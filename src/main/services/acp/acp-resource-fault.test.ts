@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { detectAcpResourceFault, formatAcpResourceFault } from './acp-resource-fault.ts'
+import {
+  detectAcpResourceFault,
+  formatAcpResourceFault,
+  formatOpenFileCeilingWarning,
+  inheritedOpenFileLimit,
+} from './acp-resource-fault.ts'
 
 describe('detectAcpResourceFault', () => {
   it('reads the descriptor limit off a Claude Code settings-watcher failure', () => {
@@ -38,20 +43,42 @@ describe('detectAcpResourceFault', () => {
   })
 })
 
+describe('inheritedOpenFileLimit', () => {
+  it('reads the limits a spawned agent inherits from this process', () => {
+    const limit = inheritedOpenFileLimit()
+    // Either a real bound or `null` for "unlimited"; a soft bound never exceeds
+    // the hard one, which is what makes the pair worth logging.
+    for (const value of [limit.soft, limit.hard]) {
+      assert.ok(value === null || (Number.isInteger(value) && value > 0))
+    }
+    if (limit.soft !== null && limit.hard !== null) assert.ok(limit.soft <= limit.hard)
+    assert.equal(inheritedOpenFileLimit(), limit, 'the limit is read once and cached')
+  })
+})
+
 describe('formatAcpResourceFault', () => {
-  it('names the agent, the scope of the exhaustion, and what happens next', () => {
+  it('names the agent, the scope of the exhaustion, and the ceiling it hit', () => {
     const line = formatAcpResourceFault('claude-agent-acp', {
       code: 'EMFILE',
       detail: 'EMFILE: too many open files, watch',
     })
     assert.match(line, /^\[acp:claude-agent-acp\]/)
-    assert.match(line, /open-file limit \(EMFILE\)/)
-    assert.match(line, /replaced before the next turn/)
+    assert.match(line, /open-file limit \(EMFILE, inherited open-file limit .+ soft \/ .+ hard\)/)
     assert.ok(line.includes('EMFILE: too many open files, watch'))
   })
 
   it('says so when the whole machine is out of descriptors', () => {
     const line = formatAcpResourceFault('codex', { code: 'ENFILE', detail: 'ENFILE: ...' })
-    assert.match(line, /machine is out of file descriptors \(ENFILE\)/)
+    assert.match(line, /machine is out of file descriptors \(ENFILE,/)
+  })
+})
+
+describe('formatOpenFileCeilingWarning', () => {
+  it('points at the machine limit rather than at the agent', () => {
+    const line = formatOpenFileCeilingWarning('claude-agent-acp')
+    assert.match(line, /^\[acp:claude-agent-acp\]/)
+    assert.match(line, /its replacement would be too/)
+    assert.match(line, /launchctl limit maxfiles/)
+    assert.match(line, /restart Copse/)
   })
 })

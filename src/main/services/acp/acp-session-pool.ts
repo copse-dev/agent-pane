@@ -2,6 +2,7 @@ import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from '.
 import { openAcpSession, willSandboxAcpAgent } from './acp-client.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import { createAcpWireTrace } from './acp-wire-trace.ts'
+import { formatOpenFileCeilingWarning } from './acp-resource-fault.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
@@ -37,6 +38,8 @@ export interface PooledAcpSession {
   open: OpenAcpSession
   bridge: AcpNativeBridge | null
   fingerprint: string
+  /** When this agent process was spawned — how a fault gets read (see below). */
+  openedAt: number
   lastUsedAt: number
   dispose: () => Promise<void>
 }
@@ -53,6 +56,19 @@ export interface AcquireAcpSessionOptions {
 
 const IDLE_MS = 10 * 60 * 1000
 const REAP_INTERVAL_MS = 60 * 1000
+
+/**
+ * How long an agent process must have run before descriptor exhaustion is worth
+ * replacing it over. A process that used its whole budget in under a minute did
+ * not leak its way there — it inherited a ceiling too low to work under (macOS
+ * hands GUI apps 256), and its replacement would inherit the same one. Below
+ * this age Copse keeps the process and says what is actually wrong, rather than
+ * respawning the agent on every turn to no effect.
+ */
+const FAULT_REPLACE_MIN_AGE_MS = 60 * 1000
+
+/** The ceiling warning names a machine-wide condition: once per run is enough. */
+let ceilingWarned = false
 
 const pool = new Map<string, PooledAcpSession>()
 /** Session IDs retained only long enough to reconnect after a transport drop. */
@@ -142,13 +158,20 @@ export async function acquireAcpSession(
     // resume path below hands the same agent session to the fresh process, so
     // the descriptors come back without the thread losing the agent's memory.
     const fault = existing.open.resourceFault()
-    if (fault) {
+    const worthReplacing =
+      fault !== null && Date.now() - existing.openedAt >= FAULT_REPLACE_MIN_AGE_MS
+    if (fault && !worthReplacing) {
+      if (!ceilingWarned) {
+        ceilingWarned = true
+        console.warn(formatOpenFileCeilingWarning(opts.config.command))
+      }
+    } else if (fault) {
       console.warn(
         `[acp-pool] replacing thread ${opts.threadId}'s agent process: it reported ${fault.code} ` +
           `(${fault.detail})`,
       )
     }
-    if (!fault && existing.fingerprint === fingerprint && !existing.open.isClosed()) {
+    if (!worthReplacing && existing.fingerprint === fingerprint && !existing.open.isClosed()) {
       existing.lastUsedAt = Date.now()
       // Config options (reasoning level, …) are excluded from the fingerprint so
       // changing one reuses the session instead of respawning it; hand the fresh
@@ -240,6 +263,7 @@ export async function acquireAcpSession(
     open,
     bridge,
     fingerprint,
+    openedAt: Date.now(),
     lastUsedAt: Date.now(),
     dispose: () => {
       if (disposal) return disposal

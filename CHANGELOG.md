@@ -531,7 +531,12 @@ every published entry.
   boundary and replaced, resuming the same agent session where the agent
   supports it, so the descriptors come back without the thread losing the
   agent's memory of it. The same applies to an agent running over SSH, whose
-  remote login often has the tighter limit of the two.
+  remote login often has the tighter limit of the two. An agent that runs out
+  within a minute of starting is left alone instead: it cannot have leaked its
+  way there, so its replacement would fare no better — the limit Copse itself
+  was launched under is too low (macOS gives an app 256 by default), and the
+  log now says so, and reports that limit, rather than quietly respawning the
+  agent on every turn.
 
 ## Release-note process
 

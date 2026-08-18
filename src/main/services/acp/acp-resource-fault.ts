@@ -47,6 +47,67 @@ export function detectAcpResourceFault(stderr: string): AcpResourceFault | null 
   return null
 }
 
+/**
+ * The descriptor limits a spawned agent inherits — this process's own, since a
+ * child starts from the parent's. Read from Node's diagnostic report, the only
+ * `getrlimit` this runtime exposes; the report is built on demand and cached,
+ * because a limit does not change under a running process.
+ *
+ * The numbers are what separates the two causes of the same errno. A ceiling of
+ * a few hundred (macOS hands GUI apps a soft limit of 256) is the cause all by
+ * itself, and no amount of restarting agents will help. A ceiling in the
+ * thousands means the agent really did open that many, which is a leak inside
+ * it. Note that a Node-based agent raises its own soft limit to the hard limit
+ * at startup, so it is the HARD limit that bounds one of those; an agent
+ * written in anything else is bounded by the soft limit it inherited.
+ */
+export interface OpenFileLimit {
+  soft: number | null
+  hard: number | null
+}
+
+let cachedLimit: OpenFileLimit | null = null
+
+function limitValue(value: unknown): number | null {
+  // A real bound is a number; POSIX reports an absent one as "unlimited".
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function readOpenFileLimit(): OpenFileLimit {
+  const unknownLimit: OpenFileLimit = { soft: null, hard: null }
+  let report: unknown
+  try {
+    report = process.report.getReport()
+  } catch {
+    // Best-effort diagnostics: never let a report failure break a spawn path.
+    return unknownLimit
+  }
+  if (typeof report !== 'object' || report === null || !('userLimits' in report)) {
+    return unknownLimit
+  }
+  const limits = report.userLimits
+  if (typeof limits !== 'object' || limits === null || !('open_files' in limits)) {
+    return unknownLimit
+  }
+  const openFiles = limits.open_files
+  if (typeof openFiles !== 'object' || openFiles === null) return unknownLimit
+  return {
+    soft: 'soft' in openFiles ? limitValue(openFiles.soft) : null,
+    hard: 'hard' in openFiles ? limitValue(openFiles.hard) : null,
+  }
+}
+
+export function inheritedOpenFileLimit(): OpenFileLimit {
+  cachedLimit ??= readOpenFileLimit()
+  return cachedLimit
+}
+
+function describeLimit(limit: OpenFileLimit): string {
+  const soft = limit.soft === null ? 'unlimited' : String(limit.soft)
+  const hard = limit.hard === null ? 'unlimited' : String(limit.hard)
+  return `inherited open-file limit ${soft} soft / ${hard} hard`
+}
+
 /** One log line explaining what Copse saw and what it is about to do about it. */
 export function formatAcpResourceFault(command: string, fault: AcpResourceFault): string {
   const scope =
@@ -54,7 +115,22 @@ export function formatAcpResourceFault(command: string, fault: AcpResourceFault)
       ? 'the machine is out of file descriptors'
       : 'the agent process hit its open-file limit'
   return (
-    `[acp:${command}] ${scope} (${fault.code}) — the process can no longer open files ` +
-    `and will be replaced before the next turn: ${fault.detail}`
+    `[acp:${command}] ${scope} (${fault.code}, ${describeLimit(inheritedOpenFileLimit())}) — ` +
+    `the process can no longer open files: ${fault.detail}`
+  )
+}
+
+/**
+ * What to say when replacing the process cannot help: it faulted so soon after
+ * starting that it cannot have leaked its way there, so the ceiling it inherited
+ * is the whole problem. Raising it is a machine-level change, outside anything
+ * Copse can do to its own children.
+ */
+export function formatOpenFileCeilingWarning(command: string): string {
+  return (
+    `[acp:${command}] a freshly started agent is already out of file descriptors ` +
+    `(${describeLimit(inheritedOpenFileLimit())}), so its replacement would be too — ` +
+    `raise the limit for the desktop session instead (macOS: launchctl limit maxfiles; ` +
+    `Linux: the login's nofile limit), then restart Copse`
   )
 }

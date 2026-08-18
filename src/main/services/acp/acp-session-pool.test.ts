@@ -258,6 +258,9 @@ describe('acp-session-pool', () => {
     // The faulted process is still connected and would otherwise be reused —
     // that is the whole failure mode: it answers, it just cannot open anything.
     assert.equal(first.entry.open.isClosed(), false)
+    // Long-running, so it plausibly leaked its way to the limit; a replacement
+    // starts from an empty descriptor table and is worth spawning.
+    first.entry.openedAt = Date.now() - 10 * 60_000
 
     const replaced = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
     assert.equal(log.spawns, 2, 'the faulted process must be replaced, not reused')
@@ -275,6 +278,28 @@ describe('acp-session-pool', () => {
     assert.equal(third.entry, replaced.entry)
     assert.equal(log.spawns, 2)
     assert.deepEqual(log.promptSessions, [originalSessionId, originalSessionId])
+  })
+
+  it('keeps a just-started agent that faults, rather than respawning it every turn', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    // Every process this factory hands out is out of descriptors from the
+    // start — the inherited-ceiling case, where a replacement is no better off.
+    const createTransport = makeResumableTransportFactory(log, () => ({
+      code: 'EMFILE',
+      detail: 'EMFILE: too many open files, watch',
+    }))
+
+    const first = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    const second = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    assert.equal(second.entry, first.entry, 'a fresh faulted process must not be swapped out')
+    assert.equal(log.spawns, 1)
+
+    // Once it has been running a while, exhaustion reads as accumulation again
+    // and the process is replaced as usual.
+    first.entry.openedAt = Date.now() - 10 * 60_000
+    const third = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    assert.notEqual(third.entry, first.entry)
+    assert.equal(log.spawns, 2)
   })
 
   it('a disposed session reports closed so acquire never reuses it', async () => {
