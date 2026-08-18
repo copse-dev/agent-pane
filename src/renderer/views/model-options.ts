@@ -47,7 +47,7 @@ import {
   acpModelVersionName,
   enabledClaudeAcpAgent,
   parseAcpAgentConfigs,
-  parseAcpModel,
+  parseAcpModelSelection,
 } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import {
@@ -553,7 +553,7 @@ export async function fetchModelOptions(
     if (current.startsWith('lmstudio:')) {
       options.push({
         value: current,
-        label: `${current.slice('lmstudio:'.length)} (offline)`,
+        label: `${modelDisplayLabel(current)} (offline)`,
         group: lmGroup,
       })
     } else if (includeAgentModels && current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
@@ -564,16 +564,20 @@ export async function fetchModelOptions(
         group: selection ? remoteAgentGroupLabel(selection.provider) : 'Remote agents',
       })
     } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
-      const selection = parseAcpModel(current)
-      const agentId = selection ?? current.slice(ACP_MODEL_PREFIX.length)
+      const selection = parseAcpModelSelection(current)
+      const agentId = selection?.id ?? current.slice(ACP_MODEL_PREFIX.length)
       const configuredAgent = acpAgents.find((agent) => agent.id === agentId)
       const configuredButUnlisted = configuredAgent?.enabled === true
+      // No `#<model>` means the agent picks: say "agent default" rather than
+      // echoing the selection back (a raw `acp:…` id is what this whole
+      // labeling pass exists to stop showing).
+      const staleModel = selection?.model ? canonicalModelLabel(selection.model) : 'agent default'
       const stale: ModelOption = {
         value: current,
         label: sshWorkspace
           ? `${modelDisplayLabel(current)} (unavailable on SSH)`
           : configuredButUnlisted
-            ? `${configuredAgent.title} — ${current.slice(current.indexOf('#') + 1) || 'agent default'} (not currently advertised)`
+            ? `${configuredAgent.title} — ${staleModel} (not currently advertised)`
             : configuredAgent
               ? `${configuredAgent.title} (disabled)`
               : `${modelDisplayLabel(current)} (not configured)`,

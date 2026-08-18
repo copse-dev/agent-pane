@@ -472,6 +472,33 @@ describe('fetchModelOptions visibility', () => {
     })
   })
 
+  it('names the agent default when an unadvertised ACP selection has no model', async () => {
+    // `acp:cursor` carries no `#<model>`, so there is no model name to show —
+    // the agent picks. Deriving one by slicing at `#` echoes the whole raw
+    // selection back when there is no `#` at all.
+    const staleValue = 'acp:cursor'
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          {
+            id: 'cursor',
+            title: 'Cursor',
+            command: 'cursor-agent',
+            enabled: true,
+            availableModels: [{ value: 'composer-2.5[fast=false]', label: 'Composer 2.5' }],
+          },
+        ],
+      }),
+      staleValue,
+    )
+    const current = options.find((option) => option.value === staleValue)
+    assert.deepEqual(current, {
+      value: staleValue,
+      label: 'Cursor — agent default (not currently advertised)',
+      group: 'Cursor on this device',
+    })
+  })
+
   it('omits ACP agents on SSH workspaces and marks a stale selection unavailable', async () => {
     const api = mockApi({
       available: { anthropic: true },

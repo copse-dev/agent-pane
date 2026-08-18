@@ -102,6 +102,7 @@ import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
 import { fetchModelOptions, modelDisplayLabel, type ModelOption } from './model-options.ts'
+import { LOCAL_MODEL_SUFFIX } from '@shared/model-display.ts'
 import { contextFitAdvice } from '@shared/context-window-advice.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
@@ -603,8 +604,14 @@ export function mountInputBar(
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
   let automaticCheckoutPreviewSeq = 0
 
+  // The picker's label carries the route as well as the name (`Title — Model`
+  // for an agent, `… · local` for LM Studio). These sentences name the model
+  // only — and the ones that care about local already say so in words — so the
+  // route half is dropped rather than read out as "Describe locally with
+  // qwen/… · local".
   function shortModelLabel(option: ModelOption): string {
-    return option.label.split(' — ')[0] ?? option.label
+    const name = option.label.split(' — ')[0] ?? option.label
+    return name.endsWith(LOCAL_MODEL_SUFFIX) ? name.slice(0, -LOCAL_MODEL_SUFFIX.length) : name
   }
 
   function appendImageDescription(text: string, modelLabel: string, description: string): string {

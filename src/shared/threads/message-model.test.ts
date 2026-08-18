@@ -64,6 +64,9 @@ describe('message-model helpers', () => {
     )
     assert.equal(formatPrimaryChatModelLabel('claude-sonnet-4-6'), 'Claude Sonnet 4.6')
     assert.equal(formatPrimaryChatModelLabel('openrouter:openai/gpt-4o'), 'GPT-4o')
+    // An extra-provider selection sheds its routing slug: the transcript names
+    // the model, the provider is the picker's grouping.
+    assert.equal(formatPrimaryChatModelLabel('deepseek:deepseek-chat'), 'deepseek-chat')
     assert.equal(formatPrimaryChatModelLabel('auto:best-value'), 'Best value (plan / price)')
   })
 })

@@ -64,19 +64,26 @@ describe('extra provider lookups against a resolved list', () => {
     assert.deepEqual(perplexity.models, [])
   })
 
-  it('returns the raw model id (labels removed)', () => {
-    // #1241 reduced this to the identity function: the selection id IS the label,
-    // prefix included. A known model, an unknown one, and no provider list at all
-    // all take the same path — nothing is stripped and `providers` is unused.
-    assert.equal(
-      extraProviderDisplayLabel('deepseek:deepseek-chat', providers),
-      'deepseek:deepseek-chat',
-    )
+  it('returns the upstream model id with the routing slug stripped', () => {
+    // #1241 dropped the curated labels and meant to leave the upstream id, but
+    // returned the whole selection — so the picker, transcript, and advisor all
+    // rendered `deepseek:deepseek-chat` next to house-styled names. The slug is
+    // the route, not the name. A known model, an unknown one, and no provider
+    // list at all take the same path: `providers` is still unused.
+    assert.equal(extraProviderDisplayLabel('deepseek:deepseek-chat', providers), 'deepseek-chat')
     assert.equal(
       extraProviderDisplayLabel('gemini:some-unknown-model', providers),
-      'gemini:some-unknown-model',
+      'some-unknown-model',
     )
-    assert.equal(extraProviderDisplayLabel('gemini:gemini-2.5-flash'), 'gemini:gemini-2.5-flash')
+    assert.equal(extraProviderDisplayLabel('gemini:gemini-2.5-flash'), 'gemini-2.5-flash')
+    // The id itself is identity: an endpoint addressed as `vendor/model:variant`
+    // keeps that whole string, only the leading slug goes.
+    assert.equal(
+      extraProviderDisplayLabel('huggingface:zai-org/GLM-5.2:deepinfra'),
+      'zai-org/GLM-5.2:deepinfra',
+    )
+    // A bare cloud id is not an extra-provider selection and passes through.
+    assert.equal(extraProviderDisplayLabel('claude-opus-4-8'), 'claude-opus-4-8')
   })
 
   it('reports per-model, then per-provider fallback, context windows', () => {

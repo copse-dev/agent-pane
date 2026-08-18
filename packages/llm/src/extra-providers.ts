@@ -67,12 +67,25 @@ export interface ExtraProviderModel {
   blendedCostPerMTok?: number
 }
 
-/** Display label for an extra-provider selection: the raw upstream model id. */
+/**
+ * Display label for an extra-provider selection: the upstream model id, with
+ * the routing slug stripped.
+ *
+ * #1241 reduced this to the upstream id when it dropped the curated per-model
+ * labels, but returned the whole selection instead — so every surface rendered
+ * `groq:llama-3.3-70b`, the routing prefix and all, next to house-styled names
+ * like "Claude Opus 4.8". The slug says which endpoint Copse asks; it is not
+ * part of the model's name, and the picker already groups by provider.
+ *
+ * The id itself is left verbatim — it is what the endpoint is asked for, org
+ * path included (`zai-org/GLM-5.2:deepinfra`) — the same identity contract
+ * `openRouterDisplayLabel` keeps for an uncurated id.
+ */
 export function extraProviderDisplayLabel(
   model: string,
   _providers: readonly ExtraProvider[] = [],
 ): string {
-  return model
+  return extraProviderModelId(model)
 }
 
 export interface ExtraProvider {
