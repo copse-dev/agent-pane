@@ -52,7 +52,11 @@ import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
-import { reapOversizedGortexDaemon, stopGortexDaemon } from './services/search/semantic-index.ts'
+import {
+  reapOversizedGortexDaemon,
+  reclaimBloatedGortexStore,
+  stopGortexDaemon,
+} from './services/search/semantic-index.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
@@ -288,6 +292,11 @@ app
     // from pushing the machine over its ceiling and OOM-killing us mid-boot.
     recordStartupPhase('reap-gortex')
     await reapOversizedGortexDaemon()
+    // Then shed a store that has bloated past its ceiling. Must follow the reap
+    // and precede any tracking: the daemon holds store.sqlite open, so this
+    // stops it before unlinking (otherwise the space stays held by the open
+    // inode). The index is derived data and rebuilds on the next workspace open.
+    await reclaimBloatedGortexStore()
 
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
