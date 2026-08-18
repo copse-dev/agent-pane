@@ -9,11 +9,16 @@
  * one thing that can be measured without driving the UI, because Copse reopens
  * the last active project on launch.
  *
- * PROFILE SAFETY. This runs against the real `~/.copse` (that is the point — the
- * cost is a function of that profile's size, and a synthetic profile would
- * measure nothing). It never writes to the profile itself: the trace goes to
- * `--out`, outside `~/.copse`. The app does its own normal startup writes, the
- * same ones any launch performs.
+ * PROFILE SAFETY. The cost under study is a function of a real profile's size, so
+ * a synthetic profile measures nothing. Point `COPSE_DIR` at an APFS clone of
+ * `~/.copse` (`cp -Rc`, which is copy-on-write and therefore near-instant and
+ * near-free) and the run touches no live state at all — while still reading
+ * exactly the bytes the real profile holds:
+ *
+ *   COPSE_DIR=/tmp/copse-clone node scripts/perf-open.mts --runs 3
+ *
+ * Without `COPSE_DIR` this runs against the real `~/.copse`, which requires the
+ * app to be closed and performs that launch's ordinary startup writes.
  */
 
 import { spawn } from 'node:child_process'
@@ -44,16 +49,18 @@ if (!existsSync(join(process.cwd(), 'dist', 'main', 'index.js'))) {
  */
 async function runOnce(index: number): Promise<string> {
   const tracePath = join(outDir, `open-${String(index)}.ndjson`)
+  // `ELECTRON_RUN_AS_NODE` must be *absent*, not empty — Electron tests for the
+  // variable's presence, so passing '' would still start it as plain Node and
+  // there would be no window to time.
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    COPSE_PERF: '1',
+    COPSE_PERF_OUT: tracePath,
+  }
+  delete env['ELECTRON_RUN_AS_NODE']
   const child = spawn(electronBin, ['dist/main/index.js'], {
     cwd: process.cwd(),
-    env: {
-      ...process.env,
-      COPSE_PERF: '1',
-      COPSE_PERF_OUT: tracePath,
-      // Keep Electron from re-exec'ing as plain node (the repo's `start` script
-      // does the same).
-      ELECTRON_RUN_AS_NODE: '',
-    },
+    env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 

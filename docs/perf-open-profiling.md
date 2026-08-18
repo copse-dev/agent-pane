@@ -71,3 +71,48 @@ three children (`switch:workspace-set`, `switch:load-threads`,
   and **bytes**; bytes is what distinguishes "many threads" from "few enormous
   threads".
 - **Renderer-observed latency** — the `gap` column, as above.
+
+## Measured result (2026-08-19, this profile)
+
+Method: `~/.copse` cloned with `cp -Rc` (APFS copy-on-write — near-instant, near-zero
+space, and byte-identical to the real profile), `COPSE_DIR` pointed at the clone so
+the live app kept running untouched. Cold opens via `scripts/perf-open.mts`;
+switches driven as real sidebar clicks via `scripts/perf-switch.mts`.
+
+### Cold open
+
+| | streaming-markdown (17 threads) | Copse (363 threads) |
+| --- | --- | --- |
+| `renderer:boot` (end to end) | **637 ms** | **7,695 – 9,471 ms** |
+| `renderer:restore-project` | 483 ms | 7,586 – 9,358 ms |
+| `threads:loadProject` (renderer-observed) | 431 ms | 6,950 – 8,638 ms |
+| `store:read-project-threads` (main-side) | 394 ms | 6,451 – 8,021 ms |
+| `store:thread-prefetch` | 17 calls, 4.9 MB | 363 calls, **210.8 MB** |
+| `index:build` | 77 ms (224 paths) | 122 – 147 ms (2,981 paths) |
+
+### Switch (real clicks)
+
+| Click | `switch:activate` | `workspace-set` | `load-threads` | `apply-state` |
+| --- | --- | --- | --- | --- |
+| → Copse | **8,991 ms** | 60 ms | 8,480 ms | 451 ms |
+| → streaming-markdown | 468 ms | 106 ms | 309 ms | 52 ms |
+| → Copse *again* | **7,924 ms** | 71 ms | 7,582 ms | 270 ms |
+
+### Conclusions
+
+1. **One cause, ~94–98 % of it.** `threads:loadProject` → `readProjectThreads`
+   reads and folds *every* non-archived thread in full — meta, spine, and every
+   referenced message and blob file — then structured-clones the result to the
+   renderer. For this profile that is 363 threads, 210.8 MB, ~50,600 files.
+2. **Cost is a function of chat history, not of the repository.** The 6.1 GB of
+   `.claude/worktrees` is correctly gitignored and never listed; `index:build`
+   costs ~130 ms for the whole Copse checkout. Workspace size is not the problem.
+3. **Nothing is cached across a switch.** Returning to Copse costs the same as
+   arriving (7,924 ms vs 8,991 ms). The sidebar thread cache deliberately
+   compacts transcripts away, and `finishActivate` re-reads from disk every time.
+   Note the file index *is* correctly reused on return (`fresh=false`) — threads
+   are the outlier.
+4. **The sidebar only ever needed metadata.** Titles and timestamps are what the
+   rows render; the full transcript of all 363 threads is loaded to display one.
+5. `storage:get` ran 9,150 times during boot for a total of 87 ms — the
+   write-through cache is doing its job. Config is not implicated.
