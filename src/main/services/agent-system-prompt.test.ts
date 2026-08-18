@@ -7,7 +7,10 @@ import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { OPUS_5_RESPONSE_LENGTH_BLOCK, OPUS_5_TONE_REMINDER } from './agent-prompt.ts'
 import { setSetting } from './storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
-import { runWithThreadExecutionContext, type ThreadExecutionContext } from './thread-execution-context.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from './thread-execution-context.ts'
 
 const CONCISENESS = 'Keep responses focused, brief, and concise'
 
