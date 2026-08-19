@@ -219,23 +219,27 @@ test('a window that does not own navigation persists projects but never navigati
   // empty. Projects still save — only the navigation half is withheld.
   __resetPersistenceForTest()
   setNavigationOwnership(false)
-  const { api, calls } = fakeApi()
-  const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
+  const popout = fakeApi()
 
-  await saveProjects(api, [], 'p1', 't1')
-  assert.deepEqual(calls.navigations, [], 'a pop-out must not write navigation')
+  await saveProjects(popout.api, [], 'p1', 't1')
+  assert.equal(popout.calls.navigations.length, 0, 'a pop-out must not write navigation')
   assert.deepEqual(
-    calls.storageSets.map((call) => call[0]),
+    popout.calls.storageSets.map((call) => call[0]),
     ['projects'],
     'the projects list is shared state and still saves',
   )
 
-  // The flag is per-window, so a main window in the same suite still writes.
+  // Ownership is per-window, so a main window is unaffected. Its own fake API,
+  // deliberately: asserting `deepEqual(navigations, [])` above would narrow the
+  // shared object to `never[]` and make every later read of it statically
+  // `undefined` — passing at runtime while the types describe a different test.
   __resetPersistenceForTest()
-  const autosave = attachAutosave(store, api)
+  const main = fakeApi()
+  const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
+  const autosave = attachAutosave(store, main.api)
   store.emit('projects_changed')
   await waitDebounce()
-  assert.deepEqual(calls.navigations.at(-1), { activeProjectId: 'p1', activeThreadId: null })
+  assert.deepEqual(main.calls.navigations.at(-1), { activeProjectId: 'p1', activeThreadId: null })
   autosave.detach()
 })
 
