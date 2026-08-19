@@ -146,7 +146,11 @@ cannot reach its provider's token endpoint will keep working until the current
 token ages out and then fail with `OAuth access token has expired`. If that
 happens repeatedly, check the **Sandbox network audit** card at the end of the
 turn for a blocked host and add its domain to that agent's
-`sandbox.allowedDomains` override. The Claude presets allow `anthropic.com`,
+`sandbox.allowedDomains` override. The card names the blocked destinations but
+points at Copse's bridged GitHub, CI and shell tools first: those reach the
+network from the host and need no allowlist entry, so widening the agent's own
+egress is for hosts no bridged tool can stand in for — a token endpoint being
+exactly that case. The Claude presets allow `anthropic.com`,
 `claude.ai`, and `claude.com` (the console moved to `platform.claude.com`, which
 is where an OAuth login refreshes) for exactly this reason.
 

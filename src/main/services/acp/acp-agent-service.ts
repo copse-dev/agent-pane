@@ -60,6 +60,11 @@ import {
   stageDiff,
 } from '../diff-queue.ts'
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
+import {
+  ACP_SANDBOX_GITHUB_STEER,
+  denialHostLabels,
+  formatSandboxNetworkDenialAudit,
+} from './acp-network-denial-steer.ts'
 import { ensureWorktreeRecoverable, resetSessionBackup } from '../worktree-backup.ts'
 import { getSetting } from '../storage/settings.ts'
 import { ensureShellCommandPermitted } from '../security/permission-gate.ts'
@@ -886,26 +891,15 @@ function auditKey(relPath: string): string {
 function emitNetworkDenialAudit(marker: number, onChunk: (chunk: StreamChunk) => void): void {
   const denied = networkDenialsSince(marker)
   if (denied.length === 0) return
-  const hosts = [
-    ...new Set(
-      denied.map((denial) =>
-        denial.port !== undefined ? `${denial.host}:${String(denial.port)}` : denial.host,
-      ),
-    ),
-  ]
   const id = `acp-network-audit-${randomUUID()}`
   onChunk({
     type: 'tool_call',
-    toolCall: { id, name: 'sandbox_network_audit', args: { blocked: hosts } },
+    toolCall: { id, name: 'sandbox_network_audit', args: { blocked: denialHostLabels(denied) } },
   })
   onChunk({
     type: 'tool_result',
     toolCallId: id,
-    result:
-      'The sandbox blocked these network destinations while the turn ran:\n' +
-      hosts.map((host) => `- ${host}`).join('\n') +
-      "\nIf the agent needs one legitimately, add its domain to the agent's " +
-      'sandbox.allowedDomains override in Settings → ACP agents.',
+    result: formatSandboxNetworkDenialAudit(denied),
     isError: false,
   })
 }
@@ -998,7 +992,9 @@ export const ACP_TURN_PROMPT_NOTE =
  * models habitually hardcode `/tmp`, which the seatbelt denies — and unlike
  * the agent's private shell has no approve-to-run-unsandboxed path. The native
  * bridge does, so steer commands through its run_shell implementation instead
- * of letting the agent walk into EPERMs that its own approval cannot fix.
+ * of letting the agent walk into EPERMs that its own approval cannot fix. The
+ * appended {@link ACP_SANDBOX_GITHUB_STEER} does the same for the network side,
+ * where GitHub is the destination agents reach for unprompted.
  */
 export const ACP_SANDBOX_PROMPT_NOTE =
   'Environment note: this session runs inside a filesystem sandbox. Writes are ' +
@@ -1008,7 +1004,9 @@ export const ACP_SANDBOX_PROMPT_NOTE =
   "use its run_shell tool for commands: it applies Copse's normal command " +
   'policy and can ask the user to run approved external work outside this ' +
   'sandbox. Do not retry blocked paths with your own shell. Put scratch files ' +
-  'in $TMPDIR or the workspace.'
+  'in $TMPDIR or the workspace.' +
+  '\n\n' +
+  ACP_SANDBOX_GITHUB_STEER
 
 /**
  * Flatten the user prompt to text. With persistent sessions (issue #605) the
