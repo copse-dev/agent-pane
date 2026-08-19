@@ -1,23 +1,16 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS, cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
-import { localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
+import { getLocalModelCapability, localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
 import {
   cloudModelIntellectHint,
   localModelIntellectHint,
   modelIntellectHint,
 } from '@copse/llm/intellect-hints.ts'
 import { resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
+import { isOpenRouterModel, openRouterModelId, toOpenRouterModel } from '@copse/llm/openrouter.ts'
 import {
-  isOpenRouterModel,
-  openRouterDisplayLabel,
-  openRouterModelId,
-  toOpenRouterModel,
-} from '@copse/llm/openrouter.ts'
-import {
-  extraProviderDisplayLabel,
   extraProviderModelId,
   extraProviderSlugFromModel,
-  isExtraProviderModel,
   toExtraProviderModel,
   type ExtraProvider,
 } from '@copse/llm/extra-providers.ts'
@@ -43,7 +36,6 @@ import {
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
   REMOTE_AGENT_PROVIDER_CURSOR,
   parseRemoteAgentModelSelection,
-  remoteAgentDisplayLabel,
   remoteAgentGroupLabel,
   remoteAgentModelValue,
 } from '@shared/remote-agent.ts'
@@ -55,7 +47,6 @@ import {
   acpModelVersionName,
   enabledClaudeAcpAgent,
   parseAcpAgentConfigs,
-  parseAcpModel,
   parseAcpModelSelection,
 } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
@@ -69,12 +60,13 @@ import {
   BEST_VALUE_CHAT_MODEL_LABEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
+import { AUTO_MODEL_PREFIX, dynamicModelChoices } from '@copse/llm/dynamic-model.ts'
 import {
-  AUTO_MODEL_PREFIX,
-  dynamicModelChoices,
-  dynamicModelLabel,
-} from '@copse/llm/dynamic-model.ts'
-import { canonicalModelLabel, claudeModelIdFromLabel } from '@copse/llm/model-label.ts'
+  canonicalModelLabel,
+  claudeModelIdFromLabel,
+  modelDisplayName,
+} from '@copse/llm/model-label.ts'
+import { displayModelLabel } from '@shared/model-display.ts'
 
 const ACP_GROUP = 'Agents on this device'
 
@@ -98,21 +90,7 @@ export interface ModelOption {
 }
 
 export function modelDisplayLabel(model: string): string {
-  if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL
-  const dynamic = dynamicModelLabel(model)
-  if (dynamic) return dynamic
-  if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
-  const pluginModel = parsePluginModelSelection(model)
-  if (pluginModel) return pluginModel.routeId
-  if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
-  if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
-  if (parseRemoteAgentModelSelection(model)) {
-    return remoteAgentDisplayLabel(model)
-  }
-  // Without the configured-agents list to resolve a title, fall back to the id.
-  const acpId = parseAcpModel(model)
-  if (acpId) return acpId
-  return cloudModelDisplayLabel(model)
+  return displayModelLabel(model)
 }
 
 /**
@@ -269,7 +247,8 @@ async function openRouterOptions(
     })
   }
 
-  for (const model of liveModels) add(model.id, model.name || model.id, model.supportsImages)
+  for (const model of liveModels)
+    add(model.id, modelDisplayName(model.name || model.id), model.supportsImages)
   if (customId) add(customId, `${customId} (custom)`)
   if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current))
 
@@ -336,7 +315,7 @@ function extraProviderOptions(
     })
   }
 
-  for (const model of provider.models) add(model.id, model.id)
+  for (const model of provider.models) add(model.id, modelDisplayName(model.id))
   if (extraProviderSlugFromModel(current) === provider.id) {
     add(extraProviderModelId(current), modelDisplayLabel(current))
   }
@@ -567,9 +546,13 @@ export async function fetchModelOptions(
     const hint = [localModelRoleHint(id), localModelIntellectHint(id)]
       .filter((part): part is string => part !== null)
       .join(' · ')
+    // The weights the app itself ships carry a curated name; anything else the
+    // server happens to have loaded is spelled from its id. Either way the row
+    // reads as a name, so the ` — ` before a hint is the only dash in it.
+    const label = getLocalModelCapability(id)?.label ?? modelDisplayName(id)
     options.push({
       value: `lmstudio:${id}`,
-      label: hint ? `${id} — ${hint}` : id,
+      label: hint ? `${label} — ${hint}` : label,
       group: lmGroup,
       ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
     })
@@ -579,7 +562,7 @@ export async function fetchModelOptions(
     if (current.startsWith('lmstudio:')) {
       options.push({
         value: current,
-        label: `${current.slice('lmstudio:'.length)} (offline)`,
+        label: `${modelDisplayLabel(current)} (offline)`,
         group: lmGroup,
       })
     } else if (includeAgentModels && current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
@@ -591,16 +574,19 @@ export async function fetchModelOptions(
       })
     } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
       const selection = parseAcpModelSelection(current)
-      const configuredAgent = selection
-        ? acpAgents.find((agent) => agent.id === selection.id)
-        : undefined
+      const agentId = selection?.id ?? current.slice(ACP_MODEL_PREFIX.length)
+      const configuredAgent = acpAgents.find((agent) => agent.id === agentId)
       const configuredButUnlisted = configuredAgent?.enabled === true
+      // No `#<model>` means the agent picks: say "agent default" rather than
+      // echoing the selection back (a raw `acp:…` id is what this whole
+      // labeling pass exists to stop showing).
+      const staleModel = selection?.model ? canonicalModelLabel(selection.model) : 'agent default'
       const stale: ModelOption = {
         value: current,
         label: sshWorkspace
           ? `${modelDisplayLabel(current)} (unavailable on SSH)`
           : configuredButUnlisted
-            ? `${configuredAgent.title} — ${selection?.model ?? 'agent default'} (not currently advertised)`
+            ? `${configuredAgent.title} — ${staleModel} (not currently advertised)`
             : configuredAgent
               ? `${configuredAgent.title} (disabled)`
               : `${modelDisplayLabel(current)} (not configured)`,
