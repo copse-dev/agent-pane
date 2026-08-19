@@ -74,6 +74,7 @@ import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-wat
 import {
   reapOversizedGortexDaemon,
   reclaimBloatedGortexStore,
+  repairCorruptGortexConfig,
   stopGortexDaemon,
 } from './services/search/semantic-index.ts'
 import { initTerminal } from './ipc/terminal.ts'
@@ -318,6 +319,10 @@ app
     // stops it before unlinking (otherwise the space stays held by the open
     // inode). The index is derived data and rebuilds on the next workspace open.
     await reclaimBloatedGortexStore()
+    // Heal a torn gortex config.yaml (concurrent exclude/track writers) before
+    // anything starts the daemon — a single garbage line makes gortex ignore
+    // the whole file, so the daemon boots with no repos and indexing fails.
+    await repairCorruptGortexConfig()
 
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
