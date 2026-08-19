@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
-import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
@@ -93,7 +93,9 @@ import { resolveBestValueChatModel } from '../services/providers/best-value-mode
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
-  loadProjectThreads,
+  backfillThreadPrRefs,
+  loadProjectThreadMetas,
+  loadThreadMessages,
   createThread,
   appendMessage,
   updateMeta,
@@ -219,6 +221,8 @@ import {
 import {
   checkoutGitBranch,
   getBranches,
+  getCommittedChanges,
+  getCommittedFileDiff,
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
@@ -245,7 +249,7 @@ import {
   reviewRoadmapItem,
   reviewRoadmapItemDeep,
 } from '../services/roadmap-review.ts'
-import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
+import { branchHasOpenPr, getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import {
@@ -484,7 +488,33 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await writeFile(join(projectPath, 'README.md'), `# ${name}\n\n`, 'utf8')
     // git init -b main keeps the initial branch name stable regardless of the
     // user's global init.defaultBranch / git template config.
-    await runCommand('git', ['init', '-b', 'main'], { cwd: projectPath, timeout_ms: 0 })
+    //
+    // Unsandboxed, like `runWorktreeGit`: the new project sits outside the
+    // *current* workspace's sandbox until `registerAllowedWorkspaceRoot` below
+    // moves the boundary, so a sandboxed spawn cannot write `.git/` there. The
+    // scaffolding above is main-process `fs` and never hit that wall, which is
+    // why the failure only surfaced once the exit code was checked.
+    const init = await runCommand('git', ['init', '-b', 'main'], {
+      cwd: projectPath,
+      timeout_ms: 0,
+      unsandboxed: true,
+    })
+    // `runCommand` resolves with the exit code rather than rejecting, so an
+    // unchecked call silently accepts a failed `git init`: the folder scaffolds,
+    // the project registers, and the user gets a "project" that is not a
+    // repository — with the reason discarded at the only point that had it.
+    // Everything downstream (branch chip, Changes, worktrees) then fails in ways
+    // that never mention Git.
+    if (init.code !== 0) {
+      // A folder we created ourselves is ours to remove. Leaving it behind would
+      // trap the retry: the emptiness check above rejects the same name on the
+      // second attempt. A pre-existing (empty) folder is the user's, so it stays.
+      if (projectMissing) await rm(projectPath, { recursive: true, force: true })
+      const detail = (init.stderr || init.stdout).trim()
+      throw new Error(
+        `Could not initialise a Git repository in ${projectPath}${detail ? `: ${detail}` : ''}`,
+      )
+    }
     const root = await registerAllowedWorkspaceRoot(projectPath)
     return root
   })
@@ -1436,7 +1466,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Archived threads are hidden from every renderer surface (sidebar and
     // `@`-catalog both filter them), so folding their history into the store
     // only grew the heap. They stay on disk and in the whole-history readers.
-    return loadProjectThreads(id, { includeArchived: false })
+    // Threads written before `prRefs` existed have no cached PR links, and a
+    // metadata-only load has no transcript to scrape — so their sidebar chips
+    // would be missing. Fill them in behind the load: fire-and-forget, low
+    // concurrency, one pass per project ever (the result is recorded on each
+    // thread's metadata), pushing batches so the chips appear without a relaunch.
+    void backfillThreadPrRefs(id, (refs) => {
+      if (!win.isDestroyed()) win.webContents.send('threads:pr_refs', id, refs)
+    }).catch((err: unknown) => {
+      console.warn('[threads] PR-ref backfill failed:', err)
+    })
+    return loadProjectThreadMetas(id, { includeArchived: false })
+  })
+  // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
+  // when the user actually opens it.
+  ipcMain.handle('threads:loadMessages', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return loadThreadMessages(id, thread)
   })
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
@@ -1970,6 +2017,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     )
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitFileDiff(filePath, isStaged, root)
+  })
+  ipcMain.handle('git:committedChanges', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getCommittedChanges(root, {
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
+  })
+  ipcMain.handle('git:committedFileDiff', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getCommittedFileDiff(filePath, root, {
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
   })
   ipcMain.handle('git:workingFileDiff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

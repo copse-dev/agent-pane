@@ -10,6 +10,19 @@ export interface GitStatusResult {
   unstaged: GitChange[]
 }
 
+/**
+ * Files changed by commits that have not reached a pull request yet: the
+ * `<base>...HEAD` diff, where `base` is the branch's remote head when an open PR
+ * already carries those commits, and the merge-base with the default branch
+ * otherwise. Committing does not remove work from the Changes panel; it moves
+ * the work into this section.
+ */
+export interface GitCommittedChanges {
+  /** What HEAD was compared against, for display: `main`, `origin/feature-x`. */
+  baseLabel: string
+  changes: GitChange[]
+}
+
 export interface GitFileDiff {
   path: string
   before: string

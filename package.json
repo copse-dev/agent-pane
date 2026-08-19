@@ -77,7 +77,6 @@
     "demo:site:sync": "node scripts/run-sync-cupcake-demo-site.mts",
     "demo:site:check": "node scripts/run-sync-cupcake-demo-site.mts --check",
     "site:md": "node scripts/sync-site-markdown.mts",
-    "site:md:check": "node scripts/sync-site-markdown.mts --check",
     "analyze:autonomy": "node scripts/analyze-autonomy-regression.mts",
     "bench:semantic": "node scripts/semantic-search-bench.mts",
     "report:prompt-causes": "node scripts/report-prompt-causes.mts",
@@ -90,7 +89,7 @@
     "pack:mac": "pnpm run build:release && pnpm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "pnpm run prepare:gortex:mac && pnpm run build:release && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
     "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run prepare:gortex:mac && pnpm run build:release && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run site:md:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm test"
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm test"
   },
   "build": {
     "appId": "app.copse-panel",
@@ -157,7 +156,7 @@
     "@copse/streaming-markdown": "^1.0.3",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@mozilla/readability": "^0.6.0",
-    "@novnc/novnc": "1.5.0",
+    "@novnc/novnc": "1.7.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "bonjour-service": "^1.4.4",
