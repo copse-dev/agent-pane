@@ -36,6 +36,10 @@ export function getActiveThread(store: AppStore): Thread | undefined {
 
 /** Empty idle thread with no messages yet (unused "New Thread"). */
 export function isBlankThread(thread: Thread): boolean {
+  // A thread whose transcript has not been loaded yet is not blank — it is
+  // unknown. Getting this wrong is destructive: `pruneBlankThreads` drops blanks
+  // from the store and the autosave reconciler then deletes them from disk.
+  if (thread.messagesLoaded === false) return false
   return thread.messages.length === 0 && thread.status === 'idle'
 }
 
