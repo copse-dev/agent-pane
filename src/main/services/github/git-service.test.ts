@@ -26,6 +26,9 @@ import {
   sumDiffNumstat,
   toGitShowPath,
   getGitChangeStats,
+  getCommittedChanges,
+  getCommittedFileDiff,
+  parseNameStatusZ,
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
@@ -173,6 +176,36 @@ describe('classifyGitBlob (#130)', () => {
   it('returns text content unchanged for a normal blob', () => {
     const result = classifyGitBlob('hello\nworld\n', 0)
     assert.deepEqual(result, { content: 'hello\nworld\n', exists: true, isBinary: false })
+  })
+})
+
+describe('parseNameStatusZ', () => {
+  it('reads one change per NUL-delimited record', () => {
+    assert.deepEqual(parseNameStatusZ('M\0src/a.ts\0A\0src/b.ts\0D\0src/c.ts\0'), [
+      { path: 'src/a.ts', status: 'modified' },
+      { path: 'src/b.ts', status: 'added' },
+      { path: 'src/c.ts', status: 'deleted' },
+    ])
+  })
+
+  it('reports the destination path of a rename or copy record', () => {
+    assert.deepEqual(parseNameStatusZ('R100\0old.ts\0new.ts\0M\0after.ts\0'), [
+      { path: 'new.ts', status: 'renamed' },
+      { path: 'after.ts', status: 'modified' },
+    ])
+    assert.deepEqual(parseNameStatusZ('C75\0src.ts\0copy.ts\0'), [
+      { path: 'copy.ts', status: 'added' },
+    ])
+  })
+
+  it('returns nothing for empty output', () => {
+    assert.deepEqual(parseNameStatusZ(''), [])
+  })
+
+  it('stops rather than inventing a change when a record is truncated', () => {
+    assert.deepEqual(parseNameStatusZ('M\0src/a.ts\0D\0'), [
+      { path: 'src/a.ts', status: 'modified' },
+    ])
   })
 })
 
@@ -329,6 +362,122 @@ describe('getGitChangeStats', { skip: !gitOk && 'git not installed' }, () => {
     await writeFile(join(repo, 'tracked.txt'), 'changed\n')
     await writeFile(join(repo, 'another.ts'), 'one\ntwo\n')
     assert.deepEqual(await getGitChangeStats(repo), { additions: 3, deletions: 1 })
+  })
+})
+
+describe('getCommittedChanges', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]): SpawnSyncReturns<Buffer> => spawnSync('git', args, { cwd: repo })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-committed-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('config', 'commit.gpgsign', 'false')
+    // Pin the default branch: without a remote, resolveDefaultBranch falls back
+    // to init.defaultBranch, which varies by host git config.
+    git('config', 'init.defaultBranch', 'main')
+    await writeFile(join(repo, 'base.txt'), 'base\n')
+    git('add', '.')
+    git('commit', '-qm', 'baseline')
+    git('branch', '-M', 'main')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+    resetDefaultBranchCache()
+  })
+
+  afterEach(() => {
+    git('checkout', '-q', 'main')
+    git('branch', '-D', 'feature')
+    git('update-ref', '-d', 'refs/remotes/origin/feature')
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    resetDefaultBranchCache()
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('lists files from commits the default branch does not have', async () => {
+    git('checkout', '-q', '-b', 'feature')
+    await writeFile(join(repo, 'added.ts'), 'export const added = true\n')
+    await writeFile(join(repo, 'base.txt'), 'edited\n')
+    git('add', '.')
+    git('commit', '-qm', 'agent work')
+
+    const committed = await getCommittedChanges(repo)
+    assert.ok(committed)
+    assert.equal(committed.baseLabel, 'main')
+    assert.deepEqual(
+      [...committed.changes].sort((a, b) => a.path.localeCompare(b.path)),
+      [
+        { path: 'added.ts', status: 'added' },
+        { path: 'base.txt', status: 'modified' },
+      ],
+    )
+  })
+
+  it('is empty when the branch has no commits of its own', async () => {
+    git('checkout', '-q', '-b', 'feature')
+    const committed = await getCommittedChanges(repo)
+    assert.deepEqual(committed?.changes, [])
+  })
+
+  it('leaves uncommitted work to the status sections', async () => {
+    git('checkout', '-q', '-b', 'feature')
+    await writeFile(join(repo, 'dirty.ts'), 'export const dirty = true\n')
+
+    const committed = await getCommittedChanges(repo)
+    assert.deepEqual(committed?.changes, [])
+    await rm(join(repo, 'dirty.ts'), { force: true })
+  })
+
+  it('narrows to the pushed head when an open PR already carries the branch', async () => {
+    git('checkout', '-q', '-b', 'feature')
+    await writeFile(join(repo, 'in-pr.ts'), 'export const inPr = true\n')
+    git('add', '.')
+    git('commit', '-qm', 'work that was pushed')
+    // Stand in for the pushed branch: what a PR would already be showing.
+    git('update-ref', 'refs/remotes/origin/feature', 'HEAD')
+    await writeFile(join(repo, 'local-only.ts'), 'export const local = true\n')
+    git('add', '.')
+    git('commit', '-qm', 'work made after the push')
+
+    const committed = await getCommittedChanges(repo, { hasOpenPr: async () => true })
+    assert.ok(committed)
+    assert.equal(committed.baseLabel, 'origin/feature')
+    assert.deepEqual(committed.changes, [{ path: 'local-only.ts', status: 'added' }])
+  })
+
+  it('keeps pushed-but-unreviewed work visible when no PR exists', async () => {
+    git('checkout', '-q', '-b', 'feature')
+    await writeFile(join(repo, 'pushed.ts'), 'export const pushed = true\n')
+    git('add', '.')
+    git('commit', '-qm', 'pushed with no PR')
+    git('update-ref', 'refs/remotes/origin/feature', 'HEAD')
+
+    const committed = await getCommittedChanges(repo, { hasOpenPr: async () => false })
+    assert.ok(committed)
+    assert.equal(committed.baseLabel, 'main')
+    assert.deepEqual(committed.changes, [{ path: 'pushed.ts', status: 'added' }])
+  })
+
+  it('diffs a committed file from the base, ignoring later working-tree edits', async () => {
+    git('checkout', '-q', '-b', 'feature')
+    await writeFile(join(repo, 'base.txt'), 'committed\n')
+    git('add', '.')
+    git('commit', '-qm', 'agent work')
+    await writeFile(join(repo, 'base.txt'), 'and then edited again\n')
+
+    const diff = await getCommittedFileDiff('base.txt', repo)
+    assert.ok(diff)
+    assert.equal(diff.before, 'base\n')
+    assert.equal(diff.after, 'committed\n')
+    git('checkout', '-q', '--', 'base.txt')
   })
 })
 

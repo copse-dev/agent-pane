@@ -5,6 +5,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
 import { cloudModelIntellectHint } from '@copse/llm/intellect-hints.ts'
+import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 
 function createApi(): ApiClient {
   const base = createFakeApi()
@@ -153,5 +154,72 @@ describe('footer model picker', () => {
       root.querySelector('.model-picker-label')?.textContent,
       `Claude Sonnet 4.6 — ${hint}`,
     )
+  })
+
+  it('lists per-chat effort as a picker selector and reports the pick', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const picked: Array<string | undefined> = []
+    let reasoning: ReasoningLevel | undefined
+    mountFooterModelPicker(
+      root,
+      createApi(),
+      () => 'claude-opus-5',
+      () => {},
+      {
+        getReasoning: () => reasoning,
+        onSelectReasoning: (level) => {
+          picked.push(level)
+          reasoning = level
+        },
+      },
+    )
+    await settle()
+
+    const trigger = root.querySelector<HTMLButtonElement>('.model-picker-trigger')
+    assert.ok(trigger)
+    trigger.click()
+
+    const row = root.querySelector<HTMLButtonElement>('.model-picker-group-row')
+    assert.ok(row)
+    assert.equal(row.querySelector('.model-picker-group-row-label')?.textContent, 'Effort')
+    assert.equal(row.querySelector('.model-picker-group-row-value')?.textContent, 'Default')
+
+    row.click()
+    const choices = [...root.querySelectorAll<HTMLButtonElement>('.model-picker-option')]
+    assert.deepEqual(
+      choices.map((choice) => choice.dataset['value']),
+      ['', 'off', 'low', 'medium', 'high', 'xhigh', 'max'],
+    )
+    choices[choices.length - 1]?.click()
+    assert.deepEqual(picked, ['max'])
+
+    // Reopening reads the thread back, so the row shows the level it applied.
+    trigger.click()
+    await settle()
+    trigger.click()
+    assert.equal(
+      root.querySelector('.model-picker-group-row .model-picker-group-row-value')?.textContent,
+      'Max',
+    )
+  })
+
+  it('offers no effort selector for a model with no reasoning control', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    mountFooterModelPicker(
+      root,
+      createApi(),
+      () => 'gpt-4o',
+      () => {},
+      {
+        getReasoning: () => undefined,
+        onSelectReasoning: () => {},
+      },
+    )
+    await settle()
+
+    root.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    assert.equal(root.querySelector('.model-picker-group-row'), null)
   })
 })

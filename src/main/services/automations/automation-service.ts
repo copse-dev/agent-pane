@@ -11,7 +11,12 @@ import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { createThread, loadProjectThreads } from '../thread-store.ts'
 import { releaseCompletedAutomationWorktree } from '../worktree-parking.ts'
 import { cronMatches, validateCronExpression } from './cron.ts'
-import { getTaskSupervisor } from '../supervisor/task-supervisor.ts'
+import {
+  getTaskSupervisor,
+  type EnqueueSupervisedTaskInput,
+  type SupervisedTaskHandler,
+} from '../supervisor/task-supervisor.ts'
+import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
@@ -58,12 +63,27 @@ export interface AutomationService {
   tick(): Promise<void>
 }
 
+/**
+ * The supervisor surface the scheduler owner needs. `TaskSupervisor` satisfies
+ * this structurally; the narrow shape lets tests drive the durable-load
+ * ordering that `start()` imposes without touching the workspace on disk.
+ */
+export interface AutomationTaskSupervisor {
+  start(): Promise<void>
+  syncCronTasks(): void
+  list(projectId?: string): SupervisedTaskMeta[]
+  cancel(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null>
+  enqueue(input: EnqueueSupervisedTaskInput): Promise<SupervisedTaskMeta>
+  registerHandler(kind: string, handler: SupervisedTaskHandler): () => void
+}
+
 export interface AutomationServiceDependencies {
   now(): number
   createProjectThread(projectId: string, thread: Thread): Promise<void>
   loadProjectThreads(projectId: string): Promise<Thread[]>
   releasePreviousRun(projectId: string, threadId: string): Promise<boolean>
   isPluginEnabled(): boolean
+  supervisor?: () => AutomationTaskSupervisor
 }
 
 export function createAutomationService(
@@ -88,7 +108,13 @@ export function createAutomationService(
   }
 
   async function syncSupervisorTask(): Promise<void> {
-    const supervisor = getTaskSupervisor()
+    const supervisor = (dependencies.supervisor ?? getTaskSupervisor)()
+    // The supervisor only holds durable tasks once `start()` has read them back
+    // off disk, and app startup registers this scheduler before it starts the
+    // supervisor. Awaiting the (idempotent) load first is what keeps the dedupe
+    // below honest — scanning an empty map used to enqueue one surplus
+    // `automation_scheduler_tick` per launch, each ticking every minute.
+    await supervisor.start()
     supervisor.syncCronTasks()
     const existing = supervisor
       .list()
@@ -283,7 +309,7 @@ export function createAutomationService(
     },
     start(sender) {
       notify = sender
-      disposeSupervisorHandler ??= getTaskSupervisor().registerHandler(
+      disposeSupervisorHandler ??= (dependencies.supervisor ?? getTaskSupervisor)().registerHandler(
         SCHEDULER_HANDLER,
         async () => {
           await service.tick()

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { perfCount, perfSpan } from './diagnostics/perf-trace.ts'
 import {
   appendFileSync,
   existsSync,
@@ -51,6 +52,8 @@ import {
 } from '@shared/remote-agent-link.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { isRemoteAgentProvider } from '@shared/remote-agent.ts'
+import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
+import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { z } from 'zod'
@@ -128,7 +131,9 @@ function reasoningCheckpointsPath(projectId: string): string {
 }
 
 function metaOf(thread: Thread): ThreadMeta {
-  const { messages: _messages, ...meta } = thread
+  // `messagesLoaded` is in-memory bookkeeping about *this session's* load state.
+  // Persisting it would write a field that is meaningless on the next launch.
+  const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta } = thread
   return meta
 }
 
@@ -328,10 +333,14 @@ function parseMeta(raw: string | null): ThreadMeta | null {
 const READ_CONCURRENCY = 32
 
 /** Run `worker` over `items` with at most {@link READ_CONCURRENCY} in flight. */
-async function mapConcurrent<T, R>(items: T[], worker: (item: T) => Promise<R>): Promise<R[]> {
+async function mapConcurrent<T, R>(
+  items: T[],
+  worker: (item: T) => Promise<R>,
+  concurrency: number = READ_CONCURRENCY,
+): Promise<R[]> {
   const results = new Array<R>(items.length)
   let cursor = 0
-  const runners = Array.from({ length: Math.min(READ_CONCURRENCY, items.length) }, async () => {
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
     for (let i = cursor++; i < items.length; i = cursor++) {
       // `i` is always in range, but `noUncheckedIndexedAccess` widens the element
       // type — read it out and narrow rather than asserting the index is safe.
@@ -436,7 +445,19 @@ async function readThread(
   const raw = eventsRaw ?? ''
   const entries = parseSpineEntries(raw)
   const spine = parseSpine(raw)
+  // DEBUG BRANCH: `prefetchThreadFiles` is where the bytes are — one read per
+  // referenced message/blob file. Counted rather than spanned: at hundreds of
+  // threads a span each would swamp the trace, while the totals (calls, ms,
+  // bytes) are what actually identify the cost.
+  const prefetchStart = process.hrtime.bigint()
   const contents = await prefetchThreadFiles(dir, raw)
+  let prefetchedBytes = 0
+  for (const body of contents.values()) prefetchedBytes += body.length
+  perfCount(
+    'store:thread-prefetch',
+    Number(process.hrtime.bigint() - prefetchStart) / 1e6,
+    prefetchedBytes + raw.length,
+  )
   const resolve: RefResolver = (ref) => {
     const body = contents.get(ref)
     if (body === undefined) throw new Error(`Missing thread file: ${ref}`)
@@ -470,14 +491,191 @@ function listThreadIds(projectId: string): string[] {
     .map((entry) => entry.name)
 }
 
+/**
+ * Read only what the sidebar draws: `meta.json`, plus a `stat` of the spine to
+ * tell a genuinely empty thread from one whose transcript is merely unread.
+ * That distinction is why this stats the spine rather than skipping it entirely
+ * — `isBlankThread` and the autosave reconciler between them delete threads that
+ * look blank, so "no messages" and "messages not loaded" must not be conflated.
+ *
+ * Cost per thread is one small read and one stat, against the old path's two
+ * reads plus a file read per referenced message and blob, a full fold, and a
+ * SHA-256 per ref.
+ */
+async function readThreadMetaOnly(
+  projectId: string,
+  threadId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread | null> {
+  const dir = threadDir(projectId, threadId)
+  const meta = parseMeta(await readOrNull(join(dir, META_FILE)))
+  if (meta === null) return null
+  if (options.includeArchived === false && meta.archivedAt != null) return null
+  let spineBytes = 0
+  try {
+    spineBytes = (await stat(join(dir, EVENTS_FILE))).size
+  } catch {
+    // No spine file at all — a brand-new thread with nothing written yet.
+  }
+  // An empty spine means the transcript really is empty, and saying so lets
+  // blank-thread pruning keep working exactly as before for new threads.
+  return { ...meta, messages: [], messagesLoaded: spineBytes === 0 }
+}
+
+/**
+ * Union this message's PR links into the thread's cached `prRefs`.
+ *
+ * Append-only: a link mentioned once stays linked even if a later edit removes
+ * the text, which matches how the chip behaved when it re-scraped the whole
+ * transcript every time. Silent on failure — a missing chip must never fail a
+ * message write.
+ */
+function mergePrRefsIntoMeta(projectId: string, threadId: string, message: Message): void {
+  try {
+    const found = extractGithubPrUrls(message.content)
+    if (found.length === 0) return
+    const path = join(threadDir(projectId, threadId), META_FILE)
+    const meta = parseMeta(safeRead(path))
+    if (meta === null) return
+    const refs = [...(meta.prRefs ?? [])]
+    const seen = new Set(refs.map(githubPrKey))
+    let added = false
+    for (const ref of found) {
+      const key = githubPrKey(ref)
+      if (seen.has(key)) continue
+      seen.add(key)
+      refs.push(ref)
+      added = true
+    }
+    if (!added) return
+    atomicWriteFile(path, JSON.stringify({ ...meta, prRefs: refs }, null, 2))
+  } catch {
+    // Diagnostic metadata; never worth failing the write it rides along with.
+  }
+}
+
+/**
+ * Fill in `prRefs` for threads written before it existed.
+ *
+ * Without this, every thread predating the cache would lose its PR chip until it
+ * was next opened or appended to. It is the one place that still pays the old
+ * whole-project read — but exactly once per project, in the background, after
+ * the project is already on screen, and never again (each thread's metadata
+ * records the result). `onBatch` reports refs back so the sidebar can fill in
+ * live rather than waiting for the next launch.
+ *
+ * Threads whose metadata already carries `prRefs`, and archived threads (no
+ * sidebar row, so no chip) are skipped without reading anything.
+ */
+export async function backfillThreadPrRefs(
+  projectId: string,
+  onBatch: (refs: Array<{ threadId: string; prRefs: GithubPrRef[] }>) => void,
+): Promise<void> {
+  const pending: string[] = []
+  for (const threadId of listThreadIds(projectId)) {
+    const meta = parseMeta(safeRead(join(threadDir(projectId, threadId), META_FILE)))
+    if (meta === null || meta.prRefs !== undefined || meta.archivedAt != null) continue
+    pending.push(threadId)
+  }
+  if (pending.length === 0) return
+
+  const batch: Array<{ threadId: string; prRefs: GithubPrRef[] }> = []
+  const flush = (): void => {
+    if (batch.length === 0) return
+    onBatch([...batch])
+    batch.length = 0
+  }
+  // Deliberately low concurrency: this runs while the user is working, and the
+  // point of the whole change is to stop thread reads monopolising the loop.
+  await mapConcurrent(
+    pending,
+    async (threadId) => {
+      const thread = await readThread(projectId, threadId)
+      if (!thread) return
+      const prRefs = collectThreadPrRefs(thread)
+      const path = join(threadDir(projectId, threadId), META_FILE)
+      const meta = parseMeta(safeRead(path))
+      // Write even an empty list: `undefined` means "never scanned", `[]` means
+      // "scanned, no PRs" — without that distinction this would re-run forever.
+      if (meta !== null) {
+        atomicWriteFile(path, JSON.stringify({ ...meta, prRefs }, null, 2))
+      }
+      if (prRefs.length > 0) batch.push({ threadId, prRefs })
+      if (batch.length >= 25) flush()
+    },
+    BACKFILL_CONCURRENCY,
+  )
+  flush()
+}
+
+/** Kept well below the load path's concurrency: this is background work. */
+const BACKFILL_CONCURRENCY = 4
+
+/** The transcript for one thread, folded on demand when it is opened. */
+export function loadThreadMessages(projectId: string, threadId: string): Promise<Message[]> {
+  return runSerialized(queueKey(projectId), async () => {
+    const thread = await readThread(projectId, threadId)
+    return thread?.messages ?? []
+  })
+}
+
 async function readProjectThreads(
   projectId: string,
   options: ThreadLoadOptions = {},
 ): Promise<Thread[]> {
-  const loaded = await mapConcurrent(listThreadIds(projectId), (threadId) =>
-    readThread(projectId, threadId, options),
+  // DEBUG BRANCH: this is the whole-project read that `threads:loadProject`
+  // performs on every open and every switch back. It reads and folds each
+  // non-archived thread in full — meta, spine, and every referenced message and
+  // blob file — so its cost is a function of the project's entire chat history,
+  // not of what the sidebar will actually display. Recording the directory count
+  // alongside the surviving thread count separates "many threads" from "few but
+  // enormous threads", which need different fixes.
+  const threadIds = listThreadIds(projectId)
+  return perfSpan(
+    'store:read-project-threads',
+    async () => {
+      const loaded = await mapConcurrent(threadIds, (threadId) =>
+        readThread(projectId, threadId, options),
+      )
+      return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
+    },
+    (threads) => ({
+      dirs: threadIds.length,
+      returned: threads?.length ?? 0,
+      includeArchived: options.includeArchived !== false,
+    }),
   )
-  return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
+}
+
+/**
+ * Every thread's metadata, without any transcript. What the sidebar needs.
+ *
+ * Deliberately a separate function from {@link loadProjectThreads} rather than a
+ * mode on it. Four main-process callers (release smoke, the automation
+ * scheduler, cursor-agent discovery, whole-history search) genuinely want the
+ * messages, and a load that quietly stopped returning them would break each in a
+ * way no type checks: `messages` would simply be empty. The names now say which
+ * one a caller is asking for.
+ */
+async function readProjectThreadMetas(
+  projectId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread[]> {
+  const threadIds = listThreadIds(projectId)
+  return perfSpan(
+    'store:read-project-metas',
+    async () => {
+      const loaded = await mapConcurrent(threadIds, (threadId) =>
+        readThreadMetaOnly(projectId, threadId, options),
+      )
+      return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
+    },
+    (threads) => ({
+      dirs: threadIds.length,
+      returned: threads?.length ?? 0,
+      includeArchived: options.includeArchived !== false,
+    }),
+  )
 }
 
 /** Store dir ids directly under the workspace root (each is a project's thread store). */
@@ -880,11 +1078,24 @@ export function listAgentPrLinks(projectId: string): Promise<RemoteAgentPrIndexE
   ])
 }
 
+/** Every thread in a project, transcripts included. */
 export function loadProjectThreads(
   projectId: string,
   options: ThreadLoadOptions = {},
 ): Promise<Thread[]> {
   return runSerialized(queueKey(projectId), () => readProjectThreads(projectId, options))
+}
+
+/**
+ * Every thread in a project as metadata only — `messages: []` plus
+ * `messagesLoaded`. The renderer's project open uses this and fetches each
+ * transcript with {@link loadThreadMessages} when its thread is opened.
+ */
+export function loadProjectThreadMetas(
+  projectId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread[]> {
+  return runSerialized(queueKey(projectId), () => readProjectThreadMetas(projectId, options))
 }
 
 export function saveProjectThread(projectId: string, thread: Thread): Promise<void> {
@@ -953,6 +1164,11 @@ export function appendMessage(
     const { line, files } = explodeMessage(message, sha256)
     for (const file of files) writeFileEnsuringDir(join(dir, file.ref), file.contents)
     const raw = serializeSpineLine(line)
+    // The sidebar's PR chip is derived from links in message text, which a
+    // metadata-only load never reads. Fold this message's links into the
+    // thread's cached `prRefs` as it lands, so the chip is correct on the next
+    // launch without the transcript being read again.
+    mergePrRefsIntoMeta(projectId, threadId, message)
     const knownIds = knownMessageIdsFor(dir)
     if (!knownIds.has(message.id)) {
       appendFileSync(join(dir, EVENTS_FILE), `${raw}\n`)

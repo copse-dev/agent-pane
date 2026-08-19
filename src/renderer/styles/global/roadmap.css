@@ -83,7 +83,9 @@
   align-items: center;
   gap: 4px;
   width: 100%;
-  padding: 5px var(--spacing-sm);
+  /* Same block padding as .git-changes-section-title so the PR and roadmap
+     group headers sit on one rhythm. */
+  padding: var(--spacing-xs) var(--spacing-sm);
   border: 0;
   border-radius: 0;
   background: transparent;

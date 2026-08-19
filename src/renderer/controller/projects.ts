@@ -19,6 +19,7 @@ import {
 } from './project-view-state.ts'
 import { showErrorToast } from '../views/toast.ts'
 import { compactSidebarThread, type SidebarThread } from './sidebar-thread.ts'
+import { begin as perfBegin, mark as perfMark } from '../perf.ts'
 
 const uuid = (): string => globalThis.crypto.randomUUID()
 const basename = (p: string): string => p.split('/').pop() ?? p
@@ -388,14 +389,22 @@ async function finishActivate(
   outgoingThreads: Thread[],
   pendingThreadId: string | null,
 ): Promise<void> {
+  // DEBUG BRANCH: one span per project activation, split into the three things
+  // it actually waits on — pointing main at the new root, reading that project's
+  // threads off disk, and applying the result to the store. Which of the three
+  // dominates is the whole question.
+  const endActivate = perfBegin('switch:activate')
+  perfMark('switch:start')
   if (gen !== switchGeneration) {
     endSwitch(gen, id)
+    endActivate({ outcome: 'superseded' })
     return
   }
 
   if (sshHost) {
     const enabled = await api.settings.get('sshWorkspaceEnabled')
     if (enabled !== true) {
+      endActivate({ outcome: 'ssh-disabled' })
       abortProjectActivation(
         store,
         id,
@@ -410,9 +419,11 @@ async function finishActivate(
     } catch (err) {
       if (gen !== switchGeneration) {
         endSwitch(gen, id)
+        endActivate({ outcome: 'superseded' })
         return
       }
       const message = err instanceof Error ? err.message : String(err)
+      endActivate({ outcome: 'ssh-failed' })
       abortProjectActivation(
         store,
         id,
@@ -437,10 +448,13 @@ async function finishActivate(
   // (see cancelPendingSwitch).
   if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true
   const persistSelection = saveProjects(api, store.getState().projects, id, pendingThreadId)
+  const endWorkspace = perfBegin('switch:workspace-set')
   const workspaceOpened = setWorkspaceInOrder(api, path, sshHost)
   const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened])
+  endWorkspace({ opened })
   if (gen !== switchGeneration) {
     endSwitch(gen, id)
+    endActivate({ outcome: 'superseded' })
     return
   }
 
@@ -448,6 +462,7 @@ async function finishActivate(
     // Quarantine rather than delete: flag the project missing and stay on the
     // project the user was already viewing (issue #997).
     await markProjectMissing(store, api, id)
+    endActivate({ outcome: 'missing' })
     abortProjectActivation(
       store,
       id,
@@ -462,15 +477,19 @@ async function finishActivate(
     return
   }
 
+  const endLoad = perfBegin('switch:load-threads')
   const loaded = await loadThreads(api, id)
+  endLoad({ threads: loaded.length })
   // Cache only once this switch is the one being applied. `cacheThreads` makes
   // its project the live entry and compacts the previous one, so a superseded
   // switch caching here would strip the transcripts off the project that is
   // still on screen.
   if (gen !== switchGeneration || store.getState().expandedProjectId !== id) {
     endSwitch(gen, id)
+    endActivate({ outcome: 'superseded' })
     return
   }
+  const endApply = perfBegin('switch:apply-state')
   cacheThreads(id, loaded)
 
   const activeThreadId =
@@ -502,7 +521,9 @@ async function finishActivate(
   store.emit('threads_changed')
   store.emit('panel_changed')
   store.emit('files_pane_changed')
+  endApply({ threads: loaded.length })
   endSwitch(gen, id)
+  endActivate({ outcome: 'ok', threads: loaded.length })
   void resumePendingQueues(store, api)
 }
 
