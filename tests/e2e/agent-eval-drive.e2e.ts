@@ -23,6 +23,7 @@ import {
   terminalReportFromAssistantText,
   type AutonomyTrace,
 } from '../../scripts/lib/autonomy-regression.mts'
+import { toolExpectationViolations } from '../../scripts/lib/eval-tool-expectations.mts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -296,13 +297,13 @@ function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void
   const expectation = scenario.toolUse
   if (!expectation) return
   const calls = thread.messages.flatMap((message) => message.toolCalls)
-  const names = new Set(calls.map((call) => call.name))
-  for (const name of expectation.requireTools ?? []) {
-    assert.ok(names.has(name), `expected agent to use ${name}`)
-  }
-  for (const name of expectation.forbidTools ?? []) {
-    assert.equal(names.has(name), false, `expected agent not to use ${name}`)
-  }
+  const names = [...new Set(calls.map((call) => call.name))]
+  const violations = toolExpectationViolations(names, {
+    requireTools: expectation.requireTools,
+    requireAnyTools: expectation.requireAnyTools,
+    forbidTools: expectation.forbidTools,
+  })
+  assert.deepEqual(violations, [], `${violations.join('; ')} (observed: ${names.join(', ')})`)
   if (expectation.requireBackgroundWakeStart === true) {
     assert.ok(
       calls.some(
@@ -394,9 +395,18 @@ describe('agent eval drive', () => {
       await waitForBackgroundWake(scenario.backgroundWake)
     }
 
-    assertWorkspaceExpectations(workspaceRoot, scenario)
-
     const thread = await readActiveThread()
+
+    // Write the artifact before asserting. A run that fails its expectations is
+    // exactly the one whose trace is worth reading, and an assertion throwing
+    // first would discard it.
+    const body = threadToJsonl(thread)
+    const timestamp = Date.now()
+    const outPath = join(ARTIFACTS, `${scenario.id}-${String(timestamp)}.jsonl`)
+    writeFileSync(outPath, body, 'utf8')
+    process.stdout.write(`\nCOPSE_EVAL_ARTIFACT=${outPath}\n`)
+
+    assertWorkspaceExpectations(workspaceRoot, scenario)
     assertToolUseExpectations(thread, scenario)
     if (
       scenario.id === 'working-brief-eval' ||
@@ -413,12 +423,6 @@ describe('agent eval drive', () => {
     if (scenario.id === 'working-brief-subagent-eval' || scenario.id === 'todo-steer-deep-dive') {
       assertExploreSubagentCompleted(thread)
     }
-    const body = threadToJsonl(thread)
-    const timestamp = Date.now()
-    const outPath = join(ARTIFACTS, `${scenario.id}-${String(timestamp)}.jsonl`)
-    writeFileSync(outPath, body, 'utf8')
-    process.stdout.write(`\nCOPSE_EVAL_ARTIFACT=${outPath}\n`)
-
     if (scenario.autonomy) {
       const contract = decodeAutonomyScenario(scenario)
       const assistantText =

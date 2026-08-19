@@ -40,6 +40,8 @@ export interface EvalScenario {
   }
   toolUse?: {
     requireTools?: string[]
+    /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
+    requireAnyTools?: string[]
     forbidTools?: string[]
     requireBackgroundWakeStart?: boolean
     maxApprovals?: number
@@ -109,6 +111,7 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
   toolUse: z
     .object({
       requireTools: z.array(z.string()).optional(),
+      requireAnyTools: z.array(z.string()).optional(),
       forbidTools: z.array(z.string()).optional(),
       requireBackgroundWakeStart: z.boolean().optional(),
       maxApprovals: z.number().int().nonnegative().optional(),

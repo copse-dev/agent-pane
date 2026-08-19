@@ -11,6 +11,7 @@ import {
 import { shouldSteerGithubLinks } from '@shared/git/github-link-steering.ts'
 import { shouldSteerTodos } from '@shared/todos/todo-logic.ts'
 import { expectString } from '../src/shared/unknown-value.mts'
+import { toolExpectationViolations } from './lib/eval-tool-expectations.mts'
 import { z } from 'zod'
 
 interface ScenarioExpect {
@@ -20,6 +21,8 @@ interface ScenarioExpect {
   maxExplore?: number | undefined
   minExplore?: number | undefined
   requireTools?: string[] | undefined
+  /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
+  requireAnyTools?: string[] | undefined
   forbidTools?: string[] | undefined
   maxInputTokens?: number | undefined
   requireUpdateTodos?: boolean | undefined
@@ -122,6 +125,7 @@ const scenarioSchema: z.ZodType<Scenario> = z.object({
       maxExplore: z.number().optional(),
       minExplore: z.number().optional(),
       requireTools: z.array(z.string()).optional(),
+      requireAnyTools: z.array(z.string()).optional(),
       forbidTools: z.array(z.string()).optional(),
       maxInputTokens: z.number().optional(),
       requireUpdateTodos: z.boolean().optional(),
@@ -285,12 +289,13 @@ function analyze(path: string, scenario?: Scenario): void {
   if (exp?.minExplore !== undefined && exploreCount < exp.minExplore) {
     violations.push(`explore count ${String(exploreCount)} < min ${String(exp.minExplore)}`)
   }
-  for (const t of exp?.requireTools ?? []) {
-    if ((toolHist[t] ?? 0) <= 0) violations.push(`missing required tool: ${t}`)
-  }
-  for (const t of exp?.forbidTools ?? []) {
-    if ((toolHist[t] ?? 0) > 0) violations.push(`forbidden tool used: ${t}`)
-  }
+  violations.push(
+    ...toolExpectationViolations(Object.keys(toolHist), {
+      requireTools: exp?.requireTools,
+      requireAnyTools: exp?.requireAnyTools,
+      forbidTools: exp?.forbidTools,
+    }),
+  )
   if (exp?.maxInputTokens !== undefined && (usage.inputTokens ?? 0) > exp.maxInputTokens) {
     violations.push(`input tokens ${String(usage.inputTokens)} > max ${String(exp.maxInputTokens)}`)
   }
