@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { canonicalModelLabel, claudeModelIdFromLabel } from './model-label.ts'
+import { canonicalModelLabel, claudeModelIdFromLabel, modelDisplayName } from './model-label.ts'
 
 describe('canonicalModelLabel', () => {
   it('names the vendor a bare family name leaves out', () => {
@@ -81,6 +81,53 @@ describe('canonicalModelLabel', () => {
     assert.equal(canonicalModelLabel('claude-opus-4-8-latest'), 'claude-opus-4-8-latest')
     assert.equal(canonicalModelLabel('claude-fable-5[1m]'), 'claude-fable-5[1m]')
     assert.equal(canonicalModelLabel('gpt-5-2025-08-07'), 'gpt-5-2025-08-07')
+  })
+})
+
+describe('modelDisplayName', () => {
+  it('spells an unrecognised id as a name, so the only dash in a row is ours', () => {
+    // Copse appends its own annotations with an em dash ("— intellect 40.6").
+    // A row whose name is itself a run of hyphens makes the reader work out
+    // which dash is the app talking.
+    assert.equal(modelDisplayName('apertus-70b'), 'Apertus 70B')
+    assert.equal(modelDisplayName('qwen3.8-max'), 'Qwen3.8 Max')
+    assert.equal(modelDisplayName('qwen3guard-gen-0.6b'), 'Qwen3guard Gen 0.6B')
+    assert.equal(modelDisplayName('paraphrase-multilingual-mpnet'), 'Paraphrase Multilingual MPNet')
+    assert.equal(modelDisplayName('qwen3-vl-30b-a3b'), 'Qwen3 VL 30B A3B')
+    assert.equal(modelDisplayName('gemma-3-27b-it'), 'Gemma 3 27B IT')
+    assert.equal(modelDisplayName('gpt-oss-120b'), 'GPT OSS 120B')
+    assert.equal(modelDisplayName('deepseek-r1'), 'DeepSeek R1')
+  })
+
+  it('rejoins a version written as separate segments', () => {
+    // `5-6` is one version, not two tokens; splitting it reads as a different
+    // model. The measurement catalog is full of this shape.
+    assert.equal(modelDisplayName('gpt-5-6-sol'), 'GPT 5.6 Sol')
+    assert.equal(modelDisplayName('claude-opus-4-7-non-reasoning'), 'Claude Opus 4.7 Non Reasoning')
+  })
+
+  it('defers to the house style whenever canonicalModelLabel claims the name', () => {
+    assert.equal(modelDisplayName('claude-opus-4-8'), 'Claude Opus 4.8')
+    assert.equal(modelDisplayName('gpt-5-mini'), 'GPT-5 mini')
+    assert.equal(modelDisplayName('glm-4.6'), 'GLM-4.6')
+  })
+
+  it('leaves alone what is not an id to spell', () => {
+    for (const name of [
+      // Already a display name.
+      'Composer 2',
+      'Grok 4.5',
+      'Auto',
+      // An address, not a name: the halves are not ours to merge.
+      'qwen/qwen3.6-35b-a3b',
+      // Tails a rewrite would silently drop.
+      'claude-haiku-4-5-20251001',
+      'claude-opus-4-8-latest',
+      'claude-fable-5[1m]',
+      'gpt-5-2025-08-07',
+    ]) {
+      assert.equal(modelDisplayName(name), name)
+    }
   })
 })
 

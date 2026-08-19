@@ -1,6 +1,6 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS, cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
-import { localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
+import { getLocalModelCapability, localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
 import {
   cloudModelIntellectHint,
   localModelIntellectHint,
@@ -61,7 +61,11 @@ import {
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
 import { AUTO_MODEL_PREFIX, dynamicModelChoices } from '@copse/llm/dynamic-model.ts'
-import { canonicalModelLabel, claudeModelIdFromLabel } from '@copse/llm/model-label.ts'
+import {
+  canonicalModelLabel,
+  claudeModelIdFromLabel,
+  modelDisplayName,
+} from '@copse/llm/model-label.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 
 const ACP_GROUP = 'Agents on this device'
@@ -243,7 +247,8 @@ async function openRouterOptions(
     })
   }
 
-  for (const model of liveModels) add(model.id, model.name || model.id, model.supportsImages)
+  for (const model of liveModels)
+    add(model.id, modelDisplayName(model.name || model.id), model.supportsImages)
   if (customId) add(customId, `${customId} (custom)`)
   if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current))
 
@@ -310,7 +315,7 @@ function extraProviderOptions(
     })
   }
 
-  for (const model of provider.models) add(model.id, model.id)
+  for (const model of provider.models) add(model.id, modelDisplayName(model.id))
   if (extraProviderSlugFromModel(current) === provider.id) {
     add(extraProviderModelId(current), modelDisplayLabel(current))
   }
@@ -541,9 +546,13 @@ export async function fetchModelOptions(
     const hint = [localModelRoleHint(id), localModelIntellectHint(id)]
       .filter((part): part is string => part !== null)
       .join(' · ')
+    // The weights the app itself ships carry a curated name; anything else the
+    // server happens to have loaded is spelled from its id. Either way the row
+    // reads as a name, so the ` — ` before a hint is the only dash in it.
+    const label = getLocalModelCapability(id)?.label ?? modelDisplayName(id)
     options.push({
       value: `lmstudio:${id}`,
-      label: hint ? `${id} — ${hint}` : id,
+      label: hint ? `${label} — ${hint}` : label,
       group: lmGroup,
       ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
     })

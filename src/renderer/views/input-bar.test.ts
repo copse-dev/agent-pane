@@ -1778,7 +1778,7 @@ describe('input bar context fit warning', () => {
     const warning = host.querySelector<HTMLElement>('.composer-context-warning')
     assert.ok(warning)
     assert.equal(warning.hidden, false)
-    assert.match(warning.textContent, /qwen3-4b/)
+    assert.match(warning.textContent, /“Qwen3 4B · local”/)
     assert.match(warning.textContent, /“Context Length” in LM Studio/)
   })
 

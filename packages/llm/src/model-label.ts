@@ -15,6 +15,14 @@
 // and re-spells what a name already says and never infers a model from a name
 // it does not recognise, so an unknown label — "Composer 2", a local weight id —
 // is returned untouched rather than guessed at.
+//
+// `modelDisplayName` at the bottom adds the one thing a *picker row* needs on
+// top of that: a name it does not recognise still gets spelled as a name rather
+// than left as an id, hyphens and all. Copse writes its own annotations onto a
+// row with an em dash — an intellect hint, an agent title, a status note — and
+// "qwen3guard-gen-8b — intellect 40.6" makes the reader work out which dash is
+// the app talking. Callers that need an unrecognised name back verbatim (the
+// intellect chart plots 583 measurement ids) keep using `canonicalModelLabel`.
 
 /** Anthropic model families, spelled as they appear in a display label. */
 const CLAUDE_FAMILIES = ['opus', 'sonnet', 'haiku', 'fable'] as const
@@ -79,7 +87,7 @@ function canonicalGptLabel(labelOrId: string): string | null {
 // Each recognises only its own prefix; an unknown name is left alone, so a
 // local weight id (`qwen3.6-35b-a3b`) or another vendor's model ("Composer 2",
 // "Grok 4.5") passes through untouched — the same contract the Claude/GPT
-// branches keep.
+// branches keep. `modelDisplayName` is what spells those for a picker row.
 
 /** Title-case a hyphen- or space-separated segment, preserving `mini`/`nano`. */
 function titleCaseSegment(segment: string): string {
@@ -131,6 +139,119 @@ function canonicalVendorLabel(labelOrId: string): string | null {
   }
 
   return null
+}
+
+// Vendors whose id shapes this module models. Used only to decide whose
+// `-latest` is an alias worth preserving (see `keepsDeclinedTail`).
+const MODELLED_VENDORS = ['claude', 'gpt', 'gemini', 'glm', 'deepseek', 'mistral'] as const
+
+/** A dated snapshot: `-20251001` or `-2025-08-07`. */
+const DATED_SNAPSHOT = /-(?:\d{8}|\d{4}-\d{2}-\d{2})$/
+/** A bracketed option suffix: `claude-fable-5[1m]`. */
+const OPTION_SUFFIX = /\[[^\]]*\]$/
+
+/**
+ * Whether an id ends in something a rewrite would silently drop.
+ *
+ * A dated snapshot and a bracketed option name a *different* configuration from
+ * the model they hang off, and a modelled vendor's `-latest` is a moving alias
+ * rather than a version — re-spacing any of those reads as a rename of the
+ * thing itself. (`-latest` only counts for a vendor whose versions this module
+ * models; elsewhere it is just a word, and "Codestral Latest" is honest.)
+ */
+function keepsDeclinedTail(lower: string): boolean {
+  if (OPTION_SUFFIX.test(lower) || DATED_SNAPSHOT.test(lower)) return true
+  return lower.endsWith('-latest') && MODELLED_VENDORS.some((v) => lower.startsWith(`${v}-`))
+}
+
+// Tokens whose house spelling is not "first letter capitalised": acronyms, and
+// the vendor names that carry an internal capital. Everything else is either a
+// size (`8b`, `a3b`), a version (`v3`, `k2`, `r1`), or an ordinary word.
+const TOKEN_SPELLING: Record<string, string> = {
+  ai: 'AI',
+  deepseek: 'DeepSeek',
+  glm: 'GLM',
+  gpt: 'GPT',
+  hf: 'HF',
+  it: 'IT',
+  llm: 'LLM',
+  minimax: 'MiniMax',
+  moe: 'MoE',
+  mpnet: 'MPNet',
+  openai: 'OpenAI',
+  oss: 'OSS',
+  qwq: 'QwQ',
+  vl: 'VL',
+}
+
+/** `8b` → `8B`, `0.6b` → `0.6B`, `120m` → `120M`: a parameter count. */
+const PARAM_COUNT = /^(\d+(?:\.\d+)?)([bkmt])$/
+/** `a3b` → `A3B`, `v3` → `V3`, `k2` → `K2`, `r1` → `R1`: a short version or spec code. */
+const SHORT_CODE = /^[a-z]\d+[a-z]?$/
+
+function spellToken(token: string): string {
+  const lower = token.toLowerCase()
+  const known = TOKEN_SPELLING[lower]
+  if (known !== undefined) return known
+  // House style keeps the small-variant qualifiers lowercase ("GPT-5 mini").
+  if (lower === 'mini' || lower === 'nano') return lower
+  const param = PARAM_COUNT.exec(lower)
+  if (param) return `${param[1] ?? ''}${(param[2] ?? '').toUpperCase()}`
+  if (SHORT_CODE.test(lower)) return lower.toUpperCase()
+  if (/^[\d.]+$/.test(lower)) return lower
+  return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`
+}
+
+/**
+ * A hyphenated id from a vendor this module does not model, spelled as a name:
+ * `qwen3.8-max` → "Qwen3.8 Max", `paraphrase-multilingual-mpnet` → "Paraphrase
+ * Multilingual MPNet", `apertus-70b` → "Apertus 70B".
+ *
+ * The hyphen is the point. Copse writes its own annotations onto a model row
+ * with an em dash — the intellect hint, an agent title, a status note — and a
+ * name that is itself a run of hyphens ("qwen3guard-gen-8b — intellect 40.6")
+ * makes the reader parse which dash is the app talking. Turning the id's own
+ * hyphens into spaces leaves the dash meaning one thing.
+ *
+ * Structural only, like the rest of this module: it re-spaces and re-cases what
+ * the id already says and adds nothing. Returned unchanged when there is no id
+ * to convert — a name with spaces is already a display name, a path-shaped id
+ * (`qwen/qwen3.6-35b-a3b`) is an address whose halves are not ours to merge,
+ * and an id ending in a snapshot date, an option, or a modelled vendor's
+ * `-latest` alias keeps that tail (see `keepsDeclinedTail`).
+ */
+function humanizeModelName(labelOrId: string): string {
+  const trimmed = labelOrId.trim()
+  if (!trimmed.includes('-')) return labelOrId
+  if (/\s/.test(trimmed) || trimmed.includes('/')) return labelOrId
+  if (keepsDeclinedTail(trimmed.toLowerCase())) return labelOrId
+  const tokens = trimmed.split('-').filter((token) => token.length > 0)
+  return tokens.reduce((acc, token, i) => {
+    const spelled = spellToken(token)
+    if (i === 0) return spelled
+    // `gpt-5-6-sol` writes one version as two segments. Adjacent bare numbers
+    // rejoin as `5.6` rather than splitting into "5 6", which reads as two
+    // different models' worth of version.
+    const joinsVersion = /^\d+$/.test(token) && /\d$/.test(tokens[i - 1] ?? '')
+    return joinsVersion ? `${acc}.${spelled}` : `${acc} ${spelled}`
+  }, '')
+}
+
+/**
+ * The name to *show* for a model id, for surfaces that render a catalog the app
+ * did not write: {@link canonicalModelLabel}'s house style when it recognises
+ * the name, else the structural spelling from {@link humanizeModelName}.
+ *
+ * Kept separate from `canonicalModelLabel` because the two answer different
+ * questions. `canonicalModelLabel` is asked "is this one of ours, spelled
+ * differently?" and must say "not mine" for anything else — the intellect
+ * chart plots 583 measurement ids through it and needs them back verbatim.
+ * This is asked "what goes in this row?", where an id is never the right
+ * answer.
+ */
+export function modelDisplayName(labelOrId: string): string {
+  const canonical = canonicalModelLabel(labelOrId)
+  return canonical === labelOrId ? humanizeModelName(labelOrId) : canonical
 }
 
 function claudeName(family: string, version: string, rest: string): ClaudeName | null {

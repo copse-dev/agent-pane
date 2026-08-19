@@ -638,13 +638,17 @@ describe('fetchModelOptions visibility', () => {
     )
     const known = options.find((o) => o.value === 'lmstudio:qwen/qwen2.5-coder-32b')
     assert.ok(known)
-    assert.match(known.label, /qwen\/qwen2\.5-coder-32b — coder/)
+    // A catalog-known weight shows its curated name, so the only dash in the
+    // row is the one introducing the app's own hints.
+    assert.match(known.label, /^Qwen2\.5-Coder 32B — coder/)
     // It now carries a sourced AA measurement, shown quant-adjusted (~) for the
     // running quant rather than the composite fallback.
     assert.match(known.label, /intellect ~[\d.]+/)
+    // An unknown weight has no curated name and no hints, but is still spelled
+    // as a name rather than left as an id.
     const unknown = options.find((o) => o.value === 'lmstudio:some-unknown-local')
     assert.ok(unknown)
-    assert.equal(unknown.label, 'some-unknown-local')
+    assert.equal(unknown.label, 'Some Unknown Local')
   })
 
   it('annotates scored cloud models with intellect, blended price, and frontier', async () => {

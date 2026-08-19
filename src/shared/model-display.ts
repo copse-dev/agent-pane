@@ -20,6 +20,7 @@ import { cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
 import { extraProviderDisplayLabel } from '@copse/llm/extra-providers.ts'
 import { openRouterDisplayLabel } from '@copse/llm/openrouter.ts'
 import { dynamicModelLabel } from '@copse/llm/dynamic-model.ts'
+import { modelDisplayName } from '@copse/llm/model-label.ts'
 import { parseModelSelection } from '@copse/llm/model-selection.ts'
 import { acpModelDisplayLabel } from '@shared/acp.ts'
 import { remoteAgentDisplayLabel } from '@shared/remote-agent.ts'
@@ -72,7 +73,9 @@ export function displayModelLabel(model: string, context?: ModelDisplayContext):
   const selection = parseModelSelection(model)
   switch (selection.namespace) {
     case 'lmstudio':
-      return `${selection.id}${LOCAL_MODEL_SUFFIX}`
+      // Local weight ids are the hyphen-heaviest names in the app; spelling
+      // them keeps the transcript reading the same as the picker row.
+      return `${modelDisplayName(selection.id)}${LOCAL_MODEL_SUFFIX}`
     case 'acp':
       // With agents context, titles and cached model labels resolve; without it
       // the helper degrades to `id — canonicalModelLabel(model)` (or `id`),
@@ -86,7 +89,7 @@ export function displayModelLabel(model: string, context?: ModelDisplayContext):
     case 'openrouter':
       return openRouterDisplayLabel(model)
     case 'extra-provider':
-      return extraProviderDisplayLabel(model)
+      return modelDisplayName(extraProviderDisplayLabel(model))
     default:
       return cloudModelDisplayLabel(model)
   }
