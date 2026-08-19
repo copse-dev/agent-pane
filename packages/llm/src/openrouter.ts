@@ -47,7 +47,12 @@ export function toOpenRouterModel(id: string): string {
   return `${OPENROUTER_MODEL_PREFIX}${id}`
 }
 
-/** Display label for an `openrouter:<id>` selection (curated label or the raw id). */
+/**
+ * Display label for an `openrouter:<id>` selection. Curated ids keep their
+ * hand-written label; an uncurated id falls back to the full upstream id
+ * verbatim (the `vendor/model` shape OpenRouter addresses models with), the
+ * same identity behaviour the extra-provider labeler keeps.
+ */
 export function openRouterDisplayLabel(model: string): string {
   const id = openRouterModelId(model)
   return OPENROUTER_MODELS.find((m) => m.id === id)?.label ?? id
