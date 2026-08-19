@@ -8,6 +8,25 @@ every published entry.
 
 ## Unreleased
 
+- Semantic search no longer reports "Indexing failed" on a large repository
+  that is merely slow to index, and no longer starts indexing one it was
+  supposed to refuse. Two faults compounded. The guard that declines to
+  semantically index an oversized workspace sized it from a file listing
+  captured through a subprocess pipe with an 8 MiB ceiling, and anything past
+  that ceiling was dropped without a trace — a 124,597-path checkout measured
+  as 61,735 paths, comfortably under the 100,000 cap, so the guard waved it
+  through and the indexer walked the whole tree. The wait that followed could
+  then only end badly: `gortex track --wait` is passed a `--wait-timeout` it
+  does not honour (a 5-second request returned after 55 seconds), so rather
+  than the indexer stepping back on its own, Copse killed it at its own
+  ceiling and logged the kill as a failure — once when the workspace opened,
+  and again on every burst of file changes. A listing that overflowed its
+  capture limit is now treated as no evidence of size at all, so the workspace
+  is skipped with the reason shown in the footer; and a wait that outlasts its
+  budget is reported as still indexing in the background, which is what is
+  actually happening, instead of as an error. Text and regex search were
+  unaffected throughout and remain so.
+
 - Per-chat reasoning effort now lives inside the composer's model picker,
   alongside an ACP agent's own **Mode** and thinking-effort selectors, instead of
   sitting as a separate dropdown in the footer strip. Every per-chat knob that
@@ -16,7 +35,6 @@ every published entry.
   this chat only, offers just the levels the selected model accepts, reads as
   **Default** when the model's own saved level applies, and disappears for models
   with no reasoning control.
-
 - A shell in a popped-out Terminal now shows its output. Typing worked and the
   command really ran, but every byte it produced was delivered to the main
   window, which had no tab for that session and dropped it — so the pop-out sat
