@@ -1,10 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const LOCAL_MODEL = 'lmstudio:qwen3-coder-30b'
 const RECIPE_MODEL = 'openrouter:deepseek/deepseek-v4-flash-0731'
+const REASONING_PROJECT_ID = 'e2e-reasoning-effort'
 
 describe('per-model generation parameters', () => {
   before(async function () {
@@ -108,41 +109,43 @@ describe('per-chat reasoning effort', () => {
   before(async function () {
     this.timeout(90_000)
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-reasoning-effort', {
+    // Pin the model on a seeded *thread*, not on `settings.model`.
+    //
+    // `footerChatModel()` reads `thread.model ?? settings.model`, and the
+    // settings half cannot be relied on here: the suite above ends with a live
+    // app holding `lmstudio:qwen3-coder-30b`, which only shuts down inside the
+    // `reloadSession()` below, and its shutdown write of `windowBounds` rewrites
+    // the whole settings file from electron-store's cache — landing after this
+    // seed and putting the LM Studio selection back. `createThread` then stamped
+    // that onto the thread, so the footer opened on an OpenAI-compatible ladder
+    // and this suite silently tested a model it never named.
+    //
+    // A seeded thread is immune: it lives in the thread store under this
+    // project's own id, which the other suite's settings write cannot reach.
+    // (Selecting Opus 5 through the picker is not an option — `fetchModelOptions`
+    // drops every cloud model whose provider has no credentials, and the fixture
+    // seeds no Anthropic key.)
+    const seededAt = Date.now()
+    writeSeedConfig({
+      [`threads:${REASONING_PROJECT_ID}`]: [
+        {
+          id: 'thread-effort',
+          title: 'Effort',
+          status: 'idle',
+          model: 'claude-opus-5',
+          messages: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: seededAt,
+          updatedAt: seededAt,
+        },
+      ],
+    })
+    seedEmptyProject(process.cwd(), REASONING_PROJECT_ID, {
       windowBounds: { width: 1280, height: 800 },
       model: 'claude-opus-5',
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-
-    // Pin the model through the picker rather than trusting `seedEmptyProject`.
-    // The suite above ends with a live app holding `lmstudio:qwen3-coder-30b`;
-    // that app only shuts down inside the `reloadSession` above, and its
-    // shutdown write of `windowBounds` rewrites the whole settings file from
-    // its own cache — landing *after* the seed and putting the LM Studio
-    // selection back. `createThread` then stamps that onto the thread, so the
-    // footer opened on an OpenAI-compatible ladder and this suite silently
-    // tested a model it never named. Selecting here is both immune to that
-    // ordering and the surface under test.
-    const seeded = await $('.footer-model-host .model-picker')
-    await seeded.$('.model-picker-trigger').click()
-    // The footer picker opens on the recent list, which on a fresh profile holds
-    // only whatever the app booted on. "Browse all models" is the way to the
-    // full catalog, and its filter matches `label` *and* `value`, so the id is
-    // an unambiguous query where the label ("Claude Opus 5") is not.
-    const browse = await seeded.$('.model-picker-browse')
-    await browse.waitForDisplayed({ timeout: 15_000 })
-    await browse.click()
-    await seeded.$('.model-picker-filter').setValue('claude-opus-5')
-    const opus = await seeded.$('.model-picker-option[data-value="claude-opus-5"]')
-    await opus.waitForDisplayed({ timeout: 15_000 })
-    await opus.click()
-    await expect(seeded.$('.model-picker-menu')).not.toBeDisplayed()
-    // Pinning must have taken: the trigger names the model the ladder belongs to.
-    await expect(seeded.$('.model-picker-trigger')).toHaveText(
-      expect.stringContaining('Claude Opus 5'),
-      { wait: 10_000 },
-    )
   })
 
   after(() => {
