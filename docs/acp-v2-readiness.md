@@ -147,12 +147,49 @@ here noticed for weeks. Two checks now carry it:
   `PROTOCOL_VERSION === 2`, and `package.json` still tracks the 1.x line. Either
   number moving fails the gate, which is the point — that change is the migration
   below, not a dependency bump.
+- **Every PR, against a real agent** —
+  [`src/main/services/acp/acp-v2-conformance.test.ts`](../src/main/services/acp/acp-v2-conformance.test.ts)
+  drives the SDK's own **dual-version example agent** as a subprocess. See
+  [Testing against a real agent, for free](#testing-against-a-real-agent-for-free).
 
 What the watch deliberately does **not** do: it reads the npm registry, not the
 upstream repo's git HEAD (`agentclientprotocol/typescript-sdk`), so v2 work lands
-in git before this sees it; and it exercises no ACP code — Copse's ACP unit tests
-run in the normal gate on every PR, and the agent probes (`npm run probe:acp*`)
-need real installed agents and stay manual.
+in git before this sees it. The agent probes (`npm run probe:acp*`) are separate
+again — they need real installed, authenticated agents and stay manual.
+
+## Testing against a real agent, for free
+
+Copse's ACP tests used to talk only to Copse. `acp-loopback.test.ts` wires the
+product's own agent half (`acp-agent-server.ts`) to its client half over real
+ndjson framing, which is a good end-to-end check but cannot catch a _shared_
+misreading of the protocol — both ends are ours. Copse can also be spawned as an
+ACP agent for real (`--acp` → `runAcpAgentMode`), and with `COPSE_PANEL_MOCK_LLM=1`
+that costs no tokens, but it boots inside Electron, so it is e2e-tier.
+
+The third party is already installed. `@agentclientprotocol/sdk` publishes
+runnable examples inside its tarball:
+
+| Shipped file                          | What it is                                                                                      |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `dist/examples/dual-version-agent.js` | Answers **v1 or v2** per connection (`agentProtocolRouter().withV1().withV2()`)                 |
+| `dist/examples/agent.js`              | Scripted v1 turn: message chunks, `tool_call`, `tool_call_update`, a real permission round trip |
+| `dist/test-support/test-agent.js`     | Programmable test agent (chunk count, delay, optional permission)                               |
+
+No model, no API key, no network, no added dependency — and version-locked to the
+SDK we pin, so the target moves when the protocol we build against moves. Note
+these are file paths, not package specifiers: the SDK's `exports` map does not
+expose `./dist/*`.
+
+The conformance test uses the dual-version one for two different jobs. The **v1**
+arm is a regression guard on the path Copse ships — SDK client plus
+`session-update-adapter.ts` — proving a v1 client still negotiates v1 against an
+agent that also speaks v2. The **v2** arm asserts nothing about Copse; it pins the
+wire shapes the migration must handle, read off a working agent instead of off the
+RFDs: `initialize` requires the new `info` object (omit it and you get
+`-32602 invalid initialize params`), the turn ends with a `state_update`
+(`running` → `idle` + `stopReason`) rather than with the prompt response, and
+whole messages keyed by `messageId` replace the chunk stream. When
+`session-update-adapter.ts` learns v2, that arm is the checklist.
 
 When it fires, triage before bumping: confirm what the new surface actually
 negotiates. If the migration will take longer than a night, add the new
