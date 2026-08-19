@@ -126,10 +126,23 @@ describe('per-chat reasoning effort', () => {
     // ordering and the surface under test.
     const seeded = await $('.footer-model-host .model-picker')
     await seeded.$('.model-picker-trigger').click()
+    // The footer picker opens on the recent list, which on a fresh profile holds
+    // only whatever the app booted on. "Browse all models" is the way to the
+    // full catalog, and its filter matches `label` *and* `value`, so the id is
+    // an unambiguous query where the label ("Claude Opus 5") is not.
+    const browse = await seeded.$('.model-picker-browse')
+    await browse.waitForDisplayed({ timeout: 15_000 })
+    await browse.click()
+    await seeded.$('.model-picker-filter').setValue('claude-opus-5')
     const opus = await seeded.$('.model-picker-option[data-value="claude-opus-5"]')
-    await opus.waitForExist({ timeout: 15_000 })
+    await opus.waitForDisplayed({ timeout: 15_000 })
     await opus.click()
     await expect(seeded.$('.model-picker-menu')).not.toBeDisplayed()
+    // Pinning must have taken: the trigger names the model the ladder belongs to.
+    await expect(seeded.$('.model-picker-trigger')).toHaveText(
+      expect.stringContaining('Claude Opus 5'),
+      { wait: 10_000 },
+    )
   })
 
   after(() => {
