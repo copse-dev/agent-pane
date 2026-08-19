@@ -83,19 +83,20 @@ export const config: Options.Testrunner = {
           '--disable-gpu',
           '--no-sandbox',
           '--disable-dev-shm-usage',
-          // `safeStorage` binds to the OS secret service, which a headless
-          // Linux runner has none of — the containers cannot even reach the
-          // session bus. `isEncryptionAvailable()` is then false and every
-          // feature guarded on it silently no-ops, which is not a product
-          // failure but is indistinguishable from one in a spec: it is why
-          // `vnc.rememberUsername` returns false and `vnc-viewer` fails on
-          // Linux while passing on macOS, where the Keychain answers.
-          // `basic` selects Chromium's built-in password store instead of
-          // probing for gnome-keyring/kwallet, so encryption reports available
-          // and round-trips. Safe for the seeded API keys: those records carry
-          // `plain: true`, and `getApiKey` returns them before it consults the
-          // cipher (settings.ts), so they read identically either way.
-          '--password-store=basic',
+          // NOTE: `--password-store=basic` was added here to make
+          // `safeStorage.isEncryptionAvailable()` report true on a headless
+          // Linux runner (which has no OS secret service, so
+          // `vnc.rememberUsername` returns false and `vnc-viewer` fails while
+          // passing on macOS). It was verified not to work — the spec failed
+          // identically with the flag present — and has been removed rather
+          // than left as a switch that looks like it does something. Picking
+          // the `basic` backend is not the same as opting into it: Electron
+          // still reports encryption unavailable unless
+          // `safeStorage.setUsePlainTextEncryption(true)` is called before
+          // `app` ready. The two real options are provisioning a secret
+          // service on the runner image (as it already bakes `bwrap` and
+          // `socat`) or that explicit opt-in; neither belongs in a browser
+          // flag here. See the revert PR for the full account.
         ],
       },
     },
