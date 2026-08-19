@@ -131,8 +131,19 @@ describe('per-chat reasoning effort', () => {
 
     await row.click()
     const choices = await $$('.model-picker-menu .model-picker-option')
-    // The default, plus the six-level ladder Opus 5 accepts.
-    await expect(choices.length).toBe(7)
+    // The default, plus the six-level ladder Opus 5 accepts. A wrong count is
+    // almost always the picker offering a *different* model's ladder, and the
+    // bare number cannot say which — so name the model on the trigger and the
+    // levels on offer. `off/minimal/low/medium/high/xhigh/max` is the
+    // OpenAI-compatible ladder, which only a namespaced selection reaches.
+    if (choices.length !== 7) {
+      const shown = await $('.model-picker-trigger').getText()
+      const labels = await Promise.all(choices.map((choice) => choice.getText()))
+      throw new Error(
+        `expected 7 effort choices for claude-opus-5, got ${choices.length}: ` +
+          `${JSON.stringify(labels)} (trigger shows ${JSON.stringify(shown)})`,
+      )
+    }
     await saveElementScreenshot('.model-picker-menu', 'footer-reasoning-effort.png')
     await choices[choices.length - 1].click()
     await expect($('.model-picker-menu')).not.toBeDisplayed()
