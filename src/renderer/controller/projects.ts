@@ -730,7 +730,14 @@ export async function restoreProject(
   })
   const activeThreadId = store.getState().activeThreadId
   if (activeThreadId) markThreadRead(store, activeThreadId)
-  await saveProjects(api, store.getState().projects, id, activeThreadId)
+  // Recording where we landed must not decide whether we render it. The project
+  // is already in the store by this point; letting this write reject took the
+  // three emits below with it, so a single refused IPC left a window with its
+  // chrome up and no workspace in it — the pane never heard `workspace_changed`.
+  // Persistence is recoverable (the next save re-sends it); a blank window is not.
+  await saveProjects(api, store.getState().projects, id, activeThreadId).catch((error: unknown) => {
+    console.warn(`[projects] could not persist the restored project ${id}:`, error)
+  })
   if (loaded.length === 0) createThread(store)
   else normalizeBlankThreads(store)
   store.emit('projects_changed')

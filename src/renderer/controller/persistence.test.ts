@@ -6,6 +6,8 @@ import {
   attachAutosave,
   awaitPendingThreadPersistence,
   __resetPersistenceForTest,
+  saveProjects,
+  setNavigationOwnership,
   AUTOSAVE_DEBOUNCE_MS,
 } from './persistence.ts'
 import { createStore } from '@shared/store/store.ts'
@@ -206,6 +208,34 @@ test('debounces a metadata burst into one projects save after the immediate crea
     activeProjectId: 'p1',
     activeThreadId: null,
   })
+  autosave.detach()
+})
+
+test('a window that does not own navigation persists projects but never navigation', async () => {
+  // A pane pop-out boots this renderer and restores the same project, but the
+  // main process rejects `setNavigation` from any window that is not a
+  // registered full main window. Sending it anyway rejected mid-`restoreProject`
+  // and took the `workspace_changed` emit with it, so the detached pane came up
+  // empty. Projects still save — only the navigation half is withheld.
+  __resetPersistenceForTest()
+  setNavigationOwnership(false)
+  const { api, calls } = fakeApi()
+  const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
+
+  await saveProjects(api, [], 'p1', 't1')
+  assert.deepEqual(calls.navigations, [], 'a pop-out must not write navigation')
+  assert.deepEqual(
+    calls.storageSets.map((call) => call[0]),
+    ['projects'],
+    'the projects list is shared state and still saves',
+  )
+
+  // The flag is per-window, so a main window in the same suite still writes.
+  __resetPersistenceForTest()
+  const autosave = attachAutosave(store, api)
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.deepEqual(calls.navigations.at(-1), { activeProjectId: 'p1', activeThreadId: null })
   autosave.detach()
 })
 
