@@ -74,7 +74,10 @@ describe('settings:get registration gate', () => {
     }
     // A constant this test cannot follow is a blind spot, not a pass.
     assert.deepEqual(unresolved, [], 'unresolvable setting-name constants at a read site')
-    assert.ok(keys.size > 20, `expected to find the renderer's setting reads, found ${String(keys.size)}`)
+    assert.ok(
+      keys.size > 20,
+      `expected to find the renderer's setting reads, found ${String(keys.size)}`,
+    )
 
     assert.deepEqual([...keys].filter((k) => !isRegisteredSettingKey(k)).sort(), [])
   })
