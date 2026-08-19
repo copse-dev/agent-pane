@@ -44,7 +44,12 @@ async function isRootReachable(root: string): Promise<boolean> {
 }
 
 function unreachableRootResult(root: string): CommandResult {
-  return { stdout: '', stderr: `Workspace path no longer exists: ${root}`, code: 1 }
+  return {
+    stdout: '',
+    stderr: `Workspace path no longer exists: ${root}`,
+    code: 1,
+    stdoutTruncated: false,
+  }
 }
 
 async function runGit(

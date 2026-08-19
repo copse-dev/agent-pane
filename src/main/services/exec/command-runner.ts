@@ -15,6 +15,17 @@ export interface CommandResult {
   stdout: string
   stderr: string
   code: number
+  /**
+   * Whether stdout exceeded `stdoutMaxBytes` and lost content.
+   *
+   * Overflow is dropped silently on the hot path (re-truncating a capped
+   * buffer per chunk thrashed the GC), so the retained string looks like a
+   * complete listing. Callers that reason about *scale* from output size must
+   * consult this: the #795 file index read a 124,597-path checkout as 61,735
+   * paths, sailed under the 100k semantic-index cap, and let gortex loose on
+   * the whole tree.
+   */
+  stdoutTruncated: boolean
 }
 
 export interface RunCommandOptions {
@@ -37,6 +48,29 @@ export interface RunCommandOptions {
   stdoutMaxBytes?: number
   /** Overrides workspace seatbelt rules for this spawn (e.g. sandbox-fs worker). */
   sandboxConfig?: Partial<SandboxRuntimeConfig>
+}
+
+/**
+ * A run that hit its `timeout_ms` ceiling and was SIGKILLed, as distinct from a
+ * command that failed on its own terms.
+ *
+ * Some callers deliberately budget less time than the work can take — the
+ * gortex indexer keeps going in its daemon after we stop waiting — so they need
+ * to tell "we stopped waiting" apart from "it broke" instead of matching on the
+ * message text.
+ */
+export class CommandTimeoutError extends Error {
+  readonly timeoutMs: number
+
+  constructor(cmd: string, timeoutMs: number) {
+    super(`Command timed out after ${String(timeoutMs)}ms: ${cmd}`)
+    this.name = 'CommandTimeoutError'
+    this.timeoutMs = timeoutMs
+  }
+}
+
+export function isCommandTimeoutError(err: unknown): err is CommandTimeoutError {
+  return err instanceof CommandTimeoutError
 }
 
 function prepareGitInvocation(
@@ -120,7 +154,7 @@ export function runCommand(
               if (!settled) {
                 settled = true
                 opts.signal?.removeEventListener('abort', onAbort)
-                reject(new Error(`Command timed out after ${String(timeout_ms)}ms: ${cmd}`))
+                reject(new CommandTimeoutError(cmd, timeout_ms))
               }
             }, timeout_ms)
           : undefined
@@ -163,7 +197,12 @@ export function runCommand(
         if (settled) return
         settled = true
         finish(() => {
-          resolve({ stdout, stderr, code: code ?? 0 })
+          resolve({
+            stdout,
+            stderr,
+            code: code ?? 0,
+            stdoutTruncated: rawStdoutBytes > stdoutMaxBytes,
+          })
         })
       })
 
