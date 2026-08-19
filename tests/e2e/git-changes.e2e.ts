@@ -72,12 +72,16 @@ describe('git changes viewer', function () {
     )
     await expect(sectionTitles.some((t) => t.startsWith('staged ('))).toBe(true)
     await expect(sectionTitles.some((t) => t.startsWith('unstaged ('))).toBe(true)
+    // Committing empties `git status`, so without its own section the fixture's
+    // committed work would be reviewable nowhere until a PR existed.
+    await expect(sectionTitles.some((t) => t.startsWith('committed ('))).toBe(true)
 
     // Verify the three expected files appear with status badges.
     const paths = await $$('.git-change-path').map((e) => e.getText())
     await expect(paths).toContain('staged.ts')
     await expect(paths).toContain('unstaged.ts')
     await expect(paths).toContain('untracked.ts')
+    await expect(paths).toContain('committed.ts')
 
     const untrackedBadge = await $('.git-change-status-untracked')
     await expect(untrackedBadge).toHaveText('?')
@@ -142,5 +146,29 @@ describe('git changes viewer', function () {
     await expandBtn.click()
     await browser.pause(300)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff-expanded.png'))
+  })
+
+  it('opens the diff of a file that was committed rather than left dirty', async () => {
+    const committedRow = await $('.git-change-row-committed')
+    await committedRow.waitForDisplayed({ timeout: 30_000 })
+    await expect(committedRow.$('.git-change-path')).toHaveText('committed.ts')
+
+    await committedRow.click()
+    await expect(committedRow).toHaveElementClass('is-selected')
+
+    const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor')
+    await diffViewer.waitForDisplayed({ timeout: 30_000 })
+    // The file exists only in the commit, so the base side is empty and every
+    // line reads as an insert.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const host = document.querySelector('#git-diff-viewer-host')
+          return host?.querySelector('.line-insert, .char-insert') != null
+        }),
+      { timeout: 15_000, timeoutMsg: 'expected the committed file to diff as added lines' },
+    )
+
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-committed-diff.png'))
   })
 })

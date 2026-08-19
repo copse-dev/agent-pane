@@ -93,7 +93,9 @@ import { resolveBestValueChatModel } from '../services/providers/best-value-mode
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
-  loadProjectThreads,
+  backfillThreadPrRefs,
+  loadProjectThreadMetas,
+  loadThreadMessages,
   createThread,
   appendMessage,
   updateMeta,
@@ -219,6 +221,8 @@ import {
 import {
   checkoutGitBranch,
   getBranches,
+  getCommittedChanges,
+  getCommittedFileDiff,
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
@@ -245,7 +249,7 @@ import {
   reviewRoadmapItem,
   reviewRoadmapItemDeep,
 } from '../services/roadmap-review.ts'
-import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
+import { branchHasOpenPr, getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import {
@@ -1455,7 +1459,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Archived threads are hidden from every renderer surface (sidebar and
     // `@`-catalog both filter them), so folding their history into the store
     // only grew the heap. They stay on disk and in the whole-history readers.
-    return loadProjectThreads(id, { includeArchived: false })
+    // Threads written before `prRefs` existed have no cached PR links, and a
+    // metadata-only load has no transcript to scrape — so their sidebar chips
+    // would be missing. Fill them in behind the load: fire-and-forget, low
+    // concurrency, one pass per project ever (the result is recorded on each
+    // thread's metadata), pushing batches so the chips appear without a relaunch.
+    void backfillThreadPrRefs(id, (refs) => {
+      if (!win.isDestroyed()) win.webContents.send('threads:pr_refs', id, refs)
+    }).catch((err: unknown) => {
+      console.warn('[threads] PR-ref backfill failed:', err)
+    })
+    return loadProjectThreadMetas(id, { includeArchived: false })
+  })
+  // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
+  // when the user actually opens it.
+  ipcMain.handle('threads:loadMessages', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return loadThreadMessages(id, thread)
   })
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
@@ -1989,6 +2010,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     )
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitFileDiff(filePath, isStaged, root)
+  })
+  ipcMain.handle('git:committedChanges', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getCommittedChanges(root, {
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
+  })
+  ipcMain.handle('git:committedFileDiff', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getCommittedFileDiff(filePath, root, {
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
   })
   ipcMain.handle('git:workingFileDiff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

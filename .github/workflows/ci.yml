@@ -914,6 +914,41 @@ jobs:
           command -v bwrap
           command -v socat
           bwrap --unshare-all --dev-bind / / --die-with-parent true
+      # The install above is hosted-only because the self-hosted image bakes
+      # both in (ci-runners/Dockerfile). When a self-hosted runner comes up on a
+      # stale image that assumption breaks silently — nothing installs, nothing
+      # checks, and the first sign is a spec failing ~40 minutes later with a
+      # product-shaped message: `selected-plugin-browser` reporting "Executable
+      # plugin behavior requires Copse's active OS sandbox", or
+      # `capability-lease-approval` waiting on a sandboxed turn-tree that never
+      # renders. Both read as regressions in whichever PR drew the runner, which
+      # is the expensive part. Run the same three checks the install step
+      # already ends with, on every runner, and fail here — where the message
+      # names the cause.
+      - name: Verify sandbox preconditions
+        if: >-
+          needs.precheck.outputs.mode == 'full' ||
+          needs.precheck.outputs.mode == 'subset'
+        run: |
+          set -uo pipefail
+          missing=''
+          command -v bwrap >/dev/null 2>&1 || missing="${missing} bubblewrap(bwrap)"
+          command -v socat >/dev/null 2>&1 || missing="${missing} socat"
+          if [ -n "${missing}" ]; then
+            probe='skipped (tools missing)'
+          elif bwrap --unshare-all --dev-bind / / --die-with-parent true >/dev/null 2>&1; then
+            probe='ok'
+          else
+            probe='FAILED'
+          fi
+          if [ -n "${missing}" ] || [ "${probe}" = 'FAILED' ]; then
+            echo "runner=${RUNNER_NAME:-unknown} environment=${RUNNER_ENVIRONMENT:-unknown}"
+            echo "missing:${missing:- none}"
+            echo "bwrap probe: ${probe}"
+            echo "::error title=e2e runner is not provisioned for the OS sandbox::missing:${missing:- none}; bwrap probe=${probe}. Specs that need the sandbox fail closed with product-shaped messages, so this fails here instead. Self-hosted runners get these from ci-runners/Dockerfile — this host is most likely on a stale image."
+            exit 1
+          fi
+          echo "sandbox preconditions ok (bwrap + socat present, probe passed)"
       - uses: ./.github/actions/download-artifact-retry
         with:
           name: dist-tar

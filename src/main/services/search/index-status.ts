@@ -91,6 +91,24 @@ export function indexBuildFinished(component: IndexComponent, ok: boolean): void
   notify()
 }
 
+/**
+ * Finish a semantic pass that neither completed nor failed.
+ *
+ * `gortex track --wait` is bounded by our own kill ceiling, and a repo big
+ * enough to outlast it is still being indexed by the daemon afterwards — the
+ * work continues, we just stopped waiting on it. Counts down like
+ * {@link indexBuildFinished} but rests at `limited` rather than `error`, so the
+ * footer says the index is incomplete instead of broken.
+ */
+export function semanticBuildDeferred(reason: string): void {
+  const state = components.semantic
+  state.active = Math.max(0, state.active - 1)
+  state.restingPhase = 'limited'
+  state.restingReason = reason
+  if (state.active === 0) state.startedAt = null
+  notify()
+}
+
 /** Mark the semantic backend as absent (no gortex/vera binary found at probe time). */
 export function setSemanticIndexUnavailable(): void {
   components.semantic = {

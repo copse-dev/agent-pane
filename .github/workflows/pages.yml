@@ -12,6 +12,10 @@ name: Deploy site
 # job is the single assembler: it lays down site/ at the root, then mounts every
 # directory from demo-previews below /demo/. A site update and a preview publish
 # both deploy through this one path.
+#
+# It is also where the site's Markdown twins are generated (site/*.md and
+# llms.txt, from the HTML — see scripts/sync-site-markdown.mts). They are build
+# artifacts and are not committed, so this is the only place they exist.
 
 on:
   push:
@@ -112,6 +116,64 @@ jobs:
           else
             echo "No demo-previews branch yet — publishing site only."
           fi
+      # `package-manager-cache: false` because this job never runs the repo's own
+      # install. Left on, setup-node hunts for a lockfile to cache and warns
+      # about the pnpm `packageManager` field it cannot act on here.
+      - uses: actions/setup-node@v7
+        with: { node-version-file: '.nvmrc', package-manager-cache: false }
+      # The Markdown twins (site/*.md + llms.txt) are generated here rather than
+      # committed, so the published copy is always what the published HTML says
+      # and the repo carries no second copy of every page to keep in step.
+      #
+      # Deliberately NOT `.github/actions/setup`. That installs the app's whole
+      # dependency tree — ~590 MB, an electron-rebuild, a 2.5-3.5 min cache
+      # restore on a hosted runner — and this job needs four pure-JS libraries.
+      # The cost would land on every caller: demo-preview.yml and
+      # demo-preview-cleanup.yml both `uses:` this workflow, and all deploys
+      # serialize on the `pages` concurrency group, so a slower job here is a
+      # slower preview publish for markdown a preview does not use. Slowing this
+      # path is what the concurrency note above records going wrong before.
+      #
+      # The four ranges are copied from the repo's own `devDependencies`, so the
+      # deploy renders within the same bounds CI and local checkouts do and a
+      # turndown major cannot arrive here unreviewed. Deliberately package.json
+      # rather than the lockfile: the first version of this step read
+      # package-lock.json and broke the moment `main` moved to pnpm, because this
+      # job checks out `main` and so always runs against a tree the PR that wrote
+      # it never saw. `dependencies` is the one manifest every package manager
+      # keeps. A missing entry is a hard error rather than an unpinned install.
+      #
+      # npm rather than pnpm because the scratch directory is not the project —
+      # it has no lockfile and no workspace to honour, npm ships with the Node
+      # that setup-node just installed, and this needs no corepack activation on
+      # the deploy path. `--ignore-scripts` runs no install hooks; all four are
+      # pure JS. The scratch prefix is what keeps the install from reconciling
+      # against the repo's own manifest and pulling the whole tree in anyway.
+      - name: Generate the site's Markdown twins
+        run: |
+          set -euo pipefail
+          deps="${RUNNER_TEMP}/site-md-deps"
+          rm -rf "$deps"
+          mkdir -p "$deps"
+          node -e '
+            const manifest = require("./package.json")
+            const need = ["jsdom", "turndown", "zod", "prettier"]
+            const dependencies = Object.fromEntries(need.map((name) => {
+              const range = manifest.devDependencies?.[name] ?? manifest.dependencies?.[name]
+              if (!range) throw new Error(name + " is not a dependency of this repo")
+              return [name, range]
+            }))
+            require("fs").writeFileSync(
+              process.argv[1] + "/package.json",
+              JSON.stringify({ name: "site-md-deps", private: true, dependencies }, null, 2) + "\n",
+            )
+          ' "$deps"
+          (cd "$deps" && npm install --ignore-scripts --no-audit --no-fund)
+          # `mv` into an existing directory would nest rather than replace it,
+          # and a self-hosted runner reuses its workspace between jobs.
+          rm -rf node_modules
+          mv "$deps/node_modules" node_modules
+          node scripts/sync-site-markdown.mts --out _site
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
