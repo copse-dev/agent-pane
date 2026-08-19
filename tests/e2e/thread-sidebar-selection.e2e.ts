@@ -74,6 +74,11 @@ describe('sidebar thread selection styling', () => {
       const listRect = list.getBoundingClientRect()
       const rowRect = selected.getBoundingClientRect()
       const style = getComputedStyle(selected)
+      const rowPaddingProbe = document.createElement('div')
+      rowPaddingProbe.style.paddingTop = 'var(--list-row-padding-block)'
+      document.body.append(rowPaddingProbe)
+      const rowPadding = getComputedStyle(rowPaddingProbe).paddingTop
+      rowPaddingProbe.remove()
       return {
         paneLeft: paneRect.left,
         paneRight: paneRect.right,
@@ -87,6 +92,7 @@ describe('sidebar thread selection styling', () => {
         paddingRight: style.paddingRight,
         paddingBottom: style.paddingBottom,
         paddingLeft: style.paddingLeft,
+        rowPadding,
         headerPaddingRight: getComputedStyle(header).paddingRight,
         boxShadow: style.boxShadow,
         borderRadius: style.borderRadius,
@@ -103,10 +109,10 @@ describe('sidebar thread selection styling', () => {
     expect(Math.abs(geometry!.rowRight - geometry!.paneRight)).toBeLessThanOrEqual(1)
     expect(geometry!.boxShadow).toMatch(/-2px/)
     expect(geometry!.borderRadius).toBe('0px')
-    // Roomier than the previous 4px vertical padding, with the trailing edge
-    // aligned to the shared projects action column.
-    expect(Number.parseFloat(geometry!.paddingTop)).toBeGreaterThanOrEqual(12)
-    expect(Number.parseFloat(geometry!.paddingBottom)).toBeGreaterThanOrEqual(12)
+    // Follow the shared row rhythm, with the trailing edge aligned to the
+    // projects action column.
+    expect(geometry!.paddingTop).toBe(geometry!.rowPadding)
+    expect(geometry!.paddingBottom).toBe(geometry!.rowPadding)
     expect(geometry!.paddingRight).toBe(geometry!.headerPaddingRight)
     expect(Number.parseFloat(geometry!.paddingLeft)).toBe(28)
 
