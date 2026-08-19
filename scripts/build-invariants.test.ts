@@ -20,6 +20,7 @@ describe('build.mts bundle invariants', () => {
   const build = readFileSync(resolve('scripts/build.mts'), 'utf8')
   const dev = readFileSync(resolve('scripts/dev.mts'), 'utf8')
   const rendererHtml = readFileSync(resolve('src/renderer/index.html'), 'utf8')
+  const rendererMain = readFileSync(resolve('src/renderer/main.ts'), 'utf8')
 
   /** The `for (…of STANDALONE_MAIN_BUNDLES)` body — everything the emit sees. */
   const standaloneLoop = build.match(
@@ -89,6 +90,8 @@ describe('build.mts bundle invariants', () => {
       /entryPoints: \['src\/renderer\/main\.ts'\],[\s\S]*?format: 'esm',[\s\S]*?sourcemap: true/,
     )
     assert.match(rendererHtml, /<script type="module" src="\.\/app\.js"><\/script>/)
+    assert.match(rendererMain, /\nexport \{\}\s*$/)
+    assert.match(build, /assertModuleParses\(`\$\{rendererOutDir\}\/app\.js`\)/)
   })
 })
 
