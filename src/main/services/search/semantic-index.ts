@@ -520,7 +520,9 @@ export function parseGortexExcludes(configYaml: string): string[] {
 
 async function readGortexExcludes(): Promise<Set<string>> {
   try {
-    return new Set(parseGortexExcludes(await readFile(join(gortexHomeDir(), '.gortex', 'config.yaml'), 'utf8')))
+    return new Set(
+      parseGortexExcludes(await readFile(join(gortexHomeDir(), '.gortex', 'config.yaml'), 'utf8')),
+    )
   } catch {
     return new Set()
   }
