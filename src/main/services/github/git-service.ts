@@ -23,6 +23,7 @@ import {
   type GitBranchInfo,
   type GitChange,
   type GitChangeStatus,
+  type GitCommittedChanges,
   type GitFileDiff,
   type GitPromptState,
   type GitStatusResult,
@@ -646,6 +647,159 @@ export async function getGitStatus(
   const { stdout, code } = await runGitRead(['status', '--porcelain=v1', '-z'], root)
   if (code !== 0) return null
   return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix)
+}
+
+/**
+ * Parse `git diff --name-status -z` into file changes. Records are NUL-separated
+ * `<code>\0<path>`; rename and copy records carry two paths
+ * (`R100\0<old>\0<new>`), and the destination is the file as it exists at HEAD,
+ * so that is the one reported. Pure, so it is unit-tested without a repository.
+ */
+export function parseNameStatusZ(raw: string): GitChange[] {
+  const changes: GitChange[] = []
+  const tokens = raw.split('\0').filter(Boolean)
+  for (let i = 0; i < tokens.length;) {
+    const code = tokens[i]?.[0]
+    if (code === undefined) break
+    const paired = code === 'R' || code === 'C'
+    const path = tokens[i + (paired ? 2 : 1)]
+    i += paired ? 3 : 2
+    if (path === undefined) break
+    changes.push({ path, status: mapStatus(code) })
+  }
+  return changes
+}
+
+/** True when `ref` resolves to a commit in this repository. */
+async function commitRefExists(ref: string, root: string): Promise<boolean> {
+  const { code } = await runGitRead(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], root)
+  return code === 0
+}
+
+export interface CommittedChangesOptions {
+  /**
+   * Whether an open pull request already carries `branch`. Injected by the
+   * caller rather than imported: the PR lookup lives in `pr-context-service`,
+   * which imports this module. Defaults to "no PR", which is also what a
+   * missing/unauthenticated `gh` means — the safe direction, since it widens the
+   * comparison to the default branch rather than hiding committed work.
+   */
+  hasOpenPr?: (branch: string) => Promise<boolean>
+}
+
+/**
+ * What committed work should be compared against, as a display label plus the
+ * commit to diff from.
+ *
+ * A branch whose commits are already published *and* carried by an open PR is
+ * reviewed in the PR panel, so only what is local to this checkout is still
+ * "not in a PR" — compare against `origin/<branch>`. Anything else (never
+ * pushed, or pushed with no PR opened) compares against the default branch, so
+ * work that has no PR to appear in stays visible.
+ */
+async function resolveCommittedBase(
+  root: string,
+  options: CommittedChangesOptions,
+): Promise<{ label: string; commit: string } | null> {
+  const branch = await getCurrentBranchName(root)
+  let ref: string | null = null
+  if (branch) {
+    const remoteBranch = `origin/${branch}`
+    // Probe the local ref first: it costs one `rev-parse` and rules out every
+    // branch that was never pushed, so `gh` is only consulted when a PR could
+    // actually exist.
+    if (
+      (await commitRefExists(remoteBranch, root)) &&
+      (await (options.hasOpenPr?.(branch) ?? Promise.resolve(false)))
+    ) {
+      ref = remoteBranch
+    }
+  }
+  if (!ref) {
+    const defaultBranch = (await getDefaultBranch(root)) ?? DEFAULT_GIT_BRANCH
+    for (const candidate of [`origin/${defaultBranch}`, defaultBranch]) {
+      if (await commitRefExists(candidate, root)) {
+        ref = candidate
+        break
+      }
+    }
+  }
+  if (!ref) return null
+  // Three-dot semantics: a branch that is behind its base must not report the
+  // base's own commits as this branch's work.
+  const { stdout, code } = await runGitRead(['merge-base', ref, 'HEAD'], root)
+  const commit = stdout.trim()
+  if (code !== 0 || !commit) return null
+  return { label: ref, commit }
+}
+
+/**
+ * Files changed by commits on HEAD that no pull request carries yet. Committing
+ * empties `git status`, so without this the Changes panel goes blank the moment
+ * an agent commits, and the work is invisible until a PR exists.
+ *
+ * Null when this is not a repository, or when nothing sensible can be compared
+ * against (a repo with no default branch and no remote, where no ref
+ * distinguishes landed work from unlanded work).
+ */
+export async function getCommittedChanges(
+  root: string | null = getAgentExecutionRoot(),
+  options: CommittedChangesOptions = {},
+): Promise<GitCommittedChanges | null> {
+  if (!(await isGitAvailableForTarget()) || !root || !(await confirmInsideWorkTree(root, true)))
+    return null
+  const prefix = await workTreePrefix(root)
+  if (prefix === null) return null
+  const base = await resolveCommittedBase(root, options)
+  if (!base) return null
+  const { stdout, code } = await runGitRead(
+    ['diff', '--name-status', '-z', base.commit, 'HEAD'],
+    root,
+  )
+  if (code !== 0) return null
+  const changes = parseNameStatusZ(stdout)
+    .map((change) => {
+      const path = toWorkspaceRelativeGitPath(change.path, prefix)
+      return path ? { ...change, path } : null
+    })
+    .filter((change): change is GitChange => change !== null)
+  return { baseLabel: base.label, changes }
+}
+
+/**
+ * Base → HEAD diff for one committed file, against the same base
+ * {@link getCommittedChanges} listed it from. The base is re-resolved rather
+ * than passed in from the renderer so a ref never crosses the IPC boundary.
+ */
+export async function getCommittedFileDiff(
+  path: string,
+  root: string | null = getAgentExecutionRoot(),
+  options: CommittedChangesOptions = {},
+): Promise<GitFileDiff | null> {
+  if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
+  const base = await resolveCommittedBase(root, options)
+  if (!base) return null
+
+  const mime = imageMimeType(path)
+  if (mime) {
+    return {
+      path,
+      before: '',
+      after: '',
+      language: detectLanguage(path),
+      beforeImage: await readGitBlobImage(base.commit, path, mime, root),
+      afterImage: await readGitBlobImage('HEAD', path, mime, root),
+    }
+  }
+
+  const before = await readGitBlob(base.commit, path, root)
+  const after = await readGitBlob('HEAD', path, root)
+  return {
+    path,
+    before: normalizeGitDiffText(before.content),
+    after: normalizeGitDiffText(after.content),
+    language: detectLanguage(path),
+  }
 }
 
 /** Sum added/deleted line counts from `git diff --numstat` output (binary rows use `-`). */
