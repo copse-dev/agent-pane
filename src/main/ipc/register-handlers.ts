@@ -219,6 +219,8 @@ import {
 import {
   checkoutGitBranch,
   getBranches,
+  getCommittedChanges,
+  getCommittedFileDiff,
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
@@ -245,7 +247,7 @@ import {
   reviewRoadmapItem,
   reviewRoadmapItemDeep,
 } from '../services/roadmap-review.ts'
-import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
+import { branchHasOpenPr, getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import {
@@ -1970,6 +1972,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     )
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitFileDiff(filePath, isStaged, root)
+  })
+  ipcMain.handle('git:committedChanges', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getCommittedChanges(root, {
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
+  })
+  ipcMain.handle('git:committedFileDiff', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getCommittedFileDiff(filePath, root, {
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
   })
   ipcMain.handle('git:workingFileDiff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
