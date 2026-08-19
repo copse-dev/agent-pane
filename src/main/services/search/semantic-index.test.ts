@@ -140,14 +140,15 @@ describe('semantic-index parsing', () => {
     assert.equal(env['GOMAXPROCS'], String(semanticThreadCap()))
   })
 
-  it('gives the gortex track kill-timeout a grace margin over its own --wait-timeout (#517)', () => {
+  it('keeps the gortex track kill-timeout above the --wait-timeout it asks for (#517)', () => {
     const waitArg = gortexIndexWaitArg()
     const match = /^(\d+)m$/.exec(waitArg)
     assert.ok(match, `expected a gortex minute duration, got ${waitArg}`)
     const waitMs = Number(match[1]) * 60_000
-    // The command runner must not SIGKILL gortex at the exact moment its own
-    // graceful --wait-timeout elapses — that race turned "still indexing" into a
-    // `Command timed out` error on every file-change burst.
+    // gortex v0.60.0 accepts --wait-timeout and ignores it (measured: a 5s
+    // request returned after 54.8s), so our kill is the only bound that holds.
+    // The margin survives for the day gortex honours the flag: a graceful exit
+    // must land inside our budget rather than racing the SIGKILL.
     assert.ok(
       gortexIndexKillTimeoutMs() > waitMs,
       `kill timeout ${String(gortexIndexKillTimeoutMs())}ms must exceed wait ${String(waitMs)}ms`,

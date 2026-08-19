@@ -210,7 +210,10 @@ async function runWorkspaceIndexing(root: string, generation: number): Promise<v
     byteEstimate: stats?.byteEstimate ?? null,
     nestedRepos: [],
     override: policyOverride,
-    discoveryConfidence: stats ? 'complete' : 'failed',
+    // A listing that overflowed its capture limit is partial evidence, not the
+    // complete picture its path count pretends to be.
+    discoveryConfidence: stats ? (stats.listingTruncated ? 'partial' : 'complete') : 'failed',
+    listingTruncated: stats?.listingTruncated ?? false,
   })
 
   resolveWorkspaceIndexGate(root, {

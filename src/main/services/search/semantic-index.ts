@@ -5,13 +5,18 @@ import { join, resolve } from 'node:path'
 import { getBundledGortexPath } from './bundled-semantic.ts'
 import { GORTEX_EXCLUDE_PATTERNS } from './index-ignore.ts'
 import { computeGitIgnoreExcludes } from './git-derived-excludes.ts'
-import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
+import {
+  isCommandTimeoutError,
+  runCommand,
+  type RunCommandOptions,
+} from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { toRelativePath } from '../workspace.ts'
 import {
   indexBuildStarted,
   indexBuildFinished,
+  semanticBuildDeferred,
   setSemanticIndexUnavailable,
 } from './index-status.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -35,23 +40,31 @@ const SEMANTIC_MAX_THREADS = 4
 const SEMANTIC_INDEX_WAIT_MS = 5 * 60_000
 
 /**
- * Grace margin between gortex's own `--wait-timeout` and the command runner's
- * hard-kill. gortex returning on its own is the graceful path; the kill turns
- * that benign return into a thrown `Command timed out` error (which then flips
- * the index status to `error`). The margin must be big enough that a healthy
- * gortex client always exits first.
+ * Margin between the `--wait-timeout` we ask for and our own hard-kill.
+ *
+ * It buys nothing today: gortex v0.60.0 accepts `--wait-timeout` and then
+ * ignores it, waiting for indexing to genuinely settle. Measured against the
+ * bundled binary, `track --wait --wait-timeout 5s` returned 0 after 54.8s and
+ * `--wait-timeout 2s` after 12.7s. We keep passing the flag so a fixed gortex
+ * would exit gracefully on its own, and keep the margin so that graceful exit
+ * would land inside our budget — but {@link SEMANTIC_INDEX_TIMEOUT_MS} is the
+ * only bound that actually holds, so hitting it must be treated as an expected
+ * outcome rather than a failure (see {@link SEMANTIC_INDEX_DEFERRED_REASON}).
  */
 const SEMANTIC_INDEX_KILL_GRACE_MS = 30_000
 
 /**
  * Hard ceiling on the whole `track` invocation — the command runner SIGKILLs
- * the process tree at this point (#517). It must exceed {@link
- * SEMANTIC_INDEX_WAIT_MS} by {@link SEMANTIC_INDEX_KILL_GRACE_MS}: equal budgets
- * (both were 5m) raced, and the kill usually won, so every file-change burst
- * turned a still-indexing repo into a `semantic index update failed` error
- * instead of letting gortex's `--wait-timeout` return gracefully.
+ * the process tree at this point (#517). Since `--wait-timeout` is inert, this
+ * is what stops a cold index of a large repo from blocking forever. gortex is
+ * daemon-based, so the kill only ends *our wait*: the daemon keeps indexing,
+ * and the next pass picks up where it left off.
  */
 const SEMANTIC_INDEX_TIMEOUT_MS = SEMANTIC_INDEX_WAIT_MS + SEMANTIC_INDEX_KILL_GRACE_MS
+
+/** Footer reason shown when a pass outlasts {@link SEMANTIC_INDEX_TIMEOUT_MS}. */
+const SEMANTIC_INDEX_DEFERRED_REASON =
+  'Repository is still being indexed in the background; text search covers the gap'
 const SEMANTIC_SEARCH_TIMEOUT_MS = 60_000
 
 /** gortex `--wait-timeout` argument, derived from {@link SEMANTIC_INDEX_WAIT_MS} so the two never drift. */
@@ -328,6 +341,27 @@ async function probeWithOpts(
   }
 }
 
+/**
+ * Settle one semantic pass that threw.
+ *
+ * A run that outlasts {@link SEMANTIC_INDEX_TIMEOUT_MS} is not a failure: gortex
+ * kept the work in its daemon and we merely stopped waiting, so the pass rests
+ * at `limited` and says so at info level. Everything else is a real error. The
+ * root stays out of {@link readyRoots} either way, so searches keep falling back
+ * to text until a pass genuinely completes.
+ */
+function settleFailedSemanticPass(phase: 'setup' | 'update', err: unknown): void {
+  if (isCommandTimeoutError(err)) {
+    semanticBuildDeferred(SEMANTIC_INDEX_DEFERRED_REASON)
+    console.info(
+      `[copse-panel] semantic index ${phase} still running after ${String(err.timeoutMs)}ms; the gortex daemon continues indexing in the background`,
+    )
+    return
+  }
+  indexBuildFinished('semantic', false)
+  console.warn(`[copse-panel] semantic index ${phase} failed:`, err)
+}
+
 /** Register and build the semantic index when a workspace opens. */
 export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> {
   if (isActiveSshWorkspace()) return
@@ -358,8 +392,7 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
       readyRoots.add(root)
       indexBuildFinished('semantic', true)
     } catch (err) {
-      indexBuildFinished('semantic', false)
-      console.warn('[copse-panel] semantic index setup failed:', err)
+      settleFailedSemanticPass('setup', err)
     }
   })()
 
@@ -431,8 +464,7 @@ async function runSemanticIndexUpdate(backend: SemanticBackend, root: string): P
     readyRoots.add(root)
     indexBuildFinished('semantic', true)
   } catch (err) {
-    indexBuildFinished('semantic', false)
-    console.warn('[copse-panel] semantic index update failed:', err)
+    settleFailedSemanticPass('update', err)
   }
 }
 
@@ -901,10 +933,10 @@ async function ensureGortexIndex(workspaceRoot: string): Promise<void> {
   // first build already honors them, rather than indexing ~3 GB once first.
   await ensureGortexExcludes(workspaceRoot)
   // --wait blocks until the graph is queryable so the first search after a
-  // workspace opens doesn't race a cold index. The command-runner timeout sits
-  // a grace margin above gortex's own --wait-timeout so a slow index lets gortex
-  // return gracefully (daemon keeps indexing) rather than being SIGKILLed at the
-  // exact wait boundary and surfaced as an error (#517).
+  // workspace opens doesn't race a cold index. `--wait-timeout` is inert in
+  // gortex v0.60.0 (see SEMANTIC_INDEX_KILL_GRACE_MS), so the command-runner
+  // ceiling is what ends the wait on a repo too big to settle in time; callers
+  // read that timeout as "still indexing", not as a failure (#517).
   await runCommand(
     gortexCmd(),
     ['track', workspaceRoot, '--wait', '--wait-timeout', gortexIndexWaitArg(), '--no-progress'],

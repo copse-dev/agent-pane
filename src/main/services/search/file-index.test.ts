@@ -7,6 +7,7 @@ import {
   buildIndex,
   getIndex,
   getIndexMemoryBytes,
+  getIndexStats,
   invalidateIndex,
   setIndexForTest,
   whenFileIndexReady,
@@ -31,6 +32,18 @@ describe('file-index', () => {
     restoreWorkspace?.()
     invalidateIndex()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('reports a complete listing as untruncated scale evidence', async () => {
+    await buildIndex(tempRoot)
+    const stats = getIndexStats(tempRoot)
+    assert.ok(stats)
+    assert.equal(stats.listingTruncated, false)
+    assert.ok(stats.pathCount > 0)
+  })
+
+  it('has no stats for a root that was never listed', () => {
+    assert.equal(getIndexStats(join(tempRoot, 'nope')), null)
   })
 
   it('builds a path index for the workspace', async () => {
