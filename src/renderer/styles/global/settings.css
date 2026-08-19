@@ -36,7 +36,14 @@ dialog.settings-overlay::backdrop {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--titlebar-height);
+  /* The separator is extra to the row, not carved out of it. Everything is
+     `border-box` (base.css), so declaring the plain titlebar height here would
+     spend a pixel of the content box on the border and centre the title half a
+     pixel above the panel title it is supposed to match. In the main window the
+     titlebar is a full row and the separator belongs to `#thread-tabs` beneath
+     it; Settings collapses both into one element, so it needs the row plus the
+     line. */
+  height: calc(var(--titlebar-height) + 1px);
   padding: 0 var(--spacing-lg) 0 var(--traffic-light-inset);
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
@@ -46,7 +53,14 @@ dialog.settings-overlay::backdrop {
 .settings-header h2 {
   font-size: var(--font-size-sm);
   /* Match the regular panel title rather than introducing a heavier heading
-     treatment when Settings takes over the same titlebar position. */
+     treatment when Settings takes over the same titlebar position. The panel
+     title (`.workspace-name`) is not a heading, so it takes the interface face
+     from the body; this is an `h2`, so the brand layer's `h1, h2, h3` rule
+     (brand.css) hands it the display serif and the serif's tighter tracking.
+     Neither belongs on chrome, and both have to be named here to be undone —
+     matching weight and colour alone leaves the face mismatched. */
+  font-family: var(--font-family);
+  letter-spacing: normal;
   font-weight: 400;
   color: var(--text-secondary);
   line-height: var(--titlebar-height);
