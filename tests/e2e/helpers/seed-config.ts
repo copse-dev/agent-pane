@@ -3792,14 +3792,17 @@ export function seedForkResendFixture(workspaceRoot: string): {
 
 /**
  * Visual eval for the unified model-name display: a thread whose subagent ran
- * on a cloud model, with a best-value footer selection, so the subagent badge
- * and the footer picker both render through the one shared labeler.
+ * on a cloud model, with a dynamic footer selection resolved to a concrete
+ * cloud route, so the subagent badge and the footer picker both render through
+ * the one shared labeler.
  *
  * The subagent badge is the most visible of the four surfaces (it used to write
  * `session.model` verbatim for cloud); the footer exercises the picker's
- * best-value sentinel. A screenshot is saved for review (AGENTS.md requires a
+ * resolved-route label. A screenshot is saved for review (AGENTS.md requires a
  * visual eval for any UI-visible change, and the badge + footer are both
- * visible).
+ * visible). The footer intentionally replaces the Settings-only best-value
+ * sentinel with its concrete local fallback, so use another dynamic selector
+ * here to reach the resolved-route path.
  */
 export function seedSubagentBadgeFixture(workspaceRoot: string): void {
   const projectId = 'e2e-subagent-badge-project'
@@ -3815,7 +3818,8 @@ export function seedSubagentBadgeFixture(workspaceRoot: string): void {
         id: threadId,
         title: 'Subagent model badge',
         status: 'idle',
-        model: 'auto:best-value',
+        model: 'auto:balanced',
+        resolvedModel: 'claude-sonnet-4-6',
         messages: [
           {
             id: 'msg-user-badge',
@@ -3855,5 +3859,5 @@ export function seedSubagentBadgeFixture(workspaceRoot: string): void {
       },
     ],
   })
-  writeSettings({ model: 'auto:best-value' })
+  writeSettings({ model: 'auto:balanced' })
 }

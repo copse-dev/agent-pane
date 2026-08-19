@@ -11,10 +11,10 @@ import {
 // eval for any UI-visible change). The subagent badge and the footer picker are
 // the two most visible of the four surfaces the shared labeler owns: the badge
 // used to write `session.model` verbatim for a cloud model, and the footer used
-// to render the best-value sentinel inconsistently. Both now route through the
-// one `displayModelLabel`, so a cloud subagent reads `Claude Haiku 4.5` and the
-// footer reads `Best value (plan / price)` — the same forms every other surface
-// shows. A screenshot is saved for review.
+// to render model selections inconsistently. Both now route through the one
+// `displayModelLabel`, so a cloud subagent reads `Claude Haiku 4.5` and the
+// footer resolves its dynamic selection to `Claude Sonnet 4.6` — the same forms
+// every other surface shows. A screenshot is saved for review.
 describe('subagent badge and footer model label', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -40,12 +40,14 @@ describe('subagent badge and footer model label', () => {
   })
 
   it('renders the footer model through the shared labeler and captures a screenshot', async () => {
-    // The footer picker trigger shows the active selection; the fixture pins
-    // `auto:best-value`, which the shared labeler resolves to the sentinel label.
+    // The footer picker trigger shows the concrete route used by a dynamic
+    // selection. Best value is intentionally replaced by a local fallback in
+    // footer chrome, so the fixture uses `auto:balanced` with a resolved cloud
+    // route to exercise the shared labeler here.
     const trigger = await $('.model-picker-trigger')
     await trigger.waitForExist({ timeout: 15_000 })
-    await expect(trigger).toHaveText('Best value (plan / price)')
+    await expect(trigger).toHaveText('Claude Sonnet 4.6')
 
-    await saveAppScreenshot('footer-model-label-best-value.png')
+    await saveAppScreenshot('footer-model-label-resolved.png')
   })
 })
