@@ -3,6 +3,12 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
+/**
+ * The per-chat effort override that used to live here as a second `describe`
+ * now has its own file, model-picker-reasoning-effort.e2e.ts. It inherited this
+ * spec's `lmstudio:` selection across `reloadSession()` and was offered that
+ * model's ladder instead of its own; that file's header has the evidence.
+ */
 const LOCAL_MODEL = 'lmstudio:qwen3-coder-30b'
 const RECIPE_MODEL = 'openrouter:deepseek/deepseek-v4-flash-0731'
 
@@ -101,64 +107,5 @@ describe('per-model generation parameters', () => {
     await expect(await section.$('.model-parameter-note')).toHaveText(
       expect.stringContaining('up to the model behind it'),
     )
-  })
-})
-
-describe('per-chat reasoning effort', () => {
-  before(async function () {
-    this.timeout(90_000)
-    resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-reasoning-effort', {
-      windowBounds: { width: 1280, height: 800 },
-      model: 'claude-opus-5',
-    })
-    await browser.reloadSession()
-    await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  })
-
-  after(() => {
-    resetUserData()
-  })
-
-  it('sits in the model picker and overrides only this chat', async function () {
-    this.timeout(60_000)
-    await $('.model-picker-trigger').click()
-    const row = await $('.model-picker-group-row')
-    await row.waitForDisplayed({ timeout: 15_000 })
-    await expect(row.$('.model-picker-group-row-label')).toHaveText('Effort')
-    // Unset by default — the model's own saved level applies.
-    await expect(row.$('.model-picker-group-row-value')).toHaveText('Default')
-
-    await row.click()
-    const choices = await $$('.model-picker-menu .model-picker-option')
-    // The default, plus the six-level ladder Opus 5 accepts. A wrong count is
-    // almost always the picker offering a *different* model's ladder, and the
-    // bare number cannot say which — so name the model on the trigger and the
-    // levels on offer. `off/minimal/low/medium/high/xhigh/max` is the
-    // OpenAI-compatible ladder, which only a namespaced selection reaches.
-    if (choices.length !== 7) {
-      // Read the labels straight out of the DOM rather than mapping the element
-      // array: WDIO's `map` returns a thenable, not an array, so `Promise.all`
-      // over it throws "object is not iterable" and the diagnostic reports
-      // nothing at all — which is exactly what happened on the first attempt.
-      const shown = await browser.execute(() => ({
-        labels: [...document.querySelectorAll('.model-picker-menu .model-picker-option')].map(
-          (option) => (option.textContent ?? '').trim(),
-        ),
-        trigger: document.querySelector('.model-picker-trigger')?.textContent?.trim() ?? null,
-      }))
-      throw new Error(
-        `expected 7 effort choices for claude-opus-5, got ${choices.length}: ${JSON.stringify(shown)}`,
-      )
-    }
-    await saveElementScreenshot('.model-picker-menu', 'footer-reasoning-effort.png')
-    await choices[choices.length - 1].click()
-    await expect($('.model-picker-menu')).not.toBeDisplayed()
-
-    // The pick lands on the thread, so it survives a reopen.
-    await $('.model-picker-trigger').click()
-    await expect($('.model-picker-group-row .model-picker-group-row-value')).toHaveText('Max', {
-      wait: 10_000,
-    })
   })
 })
