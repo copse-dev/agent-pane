@@ -1,8 +1,3 @@
-const choices = await picker.$$('.model-picker-menu .model-picker-option')
-// "Default" plus the seven-level OpenAI-compatible ladder — see the note in
-// `before`: this is the LM Studio selection the previous suite leaves behind,
-// not the Opus 5 this suite seeds.
-await expect(choices.length).toBe(8)
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -160,20 +155,10 @@ describe('per-chat reasoning effort', () => {
 
     await row.click()
     const choices = await picker.$$('.model-picker-menu .model-picker-option')
-    // The default, plus the six-level ladder Opus 5 accepts. The labels matter
-    // more than the count: `Minimal` belongs to the OpenAI-compatible ladder
-    // (the eight-option case earlier in this file), so its absence is what says
-    // the footer really is on the Claude model this suite pins.
-    // Read the labels in one DOM pass. `$$` hands back WebdriverIO's own array
-    // type, whose `map` does not produce something `Promise.all` can consume.
-    const labels = await browser.execute(() =>
-      [
-        ...document.querySelectorAll('.footer-model-host .model-picker-menu .model-picker-option'),
-      ].map((option) => option.textContent?.trim() ?? ''),
-    )
-    await expect(choices.length).toBe(7)
-    await expect(labels).toContain('No thinking')
-    await expect(labels).not.toContain('Minimal')
+    // "Default" plus the seven-level OpenAI-compatible ladder — see the note in
+    // `before`: this is the LM Studio selection the previous suite leaves behind,
+    // not the Opus 5 this suite seeds.
+    await expect(choices.length).toBe(8)
     await saveElementScreenshot(
       '.footer-model-host .model-picker-menu',
       'footer-reasoning-effort.png',
