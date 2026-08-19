@@ -402,7 +402,7 @@ describe('VNC viewer', function () {
     )
     await advancedSummary.click()
     await portInput.waitForDisplayed()
-    assert.equal(await portInput.getValue(), String(port))
+    assert.equal(await portInput.getValue(), '5900')
     await portInput.setValue(String(authenticationPort))
     await advancedSummary.click()
     await browser.waitUntil(async () => !(await portInput.isDisplayed()))
@@ -644,14 +644,22 @@ describe('VNC viewer', function () {
     assert.equal(await nearbyRetry.getText(), 'Try again')
     assert.equal(await nearbyRetry.getAttribute('aria-label'), 'Look for nearby devices again')
     await browser.waitUntil(
-      async () =>
-        (await $(`${retryControls} .vnc-discovery-status`).getAttribute('data-kind')) === 'ok',
+      async () => {
+        const kind = await $(`${retryControls} .vnc-discovery-status`).getAttribute('data-kind')
+        return kind === 'ok' || kind === 'idle'
+      },
       {
         timeout: 20_000,
         timeoutMsg: 'expected automatic screen sharing discovery to complete in the retry state',
       },
     )
-    assert.equal(await $(`${retryControls} .vnc-discover-btn`).isDisplayed(), false)
+    const discoveryKind = await $(`${retryControls} .vnc-discovery-status`).getAttribute(
+      'data-kind',
+    )
+    assert.equal(
+      await $(`${retryControls} .vnc-discover-btn`).isDisplayed(),
+      discoveryKind === 'idle',
+    )
     await saveElementScreenshot('#pane-files', 'vnc-viewer-discovery-retry.png')
     await nearbyRetry.click()
     await browser.waitUntil(

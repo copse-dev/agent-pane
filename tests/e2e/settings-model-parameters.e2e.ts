@@ -132,8 +132,8 @@ describe('per-chat reasoning effort', () => {
 
     await row.click()
     const choices = await picker.$$('.model-picker-menu .model-picker-option')
-    // The default, plus the six-level ladder Opus 5 accepts.
-    await expect(choices.length).toBe(7)
+    // The default, plus the seven-level ladder Opus 5 accepts.
+    await expect(choices.length).toBe(8)
     await saveElementScreenshot(
       '.footer-model-host .model-picker-menu',
       'footer-reasoning-effort.png',

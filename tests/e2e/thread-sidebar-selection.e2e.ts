@@ -74,6 +74,11 @@ describe('sidebar thread selection styling', () => {
       const listRect = list.getBoundingClientRect()
       const rowRect = selected.getBoundingClientRect()
       const style = getComputedStyle(selected)
+      const rowPaddingProbe = document.createElement('div')
+      rowPaddingProbe.style.paddingTop = 'var(--list-row-padding-block)'
+      document.body.append(rowPaddingProbe)
+      const rowPadding = getComputedStyle(rowPaddingProbe).paddingTop
+      rowPaddingProbe.remove()
       return {
         paneLeft: paneRect.left,
         paneRight: paneRect.right,
@@ -87,9 +92,7 @@ describe('sidebar thread selection styling', () => {
         paddingRight: style.paddingRight,
         paddingBottom: style.paddingBottom,
         paddingLeft: style.paddingLeft,
-        rowPadding: getComputedStyle(document.documentElement)
-          .getPropertyValue('--list-row-padding-block')
-          .trim(),
+        rowPadding,
         headerPaddingRight: getComputedStyle(header).paddingRight,
         boxShadow: style.boxShadow,
         borderRadius: style.borderRadius,

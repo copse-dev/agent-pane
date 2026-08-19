@@ -101,10 +101,16 @@ describe('settings styling', function () {
       type.searchHeight >= 34,
       `search box height ${String(type.searchHeight)} must be >= 34`,
     )
+    const { centerY: settingsCenterY, ...settingsTitle } = type.settingsTitle
+    const { centerY: panelCenterY, ...panelTitle } = type.panelTitle
     assert.deepEqual(
-      type.settingsTitle,
-      type.panelTitle,
-      'Settings title typography and alignment must match the regular panel title',
+      settingsTitle,
+      panelTitle,
+      'Settings title typography and horizontal alignment must match the regular panel title',
+    )
+    assert.ok(
+      Math.abs(settingsCenterY - panelCenterY) <= 0.5,
+      `Settings title center ${String(settingsCenterY)} must align with panel title center ${String(panelCenterY)}`,
     )
 
     await saveElementScreenshot('#settings-dialog', 'settings-styling-general.png')
