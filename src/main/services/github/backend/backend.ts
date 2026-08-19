@@ -16,6 +16,7 @@ import { hasGitHubApiToken } from './github-token.ts'
 import { ghCliBackend } from './gh-cli-backend.ts'
 import { githubApiBackend } from './github-api-backend.ts'
 import { mockGitHubBackend } from './mock-backend.ts'
+import { cachingGitHubBackend } from './github-read-cache.ts'
 
 /** A pull request addressed by repo + number, the unit every action operates on. */
 export interface PrRef {
@@ -97,10 +98,14 @@ export function decideBackendKind(opts: {
   return opts.hasApiToken ? 'api' : 'cli'
 }
 
+const cachedApiBackend = cachingGitHubBackend(githubApiBackend)
+const cachedCliBackend = cachingGitHubBackend(ghCliBackend)
+
 /** Resolve the backend that should service GitHub reads/writes right now. */
 export function resolveGitHubBackend(): GitHubBackend {
   // The mock stands in for both real backends under e2e / unit tests, gated by
-  // the same env var the read services already honor.
+  // the same env var the read services already honor. Do not wrap it: tests
+  // mutate mock state and re-read immediately.
   if (isMockGhEnabled()) return mockGitHubBackend
   const preference =
     backendEnvOverride() ?? getSetting<GitHubBackendPreference>(GITHUB_BACKEND_SETTING, 'auto')
@@ -111,5 +116,5 @@ export function resolveGitHubBackend(): GitHubBackend {
     hasApiToken: hasGitHubApiToken(),
     sshWorkspace,
   })
-  return kind === 'api' ? githubApiBackend : ghCliBackend
+  return kind === 'api' ? cachedApiBackend : cachedCliBackend
 }

@@ -158,6 +158,19 @@ Chrome band tokens (not spacing, but reach for these before inventing heights):
 - Per user preference: before adding any constant, check whether one already exists to import/use.
 - Column widths in markdown tables are magic numbers too — see **Markdown tables in chat** below.
 
+## One vertical rhythm for list rows
+
+Every scrollable list row uses `--list-row-padding-block` (8px) for its block padding: sidebar
+thread rows (`.chat-row`, `.chats-show-more`) and project rows (`.project-row`), and the shared
+`.git-change-row` primitive behind the Changes, PR, Memories, and Roadmap lists. The panels sit
+beside each other, so a per-pane padding reads as three different products — thread rows at 40px
+next to PR rows at 24px was the symptom. Group headers (`.git-changes-section-title`,
+`.roadmap-category-header`) share `--spacing-xs` for the same reason.
+
+A row that needs more air should change the token, not opt out locally. Rows may still differ in
+what they stack inside that padding (memories rows are two lines, roadmap rows one).
+Spec: [`tests/e2e/list-row-rhythm.e2e.ts`](../tests/e2e/list-row-rhythm.e2e.ts).
+
 ## Markdown tables in chat
 
 Agent-generated GFM tables live in `.message-text`; styles in

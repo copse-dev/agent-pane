@@ -31,10 +31,8 @@ untrusted, or there is no sandbox (Windows, or init failure). Check Settings →
 Permissions and the project trust prompt.
 
 **`git fetch` asked on Windows but not on a Mac.** On a Mac the sandbox is the
-boundary. On Windows there is no jail, so the same shape is a prompt unless a
-read-tier auto-approval match applies. After
-[#1763](https://github.com/copse-dev/agent-pane/pull/1763) it will ask on
-Windows even for recognised reads.
+boundary. On Windows there is no jail, so auto-approval does not fire at all
+and every recognised shape asks — reads included.
 
 **The Shells tab never asked.** That tab is your terminal, not the agent.
 It is supposed to open without a prompt and without the sandbox. Agent

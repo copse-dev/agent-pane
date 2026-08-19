@@ -19,6 +19,7 @@ import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
+  GitCommittedChanges,
   GitFileDiff,
   GitStatusResult,
   GitBranchStatus,
@@ -335,6 +336,19 @@ export interface ApiClient {
   }
   threads: {
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
+    loadMessages: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/types').Message[]>
+    onPrRefs: (
+      handler: (
+        projectId: string,
+        refs: Array<{
+          threadId: string
+          prRefs: import('@shared/git/github-pr-url.ts').GithubPrRef[]
+        }>,
+      ) => void,
+    ) => () => void
     create: (projectId: string, thread: import('@shared/types').Thread) => Promise<void>
     appendMessage: (
       projectId: string,
@@ -875,6 +889,18 @@ export interface ApiClient {
       threadId: string,
       path: string,
     ) => Promise<GitFileDiff | null>
+    /**
+     * Files changed by commits no pull request carries yet, so committed work
+     * keeps showing in the Changes panel. Null outside a repository, or when no
+     * ref distinguishes landed from unlanded work.
+     */
+    committedChanges: (projectId: string, threadId: string) => Promise<GitCommittedChanges | null>
+    /** Base → HEAD diff for one file listed by `committedChanges`. */
+    committedFileDiff: (
+      projectId: string,
+      threadId: string,
+      path: string,
+    ) => Promise<GitFileDiff | null>
     branchStatus: (
       projectId: string,
       threadId: string,
@@ -889,9 +915,20 @@ export interface ApiClient {
     sessionBackup: (projectId: string, threadId: string) => Promise<SessionBackup | null>
     /** Revert the session backup's captured paths to their pre-session content. */
     restoreBackup: (projectId: string, threadId: string) => Promise<boolean>
+    /** Recursive execution-root change signal; consumers should debounce expensive reads. */
+    onWorkingTreeChanged: (handler: (root: string) => void) => () => void
   }
   gh: {
     status: () => Promise<GhCliStatus>
+    /** Drop TTL'd GitHub reads so the next list/details fetch hits GitHub (or a 304). */
+    invalidateReadCache: () => Promise<void>
+    /**
+     * Join or leave the process-wide PR-list poller. `includeMyPrs` is true once
+     * this window has expanded "your other PRs" so ticks keep that list warm.
+     */
+    setListWatch: (watching: boolean, includeMyPrs: boolean) => Promise<void>
+    /** Shared 30s list cadence from main — no-op unless this window is on PRs. */
+    onListsTick: (handler: () => void) => () => void
     listMyOpenPrs: () => Promise<GhPrSummary[] | null>
     listWorkspaceOpenPrs: () => Promise<GhPrSummary[]>
     prChecks: (owner: string, repo: string, number: number) => Promise<GhPrChecksState>

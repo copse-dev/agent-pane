@@ -9,8 +9,21 @@ import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { ghPrViewListSchema, ghPrViewSchema, type GhPrView } from './gh-json-schemas.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { ghPrHasCiFailures } from './github-ci-service.ts'
+import { createInFlightCoalescer } from '../coalesce-in-flight.ts'
 
 const decodeGhPr = decodeWithSchema(ghPrViewSchema)
+
+/**
+ * Duplicate-suppressor for the open-PR lookup behind `getGitBranchStatus`.
+ * Coalescing only while a lookup is in flight keeps the result live: once it
+ * settles, the next caller runs a fresh `gh` query.
+ */
+const coalesceOpenPrLookup = createInFlightCoalescer<GitOpenPr | null>()
+
+/** Keep process-global in-flight lookups isolated between project identities. */
+export function branchStatusLookupKey(projectId: string, root: string, branch: string): string {
+  return `${projectId}\0${root}\0${branch}`
+}
 
 /** Sum line add/delete counts from `git diff --numstat` output. */
 export function parseDiffNumstat(raw: string): { additions: number; deletions: number } {
@@ -77,6 +90,34 @@ async function getOpenPrForBranch(branch: string, root?: string): Promise<GitOpe
     root ? { cwd: root } : {},
   )
   return ghResult.code === 0 ? parseGhOpenPrList(ghResult.stdout.trim()) : null
+}
+
+const OPEN_PR_TTL_MS = 60_000
+const openPrForBranchCache = new Map<string, { hasOpenPr: boolean; checkedAt: number }>()
+
+/**
+ * Whether an open pull request already carries `branch` — the Changes panel's
+ * "is this committed work already under review somewhere else?" question.
+ *
+ * Cached, unlike {@link getGitBranchStatus}: the panel re-reads on every
+ * working-tree tick, and a live `gh` round trip per file save is not affordable.
+ * A PR appearing (or being merged) surfaces within the TTL, which is the same
+ * freshness the footer's own poll offers.
+ */
+export async function branchHasOpenPr(
+  projectId: string,
+  branch: string,
+  root: string | null,
+): Promise<boolean> {
+  // `gh` absent means "no PR is known", not "no PR exists". Callers treat that
+  // as no-PR, which widens what the Changes panel shows rather than hiding work.
+  if (!root || !isGhAvailable()) return false
+  const key = branchStatusLookupKey(projectId, root, branch)
+  const cached = openPrForBranchCache.get(key)
+  if (cached && Date.now() - cached.checkedAt < OPEN_PR_TTL_MS) return cached.hasOpenPr
+  const pr = await coalesceOpenPrLookup(key, () => getOpenPrForBranch(branch, root))
+  openPrForBranchCache.set(key, { hasOpenPr: pr !== null, checkedAt: Date.now() })
+  return pr !== null
 }
 
 /** Parse `gh pr view --json` output into an open PR summary, or null. */
@@ -164,6 +205,7 @@ export async function getPrWorkspaceContext(
 
 /** Branch name and open PR (when `gh` is available) for the status bar. */
 export async function getGitBranchStatus(
+  projectId: string,
   forBranch?: string,
   root: string | null = getWorkspaceRoot(),
 ): Promise<GitBranchStatus> {
@@ -181,13 +223,26 @@ export async function getGitBranchStatus(
   // that has a branch (failing nearly every workspace e2e spec via afterTest).
   if (!isGhAvailable()) return { currentBranch, pr: null }
 
-  let pr: GitOpenPr | null
-  if (forBranch && forBranch !== currentBranch) {
-    pr = await getOpenPrForBranch(forBranch, root)
-  } else {
-    const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'], { cwd: root })
-    pr = ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
-  }
+  // The PR lookup is a live GitHub API round trip, and a single thread switch
+  // asks for the same one twice: the titlebar wants the branch name and the
+  // footer chip wants the branch's PR, and both subscribe to `threads_changed`,
+  // which the store emits synchronously — so the second request is issued before
+  // the first has resolved. Key on the branch actually being looked up (the
+  // titlebar passes no `forBranch`, the footer passes the thread's, and for the
+  // active thread those are the same branch) so the pair collapses into one call.
+  // Include trusted project identity as well: local and SSH projects can share
+  // the same path and branch strings, but must never share a GitHub result.
+  const targetBranch = forBranch && forBranch !== currentBranch ? forBranch : null
+  const pr = await coalesceOpenPrLookup(
+    branchStatusLookupKey(projectId, root, targetBranch ?? currentBranch),
+    async () => {
+      if (targetBranch) return getOpenPrForBranch(targetBranch, root)
+      const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'], {
+        cwd: root,
+      })
+      return ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
+    },
+  )
 
   return { currentBranch, pr }
 }

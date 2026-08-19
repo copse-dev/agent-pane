@@ -1,15 +1,25 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { buildIndex, getIndex, invalidateIndex } from './file-index.ts'
 import {
+  emitWorkspaceIndexWatcherErrorForTest,
+  ensureWorkingTreeWatched,
   flushScheduledIndexRebuild,
+  handleWorkspaceWatchEvent,
+  isRootWatched,
+  isWorkingTreeWatched,
   scheduleIndexRebuild,
   startWorkspaceIndexWatcher,
   stopWorkspaceIndexWatcher,
 } from './workspace-index-watcher.ts'
+import {
+  flushWorkspaceChangeNotify,
+  resetWorkspaceChangeNotifyForTest,
+  setWorkspaceChangeSink,
+} from './workspace-change-notify.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('workspace-index-watcher', () => {
@@ -20,15 +30,73 @@ describe('workspace-index-watcher', () => {
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-index-watch-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     invalidateIndex()
+    resetWorkspaceChangeNotifyForTest()
     await buildIndex(tempRoot)
     startWorkspaceIndexWatcher(tempRoot)
   })
 
   afterEach(async () => {
     stopWorkspaceIndexWatcher()
+    resetWorkspaceChangeNotifyForTest()
     restoreWorkspace?.()
     invalidateIndex()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('publishes tracked generated paths without rebuilding the index from them', async () => {
+    const changedRoots: string[] = []
+    setWorkspaceChangeSink((root) => changedRoots.push(root))
+    const before = getIndex(tempRoot)?.paths.slice() ?? []
+
+    handleWorkspaceWatchEvent(tempRoot, 'node_modules/tracked-generated.js')
+    handleWorkspaceWatchEvent(tempRoot, '.git/objects/ab/cdef')
+    flushWorkspaceChangeNotify()
+    await flushScheduledIndexRebuild(tempRoot)
+
+    assert.deepEqual(changedRoots, [tempRoot])
+    assert.deepEqual(getIndex(tempRoot)?.paths, before)
+  })
+
+  it('rebuilds the index for source paths and coalesces the git signal', async () => {
+    const changedRoots: string[] = []
+    setWorkspaceChangeSink((root) => changedRoots.push(root))
+    await mkdir(join(tempRoot, 'src'), { recursive: true })
+    await writeFile(join(tempRoot, 'src', 'app.ts'), 'export {}\n', 'utf-8')
+
+    handleWorkspaceWatchEvent(tempRoot, 'src/app.ts')
+    handleWorkspaceWatchEvent(tempRoot, '.git/HEAD')
+    flushWorkspaceChangeNotify()
+    await flushScheduledIndexRebuild(tempRoot)
+
+    assert.deepEqual(changedRoots, [tempRoot])
+    assert.ok(getIndex(tempRoot)?.paths.includes('src/app.ts'))
+  })
+
+  it('arms a git-only watch without claiming the index is current', async () => {
+    const worktreeRoot = await mkdtemp(join(tmpdir(), 'copse-panel-git-only-watch-'))
+    try {
+      stopWorkspaceIndexWatcher(tempRoot)
+      ensureWorkingTreeWatched(worktreeRoot)
+      assert.equal(isWorkingTreeWatched(worktreeRoot), true)
+      assert.equal(isRootWatched(worktreeRoot), false)
+
+      const changedRoots: string[] = []
+      setWorkspaceChangeSink((root) => changedRoots.push(root))
+      handleWorkspaceWatchEvent(worktreeRoot, 'src/app.ts')
+      flushWorkspaceChangeNotify()
+      await flushScheduledIndexRebuild(worktreeRoot)
+      assert.deepEqual(changedRoots, [worktreeRoot])
+      assert.equal(getIndex(worktreeRoot), null)
+
+      startWorkspaceIndexWatcher(worktreeRoot, { withSemantic: false })
+      assert.equal(isRootWatched(worktreeRoot), true)
+      await flushScheduledIndexRebuild(worktreeRoot)
+      assert.ok(getIndex(worktreeRoot))
+    } finally {
+      stopWorkspaceIndexWatcher(worktreeRoot)
+      invalidateIndex(worktreeRoot)
+      await rm(worktreeRoot, { recursive: true, force: true })
+    }
   })
 
   it('rebuilds the file index after a debounced schedule', async () => {
@@ -57,6 +125,15 @@ describe('workspace-index-watcher', () => {
       invalidateIndex(otherRoot)
       await rm(otherRoot, { recursive: true, force: true })
     }
+  })
+
+  it('drops the watcher on error instead of leaving an uncaught exception', () => {
+    assert.equal(isRootWatched(tempRoot), true)
+    assert.equal(
+      emitWorkspaceIndexWatcherErrorForTest(tempRoot, new Error('ENOENT: watch root gone')),
+      true,
+    )
+    assert.equal(isRootWatched(tempRoot), false)
   })
 
   it('stopping one root leaves the other watched', async () => {

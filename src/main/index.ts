@@ -1,4 +1,23 @@
 import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import {
+  armPerfTrace,
+  flushPerfTrace,
+  perfDumpCounters,
+  perfMark,
+} from './services/diagnostics/perf-trace.ts'
+import {
+  installIpcPerfTracing,
+  installRendererPerfChannel,
+} from './services/diagnostics/perf-ipc.ts'
+
+// DEBUG BRANCH (`COPSE_PERF=1` only, inert otherwise). Armed here, above every
+// other import's side effects, for two reasons: it fixes the trace origin at the
+// earliest moment main can observe, and it publishes `COPSE_PERF_ORIGIN` into
+// the environment before any renderer process is forked, which is what lets
+// renderer timestamps share an axis with main's.
+armPerfTrace()
+installIpcPerfTracing()
+
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
@@ -52,7 +71,11 @@ import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
-import { reapOversizedGortexDaemon, stopGortexDaemon } from './services/search/semantic-index.ts'
+import {
+  reapOversizedGortexDaemon,
+  reclaimBloatedGortexStore,
+  stopGortexDaemon,
+} from './services/search/semantic-index.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
@@ -118,6 +141,7 @@ import {
   startEventLoopWatchdog,
   stopEventLoopWatchdog,
 } from './services/diagnostics/event-loop-watchdog.ts'
+import { installProcessFaultHandlers } from './services/diagnostics/process-faults.ts'
 import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
@@ -150,6 +174,8 @@ import { installDarkFactorySensor } from './services/supervisor/dark-factory-sen
 import { installCiWatchConsumer } from './services/github/ci-watch-service.ts'
 import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
+import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
+import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
 
 // Settings encrypts API keys through whichever cipher is installed rather than
 // importing `safeStorage` itself, which is what keeps `createRegistry()` and
@@ -162,6 +188,16 @@ setSecretCipher({
   decryptString: (encrypted) => safeStorage.decryptString(encrypted),
 })
 const taskSupervisor = getTaskSupervisor()
+
+// Record escaped faults and quit through the normal cleanup path so an
+// uncaught watcher/`error` event drains the write queue instead of dying
+// mid-write. Watcher sites also bind their own listeners; this is the backstop.
+installProcessFaultHandlers({
+  onUncaughtException: () => {
+    approveClose()
+    app.quit()
+  },
+})
 
 setBrowserSessionPlatform({
   createWindow: (options) => new BrowserWindow(options),
@@ -191,8 +227,18 @@ setContextEstimateRefreshSink(() => {
   win.webContents.send('agent:refresh_context_estimate')
 })
 
+setWorkspaceChangeSink((root) => {
+  broadcastToAppWindows('git:working_tree_changed', root)
+})
+
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
+app.on('child-process-gone', (_event, details) => {
+  console.error(
+    `[process] child gone type=${details.type} reason=${details.reason} exitCode=${String(details.exitCode)}`,
+  )
+})
+
 app.on('web-contents-created', (_event, contents) => {
   if (isBrowserWebContents(contents)) {
     attachBrowserGuestWindowOpen(contents)
@@ -258,6 +304,8 @@ app
     // most expensive to diagnose after the fact (issue #995).
     startEventLoopWatchdog()
     recordStartupPhase('app-ready')
+    perfMark('main:app-ready')
+    installRendererPerfChannel()
 
     // Before we allocate our window/renderer: reap an oversized gortex daemon
     // left over from a previous (possibly SIGKILLed) session. Freeing its memory
@@ -265,11 +313,17 @@ app
     // from pushing the machine over its ceiling and OOM-killing us mid-boot.
     recordStartupPhase('reap-gortex')
     await reapOversizedGortexDaemon()
+    // Then shed a store that has bloated past its ceiling. Must follow the reap
+    // and precede any tracking: the daemon holds store.sqlite open, so this
+    // stops it before unlinking (otherwise the space stays held by the open
+    // inode). The index is derived data and rebuilds on the next workspace open.
+    await reclaimBloatedGortexStore()
 
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
 
     recordStartupPhase('window-create')
+    perfMark('main:window-create')
     const win = createMainWindow()
     // The shell tool streams child output through a sink rather than reaching
     // for the window itself, so `createRegistry()` stays importable without
@@ -348,6 +402,7 @@ app
     const disposeTerminalHandlers = initTerminal(win)
     const disposeVncHandlers = initVnc(win)
     recordStartupPhase('register-handlers')
+    perfMark('main:register-handlers')
     registerAllHandlers(win, registry)
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
@@ -710,6 +765,12 @@ app
     await loadCustomTools(registry)
 
     recordStartupPhase('boot-complete')
+    perfMark('main:boot-complete')
+    // Counters accumulated during boot (per-IPC-channel totals, thread-store and
+    // storage reads) are dumped at each boundary and reset, so the "boot" figures
+    // and the later "switch" figures never blur together.
+    perfDumpCounters('boot-complete')
+    flushPerfTrace()
     // Print the boot timeline and flag any phase over its ceiling (#994). Every
     // expensive thing above scales with something CI does not have — profile
     // size, workspace size, MCP server count — so this is the one place the
@@ -754,6 +815,9 @@ let disposeTaskSupervisorEvents: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
+  perfMark('main:quit')
+  perfDumpCounters('quit')
+  flushPerfTrace()
   getAutomationService().stop()
   disposeDarkFactorySensor?.()
   disposeDarkFactorySensor = undefined

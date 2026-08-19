@@ -10,6 +10,7 @@ import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 import { MainWindowRegistry, type MainWindowContext } from './main-window-registry.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
 import { registerAppWindow } from './app-window-broadcast.ts'
+import { attachRendererCrashRecovery } from './renderer-crash-recovery.ts'
 
 const mainWindowRegistry = new MainWindowRegistry<BrowserWindow>()
 
@@ -112,6 +113,10 @@ export function createMainWindow(): BrowserWindow {
     mainWindowRegistry.unregister(context.id)
   })
   attachWebContentsLockdown(win.webContents)
+  attachRendererCrashRecovery(win.webContents)
+  win.on('unresponsive', () => {
+    console.warn('[renderer] main window became unresponsive')
+  })
   win.once('ready-to-show', () => {
     win.show()
   })

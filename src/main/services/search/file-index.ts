@@ -15,6 +15,18 @@ interface FileIndex {
   paths: string[]
   lastBuilt: number
   memoryBytes: number
+  /**
+   * Whether the listing subprocess overflowed its output cap, so `paths` holds
+   * only part of the tree. Scale decisions must not read a truncated listing as
+   * a small workspace (#795).
+   */
+  truncated: boolean
+}
+
+/** A listing plus whether it is the whole tree. */
+interface Listing {
+  paths: string[]
+  truncated: boolean
 }
 
 /**
@@ -48,24 +60,28 @@ function isIndexableRelativePath(rel: string): boolean {
   return !parts.some((part) => part === 'node_modules' || part.startsWith('.'))
 }
 
-async function listFilesViaFind(workspaceRoot: string): Promise<string[]> {
-  const { stdout, code } = await runCommand('find', [workspaceRoot, '-type', 'f'], {
-    ...LIST_CMD_OPTS,
-    cwd: workspaceRoot,
-  })
-  if (code !== 0) return []
+async function listFilesViaFind(workspaceRoot: string): Promise<Listing> {
+  const { stdout, code, stdoutTruncated } = await runCommand(
+    'find',
+    [workspaceRoot, '-type', 'f'],
+    {
+      ...LIST_CMD_OPTS,
+      cwd: workspaceRoot,
+    },
+  )
+  if (code !== 0) return { paths: [], truncated: false }
   const paths: string[] = []
   for (const full of stdout.split('\n').filter(Boolean)) {
     const rel = await toRelativePathWithinRoot(full, workspaceRoot)
     if (isIndexableRelativePath(rel)) paths.push(rel)
   }
-  return paths
+  return { paths, truncated: stdoutTruncated }
 }
 
-async function listFilesViaRg(workspaceRoot: string): Promise<string[]> {
+async function listFilesViaRg(workspaceRoot: string): Promise<Listing> {
   // No `--sort path`: sorting waits for the full walk and slows SSH listings.
   // Sort relative paths in-process after the listing completes.
-  const { stdout } = await runCommand('rg', ['--files', workspaceRoot], {
+  const { stdout, stdoutTruncated } = await runCommand('rg', ['--files', workspaceRoot], {
     ...LIST_CMD_OPTS,
     cwd: workspaceRoot,
   })
@@ -76,25 +92,34 @@ async function listFilesViaRg(workspaceRoot: string): Promise<string[]> {
       .map((p) => toRelativePathWithinRoot(p, workspaceRoot)),
   )
   paths.sort((a, b) => a.localeCompare(b))
-  return paths
+  return { paths, truncated: stdoutTruncated }
 }
 
 async function runBuild(key: string, workspaceRoot: string): Promise<void> {
   indexBuildStarted('fileIndex')
   try {
-    let paths: string[]
+    let listing: Listing
     if (await isRgAvailableForTarget()) {
-      paths = await listFilesViaRg(workspaceRoot)
+      listing = await listFilesViaRg(workspaceRoot)
     } else if (isActiveSshWorkspace()) {
-      paths = await listFilesViaFind(workspaceRoot)
+      listing = await listFilesViaFind(workspaceRoot)
     } else {
-      paths = await walkPaths(workspaceRoot, workspaceRoot)
-      paths.sort((a, b) => a.localeCompare(b))
+      // The in-process walk streams into an array — no subprocess pipe, so
+      // nothing to overflow.
+      const walked = await walkPaths(workspaceRoot, workspaceRoot)
+      walked.sort((a, b) => a.localeCompare(b))
+      listing = { paths: walked, truncated: false }
+    }
+    if (listing.truncated) {
+      console.warn(
+        `[copse-panel] file listing for ${workspaceRoot} exceeded its output cap; the index holds only ${String(listing.paths.length)} of its paths`,
+      )
     }
     indexes.set(key, {
-      paths,
+      paths: listing.paths,
       lastBuilt: Date.now(),
-      memoryBytes: estimateIndexMemoryBytes(paths),
+      memoryBytes: estimateIndexMemoryBytes(listing.paths),
+      truncated: listing.truncated,
     })
     indexBuildFinished('fileIndex', true)
   } catch (err) {
@@ -172,13 +197,16 @@ export function invalidateIndex(root?: string): void {
 /**
  * Scale evidence for the #795 index policy. Path count comes from the bounded
  * file listing; byte estimate is reserved for a later sampling slice (null today).
+ *
+ * `listingTruncated` says the count is a floor rather than a total — without it
+ * the policy reads an overflowed listing as a workspace small enough to index.
  */
 export function getIndexStats(
   root: string,
-): { pathCount: number; byteEstimate: number | null } | null {
+): { pathCount: number; byteEstimate: number | null; listingTruncated: boolean } | null {
   const entry = indexes.get(resolve(root))
   if (!entry) return null
-  return { pathCount: entry.paths.length, byteEstimate: null }
+  return { pathCount: entry.paths.length, byteEstimate: null, listingTruncated: entry.truncated }
 }
 
 /** Test hook — install a fixed file index for a root without scanning it. */
@@ -190,6 +218,7 @@ export function setIndexForTest(paths: string[] | null, root: string): void {
       paths,
       lastBuilt: Date.now(),
       memoryBytes: estimateIndexMemoryBytes(paths),
+      truncated: false,
     })
 }
 

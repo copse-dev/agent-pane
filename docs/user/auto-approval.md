@@ -33,15 +33,11 @@ All of these still ask, even at the highest level:
 
 - the workspace is not trusted;
 - auto-run (the checkbox above the dropdown) is off;
-- there is no project sandbox — Windows, or a sandbox that failed to start —
-  **for write-level shapes**. Write tiers are capped at Reads without
-  containment, because they run git hooks.
+- there is no project sandbox — Windows, or a sandbox that failed to start.
+  Every recognised shape asks without containment, reads included: these
+  shapes are granted by class rather than typed out one binary at a time, so
+  running them unprompted on an uncontained host is not a bar we hold.
 - the command is not on the allow-list.
-
-On current `main`, a recognised **read**-tier shape can still skip the prompt
-without a sandbox. [#1763](https://github.com/copse-dev/agent-pane/pull/1763)
-closes that: after it lands, every recognised shape asks when there is no
-sandbox. That is the public bar.
 
 **You should see** `git fetch origin` and `git status` run without a dialog in
 a trusted macOS or Linux project with the default Reads level and a live
