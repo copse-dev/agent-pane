@@ -2,10 +2,99 @@ import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type { Thread } from '@shared/types'
+import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
+import type { EnqueueSupervisedTaskInput } from '../supervisor/task-supervisor.ts'
 import { storageSet } from '../storage/storage.ts'
-import { createAutomationService } from './automation-service.ts'
+import { createAutomationService, type AutomationTaskSupervisor } from './automation-service.ts'
 
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
+const SCHEDULER_HANDLER = 'automation_scheduler_tick'
+
+/**
+ * Durable tasks only become visible once `start()` has replayed them off disk,
+ * which is the ordering the real supervisor imposes on a cold launch.
+ */
+class FakeTaskSupervisor implements AutomationTaskSupervisor {
+  readonly enqueued: EnqueueSupervisedTaskInput[] = []
+  readonly cancelled: string[] = []
+  private readonly durable: SupervisedTaskMeta[]
+  private tasks: SupervisedTaskMeta[] = []
+  private started: Promise<void> | null = null
+  private nextId = 0
+
+  constructor(durable: readonly SupervisedTaskMeta[] = []) {
+    this.durable = [...durable]
+  }
+
+  start(): Promise<void> {
+    // Idempotent, like the real supervisor's memoised `startPromise`.
+    if (!this.started) {
+      this.tasks = [...this.durable]
+      this.started = Promise.resolve()
+    }
+    return this.started
+  }
+
+  syncCronTasks(): void {}
+
+  list(projectId?: string): SupervisedTaskMeta[] {
+    return this.tasks.filter((task) => projectId === undefined || task.projectId === projectId)
+  }
+
+  cancel(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null> {
+    this.cancelled.push(taskId)
+    const task = this.tasks.find(
+      (candidate) => candidate.projectId === projectId && candidate.taskId === taskId,
+    )
+    if (!task) return Promise.resolve(null)
+    const next: SupervisedTaskMeta = { ...task, state: 'cancelled' }
+    this.tasks = this.tasks.map((candidate) => (candidate === task ? next : candidate))
+    return Promise.resolve(next)
+  }
+
+  enqueue(input: EnqueueSupervisedTaskInput): Promise<SupervisedTaskMeta> {
+    this.enqueued.push(input)
+    this.nextId += 1
+    const task = schedulerTask({
+      taskId: `enqueued-${String(this.nextId)}`,
+      projectId: input.projectId,
+      threadId: input.threadId,
+    })
+    this.tasks = [...this.tasks, task]
+    return Promise.resolve(task)
+  }
+
+  registerHandler(): () => void {
+    return () => {}
+  }
+}
+
+function schedulerTask(input: {
+  taskId: string
+  projectId: string
+  threadId: string
+}): SupervisedTaskMeta {
+  return {
+    taskId: input.taskId,
+    projectId: input.projectId,
+    threadId: input.threadId,
+    handler: SCHEDULER_HANDLER,
+    provenance: 'schedule',
+    state: 'waiting',
+    createdAt: 0,
+    updatedAt: 0,
+    trigger: { kind: 'cron', expression: '* * * * *' },
+    permissionSnapshot: {
+      capturedAt: 0,
+      autoRunSandboxCommands: false,
+      projectSandboxEnabled: false,
+    },
+    reapproveOnWake: false,
+    concurrencyClass: 'schedule',
+    attempt: 0,
+    maxAttempts: 1,
+  }
+}
 
 describe('AutomationService', () => {
   beforeEach(() => {
@@ -302,5 +391,110 @@ describe('AutomationService', () => {
     assert.equal(third.disposition, 'coalesced')
     assert.equal(third.coalescedReason, 'worktree-limit')
     assert.equal(threads.size, 2)
+  })
+  it('adopts the durable scheduler task instead of enqueuing one per launch', async () => {
+    const scheduleId = 'schedule-1'
+    storageSet(STORAGE_KEY, [
+      {
+        id: scheduleId,
+        projectId: 'project-a',
+        name: 'Morning review',
+        cron: '0 9 * * 1-5',
+        prompt: 'Review the current project.',
+        model: 'gpt-5.4',
+        enabled: true,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ])
+    const supervisor = new FakeTaskSupervisor([
+      schedulerTask({ taskId: 'durable-1', projectId: 'project-a', threadId: scheduleId }),
+    ])
+    const service = createAutomationService({
+      now: () => 0,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
+      supervisor: () => supervisor,
+    })
+
+    service.start(() => {})
+    await service.sync()
+
+    assert.deepEqual(supervisor.enqueued, [])
+    assert.deepEqual(supervisor.cancelled, [])
+    assert.equal(supervisor.list('project-a').length, 1)
+  })
+
+  it('cancels surplus scheduler tasks left by earlier launches', async () => {
+    const scheduleId = 'schedule-1'
+    storageSet(STORAGE_KEY, [
+      {
+        id: scheduleId,
+        projectId: 'project-a',
+        name: 'Morning review',
+        cron: '0 9 * * 1-5',
+        prompt: 'Review the current project.',
+        model: 'gpt-5.4',
+        enabled: true,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ])
+    const supervisor = new FakeTaskSupervisor([
+      schedulerTask({ taskId: 'durable-1', projectId: 'project-a', threadId: scheduleId }),
+      schedulerTask({ taskId: 'durable-2', projectId: 'project-a', threadId: scheduleId }),
+    ])
+    const service = createAutomationService({
+      now: () => 0,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
+      supervisor: () => supervisor,
+    })
+
+    service.start(() => {})
+    await service.sync()
+
+    assert.deepEqual(supervisor.enqueued, [])
+    assert.deepEqual(supervisor.cancelled, ['durable-2'])
+    assert.equal(supervisor.list('project-a').filter((task) => task.state === 'waiting').length, 1)
+  })
+
+  it('enqueues one scheduler task when none survived on disk', async () => {
+    const scheduleId = 'schedule-1'
+    storageSet(STORAGE_KEY, [
+      {
+        id: scheduleId,
+        projectId: 'project-a',
+        name: 'Morning review',
+        cron: '0 9 * * 1-5',
+        prompt: 'Review the current project.',
+        model: 'gpt-5.4',
+        enabled: true,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ])
+    const supervisor = new FakeTaskSupervisor()
+    const service = createAutomationService({
+      now: () => 0,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
+      supervisor: () => supervisor,
+    })
+
+    service.start(() => {})
+    await service.sync()
+    // A second sync must adopt what the first one enqueued.
+    await service.sync()
+
+    assert.equal(supervisor.enqueued.length, 1)
+    assert.equal(supervisor.enqueued[0]?.threadId, scheduleId)
+    assert.deepEqual(supervisor.cancelled, [])
   })
 })
