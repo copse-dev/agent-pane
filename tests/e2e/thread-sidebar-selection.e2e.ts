@@ -103,10 +103,13 @@ describe('sidebar thread selection styling', () => {
     expect(Math.abs(geometry!.rowRight - geometry!.paneRight)).toBeLessThanOrEqual(1)
     expect(geometry!.boxShadow).toMatch(/-2px/)
     expect(geometry!.borderRadius).toBe('0px')
-    // Roomier than the previous 4px vertical padding, with the trailing edge
-    // aligned to the shared projects action column.
-    expect(Number.parseFloat(geometry!.paddingTop)).toBeGreaterThanOrEqual(12)
-    expect(Number.parseFloat(geometry!.paddingBottom)).toBeGreaterThanOrEqual(12)
+    // Roomier than the original 4px vertical padding, with the trailing edge
+    // aligned to the shared projects action column. The floor tracks
+    // `--list-row-padding-block` (8px), the one rhythm #1790 gave sidebar, PR
+    // and roadmap rows — so it is deliberately not a bound of its own to drift
+    // away from that token again.
+    expect(Number.parseFloat(geometry!.paddingTop)).toBeGreaterThanOrEqual(8)
+    expect(Number.parseFloat(geometry!.paddingBottom)).toBeGreaterThanOrEqual(8)
     expect(geometry!.paddingRight).toBe(geometry!.headerPaddingRight)
     expect(Number.parseFloat(geometry!.paddingLeft)).toBe(28)
 
