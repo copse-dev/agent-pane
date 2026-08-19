@@ -60,8 +60,6 @@ describe('git changes viewer', function () {
       timeout: 30_000,
       timeoutMsg: 'expected at least 3 changed-file rows',
     })
-    const rows = await $$('.git-change-row')
-
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-list.png'))
 
     // Section titles reflect staged vs unstaged counts. CSS uppercases the text,
@@ -104,9 +102,9 @@ describe('git changes viewer', function () {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-external-refresh.png'))
 
     // Opening the panel auto-selects the first changed file (staged.ts).
-    const stagedRow = await rows.find(
-      async (r) => (await r.$('.git-change-path').getText()) === 'staged.ts',
-    )
+    // Re-query after the external refresh: it replaces the row DOM, so handles
+    // captured before the filesystem event are stale by design.
+    const stagedRow = await $('.git-change-row*=staged.ts')
     await expect(stagedRow).toHaveElementClass('is-selected')
 
     const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor')

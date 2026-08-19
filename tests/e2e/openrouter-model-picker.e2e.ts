@@ -154,7 +154,7 @@ describe('OpenRouter model picker', () => {
 
     assert.equal(recent.title, 'Recent')
     assert.deepEqual(recent.groupLabels, [])
-    assert.deepEqual(recent.optionLabels, ['Qwen3 235B A22B (free)', 'Claude 3.5 Sonnet (paid)'])
+    assert.deepEqual(recent.optionLabels, ['Qwen3 235B A22B (free)', 'Claude Sonnet 3.5 (paid)'])
     assert.ok(!recent.optionLabels.includes('Gemini 2.5 Pro (paid)'))
 
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-menu.png')
@@ -183,7 +183,7 @@ describe('OpenRouter model picker', () => {
       `expected the free Qwen model, saw ${JSON.stringify(picker.optionLabels)}`,
     )
     assert.ok(
-      picker.optionLabels.includes('Claude 3.5 Sonnet (paid)'),
+      picker.optionLabels.includes('Claude Sonnet 3.5 (paid)'),
       `expected the paid Claude model, saw ${JSON.stringify(picker.optionLabels)}`,
     )
     assert.ok(
@@ -233,7 +233,7 @@ describe('OpenRouter model picker', () => {
       initialOptions,
       [
         { text: 'Qwen3 235B A22B (free)', active: 'true' },
-        { text: 'Claude 3.5 Sonnet (paid)', active: 'false' },
+        { text: 'Claude Sonnet 3.5 (paid)', active: 'false' },
       ],
       'the currently applied model should be highlighted when the picker opens',
     )
@@ -250,7 +250,7 @@ describe('OpenRouter model picker', () => {
     )
     assert.deepEqual(afterArrow, [
       { text: 'Qwen3 235B A22B (free)', active: 'false', hasActiveClass: false },
-      { text: 'Claude 3.5 Sonnet (paid)', active: 'true', hasActiveClass: true },
+      { text: 'Claude Sonnet 3.5 (paid)', active: 'true', hasActiveClass: true },
     ])
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-keyboard.png')
 
@@ -260,7 +260,7 @@ describe('OpenRouter model picker', () => {
     })
     await browser.keys('Enter')
     await $('.model-picker-menu').waitForDisplayed({ reverse: true, timeout: 5_000 })
-    assert.equal((await $('.model-picker-label').getText()).trim(), 'Claude 3.5 Sonnet (paid)')
+    assert.equal((await $('.model-picker-label').getText()).trim(), 'Claude Sonnet 3.5 (paid)')
     assert.equal(
       await browser.execute(() => document.activeElement?.classList.contains('prompt-input')),
       true,
@@ -346,7 +346,7 @@ describe('OpenRouter model picker', () => {
     const warning = await $('.composer-image-warning')
     await warning.waitForDisplayed({ timeout: 10_000 })
     assert.match(await warning.getText(), /Qwen3 235B A22B \(free\) can’t read image input/)
-    assert.match(await warning.getText(), /Use Claude 3.5 Sonnet \(paid\)/)
+    assert.match(await warning.getText(), /Use Claude Sonnet 3.5 \(paid\)/)
     assert.match(await warning.getText(), /Describe locally with qwen\/qwen3-vl/)
     await expect(await $('.composer-image-describe-btn').isDisplayed()).toBe(true)
     await expect(await $('.composer-image-without-btn').isDisplayed()).toBe(true)

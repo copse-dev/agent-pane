@@ -122,25 +122,30 @@ describe('per-chat reasoning effort', () => {
 
   it('sits in the model picker and overrides only this chat', async function () {
     this.timeout(60_000)
-    await $('.model-picker-trigger').click()
-    const row = await $('.model-picker-group-row')
+    const picker = await $('.footer-model-host .model-picker')
+    await picker.$('.model-picker-trigger').click()
+    const row = await picker.$('.model-picker-group-row')
     await row.waitForDisplayed({ timeout: 15_000 })
     await expect(row.$('.model-picker-group-row-label')).toHaveText('Effort')
     // Unset by default — the model's own saved level applies.
     await expect(row.$('.model-picker-group-row-value')).toHaveText('Default')
 
     await row.click()
-    const choices = await $$('.model-picker-menu .model-picker-option')
+    const choices = await picker.$$('.model-picker-menu .model-picker-option')
     // The default, plus the six-level ladder Opus 5 accepts.
     await expect(choices.length).toBe(7)
-    await saveElementScreenshot('.model-picker-menu', 'footer-reasoning-effort.png')
+    await saveElementScreenshot(
+      '.footer-model-host .model-picker-menu',
+      'footer-reasoning-effort.png',
+    )
     await choices[choices.length - 1].click()
-    await expect($('.model-picker-menu')).not.toBeDisplayed()
+    await expect(picker.$('.model-picker-menu')).not.toBeDisplayed()
 
     // The pick lands on the thread, so it survives a reopen.
-    await $('.model-picker-trigger').click()
-    await expect($('.model-picker-group-row .model-picker-group-row-value')).toHaveText('Max', {
-      wait: 10_000,
-    })
+    await picker.$('.model-picker-trigger').click()
+    await expect(picker.$('.model-picker-group-row .model-picker-group-row-value')).toHaveText(
+      'Max',
+      { wait: 10_000 },
+    )
   })
 })
