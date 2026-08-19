@@ -96,7 +96,11 @@ import { startAgentController } from './controller/agent.ts'
 import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
-import { loadProjects, attachAutosave } from './controller/persistence.ts'
+import {
+  loadProjects,
+  attachAutosave,
+  setNavigationOwnership,
+} from './controller/persistence.ts'
 import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
 import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
@@ -181,6 +185,11 @@ if (popoutMode) {
   document.documentElement.classList.add('is-popout')
   document.documentElement.setAttribute('data-popout-mode', popoutMode)
 }
+// A pop-out restores the same project as its parent, but it does not own where
+// the workspace is pointed — the main process rejects `setNavigation` from any
+// window that is not a registered full main window. Declared here, beside the
+// other pop-out boot decisions, and before `boot()` reaches `restoreProject`.
+setNavigationOwnership(popoutMode === null)
 
 // The app shell ships these mount points in index.html; a missing one is a
 // build/markup bug we want to surface loudly rather than silently no-op.

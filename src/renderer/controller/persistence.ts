@@ -51,10 +51,34 @@ function serializedWrite(key: string, write: () => Promise<void>): Promise<void>
   return next
 }
 
+/**
+ * Whether this window owns the persisted navigation (active project + thread).
+ *
+ * A pane pop-out boots this same renderer and restores the same project, but it
+ * is a secondary *view* of the main window's workspace and does not own where
+ * that workspace is pointed. The main process enforces this — `setNavigation`
+ * rejects any sender that is not a registered full main window — so a pop-out
+ * asking to persist navigation is not a recoverable write, it is a call it
+ * should never have made. `main.ts` already withholds `attachAutosave` from a
+ * pop-out for the same reason; this covers the direct `saveProjects` calls on
+ * its boot path.
+ *
+ * Left as an explicit flag rather than softening the main-process guard: a full
+ * main window that failed to register is a real bug, and it should still be
+ * loud.
+ */
+let ownsNavigation = true
+
+/** Set once at boot. A pane pop-out passes `false`. */
+export function setNavigationOwnership(owns: boolean): void {
+  ownsNavigation = owns
+}
+
 function serializedNavigation(
   api: ApiClient,
   navigation: import('@shared/types/main-window.ts').MainWindowNavigation,
 ): Promise<void> {
+  if (!ownsNavigation) return Promise.resolve()
   return serializedWrite('mainWindow:navigation', () => api.windowState.setNavigation(navigation))
 }
 
@@ -157,6 +181,7 @@ export function __resetPersistenceForTest(): void {
   persistedMeta.clear()
   writeChains.clear()
   activeAutosave = null
+  ownsNavigation = true
 }
 
 export async function loadProjects(api: ApiClient): Promise<{
