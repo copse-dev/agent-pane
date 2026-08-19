@@ -96,11 +96,7 @@ import { startAgentController } from './controller/agent.ts'
 import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
-import {
-  loadProjects,
-  attachAutosave,
-  setNavigationOwnership,
-} from './controller/persistence.ts'
+import { loadProjects, attachAutosave, setNavigationOwnership } from './controller/persistence.ts'
 import { begin as perfBegin, mark as perfMark } from './perf.ts'
 import { attachThreadHydration } from './controller/thread-hydration.ts'
 import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
