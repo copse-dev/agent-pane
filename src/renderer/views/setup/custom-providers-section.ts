@@ -11,6 +11,7 @@ import { blendedRate } from '@copse/llm/pareto-frontier.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { closeIcon, plusIcon } from '../../dom/icons.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
+import { showConfirmDialog } from '../../views/confirm-dialog.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
 
 // Unified "Providers" panel: a chip row selects one provider and shows its form.
@@ -846,21 +847,36 @@ export function createCustomProvidersSection(
           status.className = 'key-status err'
           return
         }
+        const key = keyInput.value.trim()
         const slug = (slugInput.value.trim() || providerSlugFromBaseUrl(baseUrl)).toLowerCase()
         const label = labelInput.value.trim()
         setInlineStatus(status, 'pending', 'Saving…')
         status.className = 'key-status'
         try {
-          const before = new Set(providers.map((p) => p.id))
           const next = await api.settings.saveExtraProvider({
             ...(slug ? { slug } : {}),
             ...(label ? { label } : {}),
             baseUrl,
           })
-          const created = next.find((p) => !before.has(p.id))
-          const key = keyInput.value.trim()
-          if (key && created) await api.settings.setKey(created.id, key)
-          if (created) selected = created.id
+          const savedRecord = next.find((p) => p.id === slug)
+          // The resolved slug is the provider we just created (or re-saved), so
+          // persist any entered key against it right here on "Add" — not gated
+          // on the `created` diff, which is only the brand-new entry and is
+          // empty on a re-add. Without this the key does not survive a restart
+          // because the dialog-level save flushes only `pendingKeys`, and a
+          // fresh add never put the value there.
+          if (key) {
+            const saved = await persistProviderKey(slug, key, label || (savedRecord?.label ?? slug))
+            if (!saved) {
+              setInlineStatus(status, 'error', 'Provider saved, but the key was not stored')
+              status.className = 'key-status err'
+            }
+          } else {
+            // No key typed: still stage a future value under the resolved slug
+            // so a later Save with a key has a stable target.
+            pendingKeys.set(slug, '')
+          }
+          if (savedRecord) selected = savedRecord.id
           await refresh()
         } catch (err) {
           setInlineStatus(
@@ -984,10 +1000,45 @@ export function createCustomProvidersSection(
     opts.onChanged?.()
   }
 
+  // Per-key plaintext storage consent, matching the fixed cloud-provider flow
+  // (api-keys-section.ts). Shown only when OS secure storage is unavailable
+  // and the user has not yet approved storing this key unencrypted.
+  async function confirmPlaintextStorage(label: string): Promise<boolean> {
+    return showConfirmDialog({
+      message: `No OS keyring is available to encrypt your ${label} key at rest. Install and unlock a system keyring to store it encrypted.`,
+      detail: 'Store it unencrypted on this machine anyway?',
+      confirmLabel: 'Store anyway',
+    })
+  }
+
+  // Display label for a provider slug, used in the plaintext-consent prompt.
+  function providerLabelFor(slug: string): string {
+    return (
+      providers.find((p) => p.id === slug)?.label ??
+      nativeById.get(slug)?.label ??
+      fixedById.get(slug)?.label ??
+      slug
+    )
+  }
+
+  // Persist one key, honouring the plaintext gate the same way the fixed
+  // cloud-provider section does (api-keys-section.ts): an OS-secure-storage
+  // refusal returns `plaintext-consent-required`, so prompt for explicit
+  // consent and retry with `allowPlaintext` before giving up. Without this the
+  // key would be dropped silently and "forgotten" next launch.
+  async function persistProviderKey(slug: string, key: string, label: string): Promise<boolean> {
+    const trimmed = key.trim()
+    if (!trimmed) return true
+    let result = await api.settings.setKey(slug, trimmed)
+    if (!result.ok && (await confirmPlaintextStorage(label))) {
+      result = await api.settings.setKey(slug, trimmed, { allowPlaintext: true })
+    }
+    return result.ok
+  }
+
   async function saveKeys(): Promise<void> {
     for (const [slug, key] of pendingKeys) {
-      const trimmed = key.trim()
-      if (trimmed) await api.settings.setKey(slug, trimmed)
+      await persistProviderKey(slug, key, providerLabelFor(slug))
     }
     pendingKeys.clear()
     // Persist the OpenRouter custom model id only if it was touched, so leaving

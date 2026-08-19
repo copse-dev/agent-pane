@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
+import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
+
+// DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
+// captures it, so every channel the renderer calls is timed. No-op otherwise.
+installPreloadPerfTracing()
+exposePerfBridge()
 
 contextBridge.exposeInMainWorld('api', {
   workspace: {
@@ -555,6 +561,23 @@ contextBridge.exposeInMainWorld('api', {
   },
   threads: {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:loadProject', projectId),
+    loadMessages: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:loadMessages', projectId, threadId),
+    onPrRefs: (
+      handler: (projectId: string, refs: Array<{ threadId: string; prRefs: unknown[] }>) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        projectId: string,
+        refs: Array<{ threadId: string; prRefs: unknown[] }>,
+      ): void => {
+        handler(projectId, refs)
+      }
+      ipcRenderer.on('threads:pr_refs', listener)
+      return (): void => {
+        ipcRenderer.removeListener('threads:pr_refs', listener)
+      }
+    },
     create: (projectId: string, thread: import('@shared/types').Thread) =>
       ipcRenderer.invoke('threads:create', projectId, thread),
     appendMessage: (
@@ -1068,6 +1091,10 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('git:fileDiff', projectId, threadId, path, staged),
     workingFileDiff: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('git:workingFileDiff', projectId, threadId, path),
+    committedChanges: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:committedChanges', projectId, threadId),
+    committedFileDiff: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('git:committedFileDiff', projectId, threadId, path),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branchStatus', projectId, threadId, forBranch),
     promptState: (projectId: string, threadId: string) =>
