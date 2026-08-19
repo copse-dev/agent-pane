@@ -405,6 +405,26 @@ describe('gortex daemon scoping + reaping', () => {
     assert.ok(parseGortexExcludes(repaired).includes('node_modules/'))
   })
 
+  it('does not carry a torn config’s duplicate repos and excludes into the rewrite', () => {
+    // The concurrent writers that tear the file are the same ones that append
+    // an entry twice, so the salvage sees duplicates; the rewrite is what
+    // gortex keeps from then on.
+    const torn = [
+      'repos:',
+      '    - path: /tmp/repo',
+      '    - path: /tmp/repo',
+      'exclude:',
+      '    - node_modules/',
+      '    - dist/',
+      '    - node_modules/',
+      's/',
+      '',
+    ].join('\n')
+    const repaired = repairGortexConfigYaml(torn)
+    assert.deepEqual(parseTrackedRepos(repaired), ['/tmp/repo'])
+    assert.deepEqual(parseGortexExcludes(repaired), ['node_modules/', 'dist/'])
+  })
+
   it('repairCorruptGortexConfig is best-effort and never throws on the boot path', async () => {
     await assert.doesNotReject(repairCorruptGortexConfig())
   })

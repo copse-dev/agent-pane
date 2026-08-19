@@ -554,8 +554,13 @@ export function gortexConfigNeedsRepair(configYaml: string): boolean {
  * not walk `node_modules`/`dist`.
  */
 export function repairGortexConfigYaml(configYaml: string): string {
-  const repos = parseTrackedRepos(configYaml)
-  const salvagedExcludes = parseGortexExcludes(configYaml)
+  // Deduplicate both lists. The writers that tear this file are the same ones
+  // that double-append to it, so a torn config routinely carries the same repo
+  // or pattern twice; `readGortexExcludes` folds that away on read, but the
+  // rewrite is what gortex keeps, and a repair that preserves the duplicates
+  // makes them permanent.
+  const repos = [...new Set(parseTrackedRepos(configYaml))]
+  const salvagedExcludes = [...new Set(parseGortexExcludes(configYaml))]
   const excludes = salvagedExcludes.length > 0 ? salvagedExcludes : [...GORTEX_EXCLUDE_PATTERNS]
   const lines: string[] = []
   if (repos.length > 0) {
