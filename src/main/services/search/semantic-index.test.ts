@@ -10,11 +10,15 @@ import {
   isOversizedGortexDaemon,
   isSemanticIndexReady,
   parseGortexJson,
+  parseGortexExcludes,
   parseTrackedRepos,
   parseVeraJson,
   reapOversizedGortexDaemon,
   reposToUntrackForActive,
   nextRepoMru,
+  gortexConfigNeedsRepair,
+  repairGortexConfigYaml,
+  repairCorruptGortexConfig,
   gortexStoreMaxBytes,
   gortexStoreNeedsReclaim,
   reclaimBloatedGortexStore,
@@ -351,5 +355,77 @@ describe('gortex daemon scoping + reaping', () => {
     // resolve without throwing — the boot path awaits it before creating the
     // window, so a throw here would crash startup.
     await assert.doesNotReject(reapOversizedGortexDaemon())
+  })
+
+  it('flags a torn config.yaml that gortex would reject wholesale', () => {
+    // Observed client failure: concurrent writers left a bare `s/` after the
+    // exclude list; gortex then ignores repos+excludes entirely.
+    const torn = [
+      'repos:',
+      '    - path: /Users/me/debugging/agent-pane',
+      'exclude:',
+      '    - node_modules/',
+      '    - bench-results/',
+      's/',
+      '',
+    ].join('\n')
+    assert.equal(gortexConfigNeedsRepair(torn), true)
+    assert.equal(gortexConfigNeedsRepair(CONFIG), false)
+    assert.equal(gortexConfigNeedsRepair('exclude:\n    - node_modules/\n'), false)
+  })
+
+  it('flags indented garbage that is not a list entry or nested key', () => {
+    const torn = ['exclude:', '    - node_modules/', '    s/', ''].join('\n')
+    assert.equal(gortexConfigNeedsRepair(torn), true)
+  })
+
+  it('repairs a torn config by salvaging repos and excludes', () => {
+    const torn = [
+      'repos:',
+      '    - path: /Users/me/debugging/agent-pane',
+      'exclude:',
+      '    - node_modules/',
+      '    - dist/',
+      '    - bench-results/',
+      's/',
+      '',
+    ].join('\n')
+    const repaired = repairGortexConfigYaml(torn)
+    assert.equal(gortexConfigNeedsRepair(repaired), false)
+    assert.deepEqual(parseTrackedRepos(repaired), ['/Users/me/debugging/agent-pane'])
+    assert.deepEqual(parseGortexExcludes(repaired), ['node_modules/', 'dist/', 'bench-results/'])
+    assert.equal(/^s\/$/m.test(repaired), false)
+  })
+
+  it('seeds the static exclude baseline when excludes are unrecoverable', () => {
+    const torn = 'repos:\n    - path: /tmp/repo\nbogus\n'
+    const repaired = repairGortexConfigYaml(torn)
+    assert.equal(gortexConfigNeedsRepair(repaired), false)
+    assert.deepEqual(parseTrackedRepos(repaired), ['/tmp/repo'])
+    assert.ok(parseGortexExcludes(repaired).includes('node_modules/'))
+  })
+
+  it('does not carry a torn config’s duplicate repos and excludes into the rewrite', () => {
+    // The concurrent writers that tear the file are the same ones that append
+    // an entry twice, so the salvage sees duplicates; the rewrite is what
+    // gortex keeps from then on.
+    const torn = [
+      'repos:',
+      '    - path: /tmp/repo',
+      '    - path: /tmp/repo',
+      'exclude:',
+      '    - node_modules/',
+      '    - dist/',
+      '    - node_modules/',
+      's/',
+      '',
+    ].join('\n')
+    const repaired = repairGortexConfigYaml(torn)
+    assert.deepEqual(parseTrackedRepos(repaired), ['/tmp/repo'])
+    assert.deepEqual(parseGortexExcludes(repaired), ['node_modules/', 'dist/'])
+  })
+
+  it('repairCorruptGortexConfig is best-effort and never throws on the boot path', async () => {
+    await assert.doesNotReject(repairCorruptGortexConfig())
   })
 })
