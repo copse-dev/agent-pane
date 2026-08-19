@@ -79,7 +79,10 @@ import {
   parseRendererWritableSetting,
   securitySettingsSchema,
 } from '../services/storage/settings-writable.ts'
-import { storedExtraProviderSchema } from '../services/storage/settings-schema.ts'
+import {
+  isRegisteredSettingKey,
+  storedExtraProviderSchema,
+} from '../services/storage/settings-schema.ts'
 import {
   getResolvedExtraProviders,
   saveExtraProvider,
@@ -1113,6 +1116,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // (base64 plaintext when the OS keyring is unavailable).
     if (isSecretSettingKey(k)) {
       throw new IpcValidationError(`Setting key not readable from renderer: ${k}`)
+    }
+    // An unregistered key cannot survive this read: `getSetting` falls back to a
+    // type-check against the fallback, and `null` matches only `null`, so the
+    // renderer would receive `null` whatever is stored — and then write that
+    // emptied value back on the next save (#1804). Fail the read instead of
+    // silently serving a default, so a key added without a schema is found the
+    // first time it is read rather than after it has eaten someone's settings.
+    if (!isRegisteredSettingKey(k)) {
+      throw new IpcValidationError(
+        `Setting key has no registered schema, so it cannot be read from the renderer: ${k}. ` +
+          'Register it in settings-schema.ts.',
+      )
     }
     return getSetting(k, null)
   })

@@ -143,3 +143,15 @@ export function getSettingSchema(key: string): z.ZodType | undefined {
     ? SETTING_SCHEMAS[key]
     : undefined
 }
+
+/**
+ * Whether a settings key is registered above.
+ *
+ * `settings:get` gates renderer reads on this. An unregistered key cannot be
+ * read back through that IPC at all (see the note on the registry), so failing
+ * the read outright is the only way the omission surfaces instead of quietly
+ * degrading to `null`.
+ */
+export function isRegisteredSettingKey(key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(SETTING_SCHEMAS, key)
+}
