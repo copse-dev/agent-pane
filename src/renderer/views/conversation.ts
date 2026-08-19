@@ -1908,7 +1908,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     renderMessageHookCards(threadId, msgId)
   }
 
-  function appendMessageEl(threadId: string, msgId: string): void {
+  /**
+   * Insert a message at the transcript tail.
+   *
+   * `batched` skips the three per-message passes at the end. Each of them is
+   * either O(thread length) or forces a synchronous layout, so running them once
+   * per message turns rendering a window of N messages into O(N × thread length)
+   * DOM work plus N reflows — which is what made switching into a long thread
+   * stall. `rebuildForThread` runs them once for the whole window instead, the
+   * same way `backfillOlderMessages` already does for its chunks.
+   */
+  function appendMessageEl(threadId: string, msgId: string, batched = false): void {
     if (threadId !== store.getState().activeThreadId) return
     const thread = getThreadById(store, threadId)
     const msg = thread?.messages.find((m) => m.id === msgId)
@@ -1935,6 +1945,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard)
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
     finalizeMessageEl(threadId, msgId)
+    if (batched) return
     // Model labels appear only once the primary chat has used more than one
     // model, and only at model-segment boundaries (first assistant turn of
     // each contiguous model run). Syncing after each append also backfills
@@ -2061,10 +2072,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
     // A segment starts where the model *or* the parameters change, so dialling
     // effort up mid-thread marks the turn it took effect on.
+    // Only a window of the thread is in the DOM (see rebuildForThread), so scan
+    // the rendered elements once and look ids up here rather than issuing a
+    // `querySelector` per assistant message: this pass runs on every rebuild and
+    // every backfill chunk, and a `querySelector` for a message that isn't
+    // rendered still walks the whole list.
+    const rendered = new Map<string, Element>()
+    list.querySelectorAll('[data-message-id]').forEach((node) => {
+      const id = node.getAttribute('data-message-id')
+      // First match wins, matching the document-order result `querySelector` gave.
+      if (id !== null && !rendered.has(id)) rendered.set(id, node)
+    })
     let prevLabel: string | undefined
     for (const msg of thread.messages) {
       if (msg.role !== 'assistant') continue
-      const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`)
+      const msgEl = rendered.get(msg.id)
       if (!msgEl) continue
       const existing = msgEl.querySelector<HTMLElement>('.message-model')
       const model = msg.model
@@ -2252,8 +2274,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const initialStart = Math.max(0, total - INITIAL_RENDER_WINDOW)
     for (let i = initialStart; i < total; i++) {
       const m = thread.messages[i]
-      if (m) appendMessageEl(thread.id, m.id)
+      if (m) appendMessageEl(thread.id, m.id, true)
     }
+    // Batched tail work for the whole window, in the order the per-message path
+    // would have left things in: labels and actions reflect the final DOM, and
+    // the view lands at the bottom before the chrome is inserted around it.
+    syncModelLabels()
+    syncUserActions()
+    scrollToBottom(true)
     finishThreadChrome(thread)
     if (initialStart > 0) {
       const generation = backfillGeneration
