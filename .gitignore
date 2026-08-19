@@ -26,6 +26,10 @@ benchmarks/tasks/swe-bench/
 .wdio-profile-*/
 .wdio-git-fixture-*/
 tests/fixtures/git-changes-repo/.git/
+# Created inside the fixture's own repo, on its branch — tracking it here would
+# put the file in the fixture's baseline commit, leaving the branch with nothing
+# committed for the Changes panel to list.
+tests/fixtures/git-changes-repo/committed.ts
 .wdio-eval-profile-*/
 .wdio-eval-userdata-*/
 .wdio-eval-chrome-*/
