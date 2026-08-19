@@ -117,7 +117,61 @@ switches driven as real sidebar clicks via `scripts/perf-switch.mts`.
 5. `storage:get` ran 9,150 times during boot for a total of 87 ms — the
    write-through cache is doing its job. Config is not implicated.
 
-## Prototype: lazy thread loading (`COPSE_LAZY_THREADS=1`)
+## Lazy thread loading (shipped path)
+
+`threads:loadProject` returns metadata only — `meta.json` plus a `stat` of the
+spine — and a thread's transcript is read when that thread is opened
+(`threads:loadMessages`). There is no flag: this is the only path.
+
+### The trap this had to avoid
+
+`isBlankThread` is `messages.length === 0 && status === 'idle'`,
+`pruneBlankThreads` drops blanks from the store, and the autosave reconciler
+emits `threads:delete` for anything that left. A naive metadata-only load makes
+all 363 idle threads look blank, so it would have **deleted the entire chat
+history from disk** on the first launch. Hence `Thread.messagesLoaded`: `false`
+means "unknown", which `isBlankThread` refuses to treat as blank. The spine is
+`stat`ed (not read) so a genuinely empty thread is still distinguishable and
+blank pruning keeps working for new threads.
+`src/shared/store/lazy-thread-loading.test.ts` is the tripwire for that chain.
+
+### Two readers, deliberately not one
+
+`loadProjectThreads` (whole threads) and `loadProjectThreadMetas` (metadata) are
+separate functions. Four main-process callers — release smoke, the automation
+scheduler, cursor-agent discovery, whole-history search — genuinely want the
+messages, and a load that quietly stopped returning them would break each in a
+way no type checks: `messages` would simply be empty. The first cut of this
+change did exactly that; the thread-store tests caught it.
+
+### Keeping the sidebar honest
+
+- **PR chips** come from links in message text, which a metadata-only load never
+  reads. `prRefs` is now cached on thread metadata: merged in as each message is
+  appended, and backfilled for older threads by a one-pass-per-project background
+  scan behind the load, which pushes batches over `threads:pr_refs` so chips fill
+  in without a relaunch. `sidebarPrRefs` still prefers a transcript that is in
+  memory — a streaming thread must re-scrape, since `appendToken` mutates content
+  in place.
+- **Background writes** (automation triggers, queue resume after restart) call
+  `ensureThreadMessages` before dispatch, so a run never appends onto a
+  transcript that was never read. The agent's own LLM context is unaffected
+  either way: `agent:run` passes ids, and main reads history from
+  `agent-history.json`.
+- **Residency** is bounded at 8 transcripts per project, pinning the active
+  thread, anything running, and anything with a queue. Without it a long session
+  would re-accumulate exactly the heap the eager load used to allocate up front.
+
+### Possible future step: load from the catalog
+
+The metadata load still reads 369 `meta.json` files (~270–310 ms). The existing
+per-project `catalog.jsonl` would make that ~5 ms, but it carries only id, title,
+timestamps and a digest — not `status`, `usage`, `worktree`, `todos` or
+`pendingMessages`, which the sidebar and the queue both need. Extending the
+catalog to cover them is a real option if this ever becomes the bottleneck; at
+~300 ms it is not one today.
+
+## Measured A/B (flag build, retained for the record)
 
 `threads:loadProject` returns metadata only — `meta.json` plus a `stat` of the
 spine — and the active thread's transcript is fetched on demand via a new
@@ -138,24 +192,24 @@ and blank-thread pruning keeps working for new threads.
 
 ### Cold open — Copse, 363 threads
 
-| | baseline | lazy | |
-| --- | --- | --- | --- |
-| `renderer:boot` (end to end) | 8,393 / 7,511 ms | **430 / 428 ms** | **~18×** |
-| `renderer:restore-project` | 8,278 / 7,408 ms | 325 / 322 ms | |
-| `threads:loadProject` | 7,547 / 6,772 ms | 211 / 279 ms | |
-| main-side read | 6,960 / 6,254 ms | 119 / 226 ms | |
-| bytes read | 363 calls, 210.8 MB | **1 call, 1.6 MB** | **~130×** |
-| `thread:hydrate` (active thread) | — | 298 / 158 ms (85 messages) | |
+|                                  | baseline            | lazy                       |           |
+| -------------------------------- | ------------------- | -------------------------- | --------- |
+| `renderer:boot` (end to end)     | 8,393 / 7,511 ms    | **430 / 428 ms**           | **~18×**  |
+| `renderer:restore-project`       | 8,278 / 7,408 ms    | 325 / 322 ms               |           |
+| `threads:loadProject`            | 7,547 / 6,772 ms    | 211 / 279 ms               |           |
+| main-side read                   | 6,960 / 6,254 ms    | 119 / 226 ms               |           |
+| bytes read                       | 363 calls, 210.8 MB | **1 call, 1.6 MB**         | **~130×** |
+| `thread:hydrate` (active thread) | —                   | 298 / 158 ms (85 messages) |           |
 
 Sidebar completeness is unchanged: still 363 rows.
 
 ### Switch — real clicks, small ⇄ Copse
 
-| Click | baseline `switch:activate` | lazy `switch:activate` |
-| --- | --- | --- |
-| → Copse | 7,918 ms | **225 ms** |
-| → streaming-markdown | 378 ms | 137 ms |
-| → Copse again | 7,653 ms | **162 ms** |
+| Click                | baseline `switch:activate` | lazy `switch:activate` |
+| -------------------- | -------------------------- | ---------------------- |
+| → Copse              | 7,918 ms                   | **225 ms**             |
+| → streaming-markdown | 378 ms                     | 137 ms                 |
+| → Copse again        | 7,653 ms                   | **162 ms**             |
 
 ~40× on the switch, with the visible thread's transcript arriving ~170–200 ms
 later, after the pane is already interactive.
@@ -166,7 +220,7 @@ Measured improvement is real; production readiness is not claimed. Known gaps,
 from reading the code rather than from observation:
 
 1. **Sidebar PR chips.** `sidebarPrRefs` scrapes PR links out of message text for
-   threads in the *active* project (compacted entries carry a pre-scraped
+   threads in the _active_ project (compacted entries carry a pre-scraped
    `prRefs`; live ones do not). With transcripts unloaded, those chips would be
    missing until a thread is opened. The fix fits the existing design: persist
    `prRefs` into `catalog.jsonl` at write time, as `compactSidebarThread` already
@@ -178,3 +232,28 @@ from reading the code rather than from observation:
 3. **Visual evidence.** AGENTS.md requires a focused visual eval for user-visible
    changes; this branch has none. A real PR needs one covering the sidebar with
    unhydrated threads and the conversation pane during hydration.
+
+### Final numbers, with the production path
+
+Re-measured after the PR-ref backfill, hydration-before-dispatch and eviction
+landed — i.e. with all the extra background work in play:
+
+| | baseline | shipped path |
+| --- | --- | --- |
+| `renderer:boot`, backfill pass | 8,393 ms | **655 ms** |
+| `renderer:boot`, steady state | 7,511 ms | **491 ms** |
+| `threads:loadProject` | 7,547 ms | 369–519 ms |
+| active-thread hydrate | — | 203–298 ms |
+
+The backfill read 334 threads / 186 MB in the background during that first run
+without pushing the open above 655 ms, and it is resumable — run 1 was killed
+mid-pass and run 2 picked up the remaining 31 threads.
+
+### Still open
+
+- **Visual eval.** AGENTS.md requires one for user-visible changes: the sidebar
+  with unhydrated threads (PR chips arriving via backfill) and the conversation
+  pane during hydration. Not yet written.
+- **Aged-profile boot fixture** (#994). Every cost here scales with profile size
+  and CI only ever boots a pristine profile, so this regression is invisible to
+  CI by construction. Without the fixture, nothing stops eager loading returning.

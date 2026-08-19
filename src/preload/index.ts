@@ -563,6 +563,21 @@ contextBridge.exposeInMainWorld('api', {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:loadProject', projectId),
     loadMessages: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:loadMessages', projectId, threadId),
+    onPrRefs: (
+      handler: (projectId: string, refs: Array<{ threadId: string; prRefs: unknown[] }>) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        projectId: string,
+        refs: Array<{ threadId: string; prRefs: unknown[] }>,
+      ): void => {
+        handler(projectId, refs)
+      }
+      ipcRenderer.on('threads:pr_refs', listener)
+      return (): void => {
+        ipcRenderer.removeListener('threads:pr_refs', listener)
+      }
+    },
     create: (projectId: string, thread: import('@shared/types').Thread) =>
       ipcRenderer.invoke('threads:create', projectId, thread),
     appendMessage: (

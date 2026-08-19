@@ -458,6 +458,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // hydrate one; answering from the in-memory list keeps that true.
       loadMessages: (_projectId: string, threadId: string) =>
         resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
+      // Demo threads always arrive whole, so nothing is ever backfilled.
+      onPrRefs: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {
         threads = [thread, ...threads.filter((candidate) => candidate.id !== thread.id)]
         return resolvedVoid()

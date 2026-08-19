@@ -2,6 +2,7 @@ import type { ModelParameters, ReasoningLevel } from '@copse/llm/model-parameter
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
+import type { GithubPrRef } from '../git/github-pr-url.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
 import type { ThreadWorktree, ThreadWorktreeChoice } from './worktree.ts'
 import type { VideoAttachmentRef } from '../video/video-media.ts'
@@ -136,19 +137,29 @@ export interface Thread {
   status: ThreadStatus
   messages: Message[]
   /**
-   * PROTOTYPE (lazy thread loading): `false` means the transcript has not been
-   * read off disk yet, so an empty `messages` says nothing about the thread.
+   * `false` means this thread's transcript has not been read off disk yet, so an
+   * empty `messages` says nothing about whether the thread has any.
    *
-   * The distinction is load-bearing, not cosmetic. `isBlankThread` treats an
-   * empty transcript as "new, unused thread", and the autosave reconciler
-   * deletes threads that leave the store — so without this flag, a
-   * metadata-only load would make all 363 threads look blank, prune them, and
-   * delete them from disk. Absent (`undefined`) on every thread built the old
-   * way, which is what keeps the flag off a no-op.
+   * Load-bearing, not cosmetic. `isBlankThread` treats an empty transcript as
+   * "new, unused thread", `pruneBlankThreads` drops those from the store, and
+   * the autosave reconciler then deletes anything that left — so without this
+   * flag a metadata-only load would delete a project's entire history on its
+   * first launch. `undefined` means "loaded" (threads built in memory, and the
+   * demo API's whole threads).
    *
    * Never persisted: both `metaOf` implementations strip it before writing.
    */
   messagesLoaded?: boolean
+  /**
+   * GitHub PRs linked from this thread, cached on its metadata.
+   *
+   * Derived from PR links in message text plus {@link remoteAgentLink} — that
+   * is, from exactly the transcript a metadata-only load does not read. Caching
+   * the scrape's result here is what lets the sidebar draw its PR chip without
+   * the transcript, and it is refreshed whenever the transcript is in memory
+   * (on append, and on hydration).
+   */
+  prRefs?: GithubPrRef[]
   usage: ThreadUsage
   /** Populated when history compaction runs during an agent turn (also in JSONL export). */
   contextTrims?: ContextTrimRecord[]

@@ -93,7 +93,8 @@ import { resolveBestValueChatModel } from '../services/providers/best-value-mode
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
-  loadProjectThreads,
+  backfillThreadPrRefs,
+  loadProjectThreadMetas,
   loadThreadMessages,
   createThread,
   appendMessage,
@@ -1437,7 +1438,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Archived threads are hidden from every renderer surface (sidebar and
     // `@`-catalog both filter them), so folding their history into the store
     // only grew the heap. They stay on disk and in the whole-history readers.
-    return loadProjectThreads(id, { includeArchived: false })
+    // Threads written before `prRefs` existed have no cached PR links, and a
+    // metadata-only load has no transcript to scrape — so their sidebar chips
+    // would be missing. Fill them in behind the load: fire-and-forget, low
+    // concurrency, one pass per project ever (the result is recorded on each
+    // thread's metadata), pushing batches so the chips appear without a relaunch.
+    void backfillThreadPrRefs(id, (refs) => {
+      if (!win.isDestroyed()) win.webContents.send('threads:pr_refs', id, refs)
+    }).catch((err: unknown) => {
+      console.warn('[threads] PR-ref backfill failed:', err)
+    })
+    return loadProjectThreadMetas(id, { includeArchived: false })
   })
   // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
   // when the user actually opens it.

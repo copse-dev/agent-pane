@@ -9,6 +9,7 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { dispatchAgentRun, startAutomationTurnTree } from './message-queue.ts'
+import { ensureThreadMessages } from './thread-hydration.ts'
 
 export interface AutomationControllerApi {
   agent: Pick<ApiClient['agent'], 'prepareCheckout' | 'run'>
@@ -44,6 +45,13 @@ export function attachAutomationController(
     if (!prompt) return
     starting.add(threadId)
     try {
+      // Threads arrive as metadata only, so an automation can be the first thing
+      // to touch a transcript that was never read — on a trigger, or on restart
+      // via `startPendingForActiveProject`. Load it before the run streams into
+      // it, or the thread renders as a conversation that began mid-sentence.
+      // (The agent's own context is unaffected: main reads it from disk.)
+      await ensureThreadMessages(projectId, threadId)
+      if (store.getState().activeProjectId !== projectId) return
       if (!initial.worktreeChoice) {
         const prepared = await api.agent.prepareCheckout(
           projectId,

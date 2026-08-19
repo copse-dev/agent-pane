@@ -339,6 +339,15 @@ export interface ApiClient {
       projectId: string,
       threadId: string,
     ) => Promise<import('@shared/types').Message[]>
+    onPrRefs: (
+      handler: (
+        projectId: string,
+        refs: Array<{
+          threadId: string
+          prRefs: import('@shared/git/github-pr-url.ts').GithubPrRef[]
+        }>,
+      ) => void,
+    ) => () => void
     create: (projectId: string, thread: import('@shared/types').Thread) => Promise<void>
     appendMessage: (
       projectId: string,
