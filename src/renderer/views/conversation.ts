@@ -47,6 +47,7 @@ import {
   formatPrimaryChatModelLabel,
   shouldShowPrimaryChatModelLabels,
 } from '@shared/threads/message-model.ts'
+import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
@@ -411,9 +412,8 @@ function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['s
 // without it, and so is the silent cloud fallback when LM Studio is unreachable.
 function subagentModelBadge(session: SubagentSession): HTMLElement | null {
   if (!session.model) return null
-  const isLocal = session.model.startsWith('lmstudio:')
   const badge = el('div', { class: 'subagent-model' })
-  badge.textContent = isLocal ? `${session.model.slice('lmstudio:'.length)} · local` : session.model
+  badge.textContent = displayModelLabel(session.model)
   if (session.localFallback) {
     badge.textContent += ' — local model unavailable, ran on cloud'
     badge.classList.add('subagent-model-fallback')
