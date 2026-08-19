@@ -335,6 +335,10 @@ export interface ApiClient {
   }
   threads: {
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
+    loadMessages: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<import('@shared/types').Message[]>
     create: (projectId: string, thread: import('@shared/types').Thread) => Promise<void>
     appendMessage: (
       projectId: string,

@@ -561,6 +561,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   threads: {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:loadProject', projectId),
+    loadMessages: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('threads:loadMessages', projectId, threadId),
     create: (projectId: string, thread: import('@shared/types').Thread) =>
       ipcRenderer.invoke('threads:create', projectId, thread),
     appendMessage: (

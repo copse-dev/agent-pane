@@ -98,6 +98,7 @@ import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import { begin as perfBegin, mark as perfMark } from './perf.ts'
+import { attachThreadHydration } from './controller/thread-hydration.ts'
 import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
 import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
@@ -332,6 +333,9 @@ async function boot(): Promise<void> {
     attachDiffState(store, api, { revealOnShowDiff: false })
   }
   attachProjectThreadCache(store)
+  // PROTOTYPE (lazy thread loading): no-op unless main returned metadata-only
+  // threads, i.e. unless COPSE_LAZY_THREADS=1.
+  attachThreadHydration(store, api)
 
   mountTitlebar(requireElement('titlebar'), store, api)
 

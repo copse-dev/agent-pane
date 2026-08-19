@@ -43,9 +43,14 @@ const child = spawn(
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-let booted = false
+// A promise rather than a polled flag: the flag is only ever written from a
+// stream callback, which control-flow analysis cannot see.
+let markBooted = (): void => undefined
+const booted = new Promise<void>((r) => {
+  markBooted = r
+})
 const onOutput = (buf: Buffer): void => {
-  if (buf.toString().includes('[startup] boot-complete')) booted = true
+  if (buf.toString().includes('[startup] boot-complete')) markBooted()
 }
 child.stdout.on('data', onOutput)
 child.stderr.on('data', onOutput)
@@ -118,7 +123,7 @@ function evaluate(ws: WebSocket, id: number, expression: string): Promise<unknow
   })
 }
 
-while (!booted) await sleep(250)
+await booted
 await sleep(3_000)
 
 const wsUrl = await findRenderer()

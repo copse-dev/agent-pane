@@ -94,6 +94,7 @@ import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
   loadProjectThreads,
+  loadThreadMessages,
   createThread,
   appendMessage,
   updateMeta,
@@ -1437,6 +1438,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // `@`-catalog both filter them), so folding their history into the store
     // only grew the heap. They stay on disk and in the whole-history readers.
     return loadProjectThreads(id, { includeArchived: false })
+  })
+  // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
+  // when the user actually opens it.
+  ipcMain.handle('threads:loadMessages', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return loadThreadMessages(id, thread)
   })
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)

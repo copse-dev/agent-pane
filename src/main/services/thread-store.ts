@@ -129,7 +129,9 @@ function reasoningCheckpointsPath(projectId: string): string {
 }
 
 function metaOf(thread: Thread): ThreadMeta {
-  const { messages: _messages, ...meta } = thread
+  // `messagesLoaded` is in-memory bookkeeping about *this session's* load state.
+  // Persisting it would write a field that is meaningless on the next launch.
+  const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta } = thread
   return meta
 }
 
@@ -483,6 +485,55 @@ function listThreadIds(projectId: string): string[] {
     .map((entry) => entry.name)
 }
 
+/**
+ * PROTOTYPE (lazy thread loading, `COPSE_LAZY_THREADS=1`).
+ *
+ * Read only what the sidebar draws: `meta.json`, plus a `stat` of the spine to
+ * tell a genuinely empty thread from one whose transcript is merely unread.
+ * That distinction is why this stats the spine rather than skipping it entirely
+ * — `isBlankThread` and the autosave reconciler between them delete threads that
+ * look blank, so "no messages" and "messages not loaded" must not be conflated.
+ *
+ * Cost per thread is one small read and one stat, against the old path's two
+ * reads plus a file read per referenced message and blob, a full fold, and a
+ * SHA-256 per ref.
+ */
+async function readThreadMetaOnly(
+  projectId: string,
+  threadId: string,
+  options: ThreadLoadOptions = {},
+): Promise<Thread | null> {
+  const dir = threadDir(projectId, threadId)
+  const meta = parseMeta(await readOrNull(join(dir, META_FILE)))
+  if (meta === null) return null
+  if (options.includeArchived === false && meta.archivedAt != null) return null
+  let spineBytes = 0
+  try {
+    spineBytes = (await stat(join(dir, EVENTS_FILE))).size
+  } catch {
+    // No spine file at all — a brand-new thread with nothing written yet.
+  }
+  // An empty spine means the transcript really is empty, and saying so lets
+  // blank-thread pruning keep working exactly as before for new threads.
+  return { ...meta, messages: [], messagesLoaded: spineBytes === 0 }
+}
+
+/** The transcript for one thread, folded on demand when it is opened. */
+export function loadThreadMessages(projectId: string, threadId: string): Promise<Message[]> {
+  return runSerialized(queueKey(projectId), async () => {
+    const thread = await readThread(projectId, threadId)
+    return thread?.messages ?? []
+  })
+}
+
+/**
+ * Whether a project open should defer transcripts. Read per call rather than
+ * cached at import so the A/B measurement is one flag on one build.
+ */
+function lazyThreadsEnabled(): boolean {
+  return process.env['COPSE_LAZY_THREADS'] === '1'
+}
+
 async function readProjectThreads(
   projectId: string,
   options: ThreadLoadOptions = {},
@@ -495,17 +546,21 @@ async function readProjectThreads(
   // alongside the surviving thread count separates "many threads" from "few but
   // enormous threads", which need different fixes.
   const threadIds = listThreadIds(projectId)
+  const lazy = lazyThreadsEnabled()
   return perfSpan(
-    'store:read-project-threads',
+    lazy ? 'store:read-project-metas' : 'store:read-project-threads',
     async () => {
       const loaded = await mapConcurrent(threadIds, (threadId) =>
-        readThread(projectId, threadId, options),
+        lazy
+          ? readThreadMetaOnly(projectId, threadId, options)
+          : readThread(projectId, threadId, options),
       )
       return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
     },
     (threads) => ({
       dirs: threadIds.length,
       returned: threads?.length ?? 0,
+      lazy,
       includeArchived: options.includeArchived !== false,
     }),
   )

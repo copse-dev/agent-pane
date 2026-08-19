@@ -135,6 +135,20 @@ export interface Thread {
   title: string
   status: ThreadStatus
   messages: Message[]
+  /**
+   * PROTOTYPE (lazy thread loading): `false` means the transcript has not been
+   * read off disk yet, so an empty `messages` says nothing about the thread.
+   *
+   * The distinction is load-bearing, not cosmetic. `isBlankThread` treats an
+   * empty transcript as "new, unused thread", and the autosave reconciler
+   * deletes threads that leave the store — so without this flag, a
+   * metadata-only load would make all 363 threads look blank, prune them, and
+   * delete them from disk. Absent (`undefined`) on every thread built the old
+   * way, which is what keeps the flag off a no-op.
+   *
+   * Never persisted: both `metaOf` implementations strip it before writing.
+   */
+  messagesLoaded?: boolean
   usage: ThreadUsage
   /** Populated when history compaction runs during an agent turn (also in JSONL export). */
   contextTrims?: ContextTrimRecord[]

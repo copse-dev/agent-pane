@@ -58,10 +58,13 @@ function serializedWrite(key: string, write: () => Promise<void>): Promise<void>
 const threadWriteKey = (projectId: string, threadId: string): string =>
   `thread:${projectId}:${threadId}`
 
-type ThreadMeta = Omit<Thread, 'messages'>
+type ThreadMeta = Omit<Thread, 'messages' | 'messagesLoaded'>
 
 function metaOf(thread: Thread): ThreadMeta {
-  const { messages: _messages, ...meta } = thread
+  // Mirror the main-process `metaOf`: `messagesLoaded` is session-local load
+  // bookkeeping. Leaving it in would also make hydrating a thread look like a
+  // metadata change and fire a pointless `updateMeta` write per thread opened.
+  const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta } = thread
   return meta
 }
 
