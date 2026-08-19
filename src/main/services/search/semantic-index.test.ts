@@ -14,6 +14,10 @@ import {
   parseVeraJson,
   reapOversizedGortexDaemon,
   reposToUntrackForActive,
+  nextRepoMru,
+  gortexStoreMaxBytes,
+  gortexStoreNeedsReclaim,
+  reclaimBloatedGortexStore,
   semanticThreadCap,
   setSemanticBackendForTest,
   setSemanticIndexReadyForTest,
@@ -136,14 +140,15 @@ describe('semantic-index parsing', () => {
     assert.equal(env['GOMAXPROCS'], String(semanticThreadCap()))
   })
 
-  it('gives the gortex track kill-timeout a grace margin over its own --wait-timeout (#517)', () => {
+  it('keeps the gortex track kill-timeout above the --wait-timeout it asks for (#517)', () => {
     const waitArg = gortexIndexWaitArg()
     const match = /^(\d+)m$/.exec(waitArg)
     assert.ok(match, `expected a gortex minute duration, got ${waitArg}`)
     const waitMs = Number(match[1]) * 60_000
-    // The command runner must not SIGKILL gortex at the exact moment its own
-    // graceful --wait-timeout elapses — that race turned "still indexing" into a
-    // `Command timed out` error on every file-change burst.
+    // gortex v0.60.0 accepts --wait-timeout and ignores it (measured: a 5s
+    // request returned after 54.8s), so our kill is the only bound that holds.
+    // The margin survives for the day gortex honours the flag: a graceful exit
+    // must land inside our budget rather than racing the SIGKILL.
     assert.ok(
       gortexIndexKillTimeoutMs() > waitMs,
       `kill timeout ${String(gortexIndexKillTimeoutMs())}ms must exceed wait ${String(waitMs)}ms`,
@@ -255,6 +260,61 @@ describe('gortex daemon scoping + reaping', () => {
       '/Users/me/debugging/jotter',
       '/Users/me/debugging/ddg-workflow',
     ])
+  })
+
+  it('keeps recently-used repos inside the MRU window so nothing is stranded', () => {
+    const tracked = parseTrackedRepos(CONFIG)
+    // Two windows open on agent-pane and jotter: neither may untrack the other,
+    // or each file-change burst strands a graph and forces a cold re-index.
+    assert.deepEqual(
+      reposToUntrackForActive(
+        tracked,
+        '/Users/me/debugging/agent-pane',
+        ['/Users/me/debugging/agent-pane', '/Users/me/debugging/jotter'],
+        3,
+      ),
+      ['/Users/me/debugging/ddg-workflow'],
+    )
+  })
+
+  it('evicts past the MRU ceiling, counting the active repo against it', () => {
+    const tracked = parseTrackedRepos(CONFIG)
+    // maxTracked=2 → active + one most-recent; ddg-workflow falls out even
+    // though it is in the MRU list.
+    assert.deepEqual(
+      reposToUntrackForActive(
+        tracked,
+        '/Users/me/debugging/agent-pane',
+        ['/Users/me/debugging/jotter', '/Users/me/debugging/ddg-workflow'],
+        2,
+      ),
+      ['/Users/me/debugging/ddg-workflow'],
+    )
+  })
+
+  it('promotes the active root to the front of the MRU and dedupes it', () => {
+    assert.deepEqual(nextRepoMru(['/a', '/b', '/c'], '/c', 3), ['/c', '/a', '/b'])
+    assert.deepEqual(nextRepoMru(['/a', '/b'], '/a/', 3), ['/a', '/b'])
+  })
+
+  it('truncates the MRU to the ceiling, keeping at least the active root', () => {
+    assert.deepEqual(nextRepoMru(['/a', '/b', '/c'], '/d', 2), ['/d', '/a'])
+    assert.deepEqual(nextRepoMru(['/a', '/b'], '/d', 0), ['/d'])
+  })
+
+  it('reclaims a store only once it crosses the ceiling', () => {
+    const cap = gortexStoreMaxBytes()
+    assert.equal(gortexStoreNeedsReclaim(cap), true)
+    assert.equal(gortexStoreNeedsReclaim(cap + 1), true)
+    assert.equal(gortexStoreNeedsReclaim(cap - 1), false)
+    // A healthy working store (a few hundred MB) is never dropped.
+    assert.equal(gortexStoreNeedsReclaim(400 * 1024 * 1024), false)
+  })
+
+  it('reclaimBloatedGortexStore is best-effort and never throws on the boot path', async () => {
+    // Same contract as the reap above: boot awaits this before creating the
+    // window, so a missing store / unreadable pidfile must resolve, not throw.
+    await assert.doesNotReject(reclaimBloatedGortexStore())
   })
 
   it('normalizes the active path so a trailing slash still matches', () => {

@@ -1,9 +1,0 @@
-# Copse
-
-> Copse is a free and open-source desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support.
-
-## Pages
-
-- [Copse — AI coding that stays on your machine](https://copse.dev/index.md): Copse is a free and open-source desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support.
-- [Architecture — Copse](https://copse.dev/architecture.md): Interactive, source-verified systems diagrams for the Copse desktop coding assistant.
-- [Privacy Policy — Copse](https://copse.dev/privacy.md): How Copse keeps project data local and what is shared when you connect external services.
