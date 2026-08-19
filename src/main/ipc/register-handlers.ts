@@ -488,9 +488,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await writeFile(join(projectPath, 'README.md'), `# ${name}\n\n`, 'utf8')
     // git init -b main keeps the initial branch name stable regardless of the
     // user's global init.defaultBranch / git template config.
+    //
+    // Unsandboxed, like `runWorktreeGit`: the new project sits outside the
+    // *current* workspace's sandbox until `registerAllowedWorkspaceRoot` below
+    // moves the boundary, so a sandboxed spawn cannot write `.git/` there. The
+    // scaffolding above is main-process `fs` and never hit that wall, which is
+    // why the failure only surfaced once the exit code was checked.
     const init = await runCommand('git', ['init', '-b', 'main'], {
       cwd: projectPath,
       timeout_ms: 0,
+      unsandboxed: true,
     })
     // `runCommand` resolves with the exit code rather than rejecting, so an
     // unchecked call silently accepts a failed `git init`: the folder scaffolds,
