@@ -1,32 +1,35 @@
 #!/usr/bin/env node
-// Nightly watch: has the ACP TypeScript SDK published a protocol-v2 API yet?
+// Nightly watch: how much of ACP protocol v2 does the published TypeScript SDK
+// expose, and has that surface changed since we last looked?
 //
-// Copse's whole ACP integration is protocol v1 by design. The published
-// `@agentclientprotocol/sdk` line ships `PROTOCOL_VERSION === 1` and no v2
-// types, so there is nothing to negotiate, adapt, or probe today — the reasons
-// are laid out in docs/acp-v2-readiness.md. Upstream, though, v2 is real and
-// moving (stable v2 baseline schema, migration guide, active RFD stream), so
-// the open question is not *whether* the SDK gains v2 but *when* — and until
-// now the only answer came from someone re-checking npm by hand.
+// Copse's ACP integration is protocol v1: the SDK's MAIN entry point ships
+// `PROTOCOL_VERSION === 1`, the session-update adapter parses a v1-only union,
+// and the capability probe requests v1 (docs/acp-v2-readiness.md). What that
+// doc used to say — that the published SDK carries no v2 types at all — stopped
+// being true at 1.3.0, the version this repo pins: `@agentclientprotocol/sdk`
+// now also publishes `./experimental/v2`, whose `PROTOCOL_VERSION` is 2.
 //
-// This script is that re-check, automated. It reads the registry's abbreviated
-// packument and fails the run when the published line grows anything that could
-// carry v2: a major >= 2 release, or a dist-tag beyond the v1 line's `latest`
-// (`next` / `v2` / `beta` is how a v2 SDK would surface first). Failing IS the
-// notification; the migration checklist lives in docs/acp-v2-readiness.md
-// ("When v2 stabilizes — the plan").
+// That is exactly the shape a watch is easy to get wrong on. v2 did NOT arrive
+// as a major bump or a `next` dist-tag; it arrived as a new subpath export in a
+// minor release. So this script's primary signal is the package's own EXPORT
+// MAP, read from the registry, compared against the surface we have already
+// triaged (ACKNOWLEDGED below). It goes red when that surface moves — most
+// importantly when a v2 entry point appears OUTSIDE `./experimental/`, which is
+// the real migration trigger — and stays quiet while the surface is the one we
+// have already reasoned about.
 //
 // Two deliberate properties:
 //   - Dependency-free (node builtins + repo-local modules only), so the nightly
 //     workflow runs it straight after `actions/setup-node` and skips the
 //     multi-minute dependency restore `./.github/actions/setup` pays for.
-//   - Acknowledgeable. A candidate that has been triaged but not yet migrated
-//     goes in REVIEWED_RELEASES, so the watch reports it without going red
-//     every night for the length of the migration.
+//   - Acknowledgeable. Everything already triaged is listed in ACKNOWLEDGED with
+//     the reasoning, so a months-long migration does not leave a nightly that is
+//     red every morning and therefore ignored.
 //
-// The offline half of the same question — that the SDK we actually build
-// against still reports protocol v1 — is pinned in acp-v2-watch.test.ts and
-// runs in the normal unit gate, with no network.
+// What it does NOT do: it reads the npm registry, not the upstream git repo
+// (agentclientprotocol/typescript-sdk), and it does not exercise any ACP code.
+// Copse's own ACP unit tests run in the normal gate on every PR; the agent
+// probes (`npm run probe:acp*`) need real installed agents and stay manual.
 //
 // Run locally:  npm run watch:acp-v2            (human-readable report)
 //               npm run watch:acp-v2 -- --json  (machine-readable verdict)
@@ -39,38 +42,50 @@ import { isRecord, stringRecordOrEmpty } from '../src/shared/unknown-value.mts'
 export const SDK_PACKAGE = '@agentclientprotocol/sdk'
 
 /** Scoped names are percent-encoded in a registry path (`@scope%2Fname`). */
-const REGISTRY_URL = `https://registry.npmjs.org/${SDK_PACKAGE.replace('/', '%2F')}`
+const REGISTRY_BASE = `https://registry.npmjs.org/${SDK_PACKAGE.replace('/', '%2F')}`
 
 /**
  * The abbreviated packument: dist-tags plus a trimmed entry per version, a few
- * KB instead of the full document's megabytes. Everything this watch reads
- * (tag targets, the version list) is in it.
+ * KB instead of the full document's megabytes. It carries tag targets and the
+ * version list — but NOT the export map, which is why the manifest below is a
+ * second request.
  */
 const ABBREVIATED_PACKUMENT = 'application/vnd.npm.install-v1+json'
 
 /**
- * Dist-tags the v1 line publishes. Anything else is a channel that did not
- * exist while the SDK was v1-only, which is exactly how a v2 (or unstable-v2)
- * build would first appear — see docs/acp-v2-readiness.md.
+ * Dist-tags the v1 line publishes. Anything else is a channel that did not exist
+ * while the SDK was v1-only — a plausible home for a v2 or unstable-v2 build.
  */
 const V1_DIST_TAGS: readonly string[] = ['latest']
 
 /**
- * The SDK's 0.29 -> 1.0 jump was v1 going *stable*, not v2 arriving, so the
- * whole 1.x line is protocol v1. A major bump is therefore the version-shaped
- * signal worth waking someone for.
+ * The SDK's 0.29 -> 1.0 jump was v1 going *stable*, not v2 arriving, so the whole
+ * 1.x line negotiates v1 from its main entry. A major bump is still worth waking
+ * someone for — it is just no longer the only way v2 can reach us.
  */
 const FIRST_CANDIDATE_MAJOR = 2
 
 /**
- * Candidates a human has already looked at. Add a version or dist-tag here
- * (with the date and what was decided) once it has been triaged but the
- * migration has not landed yet — the watch keeps reporting it and stops going
- * red for it. Empty today: nothing beyond the v1 line has ever been published.
+ * Signals already triaged, as `kind:name`. Anything here is reported but does not
+ * fail the run; anything NOT here does. Add an entry (with what was decided and
+ * when) rather than widening the detectors — the point is that a NEW shape is
+ * always loud.
+ *
+ * Today's entries: v2 shipped in 1.3.0 as an experimental subpath. Copse stays on
+ * the v1 main entry deliberately — `experimental/` is upstream's own "not stable
+ * yet" marker, and the v2 migration is a rewrite of the session-update adapter,
+ * permission bridge, and write path, not a dependency bump. See
+ * docs/acp-v2-readiness.md.
  */
-const REVIEWED_RELEASES: readonly string[] = []
+const ACKNOWLEDGED: readonly string[] = [
+  'export:./experimental/v2', // v2 API, experimental subpath, since 1.3.0 (2026-07)
+  'export:./schema/v2/schema.unstable.json', // the unstable v2 schema it is generated from
+]
 
 const READINESS_DOC = 'docs/acp-v2-readiness.md'
+
+/** Matches an export subpath that carries v2, e.g. `./experimental/v2`, `./v2/foo`. */
+const V2_SUBPATH = /(?:^|\/)v2(?:$|\/|\.)/
 
 export interface Packument {
   distTags: Record<string, string>
@@ -79,29 +94,38 @@ export interface Packument {
   modified: string
 }
 
+/** The `latest` version's own manifest — the only place the export map lives. */
+export interface Manifest {
+  version: string
+  exportPaths: string[]
+}
+
 export interface WatchSignal {
-  /** `version`/`dist-tag` come from the registry; `pin` from our package.json. */
-  kind: 'version' | 'dist-tag' | 'pin'
-  /** Version string, dist-tag name, or dependency range, depending on kind. */
+  /**
+   * `export` — a v2 subpath in the published package's export map (how v2
+   * actually arrived). `version`/`dist-tag` — registry-shaped arrivals.
+   * `pin` — our own package.json moved.
+   */
+  kind: 'export' | 'version' | 'dist-tag' | 'pin'
+  /** Export subpath, version string, dist-tag name, or dependency range. */
   name: string
-  /** The version the signal points at. */
-  target: string
   why: string
-  /** True once the target appears in REVIEWED_RELEASES. */
-  reviewed: boolean
+  /** True once `kind:name` appears in ACKNOWLEDGED. */
+  acknowledged: boolean
 }
 
 export interface WatchVerdict {
   package: string
   /**
-   * `v1-only` — nothing but the v1 line exists (today's expected answer).
-   * `v2-candidate` — an untriaged signal; the run goes red.
-   * `reviewed` — every signal is acknowledged in REVIEWED_RELEASES.
+   * `as-expected` — the published surface is the one we have already triaged.
+   * `changed` — something new; the run goes red.
    */
-  status: 'v1-only' | 'v2-candidate' | 'reviewed'
+  status: 'as-expected' | 'changed'
   latest: string
   pinnedRange: string
   modified: string
+  /** Every v2 export subpath the published `latest` carries, acknowledged or not. */
+  v2Exports: string[]
   signals: WatchSignal[]
 }
 
@@ -161,12 +185,38 @@ export function decodePackument(text: string): Packument {
   }
 }
 
-export async function fetchPackument(fetchImpl: typeof fetch = fetch): Promise<Packument> {
-  const res = await fetchImpl(REGISTRY_URL, { headers: { accept: ABBREVIATED_PACKUMENT } })
+export function decodeManifest(text: string): Manifest {
+  const value: unknown = parseJson(text)
+  if (!isRecord(value)) throw new Error(`${SDK_PACKAGE}: manifest response was not a JSON object`)
+  const version = value['version']
+  if (typeof version !== 'string') throw new Error(`${SDK_PACKAGE}: manifest has no version`)
+  const exportsField = value['exports']
+  // A package with a single string `exports` (or none) has no subpaths at all,
+  // which is a real answer — no v2 entry point — not a decode failure.
+  const exportPaths = isRecord(exportsField) ? Object.keys(exportsField) : []
+  return { version, exportPaths }
+}
+
+async function fetchJson(url: string, accept: string, fetchImpl: typeof fetch): Promise<string> {
+  const res = await fetchImpl(url, { headers: { accept } })
   if (!res.ok) {
-    throw new Error(`npm registry -> ${String(res.status)} ${res.statusText} for ${SDK_PACKAGE}`)
+    throw new Error(`npm registry -> ${String(res.status)} ${res.statusText} for ${url}`)
   }
-  return decodePackument(await res.text())
+  return await res.text()
+}
+
+export async function fetchPackument(fetchImpl: typeof fetch = fetch): Promise<Packument> {
+  return decodePackument(await fetchJson(REGISTRY_BASE, ABBREVIATED_PACKUMENT, fetchImpl))
+}
+
+/**
+ * The `latest` manifest, i.e. that version's package.json. Requested separately
+ * because neither packument form carries `exports`, and the export map is the
+ * signal that would otherwise be missed: v2 reached npm as `./experimental/v2`
+ * in the minor release 1.3.0.
+ */
+export async function fetchLatestManifest(fetchImpl: typeof fetch = fetch): Promise<Manifest> {
+  return decodeManifest(await fetchJson(`${REGISTRY_BASE}/latest`, 'application/json', fetchImpl))
 }
 
 /** The range this repo builds against, read from the root manifest. */
@@ -180,62 +230,66 @@ export function readPinnedRange(manifestPath = resolve('package.json')): string 
 
 export function evaluateWatch(
   packument: Packument,
+  manifest: Manifest,
   pinnedRange: string,
-  reviewedReleases: readonly string[] = REVIEWED_RELEASES,
+  acknowledged: readonly string[] = ACKNOWLEDGED,
 ): WatchVerdict {
   const signals: WatchSignal[] = []
-  const reviewed = (target: string): boolean => reviewedReleases.includes(target)
+  const add = (kind: WatchSignal['kind'], name: string, why: string): void => {
+    signals.push({ kind, name, why, acknowledged: acknowledged.includes(`${kind}:${name}`) })
+  }
+
+  const v2Exports = manifest.exportPaths.filter((path) => V2_SUBPATH.test(path))
+  for (const path of v2Exports) {
+    // `./experimental/...` is upstream's own "not stable yet" marker. A v2 entry
+    // point outside it means v2 has graduated, which is the migration trigger.
+    const stable = !path.startsWith('./experimental/')
+    add(
+      'export',
+      path,
+      stable
+        ? 'v2 entry point OUTSIDE `./experimental/` — v2 has graduated on the published package'
+        : 'v2 entry point published behind the experimental marker',
+    )
+  }
 
   for (const version of packument.versions) {
     const parts = parseSemver(version)
     if (parts === null || parts.major < FIRST_CANDIDATE_MAJOR) continue
-    signals.push({
-      kind: 'version',
-      name: version,
-      target: version,
-      why:
-        `major ${String(parts.major)} release` +
+    add(
+      'version',
+      version,
+      `major ${String(parts.major)} release` +
         (parts.prerelease === '' ? '' : ` (prerelease ${parts.prerelease})`) +
-        ' — the protocol-v1 line is 1.x, so this can carry v2 types',
-      reviewed: reviewed(version),
-    })
+        " — the main entry's v1 line is 1.x, so this can negotiate v2 by default",
+    )
   }
 
   for (const [tag, target] of Object.entries(packument.distTags)) {
     if (V1_DIST_TAGS.includes(tag)) continue
-    signals.push({
-      kind: 'dist-tag',
-      name: tag,
-      target,
-      why: `dist-tag beyond \`latest\` — a v2 or unstable-v2 build would ship on a channel like this first`,
-      reviewed: reviewed(tag) || reviewed(target),
-    })
+    add(
+      'dist-tag',
+      tag,
+      `dist-tag beyond \`latest\` (-> ${target}) — a v2 or unstable-v2 build could ship on a channel like this`,
+    )
   }
 
   const pinned = rangeMajor(pinnedRange)
   if (pinned !== null && pinned >= FIRST_CANDIDATE_MAJOR) {
-    signals.push({
-      kind: 'pin',
-      name: pinnedRange,
-      target: pinnedRange,
-      why: `package.json already depends on a major >= ${String(FIRST_CANDIDATE_MAJOR)} range — the v1 adapters in src/main/services/acp must have moved with it`,
-      reviewed: reviewed(pinnedRange),
-    })
+    add(
+      'pin',
+      pinnedRange,
+      `package.json depends on a major >= ${String(FIRST_CANDIDATE_MAJOR)} range — the v1 adapters in src/main/services/acp must have moved with it`,
+    )
   }
-
-  const status =
-    signals.length === 0
-      ? 'v1-only'
-      : signals.some((s) => !s.reviewed)
-        ? 'v2-candidate'
-        : 'reviewed'
 
   return {
     package: SDK_PACKAGE,
-    status,
+    status: signals.some((signal) => !signal.acknowledged) ? 'changed' : 'as-expected',
     latest: packument.distTags['latest'] ?? '',
     pinnedRange,
     modified: packument.modified,
+    v2Exports,
     signals,
   }
 }
@@ -247,40 +301,41 @@ export function formatReport(verdict: WatchVerdict): string {
     `- package: \`${verdict.package}\``,
     `- \`latest\`: \`${verdict.latest}\``,
     `- pinned in package.json: \`${verdict.pinnedRange}\``,
+    `- v2 entry points published: ${
+      verdict.v2Exports.length === 0
+        ? 'none'
+        : verdict.v2Exports.map((path) => `\`${path}\``).join(', ')
+    }`,
   ]
   if (verdict.modified !== '') lines.push(`- registry last modified: ${verdict.modified}`)
   lines.push('')
 
-  if (verdict.status === 'v1-only') {
+  if (verdict.status === 'as-expected') {
     lines.push(
-      `No protocol-v2 signal: the published SDK line is still v1-only, so Copse's v1 ACP`,
-      `integration remains correct. See \`${READINESS_DOC}\` for what changes when that ends.`,
+      "The published v2 surface is the one already triaged in `ACKNOWLEDGED`: Copse's",
+      `integration stays on the v1 main entry. See \`${READINESS_DOC}\`.`,
     )
     return lines.join('\n')
   }
 
   lines.push(
-    verdict.status === 'reviewed'
-      ? '**Known candidate release(s), already triaged** — no action beyond the migration already tracked.'
-      : `**Candidate v2 SDK release(s) found.** Work the plan in \`${READINESS_DOC}\` ("When v2 stabilizes").`,
+    `**The published SDK surface moved.** Work the plan in \`${READINESS_DOC}\` ("When v2 stabilizes").`,
     '',
-    '| signal | name | target | reviewed | why |',
-    '| --- | --- | --- | --- | --- |',
+    '| signal | name | known | why |',
+    '| --- | --- | --- | --- |',
   )
   for (const signal of verdict.signals) {
     lines.push(
-      `| ${signal.kind} | \`${signal.name}\` | \`${signal.target}\` | ${signal.reviewed ? 'yes' : 'no'} | ${signal.why} |`,
+      `| ${signal.kind} | \`${signal.name}\` | ${signal.acknowledged ? 'yes' : '**new**'} | ${signal.why} |`,
     )
   }
-  if (verdict.status === 'v2-candidate') {
-    lines.push(
-      '',
-      'First step is triage, not a bump: confirm the release actually exports v2 types',
-      '(`PROTOCOL_VERSION`, the v2 schema) before touching the adapters. If it does not — or',
-      'if it does and the migration will take more than a night — record it in',
-      '`REVIEWED_RELEASES` in `scripts/acp-v2-watch.mts` so this watch stops going red for it.',
-    )
-  }
+  lines.push(
+    '',
+    'Triage before bumping: confirm what the new surface actually negotiates. If the',
+    'migration will take longer than a night, add the new `kind:name` to `ACKNOWLEDGED`',
+    'in `scripts/acp-v2-watch.mts` with the reasoning, so this watch stops going red',
+    'for a decision that has already been made.',
+  )
   return lines.join('\n')
 }
 
@@ -288,9 +343,9 @@ function usage(): string {
   return `Usage:
   npm run watch:acp-v2 [-- --json]
 
-Checks the npm registry for a protocol-v2 release of ${SDK_PACKAGE}
-(major >= ${String(FIRST_CANDIDATE_MAJOR)}, or a dist-tag beyond \`latest\`) and exits non-zero when it
-finds an untriaged one. See ${READINESS_DOC}.`
+Reports the protocol-v2 surface ${SDK_PACKAGE} publishes (v2 export
+subpaths, major >= ${String(FIRST_CANDIDATE_MAJOR)} releases, dist-tags beyond \`latest\`) and exits non-zero
+when it differs from the surface already triaged. See ${READINESS_DOC}.`
 }
 
 async function main(): Promise<void> {
@@ -299,7 +354,8 @@ async function main(): Promise<void> {
     console.log(usage())
     return
   }
-  const verdict = evaluateWatch(await fetchPackument(), readPinnedRange())
+  const [packument, manifest] = await Promise.all([fetchPackument(), fetchLatestManifest()])
+  const verdict = evaluateWatch(packument, manifest, readPinnedRange())
   const report = formatReport(verdict)
   console.log(args.includes('--json') ? JSON.stringify(verdict, null, 2) : report)
 
@@ -309,7 +365,7 @@ async function main(): Promise<void> {
     await writeFile(stepSummary, `${report}\n`, { flag: 'a' })
   }
 
-  if (verdict.status === 'v2-candidate') process.exitCode = 1
+  if (verdict.status === 'changed') process.exitCode = 1
 }
 
 if (process.argv[1]?.endsWith('acp-v2-watch.mts')) {
