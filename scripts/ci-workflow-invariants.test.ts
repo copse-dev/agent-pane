@@ -502,6 +502,26 @@ describe('codeql.yml workflow invariants', () => {
   })
 })
 
+describe('acp-v2-watch.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/acp-v2-watch.yml'), 'utf8')
+
+  it('runs nightly and never gates a PR', () => {
+    // The watch polls npm for a protocol-v2 ACP SDK (docs/acp-v2-readiness.md).
+    // Its red run means "upstream moved", not "this change is broken", so it
+    // must stay off pull_request — on a PR trigger every unrelated PR would go
+    // red the day v2 ships.
+    assert.match(workflow, /^ {4}- cron: '[^']+'$/m)
+    assert.doesNotMatch(workflow, /^ {2}pull_request:/m)
+  })
+
+  it('skips the dependency restore the watch is written to avoid', () => {
+    // Dependency-free is the whole reason this is a 30-second job. A setup-action
+    // call here would quietly reintroduce the multi-minute node_modules restore.
+    assert.doesNotMatch(workflow, /uses: \.\/\.github\/actions\/setup/)
+    assert.match(workflow, /run: pnpm run watch:acp-v2/)
+  })
+})
+
 describe('gitleaks workflow invariants', () => {
   const ciWorkflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
   const gitleaksWorkflow = readFileSync(resolve('.github/workflows/gitleaks.yml'), 'utf8')

@@ -23,7 +23,7 @@ Two different projects, at two very different stages:
   side v2 is real and moving, though the guide still says to "gate v2 behind
   explicit version negotiation and feature flags until it stabilizes."
 - **The published TypeScript SDK (`@agentclientprotocol/sdk`) — the one Copse
-  depends on — is still v1-only.** Latest is **1.2.1** (`latest` tag; the 0.29→1.x
+  depends on — is still v1-only.** Latest is **1.3.0** (`latest` tag; the 0.29→1.x
   jump is v1 going _stable_, not v2). Its dist ships `PROTOCOL_VERSION === 1`,
   only `schema/schema.json` (v1), zero v2 types, and there is no v2/`next`
   dist-tag on npm. The Rust crate isn't published to npm at all
@@ -32,17 +32,20 @@ Two different projects, at two very different stages:
 
 **Net:** v2 is coming and its shape is now concrete, but we can't _consume_ it
 until the TS SDK generates v2 types. Takeaway: **v2 stays a watch item** — track
-when the SDK ships v2 types (or a `next` tag), then execute the plan below.
+when the SDK ships v2 types (or a `next` tag), then execute the plan below. That
+tracking is now automated rather than a periodic manual re-check of npm; see
+[The watch](#the-watch-how-well-find-out) below.
 
 > The v1 SDK bump has since landed: `package.json` now depends on
-> `@agentclientprotocol/sdk@^1.2.1` (locked `1.2.1`), the stable v1 line. This
-> does not change anything below — `1.2.1` is still
-> `PROTOCOL_VERSION === 1`, v1-only.
+> `@agentclientprotocol/sdk@^1.3.0` (locked `1.3.0`), the stable v1 line. This
+> does not change anything below — `1.3.0` is still
+> `PROTOCOL_VERSION === 1`, v1-only, which the unit gate now pins
+> (`scripts/acp-v2-watch.test.ts`).
 
 ## Why the probe can't (and shouldn't) see v2 today
 
 Three independent facts, all verifiable in the SDK we depend on
-(`@agentclientprotocol/sdk@1.2.1`, v1 like the whole current 1.x line):
+(`@agentclientprotocol/sdk@1.3.0`, v1 like the whole current 1.x line):
 
 1. **The SDK is v1.** `PROTOCOL_VERSION === 1`; there are no v2 types in the
    package. The probe requests v1 in `initialize`.
@@ -109,10 +112,35 @@ Both narrow gaps that earlier favored a direct Claude Agent SDK backend over ACP
   mechanism; the v2 write-containment story will have to be rethought (and the
   shell-bypass gap noted in `acp-agents.md` doesn't get better on its own).
 
+## The watch: how we'll find out
+
+Nothing above changes until someone notices an upstream publish, and "someone
+re-checks npm" is not a mechanism. Two checks now carry it:
+
+- **Nightly** — [`.github/workflows/acp-v2-watch.yml`](../.github/workflows/acp-v2-watch.yml)
+  runs `npm run watch:acp-v2` ([`scripts/acp-v2-watch.mts`](../scripts/acp-v2-watch.mts))
+  against the npm registry and goes red on the two shapes a v2 SDK can arrive
+  in: a `@agentclientprotocol/sdk` release with major >= 2 (the whole 1.x line is
+  protocol v1), or a dist-tag beyond `latest` (`next` / `v2` / `beta` — how an
+  unstable-v2 build would land first). The report goes to the run summary. It is
+  advisory: its own workflow, never a merge gate, no build and no dependency
+  install (the script is deliberately dependency-free).
+- **Every PR** — [`scripts/acp-v2-watch.test.ts`](../scripts/acp-v2-watch.test.ts)
+  pins the offline half in the normal unit gate: the SDK we build against still
+  reports `PROTOCOL_VERSION === 1` and `package.json` still depends on the 1.x
+  line. Bumping to an SDK that negotiates v2 fails this test, which is the point
+  — that bump is the migration below, not a dependency bump.
+
+When the nightly fires, triage before bumping: confirm the release actually
+exports v2 types. If it does not (a major bump for unrelated reasons), or if it
+does and the migration will take longer than a night, add the version or tag to
+`REVIEWED_RELEASES` in `scripts/acp-v2-watch.mts` — the watch keeps reporting it
+and stops going red for it while the plan below is worked.
+
 ## When v2 stabilizes — the plan
 
 1. Bump `@agentclientprotocol/sdk` to a version that publishes v2 types (the v1
-   1.x bump has already landed — we're on `1.2.1`). Version negotiation is per
+   1.x bump has already landed — we're on `1.3.0`). Version negotiation is per
    connection, so keep the v1 surface — the migration guide is explicit that
    v1-only agents and clients stay common "for some time."
 2. Add a v2 branch to `extractCapabilitySnapshot` reading the new `capabilities`
@@ -123,11 +151,12 @@ Both narrow gaps that earlier favored a direct Claude Agent SDK backend over ACP
 4. Revisit permission handling to consume the structured `subject`, and the
    write path now that `fs/*` is gone.
 
-Until then this is a watch item, not a task. The probe is complete for what
-exists today.
+Until then this is a watch item, not a task — an automated one. The probe is
+complete for what exists today.
 
 ## See also
 
 - [`docs/acp-capability-probe.md`](acp-capability-probe.md) — the Tier-1 probe.
 - [`docs/acp-agents.md`](acp-agents.md) — the v1 client integration.
+- [`scripts/acp-v2-watch.mts`](../scripts/acp-v2-watch.mts) — the nightly registry watch.
 - [ACP v2 RFDs](https://agentclientprotocol.com/rfds/v2/overview).
