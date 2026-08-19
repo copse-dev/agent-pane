@@ -2,7 +2,11 @@ import { getSetting, setSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
-import { TRUSTED_COMMANDS_SETTING, sanitizeTrustedCommands } from '@shared/command-routing.ts'
+import {
+  TRUSTED_COMMANDS_SETTING,
+  isValidTrustedCommand,
+  sanitizeTrustedCommands,
+} from '@shared/command-routing.ts'
 import {
   resolveCommandRouting,
   trustableCommandHead,
@@ -109,6 +113,9 @@ export function offerableTrustedCommand(command: string): string | null {
  * command auto-runs only in trusted workspaces.
  */
 export async function addTrustedShellCommand(name: string): Promise<void> {
+  // The setting now carries a store schema, so an invalid entry would throw on
+  // write rather than being dropped on read. Keep the documented no-op instead.
+  if (!isValidTrustedCommand(name)) return
   const current = sanitizeTrustedCommands(getSetting<unknown>(TRUSTED_COMMANDS_SETTING, []))
   if (current.includes(name)) return
   await setSetting(TRUSTED_COMMANDS_SETTING, [...current, name])

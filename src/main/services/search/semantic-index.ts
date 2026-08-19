@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join, resolve } from 'node:path'
 import { getBundledGortexPath } from './bundled-semantic.ts'
@@ -504,24 +504,127 @@ export async function searchSemanticContent(
  * (no daemon, no subprocess) so {@link ensureGortexExcludes} can skip re-adding
  * patterns and avoid a spawn-per-pattern storm on every workspace open.
  */
-async function readGortexExcludes(): Promise<Set<string>> {
-  const out = new Set<string>()
-  let raw: string
-  try {
-    raw = await readFile(join(gortexHomeDir(), '.gortex', 'config.yaml'), 'utf8')
-  } catch {
-    return out
-  }
+export function parseGortexExcludes(configYaml: string): string[] {
+  const out: string[] = []
   let inExclude = false
-  for (const line of raw.split('\n')) {
+  for (const line of configYaml.split('\n')) {
     // Top-level `exclude:` key opens the block; any other non-indented key ends it.
     if (/^\S/.test(line)) inExclude = /^exclude:\s*$/.test(line)
     else if (inExclude) {
       const match = line.match(/^\s*-\s*(.+?)\s*$/)
-      if (match?.[1]) out.add(match[1].trim())
+      if (match?.[1]) out.push(match[1].trim())
     }
   }
   return out
+}
+
+async function readGortexExcludes(): Promise<Set<string>> {
+  try {
+    return new Set(
+      parseGortexExcludes(await readFile(join(gortexHomeDir(), '.gortex', 'config.yaml'), 'utf8')),
+    )
+  } catch {
+    return new Set()
+  }
+}
+
+/**
+ * A line that can appear in a healthy gortex global `config.yaml`. Concurrent
+ * `exclude add` / `track` / `untrack` writers have been observed to tear the
+ * file and leave garbage like a bare `s/` at top level — gortex then rejects
+ * the *entire* config (`yaml: line N: could not find expected ':'`), so the
+ * daemon boots with no repos/excludes and indexing fails closed.
+ */
+function isPlausibleGortexConfigLine(line: string): boolean {
+  if (line.trim() === '' || line.trimStart().startsWith('#')) return true
+  if (/^\S/.test(line)) return /^[A-Za-z_][\w-]*:\s*/.test(line)
+  // Indented: sequence entry (`- …`) or nested mapping key (`path:`).
+  return /^\s+-\s+\S/.test(line) || /^\s+[A-Za-z_][\w-]*:\s*/.test(line)
+}
+
+/** Whether gortex would fail to parse this global config (clients must repair). */
+export function gortexConfigNeedsRepair(configYaml: string): boolean {
+  return configYaml.split('\n').some((line) => !isPlausibleGortexConfigLine(line))
+}
+
+/**
+ * Rebuild a minimal valid `config.yaml` from whatever {@link parseTrackedRepos}
+ * / {@link parseGortexExcludes} can still salvage. Seeds the static exclude
+ * baseline when the exclude block was unrecoverable so the next `track` does
+ * not walk `node_modules`/`dist`.
+ */
+export function repairGortexConfigYaml(configYaml: string): string {
+  // Deduplicate both lists. The writers that tear this file are the same ones
+  // that double-append to it, so a torn config routinely carries the same repo
+  // or pattern twice; `readGortexExcludes` folds that away on read, but the
+  // rewrite is what gortex keeps, and a repair that preserves the duplicates
+  // makes them permanent.
+  const repos = [...new Set(parseTrackedRepos(configYaml))]
+  const salvagedExcludes = [...new Set(parseGortexExcludes(configYaml))]
+  const excludes = salvagedExcludes.length > 0 ? salvagedExcludes : [...GORTEX_EXCLUDE_PATTERNS]
+  const lines: string[] = []
+  if (repos.length > 0) {
+    lines.push('repos:')
+    for (const path of repos) lines.push(`    - path: ${path}`)
+  }
+  if (excludes.length > 0) {
+    lines.push('exclude:')
+    for (const pattern of excludes) lines.push(`    - ${pattern}`)
+  }
+  return lines.length > 0 ? `${lines.join('\n')}\n` : ''
+}
+
+/**
+ * Detect a torn/unparseable gortex global config and rewrite it in place.
+ * Runs on the boot path and before daemon start so aged profiles self-heal.
+ * Best-effort — never throws into callers.
+ *
+ * @returns true when the on-disk config was rewritten
+ */
+export async function repairCorruptGortexConfig(): Promise<boolean> {
+  try {
+    const configPath = join(gortexHomeDir(), '.gortex', 'config.yaml')
+    let raw: string
+    try {
+      raw = await readFile(configPath, 'utf8')
+    } catch {
+      return false
+    }
+    if (!gortexConfigNeedsRepair(raw)) return false
+
+    const repaired = repairGortexConfigYaml(raw)
+    const tmpPath = `${configPath}.copse-repair`
+    await writeFile(tmpPath, repaired, 'utf8')
+    await rename(tmpPath, configPath)
+    console.info('[copse-panel] repaired corrupt gortex config.yaml')
+
+    // A live daemon may still be serving the torn config from memory. Prefer
+    // `daemon reload` when the CLI is already probed; otherwise (boot path)
+    // signal the pidfile directly. If reload fails on older gortex builds,
+    // fall through to the same stop so ensureGortexDaemon starts cold against
+    // the healed file.
+    let reloaded = false
+    if (gortexCommand) {
+      const reload = await runCommand(
+        gortexCmd(),
+        ['daemon', 'reload', '--no-progress'],
+        gortexRunOpts(gortexHomeDir()),
+      ).catch(() => null)
+      reloaded = reload !== null && reload.code === 0
+    }
+    if (!reloaded) {
+      try {
+        const pid = await readGortexDaemonPid()
+        if (pid !== null) process.kill(pid, 'SIGTERM')
+      } catch {
+        // Best-effort — ensureGortexDaemon will spawn a fresh process.
+      }
+      gortexDaemonReady = null
+    }
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function ensureGortexExcludes(workspaceRoot: string): Promise<void> {
@@ -918,6 +1021,10 @@ export async function reclaimBloatedGortexStore(): Promise<boolean> {
 }
 
 async function ensureGortexIndex(workspaceRoot: string): Promise<void> {
+  // Heal a torn config.yaml before any track/untrack/daemon work — gortex rejects
+  // the whole file on a single bad line, boots with zero repos/excludes, and the
+  // status poll then looks like "daemon failed to start" on cold opens.
+  await repairCorruptGortexConfig()
   // Scope BEFORE starting the daemon. `untrack` is a plain config edit that works
   // with no daemon running, so this leaves gortex's config listing only the
   // active repo. Ordering matters: a freshly-started daemon reads the *full*
