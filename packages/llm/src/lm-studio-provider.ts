@@ -297,6 +297,16 @@ async function toLmStudioChat(messages: LLMMessage[], client: ClientAdapter): Pr
       chat.append('system', message.content)
       continue
     }
+    // LM Studio's Chat has no `developer` role, and a local chat template would
+    // not accept OpenAI's anyway — which is why `operatorInstructionPlacement`
+    // routes every non-cloud namespace down the `leading-system` path and this
+    // branch should never be reached in practice. It is still the strongest
+    // operator channel the transport has, so carry it as `system` rather than
+    // dropping the instruction if that routing ever changes.
+    if (message.role === 'developer') {
+      chat.append('system', message.content)
+      continue
+    }
     if (message.role === 'user') {
       if (typeof message.content === 'string') {
         chat.append('user', message.content)
