@@ -114,6 +114,22 @@ describe('per-chat reasoning effort', () => {
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+
+    // Pin the model through the picker rather than trusting `seedEmptyProject`.
+    // The suite above ends with a live app holding `lmstudio:qwen3-coder-30b`;
+    // that app only shuts down inside the `reloadSession` above, and its
+    // shutdown write of `windowBounds` rewrites the whole settings file from
+    // its own cache — landing *after* the seed and putting the LM Studio
+    // selection back. `createThread` then stamps that onto the thread, so the
+    // footer opened on an OpenAI-compatible ladder and this suite silently
+    // tested a model it never named. Selecting here is both immune to that
+    // ordering and the surface under test.
+    const seeded = await $('.footer-model-host .model-picker')
+    await seeded.$('.model-picker-trigger').click()
+    const opus = await seeded.$('.model-picker-option[data-value="claude-opus-5"]')
+    await opus.waitForExist({ timeout: 15_000 })
+    await opus.click()
+    await expect(seeded.$('.model-picker-menu')).not.toBeDisplayed()
   })
 
   after(() => {
@@ -132,10 +148,14 @@ describe('per-chat reasoning effort', () => {
 
     await row.click()
     const choices = await picker.$$('.model-picker-menu .model-picker-option')
-    // The default, plus the six-level ladder Opus 5 accepts. (The eight above
-    // is a different model: an OpenAI-compatible endpoint whose ladder has
-    // `minimal` too.)
+    // The default, plus the six-level ladder Opus 5 accepts. The labels matter
+    // more than the count: `Minimal` belongs to the OpenAI-compatible ladder
+    // (the eight-option case earlier in this file), so its absence is what says
+    // the footer really is on the Claude model this suite pins.
+    const labels = await Promise.all(choices.map((choice) => choice.getText()))
     await expect(choices.length).toBe(7)
+    await expect(labels).toContain('No thinking')
+    await expect(labels).not.toContain('Minimal')
     await saveElementScreenshot(
       '.footer-model-host .model-picker-menu',
       'footer-reasoning-effort.png',
