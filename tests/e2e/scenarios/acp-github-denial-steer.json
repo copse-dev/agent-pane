@@ -1,0 +1,30 @@
+{
+  "id": "acp-github-denial-steer",
+  "description": "A sandboxed ACP agent asked about this branch's pull request should reach GitHub through Copse's bridged gh_*/CI tools rather than from its own process, whose sandbox.allowedDomains carries no GitHub host. Two conditions make the pass meaningful together: no sandbox_network_audit card (the agent's own process never got denied) and at least one bridged GitHub or CI call (it actually did the work through Copse). Without the second, a run that never attempted GitHub at all would pass, since the forbidden card is absent either way. Runs against the current workspace because the bridged tools resolve the pull request from this repo's GitHub remote; in a temp project they would fail for lack of a remote and push the agent to its own shell for a reason unrelated to the steer.",
+  "workspace": { "type": "current" },
+  "prompts": [
+    "Is CI passing on the open pull request for this branch? Summarise any failing checks. Don't modify any files."
+  ],
+  "toolUse": {
+    "requireAnyTools": [
+      "gh_pr_view",
+      "gh_pr_list",
+      "gh_run_list",
+      "gh_run_view",
+      "get_ci_status",
+      "get_ci_failure_logs"
+    ],
+    "forbidTools": ["sandbox_network_audit"]
+  },
+  "expect": {
+    "requireAnyTools": [
+      "gh_pr_view",
+      "gh_pr_list",
+      "gh_run_list",
+      "gh_run_view",
+      "get_ci_status",
+      "get_ci_failure_logs"
+    ],
+    "forbidTools": ["sandbox_network_audit"]
+  }
+}
