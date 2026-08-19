@@ -238,12 +238,12 @@ from reading the code rather than from observation:
 Re-measured after the PR-ref backfill, hydration-before-dispatch and eviction
 landed — i.e. with all the extra background work in play:
 
-| | baseline | shipped path |
-| --- | --- | --- |
-| `renderer:boot`, backfill pass | 8,393 ms | **655 ms** |
-| `renderer:boot`, steady state | 7,511 ms | **491 ms** |
-| `threads:loadProject` | 7,547 ms | 369–519 ms |
-| active-thread hydrate | — | 203–298 ms |
+|                                | baseline | shipped path |
+| ------------------------------ | -------- | ------------ |
+| `renderer:boot`, backfill pass | 8,393 ms | **655 ms**   |
+| `renderer:boot`, steady state  | 7,511 ms | **491 ms**   |
+| `threads:loadProject`          | 7,547 ms | 369–519 ms   |
+| active-thread hydrate          | —        | 203–298 ms   |
 
 The backfill read 334 threads / 186 MB in the background during that first run
 without pushing the open above 655 ms, and it is resumable — run 1 was killed
