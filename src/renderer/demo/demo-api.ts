@@ -794,6 +794,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
+      committedChanges: () => resolved(null),
+      committedFileDiff: () => resolved(null),
       // These take (projectId, threadId, …) — dropping the leading two made
       // `branchStatus` answer with the *project id* as the current branch, which
       // reads as a branch mismatch and blocks every send behind the composer's

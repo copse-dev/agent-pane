@@ -19,6 +19,7 @@ import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
+  GitCommittedChanges,
   GitFileDiff,
   GitStatusResult,
   GitBranchStatus,
@@ -884,6 +885,18 @@ export interface ApiClient {
     ) => Promise<GitFileDiff | null>
     /** Combined HEAD → working-tree diff for one file, or null when it matches HEAD. */
     workingFileDiff: (
+      projectId: string,
+      threadId: string,
+      path: string,
+    ) => Promise<GitFileDiff | null>
+    /**
+     * Files changed by commits no pull request carries yet, so committed work
+     * keeps showing in the Changes panel. Null outside a repository, or when no
+     * ref distinguishes landed from unlanded work.
+     */
+    committedChanges: (projectId: string, threadId: string) => Promise<GitCommittedChanges | null>
+    /** Base → HEAD diff for one file listed by `committedChanges`. */
+    committedFileDiff: (
       projectId: string,
       threadId: string,
       path: string,

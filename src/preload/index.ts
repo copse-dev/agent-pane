@@ -1091,6 +1091,10 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('git:fileDiff', projectId, threadId, path, staged),
     workingFileDiff: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('git:workingFileDiff', projectId, threadId, path),
+    committedChanges: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:committedChanges', projectId, threadId),
+    committedFileDiff: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('git:committedFileDiff', projectId, threadId, path),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branchStatus', projectId, threadId, forBranch),
     promptState: (projectId: string, threadId: string) =>
