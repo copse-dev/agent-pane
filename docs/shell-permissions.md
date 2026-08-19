@@ -5,25 +5,24 @@ scope analysis, the project sandbox, escalation, or approval UI. Historical desi
 remain in `docs/plans/`; this is the durable cross-platform contract.
 
 Shell command auto-run is gated by the pure `decideShellPermission` function in
-`src/main/services/permission-policy.ts`, called from `permission-gate.ts`. The OS sandbox runs
-on macOS (ASRT seatbelt) and Linux (ASRT bubblewrap). Windows has no sandbox we enable. The
-optional safety-model classifier is never an authorization boundary — it can only make
-strict-mode blocks. A separate deterministic auto-approval classifier can turn a `prompt` into
-an allow for recognised command shapes; write tiers of that classifier require an active
-sandbox.
+`src/main/services/security/permission-policy.ts`, called from `permission-gate.ts`. The OS sandbox
+runs on macOS (ASRT seatbelt) and Linux (bubblewrap). Windows, and any platform whose sandbox failed
+to start, has no containment: every command prompts. The optional LM Studio classifier is never an
+authorization boundary. The deterministic auto-approval classifier may skip a prompt only while the
+project sandbox is active.
 
 ## Platform matrix
 
-| Situation                       | Sandbox-contained command                                                                                                                     | Hard-external command (network download, `git push`, install, `~/...`)                                                | Ambiguous “may reach” command (`gh`, `nc`, cloud CLIs, `open <url>`)                                                                              |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **macOS / Linux, ASRT active**  | Auto-runs inside the project sandbox. The safety-model classifier is not consulted.                                                           | Prompts first, then runs outside the sandbox, unless a recognised auto-approval shape is within the configured level. | Auto-runs inside the sandbox. A verified block offers retry outside. `expects_sandbox_block: true` can move that prompt before the first attempt. |
-| **Windows / ASRT init failure** | Prompts because no OS sandbox can contain it. Recognised **read**-tier shapes may auto-approve. Write-tier auto-approval is capped at `read`. | Prompts, unless strict-mode hard-deny applies or a recognised **read**-tier shape matches.                            | Prompts and is treated as external, unless a recognised **read**-tier shape matches.                                                              |
-| **Auto-run disabled**           | Prompts.                                                                                                                                      | Prompts.                                                                                                              | Prompts.                                                                                                                                          |
+| Situation                                | Sandbox-contained command                                                    | Hard-external command (network download, `git push`, install, `~/...`)                                                               | Ambiguous “may reach” command (`gh`, `nc`, cloud CLIs, `open <url>`)                                                                                                                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **macOS ASRT / Linux bubblewrap active** | Auto-runs inside the project sandbox. The model classifier is not consulted. | Prompts first, then runs outside the sandbox. Recognised low-risk shapes (`git push origin`) may skip that prompt via auto-approval. | Auto-runs inside the sandbox. A verified block offers retry outside. This includes opaque interpreter heredocs, whose effects the sandbox contains. `expects_sandbox_block: true` can move that prompt before the first attempt. |
+| **Windows / sandbox init failure**       | Prompts because no OS sandbox can contain it. Auto-approval does not fire.   | Prompts, unless strict-mode hard-deny applies. Auto-approval does not fire.                                                          | Prompts and is treated as external. Auto-approval does not fire.                                                                                                                                                                 |
+| **Auto-run disabled**                    | Prompts.                                                                     | Prompts.                                                                                                                             | Prompts.                                                                                                                                                                                                                         |
 
 The ambiguous tier exists because short command names also appear harmlessly as paths or arguments.
 Where a sandbox is active, the sandbox—not a fuzzy match—decides whether they escape. Without a
-sandbox there is no containment boundary, so ambiguity must prompt unless a recognised read-tier
-shape matches.
+sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
+that prompt.
 
 ## Strict mode and expected blocks
 
@@ -72,10 +71,12 @@ remembered. Each later allowed command records a verdict sourced to `read-outsid
 - `shell-scope.ts`: static `sandbox` / `ambiguous` / `external` analysis and human-readable reasons.
 - `read-outside-project.ts` and `read-outside-grant.ts`: read-shape proof, refusals, and thread grant.
 - `safety-classifier.ts`: optional LM Studio classifier used only when the OS sandbox is unavailable.
-- `auto-approval.ts` / `auto-approval-config.ts`: deterministic shape allow-list; write tiers are
-  capped at `read` unless `isProjectSandboxEnabled()` is true.
-- `project-sandbox/`: ASRT integration on macOS (seatbelt) and Linux (bubblewrap).
-  `isProjectSandboxEnabled()` is false on Windows and after ASRT init failure.
+- `auto-approval.ts` / `auto-approval-config.ts`: deterministic shape allow-list; honoured only
+  while the project sandbox is active, auto-run is on, and the workspace is trusted. Write tiers
+  are additionally capped at `read` if a caller reaches the level helper without a sandbox.
+- `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
+  on Windows and after init failure.
 
-`permission-platform.test.ts` pins the platform matrix; `permission-gate.test.ts` pins gate wiring
-and MCP decisions. Update this document and those tests with any intentional contract change.
+`permission-platform.test.ts` pins the platform matrix; `permission-gate.test.ts` and
+`auto-approval-config.test.ts` pin gate wiring, the sandbox auto-approval gate, and MCP decisions.
+Update this document and those tests with any intentional contract change.

@@ -2,7 +2,8 @@
 
 Status: **Resolved (deterministic core shipped)** — the `read` tier is on by
 default; `local-write` and `remote-write` are one dropdown away in
-Settings → Permissions → Shell commands, beside the auto-run toggle.
+Settings → Permissions → Shell commands, beside the auto-run toggle. Auto-approval
+is honoured only while the project sandbox is active ([#1248](https://github.com/copse-dev/agent-pane/issues/1248)).
 
 ## Motivation
 
@@ -71,8 +72,8 @@ flowchart TD
   STRICT -- yes --> DENY[DENY - thrown to agent]
   STRICT -- no --> PR3[PROMPT - no containment available]
 
-  PR2 --> AUTO{recognised low-risk shape, within level?}
-  PR3 --> AUTO
+  PR2 --> AUTO{recognised low-risk shape, within level, sandbox active?}
+  PR3 --> ASK
   AUTO -- yes --> AL3[ALLOW - no prompt]
   AUTO -- no --> ASK[ask the user]
 
@@ -165,10 +166,15 @@ tier across its segments, so `git status && git commit -m x` needs `local-write`
   So are `gh pr merge`/`approve`/`ready`/`close`, `run rerun`, `workflow run`,
   and `repo delete`, mirroring `GITHUB_WRITE_TOOLS`, which always prompts. A
   `gh` write refuses `--repo`/`-R` so the target is always the workspace's repo.
-- **Gated like the trusted-command list**: honoured only when auto-run is on and
-  the workspace is explicitly trusted. This matters more here than there — the
-  allow-list is a per-binary grant the user typed out, while these shapes are
-  granted by class, so a freshly-cloned untrusted repo must not benefit.
+- **Gated like the trusted-command list**, plus one more: honoured only when
+  auto-run is on, the workspace is explicitly trusted, **and the project sandbox
+  is active**. A recognised shape can retry outside that sandbox (`git fetch`
+  after a seatbelt denial), but it must not run unprompted on the host when
+  there is no containment — Windows, or an ASRT / bubblewrap init failure.
+  Callers that omit the flag fail closed. This matters more here than for the
+  trusted-command list — the allow-list is a per-binary grant the user typed
+  out, while these shapes are granted by class, so a freshly-cloned untrusted
+  repo, or a host with no sandbox, must not benefit.
 - **Every grant is logged.** A `decisions.jsonl` line with `actor: 'classifier'`,
   `verdict: 'allowed'`, `source: 'auto-approval'`, and the tier plus per-segment
   reasons.
@@ -231,8 +237,9 @@ These are scope decisions, not oversights:
   `git push` run `.git/hooks/*`. A fresh clone ships none (hooks are not tracked),
   but a `core.hooksPath` pointed at a tracked directory, or a hook the agent wrote
   earlier in the session, is code these tiers execute without a prompt. Contained
-  by the macOS project sandbox; **not** contained on Linux or Windows. This is why
-  `local-write` is a separate tier and why `read` is the default.
+  by the project sandbox on macOS and Linux; **not** contained on Windows, which
+  is why auto-approval refuses to fire there. This is why `local-write` is a
+  separate tier and why `read` is the default.
 - **`git fetch` stages content it does not run.** Objects and refs land in `.git`;
   a later checkout could execute them.
 - **`gh` honours user aliases.** `gh alias set pr '!curl …'` would redirect a

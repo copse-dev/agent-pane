@@ -128,7 +128,7 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 | Surface                                    | Current guarantee                                                                                    | Important limitation                                                                                                                                        |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Local shell/background work on macOS/Linux | Workspace-scoped ASRT filesystem policy and deny-all network for contained auto-run work             | Approved external work may run with full host authority                                                                                                     |
-| Local shell/background work without ASRT   | Conservative approval; the safety-model classifier cannot authorize execution                        | An approved command runs with the user's authority. Read-tier auto-approval may still skip the prompt.                                                      |
+| Local shell/background work without ASRT   | Conservative approval; the safety-model classifier cannot authorize execution                        | An approved command runs with the user's authority. Auto-approval does not fire without a sandbox.                                                          |
 | Local ACP agent                            | macOS/Linux workspace profile with configured agent destinations; native tools re-enter Copse's gate | Network allow-list implementation is process-global; enforcement is absent on Windows                                                                       |
 | SSH workspace                              | Local approval policy and thread ownership; remote filesystem/process routing over SSH               | The remote account and host enforce filesystem, process, and network security                                                                               |
 | Managed remote agent                       | Local handoff, PII-redaction option, durable provider-session link, and local transcript projection  | Runtime isolation, network, credentials, retention, and teardown are provider-owned; the current Anthropic environment request uses unrestricted networking |
@@ -146,9 +146,11 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
   or soften a `deny`. It fails closed on any unrecognised segment, flag, or
   argument, refuses substitution/redirection/interpreters, excludes destructive
   git and `gh` forms by name, and is honoured only in a trusted workspace with
-  auto-run on. Write tiers additionally require an active OS sandbox, because
-  they run repository git hooks. No model verdict participates. Every grant is
-  recorded to the decision log. See
+  auto-run on **and** an active project sandbox. Without a sandbox — Windows, or
+  an init failure — every recognised shape still prompts. Write tiers
+  additionally cap at `read` if a caller reaches the level helper without
+  containment, because they run repository git hooks. No model verdict
+  participates. Every grant is recorded to the decision log. See
   [`plans/auto-approval-classifier.md`](plans/auto-approval-classifier.md).
 - **Approval and mutation gates.** Risky/external shell commands ask for explicit
   approval; custom tools prompt or use their documented remembered-grant path. File
@@ -203,11 +205,9 @@ enforced, ordered by how much they widen the blast radius:
   runs on macOS (seatbelt) and Linux (bubblewrap). On Windows, and after a sandbox
   init failure on any platform, every agent-proposed shell command requires
   explicit approval unless the user has explicitly allow-listed its binary as
-  trusted, or it matches a **read**-tier shape on the deterministic auto-approval
-  allow-list. Write-tier auto-approval (`local-write` / `remote-write`) is capped
-  at `read` unless a sandbox is actually active, because those shapes run
-  repository git hooks. The optional local **safety-model** classifier can only
-  make strict-mode blocks, never authorize host execution. Approved commands run
+  trusted. The deterministic auto-approval classifier does not fire without a
+  sandbox. The optional local **safety-model** classifier can only make
+  strict-mode blocks, never authorize host execution. Approved commands run
   with the user's full privilege.
 - **Approved external commands lose containment.** The contained macOS profile denies
   network and out-of-workspace access, but an approved external command or retry runs

@@ -404,4 +404,42 @@ describe('footer branch status', () => {
     )
     assert.deepEqual(labels, ['main'])
   })
+
+  it('refreshes from recursive working-tree events (#1753)', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const listener: { current: ((root: string) => void) | null } = { current: null }
+    let branchReads = 0
+    const base = createApi({ currentBranch: 'main', pr: null })
+    mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        branchStatus: async () => {
+          branchReads++
+          return { currentBranch: branchReads === 1 ? 'main' : 'feature/external', pr: null }
+        },
+        onWorkingTreeChanged: (handler: (root: string) => void): (() => void) => {
+          listener.current = handler
+          return () => {
+            if (listener.current === handler) listener.current = null
+          }
+        },
+      },
+    })
+    await settle()
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'main')
+    assert.ok(listener.current)
+
+    listener.current('/repo')
+    await new Promise<void>((resolve) => setTimeout(resolve, 550))
+    await settle()
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/external')
+  })
 })

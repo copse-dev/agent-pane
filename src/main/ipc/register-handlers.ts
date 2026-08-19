@@ -8,6 +8,7 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { getInAppBrowserSession } from '../windows/browser-web-contents.ts'
 import {
   captureBrowserPageText,
@@ -59,7 +60,10 @@ import {
   setSemanticIndexScaleGuarded,
 } from '../services/search/index-status.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
-import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
+import {
+  ensureWorkingTreeWatched,
+  scheduleIndexRebuild,
+} from '../services/search/workspace-index-watcher.ts'
 import {
   getSetting,
   setSetting,
@@ -89,7 +93,9 @@ import { resolveBestValueChatModel } from '../services/providers/best-value-mode
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
-  loadProjectThreads,
+  backfillThreadPrRefs,
+  loadProjectThreadMetas,
+  loadThreadMessages,
   createThread,
   appendMessage,
   updateMeta,
@@ -215,6 +221,8 @@ import {
 import {
   checkoutGitBranch,
   getBranches,
+  getCommittedChanges,
+  getCommittedFileDiff,
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
@@ -241,7 +249,7 @@ import {
   reviewRoadmapItem,
   reviewRoadmapItemDeep,
 } from '../services/roadmap-review.ts'
-import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
+import { branchHasOpenPr, getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import {
@@ -249,10 +257,16 @@ import {
   getGhPrChecksState,
   getGhPrDetails,
   getGhPrFileDiff,
+  invalidateGithubReadCache,
   listMyOpenPrs,
   listWorkspaceOpenPrs,
   resolveGithubPrRef,
 } from '../services/github/gh-pr-service.ts'
+import {
+  notifyGitHubListWatchers,
+  setGitHubListWatch,
+  setGitHubListWatchBroadcast,
+} from '../services/github/backend/github-list-watch.ts'
 import {
   approvePr,
   enablePrAutoMerge,
@@ -373,6 +387,9 @@ you want the coding agent to follow on every turn.
 `
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  setGitHubListWatchBroadcast(() => {
+    broadcastToAppWindows('gh:lists_tick')
+  })
   const alertUser = createElectronUserAlertSender(win, app.dock)
   const pluginService = getPluginService()
   setPluginBrowserService(createPluginBrowserPanelService(win))
@@ -1423,7 +1440,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Archived threads are hidden from every renderer surface (sidebar and
     // `@`-catalog both filter them), so folding their history into the store
     // only grew the heap. They stay on disk and in the whole-history readers.
-    return loadProjectThreads(id, { includeArchived: false })
+    // Threads written before `prRefs` existed have no cached PR links, and a
+    // metadata-only load has no transcript to scrape — so their sidebar chips
+    // would be missing. Fill them in behind the load: fire-and-forget, low
+    // concurrency, one pass per project ever (the result is recorded on each
+    // thread's metadata), pushing batches so the chips appear without a relaunch.
+    void backfillThreadPrRefs(id, (refs) => {
+      if (!win.isDestroyed()) win.webContents.send('threads:pr_refs', id, refs)
+    }).catch((err: unknown) => {
+      console.warn('[threads] PR-ref backfill failed:', err)
+    })
+    return loadProjectThreadMetas(id, { includeArchived: false })
+  })
+  // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
+  // when the user actually opens it.
+  ipcMain.handle('threads:loadMessages', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return loadThreadMessages(id, thread)
   })
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
@@ -1925,21 +1959,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   const threadOwnerArgs = z.tuple([zProjectId, zThreadId])
 
+  async function resolveWatchedGitRoot(projectId: string, threadId: string): Promise<string> {
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    // Watch-only: isolated worktrees are otherwise unwatched until an agent
+    // turn starts indexing, and large workspaces may skip the index watcher.
+    ensureWorkingTreeWatched(root)
+    return root
+  }
+
   ipcMain.handle('git:isAvailable', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
     return (await isGitAvailableForTarget()) && (await isInsideGitWorkTree(root))
   })
   ipcMain.handle('git:status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitStatus((await resolveThreadExecutionContext(projectId, threadId)).root)
+    return getGitStatus(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:changeStats', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitChangeStats((await resolveThreadExecutionContext(projectId, threadId)).root)
+    return getGitChangeStats(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:fileDiff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -1947,13 +1989,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       z.tuple([zProjectId, zThreadId, zPathString, z.boolean()]),
       rawArgs,
     )
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitFileDiff(filePath, isStaged, root)
+  })
+  ipcMain.handle('git:committedChanges', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getCommittedChanges(root, {
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
+  })
+  ipcMain.handle('git:committedFileDiff', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
+    return getCommittedFileDiff(filePath, root, {
+      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
+    })
   })
   ipcMain.handle('git:workingFileDiff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitWorkingFileDiff(filePath, root)
   })
   ipcMain.handle('git:branchStatus', async (event, ...rawArgs) => {
@@ -1972,13 +2030,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       ]),
       rawArgs,
     )
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitBranchStatus(projectId, branch, root)
   })
   ipcMain.handle('git:promptState', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitPromptState((await resolveThreadExecutionContext(projectId, threadId)).root)
+    return getGitPromptState(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:checkoutBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -1986,18 +2044,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       z.tuple([zProjectId, zThreadId, z.string().min(1).max(256)]),
       rawArgs,
     )
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    const root = await resolveWatchedGitRoot(projectId, threadId)
     await checkoutGitBranch(targetBranch, root)
   })
   ipcMain.handle('git:listBranches', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getBranches((await resolveThreadExecutionContext(projectId, threadId)).root)
+    return getBranches(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:getDefaultBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getDefaultBranch((await resolveThreadExecutionContext(projectId, threadId)).root)
+    return getDefaultBranch(await resolveWatchedGitRoot(projectId, threadId))
   })
   ipcMain.handle('git:sessionBackup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
@@ -2016,6 +2074,25 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   )
 
   ipcMain.handle('gh:status', () => getGhCliStatus())
+  ipcMain.handle('gh:invalidateReadCache', () => {
+    invalidateGithubReadCache()
+    // Other windows re-read through the now-empty TTL cache instead of waiting
+    // up to 30s for the next shared tick.
+    notifyGitHubListWatchers()
+  })
+  const listWatchTeardown = new WeakSet<WebContents>()
+  ipcMain.handle('gh:setListWatch', (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [watching, includeMyPrs] = parseIpcArgs(z.tuple([z.boolean(), z.boolean()]), rawArgs)
+    if (!listWatchTeardown.has(event.sender)) {
+      listWatchTeardown.add(event.sender)
+      const watcherId = event.sender.id
+      event.sender.once('destroyed', () => {
+        setGitHubListWatch(watcherId, false, false)
+      })
+    }
+    setGitHubListWatch(event.sender.id, watching, includeMyPrs)
+  })
   ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
   ipcMain.handle('gh:listWorkspaceOpenPrs', () => listWorkspaceOpenPrs())
   ipcMain.handle('gh:prChecks', (event, owner: unknown, repo: unknown, number: unknown) => {

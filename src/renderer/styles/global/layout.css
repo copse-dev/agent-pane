@@ -162,7 +162,7 @@
   gap: 4px;
   width: 100%;
   text-align: left;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -437,9 +437,10 @@
   margin-inline: 0;
   border-radius: 0;
   text-align: left;
-  /* Left 28px keeps the running-status gutter; roomier vertical padding keeps
+  /* Left 28px keeps the running-status gutter; the shared list rhythm keeps
      dense thread lists legible while actions use the shared trailing inset. */
-  padding: var(--spacing-md) var(--projects-action-inset) var(--spacing-md) 28px;
+  padding: var(--list-row-padding-block) var(--projects-action-inset) var(--list-row-padding-block)
+    28px;
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -576,7 +577,7 @@
   width: auto;
   margin-inline: 0;
   text-align: left;
-  padding: var(--spacing-md) var(--spacing-md) var(--spacing-md) 28px;
+  padding: var(--list-row-padding-block) var(--spacing-md) var(--list-row-padding-block) 28px;
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
@@ -1083,7 +1084,7 @@
   gap: var(--spacing-xs);
   width: 100%;
   text-align: left;
-  padding: 4px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }

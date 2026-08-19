@@ -147,12 +147,13 @@ const INVARIANTS: Invariant[] = [
     check: () => expectUnitPlan(['docs/testing-strategy.md'], 'skip'),
   },
   {
-    // A published Markdown twin is generated from its HTML page and drift-checked
-    // by sync-site-markdown.test.ts, so it is NOT docs-only however much the
-    // extension says otherwise. Hand-editing one is exactly what the unit tier
-    // has to catch, and `skip` here would be a silent green on it.
-    name: 'a hand-edited site/*.md twin still runs the unit tier',
-    check: () => expectUnitPlan(['site/index.md'], 'full'),
+    // sync-site-markdown.test.ts reads site/*.html off disk, so the import graph
+    // cannot see the dependency. The page is also the only reviewed copy of what
+    // deploys — pages.yml regenerates the Markdown twins from it with nothing
+    // between that and the live site — so `skip` here would be a silent green on
+    // a page edit that breaks the publish.
+    name: 'a site page edit runs the unit tier that generates its twin',
+    check: () => expectUnitPlan(['site/index.html'], 'full'),
   },
   {
     name: 'renderer panel change thins the unit tier to a subset',

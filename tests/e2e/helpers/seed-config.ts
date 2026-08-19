@@ -8,7 +8,7 @@ import {
   readFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -2313,10 +2313,16 @@ function buildLargeStagedFile(value: number): string {
   return `${lines.join('\n')}\n`
 }
 
+/** Branch the fixture's committed work lives on, ahead of its default branch. */
+const GIT_CHANGES_FIXTURE_BRANCH = 'agent-work'
+
 function initGitChangesFixtureRepo(): void {
   const repoRoot = GIT_CHANGES_FIXTURE_ROOT
   mkdirSync(repoRoot, { recursive: true })
   rmSync(join(repoRoot, 'untracked.ts'), { force: true })
+  // Neither file belongs in the baseline commit: untracked.ts is the fixture's
+  // untracked row, and committed.ts must arrive on the branch ahead of it.
+  rmSync(join(repoRoot, 'committed.ts'), { force: true })
   writeFileSync(join(repoRoot, 'staged.ts'), buildLargeStagedFile(1), 'utf8')
   writeFileSync(join(repoRoot, 'unstaged.ts'), 'export const name = "old"\n', 'utf8')
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
@@ -2324,8 +2330,38 @@ function initGitChangesFixtureRepo(): void {
   git('config', 'user.email', 'e2e@example.com')
   git('config', 'user.name', 'E2E')
   git('config', 'commit.gpgsign', 'false')
+  // With no remote, the default branch is read from init.defaultBranch, which
+  // otherwise varies by host git config and would leave the Changes panel with
+  // nothing to compare committed work against.
+  git('config', 'init.defaultBranch', 'main')
   git('add', '.')
   git('commit', '-q', '-m', 'baseline')
+  git('branch', '-M', 'main')
+}
+
+/**
+ * Put a commit on a branch of its own — the state an agent leaves behind when it
+ * commits its work, which the Changes panel lists under "Committed" because no
+ * pull request carries it yet.
+ */
+function ensureGitChangesFixtureCommit(): void {
+  const repoRoot = GIT_CHANGES_FIXTURE_ROOT
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
+  const refExists = (ref: string): boolean =>
+    spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], { cwd: repoRoot }).status === 0
+
+  // Idempotent, because a developer's fixture may predate this branch layout:
+  // the repo directory survives between runs and only its `.git` is gitignored.
+  git('config', 'init.defaultBranch', 'main')
+  if (!refExists('main')) git('branch', '-M', 'main')
+  if (refExists(GIT_CHANGES_FIXTURE_BRANCH)) {
+    git('checkout', '-q', GIT_CHANGES_FIXTURE_BRANCH)
+    return
+  }
+  git('checkout', '-q', '-B', GIT_CHANGES_FIXTURE_BRANCH, 'main')
+  writeFileSync(join(repoRoot, 'committed.ts'), 'export const committed = true\n', 'utf8')
+  git('add', 'committed.ts')
+  git('commit', '-q', '-m', 'agent committed work')
 }
 
 /** Reset the committed git-changes fixture to staged + unstaged + untracked state. */
@@ -2334,6 +2370,7 @@ export function resetGitChangesFixtureState(): void {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
   git('checkout', '-f', 'HEAD')
   git('clean', '-fd')
+  ensureGitChangesFixtureCommit()
   writeFileSync(join(repoRoot, 'staged.ts'), buildLargeStagedFile(2), 'utf8')
   git('add', 'staged.ts')
   writeFileSync(join(repoRoot, 'unstaged.ts'), 'export const name = "new"\n', 'utf8')

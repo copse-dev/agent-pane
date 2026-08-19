@@ -104,11 +104,11 @@ describe('per-model generation parameters', () => {
   })
 })
 
-describe('per-chat reasoning dial', () => {
+describe('per-chat reasoning effort', () => {
   before(async function () {
     this.timeout(90_000)
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-reasoning-dial', {
+    seedEmptyProject(process.cwd(), 'e2e-reasoning-effort', {
       windowBounds: { width: 1280, height: 800 },
       model: 'claude-opus-5',
     })
@@ -120,16 +120,27 @@ describe('per-chat reasoning dial', () => {
     resetUserData()
   })
 
-  it('sits beside the model picker and overrides only this chat', async function () {
+  it('sits in the model picker and overrides only this chat', async function () {
     this.timeout(60_000)
-    const dial = await $('[data-testid="footer-reasoning"]')
-    await dial.waitForDisplayed({ timeout: 15_000 })
+    await $('.model-picker-trigger').click()
+    const row = await $('.model-picker-group-row')
+    await row.waitForDisplayed({ timeout: 15_000 })
+    await expect(row.$('.model-picker-group-row-label')).toHaveText('Effort')
     // Unset by default — the model's own saved level applies.
-    await expect(dial).toHaveValue('')
+    await expect(row.$('.model-picker-group-row-value')).toHaveText('Default')
 
-    await dial.selectByAttribute('value', 'max')
-    await expect(dial).toHaveValue('max')
-    await expect(await $('.footer-reasoning')).toHaveElementClass('is-set')
-    await saveElementScreenshot('.input-footer', 'footer-reasoning-dial.png')
+    await row.click()
+    const choices = await $$('.model-picker-menu .model-picker-option')
+    // The default, plus the six-level ladder Opus 5 accepts.
+    await expect(choices.length).toBe(7)
+    await saveElementScreenshot('.model-picker-menu', 'footer-reasoning-effort.png')
+    await choices[choices.length - 1].click()
+    await expect($('.model-picker-menu')).not.toBeDisplayed()
+
+    // The pick lands on the thread, so it survives a reopen.
+    await $('.model-picker-trigger').click()
+    await expect($('.model-picker-group-row .model-picker-group-row-value')).toHaveText('Max', {
+      wait: 10_000,
+    })
   })
 })

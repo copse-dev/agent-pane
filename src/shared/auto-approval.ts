@@ -84,6 +84,8 @@ export function autoApprovalLevelAllows(level: AutoApprovalLevel, tier: AutoAppr
  * with the user's full host privilege (GA ledger N1). Cap at `read` so a
  * Windows session — or a macOS/Linux session after ASRT init failed — cannot
  * honour `local-write` / `remote-write` uncontained. `off` stays `off`.
+ * `resolveAutoApproval` now refuses every tier unless the sandbox is active;
+ * this cap remains so a write-tier cannot leak if a caller skips that gate.
  */
 export function effectiveAutoApprovalLevel(
   configured: AutoApprovalLevel,

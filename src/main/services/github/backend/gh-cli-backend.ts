@@ -311,7 +311,7 @@ export const ghCliBackend: GitHubBackend = {
         message: auth.stderr.trim() || 'Run `gh auth login` to connect your GitHub account.',
       }
     }
-    const user = await runGh(['api', 'user', '--jq', '.login'])
+    const user = await runGh(['api', '--cache', '60s', 'user', '--jq', '.login'])
     if (user.code !== 0 || !user.stdout.trim()) {
       return {
         installed: true,
@@ -390,6 +390,8 @@ export const ghCliBackend: GitHubBackend = {
     // a per-request safety boundary only.
     const { stdout, stderr, code } = await runGh([
       'api',
+      '--cache',
+      '20s',
       `repos/${slug}/issues`,
       '--method',
       'GET',

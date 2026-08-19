@@ -9,7 +9,10 @@ import {
   startSupervisedBackgroundProcess,
   stopSupervisedBackgroundProcess,
 } from '../services/exec/supervised-background-process.ts'
-import { requestBackgroundCompletionWake } from '../services/exec/background-completion-wake.ts'
+import {
+  requestBackgroundCompletionWake,
+  resolveBackgroundCompletionWakeHandler,
+} from '../services/exec/background-completion-wake.ts'
 import { requireThreadExecutionOwner } from '../services/thread-execution-context.ts'
 import { getActiveRunTurnTreeId } from '../services/thread-models.ts'
 
@@ -93,6 +96,8 @@ export const runBackgroundTool = defineTool({
     if (wake_on_completion === true && !turnTreeId) {
       return 'run_background cannot wake without an active human turn-tree.'
     }
+    // Capture before spawn: process `exit` is delivered outside this ALS scope.
+    const armedWakeHandler = turnTreeId === null ? null : resolveBackgroundCompletionWakeHandler()
     const info = await startSupervisedBackgroundProcess({
       command,
       allowPortBinding: allow_port_binding === true,
@@ -101,13 +106,16 @@ export const runBackgroundTool = defineTool({
       ...(turnTreeId
         ? {
             onCompletion: async ({ info: completed }): Promise<void> => {
-              await requestBackgroundCompletionWake({
-                operationId: completed.id,
-                owner,
-                turnTreeId,
-                exitCode: completed.exitCode,
-                timedOut: completed.timedOut,
-              })
+              await requestBackgroundCompletionWake(
+                {
+                  operationId: completed.id,
+                  owner,
+                  turnTreeId,
+                  exitCode: completed.exitCode,
+                  timedOut: completed.timedOut,
+                },
+                armedWakeHandler,
+              )
             },
           }
         : {}),
