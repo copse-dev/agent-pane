@@ -168,7 +168,13 @@ describe('per-chat reasoning effort', () => {
     // more than the count: `Minimal` belongs to the OpenAI-compatible ladder
     // (the eight-option case earlier in this file), so its absence is what says
     // the footer really is on the Claude model this suite pins.
-    const labels = await Promise.all(choices.map((choice) => choice.getText()))
+    // Read the labels in one DOM pass. `$$` hands back WebdriverIO's own array
+    // type, whose `map` does not produce something `Promise.all` can consume.
+    const labels = await browser.execute(() =>
+      [
+        ...document.querySelectorAll('.footer-model-host .model-picker-menu .model-picker-option'),
+      ].map((option) => option.textContent?.trim() ?? ''),
+    )
     await expect(choices.length).toBe(7)
     await expect(labels).toContain('No thinking')
     await expect(labels).not.toContain('Minimal')
