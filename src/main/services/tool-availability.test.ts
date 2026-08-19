@@ -97,7 +97,7 @@ describe('checkToolAvailability', () => {
       { command: string; args: string[]; unsandboxed: boolean | undefined } | undefined
     const available = await probeGhAccessible((command, args, options) => {
       invocation = { command, args, unsandboxed: options?.unsandboxed }
-      return Promise.resolve({ stdout: '', stderr: '', code: 0 })
+      return Promise.resolve({ stdout: '', stderr: '', code: 0, stdoutTruncated: false })
     })
 
     assert.equal(available, true)
@@ -110,7 +110,7 @@ describe('checkToolAvailability', () => {
 
   it('treats a failed authenticated GitHub probe as unavailable', async () => {
     const available = await probeGhAccessible(() =>
-      Promise.resolve({ stdout: '', stderr: 'not authenticated', code: 1 }),
+      Promise.resolve({ stdout: '', stderr: 'not authenticated', code: 1, stdoutTruncated: false }),
     )
     assert.equal(available, false)
   })

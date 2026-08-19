@@ -18,6 +18,7 @@ function base(over: Partial<WorkspaceIndexPolicyInput> = {}): WorkspaceIndexPoli
     nestedRepos: [],
     override: 'default',
     discoveryConfidence: 'complete',
+    listingTruncated: false,
     ...over,
   }
 }
@@ -42,6 +43,29 @@ describe('decideWorkspaceIndexPolicy', () => {
     assert.ok(policy.reasons.some((r) => /indexed paths/.test(r)))
     assert.equal(policyAllowsSemantic(policy), false)
     assert.equal(policyAllowsWatch(policy), false)
+  })
+
+  it('skips when the listing was truncated, whatever the surviving count says', () => {
+    // The capture stops at a byte budget, so an oversized checkout reports the
+    // fraction that fit: a measured 124,597-path repo arrived as 61,735 and
+    // cleared the 100k cap, then gortex indexed all of it and blew the track
+    // ceiling on every file-change burst.
+    const policy = decideWorkspaceIndexPolicy(
+      base({ pathCount: 61_735, byteEstimate: null, listingTruncated: true }),
+    )
+    assert.equal(policy.semantic, 'skipped')
+    assert.equal(policy.watch, 'skipped')
+    assert.ok(policy.reasons.some((r) => /overflowed its capture limit/.test(r)))
+    assert.equal(policyAllowsSemantic(policy), false)
+    assert.equal(policyAllowsWatch(policy), false)
+  })
+
+  it('still honours the force override on a truncated listing', () => {
+    const policy = decideWorkspaceIndexPolicy(
+      base({ pathCount: 61_735, listingTruncated: true, override: 'force' }),
+    )
+    assert.equal(policy.semantic, 'full')
+    assert.equal(policy.watch, 'full')
   })
 
   it('skips when the byte estimate alone exceeds the global cap', () => {

@@ -30,6 +30,11 @@ export interface WorkspaceIndexPolicyInput {
   nestedRepos: readonly NestedRepoObservation[]
   override: IndexPolicyOverride
   discoveryConfidence: DiscoveryConfidence
+  /**
+   * Whether `pathCount` is a floor rather than a total, because the listing
+   * subprocess overflowed its output cap and the rest of the tree was dropped.
+   */
+  listingTruncated: boolean
 }
 
 export interface WorkspaceIndexPolicy {
@@ -80,6 +85,7 @@ function nestedExcludePrefix(relativePath: string): string {
  * - `force` always allows full work (user override / tests).
  * - `never` always skips both.
  * - Global path/byte caps → `skipped` (hard refuse).
+ * - A truncated listing → `skipped`: the count is a floor, not a total.
  * - Oversized nested child repos → `limited` + suggested excludes (root never excluded).
  * - Missing scale evidence (`pathCount === 0` and no byte estimate) with
  *   `partial`/`failed` discovery → `skipped` (do not treat "listing failed" as
@@ -117,6 +123,23 @@ export function decideWorkspaceIndexPolicy(input: WorkspaceIndexPolicyInput): Wo
       watch: 'skipped',
       reasons: [
         'Scale discovery failed; refusing semantic indexing until path evidence is available',
+      ],
+      suggestedExcludes: [],
+    }
+  }
+
+  // A truncated listing carries no usable upper bound. The capture stops at a
+  // fixed byte budget, so an oversized checkout reports whatever fraction fit —
+  // a measured 124,597-path checkout came back as 61,735 and cleared the 100k
+  // cap, after which `gortex track` walked all of it and got SIGKILLed at the
+  // wait ceiling on every file-change burst. Same principle as failed discovery
+  // above: absence of evidence is not evidence of a small workspace.
+  if (input.listingTruncated) {
+    return {
+      semantic: 'skipped',
+      watch: 'skipped',
+      reasons: [
+        `Workspace file listing overflowed its capture limit at ${formatCount(input.pathCount)} paths; the real size is unknown`,
       ],
       suggestedExcludes: [],
     }
