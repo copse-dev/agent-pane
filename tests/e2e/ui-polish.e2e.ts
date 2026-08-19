@@ -37,6 +37,14 @@ describe('shared UI polish', () => {
     await $('.submit-btn').click()
     const activity = $('.agent-activity')
     await activity.waitForDisplayed({ timeout: 10_000 })
+    // Clicking parks the pointer on the button, so it stays `:hover` for the
+    // rest of the test and reports `--accent-fill-hover` rather than the
+    // `--accent-fill` the spiral is supposed to match (brand.css). Park the
+    // pointer somewhere inert before reading any of its colours. The prompt
+    // textarea's top-left corner is the safest park: hovering it changes
+    // nothing, and it is the far corner of the composer from the button, which
+    // is pinned to `#input-bar`'s bottom-right.
+    await $('.prompt-input').moveTo({ xOffset: 1, yOffset: 1 })
 
     const composerGeometry = await browser.execute(() => {
       const input = document.getElementById('input-bar')
