@@ -16,6 +16,15 @@ import type { NetworkDenial } from '../../project-sandbox/network-scope.ts'
 export type DeniedDestination = Pick<NetworkDenial, 'host' | 'port'>
 
 /**
+ * Name of the post-turn card reporting a turn's blocked destinations, and the
+ * argument carrying its `host:port` labels. Shared because the card is read back
+ * as well as written: the eval harness scores a scenario against a recorded
+ * thread, so it has to find this call and its hosts by the same names.
+ */
+export const SANDBOX_NETWORK_AUDIT_TOOL = 'sandbox_network_audit'
+export const SANDBOX_NETWORK_AUDIT_BLOCKED_ARG = 'blocked'
+
+/**
  * `host:port` labels for one turn's denials, deduplicated in first-seen order.
  * The audit's structured `blocked` argument and its human-readable body share
  * this so a card cannot list one set of hosts and explain another.
@@ -35,9 +44,16 @@ const GITHUB_DENIAL_HOSTS = new Set(['github.com', 'api.github.com', 'githubuser
 /**
  * True for GitHub destinations, where the bridged `gh_*` and CI tools are a real
  * substitute for widening this agent's egress and so earn a named callout.
+ *
+ * Accepts either a bare host or one of the `host:port` labels
+ * {@link denialHostLabels} writes into the audit card, so a caller holding only
+ * a recorded card — the eval harness scores against `args.blocked` — can ask the
+ * same question the card itself asked. Everything else an agent's process
+ * reaches, telemetry and package registries included, is deliberately not
+ * GitHub: those denials get the generic bridged-tools guidance.
  */
-function isGithubDenialHost(host: string): boolean {
-  const hostname = host.trim().toLowerCase()
+export function isGithubDenialHost(hostOrLabel: string): boolean {
+  const hostname = hostOrLabel.trim().toLowerCase().replace(/:\d+$/, '')
   return (
     GITHUB_DENIAL_HOSTS.has(hostname) ||
     hostname.endsWith('.github.com') ||
@@ -55,19 +71,20 @@ export function formatSandboxNetworkDenialAudit(denied: readonly DeniedDestinati
     '',
     "Copse's bridged tools reach the network from the host, so prefer them over " +
       "opening this agent's own egress:",
-    '- GitHub pull requests, Actions and CI: the "copse" MCP server\'s gh_pr_*, gh_run_* and CI tools, which use Copse\'s gh auth.',
-    '- Commands that need the network or files outside the workspace: its run_shell and run_background, which can ask the user to run approved work outside this sandbox.',
-    "Retrying the same destination from the agent's own shell will fail the same way — approval cannot unsandbox it.",
   ]
 
+  // Only name GitHub when GitHub was actually blocked. Most of what an agent's
+  // own process reaches is its telemetry or a package registry, and leading
+  // those denials with pull-request tooling reads as a non sequitur.
   if (denied.some((denial) => isGithubDenialHost(denial.host))) {
     lines.push(
-      '',
-      'GitHub was among the blocked hosts. Use the bridged GitHub and CI tools rather than running `gh` or curl against github.com inside the sandbox.',
+      '- GitHub pull requests, Actions and CI: the "copse" MCP server\'s gh_pr_*, gh_run_* and CI tools use Copse\'s gh auth, so prefer them to running `gh` or curl against github.com in here.',
     )
   }
 
   lines.push(
+    '- Commands that need the network or files outside the workspace: its run_shell and run_background, which can ask the user to run approved work outside this sandbox.',
+    "Retrying the same destination from the agent's own shell will fail the same way — approval cannot unsandbox it.",
     '',
     'If no bridged tool covers the need — an agent signing itself in, say — add the ' +
       "domain to this agent's sandbox.allowedDomains override under Settings → ACP " +

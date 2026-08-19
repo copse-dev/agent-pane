@@ -298,10 +298,11 @@ function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void
   if (!expectation) return
   const calls = thread.messages.flatMap((message) => message.toolCalls)
   const names = [...new Set(calls.map((call) => call.name))]
-  const violations = toolExpectationViolations(names, {
+  const violations = toolExpectationViolations(calls, {
     requireTools: expectation.requireTools,
     requireAnyTools: expectation.requireAnyTools,
     forbidTools: expectation.forbidTools,
+    forbidGithubNetworkDenial: expectation.forbidGithubNetworkDenial,
   })
   assert.deepEqual(violations, [], `${violations.join('; ')} (observed: ${names.join(', ')})`)
   if (expectation.requireBackgroundWakeStart === true) {

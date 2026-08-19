@@ -43,6 +43,8 @@ export interface EvalScenario {
     /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
     requireAnyTools?: string[]
     forbidTools?: string[]
+    /** Fail when a `sandbox_network_audit` card names a GitHub host. */
+    forbidGithubNetworkDenial?: boolean
     requireBackgroundWakeStart?: boolean
     maxApprovals?: number
   }
@@ -113,6 +115,7 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
       requireTools: z.array(z.string()).optional(),
       requireAnyTools: z.array(z.string()).optional(),
       forbidTools: z.array(z.string()).optional(),
+      forbidGithubNetworkDenial: z.boolean().optional(),
       requireBackgroundWakeStart: z.boolean().optional(),
       maxApprovals: z.number().int().nonnegative().optional(),
     })

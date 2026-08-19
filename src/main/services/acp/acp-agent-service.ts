@@ -62,6 +62,8 @@ import {
 import { networkDenialMarker, networkDenialsSince } from '../../project-sandbox/network-scope.ts'
 import {
   ACP_SANDBOX_GITHUB_STEER,
+  SANDBOX_NETWORK_AUDIT_BLOCKED_ARG,
+  SANDBOX_NETWORK_AUDIT_TOOL,
   denialHostLabels,
   formatSandboxNetworkDenialAudit,
 } from './acp-network-denial-steer.ts'
@@ -894,7 +896,11 @@ function emitNetworkDenialAudit(marker: number, onChunk: (chunk: StreamChunk) =>
   const id = `acp-network-audit-${randomUUID()}`
   onChunk({
     type: 'tool_call',
-    toolCall: { id, name: 'sandbox_network_audit', args: { blocked: denialHostLabels(denied) } },
+    toolCall: {
+      id,
+      name: SANDBOX_NETWORK_AUDIT_TOOL,
+      args: { [SANDBOX_NETWORK_AUDIT_BLOCKED_ARG]: denialHostLabels(denied) },
+    },
   })
   onChunk({
     type: 'tool_result',

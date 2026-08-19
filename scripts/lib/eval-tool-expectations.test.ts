@@ -1,6 +1,17 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { toolExpectationViolations, usedTool } from './eval-tool-expectations.mts'
+import {
+  toolExpectationViolations,
+  usedTool,
+  type ObservedToolCall,
+} from './eval-tool-expectations.mts'
+
+const called = (...names: string[]): ObservedToolCall[] => names.map((name) => ({ name }))
+
+const auditOf = (...blocked: string[]): ObservedToolCall => ({
+  name: 'sandbox_network_audit',
+  args: { blocked },
+})
 
 describe('usedTool', () => {
   it('matches a bridged ACP call against the bare tool name a scenario writes', () => {
@@ -35,9 +46,9 @@ describe('usedTool', () => {
 describe('toolExpectationViolations', () => {
   it('passes a run that used a bridged form of every required tool', () => {
     assert.deepEqual(
-      toolExpectationViolations(['mcp.copse.gh_pr_view', 'mcp.copse.get_ci_status'], {
+      toolExpectationViolations(called('mcp.copse.gh_pr_view', 'mcp.copse.get_ci_status'), {
         requireTools: ['gh_pr_view'],
-        forbidTools: ['sandbox_network_audit'],
+        forbidGithubNetworkDenial: true,
       }),
       [],
     )
@@ -45,14 +56,14 @@ describe('toolExpectationViolations', () => {
 
   it('reports a forbidden tool reached through the bridge', () => {
     assert.deepEqual(
-      toolExpectationViolations(['mcp.copse.run_shell'], { forbidTools: ['run_shell'] }),
+      toolExpectationViolations(called('mcp.copse.run_shell'), { forbidTools: ['run_shell'] }),
       ['forbidden tool used: run_shell'],
     )
   })
 
   it('accepts any one of the alternatives', () => {
     assert.deepEqual(
-      toolExpectationViolations(['mcp.copse.get_ci_status'], {
+      toolExpectationViolations(called('mcp.copse.get_ci_status'), {
         requireAnyTools: ['gh_pr_view', 'get_ci_status', 'gh_run_view'],
       }),
       [],
@@ -61,7 +72,7 @@ describe('toolExpectationViolations', () => {
 
   it('fails a run that used none of the alternatives', () => {
     assert.deepEqual(
-      toolExpectationViolations(['read_file'], {
+      toolExpectationViolations(called('read_file'), {
         requireAnyTools: ['gh_pr_view', 'get_ci_status'],
       }),
       ['expected at least one of these tools: gh_pr_view, get_ci_status'],
@@ -70,5 +81,74 @@ describe('toolExpectationViolations', () => {
 
   it('treats an empty alternative list as no expectation', () => {
     assert.deepEqual(toolExpectationViolations([], { requireAnyTools: [] }), [])
+  })
+})
+
+describe('forbidGithubNetworkDenial', () => {
+  it('fails when the audit names a GitHub host, reporting which', () => {
+    assert.deepEqual(
+      toolExpectationViolations([auditOf('api.github.com:443')], {
+        forbidGithubNetworkDenial: true,
+      }),
+      ["the agent's own process was denied GitHub: api.github.com:443"],
+    )
+  })
+
+  it('ignores an audit that blocked only the adapter phoning home', () => {
+    // The denials seen on nearly every real ACP turn: Claude's telemetry intake
+    // and Cursor's package registry. Neither says anything about how the agent
+    // reached GitHub, and failing on them made the scenario unusable.
+    assert.deepEqual(
+      toolExpectationViolations(
+        [auditOf('http-intake.logs.us5.datadoghq.com:443', 'registry.npmjs.org:443')],
+        { forbidGithubNetworkDenial: true },
+      ),
+      [],
+    )
+  })
+
+  it('still fails when GitHub is blocked alongside unrelated hosts', () => {
+    assert.deepEqual(
+      toolExpectationViolations(
+        [auditOf('http-intake.logs.us5.datadoghq.com:443', 'github.com:443')],
+        { forbidGithubNetworkDenial: true },
+      ),
+      ["the agent's own process was denied GitHub: github.com:443"],
+    )
+  })
+
+  it('reads the audit card through its bridged name too', () => {
+    assert.deepEqual(
+      toolExpectationViolations(
+        [{ name: 'mcp.copse.sandbox_network_audit', args: { blocked: ['github.com:443'] } }],
+        { forbidGithubNetworkDenial: true },
+      ),
+      ["the agent's own process was denied GitHub: github.com:443"],
+    )
+  })
+
+  it('passes a run with no audit card at all', () => {
+    assert.deepEqual(
+      toolExpectationViolations(called('mcp.copse.gh_pr_view'), {
+        forbidGithubNetworkDenial: true,
+      }),
+      [],
+    )
+  })
+
+  it('is inert when the scenario does not set it', () => {
+    assert.deepEqual(toolExpectationViolations([auditOf('github.com:443')], {}), [])
+  })
+
+  it('tolerates an audit card whose blocked list is missing or malformed', () => {
+    for (const args of [undefined, {}, { blocked: 'github.com' }, { blocked: [1, null] }]) {
+      assert.deepEqual(
+        toolExpectationViolations([{ name: 'sandbox_network_audit', ...(args ? { args } : {}) }], {
+          forbidGithubNetworkDenial: true,
+        }),
+        [],
+        JSON.stringify(args),
+      )
+    }
   })
 })

@@ -4,11 +4,32 @@
  * (`scenario.expect`) so the two cannot disagree about whether a run met them.
  */
 import { matchesBridgedToolName } from '../../src/main/services/acp/acp-bridge-name.ts'
+import {
+  SANDBOX_NETWORK_AUDIT_BLOCKED_ARG,
+  SANDBOX_NETWORK_AUDIT_TOOL,
+  isGithubDenialHost,
+} from '../../src/main/services/acp/acp-network-denial-steer.ts'
 
 export interface ToolExpectations {
   requireTools?: readonly string[] | undefined
   requireAnyTools?: readonly string[] | undefined
   forbidTools?: readonly string[] | undefined
+  /**
+   * Fail when a `sandbox_network_audit` card names a GitHub host — the agent's
+   * own process tried to reach GitHub instead of using a bridged tool.
+   *
+   * Distinct from `forbidTools: ['sandbox_network_audit']`, which fails on *any*
+   * blocked destination and so cannot be used with an agent that phones home:
+   * Claude's adapter is denied its Datadog telemetry on most turns and Cursor's
+   * is denied the npm registry, neither of which says anything about GitHub.
+   */
+  forbidGithubNetworkDenial?: boolean | undefined
+}
+
+/** One observed call: the name a scenario matches, and the args it may inspect. */
+export interface ObservedToolCall {
+  name: string
+  args?: Record<string, unknown> | undefined
 }
 
 /**
@@ -46,9 +67,10 @@ export function usedTool(observedNames: readonly string[], expectedName: string)
  * all — the forbidden tool is absent either way.
  */
 export function toolExpectationViolations(
-  observedNames: readonly string[],
+  observed: readonly ObservedToolCall[],
   expectations: ToolExpectations,
 ): string[] {
+  const observedNames = observed.map((call) => call.name)
   const violations: string[] = []
   for (const name of expectations.requireTools ?? []) {
     if (!usedTool(observedNames, name)) violations.push(`missing required tool: ${name}`)
@@ -60,5 +82,32 @@ export function toolExpectationViolations(
   for (const name of expectations.forbidTools ?? []) {
     if (usedTool(observedNames, name)) violations.push(`forbidden tool used: ${name}`)
   }
+  if (expectations.forbidGithubNetworkDenial === true) {
+    const github = deniedGithubHosts(observed)
+    if (github.length > 0) {
+      violations.push(`the agent's own process was denied GitHub: ${github.join(', ')}`)
+    }
+  }
   return violations
+}
+
+/**
+ * GitHub hosts named by any `sandbox_network_audit` card in the run.
+ *
+ * The card records its hosts as `host:port` labels, which
+ * {@link isGithubDenialHost} accepts, so the harness and the card agree on what
+ * counts as GitHub. A card carrying only non-GitHub hosts yields nothing.
+ */
+function deniedGithubHosts(observed: readonly ObservedToolCall[]): string[] {
+  const hosts = observed
+    .filter((call) => usedTool([call.name], SANDBOX_NETWORK_AUDIT_TOOL))
+    .flatMap((call) => blockedLabels(call.args))
+    .filter((label) => isGithubDenialHost(label))
+  return [...new Set(hosts)]
+}
+
+function blockedLabels(args: Record<string, unknown> | undefined): string[] {
+  const blocked = args?.[SANDBOX_NETWORK_AUDIT_BLOCKED_ARG]
+  if (!Array.isArray(blocked)) return []
+  return blocked.filter((label): label is string => typeof label === 'string')
 }
