@@ -62,8 +62,11 @@ export interface ModelDisplayContext {
  * - the best-value chat sentinel → `Best value (plan / price)`.
  * - a bare cloud id → the shared house-style cloud label.
  *
- * The model-name half always runs through the house-style labelers, so vendor
- * casing on proper nouns is preserved; only structure and separators are unified.
+ * Every vendor-named model runs through the house-style labelers, so casing on
+ * proper nouns is preserved; only structure and separators are unified. LM Studio
+ * is the exception, and deliberately: its ids are local weight names
+ * (`qwen3.6-35b-a3b`), which `canonicalModelLabel` returns untouched anyway, so
+ * the suffix is all that is added.
  */
 export function displayModelLabel(model: string, context?: ModelDisplayContext): string {
   if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL

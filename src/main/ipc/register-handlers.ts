@@ -487,17 +487,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await writeFile(join(projectPath, 'AGENT.md'), STARTER_AGENT_MD, 'utf8')
     await writeFile(join(projectPath, 'README.md'), `# ${name}\n\n`, 'utf8')
     // git init -b main keeps the initial branch name stable regardless of the
-    // user's global init.defaultBranch / git template config. The chosen parent
-    // is intentionally outside the current workspace sandbox until registration
-    // below, so this explicit user action must not inherit that old boundary.
-    const initialized = await runCommand('git', ['init', '-b', 'main'], {
-      cwd: projectPath,
-      timeout_ms: 0,
-      unsandboxed: true,
-    })
-    if (initialized.code !== 0) {
-      throw new Error(initialized.stderr.trim() || 'Could not initialise the Git repository')
-    }
+    // user's global init.defaultBranch / git template config.
+    await runCommand('git', ['init', '-b', 'main'], { cwd: projectPath, timeout_ms: 0 })
     const root = await registerAllowedWorkspaceRoot(projectPath)
     return root
   })

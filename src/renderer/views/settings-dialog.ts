@@ -508,7 +508,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
-        <h2 style="font-family: var(--font-family)">Settings</h2>
+        <h2>Settings</h2>
         <button type="button" class="settings-close-btn" id="settings-close" aria-label="Close settings" data-tooltip="Close settings"></button>
       </header>
 
