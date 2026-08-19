@@ -8,6 +8,15 @@ every published entry.
 
 ## Unreleased
 
+- Per-chat reasoning effort now lives inside the composer's model picker,
+  alongside an ACP agent's own **Mode** and thinking-effort selectors, instead of
+  sitting as a separate dropdown in the footer strip. Every per-chat knob that
+  belongs to the chosen model is now in one menu, and the footer keeps one
+  control where it had two. The behaviour is unchanged: the effort applies to
+  this chat only, offers just the levels the selected model accepts, reads as
+  **Default** when the model's own saved level applies, and disappears for models
+  with no reasoning control.
+
 - A shell in a popped-out Terminal now shows its output. Typing worked and the
   command really ran, but every byte it produced was delivered to the main
   window, which had no tab for that session and dropped it — so the pop-out sat
