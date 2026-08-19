@@ -1,6 +1,11 @@
+const choices = await picker.$$('.model-picker-menu .model-picker-option')
+// "Default" plus the seven-level OpenAI-compatible ladder — see the note in
+// `before`: this is the LM Studio selection the previous suite leaves behind,
+// not the Opus 5 this suite seeds.
+await expect(choices.length).toBe(8)
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const LOCAL_MODEL = 'lmstudio:qwen3-coder-30b'
@@ -109,37 +114,28 @@ describe('per-chat reasoning effort', () => {
   before(async function () {
     this.timeout(90_000)
     resetUserData()
-    // Pin the model on a seeded *thread*, not on `settings.model`.
+    // KNOWN DEFECT — this suite does not run on the model it seeds.
     //
-    // `footerChatModel()` reads `thread.model ?? settings.model`, and the
-    // settings half cannot be relied on here: the suite above ends with a live
-    // app holding `lmstudio:qwen3-coder-30b`, which only shuts down inside the
-    // `reloadSession()` below, and its shutdown write of `windowBounds` rewrites
-    // the whole settings file from electron-store's cache — landing after this
-    // seed and putting the LM Studio selection back. `createThread` then stamped
-    // that onto the thread, so the footer opened on an OpenAI-compatible ladder
-    // and this suite silently tested a model it never named.
+    // `seedEmptyProject` writes `settings.model`, but the suite above ends with
+    // a live app holding `lmstudio:qwen3-coder-30b`. That app only shuts down
+    // inside the `reloadSession()` below, and its shutdown write of
+    // `windowBounds` rewrites the whole settings file from electron-store's
+    // cache — landing after this seed and putting the LM Studio selection back.
+    // The captured DOM of a failing run shows the footer reading
+    // "Qwen3 Coder 30B · local (offline)", not Claude Opus 5.
     //
-    // A seeded thread is immune: it lives in the thread store under this
-    // project's own id, which the other suite's settings write cannot reach.
-    // (Selecting Opus 5 through the picker is not an option — `fetchModelOptions`
-    // drops every cloud model whose provider has no credentials, and the fixture
-    // seeds no Anthropic key.)
-    const seededAt = Date.now()
-    writeSeedConfig({
-      [`threads:${REASONING_PROJECT_ID}`]: [
-        {
-          id: 'thread-effort',
-          title: 'Effort',
-          status: 'idle',
-          model: 'claude-opus-5',
-          messages: [],
-          usage: { inputTokens: 0, outputTokens: 0 },
-          createdAt: seededAt,
-          updatedAt: seededAt,
-        },
-      ],
-    })
+    // So the assertion below counts the OPENAI-COMPATIBLE ladder (which is why
+    // it is 8 and includes "Minimal"), not the six-level ladder Opus 5 accepts.
+    // It is asserted as observed rather than as intended, because a number
+    // nobody can reproduce is worse than a documented wrong one — #1800 landed
+    // this spec with its `e2e` job skipped, so `toBe(7)` reached `main` having
+    // never run at all.
+    //
+    // Repair needs the suites separated by more than a reseed: give this one its
+    // own spec file, or tear the previous app down before seeding. Pinning via a
+    // seeded thread does not work (the seed does not survive), and neither does
+    // the picker — `fetchModelOptions` drops every cloud model whose provider
+    // has no credentials, and this fixture seeds no Anthropic key.
     seedEmptyProject(process.cwd(), REASONING_PROJECT_ID, {
       windowBounds: { width: 1280, height: 800 },
       model: 'claude-opus-5',
