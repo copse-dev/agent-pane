@@ -431,6 +431,10 @@ describe('buildAcpPrompt', () => {
     assert.match(sandboxed, /cannot unsandbox your own shell/i)
     assert.match(sandboxed, /copse[\s\S]+run_shell/i)
     assert.match(sandboxed, /approved external work outside this sandbox/i)
+    // The GitHub steer is appended to the sandbox note: bridge first, no
+    // github.com on the agent allowlist by default.
+    assert.match(sandboxed, /GitHub and CI tools/i)
+    assert.match(sandboxed, /sandbox\.allowedDomains/)
     assert.doesNotMatch(buildAcpPrompt('hello', [], { sandboxed: false }), /Environment note:/)
   })
 
