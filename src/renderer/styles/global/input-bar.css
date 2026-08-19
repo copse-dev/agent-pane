@@ -635,29 +635,6 @@
   flex-shrink: 1;
   max-width: min(200px, 30vw);
 }
-/* Per-chat reasoning dial. Sits next to the model it applies to and stays
-   quiet — the model name is the headline; effort is the qualifier. */
-.footer-reasoning-host {
-  min-width: 0;
-  flex: 0 0 auto;
-}
-.footer-reasoning-select {
-  max-width: min(140px, 30vw);
-  padding: 2px var(--spacing-md) 2px var(--spacing-xs);
-  border: none;
-  background-color: transparent;
-  background-position: right 0 center;
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
-}
-.footer-reasoning-select:hover {
-  color: var(--text-primary);
-}
-/* Set apart only while it actually overrides the model's own level, so a glance
-   says whether this chat is running hotter than the model's default. */
-.footer-reasoning.is-set .footer-reasoning-select {
-  color: var(--text-secondary);
-}
 .footer-checkout-host {
   position: relative;
   flex: 0 0 auto;

@@ -3,6 +3,7 @@ import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
 import {
   autoApprovalLevelSchema,
   RENDERER_WRITABLE_SETTING_SCHEMAS,
+  trustedShellCommandsSchema,
   webAllowedOriginsSchema,
 } from './settings-writable.ts'
 
@@ -28,6 +29,14 @@ const providerBaseUrlSchema = z
 // validate against the matching schema (corrupt values fall back to the default)
 // and writes validate before persisting. Keys without an entry keep the legacy
 // untyped behaviour, so adding a schema here is incremental and non-breaking.
+//
+// Registering a key is NOT optional for anything the renderer reads back.
+// `settings:get` calls `getSetting(key, null)`, and with no schema that read
+// falls through to the fallback type-check — where a `null` fallback matches
+// only `null`. An unregistered key therefore reads back as `null` whatever is
+// stored, so the Settings form shows its default and then writes that emptied
+// value back on the next save. `settings-schema.test.ts` asserts every key in
+// the security bundle is registered here.
 
 const windowBoundsSchema = z.object({
   x: z.number().optional(),
@@ -95,7 +104,16 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   // Highest tier the deterministic auto-approval classifier may grant without a
   // prompt (see src/main/services/security/auto-approval.ts).
   shellAutoApprovalLevel: autoApprovalLevelSchema,
+  // Command basenames trusted to run unsandboxed with no prompt (Settings →
+  // Permissions). Registering the schema is what lets `settings:get` hand the
+  // stored array back to the renderer — see the note above SETTING_SCHEMAS.
+  trustedShellCommands: trustedShellCommandsSchema,
   mcpAutoAllowReadOnly: z.boolean(),
+  // Cursor-hooks toggle (Settings → Sources) and the per-thread read-only
+  // default (Settings → Permissions). Both are written through the security
+  // bundle and read back by the Settings form.
+  cursorHooksEnabled: z.boolean(),
+  defaultReadonlyMode: z.boolean(),
   safeInstallEnabled: z.boolean(),
   mockFollowUps: z.boolean(),
   webAllowedOrigins: webAllowedOriginsSchema,

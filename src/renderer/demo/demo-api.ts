@@ -465,6 +465,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     threads: {
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
+      // The demo always hands back whole threads, so nothing ever asks to
+      // hydrate one; answering from the in-memory list keeps that true.
+      loadMessages: (_projectId: string, threadId: string) =>
+        resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
+      // Demo threads always arrive whole, so nothing is ever backfilled.
+      onPrRefs: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {
         threads = [thread, ...threads.filter((candidate) => candidate.id !== thread.id)]
         return resolvedVoid()
@@ -799,6 +805,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
+      committedChanges: () => resolved(null),
+      committedFileDiff: () => resolved(null),
       // These take (projectId, threadId, …) — dropping the leading two made
       // `branchStatus` answer with the *project id* as the current branch, which
       // reads as a branch mismatch and blocks every send behind the composer's

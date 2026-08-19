@@ -88,10 +88,13 @@ function serializedNavigation(
 const threadWriteKey = (projectId: string, threadId: string): string =>
   `thread:${projectId}:${threadId}`
 
-type ThreadMeta = Omit<Thread, 'messages'>
+type ThreadMeta = Omit<Thread, 'messages' | 'messagesLoaded'>
 
 function metaOf(thread: Thread): ThreadMeta {
-  const { messages: _messages, ...meta } = thread
+  // Mirror the main-process `metaOf`: `messagesLoaded` is session-local load
+  // bookkeeping. Leaving it in would also make hydrating a thread look like a
+  // metadata change and fire a pointless `updateMeta` write per thread opened.
+  const { messages: _messages, messagesLoaded: _messagesLoaded, ...meta } = thread
   return meta
 }
 
@@ -300,7 +303,13 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     const { threads, activeThreadId } = store.getState()
     const active = threads.find((t) => t.id === activeThreadId)
     if (active?.messages.some((m) => m.id === messageId)) return active.id
-    return threads.find((t) => t.messages.some((m) => m.id === messageId))?.id
+    // Skip threads whose transcript is not in memory: their empty `messages`
+    // proves nothing, and matching against it would silently attribute the
+    // message to the wrong thread or to none. Anything actually streaming a
+    // message has been hydrated first (see `ensureThreadMessages` callers).
+    return threads.find(
+      (t) => t.messagesLoaded !== false && t.messages.some((m) => m.id === messageId),
+    )?.id
   }
 
   const flushNow = (): Promise<void> => {
