@@ -28,12 +28,16 @@ describe('subagent badge and footer model label', () => {
   })
 
   it('renders the subagent badge through the shared labeler and captures a screenshot', async () => {
-    await $('.tool-card-subagent').waitForExist({ timeout: 30_000 })
+    const card = await $('.tool-card-subagent')
+    await card.waitForExist({ timeout: 30_000 })
+    await expect(card).not.toHaveAttribute('open')
+    await card.$('summary.tool-card-header').click()
+    await expect(card).toHaveAttribute('open')
 
     // The badge is the whole point of local/cloud routing visibility; it used
     // to show the raw `claude-haiku-4-5` id. It now reads the house-style label.
-    const badge = await $('.subagent-model')
-    await badge.waitForExist({ timeout: 15_000 })
+    const badge = await card.$('.subagent-model')
+    await expect(badge).toBeDisplayed()
     await expect(badge).toHaveText('Claude Haiku 4.5')
 
     await saveElementScreenshot('.tool-card-subagent', 'subagent-badge-cloud.png')

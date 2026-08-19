@@ -44,6 +44,7 @@ dialog.settings-overlay::backdrop {
   -webkit-app-region: drag;
 }
 .settings-header h2 {
+  font-family: var(--font-family);
   font-size: var(--font-size-sm);
   /* Match the regular panel title rather than introducing a heavier heading
      treatment when Settings takes over the same titlebar position. */
