@@ -12,6 +12,7 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 import { canContinue, DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
+import { ensureThreadMessages } from './thread-hydration.ts'
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -328,7 +329,21 @@ export async function resumePendingQueues(store: AppStore, api: ApiClient): Prom
       status = 'idle'
     }
     if (status === 'idle' && (thread.pendingMessages?.length ?? 0) > 0) {
-      drainMessageQueue(store, api, thread.id)
+      // Threads load as metadata only, so a queue resuming after a restart can
+      // be the first thing to touch a transcript that was never read. Load it
+      // before the drain streams into it, or the thread renders as a
+      // conversation that began mid-sentence. Sequenced per thread rather than
+      // awaited here so one slow read cannot hold up the other threads' resumes.
+      const projectId = store.getState().activeProjectId
+      const threadId = thread.id
+      if (projectId) {
+        void ensureThreadMessages(projectId, threadId).then(() => {
+          if (store.getState().activeProjectId !== projectId) return
+          drainMessageQueue(store, api, threadId)
+        })
+      } else {
+        drainMessageQueue(store, api, threadId)
+      }
     }
   }
 }
