@@ -507,6 +507,76 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('refreshes the open artefact tab in place instead of stacking duplicates', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openCanvasArtefact(store, {
+        title: 'Sales Dashboard',
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>v1</h1>',
+      })
+      const firstPanel = viewer.querySelector('.browser-tab-panel.is-active')
+      assert.ok(firstPanel)
+      const webview = firstPanel.querySelector<FakeWebview>('.browser-webview')
+      assert.ok(webview)
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      // The agent iterates on the same prototype and re-renders it.
+      openCanvasArtefact(store, {
+        title: 'Sales Dashboard',
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>v2</h1>',
+      })
+
+      // Still one Sales Dashboard tab, still the same one, now carrying v2.
+      const labels = (): string[] =>
+        Array.from(list.querySelectorAll('.browser-tabs-tab-label')).map((el) => el.textContent)
+      assert.deepEqual(
+        labels().filter((label) => label === 'Sales Dashboard'),
+        ['Sales Dashboard'],
+      )
+      const activePanel = viewer.querySelector('.browser-tab-panel.is-active')
+      assert.equal(activePanel, firstPanel)
+      const decoded = Buffer.from(webview.src.split('base64,')[1] ?? '', 'base64').toString('utf8')
+      assert.match(decoded, /<h1>v2<\/h1>/)
+      const activeLabel = list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')
+      assert.equal(activeLabel?.textContent, 'Sales Dashboard')
+
+      // A differently titled artefact is a different thing and gets its own tab.
+      const beforePricing = list.querySelectorAll('.browser-tabs-tab').length
+      openCanvasArtefact(store, {
+        title: 'Pricing Page',
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>pricing</h1>',
+      })
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, beforePricing + 1)
+      assert.ok(labels().includes('Pricing Page'))
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
+      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
+      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      unmount()
+    }
+  })
+
   it('shares page context and offers external-browser tools from the toolbar menu', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {

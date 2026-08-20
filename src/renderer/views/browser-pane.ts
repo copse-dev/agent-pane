@@ -652,13 +652,35 @@ export function mountBrowserPane(
     })
   }
 
+  /**
+   * The open tab already showing this artefact, if any. Titles are the artefact's
+   * identity on the canvas — the address bar shows the title, not the (opaque,
+   * enormous) data: URL — so re-rendering the same title means "here is a new
+   * version of that", not "here is a second thing".
+   */
+  function artefactTabFor(title: string): BrowserTab | undefined {
+    for (const tab of tabs.values()) if (tab.artefactTitle === title) return tab
+    return undefined
+  }
+
   function openArtefact(artefact: CanvasArtefact): void {
     // text/html renders inline via an opaque data: URL; a URL-list artefact
     // navigates normally (and is still subject to the browser origin policy).
     const isHtml = artefact.mimeType === 'text/html'
     const target = isHtml ? htmlDataUrl(artefact.body) : normalizeBrowserUrl(artefact.body)
-    const id = addTab({ activate: true })
-    const tab = tabs.get(id)
+    // Iterating on a prototype re-renders it many times over. Refresh the tab
+    // that is already showing it rather than stacking near-identical tabs the
+    // user has to close: the canvas they are looking at becomes the new version
+    // in place. `navigateWebview` reloads when the URL is unchanged, so a
+    // re-render of byte-identical HTML still repaints.
+    const existing = artefactTabFor(artefact.title)
+    if (existing) {
+      // Drop any queued navigation first: activating the tab flushes pendingUrl,
+      // and that would load the previous version a frame before this one.
+      existing.pendingUrl = null
+      setActiveTab(existing.id)
+    }
+    const tab = existing ?? tabs.get(addTab({ activate: true }))
     if (!tab) return
     tab.artefactTitle = artefact.title
     tab.urlInput.value = ''

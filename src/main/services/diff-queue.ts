@@ -1,4 +1,5 @@
 import { errorMessage } from '@shared/errors.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname } from 'node:path'
 import type { BrowserWindow, IpcMain } from 'electron'
@@ -305,15 +306,55 @@ async function readCurrentContent(
   }
 }
 
+/**
+ * Whether `path` already exists in the worktree. Fails *closed*: a probe that
+ * cannot be answered (no root, an unreadable parent, an SSH hiccup) reports the
+ * path as existing, so the new-file fast path in {@link canApplyDirectly} is
+ * never taken on a guess.
+ */
+async function pathExistsInWorktree(path: string, root: string | null): Promise<boolean> {
+  if (!root) return true
+  try {
+    await getActiveWorkspaceFs().access(await resolvePathWithinRoot(path, root))
+    return true
+  } catch (err) {
+    // ENOENT is the answer we are looking for; anything else means the probe
+    // itself failed and the safe reading is "assume there is something there".
+    return !isNotFoundError(err)
+  }
+}
+
+/** Whether a filesystem rejection means "no such file" rather than a failed probe. */
+function isNotFoundError(err: unknown): boolean {
+  if (!isRecord(err)) return false
+  const code = err['code']
+  return code === 'ENOENT' || code === 'ENOTDIR'
+}
+
 async function canApplyDirectly(
   state: DiffQueueState,
   path: string,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+  op: DiffOp = 'write',
+): Promise<{ ok: true; newFile?: boolean } | { ok: false; reason: string }> {
   if (state.queue.length > 0) {
     return { ok: false, reason: 'there are pending staged diffs waiting for user approval' }
   }
 
   const root = executionRootFor(state)
+  // Creating a file that does not exist yet destroys nothing, so there is
+  // nothing for approval to protect — the same reasoning `canApplyFileOpDirectly`
+  // already applies to `mkdir`, and the reason a "prototype this" turn can write
+  // its HTML and render it in one step instead of stopping at a diff panel for a
+  // file the user has never seen. The creation stays fully visible and
+  // reversible: it lands untracked in `git status` and deleting it loses nothing.
+  //
+  // Writes only. `canApplyFileOpDirectly` routes deletes and renames through
+  // here too, and for those the path *not* existing is a failure to report, not
+  // a licence to skip review.
+  if (op === 'write' && !(await pathExistsInWorktree(path, root))) {
+    return { ok: true, newFile: true }
+  }
+
   const status = await getGitStatus(root)
   if (!status) {
     return { ok: false, reason: 'git is unavailable or the workspace is not a git worktree' }
@@ -359,9 +400,9 @@ async function canApplyDirectly(
 /**
  * Whether a non-content file op (delete, rename, mkdir) may skip the approval
  * queue. Writes have always had that option — {@link canApplyDirectly} guards
- * them with a worktree backup — but ops staged unconditionally, so a thread
- * running in its own worktree still had to approve every delete and rename it
- * made inside its own checkout. Nothing there is the user's: the worktree is cut
+ * them with a worktree backup, and exempts a brand-new path outright — but ops
+ * staged unconditionally, so a thread running in its own worktree still had to
+ * approve every delete and rename it made inside its own checkout. Nothing there is the user's: the worktree is cut
  * from the default branch, lives on its own branch in its own directory, and the
  * user's checkout is untouched either way (worktree invariant 6), so the prompt
  * was asking about files only the agent had ever written.
@@ -400,7 +441,7 @@ async function canApplyFileOpDirectly(
     }
     return { ok: true }
   }
-  return canApplyDirectly(state, path)
+  return canApplyDirectly(state, path, op)
 }
 
 /**
@@ -1011,9 +1052,14 @@ export async function applyOrStageDiff(
     recordDecision(state, owner, { path, status: 'applied_directly' })
     await reindexAfterApply(state)
     const backup = getSessionBackup()
-    const safetyNote = backup
-      ? `The worktree had uncommitted changes, so those were backed up to ${backup.ref} first; no approval was required.`
-      : `Git was clean except for Copse-applied edits in this session, so no approval was required.`
+    // A brand-new file skips the git sweep entirely, so neither of the
+    // git-shaped explanations below would be true of it; say what actually
+    // happened instead.
+    const safetyNote = direct.newFile
+      ? `${path} did not exist, so this created it and overwrote nothing; no approval was required.`
+      : backup
+        ? `The worktree had uncommitted changes, so those were backed up to ${backup.ref} first; no approval was required.`
+        : `Git was clean except for Copse-applied edits in this session, so no approval was required.`
     return `Applied edit directly to ${path}. ${safetyNote} You can validate with run_shell/read_file/git now.`
   }
   if (result.status === 'conflict') {
