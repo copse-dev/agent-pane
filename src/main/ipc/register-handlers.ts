@@ -193,7 +193,7 @@ import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-senso
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
-import { MEMORY_TYPE } from '../tools/memory-tools.ts'
+import { EXTERNAL_CONTEXT_FIELD, MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
 import { ROADMAP_CATEGORIES, isRoadmapCategory } from '@shared/roadmap/complexity.ts'
 import {
@@ -702,7 +702,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       const title = parseIpcArgs(zMemoryTitle, [rawTitle])
       const body = parseIpcArgs(zMemoryBody, [rawBody])
       const tags = parseIpcArgs(zMemoryTags.optional(), [rawTags])
-      return updateKnowledgeNote(id, { title, body, tags })
+      // A user edit is a review: saving from the Memories pane clears the
+      // saved-with-external-content marker (context-provenance plan, Phase 4).
+      const current = getKnowledgeNote(id)
+      const fields = current
+        ? Object.fromEntries(
+            Object.entries(current.fields).filter(([key]) => key !== EXTERNAL_CONTEXT_FIELD),
+          )
+        : undefined
+      return updateKnowledgeNote(id, { title, body, tags, ...(fields ? { fields } : {}) })
     },
   )
 

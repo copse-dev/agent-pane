@@ -13,6 +13,7 @@ import {
   setExecutionRootWatchForTest,
   stopAllExecutionRootWatchers,
 } from './search/execution-root-watcher.ts'
+import { turnIngestedExternalContent } from './security/turn-taint.ts'
 import { z } from 'zod'
 
 describe('ToolRegistry', () => {
@@ -254,6 +255,43 @@ describe('ToolRegistry', () => {
         '<external_content source="fake_fetch">\nbody\n</external_content>\n\n' +
           '<system-reminder>note</system-reminder>',
       )
+      setPermissionGateForTests(null)
+    })
+
+    it('marks the turn as having ingested external content (Phase 4)', async () => {
+      setPermissionGateForTests(async () => true)
+      const reg = new ToolRegistry()
+      reg.register({
+        name: 'fake_fetch',
+        description: 'fetch',
+        parameters: z.object({}),
+        provenance: 'external',
+        execute: async () => 'body',
+      })
+      reg.register({
+        name: 'echo',
+        description: 'echo',
+        parameters: z.object({}),
+        execute: async () => 'plain',
+      })
+      const context: ThreadExecutionContext = {
+        projectId: 'p1',
+        threadId: 't1',
+        projectRoot: '/tmp/p',
+        root: '/tmp/p',
+        checkoutMode: 'shared',
+        branch: null,
+      }
+      await runWithThreadExecutionContext(context, async () => {
+        await reg.execute('echo', {}, new AbortController().signal)
+        assert.equal(turnIngestedExternalContent(), false)
+        await reg.execute('fake_fetch', {}, new AbortController().signal)
+        assert.equal(turnIngestedExternalContent(), true)
+      })
+      // A fresh turn context starts clean.
+      await runWithThreadExecutionContext({ ...context }, async () => {
+        assert.equal(turnIngestedExternalContent(), false)
+      })
       setPermissionGateForTests(null)
     })
 
