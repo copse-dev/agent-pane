@@ -434,7 +434,7 @@ async function boot(): Promise<void> {
   // Only now may autosave write navigation back: it has been attached since
   // well before this line, and until the store held the restored value every
   // flush would have persisted `activeProjectId: null` over it.
-  markNavigationRestored()
+  markNavigationRestored({ activeProjectId, activeThreadId })
 
   const [firstProject] = projects
   if (firstProject) {

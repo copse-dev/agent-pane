@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Project, Thread } from '@shared/types'
+import type { MainWindowNavigation } from '@shared/types/main-window.ts'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 
@@ -98,16 +99,40 @@ export function suspendNavigationWrites(): void {
   navigationRestored = false
 }
 
-/** Called by boot once `loadProjects` has put the stored navigation in the store. */
-export function markNavigationRestored(): void {
+/**
+ * The navigation last persisted (or restored) by this window, so an unchanged
+ * value is never written back.
+ *
+ * `flushNow` writes navigation on every flush, and one of those flushes is the
+ * `pagehide` fired while the window is being torn down. In e2e that teardown
+ * happens *after* the next fixture has seeded `config.json`, so an unconditional
+ * write puts the dying window's project back over the seed — the next launch
+ * then boots with someone else's `activeProjectId`, or none. `main` never had
+ * this because it only wrote `activeProjectId` when `projectsDirty`; this
+ * restores that coupling without giving up per-window navigation.
+ */
+let lastNavigation: MainWindowNavigation | null = null
+
+/**
+ * Called by boot once `loadProjects` has put the stored navigation in the store.
+ * The restored value becomes the baseline, so a window that never navigates
+ * writes nothing at all.
+ */
+export function markNavigationRestored(restored: MainWindowNavigation): void {
   navigationRestored = true
+  lastNavigation = restored
 }
 
-function serializedNavigation(
-  api: ApiClient,
-  navigation: import('@shared/types/main-window.ts').MainWindowNavigation,
-): Promise<void> {
+function serializedNavigation(api: ApiClient, navigation: MainWindowNavigation): Promise<void> {
   if (!ownsNavigation || !navigationRestored) return Promise.resolve()
+  if (
+    lastNavigation !== null &&
+    lastNavigation.activeProjectId === navigation.activeProjectId &&
+    lastNavigation.activeThreadId === navigation.activeThreadId
+  ) {
+    return Promise.resolve()
+  }
+  lastNavigation = navigation
   return serializedWrite('mainWindow:navigation', () => api.windowState.setNavigation(navigation))
 }
 
@@ -215,6 +240,7 @@ export function __resetPersistenceForTest(): void {
   activeAutosave = null
   ownsNavigation = true
   navigationRestored = true
+  lastNavigation = null
 }
 
 export async function loadProjects(api: ApiClient): Promise<{
