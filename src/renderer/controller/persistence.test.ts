@@ -262,11 +262,36 @@ test('does not persist navigation before boot has restored it', async () => {
   assert.equal(calls.navigations.length, 0, 'a pre-restore flush must not write navigation')
 
   // Boot restores, and from then on the real value is persisted.
-  markNavigationRestored()
+  markNavigationRestored({ activeProjectId: null, activeThreadId: null })
   store.setState({ activeProjectId: 'p1' })
   store.emit('projects_changed')
   await waitDebounce()
   assert.deepEqual(calls.navigations.at(-1), { activeProjectId: 'p1', activeThreadId: null })
+  autosave.detach()
+})
+
+test('does not rewrite navigation that has not changed', async () => {
+  // `flushNow` writes navigation on every flush, and one of those is the
+  // `pagehide` fired while the window is being torn down — which in e2e happens
+  // *after* the next fixture has seeded config.json. Writing an unchanged value
+  // there put the dying window's project back over the seed, so the next launch
+  // booted with no active project (and the SSH banner, gated on
+  // `activeProjectId`, never rendered).
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const store = createStore({ activeProjectId: 'p1', threads: [], projects: [] })
+  markNavigationRestored({ activeProjectId: 'p1', activeThreadId: null })
+  const autosave = attachAutosave(store, api)
+
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.equal(calls.navigations.length, 0, 'an unchanged navigation must not be written')
+
+  // A real navigation change still lands.
+  store.setState({ activeProjectId: 'p2' })
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.deepEqual(calls.navigations.at(-1), { activeProjectId: 'p2', activeThreadId: null })
   autosave.detach()
 })
 
