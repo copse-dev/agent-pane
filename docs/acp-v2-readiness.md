@@ -197,19 +197,70 @@ negotiates. If the migration will take longer than a night, add the new
 the watch keeps reporting the surface and stops going red for a decision already
 made.
 
+## Prototype: what the seam actually costs
+
+Two spike modules, **not wired into the product** — no import from `acp-client.ts`
+or the session pool, so nothing in a shipping path changes:
+
+- [`acp-protocol-negotiate.ts`](../src/main/services/acp/acp-protocol-negotiate.ts)
+  — the version decision and its rules.
+- [`acp-v2-session-adapter.ts`](../src/main/services/acp/acp-v2-session-adapter.ts)
+  — v2 session updates to `StreamChunk`.
+
+Both have unit tests, and the adapter is additionally driven end to end against
+the SDK's dual-version example agent. Four findings, each of which changes the
+plan below:
+
+**1. The v2 client cannot fall back — and fails in a way you cannot read.** The
+_protocol_ downgrades exactly as specified: ask a v1-only agent for
+`protocolVersion: 2` and it answers `1`. The SDK's v2 _client_ does not. It
+parses the initialize response against the v2 schema before checking the version,
+so a v1 answer dies as a **ZodError on a missing `info`**, indistinguishable from
+a genuinely broken agent. "Build the v2 client and catch the error" would
+silently treat a sick agent as a v1 one. The seam therefore negotiates first with
+a schema-free `initialize`, then builds the typed client for the answer. Cost:
+one extra round trip, cacheable per agent exactly like `availableModels`.
+
+**2. The v2 union does not narrow on its discriminant.** `switch
+(update.sessionUpdate)` — precisely how `session-update-adapter.ts` reads v1 —
+compiles, but every field of the narrowed member comes out `unknown`
+(reproducible on a bare `tsc --strict`, so it is the published types, not our
+config). The SDK ships generated guards for this: `SessionUpdate.isAgentMessageChunk(u)`
+narrows properly. **v2 mapping is a guard chain, not a switch** — the v1 adapter's
+shape does not survive the port. (Constructing typed literals works fine; it is
+only reading that fails, so test fixtures need no casts.)
+
+**3. The whole-message upsert is free.** The table above treats v2's replacement
+of the chunk stream as a major adapter change. It is not: Copse's chunk
+vocabulary already has `text_replace` ("replace accumulated assistant text"),
+added for an unrelated reason, and whole-message updates map onto it exactly. The
+one subtlety is that `text_replace` replaces the _turn's_ accumulated text rather
+than one message, so revising one of several messages re-sends the concatenation.
+Reasoning has no equivalent primitive, so a whole `agent_thought` upsert cannot
+be expressed today.
+
+**4. `StopReason` is not re-exported** from the v2 entry point — only reachable
+as `schema.StopReason` inside the SDK's own declarations. Derive it from the
+union rather than deep-importing.
+
+What the prototype does **not** touch, and what therefore still carries the risk:
+permissions, the `fs/*` write path, the session pool, and turn/usage plumbing.
+
 ## When v2 stabilizes — the plan
 
-1. Import the v2 entry point. The types are already installed — `1.3.0` ships
-   `@agentclientprotocol/sdk/experimental/v2` (`PROTOCOL_VERSION === 2`); the
-   open question is whether to build on `experimental/` or wait for it to
-   graduate. Version negotiation is per
-   connection, so keep the v1 surface — the migration guide is explicit that
-   v1-only agents and clients stay common "for some time."
+1. Negotiate the version per connection before building a client (finding 1
+   above), sourcing the preferred version from per-agent configuration rather
+   than a global switch — an install routinely has one v2-capable agent and
+   several v1 ones. Keep the v1 surface either way: the migration guide is
+   explicit that v1-only agents and clients stay common "for some time."
 2. Add a v2 branch to `extractCapabilitySnapshot` reading the new `capabilities`
    / `info` shape, and probe with `--protocol 2` (sends `protocolVersion: 2`; a
    v1 agent still answers v1 and the matrix flags the downgrade).
 3. Teach `session-update-adapter.ts` the new update kinds (`state_update`,
-   whole-message, tool-call upsert, `plan_update`).
+   whole-message, tool-call upsert, `plan_update`) — as a guard chain, and
+   carrying the state the upsert model needs (finding 2). The prototype adapter
+   covers text, thought, tool calls, state and usage; plan, terminals, commands
+   and config options are still open.
 4. Revisit permission handling to consume the structured `subject`, and the
    write path now that `fs/*` is gone.
 
