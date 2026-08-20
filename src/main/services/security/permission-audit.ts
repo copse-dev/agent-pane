@@ -45,9 +45,7 @@ export function recordPermissionDecision(input: PermissionAuditInput): void {
       : {}),
     detail: {
       originalCommand: input.originalCommand,
-      ...(input.effectiveCommand !== undefined
-        ? { effectiveCommand: input.effectiveCommand }
-        : {}),
+      ...(input.effectiveCommand !== undefined ? { effectiveCommand: input.effectiveCommand } : {}),
       originalMode: input.originalMode,
       effectiveMode: input.effectiveMode,
       sandboxState: input.sandboxState,

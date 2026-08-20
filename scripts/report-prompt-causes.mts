@@ -18,10 +18,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import {
-  parseDecisionLog,
-  type DecisionEvent,
-} from '../src/shared/threads/decision-log.ts'
+import { parseDecisionLog, type DecisionEvent } from '../src/shared/threads/decision-log.ts'
 import {
   parseSpineEntries,
   type SpinePermissionDecisionLine,

@@ -326,4 +326,7 @@ download `<title-slug>-<YYYY-MM-DD>`.
 
 The JSONL stays the format for sharing a transcript; the zip is the
 full-fidelity copy for debugging or moving a thread between machines.
+
+```
+
 ```

@@ -201,14 +201,8 @@ describe('hook_run survives full save (decision 6)', () => {
     const detailRaw = readFileSync(join(root, PROJECT, THREAD, decision.detail.ref), 'utf8')
     const detail: unknown = JSON.parse(detailRaw)
     assert.ok(detail && typeof detail === 'object')
-    assert.equal(
-      (detail as { originalCommand?: string }).originalCommand,
-      'echo safe',
-    )
-    assert.equal(
-      (detail as { effectiveCommand?: string }).effectiveCommand,
-      'rm -rf build',
-    )
+    assert.equal((detail as { originalCommand?: string }).originalCommand, 'echo safe')
+    assert.equal((detail as { effectiveCommand?: string }).effectiveCommand, 'rm -rf build')
   })
 
   it('a detached hook records against a snapshot taken before endHookRunRecording (C1, decision 3/6)', async () => {

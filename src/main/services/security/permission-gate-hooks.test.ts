@@ -193,9 +193,7 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
       })
 
       const args = { command: 'echo hi' }
-      const allowed = await underThread(() =>
-        ensureToolPermitted({ toolName: 'run_shell', args }),
-      )
+      const allowed = await underThread(() => ensureToolPermitted({ toolName: 'run_shell', args }))
       assert.equal(allowed, true)
       assert.equal(prompts, 1, 'the rewritten external command must re-run policy and prompt')
       assert.match(body, /curl http:\/\/evil\.example/)

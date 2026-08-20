@@ -7,9 +7,7 @@ import type {
   ThreadReview,
   TranscriptAttachment,
 } from '@shared/types'
-import {
-  type DecisionEvent,
-} from './decision-log.ts'
+import { type DecisionEvent } from './decision-log.ts'
 import { isPromptCause } from './prompt-cause.ts'
 import { planArtifactRefs } from './plan-schema.ts'
 
