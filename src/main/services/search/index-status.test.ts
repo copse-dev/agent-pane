@@ -8,6 +8,7 @@ import {
   onWorkspaceIndexStatusChanged,
   resetWorkspaceIndexStatusForTest,
   semanticBuildDeferred,
+  clearSemanticIndexStatus,
   setSemanticIndexScaleGuarded,
   setSemanticIndexUnavailable,
 } from './index-status.ts'
@@ -95,6 +96,15 @@ describe('index-status', () => {
     assert.equal(status.phase, 'skipped')
     assert.equal(status.reason, 'Workspace has 120,000 indexed paths')
     assert.equal(isSemanticIndexScaleGuarded(), true)
+  })
+
+  it('clears a scale-skipped resting phase back to idle', () => {
+    setSemanticIndexScaleGuarded('skipped', 'Workspace has 120,000 indexed paths')
+    clearSemanticIndexStatus()
+    const status = getWorkspaceIndexStatus().semantic
+    assert.equal(status.phase, 'idle')
+    assert.equal(status.reason, undefined)
+    assert.equal(isSemanticIndexScaleGuarded(), false)
   })
 
   it('clears the scale-guard reason after a later successful build', () => {
