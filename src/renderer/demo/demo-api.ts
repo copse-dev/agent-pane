@@ -800,6 +800,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       openTerminal: resolvedVoid,
       remove: unsupported,
     },
+    agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
     skills: { list: emptyArray },
     cursorPlugins: { list: emptyArray },
     hooks: {
