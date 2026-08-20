@@ -34,10 +34,7 @@ describe('splitUserPromptForFold', () => {
     assert.equal(parts.head, 'line 1\nline 2')
     assert.equal(parts.tail, 'line 11')
     assert.equal(parts.hiddenLineCount, 8)
-    assert.equal(
-      parts.middle,
-      Array.from({ length: 8 }, (_, i) => `line ${i + 3}`).join('\n'),
-    )
+    assert.equal(parts.middle, Array.from({ length: 8 }, (_, i) => `line ${i + 3}`).join('\n'))
   })
 })
 

@@ -65,7 +65,11 @@ export function fillUserPromptFold(
   const head = el('div', { class: 'msg-user-fold-head' })
   renderPart(head, parts.head)
 
-  const label = el('span', { class: 'msg-user-fold-label' }, foldLabel(false, parts.hiddenLineCount))
+  const label = el(
+    'span',
+    { class: 'msg-user-fold-label' },
+    foldLabel(false, parts.hiddenLineCount),
+  )
   const toggle = el(
     'button',
     {
