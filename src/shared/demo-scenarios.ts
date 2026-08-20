@@ -45,6 +45,13 @@ export interface DemoScenario {
    * clicking the URL and then the pane's Expand control.
    */
   revealFinalPreview?: boolean
+  /**
+   * Never answer transcript hydration (`threads:loadMessages`), freezing an
+   * unhydrated thread in its mid-switch state. The conversation's hydration
+   * notice is only ever on screen for the moment a transcript takes to read;
+   * this holds that moment open so the visual spec can assert and capture it.
+   */
+  holdThreadHydration?: boolean
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -565,6 +572,33 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         model: 'claude-opus-5',
         reasoning: 'max',
         messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'thread-hydration',
+    label: 'Thread switch hydration notice',
+    project: project('demo-thread-hydration-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The state under test is the moment after selecting a thread whose
+    // transcript has not been read yet while its agent run is still going:
+    // metadata only, no messages, status running. holdThreadHydration keeps
+    // the loading notice on screen instead of letting it resolve instantly.
+    holdThreadHydration: true,
+    threads: [
+      {
+        id: 'demo-thread-hydration-thread',
+        title: 'Long refactor still running',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,

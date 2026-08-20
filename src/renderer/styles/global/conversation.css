@@ -148,6 +148,28 @@
     animation: none;
   }
 }
+/* Transcript-loading notice (see hydrationNoticeEl in conversation.ts): fills
+   the otherwise-empty pane while a switched-to thread's messages are read off
+   disk. Same voice as .agent-activity — secondary text, spiral accent icon —
+   but in-flow and roomier, since it is the only thing on screen. */
+.conversation-hydrating {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: min(100%, var(--chat-content-max));
+  margin-inline: auto;
+  padding: var(--spacing-lg) var(--spacing-md);
+  box-sizing: border-box;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.conversation-hydrating > .reasoning-activity-icon {
+  width: var(--font-size-lg);
+  height: var(--font-size-lg);
+  flex-shrink: 0;
+  overflow: visible;
+  color: var(--accent);
+}
 .agent-activity-clickable {
   cursor: pointer;
 }
