@@ -3,7 +3,7 @@
 // cross-version equating maps. Source of truth: scripts/data/intellect-scores.json.
 // Absent models mean "no sourced measurement yet", not zero.
 // Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)
-// Last synced: 2026-08-18
+// Last synced: 2026-08-13
 
 import type { EquatingMap } from './intellect-equating.ts'
 
@@ -2777,10 +2777,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
   ],
   'kat-coder-pro-v2': [
     {
-      value: 33.7,
+      value: 34.5,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'kat-coder-pro-v2', fetched 2026-08-18",
-      asOf: '2026-08-18',
+      source: "Artificial Analysis API (index v4.1), model 'kat-coder-pro-v2', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'kimi-k2': [
@@ -3191,10 +3191,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
   ],
   'longcat-2-0': [
     {
-      value: 34,
+      value: 34.3,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'longcat-2-0', fetched 2026-08-18",
-      asOf: '2026-08-18',
+      source: "Artificial Analysis API (index v4.1), model 'longcat-2-0', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'longcat-flash-lite': [
@@ -3575,8 +3575,8 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
     {
       value: 6.7,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-08-18",
-      asOf: '2026-08-18',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'mixtral-8x7b-instruct': [
@@ -3720,10 +3720,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
   ],
   'nex-n2-pro': [
     {
-      value: 41.7,
+      value: 42.1,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'nex-n2-pro', fetched 2026-08-18",
-      asOf: '2026-08-18',
+      source: "Artificial Analysis API (index v4.1), model 'nex-n2-pro', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'north-mini-code': [
@@ -4597,14 +4597,6 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
   ],
-  'qwen3-8-2-4t-a95b': [
-    {
-      value: 57.7,
-      indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'qwen3-8-2-4t-a95b', fetched 2026-08-18",
-      asOf: '2026-08-18',
-    },
-  ],
   'qwen3-8-max': [
     {
       value: 58.1,
@@ -4858,10 +4850,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
   ],
   'ring-2-6-1t': [
     {
-      value: 31.7,
+      value: 31.3,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'ring-2-6-1t', fetched 2026-08-18",
-      asOf: '2026-08-18',
+      source: "Artificial Analysis API (index v4.1), model 'ring-2-6-1t', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'ring-flash-2-0': [
@@ -5076,11 +5068,11 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
   ],
   'trinity-large-thinking': [
     {
-      value: 18.7,
+      value: 18.4,
       indexVersion: 'v4.1',
       source:
-        "Artificial Analysis API (index v4.1), model 'trinity-large-thinking', fetched 2026-08-18",
-      asOf: '2026-08-18',
+        "Artificial Analysis API (index v4.1), model 'trinity-large-thinking', fetched 2026-08-13",
+      asOf: '2026-08-13',
     },
   ],
   'tulu3-405b': [

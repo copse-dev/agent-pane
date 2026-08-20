@@ -117,7 +117,6 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
     store.on('threads_changed', syncBranch),
     store.on('git_branch_changed', syncBranch),
     api.fs.onChanged(scheduleBranchSync),
-    api.git.onWorkingTreeChanged(scheduleBranchSync),
   ]
 
   return () => {

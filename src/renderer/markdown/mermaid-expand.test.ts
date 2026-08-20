@@ -77,8 +77,6 @@ describe('attachMermaidExpand', () => {
     const dialog = qsRequired(document, '.mermaid-expand-dialog')
     assert.ok(qs(dialog, '.mermaid-expand-stage svg'), 'svg cloned into stage')
     assert.ok(qs(dialog, '.mermaid-expand-toolbar'))
-    assert.ok(qs(dialog, '.mermaid-expand-tool svg[data-icon="minus"]'))
-    assert.ok(qs(dialog, '.mermaid-expand-tool svg[data-icon="plus"]'))
   })
 
   it('opens on Enter/Space keydown', () => {

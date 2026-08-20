@@ -1,13 +1,4 @@
-import type {
-  FollowUpAction,
-  FollowUpContext,
-  FollowUpSuggestion,
-  PrWorkspaceContext,
-} from '@shared/follow-ups/types.ts'
-import type {
-  PluginFollowUpAction,
-  PluginFollowUpCondition,
-} from '@copse/agent/plugins/plugin-manifest.ts'
+import type { FollowUpContext, FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import {
   MODEL_FOLLOW_UP_PRESETS,
   buildChangesSuggestion,
@@ -21,7 +12,6 @@ import {
 import { getSetting } from './storage/settings.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
-import { MODEL_COMPARISON_FOLLOW_UP_ID } from '@copse/agent/plugins/model-comparison-plugin.ts'
 import { getPrWorkspaceContext } from './github/pr-context-service.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
@@ -92,53 +82,6 @@ async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSug
   }
 }
 
-/** Whether the workspace satisfies a plugin bubble's declared `when` condition. */
-export function pluginFollowUpConditionMet(
-  when: PluginFollowUpCondition,
-  ctx: Pick<PrWorkspaceContext, 'changeStats'>,
-): boolean {
-  switch (when) {
-    case 'always':
-      return true
-    case 'workspace-changes':
-      return ctx.changeStats !== null
-  }
-}
-
-/** The host action a plugin's declared action maps to on the rendered bubble. */
-function pluginFollowUpAction(action: PluginFollowUpAction): FollowUpAction {
-  return action === 'model-compare' ? 'model-compare' : 'prompt'
-}
-
-/**
- * Bubbles contributed by enabled plugins, filtered on each decl's `when`.
- * Plugins suggest rather than interrupt: a plugin that wants the user to do something
- * expensive puts a bubble above the composer instead of raising a modal, and the
- * click gets to open a picker rather than only stuffing the composer.
- *
- * A plugin bubble that fails validation here is skipped, not surfaced broken — the
- * registry already rejects a `prompt` decl with no prompt at registration, so
- * this is a belt-and-braces guard for a decl that arrived some other way.
- */
-export function buildPluginFollowUps(
-  ctx: Pick<PrWorkspaceContext, 'changeStats'>,
-): FollowUpSuggestion[] {
-  const out: FollowUpSuggestion[] = []
-  for (const { followUp } of getDefaultPluginRegistry().activeFollowUps()) {
-    if (!pluginFollowUpConditionMet(followUp.when ?? 'always', ctx)) continue
-    const action = pluginFollowUpAction(followUp.action ?? 'prompt')
-    const prompt = followUp.prompt?.trim() ?? ''
-    if (action === 'prompt' && !prompt) continue
-    out.push({
-      id: followUp.id,
-      label: followUp.label,
-      action,
-      ...(prompt ? { prompt } : {}),
-    })
-  }
-  return out
-}
-
 function buildDeterministicFollowUps(
   ctx: Awaited<ReturnType<typeof getPrWorkspaceContext>>,
 ): FollowUpSuggestion[] {
@@ -150,7 +93,6 @@ function buildDeterministicFollowUps(
       id: changes.id,
       label: changes.label,
       prompt: changes.prompt,
-      action: 'open-changes',
       variant: 'changes',
       additions: changes.additions,
       deletions: changes.deletions,
@@ -175,12 +117,7 @@ function buildDeterministicFollowUps(
   return out
 }
 
-/**
- * Fixed suggestions for e2e / headless screenshot validation (no LM Studio or gh
- * required). Includes the model-comparison bubble unconditionally — the fixture
- * exists so a spec can drive each bubble kind without standing up the plugin
- * registry and a dirty worktree, which is exactly what the real gates need.
- */
+/** Fixed suggestions for e2e / headless screenshot validation (no LM Studio or gh required). */
 export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
   const changes = buildChangesSuggestion({ additions: 1, deletions: 1 })
   const ci = buildDebugCiSuggestion()
@@ -189,13 +126,11 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
       id: changes.id,
       label: changes.label,
       prompt: changes.prompt,
-      action: 'open-changes',
       variant: 'changes',
       additions: changes.additions,
       deletions: changes.deletions,
     },
     { id: ci.id, label: ci.label, prompt: ci.prompt },
-    { id: MODEL_COMPARISON_FOLLOW_UP_ID, label: 'Compare models', action: 'model-compare' },
   ]
 }
 
@@ -214,12 +149,9 @@ export async function suggestFollowUps(
   const deterministic = buildDeterministicFollowUps(workspaceCtx)
   const modelPicks = await pickModelFollowUps(context)
 
-  // Order: deterministic git/PR signals, then plugin offers, then the small
-  // model's picks. A merge conflict or red CI is a fact about the branch and
-  // outranks an offer; an offer outranks a guess.
   const seen = new Set(deterministic.map((s) => s.id))
   const merged = [...deterministic]
-  for (const suggestion of [...buildPluginFollowUps(workspaceCtx), ...modelPicks]) {
+  for (const suggestion of modelPicks) {
     if (seen.has(suggestion.id)) continue
     seen.add(suggestion.id)
     merged.push(suggestion)

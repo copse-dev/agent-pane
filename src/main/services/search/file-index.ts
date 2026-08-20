@@ -14,19 +14,6 @@ import * as fs from 'node:fs/promises'
 interface FileIndex {
   paths: string[]
   lastBuilt: number
-  memoryBytes: number
-  /**
-   * Whether the listing subprocess overflowed its output cap, so `paths` holds
-   * only part of the tree. Scale decisions must not read a truncated listing as
-   * a small workspace (#795).
-   */
-  truncated: boolean
-}
-
-/** A listing plus whether it is the whole tree. */
-interface Listing {
-  paths: string[]
-  truncated: boolean
 }
 
 /**
@@ -44,44 +31,30 @@ const LIST_CMD_OPTS = {
   lowPriority: true,
 } as const
 
-// A conservative retained-heap estimate: JavaScript strings are commonly two
-// bytes per code unit, and each array/string entry carries object metadata.
-// Exact VM accounting is neither portable nor needed for enforcing a bounded
-// dormant-project cache; consistently overestimating is the safer policy.
-function estimateIndexMemoryBytes(paths: string[]): number {
-  const collectionOverhead = 64
-  const entryOverhead = 48
-  return paths.reduce((total, path) => total + entryOverhead + path.length * 2, collectionOverhead)
-}
-
 function isIndexableRelativePath(rel: string): boolean {
   if (!rel || rel.startsWith('..')) return false
   const parts = rel.split('/')
   return !parts.some((part) => part === 'node_modules' || part.startsWith('.'))
 }
 
-async function listFilesViaFind(workspaceRoot: string): Promise<Listing> {
-  const { stdout, code, stdoutTruncated } = await runCommand(
-    'find',
-    [workspaceRoot, '-type', 'f'],
-    {
-      ...LIST_CMD_OPTS,
-      cwd: workspaceRoot,
-    },
-  )
-  if (code !== 0) return { paths: [], truncated: false }
+async function listFilesViaFind(workspaceRoot: string): Promise<string[]> {
+  const { stdout, code } = await runCommand('find', [workspaceRoot, '-type', 'f'], {
+    ...LIST_CMD_OPTS,
+    cwd: workspaceRoot,
+  })
+  if (code !== 0) return []
   const paths: string[] = []
   for (const full of stdout.split('\n').filter(Boolean)) {
     const rel = await toRelativePathWithinRoot(full, workspaceRoot)
     if (isIndexableRelativePath(rel)) paths.push(rel)
   }
-  return { paths, truncated: stdoutTruncated }
+  return paths
 }
 
-async function listFilesViaRg(workspaceRoot: string): Promise<Listing> {
+async function listFilesViaRg(workspaceRoot: string): Promise<string[]> {
   // No `--sort path`: sorting waits for the full walk and slows SSH listings.
   // Sort relative paths in-process after the listing completes.
-  const { stdout, stdoutTruncated } = await runCommand('rg', ['--files', workspaceRoot], {
+  const { stdout } = await runCommand('rg', ['--files', workspaceRoot], {
     ...LIST_CMD_OPTS,
     cwd: workspaceRoot,
   })
@@ -92,35 +65,22 @@ async function listFilesViaRg(workspaceRoot: string): Promise<Listing> {
       .map((p) => toRelativePathWithinRoot(p, workspaceRoot)),
   )
   paths.sort((a, b) => a.localeCompare(b))
-  return { paths, truncated: stdoutTruncated }
+  return paths
 }
 
 async function runBuild(key: string, workspaceRoot: string): Promise<void> {
   indexBuildStarted('fileIndex')
   try {
-    let listing: Listing
+    let paths: string[]
     if (await isRgAvailableForTarget()) {
-      listing = await listFilesViaRg(workspaceRoot)
+      paths = await listFilesViaRg(workspaceRoot)
     } else if (isActiveSshWorkspace()) {
-      listing = await listFilesViaFind(workspaceRoot)
+      paths = await listFilesViaFind(workspaceRoot)
     } else {
-      // The in-process walk streams into an array — no subprocess pipe, so
-      // nothing to overflow.
-      const walked = await walkPaths(workspaceRoot, workspaceRoot)
-      walked.sort((a, b) => a.localeCompare(b))
-      listing = { paths: walked, truncated: false }
+      paths = await walkPaths(workspaceRoot, workspaceRoot)
+      paths.sort((a, b) => a.localeCompare(b))
     }
-    if (listing.truncated) {
-      console.warn(
-        `[copse-panel] file listing for ${workspaceRoot} exceeded its output cap; the index holds only ${String(listing.paths.length)} of its paths`,
-      )
-    }
-    indexes.set(key, {
-      paths: listing.paths,
-      lastBuilt: Date.now(),
-      memoryBytes: estimateIndexMemoryBytes(listing.paths),
-      truncated: listing.truncated,
-    })
+    indexes.set(key, { paths, lastBuilt: Date.now() })
     indexBuildFinished('fileIndex', true)
   } catch (err) {
     indexBuildFinished('fileIndex', false)
@@ -180,11 +140,6 @@ export function getIndexAgeMs(root: string): number | null {
   return entry ? Date.now() - entry.lastBuilt : null
 }
 
-/** Conservative retained-heap size for one coherent file-list snapshot. */
-export function getIndexMemoryBytes(root: string): number | null {
-  return indexes.get(resolve(root))?.memoryBytes ?? null
-}
-
 /** Drop the cached index for one root, or every root when called with none. */
 export function invalidateIndex(root?: string): void {
   if (root === undefined) {
@@ -197,29 +152,20 @@ export function invalidateIndex(root?: string): void {
 /**
  * Scale evidence for the #795 index policy. Path count comes from the bounded
  * file listing; byte estimate is reserved for a later sampling slice (null today).
- *
- * `listingTruncated` says the count is a floor rather than a total — without it
- * the policy reads an overflowed listing as a workspace small enough to index.
  */
 export function getIndexStats(
   root: string,
-): { pathCount: number; byteEstimate: number | null; listingTruncated: boolean } | null {
+): { pathCount: number; byteEstimate: number | null } | null {
   const entry = indexes.get(resolve(root))
   if (!entry) return null
-  return { pathCount: entry.paths.length, byteEstimate: null, listingTruncated: entry.truncated }
+  return { pathCount: entry.paths.length, byteEstimate: null }
 }
 
 /** Test hook — install a fixed file index for a root without scanning it. */
 export function setIndexForTest(paths: string[] | null, root: string): void {
   const key = resolve(root)
   if (paths === null) indexes.delete(key)
-  else
-    indexes.set(key, {
-      paths,
-      lastBuilt: Date.now(),
-      memoryBytes: estimateIndexMemoryBytes(paths),
-      truncated: false,
-    })
+  else indexes.set(key, { paths, lastBuilt: Date.now() })
 }
 
 async function walkPaths(root: string, dir: string): Promise<string[]> {

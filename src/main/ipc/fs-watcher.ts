@@ -34,29 +34,14 @@ export function initFsWatcher(win: BrowserWindow): void {
     const abs = await resolvePathWithinRoot(rel, root)
     const key = watcherKey(projectId, threadId, rel)
     if (watchers.has(key)) return
-    let debounce: ReturnType<typeof setTimeout> | undefined
-    let watcher: fs.FSWatcher
-    try {
-      watcher = fs.watch(abs, { persistent: false }, () => {
-        clearTimeout(debounce)
-        debounce = setTimeout(() => {
-          void notifyFileChanged(projectId, threadId, rel, abs, root)
-        }, 200)
-      })
-    } catch (err) {
-      console.warn('[copse-panel] file watcher unavailable for', rel, err)
-      return
-    }
-    // Deleted or unreadable files emit `error`. Without a listener that is an
-    // uncaught exception in the main process — the same crash class as a
-    // retired worktree's recursive watch.
-    watcher.on('error', (err: unknown) => {
-      console.warn('[copse-panel] file watcher failed for', rel, err)
+    let debounce: ReturnType<typeof setTimeout>
+    const w = fs.watch(abs, { persistent: false }, () => {
       clearTimeout(debounce)
-      watchers.get(key)?.close()
-      watchers.delete(key)
+      debounce = setTimeout(() => {
+        void notifyFileChanged(projectId, threadId, rel, abs, root)
+      }, 200)
     })
-    watchers.set(key, watcher)
+    watchers.set(key, w)
   })
 
   ipcMain.handle('fs:unwatch', (event, ...rawArgs) => {

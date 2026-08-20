@@ -1,6 +1,6 @@
 import { loadAgentRequestedRulesCatalog, loadProjectInstructions } from './project-instructions.ts'
 import { getSetting, getSettingTrimmed } from './storage/settings.ts'
-import { getAgentExecutionRoot } from './execution-root.ts'
+import { getWorkspaceRoot } from './workspace.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
@@ -82,10 +82,7 @@ export async function buildSystemPrompt(opts: {
   return (
     basePrompt
       .replace('{SKILLS_TOOLS_LINE}', skillsToolsLine)
-      // Must be the agent execution root, not the renderer workspace root: the
-      // sandbox read grant and run_shell's cwd are the worktree root, so naming
-      // the main repo here makes the agent `cd` outside the grant and hit EPERM.
-      .replace('{WORKSPACE_ROOT}', getAgentExecutionRoot() ?? '(none)') +
+      .replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
     (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
     (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +

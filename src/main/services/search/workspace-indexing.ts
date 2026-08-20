@@ -1,11 +1,4 @@
-import { resolve } from 'node:path'
-import {
-  buildIndex,
-  getIndexAgeMs,
-  getIndexMemoryBytes,
-  getIndexStats,
-  invalidateIndex,
-} from './file-index.ts'
+import { buildIndex, getIndexAgeMs, getIndexStats, invalidateIndex } from './file-index.ts'
 import { ensureSemanticIndex } from './semantic-index.ts'
 import { setSemanticIndexScaleGuarded, setSemanticIndexUnavailable } from './index-status.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
@@ -15,18 +8,9 @@ import {
   stopWorkspaceIndexWatcher,
 } from './workspace-index-watcher.ts'
 import { stopWatchingExecutionRoot } from './execution-root-watcher.ts'
-import { pathLabel, perfMark, perfSpan } from '../diagnostics/perf-trace.ts'
 
 /** The most recently opened renderer-selected workspace root, if any. */
 let primaryWorkspaceRoot: string | null = null
-let primaryWorkspaceGeneration = 0
-const dormantPrimaryIndexes = new Map<string, number>()
-
-// File lists are compact compared with transcripts and semantic indexes, but a
-// user may have hundreds of saved projects. Retain warm project snapshots only
-// inside a fixed heap budget; worktree indexes have their own lifecycle and are
-// never entered into this primary-project MRU.
-const DORMANT_PRIMARY_INDEX_BUDGET_BYTES = 32 * 1024 * 1024
 import {
   decideWorkspaceIndexPolicy,
   policyAllowsSemantic,
@@ -56,46 +40,6 @@ function scaleGuardReason(reasons: string[]): string {
  * bounds the roots that have no change signal at all (fs.watch refused, SSH).
  */
 const UNWATCHED_INDEX_MAX_AGE_MS = 2 * 60 * 1000
-
-export interface DormantIndexSnapshot {
-  root: string
-  bytes: number
-}
-
-/** Return oldest-first entries to evict until `snapshots` fits `maxBytes`. */
-export function selectDormantIndexEvictions(
-  snapshots: readonly DormantIndexSnapshot[],
-  maxBytes: number,
-): string[] {
-  let retainedBytes = snapshots.reduce((total, snapshot) => total + snapshot.bytes, 0)
-  const evictions: string[] = []
-  for (const snapshot of snapshots) {
-    if (retainedBytes <= maxBytes) break
-    evictions.push(snapshot.root)
-    retainedBytes -= snapshot.bytes
-  }
-  return evictions
-}
-
-function retainDormantPrimaryIndex(root: string): void {
-  const key = resolve(root)
-  const bytes = getIndexMemoryBytes(key)
-  if (bytes === null) return
-  // Delete + set promotes a project that was selected more recently.
-  dormantPrimaryIndexes.delete(key)
-  dormantPrimaryIndexes.set(key, bytes)
-  const snapshots = [...dormantPrimaryIndexes].map(([snapshotRoot, snapshotBytes]) => ({
-    root: snapshotRoot,
-    bytes: snapshotBytes,
-  }))
-  for (const evictedRoot of selectDormantIndexEvictions(
-    snapshots,
-    DORMANT_PRIMARY_INDEX_BUDGET_BYTES,
-  )) {
-    dormantPrimaryIndexes.delete(evictedRoot)
-    invalidateIndex(evictedRoot)
-  }
-}
 
 /**
  * Whether registering `root` should pay for a fresh listing (#1694).
@@ -143,59 +87,31 @@ function needsFreshListing(root: string): boolean {
  * than ordinary tool subprocesses (`FILE_INDEX_LIST_TIMEOUT_MS`).
  */
 export function startWorkspaceIndexing(root: string): void {
-  const key = resolve(root)
-  // Switching workspaces replaces the previous primary root: stop its watcher,
-  // but retain the last coherent listing in the bounded dormant-project MRU.
+  // Switching workspaces replaces the previous primary root: drop its watcher
+  // and stale index rather than accumulating one entry per folder ever opened.
   // Worktree execution roots (registered via startExecutionRootIndexing) are
   // untouched — they track their own thread's lifetime, not the renderer's
   // selected workspace.
   const previous = primaryWorkspaceRoot
-  primaryWorkspaceRoot = key
-  const generation = ++primaryWorkspaceGeneration
-  dormantPrimaryIndexes.delete(key)
-  if (previous && previous !== key) {
+  primaryWorkspaceRoot = root
+  if (previous && previous !== root) {
     stopWorkspaceIndexWatcher(previous)
-    retainDormantPrimaryIndex(previous)
+    invalidateIndex(previous)
   }
 
-  perfMark('index:requested', { root: pathLabel(key) })
-  beginWorkspaceIndexGate(key)
-  void runWorkspaceIndexing(key, generation).catch((err: unknown) => {
+  beginWorkspaceIndexGate(root)
+  void runWorkspaceIndexing(root).catch((err: unknown) => {
     console.warn('[copse-panel] workspace indexing orchestration failed:', err)
   })
 }
 
-async function runWorkspaceIndexing(root: string, generation: number): Promise<void> {
+async function runWorkspaceIndexing(root: string): Promise<void> {
   try {
     // Re-selecting the project you are already on re-runs this; the scale
     // evidence below reads the existing listing rather than rebuilding it.
-    //
-    // DEBUG BRANCH: indexing is explicitly *not* awaited by `workspace:set`, so
-    // it cannot delay the IPC reply — but it is CPU and I/O on the same main
-    // event loop the renderer's other calls are queued behind, which is a
-    // different way to make an open feel slow. Timing it separately from the
-    // open is what tells those two apart.
-    const fresh = needsFreshListing(root)
-    perfMark('index:start', { root: pathLabel(root), fresh })
-    if (fresh) {
-      await perfSpan(
-        'index:build',
-        () => buildIndex(root),
-        () => ({
-          paths: getIndexStats(root)?.pathCount ?? 0,
-        }),
-      )
-    }
+    if (needsFreshListing(root)) await buildIndex(root)
   } catch (err: unknown) {
     console.warn('[copse-panel] file index build failed:', err)
-  }
-
-  // A large listing can finish after another project was selected. Keep its
-  // coherent snapshot as dormant data, but never let an obsolete orchestration
-  // re-arm the outgoing root's watcher or semantic work.
-  if (generation !== primaryWorkspaceGeneration) {
-    if (root !== primaryWorkspaceRoot) retainDormantPrimaryIndex(root)
-    return
   }
 
   if (isActiveSshWorkspace()) {
@@ -210,10 +126,7 @@ async function runWorkspaceIndexing(root: string, generation: number): Promise<v
     byteEstimate: stats?.byteEstimate ?? null,
     nestedRepos: [],
     override: policyOverride,
-    // A listing that overflowed its capture limit is partial evidence, not the
-    // complete picture its path count pretends to be.
-    discoveryConfidence: stats ? (stats.listingTruncated ? 'partial' : 'complete') : 'failed',
-    listingTruncated: stats?.listingTruncated ?? false,
+    discoveryConfidence: stats ? 'complete' : 'failed',
   })
 
   resolveWorkspaceIndexGate(root, {
@@ -239,9 +152,6 @@ async function runWorkspaceIndexing(root: string, generation: number): Promise<v
 /** Test hook — clear gate + override between tests. */
 export function resetWorkspaceIndexingForTest(): void {
   policyOverride = 'default'
-  primaryWorkspaceRoot = null
-  primaryWorkspaceGeneration = 0
-  dormantPrimaryIndexes.clear()
   clearWorkspaceIndexGate()
 }
 

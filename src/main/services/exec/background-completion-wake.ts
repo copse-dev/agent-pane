@@ -10,7 +10,7 @@ export interface BackgroundCompletionWakeRequest {
   timedOut: boolean
 }
 
-export type BackgroundCompletionWakeHandler = (
+type BackgroundCompletionWakeHandler = (
   request: BackgroundCompletionWakeRequest,
 ) => Promise<MachineDispatchResult>
 
@@ -30,23 +30,12 @@ export function runWithBackgroundCompletionWakeHandler<T>(
   return scopedHandler.run(next, fn)
 }
 
-/**
- * Snapshot the handler that should receive a later completion wake.
- *
- * Child-process `exit` callbacks are not guaranteed to stay inside the
- * `AsyncLocalStorage` scope that armed the wake. Capture at arm time so the
- * EventEmitter path still reaches the same handler the turn installed.
- */
-export function resolveBackgroundCompletionWakeHandler(): BackgroundCompletionWakeHandler | null {
-  return scopedHandler.getStore() ?? handler
-}
-
 export async function requestBackgroundCompletionWake(
   request: BackgroundCompletionWakeRequest,
-  armedHandler: BackgroundCompletionWakeHandler | null = resolveBackgroundCompletionWakeHandler(),
 ): Promise<MachineDispatchResult> {
-  if (!armedHandler) return 'stale'
-  return armedHandler(request)
+  const activeHandler = scopedHandler.getStore() ?? handler
+  if (!activeHandler) return 'stale'
+  return activeHandler(request)
 }
 
 export function backgroundCompletionPrompt(request: BackgroundCompletionWakeRequest): string {

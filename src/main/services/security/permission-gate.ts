@@ -189,9 +189,8 @@ function autoApproveShell(
   command: string,
   scope: 'sandbox' | 'external',
   executionRoot?: string | null,
-  sandboxEnabled = isProjectSandboxEnabled(),
 ): boolean {
-  const decision = resolveAutoApproval(command, executionRoot, sandboxEnabled)
+  const decision = resolveAutoApproval(command, executionRoot)
   if (decision.action !== 'auto-approve') return false
   recordDecision({
     kind: 'shell',
@@ -859,15 +858,7 @@ export async function ensureShellCommandPermitted(
   // only ever turn a prompt into an allow, never widen an `allow` or soften a
   // `deny` (both returned above). Deterministic and fail-closed; see
   // auto-approval.ts for the enumerated shapes and the safety argument.
-  if (
-    autoApproveShell(
-      command,
-      outsideSandbox ? 'external' : 'sandbox',
-      workspaceRoot,
-      sandboxEnabled,
-    )
-  )
-    return true
+  if (autoApproveShell(command, outsideSandbox ? 'external' : 'sandbox', workspaceRoot)) return true
 
   // A user may explicitly authorize one constituent for bounded exact retries in
   // this human turn tree. Conservative top-level composition is allowed only
