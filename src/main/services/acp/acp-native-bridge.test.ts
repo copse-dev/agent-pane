@@ -17,11 +17,13 @@ import { at } from '@shared/array-utils.ts'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import { definePlugin } from '@copse/agent/plugins/plugin-manifest.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
-import { storageSet } from '../storage/storage.ts'
 import {
+  requireThreadExecutionContext,
   requireThreadExecutionOwner,
+  type ThreadExecutionContext,
   type ThreadExecutionOwner,
 } from '../thread-execution-context.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
 
 /**
  * The native-tool MCP bridge (issue #602, tier 2) exposes a curated slice of
@@ -77,6 +79,18 @@ function testRegistry(executed: string[]): ToolRegistry {
     execute: () => Promise.resolve('should never run over the bridge'),
   })
   return registry
+}
+
+/** A worktree-mode turn context, as the dispatcher would resolve and bind it. */
+function worktreeContext(threadId: string, root: string): ThreadExecutionContext {
+  return {
+    projectId: 'project-1',
+    threadId,
+    projectRoot: '/project/checkout',
+    root,
+    checkoutMode: 'worktree',
+    branch: `copse/${threadId}`,
+  }
 }
 
 async function rpc(
@@ -257,12 +271,15 @@ describe('startAcpNativeBridge', () => {
     assert.equal(at(content, 1)['mimeType'], 'image/jpeg')
   })
 
-  it('binds the owning thread so a run-scoped tool knows whose thread it is', async () => {
+  it('binds the turn context so bridged tools resolve the worktree, not the shared checkout', async () => {
     // The bridge's MCP handlers are a separate async chain from the ACP turn, so
-    // without an explicit rebind `requireThreadExecutionOwner()` throws and any
-    // tool that keeps run-scoped state (read_archive) fails on every call.
+    // without an explicit rebind `getAgentExecutionRoot()` falls back to the
+    // shared checkout while the turn itself runs in the thread's worktree, and
+    // `requireThreadExecutionOwner()` throws for any tool that keeps run-scoped
+    // state (read_archive). The turn's already-resolved context is set around
+    // each prompt (#1439); between turns owner-scoped tools fail closed.
     setPermissionGateForTests(() => Promise.resolve(true))
-    const seen: (ThreadExecutionOwner | string)[] = []
+    const seen: { root: string | null; owner: ThreadExecutionOwner | string }[] = []
     const registry = testRegistry([])
     registry.register({
       name: 'read_archive',
@@ -270,28 +287,90 @@ describe('startAcpNativeBridge', () => {
       parameters: z.object({}),
       execute: () => {
         try {
-          seen.push(requireThreadExecutionOwner())
+          seen.push({ root: getAgentExecutionRoot(), owner: requireThreadExecutionOwner() })
         } catch (err) {
-          seen.push(err instanceof Error ? err.message : String(err))
+          seen.push({
+            root: getAgentExecutionRoot(),
+            owner: err instanceof Error ? err.message : String(err),
+          })
         }
         return Promise.resolve('unpacked')
       },
     })
-    storageSet('activeProjectId', 'project-1')
     bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
       threadId: 'bridge-thread',
     })
     assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-thread', '/worktrees/bridge-thread'))
     for (const init of initialized()) await rpc(bridge, init)
 
-    const call = await rpc(bridge, {
+    const call = (id: number): unknown => ({
       jsonrpc: '2.0',
-      id: 2,
+      id,
       method: 'tools/call',
       params: { name: 'read_archive', arguments: {} },
     })
-    assert.equal(contentText(call), 'unpacked')
-    assert.deepEqual(seen, [{ projectId: 'project-1', threadId: 'bridge-thread' }])
+    const inTurn = await rpc(bridge, call(2))
+    assert.equal(contentText(inTurn), 'unpacked')
+    assert.deepEqual(seen, [
+      {
+        root: '/worktrees/bridge-thread',
+        owner: { projectId: 'project-1', threadId: 'bridge-thread' },
+      },
+    ])
+
+    // Turn over: the context is cleared, and a straggling call must fail closed
+    // on run-scoped state rather than landing on a guessed thread.
+    bridge.setExecutionContext(null)
+    const betweenTurns = await rpc(bridge, call(3))
+    assert.equal(contentText(betweenTurns), 'unpacked')
+    assert.equal(seen[1]?.owner, 'No thread execution context is active')
+  })
+
+  it('keeps concurrent thread bridges resolving their own worktree roots', async () => {
+    // Mirrors the advisor-context isolation test: two threads' bridges serving
+    // overlapping calls must each see their own turn's root, never the other's.
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'read_archive',
+      description: 'Report the bound execution root',
+      parameters: z.object({}),
+      execute: async () => {
+        const context = requireThreadExecutionContext()
+        // Force the two HTTP calls to overlap; a shared mutable slot read at
+        // execute time (rather than bound per request) would let the later
+        // request replace the earlier request's root here.
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        return `${context.threadId}:${context.root}`
+      },
+    })
+    const bridgeA = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'thread-a',
+    })
+    const bridgeB = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'thread-b',
+    })
+    assert.ok(bridgeA)
+    assert.ok(bridgeB)
+    try {
+      bridgeA.setExecutionContext(worktreeContext('thread-a', '/worktrees/thread-a'))
+      bridgeB.setExecutionContext(worktreeContext('thread-b', '/worktrees/thread-b'))
+      for (const init of initialized()) {
+        await Promise.all([rpc(bridgeA, init), rpc(bridgeB, init)])
+      }
+      const call = (id: number): unknown => ({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { name: 'read_archive', arguments: {} },
+      })
+      const [resultA, resultB] = await Promise.all([rpc(bridgeA, call(6)), rpc(bridgeB, call(7))])
+      assert.equal(contentText(resultA), 'thread-a:/worktrees/thread-a')
+      assert.equal(contentText(resultB), 'thread-b:/worktrees/thread-b')
+    } finally {
+      await Promise.all([bridgeA.close(), bridgeB.close()])
+    }
   })
 
   it('offers the advisor tool when registered, so an ACP executor can consult it', async () => {
