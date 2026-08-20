@@ -1344,6 +1344,53 @@ export function seedConversationVisualHierarchyFixture(workspaceRoot: string): v
   })
 }
 
+/**
+ * Assistant answer trailed by a Cursor ACP transport RetriableError.
+ * Seeds developer mode so the collapsed transport-note disclosure is visible.
+ */
+export function seedAcpTransportNoiseFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-transport-noise-project'
+  const threadId = 'e2e-acp-transport-noise-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP transport noise',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-noise',
+            role: 'user',
+            content: 'make a pr',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-noise',
+            role: 'assistant',
+            content: [
+              'https://github.com/copse-dev/agent-pane/pull/1818',
+              '',
+              'Error: RetriableError: WritableIterable is closed',
+            ].join('\n'),
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+  writeSettings({ developerMode: true })
+}
+
 /** Two user turns followed by enough output to exercise the latest-prompt sticky anchor. */
 export function seedStickyUserPromptFixture(workspaceRoot: string): void {
   const projectId = 'e2e-sticky-user-prompt-project'
