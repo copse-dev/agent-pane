@@ -647,3 +647,129 @@ describe('browser pane requested URLs', () => {
     }
   })
 })
+
+describe('browser pane webview size sync', () => {
+  function installRecordingResizeObserver(): {
+    observed: Element[]
+    fire: () => void
+    restore: () => void
+  } {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    let callback: ResizeObserverCallback | null = null
+    const observed: Element[] = []
+    class RecordingResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        callback = cb
+      }
+      observe(target: Element): void {
+        observed.push(target)
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = RecordingResizeObserver
+    // The callback's second argument is the observer that fired. Hand it a real
+    // instance of the stub above rather than asserting an empty object into the
+    // type — `RecordingResizeObserver` already implements the whole interface.
+    const firingObserver: ResizeObserver = new RecordingResizeObserver(() => {})
+    return {
+      observed,
+      fire: (): void => {
+        callback?.([], firingObserver)
+      },
+      restore: (): void => {
+        if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+        else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      },
+    }
+  }
+
+  function stubHostBox(host: HTMLElement, width: number, height: number): void {
+    host.getBoundingClientRect = (): DOMRect => ({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      top: 0,
+      left: 0,
+      right: width,
+      bottom: height,
+      toJSON: () => ({}),
+    })
+  }
+
+  it('observes browser-body and re-pins the active guest when that box changes', () => {
+    const recorder = installRecordingResizeObserver()
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      assert.equal(recorder.observed.length, 1)
+      assert.equal(recorder.observed[0]?.className, 'browser-body')
+
+      const host = qsRequired(viewer, '.browser-tab-panel.is-active .browser-webview-host')
+      const webview = qsRequired<FakeWebview>(host, '.browser-webview')
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      stubHostBox(host, 640, 480)
+      recorder.fire()
+      assert.equal(webview.style.width, '640px')
+      assert.equal(webview.style.height, '480px')
+
+      stubHostBox(host, 900, 700)
+      recorder.fire()
+      assert.equal(webview.style.width, '900px')
+      assert.equal(webview.style.height, '700px')
+    } finally {
+      recorder.restore()
+      unmount()
+    }
+  })
+
+  it('re-pins the guest after maximize even when ResizeObserver is quiet', async () => {
+    const recorder = installRecordingResizeObserver()
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+      rightPanelMaximized: false,
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      const host = qsRequired(viewer, '.browser-tab-panel.is-active .browser-webview-host')
+      const webview = qsRequired<FakeWebview>(host, '.browser-webview')
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      stubHostBox(host, 480, 400)
+      recorder.fire()
+      assert.equal(webview.style.width, '480px')
+
+      stubHostBox(host, 1100, 800)
+      store.setState({ rightPanelMaximized: true })
+      store.emit('right_panel_maximized_changed')
+      assert.equal(webview.style.width, '1100px')
+      assert.equal(webview.style.height, '800px')
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      recorder.restore()
+      unmount()
+    }
+  })
+})
