@@ -1,4 +1,5 @@
 import type * as Monaco from 'monaco-editor'
+import { createWorkerHandout } from './worker-handout.ts'
 
 declare global {
   // Monaco's ESM worker loader joins `vs/...` module ids against this root.
@@ -62,19 +63,16 @@ function workerEntryRelativeToMonacoRoot(label: string): string {
   }
 }
 
-function createMonacoWorker(label: string): Promise<Worker> {
-  const cached = workerPromises.get(label)
-  if (cached) return cached
-
-  const promise = createMonacoWorkerOnce(label).catch((err: unknown) => {
-    workerPromises.delete(label)
-    throw err
-  })
-  workerPromises.set(label, promise)
-  return promise
-}
-
-const workerPromises = new Map<string, Promise<Worker>>()
+/**
+ * Monaco owns every worker {@link loadMonaco}'s `getWorker` hands it: after
+ * five idle minutes (or a model-less window) it terminates the instance and
+ * asks `getWorker` again on the next request. Memoising the instance per label
+ * returned that already-terminated worker, so no diff ever computed again in
+ * this window — every Changes diff rendered as plain uncoloured text while a
+ * freshly opened pop-out window still coloured the same file (#1753). The
+ * handout keeps the pre-warm (below) but surrenders each instance at most once.
+ */
+const monacoWorkers = createWorkerHandout(createMonacoWorkerOnce)
 
 function createMonacoWorkerOnce(label: string): Promise<Worker> {
   // Resolved against the Monaco root, not the page: when the tree is shared
@@ -184,7 +182,7 @@ export function loadMonaco(): Promise<typeof Monaco> {
     // ESM worker or requests such as TypeScript diagnostics hit the editor worker.
     window.MonacoEnvironment = {
       getWorker(_workerId: string, label: string): Promise<Worker> {
-        return createMonacoWorker(label)
+        return monacoWorkers.take(label)
       },
     }
     // Diff computation uses the generic editor worker. Await it before resolving
@@ -204,7 +202,10 @@ export function ensureMonacoEditorWorker(): Promise<void> {
   if (typeof Worker === 'undefined') return Promise.resolve()
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   return Promise.race([
-    createMonacoWorker('editor').then(
+    // 'editorWorkerService' is the label Monaco's EditorWorkerService requests
+    // for diff computation, so this warmed instance is the one its first
+    // request takes over.
+    monacoWorkers.warm('editorWorkerService').then(
       () => undefined,
       () => undefined,
     ),
