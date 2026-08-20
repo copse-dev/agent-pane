@@ -50,6 +50,9 @@ describe('acp model values', () => {
     ]
     assert.equal(acpModelDisplayLabel('acp:gemini-cli', agents), 'Gemini CLI')
     assert.equal(acpModelDisplayLabel('acp:unknown', agents), 'unknown')
+    // A thread that ran a since-retired agent still names it, even though the
+    // agent is no longer offered and so is not in `agents`.
+    assert.equal(acpModelDisplayLabel('acp:claude-code-acp', agents), 'Claude Code (ACP, Zed)')
     assert.equal(acpModelDisplayLabel('claude-opus-4-8', agents), 'claude-opus-4-8')
   })
 

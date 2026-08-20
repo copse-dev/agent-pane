@@ -1,6 +1,7 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { setSetting } from '../storage/settings.ts'
+import { KNOWN_ACP_AGENTS, RETIRED_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   getAcpAgent,
   listAcpAgents,
@@ -81,6 +82,32 @@ describe('resolveAcpSandbox (issue #590)', () => {
     assert.ok(resolved.allowedDomains.includes('*.cursor.sh'))
     assert.ok(resolved.homeDirs?.includes('.cursor'))
     assert.deepEqual(resolved.scratchPaths, ['/tmp/.cursor'])
+  })
+})
+
+describe('retired agents keep their confinement', () => {
+  const base = { title: 'X', command: 'x', enabled: true }
+
+  it('still resolves the seatbelt for a config naming a retired agent', () => {
+    // Withdrawing an agent must never relax it. `resolveAcpSandbox` reads the
+    // catalog at spawn time, so an entry that simply vanished would downgrade
+    // an existing user's agent to spawning unconfined.
+    const resolved = resolveAcpSandbox({ ...base, id: 'claude-code-acp' })
+    assert.ok(resolved, 'retired agent resolved no sandbox — it would spawn unconfined')
+    assert.ok(resolved.allowedDomains.includes('*.anthropic.com'))
+    assert.ok(resolved.homeDirs?.includes('.claude'))
+  })
+
+  it('is not offered for install or registration', () => {
+    assert.equal(
+      KNOWN_ACP_AGENTS.some((agent) => agent.id === 'claude-code-acp'),
+      false,
+    )
+    const retired = RETIRED_ACP_AGENTS.find((agent) => agent.id === 'claude-code-acp')
+    assert.ok(retired)
+    assert.equal(retired.installPackage, undefined)
+    assert.equal(retired.autoInstall, undefined)
+    assert.equal(retired.preset, undefined)
   })
 })
 

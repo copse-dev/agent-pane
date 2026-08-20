@@ -45,7 +45,7 @@ const MERGED_VENDORS: readonly VendorSpec[] = [
     id: 'anthropic',
     label: 'Anthropic',
     api: ['anthropic'],
-    agents: ['claude-agent-acp', 'claude-code-acp'],
+    agents: ['claude-agent-acp'],
   },
   { id: 'openai', label: 'OpenAI', api: ['openai'], agents: ['codex'] },
   { id: 'cursor', label: 'Cursor', agents: ['cursor'] },

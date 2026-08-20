@@ -84,6 +84,89 @@ export interface KnownAcpAgent {
   note?: string
 }
 
+/**
+ * Agents that were once offered and no longer are. They are deliberately NOT in
+ * {@link KNOWN_ACP_AGENTS} — nothing installs, registers, or recommends them —
+ * but they keep their full entry here, confinement included, for three reasons:
+ *
+ *  1. **They must stay sandboxed.** `resolveAcpSandbox` reads the catalog at
+ *     spawn time rather than copying the profile into the persisted config, so
+ *     an entry that simply disappears downgrades an existing user's agent to
+ *     spawning unconfined. Retiring an agent must never relax its seatbelt.
+ *  2. `isClaudeAcpAgent` matches by spawn command, so a retired Claude wrapper
+ *     must still be recognised as Claude or it loses its Claude-specific
+ *     handling and is demoted to the API-billed path in the picker.
+ *  3. Threads that ran one stay readable — history stores `acp:<id>` forever,
+ *     and without a title the picker label falls back to the raw slug.
+ *
+ * A retirement is not a rename. `claude-code-acp` must never resolve to
+ * `claude-acp`: it was a different adapter, and pointing old threads at the
+ * current one would misreport what actually ran. Renames belong in
+ * {@link LEGACY_ACP_AGENT_IDS}.
+ */
+export interface RetiredAcpAgent extends KnownAcpAgent {
+  /** Why it went away. Shown in review and in the Settings notice. */
+  reason: string
+}
+
+export const RETIRED_ACP_AGENTS: readonly RetiredAcpAgent[] = [
+  {
+    id: 'claude-code-acp',
+    // npm marks @zed-industries/claude-code-acp deprecated: "This package
+    // has been renamed to @agentclientprotocol/claude-agent-acp." It stopped
+    // at 0.16.2 (2026-02-17); the renamed package carries on from 0.24.0.
+    reason: 'Renamed upstream to @agentclientprotocol/claude-agent-acp.',
+    title: 'Claude Code (ACP, Zed)',
+    command: 'claude-code-acp',
+    args: [],
+    envHints: ['ANTHROPIC_API_KEY'],
+    requiresClient: 'claude',
+    sandbox: {
+      // Anthropic-owned infra wholesale: the API lives on api.anthropic.com,
+      // but OAuth token refresh and telemetry move between subdomains — pinning
+      // individual hosts breaks auth ("403 Connection blocked by network
+      // allowlist") when they do. `claude.com` is not optional: the console
+      // moved to platform.claude.com, which is where an OAuth login refreshes
+      // its access token. Blocking it doesn't fail loudly — the token simply
+      // never refreshes and the next turn dies on "OAuth access token has
+      // expired. Re-authenticate to continue."
+      allowedDomains: [
+        'anthropic.com',
+        '*.anthropic.com',
+        'claude.ai',
+        '*.claude.ai',
+        'claude.com',
+        '*.claude.com',
+      ],
+      homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
+      // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
+      // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
+      // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
+      // BOTH forms are required: the literal dir gets recursive subpath
+      // coverage (ASRT strips trailing /** from write globs, so a glob can
+      // never grant a subtree), while the single-segment glob covers the
+      // sibling -cwd files.
+      scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*'],
+    },
+    sandboxedPermissionMode: 'acceptEdits',
+    docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
+    note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",
+  },
+]
+
+/**
+ * Catalog lookup by id across both the offered and the retired sets. Every
+ * resolver that reads the catalog with a **persisted** id must go through this:
+ * a config written before an agent was retired still names it, and the answer
+ * for "what seatbelt does this spawn under" cannot be "none, it is gone".
+ */
+export function findAcpCatalogEntry(id: string): KnownAcpAgent | undefined {
+  return (
+    KNOWN_ACP_AGENTS.find((agent) => agent.id === id) ??
+    RETIRED_ACP_AGENTS.find((agent) => agent.id === id)
+  )
+}
+
 export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
   {
     id: 'gemini-cli',
@@ -152,46 +235,6 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     reauth: 'claude /login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
     note: 'Claude Agent SDK over ACP. Uses your existing `claude` login (or ANTHROPIC_API_KEY).',
-  },
-  {
-    id: 'claude-code-acp',
-    title: 'Claude Code (ACP, Zed)',
-    command: 'claude-code-acp',
-    args: [],
-    envHints: ['ANTHROPIC_API_KEY'],
-    install: 'npm install -g @zed-industries/claude-code-acp',
-    installPackage: '@zed-industries/claude-code-acp',
-    requiresClient: 'claude',
-    sandbox: {
-      // Anthropic-owned infra wholesale: the API lives on api.anthropic.com,
-      // but OAuth token refresh and telemetry move between subdomains — pinning
-      // individual hosts breaks auth ("403 Connection blocked by network
-      // allowlist") when they do. `claude.com` is not optional: the console
-      // moved to platform.claude.com, which is where an OAuth login refreshes
-      // its access token. Blocking it doesn't fail loudly — the token simply
-      // never refreshes and the next turn dies on "OAuth access token has
-      // expired. Re-authenticate to continue."
-      allowedDomains: [
-        'anthropic.com',
-        '*.anthropic.com',
-        'claude.ai',
-        '*.claude.ai',
-        'claude.com',
-        '*.claude.com',
-      ],
-      homeDirs: ['.claude', '.claude.json', '.claude.json.backup', '.config/claude'],
-      // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
-      // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
-      // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
-      // BOTH forms are required: the literal dir gets recursive subpath
-      // coverage (ASRT strips trailing /** from write globs, so a glob can
-      // never grant a subtree), while the single-segment glob covers the
-      // sibling -cwd files.
-      scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*'],
-    },
-    sandboxedPermissionMode: 'acceptEdits',
-    docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
-    note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",
   },
   {
     id: 'cursor',
