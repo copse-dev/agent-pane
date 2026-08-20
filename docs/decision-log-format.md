@@ -11,45 +11,63 @@ session.
 
 ## Location
 
+Decisions are **thread-local spine lines** on each thread's `events.jsonl`:
+
 ```
-~/.copse/workspace/<projectId>/decisions.jsonl
+~/.copse/workspace/<projectId>/<threadId>/events.jsonl
 ```
 
-- Same store root as the thread spine; override with `COPSE_WORKSPACE_DIR`
+Optional argv / Guarded-YOLO extras live next to tool results:
+
+```
+~/.copse/workspace/<projectId>/<threadId>/blobs/decision-<id>.detail.json
+```
+
+- Same store root as the rest of the thread; override with `COPSE_WORKSPACE_DIR`
   ([`copse-paths.ts`](../src/main/services/storage/copse-paths.ts)).
-- Decisions made with no active project (headless / pre-open paths) are bucketed
-  under a `_global` project id so they are never silently dropped.
+- Decisions without an active project **and** thread are dropped (there is no
+  `_global` bucket).
 - Append-only: one JSON object per line
-  ([`decision-log.ts`](../src/shared/threads/decision-log.ts)), written through
-  the same per-project write queue as the thread store so concurrent gates can't
-  interleave a line.
+  ([`decision-log.ts`](../src/shared/threads/decision-log.ts) +
+  [`spine-schema.ts`](../src/shared/threads/spine-schema.ts)), written through
+  the same per-project write queue as the thread store.
+- Legacy project-level `decisions.jsonl` is no longer written; readers delete it
+  when encountered. Older `permission_decision` spine lines remain readable.
 
 ## Line schema (`type: "decision"`)
 
-| field        | type                                                                                                                  | notes                                                                                                                                                                                                                    |
-| ------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `v`          | number                                                                                                                | schema version (`1`)                                                                                                                                                                                                     |
-| `type`       | `"decision"`                                                                                                          | discriminator                                                                                                                                                                                                            |
-| `id`         | string (uuid)                                                                                                         | unique per event                                                                                                                                                                                                         |
-| `at`         | number                                                                                                                | epoch ms                                                                                                                                                                                                                 |
-| `kind`       | string                                                                                                                | domain: `shell` \| `mcp` \| `web` \| `pii` \| `browser` \| `github-write` \| `custom-tool` \| `port-binding` \| `model-compare` \| `install` \| `classification` \| `hook` \| … (free string; treat unknowns gracefully) |
-| `actor`      | `"user"` \| `"classifier"` \| `"hook"` \| `"system"`                                                                  | who produced the event                                                                                                                                                                                                   |
-| `verdict`    | `"approved"` \| `"denied"` \| `"allowed"` \| `"blocked"` \| `"ask"` \| `"classified"` \| `"timeout"` \| `"cancelled"` | `classified` records evidence rather than authorization; timeout/window-close/unavailable transport outcomes are system events, not user denials                                                                         |
-| `subject`    | string                                                                                                                | redacted operation / tool name / origin; shell arguments are omitted                                                                                                                                                     |
-| `scope`      | string?                                                                                                               | e.g. `sandbox` \| `external`                                                                                                                                                                                             |
-| `remembered` | boolean?                                                                                                              | whether the grant was made sticky                                                                                                                                                                                        |
-| `confidence` | number?                                                                                                               | classifier confidence in `[0, 1]`                                                                                                                                                                                        |
-| `reasons`    | string[]?                                                                                                             | redacted policy / classifier / hook reasons                                                                                                                                                                              |
-| `threadId`   | string?                                                                                                               | originating thread id (links back to the spine)                                                                                                                                                                          |
-| `source`     | string?                                                                                                               | redacted context: hook event name, classifier model, …                                                                                                                                                                   |
+| field        | type                                                                                                                                    | notes                                                                                                                                                                                                                    |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `v`          | number                                                                                                                                  | schema version (`1`)                                                                                                                                                                                                     |
+| `type`       | `"decision"`                                                                                                                            | discriminator                                                                                                                                                                                                            |
+| `id`         | string (uuid)                                                                                                                           | unique per event                                                                                                                                                                                                         |
+| `at`         | number                                                                                                                                  | epoch ms                                                                                                                                                                                                                 |
+| `kind`       | string                                                                                                                                  | domain: `shell` \| `mcp` \| `web` \| `pii` \| `browser` \| `github-write` \| `custom-tool` \| `port-binding` \| `model-compare` \| `install` \| `classification` \| `hook` \| … (free string; treat unknowns gracefully) |
+| `actor`      | `"user"` \| `"classifier"` \| `"hook"` \| `"system"`                                                                                    | who produced the event                                                                                                                                                                                                   |
+| `verdict`    | `"approved"` \| `"denied"` \| `"allowed"` \| `"blocked"` \| `"ask"` \| `"classified"` \| `"timeout"` \| `"cancelled"` \| `"deferred"` | `classified` records evidence rather than authorization; timeout/window-close/unavailable transport outcomes are system events, not user denials                                                                         |
+| `subject`    | string                                                                                                                                  | redacted operation / tool name / origin; shell arguments are omitted                                                                                                                                                     |
+| `scope`      | string?                                                                                                                                 | e.g. `sandbox` \| `external`                                                                                                                                                                                             |
+| `remembered` | boolean?                                                                                                                                | whether the grant was made sticky                                                                                                                                                                                        |
+| `confidence` | number?                                                                                                                                 | classifier confidence in `[0, 1]`                                                                                                                                                                                        |
+| `reasons`    | string[]?                                                                                                                               | redacted policy / classifier / hook reasons                                                                                                                                                                              |
+| `threadId`   | string?                                                                                                                                 | originating thread id                                                                                                                                                                                                    |
+| `toolCallId` | string?                                                                                                                                 | join key to the tool call whose args live inline or in `blobs/<id>.args.json`                                                                                                                                            |
+| `source`     | string?                                                                                                                                 | redacted context: hook event name, classifier model, …                                                                                                                                                                   |
+| `cause`      | string?                                                                                                                                 | fixed prompt-cause slug ([`prompt-cause.ts`](../src/shared/threads/prompt-cause.ts))                                                                                                                                     |
+| `detail`     | `{ ref, sha256 }`?                                                                                                                      | optional blob for YOLO command text / other structured extras (not inlined into exports)                                                                                                                                 |
+| `turnId`     | string?                                                                                                                                 | hook-recording turn correlation                                                                                                                                                                                          |
+| `step`       | number?                                                                                                                                 | hook-recording step                                                                                                                                                                                                      |
 
 ## Where events come from
 
 - **User approvals/denials** — every `requestApproval`
   ([`approval.ts`](../src/main/services/approval.ts)) is recorded as an `actor:
-"user"` event, so all shell / MCP / web / browser / GitHub-write / custom-tool
+  "user"` event, so all shell / MCP / web / browser / GitHub-write / custom-tool
   / port-binding / PII / model-compare prompts are captured in one place, along
   with the `remember` grant.
+- **Guarded YOLO** — shell authorizations write the same `decision` line (cause
+  `shell-guarded-yolo-harm`) with command text in the detail blob rather than a
+  separate `permission_decision` line type.
 - **Classifier evidence** — the sandbox-vs-external scope classification
   ([`safety-classifier.ts`](../src/main/services/security/safety-classifier.ts))
   is recorded as an `actor: "classifier"`, `verdict: "classified"` event with
@@ -61,8 +79,10 @@ session.
 ## Redaction
 
 Shell decisions record the fixed subject `shell command (arguments omitted)`;
-raw command text is never persisted because arbitrary positional secrets cannot
-be redacted reliably. Other free-text fields are still passed through
+raw command text is never inlined on the spine line because arbitrary positional
+secrets cannot be redacted reliably. Prefer joining via `toolCallId` to tool
+args (inline or `blobs/<id>.args.json`). Guarded YOLO still stores commands in
+the optional detail blob for forensics. Other free-text fields are passed through
 `redactSecrets`, which strips URL userinfo, `Authorization`/`Bearer` values,
 known provider token shapes (`ghp_…`, `sk-…`, `xox…`, `AKIA…`, `AIza…`), and
 `*_TOKEN=`/`--password …`-style assignments as defense in depth.
@@ -78,5 +98,5 @@ declares:
 An **export** (`decisions:export` IPC, or `exportDecisionLog`) writes a
 self-contained bundle under `<projectId>/exports/decisions-<timestamp>.jsonl`: a
 `decision-log-manifest` header line (media type + schema version + conformance
-target + count) followed by the redacted decision events, so external tooling can
-validate and evaluate the log on its own rather than merely re-reading it.
+target) followed by redacted decision events gathered from every thread spine in
+the project. Detail blobs are not inlined.

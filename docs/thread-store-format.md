@@ -38,6 +38,8 @@ describes it to the agent, so changing the layout means updating that preamble.
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
     blobs/<toolCallId>.result.txt    # verbatim tool result
+    blobs/<toolCallId>.args.json     # oversized tool args (when spilled from spine)
+    blobs/decision-<id>.detail.json  # optional decision extras (e.g. YOLO commands)
     blobs/<messageId>-img-<n>.dataurl  # decoded image data URL
     blobs/<hookRunId>.stdout.txt     # raw hook stdout (command hooks)
     blobs/<hookRunId>.stderr.txt     # raw hook stderr (command hooks)
@@ -69,7 +71,8 @@ describes it to the agent, so changing the layout means updating that preamble.
   pure reconcile only.
 
 - **`events.jsonl`** is the linear history — one JSON line per finalized message
-  (plus interleaved `hook_run`, `permission_decision`, `machine_continuation`, and Plan Mode `plan` lifecycle lines, below), oldest first. It is
+  (plus interleaved `hook_run`, `decision`, legacy `permission_decision`,
+  `machine_continuation`, and Plan Mode `plan` lifecycle lines, below), oldest first. It is
   the source of ordering and structure; prose and large/opaque content live in
   referenced files (`messages/*.md`, `blobs/*`) so a draft keystroke rewrites
   one tiny file, not the whole thread.
@@ -122,7 +125,8 @@ append is the commit point). See [`spine-schema.ts`](../src/shared/threads/spine
   "toolCalls": [
     {
       "id": "…", "name": "read_file",
-      "args": { … },                    // inline: small structured JSON
+      "args": { … } | { "ref": "blobs/<toolCallId>.args.json", "sha256": "…" },
+      // inline when JSON ≤ ~2 KiB; otherwise spilled like results
       "status": "done" | "error",
       "result": { "ref": "blobs/<toolCallId>.result.txt", "sha256": "…" } | null,
       "editStats": { "additions": 1, "deletions": 2 }, // optional
@@ -242,11 +246,15 @@ spawned `command` hooks such as Cursor permission hooks) appends one line:
   reference are exempt from stale-file pruning. Message-level appends
   (`appendMessage`) preserve them the same way.
 
-## Permission-decision line schema (`type: "permission_decision"`)
+## Decision line schema (`type: "decision"`)
 
-Guarded YOLO shell authorization appends a host-owned audit line after each
-allow/prompt/deny result. This is observability only: a failed append is logged but
-cannot weaken or change the authorization result.
+Control-plane approvals (user, classifier, hook, system — including Guarded YOLO)
+append a unified `decision` line. Redacted fields live on the spine; optional
+structured extras (YOLO command text) go to `blobs/decision-<id>.detail.json`.
+Tool argv lives on the tool call (inline under ~2 KiB, else `blobs/<toolCallId>.args.json`).
+See [`decision-log-format.md`](./decision-log-format.md).
+
+Legacy `permission_decision` lines remain parseable for older threads.
 
 ## Plan lifecycle line schema (`type: "plan"`)
 
@@ -261,38 +269,17 @@ and hook runs). Zod source of truth:
 ```jsonc
 {
   "v": 1,
-  "type": "permission_decision",
-  "id": "<uuid>",
-  "turnId": "<uuid>",
-  "step": 2,
-  "decidedAt": 1712345678901,
-  "originalCommand": "echo original",
-  "effectiveCommand": "rm -rf build", // optional; present after a hook rewrite
-  "originalMode": "guarded-yolo",
-  "effectiveMode": "guarded-yolo",
-  "sandboxState": "project-sandbox" | "unsandboxed",
-  "harmDecision": "allow" | "prompt" | "deny",
-  "policyDecision": "allow" | "prompt" | "deny",
-  "reasons": ["recursive/forced delete requires confirmation"],
-  "userResponse": "approved" | "declined" | "not-required"
+  "type": "plan",
+  "action": "create" | "revise" | "comment" | "approve" | "abandon",
+  "id": "<eventId>",
+  "planId": "<planId>",
+  "revision": 2, // when the action touches a revision
+  "createdAt": 1712345678901,
+  "artifact": { "ref": "plans/<planId>/revision-2.md", "sha256": "…" }, // create/revise/approve
+  "commentId": "<commentId>", // comment
+  "executionProfileId": "implementation", // approve
+  "contentHash": "<hex sha256 of body>" // approve
 }
-```
-
-Like `hook_run`, these lines are skipped by transcript folding/export, preserved
-verbatim through full saves, and remain readable for audits even after the
-session-only capability expires.
-"type": "plan",
-"action": "create" | "revise" | "comment" | "approve" | "abandon",
-"id": "<eventId>",
-"planId": "<planId>",
-"revision": 2, // when the action touches a revision
-"createdAt": 1712345678901,
-"artifact": { "ref": "plans/<planId>/revision-2.md", "sha256": "…" }, // create/revise/approve
-"commentId": "<commentId>", // comment
-"executionProfileId": "implementation", // approve
-"contentHash": "<hex sha256 of body>" // approve
-}
-
 ```
 
 - **Human-readable artifacts.** Revision bodies are markdown files; `meta.json`,

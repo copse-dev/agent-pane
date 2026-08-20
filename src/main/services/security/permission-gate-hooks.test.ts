@@ -29,6 +29,7 @@ import {
 
 describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
   const projectId = 'hook-audit-project'
+  const threadId = 'hook-audit-thread'
   let tempHome = ''
   let originalHome: string | undefined
   let originalWorkspaceDir: string | undefined
@@ -59,6 +60,11 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
     }
     await rm(tempHome, { recursive: true, force: true })
   })
+
+  /** Bind ALS so spine decisions attribute to this thread. */
+  function underThread<T>(fn: () => T): T {
+    return runWithActiveRunIdentity(threadId, fn)
+  }
 
   /** Declare a user `beforeReadFile` hook that prints `responseJson`. */
   async function writeReadFileHook(responseJson: string): Promise<void> {
@@ -95,7 +101,7 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
       promptTitle = req.title
       return { approved: true, remember: false }
     })
-    const allowed = await ensureToolPermitted(readFile)
+    const allowed = await underThread(() => ensureToolPermitted(readFile))
     assert.equal(allowed, true)
     assert.equal(prompts, 1, 'the hook ask must trigger exactly one approval prompt')
     assert.match(promptTitle, /Hook asks to confirm/)
@@ -108,7 +114,7 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
       prompts += 1
       return { approved: false, remember: false }
     })
-    const allowed = await ensureToolPermitted(readFile)
+    const allowed = await underThread(() => ensureToolPermitted(readFile))
     assert.equal(allowed, false)
     assert.equal(prompts, 1)
   })
@@ -116,13 +122,16 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
   it('deny with an agentMessage throws so the reason reaches the agent', async () => {
     await writeReadFileHook('{"permission":"deny","agentMessage":"blocked: reads sensitive file"}')
     setApprovalHandler(async () => ({ approved: true, remember: false }))
-    await assert.rejects(ensureToolPermitted(readFile), /blocked: reads sensitive file/)
+    await assert.rejects(
+      underThread(() => ensureToolPermitted(readFile)),
+      /blocked: reads sensitive file/,
+    )
   })
 
   it('a bare deny (no message) is a plain rejection, not a throw', async () => {
     await writeReadFileHook('{"permission":"deny"}')
     setApprovalHandler(async () => ({ approved: true, remember: false }))
-    assert.equal(await ensureToolPermitted(readFile), false)
+    assert.equal(await underThread(() => ensureToolPermitted(readFile)), false)
     const decisions = await readDecisionLog(projectId)
     assert.equal(
       decisions.some(
@@ -184,7 +193,9 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
       })
 
       const args = { command: 'echo hi' }
-      const allowed = await ensureToolPermitted({ toolName: 'run_shell', args })
+      const allowed = await underThread(() =>
+        ensureToolPermitted({ toolName: 'run_shell', args }),
+      )
       assert.equal(allowed, true)
       assert.equal(prompts, 1, 'the rewritten external command must re-run policy and prompt')
       assert.match(body, /curl http:\/\/evil\.example/)
@@ -197,7 +208,7 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
       await writeShellHook('{"permission":"allow"}')
       setApprovalHandler(async () => ({ approved: true, remember: false }))
       const args = { command: 'echo hi' }
-      await ensureToolPermitted({ toolName: 'run_shell', args })
+      await underThread(() => ensureToolPermitted({ toolName: 'run_shell', args }))
       assert.equal(args.command, 'echo hi')
     })
   })
@@ -215,7 +226,7 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
         args: { command: string }
         injectContext?: string
       }
-      const allowed = await ensureToolPermitted(check)
+      const allowed = await underThread(() => ensureToolPermitted(check))
       assert.equal(allowed, true)
       assert.equal(check.injectContext, '<system-reminder>\nmind the linter\n</system-reminder>')
     })
@@ -228,7 +239,7 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
         args: { command: string }
         injectContext?: string
       }
-      await ensureToolPermitted(check)
+      await underThread(() => ensureToolPermitted(check))
       assert.equal(check.injectContext, undefined)
     })
   })

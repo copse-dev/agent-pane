@@ -59,7 +59,7 @@ export type DecisionVerdict =
   | 'cancelled'
   | 'deferred'
 
-/** One line of `decisions.jsonl`: a single control-plane decision. */
+/** One line of the durable decision audit (thread spine `type: "decision"`). */
 export interface DecisionEvent {
   v: number
   type: 'decision'
@@ -88,6 +88,8 @@ export interface DecisionEvent {
   reasons?: string[]
   /** Originating thread id (links back to the spine), when known. */
   threadId?: string
+  /** Tool call this decision authorized, when known. */
+  toolCallId?: string
   /** Redacted extra context: hook config path, classifier model id, etc. */
   source?: string
   /**
@@ -175,6 +177,7 @@ export function makeDecisionEvent(input: DecisionInput, id: string, at: number):
     event.reasons = input.reasons.map((r) => clampField(redactSecrets(r)))
   }
   if (input.threadId !== undefined) event.threadId = input.threadId
+  if (input.toolCallId !== undefined) event.toolCallId = input.toolCallId
   if (input.source !== undefined) event.source = clampField(redactSecrets(input.source))
   // Not redacted or clamped: a cause is one of a fixed set of slugs, never free text.
   if (input.cause !== undefined) event.cause = input.cause
@@ -229,7 +232,7 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
   if (!isRecord(parsed)) return null
   const event = parsed
   const { v, type, id, at, kind, actor, verdict, subject } = event
-  const { scope, remembered, confidence, reasons, threadId, source, cause } = event
+  const { scope, remembered, confidence, reasons, threadId, toolCallId, source, cause } = event
   if (
     v !== DECISION_LOG_SCHEMA_VERSION ||
     type !== 'decision' ||
@@ -252,6 +255,7 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
         confidence > 1)) ||
     (reasons !== undefined && !isStringArray(reasons)) ||
     !isOptionalString(threadId) ||
+    !isOptionalString(toolCallId) ||
     !isOptionalString(source)
   ) {
     return null
@@ -270,6 +274,7 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
     ...(typeof confidence === 'number' ? { confidence } : {}),
     ...(reasons !== undefined ? { reasons } : {}),
     ...(typeof threadId === 'string' ? { threadId } : {}),
+    ...(typeof toolCallId === 'string' ? { toolCallId } : {}),
     ...(typeof source === 'string' ? { source } : {}),
     // Unknown slugs drop rather than reject the line: a log written by a newer
     // build must stay readable, just without that dimension.
@@ -277,7 +282,7 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
   }
 }
 
-/** Parse a full `decisions.jsonl` body, skipping blank or malformed lines. */
+/** Parse a full decision-log body (legacy export / project file), skipping blank or malformed lines. */
 export function parseDecisionLog(raw: string): DecisionEvent[] {
   const out: DecisionEvent[] = []
   for (const line of raw.split('\n')) {
@@ -288,7 +293,7 @@ export function parseDecisionLog(raw: string): DecisionEvent[] {
   return out
 }
 
-/** Serialize a full `decisions.jsonl` body (trailing newline when non-empty). */
+/** Serialize a full decision-log body (trailing newline when non-empty). */
 export function serializeDecisionLog(events: DecisionEvent[]): string {
   return events.map(serializeDecisionLine).join('\n') + (events.length > 0 ? '\n' : '')
 }

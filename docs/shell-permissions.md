@@ -61,7 +61,7 @@ This applies on every platform. Off macOS/Linux there is no seatbelt/bubblewrap 
 access is still outside the project and requires the same narrowly reasoned permission.
 
 The in-memory grant disappears on restart. The decision record does not: an answer appends a
-`decisions.jsonl` event at `scope: external-read`, including the paths and whether the grant was
+`decision` spine event at `scope: external-read`, including the paths and whether the grant was
 remembered. Each later allowed command records a verdict sourced to `read-outside-grant`.
 
 ## Implementation map
