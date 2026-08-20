@@ -18,6 +18,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
+import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { isAcpOverSshEnabled } from './acp-ssh-transport.ts'
 import {
@@ -577,7 +578,12 @@ export async function runAcpAgentFromSettings(
 
   return {
     stopReason,
-    messages: assistantText ? [{ role: 'assistant', content: assistantText }] : [],
+    // Drop Cursor ACP trailing transport RetriableError lines from history so
+    // the next turn does not replay them; the UI demotes the same noise from
+    // the stored message body at display time.
+    messages: assistantText
+      ? [{ role: 'assistant', content: stripCursorAcpTransportNoise(assistantText) }]
+      : [],
     usage: { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens },
   }
 }
