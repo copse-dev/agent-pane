@@ -323,7 +323,7 @@ describe('sync-intellect workflow', () => {
     assert.ok(validate >= 0 && pullRequest > validate)
     assert.ok(propagateFailure > pullRequest)
     assert.match(workflow, /id: validate\s+continue-on-error: true/)
-    assert.match(workflow, /token: \$\{\{ secrets\.SYNC_PR_TOKEN \}\}/)
+    assert.match(workflow, /token: \$\{\{ steps\.app-token\.outputs\.token \}\}/)
     assert.match(workflow, /branch: chore\/sync-intellect/)
   })
 })
