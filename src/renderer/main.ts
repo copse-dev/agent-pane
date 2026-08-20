@@ -430,15 +430,25 @@ async function boot(): Promise<void> {
   const endLoadProjects = perfBegin('renderer:load-projects')
   const { projects, activeProjectId, activeThreadId } = await loadProjects(api)
   endLoadProjects({ projects: projects.length })
-  store.setState({ projects, activeProjectId })
-  // Only now may autosave write navigation back: it has been attached since
-  // well before this line, and until the store held the restored value every
-  // flush would have persisted `activeProjectId: null` over it.
+  // Resolve the restored id against the projects actually loaded *before* it
+  // reaches the store. Navigation is now per-window, and a window's record can
+  // name a project this profile no longer has — so the raw id may match nothing.
+  // `restoreProject` already corrects it in its own `setState`, but it returns
+  // early on paths that never reach one: an SSH host that will not connect
+  // leaves the store pointing at a project that is not in `projects`, and
+  // everything reading `activeProjectId` then finds nothing — the sidebar's
+  // active row, and `ssh-status-banner`, which is gated on it and so never
+  // renders the disconnect banner that path exists to show.
+  const [firstProject] = projects
+  const active = firstProject
+    ? (projects.find((p) => p.id === activeProjectId) ?? firstProject)
+    : undefined
+  store.setState({ projects, activeProjectId: active?.id ?? null })
+  // The baseline stays the value that was *restored*, not the resolved one, so
+  // a correction here is a real change and the next flush heals the record.
   markNavigationRestored({ activeProjectId, activeThreadId })
 
-  const [firstProject] = projects
-  if (firstProject) {
-    const active = projects.find((p) => p.id === activeProjectId) ?? firstProject
+  if (active) {
     // Mount the panel immediately rather than waiting for restoreProject() to
     // finish — a large project's thread load (or a slow SSH connect) can take a
     // while, and every mounted pane already renders its own empty/loading state
