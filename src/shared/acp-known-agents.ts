@@ -89,7 +89,13 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     id: 'gemini-cli',
     title: 'Gemini CLI',
     command: 'gemini',
-    args: ['--experimental-acp'],
+    // `--acp` is the canonical flag, added in @google/gemini-cli 0.33.0 (2026-03-11);
+    // it is what the ACP registry lists for agent id `gemini`. The older
+    // `--experimental-acp` still works as a deprecated alias (the CLI computes
+    // `isAcpMode = !!argv.acp || !!argv.experimentalAcp`), but it is deprecated in the
+    // `--help` text and will eventually be removed, so we track the canonical spelling.
+    // Cost of the switch: installs older than 0.33.0 reject `--acp` and need an upgrade.
+    args: ['--acp'],
     envHints: ['GEMINI_API_KEY'],
     install: 'npm install -g @google/gemini-cli',
     sandbox: {
