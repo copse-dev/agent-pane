@@ -1,7 +1,8 @@
 # Custom subagents from `.claude/agents`
 
-Status: **Active (P1 landed)**. Discovery and Settings visibility are implemented; the
-runtime (P2 onward) is still design only. Owns
+Status: **Active (P1 + P2 landed)**. Discovery, Settings visibility, and explicit
+`/name` invocation are implemented. Automatic delegation (P4) and the remaining phases
+are still design only. Owns
 [#1819](https://github.com/copse-dev/agent-pane/issues/1819) ("I want to use agents that
 are in my `~/.claude/agents` when using copse").
 
@@ -320,7 +321,7 @@ registry now uses the same code, and its existing tests held green through the m
 `discoverAgentsFromRoots()` takes its roots as a parameter so both halves are testable at a
 real boundary rather than through a test-only escape hatch.
 
-**P2 — Explicit invocation (the feature).** Generalise the slash picker and
+**P2 — Explicit invocation (the feature). Landed.** Generalise the slash picker and
 `resolveSkillInvocation` to invocables; `invokedAgent` through the run payload; the `task`
 tool (registered once, withheld in `parentTools` except on invoking turns — see
 decision 2); `custom-agent-runner.ts`
@@ -329,6 +330,15 @@ wires); tool translation + filtering; model resolution; session kind + card. Hoo
 comes free — `runSubagent` already fires `subagentStart` / `subagentStop` with the
 subagent type as the matcher, so a user's hooks can gate a custom agent by name on day
 one.
+
+Shipped as: `src/shared/invocation/parse-invocation.ts` (the merged `/` namespace),
+`src/main/services/agents/custom-agent-{strategy,runner}.ts`, `src/main/tools/task-tool.ts`,
+`invokedAgent` through the run payload, `kind: 'custom'` + `agentName` on `SubagentSession`
+(both optional, so older threads decode unchanged), and a dynamic `task` card label.
+Read-only mode **allows** `task`: the read-only scope is ALS-based and covers everything
+the run awaits, so a subagent's own calls are gated by the same allow-list — withholding
+the entry point would only block a read-only reviewer agent for no safety gain, unlike
+`delegate_step`, whose purpose is to write.
 
 **P3 — Codex TOML.** One extra parser feeding the same registry
 (`.codex/agents/*.toml`, `~/.codex/agents/`), mapping `developer_instructions` to the
@@ -356,6 +366,11 @@ Two of these were found by implementing P1; the rest are still predictions.
   against a perfectly normal `README.md`. The rule that survives: a file that never opens a
   `---` block is documentation and is silent; a block that opens and never closes is a real
   mistake and is reported. Only the second reaches a Settings row.
+- **(Found in P2) The submit path is microtask-counted by tests.** `input-bar.test.ts`
+  advances exactly two microtask ticks via `settle()`; resolving the agent catalog
+  alongside the skill catalog added a tick and stranded one assertion. The re-fetch is
+  correct — a stale cache would false-reject a newly added agent, which is why skills
+  already re-fetch on submit — so the fix was to await a macrotask in that test.
 - **(Found in P1) `createPendingApi` never settles unless overridden.** Three renderer
   tests stub the Sources endpoints one by one over a never-settling API double, so adding a
   sixth endpoint to `refreshSources` hung `Promise.all` and failed 26 assertions in files
