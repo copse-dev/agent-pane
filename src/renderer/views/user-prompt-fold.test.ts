@@ -9,7 +9,7 @@ import {
 import '../../../tests/setup-dom.ts'
 
 function linesOf(n: number): string {
-  return Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n')
+  return Array.from({ length: n }, (_, i) => `line ${String(i + 1)}`).join('\n')
 }
 
 describe('userPromptLines', () => {
@@ -34,7 +34,10 @@ describe('splitUserPromptForFold', () => {
     assert.equal(parts.head, 'line 1\nline 2')
     assert.equal(parts.tail, 'line 11')
     assert.equal(parts.hiddenLineCount, 8)
-    assert.equal(parts.middle, Array.from({ length: 8 }, (_, i) => `line ${i + 3}`).join('\n'))
+    assert.equal(
+      parts.middle,
+      Array.from({ length: 8 }, (_, i) => `line ${String(i + 3)}`).join('\n'),
+    )
   })
 })
 

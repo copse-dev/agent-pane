@@ -7,7 +7,7 @@ import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 function linesOf(n: number): string {
-  return Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n')
+  return Array.from({ length: n }, (_, i) => `line ${String(i + 1)}`).join('\n')
 }
 
 function mountWithUserMessage(content: string): void {

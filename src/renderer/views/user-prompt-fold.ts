@@ -46,7 +46,7 @@ export function splitUserPromptForFold(content: string): UserPromptFoldParts | n
 }
 
 function foldLabel(expanded: boolean, hiddenLineCount: number): string {
-  return expanded ? 'collapse' : `${hiddenLineCount} lines hidden`
+  return expanded ? 'collapse' : `${String(hiddenLineCount)} lines hidden`
 }
 
 /**
