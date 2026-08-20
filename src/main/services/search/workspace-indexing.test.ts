@@ -90,6 +90,37 @@ describe('workspace-indexing scale gate (#795)', () => {
     assert.equal(isRootWatched(root), false)
   })
 
+  it('clears a scale-skipped chip immediately when switching primary roots', async () => {
+    const rootA = await prepWorkspace()
+    const rootB = await mkdtemp(join(tmpdir(), 'copse-panel-ws-index-clear-'))
+    try {
+      setSemanticBackendForTest(null)
+      setWorkspaceIndexPolicyOverrideForTest('never')
+      await writeFile(join(rootB, 'other.ts'), 'export {}\n', 'utf-8')
+
+      startWorkspaceIndexing(rootA)
+      await waitFor(() => getWorkspaceIndexStatus().semantic.phase === 'skipped')
+      assert.match(
+        getWorkspaceIndexStatus().semantic.reason ?? '',
+        /Override disables semantic indexing/,
+      )
+
+      // Incoming root is allowed; switch must drop the outgoing skipped chip
+      // before its own orchestration settles (no semantic backend → would
+      // otherwise leave skipped stuck forever).
+      setWorkspaceIndexPolicyOverrideForTest('default')
+      startWorkspaceIndexing(rootB)
+      assert.equal(getWorkspaceIndexStatus().semantic.phase, 'idle')
+      assert.equal(getWorkspaceIndexStatus().semantic.reason, undefined)
+
+      await waitFor(() => !semanticIndexPending(rootB))
+      assert.equal(semanticIndexAllowed(rootB), true)
+      assert.equal(getWorkspaceIndexStatus().semantic.phase, 'idle')
+    } finally {
+      await rm(rootB, { recursive: true, force: true })
+    }
+  })
+
   it('retains a warm project listing across A → B → A switches (#1728)', async () => {
     const rootA = await prepWorkspace()
     const rootB = await mkdtemp(join(tmpdir(), 'copse-panel-ws-index-b-'))
