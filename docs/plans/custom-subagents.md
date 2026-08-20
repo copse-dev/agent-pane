@@ -134,6 +134,27 @@ Two ways to make invocation actually delegate, in preference order:
 
 Start with (1); (2) is the fallback, not a v2 feature.
 
+**Eval result (2026-08-21): (1) does not hold, and (2) is now required.** Three runs of
+`tests/e2e/scenarios/custom-subagent-invocation.json` on a GUI machine against
+`lmstudio:qwen/qwen3.5-9b`, driving the real Electron app with a definition seeded at
+`~/.claude/agents/`. Every run failed the same way — `missing required tool: task` — with
+the model answering directly (observed instead: `explore`, `read_file`,
+`read_staged_thread`, `run_shell`, `git_status`). A temporary main-process probe confirmed
+the wiring was not at fault:
+
+```
+optionAgent=copse-eval-reviewer resolved=copse-eval-reviewer
+discovered=["copse-eval-reviewer"] taskOffered=true
+```
+
+Discovery, the renderer's `invokedAgent`, main's re-resolution, and the offered toolset
+were all correct; the model simply declined to delegate. Disabling the built-in `explore`
+subagent (`COPSE_EVAL_SUBAGENTS=0`) did not help — the model used `read_file` and answered
+itself instead. A directive is a request, and an explicit invocation must not be one:
+when the user names an agent, the run has to be deterministic. Caveat on scope: this is
+one 9B local model, and a frontier model may well comply — but a feature whose contract is
+"this runs when you ask for it" cannot depend on which model is selected.
+
 ### 3. Default on, with a disable switch later
 
 No feature-pack gate. With discovery-driven delegation out of scope (decision 1), what
