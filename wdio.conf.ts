@@ -83,21 +83,22 @@ export const config: Options.Testrunner = {
           '--disable-gpu',
           '--no-sandbox',
           '--disable-dev-shm-usage',
-          // NOTE: `--password-store=basic` was added here (#1793) to make
-          // `safeStorage.isEncryptionAvailable()` report true on a headless
-          // Linux runner, which has no OS secret service. It was verified not
-          // to work — `vnc-viewer` failed identically with the flag present —
-          // so it is removed rather than left looking load-bearing. Picking the
-          // `basic` backend is not opting into it: Electron still reports
-          // encryption unavailable unless `setUsePlainTextEncryption(true)` is
-          // called before `app` ready.
+          // Keeps Chromium off the desktop keyring: it uses its built-in store
+          // instead of auto-detecting gnome-keyring/kwallet over a session bus
+          // these containers do not have.
           //
-          // Nothing needs to replace it. #1797 settled the underlying question
+          // It does NOT make `safeStorage` work, which is why #1793 added it.
+          // That was verified wrong — `vnc-viewer` failed identically with the
+          // flag present. Selecting the `basic` backend is not opting into it:
+          // Electron still reports encryption unavailable unless
+          // `setUsePlainTextEncryption(true)` is called before `app` ready.
+          //
+          // Nothing needs to make `safeStorage` work here. #1797 settled that
           // the right way round: `rememberVncUsername` returning false with no
-          // cipher is the product being *correct*, not a gap to paper over, so
-          // the spec now asserts that outcome on Linux and the persisted one on
-          // macOS. Handing the runner a fake secret store would only have made
-          // it lie to the test.
+          // cipher is the product being *correct*, so the spec asserts that
+          // outcome on Linux and the persisted one on macOS. Giving the runner
+          // a fake secret store would only have made it lie to the test.
+          '--password-store=basic',
         ],
       },
     },
