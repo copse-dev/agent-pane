@@ -42,10 +42,7 @@ describe('env parse/format round-trip', () => {
 
 describe('args parse/format', () => {
   it('treats one argument per line, trimming and dropping blanks', () => {
-    assert.deepEqual(parseArgsText(' --experimental-acp \n\n--foo\n'), [
-      '--experimental-acp',
-      '--foo',
-    ])
+    assert.deepEqual(parseArgsText(' --acp \n\n--foo\n'), ['--acp', '--foo'])
     assert.equal(formatArgsText(['--a', '--b']), '--a\n--b')
     assert.equal(formatArgsText(undefined), '')
   })
@@ -95,7 +92,7 @@ describe('knownToConfig', () => {
       id: 'gemini-cli',
       title: 'Gemini CLI',
       command: 'gemini',
-      args: ['--experimental-acp'],
+      args: ['--acp'],
       envHints: ['GEMINI_API_KEY'],
       install: 'npm install -g @google/gemini-cli',
       setup: 'gemini',
@@ -104,7 +101,7 @@ describe('knownToConfig', () => {
       id: 'gemini-cli',
       title: 'Gemini CLI',
       command: 'gemini',
-      args: ['--experimental-acp'],
+      args: ['--acp'],
       env: { GEMINI_API_KEY: '' },
       enabled: true,
     })
