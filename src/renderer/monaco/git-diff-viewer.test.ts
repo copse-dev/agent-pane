@@ -48,6 +48,8 @@ async function withDeadline<T>(promise: Promise<T>, timeoutMs = 500): Promise<T>
   }
 }
 
+type LineChanges = ReturnType<GitDiffEditor['getLineChanges']>
+
 interface FakeDiff {
   monaco: GitDiffMonaco
   editor: GitDiffEditor
@@ -55,6 +57,11 @@ interface FakeDiff {
   disposed: string[]
   /** Let the diff currently being computed finish. */
   finishDiff: () => void
+  /** What getLineChanges answers: null = compute still pending. */
+  setLineChanges: (value: LineChanges) => void
+  /** Emit the editor's onDidUpdateDiff to every live listener. */
+  fireDiffUpdated: () => void
+  counts: { reveal: number }
 }
 
 /** Minimal Monaco doubles: enough surface for setGitFileDiffModel's swap. */
@@ -62,6 +69,9 @@ function createFakeDiff(): FakeDiff {
   const disposed: string[] = []
   let attached: { original: GitDiffModel; modified: GitDiffModel } | null = null
   let releaseDiff: (() => void) | null = null
+  let lineChanges: LineChanges = []
+  const diffUpdateListeners = new Set<() => void>()
+  const counts = { reveal: 0 }
 
   const model = (value: string): GitDiffModel => ({
     getValue: () => value,
@@ -69,7 +79,9 @@ function createFakeDiff(): FakeDiff {
   })
 
   const codeEditor = (): GitDiffCodeEditor => ({
-    revealLineInCenterIfOutsideViewport: (): void => {},
+    revealLineInCenterIfOutsideViewport: (): void => {
+      counts.reveal++
+    },
     getSelection: () => null,
     getModel: () => null,
     onKeyDown: () => ({ dispose: (): void => {} }),
@@ -88,12 +100,19 @@ function createFakeDiff(): FakeDiff {
       },
     }),
     dispose: (): void => {},
-    getLineChanges: () => [],
+    getLineChanges: () => lineChanges,
     getModel: () => attached,
     getModifiedEditor: codeEditor,
     getOriginalEditor: codeEditor,
     layout: (): void => {},
-    onDidUpdateDiff: () => ({ dispose: (): void => {} }),
+    onDidUpdateDiff: (listener) => {
+      diffUpdateListeners.add(listener)
+      return {
+        dispose: (): void => {
+          diffUpdateListeners.delete(listener)
+        },
+      }
+    },
     setModel: (next): void => {
       attached = next === null || !('model' in next) ? null : (next.model ?? null)
     },
@@ -119,6 +138,13 @@ function createFakeDiff(): FakeDiff {
       releaseDiff = null
       resolve?.()
     },
+    setLineChanges: (value): void => {
+      lineChanges = value
+    },
+    fireDiffUpdated: (): void => {
+      for (const listener of [...diffUpdateListeners]) listener()
+    },
+    counts,
   }
 }
 
@@ -285,6 +311,97 @@ describe('setGitFileDiffModel keeps a diff on screen while the next one computes
       ['typescript', 'typescript', 'python', 'python'],
       'a different path/language must mint its own models',
     )
+  })
+})
+
+describe('a diff attached before its compute finished re-presents when it lands (#1753)', () => {
+  const MID_FILE_CHANGE = [
+    {
+      originalStartLineNumber: 500,
+      originalEndLineNumber: 500,
+      modifiedStartLineNumber: 500,
+      modifiedEndLineNumber: 500,
+    },
+  ]
+
+  it('re-runs collapse + reveal on the diff update that completes the compute', async () => {
+    const host = document.createElement('div')
+    forceSize(host, 400, 300)
+    document.body.append(host)
+    const fake = createFakeDiff()
+    const { monaco, editor, counts } = fake
+
+    // Large diff: the attach budget expires while the worker is still computing,
+    // so the attach lands with getLineChanges() null — plain uncoloured text,
+    // nothing collapsed, nothing revealed.
+    fake.setLineChanges(null)
+    const attach = setGitFileDiffModel(
+      editor,
+      monaco,
+      { path: 'huge.ts', before: 'h-before', after: 'h-after', language: 'typescript' },
+      host,
+    )
+    await flush()
+    fake.finishDiff()
+    assert.equal(await withDeadline(attach, 2_000), true)
+    const revealsBeforeCompute = counts.reveal
+    assert.equal(revealsBeforeCompute, 0, 'nothing to reveal while the compute is pending')
+
+    // The worker finishes: the editor emits a diff update with real line changes.
+    fake.setLineChanges(MID_FILE_CHANGE)
+    fake.fireDiffUpdated()
+    await withDeadline(
+      new Promise<void>((resolve) => {
+        const poll = setInterval(() => {
+          if (counts.reveal > 0) {
+            clearInterval(poll)
+            resolve()
+          }
+        }, 10)
+      }),
+      2_000,
+    )
+    assert.ok(counts.reveal >= 1, 'the late compute must be presented (revealed) when it lands')
+  })
+
+  it('re-presents an unpresented attach on an identical-content refresh', async () => {
+    const host = document.createElement('div')
+    forceSize(host, 400, 300)
+    document.body.append(host)
+    const fake = createFakeDiff()
+    const { monaco, editor, counts } = fake
+    const diff = { path: 'huge.ts', before: 'h-before', after: 'h-after', language: 'typescript' }
+
+    let createCount = 0
+    const createModel = monaco.editor.createModel.bind(monaco.editor)
+    monaco.editor.createModel = (value, language, uri): ReturnType<typeof createModel> => {
+      createCount++
+      return createModel(value, language, uri)
+    }
+
+    fake.setLineChanges(null)
+    const attach = setGitFileDiffModel(editor, monaco, diff, host)
+    await flush()
+    fake.finishDiff()
+    assert.equal(await withDeadline(attach, 2_000), true)
+    assert.equal(createCount, 2)
+    const revealsAfterAttach = counts.reveal
+    assert.equal(revealsAfterAttach, 0)
+
+    // The compute finishes but its update event was missed (e.g. the arming
+    // selection was superseded). The next refresh resolves to identical content
+    // — it must re-present rather than pin the uncoloured view.
+    fake.setLineChanges(MID_FILE_CHANGE)
+    const second = setGitFileDiffModel(editor, monaco, diff, host)
+    assert.equal(await withDeadline(second, 2_000), true)
+    assert.equal(createCount, 2, 'identical refresh must still not mint new models')
+    assert.ok(counts.reveal >= 1, 'the healed presentation reveals the first change')
+
+    // Once presented, further identical refreshes go back to skipping outright.
+    const revealsAfterHeal = counts.reveal
+    const third = setGitFileDiffModel(editor, monaco, diff, host)
+    assert.equal(await withDeadline(third, 2_000), true)
+    assert.equal(counts.reveal, revealsAfterHeal, 'a presented diff is not re-revealed')
   })
 })
 

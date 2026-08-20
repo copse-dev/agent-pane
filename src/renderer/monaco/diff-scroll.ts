@@ -36,6 +36,15 @@ export const GIT_CHANGES_DIFF_EDITOR_OPTIONS: Monaco.editor.IDiffEditorConstruct
   ignoreTrimWhitespace: false,
   renderIndicators: true,
   hideUnchangedRegions: HIDE_UNCHANGED_REGIONS,
+  // Monaco's 5s default gives up on large files and renders the degenerate
+  // whole-file replace — no hunks, nothing collapsible. A busy renderer (app
+  // boot, agent churn) pushes even mid-sized diffs over 5s, so the docked pane
+  // showed the degenerate diff while a pop-out of the same file, computing on
+  // an idle renderer, showed real hunks (#1753). 3× the default: the wait is in
+  // the worker, the attach path stays responsive, and setGitFileDiffModel
+  // re-presents (collapse + reveal) when the late result lands — while a hard
+  // cap still bounds pathological files.
+  maxComputationTime: 15_000,
 }
 
 function nextAnimationFrame(): Promise<void> {
