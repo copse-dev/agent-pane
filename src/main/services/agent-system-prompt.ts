@@ -16,6 +16,7 @@ import {
   BASE_SYSTEM_PROMPT_DIRECT_READS,
   BROWSER_TOOLS_BLOCK,
   EXTERNAL_API_SAFETY_BLOCK,
+  EXTERNAL_CONTENT_BLOCK,
   MEMORY_TOOLS_BLOCK,
   OPUS_5_RESPONSE_LENGTH_BLOCK,
   OPUS_5_TONE_REMINDER,
@@ -88,6 +89,7 @@ export async function buildSystemPrompt(opts: {
       .replace('{WORKSPACE_ROOT}', getAgentExecutionRoot() ?? '(none)') +
     (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
+    EXTERNAL_CONTENT_BLOCK +
     (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +
     (readTerminalEnabled ? READ_TERMINAL_BLOCK : '') +
     (okfMemoriesEnabled ? MEMORY_TOOLS_BLOCK : '') +

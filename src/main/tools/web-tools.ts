@@ -7,6 +7,7 @@ async function loadWebSearch(): Promise<typeof import('../services/web-search/in
 
 export const webSearchTool = defineTool({
   name: 'web_search',
+  provenance: 'external',
   description:
     'Search the public web. Use for documentation, release notes, or facts outside the workspace.',
   parameters: z.object({
@@ -30,6 +31,7 @@ export const webSearchTool = defineTool({
 
 export const fetchUrlTool = defineTool({
   name: 'fetch_url',
+  provenance: 'external',
   description:
     'Fetch a public HTTP/HTTPS URL and return readable Markdown extracted from the page content.',
   parameters: z.object({

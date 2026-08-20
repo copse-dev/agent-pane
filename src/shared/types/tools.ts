@@ -8,6 +8,8 @@ import type { ToolExecuteResult } from '@copse/agent/wire-types.ts'
 export type { ToolEditStats, ToolExecuteResult, ToolResultImage } from '@copse/agent/wire-types.ts'
 export { normalizeToolExecuteResult } from '@copse/agent/wire-types.ts'
 export type { LLMTool } from '@copse/llm/wire-types.ts'
+export type { ToolProvenance } from '@copse/agent/external-content.ts'
+import type { ToolProvenance } from '@copse/agent/external-content.ts'
 
 export interface ToolDefinition<TArgs = unknown> {
   name: string
@@ -25,6 +27,14 @@ export interface ToolDefinition<TArgs = unknown> {
    * Used by MCP tools whose schemas are JSON Schema, not Zod.
    */
   rawParameters?: Record<string, unknown>
+  /**
+   * Who authored the bytes this tool returns (docs/plans/context-provenance.md).
+   * `external` results are wrapped in the `<external_content>` envelope by the
+   * registry. Defaults to `workspace` — repo contents the user opened, which
+   * get no wrapper. Purely prompt-side framing; never consulted by any
+   * permission gate.
+   */
+  provenance?: ToolProvenance
 }
 
 /**
