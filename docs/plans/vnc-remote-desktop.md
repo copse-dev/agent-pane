@@ -1,8 +1,19 @@
 # Seeing the other machine's screen: VNC support
 
-**Status: Proposed.** Design only — nothing here is implemented, and there is no
-issue for it yet. The tunnel half of Phase V0 is the work
-[#771](https://github.com/copse-dev/agent-pane/issues/771) already tracks.
+**Status: Active (V0/V1 first release).** The SSH-forwarding primitive, opt-in
+viewer, protocol-verified local discovery, and configured-SSH-host
+discovery are implemented. Nearby `_rfb._tcp` services are discovered through
+Bonjour/DNS-SD, and explicit private/link-local addresses are supported behind
+an unencrypted-connection confirmation. Saved SSH machines are always reused as
+encrypted VNC routes, independently of whether remote-workspace execution is
+enabled; equivalent Bonjour advertisements are collapsed in favour of SSH,
+including when differently named hosts resolve to the same address. The generic
+browser consumer, reconnect reconciliation, and live-host validation remain
+V0/V1 follow-ups; stored passwords and every agent-facing capability remain V2
+or later. V1 now handles noVNC's session-only credential requests without
+persisting secrets and lets the user explicitly enable mouse and keyboard
+control per connection. The tunnel work is tracked by
+[#771](https://github.com/copse-dev/agent-pane/issues/771).
 
 ## Three readings of "VNC support", and which two this plan covers
 
@@ -58,9 +69,10 @@ listing the host's listeners, attributing the ones that descend from a Shells ta
 or a background task, and offering open/kill for those alone. It sits there
 rather than in its own right-panel mode because a listening port is a property of
 something running in that pane — the same argument that put agent tasks and
-background tasks in the same rail. Remote discovery in V2 extends `discover()`
-over the SSH exec path onto the same parsers rather than growing a second scanner
-beside them.
+background tasks in the same rail. VNC discovery now extends `discover()` over
+the SSH exec path onto those same parsers rather than growing a second scanner
+beside them. Candidate listeners are reported only after a loopback connection
+(or temporary SSH forward) receives a valid RFB version banner.
 
 ## Binding decisions
 
@@ -124,13 +136,15 @@ beside them.
    `Thread.videos`: state the renderer owns that a main-process tool needs, so the
    tool silently does nothing on the path where no window exists.
 
-4. **Never a direct connection to a non-loopback VNC port. Tunnel or nothing.**
+4. **Direct VNC is LAN-only, explicit, and visibly unencrypted.**
    RFB's own authentication is a DES challenge with an effective 8-character key,
    and RFB 3.8 has no transport encryption; every keystroke, including whatever
    is typed into a terminal on that desktop, crosses the wire in the clear. So a
-   target is either loopback on this machine, or a configured SSH host reached
-   through a local forward. There is no third kind, and no host field the user
-   can type an internet address into.
+   target is normally loopback on this machine or a configured SSH host reached
+   through a local forward. A user may also choose a Bonjour-advertised service
+   or type a private/link-local address. That path shows an unencrypted warning
+   and requires confirmation for each connection. Public addresses and
+   hostnames resolving outside private/link-local ranges are rejected.
 
    That makes **#771 a hard dependency, and a cheap one**: `ssh -O forward -L
 127.0.0.1:<local>:127.0.0.1:<remote>` runs against the ControlMaster socket
@@ -138,15 +152,26 @@ beside them.
 cancel` to tear it down. No second handshake, no new auth surface, no askpass
    lease beyond the one `leaseSshAskpassEnv` already brokers.
 
-   **Rejected: a `vncAllowedHosts` allowlist for direct connections**, mirroring
-   `browserAllowedOrigins`. An allowlist authorises a destination; it says nothing
-   about the wire, and the wire is the problem here.
+   **Rejected: silently treating LAN as secure.** A private address authorises a
+   destination; it says nothing about the wire. The UI therefore keeps the
+   warning attached to the direct target and prefers SSH whenever it is configured.
 
-5. **The viewer ships before any input, and the agent's input ships last.**
+5. **Human input is explicit per connection, and the agent's input ships last.**
    Not caution for its own sake — see the security section, which argues that an
    agent with pointer and keyboard on a desktop routes around the shell
-   permission gate entirely. V1 connects with `view-only` set and no input path
-   compiled into the pane at all.
+   permission gate entirely. V1 connects with `view-only` set. The user can then
+   turn on noVNC's existing pointer and keyboard path from a visible pane action;
+   the tab and framebuffer remain visibly marked while control is enabled. This
+   does not expose input to the agent or add an agent tool.
+
+   Authentication is not input authority. When the RFB handshake requests a
+   password, username, or target, V1 asks for it in the viewer and passes it to
+   noVNC. Passwords and targets remain connection-only and the visible password
+   is cleared immediately after submission. After a successful login, the
+   username alone is remembered per machine using OS-backed encrypted storage;
+   saved SSH targets initially offer their configured SSH username. A rejected credential, an unsupported authentication request,
+   an unavailable Screen Sharing service, and a dropped session remain distinct
+   error states after noVNC emits its final disconnect event.
 
 6. **Clipboard sync is off, separately consented, and never implicit.**
    RFB carries clipboard in both directions. On by default it means anything the
@@ -160,15 +185,17 @@ cancel` to tear it down. No second handshake, no new auth surface, no askpass
    Enumerating `:5900`/`:5901` on an SSH host is `scanCandidates()`'s command list
    run through `execShell` instead of `runCommand`, feeding the same parsers. If
    the Ports panel lands first, a VNC target becomes one row type in it rather
-   than a parallel list.
+   than a parallel list. Other machines on the local link are found separately
+   through DNS-SD `_rfb._tcp` advertisements; Copse never sweeps the subnet.
 
 ## Interface
 
 ```typescript
-/** Where a desktop lives. There is no free-form host field. */
+/** Where a desktop lives. Direct network targets are LAN-only and confirmed. */
 type VncTarget =
   | { kind: 'loopback'; port: number }
   | { kind: 'ssh'; hostId: string; remotePort: number; display?: string }
+  | { kind: 'network'; host: string; port: number; confirmedUnencrypted: true }
 
 interface VncConnection {
   id: string
@@ -190,6 +217,8 @@ interface VncService {
   list(): VncConnection[]
   /** Enumerate plausible VNC ports on a target host. */
   discover(host: { kind: 'local' } | { kind: 'ssh'; hostId: string }): Promise<number[]>
+  /** Browse `_rfb._tcp.local` services without scanning the subnet. */
+  discoverNearby(): Promise<VncNearbyServer[]>
 }
 ```
 
@@ -204,6 +233,11 @@ contributors on the day they land.
 
 ### V0 — Tunnels (~2 days)
 
+**Implementation:** `ssh-forward.ts` now builds loopback-only ControlMaster
+forward/cancel argv and allocates ephemeral ports; SSH transports track and
+cancel forwards on disconnect, VNC close, and awaited app shutdown. Reconnect
+reconciliation and a generic browser-pane consumer remain.
+
 1. `ssh-workspace/ssh-forward.ts`: establish/cancel a local forward via `-O
 forward` / `-O cancel` on the existing control socket; allocate the local port
    with a `listen(0)` probe rather than guessing.
@@ -216,7 +250,35 @@ forward` / `-O cancel` on the existing control socket; allocate the local port
 `http://127.0.0.1:<local>` in the existing browser pane, and the forward is gone
 after disconnect. This is #771's tunnel half and lands under that issue.
 
-### V1 — The viewer, read-only (~1 week)
+### V1 — The viewer and basic user control (~1 week)
+
+**Implementation:** shipped behind `vncEnabled`, default off. Main owns the raw
+RFB socket (loopback, LAN-direct, or SSH-forwarded), preload exposes a binary
+WebSocket-shaped IPC channel, and noVNC 1.5.0 paints the pane. Unit
+coverage uses real loopback sockets, and the focused WDIO eval paints and pixel-
+checks a two-colour RFB 3.8 framebuffer. The pane explicitly selects this
+machine or a configured SSH host, discovers verified RFB listeners on either,
+discovers nearby Bonjour-advertised devices, and accepts a manually entered LAN
+hostname/IP with an optional `:port`. Port 5900 is the quiet default; the explicit
+RFB port override lives under Advanced, while discovery and Bonjour selections
+retain their detected ports. A single discovered desktop is selected silently;
+the chooser appears only when discovery finds multiple desktops. Saved SSH hosts refresh live when Settings changes,
+and deduplication matches Bonjour devices by hostname, normalized device label,
+or the current addresses resolved for the SSH host. Remote scans use the probed host OS and directly verify
+port 5900 when a process scanner omits macOS's launchd-managed Screen Sharing
+listener. A connected framebuffer can be right-clicked to attach the current
+screen as a PNG to the active composer; the user still decides whether to send
+it to the model. The Desktop pane supports multiple tabs, each with its own live
+connection; switching tabs keeps the other sessions connected, while closing a
+tab disconnects only that desktop. Once a session starts, setup and discovery
+controls collapse into a plain-language connected summary, view-only
+explanation, and Disconnect action; protocol names and port numbers remain
+confined to Advanced settings and error diagnostics. The live `DISPLAY=:1`
+harness remains. Each connection starts view-only and exposes a clear **Control
+desktop** action. Enabling it forwards the user's pointer and keyboard through
+noVNC; **Stop controlling** returns that tab to view-only. Right-click continues
+to open the local share action in view-only mode and reaches the remote desktop
+while control is enabled.
 
 1. Vendor noVNC; add the `THIRD_PARTY_NOTICES.md` section.
 2. `services/vnc/vnc-service.ts` — `open`/`close`/`list`, socket to the local
@@ -224,7 +286,7 @@ after disconnect. This is #771's tunnel half and lands under that issue.
    `ownerId`-style check `terminal-service.ts` uses.
 3. Preload shim implementing the channel object noVNC attaches to.
 4. A pane: `rightPanelMode: 'vnc'` (or a browser-pane tab type — open question),
-   `view-only`, scaling to fit, a status line that distinguishes "no server
+   view-only by default, scaling to fit, a status line that distinguishes "no server
    there" from "tunnel down" from "server refused the encoding".
 5. Settings: `vncEnabled`, default off, wired the six places
    `browserToolsEnabled` is wired.
@@ -232,14 +294,14 @@ after disconnect. This is #771's tunnel half and lands under that issue.
 **Acceptance:** with an SSH workspace pointed at the e2e host, the pane shows
 `DISPLAY=:1` and an `npm run test:e2e` run is watchable from inside Copse.
 
-### V2 — Human input and discovery (~3–4 days)
+### V2 — Input polish and saved credentials (~2–3 days)
 
-1. Pointer and key events from the pane, with the keysym mapping noVNC provides.
-2. `discover()` over the SSH exec path, running the local Ports panel's parsers
-   against a remote host.
-3. Optional per-host password through `secret-cipher.ts`, never in settings JSON.
-4. Clipboard toggle, off by default, per connection.
-5. The idle-blanker problem is real and documented (`AGENTS.md:42`): synthetic
+1. Clipboard, special-key helpers, and multi-monitor input polish. Basic pointer
+   and key events already use noVNC's mapping in V1.
+2. Optional per-host saved password through `secret-cipher.ts`, never in settings
+   JSON. Session-only credential prompts already exist in V1.
+3. Clipboard toggle, off by default, per connection.
+4. The idle-blanker problem is real and documented (`AGENTS.md:42`): synthetic
    warps do not reset X's screensaver, only real input does. Surface it as a
    pane control ("keep awake"), not as a background loop nobody can see.
 

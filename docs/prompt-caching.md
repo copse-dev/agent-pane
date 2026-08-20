@@ -33,13 +33,16 @@ separately, so the Settings usage table reflects real cache savings.
 Anything that changes the rendered bytes ahead of a breakpoint:
 
 - **Editing the system prompt.** It sits at the front, so per-turn text there
-  invalidates the entire conversation cache. Turn steering and hook-injected
-  context therefore ride a **trailing `role: 'system'` message** instead of being
-  folded into `messages[0]`. Models that don't accept a mid-conversation system
-  turn get the same content as a `<system-reminder>` block in a trailing user
-  message — same caching profile, less authority. See
-  `supportsMidConversationSystem` in `packages/llm/src/model-catalog.ts`; note
-  that the default cloud model (`claude-sonnet-4-6`) is on the fallback path.
+  invalidates the entire conversation cache. Capability-aware turn assembly
+  avoids that cost where the model has a documented operator channel: routed
+  GPT models receive a trailing `developer` message, while the explicit
+  `supportsMidConversationSystem` allowlist receives a trailing `system`
+  message. Every other selection merges the instruction into `messages[0]`.
+  That conservative fallback intentionally loses the prefix cache when steering
+  changes, but it works with strict single-system templates such as Qwen under
+  LM Studio / MLX and does not weaken the instruction into a pseudo-role user
+  message. See `operatorInstructionPlacement` in
+  `packages/llm/src/model-catalog.ts`.
 - **Changing the tool set or the model.** Tools render at position 0, and caches
   are model-scoped; either change forces a full rebuild.
 - **Trimming history.** Dropping the oldest messages is a prefix edit, so

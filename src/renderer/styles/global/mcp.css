@@ -92,6 +92,13 @@
 .mcp-trust-banner button {
   flex: none;
 }
+.trust-unsandboxed-hooks-warning {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.trust-unsandboxed-hooks-warning > .ui-icon {
+  margin-top: 1px;
+}
 
 .mcp-curated-list {
   display: flex;

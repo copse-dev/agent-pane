@@ -7,6 +7,7 @@ import {
   getStaticPreviewServer,
   shutdownStaticPreviewServers,
   staticPreviewUrl,
+  workspacePreviewFileUrl,
 } from './static-preview-server.ts'
 
 const temporaryRoots: string[] = []
@@ -38,6 +39,13 @@ describe('static browser preview server', () => {
     assert.equal(page.status, 200)
     assert.equal(page.headers.get('cache-control'), 'no-store')
     assert.equal(page.headers.get('content-type'), 'text/html; charset=utf-8')
+    assert.equal(page.headers.get('x-content-type-options'), 'nosniff')
+    assert.equal(page.headers.get('x-frame-options'), 'DENY')
+    assert.equal(page.headers.get('referrer-policy'), 'no-referrer')
+    const csp = page.headers.get('content-security-policy')
+    assert.ok(csp?.includes("connect-src 'self'"))
+    assert.ok(csp?.includes("form-action 'none'"))
+    assert.ok(csp?.includes("frame-ancestors 'none'"))
     assert.equal(await page.text(), '<h1>Crumb &amp; Bloom</h1>')
 
     const stylesheet = await fetch(new URL('assets/site.css', first.url))
@@ -55,6 +63,17 @@ describe('static browser preview server', () => {
     const preview = await getStaticPreviewServer(root)
     const response = await fetch(new URL('secret.txt', preview.url))
     assert.equal(response.status, 404)
+  })
+
+  it('builds a loopback http URL for a contained workspace file, never file://', async () => {
+    const root = await temporaryRoot('copse-static-preview-file-url-')
+    const file = join(root, 'pages', 'launch.html')
+    await mkdir(join(root, 'pages'))
+    await writeFile(file, '<p>ok</p>')
+
+    const url = await workspacePreviewFileUrl(root, file)
+    assert.match(url, /^http:\/\/localhost:\d+\/pages\/launch\.html$/)
+    assert.equal(new URL(url).protocol, 'http:')
   })
 
   it('builds only workspace-relative entry URLs', () => {

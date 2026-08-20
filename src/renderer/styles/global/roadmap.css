@@ -83,7 +83,9 @@
   align-items: center;
   gap: 4px;
   width: 100%;
-  padding: 5px var(--spacing-sm);
+  /* Same block padding as .git-changes-section-title so the PR and roadmap
+     group headers sit on one rhythm. */
+  padding: var(--spacing-xs) var(--spacing-sm);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -101,8 +103,8 @@
 }
 .roadmap-category-chevron {
   width: 10px;
-  font-size: 12px;
-  text-align: center;
+  height: 10px;
+  flex: none;
 }
 .roadmap-category-count {
   margin-left: auto;
@@ -337,9 +339,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The global input/button rules give buttons a filled look — the remove ✕ is
-   an inline glyph, like the composer's attachment-chip remove. */
+/* The global input/button rules give buttons a filled look; this stays an
+   inline icon, like the composer's attachment-chip remove. */
 .roadmap-attachment-remove {
+  display: inline-flex;
+  align-items: center;
   border: none;
   background: none;
   color: var(--text-muted);
@@ -351,6 +355,9 @@
   color: var(--danger, #f14c4c);
 }
 .roadmap-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   background: none;

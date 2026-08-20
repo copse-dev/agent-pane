@@ -9,6 +9,9 @@ describe('thread running status dots', () => {
   let idleThreadTitle: string
 
   before(async () => {
+    process.env.COPSE_PANEL_MOCK_LLM = '1'
+    process.env.ANTHROPIC_API_KEY = ''
+    process.env.OPENAI_API_KEY = ''
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     ;({ runningThreadTitle, idleThreadTitle } = seedThreadRunningStatusFixture(process.cwd()))
@@ -24,6 +27,20 @@ describe('thread running status dots', () => {
     this.timeout(90_000)
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)
+
+    const seededUnreadRow = await $(`.chat-row*=${idleThreadTitle}`)
+    await expect(seededUnreadRow).toHaveElementClass('is-unread')
+    await expect(seededUnreadRow.$('.chat-unread-dot')).toHaveAttribute(
+      'aria-label',
+      'Unread agent completion',
+    )
+    await saveElementScreenshot('#pane-projects', 'thread-unread-completion-dot.png')
+
+    await seededUnreadRow.click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText(idleThreadTitle)
+    await seededUnreadRow.$('.chat-unread-dot').waitForExist({ reverse: true, timeout: 5_000 })
+    await $(`.chat-row*=${runningThreadTitle}`).click()
     await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)
 
     // Persisted `running` is cleared on load (resumePendingQueues), so drive a
@@ -73,7 +90,39 @@ describe('thread running status dots', () => {
 
     await saveElementScreenshot('#pane-projects', 'thread-running-status-dots.png')
 
-    await $('.stop-btn').click()
-    await runningRow.waitForExist({ reverse: true, timeout: 10_000 })
+    const idleRow = await $(`.chat-row*=${idleThreadTitle}`)
+    await idleRow.click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText(idleThreadTitle)
+
+    const unreadRow = await $(`.chat-row*=${runningThreadTitle}`)
+    await unreadRow.$('.chat-unread-dot').waitForExist({ timeout: 15_000 })
+    await expect(unreadRow).toHaveElementClass('is-unread')
+    await expect(unreadRow.$('.chat-unread-dot')).toHaveAttribute(
+      'aria-label',
+      'Unread agent completion',
+    )
+
+    const unreadPlacement = await browser.execute((titleText) => {
+      const row = [...document.querySelectorAll<HTMLElement>('.chat-row')].find(
+        (candidate) => candidate.querySelector('.chat-title')?.textContent === titleText,
+      )
+      const title = row?.querySelector<HTMLElement>('.chat-title')
+      const dot = row?.querySelector<HTMLElement>('.chat-unread-dot')
+      if (!row || !title || !dot) return null
+      const rowRect = row.getBoundingClientRect()
+      const titleRect = title.getBoundingClientRect()
+      const dotRect = dot.getBoundingClientRect()
+      return {
+        dotLeftOfTitle: dotRect.right <= titleRect.left + 1,
+        dotInGutter: dotRect.left >= rowRect.left && dotRect.right <= titleRect.left + 1,
+      }
+    }, runningThreadTitle)
+    await expect(unreadPlacement).not.toBeNull()
+    await expect(unreadPlacement?.dotLeftOfTitle).toBe(true)
+    await expect(unreadPlacement?.dotInGutter).toBe(true)
+
+    await unreadRow.click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)
+    await unreadRow.$('.chat-unread-dot').waitForExist({ reverse: true, timeout: 5_000 })
   })
 })

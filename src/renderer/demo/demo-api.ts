@@ -9,6 +9,7 @@ import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { demoScenarioPrompt } from '@shared/demo-scenarios.ts'
+import { maximizeIcon, minimizeIcon } from '../dom/icons.ts'
 
 const DEMO_MODEL = 'mock:demo'
 const DEMO_TIME = '2026-07-17T09:00:00.000Z'
@@ -28,6 +29,7 @@ const DEMO_PLUGIN_CONTRIBUTIONS: PluginContributionsSummary = {
   commandHooks: [],
   promptBlocks: [],
   ui: [],
+  followUps: [],
   capabilities: [],
   permissions: [],
 }
@@ -356,6 +358,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       runningThreadIds: emptyArray,
       retryReview: resolvedVoid,
       retryComparison: resolvedVoid,
+      comparisonModels: () => resolved({ a: '', b: '', judge: '' }),
       clearHistory: resolvedVoid,
       refreshModelContext: resolvedVoid,
       suggestTitle: () => resolved(null),
@@ -451,6 +454,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     threads: {
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
+      // The demo always hands back whole threads, so nothing ever asks to
+      // hydrate one; answering from the in-memory list keeps that true.
+      loadMessages: (_projectId: string, threadId: string) =>
+        resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
+      // Demo threads always arrive whole, so nothing is ever backfilled.
+      onPrRefs: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {
         threads = [thread, ...threads.filter((candidate) => candidate.id !== thread.id)]
         return resolvedVoid()
@@ -667,6 +676,20 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       list: () => resolved({ rows: [], tool: 'demo' }),
       kill: () => resolved({ killed: false, reason: 'Ports are not available in the demo.' }),
     },
+    vnc: {
+      open: unsupported,
+      list: emptyArray,
+      discover: emptyArray,
+      discoverNearby: emptyArray,
+      resolveSshHosts: emptyArray,
+      getUsername: () => resolved(null),
+      rememberUsername: () => resolved(false),
+      start: () => {},
+      send: () => {},
+      close: resolvedVoid,
+      onData: subscribe,
+      onStatus: subscribe,
+    },
     memories: {
       list: emptyArray,
       create: unsupported,
@@ -768,8 +791,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       isAvailable: () => resolved(true),
       status: () => resolved({ staged: [], unstaged: [] }),
       changeStats: () => resolved(null),
+      onWorkingTreeChanged: subscribe,
       fileDiff: () => resolved(null),
       workingFileDiff: () => resolved(null),
+      committedChanges: () => resolved(null),
+      committedFileDiff: () => resolved(null),
       // These take (projectId, threadId, …) — dropping the leading two made
       // `branchStatus` answer with the *project id* as the current branch, which
       // reads as a branch mismatch and blocks every send behind the composer's
@@ -801,6 +827,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           username: null,
           message: 'Unavailable in browser demo',
         }),
+      invalidateReadCache: resolvedVoid,
+      setListWatch: resolvedVoid,
+      onListsTick: subscribe,
       listMyOpenPrs: () => resolved([]),
       listWorkspaceOpenPrs: emptyArray,
       prChecks: () => resolved<'no_checks'>('no_checks'),
@@ -857,7 +886,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         for (const button of document.querySelectorAll<HTMLButtonElement>(
           `.pane-popout-btn[data-pane-mode="${mode}"]`,
         )) {
-          button.textContent = expanded ? '⛶' : '↙'
+          button.replaceChildren(
+            expanded ? maximizeIcon('ui-icon ui-icon-sm') : minimizeIcon('ui-icon ui-icon-sm'),
+          )
           button.setAttribute('aria-label', `${expanded ? 'Expand' : 'Restore'} ${mode}`)
           button.title = expanded ? 'Expand pane' : 'Restore app layout'
         }

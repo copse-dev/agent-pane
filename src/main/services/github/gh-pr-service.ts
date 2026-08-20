@@ -1,5 +1,6 @@
 import { parseGithubPrUrl } from '@shared/git/github-pr-url.ts'
 import { resolveGitHubBackend, type PrRef } from './backend/backend.ts'
+import { invalidateGitHubReadCache } from './backend/github-read-cache.ts'
 import type {
   GhCliStatus,
   GhPrChecksState,
@@ -37,6 +38,11 @@ export async function getGhPrFileDiff(ref: PrRef, path: string): Promise<GhPrFil
 
 export async function getGhPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
   return resolveGitHubBackend().getPrChecksState(ref)
+}
+
+/** Drop TTL'd GitHub reads so the next list/details fetch is live (manual refresh). */
+export function invalidateGithubReadCache(): void {
+  invalidateGitHubReadCache()
 }
 
 /** Resolve a PR URL to an owner/repo/number ref (pure; no backend call). */

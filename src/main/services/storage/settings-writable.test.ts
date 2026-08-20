@@ -96,6 +96,12 @@ describe('settings-writable', () => {
     assert.equal(isRendererWritableSettingKey('apiKey.anthropic'), false)
   })
 
+  it('treats encrypted VNC username records as secret settings', () => {
+    assert.equal(isSecretSettingKey('vncUsername'), true)
+    assert.equal(isSecretSettingKey('vncUsername.abc123'), true)
+    assert.equal(isRendererWritableSettingKey('vncUsername.abc123'), false)
+  })
+
   it('does not treat ordinary settings as secret', () => {
     assert.equal(isSecretSettingKey('model'), false)
     assert.equal(isSecretSettingKey('theme'), false)

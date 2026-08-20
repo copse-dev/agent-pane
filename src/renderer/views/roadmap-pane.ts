@@ -10,6 +10,17 @@ import {
 } from '../export-roadmap.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import {
+  checkIcon,
+  chevronDownIcon,
+  chevronRightIcon,
+  closeIcon,
+  downloadIcon,
+  plusIcon,
+  refreshIcon,
+  searchIcon,
+  uploadIcon,
+} from '../dom/icons.ts'
+import {
   ROADMAP_CATEGORIES,
   ROADMAP_COMPLEXITIES,
   isRoadmapCategory,
@@ -37,7 +48,6 @@ import { knowledgeDate } from './knowledge-date.ts'
 import { createThread, getThreadById, switchThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
-import { checkIcon, refreshIcon } from '../dom/icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -277,7 +287,7 @@ export function mountRoadmapPane(
       'aria-label': 'New roadmap item',
       'data-tooltip': 'New roadmap item',
     },
-    '+',
+    plusIcon('ui-icon ui-icon-sm'),
   )
   const importBtn = el(
     'button',
@@ -287,7 +297,7 @@ export function mountRoadmapPane(
       'aria-label': 'Import from GitHub issues',
       'data-tooltip': 'Import from GitHub issues',
     },
-    '⇩',
+    downloadIcon('ui-icon ui-icon-sm'),
   )
   const reviewBtn = el(
     'button',
@@ -297,7 +307,7 @@ export function mountRoadmapPane(
       'aria-label': 'Review roadmap resolution',
       'data-tooltip': 'Review whether roadmap items have been resolved',
     },
-    '◎',
+    searchIcon('ui-icon ui-icon-sm'),
   )
   const refreshBtn = el(
     'button',
@@ -307,7 +317,7 @@ export function mountRoadmapPane(
       'aria-label': 'Refresh roadmap',
       'data-tooltip': 'Refresh roadmap',
     },
-    '↻',
+    refreshIcon('ui-icon ui-icon-sm'),
   )
   const exportBtn = el(
     'button',
@@ -317,7 +327,7 @@ export function mountRoadmapPane(
       'aria-label': 'Export roadmap',
       'data-tooltip': 'Export roadmap as a file',
     },
-    '⇧',
+    uploadIcon('ui-icon ui-icon-sm'),
   )
   exportBtn.addEventListener('click', () => {
     const rect = exportBtn.getBoundingClientRect()
@@ -473,7 +483,8 @@ export function mountRoadmapPane(
       class: 'roadmap-attach-btn',
       title: 'Attach files or images — or paste/drop them into the form',
     },
-    '+ Attach',
+    plusIcon('ui-icon ui-icon-sm'),
+    'Attach',
   )
   // New items always start `ready`; the status control only applies to items
   // that already exist (matching the roadmap_plan tool's add/set_status split).
@@ -847,7 +858,7 @@ export function mountRoadmapPane(
         'aria-label': `Remove attachment ${att.name}`,
         'data-tooltip': 'Remove attachment',
       },
-      '✕',
+      closeIcon('ui-icon ui-icon-sm'),
     )
     remove.addEventListener('click', onRemove)
     chip.append(el('span', { class: 'roadmap-attachment-name' }, att.name), remove)
@@ -1106,7 +1117,9 @@ export function mountRoadmapPane(
           class: 'roadmap-category-header',
           'aria-expanded': collapsed ? 'false' : 'true',
         },
-        el('span', { class: 'roadmap-category-chevron' }, collapsed ? '›' : '⌄'),
+        collapsed
+          ? chevronRightIcon('ui-icon roadmap-category-chevron')
+          : chevronDownIcon('ui-icon roadmap-category-chevron'),
         el('span', { class: 'roadmap-category-header-label' }, label),
         el('span', { class: 'roadmap-category-count' }, String(categoryItems.length)),
       )

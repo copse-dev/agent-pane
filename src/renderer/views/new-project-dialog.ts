@@ -47,7 +47,7 @@ export function openNewProjectDialog(
   const browseBtn = el('button', { type: 'button', class: 'new-project-browse' }, 'Browse…')
   const pathPreview = el('p', { class: 'field-hint new-project-path-preview' })
   const error = el('p', { class: 'new-project-error field-hint', hidden: true })
-  const okBtn = el('button', { type: 'button', class: 'ui-btn primary' }, 'Create')
+  const okBtn = el('button', { type: 'button', class: 'ui-btn ui-btn-primary' }, 'Create')
   const cancelBtn = el('button', { type: 'button', class: 'ui-btn' }, 'Cancel')
 
   function updatePathPreview(): void {

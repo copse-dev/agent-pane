@@ -1,4 +1,5 @@
 import { el } from '../dom/helpers.ts'
+import { minusIcon, plusIcon } from '../dom/icons.ts'
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 4
@@ -140,13 +141,13 @@ function ensureExpandDialog(): HTMLDialogElement {
   const zoomOutBtn = el(
     'button',
     { type: 'button', class: 'mermaid-expand-tool', 'aria-label': 'Zoom out' },
-    '−',
+    minusIcon('ui-icon ui-icon-sm'),
   )
   zoomLabelEl = el('span', { class: 'mermaid-expand-zoom-label' }, '100%')
   const zoomInBtn = el(
     'button',
     { type: 'button', class: 'mermaid-expand-tool', 'aria-label': 'Zoom in' },
-    '+',
+    plusIcon('ui-icon ui-icon-sm'),
   )
   const resetBtn = el(
     'button',

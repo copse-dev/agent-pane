@@ -88,6 +88,7 @@ function stubApi(
       commandHooks: [],
       promptBlocks: [],
       ui: [],
+      followUps: [],
       capabilities: [],
       permissions: [],
     },

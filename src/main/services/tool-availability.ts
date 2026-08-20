@@ -83,7 +83,12 @@ async function runToolAvailabilityProbes(deps: ToolAvailabilityDeps): Promise<vo
   // git-changes and search specs rely on it), while gh and the indexed-grep /
   // semantic-backend probes (a spawned gortex binary) are unused by the
   // seeded suite, so leave them off rather than spawning anything.
-  if (process.env['COPSE_E2E'] === '1') {
+  //
+  // The agent-eval harness is the exception. It launches the app once and drives
+  // a real agent whose tool choice is the measurement, so hard-coding `gh` as
+  // unavailable would unregister the bridged GitHub and CI tools the run exists
+  // to observe the agent choosing.
+  if (process.env['COPSE_E2E'] === '1' && process.env['COPSE_AGENT_EVAL'] !== '1') {
     rgAvail = true
     gitAvail = true
     ghAvail = false

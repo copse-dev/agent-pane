@@ -110,8 +110,9 @@ intentional no-opinion.
   This applies to every dialect: Cursor and Claude hooks cannot express the escape, so they
   are always sandboxed-by-default; only the Copse `sandbox: false` field opts a hook **out**,
   running it outside the sandbox with full authority (Sources badges it "outside sandbox").
-  Enforcement is **macOS-only** (seatbelt via ASRT); on Linux / Windows
-  `isProjectSandboxEnabled()` is hard-false, so "sandboxed" is a _default, not a guarantee_.
+  Enforcement is **macOS and Linux** (ASRT seatbelt / bubblewrap); on Windows
+  (and when ASRT init fails) `isProjectSandboxEnabled()` is hard-false, so
+  "sandboxed" is a _default, not a guarantee_.
   A **sandbox-blocked** hook is never a silent fail-open: the block is recorded on the spine
   (`sandboxBlocked: true`, keyed off runner-side violation signals — never the hook's own
   stdout, issue #104), surfaced in Sources as a per-hook error, and resolved through the

@@ -242,7 +242,7 @@ describe('acp wire trace', () => {
     assert.deepEqual(record['msg'], message)
   })
 
-  it('keeps the experimental name, _meta, and unknown extension fields that normalization drops', async () => {
+  it('keeps the _meta and unknown extension fields that normalization drops', async () => {
     await saveProjectThread('p1', threadOf('t1'))
     const trace = await createAcpWireTrace({ threadId: 't1', projectId: 'p1' }, ON)
     assert.ok(trace)
@@ -260,17 +260,11 @@ describe('acp wire trace', () => {
     })
     assert.deepEqual(update['vendorExtension'], { deeply: { nested: [1, 'two', null, true] } })
 
-    // The point of tracing the transport rather than the parsed update: Copse
-    // uses the programmatic name to replace a generic title, but transport-only
-    // metadata and vendor extensions are still gone. The trace keeps them.
-    const chunk = sessionUpdateToStreamChunk({
-      sessionUpdate: 'tool_call',
-      toolCallId: 'call-1',
-      title: 'MCP: tool',
-      name: 'mcp__linear__create_issue',
-      kind: 'other',
-      rawInput: { team: 'ENG' },
-    })
+    // The point of tracing the transport rather than the parsed update: the
+    // normalized chunk carries only what Copse models. `name` now survives as
+    // the label, rescuing the generic `MCP: tool` title, but the vendor
+    // metadata sitting beside it does not. The trace still has all of it.
+    const chunk = sessionUpdateToStreamChunk(GENERIC_MCP_TOOL_CALL)
     assert.ok(chunk !== null && chunk.type === 'tool_call')
     assert.equal(chunk.toolCall.name, 'mcp__linear__create_issue')
     assert.equal(JSON.stringify(chunk).includes('cursor.dev/serverName'), false)

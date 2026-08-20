@@ -3,6 +3,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { capturePopoutSeed } from '../popout/pane-popout-seed.ts'
+import { externalLinkIcon, maximizeIcon } from '../dom/icons.ts'
 
 /**
  * A small "pop out into its own window" control for a right-panel pane header.
@@ -27,7 +28,7 @@ export function panePopoutButton(
         ? `Expand ${paneLabel}`
         : `Pop out ${paneLabel} into its own window`,
     },
-    browserDemo ? '⛶' : '⧉',
+    browserDemo ? maximizeIcon('ui-icon ui-icon-sm') : externalLinkIcon('ui-icon ui-icon-sm'),
   )
   btn.addEventListener('click', () => {
     const seed = capturePopoutSeed(mode, store)

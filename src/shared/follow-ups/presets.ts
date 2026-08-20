@@ -29,6 +29,12 @@ export const DETERMINISTIC_FOLLOW_UP_IDS = {
   fixMergeConflicts: 'fix-merge-conflicts',
 } as const
 
+/**
+ * The changeset chip's content. It still carries a prompt even though callers
+ * render it with `action: 'open-changes'` — that is the sentence the bubble sent
+ * before the reviewer-pane shortcut existed, kept as the fallback for anything
+ * that treats a bubble as a prompt.
+ */
 export function buildChangesSuggestion(stats: { additions: number; deletions: number }): {
   id: string
   label: string

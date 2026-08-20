@@ -39,8 +39,8 @@ export interface TerminalProcessInfo {
 export interface TerminalSession {
   id: string
   pty: Pick<IPty, 'pid' | 'write' | 'resize' | 'kill' | 'onData' | 'onExit'>
-  /** Identifies the renderer that created the session, for ownership checks. */
-  ownerId: number
+  /** The renderer that created the session: ownership check *and* output target. */
+  owner: TerminalOwner
   listeners?: PtyListeners
   /** Capped PTY output for agent `read_terminal` snapshots. */
   output: CappedOutputAccumulator
@@ -50,12 +50,25 @@ export interface TerminalSession {
 
 const sessions = new Map<string, TerminalSession>()
 
-export interface TerminalWindow {
+/**
+ * The renderer a session belongs to — structurally an Electron `WebContents`.
+ *
+ * A shell's output goes to the window that opened it and nowhere else. Unlike
+ * the diff queue (shared workspace state, broadcast to every window), terminal
+ * output is private to its owner: fanning it out would replay one window's
+ * shell — credentials, tokens, whatever is on screen — into another renderer.
+ *
+ * Sessions were always keyed by the *calling* renderer's id, but their output
+ * was sent to the one window captured at `initTerminal` time. A pane pop-out
+ * could therefore open a shell and type into it while every byte it produced
+ * was delivered to the main window, which had no tab for that session and
+ * dropped it (#1705).
+ */
+export interface TerminalOwner {
+  /** `WebContents.id` — the ownership key. */
+  id: number
   isDestroyed(): boolean
-  webContents: {
-    isDestroyed(): boolean
-    send(channel: string, ...args: unknown[]): void
-  }
+  send(channel: string, ...args: unknown[]): void
 }
 
 /** Per-owner focused session — the default target for `read_terminal` without an id. */
@@ -69,7 +82,7 @@ const activeByOwner = new Map<number, string>()
 function ownedSession(sessionId: string, ownerId: number): TerminalSession | undefined {
   const session = sessions.get(sessionId)
   if (!session) return undefined
-  if (session.ownerId !== ownerId) {
+  if (session.owner.id !== ownerId) {
     throw new Error(`Terminal session ${sessionId} is not owned by the caller`)
   }
   return session
@@ -88,13 +101,13 @@ function sessionCwd(executionRoot?: string): string {
 }
 
 function sendTerminalEvent(
-  win: TerminalWindow,
+  owner: TerminalOwner,
   channel: 'terminal:output' | 'terminal:exit',
   sessionId: string,
   payload: string | number,
 ): void {
-  if (win.isDestroyed() || win.webContents.isDestroyed()) return
-  win.webContents.send(channel, sessionId, payload)
+  if (owner.isDestroyed()) return
+  owner.send(channel, sessionId, payload)
 }
 
 function disposeSessionListeners(session: TerminalSession): void {
@@ -109,7 +122,7 @@ function clearActiveIfNeeded(sessionId: string, ownerId: number): void {
 
 function disposeSession(session: TerminalSession, sessionId: string, notify = true): void {
   disposeSessionListeners(session)
-  clearActiveIfNeeded(sessionId, session.ownerId)
+  clearActiveIfNeeded(sessionId, session.owner.id)
   try {
     session.pty.kill()
   } catch {
@@ -120,30 +133,29 @@ function disposeSession(session: TerminalSession, sessionId: string, notify = tr
 }
 
 function attachPtyHandlers(
-  win: TerminalWindow,
+  owner: TerminalOwner,
   sessionId: string,
   ptyProcess: IPty,
   session: TerminalSession,
 ): void {
   const onData = ptyProcess.onData((data) => {
     session.output.append(data)
-    sendTerminalEvent(win, 'terminal:output', sessionId, data)
+    sendTerminalEvent(owner, 'terminal:output', sessionId, data)
   })
   const onExit = ptyProcess.onExit(({ exitCode }) => {
     disposeSessionListeners(session)
-    clearActiveIfNeeded(sessionId, session.ownerId)
+    clearActiveIfNeeded(sessionId, session.owner.id)
     sessions.delete(sessionId)
     notifyThreadResourceFinished(session.threadId)
     // exitCode comes from node-pty (external); guard against a missing code at runtime.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    sendTerminalEvent(win, 'terminal:exit', sessionId, exitCode ?? 1)
+    sendTerminalEvent(owner, 'terminal:exit', sessionId, exitCode ?? 1)
   })
   session.listeners = { onData, onExit }
 }
 
 async function spawnShell(
-  win: TerminalWindow,
-  ownerId: number,
+  owner: TerminalOwner,
   cols: number,
   rows: number,
   meta?: TerminalSessionMeta,
@@ -163,28 +175,40 @@ async function spawnShell(
   const session: TerminalSession = {
     id: randomUUID(),
     pty: ptyProcess,
-    ownerId,
+    owner,
     output: new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES),
     label: nonEmptyStringOr(meta?.label?.trim(), 'Terminal'),
     threadId: meta?.threadId ?? null,
   }
   sessions.set(session.id, session)
-  attachPtyHandlers(win, session.id, ptyProcess, session)
+  attachPtyHandlers(owner, session.id, ptyProcess, session)
   return session
 }
 
 export async function createTerminalSession(
-  win: TerminalWindow,
-  ownerId: number,
+  owner: TerminalOwner,
   cols = DEFAULT_COLS,
   rows = DEFAULT_ROWS,
   meta?: TerminalSessionMeta,
   executionRoot?: string,
 ): Promise<string> {
-  const session = await spawnShell(win, ownerId, cols, rows, meta, executionRoot)
+  const session = await spawnShell(owner, cols, rows, meta, executionRoot)
   // First session for this owner becomes active until the UI focuses another.
-  if (!activeByOwner.has(ownerId)) activeByOwner.set(ownerId, session.id)
+  if (!activeByOwner.has(owner.id)) activeByOwner.set(owner.id, session.id)
   return session.id
+}
+
+/**
+ * Tear down every session belonging to one renderer. A pane pop-out is a real
+ * window that can be closed on its own, and only the main window's `close` was
+ * wired to teardown — so each pop-out close leaked its shells as orphaned ptys.
+ */
+export function destroyTerminalSessionsForOwner(ownerId: number): void {
+  for (const [sessionId, session] of [...sessions]) {
+    if (session.owner.id !== ownerId) continue
+    disposeSession(session, sessionId)
+  }
+  activeByOwner.delete(ownerId)
 }
 
 export function writeTerminalSession(sessionId: string, ownerId: number, data: string): void {
@@ -255,7 +279,7 @@ export function listTerminalSessions(threadId?: string | null): TerminalSessionI
       id: session.id,
       label: session.label,
       threadId: session.threadId,
-      active: activeByOwner.get(session.ownerId) === session.id,
+      active: activeByOwner.get(session.owner.id) === session.id,
     })
   }
   return out
@@ -320,7 +344,7 @@ export function __testInjectTerminalSession(opts: {
         return { dispose(): void {} }
       },
     },
-    ownerId: opts.ownerId,
+    owner: { id: opts.ownerId, isDestroyed: () => false, send(): void {} },
     output,
     label: opts.label,
     threadId: opts.threadId,

@@ -1,12 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readdir } from 'node:fs/promises'
+import { join, sep } from 'node:path'
 import {
   architectureMarkdown,
   extractLiteral,
   llmsTxt,
   markdownName,
   pageMarkdown,
+  readOutDir,
   readPageMeta,
   renderSite,
   type PageMeta,
@@ -60,7 +62,7 @@ describe('pageMarkdown', () => {
       '<p><img src="rule.svg" alt="" /><img src="shot.png" alt="A screenshot" /></p>',
     )
     assert.doesNotMatch(markdown, /rule\.svg/)
-    assert.match(markdown, /!\[A screenshot\]\(shot\.png\)/)
+    assert.match(markdown, /!\[A screenshot\]\(https:\/\/copse\.dev\/shot\.png\)/)
   })
 
   it('reduces an image inside a heading to its alt text', () => {
@@ -91,7 +93,7 @@ describe('pageMarkdown', () => {
       '<p><a href="privacy.html">Privacy</a> <a href="#download">Download</a> ' +
         '<a href="https://example.com/a.html">External</a></p>',
     )
-    assert.match(markdown, /\[Privacy\]\(privacy\.md\)/)
+    assert.match(markdown, /\[Privacy\]\(https:\/\/copse\.dev\/privacy\.md\)/)
     assert.match(markdown, /\[External\]\(https:\/\/example\.com\/a\.html\)/)
     // The anchor has no counterpart in Markdown; the words survive, the link doesn't.
     assert.match(markdown, /Download/)
@@ -100,7 +102,23 @@ describe('pageMarkdown', () => {
 
   it('keeps a fragment when rewriting a sibling page link', () => {
     const markdown = convert('<p><a href="index.html#download">Get it</a></p>')
-    assert.match(markdown, /\[Get it\]\(index\.md#download\)/)
+    assert.match(markdown, /\[Get it\]\(https:\/\/copse\.dev\/index\.md#download\)/)
+  })
+
+  it('publishes absolute URLs, because a fetched twin gets copied away from its origin', () => {
+    const markdown = convert(
+      '<p><img src="screenshots/x.png" alt="A shot" />' +
+        '<a href="demo/main/?scenario=landing">Demo</a> <a href="/releases">Releases</a> ' +
+        '<a href="mailto:hi@copse.dev">Mail</a> <a href="//cdn.example.com/x">CDN</a></p>',
+    )
+    assert.match(markdown, /!\[A shot\]\(https:\/\/copse\.dev\/screenshots\/x\.png\)/)
+    assert.match(markdown, /\[Demo\]\(https:\/\/copse\.dev\/demo\/main\/\?scenario=landing\)/)
+    // A root-relative path names the same file as a page-relative one here, so
+    // it must not come out with a doubled slash.
+    assert.match(markdown, /\[Releases\]\(https:\/\/copse\.dev\/releases\)/)
+    // Anything that already names an origin is left alone.
+    assert.match(markdown, /\[Mail\]\(mailto:hi@copse\.dev\)/)
+    assert.match(markdown, /\[CDN\]\(\/\/cdn\.example\.com\/x\)/)
   })
 
   describe('coming-soon mode', () => {
@@ -131,7 +149,14 @@ describe('pageMarkdown', () => {
     assert.match(markdown, /^---\ntitle: 'Test — Copse'\n/)
     assert.match(markdown, /^description: 'A test page\.'$/m)
     assert.match(markdown, /^generated_from: site\/test\.html$/m)
-    assert.match(markdown, /Do not edit by hand/)
+  })
+
+  it('ships no repo housekeeping to the reader', () => {
+    // The twins are generated at deploy and never committed, so a "do not edit
+    // by hand" banner would be addressed to a reader who does not exist — while
+    // every agent fetching the page pays for it. `generated_from` above already
+    // says the same thing in a line a machine can read.
+    assert.doesNotMatch(convert('<h1>Hi</h1>'), /<!--/)
   })
 })
 
@@ -254,17 +279,46 @@ describe('llmsTxt', () => {
   })
 })
 
+describe('readOutDir', () => {
+  it('reads the destination in either spelling, defaulting beside the pages', () => {
+    assert.equal(readOutDir([]), 'site')
+    assert.equal(readOutDir(['--out', '_site']), '_site')
+    assert.equal(readOutDir(['--out=_site']), '_site')
+  })
+
+  it('refuses a missing directory rather than writing somewhere surprising', () => {
+    assert.throws(() => readOutDir(['--out']), /--out needs a directory/)
+    assert.throws(() => readOutDir(['--out', '--verbose']), /--out needs a directory/)
+  })
+})
+
 describe('the published site', () => {
-  it('matches what its HTML generates', async () => {
-    // The drift gate. `npm run site:md:check` asserts the same thing from the
-    // CLI; this puts it in the unit suite so no workflow has to remember to.
-    for (const { path, content } of await renderSite()) {
-      const committed = await readFile(path, 'utf8').catch(() => null)
-      assert.equal(
-        committed,
-        content,
-        `${path} is out of date with site/*.html — run \`npm run site:md\``,
-      )
+  it('generates cleanly from the real pages', async () => {
+    // Nothing here is committed, so there is no drift to check — pages.yml
+    // regenerates the twins into the deployed tree on every publish. This is
+    // what replaces that gate: the deploy runs exactly this code with no review
+    // between it and the live site, so a page that loses its `<main>`, its
+    // `<title>`, its `<link rel="alternate">`, or (on architecture.html) its
+    // `views` literal has to fail on the PR that does it.
+    const generated = await renderSite()
+    const pages = (await readdir('site')).filter((name) => name.endsWith('.html')).sort()
+
+    assert.deepEqual(
+      generated.map(({ path }) => path),
+      [...pages.map((page) => join('site', markdownName(page))), join('site', 'llms.txt')],
+    )
+    for (const { path, content } of generated) {
+      assert.ok(content.trim() !== '', `${path} generated empty`)
     }
+  })
+
+  it('renders into a build tree without writing beside the pages', async () => {
+    // How the deploy calls it. The pages are still read from site/; only the
+    // output moves, into the tree that is about to be uploaded to Pages.
+    const generated = await renderSite('site', '_site')
+    assert.ok(
+      generated.every(({ path }) => path.startsWith(`_site${sep}`)),
+      generated.map(({ path }) => path).join(', '),
+    )
   })
 })

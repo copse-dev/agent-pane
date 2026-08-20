@@ -2,6 +2,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { clear, el } from '../dom/helpers.ts'
+import { closeIcon } from '../dom/icons.ts'
 
 function taskLabel(handler: string): string {
   if (handler === 'long_horizon_continue') return 'Long task continuation'
@@ -43,7 +44,7 @@ export function mountSupervisedTasks(
           title: 'Cancel task',
           'aria-label': `Cancel ${taskLabel(task.handler)}`,
         },
-        '×',
+        closeIcon('ui-icon ui-icon-sm'),
       )
       cancel.addEventListener('click', () => {
         cancel.disabled = true

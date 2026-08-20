@@ -38,6 +38,21 @@ export interface ModelComparisonContext {
   /** The current chat model, used as reviewer A when no A is configured. */
   chatModel: string
   onChunk: (chunk: StreamChunk) => void
+  /**
+   * Models the user picked themselves, in the picker the "Compare models"
+   * follow-up bubble opens. Present only on that path, and it changes two
+   * things: the settings/defaults resolution is skipped (these ARE the choice),
+   * and so is the spend approval.
+   *
+   * Skipping the approval is the point of the bubble, not a hole in it. The
+   * modal exists to get informed consent for a run the user did not ask for —
+   * the auto-on-review trigger and the agent's own `compare_models` call, which
+   * both still prompt. Here the user opened a picker that names all three
+   * concrete models and says what the run costs, then pressed Run: re-asking the
+   * same question in a second dialog (and ringing the alert channels to do it)
+   * is the interruption the bubble replaced.
+   */
+  models?: ComparisonModels
 }
 
 // Threads whose user chose "always run comparisons in this chat". Scoped per
@@ -63,7 +78,9 @@ function comparisonModelSetting(key: string): string {
  * The three *selections* (settings, then defaults), expanded into concrete model
  * ids. Expansion happens here — before the spend approval — for two reasons: the
  * approval prompt has to name the models it is about to bill for, and
- * `isBillableModel` cannot classify a rule that has not been resolved.
+ * `isBillableModel` cannot classify a rule that has not been resolved. The
+ * follow-up bubble's picker opens on these same three, for the same reason:
+ * "Most capable" is not something a dialog can price.
  *
  * `resolveDistinctDynamicModelIds` walks the three in order against one
  * candidate pool, each dynamic pick avoiding what the earlier ones took, so
@@ -72,7 +89,7 @@ function comparisonModelSetting(key: string): string {
  * user who named a model on both sides gets what they asked for, and the
  * distinct-reviewer check below surfaces it.
  */
-async function resolveModelsFromSettings(chatModel: string): Promise<ComparisonModels> {
+export async function resolveComparisonModelDefaults(chatModel: string): Promise<ComparisonModels> {
   const selections = resolveComparisonModels({
     modelA: comparisonModelSetting(COMPARISON_MODEL_A_SETTING_ID),
     modelB: comparisonModelSetting(COMPARISON_MODEL_B_SETTING_ID),
@@ -88,18 +105,25 @@ async function resolveModelsFromSettings(chatModel: string): Promise<ComparisonM
 }
 
 /**
- * Gate the run behind a spend approval when any model is billable. Returns false
+ * Gate the run behind a spend approval when any model is billable. Returns null
  * when declined or the run was cancelled. The abort signal is honoured before and
  * after the prompt so a Stop press doesn't leave the turn waiting on the modal.
+ *
+ * `preChosen` short-circuits the prompt: those models came from the picker the
+ * user opened themselves, which already asked this question (see
+ * {@link ModelComparisonContext.models}). The abort check still applies, so a
+ * Stop between the picker and the run cancels rather than starting a paid pass.
  */
 async function ensureApproved(
   models: ComparisonModels,
   threadId: string,
   signal: AbortSignal,
+  preChosen?: ComparisonModels,
 ): Promise<ComparisonModels | null> {
+  if (signal.aborted) return null
+  if (preChosen) return preChosen
   if (!comparisonNeedsApproval(models, isBillableModel)) return models
   if (approvedThreads.has(threadId)) return models
-  if (signal.aborted) return null
   const { approved, remember, comparisonModels } = await requestApproval({
     type: 'model-compare',
     cause: 'review-spend',
@@ -172,7 +196,7 @@ export async function runModelComparison(
   ctx: ModelComparisonContext,
   signal: AbortSignal,
 ): Promise<{ summary: string; comparison: ModelComparison | null }> {
-  const models = await resolveModelsFromSettings(ctx.chatModel)
+  const models = ctx.models ?? (await resolveComparisonModelDefaults(ctx.chatModel))
 
   if (!comparisonReviewersDistinct(models)) {
     // Surface a card (not a silent no-op) so an identical-reviewer misconfig is
@@ -183,7 +207,7 @@ export async function runModelComparison(
     return { summary: msg, comparison: skipped }
   }
 
-  const approvedModels = await ensureApproved(models, ctx.threadId, signal)
+  const approvedModels = await ensureApproved(models, ctx.threadId, signal, ctx.models)
   if (!approvedModels) {
     const declined = errorComparison(
       models,

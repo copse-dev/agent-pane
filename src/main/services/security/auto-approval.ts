@@ -52,11 +52,12 @@ import { commandName, shellRedirects, TRUST_TRANSPARENT_WRAPPERS } from './shell
  *  - **Remote content.** `git fetch` writes objects and refs into `.git`. It runs
  *    nothing itself, but it stages content a later checkout could execute.
  *
- * Both are contained by the macOS project sandbox where it is active. Off macOS
- * there is no containment, which the Settings copy says plainly.
+ * Both are contained by the project sandbox where it is active (macOS ASRT and
+ * Linux bubblewrap). Without a sandbox — Windows, or an init failure — the
+ * settings-backed wrapper refuses to auto-approve, so these shapes still prompt.
  *
  * The classifier is PURE; the settings-backed wrapper (level, workspace trust,
- * auto-run gating, remote lookup) lives in `auto-approval-config.ts`.
+ * auto-run gating, sandbox gating, remote lookup) lives in `auto-approval-config.ts`.
  */
 
 export type AutoApprovalDecision =

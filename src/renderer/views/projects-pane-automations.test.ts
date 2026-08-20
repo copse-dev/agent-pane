@@ -85,6 +85,7 @@ const automationsPlugin: PluginSummary = {
         title: 'Automation schedules',
       },
     ],
+    followUps: [],
     capabilities: [],
     permissions: [],
     storageNamespace: AUTOMATIONS_PLUGIN_ID,

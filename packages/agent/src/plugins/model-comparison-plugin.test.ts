@@ -25,6 +25,7 @@ import {
   modelComparisonPlugin,
   MODEL_COMPARISON_PLUGIN_ID,
   MODEL_COMPARISON_TOOL_NAME,
+  MODEL_COMPARISON_FOLLOW_UP_ID,
   COMPARISON_MODEL_A_SETTING_ID,
   COMPARISON_MODEL_B_SETTING_ID,
   COMPARISON_JUDGE_MODEL_SETTING_ID,
@@ -58,6 +59,36 @@ describe('copse.model-comparison plugin (P5)', () => {
     assert.deepEqual(modelComparisonPlugin.contributions.asyncHooks, [])
     assert.deepEqual(modelComparisonPlugin.contributions.promptBlocks, [])
     assert.deepEqual(modelComparisonPlugin.contributions.uiContributions, [])
+  })
+
+  it('suggests the comparison as a bubble, gated on there being a diff to review', () => {
+    // The plugin's user-facing entry point is an offer, not an interruption: a
+    // bubble above the composer whose click opens the model picker, rather than
+    // a modal that arrives unbidden and rings the alert channels. It is gated on
+    // `workspace-changes` because both reviewers read the working diff — with a
+    // clean tree the picker would open onto an empty comparison.
+    const [bubble, ...rest] = modelComparisonPlugin.contributions.followUps
+    assert.deepEqual(rest, [])
+    assert.ok(bubble)
+    assert.equal(bubble.id, MODEL_COMPARISON_FOLLOW_UP_ID)
+    assert.equal(bubble.action, 'model-compare')
+    assert.equal(bubble.when, 'workspace-changes')
+    // A host action carries no prompt — the click runs the comparison itself
+    // instead of putting a sentence in the composer.
+    assert.equal(bubble.prompt, undefined)
+    assert.deepEqual(modelComparisonPlugin.manifest.followUps, [bubble])
+  })
+
+  it('drops the bubble from the active seed on disable, with the tool', () => {
+    const registry = createFirstPartyPluginRegistry()
+    const bubbleIds = (): string[] => registry.activeFollowUps().map(({ followUp }) => followUp.id)
+    assert.ok(bubbleIds().includes(MODEL_COMPARISON_FOLLOW_UP_ID))
+
+    registry.disable(MODEL_COMPARISON_PLUGIN_ID)
+    assert.ok(
+      !bubbleIds().includes(MODEL_COMPARISON_FOLLOW_UP_ID),
+      'the bubble must leave activeFollowUps() in the same flag flip as the tool',
+    )
   })
 
   it('owns reviewer A / reviewer B / judge as plugin-scoped `model` settings', () => {

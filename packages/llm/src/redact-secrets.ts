@@ -142,15 +142,15 @@ export function redactSecrets(text: string, literalSecrets: readonly string[] = 
  * Apply {@link redactSecrets} to every text-bearing field of an outbound message
  * list: user text, image alt text is left alone, assistant text, tool-call
  * argument strings, and tool results (the most common secret carrier). Returns a
- * new array; inputs are not mutated. System prompts are app-authored, so they
- * are passed through untouched.
+ * new array; inputs are not mutated. System/developer instructions are
+ * app-authored, so they are passed through untouched.
  */
 export function redactMessages(
   messages: LLMMessage[],
   literalSecrets: readonly string[] = [],
 ): LLMMessage[] {
   return messages.map((m): LLMMessage => {
-    if (m.role === 'system') return m
+    if (m.role === 'system' || m.role === 'developer') return m
     if (m.role === 'user') {
       if (typeof m.content === 'string')
         return { role: 'user', content: redactSecrets(m.content, literalSecrets) }

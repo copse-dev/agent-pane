@@ -215,6 +215,39 @@
         }
       }
     },
+    "followUps": {
+      "description": "Follow-up bubbles the pack suggests above the composer while enabled — the offer-shaped alternative to interrupting with a modal. The host decides whether to show each one (`when`) and what its click does (`action`).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label"],
+        "properties": {
+          "id": {
+            "description": "Stable suggestion id — the bubble's data-id and its dedupe key. A collision with a host preset id (changes, debug-ci, …) loses.",
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "description": "Bubble text. Bubbles sit in one row above the composer, so keep it short.",
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "description": "The message the bubble sends when `action` is `prompt`. Required for a prompt bubble — one with nothing to send is a dead click.",
+            "type": "string"
+          },
+          "action": {
+            "description": "What the click does. `prompt` (the default) sends `prompt` to the agent. Host actions such as `model-compare` are first-party only: a discovered manifest is forced back to `prompt`, whatever it declares here.",
+            "enum": ["prompt", "model-compare"]
+          },
+          "when": {
+            "description": "When the host offers the bubble: `always` (the default), or `workspace-changes` for only while the working tree has uncommitted changes.",
+            "enum": ["always", "workspace-changes"]
+          }
+        }
+      }
+    },
     "capabilities": {
       "description": "Named runtime capability flags the pack owns — pure cross-cutting behaviour (no tool/hook/prompt/panel), read by any subsystem through the registry's isCapabilityActive seam and enumerated in Settings (P3).",
       "type": "array",

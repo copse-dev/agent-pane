@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { runCommand } from './command-runner.ts'
+import { isCommandTimeoutError, runCommand } from './command-runner.ts'
 import {
   COMMAND_OUTPUT_MAX_BYTES,
   COMMAND_OUTPUT_TRUNCATED_MARKER,
@@ -32,6 +32,66 @@ describe('runCommand stdoutMaxBytes', () => {
     assert.equal(code, 0)
     assert.equal(stdout.length, size)
     assert.equal(stdout, 'a'.repeat(size))
+  })
+})
+
+describe('runCommand truncation reporting', () => {
+  it('flags stdout that overflowed its cap', async () => {
+    const size = COMMAND_OUTPUT_MAX_BYTES + 4096
+    const { stdoutTruncated } = await runCommand(
+      process.execPath,
+      ['-e', `process.stdout.write('a'.repeat(${String(size)}))`],
+      { unsandboxed: true },
+    )
+    // Overflow is dropped silently, so the retained string looks complete —
+    // callers that size a workspace from it (#795) need this flag to know it is
+    // a floor rather than a total.
+    assert.equal(stdoutTruncated, true)
+  })
+
+  it('leaves output that fits unflagged', async () => {
+    const { stdout, stdoutTruncated } = await runCommand(
+      process.execPath,
+      ['-e', `process.stdout.write('a'.repeat(64))`],
+      { unsandboxed: true },
+    )
+    assert.equal(stdout.length, 64)
+    assert.equal(stdoutTruncated, false)
+  })
+
+  it('does not flag output that lands exactly on the cap', async () => {
+    const { stdoutTruncated } = await runCommand(
+      process.execPath,
+      ['-e', `process.stdout.write('a'.repeat(4096))`],
+      { unsandboxed: true, stdoutMaxBytes: 4096 },
+    )
+    assert.equal(stdoutTruncated, false)
+  })
+})
+
+describe('runCommand timeouts', () => {
+  it('rejects with a recognisable timeout error rather than a bare Error', async () => {
+    // The semantic indexer deliberately budgets less time than a cold index can
+    // take, so it must tell "we stopped waiting" apart from "the command broke"
+    // without matching on message text (#517).
+    const err = await runCommand(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {
+      unsandboxed: true,
+      timeout_ms: 250,
+    }).then(
+      () => null,
+      (e: unknown) => e,
+    )
+    assert.ok(isCommandTimeoutError(err))
+    assert.equal(err.timeoutMs, 250)
+  })
+
+  it('does not classify an ordinary non-zero exit as a timeout', async () => {
+    const { code } = await runCommand(process.execPath, ['-e', 'process.exit(3)'], {
+      unsandboxed: true,
+      timeout_ms: 30_000,
+    })
+    assert.equal(code, 3)
+    assert.equal(isCommandTimeoutError(new Error('Command timed out after 1ms: x')), false)
   })
 })
 

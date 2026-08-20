@@ -324,8 +324,42 @@ describe('analyzeShellCommand', () => {
     }
   })
 
-  it('flags heredoc scripts fed to an interpreter', () => {
-    assert.equal(analyzeShellCommand('python3 <<EOF\nimport os\nEOF', root).verdict, 'external')
+  it('runs heredoc scripts inside the sandbox before offering an escape', () => {
+    const result = analyzeShellCommand('python3 <<EOF\nimport os\nEOF', root)
+    assert.equal(result.verdict, 'ambiguous')
+    assert.ok(result.reasons.includes('heredoc script fed to an interpreter'))
+  })
+
+  it('analyzes the shell around a heredoc without treating source code as shell', () => {
+    assert.equal(
+      analyzeShellCommand("python3 <<'PY'\nprint('curl https://example.com ~/secret')\nPY", root)
+        .verdict,
+      'ambiguous',
+    )
+    assert.equal(
+      analyzeShellCommand("python3 <<'PY'\nprint('safe')\nPY\ncurl https://example.com", root)
+        .verdict,
+      'external',
+    )
+  })
+
+  it('keeps a read-only Python workspace inspection contained', () => {
+    const result = analyzeShellCommand(
+      `python3 - <<'PY'
+from pathlib import Path
+p=Path('src/main/services/agent-service.ts')
+lines=p.read_text().splitlines()
+for start,end in [(860,940),(990,1060),(1780,1860)]:
+    for i in range(start-1, min(end,len(lines))):
+        print(f"{i+1}:{lines[i][:200]}")
+for path in Path('src').rglob('*openrouter*'):
+    print('file', path)
+PY`,
+      root,
+    )
+
+    assert.equal(result.verdict, 'ambiguous')
+    assert.deepEqual(result.reasons, ['heredoc script fed to an interpreter'])
   })
 
   it('flags git network ops behind global options and submodule/archive', () => {

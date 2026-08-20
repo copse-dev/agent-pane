@@ -100,6 +100,55 @@ export interface PluginPermissionDecl {
 }
 
 /**
+ * What clicking a plugin-contributed follow-up bubble does.
+ *  - `prompt` — send the decl's `prompt` to the agent, exactly what every
+ *    follow-up bubble did before packs could contribute one.
+ *  - `model-compare` — open the comparison model picker, then run the
+ *    comparison with what the user chose.
+ *
+ * A host action is a first-party privilege. It drives app UI (and, for
+ * `model-compare`, spends money) without passing through the agent, so a
+ * discovered manifest is forced back to `prompt` in
+ * {@link pluginManifestFromPluginJson} and {@link PluginRegistry.register} rejects a
+ * non-first-party plugin that contributes one — the same tiering the `trusted`
+ * prompt block gets.
+ */
+export type PluginFollowUpAction = 'prompt' | 'model-compare'
+
+/**
+ * When the host should offer a plugin's bubble. A bounded vocabulary rather than a
+ * predicate: the manifest is plain JSON, so a plugin names a condition the host
+ * *already* computes for its own deterministic bubbles (the git/PR workspace
+ * context) instead of shipping code that runs at the end of every turn.
+ *
+ * `workspace-changes` — only when the working tree has uncommitted changes.
+ * `always` — whenever the pack is enabled (the default).
+ */
+export type PluginFollowUpCondition = 'always' | 'workspace-changes'
+
+/**
+ * A follow-up bubble a plugin suggests above the composer — the offer-shaped
+ * alternative to interrupting with a modal. The host decides *whether* to show
+ * it (`when`) and *what the click does* (`action`); the plugin only declares it.
+ */
+export interface PluginFollowUpDecl {
+  /**
+   * Stable suggestion id — the bubble's `data-id` and its dedupe key. A decl
+   * that collides with a host preset id (`changes`, `debug-ci`, …) loses: the
+   * deterministic signal is already on screen.
+   */
+  id: string
+  /** Bubble text. Keep it short — bubbles sit in one row above the composer. */
+  label: string
+  /** Sent to the agent when `action` is `prompt`; unused by host actions. */
+  prompt?: string
+  /** Defaults to `prompt`. */
+  action?: PluginFollowUpAction
+  /** Defaults to `always`. */
+  when?: PluginFollowUpCondition
+}
+
+/**
  * A prompt / steering block a plugin contributes, carrying trust framing (plan).
  * A `trusted` (first-party) block is injected verbatim; an `untrusted` (user)
  * block is delimited as data, matching the skills trust model.
@@ -239,6 +288,8 @@ export interface PluginManifest {
   hooks?: readonly PluginCommandHookDecl[]
   prompt?: readonly PluginPromptBlock[]
   ui?: readonly PluginUiContribution[]
+  /** Follow-up bubbles the plugin suggests above the composer while enabled. */
+  followUps?: readonly PluginFollowUpDecl[]
   /** Named runtime capability flags the plugin owns (pure behaviour, no tool). */
   capabilities?: readonly PluginCapabilityDecl[]
   /** Permission / sandbox relaxations the plugin may request while enabled. */
@@ -270,6 +321,13 @@ export interface PluginContributions {
   /** UI contributions mounted for *new* content while enabled (decision 17). */
   readonly uiContributions: readonly PluginUiContribution[]
   /**
+   * Follow-up bubbles offered above the composer while enabled. Like every other
+   * contribution kind these are consulted only for *new* work — a bubble already
+   * on screen when the pack is disabled is stale UI, not history, and clears on
+   * the next turn.
+   */
+  readonly followUps: readonly PluginFollowUpDecl[]
+  /**
    * Runtime capability flags active while enabled. A capability is "active" iff
    * some enabled plugin declares it (see {@link PluginRegistry.isCapabilityActive});
    * disabling the plugin drops it in the same atomic flag flip as its other
@@ -295,6 +353,7 @@ export const EMPTY_PLUGIN_CONTRIBUTIONS: PluginContributions = {
   asyncHooks: [],
   promptBlocks: [],
   uiContributions: [],
+  followUps: [],
   capabilities: [],
   permissions: [],
 }
@@ -355,6 +414,7 @@ export function pluginManifestFromPluginJson(
     hooks?: readonly PluginCommandHookDecl[]
     prompt?: readonly PluginPromptBlock[]
     ui?: readonly PluginUiContribution[]
+    followUps?: readonly PluginFollowUpDecl[]
     capabilities?: readonly PluginCapabilityDecl[]
     permissions?: readonly PluginPermissionDecl[]
     settings?: PluginSettingsSchema
@@ -406,6 +466,12 @@ export function pluginManifestFromPluginJson(
   // blocks (decision 15's capability tiering applied to prompt).
   if (raw.prompt) manifest.prompt = raw.prompt.map((b) => ({ ...b, trust: 'untrusted' }))
   if (raw.ui) manifest.ui = raw.ui
+  // A discovered pack may *suggest* a follow-up, never bind one to a host action:
+  // `model-compare` opens a picker that spends money, and the rest of the action
+  // vocabulary drives app UI outside the agent. Force every declared action back
+  // to `prompt` here (the same self-grant this function denies prompt blocks), so
+  // a repo-supplied plugin.json can only ever put words in the composer.
+  if (raw.followUps) manifest.followUps = raw.followUps.map((f) => ({ ...f, action: 'prompt' }))
   if (raw.capabilities) manifest.capabilities = raw.capabilities
   if (raw.permissions) manifest.permissions = raw.permissions
   if (raw.settings) manifest.settings = raw.settings

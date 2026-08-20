@@ -85,7 +85,9 @@ runs:
     # sudo + apt, so install it there. Self-hosted runners typically have neither
     # (sudo prompts for a password, apt may be unavailable), so provision ripgrep
     # — and the Electron e2e system libs — on the host once instead (see PR #371).
-    - run: sudo apt-get update && sudo apt-get install -y ripgrep
+    - run: >-
+        sudo apt-get update && sudo apt-get install -y ripgrep
+        fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji
       if: runner.environment == 'github-hosted' && runner.os == 'Linux'
       shell: bash
     # Self-hosted macOS runner: provision ripgrep + coreutils via Homebrew (no
