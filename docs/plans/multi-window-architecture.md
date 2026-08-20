@@ -1,6 +1,6 @@
 # Multiple main windows
 
-Status: **Proposed.** This document is the implementation plan for multiple complete Copse main windows in one Electron app process. Profile and account picking are explicitly deferred to follow-up work.
+Status: **Active.** The multiple-window registry and New Window foundation have landed. Per-window navigation and restoration are in progress; concurrent agent routing remains gated. Profile and account picking are explicitly deferred to follow-up work.
 
 ## Outcome
 
@@ -10,14 +10,16 @@ This is not a plan for splitting one renderer into several chat panels. Each sur
 
 ## Why this exists
 
-Copse currently has one full main window:
+The project began with one full main window and these singleton assumptions:
 
-- `src/main/windows/create-main-window.ts` owns a module-level `mainWin` and exposes `getMainWindow()`.
-- `src/main/index.ts` creates that window once and several process services send renderer events through `getMainWindow()`.
-- `src/main/ipc/register-handlers.ts` is registered with that window, while `assertMainFrameSender` in `src/main/ipc/ipc-guards.ts` validates against it.
-- `src/main/windows/app-menu.ts` captures one window for native-menu commands.
-- renderer stores are naturally separate per renderer, but `activeProjectId`, workspace helpers, and persistence still contain single-active-context assumptions.
-- `windowBounds` records one geometry in settings.
+- `src/main/windows/create-main-window.ts` exposed one `getMainWindow()` compatibility target.
+- `src/main/index.ts` created one window and several process services sent renderer events through that target.
+- `src/main/ipc/register-handlers.ts` registered against that window, while `assertMainFrameSender` in `src/main/ipc/ipc-guards.ts` validated against it.
+- `src/main/windows/app-menu.ts` captured one window for native-menu commands.
+- renderer stores were naturally separate per renderer, but `activeProjectId`, workspace helpers, and persistence contained single-active-context assumptions.
+- `windowBounds` recorded one geometry in settings.
+
+PR 1 replaced the window and menu singletons with a registry and focused-window dispatch. The remaining compatibility target, process-global workspace services, event sinks, and legacy navigation keys are now migration scaffolding rather than the intended final authority.
 
 Pane popouts are not the desired feature. `src/main/windows/create-popout-window.ts` creates a restricted secondary window and `src/renderer/main.ts` deliberately omits ordinary main-window ownership in popout mode. Existing popouts remain secondary views owned by a main window.
 
@@ -285,7 +287,9 @@ A newly requested window uses the focused window's display and cascades from its
 
 The implementation should be a short PR series rather than one large PR.
 
-### PR 1 — Registry and second full window
+### PR 1 — Registry and second full window ✅
+
+Landed. The temporary primary-window agent gate remains intentionally in place until owner-routed execution is complete.
 
 Deliver:
 
@@ -306,7 +310,9 @@ Acceptance:
 
 This PR does not claim concurrent agent correctness yet. If unsafe actions remain singleton-routed, gate or disable starting an agent in secondary windows until PR 3 rather than risk cross-window leakage.
 
-### PR 2 — Window-local state and restoration
+### PR 2 — Window-local state and restoration (in progress)
+
+The first slice introduces versioned window records, sender-derived project/thread navigation, per-window geometry, startup restoration, and close-versus-quit record preservation. Shared-project broadcasts, per-window popout ownership, aggregate close handling, and live display-change recovery remain before this phase is complete.
 
 Deliver:
 

@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Project, Thread } from '@shared/types'
+import type { MainWindowNavigation } from '@shared/types/main-window.ts'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 
@@ -12,7 +13,6 @@ import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 // instead of rewriting whole threads on every keystroke.
 
 const KEY_PROJECTS = 'projects'
-const KEY_ACTIVE = 'activeProjectId'
 
 // Autosave fires several events per turn and project switches save/load
 // concurrently, so writes to the same key could overlap and land out of order
@@ -50,6 +50,90 @@ function serializedWrite(key: string, write: () => Promise<void>): Promise<void>
     if (writeChains.get(key) === next) writeChains.delete(key)
   })
   return next
+}
+
+/**
+ * Whether this window owns the persisted navigation (active project + thread).
+ *
+ * A pane pop-out boots this same renderer and restores the same project, but it
+ * is a secondary *view* of the main window's workspace and does not own where
+ * that workspace is pointed. The main process enforces this — `setNavigation`
+ * rejects any sender that is not a registered full main window — so a pop-out
+ * asking to persist navigation is not a recoverable write, it is a call it
+ * should never have made. `main.ts` already withholds `attachAutosave` from a
+ * pop-out for the same reason; this covers the direct `saveProjects` calls on
+ * its boot path.
+ *
+ * Left as an explicit flag rather than softening the main-process guard: a full
+ * main window that failed to register is a real bug, and it should still be
+ * loud.
+ */
+let ownsNavigation = true
+
+/** Set once at boot. A pane pop-out passes `false`. */
+export function setNavigationOwnership(owns: boolean): void {
+  ownsNavigation = owns
+}
+
+/**
+ * Whether boot has restored the stored navigation yet.
+ *
+ * `attachAutosave` is attached well before `loadProjects` resolves, and
+ * `flushNow` reads `activeProjectId` straight from the store — which is still
+ * `null` until the restore lands. Persisting that null overwrites the window's
+ * record and, for the primary window, the legacy `activeProjectId` mirror too,
+ * so the app forgets which project was open. The symptom is a window that lists
+ * its projects but has none active: `ssh-status-banner` short-circuits on
+ * `!activeProjectId`, and the SSH disconnect banner never renders.
+ *
+ * Reads are unaffected — this only gates writing back.
+ */
+let navigationRestored = true
+
+/**
+ * Called by boot *before* `attachAutosave`, to close the window in which a
+ * flush would persist the not-yet-restored `null`. Defaults open, so every
+ * caller that is not boot — and every test — behaves exactly as before.
+ */
+export function suspendNavigationWrites(): void {
+  navigationRestored = false
+}
+
+/**
+ * The navigation last persisted (or restored) by this window, so an unchanged
+ * value is never written back.
+ *
+ * `flushNow` writes navigation on every flush, and one of those flushes is the
+ * `pagehide` fired while the window is being torn down. In e2e that teardown
+ * happens *after* the next fixture has seeded `config.json`, so an unconditional
+ * write puts the dying window's project back over the seed — the next launch
+ * then boots with someone else's `activeProjectId`, or none. `main` never had
+ * this because it only wrote `activeProjectId` when `projectsDirty`; this
+ * restores that coupling without giving up per-window navigation.
+ */
+let lastNavigation: MainWindowNavigation | null = null
+
+/**
+ * Called by boot once `loadProjects` has put the stored navigation in the store.
+ * The restored value becomes the baseline, so a window that never navigates
+ * writes nothing at all.
+ */
+export function markNavigationRestored(restored: MainWindowNavigation): void {
+  navigationRestored = true
+  lastNavigation = restored
+}
+
+function serializedNavigation(api: ApiClient, navigation: MainWindowNavigation): Promise<void> {
+  if (!ownsNavigation || !navigationRestored) return Promise.resolve()
+  if (
+    lastNavigation !== null &&
+    lastNavigation.activeProjectId === navigation.activeProjectId &&
+    lastNavigation.activeThreadId === navigation.activeThreadId
+  ) {
+    return Promise.resolve()
+  }
+  lastNavigation = navigation
+  return serializedWrite('mainWindow:navigation', () => api.windowState.setNavigation(navigation))
 }
 
 // All writes for one thread (create / appendMessage / updateMeta / delete) share
@@ -154,11 +238,16 @@ export function __resetPersistenceForTest(): void {
   persistedMeta.clear()
   writeChains.clear()
   activeAutosave = null
+  ownsNavigation = true
+  navigationRestored = true
+  lastNavigation = null
 }
 
-export async function loadProjects(
-  api: ApiClient,
-): Promise<{ projects: Project[]; activeProjectId: string | null }> {
+export async function loadProjects(api: ApiClient): Promise<{
+  projects: Project[]
+  activeProjectId: string | null
+  activeThreadId: string | null
+}> {
   const projects = recordArrayOrEmpty(await api.storage.get(KEY_PROJECTS)).flatMap((value) => {
     const id = value['id']
     const path = value['path']
@@ -177,19 +266,19 @@ export async function loadProjects(
     }
     return [project]
   })
-  const rawActiveProjectId = await api.storage.get(KEY_ACTIVE)
-  const activeProjectId = typeof rawActiveProjectId === 'string' ? rawActiveProjectId : null
-  return { projects, activeProjectId }
+  const navigation = await api.windowState.getNavigation()
+  return { projects, ...navigation }
 }
 
 export async function saveProjects(
   api: ApiClient,
   projects: Project[],
   activeProjectId: string | null,
+  activeThreadId: string | null,
 ): Promise<void> {
   await Promise.all([
     serializedSet(api, KEY_PROJECTS, projects),
-    serializedSet(api, KEY_ACTIVE, activeProjectId),
+    serializedNavigation(api, { activeProjectId, activeThreadId }),
   ])
 }
 
@@ -280,12 +369,13 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
   }
 
   const flushNow = (): Promise<void> => {
-    const { activeProjectId, projects } = store.getState()
+    const { activeProjectId, activeThreadId, projects } = store.getState()
     const writes: Array<Promise<void>> = []
     if (projectsDirty) {
       projectsDirty = false
-      writes.push(saveProjects(api, projects, activeProjectId))
+      writes.push(serializedSet(api, KEY_PROJECTS, projects))
     }
+    writes.push(serializedNavigation(api, { activeProjectId, activeThreadId }))
     if (activeProjectId) writes.push(reconcile(activeProjectId))
     const done = Promise.all(writes).then(() => undefined)
     inflightFlush = Promise.all([inflightFlush.catch(() => undefined), done]).then(() => undefined)
