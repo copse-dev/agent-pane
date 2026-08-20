@@ -53,6 +53,7 @@ import {
   READ_TERMINAL_BLOCK,
   SHARED_WORKING_STYLE,
 } from '../src/main/services/agent-prompt.ts'
+import { EXTERNAL_CONTENT_BLOCK, wrapExternalContent } from '@copse/agent/external-content.ts'
 import { TODO_STEERING_PROMPT } from '@copse/agent/todo-steering.ts'
 import {
   FORCED_TODO_PLAN_PROMPT,
@@ -93,6 +94,7 @@ export type SteerEvalProviderId = (typeof STEER_EVAL_PROVIDER_IDS)[number]
 export const STEER_BLOCK_IDS = [
   'browserTools',
   'externalApiSafety',
+  'externalContent',
   'opus5ResponseLength',
   'opus5ToneReminder',
   'readTerminal',
@@ -115,6 +117,7 @@ export type SteerNudgeId = (typeof STEER_NUDGE_IDS)[number]
 export const STEER_BLOCK_TEXTS: Record<SteerBlockId, string> = {
   browserTools: BROWSER_TOOLS_BLOCK,
   externalApiSafety: EXTERNAL_API_SAFETY_BLOCK,
+  externalContent: EXTERNAL_CONTENT_BLOCK,
   opus5ResponseLength: OPUS_5_RESPONSE_LENGTH_BLOCK,
   opus5ToneReminder: OPUS_5_TONE_REMINDER,
   readTerminal: READ_TERMINAL_BLOCK,
@@ -218,6 +221,16 @@ export interface SteerEvalTask {
    * list registered.
    */
   excludeTools?: string[] | undefined
+  /**
+   * Canned pages for a `fetch_url` tool, URL -> file path (relative to the repo
+   * root, like `fixture`; NOT copied into the workspace, so page content never
+   * doubles as a workspace file). Registering any page adds the tool. In the
+   * steered arm the fetched text is wrapped with the shipping
+   * `wrapExternalContent` envelope — production post-provenance behaviour; the
+   * control arm returns it raw — production before the envelope shipped. The
+   * A/B therefore measures the combined envelope + system-block mechanism.
+   */
+  fetchPages?: Record<string, string> | undefined
   /**
    * For nudge packs, seed an exact read-only checkpoint instead of asking the
    * model to generate an independently sampled phase 1 in each arm. Seeded
@@ -372,6 +385,7 @@ const steerTaskSchema: z.ZodType<SteerEvalTask> = z.object({
   allowedCommandPatterns: z.array(z.string()).optional(),
   mockOnly: z.boolean().optional(),
   excludeTools: z.array(z.string()).optional(),
+  fetchPages: z.record(z.string(), z.string()).optional(),
   seedReadFiles: z.array(z.string()).optional(),
   checks: z.array(steerCheckSchema).min(1),
   maxSteps: z.number().int().positive().optional(),
@@ -511,6 +525,18 @@ export const STEER_EVAL_TOOLS: LLMTool[] = [
   },
 ]
 
+/** Registered only for tasks that declare `fetchPages`. */
+export const FETCH_URL_EVAL_TOOL: LLMTool = {
+  name: 'fetch_url',
+  description:
+    'Fetch a public HTTP/HTTPS URL and return readable Markdown extracted from the page content.',
+  parameters: {
+    type: 'object',
+    properties: { url: { type: 'string' } },
+    required: ['url'],
+  },
+}
+
 /**
  * Prompt vars for the eval sandbox. Mirrors the doctrine harness so the two
  * read the same, but advertises the git and plan tools this harness registers.
@@ -578,13 +604,23 @@ function commandAllowed(task: SteerEvalTask, command: string): boolean {
   return (task.allowedCommandPatterns ?? []).some((pattern) => new RegExp(pattern).test(command))
 }
 
-async function executeTool(
+export async function executeSteerEvalTool(
   workspace: string,
   task: SteerEvalTask,
+  armId: 'with' | 'without',
   name: string,
   rawArgs: unknown,
 ): Promise<string> {
   const args = expectRecord(rawArgs)
+  if (name === 'fetch_url') {
+    const url = stringArg(args, 'url')
+    const page = task.fetchPages?.[url]
+    if (page === undefined) return `Error: no page at ${url} (404)`
+    const text = readFileSync(resolve(page), 'utf8').slice(0, MAX_TOOL_OUTPUT)
+    // Steered arm gets the shipping provenance envelope; control gets the raw
+    // page — the pre-envelope production behaviour the A/B compares against.
+    return armId === 'with' ? wrapExternalContent('fetch_url', text) : text
+  }
   if (name === 'list_dir') {
     const path = typeof args['path'] === 'string' ? args['path'] : '.'
     const dir = jailPath(workspace, path)
@@ -931,7 +967,9 @@ async function runAttempt(
   }
 
   const excluded = new Set(task.excludeTools ?? [])
-  const tools = STEER_EVAL_TOOLS.filter((tool) => !excluded.has(tool.name))
+  const tools = [...STEER_EVAL_TOOLS, ...(task.fetchPages ? [FETCH_URL_EVAL_TOOL] : [])].filter(
+    (tool) => !excluded.has(tool.name),
+  )
   const maxSteps = task.maxSteps ?? 16
   try {
     if (pack.steer.kind === 'nudge') {
@@ -946,7 +984,7 @@ async function runAttempt(
           provider,
           messages,
           tools,
-          executeTool: (name, args) => executeTool(workspace, task, name, args),
+          executeTool: (name, args) => executeSteerEvalTool(workspace, task, armId, name, args),
           signal: controller.signal,
           maxSteps: Math.min(afterSteps, maxSteps),
           onChunk,
@@ -961,7 +999,7 @@ async function runAttempt(
         provider,
         messages,
         tools,
-        executeTool: (name, args) => executeTool(workspace, task, name, args),
+        executeTool: (name, args) => executeSteerEvalTool(workspace, task, armId, name, args),
         signal: controller.signal,
         maxSteps: task.seedReadFiles ? maxSteps : Math.max(1, maxSteps - afterSteps),
         onChunk,
@@ -971,7 +1009,7 @@ async function runAttempt(
         provider,
         messages,
         tools,
-        executeTool: (name, args) => executeTool(workspace, task, name, args),
+        executeTool: (name, args) => executeSteerEvalTool(workspace, task, armId, name, args),
         signal: controller.signal,
         maxSteps,
         onChunk,

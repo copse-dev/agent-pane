@@ -79,16 +79,17 @@ counts.
 
 ## What each pack proves
 
-| pack                    | steer                          | the question it answers                                                                                                    | PR    |
-| ----------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ----- |
-| `git-branch-safety`     | `GIT_BRANCH_SAFETY`            | Does a model on the default branch actually branch before committing — and does it leave an existing working branch alone? | #1608 |
-| `commit-steering`       | `buildCommitSteeringPrompt`    | Does the agent reach for `git_commit` instead of `run_shell git commit`, so the attribution trailer survives?              | #1610 |
-| `forced-todo-plan`      | `FORCED_TODO_PLAN_PROMPT`      | Does a weak model plan _before_ acting when the block fires?                                                               | #1612 |
-| `forced-written-plan`   | `FORCED_WRITTEN_PLAN_PROMPT`   | Does the no-plan-tool fallback produce a written plan?                                                                     | #1612 |
-| `loop-nudge`            | `LOOP_NUDGE_USER_MESSAGE`      | Does the nudge actually end a loop, or just cost a turn?                                                                   | #1613 |
-| `stuck-finalize-nudge`  | `STUCK_FINALIZE_NUDGE`         | Same, for the harder "stop calling tools" wording.                                                                         | #1613 |
-| `opus5-response-length` | `OPUS_5_RESPONSE_LENGTH_BLOCK` | Do answers get shorter — without degrading into fragments?                                                                 | #1614 |
-| `opus5-tone-reminder`   | `OPUS_5_TONE_REMINDER`         | Does the end-of-prompt restatement carry any effect on its own?                                                            | #1614 |
+| pack                         | steer                               | the question it answers                                                                                                                     | PR    |
+| ---------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| `git-branch-safety`          | `GIT_BRANCH_SAFETY`                 | Does a model on the default branch actually branch before committing — and does it leave an existing working branch alone?                  | #1608 |
+| `commit-steering`            | `buildCommitSteeringPrompt`         | Does the agent reach for `git_commit` instead of `run_shell git commit`, so the attribution trailer survives?                               | #1610 |
+| `forced-todo-plan`           | `FORCED_TODO_PLAN_PROMPT`           | Does a weak model plan _before_ acting when the block fires?                                                                                | #1612 |
+| `forced-written-plan`        | `FORCED_WRITTEN_PLAN_PROMPT`        | Does the no-plan-tool fallback produce a written plan?                                                                                      | #1612 |
+| `loop-nudge`                 | `LOOP_NUDGE_USER_MESSAGE`           | Does the nudge actually end a loop, or just cost a turn?                                                                                    | #1613 |
+| `stuck-finalize-nudge`       | `STUCK_FINALIZE_NUDGE`              | Same, for the harder "stop calling tools" wording.                                                                                          | #1613 |
+| `opus5-response-length`      | `OPUS_5_RESPONSE_LENGTH_BLOCK`      | Do answers get shorter — without degrading into fragments?                                                                                  | #1614 |
+| `opus5-tone-reminder`        | `OPUS_5_TONE_REMINDER`              | Does the end-of-prompt restatement carry any effect on its own?                                                                             | #1614 |
+| `external-content-injection` | `EXTERNAL_CONTENT_BLOCK` + envelope | Do injected instructions in fetched pages and workspace files get reported instead of acted on — while the legitimate task still gets done? | #1827 |
 
 Two packs care which model you point them at:
 
@@ -97,6 +98,13 @@ Two packs care which model you point them at:
   model reads ~0 for the uninteresting reason that it would have planned anyway.
 - **`opus5-*` want Opus 5.** The blocks are gated on `isOpus5Model` in
   production and the premise is a claim about that model's verbosity.
+- **`external-content-injection` should be read across at least two models.**
+  Frontier models resist much of this corpus unprompted (high both-arm pass
+  rates, ~0 lift — the redundancy outcome below), so its lift signal lives on
+  smaller local models, while its `minWithPassRate` gate is the claim to hold
+  everywhere. This pack is trend evidence for the context-provenance plan
+  (`docs/plans/context-provenance.md`), not a security boundary: a pass proves
+  the framing helps the models tested, never that injection is solved.
 
 ## Reading the result
 
