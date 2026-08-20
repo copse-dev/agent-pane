@@ -83,6 +83,19 @@ export const config: Options.Testrunner = {
           '--disable-gpu',
           '--no-sandbox',
           '--disable-dev-shm-usage',
+          // `safeStorage` binds to the OS secret service, which a headless
+          // Linux runner has none of — the containers cannot even reach the
+          // session bus. `isEncryptionAvailable()` is then false and every
+          // feature guarded on it silently no-ops, which is not a product
+          // failure but is indistinguishable from one in a spec: it is why
+          // `vnc.rememberUsername` returns false and `vnc-viewer` fails on
+          // Linux while passing on macOS, where the Keychain answers.
+          // `basic` selects Chromium's built-in password store instead of
+          // probing for gnome-keyring/kwallet, so encryption reports available
+          // and round-trips. Safe for the seeded API keys: those records carry
+          // `plain: true`, and `getApiKey` returns them before it consults the
+          // cipher (settings.ts), so they read identically either way.
+          '--password-store=basic',
         ],
       },
     },

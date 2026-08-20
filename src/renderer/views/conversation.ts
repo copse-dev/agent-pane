@@ -36,6 +36,7 @@ import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
+import { splitCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import type {
   Message,
   SubagentSession,
@@ -47,6 +48,7 @@ import {
   formatPrimaryChatModelLabel,
   shouldShowPrimaryChatModelLabels,
 } from '@shared/threads/message-model.ts'
+import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
@@ -271,8 +273,13 @@ function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): 
   return card
 }
 
-function assistantDisplayText(content: string): string {
-  return stripTextToolCallBlocks(content)
+function assistantDisplayParts(content: string): {
+  body: string
+  transportNoise: string | null
+} {
+  const stripped = stripTextToolCallBlocks(content)
+  const { body, noise } = splitCursorAcpTransportNoise(stripped)
+  return { body, transportNoise: noise }
 }
 
 function summaryPreview(text: string, max = 200): string {
@@ -301,13 +308,60 @@ function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
 // instead of rebuilding the whole message innerHTML each token (O(n²)).
 const streamingRenderers = new WeakMap<HTMLElement, StreamingMarkdownRenderer>()
 
+/**
+ * Cursor ACP may append a trailing `Error: RetriableError: …` transport line
+ * after useful output. Keep it out of the primary markdown for everyone. In
+ * developer mode (same gate as Hooks), demote the stripped lines into a
+ * collapsed disclosure; otherwise hide them entirely.
+ *
+ * The disclosure is a sibling of `.message-text`, not a child — the streaming
+ * markdown renderer owns that element's children. When the text node is not yet
+ * mounted, stash the noise and flush on the next sync once a parent exists.
+ */
+let showAcpTransportNoiseDisclosure: () => boolean = (): boolean => false
+
+function syncAcpTransportNoiseDisclosure(messageTextEl: HTMLElement, noise: string | null): void {
+  const visibleNoise = showAcpTransportNoiseDisclosure() ? noise : null
+  const host = messageTextEl.parentElement
+  if (!host) {
+    if (visibleNoise) messageTextEl.dataset['pendingAcpTransportNoise'] = visibleNoise
+    else delete messageTextEl.dataset['pendingAcpTransportNoise']
+    return
+  }
+  delete messageTextEl.dataset['pendingAcpTransportNoise']
+  let details = host.querySelector<HTMLDetailsElement>(':scope > .acp-transport-noise')
+  if (!visibleNoise) {
+    details?.remove()
+    return
+  }
+  if (!details) {
+    details = el('details', { class: 'acp-transport-noise' })
+    details.append(
+      el('summary', { class: 'acp-transport-noise-summary' }, 'Agent transport note'),
+      el('pre', { class: 'acp-transport-noise-body' }),
+    )
+    messageTextEl.after(details)
+  } else if (details.previousElementSibling !== messageTextEl) {
+    messageTextEl.after(details)
+  }
+  const body = details.querySelector('.acp-transport-noise-body')
+  if (body) body.textContent = visibleNoise
+}
+
+/** Flush a disclosure that was computed before `.message-text` had a parent. */
+function flushPendingAcpTransportNoise(messageTextEl: HTMLElement): void {
+  const pending = messageTextEl.dataset['pendingAcpTransportNoise']
+  if (pending === undefined) return
+  syncAcpTransportNoiseDisclosure(messageTextEl, pending)
+}
+
 function setAssistantMarkdown(
   el: HTMLElement,
   content: string,
   streaming: boolean,
   api: ApiClient,
 ): void {
-  const display = assistantDisplayText(content)
+  const { body: display, transportNoise } = assistantDisplayParts(content)
   if (streaming) {
     el.classList.add('is-streaming')
     let renderer = streamingRenderers.get(el)
@@ -317,6 +371,8 @@ function setAssistantMarkdown(
     }
     renderer.update(display)
     attachCodeBlockCopyButtons(el)
+    // Demote as soon as the trailing line is complete; keep collapsed while live.
+    syncAcpTransportNoiseDisclosure(el, transportNoise)
     return
   }
   // Final render: replace the incremental scaffold with the finished markdown.
@@ -330,6 +386,7 @@ function setAssistantMarkdown(
   void annotateFileReferences(el, api)
   hydrateRemoteArtifactImages(el, api)
   void renderMermaidIn(el)
+  syncAcpTransportNoiseDisclosure(el, transportNoise)
 }
 
 /** Turn composer single newlines into CommonMark hard breaks; skip fenced code. */
@@ -411,9 +468,8 @@ function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['s
 // without it, and so is the silent cloud fallback when LM Studio is unreachable.
 function subagentModelBadge(session: SubagentSession): HTMLElement | null {
   if (!session.model) return null
-  const isLocal = session.model.startsWith('lmstudio:')
   const badge = el('div', { class: 'subagent-model' })
-  badge.textContent = isLocal ? `${session.model.slice('lmstudio:'.length)} · local` : session.model
+  badge.textContent = displayModelLabel(session.model)
   if (session.localFallback) {
     badge.textContent += ' — local model unavailable, ran on cloud'
     badge.classList.add('subagent-model-fallback')
@@ -519,6 +575,7 @@ function syncSubagentTimeline(
     const node = desired[i]
     if (!node) continue
     if (timeline.children[i] !== node) timeline.insertBefore(node, timeline.children[i] ?? null)
+    flushPendingAcpTransportNoise(node)
   }
 }
 
@@ -593,8 +650,8 @@ function populateSubagentCard(
     const previewEl = el('div', {
       class: 'subagent-summary-preview message-text streaming-markdown',
     })
-    setAssistantMarkdown(previewEl, summaryPreview(preview), false, api)
     card.append(previewEl)
+    setAssistantMarkdown(previewEl, summaryPreview(preview), false, api)
   }
 
   const argsSection = createToolArgsSection(tc.args)
@@ -608,8 +665,8 @@ function populateSubagentCard(
       class:
         'subagent-parent-result subagent-message subagent-message-assistant message-text streaming-markdown',
     })
-    setAssistantMarkdown(resultEl, parentResult, false, api)
     card.append(resultEl)
+    setAssistantMarkdown(resultEl, parentResult, false, api)
   }
 
   subagentCardChromeSig.set(card, chromeSig)
@@ -1001,6 +1058,9 @@ function appendMessageContent(
     body.append(buildReasoningEl(msg.reasoning, !msg.content.trim(), false))
   }
   const textEl = el('div', { class: 'message-text streaming-markdown' })
+  // Attach before markdown so ACP transport-noise disclosure can find a parent
+  // and insert itself as a sibling of `.message-text`.
+  body.append(textEl)
   if (msg.role === 'assistant' && msg.content) {
     setAssistantMarkdown(textEl, msg.content, false, api)
   } else if (msg.role === 'user' && msg.attachments?.length) {
@@ -1010,7 +1070,6 @@ function appendMessageContent(
   } else {
     textEl.textContent = msg.content
   }
-  body.append(textEl)
 }
 
 /** True when reasoning should fold into the tool rollup for this message. */
@@ -1216,6 +1275,7 @@ const INITIAL_RENDER_WINDOW = 40
 const BACKFILL_CHUNK_SIZE = 30
 
 export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
+  showAcpTransportNoiseDisclosure = (): boolean => store.getState().developerMode
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
@@ -1908,7 +1968,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     renderMessageHookCards(threadId, msgId)
   }
 
-  function appendMessageEl(threadId: string, msgId: string): void {
+  /**
+   * Insert a message at the transcript tail.
+   *
+   * `batched` skips the three per-message passes at the end. Each of them is
+   * either O(thread length) or forces a synchronous layout, so running them once
+   * per message turns rendering a window of N messages into O(N × thread length)
+   * DOM work plus N reflows — which is what made switching into a long thread
+   * stall. `rebuildForThread` runs them once for the whole window instead, the
+   * same way `backfillOlderMessages` already does for its chunks.
+   */
+  function appendMessageEl(threadId: string, msgId: string, batched = false): void {
     if (threadId !== store.getState().activeThreadId) return
     const thread = getThreadById(store, threadId)
     const msg = thread?.messages.find((m) => m.id === msgId)
@@ -1935,6 +2005,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard)
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
     finalizeMessageEl(threadId, msgId)
+    if (batched) return
     // Model labels appear only once the primary chat has used more than one
     // model, and only at model-segment boundaries (first assistant turn of
     // each contiguous model run). Syncing after each append also backfills
@@ -2061,10 +2132,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
     // A segment starts where the model *or* the parameters change, so dialling
     // effort up mid-thread marks the turn it took effect on.
+    // Only a window of the thread is in the DOM (see rebuildForThread), so scan
+    // the rendered elements once and look ids up here rather than issuing a
+    // `querySelector` per assistant message: this pass runs on every rebuild and
+    // every backfill chunk, and a `querySelector` for a message that isn't
+    // rendered still walks the whole list.
+    const rendered = new Map<string, Element>()
+    list.querySelectorAll('[data-message-id]').forEach((node) => {
+      const id = node.getAttribute('data-message-id')
+      // First match wins, matching the document-order result `querySelector` gave.
+      if (id !== null && !rendered.has(id)) rendered.set(id, node)
+    })
     let prevLabel: string | undefined
     for (const msg of thread.messages) {
       if (msg.role !== 'assistant') continue
-      const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`)
+      const msgEl = rendered.get(msg.id)
       if (!msgEl) continue
       const existing = msgEl.querySelector<HTMLElement>('.message-model')
       const model = msg.model
@@ -2252,8 +2334,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const initialStart = Math.max(0, total - INITIAL_RENDER_WINDOW)
     for (let i = initialStart; i < total; i++) {
       const m = thread.messages[i]
-      if (m) appendMessageEl(thread.id, m.id)
+      if (m) appendMessageEl(thread.id, m.id, true)
     }
+    // Batched tail work for the whole window, in the order the per-message path
+    // would have left things in: labels and actions reflect the final DOM, and
+    // the view lands at the bottom before the chrome is inserted around it.
+    syncModelLabels()
+    syncUserActions()
+    scrollToBottom(true)
     finishThreadChrome(thread)
     if (initialStart > 0) {
       const generation = backfillGeneration
@@ -2381,6 +2469,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       syncComparisonPanel()
       scrollToBottom()
     }),
+    store.on('settings_changed', () => {
+      // Developer mode gates the collapsed transport-note disclosure; resync
+      // without rebuilding markdown so streaming renderers stay intact.
+      const thread = getActiveThread(store)
+      if (!thread) return
+      for (const msg of thread.messages) {
+        if (msg.role !== 'assistant' || !msg.content) continue
+        const textEl = list.querySelector<HTMLElement>(
+          `[data-message-id="${msg.id}"] .message-text`,
+        )
+        if (!textEl) continue
+        syncAcpTransportNoiseDisclosure(textEl, assistantDisplayParts(msg.content).transportNoise)
+      }
+    }),
     store.on('thread_status_changed', (tid, status) => {
       if (tid !== store.getState().activeThreadId) return
       if (status !== 'running') setActivity(null)
@@ -2400,6 +2502,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Invalidate any backfillOlderMessages step still queued via
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
     backfillGeneration++
+    showAcpTransportNoiseDisclosure = (): boolean => false
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()

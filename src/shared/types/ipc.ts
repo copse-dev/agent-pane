@@ -24,6 +24,16 @@ export interface IpcInvokeMap {
   'workspace:get': { args: []; result: string | null }
   'workspace:set': { args: [root: string, sshHost?: string]; result: string }
 
+  // Full main-window state (sender-derived; pane popouts cannot mutate it)
+  'mainWindow:getNavigation': {
+    args: []
+    result: import('./main-window.ts').MainWindowNavigation
+  }
+  'mainWindow:setNavigation': {
+    args: [navigation: import('./main-window.ts').MainWindowNavigation]
+    result: undefined
+  }
+
   // File system
   'fs:readFile': { args: [projectId: string, threadId: string, path: string]; result: string }
   'fs:writeFile': {

@@ -7,7 +7,11 @@ import {
   invalidateIndex,
 } from './file-index.ts'
 import { ensureSemanticIndex } from './semantic-index.ts'
-import { setSemanticIndexScaleGuarded, setSemanticIndexUnavailable } from './index-status.ts'
+import {
+  clearSemanticIndexStatus,
+  setSemanticIndexScaleGuarded,
+  setSemanticIndexUnavailable,
+} from './index-status.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import {
   isRootWatched,
@@ -15,6 +19,7 @@ import {
   stopWorkspaceIndexWatcher,
 } from './workspace-index-watcher.ts'
 import { stopWatchingExecutionRoot } from './execution-root-watcher.ts'
+import { pathLabel, perfMark, perfSpan } from '../diagnostics/perf-trace.ts'
 
 /** The most recently opened renderer-selected workspace root, if any. */
 let primaryWorkspaceRoot: string | null = null
@@ -155,8 +160,13 @@ export function startWorkspaceIndexing(root: string): void {
   if (previous && previous !== key) {
     stopWorkspaceIndexWatcher(previous)
     retainDormantPrimaryIndex(previous)
+    // Status is global — drop the outgoing root's skipped/limited/unavailable
+    // chip so it cannot linger on the incoming project while scale evidence
+    // loads (and so a missing semantic backend cannot leave it stuck forever).
+    clearSemanticIndexStatus()
   }
 
+  perfMark('index:requested', { root: pathLabel(key) })
   beginWorkspaceIndexGate(key)
   void runWorkspaceIndexing(key, generation).catch((err: unknown) => {
     console.warn('[copse-panel] workspace indexing orchestration failed:', err)
@@ -167,7 +177,23 @@ async function runWorkspaceIndexing(root: string, generation: number): Promise<v
   try {
     // Re-selecting the project you are already on re-runs this; the scale
     // evidence below reads the existing listing rather than rebuilding it.
-    if (needsFreshListing(root)) await buildIndex(root)
+    //
+    // DEBUG BRANCH: indexing is explicitly *not* awaited by `workspace:set`, so
+    // it cannot delay the IPC reply — but it is CPU and I/O on the same main
+    // event loop the renderer's other calls are queued behind, which is a
+    // different way to make an open feel slow. Timing it separately from the
+    // open is what tells those two apart.
+    const fresh = needsFreshListing(root)
+    perfMark('index:start', { root: pathLabel(root), fresh })
+    if (fresh) {
+      await perfSpan(
+        'index:build',
+        () => buildIndex(root),
+        () => ({
+          paths: getIndexStats(root)?.pathCount ?? 0,
+        }),
+      )
+    }
   } catch (err: unknown) {
     console.warn('[copse-panel] file index build failed:', err)
   }
@@ -192,7 +218,10 @@ async function runWorkspaceIndexing(root: string, generation: number): Promise<v
     byteEstimate: stats?.byteEstimate ?? null,
     nestedRepos: [],
     override: policyOverride,
-    discoveryConfidence: stats ? 'complete' : 'failed',
+    // A listing that overflowed its capture limit is partial evidence, not the
+    // complete picture its path count pretends to be.
+    discoveryConfidence: stats ? (stats.listingTruncated ? 'partial' : 'complete') : 'failed',
+    listingTruncated: stats?.listingTruncated ?? false,
   })
 
   resolveWorkspaceIndexGate(root, {

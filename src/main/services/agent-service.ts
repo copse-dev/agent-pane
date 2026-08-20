@@ -1,4 +1,5 @@
 import { errorMessage } from '@shared/errors.ts'
+import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
@@ -1079,8 +1080,11 @@ export async function runAgent(
       // would disagree about the same moment. It is also the only assistant
       // content when the agent failed before emitting a token — an auth failure
       // at connect time — which used to persist nothing at all.
+      const cleanedPartial = partial?.assistantText
+        ? stripCursorAcpTransportNoise(partial.assistantText)
+        : undefined
       const content = [
-        partial?.assistantText,
+        cleanedPartial,
         msg,
         acpTurnInterruptionMarker(aborted ? 'aborted' : (authFailure ?? 'error'), acpRunAgentId),
       ]

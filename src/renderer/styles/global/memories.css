@@ -12,9 +12,10 @@
 .memories-new-btn {
   font-size: 16px;
 }
+/* Padding stays with `.git-change-row` so memories and roadmap rows keep the
+   shared list rhythm; only the two-line title/tags stack differs here. */
 .memories-row {
   align-items: flex-start;
-  padding: var(--spacing-xs) var(--spacing-sm);
 }
 .memories-row-main {
   display: flex;

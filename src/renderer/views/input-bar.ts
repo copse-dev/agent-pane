@@ -55,7 +55,6 @@ import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { ContextBreakdown, TranscriptAttachment, UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
-import { mountFooterReasoningDial } from './footer-reasoning-dial.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
@@ -103,8 +102,10 @@ import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
 import { fetchModelOptions, modelDisplayLabel, type ModelOption } from './model-options.ts'
+import { LOCAL_MODEL_SUFFIX } from '@shared/model-display.ts'
 import { contextFitAdvice } from '@shared/context-window-advice.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
+import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 
 interface MountInputBarOptions {
   /**
@@ -271,7 +272,6 @@ export function mountInputBar(
   })
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
-  const reasoningHost = el('div', { class: 'footer-reasoning-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
   const checkoutBtn = el('button', {
     type: 'button',
@@ -308,7 +308,7 @@ export function mountInputBar(
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
-  footer.append(modelHost, reasoningHost, checkoutHost, branchHost)
+  footer.append(modelHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
       label: guardedYolo.menuLabel,
@@ -414,9 +414,9 @@ export function mountInputBar(
       .getState()
       .threads.map((t) => (t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() }))
     store.setState({ threads })
+    // The picker reloads its selectors on refresh, so the effort row follows
+    // the new model's ladder — or disappears when it has none.
     modelPicker.refresh()
-    // The new model may offer a different ladder — or none at all.
-    reasoningDial.sync()
     updateFooter()
     // The context window depends on the model, so re-estimate the footer wheel
     // against the newly selected model rather than waiting for the next keystroke.
@@ -425,35 +425,30 @@ export function mountInputBar(
     void refreshImageCompatibilityWarning()
   }
 
-  // Per-chat effort, beside the model it applies to. Writes to the thread, so
-  // it lasts as long as the conversation and never re-tunes the model itself.
-  const reasoningDial = mountFooterReasoningDial(
-    reasoningHost,
-    footerChatModel,
-    () => getActiveThread(store)?.reasoning,
-    (reasoning) => {
-      const thread = getActiveThread(store)
-      if (!thread) return
-      const threads = store.getState().threads.map((t) =>
-        t.id !== thread.id
-          ? t
-          : {
-              ...t,
-              ...(reasoning === undefined ? {} : { reasoning }),
-              updatedAt: Date.now(),
-            },
-      )
-      // Clearing the dial has to delete the field rather than write undefined,
-      // or the thread keeps a key that reads as "set" on the next sync.
-      if (reasoning === undefined) {
-        const target = threads.find((t) => t.id === thread.id)
-        if (target) Reflect.deleteProperty(target, 'reasoning')
-      }
-      store.setState({ threads })
-      reasoningDial.sync()
-      composer.focus()
-    },
-  )
+  // Per-chat effort, offered by the model picker alongside the chosen model's
+  // own selectors. Writes to the thread, so it lasts as long as the
+  // conversation and never re-tunes the model itself.
+  function selectReasoning(reasoning: ReasoningLevel | undefined): void {
+    const thread = getActiveThread(store)
+    if (!thread) return
+    const threads = store.getState().threads.map((t) =>
+      t.id !== thread.id
+        ? t
+        : {
+            ...t,
+            ...(reasoning === undefined ? {} : { reasoning }),
+            updatedAt: Date.now(),
+          },
+    )
+    // Clearing the override has to delete the field rather than write
+    // undefined, or the thread keeps a key that reads as "set" next time.
+    if (reasoning === undefined) {
+      const target = threads.find((t) => t.id === thread.id)
+      if (target) Reflect.deleteProperty(target, 'reasoning')
+    }
+    store.setState({ threads })
+    modelPicker.refresh()
+  }
 
   const modelPicker = mountFooterModelPicker(modelHost, api, footerChatModel, selectChatModel, {
     formatCurrentLabel: footerModelDisplayLabel,
@@ -466,13 +461,14 @@ export function mountInputBar(
       composer.focus()
     },
     getRecentModels: footerRecentModels,
+    getReasoning: () => getActiveThread(store)?.reasoning,
+    onSelectReasoning: selectReasoning,
   })
   // Re-sync the picker whenever the active thread changes (new thread,
   // thread switch, or thread deletion that shifts the active pointer), and when
   // the project changes so ACP options hide/show with SSH workspaces.
   store.on('threads_changed', () => {
     modelPicker.refresh()
-    reasoningDial.sync()
     void refreshAutomaticCheckoutPreview()
   })
   store.on('projects_changed', () => {
@@ -608,8 +604,14 @@ export function mountInputBar(
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
   let automaticCheckoutPreviewSeq = 0
 
+  // The picker's label carries the route as well as the name (`Title — Model`
+  // for an agent, `… · local` for LM Studio). These sentences name the model
+  // only — and the ones that care about local already say so in words — so the
+  // route half is dropped rather than read out as "Describe locally with
+  // qwen/… · local".
   function shortModelLabel(option: ModelOption): string {
-    return option.label.split(' — ')[0] ?? option.label
+    const name = option.label.split(' — ')[0] ?? option.label
+    return name.endsWith(LOCAL_MODEL_SUFFIX) ? name.slice(0, -LOCAL_MODEL_SUFFIX.length) : name
   }
 
   function appendImageDescription(text: string, modelLabel: string, description: string): string {

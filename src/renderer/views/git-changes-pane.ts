@@ -9,6 +9,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type {
   GitChange,
   GitChangeStatus,
+  GitCommittedChanges,
   GitFileDiff,
   GitStatusResult,
   SessionBackup,
@@ -84,7 +85,9 @@ const STATUS_LABEL: Record<GitChangeStatus, string> = {
 }
 
 type ChangeSelection =
-  { kind: 'proposed'; path: string } | { kind: 'git'; path: string; staged: boolean }
+  | { kind: 'proposed'; path: string }
+  | { kind: 'git'; path: string; staged: boolean }
+  | { kind: 'committed'; path: string }
 
 /** Validates a pop-out seed before it drives selection. The previous assertion
  * trusted the shape outright, so a malformed seed reached selectGitChange with
@@ -92,7 +95,7 @@ type ChangeSelection =
 function isChangeSelection(seed: unknown): seed is ChangeSelection {
   if (!seed || typeof seed !== 'object') return false
   if (!('kind' in seed) || !('path' in seed) || typeof seed.path !== 'string') return false
-  if (seed.kind === 'proposed') return true
+  if (seed.kind === 'proposed' || seed.kind === 'committed') return true
   return seed.kind === 'git' && 'staged' in seed && typeof seed.staged === 'boolean'
 }
 
@@ -184,6 +187,7 @@ export function mountGitChangesPane(
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
   let status: GitStatusResult | null = null
+  let committed: GitCommittedChanges | null = null
   let gitAvailable = false
   let sessionBackup: SessionBackup | null = null
   let restoreInFlight = false
@@ -330,6 +334,45 @@ export function mountGitChangesPane(
     listBody.append(section)
   }
 
+  /**
+   * Commits that no pull request carries yet. Without this section the pane goes
+   * blank the moment an agent commits — the work has left `git status` and has
+   * nowhere else to show until a PR exists.
+   */
+  function renderCommittedSection(view: GitCommittedChanges): void {
+    if (view.changes.length === 0) return
+    const section = el('div', { class: 'git-changes-section git-changes-section-committed' })
+    section.append(
+      el(
+        'div',
+        {
+          class: 'git-changes-section-title',
+          'data-tooltip': `Committed here but not in a pull request yet (compared against ${view.baseLabel})`,
+        },
+        `Committed (${String(view.changes.length)})`,
+      ),
+    )
+    for (const change of view.changes) {
+      const isSelected = selection?.kind === 'committed' && selection.path === change.path
+      const row = el(
+        'button',
+        {
+          type: 'button',
+          class: `git-change-row git-change-row-committed${isSelected ? ' is-selected' : ''}`,
+        },
+        el(
+          'span',
+          { class: `git-change-status git-change-status-${change.status}` },
+          STATUS_LABEL[change.status],
+        ),
+        el('span', { class: 'git-change-path' }, change.path),
+      )
+      row.addEventListener('click', () => void selectCommittedChange(change.path))
+      section.append(row)
+    }
+    listBody.append(section)
+  }
+
   function renderList(): void {
     const queue = store.getState().stagedDiffs
     syncBulkActions(queue.length)
@@ -345,7 +388,8 @@ export function mountGitChangesPane(
     }
 
     const hasGitChanges = status != null && (status.staged.length > 0 || status.unstaged.length > 0)
-    if (!hasGitChanges && queue.length === 0) {
+    const hasCommitted = (committed?.changes.length ?? 0) > 0
+    if (!hasGitChanges && !hasCommitted && queue.length === 0) {
       listBody.append(el('div', { class: 'git-changes-empty' }, 'No changes'))
       return
     }
@@ -354,6 +398,9 @@ export function mountGitChangesPane(
       renderGitSection('Staged', status.staged, true)
       renderGitSection('Unstaged', status.unstaged, false)
     }
+    // Last: committed work is settled relative to the working tree above it, and
+    // keeping it below preserves which row the pane auto-selects.
+    if (committed) renderCommittedSection(committed)
   }
 
   function renderRestoreBanner(): void {
@@ -574,6 +621,59 @@ export function mountGitChangesPane(
     await diffLoadQueue
   }
 
+  async function selectCommittedChange(path: string): Promise<void> {
+    const requestId = ++selectRequestId
+    selection = { kind: 'committed', path }
+    pendingSelect = { kind: 'committed', path }
+    hideApprovalButtons()
+    renderList()
+    const owner = activeOwner()
+    if (!owner) return
+    const diff = await api.git.committedFileDiff(owner.projectId, owner.threadId, path)
+    if (
+      requestId !== selectRequestId ||
+      activeOwner()?.projectId !== owner.projectId ||
+      activeOwner()?.threadId !== owner.threadId ||
+      pendingSelect.path !== path
+    ) {
+      return
+    }
+    if (!diff) {
+      emptyState.hidden = false
+      diffWrap.hidden = true
+      imageWrap.hidden = true
+      emptyState.textContent = 'Could not load diff'
+      return
+    }
+    diffLoadQueue = diffLoadQueue
+      .catch(() => undefined)
+      .then(async () => {
+        const isCurrent = (): boolean =>
+          requestId === selectRequestId &&
+          pendingSelect?.kind === 'committed' &&
+          pendingSelect.path === path
+        if (!isCurrent()) return
+        emptyState.hidden = true
+        if (isImageDiff(diff)) {
+          diffWrap.hidden = true
+          imageWrap.hidden = false
+          if (diffEditor) disposeDiffModels(diffEditor)
+          renderImageDiff(imageWrap, diff)
+          return
+        }
+        imageWrap.hidden = true
+        diffWrap.hidden = false
+        await setGitFileDiffModel(
+          () => ensureDiffEditor(),
+          requireMonaco(),
+          diff,
+          viewerRoot,
+          isCurrent,
+        )
+      })
+    await diffLoadQueue
+  }
+
   function clearViewer(): void {
     selectRequestId++
     pendingSelect = null
@@ -611,13 +711,20 @@ export function mountGitChangesPane(
     // A git_change_navigate request takes priority over the existing selection.
     const navTarget = pendingNavigate
     pendingNavigate = null
-    if (navTarget && status) {
-      const inUnstaged = status.unstaged.some((c) => c.path === navTarget)
-      const inStaged = status.staged.some((c) => c.path === navTarget)
+    if (navTarget) {
+      const inUnstaged = status?.unstaged.some((c) => c.path === navTarget) ?? false
+      const inStaged = status?.staged.some((c) => c.path === navTarget) ?? false
       if (inUnstaged || inStaged) {
         const staged = !inUnstaged && inStaged
         selection = { kind: 'git', path: navTarget, staged }
         await selectGitChange(navTarget, staged)
+        return
+      }
+      // A file the agent touched and then committed is no longer in `git status`;
+      // navigation to it must still land on its diff rather than falling through.
+      if (committed?.changes.some((c) => c.path === navTarget)) {
+        selection = { kind: 'committed', path: navTarget }
+        await selectCommittedChange(navTarget)
         return
       }
     }
@@ -640,6 +747,10 @@ export function mountGitChangesPane(
         : status?.unstaged.some((c) => c.path === gitSel.path)
       if (!stillExists) current = null
     }
+    if (current?.kind === 'committed') {
+      const committedSel = current
+      if (!committed?.changes.some((c) => c.path === committedSel.path)) current = null
+    }
     selection = current
 
     if (selection?.kind === 'proposed') {
@@ -648,6 +759,10 @@ export function mountGitChangesPane(
     }
     if (selection?.kind === 'git') {
       await selectGitChange(selection.path, selection.staged)
+      return
+    }
+    if (selection?.kind === 'committed') {
+      await selectCommittedChange(selection.path)
       return
     }
 
@@ -660,6 +775,13 @@ export function mountGitChangesPane(
     const firstGit = status ? getFirstGitChange(status) : null
     if (firstGit) {
       await selectGitChange(firstGit.path, firstGit.staged)
+      return
+    }
+    // Nothing uncommitted: a thread whose agent committed everything still has
+    // work to review, so open its first committed file rather than an empty pane.
+    const firstCommitted = committed?.changes[0]
+    if (firstCommitted) {
+      await selectCommittedChange(firstCommitted.path)
     } else {
       clearSelection()
     }
@@ -683,6 +805,7 @@ export function mountGitChangesPane(
     gitAvailable = available
     if (!gitAvailable) {
       status = null
+      committed = null
       sessionBackup = null
       renderRestoreBanner()
       renderList()
@@ -691,9 +814,12 @@ export function mountGitChangesPane(
     }
     const nextStatus = await api.git.status(owner.projectId, owner.threadId)
     if (requestId !== refreshRequestId) return
+    const nextCommitted = await api.git.committedChanges(owner.projectId, owner.threadId)
+    if (requestId !== refreshRequestId) return
     const nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
     if (requestId !== refreshRequestId) return
     status = nextStatus
+    committed = nextCommitted
     sessionBackup = nextBackup
     renderRestoreBanner()
     renderList()
@@ -745,6 +871,7 @@ export function mountGitChangesPane(
     }),
     store.on('workspace_changed', () => {
       status = null
+      committed = null
       sessionBackup = null
       renderRestoreBanner()
       pendingProposedNavigate = null
@@ -758,6 +885,7 @@ export function mountGitChangesPane(
       refreshRequestId++
       selectRequestId++
       status = null
+      committed = null
       sessionBackup = null
       selection = null
       seededProposedPath = null
@@ -810,7 +938,8 @@ export function mountGitChangesPane(
       if (seed.kind === 'proposed') {
         seededProposedPath = seed.path
         void selectProposed(seed.path)
-      } else void selectGitChange(seed.path, seed.staged)
+      } else if (seed.kind === 'committed') void selectCommittedChange(seed.path)
+      else void selectGitChange(seed.path, seed.staged)
     },
   })
 

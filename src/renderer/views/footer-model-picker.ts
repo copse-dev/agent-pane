@@ -6,6 +6,12 @@ import {
   saveAcpOptionSelection,
   type AcpOptionGroup,
 } from './acp-config-options.ts'
+import {
+  REASONING_GROUP_ID,
+  reasoningLevelFromGroupValue,
+  reasoningValueGroup,
+} from './footer-reasoning-group.ts'
+import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 
 export interface FooterModelPickerOptions {
   /** When true, ACP agents are omitted (SSH workspaces). */
@@ -16,6 +22,10 @@ export interface FooterModelPickerOptions {
   getRecentModels?: () => readonly string[]
   /** Override the trigger label for the current picker value (resolved route). */
   formatCurrentLabel?: (current: string) => string | undefined
+  /** This chat's reasoning override, if any. Omit to hide the effort selector. */
+  getReasoning?: () => ReasoningLevel | undefined
+  /** Applies an effort pick; `undefined` clears the chat's override. */
+  onSelectReasoning?: (level: ReasoningLevel | undefined) => void
 }
 
 // Composer adapter for the app-wide picker. The trigger stays compact while the
@@ -57,15 +67,26 @@ export function mountFooterModelPicker(
       variant: 'compact',
       enableShortcut: true,
       ariaLabel: 'Chat model',
-      // An ACP agent's own knobs — reasoning level, mode — hang off whichever
-      // agent is selected, so they reload with the model list.
+      // Everything that belongs to the *chosen model* rather than the catalog:
+      // our own per-chat effort, plus an ACP agent's own knobs (mode, thinking
+      // effort). Both hang off whichever value is selected, so they reload with
+      // the model list.
       loadValueGroups: async (current) => {
         const loaded = await loadAcpOptionGroups(api, current)
         optionAgentId = loaded?.agentId ?? null
         optionGroups = loaded?.groups ?? []
-        return optionGroups
+        const reasoning = pickerOpts.getReasoning
+          ? reasoningValueGroup(current, pickerOpts.getReasoning())
+          : null
+        return reasoning ? [reasoning, ...optionGroups] : optionGroups
       },
-      onSelectGroupValue: persistGroupValue,
+      onSelectGroupValue: (groupId, value) => {
+        if (groupId === REASONING_GROUP_ID) {
+          pickerOpts.onSelectReasoning?.(reasoningLevelFromGroupValue(value))
+          return
+        }
+        persistGroupValue(groupId, value)
+      },
       ...(pickerOpts.onClose ? { onClose: pickerOpts.onClose } : {}),
       ...(pickerOpts.getRecentModels ? { getRecentValues: pickerOpts.getRecentModels } : {}),
       ...(pickerOpts.formatCurrentLabel

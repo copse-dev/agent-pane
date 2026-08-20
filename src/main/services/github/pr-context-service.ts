@@ -92,6 +92,34 @@ async function getOpenPrForBranch(branch: string, root?: string): Promise<GitOpe
   return ghResult.code === 0 ? parseGhOpenPrList(ghResult.stdout.trim()) : null
 }
 
+const OPEN_PR_TTL_MS = 60_000
+const openPrForBranchCache = new Map<string, { hasOpenPr: boolean; checkedAt: number }>()
+
+/**
+ * Whether an open pull request already carries `branch` — the Changes panel's
+ * "is this committed work already under review somewhere else?" question.
+ *
+ * Cached, unlike {@link getGitBranchStatus}: the panel re-reads on every
+ * working-tree tick, and a live `gh` round trip per file save is not affordable.
+ * A PR appearing (or being merged) surfaces within the TTL, which is the same
+ * freshness the footer's own poll offers.
+ */
+export async function branchHasOpenPr(
+  projectId: string,
+  branch: string,
+  root: string | null,
+): Promise<boolean> {
+  // `gh` absent means "no PR is known", not "no PR exists". Callers treat that
+  // as no-PR, which widens what the Changes panel shows rather than hiding work.
+  if (!root || !isGhAvailable()) return false
+  const key = branchStatusLookupKey(projectId, root, branch)
+  const cached = openPrForBranchCache.get(key)
+  if (cached && Date.now() - cached.checkedAt < OPEN_PR_TTL_MS) return cached.hasOpenPr
+  const pr = await coalesceOpenPrLookup(key, () => getOpenPrForBranch(branch, root))
+  openPrForBranchCache.set(key, { hasOpenPr: pr !== null, checkedAt: Date.now() })
+  return pr !== null
+}
+
 /** Parse `gh pr view --json` output into an open PR summary, or null. */
 export function parseGhOpenPr(raw: string): GitOpenPr | null {
   if (!raw.trim()) return null

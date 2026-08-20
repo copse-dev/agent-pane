@@ -263,6 +263,38 @@
   font-family: var(--font-mono);
   padding: 1px 4px;
   background: var(--bg-muted);
+}
+
+/* Cursor ACP trailing transport RetriableError — developer-mode disclosure only. */
+.acp-transport-noise {
+  margin-top: var(--spacing-sm);
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+.acp-transport-noise-summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-muted);
+}
+.acp-transport-noise-summary::-webkit-details-marker {
+  display: none;
+}
+.acp-transport-noise-summary::before {
+  content: '▸ ';
+  font-size: 0.75em;
+}
+.acp-transport-noise[open] > .acp-transport-noise-summary::before {
+  content: '▾ ';
+}
+.acp-transport-noise-body {
+  margin: var(--spacing-xs) 0 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  background: var(--bg-muted);
   border-radius: 3px;
 }
 .message-body {

@@ -6,12 +6,18 @@
  * gets the copy without the chrome. Everything under `site/*.md` and
  * `site/llms.txt` is a build artifact: the HTML is the only source of truth.
  *
- *   npm run site:md         regenerate
- *   npm run site:md:check    fail if what is committed isn't what HTML produces
+ *   pnpm run site:md              write the twins into site/ for local preview
+ *   pnpm run site:md -- --out DIR write them into a built tree instead
  *
- * `site:md:check` runs inside `npm run check`, and `sync-site-markdown.test.ts`
- * asserts the same thing from the unit suite, so a page edited without a
- * regenerate is caught in CI rather than published as a stale twin.
+ * None of it is committed. `.gitignore` covers `site/*.md` and `site/llms.txt`,
+ * and `pages.yml` regenerates them into `_site/` on the way to Pages, so the
+ * published twins are always what the published HTML says — there is no second
+ * copy in the repo that could be stale, and so nothing to drift-check.
+ *
+ * What a PR still owes: `sync-site-markdown.test.ts` runs this against the real
+ * `site/*.html`, so a page that loses its `<main>`, its `<title>`, or its
+ * `<link rel="alternate">` fails on the PR that does it rather than at deploy,
+ * where the same mistake would be a broken publish.
  *
  * ── Why this can't drift ─────────────────────────────────────────────────────
  * The conversion reads only markup the pages already have to get right for
@@ -46,9 +52,6 @@ import { formatGenerated } from './lib/generated-file.mts'
 
 export const SITE_DIR = 'site'
 export const SITE_ORIGIN = 'https://copse.dev'
-
-/** Regenerate command, quoted in every "this file is stale" message. */
-const SYNC_COMMAND = 'npm run site:md'
 
 /** Elements that never carry page copy, whatever the page. */
 const NON_CONTENT_TAGS = ['script', 'style', 'noscript', 'template', 'svg', 'iframe', 'canvas']
@@ -126,7 +129,7 @@ function pruneToContent(document: Document, root: Element): void {
     img.replaceWith(document.createTextNode(img.getAttribute('alt') ?? ''))
   }
   applyAriaSemantics(document, root)
-  rewriteLinks(document, root)
+  rewriteUrls(document, root)
 }
 
 /**
@@ -156,11 +159,21 @@ function rename(document: Document, el: Element, tagName: string): void {
 }
 
 /**
- * Point sibling-page links at the Markdown twin, and unwrap in-page anchors —
- * `#download` addresses a section of the HTML page that has no counterpart
- * here, so the link text survives and the dangling target doesn't.
+ * Point sibling-page links at the Markdown twin, unwrap in-page anchors, and
+ * make every surviving link and image absolute.
+ *
+ * An in-page anchor like `#download` addresses a section of the HTML page that
+ * has no counterpart here, so the link text survives and the dangling target
+ * doesn't.
+ *
+ * Absolute because the twins travel. `screenshots/x.png` resolves correctly out
+ * of `copse.dev/index.md` only while the reader still knows where the file came
+ * from, and the first thing that happens to this content is being copied into a
+ * context window — which is exactly what loses that. `llms.txt` and the
+ * `canonical:` front-matter field are already absolute for the same reason, so
+ * this is the body catching up with them rather than a new convention.
  */
-function rewriteLinks(document: Document, root: Element): void {
+function rewriteUrls(document: Document, root: Element): void {
   for (const anchor of root.querySelectorAll('a[href]')) {
     const href = anchor.getAttribute('href') ?? ''
     if (href.startsWith('#')) {
@@ -168,10 +181,28 @@ function rewriteLinks(document: Document, root: Element): void {
       continue
     }
     const [path, fragment] = splitFragment(href)
-    if (path.endsWith('.html') && !path.includes('//')) {
-      anchor.setAttribute('href', `${markdownName(path)}${fragment}`)
-    }
+    const target = path.endsWith('.html') && !path.includes('//') ? markdownName(path) : path
+    anchor.setAttribute('href', `${absoluteUrl(target)}${fragment}`)
   }
+  for (const img of root.querySelectorAll('img[src]')) {
+    img.setAttribute('src', absoluteUrl(img.getAttribute('src') ?? ''))
+  }
+}
+
+/**
+ * A page-relative URL in its published absolute form.
+ *
+ * Every page is served from the site root — `site/index.html` is `copse.dev/`,
+ * `site/screenshots/x.png` is `copse.dev/screenshots/x.png` — so a page-relative
+ * path and a root-relative one name the same file. That is what makes this a
+ * join rather than real URL resolution, and it stops being true the day a page
+ * lives in a subdirectory.
+ */
+function absoluteUrl(url: string): string {
+  // A scheme (`https:`, `mailto:`, `data:`) or a protocol-relative `//host`
+  // already names its own origin; only a bare path needs one.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('//')) return url
+  return `${SITE_ORIGIN}/${url.replace(/^\/+/, '')}`
 }
 
 function splitFragment(href: string): [string, string] {
@@ -198,6 +229,14 @@ export function pageMarkdown(html: string, file: string): string {
   return `${frontMatter(readPageMeta(html, file), file)}\n\n${body}${diagrams}\n`
 }
 
+/**
+ * No "do not edit by hand" banner. That warning was addressed to someone
+ * editing the file in the repo, and since the twins are generated at deploy and
+ * never committed there is no such reader — while every agent that fetches the
+ * page got two lines of repo housekeeping at the top of content whose whole
+ * point is the copy without the chrome. `generated_from` already states the
+ * same fact, in a line a machine can read.
+ */
 function frontMatter(meta: PageMeta, file: string): string {
   const canonical = file === 'index.html' ? `${SITE_ORIGIN}/` : `${SITE_ORIGIN}/${file}`
   return [
@@ -207,9 +246,6 @@ function frontMatter(meta: PageMeta, file: string): string {
     `canonical: ${canonical}`,
     `generated_from: ${SITE_DIR}/${file}`,
     '---',
-    '',
-    `<!-- Generated from ${SITE_DIR}/${file} by scripts/sync-site-markdown.mts.`,
-    `     Do not edit by hand — edit the page and run \`${SYNC_COMMAND}\`. -->`,
   ].join('\n')
 }
 
@@ -366,8 +402,15 @@ export function llmsTxt(pages: PageMeta[]): string {
 
 export type GeneratedFile = { path: string; content: string }
 
-/** Every page's twin plus the index, rendered but not yet written. */
-export async function renderSite(siteDir = SITE_DIR): Promise<GeneratedFile[]> {
+/**
+ * Every page's twin plus the index, rendered but not yet written.
+ *
+ * `outDir` defaults to `siteDir` — the local-preview case, where the twins sit
+ * beside the pages they came from and a static server over `site/` serves the
+ * real thing. The deploy passes the assembled tree instead, so the pages are
+ * still read from the repo and the output lands where Pages will publish it.
+ */
+export async function renderSite(siteDir = SITE_DIR, outDir = siteDir): Promise<GeneratedFile[]> {
   const files = (await readdir(siteDir)).filter((name) => name.endsWith('.html')).sort()
   if (files.length === 0) throw new Error(`no HTML pages found in ${siteDir}`)
 
@@ -377,12 +420,10 @@ export async function renderSite(siteDir = SITE_DIR): Promise<GeneratedFile[]> {
     const html = await readFile(join(siteDir, file), 'utf8')
     assertMarkdownLink(html, file)
     metas.push(readPageMeta(html, file))
-    generated.push({
-      path: join(siteDir, markdownName(file)),
-      content: await formatGenerated(join(siteDir, markdownName(file)), pageMarkdown(html, file)),
-    })
+    const path = join(outDir, markdownName(file))
+    generated.push({ path, content: await formatGenerated(path, pageMarkdown(html, file)) })
   }
-  generated.push({ path: join(siteDir, 'llms.txt'), content: llmsTxt(metas) })
+  generated.push({ path: join(outDir, 'llms.txt'), content: llmsTxt(metas) })
   return generated
 }
 
@@ -398,29 +439,24 @@ function assertMarkdownLink(html: string, file: string): void {
   }
 }
 
+/** `--out DIR` or `--out=DIR`; defaults to writing beside the pages. */
+export function readOutDir(argv: string[]): string {
+  const inline = argv.find((arg) => arg.startsWith('--out='))
+  if (inline !== undefined) return required(inline.slice('--out='.length))
+  const at = argv.indexOf('--out')
+  return at === -1 ? SITE_DIR : required(argv[at + 1] ?? '')
+}
+
+function required(dir: string): string {
+  if (dir === '' || dir.startsWith('-')) throw new Error('--out needs a directory')
+  return dir
+}
+
 async function main(): Promise<void> {
-  const generated = await renderSite()
-  const check = process.argv.includes('--check')
-
-  const stale: string[] = []
-  for (const { path, content } of generated) {
-    const existing = await readFile(path, 'utf8').catch(() => null)
-    if (existing === content) continue
-    if (check) stale.push(path)
-    else await writeFile(path, content, 'utf8')
-  }
-
-  if (!check) {
-    console.log(`[sync-site-markdown] ${String(generated.length)} files up to date in ${SITE_DIR}/`)
-    return
-  }
-  if (stale.length > 0) {
-    throw new Error(
-      `${stale.join(', ')} ${stale.length === 1 ? 'is' : 'are'} out of date with the HTML; ` +
-        `run \`${SYNC_COMMAND}\``,
-    )
-  }
-  console.log(`[sync-site-markdown] ${String(generated.length)} files match ${SITE_DIR}/*.html`)
+  const outDir = readOutDir(process.argv.slice(2))
+  const generated = await renderSite(SITE_DIR, outDir)
+  for (const { path, content } of generated) await writeFile(path, content, 'utf8')
+  console.log(`[sync-site-markdown] wrote ${String(generated.length)} files to ${outDir}/`)
 }
 
 const invokedDirectly = process.argv[1]?.endsWith('sync-site-markdown.mts') === true
