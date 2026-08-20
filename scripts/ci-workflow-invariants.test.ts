@@ -368,7 +368,7 @@ describe('promote-develop.yml workflow invariants', () => {
     assert.match(workflow, /enablePullRequestAutoMerge/)
     assert.match(workflow, /mergeMethod: MERGE/)
     assert.doesNotMatch(workflow, /mergeMethod: SQUASH/)
-    assert.match(workflow, /github-token: \$\{\{ secrets\.SYNC_PR_TOKEN \}\}/)
+    assert.match(workflow, /github-token: \$\{\{ steps\.app-token\.outputs\.token \}\}/)
   })
 })
 

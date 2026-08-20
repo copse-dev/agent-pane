@@ -374,15 +374,17 @@ jobs:
   # `commit-screenshots` its own job. Prettier runs last so it tidies whatever
   # ESLint rewrote; `eslint-config-prettier` means the two never fight.
   #
-  # Pushed with SCREENSHOTS_PAT (reused) rather than the default GITHUB_TOKEN:
-  # GitHub won't start a run for a GITHUB_TOKEN push (recursion guard), so a
-  # token-pushed format commit would land as the PR head with no CI and leave
-  # the PR blocked. The PAT push fires `pull_request: synchronize`, and the
-  # top-level `concurrency: cancel-in-progress` supersedes THIS run with one on
-  # the formatted commit — so build/e2e aren't paid for twice. It terminates in
-  # one extra run: the re-triggered run reformats nothing (idempotent), so this
-  # job finds no diff and pushes nothing. Falls back to github.token when the
-  # secret is unset (commit lands, just no CI re-trigger — pre-PAT behaviour).
+  # Pushed as the copse-release-bot App rather than with the default
+  # GITHUB_TOKEN: GitHub won't start a run for a GITHUB_TOKEN push (recursion
+  # guard), so a token-pushed format commit would land as the PR head with no CI
+  # and leave the PR blocked. An App push is a distinct actor and fires
+  # `pull_request: synchronize` normally, and the top-level
+  # `concurrency: cancel-in-progress` supersedes THIS run with one on the
+  # formatted commit — so build/e2e aren't paid for twice. It terminates in one
+  # extra run: the re-triggered run reformats nothing (idempotent), so this job
+  # finds no diff and pushes nothing. Falls back to github.token when the App
+  # credentials are unset (commit lands, just no CI re-trigger — the behaviour
+  # before any push identity was configured).
   autoformat:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
@@ -392,11 +394,21 @@ jobs:
     permissions:
       contents: write
     steps:
+      # continue-on-error preserves that documented degradation: a missing or
+      # broken App credential leaves `outputs.token` empty and the checkout
+      # below falls through to github.token rather than reddening the PR.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-          token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
       # Decide whether there is anything to fix BEFORE installing. `npm ci` /
       # cache-restore is ~2-5 min on this fleet and the autofix itself takes
       # seconds, so on a diff with no formattable file the old order paid the
@@ -1350,15 +1362,15 @@ jobs:
   # conflict (regenerated PNGs have no meaningful merge). Source-code conflicts are
   # NEVER auto-resolved — they abort the merge and get a "needs a human" PR comment.
   #
-  # The checkout uses a PAT (secrets.SCREENSHOTS_PAT) rather than the default
-  # GITHUB_TOKEN: GitHub will not start a new workflow run for a commit pushed with
-  # GITHUB_TOKEN (recursion guard), so a token-pushed screenshot commit would land
-  # as the PR head with no CI run and no `ci-passed` status — leaving the PR blocked
-  # and auto-merge stuck. Pushing with a PAT makes the commit trigger CI normally so
-  # `ci-passed` reports on the new head. That re-run is cheap: plan-e2e skips the
-  # e2e tier for a screenshot-only commit (see its `mode=skip` shortcut). Falls back
-  # to github.token when the secret is unset — commits still land, just without the
-  # CI re-trigger (the pre-PAT behaviour).
+  # The checkout authenticates as the copse-release-bot App rather than with the
+  # default GITHUB_TOKEN: GitHub will not start a new workflow run for a commit
+  # pushed with GITHUB_TOKEN (recursion guard), so a token-pushed screenshot commit
+  # would land as the PR head with no CI run and no `ci-passed` status — leaving the
+  # PR blocked and auto-merge stuck. An App push is a distinct actor, so the commit
+  # triggers CI normally and `ci-passed` reports on the new head. That re-run is
+  # cheap: plan-e2e skips the e2e tier for a screenshot-only commit (see its
+  # `mode=skip` shortcut). Falls back to github.token when the App credentials are
+  # unset — commits still land, just without the CI re-trigger.
   commit-screenshots:
     needs: [build, e2e]
     if: >-
@@ -1417,12 +1429,23 @@ jobs:
               exit 1
               ;;
           esac
+      # continue-on-error preserves the documented degradation: a missing or
+      # broken App credential leaves `outputs.token` empty and the checkout falls
+      # through to github.token rather than reddening an otherwise-green PR.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        if: steps.head.outputs.exists == 'true'
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - uses: actions/checkout@v7.0.1
         if: steps.head.outputs.exists == 'true'
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-          token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
       - name: Download regenerated screenshots
         if: steps.head.outputs.exists == 'true'
         uses: actions/download-artifact@v8
@@ -1645,19 +1668,22 @@ jobs:
             fi
           done <<< "$conflicts"
           git add tests/e2e/screenshots/
-          # The push authenticates with SCREENSHOTS_PAT, a classic PAT without
-          # `workflow` scope. If main advanced a file under .github/workflows/, the
-          # merge folds it in and GitHub rejects the push ("refusing to allow a
-          # Personal Access Token to create or update workflow ... without workflow
-          # scope"), hard-failing the job. We can't drop main's workflow change
+          # The push authenticates as the copse-release-bot App, which is
+          # deliberately NOT granted `workflows: write` (it is installed org-wide,
+          # and an actor that can rewrite CI definitions everywhere is a bigger
+          # grant than resolving these merges is worth). If main advanced a file
+          # under .github/workflows/, the merge folds it in and GitHub rejects the
+          # push ("refusing to allow a GitHub App to create or update workflow ...
+          # without `workflows` permission"), hard-failing the job. We can't drop
+          # main's workflow change
           # (reverting it to --ours would undo it when the PR merges), so abort the
           # merge and hand it to a human — the same policy as a source conflict.
           # Any screenshot render commit made above still pushes below; only the
-          # unpushable merge is skipped. Grant the PAT `workflow` scope to let CI
+          # unpushable merge is skipped. Grant the App `workflows: write` to let CI
           # resolve these automatically.
           wf="$(git diff --cached --name-only -- .github/workflows/ || true)"
           if [ -n "$wf" ]; then
-            echo "Merge updates workflow files the PAT can't push — leaving to a human:"
+            echo "Merge updates workflow files the App can't push — leaving to a human:"
             printf '%s\n' "$wf"
             git merge --abort
             {
@@ -1771,9 +1797,9 @@ jobs:
               sections.push(
                 `### Merge needs a human (${workflowMerge.length})\n\n` +
                   `Screenshot conflicts with \`main\` were resolved automatically, but the merge ` +
-                  `updates these **workflow** files, which CI's token isn't scoped to push. Merge ` +
-                  `or rebase \`main\` by hand — or grant the \`SCREENSHOTS_PAT\` the \`workflow\` ` +
-                  `scope to let CI resolve these automatically:\n\n` +
+                  `updates these **workflow** files, which CI's token isn't permitted to push. Merge ` +
+                  `or rebase \`main\` by hand — or grant the release App the \`workflows: write\` ` +
+                  `permission to let CI resolve these automatically:\n\n` +
                   lines.join('\n'),
               );
             }
