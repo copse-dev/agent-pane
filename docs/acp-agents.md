@@ -188,7 +188,7 @@ Example value:
     "id": "gemini-cli",
     "title": "Gemini CLI",
     "command": "gemini",
-    "args": ["--experimental-acp"],
+    "args": ["--acp"],
     "env": { "GEMINI_API_KEY": "..." },
     "enabled": true
   }
