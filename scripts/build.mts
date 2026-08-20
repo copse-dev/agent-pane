@@ -89,6 +89,21 @@ function assertParses(outfile: string): void {
 }
 
 /**
+ * Syntax-check the initial renderer as an ES module. A dependency with top-level
+ * await can otherwise make esbuild emit `await` inside a synchronous CommonJS
+ * wrapper when the entry point is accidentally classified as CommonJS.
+ */
+function assertModuleParses(outfile: string): void {
+  const check = spawnSync(process.execPath, ['--input-type=module', '--check'], {
+    input: readFileSync(outfile, 'utf8'),
+    encoding: 'utf8',
+  })
+  if (check.status !== 0) {
+    throw new Error(`[build] ${outfile} is not parseable as an ES module:\n${check.stderr.trim()}`)
+  }
+}
+
+/**
  * Stamp diagnostics with the exact source revision that produced the bundle.
  * Release CI can provide COPSE_BUILD_COMMIT explicitly; local builds fall back
  * to the checkout's HEAD. `unknown` is honest when building from a source
@@ -200,8 +215,13 @@ const rendererEntry = isDemo ? 'src/renderer/demo/main.ts' : 'src/renderer/main.
 await esbuild.build({
   ...browserOpts,
   entryPoints: [rendererEntry],
+  // noVNC 1.7 performs an asynchronous WebCodecs capability probe at module
+  // initialization. Preserve its top-level await instead of forcing the app
+  // bundle into esbuild's default IIFE format.
+  format: 'esm',
   outfile: `${rendererOutDir}/app.js`,
 })
+assertModuleParses(`${rendererOutDir}/app.js`)
 // Monaco is bundled on its own and injected lazily by monaco/setup.ts, keeping
 // the multi-megabyte editor (and its CSS) out of the initial app.js.
 await esbuild.build({
