@@ -97,14 +97,36 @@ describe('withMultilineFStringFix', () => {
     const patched = withMultilineFStringFix(upstreamPythonGrammar())
     assert.deepEqual(shortRules(patched, 'strings'), [
       ["'$", 'string.escape', '@popall'],
-      ["f'''", 'string.escape', '@fEndDocString'],
-      ["f'", 'string.escape', '@fStringBody'],
+      ["[fF][rR]?'''", 'string.escape', '@fEndDocString'],
+      ["[rR][fF]'''", 'string.escape', '@fEndDocString'],
+      ["[fF][rR]?'", 'string.escape', '@fStringBody'],
+      ["[rR][fF]'", 'string.escape', '@fStringBody'],
       ["'", 'string.escape', '@stringBody'],
       ['"$', 'string.escape', '@popall'],
-      ['f"""', 'string.escape', '@fEndDblDocString'],
-      ['f"', 'string.escape', '@fDblStringBody'],
+      ['[fF][rR]?"""', 'string.escape', '@fEndDblDocString'],
+      ['[rR][fF]"""', 'string.escape', '@fEndDblDocString'],
+      ['[fF][rR]?"', 'string.escape', '@fDblStringBody'],
+      ['[rR][fF]"', 'string.escape', '@fDblStringBody'],
       ['"', 'string.escape', '@dblStringBody'],
     ])
+  })
+
+  it('covers every f-string prefix spelling, but never a lone raw prefix', () => {
+    const patched = withMultilineFStringFix(upstreamPythonGrammar())
+    const tripleRules = shortRules(patched, 'strings').filter(
+      ([, , next]) => next === '@fEndDocString' || next === '@fEndDblDocString',
+    )
+    const matchesTriple = (opener: string): boolean =>
+      tripleRules.some(([source]) => new RegExp(`^(?:${source})`).test(opener))
+    for (const prefix of ['f', 'F', 'rf', 'fr', 'rF', 'Rf', 'fR', 'FR']) {
+      assert.ok(matchesTriple(`${prefix}'''`), `${prefix}''' routes to a multi-line state`)
+      assert.ok(matchesTriple(`${prefix}"""`), `${prefix}""" routes to a multi-line state`)
+    }
+    // A plain raw/byte string has no interpolations; it must keep falling
+    // through to the grammar's identifier + docstring path.
+    for (const opener of ["r'''", 'R"""', "b'''", "ff'''"]) {
+      assert.ok(!matchesTriple(opener), `${opener} stays on the docstring path`)
+    }
   })
 
   it('closes the new states only on the matching triple quote, popping the whole stack', () => {

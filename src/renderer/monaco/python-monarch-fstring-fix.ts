@@ -13,10 +13,11 @@ type MonarchRule = Monaco.languages.IMonarchLanguageRule
  * f-string renders as one endless string. Plain `"""` docstrings are unaffected
  * (they have their own multi-line states).
  *
- * The returned grammar routes `f'''`/`f"""` into new multi-line states modelled
- * on the grammar's own `endDocString`/`endDblDocString`, plus its
- * `@fStringDetail` interpolation handling. Everything else is shared with the
- * input grammar by reference.
+ * The returned grammar routes triple-quoted f-strings — every prefix spelling,
+ * `f'''`/`F"""`/`rf'''`/`fR"""`/… — into new multi-line states modelled on the
+ * grammar's own `endDocString`/`endDblDocString`, plus its `@fStringDetail`
+ * interpolation handling. Everything else is shared with the input grammar by
+ * reference.
  *
  * Deliberately all-or-nothing: if the `strings` state no longer contains the
  * exact rules being replaced (or the new state names appear), a monaco upgrade
@@ -31,20 +32,29 @@ export function withMultilineFStringFix(
     return language
   }
 
+  // Prefix coverage matches the pending upstream fix
+  // (microsoft/monaco-editor#5272): every f-string spelling — `F`, `rf`, `fR`,
+  // `Rf`, … — gets the f-string states, not just bare lowercase `f`. Two rules
+  // per quote length because a single alternation can't say "f and r in either
+  // order, r optional" without also matching a lone `r`.
   let replaced = 0
   const patchedStrings = strings.flatMap((rule): MonarchRule[] => {
     switch (ruleRegexSource(rule)) {
       case "f'{1,3}":
         replaced += 1
         return [
-          [/f'''/, 'string.escape', '@fEndDocString'],
-          [/f'/, 'string.escape', '@fStringBody'],
+          [/[fF][rR]?'''/, 'string.escape', '@fEndDocString'],
+          [/[rR][fF]'''/, 'string.escape', '@fEndDocString'],
+          [/[fF][rR]?'/, 'string.escape', '@fStringBody'],
+          [/[rR][fF]'/, 'string.escape', '@fStringBody'],
         ]
       case 'f"{1,3}':
         replaced += 1
         return [
-          [/f"""/, 'string.escape', '@fEndDblDocString'],
-          [/f"/, 'string.escape', '@fDblStringBody'],
+          [/[fF][rR]?"""/, 'string.escape', '@fEndDblDocString'],
+          [/[rR][fF]"""/, 'string.escape', '@fEndDblDocString'],
+          [/[fF][rR]?"/, 'string.escape', '@fDblStringBody'],
+          [/[rR][fF]"/, 'string.escape', '@fDblStringBody'],
         ]
       default:
         return [rule]
