@@ -669,10 +669,14 @@ describe('browser pane webview size sync', () => {
       disconnect(): void {}
     }
     globalThis.ResizeObserver = RecordingResizeObserver
+    // The callback's second argument is the observer that fired. Hand it a real
+    // instance of the stub above rather than asserting an empty object into the
+    // type — `RecordingResizeObserver` already implements the whole interface.
+    const firingObserver: ResizeObserver = new RecordingResizeObserver(() => {})
     return {
       observed,
       fire: (): void => {
-        callback?.([], {} as ResizeObserver)
+        callback?.([], firingObserver)
       },
       restore: (): void => {
         if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
@@ -711,8 +715,8 @@ describe('browser pane webview size sync', () => {
       assert.equal(recorder.observed[0]?.className, 'browser-body')
 
       const host = qsRequired(viewer, '.browser-tab-panel.is-active .browser-webview-host')
-      const webview = qsRequired(host, '.browser-webview')
-      stubWebviewMethods(webview as FakeWebview)
+      const webview = qsRequired<FakeWebview>(host, '.browser-webview')
+      stubWebviewMethods(webview)
       webview.dispatchEvent(new Event('dom-ready'))
 
       stubHostBox(host, 640, 480)
@@ -749,8 +753,8 @@ describe('browser pane webview size sync', () => {
 
     try {
       const host = qsRequired(viewer, '.browser-tab-panel.is-active .browser-webview-host')
-      const webview = qsRequired(host, '.browser-webview')
-      stubWebviewMethods(webview as FakeWebview)
+      const webview = qsRequired<FakeWebview>(host, '.browser-webview')
+      stubWebviewMethods(webview)
       webview.dispatchEvent(new Event('dom-ready'))
 
       stubHostBox(host, 480, 400)
