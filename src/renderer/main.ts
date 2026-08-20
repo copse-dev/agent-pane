@@ -701,3 +701,7 @@ function switchToNextThread(): void {
 }
 
 void boot()
+
+// package.json marks .js as CommonJS. Keep this entry explicitly ESM so esbuild
+// can propagate top-level await from dependencies such as noVNC 1.7.
+export {}
