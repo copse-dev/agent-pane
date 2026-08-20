@@ -47,7 +47,6 @@ function toolResultImageAdjustment(toolResults: LLMMessage & { role: 'tool' }): 
 function estimateSingleMessageTokens(message: LLMMessage): number {
   switch (message.role) {
     case 'system':
-    case 'developer':
       return message.content.length / CHARS_PER_TOKEN
     case 'user':
       return estimateUserContentTokens(message.content)

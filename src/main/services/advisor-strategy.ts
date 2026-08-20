@@ -1,10 +1,9 @@
 import type { LLMMessage, UserContent } from '@shared/types'
-import { isAcpModel } from '@shared/acp.ts'
+import { isAcpModel, parseAcpModelSelection } from '@shared/acp.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
 import { intellectBand, modelIntellect, topAnnotatedIntellect } from '@copse/llm/model-intellect.ts'
 import { BEST_INTELLECT_MODEL_SELECTOR, isDynamicModel } from '@copse/llm/dynamic-model.ts'
-import { displayModelLabel } from '@shared/model-display.ts'
 
 /**
  * Experimental, opt-in "advisor strategy" feature (tracked in
@@ -80,13 +79,16 @@ export function normalizeAdvisorResult(text: string, stopReason?: string): Advis
 /**
  * Human label for the advisor model id, used to attribute the advice in the
  * tool card so the advisor model's output is distinguishable from the
- * executor's (which drives the surrounding conversation). Routed through the
- * one shared labeler so the advisor attribution can no longer drift from the
- * picker, transcript, and subagent badge — every surface renders the same
- * `Title — Model` / `… · local` / house-style cloud form.
+ * executor's (which drives the surrounding conversation). Handles the picker's
+ * prefixed ids (`acp:<id>`, `lmstudio:<id>`, `openrouter:<id>`); a plain cloud
+ * id renders as-is.
  */
 export function formatAdvisorModelLabel(model: string): string {
-  return displayModelLabel(model)
+  const acp = parseAcpModelSelection(model)
+  if (acp) return acp.model ? `${acp.id} — ${acp.model} (ACP)` : `${acp.id} (ACP)`
+  if (model.startsWith('lmstudio:')) return `${model.slice('lmstudio:'.length)} (local)`
+  if (model.startsWith('openrouter:')) return model.slice('openrouter:'.length)
+  return model
 }
 
 /**
@@ -425,7 +427,6 @@ export function validateAdvisorPair(
 
 const ROLE_LABEL: Record<LLMMessage['role'], string> = {
   system: 'System',
-  developer: 'Developer',
   user: 'User',
   assistant: 'Assistant',
   tool: 'Tool results',
@@ -457,8 +458,8 @@ export function buildAdvisorTranscript(messages: LLMMessage[]): string {
       push(ROLE_LABEL.tool, lines.join('\n'))
     } else if (message.role === 'user') {
       push(ROLE_LABEL.user, userContentToText(message.content))
-    } else if (message.role === 'system' || message.role === 'developer') {
-      push(ROLE_LABEL[message.role], message.content)
+    } else if (message.role === 'system') {
+      push(ROLE_LABEL.system, message.content)
     } else if (Array.isArray(message.content)) {
       const lines = message.content.map((c) => `- ${c.name}(${safeJson(c.args)})`)
       push('Assistant (tool calls)', lines.join('\n'))

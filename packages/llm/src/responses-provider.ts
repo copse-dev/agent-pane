@@ -255,9 +255,6 @@ export function toResponsesInput(
     if (message.role === 'system') {
       return [{ role: 'system', content: message.content }]
     }
-    if (message.role === 'developer') {
-      return [{ role: 'developer', content: message.content }]
-    }
     if (message.role === 'user' && typeof message.content === 'string') {
       return [{ role: 'user', content: message.content }]
     }

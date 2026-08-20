@@ -290,7 +290,6 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // External ACP agents Copse drives as a client (model value `acp:<id>`).
   registeredAcpAgents: registeredAcpAgentsSchema,
   browserToolsEnabled: z.boolean(),
-  vncEnabled: z.boolean(),
   browserAllowedOrigins: z.array(z.string().max(2048)).max(256),
   // When on (default), http(s) links clicked in chat/PR/preview surfaces open in
   // the in-app browser pane. When off, they open in the user's default browser
@@ -395,18 +394,14 @@ export function isRendererWritableSettingKey(key: string): key is RendererWritab
 
 /**
  * Setting keys holding secret material that must never be read back through the
- * generic renderer-facing `settings:get` IPC. API keys use `apiKey.<provider>`;
- * remembered desktop usernames use `vncUsername.<target hash>` and have a
- * dedicated decrypting IPC method. Neither raw stored record belongs in the
- * generic settings API.
+ * renderer-facing `settings:get` IPC. API keys are persisted under `apiKey.<provider>`
+ * in the same store as ordinary settings; without this guard a renderer (or any
+ * compromised frame) could read the stored key record — which is base64 plaintext
+ * when the OS keyring is unavailable. The renderer only ever needs the boolean
+ * `settings:getKey` (hasApiKey), never the record itself.
  */
 export function isSecretSettingKey(key: string): boolean {
-  return (
-    key === 'apiKey' ||
-    key.startsWith('apiKey.') ||
-    key === 'vncUsername' ||
-    key.startsWith('vncUsername.')
-  )
+  return key === 'apiKey' || key.startsWith('apiKey.')
 }
 
 export function parseRendererWritableSetting(

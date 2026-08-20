@@ -369,9 +369,6 @@ export function mountFooterBranchStatus(
     api.fs.onChanged(() => {
       scheduleRefresh()
     }),
-    api.git.onWorkingTreeChanged(() => {
-      scheduleRefresh()
-    }),
     on(document, 'click', (e) => {
       if (!open) return
       if (!wrap.contains(e.target instanceof Node ? e.target : null)) setOpen(false)

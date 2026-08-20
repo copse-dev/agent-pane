@@ -1,20 +1,23 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
-import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
-import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { getInAppBrowserSession } from '../windows/browser-web-contents.ts'
 import {
   captureBrowserPageText,
   captureBrowserScreenshot,
 } from '../services/browser/browser-share.ts'
-import { workspacePreviewFileUrl } from '../services/browser/static-preview-server.ts'
+import {
+  getStaticPreviewServer,
+  staticPreviewUrl,
+} from '../services/browser/static-preview-server.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
@@ -60,10 +63,7 @@ import {
   setSemanticIndexScaleGuarded,
 } from '../services/search/index-status.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
-import {
-  ensureWorkingTreeWatched,
-  scheduleIndexRebuild,
-} from '../services/search/workspace-index-watcher.ts'
+import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
 import {
   getSetting,
   setSetting,
@@ -93,9 +93,7 @@ import { resolveBestValueChatModel } from '../services/providers/best-value-mode
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
-  backfillThreadPrRefs,
-  loadProjectThreadMetas,
-  loadThreadMessages,
+  loadProjectThreads,
   createThread,
   appendMessage,
   updateMeta,
@@ -142,7 +140,6 @@ import {
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
-import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
@@ -221,8 +218,6 @@ import {
 import {
   checkoutGitBranch,
   getBranches,
-  getCommittedChanges,
-  getCommittedFileDiff,
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
@@ -249,7 +244,7 @@ import {
   reviewRoadmapItem,
   reviewRoadmapItemDeep,
 } from '../services/roadmap-review.ts'
-import { branchHasOpenPr, getGitBranchStatus } from '../services/github/pr-context-service.ts'
+import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import {
@@ -257,16 +252,10 @@ import {
   getGhPrChecksState,
   getGhPrDetails,
   getGhPrFileDiff,
-  invalidateGithubReadCache,
   listMyOpenPrs,
   listWorkspaceOpenPrs,
   resolveGithubPrRef,
 } from '../services/github/gh-pr-service.ts'
-import {
-  notifyGitHubListWatchers,
-  setGitHubListWatch,
-  setGitHubListWatchBroadcast,
-} from '../services/github/backend/github-list-watch.ts'
 import {
   approvePr,
   enablePrAutoMerge,
@@ -387,9 +376,6 @@ you want the coding agent to follow on every turn.
 `
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
-  setGitHubListWatchBroadcast(() => {
-    broadcastToAppWindows('gh:lists_tick')
-  })
   const alertUser = createElectronUserAlertSender(win, app.dock)
   const pluginService = getPluginService()
   setPluginBrowserService(createPluginBrowserPanelService(win))
@@ -488,33 +474,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await writeFile(join(projectPath, 'README.md'), `# ${name}\n\n`, 'utf8')
     // git init -b main keeps the initial branch name stable regardless of the
     // user's global init.defaultBranch / git template config.
-    //
-    // Unsandboxed, like `runWorktreeGit`: the new project sits outside the
-    // *current* workspace's sandbox until `registerAllowedWorkspaceRoot` below
-    // moves the boundary, so a sandboxed spawn cannot write `.git/` there. The
-    // scaffolding above is main-process `fs` and never hit that wall, which is
-    // why the failure only surfaced once the exit code was checked.
-    const init = await runCommand('git', ['init', '-b', 'main'], {
-      cwd: projectPath,
-      timeout_ms: 0,
-      unsandboxed: true,
-    })
-    // `runCommand` resolves with the exit code rather than rejecting, so an
-    // unchecked call silently accepts a failed `git init`: the folder scaffolds,
-    // the project registers, and the user gets a "project" that is not a
-    // repository — with the reason discarded at the only point that had it.
-    // Everything downstream (branch chip, Changes, worktrees) then fails in ways
-    // that never mention Git.
-    if (init.code !== 0) {
-      // A folder we created ourselves is ours to remove. Leaving it behind would
-      // trap the retry: the emptiness check above rejects the same name on the
-      // second attempt. A pre-existing (empty) folder is the user's, so it stays.
-      if (projectMissing) await rm(projectPath, { recursive: true, force: true })
-      const detail = (init.stderr || init.stdout).trim()
-      throw new Error(
-        `Could not initialise a Git repository in ${projectPath}${detail ? `: ${detail}` : ''}`,
-      )
-    }
+    await runCommand('git', ['init', '-b', 'main'], { cwd: projectPath, timeout_ms: 0 })
     const root = await registerAllowedWorkspaceRoot(projectPath)
     return root
   })
@@ -1466,24 +1426,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Archived threads are hidden from every renderer surface (sidebar and
     // `@`-catalog both filter them), so folding their history into the store
     // only grew the heap. They stay on disk and in the whole-history readers.
-    // Threads written before `prRefs` existed have no cached PR links, and a
-    // metadata-only load has no transcript to scrape — so their sidebar chips
-    // would be missing. Fill them in behind the load: fire-and-forget, low
-    // concurrency, one pass per project ever (the result is recorded on each
-    // thread's metadata), pushing batches so the chips appear without a relaunch.
-    void backfillThreadPrRefs(id, (refs) => {
-      if (!win.isDestroyed()) win.webContents.send('threads:pr_refs', id, refs)
-    }).catch((err: unknown) => {
-      console.warn('[threads] PR-ref backfill failed:', err)
-    })
-    return loadProjectThreadMetas(id, { includeArchived: false })
-  })
-  // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
-  // when the user actually opens it.
-  ipcMain.handle('threads:loadMessages', (event, projectId: unknown, threadId: unknown) => {
-    assertMainFrameSender(event, win)
-    const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
-    return loadThreadMessages(id, thread)
+    return loadProjectThreads(id, { includeArchived: false })
   })
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
@@ -1985,29 +1928,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   const threadOwnerArgs = z.tuple([zProjectId, zThreadId])
 
-  async function resolveWatchedGitRoot(projectId: string, threadId: string): Promise<string> {
-    const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    // Watch-only: isolated worktrees are otherwise unwatched until an agent
-    // turn starts indexing, and large workspaces may skip the index watcher.
-    ensureWorkingTreeWatched(root)
-    return root
-  }
-
   ipcMain.handle('git:isAvailable', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    const root = await resolveWatchedGitRoot(projectId, threadId)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
     return (await isGitAvailableForTarget()) && (await isInsideGitWorkTree(root))
   })
   ipcMain.handle('git:status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitStatus(await resolveWatchedGitRoot(projectId, threadId))
+    return getGitStatus((await resolveThreadExecutionContext(projectId, threadId)).root)
   })
   ipcMain.handle('git:changeStats', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitChangeStats(await resolveWatchedGitRoot(projectId, threadId))
+    return getGitChangeStats((await resolveThreadExecutionContext(projectId, threadId)).root)
   })
   ipcMain.handle('git:fileDiff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2015,29 +1950,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       z.tuple([zProjectId, zThreadId, zPathString, z.boolean()]),
       rawArgs,
     )
-    const root = await resolveWatchedGitRoot(projectId, threadId)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
     return getGitFileDiff(filePath, isStaged, root)
-  })
-  ipcMain.handle('git:committedChanges', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    return getCommittedChanges(root, {
-      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
-    })
-  })
-  ipcMain.handle('git:committedFileDiff', async (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    return getCommittedFileDiff(filePath, root, {
-      hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
-    })
   })
   ipcMain.handle('git:workingFileDiff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
-    const root = await resolveWatchedGitRoot(projectId, threadId)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
     return getGitWorkingFileDiff(filePath, root)
   })
   ipcMain.handle('git:branchStatus', async (event, ...rawArgs) => {
@@ -2056,13 +1975,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       ]),
       rawArgs,
     )
-    const root = await resolveWatchedGitRoot(projectId, threadId)
-    return getGitBranchStatus(projectId, branch, root)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
+    return getGitBranchStatus(branch, root)
   })
   ipcMain.handle('git:promptState', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getGitPromptState(await resolveWatchedGitRoot(projectId, threadId))
+    return getGitPromptState((await resolveThreadExecutionContext(projectId, threadId)).root)
   })
   ipcMain.handle('git:checkoutBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2070,18 +1989,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       z.tuple([zProjectId, zThreadId, z.string().min(1).max(256)]),
       rawArgs,
     )
-    const root = await resolveWatchedGitRoot(projectId, threadId)
+    const { root } = await resolveThreadExecutionContext(projectId, threadId)
     await checkoutGitBranch(targetBranch, root)
   })
   ipcMain.handle('git:listBranches', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getBranches(await resolveWatchedGitRoot(projectId, threadId))
+    return getBranches((await resolveThreadExecutionContext(projectId, threadId)).root)
   })
   ipcMain.handle('git:getDefaultBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
-    return getDefaultBranch(await resolveWatchedGitRoot(projectId, threadId))
+    return getDefaultBranch((await resolveThreadExecutionContext(projectId, threadId)).root)
   })
   ipcMain.handle('git:sessionBackup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
@@ -2100,25 +2019,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   )
 
   ipcMain.handle('gh:status', () => getGhCliStatus())
-  ipcMain.handle('gh:invalidateReadCache', () => {
-    invalidateGithubReadCache()
-    // Other windows re-read through the now-empty TTL cache instead of waiting
-    // up to 30s for the next shared tick.
-    notifyGitHubListWatchers()
-  })
-  const listWatchTeardown = new WeakSet<WebContents>()
-  ipcMain.handle('gh:setListWatch', (event, ...rawArgs) => {
-    assertMainFrameSender(event, win)
-    const [watching, includeMyPrs] = parseIpcArgs(z.tuple([z.boolean(), z.boolean()]), rawArgs)
-    if (!listWatchTeardown.has(event.sender)) {
-      listWatchTeardown.add(event.sender)
-      const watcherId = event.sender.id
-      event.sender.once('destroyed', () => {
-        setGitHubListWatch(watcherId, false, false)
-      })
-    }
-    setGitHubListWatch(event.sender.id, watching, includeMyPrs)
-  })
   ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
   ipcMain.handle('gh:listWorkspaceOpenPrs', () => listWorkspaceOpenPrs())
   ipcMain.handle('gh:prChecks', (event, owner: unknown, repo: unknown, number: unknown) => {
@@ -2245,7 +2145,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
     }
     const abs = await resolvePathWithinRoot(relPath, root)
-    return shell.openExternal(await workspacePreviewFileUrl(root, abs))
+    return shell.openExternal(pathToFileURL(abs).href)
   })
   ipcMain.handle('browser:workspaceFileUrl', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
@@ -2255,7 +2155,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw new IpcValidationError('Remote workspace files cannot be opened in a local browser')
     }
     const abs = await resolvePathWithinRoot(relPath, root)
-    return workspacePreviewFileUrl(root, abs)
+    const preview = await getStaticPreviewServer(root)
+    const previewPath = relative(preview.root, abs).split(sep).map(encodeURIComponent).join('/')
+    return staticPreviewUrl(preview.url, previewPath)
   })
 
   ipcMain.handle('editors:list', (event) => {
@@ -2275,7 +2177,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
       [mode],
     )
     createPanePopoutWindow(parsed, seed)
@@ -2284,7 +2186,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('panes:takePopoutSeed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
-      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
       [mode],
     )
     return takePopoutSeed(parsed)
@@ -2423,16 +2325,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       createMainWindow()
     })
-    // Local macOS WebDriver sessions cannot always relaunch Electron after a
-    // fixture rewrite. Let focused specs drive the same workspace-open event as
-    // the native folder picker while keeping this seam entirely e2e-only.
-    ipcMain.handle('test:openWorkspace', async (event, rawRoot: unknown) => {
-      assertMainFrameSender(event, win)
-      const parsedRoot = parseIpcArgs(zPathString, [rawRoot])
-      const root = await registerAllowedWorkspaceRoot(parsedRoot)
-      win.webContents.send('workspace:opened', root)
-      return root
-    })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
@@ -2478,23 +2370,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [raw],
       )
       setSeededPortRows({ rows, tool: 'seeded' })
-    })
-    ipcMain.handle('test:setVncNearbyServers', (event, raw: unknown) => {
-      assertMainFrameSender(event, win)
-      const servers = parseIpcArgs(
-        z
-          .array(
-            z.object({
-              name: z.string().min(1).max(256),
-              host: z.string().min(1).max(253),
-              port: z.number().int().min(1).max(65535),
-              addresses: z.array(z.string().min(1).max(64)).max(16),
-            }),
-          )
-          .max(64),
-        [raw],
-      )
-      setSeededVncNearbyServersForTests(servers)
     })
     ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
       assertMainFrameSender(event, win)

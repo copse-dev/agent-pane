@@ -14,7 +14,6 @@
 // electron-store persistence and IPC.
 import type { PluginRegistry } from './plugin-registry.ts'
 import type {
-  PluginFollowUpDecl,
   PluginManifest,
   PluginSettingField,
   PluginUiContribution,
@@ -51,15 +50,6 @@ export interface PluginPromptBlockOut {
   trust: 'trusted' | 'untrusted'
 }
 
-/** One follow-up bubble enumerated for the Settings plugin list. */
-export interface PluginFollowUpOut {
-  id: string
-  label: string
-  /** Resolved rather than optional — Settings shows what the click will do. */
-  action: NonNullable<PluginFollowUpDecl['action']>
-  when: NonNullable<PluginFollowUpDecl['when']>
-}
-
 /** One runtime capability flag enumerated for the Settings plugin list. */
 export interface PluginCapabilityOut {
   name: string
@@ -92,8 +82,6 @@ export interface PluginContributionsOut {
   commandHooks: readonly { event: string; command: string }[]
   promptBlocks: readonly PluginPromptBlockOut[]
   ui: readonly PluginUiContributionOut[]
-  /** Follow-up bubbles the plugin suggests above the composer while enabled. */
-  followUps: readonly PluginFollowUpOut[]
   /** Named runtime capability flags the plugin owns (pure behaviour, no tool). */
   capabilities: readonly PluginCapabilityOut[]
   /** Permission / sandbox relaxations the plugin may request while enabled. */
@@ -193,12 +181,6 @@ export function pluginToSummary(
     if (c.panel?.kind !== undefined) entry.panelKind = c.panel.kind
     return entry
   })
-  const followUps = contributions.followUps.map((f) => ({
-    id: f.id,
-    label: f.label,
-    action: f.action ?? ('prompt' as const),
-    when: f.when ?? ('always' as const),
-  }))
   const commandHooks = (manifest.hooks ?? []).map((h) => ({ event: h.event, command: h.command }))
   const promptBlocks = contributions.promptBlocks.map((b) => ({ id: b.id, trust: b.trust }))
   const capabilities = contributions.capabilities.map((c) => {
@@ -221,7 +203,6 @@ export function pluginToSummary(
     commandHooks,
     promptBlocks,
     ui,
-    followUps,
     capabilities,
     permissions,
   }

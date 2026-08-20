@@ -19,7 +19,6 @@ import {
   setThreadComparison,
   addHookCard,
   getThreadById,
-  markThreadUnread,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
 import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
@@ -37,7 +36,6 @@ import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
 import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread } from './thread-naming.ts'
-import { takeQuietRun } from './quiet-runs.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
@@ -449,19 +447,12 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         drainMessageQueue(store, api, threadId)
         // A queued user or machine continuation immediately flips the thread
         // back to running. Only alert when the queue drain leaves it genuinely
-        // finished, rather than chiming between consecutive turns — and never
-        // for a run the user launched from the foreground and is watching.
+        // finished, rather than chiming between consecutive turns.
         const finishedThread = getThreadById(store, threadId)
-        const quiet = takeQuietRun(threadId)
         if (finishedThread?.status === 'idle') {
-          markThreadUnread(store, threadId)
-          if (!quiet) {
-            void api.alerts
-              .threadFinished(threadId, finishedThread.title)
-              .catch((error: unknown) => {
-                console.error('[alerts] failed to signal thread completion:', error)
-              })
-          }
+          void api.alerts.threadFinished(threadId, finishedThread.title).catch((error: unknown) => {
+            console.error('[alerts] failed to signal thread completion:', error)
+          })
         }
         break
       }

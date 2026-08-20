@@ -13,8 +13,6 @@ export interface SshTransport {
   connect(): Promise<void>
   disconnect(): Promise<void>
   isConnected(): boolean
-  openForward(remotePort: number): Promise<{ localPort: number }>
-  closeForward(localPort: number): Promise<void>
   execArgv(argv: string[], options?: SshExecOptions): Promise<SshExecResult>
   execShell(command: string, options?: SshExecOptions): Promise<SshExecResult>
 }

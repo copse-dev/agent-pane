@@ -36,7 +36,6 @@ export function reconcileChangesSuggestion(
     id: built.id,
     label: built.label,
     prompt: built.prompt,
-    action: 'open-changes',
     variant: 'changes',
     additions: built.additions,
     deletions: built.deletions,

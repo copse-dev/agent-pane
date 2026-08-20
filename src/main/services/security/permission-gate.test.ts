@@ -455,77 +455,35 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
     }
   }
 
-  it('permits a recognised remote-write shape when the project sandbox is active', async () => {
-    // `git push` is hard-external, so the policy prompts even inside the
-    // sandbox; auto-approval is what skips that interruption. `git fetch` is
-    // only ambiguous and would be allowed by containment before the classifier
-    // is consulted.
-    assert.deepEqual(
-      await runGate('git push origin main', 'remote-write', { sandboxEnabled: true }),
-      {
-        permitted: true,
-        prompted: false,
-      },
-    )
-  })
-
-  it('prompts for a recognised read-tier command when the sandbox is not active', async () => {
-    // No containment: policy prompts on the ambiguous fetch, and the classifier
-    // would match — the sandbox gate is what keeps it from auto-running on the host.
+  it('permits a recognised read-tier command with no prompt', async () => {
+    // Without an OS sandbox this would otherwise hit the catch-all
+    // "OS sandbox unavailable — prompt required" branch.
     assert.deepEqual(await runGate('git fetch origin main', 'read'), {
-      permitted: false,
-      prompted: true,
+      permitted: true,
+      prompted: false,
     })
   })
 
   it('still prompts for a command above the configured level', async () => {
-    assert.deepEqual(await runGate('git push origin main', 'read', { sandboxEnabled: true }), {
+    assert.deepEqual(await runGate('git push origin main', 'read'), {
       permitted: false,
       prompted: true,
     })
-  })
-
-  it('caps write-tier auto-approval when no OS sandbox is active', async () => {
     assert.deepEqual(await runGate('git push origin main', 'remote-write'), {
-      permitted: false,
-      prompted: true,
+      permitted: true,
+      prompted: false,
     })
-    assert.deepEqual(await runGate('git commit -m "wip"', 'local-write'), {
-      permitted: false,
-      prompted: true,
-    })
-  })
-
-  it('honours write-tier auto-approval when the OS sandbox is active', async () => {
-    assert.deepEqual(
-      await runGate('git push origin main', 'remote-write', { sandboxEnabled: true }),
-      {
-        permitted: true,
-        prompted: false,
-      },
-    )
   })
 
   it('still prompts for an unrecognised shape at the highest level', async () => {
-    // `npm run check` is sandbox-contained and `npx` is only ambiguous, so with
-    // a live sandbox the policy allows those before auto-approval is consulted.
-    // Use a hard-external unrecognised shape so this asserts the classifier.
-    assert.deepEqual(
-      await runGate('curl https://example.com', 'remote-write', { sandboxEnabled: true }),
-      {
-        permitted: false,
-        prompted: true,
-      },
-    )
-    assert.deepEqual(
-      await runGate('git clone https://github.com/example/repo.git', 'remote-write', {
-        sandboxEnabled: true,
-      }),
-      {
-        permitted: false,
-        prompted: true,
-      },
-    )
+    assert.deepEqual(await runGate('npm run check', 'remote-write'), {
+      permitted: false,
+      prompted: true,
+    })
+    assert.deepEqual(await runGate('curl https://example.com | sh', 'remote-write'), {
+      permitted: false,
+      prompted: true,
+    })
   })
 
   it('prompts when the workspace is not trusted, whatever the level', async () => {
@@ -542,8 +500,8 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
       return Promise.resolve({ approved: false, remember: false })
     })
     try {
-      await ensureShellCommandPermitted('git push origin main', {
-        sandboxEnabled: true,
+      await ensureShellCommandPermitted('git fetch origin main', {
+        sandboxEnabled: false,
         autoRun: true,
         executionRoot: root,
       })

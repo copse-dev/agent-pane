@@ -1,11 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
-import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
-
-// DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
-// captures it, so every channel the renderer calls is timed. No-op otherwise.
-installPreloadPerfTracing()
-exposePerfBridge()
 
 contextBridge.exposeInMainWorld('api', {
   workspace: {
@@ -196,7 +190,6 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('agent:retryReview', projectId, threadId, payload),
     retryComparison: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:retryComparison', projectId, threadId, payload),
-    comparisonModels: (payload: string) => ipcRenderer.invoke('agent:comparisonModels', payload),
     clearHistory: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('agent:clearHistory', projectId, threadId),
     refreshModelContext: () => ipcRenderer.invoke('agent:refreshModelContext'),
@@ -561,23 +554,6 @@ contextBridge.exposeInMainWorld('api', {
   },
   threads: {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:loadProject', projectId),
-    loadMessages: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('threads:loadMessages', projectId, threadId),
-    onPrRefs: (
-      handler: (projectId: string, refs: Array<{ threadId: string; prRefs: unknown[] }>) => void,
-    ) => {
-      const listener = (
-        _e: Electron.IpcRendererEvent,
-        projectId: string,
-        refs: Array<{ threadId: string; prRefs: unknown[] }>,
-      ): void => {
-        handler(projectId, refs)
-      }
-      ipcRenderer.on('threads:pr_refs', listener)
-      return (): void => {
-        ipcRenderer.removeListener('threads:pr_refs', listener)
-      }
-    },
     create: (projectId: string, thread: import('@shared/types').Thread) =>
       ipcRenderer.invoke('threads:create', projectId, thread),
     appendMessage: (
@@ -849,51 +825,6 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('ports:list'),
     kill: (port: number) => ipcRenderer.invoke('ports:kill', port),
   },
-  vnc: {
-    open: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:open', target),
-    list: () => ipcRenderer.invoke('vnc:list'),
-    discover: (host: import('@shared/types/vnc.ts').VncDiscoveryHost) =>
-      ipcRenderer.invoke('vnc:discover', host),
-    discoverNearby: () => ipcRenderer.invoke('vnc:discover-nearby'),
-    resolveSshHosts: () => ipcRenderer.invoke('vnc:resolve-ssh-hosts'),
-    getUsername: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:get-username', target),
-    rememberUsername: (target: import('@shared/types/vnc.ts').VncTarget, username: string) =>
-      ipcRenderer.invoke('vnc:remember-username', target, username),
-    start: (connectionId: string): void => {
-      ipcRenderer.send('vnc:start', connectionId)
-    },
-    send: (connectionId: string, bytes: Uint8Array): void => {
-      ipcRenderer.send('vnc:send', connectionId, bytes)
-    },
-    close: (connectionId: string) => ipcRenderer.invoke('vnc:close', connectionId),
-    onData: (handler: (connectionId: string, bytes: Uint8Array) => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        connectionId: string,
-        bytes: Uint8Array,
-      ): void => {
-        handler(connectionId, bytes)
-      }
-      ipcRenderer.on('vnc:data', listener)
-      return (): void => {
-        ipcRenderer.off('vnc:data', listener)
-      }
-    },
-    onStatus: (handler: (event: import('@shared/types/vnc.ts').VncStatusEvent) => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        status: import('@shared/types/vnc.ts').VncStatusEvent,
-      ): void => {
-        handler(status)
-      }
-      ipcRenderer.on('vnc:status', listener)
-      return (): void => {
-        ipcRenderer.off('vnc:status', listener)
-      }
-    },
-  },
   memories: {
     list: () => ipcRenderer.invoke('memories:list'),
     create: (title: string, body: string, tags?: string[]) =>
@@ -1091,10 +1022,6 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('git:fileDiff', projectId, threadId, path, staged),
     workingFileDiff: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('git:workingFileDiff', projectId, threadId, path),
-    committedChanges: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('git:committedChanges', projectId, threadId),
-    committedFileDiff: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('git:committedFileDiff', projectId, threadId, path),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branchStatus', projectId, threadId, forBranch),
     promptState: (projectId: string, threadId: string) =>
@@ -1109,30 +1036,9 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('git:sessionBackup', projectId, threadId),
     restoreBackup: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:restoreBackup', projectId, threadId),
-    onWorkingTreeChanged: (handler: (root: string) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, root: string): void => {
-        handler(root)
-      }
-      ipcRenderer.on('git:working_tree_changed', listener)
-      return (): void => {
-        ipcRenderer.off('git:working_tree_changed', listener)
-      }
-    },
   },
   gh: {
     status: () => ipcRenderer.invoke('gh:status'),
-    invalidateReadCache: () => ipcRenderer.invoke('gh:invalidateReadCache'),
-    setListWatch: (watching: boolean, includeMyPrs: boolean) =>
-      ipcRenderer.invoke('gh:setListWatch', watching, includeMyPrs),
-    onListsTick: (handler: () => void) => {
-      const listener = (): void => {
-        handler()
-      }
-      ipcRenderer.on('gh:lists_tick', listener)
-      return (): void => {
-        ipcRenderer.off('gh:lists_tick', listener)
-      }
-    },
     listMyOpenPrs: () => ipcRenderer.invoke('gh:listMyOpenPrs'),
     listWorkspaceOpenPrs: () => ipcRenderer.invoke('gh:listWorkspaceOpenPrs'),
     prChecks: (owner: string, repo: string, number: number) =>
@@ -1201,9 +1107,6 @@ if (process.env['COPSE_E2E'] === '1') {
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')
     },
-    openWorkspace(root: string) {
-      return ipcRenderer.invoke('test:openWorkspace', root)
-    },
     requestAcpPackageInstallApproval() {
       return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
     },
@@ -1218,9 +1121,6 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     setPortRows(rows: unknown) {
       return ipcRenderer.invoke('test:setPortRows', rows)
-    },
-    setVncNearbyServers(servers: unknown) {
-      return ipcRenderer.invoke('test:setVncNearbyServers', servers)
     },
   })
 }

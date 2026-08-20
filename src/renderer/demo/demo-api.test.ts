@@ -164,7 +164,6 @@ describe('createDemoApi pane expansion', () => {
     assert.equal(document.documentElement.dataset['demoExpandedPane'], 'browser')
     assert.equal(button.parentElement, toolbar)
     assert.equal(button.getAttribute('aria-label'), 'Restore browser')
-    assert.ok(button.querySelector('svg[data-icon="minimize"]'))
 
     await api.panes.popout('browser')
 
@@ -172,7 +171,6 @@ describe('createDemoApi pane expansion', () => {
     assert.equal(button.parentElement, header)
     assert.equal(header.firstElementChild, button)
     assert.equal(button.getAttribute('aria-label'), 'Expand browser')
-    assert.ok(button.querySelector('svg[data-icon="maximize"]'))
     document.body.replaceChildren()
   })
 })

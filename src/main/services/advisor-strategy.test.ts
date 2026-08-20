@@ -60,23 +60,17 @@ describe('renderAdvisorResult', () => {
 })
 
 describe('formatAdvisorModelLabel', () => {
-  it('renders picker-prefixed ids into the unified shared-label dialect', () => {
-    // Cloud ids are house-styled the same way every other surface spells them.
-    assert.equal(formatAdvisorModelLabel('claude-opus-4-8'), 'Claude Opus 4.8')
-    // LM Studio keeps the `· local` suffix used by the transcript and badge.
+  it('renders picker-prefixed ids into friendly labels', () => {
+    assert.equal(formatAdvisorModelLabel('claude-opus-4-8'), 'claude-opus-4-8')
     assert.equal(
       formatAdvisorModelLabel('lmstudio:qwen/qwen2.5-coder-32b'),
-      'qwen/qwen2.5-coder-32b · local',
+      'qwen/qwen2.5-coder-32b (local)',
     )
-    // OpenRouter keeps its upstream `vendor/model` id, the same identity
-    // behaviour every other surface shows for an uncurated id.
     assert.equal(formatAdvisorModelLabel('openrouter:zai-org/glm-5.2'), 'zai-org/glm-5.2')
-    // ACP joins `Title — Model` (title alone when no model is chosen); the old
-    // `(ACP)` suffix is gone — the `acp:` route is implied by the agent title.
-    assert.equal(formatAdvisorModelLabel('acp:gemini-cli'), 'gemini-cli')
+    assert.equal(formatAdvisorModelLabel('acp:gemini-cli'), 'gemini-cli (ACP)')
     assert.equal(
       formatAdvisorModelLabel('acp:gemini-cli#gemini-2.5-pro'),
-      'gemini-cli — Gemini 2.5 Pro',
+      'gemini-cli — gemini-2.5-pro (ACP)',
     )
   })
 })
@@ -85,7 +79,7 @@ describe('attributeAdvice', () => {
   it('prepends a Markdown attribution line naming the advisor model', () => {
     assert.equal(
       attributeAdvice('Do the smallest slice first.', 'claude-opus-4-8'),
-      '**Advisor — Claude Opus 4.8**\n\nDo the smallest slice first.',
+      '**Advisor — claude-opus-4-8**\n\nDo the smallest slice first.',
     )
   })
 })

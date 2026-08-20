@@ -1,25 +1,8 @@
 import { getGithubRepoSlug } from '../git-service.ts'
 import { isFailingConclusion } from '../gh-service.ts'
 import { detectLanguage } from '../../language.ts'
+import { deriveOverallState, rollupToCiChecks } from '../github-ci-service.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
-import {
-  coalesceKeyed,
-  githubCachedGet,
-  githubGraphqlInflight,
-  githubHttpErrorMessage,
-  isGitCommitSha,
-  noteGitHubRateLimitHeaders,
-} from './github-http-cache.ts'
-import {
-  checksFromGraphqlRollup,
-  graphqlPullNodesToSummaries,
-  MY_OPEN_PRS_QUERY,
-  PR_CHECKS_QUERY,
-  pullRequestRollup,
-  viewerPullNodes,
-  WORKSPACE_OPEN_PRS_QUERY,
-  workspacePullNodes,
-} from './github-graphql-prs.ts'
 import type {
   GhCliStatus,
   GhIssueSummary,
@@ -73,40 +56,32 @@ async function authHeaders(): Promise<Record<string, string> | null> {
   }
 }
 
+function extractErrorMessage(status: number, json: unknown): string {
+  if (isRecord(json)) {
+    const message = json['message']
+    if (typeof message === 'string' && message) return message
+  }
+  return `GitHub API request failed (HTTP ${String(status)}).`
+}
+
 async function rest(
   path: string,
-  init: { method?: string; body?: unknown; immutable?: boolean } = {},
+  init: { method?: string; body?: unknown } = {},
 ): Promise<RestResponse> {
   const headers = await authHeaders()
   if (!headers) return { ok: false, status: 401, json: null, errorMessage: NO_TOKEN_MESSAGE }
   if (init.body !== undefined) headers['Content-Type'] = 'application/json'
   const url = path.startsWith('http') ? path : `${apiRoots().rest}${path}`
-  const method = init.method ?? 'GET'
-  if (method === 'GET' && init.body === undefined) {
-    const result = await githubCachedGet(
-      url,
-      headers,
-      init.immutable === true ? { immutable: true } : {},
-    )
-    const ok = result.status >= 200 && result.status < 300
-    return {
-      ok,
-      status: result.status,
-      json: result.json,
-      errorMessage: ok ? null : githubHttpErrorMessage(result.status, result.json),
-    }
-  }
-  const requestInit: RequestInit = { method, headers }
+  const requestInit: RequestInit = { method: init.method ?? 'GET', headers }
   if (init.body !== undefined) requestInit.body = JSON.stringify(init.body)
   const response = await fetch(url, requestInit)
-  noteGitHubRateLimitHeaders(response.headers)
   const text = await response.text()
   const json: unknown = text ? safeJsonParse(text) : null
   return {
     ok: response.ok,
     status: response.status,
     json,
-    errorMessage: response.ok ? null : githubHttpErrorMessage(response.status, json),
+    errorMessage: response.ok ? null : extractErrorMessage(response.status, json),
   }
 }
 
@@ -119,33 +94,28 @@ async function graphql(query: string, variables: Record<string, unknown>): Promi
   const headers = await authHeaders()
   if (!headers) return { data: null, errorMessage: NO_TOKEN_MESSAGE }
   headers['Content-Type'] = 'application/json'
-  const body = JSON.stringify({ query, variables })
-  const url = apiRoots().graphql
-  return coalesceKeyed(githubGraphqlInflight, `POST:${url}:${body}`, async () => {
-    const response = await fetch(url, { method: 'POST', headers, body })
-    noteGitHubRateLimitHeaders(response.headers)
-    const json = safeJsonParse(await response.text())
-    const errors = isRecord(json) ? recordArrayOrEmpty(json['errors']) : []
-    if (errors.length > 0) {
-      return {
-        data: null,
-        errorMessage:
-          errors
-            .map((error) => (typeof error['message'] === 'string' ? error['message'] : ''))
-            .join('; ') || 'GraphQL error',
-      }
-    }
-    if (!response.ok) {
-      return {
-        data: null,
-        errorMessage: `GraphQL request failed (HTTP ${String(response.status)}).`,
-      }
-    }
-    return {
-      data: isRecord(json) ? (json['data'] ?? null) : null,
-      errorMessage: null,
-    }
+  const response = await fetch(apiRoots().graphql, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ query, variables }),
   })
+  const json = safeJsonParse(await response.text())
+  const errors = isRecord(json) ? recordArrayOrEmpty(json['errors']) : []
+  if (errors.length > 0) {
+    return {
+      data: null,
+      errorMessage:
+        errors
+          .map((error) => (typeof error['message'] === 'string' ? error['message'] : ''))
+          .join('; ') || 'GraphQL error',
+    }
+  }
+  if (!response.ok)
+    return { data: null, errorMessage: `GraphQL request failed (HTTP ${String(response.status)}).` }
+  return {
+    data: isRecord(json) ? (json['data'] ?? null) : null,
+    errorMessage: null,
+  }
 }
 
 // --- REST payload shapes (only the fields we read). ---
@@ -255,6 +225,23 @@ function mapFileStatus(raw: string | undefined): GhPrChangedFile['status'] {
   }
 }
 
+function pullToSummary(ref: PrRef, pull: RestPull): GhPrSummary | null {
+  if (!pull.html_url) return null
+  const summary: GhPrSummary = {
+    owner: ref.owner,
+    repo: ref.repo,
+    number: ref.number,
+    title: nonEmptyStringOr(pull.title?.trim(), `PR #${String(ref.number)}`),
+    url: pull.html_url,
+    state: restPullState(pull),
+  }
+  if (pull.head?.ref) summary.headRefName = pull.head.ref
+  if (pull.user?.login) summary.authorLogin = pull.user.login
+  if (pull.created_at) summary.createdAt = pull.created_at
+  if (pull.updated_at) summary.updatedAt = pull.updated_at
+  return summary
+}
+
 async function getPull(ref: PrRef): Promise<RestResponse> {
   return rest(`/repos/${ref.owner}/${ref.repo}/pulls/${String(ref.number)}`)
 }
@@ -298,7 +285,6 @@ async function fileAtRef(ref: PrRef, path: string, gitRef: string): Promise<stri
     .join('/')
   const result = await rest(
     `/repos/${ref.owner}/${ref.repo}/contents/${encoded}?ref=${encodeURIComponent(gitRef)}`,
-    { immutable: isGitCommitSha(gitRef) },
   )
   if (!result.ok) return ''
   if (!isRecord(result.json)) return ''
@@ -348,13 +334,25 @@ export const githubApiBackend: GitHubBackend = {
   },
 
   async listMyOpenPrs(limit: number): Promise<GhPrSummary[] | null> {
-    // GraphQL `viewer.pullRequests` spends the GraphQL point budget, not the
-    // Search API's 30 req/min cap, and includes CI rollup in the same query.
-    const result = await graphql(MY_OPEN_PRS_QUERY, { limit })
-    if (result.errorMessage === NO_TOKEN_MESSAGE) return null
-    if (result.errorMessage?.includes('HTTP 401')) return null
-    if (result.errorMessage) throw new Error(result.errorMessage)
-    return graphqlPullNodesToSummaries(viewerPullNodes(result.data), null)
+    const status = await this.getStatus()
+    if (!status.authenticated || !status.username) return null
+    const query = encodeURIComponent(`is:open is:pr author:${status.username}`)
+    const result = await rest(`/search/issues?q=${query}&per_page=${String(limit)}`)
+    if (!result.ok) throw new Error(result.errorMessage ?? 'Search failed.')
+    const items = isRecord(result.json) ? recordArrayOrEmpty(result.json['items']) : []
+    return items
+      .map((item) => {
+        const url = typeof item['html_url'] === 'string' ? item['html_url'] : null
+        const number = typeof item['number'] === 'number' ? item['number'] : null
+        const repositoryUrl =
+          typeof item['repository_url'] === 'string' ? item['repository_url'] : null
+        if (!url || number == null || !repositoryUrl) return null
+        const [repo, owner] = repositoryUrl.split('/').reverse()
+        if (!owner || !repo) return null
+        const pull = parseRestPull({ ...item, html_url: url })
+        return pullToSummary({ owner, repo, number }, pull)
+      })
+      .filter((entry): entry is GhPrSummary => entry != null)
   },
 
   async listWorkspaceOpenPrs(limit: number): Promise<GhPrSummary[]> {
@@ -362,9 +360,16 @@ export const githubApiBackend: GitHubBackend = {
     if (!slug) return []
     const [owner, repo] = slug.split('/')
     if (!owner || !repo) return []
-    const result = await graphql(WORKSPACE_OPEN_PRS_QUERY, { owner, repo, limit })
-    if (result.errorMessage) throw new Error(result.errorMessage)
-    return graphqlPullNodesToSummaries(workspacePullNodes(result.data), { owner, repo })
+    const result = await rest(`/repos/${owner}/${repo}/pulls?state=open&per_page=${String(limit)}`)
+    if (!result.ok) throw new Error(result.errorMessage ?? 'Could not list pull requests.')
+    const pulls = recordArrayOrEmpty(result.json).map(parseRestPull)
+    return pulls
+      .map((pull) =>
+        typeof pull.number === 'number'
+          ? pullToSummary({ owner, repo, number: pull.number }, pull)
+          : null,
+      )
+      .filter((entry): entry is GhPrSummary => entry != null)
   },
 
   async listWorkspaceOpenIssues(page: number, pageSize: number) {
@@ -521,15 +526,25 @@ export const githubApiBackend: GitHubBackend = {
   async getPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
     // Contract: this read never throws — a missing token or network error
     // degrades to 'no_checks', matching the CLI backend and the old service.
-    // One GraphQL query replaces REST pull + check-runs (and matches `gh pr view`).
     try {
-      const result = await graphql(PR_CHECKS_QUERY, {
-        owner: ref.owner,
-        repo: ref.repo,
-        number: ref.number,
+      const pull = await getPull(ref)
+      if (!pull.ok) return 'no_checks'
+      const headSha = parseRestPull(pull.json).head?.sha
+      if (!headSha) return 'no_checks'
+      const runs = await rest(
+        `/repos/${ref.owner}/${ref.repo}/commits/${headSha}/check-runs?per_page=100`,
+      )
+      if (!runs.ok) return 'no_checks'
+      const checkRuns = isRecord(runs.json) ? recordArrayOrEmpty(runs.json['check_runs']) : []
+      const rollup = checkRuns.map((run) => {
+        const item: { name?: string; status?: string; conclusion?: string } = {
+          status: (optionalString(run['status']) ?? '').toUpperCase(),
+          conclusion: (optionalString(run['conclusion']) ?? '').toUpperCase(),
+        }
+        if (typeof run['name'] === 'string') item.name = run['name']
+        return item
       })
-      if (result.errorMessage) return 'no_checks'
-      return checksFromGraphqlRollup(pullRequestRollup(result.data))
+      return deriveOverallState(rollupToCiChecks(rollup))
     } catch {
       return 'no_checks'
     }

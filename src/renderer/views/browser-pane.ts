@@ -2,12 +2,10 @@ import { el } from '../dom/helpers.ts'
 import {
   arrowLeftIcon,
   arrowRightIcon,
-  closeIcon,
   externalLinkIcon,
   fileTextIcon,
   imageIcon,
   moreHorizontalIcon,
-  plusIcon,
   refreshIcon,
   searchIcon,
 } from '../dom/icons.ts'
@@ -391,7 +389,7 @@ export function mountBrowserPane(
       'aria-label': 'New browser tab',
       'data-tooltip': 'New browser tab',
     },
-    plusIcon('ui-icon ui-icon-sm'),
+    '+',
   )
   if (api) listHeader.append(panePopoutButton(store, api, 'browser', 'browser'))
   listHeader.append(paneMaximizeButton(store, 'browser'), newBtn)
@@ -685,7 +683,7 @@ export function mountBrowserPane(
         'aria-label': 'Close tab',
         'data-tooltip': 'Close tab',
       },
-      closeIcon('ui-icon ui-icon-sm'),
+      '×',
     )
     const tabBtn = el(
       'button',

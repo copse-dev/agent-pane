@@ -1,6 +1,5 @@
 import { renderTextBlock, textBlockLabel } from '@copse/agent/build-text-with-attachments.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
-import { closeIcon } from '../dom/icons.ts'
 
 /**
  * The composer's rich input: a `contenteditable` that renders pasted text
@@ -120,7 +119,7 @@ export function mountComposerEditor(): ComposerEditor {
     const remove = document.createElement('button')
     remove.type = 'button'
     remove.className = 'inline-paste-chip-remove'
-    remove.append(closeIcon('ui-icon ui-icon-sm'))
+    remove.textContent = '✕'
     remove.setAttribute('aria-label', `Remove pasted text: ${block.label}`)
     remove.addEventListener('click', (e) => {
       e.preventDefault()

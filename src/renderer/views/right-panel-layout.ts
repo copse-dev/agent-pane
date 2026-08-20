@@ -18,7 +18,6 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const isMemories = mode === 'memories'
     const isRoadmap = mode === 'roadmap'
     const isBrowser = mode === 'browser'
-    const isVnc = mode === 'vnc'
 
     const treeHost = document.getElementById('file-tree-host')
     const terminalsList = document.getElementById('terminals-list-host')
@@ -27,7 +26,6 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const memoriesHost = document.getElementById('memories-host')
     const roadmapHost = document.getElementById('roadmap-host')
     const browserTabsHost = document.getElementById('browser-tabs-host')
-    const vncControlsHost = document.getElementById('vnc-controls-host')
     const treeResizer = document.getElementById('resizer-tree')
     const fileViewer = document.getElementById('file-viewer')
     const terminalsViewer = document.getElementById('terminals-viewer-host')
@@ -36,7 +34,6 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     const memoriesViewer = document.getElementById('memories-viewer-host')
     const roadmapViewer = document.getElementById('roadmap-viewer-host')
     const browserViewer = document.getElementById('browser-viewer-host')
-    const vncViewer = document.getElementById('vnc-viewer-host')
 
     if (treeHost) treeHost.hidden = !isExplorer
     if (terminalsList) terminalsList.hidden = !isTerminal
@@ -45,7 +42,6 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     if (memoriesHost) memoriesHost.hidden = !isMemories
     if (roadmapHost) roadmapHost.hidden = !isRoadmap
     if (browserTabsHost) browserTabsHost.hidden = !isBrowser
-    if (vncControlsHost) vncControlsHost.hidden = !isVnc
     if (fileViewer) fileViewer.hidden = !isExplorer
     if (terminalsViewer) terminalsViewer.hidden = !isTerminal
     if (gitDiffViewer) gitDiffViewer.hidden = !isChanges
@@ -53,7 +49,6 @@ export function mountRightPanelLayout(store: AppStore): () => void {
     if (memoriesViewer) memoriesViewer.hidden = !isMemories
     if (roadmapViewer) roadmapViewer.hidden = !isRoadmap
     if (browserViewer) browserViewer.hidden = !isBrowser
-    if (vncViewer) vncViewer.hidden = !isVnc
     if (treeResizer) treeResizer.hidden = !store.getState().filesPaneOpen
   }
 

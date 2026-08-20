@@ -9,7 +9,6 @@
   // attribute comes off.
   var activate = host.querySelector('.hero-demo-activate:not([hidden])')
   var FRAME_HEIGHT = 800
-  var mobile = window.matchMedia('(max-width: 760px)')
 
   function setInteractive(interactive) {
     if (!frame || !activate) return
@@ -48,23 +47,8 @@
     host.style.setProperty('--hero-demo-top', String(top) + 'px')
   }
 
-  function syncAvailability() {
-    if (!frame) return
-
-    if (mobile.matches) {
-      setInteractive(false)
-      frame.removeAttribute('src')
-      return
-    }
-
-    var source = frame.getAttribute('data-src')
-    if (source && !frame.hasAttribute('src')) frame.setAttribute('src', source)
-    fit()
-  }
-
-  syncAvailability()
+  fit()
   window.addEventListener('resize', fit)
-  mobile.addEventListener('change', syncAvailability)
 
   if (frame && activate) {
     activate.addEventListener('click', function activateDemo() {

@@ -2,7 +2,6 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { el } from '../dom/helpers.ts'
-import { closeIcon, plusIcon } from '../dom/icons.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
@@ -92,7 +91,7 @@ export function mountTerminalsPane(
       'aria-label': 'New terminal',
       'data-tooltip': 'New terminal',
     },
-    plusIcon('ui-icon ui-icon-sm'),
+    '+',
   )
   listHeader.append(
     panePopoutButton(store, api, 'terminal', 'terminal'),
@@ -401,7 +400,7 @@ export function mountTerminalsPane(
         'aria-label': 'Close terminal',
         'data-tooltip': 'Close terminal',
       },
-      closeIcon('ui-icon ui-icon-sm'),
+      '×',
     )
     const labelSpan = el('span', { class: 'terminals-tab-label' }, label)
     const checkoutBadge = el(

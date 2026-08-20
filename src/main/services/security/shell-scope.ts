@@ -192,12 +192,9 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean
   },
   {
     // Heredoc fed to a real interpreter (`python3 <<EOF … EOF`) — inline code with
-    // no `-c`. The project sandbox can contain the opaque program, so let it run
-    // there first and rely on a verified sandbox block before offering an escape.
-    // `cat <<EOF > file` is deliberately excluded (that just writes text).
+    // no `-c`. `cat <<EOF > file` is deliberately excluded (that just writes text).
     re: /\b(?:python3?|node|deno|bun|ruby|perl)\b[^\n]*<<-?/i,
     reason: 'heredoc script fed to an interpreter',
-    ambiguous: true,
   },
   { re: /\beval\b|\bexec\b|\bbase64\b/i, reason: 'dynamic execution / encoding' },
   { re: /\bpkill\b|\bkillall\b|\bkill\s+-9\b/i, reason: 'process kill (system-wide)' },
@@ -267,42 +264,6 @@ const REASON_INTERPRETER_FILE =
 const REASON_INTERPRETER_INLINE = 'inline script (interpreter -c/-e/--eval)'
 const REASON_BUILD_DRIVER =
   'build driver may require host caches or system build services (xcodebuild/gradle/swift/cargo)'
-
-/**
- * Remove interpreter heredoc bodies before applying shell-syntax scope checks.
- * The body is source code, not a sequence of shell commands: treating its lines
- * as argv produced false external signals such as `Path('src/x')` appearing to
- * execute `src/x`. The opening command and closing delimiter remain visible.
- */
-function maskInterpreterHeredocBodies(command: string): string {
-  const lines = command.split('\n')
-  let delimiter: string | null = null
-  let stripTabs = false
-
-  return lines
-    .map((line) => {
-      if (delimiter !== null) {
-        const candidate = stripTabs ? line.replace(/^\t+/, '') : line
-        if (candidate.trim() === delimiter) {
-          delimiter = null
-          stripTabs = false
-          return line
-        }
-        return ''
-      }
-
-      const match =
-        /\b(?:python3?|node|deno|bun|ruby|perl)\b[^\n]*<<(-)?\s*(?:'([^']+)'|"([^"]+)"|\\?([A-Za-z_][A-Za-z0-9_]*))/.exec(
-          line,
-        )
-      if (match !== null) {
-        delimiter = match[2] ?? match[3] ?? match[4] ?? null
-        stripTabs = match[1] === '-'
-      }
-      return line
-    })
-    .join('\n')
-}
 
 /**
  * A build may look workspace-contained in its argv yet need host-owned caches
@@ -384,8 +345,7 @@ function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHar
 function collectExternalReasons(command: string): { reasons: string[]; hasHard: boolean } {
   const reasons: string[] = []
   let hasHard = false
-  const shellCommand = maskInterpreterHeredocBodies(command)
-  const variants = [shellCommand, normalizeShellCommandForAnalysis(shellCommand)]
+  const variants = [command, normalizeShellCommandForAnalysis(command)]
   for (const text of variants) {
     for (const { re, reason, ambiguous } of EXTERNAL_PATTERNS) {
       if (re.test(text) && !reasons.includes(reason)) {
@@ -400,13 +360,13 @@ function collectExternalReasons(command: string): { reasons: string[]; hasHard: 
       }
     }
   }
-  if (/\$\(|`/.test(shellCommand)) {
+  if (/\$\(|`/.test(command)) {
     reasons.push('command substitution (may hide network or outside-path tools)')
     hasHard = true
   }
   // Additive token pass: reinforces the fragile interpreter checks above without
   // ever loosening the result (union of reasons; hasHard only promoted, never cleared).
-  const tokenHits = tokenBasedExternalReasons(shellCommand)
+  const tokenHits = tokenBasedExternalReasons(command)
   for (const reason of tokenHits.reasons) {
     if (!reasons.includes(reason)) reasons.push(reason)
   }
@@ -564,10 +524,7 @@ export function analyzeShellCommand(
 
   // Outside-workspace filesystem access is always a hard escape: we want such
   // commands to prompt and run outside the sandbox, not attempt-then-retry.
-  const outsidePath = referencesOutsideWorkspace(
-    maskInterpreterHeredocBodies(trimmed),
-    workspaceRoot,
-  )
+  const outsidePath = referencesOutsideWorkspace(trimmed, workspaceRoot)
   if (outsidePath) reasons.push(outsidePath)
 
   if (reasons.length === 0) {
