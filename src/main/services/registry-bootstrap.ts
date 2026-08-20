@@ -30,7 +30,6 @@ import { strReplaceTool } from '../tools/str-replace-tool.ts'
 import { readStagedDiffTool, stagedDiffsTool } from '../tools/staged-diff-tools.ts'
 import { deleteFileTool, renameFileTool, makeDirectoryTool } from '../tools/file-ops-tools.ts'
 import { exploreTool } from '../tools/explore-tool.ts'
-import { taskTool } from '../tools/task-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
@@ -101,11 +100,6 @@ export function createRegistry(): ToolRegistry {
   syncGhTools(registry)
   registry.register(runShellTool)
   registry.register(exploreTool)
-  // Custom subagents (docs/plans/custom-subagents.md). Registered unconditionally
-  // because the registry is a process-wide singleton shared by every thread;
-  // `parentTools` withholds it except on a turn where the user invoked an agent
-  // with `/name`, which is what keeps delegation explicit.
-  registry.register(taskTool)
   // Experimental CI investigator subagent (off by default). Gated by the
   // `copse.ci-investigator` first-party pack — the pack toggle in Settings >
   // Plugins is the atomic master switch. Registration also requires `gh` (the

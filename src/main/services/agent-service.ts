@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
@@ -103,8 +104,9 @@ import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
-import { runWithCustomAgentContext } from './agents/custom-agent-runner.ts'
+import { runCustomAgent } from './agents/custom-agent-runner.ts'
 import { getAgent } from './agents/agents-registry.ts'
+import { BARE_INVOCATION_TASK, buildAgentReportBlock } from './agents/custom-agent-strategy.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
@@ -313,14 +315,8 @@ function parentTools(
   threadId: string,
   threadVideos: readonly VideoAttachmentRef[],
   threadArchives: readonly ArchiveAttachmentRef[],
-  invokedAgent: string | undefined,
 ): LLMTool[] {
   let tools = registry.toLLMTools()
-  // `task` is registered globally but offered only on a turn where the user
-  // explicitly invoked an agent. The model cannot choose to delegate on its own.
-  if (invokedAgent === undefined) {
-    tools = tools.filter((tool) => tool.name !== 'task')
-  }
   // Hide the advisor tool when the configured advisor is not more capable than
   // the executor (same model, or a confidently weaker annotated pairing) — it
   // would only spend tokens for no lift. Conservative: cross-scale/unannotated
@@ -1404,7 +1400,6 @@ export async function runAgent(
     const systemPrompt = await buildSystemPrompt({
       subagentsEnabled,
       invokedSkills,
-      ...(invokedAgent !== undefined ? { invokedAgent } : {}),
       threadId,
       userPrompt: outboundPrompt,
       model,
@@ -1444,7 +1439,6 @@ export async function runAgent(
       threadId,
       threadVideos,
       threadArchives,
-      invokedAgent,
     )
     setHookRunToolset(parentLoopTools)
 
@@ -1480,6 +1474,68 @@ export async function runAgent(
       [turnStartInjected, submitInjectContext],
       operatorInstructionPlacement(model),
     )
+
+    // Deterministic pre-invocation (docs/plans/custom-subagents.md, decision 2).
+    // The user named an agent, so it runs — before the parent's first LLM call,
+    // not because the parent chose to call a tool. Three evals against a real
+    // model showed a turn directive is not enough: asked to delegate, the model
+    // answered directly instead. Running it here makes `/name` mean what it says
+    // whatever model the thread is on.
+    //
+    // The card is synthesized rather than model-issued: a `task` tool call the
+    // subagent stream attaches to, so the timeline renders exactly as it would
+    // for any other subagent, with the agent's own steps inside it.
+    if (invokedAgent !== undefined) {
+      const agent = getAgent(invokedAgent)
+      if (agent) {
+        const agentToolCallId = randomUUID()
+        const agentTask = userTextForSteering.trim() || BARE_INVOCATION_TASK
+        sendChunk({
+          type: 'tool_call',
+          toolCall: {
+            id: agentToolCallId,
+            name: 'task',
+            args: { subagent_type: invokedAgent, prompt: agentTask },
+          },
+        })
+        let report: string
+        let reportIsError = false
+        try {
+          report = await runCustomAgent(
+            {
+              parentToolCallId: agentToolCallId,
+              parentGoal,
+              provider,
+              parentModel: model,
+              registry,
+              parentTools: parentLoopTools,
+              contextWindow,
+              toolSchemaReserve,
+              onChunk: sendChunk,
+            },
+            agent,
+            agentTask,
+            controller.signal,
+          )
+        } catch (err) {
+          // The parent still answers: it is told the agent failed rather than
+          // being left to describe a report that never arrived.
+          report = `The "${invokedAgent}" agent did not finish: ${errorMessage(err)}`
+          reportIsError = true
+        }
+        sendChunk({
+          type: 'tool_result',
+          toolCallId: agentToolCallId,
+          result: report,
+          isError: reportIsError,
+        })
+        appendOperatorInstruction(
+          messages,
+          [buildAgentReportBlock(invokedAgent, report)],
+          operatorInstructionPlacement(model),
+        )
+      }
+    }
 
     const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
     trimmed = prepared.trimmed
@@ -1670,26 +1726,6 @@ export async function runAgent(
                 onChunk: sendChunk,
                 usageModel: subagentUsageModel,
                 localFallback: subagentLocalFallback,
-              },
-              () => registry.execute(name, args, signal),
-            )
-          }
-          if (name === 'task' && invokedAgent !== undefined) {
-            // The turn's explicit agent name travels in ALS, so an invented
-            // `subagent_type` cannot select a different definition. Its declared
-            // tools may only narrow this parent tool ceiling.
-            return runWithCustomAgentContext(
-              {
-                parentToolCallId: toolCallId,
-                parentGoal,
-                provider,
-                parentModel: model,
-                registry,
-                parentTools: parentLoopTools,
-                contextWindow,
-                toolSchemaReserve,
-                onChunk: sendChunk,
-                invokedAgentName: invokedAgent,
               },
               () => registry.execute(name, args, signal),
             )
