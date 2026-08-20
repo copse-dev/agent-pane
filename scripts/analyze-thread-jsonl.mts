@@ -11,6 +11,7 @@ import {
 import { shouldSteerGithubLinks } from '@shared/git/github-link-steering.ts'
 import { shouldSteerTodos } from '@shared/todos/todo-logic.ts'
 import { expectString } from '../src/shared/unknown-value.mts'
+import { toolExpectationViolations, type ObservedToolCall } from './lib/eval-tool-expectations.mts'
 import { z } from 'zod'
 
 interface ScenarioExpect {
@@ -20,7 +21,11 @@ interface ScenarioExpect {
   maxExplore?: number | undefined
   minExplore?: number | undefined
   requireTools?: string[] | undefined
+  /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
+  requireAnyTools?: string[] | undefined
   forbidTools?: string[] | undefined
+  /** Fail when a `sandbox_network_audit` card names a GitHub host. */
+  forbidGithubNetworkDenial?: boolean | undefined
   maxInputTokens?: number | undefined
   requireUpdateTodos?: boolean | undefined
   forbidParallelExploreTurn1?: boolean | undefined
@@ -122,7 +127,9 @@ const scenarioSchema: z.ZodType<Scenario> = z.object({
       maxExplore: z.number().optional(),
       minExplore: z.number().optional(),
       requireTools: z.array(z.string()).optional(),
+      requireAnyTools: z.array(z.string()).optional(),
       forbidTools: z.array(z.string()).optional(),
+      forbidGithubNetworkDenial: z.boolean().optional(),
       maxInputTokens: z.number().optional(),
       requireUpdateTodos: z.boolean().optional(),
       forbidParallelExploreTurn1: z.boolean().optional(),
@@ -211,6 +218,7 @@ function analyze(path: string, scenario?: Scenario): void {
   const userText = typeof user?.content === 'string' ? user.content : JSON.stringify('')
 
   const toolHist: Record<string, number> = {}
+  const observedCalls: ObservedToolCall[] = []
   const doctrineToolCalls: DoctrineToolCall[] = []
   let exploreCount = 0
   let updateTodos = 0
@@ -226,6 +234,7 @@ function analyze(path: string, scenario?: Scenario): void {
     }
     for (const tc of tcs) {
       toolHist[tc.name] = (toolHist[tc.name] ?? 0) + 1
+      observedCalls.push(tc.args ? { name: tc.name, args: tc.args } : { name: tc.name })
       if (tc.name === 'explore') exploreCount++
       if (tc.name === 'update_todos') updateTodos++
       const doctrineCall: DoctrineToolCall = { name: tc.name }
@@ -285,12 +294,14 @@ function analyze(path: string, scenario?: Scenario): void {
   if (exp?.minExplore !== undefined && exploreCount < exp.minExplore) {
     violations.push(`explore count ${String(exploreCount)} < min ${String(exp.minExplore)}`)
   }
-  for (const t of exp?.requireTools ?? []) {
-    if ((toolHist[t] ?? 0) <= 0) violations.push(`missing required tool: ${t}`)
-  }
-  for (const t of exp?.forbidTools ?? []) {
-    if ((toolHist[t] ?? 0) > 0) violations.push(`forbidden tool used: ${t}`)
-  }
+  violations.push(
+    ...toolExpectationViolations(observedCalls, {
+      requireTools: exp?.requireTools,
+      requireAnyTools: exp?.requireAnyTools,
+      forbidTools: exp?.forbidTools,
+      forbidGithubNetworkDenial: exp?.forbidGithubNetworkDenial,
+    }),
+  )
   if (exp?.maxInputTokens !== undefined && (usage.inputTokens ?? 0) > exp.maxInputTokens) {
     violations.push(`input tokens ${String(usage.inputTokens)} > max ${String(exp.maxInputTokens)}`)
   }
