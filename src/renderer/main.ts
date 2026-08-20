@@ -96,7 +96,13 @@ import { startAgentController } from './controller/agent.ts'
 import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
-import { loadProjects, attachAutosave, setNavigationOwnership } from './controller/persistence.ts'
+import {
+  loadProjects,
+  attachAutosave,
+  setNavigationOwnership,
+  markNavigationRestored,
+  suspendNavigationWrites,
+} from './controller/persistence.ts'
 import { begin as perfBegin, mark as perfMark } from './perf.ts'
 import { attachThreadHydration } from './controller/thread-hydration.ts'
 import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
@@ -188,6 +194,10 @@ if (popoutMode) {
 // window that is not a registered full main window. Declared here, beside the
 // other pop-out boot decisions, and before `boot()` reaches `restoreProject`.
 setNavigationOwnership(popoutMode === null)
+// Autosave is attached long before `loadProjects` resolves, and a flush in that
+// window would persist the store's not-yet-restored `activeProjectId: null` over
+// the real one. Closed here, reopened once the restore lands.
+suspendNavigationWrites()
 
 // The app shell ships these mount points in index.html; a missing one is a
 // build/markup bug we want to surface loudly rather than silently no-op.
@@ -421,6 +431,10 @@ async function boot(): Promise<void> {
   const { projects, activeProjectId, activeThreadId } = await loadProjects(api)
   endLoadProjects({ projects: projects.length })
   store.setState({ projects, activeProjectId })
+  // Only now may autosave write navigation back: it has been attached since
+  // well before this line, and until the store held the restored value every
+  // flush would have persisted `activeProjectId: null` over it.
+  markNavigationRestored()
 
   const [firstProject] = projects
   if (firstProject) {

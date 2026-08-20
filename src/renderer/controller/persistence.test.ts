@@ -8,6 +8,8 @@ import {
   __resetPersistenceForTest,
   saveProjects,
   setNavigationOwnership,
+  markNavigationRestored,
+  suspendNavigationWrites,
   AUTOSAVE_DEBOUNCE_MS,
 } from './persistence.ts'
 import { createStore } from '@shared/store/store.ts'
@@ -240,6 +242,31 @@ test('a window that does not own navigation persists projects but never navigati
   store.emit('projects_changed')
   await waitDebounce()
   assert.deepEqual(main.calls.navigations.at(-1), { activeProjectId: 'p1', activeThreadId: null })
+  autosave.detach()
+})
+
+test('does not persist navigation before boot has restored it', async () => {
+  // `attachAutosave` is attached long before `loadProjects` resolves. Until the
+  // restored value is in the store, `activeProjectId` reads as null, and writing
+  // that back overwrote the window's record and the legacy mirror — leaving a
+  // window that lists its projects with none of them active (the SSH disconnect
+  // banner short-circuits on `!activeProjectId` and never renders).
+  __resetPersistenceForTest()
+  suspendNavigationWrites()
+  const { api, calls } = fakeApi()
+  const store = createStore({ activeProjectId: null, threads: [], projects: [] })
+  const autosave = attachAutosave(store, api)
+
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.equal(calls.navigations.length, 0, 'a pre-restore flush must not write navigation')
+
+  // Boot restores, and from then on the real value is persisted.
+  markNavigationRestored()
+  store.setState({ activeProjectId: 'p1' })
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.deepEqual(calls.navigations.at(-1), { activeProjectId: 'p1', activeThreadId: null })
   autosave.detach()
 })
 

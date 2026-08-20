@@ -74,11 +74,40 @@ export function setNavigationOwnership(owns: boolean): void {
   ownsNavigation = owns
 }
 
+/**
+ * Whether boot has restored the stored navigation yet.
+ *
+ * `attachAutosave` is attached well before `loadProjects` resolves, and
+ * `flushNow` reads `activeProjectId` straight from the store — which is still
+ * `null` until the restore lands. Persisting that null overwrites the window's
+ * record and, for the primary window, the legacy `activeProjectId` mirror too,
+ * so the app forgets which project was open. The symptom is a window that lists
+ * its projects but has none active: `ssh-status-banner` short-circuits on
+ * `!activeProjectId`, and the SSH disconnect banner never renders.
+ *
+ * Reads are unaffected — this only gates writing back.
+ */
+let navigationRestored = true
+
+/**
+ * Called by boot *before* `attachAutosave`, to close the window in which a
+ * flush would persist the not-yet-restored `null`. Defaults open, so every
+ * caller that is not boot — and every test — behaves exactly as before.
+ */
+export function suspendNavigationWrites(): void {
+  navigationRestored = false
+}
+
+/** Called by boot once `loadProjects` has put the stored navigation in the store. */
+export function markNavigationRestored(): void {
+  navigationRestored = true
+}
+
 function serializedNavigation(
   api: ApiClient,
   navigation: import('@shared/types/main-window.ts').MainWindowNavigation,
 ): Promise<void> {
-  if (!ownsNavigation) return Promise.resolve()
+  if (!ownsNavigation || !navigationRestored) return Promise.resolve()
   return serializedWrite('mainWindow:navigation', () => api.windowState.setNavigation(navigation))
 }
 
@@ -185,6 +214,7 @@ export function __resetPersistenceForTest(): void {
   writeChains.clear()
   activeAutosave = null
   ownsNavigation = true
+  navigationRestored = true
 }
 
 export async function loadProjects(api: ApiClient): Promise<{
