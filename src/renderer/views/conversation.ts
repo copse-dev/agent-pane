@@ -8,6 +8,7 @@ import {
   warningIcon,
   zapIcon,
 } from '../dom/icons.ts'
+import { fillUserPromptFold, splitUserPromptForFold } from './user-prompt-fold.ts'
 import {
   getHookCardStatusLabel,
   getHookCardTitle,
@@ -352,8 +353,8 @@ function hardBreakSingleNewlines(text: string): string {
   return text.replace(/(?<!\n)\n(?!\n)/g, '  \n')
 }
 
-/** Render a settled user prompt: markdown like assistant replies, without post-processing hooks. */
-function setUserMarkdown(el: HTMLElement, content: string): void {
+/** Render markdown into a user-prompt sink (full bubble or one fold region). */
+function paintUserMarkdown(el: HTMLElement, content: string): void {
   if (!content) {
     el.replaceChildren()
     return
@@ -363,6 +364,19 @@ function setUserMarkdown(el: HTMLElement, content: string): void {
   // elements and the command vanishes from the transcript.
   el.innerHTML = renderMarkdown(userPromptMarkdown(content), { htmlPolicy: 'escape-all' })
   attachCodeBlockCopyButtons(el)
+}
+
+/**
+ * Settled user prompt: markdown like assistant replies. Long prompts (>10 lines)
+ * get a mid-fold accordion — opening + closing stay visible; middle collapses.
+ */
+function setUserMarkdown(el: HTMLElement, content: string): void {
+  const parts = splitUserPromptForFold(content)
+  if (!parts) {
+    paintUserMarkdown(el, content)
+    return
+  }
+  fillUserPromptFold(el, parts, paintUserMarkdown)
 }
 
 function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {
