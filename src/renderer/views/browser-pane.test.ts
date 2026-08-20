@@ -682,18 +682,17 @@ describe('browser pane webview size sync', () => {
   }
 
   function stubHostBox(host: HTMLElement, width: number, height: number): void {
-    host.getBoundingClientRect = (): DOMRect =>
-      ({
-        x: 0,
-        y: 0,
-        width,
-        height,
-        top: 0,
-        left: 0,
-        right: width,
-        bottom: height,
-        toJSON: () => ({}),
-      }) as DOMRect
+    host.getBoundingClientRect = (): DOMRect => ({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      top: 0,
+      left: 0,
+      right: width,
+      bottom: height,
+      toJSON: () => ({}),
+    })
   }
 
   it('observes browser-body and re-pins the active guest when that box changes', () => {
@@ -711,11 +710,8 @@ describe('browser pane webview size sync', () => {
       assert.equal(recorder.observed.length, 1)
       assert.equal(recorder.observed[0]?.className, 'browser-body')
 
-      const host = qsRequired<HTMLElement>(
-        viewer,
-        '.browser-tab-panel.is-active .browser-webview-host',
-      )
-      const webview = qsRequired<HTMLElement>(host, '.browser-webview')
+      const host = qsRequired(viewer, '.browser-tab-panel.is-active .browser-webview-host')
+      const webview = qsRequired(host, '.browser-webview')
       stubWebviewMethods(webview as FakeWebview)
       webview.dispatchEvent(new Event('dom-ready'))
 
@@ -752,11 +748,8 @@ describe('browser pane webview size sync', () => {
     const unmount = mountBrowserPane(list, viewer, store)
 
     try {
-      const host = qsRequired<HTMLElement>(
-        viewer,
-        '.browser-tab-panel.is-active .browser-webview-host',
-      )
-      const webview = qsRequired<HTMLElement>(host, '.browser-webview')
+      const host = qsRequired(viewer, '.browser-tab-panel.is-active .browser-webview-host')
+      const webview = qsRequired(host, '.browser-webview')
       stubWebviewMethods(webview as FakeWebview)
       webview.dispatchEvent(new Event('dom-ready'))
 
