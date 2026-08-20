@@ -24,6 +24,13 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   'read_staged_diff',
   'read_skill',
   'explore',
+  // Delegating to a user-authored subagent is itself non-mutating, and the
+  // subagent cannot escape the run's read-only scope: that scope is ALS-based
+  // and covers everything the run awaits, so each of the subagent's own tool
+  // calls is gated by this same allow-list. Withholding `task` here would
+  // instead block a read-only reviewer agent for no safety gain — unlike
+  // `delegate_step`, whose whole purpose is to write files.
+  'task',
   'ask_user',
   // Reading back stored OKF memories is non-mutating; `remember` (a write) stays
   // denied by default in read-only mode.

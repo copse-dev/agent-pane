@@ -22,20 +22,16 @@ describe('skill picker', () => {
     initSkillPicker({
       input,
       inputBar,
-      listSkills: async () => [
+      listInvocables: async () => [
         {
           name: 'demo-skill',
           description: 'Validate skills support',
-          source: 'project',
-          skillPath: '/repo/.agents/skills/demo-skill/SKILL.md',
-          externalLinks: [],
+          kind: 'skill' as const,
         },
         {
           name: 'release-notes',
           description: 'Draft a release summary',
-          source: 'project',
-          skillPath: '/repo/.agents/skills/release-notes/SKILL.md',
-          externalLinks: [],
+          kind: 'skill' as const,
         },
       ],
     })
@@ -68,22 +64,18 @@ describe('skill picker', () => {
     initSkillPicker({
       input,
       inputBar,
-      listSkills: async () => [
+      listInvocables: async () => [
         {
           // Alphabetically first, and description contains the query — without
           // name-prefix ranking, Enter would insert this instead of `/checkup`.
           name: 'agent-run-eval',
           description: 'Drive checkup-style regression evals',
-          source: 'project',
-          skillPath: '/repo/.cursor/skills/agent-run-eval/SKILL.md',
-          externalLinks: [],
+          kind: 'skill' as const,
         },
         {
           name: 'checkup',
           description: 'Run a Copse setup health check',
-          source: 'bundled',
-          skillPath: '/app/assets/skills/checkup/SKILL.md',
-          externalLinks: [],
+          kind: 'skill' as const,
         },
       ],
     })
@@ -132,13 +124,11 @@ describe('skill picker', () => {
     initSkillPicker({
       input,
       inputBar,
-      listSkills: async () => [
+      listInvocables: async () => [
         {
           name: 'blah-skill',
           description: 'Would have matched the path tail',
-          source: 'project',
-          skillPath: '/repo/.agents/skills/blah-skill/SKILL.md',
-          externalLinks: [],
+          kind: 'skill' as const,
         },
       ],
     })
@@ -151,5 +141,41 @@ describe('skill picker', () => {
     const picker = inputBar.querySelector<HTMLElement>('.skill-picker')
     assert.ok(picker)
     assert.equal(picker.hidden, true)
+  })
+
+  it('offers agents alongside skills and marks which is which', async () => {
+    const inputBar = document.createElement('div')
+    const input = mountComposerEditor()
+    inputBar.append(input.el)
+    document.body.append(inputBar)
+    initSkillPicker({
+      input,
+      inputBar,
+      listInvocables: async () => [
+        { name: 'review-code', description: 'Skill that reviews code', kind: 'skill' as const },
+        { name: 'reviewer', description: 'Agent that reviews code', kind: 'agent' as const },
+      ],
+    })
+
+    input.value = '/review'
+    input.setSelectionRange(input.value.length, input.value.length)
+    input.el.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+
+    const items = document.querySelectorAll('.skill-item')
+    assert.equal(items.length, 2, 'both a skill and an agent match /review')
+
+    const names = [...items].map((el) => el.querySelector('.skill-item-name')?.textContent ?? '')
+    assert.ok(names.some((name) => name.startsWith('/review-code')))
+    assert.ok(names.some((name) => name.startsWith('/reviewer')))
+
+    // Only the agent row is badged; a skill row must look exactly as it did
+    // before agents shared the namespace.
+    const badges = document.querySelectorAll('.skill-item-kind')
+    assert.equal(badges.length, 1)
+    const [badge] = badges
+    assert.ok(badge)
+    assert.equal(badge.textContent, 'agent')
+    assert.match(badge.closest('.skill-item')?.textContent ?? '', /reviewer/)
   })
 })

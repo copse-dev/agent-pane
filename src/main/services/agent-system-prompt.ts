@@ -13,6 +13,7 @@ import {
   buildSkillsToolsPromptLine,
 } from './skills/skill-prompt.ts'
 import { extractContextPathsFromText, type CursorRuleContext } from './skills/cursor-rules.ts'
+import { buildInvokedAgentDirective } from './agents/custom-agent-strategy.ts'
 import {
   BASE_SYSTEM_PROMPT,
   BASE_SYSTEM_PROMPT_DIRECT_READS,
@@ -79,6 +80,12 @@ async function buildRepositoryContext(): Promise<string> {
 export async function buildSystemPrompt(opts: {
   subagentsEnabled: boolean
   invokedSkills: string[]
+  /**
+   * Subagent the user invoked with `/name`. Adds the directive that makes the
+   * turn actually delegate; absent on every other turn, which is why the model
+   * is never told that custom agents exist (no automatic delegation in v1).
+   */
+  invokedAgent?: string
   threadId?: string
   /** Current user turn — drives Auto-Attached / Manual Cursor rule selection (#636). */
   userPrompt?: UserContent
@@ -140,6 +147,7 @@ export async function buildSystemPrompt(opts: {
     (piiRedactionEnabled ? PII_REDACTION_BLOCK : '') +
     buildSkillsCatalogBlock() +
     (await buildInvokedSkillsBlock(invokedSkills, { sandboxActive: isProjectSandboxActive() })) +
+    (opts.invokedAgent !== undefined ? buildInvokedAgentDirective(opts.invokedAgent) : '') +
     agentRulesCatalog +
     buildSemanticSearchPromptBlock() +
     (opus5 ? OPUS_5_TONE_REMINDER : '') +

@@ -103,6 +103,8 @@ import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
+import { runWithCustomAgentContext } from './agents/custom-agent-runner.ts'
+import { getAgent } from './agents/agents-registry.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
@@ -311,8 +313,14 @@ function parentTools(
   threadId: string,
   threadVideos: readonly VideoAttachmentRef[],
   threadArchives: readonly ArchiveAttachmentRef[],
+  invokedAgent: string | undefined,
 ): LLMTool[] {
   let tools = registry.toLLMTools()
+  // `task` is registered globally but offered only on a turn where the user
+  // explicitly invoked an agent. The model cannot choose to delegate on its own.
+  if (invokedAgent === undefined) {
+    tools = tools.filter((tool) => tool.name !== 'task')
+  }
   // Hide the advisor tool when the configured advisor is not more capable than
   // the executor (same model, or a confidently weaker annotated pairing) — it
   // would only spend tokens for no lift. Conservative: cross-scale/unannotated
@@ -610,6 +618,8 @@ function fireAfterToolUseHook(args: {
 
 export interface RunAgentOptions {
   invokedSkills?: string[]
+  /** Subagent explicitly invoked by the user's leading `/name`. */
+  invokedAgent?: string
   priorTodos?: TodoItem[]
   workingBrief?: string
   model?: string
@@ -1384,9 +1394,17 @@ export async function runAgent(
     // inline below, not because a chunk is withheld.
     let loopStopReason: string | undefined
 
+    // A definition can disappear between composing and sending. Do not expose a
+    // task tool that could only fail when that happens.
+    const invokedAgent =
+      options?.invokedAgent !== undefined && getAgent(options.invokedAgent) !== null
+        ? options.invokedAgent
+        : undefined
+
     const systemPrompt = await buildSystemPrompt({
       subagentsEnabled,
       invokedSkills,
+      ...(invokedAgent !== undefined ? { invokedAgent } : {}),
       threadId,
       userPrompt: outboundPrompt,
       model,
@@ -1426,6 +1444,7 @@ export async function runAgent(
       threadId,
       threadVideos,
       threadArchives,
+      invokedAgent,
     )
     setHookRunToolset(parentLoopTools)
 
@@ -1651,6 +1670,26 @@ export async function runAgent(
                 onChunk: sendChunk,
                 usageModel: subagentUsageModel,
                 localFallback: subagentLocalFallback,
+              },
+              () => registry.execute(name, args, signal),
+            )
+          }
+          if (name === 'task' && invokedAgent !== undefined) {
+            // The turn's explicit agent name travels in ALS, so an invented
+            // `subagent_type` cannot select a different definition. Its declared
+            // tools may only narrow this parent tool ceiling.
+            return runWithCustomAgentContext(
+              {
+                parentToolCallId: toolCallId,
+                parentGoal,
+                provider,
+                parentModel: model,
+                registry,
+                parentTools: parentLoopTools,
+                contextWindow,
+                toolSchemaReserve,
+                onChunk: sendChunk,
+                invokedAgentName: invokedAgent,
               },
               () => registry.execute(name, args, signal),
             )
