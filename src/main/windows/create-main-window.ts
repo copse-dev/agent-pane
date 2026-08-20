@@ -1,18 +1,30 @@
-import { BrowserWindow, globalShortcut, screen } from 'electron'
+import { BrowserWindow, globalShortcut, screen, type WebContents } from 'electron'
 import { join } from 'node:path'
 import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/storage/settings.ts'
+import { storageGet, storageSet } from '../services/storage/storage.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { DEVTOOLS_SHORTCUT_CAPABILITY } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
 import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
+import type {
+  MainWindowBounds,
+  MainWindowNavigation,
+  MainWindowRecord,
+} from '@shared/types/main-window.ts'
 import { MainWindowRegistry, type MainWindowContext } from './main-window-registry.ts'
+import { MainWindowStateRepository } from './main-window-state.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
 import { registerAppWindow } from './app-window-broadcast.ts'
 import { attachRendererCrashRecovery } from './renderer-crash-recovery.ts'
 
 const mainWindowRegistry = new MainWindowRegistry<BrowserWindow>()
+const mainWindowState = new MainWindowStateRepository({
+  get: storageGet,
+  set: storageSet,
+})
+let quitting = false
 
 /** Temporary compatibility accessor for services that still target the primary window. */
 export function getMainWindow(): BrowserWindow | null {
@@ -43,38 +55,119 @@ export function assertPrimaryMainWindow(webContents: Electron.WebContents): void
   }
 }
 
-interface Bounds {
-  width: number
-  height: number
-  x?: number
-  y?: number
+function legacyNavigation(): MainWindowNavigation {
+  const projectId = storageGet('activeProjectId')
+  const threadId = storageGet('activeThreadId')
+  return {
+    activeProjectId: typeof projectId === 'string' ? projectId : null,
+    activeThreadId: typeof threadId === 'string' ? threadId : null,
+  }
+}
+
+function legacyBounds(): MainWindowBounds {
+  return getSetting<MainWindowBounds>('windowBounds', { width: 1200, height: 800 })
+}
+
+export function getRestorableMainWindowRecords(): MainWindowRecord[] {
+  return mainWindowState.loadOrMigrate({
+    ...legacyNavigation(),
+    bounds: legacyBounds(),
+  })
+}
+
+export function beginMainWindowQuit(): void {
+  quitting = true
+}
+
+function contextRecord(webContents: WebContents): MainWindowRecord | undefined {
+  const context = mainWindowRegistry.fromWebContents(webContents)
+  return context ? mainWindowState.get(context.id) : undefined
+}
+
+export function getMainWindowNavigation(webContents: WebContents): MainWindowNavigation {
+  const record = contextRecord(webContents)
+  return record
+    ? {
+        activeProjectId: record.activeProjectId,
+        activeThreadId: record.activeThreadId,
+      }
+    : legacyNavigation()
+}
+
+export function setMainWindowNavigation(
+  webContents: WebContents,
+  navigation: MainWindowNavigation,
+): void {
+  const context = mainWindowRegistry.fromWebContents(webContents)
+  if (!context) throw new Error('Window navigation rejected: sender is not a full main window')
+  mainWindowState.update(context.id, navigation)
+  // Keep the primary window mirrored into the legacy keys while singleton
+  // services are migrated. Secondary windows must never overwrite this bridge.
+  if (mainWindowRegistry.isPrimary(webContents)) {
+    storageSet('activeProjectId', navigation.activeProjectId)
+    storageSet('activeThreadId', navigation.activeThreadId)
+  }
 }
 
 // A saved x/y can point at a display that's since been disconnected
 // (e.g. an external monitor positioned left of the main screen → negative x).
 // If the saved rect isn't substantially visible on a currently-connected
 // display, drop the position so Electron centres the window instead.
-function sanitizeBounds(saved: Bounds): Bounds {
+export function sanitizeBounds(saved: MainWindowBounds, displayId?: string): MainWindowBounds {
   const { x: savedX, y: savedY } = saved
   if (savedX === undefined || savedY === undefined) return saved
 
   const displays = screen.getAllDisplays()
-  const visible = displays.some((d) => {
-    const wa = d.workArea
-    // Require the window's top-left region to fall within a display's work area.
-    const xOk = savedX >= wa.x - 8 && savedX < wa.x + wa.width - 80
-    const yOk = savedY >= wa.y - 8 && savedY < wa.y + wa.height - 40
-    return xOk && yOk
-  })
+  const preferredDisplayExists =
+    displayId === undefined || displays.some((display) => String(display.id) === displayId)
+  const visible =
+    preferredDisplayExists &&
+    displays.some((display) => {
+      const workArea = display.workArea
+      // Require the window's top-left region to fall within a display's work area.
+      const xOk = savedX >= workArea.x - 8 && savedX < workArea.x + workArea.width - 80
+      const yOk = savedY >= workArea.y - 8 && savedY < workArea.y + workArea.height - 40
+      return xOk && yOk
+    })
 
-  if (!visible) {
-    return { width: saved.width, height: saved.height }
-  }
-  return saved
+  return visible ? saved : { width: saved.width, height: saved.height }
 }
 
-export function createMainWindow(): BrowserWindow {
-  const saved = sanitizeBounds(getSetting<Bounds>('windowBounds', { width: 1200, height: 800 }))
+function createNewWindowRecord(): MainWindowRecord {
+  const focused = mainWindowRegistry.getFocused() ?? mainWindowRegistry.getMostRecentlyFocused()
+  const inherited = focused ? mainWindowState.get(focused.id) : undefined
+  const sourceBounds = focused?.window.getNormalBounds() ?? legacyBounds()
+  const cascaded: MainWindowBounds =
+    sourceBounds.x === undefined || sourceBounds.y === undefined
+      ? sourceBounds
+      : { ...sourceBounds, x: sourceBounds.x + 28, y: sourceBounds.y + 28 }
+  return mainWindowState.create({
+    activeProjectId: inherited?.activeProjectId ?? legacyNavigation().activeProjectId,
+    activeThreadId: inherited?.activeThreadId ?? legacyNavigation().activeThreadId,
+    bounds: sanitizeBounds(cascaded),
+  })
+}
+
+function captureWindowRecord(context: MainWindowContext<BrowserWindow>): void {
+  const { window } = context
+  if (window.isDestroyed()) return
+  const maximized = window.isMaximized()
+  const fullscreen = window.isFullScreen()
+  const patch: Partial<Omit<MainWindowRecord, 'id'>> = {
+    maximized,
+    fullscreen,
+  }
+  if (!maximized && !fullscreen) {
+    const bounds = window.getNormalBounds()
+    patch.bounds = bounds
+    patch.displayId = String(screen.getDisplayMatching(bounds).id)
+  }
+  mainWindowState.update(context.id, patch)
+}
+
+export function createMainWindow(restoredRecord?: MainWindowRecord): BrowserWindow {
+  const record = restoredRecord ?? createNewWindowRecord()
+  const saved = sanitizeBounds(record.bounds, record.displayId)
   const icon = getAppIcon()
   const bootTheme = bootThemeWindowOptions()
   const win = new BrowserWindow({
@@ -100,24 +193,65 @@ export function createMainWindow(): BrowserWindow {
       preload: join(__dirname, '../preload/index.js'),
     },
   })
-  const context = mainWindowRegistry.register(win)
+  const context = mainWindowRegistry.register(win, record.id)
+  if (!mainWindowState.get(record.id)) {
+    mainWindowState.create(
+      {
+        activeProjectId: record.activeProjectId,
+        activeThreadId: record.activeThreadId,
+        bounds: record.bounds,
+      },
+      record.id,
+    )
+    mainWindowState.update(record.id, record)
+  }
   const frame = win.webContents.mainFrame
   registerTrustedAppFrame(frame)
   const unregisterBroadcast = registerAppWindow(win.webContents)
+
+  let persistTimer: ReturnType<typeof setTimeout> | null = null
+  const scheduleCapture = (): void => {
+    if (persistTimer !== null) return
+    persistTimer = setTimeout(() => {
+      persistTimer = null
+      captureWindowRecord(context)
+    }, 250)
+  }
   win.on('focus', () => {
     mainWindowRegistry.markFocused(context.id)
+    mainWindowState.update(context.id, { lastFocusedAt: Date.now() })
+  })
+  win.on('move', scheduleCapture)
+  win.on('resize', scheduleCapture)
+  win.on('maximize', scheduleCapture)
+  win.on('unmaximize', scheduleCapture)
+  win.on('enter-full-screen', scheduleCapture)
+  win.on('leave-full-screen', scheduleCapture)
+  win.on('close', () => {
+    if (persistTimer !== null) {
+      clearTimeout(persistTimer)
+      persistTimer = null
+    }
+    captureWindowRecord(context)
+    if (mainWindowRegistry.isPrimary(win.webContents)) {
+      void setSetting('windowBounds', win.getNormalBounds())
+    }
   })
   win.on('closed', () => {
     unregisterTrustedAppFrame(frame)
     unregisterBroadcast()
     mainWindowRegistry.unregister(context.id)
+    if (!quitting) mainWindowState.remove(context.id)
   })
+
   attachWebContentsLockdown(win.webContents)
   attachRendererCrashRecovery(win.webContents)
   win.on('unresponsive', () => {
     console.warn('[renderer] main window became unresponsive')
   })
   win.once('ready-to-show', () => {
+    if (record.maximized) win.maximize()
+    if (record.fullscreen) win.setFullScreen(true)
     win.show()
   })
   // Fallback: if ready-to-show somehow never fires, force-show so the window
@@ -125,7 +259,6 @@ export function createMainWindow(): BrowserWindow {
   setTimeout(() => {
     if (!win.isDestroyed() && !win.isVisible()) win.show()
   }, 3000)
-  win.on('close', () => void setSetting('windowBounds', win.getBounds()))
   void win.loadFile(join(__dirname, '../renderer/index.html'), { query: bootTheme.query })
   return win
 }
