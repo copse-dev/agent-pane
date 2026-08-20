@@ -1,4 +1,5 @@
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
+import type { OperatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
 
 // Current-turn context injection (H2 of the hooks platform).
 //
@@ -84,20 +85,16 @@ export function buildInjectedContextBlock(
 }
 
 /**
- * Append this turn's operator instructions — `turnStart` steering (M0.2) and any
- * `beforeSubmitPrompt` injected context (H2) — to `messages` as a single
- * trailing system message. Returns whether anything was appended.
+ * Place this turn's operator instructions — `turnStart` steering (M0.2) and any
+ * `beforeSubmitPrompt` injected context (H2) — in the strongest channel the
+ * selected model is known to accept. Returns whether anything was placed.
  *
- * **Placement is a caching invariant, not a style choice.** These blocks are
- * regenerated every turn, so folding them into the leading system prompt (as
- * this used to) puts per-turn text at the very front of the rendered prompt.
- * Prompt caching is a prefix match, so that invalidated the entire cached
- * prefix — tool schemas and system prompt included — on every turn a hook fired
- * (#1286, `docs/prompt-caching.md`). As the last entry they land *after* the
- * last cache breakpoint, leaving the prefix byte-stable across turns.
- *
- * Trailing placement also satisfies the Messages API rule for mid-conversation
- * system messages: the entry follows the user turn and is last.
+ * GPT models use a trailing `developer` message. Models on the explicit late-
+ * system allowlist use a trailing `system` message. Every other selection — in
+ * particular LM Studio / MLX models whose templates may reject extra roles or
+ * multiple system turns — folds the text into the first system prompt. That
+ * fallback sacrifices prefix-cache stability when steering changes, but keeps
+ * the request valid and retains system authority without pseudo-role markup.
  *
  * Empty and whitespace-only blocks are dropped, so a hook that fires but injects
  * nothing leaves `messages` untouched — and therefore leaves the prefix intact.
@@ -105,11 +102,32 @@ export function buildInjectedContextBlock(
 export function appendOperatorInstruction(
   messages: LLMMessage[],
   blocks: ReadonlyArray<string | undefined>,
+  placement: OperatorInstructionPlacement,
 ): boolean {
   const present = blocks.filter(
     (block): block is string => block !== undefined && block.trim().length > 0,
   )
   if (present.length === 0) return false
-  messages.push({ role: 'system', content: present.join('\n\n') })
+  const content = present.join('\n\n')
+  if (placement === 'trailing-developer') {
+    messages.push({ role: 'developer', content })
+    return true
+  }
+  if (placement === 'trailing-system') {
+    messages.push({ role: 'system', content })
+    return true
+  }
+
+  const systemIndex = messages.findIndex((message) => message.role === 'system')
+  if (systemIndex < 0) {
+    messages.unshift({ role: 'system', content })
+    return true
+  }
+  const system = messages[systemIndex]
+  if (system?.role !== 'system') return false
+  messages[systemIndex] = {
+    role: 'system',
+    content: system.content.length > 0 ? `${system.content}\n\n${content}` : content,
+  }
   return true
 }

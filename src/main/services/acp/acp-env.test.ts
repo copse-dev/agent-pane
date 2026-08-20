@@ -14,6 +14,8 @@ describe('buildAcpAgentEnv', () => {
     'OPENAI_API_KEY',
     'OPENROUTER_API_KEY',
     'PARALLEL_API_KEY',
+    'CURSOR_API_KEY',
+    'CURSOR_SESSION_TOKEN',
     'GITHUB_TOKEN',
   ]
 
@@ -26,6 +28,8 @@ describe('buildAcpAgentEnv', () => {
     process.env['OPENAI_API_KEY'] = 'sk-openai-secret'
     process.env['OPENROUTER_API_KEY'] = 'sk-or-secret'
     process.env['PARALLEL_API_KEY'] = 'parallel-secret'
+    process.env['CURSOR_API_KEY'] = 'cursor-secret'
+    process.env['CURSOR_SESSION_TOKEN'] = 'cursor-session'
     process.env['GITHUB_TOKEN'] = 'gh-token'
 
     const env = buildAcpAgentEnv({ command: 'agent', cwd: '/tmp/project' })
@@ -34,6 +38,8 @@ describe('buildAcpAgentEnv', () => {
     assert.equal(env['OPENAI_API_KEY'], undefined)
     assert.equal(env['OPENROUTER_API_KEY'], undefined)
     assert.equal(env['PARALLEL_API_KEY'], undefined)
+    assert.equal(env['CURSOR_API_KEY'], undefined)
+    assert.equal(env['CURSOR_SESSION_TOKEN'], undefined)
     assert.equal(env['GITHUB_TOKEN'], 'gh-token')
   })
 

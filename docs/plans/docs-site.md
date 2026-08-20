@@ -205,8 +205,9 @@ because it is what lets pages be grouped by job while the files stay flat and gr
 and settles a convention that points the other way. `scripts/sync-site-markdown.mts` generates
 `site/index.md`, `site/architecture.md`, `site/privacy.md` and an `llms.txt` index **from the
 HTML**, so an agent fetching the site gets the copy without the chrome. Its stated contract is
-that "the HTML is the only source of truth," and `npm run site:md:check` enforces it inside
-`npm run check`.
+that "the HTML is the only source of truth." None of the output is committed: `pages.yml`
+regenerates it into the deployed tree, so the published twins are always what the published
+HTML says.
 
 A docs site inverts that: Markdown is authored and HTML is generated. Both directions can
 coexist — the marketing pages are hand-built HTML, the docs would be authored prose — but the
@@ -220,8 +221,11 @@ plan should not leave two opposite conventions in one tree unremarked. Two conse
   answer that question. Whichever generator wins needs to emit into it.
 
 This also shifts the trade-off table slightly toward extending `scripts/build.mts`: there is now
-precedent, machinery, and a `check` gate for site content transformation in `scripts/`, which
-did not exist when the two options above were weighed.
+precedent and machinery for site content transformation in `scripts/`, and a deploy step that
+runs it, neither of which existed when the two options above were weighed. Note the shape that
+step had to take — `pages.yml` installs four pinned libraries rather than the app's dependency
+tree, because it is also the deploy path for every demo preview. A docs generator that needs a
+full framework install does not fit there, and would have to earn its own build stage.
 
 ## Phasing
 

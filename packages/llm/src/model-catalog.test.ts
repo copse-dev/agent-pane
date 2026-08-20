@@ -9,6 +9,7 @@ import {
   inferCloudModelProvider,
   MODEL_CATALOG,
   isOpus5Model,
+  operatorInstructionPlacement,
   supportsMidConversationSystem,
   TRACKED_MODELS,
 } from './model-catalog.ts'
@@ -97,13 +98,35 @@ describe('model catalog', () => {
     assert.equal(supportsMidConversationSystem('claude-opus-5-20260101'), true)
 
     // Sending a system turn to any of these is a 400 — the default cloud model
-    // included, so the `<system-reminder>` fallback is the common path.
+    // included, so leading-system placement is the common path.
     assert.equal(supportsMidConversationSystem('claude-sonnet-4-6'), false)
     assert.equal(supportsMidConversationSystem('claude-sonnet-5'), false)
     assert.equal(supportsMidConversationSystem('claude-haiku-4-5'), false)
     // Unknown ids default to the safe path rather than guessing.
     assert.equal(supportsMidConversationSystem('claude-unknown'), false)
     assert.equal(supportsMidConversationSystem('gpt-5'), false)
+  })
+
+  it('routes operator instructions by resolved model capability, not transport shape', () => {
+    assert.equal(operatorInstructionPlacement('gpt-5.6-sol'), 'trailing-developer')
+    assert.equal(
+      operatorInstructionPlacement('openrouter:openai/gpt-5.6-sol'),
+      'trailing-developer',
+    )
+    assert.equal(operatorInstructionPlacement('claude-opus-4-8'), 'trailing-system')
+    assert.equal(
+      operatorInstructionPlacement('openrouter:anthropic/claude-fable-5'),
+      'trailing-system',
+    )
+
+    assert.equal(operatorInstructionPlacement('claude-sonnet-4-6'), 'leading-system')
+    assert.equal(operatorInstructionPlacement('lmstudio:qwen/qwen3.8-27b'), 'leading-system')
+    // An OpenAI-compatible local route is not evidence that its template accepts
+    // OpenAI's developer role, even when the local model name looks like GPT.
+    assert.equal(operatorInstructionPlacement('lmstudio:gpt-5'), 'leading-system')
+    assert.equal(operatorInstructionPlacement('lmstudio:claude-opus-5'), 'leading-system')
+    assert.equal(operatorInstructionPlacement('openrouter:openai/gpt-oss-120b'), 'leading-system')
+    assert.equal(operatorInstructionPlacement('acp:codex#gpt-5.6-sol'), 'leading-system')
   })
 
   it('identifies the Opus 5 family without catching neighbouring Opus ids', () => {

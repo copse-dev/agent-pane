@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { expectRecord } from '@shared/unknown-value.ts'
 import { githubApiBackend } from './github-api-backend.ts'
 import { resetGitHubApiTokenCacheForTest } from './github-token.ts'
+import { resetGitHubHttpCacheForTest } from './github-http-cache.ts'
 
 interface RouteResult {
   status?: number
@@ -39,6 +40,7 @@ beforeEach((): void => {
   calls.length = 0
   process.env['GITHUB_TOKEN'] = 'test-token'
   resetGitHubApiTokenCacheForTest()
+  resetGitHubHttpCacheForTest()
   installFetch()
 })
 
@@ -218,5 +220,76 @@ describe('githubApiBackend', () => {
     globalThis.fetch = (): Promise<Response> => Promise.reject(new Error('network down'))
     const state = await githubApiBackend.getPrChecksState(REF)
     assert.equal(state, 'no_checks')
+  })
+
+  it('getPrChecksState reads CI from one GraphQL query', async () => {
+    router = (_m: string, url: string): RouteResult => {
+      if (url.endsWith('/graphql')) {
+        return {
+          body: {
+            data: {
+              repository: {
+                pullRequest: {
+                  statusCheckRollup: {
+                    state: 'SUCCESS',
+                    contexts: {
+                      nodes: [
+                        {
+                          __typename: 'CheckRun',
+                          name: 'CI',
+                          status: 'COMPLETED',
+                          conclusion: 'SUCCESS',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }
+      }
+      return { body: {} }
+    }
+    const state = await githubApiBackend.getPrChecksState(REF)
+    assert.equal(state, 'success')
+    assert.equal(calls.length, 1)
+    assert.ok(calls[0]?.url.endsWith('/graphql'))
+  })
+
+  it('listMyOpenPrs uses viewer.pullRequests instead of the Search API', async () => {
+    router = (_m: string, url: string): RouteResult => {
+      if (url.endsWith('/graphql')) {
+        return {
+          body: {
+            data: {
+              viewer: {
+                pullRequests: {
+                  nodes: [
+                    {
+                      number: 7,
+                      title: 'Mine',
+                      url: 'https://github.com/octo/demo/pull/7',
+                      state: 'OPEN',
+                      repository: { name: 'demo', owner: { login: 'octo' } },
+                      statusCheckRollup: { state: 'PENDING', contexts: { nodes: [] } },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }
+      }
+      return { body: {} }
+    }
+    const prs = await githubApiBackend.listMyOpenPrs(10)
+    assert.ok(prs)
+    assert.equal(prs.length, 1)
+    const first = prs[0]
+    assert.ok(first)
+    assert.equal(first.title, 'Mine')
+    assert.equal(first.checks, 'pending')
+    assert.ok(!calls.some((call) => call.url.includes('/search/')))
   })
 })

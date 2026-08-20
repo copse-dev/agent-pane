@@ -6,6 +6,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { knowledgeDate } from './knowledge-date.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { plusIcon, refreshIcon } from '../dom/icons.ts'
 
 // A memory is one `Memory`-typed knowledge note. Derive the shape from the IPC
 // surface so this view never imports main-process types directly.
@@ -55,7 +56,7 @@ export function mountMemoriesPane(
         'aria-label': 'New memory',
         'data-tooltip': 'New memory',
       },
-      '+',
+      plusIcon('ui-icon ui-icon-sm'),
     ),
     el(
       'button',
@@ -65,7 +66,7 @@ export function mountMemoriesPane(
         'aria-label': 'Refresh memories',
         'data-tooltip': 'Refresh memories',
       },
-      '↻',
+      refreshIcon('ui-icon ui-icon-sm'),
     ),
   )
   const newBtn = qsRequired<HTMLButtonElement>(listHeader, '.memories-new-btn')

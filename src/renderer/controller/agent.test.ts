@@ -8,6 +8,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread, StreamChunk } from '@shared/types'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { markQuietRun } from './quiet-runs.ts'
 
 function at<T>(arr: readonly T[], i: number): T {
   const value = arr[i]
@@ -523,6 +524,7 @@ test('done finalizes the message, alerts once, sets the thread idle, and resets 
   send({ type: 'done' })
 
   assert.equal(requireThread(store, 't1').status, 'idle')
+  assert.equal(requireThread(store, 't1').unreadAt, undefined)
   assert.deepEqual(messageDone, [firstId])
   assert.deepEqual(finishedAlerts, [{ threadId: 't1', title: 't1' }])
 
@@ -530,6 +532,15 @@ test('done finalizes the message, alerts once, sets the thread idle, and resets 
   send({ type: 'text', text: 'next turn' })
   assert.equal(messages().length, 2)
   assert.equal(at(messages(), 1).content, 'next turn')
+})
+
+test('done marks a background thread unread', () => {
+  const { send, store } = setup([thread('t1'), thread('t2')], 't2')
+
+  send({ type: 'done' }, 't1')
+
+  assert.equal(typeof requireThread(store, 't1').unreadAt, 'number')
+  assert.equal(requireThread(store, 't2').unreadAt, undefined)
 })
 
 test('done does not alert between queued turns', () => {
@@ -543,6 +554,23 @@ test('done does not alert between queued turns', () => {
 
   assert.equal(requireThread(store, 't1').status, 'running')
   assert.deepEqual(finishedAlerts, [])
+})
+
+test('done does not alert for a run the user launched and is watching', () => {
+  const { send, store, finishedAlerts } = setup()
+
+  // The comparison the "Compare models" bubble starts is marked quiet: the
+  // click was a second ago and its card renders in front of the user, so the
+  // completion chime would be noise, not a summons.
+  markQuietRun('t1')
+  send({ type: 'done' })
+  assert.equal(requireThread(store, 't1').status, 'idle')
+  assert.deepEqual(finishedAlerts, [])
+
+  // The mark is consumed by that run's `done`, so the next turn alerts again.
+  send({ type: 'text', text: 'answer' })
+  send({ type: 'done' })
+  assert.deepEqual(finishedAlerts, [{ threadId: 't1', title: 't1' }])
 })
 
 test('first assistant text kicks off naming without waiting for done', async () => {

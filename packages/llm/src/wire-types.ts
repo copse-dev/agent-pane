@@ -33,6 +33,7 @@ export type ImageDetail = (typeof IMAGE_DETAILS)[number]
 
 export type LLMMessage =
   | { role: 'system'; content: string }
+  | { role: 'developer'; content: string }
   | { role: 'user'; content: UserContent }
   | { role: 'assistant'; content: string | ToolCallContent[] }
   | { role: 'tool'; toolResults: ToolResult[] }

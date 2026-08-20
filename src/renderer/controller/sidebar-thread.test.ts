@@ -35,6 +35,7 @@ test('compacting keeps the row fields and drops the transcript', () => {
         scheduleName: 'Project health',
         triggeredAt: 10,
       },
+      unreadAt: 20,
     }),
   )
 
@@ -43,6 +44,7 @@ test('compacting keeps the row fields and drops the transcript', () => {
   assert.equal(compacted.status, 'running')
   assert.equal(compacted.messages, undefined)
   assert.equal(compacted.automation?.scheduleId, 'health')
+  assert.equal(compacted.unreadAt, 20)
 })
 
 test('compacting carries the PR scrape over, so the status chip survives it', () => {

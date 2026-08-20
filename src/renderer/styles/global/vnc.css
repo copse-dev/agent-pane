@@ -1,0 +1,400 @@
+.vnc-controls-host {
+  min-height: 0;
+  overflow: clip;
+}
+
+.vnc-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-left: auto;
+}
+
+.vnc-tabs-new-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.vnc-tabs-new-btn:hover {
+  color: var(--text-primary);
+}
+
+.vnc-tabs-list {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  min-width: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+
+.vnc-tab {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--spacing-xs);
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  padding: 6px var(--spacing-xs) 6px var(--spacing-sm);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+}
+
+.vnc-tab:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.vnc-tab.is-active {
+  color: var(--text-primary);
+  background: var(--bg-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.vnc-tab.is-controlling::before {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  background: var(--warning);
+  border-radius: 50%;
+  content: '';
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.vnc-tab-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vnc-tab-close {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 1px;
+  color: var(--text-muted);
+  opacity: 0;
+}
+
+.vnc-tab:hover .vnc-tab-close,
+.vnc-tab.is-active .vnc-tab-close {
+  opacity: 1;
+}
+
+.vnc-controls-panels,
+.vnc-controls-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.vnc-controls-panel[hidden],
+.vnc-viewer-panel[hidden] {
+  display: none;
+}
+
+.vnc-controls-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  overflow-y: auto;
+  padding: var(--spacing-md);
+}
+
+.vnc-connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.vnc-setup-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.vnc-setup-fields[hidden] {
+  display: none;
+}
+
+.vnc-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.vnc-port-input,
+.vnc-address-input,
+.vnc-auth-input,
+.vnc-machine-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--spacing-sm);
+  color: var(--text-primary);
+  font: inherit;
+  font-family: var(--font-mono);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.vnc-port-input:focus,
+.vnc-address-input:focus,
+.vnc-auth-input:focus,
+.vnc-machine-select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.vnc-connect-btn,
+.vnc-control-btn,
+.vnc-disconnect-btn {
+  justify-content: center;
+  width: 100%;
+}
+
+.vnc-discovery-retry {
+  align-self: flex-start;
+  margin-top: calc(var(--spacing-sm) * -1);
+  padding: 2px var(--spacing-xs);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.vnc-control-btn.is-active {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+}
+
+.vnc-advanced summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.vnc-advanced[open] summary {
+  margin-bottom: var(--spacing-sm);
+}
+
+.vnc-field-hint {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.vnc-auth-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-left: 2px solid var(--accent);
+}
+
+.vnc-auth-panel[hidden] {
+  display: none;
+}
+
+.vnc-auth-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.vnc-auth-description {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.vnc-auth-input {
+  -webkit-text-security: none;
+}
+
+.vnc-password-input {
+  font-family: system-ui, sans-serif;
+  -webkit-text-security: disc;
+}
+
+.vnc-authenticate-btn {
+  justify-content: center;
+  width: 100%;
+}
+
+.vnc-discovery-status,
+.vnc-nearby-status {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.vnc-discovery-status[data-kind='working'],
+.vnc-nearby-status[data-kind='working'] {
+  color: var(--text-secondary);
+}
+
+.vnc-discovery-status[data-kind='ok'],
+.vnc-nearby-status[data-kind='ok'] {
+  color: var(--success);
+}
+
+.vnc-discovery-status[data-kind='error'],
+.vnc-nearby-status[data-kind='error'] {
+  color: var(--error);
+}
+
+.vnc-network-warning {
+  padding: var(--spacing-sm);
+  color: var(--warning);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: var(--radius);
+}
+
+.vnc-discovered-ports {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.vnc-discovered-ports[hidden] {
+  display: none;
+}
+
+.vnc-discovered-port {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.vnc-discovered-port:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.vnc-discovered-port.selected {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.vnc-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding-left: var(--spacing-sm);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  border-left: 2px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.vnc-status[data-kind='working'] {
+  color: var(--text-secondary);
+  border-left-color: var(--accent);
+}
+
+.vnc-status[data-kind='ok'] {
+  color: var(--success);
+  border-left-color: var(--success);
+}
+
+.vnc-status[data-kind='error'] {
+  color: var(--error);
+  border-left-color: var(--error);
+}
+
+.vnc-status-title {
+  font-weight: 600;
+}
+
+.vnc-status-detail {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.vnc-view-only-note {
+  margin: auto 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.vnc-viewer-host {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+.vnc-viewer-panel {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.vnc-screen {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: var(--spacing-sm);
+}
+
+.vnc-screen canvas {
+  max-width: 100%;
+  max-height: 100%;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.vnc-screen.is-controlling canvas {
+  box-shadow:
+    0 0 0 1px var(--warning),
+    0 0 0 3px color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.vnc-empty {
+  position: absolute;
+  inset: 0;
+}

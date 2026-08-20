@@ -65,6 +65,7 @@ export function pluginModelAttachments(
 function messageText(message: LLMMessage): PluginModelHistoryMessage | null {
   switch (message.role) {
     case 'system':
+    case 'developer':
       return null
     case 'user':
       return {

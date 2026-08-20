@@ -296,6 +296,7 @@ function readReasoningDelta(delta: object): string {
 function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageParam[] {
   return messages.flatMap((m): OpenAI.ChatCompletionMessageParam[] => {
     if (m.role === 'system') return [{ role: 'system', content: m.content }]
+    if (m.role === 'developer') return [{ role: 'developer', content: m.content }]
     if (m.role === 'user' && typeof m.content === 'string')
       return [{ role: 'user', content: m.content }]
     if (m.role === 'user' && Array.isArray(m.content)) {

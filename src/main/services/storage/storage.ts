@@ -1,5 +1,6 @@
 import { openPersistentStore } from './persistent-store.ts'
 import { runSerialized } from './write-queue.ts'
+import { perfCount } from '../diagnostics/perf-trace.ts'
 
 // Cache reads in memory (see cached-store.ts for why: electron-store re-parses
 // the whole multi-MB config.json on every `.get`, which turned hot-loop reads
@@ -13,13 +14,23 @@ import { runSerialized } from './write-queue.ts'
 // key it has already read. The write-queue serializes only in-process writers.
 const cached = openPersistentStore()
 
-export const storageGet = (key: string): unknown => cached.get(key)
+// DEBUG BRANCH: config reads are counted, not spanned. The cache below is what
+// makes them cheap; if a regression ever removes or bypasses it, the symptom is
+// a large *call count* rather than one slow call, and only a counter shows that.
+export const storageGet = (key: string): unknown => {
+  const start = process.hrtime.bigint()
+  const value = cached.get(key)
+  perfCount('storage:get', Number(process.hrtime.bigint() - start) / 1e6)
+  return value
+}
 
 // Fire-and-forget synchronous set (kept for callers that don't read-modify-write
 // and don't need ordering guarantees). Prefer `storageUpdate` for any
 // read-modify-write so concurrent callers can't drop each other's changes.
 export const storageSet = (key: string, value: unknown): void => {
+  const start = process.hrtime.bigint()
   cached.set(key, value)
+  perfCount('storage:set', Number(process.hrtime.bigint() - start) / 1e6)
 }
 
 export const storageDelete = (key: string): void => {

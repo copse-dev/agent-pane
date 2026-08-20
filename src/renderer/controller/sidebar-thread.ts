@@ -19,27 +19,39 @@ export interface SidebarThread {
   id: string
   title: string
   status: Thread['status']
+  unreadAt?: number
   archivedAt?: number
   automation?: Thread['automation']
   remoteAgentLink?: Thread['remoteAgentLink']
   /** The live transcript. Absent once the entry has been compacted. */
   messages?: Message[]
-  /** Pre-scraped PR refs. Absent on a live thread, whose messages still change. */
+  /** `false` when `messages` is empty only because it was never read off disk. */
+  messagesLoaded?: boolean
+  /**
+   * PR refs to fall back on when there is no transcript to scrape — cached on a
+   * thread's metadata by the loader, or computed at compaction time.
+   */
   prRefs?: GithubPrRef[]
 }
 
 /**
- * PR refs for the status chip, scraping the transcript only when the entry still
- * has one. A live thread cannot cache its refs: `appendToken` mutates message
- * content in place as the agent streams, so a PR link the agent posts mid-turn
- * has to be found by re-reading, exactly as the sidebar did before.
+ * PR refs for the status chip.
+ *
+ * A transcript that is actually in memory wins over any cache, and must:
+ * `appendToken` mutates message content in place while the agent streams, so a
+ * PR link posted mid-turn is only found by re-reading. The cached `prRefs` is
+ * for the two cases with no transcript to read — an entry compacted on switching
+ * away, and a thread whose transcript has not been loaded (`messagesLoaded:
+ * false`), where an empty `messages` would otherwise read as "no PRs".
  */
 export function sidebarPrRefs(thread: SidebarThread): GithubPrRef[] {
-  if (thread.prRefs) return thread.prRefs
-  return collectThreadPrRefs({
-    messages: thread.messages ?? [],
-    ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
-  })
+  if (thread.messages && thread.messagesLoaded !== false) {
+    return collectThreadPrRefs({
+      messages: thread.messages,
+      ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
+    })
+  }
+  return thread.prRefs ?? []
 }
 
 /**
@@ -51,6 +63,7 @@ export function compactSidebarThread(thread: SidebarThread): SidebarThread {
     id: thread.id,
     title: thread.title,
     status: thread.status,
+    ...(thread.unreadAt !== undefined ? { unreadAt: thread.unreadAt } : {}),
     ...(thread.archivedAt !== undefined ? { archivedAt: thread.archivedAt } : {}),
     ...(thread.automation ? { automation: thread.automation } : {}),
     ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),

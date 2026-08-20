@@ -128,11 +128,11 @@ export function anthropicMaxOutputTokens(model: string): number {
  * hook-injected context). Matched by prefix so dated snapshots and suffixed
  * routing ids resolve too.
  *
- * Anything absent from this list must fall back to a `<system-reminder>` block
- * in a user turn; sending a mid-conversation system message to a model that
- * doesn't support it is a 400. Notably `claude-sonnet-4-6` — the default cloud
- * model — does not support it, so the fallback is the common path, not an edge
- * case.
+ * Anything absent from this list must keep current-turn operator instructions
+ * in the leading system prompt; sending a mid-conversation system message to a
+ * model that doesn't support it is a 400. Notably `claude-sonnet-4-6` — the
+ * default cloud model — does not support it, so leading-system placement is the
+ * common path, not an edge case.
  */
 const MID_CONVERSATION_SYSTEM_PREFIXES = [
   'claude-opus-5',
@@ -146,6 +146,10 @@ export function supportsMidConversationSystem(model: string): boolean {
   return MID_CONVERSATION_SYSTEM_PREFIXES.some((prefix) => model.startsWith(prefix))
 }
 
+/** Where current-turn operator instructions belong for one stored model selection. */
+export type OperatorInstructionPlacement =
+  'trailing-developer' | 'trailing-system' | 'leading-system'
+
 /**
  * Namespaces that put a first-party cloud model id on the wire, so a family
  * check against that id means something.
@@ -155,6 +159,26 @@ export function supportsMidConversationSystem(model: string): boolean {
  * `plugin-model` hand the turn to something that owns its own prompt.
  */
 const CLOUD_ROUTED: ReadonlySet<ModelNamespace> = new Set(['cloud', 'openrouter', 'extra-provider'])
+
+/**
+ * Select the strongest operator-instruction channel the resolved model is known
+ * to accept.
+ *
+ * This deliberately keys off the stored selection as well as the model id. An
+ * LM Studio / MLX model speaks an OpenAI-compatible transport, but that does not
+ * make its chat template accept OpenAI's `developer` role. Local and externally
+ * hosted agent namespaces therefore take the conservative leading-system path,
+ * even when their model name happens to begin with `gpt` or `claude`.
+ */
+export function operatorInstructionPlacement(model: string): OperatorInstructionPlacement {
+  const selection = parseModelSelection(model)
+  if (!CLOUD_ROUTED.has(selection.namespace)) return 'leading-system'
+  if (selection.modelId.startsWith('gpt-') && !selection.modelId.startsWith('gpt-oss-')) {
+    return 'trailing-developer'
+  }
+  if (supportsMidConversationSystem(selection.modelId)) return 'trailing-system'
+  return 'leading-system'
+}
 
 /**
  * Whether `model` resolves to the Claude Opus 5 family.

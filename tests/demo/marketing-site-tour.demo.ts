@@ -35,6 +35,10 @@ describe('marketing site Tour anchor', () => {
     await browser.url('/marketing/index.html')
     await $('.hero-demo').waitForDisplayed()
     await browser.waitUntil(() => browser.execute(() => document.fonts.status === 'loaded'))
+    await expect($('#hero-demo-frame')).toHaveAttribute(
+      'src',
+      'demo/main/?scenario=landing&embedded=1',
+    )
 
     await $('a[href="#tour"]').click()
     await browser.waitUntil(async () => {
@@ -52,5 +56,28 @@ describe('marketing site Tour anchor', () => {
     expect(geometry.demoTop - geometry.navBottom).toBeLessThanOrEqual(28)
 
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'marketing-site-tour-anchor.png'))
+  })
+
+  it('does not show or load either demo entry point on mobile', async () => {
+    await browser.setWindowSize(390, 844)
+    await browser.url('/marketing/index.html')
+    await $('.hero-copy').waitForDisplayed()
+    await browser.waitUntil(() => browser.execute(() => document.fonts.status === 'loaded'))
+
+    await expect($('.hero-visual')).not.toBeDisplayed()
+    await expect($('.hero-demo')).not.toBeDisplayed()
+    await expect($('.hero-demo-popout')).not.toBeDisplayed()
+    await expect($('a[href="#tour"]')).not.toBeDisplayed()
+
+    const frameSource = await browser.execute(() =>
+      document.getElementById('hero-demo-frame')?.getAttribute('src'),
+    )
+    expect(frameSource).toBeNull()
+
+    await browser.execute(() => {
+      const manifesto = document.querySelector('.manifesto')
+      if (manifesto) window.scrollTo({ top: manifesto.getBoundingClientRect().top + scrollY - 220 })
+    })
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'marketing-site-mobile-no-demo.png'))
   })
 })

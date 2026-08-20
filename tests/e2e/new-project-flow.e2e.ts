@@ -64,7 +64,8 @@ describe('new project flow', () => {
     await saveAppScreenshot('new-project-dialog.png')
 
     // Cancel returns to the welcome screen.
-    await $('.new-project-actions .ui-btn:not(.primary)').click()
+    await expect($('.new-project-actions .ui-btn-primary')).toHaveText('Create')
+    await $('.new-project-actions .ui-btn:not(.ui-btn-primary)').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
   })
 
@@ -87,12 +88,12 @@ describe('new project flow', () => {
 
     // Missing name shows an inline error.
     await $('.new-project-name').clearValue()
-    await $('.new-project-actions .ui-btn.primary').click()
+    await $('.new-project-actions .ui-btn-primary').click()
     await expect($('.new-project-error')).toBeDisplayed()
 
     // Fill it back in and create.
     await $('.new-project-name').setValue(projectName)
-    await $('.new-project-actions .ui-btn.primary').click()
+    await $('.new-project-actions .ui-btn-primary').click()
 
     // The workspace activates and the composer appears with the starter prompt.
     // The composer is a contenteditable, not an input: WDIO's value matchers read

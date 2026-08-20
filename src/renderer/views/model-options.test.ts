@@ -104,6 +104,7 @@ function mockApi(opts: MockOpts = {}): ApiClient {
                       commandHooks: [],
                       promptBlocks: [],
                       ui: [],
+                      followUps: [],
                       capabilities: [],
                       permissions: [],
                     },
@@ -471,6 +472,33 @@ describe('fetchModelOptions visibility', () => {
     })
   })
 
+  it('names the agent default when an unadvertised ACP selection has no model', async () => {
+    // `acp:cursor` carries no `#<model>`, so there is no model name to show —
+    // the agent picks. Deriving one by slicing at `#` echoes the whole raw
+    // selection back when there is no `#` at all.
+    const staleValue = 'acp:cursor'
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          {
+            id: 'cursor',
+            title: 'Cursor',
+            command: 'cursor-agent',
+            enabled: true,
+            availableModels: [{ value: 'composer-2.5[fast=false]', label: 'Composer 2.5' }],
+          },
+        ],
+      }),
+      staleValue,
+    )
+    const current = options.find((option) => option.value === staleValue)
+    assert.deepEqual(current, {
+      value: staleValue,
+      label: 'Cursor — agent default (not currently advertised)',
+      group: 'Cursor on this device',
+    })
+  })
+
   it('omits ACP agents on SSH workspaces and marks a stale selection unavailable', async () => {
     const api = mockApi({
       available: { anthropic: true },
@@ -610,13 +638,17 @@ describe('fetchModelOptions visibility', () => {
     )
     const known = options.find((o) => o.value === 'lmstudio:qwen/qwen2.5-coder-32b')
     assert.ok(known)
-    assert.match(known.label, /qwen\/qwen2\.5-coder-32b — coder/)
+    // A catalog-known weight shows its curated name, so the only dash in the
+    // row is the one introducing the app's own hints.
+    assert.match(known.label, /^Qwen2\.5-Coder 32B — coder/)
     // It now carries a sourced AA measurement, shown quant-adjusted (~) for the
     // running quant rather than the composite fallback.
     assert.match(known.label, /intellect ~[\d.]+/)
+    // An unknown weight has no curated name and no hints, but is still spelled
+    // as a name rather than left as an id.
     const unknown = options.find((o) => o.value === 'lmstudio:some-unknown-local')
     assert.ok(unknown)
-    assert.equal(unknown.label, 'some-unknown-local')
+    assert.equal(unknown.label, 'Some Unknown Local')
   })
 
   it('annotates scored cloud models with intellect, blended price, and frontier', async () => {

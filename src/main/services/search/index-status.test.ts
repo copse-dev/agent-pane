@@ -7,6 +7,7 @@ import {
   isSemanticIndexScaleGuarded,
   onWorkspaceIndexStatusChanged,
   resetWorkspaceIndexStatusForTest,
+  semanticBuildDeferred,
   setSemanticIndexScaleGuarded,
   setSemanticIndexUnavailable,
 } from './index-status.ts'
@@ -32,6 +33,27 @@ describe('index-status', () => {
     const done = getWorkspaceIndexStatus().fileIndex
     assert.equal(done.phase, 'ready')
     assert.equal(done.startedAt, undefined)
+  })
+
+  it('rests a deferred semantic pass at limited, not error', () => {
+    indexBuildStarted('semantic')
+    semanticBuildDeferred('still indexing')
+    const status = getWorkspaceIndexStatus().semantic
+    // Outlasting our wait ceiling means gortex's daemon is still working, not
+    // that the index broke — the footer must not cry "Indexing failed" (#517).
+    assert.equal(status.phase, 'limited')
+    assert.equal(status.reason, 'still indexing')
+    assert.equal(status.startedAt, undefined)
+    assert.equal(isSemanticIndexScaleGuarded(), true)
+  })
+
+  it('keeps reporting building when a deferred pass leaves another in flight', () => {
+    indexBuildStarted('semantic')
+    indexBuildStarted('semantic')
+    semanticBuildDeferred('still indexing')
+    assert.equal(getWorkspaceIndexStatus().semantic.phase, 'building')
+    indexBuildFinished('semantic', true)
+    assert.equal(getWorkspaceIndexStatus().semantic.phase, 'ready')
   })
 
   it('stays building while overlapping builds are in flight', () => {

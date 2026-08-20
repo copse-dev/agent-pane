@@ -6,17 +6,29 @@ import {
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
+import { markQuietRun } from './quiet-runs.ts'
+import type { ComparisonModelSelection } from '../views/approval-comparison-pickers.ts'
 
 // Payload for the standalone review/comparison retries. Mirrors the fields the
 // full run sends (see message-queue's refreshPayload) so the retry runs against
 // the picker's current model and the thread's persisted goal — read at click
 // time so a model swapped in the footer since the failure takes effect.
-function retryPayload(store: AppStore, threadId: string): string {
+function retryPayload(
+  store: AppStore,
+  threadId: string,
+  comparisonModels?: ComparisonModelSelection,
+): string {
   const thread = store.getState().threads.find((t) => t.id === threadId)
   return JSON.stringify({
     ...(thread?.workingBrief !== undefined ? { workingBrief: thread.workingBrief } : {}),
     ...(thread?.model !== undefined ? { model: thread.model } : {}),
+    ...(comparisonModels ? { comparisonModels } : {}),
   })
+}
+
+/** Payload for the picker's defaults — the thread's model, no run started. */
+export function comparisonModelsPayload(store: AppStore, threadId: string): string {
+  return retryPayload(store, threadId)
 }
 
 /** Re-run the post-turn review for the turn whose review card failed. */
@@ -59,4 +71,35 @@ export function retryComparison(store: AppStore, api: ApiClient, threadId: strin
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
   void api.agent.retryComparison(projectId, threadId, retryPayload(store, threadId))
+}
+
+/**
+ * Run a comparison the user asked for from the "Compare models" follow-up
+ * bubble, with the three models they picked. Unlike {@link retryComparison} this
+ * starts a comparison where there was none, so it seeds the running card itself
+ * rather than flipping an existing one — main re-emits the same `running` chunk
+ * when the run begins, so the click has feedback either way.
+ *
+ * Marked quiet: the picker's Run button is the user's own action, seconds old,
+ * with the card on screen — the completion chime would be noise.
+ */
+export function startComparison(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  models: ComparisonModelSelection,
+): void {
+  const projectId = store.getState().activeProjectId
+  if (!projectId) return
+  setThreadComparison(store, threadId, {
+    status: 'running',
+    models,
+    reviewA: '',
+    reviewB: '',
+    synthesis: '',
+  })
+  setThreadStatus(store, threadId, 'running')
+  syncAgentActivity(store, threadId, false)
+  markQuietRun(threadId)
+  void api.agent.retryComparison(projectId, threadId, retryPayload(store, threadId, models))
 }

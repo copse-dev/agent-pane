@@ -27,7 +27,7 @@ export class MockLLMProvider implements LLMProvider {
     signal?: AbortSignal,
   ): AsyncIterable<ProviderStreamChunk> {
     const systemText = messages
-      .filter((m) => m.role === 'system')
+      .filter((m) => m.role === 'system' || m.role === 'developer')
       .map((m) => (typeof m.content === 'string' ? m.content : ''))
       .join('\n')
     // Skill prompts emit `<skill_content name="…" trust="…">` (see skill-prompt.ts).

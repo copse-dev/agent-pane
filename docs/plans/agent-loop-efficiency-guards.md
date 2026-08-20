@@ -230,10 +230,12 @@ artefact of the pinning, not a property of caching. Pin the breakpoint to the la
 byte-identical and hits on every step whether or not the dynamic tool is present;
 revealing it then costs one tool schema plus the system block.
 
-The same file already applies this exact reordering one layer up (`:28-36`): volatile
-mid-conversation system messages are converted **last** with the breakpoint placed
-**before** them, so the entry a request writes stays a byte-identical prefix of the next
-turn's request (#1286). Anthropic allows four breakpoints, so there is room.
+The same file applies this exact reordering one layer up for models on the explicit
+late-system allowlist: volatile mid-conversation system messages are converted **last**
+with the breakpoint placed **before** them, so the entry a request writes stays a
+byte-identical prefix of the next turn's request (#1286). Models without a documented
+late operator channel merge steering into the initial system prompt instead; that safe
+template-compatible path intentionally gives up this cache benefit.
 
 For OpenAI / OpenRouter automatic prefix caching (`promptCacheKey`,
 `packages/llm/src/create-provider.ts:38`) the principle holds: appending preserves the

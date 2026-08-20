@@ -193,6 +193,11 @@ export default ts.config(
       'src/main/services/user-alerts-electron.ts',
       'src/main/services/plugins/plugin-browser-panel.ts',
       'src/main/services/ssh-workspace/ssh-workspace-ipc.ts',
+      // DEBUG BRANCH: patches `ipcMain.handle` to time every channel. It is by
+      // definition part of the IPC surface — instrumenting IPC without importing
+      // Electron is not a thing — so it belongs on this list rather than behind
+      // an injected seam that would need threading through every caller.
+      'src/main/services/diagnostics/perf-ipc.ts',
     ],
     rules: {
       '@typescript-eslint/no-restricted-imports': 'off',

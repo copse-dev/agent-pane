@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { getSettingSchema } from './settings-schema.ts'
+import { securitySettingsSchema } from './settings-writable.ts'
 
 describe('settings-schema', () => {
   it('returns a schema for known renderer-writable keys', () => {
@@ -48,6 +49,28 @@ describe('settings-schema', () => {
     assert.equal(rightPanelPosition.safeParse('side').success, true)
     assert.equal(rightPanelPosition.safeParse('bottom').success, true)
     assert.equal(rightPanelPosition.safeParse('top').success, false)
+  })
+
+  // Regression: `trustedShellCommands`, `cursorHooksEnabled` and
+  // `defaultReadonlyMode` were written by the security bundle but never
+  // registered here, so `settings:get` (which reads with a `null` fallback)
+  // handed the renderer `null` whatever was stored. The Settings form showed
+  // them empty/default on every open, and the next save wrote that back —
+  // the trusted-commands box looked like it never saved.
+  it('registers a schema for every key the security bundle writes', () => {
+    const unregistered = Object.keys(securitySettingsSchema.shape).filter(
+      (key) => !getSettingSchema(key),
+    )
+    assert.deepEqual(unregistered, [])
+  })
+
+  it('validates the trusted-command allow-list', () => {
+    const schema = getSettingSchema('trustedShellCommands')
+    assert.ok(schema)
+    assert.equal(schema.safeParse(['xcodebuild', 'swift']).success, true)
+    assert.equal(schema.safeParse([]).success, true)
+    assert.equal(schema.safeParse('xcodebuild').success, false)
+    assert.equal(schema.safeParse(['']).success, false)
   })
 
   it('returns undefined for keys without a registered schema', () => {

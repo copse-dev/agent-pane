@@ -20,6 +20,7 @@
 import type {
   PluginCapabilityDecl,
   PluginContributions,
+  PluginFollowUpDecl,
   PluginPermissionDecl,
   PluginUiContribution,
   PluginPromptBlock,
@@ -81,6 +82,23 @@ export class InvalidPanelContributionError extends Error {
     this.name = 'InvalidPanelContributionError'
     this.pluginId = pluginId
     this.contributionId = contributionId
+  }
+}
+
+/**
+ * Thrown when a plugin's follow-up bubble could not do what it declares. A
+ * prompt bubble with nothing to send is a dead click, and a host action is a
+ * first-party privilege that a user plugin must not self-grant through a
+ * manifest field.
+ */
+export class InvalidFollowUpContributionError extends Error {
+  readonly pluginId: string
+  readonly followUpId: string
+  constructor(pluginId: string, followUpId: string, reason: string) {
+    super(`plugin "${pluginId}" follow-up "${followUpId}" is invalid: ${reason}`)
+    this.name = 'InvalidFollowUpContributionError'
+    this.pluginId = pluginId
+    this.followUpId = followUpId
   }
 }
 
@@ -152,6 +170,23 @@ export class PluginRegistry {
           plugin.id,
           contribution.id,
           `level ${String(contribution.level)} must not declare a \`panel\` — panels are the level-2 contract`,
+        )
+      }
+    }
+    for (const followUp of plugin.contributions.followUps) {
+      const action = followUp.action ?? 'prompt'
+      if (action !== 'prompt' && plugin.trust !== 'first-party') {
+        throw new InvalidFollowUpContributionError(
+          plugin.id,
+          followUp.id,
+          'only first-party plugins may bind a bubble to a host action — a user plugin may suggest a prompt',
+        )
+      }
+      if (action === 'prompt' && !followUp.prompt?.trim()) {
+        throw new InvalidFollowUpContributionError(
+          plugin.id,
+          followUp.id,
+          'a `prompt` follow-up must carry the prompt text its click sends',
         )
       }
     }
@@ -274,6 +309,23 @@ export class PluginRegistry {
   /** UI contributions that mount for new content right now (enabled plugins only). */
   activeUiContributions(): readonly PluginUiContribution[] {
     return this.collectActive((c) => c.uiContributions)
+  }
+
+  /**
+   * Follow-up bubbles offered right now, each paired with its owning enabled
+   * plugin. The host still filters on each declaration's `when` condition.
+   */
+  activeFollowUps(): readonly {
+    readonly pluginId: string
+    readonly followUp: PluginFollowUpDecl
+  }[] {
+    const out: { pluginId: string; followUp: PluginFollowUpDecl }[] = []
+    for (const plugin of this.enabledPlugins()) {
+      for (const followUp of plugin.contributions.followUps) {
+        out.push({ pluginId: plugin.id, followUp })
+      }
+    }
+    return out
   }
 
   /**

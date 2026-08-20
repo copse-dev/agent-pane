@@ -52,6 +52,7 @@ describe('checkToolAvailability', () => {
     setGitAvailableForTest(null)
     setGhAvailableForTest(null)
     delete process.env['COPSE_E2E']
+    delete process.env['COPSE_AGENT_EVAL']
   })
 
   // Each probe is a process spawn and `gh auth status` is a network round trip;
@@ -92,12 +93,26 @@ describe('checkToolAvailability', () => {
     assert.equal(isGhAvailable(), false)
   })
 
+  // The agent-eval harness sets COPSE_E2E too, but it launches once and measures
+  // which tools a real agent picks. Skipping the probe there would unregister the
+  // `gh`-backed tools and score the agent on a tool list it could never have used.
+  it('still probes under the agent-eval harness', async () => {
+    process.env['COPSE_E2E'] = '1'
+    process.env['COPSE_AGENT_EVAL'] = '1'
+    const { deps, started, release } = gatedDeps()
+    const done = checkToolAvailability(deps)
+    release()
+    await done
+    assert.deepEqual(started.sort(), ['gh', 'git', 'grep', 'rg', 'semantic'])
+    assert.equal(isGhAvailable(), true)
+  })
+
   it('runs the authenticated GitHub probe outside the project sandbox', async () => {
     let invocation:
       { command: string; args: string[]; unsandboxed: boolean | undefined } | undefined
     const available = await probeGhAccessible((command, args, options) => {
       invocation = { command, args, unsandboxed: options?.unsandboxed }
-      return Promise.resolve({ stdout: '', stderr: '', code: 0 })
+      return Promise.resolve({ stdout: '', stderr: '', code: 0, stdoutTruncated: false })
     })
 
     assert.equal(available, true)
@@ -110,7 +125,7 @@ describe('checkToolAvailability', () => {
 
   it('treats a failed authenticated GitHub probe as unavailable', async () => {
     const available = await probeGhAccessible(() =>
-      Promise.resolve({ stdout: '', stderr: 'not authenticated', code: 1 }),
+      Promise.resolve({ stdout: '', stderr: 'not authenticated', code: 1, stdoutTruncated: false }),
     )
     assert.equal(available, false)
   })

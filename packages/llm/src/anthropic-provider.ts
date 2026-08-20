@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { withAppAttribution } from './app-attribution.ts'
-import { anthropicMaxOutputTokens, supportsMidConversationSystem } from './model-catalog.ts'
+import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import { anthropicParameterFields, type ModelParameters } from './model-parameters.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
@@ -31,7 +31,6 @@ export class AnthropicProvider implements LLMProvider {
     const { client, model } = this
     const self = this
     const { systemPrompt, conversation } = splitSystemPrompt(messages)
-    const midSystem = supportsMidConversationSystem(model)
     // Any system message *after* the first is an operator instruction that
     // arrived mid-conversation (turn steering, hook-injected context). It is
     // volatile — regenerated every turn and never persisted into the thread's
@@ -40,9 +39,9 @@ export class AnthropicProvider implements LLMProvider {
     // the next turn's request, instead of contaminating it with text that turn
     // will not resend (#1286).
     const operatorStart = trailingSystemStart(conversation)
-    const apiMessages = toAnthropicMessages(conversation.slice(0, operatorStart), midSystem)
+    const apiMessages = toAnthropicMessages(conversation.slice(0, operatorStart))
     markTrailingCacheBreakpoint(apiMessages)
-    apiMessages.push(...toAnthropicMessages(conversation.slice(operatorStart), midSystem))
+    apiMessages.push(...toAnthropicMessages(conversation.slice(operatorStart)))
     const maxTokens = anthropicMaxOutputTokens(model)
     // Thinking / effort / sampling the user chose for this model. Empty unless
     // they tuned it, so an untouched model's request body is byte-identical to
@@ -177,7 +176,8 @@ export class AnthropicProvider implements LLMProvider {
  * top-level `system` parameter) from the rest of the conversation. Later system
  * messages stay in `conversation` — they are mid-conversation operator
  * instructions, not the system prompt, and are handled by
- * {@link toAnthropicMessages}.
+ * {@link toAnthropicMessages}. Turn assembly only leaves them here for models
+ * on the explicit late-system allowlist.
  *
  * `systemPrompt` is `undefined` only when there is no system message at all; an
  * empty-string prompt still produces the `system` parameter, matching the
@@ -209,17 +209,6 @@ function trailingSystemStart(conversation: LLMMessage[]): number {
 }
 
 /**
- * Fallback channel for models without mid-conversation system messages: the
- * instruction rides a user turn wrapped in `<system-reminder>` tags. Same
- * caching profile — it lands after the last breakpoint either way — but without
- * the operator authority of a real system turn, so it is only used when the
- * model cannot accept one.
- */
-function systemReminder(text: string): string {
-  return `<system-reminder>\n${text}\n</system-reminder>`
-}
-
-/**
  * Put a cache breakpoint on the final content block of the final message, so
  * the whole conversation prefix is cached across agent-loop iterations instead
  * of only the system prompt (#582). Each request's breakpoint lands one turn
@@ -248,18 +237,16 @@ export function markTrailingCacheBreakpoint(apiMessages: Anthropic.MessageParam[
   block.cache_control = { type: 'ephemeral' }
 }
 
-function toAnthropicMessages(
-  messages: LLMMessage[],
-  midConversationSystem: boolean,
-): Anthropic.MessageParam[] {
+function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
   return messages.flatMap((m): Anthropic.MessageParam[] => {
     if (m.role === 'system') {
       // An empty block would be rejected by the API, and an empty operator
       // instruction says nothing anyway.
       if (!m.content) return []
-      return midConversationSystem
-        ? [{ role: 'system', content: m.content }]
-        : [{ role: 'user', content: [{ type: 'text', text: systemReminder(m.content) }] }]
+      return [{ role: 'system', content: m.content }]
+    }
+    if (m.role === 'developer') {
+      throw new Error('Anthropic requests do not support developer messages')
     }
     if (m.role === 'user' && typeof m.content === 'string') {
       return [{ role: 'user', content: m.content }]

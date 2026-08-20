@@ -26,6 +26,10 @@ describe('envForRendererChildProcess', () => {
       MISTRAL_API_KEY: 'm',
       OPENROUTER_API_KEY: 'o',
       PARALLEL_API_KEY: 'p',
+      CURSOR_API_KEY: 'cursor-secret',
+      CURSOR_SESSION_TOKEN: 'cursor-session',
+      WORKOS_CURSOR_SESSION_TOKEN: 'workos-session',
+      LM_API_TOKEN: 'lm-token',
       ANTHROPIC_AUTH_TOKEN: 'a', // caught by the provider pattern, not the list
     })
     assert.equal(env['PATH'], '/usr/bin')
@@ -36,6 +40,10 @@ describe('envForRendererChildProcess', () => {
     assert.equal(env['MISTRAL_API_KEY'], undefined)
     assert.equal(env['OPENROUTER_API_KEY'], undefined)
     assert.equal(env['PARALLEL_API_KEY'], undefined)
+    assert.equal(env['CURSOR_API_KEY'], undefined)
+    assert.equal(env['CURSOR_SESSION_TOKEN'], undefined)
+    assert.equal(env['WORKOS_CURSOR_SESSION_TOKEN'], undefined)
+    assert.equal(env['LM_API_TOKEN'], undefined)
     assert.equal(env['ANTHROPIC_AUTH_TOKEN'], undefined)
   })
 

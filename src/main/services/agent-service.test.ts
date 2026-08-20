@@ -223,10 +223,12 @@ describe('runAgent AgentHost decoupling', () => {
       { role: 'user', content: 'earlier' },
       { role: 'user', content: 'why does this thread forget?' },
     ])
-    // Turn-local system steering is stripped from every checkpoint, exactly as
-    // it is from the committed history.
+    // Turn-local operator steering is stripped from every checkpoint, exactly
+    // as it is from the committed history.
     for (const snapshot of checkpoints) {
-      assert.ok(!snapshot.some((message) => message.role === 'system'))
+      assert.ok(
+        !snapshot.some((message) => message.role === 'system' || message.role === 'developer'),
+      )
     }
     assert.deepEqual(checkpoints.at(-1), result.messages.slice(0, checkpoints.at(-1)?.length))
   })

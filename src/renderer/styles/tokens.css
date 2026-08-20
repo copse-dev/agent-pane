@@ -129,6 +129,10 @@
   --spacing-md: calc(12px * var(--ui-scale));
   --spacing-lg: calc(16px * var(--ui-scale));
   --spacing-xl: calc(24px * var(--ui-scale));
+  /* One vertical rhythm for every scrollable list row — sidebar threads and
+     projects, PR rows, roadmap backlog rows. Reach for this instead of a
+     per-pane padding so the panels read as the same list at the same density. */
+  --list-row-padding-block: var(--spacing-sm);
   /* Keep prose, tool traces, and the docked composer readable on very wide
      windows. Wide artifacts can still scroll or expand within this column. */
   --chat-content-max: 960px;

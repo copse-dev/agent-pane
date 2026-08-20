@@ -127,6 +127,7 @@ describe('ResponsesProvider input mapping', () => {
           { type: 'image', dataUrl: 'data:image/png;base64,abc' },
         ],
       },
+      { role: 'developer', content: 'Be concise.' },
       { role: 'assistant', content: 'I will inspect it.' },
       {
         role: 'assistant',
@@ -144,6 +145,7 @@ describe('ResponsesProvider input mapping', () => {
           { type: 'input_image', image_url: 'data:image/png;base64,abc', detail: 'auto' },
         ],
       },
+      { role: 'developer', content: 'Be concise.' },
       { role: 'assistant', content: 'I will inspect it.' },
       {
         type: 'function_call',

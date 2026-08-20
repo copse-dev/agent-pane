@@ -45,6 +45,7 @@ import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
+import { operatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
 import {
   beginHookRunRecording,
   clearHookRunLiveSink,
@@ -115,7 +116,9 @@ import {
   runModelComparison,
   setModelComparisonContext,
   isAutoComparisonEnabled,
+  resolveComparisonModelDefaults,
 } from './model-comparison-runner.ts'
+import type { ComparisonModels } from './model-comparison.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
   setAgentRunTodoContext,
@@ -369,9 +372,9 @@ interface BeforeSubmitPromptResult {
   /** The user-facing notice to show when a hook halted the submit; null to proceed. */
   blocked: string | null
   /**
-   * Current-turn context a hook injected (H2), pre-built into the system-reminder
-   * block. Folded into the local turn's system message (like `turnStart`); absent
-   * when no hook injected or the submit was halted.
+   * Current-turn context a hook injected (H2), pre-built into the bounded
+   * out-of-band block. Routed with `turnStart` through the selected model's
+   * operator channel; absent when no hook injected or the submit was halted.
    */
   injectContext?: string
 }
@@ -608,7 +611,8 @@ export interface RunAgentOptions {
    * Called with the turn's provider history as it grows, so a host can persist
    * progress a run that never returns would otherwise take with it. Fired once
    * the (redacted) prompt has been prepared and again at each LLM call, always
-   * with system messages already stripped — the same shape `runAgent` returns.
+   * with turn-local system/developer instructions already stripped — the same
+   * shape `runAgent` returns.
    * Purely observational: never awaited, and a throwing sink cannot fail a turn.
    */
   onHistoryCheckpoint?: (messages: LLMMessage[]) => void
@@ -674,9 +678,9 @@ export async function runAgent(
     return { usage: { inputTokens: 0, outputTokens: 0 }, messages: priorMessages }
   }
   // H2: a `beforeSubmitPrompt` hook may inject current-turn context (Cursor
-  // `additionalContext`). It is folded into the local turn's system message
-  // alongside `turnStart` steering below. ACP / remote paths compose the prompt
-  // out-of-process and have no equivalent injection point, so this is honoured
+  // `additionalContext`). It is routed through the local model's operator
+  // channel alongside `turnStart` steering below. ACP / remote paths compose the
+  // prompt out-of-process and have no equivalent injection point, so this is honoured
   // on the local agent-loop path (the compose-path hook's home).
   const submitInjectContext = submit.injectContext
 
@@ -1058,10 +1062,11 @@ export async function runAgent(
   let outputTokens = 0
 
   /**
-   * The turn's history in the shape the host persists: turn-local system
+   * The turn's history in the shape the host persists: turn-local operator
    * steering never outlives the turn that injected it.
    */
-  const persistableHistory = (): LLMMessage[] => trimmed.filter((m) => m.role !== 'system')
+  const persistableHistory = (): LLMMessage[] =>
+    trimmed.filter((m) => m.role !== 'system' && m.role !== 'developer')
 
   /**
    * Hand the host the turn's history so far. Observational — a sink that throws
@@ -1241,21 +1246,18 @@ export async function runAgent(
         recordHookRun: recordFunctionHookRun,
       },
     )
-    // Both the `turnStart` steering (M0.2) and any `beforeSubmitPrompt` injected
-    // context (H2, already a system-reminder block) ride a *trailing* system
-    // message rather than being folded into messages[0].
-    //
-    // Appending to the system prompt put per-turn text at the very front of the
-    // prompt, which invalidated the whole cached prefix — tools and system
-    // prompt included — on every turn steering fired. As the last entry it sits
-    // after the last cache breakpoint instead, so the prefix stays byte-stable
-    // across turns (#1286). Placement satisfies the API rule for
-    // mid-conversation system messages: it follows the user turn and is last.
-    // It never persists into the thread's history — the `role !== 'system'`
-    // filter on the returned messages strips it — so steering stays turn-local
-    // exactly as before.
+    // Route current-turn operator instructions by an explicit model capability:
+    // GPT gets a trailing developer turn, the small allowlist of models with
+    // genuine late-system support gets a trailing system turn, and everything
+    // else folds into the leading system prompt. In particular, an OpenAI-
+    // compatible LM Studio / MLX transport does not imply developer-role support.
+    // Both operator roles stay turn-local and are stripped from persisted history.
     const turnStartInjected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
-    appendOperatorInstruction(messages, [turnStartInjected, submitInjectContext])
+    appendOperatorInstruction(
+      messages,
+      [turnStartInjected, submitInjectContext],
+      operatorInstructionPlacement(model),
+    )
 
     const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
     trimmed = prepared.trimmed
@@ -1288,7 +1290,7 @@ export async function runAgent(
       sendChunk({ type: 'done' })
       return {
         usage: { inputTokens: 0, outputTokens: 0 },
-        messages: trimmed.filter((m) => m.role !== 'system'),
+        messages: trimmed.filter((m) => m.role !== 'system' && m.role !== 'developer'),
       }
     }
 
@@ -1870,6 +1872,12 @@ export function listRunningThreadIds(): string[] {
 export interface RetryOptions {
   workingBrief?: string
   model?: string
+  /**
+   * Comparison models the user picked in the follow-up bubble's picker. Only
+   * {@link retryModelComparison} reads it; passing it makes the run use exactly
+   * these three and skip the spend prompt the picker already served as.
+   */
+  comparisonModels?: ComparisonModels
 }
 
 /** Register a fresh abort controller for a standalone review/comparison retry,
@@ -1950,13 +1958,32 @@ export async function retryPostTurnReview(
 }
 
 /**
- * Re-run the two-model comparison for a thread on demand — the retry action on a
- * failed comparison card. Like {@link retryPostTurnReview}, it reviews the
- * current working diff, so a fixable failure (a mis-loaded local model, a
- * declined/aborted run) can be retried in place. `runModelComparison` emits its
- * own running/terminal `model_comparison` chunks (and re-asks for spend approval
- * when a model is billable); we bracket it with a `done` so the thread idles.
+ * Run the two-model comparison for a thread on demand — the retry action on a
+ * failed comparison card, and the "Compare models" follow-up bubble. Like
+ * {@link retryPostTurnReview}, it reviews the current working diff, so a fixable
+ * failure (a mis-loaded local model, a declined/aborted run) can be retried in
+ * place. `runModelComparison` emits its own running/terminal `model_comparison`
+ * chunks; we bracket it with a `done` so the thread idles.
+ *
+ * With `options.comparisonModels` — the bubble path — those three models are
+ * used verbatim and no spend prompt is raised; without them the settings-driven
+ * resolution and its approval apply as before.
  */
+/**
+ * The three models the "Compare models" picker opens on: the pack's settings (or
+ * its defaults) expanded to concrete ids, against the same chat model the run
+ * would use for reviewer A. Resolved when the bubble is *clicked* rather than
+ * when it is built — expansion can reach the provider catalogue, and a bubble
+ * nobody clicks should cost nothing.
+ */
+export async function resolveComparisonModelChoices(
+  options?: RetryOptions,
+): Promise<ComparisonModels> {
+  const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
+  const model = (await resolveAgentChatModel(requestedModel)).model
+  return resolveComparisonModelDefaults(model)
+}
+
 export async function retryModelComparison(
   threadId: string,
   priorMessages: LLMMessage[],
@@ -1972,7 +1999,14 @@ export async function retryModelComparison(
   try {
     const parentGoal = resolveParentGoal(options?.workingBrief, priorMessages, '')
     await runModelComparison(
-      { threadId, parentGoal, registry, chatModel: model, onChunk: sendChunk },
+      {
+        threadId,
+        parentGoal,
+        registry,
+        chatModel: model,
+        onChunk: sendChunk,
+        ...(options?.comparisonModels ? { models: options.comparisonModels } : {}),
+      },
       controller.signal,
     )
   } finally {
