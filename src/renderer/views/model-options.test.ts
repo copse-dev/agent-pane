@@ -265,7 +265,7 @@ describe('fetchModelOptions visibility', () => {
         available: { anthropic: true },
         acpAgents: [
           {
-            id: 'claude-agent-acp',
+            id: 'claude-acp',
             title: 'Claude',
             command: 'claude-agent-acp',
             enabled: true,
@@ -295,7 +295,7 @@ describe('fetchModelOptions visibility', () => {
     const options = await fetchModelOptions(
       mockApi({
         available: { anthropic: true },
-        acpAgents: [{ id: 'gemini-cli', title: 'Gemini CLI', command: 'gemini', enabled: true }],
+        acpAgents: [{ id: 'gemini', title: 'Gemini CLI', command: 'gemini', enabled: true }],
       }),
       '',
     )
@@ -311,7 +311,7 @@ describe('fetchModelOptions visibility', () => {
     const options = await fetchModelOptions(
       mockApi({
         acpAgents: [
-          { id: 'gemini-cli', title: 'Gemini CLI', command: 'gemini', enabled: true },
+          { id: 'gemini', title: 'Gemini CLI', command: 'gemini', enabled: true },
           { id: 'off', title: 'Disabled Agent', command: 'x', enabled: false },
         ],
       }),
@@ -320,7 +320,7 @@ describe('fetchModelOptions visibility', () => {
     const acp = options.filter((o) => o.group === 'Gemini CLI on this device')
     assert.deepEqual(
       acp.map((o) => o.value),
-      ['acp:gemini-cli'],
+      ['acp:gemini'],
     )
     const [acpAgent] = acp
     assert.ok(acpAgent)
@@ -401,7 +401,7 @@ describe('fetchModelOptions visibility', () => {
       mockApi({
         acpAgents: [
           {
-            id: 'claude-agent-acp',
+            id: 'claude-acp',
             title: 'Claude',
             command: 'claude-agent-acp',
             enabled: true,

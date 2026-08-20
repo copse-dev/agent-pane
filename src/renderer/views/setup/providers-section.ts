@@ -45,11 +45,11 @@ const MERGED_VENDORS: readonly VendorSpec[] = [
     id: 'anthropic',
     label: 'Anthropic',
     api: ['anthropic'],
-    agents: ['claude-agent-acp'],
+    agents: ['claude-acp'],
   },
-  { id: 'openai', label: 'OpenAI', api: ['openai'], agents: ['codex'] },
+  { id: 'openai', label: 'OpenAI', api: ['openai'], agents: ['codex-acp'] },
   { id: 'cursor', label: 'Cursor', agents: ['cursor'] },
-  { id: 'gemini', label: 'Google Gemini', api: ['gemini'], agents: ['gemini-cli'] },
+  { id: 'gemini', label: 'Google Gemini', api: ['gemini'], agents: ['gemini'] },
 ]
 
 const ADD_KEY = 'other'

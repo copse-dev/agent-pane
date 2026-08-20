@@ -1,5 +1,5 @@
 import type { AcpAgentConfig, AcpAgentSandboxConfig } from '@shared/types/acp.ts'
-import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
+import { canonicalAcpAgentId, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 
 /**
@@ -12,7 +12,14 @@ import { getSetting, setSetting } from '../storage/settings.ts'
  * the spawn config the run service hands to the ACP client.
  */
 export function listAcpAgents(): AcpAgentConfig[] {
-  return getSetting<AcpAgentConfig[]>('registeredAcpAgents', [])
+  // Normalise renamed ids on the way out (`LEGACY_ACP_AGENT_IDS`), so a config
+  // written before an agent was renamed still resolves its catalog entry — and
+  // therefore its seatbelt — rather than silently reading as a custom agent.
+  return getSetting<AcpAgentConfig[]>('registeredAcpAgents', []).map((agent) =>
+    agent.id === canonicalAcpAgentId(agent.id)
+      ? agent
+      : { ...agent, id: canonicalAcpAgentId(agent.id) },
+  )
 }
 
 /** Configured agents the user has enabled — the ones the picker should offer. */
@@ -26,7 +33,10 @@ export function listEnabledAcpAgents(): AcpAgentConfig[] {
  * than spawning something the user turned off.
  */
 export function getAcpAgent(id: string): AcpAgentConfig | null {
-  const agent = listAcpAgents().find((candidate) => candidate.id === id)
+  // `id` often comes from a thread's `acp:<id>` model value, which is history
+  // and keeps whatever id was current when the turn ran.
+  const canonical = canonicalAcpAgentId(id)
+  const agent = listAcpAgents().find((candidate) => candidate.id === canonical)
   return agent && agent.enabled ? agent : null
 }
 
@@ -75,6 +85,7 @@ export function resolveAcpPermissionMode(
  */
 export async function upsertAcpAgent(config: AcpAgentConfig): Promise<AcpAgentConfig[]> {
   const list = listAcpAgents()
+  config = { ...config, id: canonicalAcpAgentId(config.id) }
   const index = list.findIndex((candidate) => candidate.id === config.id)
   const next = index === -1 ? [...list, config] : list.map((c) => (c.id === config.id ? config : c))
   await setSetting('registeredAcpAgents', next)

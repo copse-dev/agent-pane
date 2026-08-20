@@ -135,3 +135,29 @@ describe('resolveAcpPermissionMode (issue #607)', () => {
     assert.equal(resolveAcpPermissionMode({ ...base, id: 'my-custom-agent' }, true), undefined)
   })
 })
+
+describe('renamed agent ids', () => {
+  it('reads a config written under the old id as the current one', async () => {
+    await setSetting('registeredAcpAgents', [
+      { id: 'codex', title: 'Codex', command: 'codex-acp', enabled: true },
+    ])
+    assert.deepEqual(
+      listAcpAgents().map((agent) => agent.id),
+      ['codex-acp'],
+    )
+    // A thread that ran before the rename still names the agent the old way.
+    assert.ok(getAcpAgent('codex'))
+    assert.ok(getAcpAgent('codex-acp'))
+  })
+
+  it('still resolves the seatbelt for a config written under the old id', () => {
+    const resolved = resolveAcpSandbox({
+      id: 'gemini-cli',
+      title: 'Gemini',
+      command: 'gemini',
+      enabled: true,
+    })
+    assert.ok(resolved, 'a pre-rename config resolved no sandbox')
+    assert.ok(resolved.allowedDomains.includes('*.googleapis.com'))
+  })
+})

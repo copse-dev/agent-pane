@@ -1,3 +1,4 @@
+import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import * as fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import type {
@@ -647,7 +648,8 @@ export function shouldAutoApproveSandboxedCodexCodeMode(
   agent: { id: string; sandboxed: boolean },
   req: RequestPermissionRequest,
 ): boolean {
-  if (agent.id !== 'codex' || !agent.sandboxed || req.toolCall.kind !== 'execute') return false
+  if (canonicalAcpAgentId(agent.id) !== 'codex-acp') return false
+  if (!agent.sandboxed || req.toolCall.kind !== 'execute') return false
   const meta = req._meta
   if (!isRecord(meta) || !isRecord(meta['codex'])) return false
   return acpExecuteCommandText(req.toolCall) === null

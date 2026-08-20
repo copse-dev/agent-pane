@@ -85,6 +85,35 @@ export interface KnownAcpAgent {
 }
 
 /**
+ * Renames, old id → current id.
+ *
+ * Copse's agent ids are the [ACP registry](https://github.com/agentclientprotocol/registry)
+ * ids, so one vocabulary describes an agent across every client that speaks the
+ * protocol. The ids here predate that alignment.
+ *
+ * These entries are permanent. An id is a persisted key in three places — the
+ * `acp:<id>` model value on every thread spine line, the
+ * `` `${agentId}:${kind}` `` remembered-permission grants, and
+ * `registeredAcpAgents` — and thread history is append-only, so the oldest of
+ * those can never be rewritten. Resolve through {@link canonicalAcpAgentId}
+ * wherever an id arrives from storage.
+ *
+ * Only *renames* belong here. An agent that was withdrawn is a
+ * {@link RETIRED_ACP_AGENTS} entry keeping its own id: aliasing it to whatever
+ * replaced it would make old threads claim they ran something they did not.
+ */
+export const LEGACY_ACP_AGENT_IDS: Readonly<Record<string, string>> = {
+  'claude-agent-acp': 'claude-acp',
+  codex: 'codex-acp',
+  'gemini-cli': 'gemini',
+}
+
+/** Current id for a possibly-legacy one. Unknown ids pass through unchanged. */
+export function canonicalAcpAgentId(id: string): string {
+  return LEGACY_ACP_AGENT_IDS[id] ?? id
+}
+
+/**
  * Agents that were once offered and no longer are. They are deliberately NOT in
  * {@link KNOWN_ACP_AGENTS} — nothing installs, registers, or recommends them —
  * but they keep their full entry here, confinement included, for three reasons:
@@ -161,15 +190,16 @@ export const RETIRED_ACP_AGENTS: readonly RetiredAcpAgent[] = [
  * for "what seatbelt does this spawn under" cannot be "none, it is gone".
  */
 export function findAcpCatalogEntry(id: string): KnownAcpAgent | undefined {
+  const canonical = canonicalAcpAgentId(id)
   return (
-    KNOWN_ACP_AGENTS.find((agent) => agent.id === id) ??
-    RETIRED_ACP_AGENTS.find((agent) => agent.id === id)
+    KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical) ??
+    RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical)
   )
 }
 
 export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
   {
-    id: 'gemini-cli',
+    id: 'gemini',
     title: 'Gemini CLI',
     command: 'gemini',
     // `--acp` is the canonical flag, added in @google/gemini-cli 0.33.0 (2026-03-11);
@@ -193,7 +223,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     note: 'Sign in by running `gemini` once, or set GEMINI_API_KEY.',
   },
   {
-    id: 'claude-agent-acp',
+    id: 'claude-acp',
     title: 'Claude',
     command: 'claude-agent-acp',
     args: [],
@@ -263,7 +293,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     note: 'Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`.',
   },
   {
-    id: 'codex',
+    id: 'codex-acp',
     title: 'Codex',
     command: 'codex-acp',
     args: [],

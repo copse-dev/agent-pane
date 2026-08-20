@@ -4,7 +4,7 @@ import type {
   AcpConfigOption,
   AcpModelChoice,
 } from './types/acp.ts'
-import { KNOWN_ACP_AGENTS, RETIRED_ACP_AGENTS } from './acp-known-agents.ts'
+import { canonicalAcpAgentId, KNOWN_ACP_AGENTS, RETIRED_ACP_AGENTS } from './acp-known-agents.ts'
 import { isRecord, recordArrayOrEmpty, stringRecordOrEmpty } from './unknown-value.mts'
 
 /**
@@ -137,7 +137,10 @@ export function parseAcpAgentConfigs(value: unknown): AcpAgentConfig[] {
     ) {
       return []
     }
-    const agent: AcpAgentConfig = { id, title, command, enabled }
+    // Configs written before an agent was renamed still carry the old id.
+    // Normalising here means every consumer — picker, spawn, seatbelt —
+    // sees one id, and the next write persists it.
+    const agent: AcpAgentConfig = { id: canonicalAcpAgentId(id), title, command, enabled }
     if (Array.isArray(entry['args']) && entry['args'].every((arg) => typeof arg === 'string')) {
       agent.args = entry['args']
     }
@@ -312,10 +315,13 @@ export function acpModelChoiceLabel(choice: AcpModelChoice): string {
 export function acpModelDisplayLabel(model: string, agents: readonly AcpAgentConfig[]): string {
   const selection = parseAcpModelSelection(model)
   if (selection === null) return model
-  const agent = agents.find((candidate) => candidate.id === selection.id)
+  // Canonicalise both sides: the model value is history and the configured list
+  // may have been built without going through `parseAcpAgentConfigs`.
+  const selectedId = canonicalAcpAgentId(selection.id)
+  const agent = agents.find((candidate) => canonicalAcpAgentId(candidate.id) === selectedId)
   // A thread that ran a since-retired agent still names it; fall back to the
   // recorded title so old transcripts read as a product name, not a slug.
-  const retired = RETIRED_ACP_AGENTS.find((candidate) => candidate.id === selection.id)
+  const retired = RETIRED_ACP_AGENTS.find((candidate) => candidate.id === selectedId)
   const title = agent?.title ?? retired?.title ?? selection.id
   if (!selection.model) return title
   const choice = agent?.availableModels?.find((m) => m.value === selection.model)

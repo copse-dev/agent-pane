@@ -1,3 +1,4 @@
+import { canonicalAcpAgentId, LEGACY_ACP_AGENT_IDS } from '@shared/acp-known-agents.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
@@ -12,11 +13,26 @@ import { parseStringList } from '../storage/storage-schema.ts'
 const GRANTS_STORAGE_KEY = 'acp-remembered-grants'
 
 function grantKey(agentId: string, kind: string): string {
-  return `${agentId}:${kind}`
+  return `${canonicalAcpAgentId(agentId)}:${kind}`
+}
+
+/**
+ * Every key a grant for this agent could be stored under: the current one, plus
+ * one per id the agent used to have. Grants are written canonically, but a
+ * grant remembered before the agent was renamed is still on disk under the old
+ * id — and a dropped grant means re-prompting a user who already answered.
+ */
+function grantKeys(agentId: string, kind: string): string[] {
+  const canonical = canonicalAcpAgentId(agentId)
+  const legacy = Object.entries(LEGACY_ACP_AGENT_IDS)
+    .filter(([, current]) => current === canonical)
+    .map(([old]) => `${old}:${kind}`)
+  return [`${canonical}:${kind}`, ...legacy]
 }
 
 export function isAcpPermissionRemembered(agentId: string, kind: string): boolean {
-  return parseStringList(storageGet(GRANTS_STORAGE_KEY)).includes(grantKey(agentId, kind))
+  const stored = parseStringList(storageGet(GRANTS_STORAGE_KEY))
+  return grantKeys(agentId, kind).some((key) => stored.includes(key))
 }
 
 /**
