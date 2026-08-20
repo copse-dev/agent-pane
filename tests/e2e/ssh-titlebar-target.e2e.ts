@@ -30,9 +30,14 @@ describe('SSH status chrome without lightning emoji', () => {
       await banner.waitForExist({ timeout: 15_000 })
     } catch (error) {
       const state = await browser.execute(() => ({
-        projectRows: [...document.querySelectorAll('.project-row')].map(
-          (row) => row.getAttribute('title') ?? '',
-        ),
+        // `.project-row.active` is keyed on `expandedProjectId ?? activeProjectId`
+        // (projects-pane.ts:463). `restoreProject` returns before setting
+        // `expandedProjectId` on the SSH-failure path, so on this screen the
+        // class is a direct read-out of whether the project is the active one.
+        projectRows: [...document.querySelectorAll('.project-row')].map((row) => ({
+          title: row.getAttribute('title') ?? '',
+          active: row.classList.contains('active'),
+        })),
         titlebar: document.querySelector('.workspace-name')?.textContent?.trim() ?? null,
       }))
       const ssh = await browser.execute(() => window.api.sshWorkspace.getStates())
