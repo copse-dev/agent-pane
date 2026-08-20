@@ -52,7 +52,7 @@ const nonPreset: KnownAcpAgent = {
   id: 'gemini-cli',
   title: 'Gemini CLI',
   command: 'gemini',
-  args: ['--experimental-acp'],
+  args: ['--acp'],
 }
 
 const input = (known: KnownAcpAgent, over: Partial<AcpAutoSetupInput> = {}): AcpAutoSetupInput => ({

@@ -134,6 +134,22 @@ export function setSemanticIndexScaleGuarded(phase: 'limited' | 'skipped', reaso
   notify()
 }
 
+/**
+ * Drop the previous workspace's semantic resting phase when the primary root
+ * changes. Status is process-global, so a scale-skipped chip from an oversized
+ * project would otherwise stick on the next (small) project until that project's
+ * orchestration happens to overwrite it.
+ */
+export function clearSemanticIndexStatus(): void {
+  components.semantic = {
+    active: 0,
+    startedAt: null,
+    restingPhase: 'idle',
+    restingReason: null,
+  }
+  notify()
+}
+
 /** Whether semantic work is refused by the scale guard for the active workspace. */
 export function isSemanticIndexScaleGuarded(): boolean {
   const phase = components.semantic.restingPhase
