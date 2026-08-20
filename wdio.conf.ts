@@ -83,20 +83,21 @@ export const config: Options.Testrunner = {
           '--disable-gpu',
           '--no-sandbox',
           '--disable-dev-shm-usage',
-          // NOTE: `--password-store=basic` was added here to make
+          // NOTE: `--password-store=basic` was added here (#1793) to make
           // `safeStorage.isEncryptionAvailable()` report true on a headless
-          // Linux runner (which has no OS secret service, so
-          // `vnc.rememberUsername` returns false and `vnc-viewer` fails while
-          // passing on macOS). It was verified not to work — the spec failed
-          // identically with the flag present — and has been removed rather
-          // than left as a switch that looks like it does something. Picking
-          // the `basic` backend is not the same as opting into it: Electron
-          // still reports encryption unavailable unless
-          // `safeStorage.setUsePlainTextEncryption(true)` is called before
-          // `app` ready. The two real options are provisioning a secret
-          // service on the runner image (as it already bakes `bwrap` and
-          // `socat`) or that explicit opt-in; neither belongs in a browser
-          // flag here. See the revert PR for the full account.
+          // Linux runner, which has no OS secret service. It was verified not
+          // to work — `vnc-viewer` failed identically with the flag present —
+          // so it is removed rather than left looking load-bearing. Picking the
+          // `basic` backend is not opting into it: Electron still reports
+          // encryption unavailable unless `setUsePlainTextEncryption(true)` is
+          // called before `app` ready.
+          //
+          // Nothing needs to replace it. #1797 settled the underlying question
+          // the right way round: `rememberVncUsername` returning false with no
+          // cipher is the product being *correct*, not a gap to paper over, so
+          // the spec now asserts that outcome on Linux and the persisted one on
+          // macOS. Handing the runner a fake secret store would only have made
+          // it lie to the test.
         ],
       },
     },
