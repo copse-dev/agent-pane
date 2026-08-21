@@ -35,6 +35,7 @@ import {
   type ProviderSnapshot,
 } from './checkup-report.ts'
 import { getElectronAppVersion, isElectronAppPackaged } from '../electron-app-runtime.ts'
+import { unrepairableOpenFileFault } from '../acp/acp-resource-fault.ts'
 
 export type { CheckupReport } from './checkup-report.ts'
 
@@ -139,6 +140,17 @@ function spawnHelperExecutable(): boolean | null {
 }
 
 /** Run every diagnostic and assemble the report. Each source fails soft to a safe default. */
+/**
+ * An external agent left stuck against the descriptor ceiling — recorded by the
+ * session pool only once replacing the process failed to clear it, so it is a
+ * standing condition rather than a blip.
+ */
+function agentOpenFilesSnapshot(): CheckupSnapshot['agentOpenFiles'] {
+  const stuck = unrepairableOpenFileFault()
+  if (!stuck) return null
+  return { command: stuck.command, code: stuck.fault.code, limit: stuck.fault.limitLabel }
+}
+
 export async function runCheckup(): Promise<CheckupReport> {
   const root = getWorkspaceRoot()
 
@@ -191,6 +203,7 @@ export async function runCheckup(): Promise<CheckupReport> {
       trustedCommandCount,
     },
     spawnHelperExecutable: spawnHelperExecutable(),
+    agentOpenFiles: agentOpenFilesSnapshot(),
   }
 
   return buildCheckupReport(snapshot)

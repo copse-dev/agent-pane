@@ -42,6 +42,11 @@ import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
 import { tapAcpWireStream, type AcpWireSink } from './acp-wire-tap.ts'
 import { cancelApprovalsForAcpToolCall } from './acp-permission-registry.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
+import {
+  localOpenFileLimitLabel,
+  watchAgentStderr,
+  type AcpAgentResourceFault,
+} from './acp-resource-fault.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
@@ -372,8 +377,8 @@ export function willSandboxAcpAgent(sandbox: AcpAgentSandboxConfig | undefined):
 
 const ACP_STDERR_TAIL_LIMIT = 8_000
 
-function appendStderrTail(current: string, chunk: Buffer): string {
-  const next = current + chunk.toString()
+function appendStderrTail(current: string, text: string): string {
+  const next = current + text
   return next.length <= ACP_STDERR_TAIL_LIMIT ? next : next.slice(-ACP_STDERR_TAIL_LIMIT)
 }
 
@@ -639,13 +644,26 @@ export interface OpenAcpSession {
   } | null
   /** True once the connection closed or the agent process died. */
   isClosed: () => boolean
+  /**
+   * The descriptor-exhaustion fault this agent reported on stderr, if any
+   * (see acp-resource-fault.ts). A faulted process still answers, so the pool
+   * — not the connection — decides when to replace it. Always null for a
+   * transport that captures no stderr (the in-process test transports).
+   */
+  resourceFault: () => AcpAgentResourceFault | null
   dispose: () => void
 }
 
+/** A live connection to an agent, however it was reached (local, sandboxed, SSH). */
+export interface AcpTransport {
+  stream: Stream
+  dispose: () => void
+  /** Descriptor exhaustion seen on the agent's stderr; absent when none is captured. */
+  resourceFault?: () => AcpAgentResourceFault | null
+}
+
 /** Transport injection point so tests can wire an in-process agent. */
-export type AcpTransportFactory = (
-  config: AcpAgentSpawnConfig,
-) => Promise<{ stream: Stream; dispose: () => void }>
+export type AcpTransportFactory = (config: AcpAgentSpawnConfig) => Promise<AcpTransport>
 
 function acpChildStdoutStream(
   child: ChildProcess,
@@ -714,19 +732,25 @@ function acpChildStdoutStream(
   })
 }
 
-function captureAcpChildStderr(child: ChildProcess, command: string): () => string {
+function captureAcpChildStderr(
+  child: ChildProcess,
+  command: string,
+): { tail: () => string; resourceFault: () => AcpAgentResourceFault | null } {
   let tail = ''
-  child.stderr?.on('data', (chunk: Buffer) => {
-    tail = appendStderrTail(tail, chunk)
-    const text = chunk.toString().trimEnd()
-    if (text) console.warn(`[acp:${command}] ${text}`)
+  // A locally spawned agent starts from this process's descriptor limits, so
+  // they are the ones worth naming when it runs out.
+  const faults = watchAgentStderr(child.stderr, {
+    prefix: `acp:${command}`,
+    command,
+    limitLabel: localOpenFileLimitLabel(),
+    onText: (text) => {
+      tail = appendStderrTail(tail, text)
+    },
   })
-  return () => tail
+  return { tail: () => tail, resourceFault: faults.current }
 }
 
-async function spawnTransport(
-  config: AcpAgentSpawnConfig,
-): Promise<{ stream: Stream; dispose: () => void }> {
+async function spawnTransport(config: AcpAgentSpawnConfig): Promise<AcpTransport> {
   // When the active project is an SSH workspace and the user opted in, spawn the
   // agent on the remote host (stdio over SSH) instead of locally — see
   // docs/plans/acp-over-ssh.md. Otherwise fall through to the local spawn.
@@ -749,14 +773,15 @@ async function spawnTransport(
     child = await spawnAcpAgentProcess(config)
   }
   if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
-  const stderrTail = captureAcpChildStderr(child, config.command)
+  const stderr = captureAcpChildStderr(child, config.command)
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
-  const readable = acpChildStdoutStream(child, config.command, stderrTail)
+  const readable = acpChildStdoutStream(child, config.command, stderr.tail)
   return {
     stream: ndJsonStream(writable, readable),
     dispose: (): void => {
       terminateAcpChild(child)
     },
+    resourceFault: stderr.resourceFault,
   }
 }
 
@@ -986,6 +1011,7 @@ export async function openAcpSession(
       suppressChunks: false,
       turnStop: null,
       isClosed: () => disposed || connection.signal.aborted,
+      resourceFault: () => transport.resourceFault?.() ?? null,
       dispose,
     }
     connection.signal.addEventListener(
@@ -1163,9 +1189,9 @@ export async function probeAcpAgent(
 ): Promise<AcpAgentProbe> {
   const child = await spawnAcpAgentProcess(config)
   if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
-  const stderrTail = captureAcpChildStderr(child, config.command)
+  const stderr = captureAcpChildStderr(child, config.command)
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
-  const readable = acpChildStdoutStream(child, config.command, stderrTail)
+  const readable = acpChildStdoutStream(child, config.command, stderr.tail)
   const stream = ndJsonStream(writable, readable)
   const app = client({ name: 'copse' })
     .onRequest(methods.client.fs.readTextFile, UNSUPPORTED('fs/read_text_file'))
