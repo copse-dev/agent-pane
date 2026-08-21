@@ -134,7 +134,7 @@ Two ways to make invocation actually delegate, in preference order:
 
 Start with (1); (2) is the fallback, not a v2 feature.
 
-**Eval result (2026-08-21): (1) does not hold, and (2) is now required.** Three runs of
+**Eval result (2026-08-21): (1) did not hold; (2) is implemented and verified.** Three runs of
 `tests/e2e/scenarios/custom-subagent-invocation.json` on a GUI machine against
 `lmstudio:qwen/qwen3.5-9b`, driving the real Electron app with a definition seeded at
 `~/.claude/agents/`. Every run failed the same way — `missing required tool: task` — with
@@ -154,6 +154,23 @@ itself instead. A directive is a request, and an explicit invocation must not be
 when the user names an agent, the run has to be deterministic. Caveat on scope: this is
 one 9B local model, and a frontier model may well comply — but a feature whose contract is
 "this runs when you ask for it" cannot depend on which model is selected.
+
+**Verification of the deterministic path.** The same scenario passes on the same machine
+and model. The artifact carries a card with `tool=task kind=custom
+agentName=copse-eval-reviewer status=done` that no model chose to call, and the parent
+answered correctly afterwards. Two limits worth stating plainly:
+
+- **The mechanism is proven; the end-to-end quality is not.** Neither local model produced
+  a usable _report_. `qwen3.5-9b` hit the loop's own reasoning-circle guard inside the
+  subagent ("the model got stuck repeating its reasoning"), and `gemma-4-12b` emitted
+  malformed tool-call syntax as prose and then died on its 8k context. The parent degraded
+  well in both cases — it did the work itself and answered correctly — but a run where the
+  agent returns something genuinely useful still needs a capable model to demonstrate.
+- **`requireTools: ["task"]` is now a regression guard, not a behavioural test.** It fails
+  if pre-invocation stops firing, which is worth having, but it cannot distinguish one
+  agent from another. Asserting the subagent's `kind` and `agentName` needs a small
+  addition to the eval scenario schema (`EvalScenario` has no subagent block today); the
+  identity above was confirmed by reading the artifact by hand.
 
 ### 3. Default on, with a disable switch later
 
