@@ -49,9 +49,8 @@ fn window_label(win_id: u64) -> String {
 
 fn send_window_event(stdin: &SharedStdin, win_id: u64, event: &str) {
     if let Ok(mut guard) = stdin.lock() {
-        let line = format!(
-            "{{\"op\":\"window-event\",\"winId\":{win_id},\"event\":\"{event}\"}}\n"
-        );
+        let line =
+            format!("{{\"op\":\"window-event\",\"winId\":{win_id},\"event\":\"{event}\"}}\n");
         let _ = guard.write_all(line.as_bytes());
         let _ = guard.flush();
     }
@@ -69,14 +68,17 @@ fn create_window(
     title: Option<String>,
     show: Option<bool>,
 ) {
-    let mut builder = WebviewWindowBuilder::new(
-        handle,
-        window_label(win_id),
-        WebviewUrl::App(url.into()),
-    )
-    .title(title.unwrap_or_else(|| "Copse".to_string()))
-    .inner_size(width.unwrap_or(1200.0), height.unwrap_or(800.0))
-    .visible(show.unwrap_or(true));
+    let mut builder =
+        WebviewWindowBuilder::new(handle, window_label(win_id), WebviewUrl::App(url.into()))
+            .title(title.unwrap_or_else(|| "Copse".to_string()))
+            .inner_size(width.unwrap_or(1200.0), height.unwrap_or(800.0))
+            // The sidecar mirrors Electron's hidden-then-show pattern, but an
+            // unmapped GTK window has no X11 handle yet and Servo needs one to
+            // create its surface — so the window is born visible. theme-boot.js
+            // paints the themed background before app.js runs, which is the same
+            // anti-flash contract the hidden window existed for.
+            .visible(true);
+    let _ = show;
     if let (Some(w), Some(h)) = (min_width, min_height) {
         builder = builder.min_inner_size(w, h);
     }
@@ -121,8 +123,7 @@ fn handle_sidecar_message(
             // Window creation must happen on the main thread on macOS/Windows.
             let _ = handle.clone().run_on_main_thread(move || {
                 create_window(
-                    &handle, &stdin, win_id, url, width, height, min_width, min_height, title,
-                    show,
+                    &handle, &stdin, win_id, url, width, height, min_width, min_height, title, show,
                 );
             });
         }
