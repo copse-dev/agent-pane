@@ -25,7 +25,7 @@ import {
   serializeSpineLine,
   type SpineHookRunLine,
 } from '../../../src/shared/threads/spine-schema.ts'
-import { copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
+import { copseDataRoot, copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -635,6 +635,46 @@ export function seedRoadmapNotes(
       '',
     ].join('\n')
     writeFileSync(join(roadmapDir, `${note.id}.md`), contents, 'utf8')
+  }
+  return knowledgeDir
+}
+
+/**
+ * Seed OKF memory notes for a project, including provenance fields that can only
+ * be produced by an agent turn. The files use the product's real knowledge-store
+ * format; no test-only renderer or IPC state is introduced.
+ */
+export function seedMemoryNotes(
+  projectId: string,
+  notes: {
+    id: string
+    title: string
+    body: string
+    tags?: string[]
+    externalContext?: boolean
+  }[],
+): string {
+  const knowledgeDir = join(copseDataRoot(), 'knowledge', projectId)
+  const memoryDir = join(knowledgeDir, 'memory')
+  rmSync(knowledgeDir, { recursive: true, force: true })
+  mkdirSync(memoryDir, { recursive: true })
+  const iso = new Date().toISOString()
+  for (const note of notes) {
+    const contents = [
+      '---',
+      'type: Memory',
+      `id: ${note.id}`,
+      `title: "${note.title}"`,
+      `tags: [${(note.tags ?? []).join(', ')}]`,
+      `createdAt: ${iso}`,
+      `updatedAt: ${iso}`,
+      ...(note.externalContext ? ['externalContext: "true"'] : []),
+      '---',
+      '',
+      note.body,
+      '',
+    ].join('\n')
+    writeFileSync(join(memoryDir, `${note.id}.md`), contents, 'utf8')
   }
   return knowledgeDir
 }

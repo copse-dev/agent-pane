@@ -169,6 +169,9 @@ export function mountMemoriesPane(
     if (note?.updatedAt) {
       metaLine.hidden = false
       metaLine.textContent = `Updated ${knowledgeDate(note.updatedAt)}`
+      if (note.fields['externalContext'] === 'true') {
+        metaLine.textContent += ' · saved with external content in context — saving clears this'
+      }
     } else {
       metaLine.hidden = true
       metaLine.textContent = ''
@@ -195,6 +198,20 @@ export function mountMemoriesPane(
       })
       const main = el('div', { class: 'memories-row-main' })
       main.append(el('span', { class: 'memories-row-title' }, note.title || '(untitled)'))
+      if (note.fields['externalContext'] === 'true') {
+        main.append(
+          el(
+            'span',
+            {
+              class: 'memories-row-taint',
+              'data-tooltip':
+                'Saved by the agent during a turn that had read external content ' +
+                '(web, MCP, CI, or terminal). Review it; saving an edit clears this marker.',
+            },
+            'external context',
+          ),
+        )
+      }
       if (note.tags.length > 0) {
         const tagWrap = el('span', { class: 'memories-row-tags' })
         for (const tag of note.tags) {
