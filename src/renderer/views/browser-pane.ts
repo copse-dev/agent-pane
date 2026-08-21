@@ -486,8 +486,33 @@ export function mountBrowserPane(
     if (!webview || !tab.panel.classList.contains('is-active')) return
     const { width, height } = tab.webviewHost.getBoundingClientRect()
     if (width <= 0 || height <= 0) return
+    // Electron's <webview> guest tracks the element box, not flex/% CSS — pin
+    // explicit px so a pane drag or maximize actually resizes the page.
     webview.style.width = `${String(Math.round(width))}px`
     webview.style.height = `${String(Math.round(height))}px`
+  }
+
+  function syncActiveWebviewSize(): void {
+    const tab = activeTabId ? tabs.get(activeTabId) : null
+    if (tab) syncWebviewSize(tab)
+  }
+
+  /**
+   * Watch `.browser-body`, not a per-tab host. Inactive panels are
+   * `display:none`, so observing the tab that was current when browser mode
+   * opened left later tabs (and maximize) stuck at the old px size until
+   * refresh. Body stays laid out whenever the pane is visible.
+   */
+  function ensureBrowserResizeObserver(): void {
+    resizeObserver ??= new ResizeObserver(() => {
+      syncActiveWebviewSize()
+    })
+    resizeObserver.observe(body)
+  }
+
+  function stopBrowserResizeObserver(): void {
+    resizeObserver?.disconnect()
+    resizeObserver = null
   }
 
   function whenWebviewReady(tab: BrowserTab, fn: (webview: BrowserWebviewElement) => void): void {
@@ -930,19 +955,24 @@ export function mountBrowserPane(
           navigateWebview(tab, url)
         }
         syncAddressBar(tab)
+        ensureBrowserResizeObserver()
         requestAnimationFrame(() => {
           syncWebviewSize(tab)
           tab.urlInput.focus()
         })
-        resizeObserver ??= new ResizeObserver(() => {
-          const current = activeTabId ? tabs.get(activeTabId) : null
-          if (current) syncWebviewSize(current)
-        })
-        resizeObserver.observe(tab.webviewHost)
       }
-    } else if (resizeObserver) {
-      resizeObserver.disconnect()
+    } else {
+      stopBrowserResizeObserver()
     }
+  }
+
+  function onRightPanelMaximizedChanged(): void {
+    if (!browserModeActive(store)) return
+    // Layout class is applied by right-panel-layout on the same event; wait a
+    // frame so getBoundingClientRect sees the expanded pane.
+    requestAnimationFrame(() => {
+      syncActiveWebviewSize()
+    })
   }
 
   newBtn.addEventListener('click', () => addTab())
@@ -1054,6 +1084,7 @@ export function mountBrowserPane(
   const unsubs = [
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
+    store.on('right_panel_maximized_changed', onRightPanelMaximizedChanged),
     store.on('browser_url_requested', openRequestedBrowserUrl),
     store.on('browser_url_bar_focus_requested', focusUrlBar),
     store.on('canvas_artefact_requested', openArtefact),
@@ -1080,7 +1111,7 @@ export function mountBrowserPane(
     unsubs.forEach((unsubscribe) => {
       if (typeof unsubscribe === 'function') unsubscribe()
     })
-    resizeObserver?.disconnect()
+    stopBrowserResizeObserver()
     for (const tab of tabs.values()) {
       tab.webview?.remove()
       tab.tabBtn.remove()

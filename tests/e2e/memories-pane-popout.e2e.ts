@@ -1,7 +1,7 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedMemoryNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 
 // The Memories pane is gated on the `copse.okf-memories` first-party plugin, so
@@ -11,12 +11,29 @@ import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 // get a committed reference screenshot.
 describe('Memories pane pop-out', () => {
   let mainHandle: string
+  let knowledgeDir: string
 
   before(async function () {
     this.timeout(120_000)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-memories-popout', { okfMemoriesEnabled: true })
+    const projectId = 'e2e-memories-popout'
+    seedEmptyProject(process.cwd(), projectId, { okfMemoriesEnabled: true })
+    knowledgeDir = seedMemoryNotes(projectId, [
+      {
+        id: 'build-command',
+        title: 'Build command',
+        body: 'Run `npm run build` before shipping a release.',
+        tags: ['ops'],
+      },
+      {
+        id: 'external-api-key-note',
+        title: 'Where the API key lives',
+        body: 'Stored in `.env` at the repo root; never commit it.',
+        tags: ['config', 'security'],
+        externalContext: true,
+      },
+    ])
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
     mainHandle = (await browser.getWindowHandles())[0]
@@ -29,28 +46,11 @@ describe('Memories pane pop-out', () => {
       // session already gone — nothing to do
     }
     resetUserData()
+    rmSync(knowledgeDir, { recursive: true, force: true })
   })
 
   it('detaches the memories pane into its own window', async function () {
     this.timeout(180_000)
-
-    // Seed a couple of memories through the real IPC surface so both the list
-    // and (after selecting a row) the editor column have content to render.
-    await browser.execute(async () => {
-      const api = (
-        window as unknown as {
-          api: { memories: { create: (t: string, b: string, tags?: string[]) => Promise<unknown> } }
-        }
-      ).api
-      await api.memories.create('Build command', 'Run `npm run build` before shipping a release.', [
-        'ops',
-      ])
-      await api.memories.create(
-        'Where the API key lives',
-        'Stored in `.env` at the repo root; never commit it.',
-        ['config', 'security'],
-      )
-    })
 
     // The titlebar Memories button is revealed by the seeded setting.
     const openBtn = await $('.titlebar-panel-controls [aria-label="Open memories"]')
@@ -94,14 +94,26 @@ describe('Memories pane pop-out', () => {
     await expect(await $('#pane-chat')).not.toBeDisplayed()
     await expect(await $('.pane-popout-btn')).not.toBeDisplayed()
 
-    // Select the first note so the editor column is populated in the shot.
-    await $('.memories-row').click()
+    const taintedRow = await $('.memories-row*=Where the API key lives')
+    await expect(await taintedRow.$('.memories-row-taint')).toHaveText('external context')
+    await expect(await taintedRow.$('.memories-row-taint')).toHaveAttribute(
+      'data-tooltip',
+      expect.stringContaining('Saved by the agent during a turn that had read external content'),
+    )
+    await expect(await $('.memories-row*=Build command').$('.memories-row-taint')).not.toExist()
+
+    // Select the provenance-marked note so the badge and editor warning are
+    // both present in the committed reference screenshot.
+    await taintedRow.click()
     await browser.waitUntil(
       async () => {
         const value = await $('.memories-title-input').getValue()
         return typeof value === 'string' && value.length > 0
       },
       { timeout: 10_000, timeoutMsg: 'expected the editor to load the selected memory' },
+    )
+    await expect(await $('.memories-editor-meta')).toHaveText(
+      expect.stringContaining('saved with external content in context'),
     )
 
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'pane-popout-memories.png'))

@@ -1,3 +1,4 @@
+import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import * as fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import type {
@@ -80,6 +81,7 @@ import {
   toRelativePathWithinRoot,
 } from '../workspace.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
+import { getThreadExecutionContext } from '../thread-execution-context.ts'
 
 /**
  * Run a turn against an external ACP agent selected as `acp:<id>` in the model
@@ -352,6 +354,11 @@ export async function runAcpAgentFromSettings(
     throw new Error('Open a folder before running an ACP agent so it has a workspace to act in.')
   }
   const projectRoot = getAgentProjectRoot()
+  // The turn's trusted context, resolved once by the dispatcher before this
+  // run. Handed to the native-tool bridge below so bridged calls — a separate
+  // async chain — resolve the same root (worktree or shared) as the turn
+  // itself instead of falling back to the shared checkout (#1439).
+  const executionContext = getThreadExecutionContext()
 
   const sandbox = resolveAcpSandbox(agent)
   const sandboxed = willSandboxAcpAgent(sandbox)
@@ -477,6 +484,7 @@ export async function runAcpAgentFromSettings(
       registry: options.registry,
     })
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
+    entry.bridge?.setExecutionContext(executionContext)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
     entry.bridge?.setWorkspaceWriteObserver((path) => queueWrites.add(auditKey(path)))
     entry.open.handlers.current = handlers
@@ -513,6 +521,7 @@ export async function runAcpAgentFromSettings(
       throw err
     } finally {
       entry.bridge?.setAdvisorContext(null)
+      entry.bridge?.setExecutionContext(null)
       entry.bridge?.setTurnSignal(null)
       entry.bridge?.setWorkspaceWriteObserver(null)
       entry.lastUsedAt = Date.now()
@@ -647,7 +656,8 @@ export function shouldAutoApproveSandboxedCodexCodeMode(
   agent: { id: string; sandboxed: boolean },
   req: RequestPermissionRequest,
 ): boolean {
-  if (agent.id !== 'codex' || !agent.sandboxed || req.toolCall.kind !== 'execute') return false
+  if (canonicalAcpAgentId(agent.id) !== 'codex-acp') return false
+  if (!agent.sandboxed || req.toolCall.kind !== 'execute') return false
   const meta = req._meta
   if (!isRecord(meta) || !isRecord(meta['codex'])) return false
   return acpExecuteCommandText(req.toolCall) === null

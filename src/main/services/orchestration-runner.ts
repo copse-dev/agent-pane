@@ -10,7 +10,7 @@ import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { getSettingTrimmed } from './storage/settings.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { agentWorkspaceLabel } from './execution-root.ts'
 import { getGitStatusText } from './github/git-service.ts'
 import {
   DEFAULT_ORCHESTRATION_WORKER_MODEL,
@@ -97,7 +97,7 @@ export function getOrchestrationRunner(): OrchestrationRunner | null {
     const provider = await buildProvider(workerModel)
     const contextWindow = await resolveContextWindow(workerModel)
     const toolSchemaReserve = workerToolSchemaReserve(workerModel)
-    const workspace = getWorkspaceRoot() ?? '(none)'
+    const workspace = agentWorkspaceLabel()
     const userTask = buildWorkerTask({ step, context, expectedOutcome, workspace })
 
     const subagentMessages: LLMMessage[] = [

@@ -9,9 +9,14 @@ For the architecture (how Copse acts as the ACP _client_), see
 
 ## TL;DR
 
-- **Claude works over ACP today.** Two adapters are already installed and respond
-  to the `initialize` handshake: `claude-agent-acp` (Anthropic) and
-  `claude-code-acp` (Zed).
+- **Claude works over ACP today**, through `claude-agent-acp`
+  (`@agentclientprotocol/claude-agent-acp`). The catalog records it as using your
+  existing `claude` login, or `ANTHROPIC_API_KEY`.
+- **`claude-code-acp` (Zed) is deprecated.** npm: "This package has been renamed
+  to @agentclientprotocol/claude-agent-acp." It stopped at `0.16.2`
+  (2026-02-17); the renamed package carries on. Copse no longer offers it, and
+  an existing configuration keeps working — including its seatbelt — but it
+  should be replaced with `claude-agent-acp`.
 - **Cursor works too, natively.** `cursor-agent acp` starts Cursor as an ACP
   server over stdio (a _hidden_ subcommand — not in the top-level `--help` list).
   It completes the `initialize` handshake with `protocolVersion: 1` and
@@ -44,14 +49,17 @@ is exactly why it "isn't working." Fix: don't. Use one of the flows below.
 
 ## Setup
 
-### Option A — `claude-code-acp` with your existing subscription login (recommended for you)
+### Option A — `claude-code-acp` with your existing subscription login (deprecated)
+
+> **Deprecated — do not set this up fresh.** The package was renamed to
+> `@agentclientprotocol/claude-agent-acp`; this section is kept for anyone who
+> configured it before it was withdrawn. Prefer Option B or C.
 
 The Zed adapter advertises `authMethods: [claude-login]` — it reuses the same
-credentials the `claude` CLI stores. You are already logged in, so:
+credentials the `claude` CLI stores. If you already have it installed:
 
 ```sh
-npm install -g @zed-industries/claude-code-acp   # already installed for you
-claude /login                                     # only if not already logged in
+claude /login   # only if not already logged in
 ```
 
 Then add it in Copse: **Settings → ACP agents → Claude Code → Add to my agents**.
@@ -148,12 +156,18 @@ Run the corrected validator (spawns each adapter, does the real stdio
 node validate-acp.mjs
 ```
 
-Expected: both Claude adapters print `✓` and `protocolVersion: 1`. Note their
-different `authMethods` — that difference is the whole point:
+Expected: each installed adapter prints `✓` and `protocolVersion: 1`.
 
-- `claude-agent-acp` → `authMethods: []` → wants an API key in env (Option B).
-- `claude-code-acp` → `authMethods: [claude-login]` → wants a `/login` session
+The `authMethods` readings below were taken against `claude-agent-acp` **0.53.0**
+and `claude-code-acp` **0.16.2** (see [`acp-support-findings.md`](./acp-support-findings.md)):
+
+- `claude-agent-acp` → `authMethods: []` → wanted an API key in env (Option B).
+- `claude-code-acp` → `authMethods: [claude-login]` → wanted a `/login` session
   (Option A) or `CLAUDE_CODE_OAUTH_TOKEN` (Option C).
+
+`claude-agent-acp` is now at `0.70.0` and the catalog describes it as using the
+existing `claude` login. **Re-probe before relying on the readings above** —
+`pnpm run probe:acp` records what it actually advertises today.
 
 ## Common failures
 
