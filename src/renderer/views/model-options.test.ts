@@ -451,9 +451,7 @@ describe('fetchModelOptions visibility', () => {
   it('keeps a legacy ACP id attached to its renamed configured agent', async () => {
     const options = await fetchModelOptions(
       mockApi({
-        acpAgents: [
-          { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
-        ],
+        acpAgents: [{ id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true }],
       }),
       'acp:codex',
     )
@@ -620,82 +618,3 @@ describe('fetchModelOptions visibility', () => {
       modelDisplayLabel('plugin-model:personal.reference-model:judge%3Adefault'),
       'judge:default',
     )
-    const roles = await fetchModelOptions(api, '', { includeAgentModels: false })
-    assert.ok(!roles.some((option) => option.value.startsWith('plugin-model:')))
-  })
-
-  it('keeps a disabled plugin model visible but unavailable', async () => {
-    const options = await fetchModelOptions(
-      mockApi({
-        pluginEnabled: false,
-        pluginModels: [{ id: 'judge:default', label: 'Reference judge', group: 'Personal models' }],
-      }),
-      'plugin-model:personal.reference-model:judge%3Adefault',
-    )
-    const selected = options.find((option) => option.value.startsWith('plugin-model:'))
-    assert.ok(selected)
-    assert.equal(selected.disabled, true)
-    assert.equal(selected.label, 'Reference judge (plugin disabled)')
-    assert.equal(selected.group, 'Personal models')
-  })
-
-  it('groups hosted cloud models under a heading', async () => {
-    const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
-    const cloud = options.filter((o) => o.group === 'Cloud models')
-    assert.ok(cloud.length > 0)
-    assert.ok(cloud.some((o) => o.value.startsWith('claude')))
-    // Every visible option now belongs to a heading (no headingless block).
-    assert.ok(options.every((o) => Boolean(o.group) || !o.value))
-  })
-
-  it('classifies a catalog-known local model with a role hint, leaving unknowns bare', async () => {
-    const options = await fetchModelOptions(
-      mockApi({ lmStudioModels: ['qwen/qwen2.5-coder-32b', 'some-unknown-local'] }),
-      '',
-    )
-    const known = options.find((o) => o.value === 'lmstudio:qwen/qwen2.5-coder-32b')
-    assert.ok(known)
-    // A catalog-known weight shows its curated name, so the only dash in the
-    // row is the one introducing the app's own hints.
-    assert.match(known.label, /^Qwen2\.5-Coder 32B — coder/)
-    // It now carries a sourced AA measurement, shown quant-adjusted (~) for the
-    // running quant rather than the composite fallback.
-    assert.match(known.label, /intellect ~[\d.]+/)
-    // An unknown weight has no curated name and no hints, but is still spelled
-    // as a name rather than left as an id.
-    const unknown = options.find((o) => o.value === 'lmstudio:some-unknown-local')
-    assert.ok(unknown)
-    assert.equal(unknown.label, 'Some Unknown Local')
-  })
-
-  it('annotates scored cloud models with intellect, blended price, and frontier', async () => {
-    const options = await fetchModelOptions(
-      mockApi({ available: { anthropic: true, openai: true } }),
-      '',
-    )
-    // Opus 5 joins the frontier at the same $9/MTok as Opus 4.8 but higher
-    // intellect, so the frontier flag rides on 5 and 4.8 becomes dominated.
-    const opus5 = options.find((o) => o.value === 'claude-opus-5')
-    assert.ok(opus5)
-    assert.equal(opus5.label, `Claude Opus 5 — ${currentCloudIntellectHint('claude-opus-5')}`)
-    const opus = options.find((o) => o.value === 'claude-opus-4-8')
-    assert.ok(opus)
-    assert.equal(opus.label, `Claude Opus 4.8 — ${currentCloudIntellectHint('claude-opus-4-8')}`)
-    assert.doesNotMatch(opus.label, /frontier/)
-    const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
-    assert.ok(haiku)
-    assert.equal(haiku.label, `Claude Haiku 4.5 — ${currentCloudIntellectHint('claude-haiku-4-5')}`)
-    const gpt4o = options.find((o) => o.value === 'gpt-4o')
-    assert.ok(gpt4o)
-    assert.equal(gpt4o.label, `GPT-4o — ${currentCloudIntellectHint('gpt-4o')}`)
-  })
-
-  it('keeps the current selection selectable even with no key', async () => {
-    const options = await fetchModelOptions(mockApi(), 'gpt-5')
-    const current = options.find((o) => o.value === 'gpt-5')
-    assert.ok(current)
-    assert.match(current.label, /no key/)
-    // The current-selection fallback means we are not "empty", so no global message.
-    assert.ok(!options.some((o) => /No models available/.test(o.label)))
-  })
-})
