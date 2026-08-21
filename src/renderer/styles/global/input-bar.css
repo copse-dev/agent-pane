@@ -1196,3 +1196,33 @@
 .lmstudio-test-status.err {
   color: var(--error);
 }
+
+/* Engines without CSS anchor positioning (Servo): the anchor() declarations
+   above contain var(), so they fail at computed-value time and reset to
+   `auto` — the popups then fall to their static spot below the footer and
+   clip off the viewport. Open them above the footer bar itself instead
+   (.input-footer is the containing block), start-aligned or end-aligned to
+   the bar the way their triggers lean. */
+@supports not (anchor-name: --a) {
+  .footer-model-host .model-picker-menu,
+  .footer-checkout-menu,
+  .footer-branch-host .branch-picker-menu,
+  .footer-overflow-menu,
+  .footer-usage-popover,
+  .context-wheel-popover {
+    bottom: calc(100% + var(--spacing-xs));
+    top: auto;
+  }
+  .footer-model-host .model-picker-menu,
+  .footer-checkout-menu,
+  .footer-branch-host .branch-picker-menu {
+    left: var(--spacing-md);
+    right: auto;
+  }
+  .footer-overflow-menu,
+  .footer-usage-popover,
+  .context-wheel-popover {
+    left: auto;
+    right: var(--spacing-md);
+  }
+}
