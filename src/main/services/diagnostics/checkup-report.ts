@@ -80,6 +80,12 @@ export interface CheckupSnapshot {
   permissions: { autoRun: boolean; mcpAutoAllowReadOnly: boolean; trustedCommandCount: number }
   /** Terminal helper: false = present but not executable, true = ok, null = indeterminate. */
   spawnHelperExecutable: boolean | null
+  /**
+   * An external agent that ran out of file descriptors and could not be
+   * repaired by replacing its process (see acp-resource-fault.ts). Null when
+   * nothing has hit that this run.
+   */
+  agentOpenFiles: { command: string; code: string; limit: string } | null
 }
 
 function formatTokens(n: number): string {
@@ -336,6 +342,21 @@ export function buildCheckupReport(s: CheckupSnapshot): CheckupReport {
       s.permissions.mcpAutoAllowReadOnly ? 'on' : 'off'
     }.`,
   })
+
+  // An agent stuck against the machine's descriptor ceiling. Only recorded once
+  // replacing the process has been tried and did not help, so this is never a
+  // transient: every later turn on that thread runs degraded until the limit is
+  // raised, and the console warning is the only other place it is said.
+  if (s.agentOpenFiles) {
+    add({
+      id: 'agent-open-files',
+      category: 'Agents',
+      label: 'Agent file descriptors',
+      status: 'error',
+      detail: `${s.agentOpenFiles.command} ran out of open files (${s.agentOpenFiles.code}, ${s.agentOpenFiles.limit}) and a replacement process did too, so it cannot read files, load settings, or start MCP servers.`,
+      fix: "Raise the open-file limit for your desktop session (macOS: `launchctl limit maxfiles`; Linux: the login's `nofile` limit), then restart Copse.",
+    })
+  }
 
   // Terminal (node-pty spawn-helper). Only flagged when we could positively
   // determine the helper is present but not executable.

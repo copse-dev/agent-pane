@@ -2,6 +2,10 @@ import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from '.
 import { openAcpSession, willSandboxAcpAgent } from './acp-client.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import { createAcpWireTrace } from './acp-wire-trace.ts'
+import {
+  formatOpenFileCeilingWarning,
+  noteUnrepairableOpenFileFault,
+} from './acp-resource-fault.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
 
@@ -37,6 +41,8 @@ export interface PooledAcpSession {
   open: OpenAcpSession
   bridge: AcpNativeBridge | null
   fingerprint: string
+  /** When this agent process was spawned — how a fault gets read (see below). */
+  openedAt: number
   lastUsedAt: number
   dispose: () => Promise<void>
 }
@@ -53,6 +59,26 @@ export interface AcquireAcpSessionOptions {
 
 const IDLE_MS = 10 * 60 * 1000
 const REAP_INTERVAL_MS = 60 * 1000
+
+/**
+ * How long an agent process must run before descriptor exhaustion reads as
+ * something it did to itself. Past this age it plausibly leaked its way to the
+ * ceiling, so a replacement — starting from an empty descriptor table — is
+ * worth spawning. Under it, the process was in trouble almost from birth.
+ */
+const FAULT_REPLACE_MIN_AGE_MS = 60 * 1000
+
+/**
+ * Threads whose last agent process was replaced over a fault it hit young, and
+ * so must not be replaced again for the same thing: a fresh process was already
+ * tried and did no better, which means the ceiling both started from is the
+ * problem and respawning is just churn. Cleared whenever a process survives
+ * past {@link FAULT_REPLACE_MIN_AGE_MS}, so a slow leak keeps being repaired.
+ */
+const youngFaultReplaced = new Set<string>()
+
+/** The ceiling warning names a machine-wide condition: once per run is enough. */
+let ceilingWarned = false
 
 const pool = new Map<string, PooledAcpSession>()
 /** Session IDs retained only long enough to reconnect after a transport drop. */
@@ -136,7 +162,34 @@ export async function acquireAcpSession(
 
   const existing = pool.get(opts.threadId)
   if (existing) {
-    if (existing.fingerprint === fingerprint && !existing.open.isClosed()) {
+    // A process that ran out of file descriptors keeps answering, so nothing
+    // else here would evict it — but everything it needs to open from now on
+    // fails (see acp-resource-fault.ts). Replace it at this turn boundary; the
+    // resume path below hands the same agent session to the fresh process, so
+    // the descriptors come back without the thread losing the agent's memory.
+    const fault = existing.open.resourceFault()
+    const leakedIntoIt = Date.now() - existing.openedAt >= FAULT_REPLACE_MIN_AGE_MS
+    // A faulted process never serves another turn if a fresh one could do
+    // better — the user's next prompt would go to an agent that cannot open a
+    // file. The one case where it is kept is when a replacement was already
+    // tried for this thread and ran out just as fast: nothing Copse spawns will
+    // clear that, so the alternative to reusing it is refusing to run at all.
+    const replaceable = fault !== null && (leakedIntoIt || !youngFaultReplaced.has(opts.threadId))
+    if (leakedIntoIt) youngFaultReplaced.delete(opts.threadId)
+    if (fault && !replaceable) {
+      noteUnrepairableOpenFileFault(opts.config.command, fault)
+      if (!ceilingWarned) {
+        ceilingWarned = true
+        console.warn(formatOpenFileCeilingWarning(opts.config.command))
+      }
+    } else if (fault) {
+      if (!leakedIntoIt) youngFaultReplaced.add(opts.threadId)
+      console.warn(
+        `[acp-pool] replacing thread ${opts.threadId}'s agent process: it reported ${fault.code} ` +
+          `(${fault.detail})`,
+      )
+    }
+    if (!replaceable && existing.fingerprint === fingerprint && !existing.open.isClosed()) {
       existing.lastUsedAt = Date.now()
       // Config options (reasoning level, …) are excluded from the fingerprint so
       // changing one reuses the session instead of respawning it; hand the fresh
@@ -228,6 +281,7 @@ export async function acquireAcpSession(
     open,
     bridge,
     fingerprint,
+    openedAt: Date.now(),
     lastUsedAt: Date.now(),
     dispose: () => {
       if (disposal) return disposal
@@ -267,6 +321,7 @@ export async function disposeAllAcpSessions(): Promise<void> {
   const entries = [...pool.values()]
   pool.clear()
   resumeCandidates.clear()
+  youngFaultReplaced.clear()
   if (reaper) {
     clearInterval(reaper)
     reaper = null
