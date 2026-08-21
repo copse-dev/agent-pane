@@ -1446,6 +1446,16 @@
 .terminal-container .xterm {
   height: 100%;
 }
+.terminal-container .xterm .xterm-viewport {
+  /* xterm 6 paints the theme background on the inner `.xterm-scrollable-element`,
+     which is only as tall as the whole rows that fit. The viewport behind it
+     spans the full pane and keeps xterm.css's hardcoded `#000`, so the sub-row
+     remainder left over by the fit addon showed as a black stripe under the
+     last line. `--xterm-bg` is the same background handed to `term.options`
+     (see XTERM_THEME in terminals-pane.ts). Three classes because xterm.css is
+     bundled after this sheet and would otherwise win the specificity tie. */
+  background-color: var(--xterm-bg);
+}
 .terminal-container .xterm .xterm-helper-textarea {
   /* Keep IME/focus target above any pane chrome. */
   z-index: 10;
