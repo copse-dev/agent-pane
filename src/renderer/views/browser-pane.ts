@@ -18,6 +18,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
+import { artefactUrl } from '@shared/canvas/artefact.ts'
 import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
@@ -70,17 +71,6 @@ function currentHttpUrl(tab: BrowserTab): string | null {
   if (tab.artefactTitle) return null
   const url = firstNonEmptyString(webviewUrl(tab), tab.pendingUrl) ?? ''
   return /^https?:\/\//i.test(url) ? url : null
-}
-
-/** Encode an HTML document as a base64 `data:` URL (opaque origin, no network). */
-function htmlDataUrl(html: string): string {
-  const bytes = new TextEncoder().encode(html)
-  let binary = ''
-  const CHUNK = 0x8000
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-  }
-  return `data:text/html;charset=utf-8;base64,${btoa(binary)}`
 }
 
 function webviewUrl(tab: BrowserTab): string {
@@ -688,11 +678,26 @@ export function mountBrowserPane(
     return undefined
   }
 
+  /**
+   * Bring the tab already showing `title` to the front, opening the Browser
+   * pane if it is closed. The promote half of render-then-show: the agent (via
+   * `browser_show`) or the transcript's preview card calls this once a
+   * prototype is worth looking at. Returns false when no such tab is open.
+   */
+  function showArtefact(title: string): boolean {
+    const tab = artefactTabFor(title)
+    if (!tab) return false
+    openRightPanel(store, 'browser')
+    tab.pendingUrl = null
+    setActiveTab(tab.id)
+    return true
+  }
+
   function openArtefact(artefact: CanvasArtefact): void {
     // text/html renders inline via an opaque data: URL; a URL-list artefact
     // navigates normally (and is still subject to the browser origin policy).
-    const isHtml = artefact.mimeType === 'text/html'
-    const target = isHtml ? htmlDataUrl(artefact.body) : normalizeBrowserUrl(artefact.body)
+    // Shared with the agent browser session so both load the identical document.
+    const target = artefactUrl(artefact)
     // Iterating on a prototype re-renders it many times over. Refresh the tab
     // that is already showing it rather than stacking near-identical tabs the
     // user has to close: the canvas they are looking at becomes the new version
@@ -700,11 +705,20 @@ export function mountBrowserPane(
     // re-render of byte-identical HTML still repaints.
     const existing = artefactTabFor(artefact.title)
     if (existing) {
+      // A re-render refreshes in place and stays where it is: the first render
+      // earned the user's attention, later ones are the agent iterating and
+      // must not yank the pane (or the active tab) out from under them
+      // mid-read. `browser_show`, or the preview card in the transcript, is how
+      // a later version asks to be looked at.
+      //
       // Drop any queued navigation first: activating the tab flushes pendingUrl,
       // and that would load the previous version a frame before this one.
       existing.pendingUrl = null
-      setActiveTab(existing.id)
     }
+    // A title never rendered before is new information, so it comes forward —
+    // including opening the Browser pane, which is why the pane focus lives
+    // here rather than in `openCanvasArtefact`, which cannot see the tabs.
+    if (!existing) openRightPanel(store, 'browser')
     const tab = existing ?? tabs.get(addTab({ activate: true }))
     if (!tab) return
     tab.artefactTitle = artefact.title
@@ -1110,6 +1124,9 @@ export function mountBrowserPane(
     store.on('browser_url_requested', openRequestedBrowserUrl),
     store.on('browser_url_bar_focus_requested', focusUrlBar),
     store.on('canvas_artefact_requested', openArtefact),
+    store.on('canvas_artefact_show_requested', (title) => {
+      showArtefact(title)
+    }),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
     api?.browser.onOpenTab((url) => addTab({ url, activate: false })),

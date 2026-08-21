@@ -393,7 +393,7 @@ async function registerClientTools(
         // toggle in Settings > Plugins is the atomic master switch.
         const summarizeUiResources =
           getDefaultPluginRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)
-        if (summarizeUiResources) dispatchCanvasArtefacts(result.content)
+        if (summarizeUiResources) await dispatchCanvasArtefacts(result.content)
         const text = flattenMcpContent(result.content, { summarizeUiResources })
         if (result.isError) {
           throw new Error(text || `MCP tool ${tool.name} reported an error`)

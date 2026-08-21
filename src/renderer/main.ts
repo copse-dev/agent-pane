@@ -118,8 +118,10 @@ import {
   toggleFilesPaneWithWorkspace,
   syncFilesPaneDom,
   openCanvasArtefact,
+  showCanvasArtefact,
 } from './controller/panels.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
+import { setArtefactPreview, setArtefactShowHandler } from './canvas/artefact-previews.ts'
 import { loadMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
@@ -419,7 +421,19 @@ async function boot(): Promise<void> {
   // the Browser pane, rendered fully sandboxed.
   api.canvas.onArtefact((artefact) => {
     ensureLayout()
+    // Record the thumbnail before the pane reacts, so a card rendered for this
+    // turn's tool result already has one to show.
+    setArtefactPreview(artefact.title, artefact.preview)
     openCanvasArtefact(store, artefact)
+  })
+  setArtefactShowHandler((title) => {
+    showCanvasArtefact(store, title)
+  })
+
+  // The agent promoting an artefact it is happy with (browser_show).
+  api.canvas.onShowArtefact((title) => {
+    ensureLayout()
+    showCanvasArtefact(store, title)
   })
 
   // File ▸ Open Folder… registers the chosen folder as a project and switches.

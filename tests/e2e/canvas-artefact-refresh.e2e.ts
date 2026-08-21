@@ -47,6 +47,28 @@ async function activeArtefactHeading(): Promise<string | null> {
   })
 }
 
+/** Drive a built-in tool through the mock model, the same way renderVersion does. */
+async function runTool(name: string, args: Record<string, unknown>): Promise<void> {
+  await setComposerValue(`[[mcp:${name} ${JSON.stringify(args)}]]`)
+  await $('.submit-btn').click()
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        () => !document.querySelector('.submit-btn')?.classList.contains('with-stop'),
+      ),
+    { timeout: 25_000, timeoutMsg: `expected the ${name} turn to finish` },
+  )
+}
+
+/** The label of the Browser pane's active tab. */
+async function activeTabLabel(): Promise<string | null> {
+  return await browser.execute(
+    () =>
+      document.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent ??
+      null,
+  )
+}
+
 const tabLabels = async (): Promise<string[]> =>
   await $$('.browser-tabs-tab-label').map(async (el) => await el.getText())
 
@@ -92,5 +114,50 @@ describe('canvas artefact refresh', () => {
     // than a second "Sales Dashboard" appearing beside it.
     expect(await tabLabels()).toEqual(labelsAfterFirstRender)
     await saveAppScreenshot('canvas-artefact-refresh.png')
+  })
+
+  it('leaves a re-render in the background and promotes it only when asked', async () => {
+    // The user moves off the artefact tab, as they would while reading something
+    // else in the pane.
+    await browser.execute(() => {
+      const tabs = Array.from(document.querySelectorAll('.browser-tabs-tab'))
+      const other = tabs.find(
+        (tab) => tab.querySelector('.browser-tabs-tab-label')?.textContent !== 'Sales Dashboard',
+      )
+      ;(other as HTMLElement | undefined)?.click()
+    })
+    expect(await activeTabLabel()).not.toEqual('Sales Dashboard')
+
+    // The agent iterates. The new version must land without seizing the tab.
+    await renderVersion('v3')
+    expect(await activeTabLabel()).not.toEqual('Sales Dashboard')
+    expect(await tabLabels()).toEqual(labelsAfterFirstRender)
+
+    // browser_show is the explicit promote step.
+    await runTool('browser_show', { title: 'Sales Dashboard' })
+    await browser.waitUntil(async () => (await activeTabLabel()) === 'Sales Dashboard', {
+      timeout: 20_000,
+      timeoutMsg: 'expected browser_show to bring the artefact tab to the front',
+    })
+    expect(await activeArtefactHeading()).toEqual('v3')
+    await saveAppScreenshot('canvas-artefact-promoted.png')
+  })
+
+  it('shows a preview thumbnail of the render in the transcript', async () => {
+    // End-to-end proof that the artefact reached the headless agent session: the
+    // thumbnail is a capturePage() of the agent's own tab, so a card with image
+    // data means the mirror loaded the document the canvas is showing. It is
+    // also the card that offers to promote a background re-render.
+    await browser.execute(() => {
+      for (const card of document.querySelectorAll('details.tool-card')) {
+        ;(card as HTMLDetailsElement).open = true
+        card.querySelector('summary')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      }
+    })
+    await $('.canvas-preview-card').waitForExist({ timeout: 20_000 })
+    const src = await browser.execute(
+      () => document.querySelector('.canvas-preview-image')?.getAttribute('src') ?? '',
+    )
+    expect(src).toContain('data:image/png')
   })
 })

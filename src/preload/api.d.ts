@@ -335,6 +335,7 @@ export interface ApiClient {
   }
   canvas: {
     onArtefact: (handler: (artefact: CanvasArtefact) => void) => () => void
+    onShowArtefact: (handler: (title: string) => void) => () => void
   }
   storage: {
     get: (key: string) => Promise<unknown>

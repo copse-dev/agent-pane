@@ -1,0 +1,79 @@
+/**
+ * Mirror canvas artefacts into the headless agent browser session.
+ *
+ * Without this the canvas is write-only to the model: `render_html_artefact`
+ * pushes a document to the Browser pane, and `browser_snapshot` /
+ * `browser_screenshot` — which only ever see the agent session — cannot read it
+ * back. The agent would be iterating on a prototype it is unable to look at.
+ *
+ * Loading the same URL into an agent tab closes that loop, and is why
+ * `artefactUrl` is shared: both surfaces render byte-identical documents, so a
+ * screenshot is evidence about what the user sees rather than a near-miss.
+ *
+ * The mirror is best-effort by construction. A failure here means the agent
+ * cannot inspect the artefact; it must never stop the artefact reaching the
+ * user's canvas, so every path resolves rather than throws.
+ *
+ * Electron types are injected, so this runs under the unit-test runner.
+ */
+import type { CanvasArtefact } from '@shared/types/canvas.ts'
+import { artefactUrl } from '@shared/canvas/artefact.ts'
+
+export interface CanvasMirrorSession {
+  navigate(
+    url: string,
+    opts?: { newTab?: boolean | undefined; viewId?: string | undefined },
+  ): Promise<{ viewId: string }>
+  /** A small PNG `data:` URL of the tab, or null when capture is unavailable. */
+  capturePreview(viewId: string): Promise<string | null>
+}
+
+/**
+ * Artefact title -> agent tab. Titles are the artefact's identity on the canvas
+ * (see `artefactTabFor` in the Browser pane), so re-rendering reuses the tab on
+ * both sides and the agent's `viewId` stays stable across versions.
+ */
+const viewIdByTitle = new Map<string, string>()
+
+/** @internal test helper — drop the title→tab mapping. */
+export function resetCanvasAgentMirrorForTest(): void {
+  viewIdByTitle.clear()
+}
+
+/**
+ * Load `artefact` into the agent session and return a preview PNG data URL.
+ *
+ * Returns null when the artefact could not be mirrored or captured — callers
+ * treat that as "no thumbnail", never as an error.
+ */
+export async function mirrorArtefactToAgent(
+  artefact: CanvasArtefact,
+  session: CanvasMirrorSession,
+): Promise<string | null> {
+  const url = artefactUrl(artefact)
+  const known = viewIdByTitle.get(artefact.title)
+
+  let viewId: string
+  try {
+    viewId = (await session.navigate(url, known ? { viewId: known } : { newTab: true })).viewId
+  } catch {
+    // The remembered tab is gone — the agent closed it via `browser_tabs`, or
+    // the session was torn down. Forget it and try once more in a fresh tab.
+    // Without this a single closed tab would wedge the mirror for that title
+    // for the rest of the session.
+    if (!known) return null
+    viewIdByTitle.delete(artefact.title)
+    try {
+      viewId = (await session.navigate(url, { newTab: true })).viewId
+    } catch {
+      return null
+    }
+  }
+
+  viewIdByTitle.set(artefact.title, viewId)
+  try {
+    return await session.capturePreview(viewId)
+  } catch {
+    return null
+  }
+}

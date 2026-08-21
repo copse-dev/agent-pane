@@ -40,6 +40,8 @@ export interface StoreEvents {
   pr_open_requested: [owner: string, repo: string, number: number]
   // An MCP-UI artefact should be rendered in the canvas (Browser pane).
   canvas_artefact_requested: [artefact: CanvasArtefact]
+  /** Promote an already-rendered artefact tab to the front, by title. */
+  canvas_artefact_show_requested: [title: string]
   settings_changed: []
   theme_changed: ['light' | 'dark']
   staged_diffs_changed: []

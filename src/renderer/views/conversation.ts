@@ -26,6 +26,12 @@ import {
 } from '@shared/hooks/hook-run-detail.ts'
 import type { HookRunDetail } from '@shared/types/hooks.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import {
+  artefactUriFromToolResult,
+  getArtefactPreview,
+  requestArtefactShow,
+} from '../canvas/artefact-previews.ts'
+import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { attachTableCopyButtons } from '../markdown/table-copy.ts'
@@ -263,6 +269,39 @@ function appendIfPresent(node: Node | null): Node[] {
   return node ? [node] : []
 }
 
+/**
+ * The thumbnail-and-Open card for a rendered canvas artefact, or null when this
+ * tool call did not render one (or rendered before a preview could be captured
+ * — a missing thumbnail is normal, see `CanvasArtefact.preview`).
+ *
+ * Placed after the standard sections so the args and result stay where every
+ * other card keeps them; the preview is an addition, not a replacement.
+ */
+function createCanvasPreviewSection(tc: ToolCall): HTMLElement | null {
+  if (tc.status !== 'done') return null
+  const uri = artefactUriFromToolResult(tc.result)
+  if (!uri) return null
+  const title = artefactTitleFromUri(uri)
+  const preview = getArtefactPreview(title)
+  if (!preview) return null
+
+  const open = el('button', { type: 'button', class: 'ui-btn ui-btn-secondary' }, 'Open')
+  open.addEventListener('click', () => {
+    requestArtefactShow(title)
+  })
+  return el(
+    'div',
+    { class: 'canvas-preview-card' },
+    el('img', { class: 'canvas-preview-image', src: preview, alt: `Preview of ${title}` }),
+    el(
+      'div',
+      { class: 'canvas-preview-footer' },
+      el('span', { class: 'canvas-preview-title' }, title),
+      open,
+    ),
+  )
+}
+
 function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLDetailsElement {
   if (tc.subagent) return createSubagentToolCard(tc, label, api)
 
@@ -272,6 +311,10 @@ function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): 
     'data-status': tc.status,
   })
   appendStandardToolSections(card, tc, label, 'tool-card-header')
+  onToolCardBodyBuilt(card, () => {
+    const preview = createCanvasPreviewSection(tc)
+    if (preview) card.append(preview)
+  })
   return card
 }
 

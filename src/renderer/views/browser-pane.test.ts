@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
-import { openBrowserUrl, openCanvasArtefact } from '../controller/panels.ts'
+import { openBrowserUrl, openCanvasArtefact, showCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { el, qsRequired } from '../dom/helpers.ts'
@@ -568,6 +568,87 @@ describe('browser pane requested URLs', () => {
       })
       assert.equal(list.querySelectorAll('.browser-tabs-tab').length, beforePricing + 1)
       assert.ok(labels().includes('Pricing Page'))
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
+      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
+      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      unmount()
+    }
+  })
+
+  it('leaves a re-render in the background instead of seizing the tab or the pane', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      // First render of a title is new information, so it comes forward.
+      openCanvasArtefact(store, {
+        title: 'Sales Dashboard',
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>v1</h1>',
+      })
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      const artefactPanel = viewer.querySelector('.browser-tab-panel.is-active')
+      assert.ok(artefactPanel)
+      const webview = artefactPanel.querySelector<FakeWebview>('.browser-webview')
+      assert.ok(webview)
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      // The user moves to another tab, and away from the Browser pane entirely.
+      const tabs = list.querySelectorAll<HTMLElement>('.browser-tabs-tab')
+      const otherTab = Array.from(tabs).find(
+        (tab) => tab.querySelector('.browser-tabs-tab-label')?.textContent !== 'Sales Dashboard',
+      )
+      assert.ok(otherTab, 'expected the pane to still have its initial blank tab')
+      otherTab.click()
+
+      // The agent re-renders while the user is reading another tab.
+      openCanvasArtefact(store, {
+        title: 'Sales Dashboard',
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>v2</h1>',
+      })
+
+      // The new version landed in its tab, but the user's tab kept the focus.
+      const decoded = Buffer.from(webview.src.split('base64,')[1] ?? '', 'base64').toString('utf8')
+      assert.match(decoded, /<h1>v2<\/h1>/)
+      assert.notEqual(
+        list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
+        'Sales Dashboard',
+      )
+
+      // Nor does a re-render reopen the pane once the user has left it.
+      store.setState({ rightPanelMode: 'explorer' })
+      openCanvasArtefact(store, {
+        title: 'Sales Dashboard',
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>v3</h1>',
+      })
+      assert.equal(store.getState().rightPanelMode, 'explorer')
+
+      // Promoting it is the explicit step — browser_show, or the preview card.
+      showCanvasArtefact(store, 'Sales Dashboard')
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      assert.equal(
+        list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
+        'Sales Dashboard',
+      )
     } finally {
       globalThis.requestAnimationFrame = raf
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed

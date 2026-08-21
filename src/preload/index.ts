@@ -559,6 +559,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('canvas:artefact', listener)
       }
     },
+    onShowArtefact: (handler: (title: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, title: string): void => {
+        handler(title)
+      }
+      ipcRenderer.on('canvas:show-artefact', listener)
+      return (): void => {
+        ipcRenderer.off('canvas:show-artefact', listener)
+      }
+    },
   },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
