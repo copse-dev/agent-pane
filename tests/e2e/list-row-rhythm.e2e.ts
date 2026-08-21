@@ -125,10 +125,32 @@ describe('list row rhythm', () => {
     await roadmapButton.waitForDisplayed({ timeout: 10_000 })
     await roadmapButton.click()
 
-    await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 2, {
-      timeout: 20_000,
-      timeoutMsg: 'expected two seeded roadmap rows',
-    })
+    try {
+      await browser.waitUntil(async () => (await $$('.roadmap-row')).length === 2, {
+        timeout: 20_000,
+        timeoutMsg: 'expected two seeded roadmap rows',
+      })
+    } catch {
+      // This assertion spent a while failing as a bare timeout, which said only
+      // "not 2" and sent several people looking at the seeding helper, the
+      // filter facets and the `blocked` status — none of which were at fault.
+      // The pane already knows which of three states it is in and says so in
+      // `.roadmap-list-empty` (roadmap-pane.ts `renderList`): still loading,
+      // nothing on disk, or everything filtered out. `chatRows` additionally
+      // says whether the app is on this spec's project at all, which is what
+      // the answer turned out to hinge on. Report both rather than time out
+      // mutely again.
+      const state = await browser.execute(() => ({
+        rows: document.querySelectorAll('.roadmap-row').length,
+        groups: [...document.querySelectorAll('.roadmap-category-group')].map(
+          (group) => group.getAttribute('data-category') ?? '?',
+        ),
+        empty: document.querySelector('.roadmap-list-empty')?.textContent ?? null,
+        listPresent: Boolean(document.querySelector('.roadmap-list')),
+        chatRows: document.querySelectorAll('.chats-list .chat-row').length,
+      }))
+      assert.fail(`expected two seeded roadmap rows; pane reported ${JSON.stringify(state)}`)
+    }
 
     const rhythm = await rowRhythm()
     // `.roadmap-row` carries no padding of its own: this asserts the value the
