@@ -35,6 +35,19 @@
   flex-wrap: wrap;
   gap: 4px;
 }
+/* Memory saved during a turn that had ingested external content (Phase 4). */
+.memories-row-taint {
+  flex: none;
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--warning, #d29922);
+  border: 1px dashed var(--warning, #d29922);
+  border-radius: var(--radius);
+  padding: 0 5px;
+}
 .memories-tag {
   font-size: 10px;
   line-height: 1.4;

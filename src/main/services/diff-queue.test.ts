@@ -292,6 +292,57 @@ describe('applyOrStageDiff direct-apply policy', () => {
     assert.equal(getDiffQueueForTest().length, 0)
   })
 
+  ownedIt('creates a file that does not exist without asking for approval', async () => {
+    // Nothing to overwrite, so there is nothing for the approval panel to
+    // protect — the prototype flow depends on this landing in one step.
+    const result = await applyOrStageDiff('prototypes/dashboard.html', '', '<h1>Hi</h1>\n', 'html')
+    assert.match(result, /Applied edit directly/)
+    assert.match(result, /did not exist, so this created it and overwrote nothing/)
+    assert.equal(
+      await readFile(join(workspaceRoot, 'prototypes/dashboard.html'), 'utf-8'),
+      '<h1>Hi</h1>\n',
+    )
+    assert.equal(getDiffQueueForTest().length, 0)
+  })
+
+  ownedIt('creates a new file directly even while the worktree is dirty', async () => {
+    await writeFile(join(workspaceRoot, 'dirty.txt'), "the user's work\n", 'utf-8')
+
+    const result = await applyOrStageDiff('prototypes/new.html', '', '<p>new</p>\n', 'html')
+    assert.match(result, /Applied edit directly/)
+    // The user's uncommitted work is untouched: creation cannot reach it.
+    assert.equal(await readFile(join(workspaceRoot, 'dirty.txt'), 'utf-8'), "the user's work\n")
+  })
+
+  ownedIt(
+    'still stages an overwrite of the file it just created if it changes underneath',
+    async () => {
+      const first = await applyOrStageDiff('prototypes/p.html', '', 'v1\n', 'html')
+      assert.match(first, /Applied edit directly/)
+
+      // The user edited the prototype by hand; the next write must not clobber it
+      // on the strength of the now-stale content the model read.
+      await writeFile(join(workspaceRoot, 'prototypes/p.html'), 'hand edited\n', 'utf-8')
+      const second = await applyOrStageDiff('prototypes/p.html', 'v1\n', 'v2\n', 'html')
+      assert.match(second, /approval is required/)
+      assert.equal(
+        await readFile(join(workspaceRoot, 'prototypes/p.html'), 'utf-8'),
+        'hand edited\n',
+      )
+    },
+  )
+
+  ownedIt('never lets a new file jump ahead of diffs the user is reviewing', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+    await stageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
+
+    const result = await applyOrStageDiff('prototypes/q.html', '', 'v1\n', 'html')
+    assert.match(result, /pending staged diffs waiting for user approval/)
+    assert.equal(getStagedDiffEntry('prototypes/q.html')?.after, 'v1\n')
+  })
+
   ownedIt('records a conflict decision when direct apply sees stale content', async () => {
     await writeFile(join(workspaceRoot, 'a.txt'), 'current\n', 'utf-8')
     git(tempRoot, ['add', 'packages/app/a.txt'])

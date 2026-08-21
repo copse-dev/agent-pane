@@ -8,6 +8,7 @@ import {
   warningIcon,
   zapIcon,
 } from '../dom/icons.ts'
+import { fillUserPromptFold, splitUserPromptForFold } from './user-prompt-fold.ts'
 import {
   getHookCardStatusLabel,
   getHookCardTitle,
@@ -64,6 +65,7 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { navigateToChange } from '../controller/panels.ts'
+import { hydrationFailed, needsHydration } from '../controller/thread-hydration.ts'
 import { createPluginPanelEl } from './plugin-panel.ts'
 import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/plugin-panel.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
@@ -408,8 +410,8 @@ function hardBreakSingleNewlines(text: string): string {
   return text.replace(/(?<!\n)\n(?!\n)/g, '  \n')
 }
 
-/** Render a settled user prompt: markdown like assistant replies, without post-processing hooks. */
-function setUserMarkdown(el: HTMLElement, content: string): void {
+/** Render markdown into a user-prompt sink (full bubble or one fold region). */
+function paintUserMarkdown(el: HTMLElement, content: string): void {
   if (!content) {
     el.replaceChildren()
     return
@@ -419,6 +421,19 @@ function setUserMarkdown(el: HTMLElement, content: string): void {
   // elements and the command vanishes from the transcript.
   el.innerHTML = renderMarkdown(userPromptMarkdown(content), { htmlPolicy: 'escape-all' })
   attachCodeBlockCopyButtons(el)
+}
+
+/**
+ * Settled user prompt: markdown like assistant replies. Long prompts (>10 lines)
+ * get a mid-fold accordion — opening + closing stay visible; middle collapses.
+ */
+function setUserMarkdown(el: HTMLElement, content: string): void {
+  const parts = splitUserPromptForFold(content)
+  if (!parts) {
+    paintUserMarkdown(el, content)
+    return
+  }
+  fillUserPromptFold(el, parts, paintUserMarkdown)
 }
 
 function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {
@@ -1263,6 +1278,44 @@ function syncNestedRollupReasoning(
   })
 }
 
+/**
+ * Placeholder shown in place of a transcript that has not been read off disk
+ * yet (see attachThreadHydration). When the thread has a live run, say so —
+ * the user switching into it deserves "the agent is working" rather than a
+ * pane that looks idle until the next stream event lands.
+ */
+function hydrationNoticeEl(running: boolean): HTMLElement {
+  const notice = el(
+    'div',
+    {
+      class: `conversation-hydrating${running ? ' conversation-hydrating-running' : ''}`,
+      role: 'status',
+      'aria-live': 'polite',
+    },
+    reasoningActivityIcon('reasoning-activity-icon'),
+    el(
+      'span',
+      { class: 'conversation-hydrating-label' },
+      running ? 'Agent is working — loading the conversation…' : 'Loading the conversation…',
+    ),
+  )
+  return notice
+}
+
+/**
+ * Shown instead of {@link hydrationNoticeEl} when the transcript read failed
+ * (see `fetchInto`'s catch in thread-hydration.ts): an honest line, without a
+ * spinner, rather than a "Loading…" that will never finish. `messagesLoaded`
+ * stays false, so selecting the thread again retries.
+ */
+function hydrationFailureEl(): HTMLElement {
+  return el(
+    'div',
+    { class: 'conversation-hydrating conversation-hydrating-failed', role: 'status' },
+    el('span', { class: 'conversation-hydrating-label' }, 'Couldn’t load the conversation.'),
+  )
+}
+
 const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
@@ -1651,6 +1704,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       return
     }
     const thread = getThreadById(store, tid)
+    // While the transcript is still loading, the hydration notice already says
+    // the agent is working — a second live "Reasoning…" row under it would be
+    // noise. The post-hydration threads_changed re-syncs and shows it then. A
+    // FAILED hydration is exempt: its notice makes no working claim, and the
+    // agent may still be running (see hydrationFailureEl).
+    if (thread && needsHydration(thread) && !hydrationFailed(thread.id)) {
+      setActivity(null)
+      return
+    }
     // Writing state lives in the agent controller; agent_activity events carry the label.
     setActivity(agentActivityLabel(thread, false))
   }
@@ -2325,6 +2387,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       finishThreadChrome(null)
       return
     }
+    // A freshly selected thread arrives as metadata only (`messages: []`,
+    // `messagesLoaded: false`) and its transcript loads asynchronously — see
+    // attachThreadHydration. Rendering nothing during that window made a
+    // switch look like a dead pane, worst when the agent was still running in
+    // it (#1684). Hold the space with a notice; the hydration completing emits
+    // `threads_changed`, which rebuilds over it with the real messages.
+    if (needsHydration(thread)) {
+      list.append(
+        // A read that failed must not keep claiming "Loading…" — render the
+        // honest failure line instead (reselecting the thread retries).
+        hydrationFailed(thread.id)
+          ? hydrationFailureEl()
+          : hydrationNoticeEl(thread.status === 'running'),
+      )
+    }
     // Newest-first: render the tail the user actually lands on right away, then
     // fill the rest of the history backwards in the background (see
     // backfillOlderMessages) instead of blocking a thread switch on rendering
@@ -2489,6 +2566,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('agent_activity', (tid, label) => {
       if (tid !== store.getState().activeThreadId) return
+      // The first streamed chunk can land while the transcript is still being
+      // read off disk. Unhiding the live row here would stack it under the
+      // hydration notice — exactly the duplication syncFromStore's guard
+      // exists to prevent — so hold the suppression until hydration completes
+      // (threads_changed re-syncs and shows it then) or fails.
+      const thread = getThreadById(store, tid)
+      if (thread && needsHydration(thread) && !hydrationFailed(thread.id)) return
       setActivity(label)
     }),
   ]

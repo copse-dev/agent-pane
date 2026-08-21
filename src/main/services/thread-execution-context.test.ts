@@ -9,7 +9,6 @@ import {
   type ThreadExecutionContext,
   type ThreadExecutionContextDependencies,
   requireThreadExecutionOwner,
-  runWithThreadExecutionOwner,
 } from './thread-execution-context.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import type { ValidatedThreadWorktree } from './worktree-manager.ts'
@@ -376,35 +375,18 @@ describe('thread execution owner', () => {
     assert.throws(() => requireThreadExecutionOwner(), /No thread execution context is active/)
   })
 
-  it('resolves from an owner-only binding, for callers with no root of their own', () => {
-    const owner = { projectId: 'p1', threadId: 't1' }
-    assert.deepEqual(
-      runWithThreadExecutionOwner(owner, () => requireThreadExecutionOwner()),
-      owner,
+  it('derives the owner from the bound turn context, without exposing its root', () => {
+    const result = runWithThreadExecutionContext(
+      {
+        projectId: 'p1',
+        threadId: 't1',
+        projectRoot: '/repo',
+        root: '/repo',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => requireThreadExecutionOwner(),
     )
-  })
-
-  it('prefers a full turn context over an owner-only binding around it', () => {
-    // The ACP bridge binds an owner around every call; a nested native turn
-    // inside one must still answer with its own identity.
-    const result = runWithThreadExecutionOwner({ projectId: 'outer', threadId: 'outer' }, () =>
-      runWithThreadExecutionContext(
-        {
-          projectId: 'inner',
-          threadId: 'inner',
-          projectRoot: '/repo',
-          root: '/repo',
-          checkoutMode: 'shared',
-          branch: null,
-        },
-        () => requireThreadExecutionOwner(),
-      ),
-    )
-    assert.deepEqual(result, { projectId: 'inner', threadId: 'inner' })
-  })
-
-  it('does not leak an owner binding past its callback', () => {
-    runWithThreadExecutionOwner({ projectId: 'p1', threadId: 't1' }, () => undefined)
-    assert.throws(() => requireThreadExecutionOwner(), /No thread execution context is active/)
+    assert.deepEqual(result, { projectId: 'p1', threadId: 't1' })
   })
 })

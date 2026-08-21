@@ -1,6 +1,7 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { setSetting } from '../storage/settings.ts'
+import { KNOWN_ACP_AGENTS, RETIRED_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   getAcpAgent,
   listAcpAgents,
@@ -84,6 +85,32 @@ describe('resolveAcpSandbox (issue #590)', () => {
   })
 })
 
+describe('retired agents keep their confinement', () => {
+  const base = { title: 'X', command: 'x', enabled: true }
+
+  it('still resolves the seatbelt for a config naming a retired agent', () => {
+    // Withdrawing an agent must never relax it. `resolveAcpSandbox` reads the
+    // catalog at spawn time, so an entry that simply vanished would downgrade
+    // an existing user's agent to spawning unconfined.
+    const resolved = resolveAcpSandbox({ ...base, id: 'claude-code-acp' })
+    assert.ok(resolved, 'retired agent resolved no sandbox — it would spawn unconfined')
+    assert.ok(resolved.allowedDomains.includes('*.anthropic.com'))
+    assert.ok(resolved.homeDirs?.includes('.claude'))
+  })
+
+  it('is not offered for install or registration', () => {
+    assert.equal(
+      KNOWN_ACP_AGENTS.some((agent) => agent.id === 'claude-code-acp'),
+      false,
+    )
+    const retired = RETIRED_ACP_AGENTS.find((agent) => agent.id === 'claude-code-acp')
+    assert.ok(retired)
+    assert.equal(retired.installPackage, undefined)
+    assert.equal(retired.autoInstall, undefined)
+    assert.equal(retired.preset, undefined)
+  })
+})
+
 describe('resolveAcpPermissionMode (issue #607)', () => {
   const base = { title: 'X', command: 'x', enabled: true }
 
@@ -106,5 +133,31 @@ describe('resolveAcpPermissionMode (issue #607)', () => {
     assert.equal(resolveAcpPermissionMode({ ...base, id: 'gemini-cli' }, true), undefined)
     assert.equal(resolveAcpPermissionMode({ ...base, id: 'cursor' }, true), 'acceptEdits')
     assert.equal(resolveAcpPermissionMode({ ...base, id: 'my-custom-agent' }, true), undefined)
+  })
+})
+
+describe('renamed agent ids', () => {
+  it('reads a config written under the old id as the current one', async () => {
+    await setSetting('registeredAcpAgents', [
+      { id: 'codex', title: 'Codex', command: 'codex-acp', enabled: true },
+    ])
+    assert.deepEqual(
+      listAcpAgents().map((agent) => agent.id),
+      ['codex-acp'],
+    )
+    // A thread that ran before the rename still names the agent the old way.
+    assert.ok(getAcpAgent('codex'))
+    assert.ok(getAcpAgent('codex-acp'))
+  })
+
+  it('still resolves the seatbelt for a config written under the old id', () => {
+    const resolved = resolveAcpSandbox({
+      id: 'gemini-cli',
+      title: 'Gemini',
+      command: 'gemini',
+      enabled: true,
+    })
+    assert.ok(resolved, 'a pre-rename config resolved no sandbox')
+    assert.ok(resolved.allowedDomains.includes('*.googleapis.com'))
   })
 })

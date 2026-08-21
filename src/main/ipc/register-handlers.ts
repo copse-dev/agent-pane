@@ -50,6 +50,7 @@ import {
   zPathString,
   zProjectId,
   zThreadId,
+  mainWindowNavigationSchema,
 } from './ipc-guards.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
@@ -79,7 +80,10 @@ import {
   parseRendererWritableSetting,
   securitySettingsSchema,
 } from '../services/storage/settings-writable.ts'
-import { storedExtraProviderSchema } from '../services/storage/settings-schema.ts'
+import {
+  isRegisteredSettingKey,
+  storedExtraProviderSchema,
+} from '../services/storage/settings-schema.ts'
 import {
   getResolvedExtraProviders,
   saveExtraProvider,
@@ -92,6 +96,7 @@ import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/pr
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
+import { getMainWindowNavigation, setMainWindowNavigation } from '../windows/create-main-window.ts'
 import {
   backfillThreadPrRefs,
   loadProjectThreadMetas,
@@ -193,7 +198,7 @@ import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-senso
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
-import { MEMORY_TYPE } from '../tools/memory-tools.ts'
+import { EXTERNAL_CONTEXT_FIELD, MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
 import { ROADMAP_CATEGORIES, isRoadmapCategory } from '@shared/roadmap/complexity.ts'
 import {
@@ -420,6 +425,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         // Stale workspaceRoot in config — ignore until user picks a folder.
       }
     }
+  })
+
+  ipcMain.handle('mainWindow:getNavigation', (event) => {
+    assertMainFrameSender(event, win)
+    return getMainWindowNavigation(event.sender)
+  })
+
+  ipcMain.handle('mainWindow:setNavigation', (event, rawNavigation: unknown) => {
+    assertMainFrameSender(event, win)
+    const navigation = parseIpcArgs(mainWindowNavigationSchema, [rawNavigation])
+    setMainWindowNavigation(event.sender, navigation)
   })
 
   ipcMain.handle('workspace:open', async () => {
@@ -702,7 +718,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       const title = parseIpcArgs(zMemoryTitle, [rawTitle])
       const body = parseIpcArgs(zMemoryBody, [rawBody])
       const tags = parseIpcArgs(zMemoryTags.optional(), [rawTags])
-      return updateKnowledgeNote(id, { title, body, tags })
+      // A user edit is a review: saving from the Memories pane clears the
+      // saved-with-external-content marker (context-provenance plan, Phase 4).
+      const current = getKnowledgeNote(id)
+      const fields = current
+        ? Object.fromEntries(
+            Object.entries(current.fields).filter(([key]) => key !== EXTERNAL_CONTEXT_FIELD),
+          )
+        : undefined
+      return updateKnowledgeNote(id, { title, body, tags, ...(fields ? { fields } : {}) })
     },
   )
 
@@ -1139,6 +1163,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // (base64 plaintext when the OS keyring is unavailable).
     if (isSecretSettingKey(k)) {
       throw new IpcValidationError(`Setting key not readable from renderer: ${k}`)
+    }
+    // An unregistered key cannot survive this read: `getSetting` falls back to a
+    // type-check against the fallback, and `null` matches only `null`, so the
+    // renderer would receive `null` whatever is stored — and then write that
+    // emptied value back on the next save (#1804). Fail the read instead of
+    // silently serving a default, so a key added without a schema is found the
+    // first time it is read rather than after it has eaten someone's settings.
+    if (!isRegisteredSettingKey(k)) {
+      throw new IpcValidationError(
+        `Setting key has no registered schema, so it cannot be read from the renderer: ${k}. ` +
+          'Register it in settings-schema.ts.',
+      )
     }
     return getSetting(k, null)
   })
@@ -2435,13 +2471,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)
-      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
+      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
       return requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
     })
     ipcMain.handle('test:requestAcpPackageUpgradeApproval', (event) => {
       assertMainFrameSender(event, win)
-      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
+      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
       return requestAcpPackageInstallApproval([
         {

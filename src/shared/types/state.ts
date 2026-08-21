@@ -69,6 +69,21 @@ export interface OrphanProjectStore {
   threadCount: number
 }
 
+/**
+ * A thread carried across a project switch because its agent run is still
+ * live. `state.threads` always belongs to the active project, so without this
+ * a switch dropped the running thread from the store entirely: every chunk
+ * mutation silently no-opped and `message_done` persistence found nothing to
+ * write (#1841). Held here, the same store helpers keep applying chunks and
+ * the transcript keeps persisting; activating the owning project adopts the
+ * thread back into `threads`.
+ */
+export interface BackgroundThread {
+  /** The project the thread belongs to — by construction not the active one. */
+  projectId: string
+  thread: Thread
+}
+
 export interface AppState {
   workspaceRoot: string | null
   projects: Project[]
@@ -76,6 +91,8 @@ export interface AppState {
   /** Sidebar expand state; may lead activeProjectId while a workspace switch is in flight. */
   expandedProjectId: string | null
   threads: Thread[]
+  /** Threads with live runs whose project is not active (see {@link BackgroundThread}). */
+  backgroundThreads: BackgroundThread[]
   activeThreadId: string | null
   panelTab: PanelTab
   openFile: OpenFile | null

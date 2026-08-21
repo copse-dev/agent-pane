@@ -8,6 +8,26 @@ every published entry.
 
 ## Unreleased
 
+- Asking Copse to prototype something now gets you a prototype you can look at.
+  The MCP-UI canvas has always been able to render a self-contained HTML
+  document as a live sandboxed artefact, but nothing pointed the model at it, so
+  "mock up a pricing page" was answered in prose or with a file you had to open
+  yourself. Three changes close that gap, all inside the `copse.mcp-ui-canvas`
+  plugin's single flag. A conditional turn-start hook recognises a prototype
+  request — an action verb and a prototype noun together, with review and
+  explain questions vetoed — and, only when that turn actually offers the
+  bundled `render_html_artefact` tool, tells the model to write the document to
+  a real workspace file and render it. Writing that file no longer stops at the
+  approval panel: creating a path that does not exist yet overwrites nothing, so
+  it applies directly, the same reasoning that already exempted `mkdir`. An
+  existing file is untouched by this — it still stages when the worktree holds
+  work Copse did not do, when the file changed under it, or when diffs are
+  already waiting for review, and a new file never jumps that queue either. And
+  re-rendering an artefact whose tab is already open now refreshes that tab in
+  place instead of stacking a near-identical one beside it, so iterating on a
+  prototype updates the canvas you are looking at rather than leaving you to
+  close the previous six.
+
 - Semantic search no longer reports "Indexing failed" on a large repository
   that is merely slow to index, and no longer starts indexing one it was
   supposed to refuse. Two faults compounded. The guard that declines to

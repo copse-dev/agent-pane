@@ -22,7 +22,30 @@ describe('SSH status chrome without lightning emoji', () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
     const banner = await $('#ssh-status-banner')
-    await banner.waitForExist({ timeout: 15_000 })
+    // A bare timeout here says only "no banner", which is the one thing already
+    // known. The banner is gated on `activeSshHostId` — an `activeProjectId`
+    // that resolves to a project carrying an `sshHost` — and rendered from an
+    // SSH connection event, so report all three when it does not appear.
+    try {
+      await banner.waitForExist({ timeout: 15_000 })
+    } catch (error) {
+      const state = await browser.execute(() => ({
+        // `.project-row.active` is keyed on `expandedProjectId ?? activeProjectId`
+        // (projects-pane.ts:463). `restoreProject` returns before setting
+        // `expandedProjectId` on the SSH-failure path, so on this screen the
+        // class is a direct read-out of whether the project is the active one.
+        projectRows: [...document.querySelectorAll('.project-row')].map((row) => ({
+          title: row.getAttribute('title') ?? '',
+          active: row.classList.contains('active'),
+        })),
+        titlebar: document.querySelector('.workspace-name')?.textContent?.trim() ?? null,
+      }))
+      const ssh = await browser.execute(() => window.api.sshWorkspace.getStates())
+      throw new Error(
+        `SSH disconnect banner never rendered. dom=${JSON.stringify(state)} ssh=${JSON.stringify(ssh)}`,
+        { cause: error },
+      )
+    }
     await expect(banner).toBeDisplayed()
     const text = await banner.getText()
     assert.match(text, /SSH connection/)
