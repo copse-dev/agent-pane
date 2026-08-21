@@ -60,11 +60,15 @@ const nodeOpts = {
 // 1. The sidecar: the whole main process with the electron shim.
 await esbuild.build({
   ...nodeOpts,
+  external: nodeOpts.external.filter((name) => name !== 'electron-updater'),
   entryPoints: ['src/sidecar/index.ts'],
   outfile: 'dist/sidecar/index.js',
   alias: {
     ...sharedAlias,
     electron: resolve('./src/sidecar/electron-shim/index.ts'),
+    // Inert stub: electron-updater must never load in the sidecar (its lazy
+    // internals require('electron')); the Tauri updater plugin replaces it.
+    'electron-updater': resolve('./src/sidecar/electron-shim/electron-updater.ts'),
   },
 })
 
@@ -125,6 +129,27 @@ if (withBridge === withCsp) {
   process.exit(1)
 }
 writeFileSync('dist/renderer/tauri.html', withBridge)
+
+// 5. Invariant: the Tauri build uses the `electron` package for TYPES ONLY.
+// No emitted bundle may load electron (or electron-updater, whose internals
+// lazily require electron) at runtime — the aliases above must have
+// substituted every value import. Type-only imports are erased and never
+// reach the bundles, so any hit here is a real regression.
+const emitted = [
+  'dist/sidecar/index.js',
+  ...STANDALONE_MAIN_BUNDLES.map(({ outfile }) => `dist/sidecar/${basename(outfile)}`),
+  'dist/renderer/ws-bridge.js',
+]
+for (const file of emitted) {
+  const source = readFileSync(file, 'utf8')
+  const hit = source.match(/require\((["'])electron(-updater)?\1\)|from\s*(["'])electron\3/)
+  if (hit) {
+    console.error(`${file} still loads electron at runtime (${hit[0]}) — alias or stub it.`)
+    process.exit(1)
+  }
+}
+
+console.log('electron is types-only in the tauri bundles ✓')
 
 console.log(
   'tauri prototype artifacts built: dist/sidecar/, dist/renderer/ws-bridge.js, dist/renderer/tauri.html',
