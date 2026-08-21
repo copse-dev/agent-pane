@@ -503,7 +503,16 @@ async function finishActivate(
   // keep persisting, and fold any carried threads of the incoming project back
   // into its list (#1841).
   if (outgoingId && outgoingId !== id) {
-    carryRunningThreads(store, outgoingId, outgoingThreads)
+    // `outgoingThreads` was captured when activation began so the initial
+    // persistence flush has a stable input. The agent can keep streaming while
+    // workspace.set/loadProject are in flight, though, and those chunks replace
+    // `state.threads` with fresher thread objects. Carry the live list at the
+    // hand-off point or we would resurrect the stale pre-switch snapshot and
+    // lose everything that landed during the switch window.
+    const state = store.getState()
+    const liveOutgoingThreads =
+      state.activeProjectId === outgoingId ? state.threads : outgoingThreads
+    carryRunningThreads(store, outgoingId, liveOutgoingThreads)
   }
   const merged = adoptBackgroundThreads(store, id, loaded)
   cacheThreads(id, merged)
