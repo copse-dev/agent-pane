@@ -386,6 +386,9 @@ describe('createLMStudioProvider', () => {
       { temperature: 0.4 },
     )
     assert.ok(provider instanceof LMStudioProvider)
+    // The factory is the only place that can drop `params` on the way in, and
+    // the transport assertion above would still pass if it did.
+    assert.deepEqual(Reflect.get(provider, 'params'), { temperature: 0.4 })
   })
 })
 
