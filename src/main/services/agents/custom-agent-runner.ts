@@ -21,6 +21,9 @@ import { runWithAgentRunReadFileLimits } from '../agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { subagentHookCallbacks } from '../hooks/subagent.ts'
+import { isAgentRunReadonly } from '../agent-run-readonly.ts'
+import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
+import { getMcpToolMeta } from '../mcp/mcp-registry.ts'
 
 /**
  * Runs a user-authored subagent (docs/plans/custom-subagents.md, P2).
@@ -40,8 +43,6 @@ export interface CustomAgentRunContext {
   /** Parent turn's model id, for usage attribution. */
   parentModel: string
   registry: ToolRegistry
-  /** Tools this turn offers; a definition can only narrow them. */
-  parentTools: readonly LLMTool[]
   contextWindow: number
   toolSchemaReserve: number
   onChunk: (chunk: StreamChunk) => void
@@ -67,7 +68,29 @@ export async function runCustomAgent(
   signal: AbortSignal,
 ): Promise<string> {
   const workspace = getWorkspaceRoot() ?? '(none)'
-  const tools = resolveCustomAgentTools(ctx.parentTools, agent)
+  // Candidates come from the **registry**, not from the parent turn's offered
+  // set, matching how `explore` builds its own tools. The parent's set is
+  // narrowed for reasons that are not about safety: with subagents enabled it
+  // has no `read_file`/`search_*` at all, because the parent delegates reads to
+  // `explore`. Intersecting with it starved a read-only reviewer agent of every
+  // tool it needed — it reported that no file content was available rather than
+  // reading the file it was pointed at (found by the P2 eval).
+  //
+  // Read-only is still honoured, and still only ever narrows: an agent that
+  // declares `readonly`, or a parent run already in read-only mode, drops every
+  // tool that mode forbids so the agent never spends a step on a call the gate
+  // would reject.
+  const readonly = agent.readonly || isAgentRunReadonly()
+  const available = ctx.registry.toLLMTools().filter(
+    (tool) =>
+      !readonly ||
+      isToolAllowedInReadonlyMode(tool.name, {
+        ...(tool.name.startsWith('mcp__')
+          ? { mcpAnnotations: getMcpToolMeta(tool.name)?.annotations }
+          : {}),
+      }),
+  )
+  const tools = resolveCustomAgentTools(available, agent)
   const systemPrompt = buildCustomAgentSystemPrompt(agent)
   const userTask = buildCustomAgentTask({ prompt, parentGoal: ctx.parentGoal, workspace })
 

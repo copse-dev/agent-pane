@@ -42,14 +42,25 @@ describe('resolveCustomAgentTools', () => {
     }
   })
 
-  it('cannot grant a tool the parent turn was not offering', () => {
+  it('cannot name a tool the app does not have', () => {
     const resolved = names(
       resolveCustomAgentTools(tools('read_file'), {
-        tools: ['read_file', 'run_shell'],
+        tools: ['read_file', 'nonexistent_tool'],
         disallowedTools: [],
       }),
     )
-    assert.deepEqual(resolved, ['read_file'], 'run_shell was never on offer this turn')
+    assert.deepEqual(resolved, ['read_file'], 'a definition cannot conjure a tool')
+  })
+
+  it('keeps read tools the parent turn delegates away to explore', () => {
+    // Regression: the agent's candidates come from the registry, not the
+    // parent's offered set. With subagents on, the parent has no `read_file` or
+    // `search_*` — it delegates those to `explore` — and intersecting with that
+    // set left a reviewer agent unable to read the file it was pointed at.
+    const resolved = names(
+      resolveCustomAgentTools(PARENT, { tools: ['read_file', 'search_code'], disallowedTools: [] }),
+    )
+    assert.deepEqual(resolved, ['read_file', 'search_code'])
   })
 
   it('keeps only what an allow-list names', () => {

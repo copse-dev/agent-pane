@@ -1508,7 +1508,6 @@ export async function runAgent(
               provider,
               parentModel: model,
               registry,
-              parentTools: parentLoopTools,
               contextWindow,
               toolSchemaReserve,
               onChunk: sendChunk,

@@ -55,21 +55,23 @@ export function toolMatchesEntry(toolName: string, entry: string): boolean {
 /**
  * The tools a custom agent actually gets.
  *
- * Narrowing only, in three passes: drop what no subagent may hold, drop the
- * definition's `disallowedTools` (applied *before* `tools`, matching the
- * documented order), then — if the definition names an allow-list — keep only
- * what it named. A definition with no `tools` inherits the rest of the parent's
- * set.
+ * Narrowing only, in three passes over `available`: drop what no subagent may
+ * hold, drop the definition's `disallowedTools` (applied *before* `tools`,
+ * matching the documented order), then — if the definition names an allow-list —
+ * keep only what it named. A definition with no `tools` inherits the rest.
  *
- * `parentTools` is what this turn was already offering, so nothing here can
- * grant a tool the turn did not have; every surviving call still goes through
- * the registry's permission gate and read-only enforcement.
+ * `available` is the registry's toolset (read-only-filtered by the caller when
+ * the run is read-only), not the parent turn's offered set: the parent's set is
+ * narrowed for reasons unrelated to safety, and intersecting with it left an
+ * agent with no read tools at all. Nothing here grants anything — every
+ * surviving call still goes through the registry's permission gate, read-only
+ * enforcement, and the sandbox.
  */
 export function resolveCustomAgentTools(
-  parentTools: readonly LLMTool[],
+  available: readonly LLMTool[],
   agent: Pick<AgentMetadata, 'tools' | 'disallowedTools'>,
 ): LLMTool[] {
-  const allowed = parentTools.filter((tool) => !CUSTOM_AGENT_FORBIDDEN_TOOLS.includes(tool.name))
+  const allowed = available.filter((tool) => !CUSTOM_AGENT_FORBIDDEN_TOOLS.includes(tool.name))
 
   const afterDenied =
     agent.disallowedTools.length > 0
@@ -133,6 +135,7 @@ export function buildCustomAgentTask(opts: {
   }
   parts.push(
     '',
+    'Use your tools to gather what you need — nothing about the workspace is in this conversation, so read and search for it rather than saying it was not provided.',
     'Report back in your final message: the parent agent cannot see your steps, only what you write at the end.',
   )
   return parts.join('\n')
