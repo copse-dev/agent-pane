@@ -5,7 +5,7 @@ import { setAskUserHandler, type AskUserRequest } from '../ask-user.ts'
 import { setSetting } from '../storage/settings.ts'
 
 const CLAUDE_ACP = {
-  id: 'claude-agent-acp',
+  id: 'claude-acp',
   title: 'Claude',
   command: 'claude-agent-acp',
   enabled: true,
@@ -46,8 +46,8 @@ describe('offerAcpClaudeFallback', () => {
 
     const choice = await offerAcpClaudeFallback({ provider: 'anthropic', reason: 'credit' })
     assert.ok(choice)
-    assert.equal(choice.agentId, 'claude-agent-acp')
-    assert.equal(choice.modelValue, 'acp:claude-agent-acp')
+    assert.equal(choice.agentId, 'claude-acp')
+    assert.equal(choice.modelValue, 'acp:claude-acp')
     assert.equal(asked.length, 1)
     assert.match(askedQuestion(asked), /out of credit/)
   })
@@ -55,7 +55,7 @@ describe('offerAcpClaudeFallback', () => {
   it('accepts a typed yes', async () => {
     stubAsk('yes')
     const choice = await offerAcpClaudeFallback({ provider: 'anthropic', reason: 'auth' })
-    assert.equal(choice?.agentId, 'claude-agent-acp')
+    assert.equal(choice?.agentId, 'claude-acp')
   })
 
   it('stays on the Cloud Agent when the user declines', async () => {
@@ -111,7 +111,7 @@ describe('offerAcpClaudeFallback', () => {
       reason: 'auth',
       model: 'claude-opus-4-8',
     })
-    assert.equal(notOffered?.modelValue, 'acp:claude-agent-acp')
+    assert.equal(notOffered?.modelValue, 'acp:claude-acp')
 
     await setSetting('registeredAcpAgents', [
       { ...CLAUDE_ACP, availableModels: [{ value: 'claude-opus-4-8', label: 'Opus 4.8' }] },
@@ -121,6 +121,6 @@ describe('offerAcpClaudeFallback', () => {
       reason: 'auth',
       model: 'claude-opus-4-8',
     })
-    assert.equal(offered?.modelValue, 'acp:claude-agent-acp#claude-opus-4-8')
+    assert.equal(offered?.modelValue, 'acp:claude-acp#claude-opus-4-8')
   })
 })
