@@ -7,6 +7,7 @@ import {
   buildAgentReportBlock,
   buildCustomAgentSystemPrompt,
   buildCustomAgentTask,
+  customAgentInvocationTask,
   resolveCustomAgentMaxSteps,
   resolveCustomAgentTools,
   toolMatchesEntry,
@@ -168,6 +169,25 @@ describe('buildCustomAgentTask', () => {
   it('still states a task when the user typed a bare /name', () => {
     const task = buildCustomAgentTask({ prompt: '', parentGoal: 'ship login', workspace: '/ws' })
     assert.match(task, /carry out your role/)
+  })
+})
+
+describe('customAgentInvocationTask', () => {
+  it('uses the redacted outbound text instead of reconstructing the raw prompt', () => {
+    assert.equal(
+      customAgentInvocationTask([
+        { type: 'image', dataUrl: 'data:image/png;base64,QUJD' },
+        { type: 'text', text: 'Email <PERSON_1> at <EMAIL_1>' },
+      ]),
+      'Email <PERSON_1> at <EMAIL_1>',
+    )
+  })
+
+  it('falls back for an image-only invocation', () => {
+    assert.equal(
+      customAgentInvocationTask([{ type: 'image', dataUrl: 'data:image/png;base64,QUJD' }]),
+      'Carry out your role for the request in the parent task context.',
+    )
   })
 })
 

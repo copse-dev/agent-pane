@@ -106,7 +106,7 @@ import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { runCustomAgent } from './agents/custom-agent-runner.ts'
 import { getAgent } from './agents/agents-registry.ts'
-import { BARE_INVOCATION_TASK, buildAgentReportBlock } from './agents/custom-agent-strategy.ts'
+import { buildAgentReportBlock, customAgentInvocationTask } from './agents/custom-agent-strategy.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
@@ -1489,7 +1489,9 @@ export async function runAgent(
       const agent = getAgent(invokedAgent)
       if (agent) {
         const agentToolCallId = randomUUID()
-        const agentTask = userTextForSteering.trim() || BARE_INVOCATION_TASK
+        // Use the provider-bound, redacted form. `userTextForSteering` is raw by
+        // design for local hooks and must never become a second outbound path.
+        const agentTask = customAgentInvocationTask(outboundPrompt)
         sendChunk({
           type: 'tool_call',
           toolCall: {

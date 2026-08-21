@@ -1,4 +1,4 @@
-import type { LLMTool } from '@shared/types'
+import type { LLMTool, UserContent } from '@shared/types'
 import type { AgentMetadata, AgentSource } from '@shared/types/agents.ts'
 
 /**
@@ -166,3 +166,19 @@ export function buildAgentReportBlock(agentName: string, report: string): string
  */
 export const BARE_INVOCATION_TASK =
   'Carry out your role for the request in the parent task context.'
+
+/**
+ * Build the invoked agent's task from the already-redacted outbound prompt.
+ * Custom agents call the same provider boundary as the parent, so handing them
+ * the raw composer value would bypass the PII-redaction plugin for this path.
+ */
+export function customAgentInvocationTask(outboundPrompt: UserContent): string {
+  const text =
+    typeof outboundPrompt === 'string'
+      ? outboundPrompt
+      : outboundPrompt
+          .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+          .map((block) => block.text)
+          .join('\n')
+  return text.trim() || BARE_INVOCATION_TASK
+}
