@@ -121,7 +121,7 @@ function readEventsFromPath(path: string): DecisionEvent[] {
     const raw = readFileSync(path, 'utf8')
     if (path.endsWith('events.jsonl')) {
       const parts = path.split(/[/\\]/)
-      const threadId = parts.length >= 2 ? parts[parts.length - 2]! : 'unknown'
+      const threadId = parts.at(-2) ?? 'unknown'
       return eventsFromSpine(raw, threadId)
     }
     return parseDecisionLog(raw)

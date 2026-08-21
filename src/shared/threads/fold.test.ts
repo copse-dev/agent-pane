@@ -170,8 +170,9 @@ test('spills oversized tool args to a blob and folds them back', () => {
   ok(String(parsedArgs['command']).includes(fat))
   const tc = spine[0]?.toolCalls[0]
   ok(tc)
-  ok(typeof tc.args === 'object' && tc.args !== null && 'ref' in tc.args)
-  strictEqual((tc.args as { ref: string }).ref, 'blobs/tc-fat.args.json')
+  const tcArgs: unknown = tc.args
+  ok(isRecord(tcArgs))
+  strictEqual(tcArgs['ref'], 'blobs/tc-fat.args.json')
   deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
 })
 
