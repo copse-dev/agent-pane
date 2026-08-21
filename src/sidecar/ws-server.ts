@@ -60,6 +60,10 @@ function start(): Promise<WsEndpoint> {
       }
 
       if (frame.t === 'hello') {
+        if (bound) {
+          socket.close(4006, 'already authenticated')
+          return
+        }
         if (frame.token !== token) {
           socket.close(4003, 'bad token')
           return
