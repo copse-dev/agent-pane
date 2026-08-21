@@ -162,7 +162,16 @@ function normalizeToolCall(tc: Record<string, unknown>): Record<string, unknown>
  * written — the store rebuilds it from the thread dirs on first read.
  */
 function seedThreadDir(projectId: string, thread: Record<string, unknown>): void {
-  const { messages, ...meta } = thread
+  const { messages, ...rest } = thread
+  // `usage` is REQUIRED by the thread store's meta decoder: `parseUsage`
+  // (shared/threads/thread-boundary.ts) returns null when it is missing, which
+  // nulls the whole `ThreadMeta`, so `readMeta` drops the thread from the
+  // project's catalog. A fixture that omits it therefore seeds a thread the app
+  // silently never lists — the spec opens a blank "New Thread" and times out on
+  // an element that was never going to render, with nothing naming the cause.
+  // Most fixtures pass `usage` by hand; defaulting it here means the ones that
+  // forget cannot reintroduce that trap. An explicit `usage` still wins.
+  const meta = { usage: { inputTokens: 0, outputTokens: 0 }, ...rest }
   const normalized = (Array.isArray(messages) ? messages : []).map((m) =>
     normalizeMessage(m as Record<string, unknown>),
   )
@@ -619,7 +628,7 @@ export function seedRoadmapNotes(
     complexity?: string
   }[],
 ): string {
-  const knowledgeDir = join(homedir(), '.copse', 'knowledge', projectId)
+  const knowledgeDir = join(copseDataRoot(), 'knowledge', projectId)
   const roadmapDir = join(knowledgeDir, 'roadmap')
   rmSync(knowledgeDir, { recursive: true, force: true })
   mkdirSync(roadmapDir, { recursive: true })
