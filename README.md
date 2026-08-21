@@ -33,11 +33,19 @@ Copse has no hosted backend of its own. Connect your preferred cloud provider di
 
 ## Get started
 
-You need [Node.js](https://nodejs.org/) 22.22.2 or newer and [pnpm](https://pnpm.io/) 10 (enable with `corepack enable`; the repo pins `pnpm@10.34.5` via `packageManager`). On macOS, install the Xcode command-line tools too.
+You need [Node.js](https://nodejs.org/) 22.22.2 or newer, and on macOS the Xcode command-line tools (`xcode-select --install`) so the bundled terminal's native module can compile. Everything else is provisioned for you: `make` enables Corepack, which supplies the pinned `pnpm@10.34.5` from `packageManager`.
 
 ```bash
 git clone https://github.com/copse-dev/agent-pane.git
 cd agent-pane
+make run
+```
+
+`make run` checks your Node version, installs dependencies, builds `dist/`, and launches the app. It is idempotent and cheap to repeat: dependencies are reinstalled only when `pnpm-lock.yaml` changes and `dist/` is rebuilt only when source changes, so running it again after a `git pull` does the minimum work needed. Run `make` on its own for the full target list.
+
+`make run` builds once and starts. While actively editing the app, `pnpm run dev` is still the loop you want — it rebuilds and relaunches Electron on save:
+
+```bash
 corepack enable
 pnpm install
 pnpm run dev
@@ -47,7 +55,9 @@ pnpm uses a content-addressable store with `package-import-method=auto` (clone o
 APFS, then hardlink, then copy) so additional git worktrees reuse package bytes.
 Electron’s extracted app bundle and the vendored gortex binary are shared under
 `~/.copse/cache/electron-dist/` and `~/.copse/cache/gortex/`. Each worktree still
-needs its own `pnpm install` to link `node_modules` and those caches.
+needs its own install — `make run` or `pnpm install` — to link `node_modules` and
+those caches.
+
 Then:
 
 1. Open a project folder.
@@ -84,6 +94,10 @@ Changes to the Electron UI should also be built and covered by a focused end-to-
 
 | Command             | Purpose                                                      |
 | ------------------- | ------------------------------------------------------------ |
+| `make run`          | Sync deps, rebuild if source changed, then launch the app    |
+| `make build`        | Rebuild `dist/` if source changed (deps first)               |
+| `make deps`         | Install deps if `pnpm-lock.yaml` changed                     |
+| `make clean`        | Remove `dist/` and the build and deps stamps                 |
 | `pnpm run dev`      | Build in watch mode and launch Electron                      |
 | `pnpm run build`    | Create the application bundle in `dist/`                     |
 | `pnpm start`        | Launch an existing build                                     |
@@ -110,6 +124,14 @@ SKIP_ELECTRON_REBUILD=1 node scripts/postinstall-native.mts
 ```
 
 Use `SKIP_GORTEX_FETCH=1` if you intentionally do not want the bundled semantic-search binary.
+
+`make run` provisions pnpm and every bundled dependency, but it does not install Node or a C++ toolchain, so those gaps surface as raw tool errors rather than a friendly message:
+
+- A `node-gyp` or `clang` error during install means the Xcode command-line tools are missing — `xcode-select --install`.
+- `node is not installed`, or a version below 22.22.2, means Node itself needs installing or selecting. `nvm use` picks up the `.nvmrc` pin, and `make run` sources nvm automatically when it is present.
+- An `EACCES` from `corepack enable` means your `node` lives somewhere unwritable (typically a `/usr/local` package install). Run `corepack enable` once with `sudo`, or switch to an nvm-managed Node.
+
+If `make run` returns straight away without opening a window, another Copse instance already holds the single-instance lock and was focused instead. Quit it and re-run.
 
 </details>
 
