@@ -619,7 +619,10 @@ export function seedRoadmapNotes(
     complexity?: string
   }[],
 ): string {
-  const knowledgeDir = join(homedir(), '.copse', 'knowledge', projectId)
+  // `copseDataRoot()`, not `~/.copse` — the harness points `COPSE_DIR` at the
+  // throwaway profile, so a hardcoded home path seeds notes the app never reads
+  // and the pane renders empty with nothing naming the cause.
+  const knowledgeDir = join(copseDataRoot(), 'knowledge', projectId)
   const roadmapDir = join(knowledgeDir, 'roadmap')
   rmSync(knowledgeDir, { recursive: true, force: true })
   mkdirSync(roadmapDir, { recursive: true })
