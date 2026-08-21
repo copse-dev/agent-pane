@@ -52,6 +52,13 @@ export interface DemoScenario {
    * this holds that moment open so the visual spec can assert and capture it.
    */
   holdThreadHydration?: boolean
+  /**
+   * Reject transcript hydration (`threads:loadMessages`), leaving an
+   * unhydrated thread in its failed state: the conversation must own up with
+   * a failure line — and keep the live activity row — instead of a
+   * "Loading…" notice that never finishes.
+   */
+  failThreadHydration?: boolean
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -595,6 +602,32 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     threads: [
       {
         id: 'demo-thread-hydration-thread',
+        title: 'Long refactor still running',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'thread-hydration-failed',
+    label: 'Thread switch hydration failure',
+    project: project('demo-thread-hydration-failed-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // Same mid-switch moment as `thread-hydration`, but the transcript read
+    // rejects: the pane must render the honest failure line and let the live
+    // activity row through (the agent is still running).
+    failThreadHydration: true,
+    threads: [
+      {
+        id: 'demo-thread-hydration-failed-thread',
         title: 'Long refactor still running',
         status: 'running',
         messages: [],

@@ -471,12 +471,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
       // hydrate one; answering from the in-memory list keeps that true. The
-      // exception is a scenario built around the hydration window itself,
-      // which holds the read open so the mid-switch state stays on screen.
+      // exceptions are scenarios built around the hydration window itself,
+      // which hold the read open (or fail it) so the mid-switch state stays
+      // on screen.
       loadMessages: (_projectId: string, threadId: string) =>
         scenario.holdThreadHydration === true
           ? new Promise<never>(() => undefined)
-          : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
+          : scenario.failThreadHydration === true
+            ? Promise.reject(new Error('demo: transcript read failed'))
+            : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
       onPrRefs: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {

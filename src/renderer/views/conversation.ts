@@ -65,7 +65,7 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { navigateToChange } from '../controller/panels.ts'
-import { needsHydration } from '../controller/thread-hydration.ts'
+import { hydrationFailed, needsHydration } from '../controller/thread-hydration.ts'
 import { createPluginPanelEl } from './plugin-panel.ts'
 import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/plugin-panel.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
@@ -1302,6 +1302,20 @@ function hydrationNoticeEl(running: boolean): HTMLElement {
   return notice
 }
 
+/**
+ * Shown instead of {@link hydrationNoticeEl} when the transcript read failed
+ * (see `fetchInto`'s catch in thread-hydration.ts): an honest line, without a
+ * spinner, rather than a "Loading…" that will never finish. `messagesLoaded`
+ * stays false, so selecting the thread again retries.
+ */
+function hydrationFailureEl(): HTMLElement {
+  return el(
+    'div',
+    { class: 'conversation-hydrating conversation-hydrating-failed', role: 'status' },
+    el('span', { class: 'conversation-hydrating-label' }, 'Couldn’t load the conversation.'),
+  )
+}
+
 const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
@@ -1692,8 +1706,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getThreadById(store, tid)
     // While the transcript is still loading, the hydration notice already says
     // the agent is working — a second live "Reasoning…" row under it would be
-    // noise. The post-hydration threads_changed re-syncs and shows it then.
-    if (thread && needsHydration(thread)) {
+    // noise. The post-hydration threads_changed re-syncs and shows it then. A
+    // FAILED hydration is exempt: its notice makes no working claim, and the
+    // agent may still be running (see hydrationFailureEl).
+    if (thread && needsHydration(thread) && !hydrationFailed(thread.id)) {
       setActivity(null)
       return
     }
@@ -2378,7 +2394,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // it (#1684). Hold the space with a notice; the hydration completing emits
     // `threads_changed`, which rebuilds over it with the real messages.
     if (needsHydration(thread)) {
-      list.append(hydrationNoticeEl(thread.status === 'running'))
+      list.append(
+        // A read that failed must not keep claiming "Loading…" — render the
+        // honest failure line instead (reselecting the thread retries).
+        hydrationFailed(thread.id)
+          ? hydrationFailureEl()
+          : hydrationNoticeEl(thread.status === 'running'),
+      )
     }
     // Newest-first: render the tail the user actually lands on right away, then
     // fill the rest of the history backwards in the background (see
@@ -2544,6 +2566,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('agent_activity', (tid, label) => {
       if (tid !== store.getState().activeThreadId) return
+      // The first streamed chunk can land while the transcript is still being
+      // read off disk. Unhiding the live row here would stack it under the
+      // hydration notice — exactly the duplication syncFromStore's guard
+      // exists to prevent — so hold the suppression until hydration completes
+      // (threads_changed re-syncs and shows it then) or fails.
+      const thread = getThreadById(store, tid)
+      if (thread && needsHydration(thread) && !hydrationFailed(thread.id)) return
       setActivity(label)
     }),
   ]

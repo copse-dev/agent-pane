@@ -5,7 +5,9 @@ import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
+import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
+import { attachThreadHydration } from '../controller/thread-hydration.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 // A switched-to thread arrives as metadata only (`messages: []`,
@@ -77,6 +79,52 @@ describe('conversation hydration notice', () => {
     const activity = document.querySelector<HTMLElement>('.agent-activity')
     assert.ok(activity, 'activity row is mounted')
     assert.equal(activity.hidden, false, 'live activity resumes once the transcript is in')
+  })
+
+  it('ignores agent_activity while the transcript is loading', () => {
+    const store = mountUnhydratedThread('running')
+    const tid = store.getState().activeThreadId
+    assert.ok(tid)
+    // A streamed chunk lands during the hydration window; unhiding the live
+    // row would stack it under the notice that already says the agent works.
+    store.emit('agent_activity', tid, 'Reading files…')
+    const activity = document.querySelector<HTMLElement>('.agent-activity')
+    assert.ok(activity, 'activity row is mounted')
+    assert.equal(activity.hidden, true, 'the chunk must not unhide the row under the notice')
+    assert.ok(document.querySelector('.conversation-hydrating'), 'notice still holds the pane')
+  })
+
+  it('renders the failure line and frees the activity row when hydration fails', async () => {
+    const store = createStore()
+    createThread(store)
+    store.setState({ activeProjectId: 'p' })
+    const api = createFakeApi()
+    const failing: ApiClient = {
+      ...api,
+      threads: {
+        ...api.threads,
+        loadMessages: () => Promise.reject(new Error('disk gone')),
+      },
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, failing)
+    const detach = attachThreadHydration(store, failing)
+    patchActiveThread(store, { status: 'running', messages: [], messagesLoaded: false })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const failure = document.querySelector('.conversation-hydrating-failed')
+    assert.ok(failure, 'failed hydration renders the failure line')
+    assert.equal(failure.textContent, 'Couldn’t load the conversation.')
+    assert.equal(
+      document.querySelectorAll('.conversation-hydrating').length,
+      1,
+      'the failure line replaces the loading notice rather than joining it',
+    )
+    const activity = document.querySelector<HTMLElement>('.agent-activity')
+    assert.ok(activity, 'activity row is mounted')
+    assert.equal(activity.hidden, false, 'failure stops suppressing the live activity row')
+    detach()
   })
 
   it('renders no notice for a hydrated thread', () => {
