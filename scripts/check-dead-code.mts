@@ -60,6 +60,7 @@ const roots = [
   // Substituted for the `electron` module by esbuild alias rather than
   // imported, so only this list links them (see scripts/build-tauri.mts).
   'src/sidecar/electron-shim/index.ts',
+  'src/sidecar/electron-shim/electron-updater.ts',
   'src/sidecar/ws-bridge/electron.ts',
   'src/renderer/main.ts',
   'src/renderer/demo/main.ts',
