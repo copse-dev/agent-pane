@@ -57,7 +57,10 @@ export function buildPromptSections(v: PromptSectionVars): PromptSections {
 ${v.tools}
 ${v.toolTail}
 {SKILLS_TOOLS_LINE}`,
-    workspace: 'Working directory: {WORKSPACE_ROOT}',
+    // {REPO_CONTEXT} resolves to the authoritative Git-repository-root statement
+    // (or to nothing outside a turn / outside a checkout) — see
+    // `buildRepositoryContext` in agent-system-prompt.ts (#1724).
+    workspace: 'Working directory: {WORKSPACE_ROOT}{REPO_CONTEXT}',
     openEnded: `When the user asks an open-ended question (review, explain, validate, summarize):
 1. ${v.gather}
 2. ${v.avoidRepeat}`,
