@@ -21,15 +21,26 @@ type MonarchRule = Monaco.languages.IMonarchLanguageRule
  *
  * Deliberately all-or-nothing: if the `strings` state no longer contains the
  * exact rules being replaced (or the new state names appear), a monaco upgrade
- * has changed the grammar — return it untouched rather than guess.
+ * has changed the grammar — return it untouched rather than guess. Every bail
+ * warns loudly: a silent bail would let a monaco bump revert the f-string fix
+ * with CI green (the unit tests in python-monarch-fstring-real-grammar.test.ts
+ * pin the real shipped grammar, but a runtime divergence must still be heard).
  */
 export function withMultilineFStringFix(
   language: Monaco.languages.IMonarchLanguage,
 ): Monaco.languages.IMonarchLanguage {
   const strings = language.tokenizer['strings']
-  if (!Array.isArray(strings)) return language
+  if (!Array.isArray(strings)) return bail(language, 'the `strings` state is not a rule list')
   if ('fEndDocString' in language.tokenizer || 'fEndDblDocString' in language.tokenizer) {
-    return language
+    return bail(language, 'the grammar already defines fEndDocString/fEndDblDocString states')
+  }
+  // The injected rules and states hand off to these existing states; a grammar
+  // missing any of them would make setMonarchTokensProvider's synchronous
+  // Monarch compile throw, taking the whole monaco bundle down with it.
+  for (const state of ['fStringBody', 'fDblStringBody', 'fStringDetail']) {
+    if (!Array.isArray(language.tokenizer[state])) {
+      return bail(language, `the referenced \`${state}\` state is missing`)
+    }
   }
 
   // Prefix coverage matches the pending upstream fix
@@ -60,7 +71,12 @@ export function withMultilineFStringFix(
         return [rule]
     }
   })
-  if (replaced !== 2) return language
+  if (replaced !== 2) {
+    return bail(
+      language,
+      `expected to replace 2 f-string rules in \`strings\`, found ${String(replaced)}`,
+    )
+  }
 
   return {
     ...language,
@@ -92,6 +108,21 @@ export function withMultilineFStringFix(
       ],
     },
   }
+}
+
+/** Return the grammar untouched, but never silently: an upgrade must be heard. */
+function bail(
+  language: Monaco.languages.IMonarchLanguage,
+  reason: string,
+): Monaco.languages.IMonarchLanguage {
+  console.warn(
+    `[python-monarch-fstring-fix] the multi-line f-string patch did not apply: ${reason}. ` +
+      'Python highlighting falls back to the unpatched upstream grammar, so triple-quoted ' +
+      'f-strings will corrupt highlighting below them (#1752). A monaco-editor upgrade has ' +
+      'likely reshaped the Monarch python grammar — update ' +
+      'src/renderer/monaco/python-monarch-fstring-fix.ts, or delete it if upstream fixed it.',
+  )
+  return language
 }
 
 /** The regex source of a short-form Monarch rule, or undefined for any other shape. */

@@ -17,6 +17,25 @@ declare global {
 // the app bundle never imports monaco's ESM tree a second time. An explicitly
 // set tokens provider takes precedence over the lazy per-language factory the
 // monaco-editor package registers on import.
-monaco.languages.setMonarchTokensProvider('python', withMultilineFStringFix(pythonLanguage))
+//
+// setMonarchTokensProvider with a plain grammar object compiles it
+// synchronously, and the Monarch compiler throws on an inconsistent grammar
+// (e.g. a rule referencing a missing state). A throw here would leave
+// `window.__copseMonaco` unset and kill every Monaco surface in the app, so a
+// bad patched grammar must degrade to upstream python highlighting instead.
+try {
+  monaco.languages.setMonarchTokensProvider('python', withMultilineFStringFix(pythonLanguage))
+} catch (error) {
+  console.error(
+    '[monaco-global] registering the patched python grammar failed; falling back to the ' +
+      'unpatched upstream grammar (multi-line f-strings will corrupt highlighting, #1752)',
+    error,
+  )
+  try {
+    monaco.languages.setMonarchTokensProvider('python', pythonLanguage)
+  } catch (fallbackError) {
+    console.error('[monaco-global] registering the upstream python grammar failed', fallbackError)
+  }
+}
 
 window.__copseMonaco = monaco

@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import type * as Monaco from 'monaco-editor'
 import { withMultilineFStringFix } from './python-monarch-fstring-fix.ts'
@@ -163,20 +163,60 @@ describe('withMultilineFStringFix', () => {
     }
   })
 
-  it('leaves an already-fixed grammar untouched', () => {
-    const patched = withMultilineFStringFix(upstreamPythonGrammar())
-    assert.equal(withMultilineFStringFix(patched), patched)
+  it('does not warn when the patch applies cleanly', () => {
+    const warn = mock.method(console, 'warn', () => {})
+    try {
+      withMultilineFStringFix(upstreamPythonGrammar())
+      assert.equal(warn.mock.callCount(), 0)
+    } finally {
+      warn.mock.restore()
+    }
   })
 
-  it('leaves an unrecognized grammar untouched when the f-string rules moved', () => {
+  it('leaves an already-fixed grammar untouched, warning', () => {
+    const patched = withMultilineFStringFix(upstreamPythonGrammar())
+    assertBailsLoudly(patched)
+  })
+
+  it('leaves an unrecognized grammar untouched when the f-string rules moved, warning', () => {
     const changed = upstreamPythonGrammar()
     changed.tokenizer['strings'] = [[/f?'{1,3}/, 'string.escape', '@fStringBody']]
-    assert.equal(withMultilineFStringFix(changed), changed)
+    assertBailsLoudly(changed)
   })
 
-  it('leaves an unrecognized grammar untouched when strings is not a rule list', () => {
+  it('leaves an unrecognized grammar untouched when strings is not a rule list, warning', () => {
     const changed = upstreamPythonGrammar()
     delete changed.tokenizer['strings']
-    assert.equal(withMultilineFStringFix(changed), changed)
+    assertBailsLoudly(changed)
+  })
+
+  it('leaves an unrecognized grammar untouched when a referenced state is missing, warning', () => {
+    // The injected rules hand off to these states; registering a grammar that
+    // references a missing state would make Monarch's synchronous compile
+    // throw (see monaco-global.ts), so the patch must step aside instead.
+    for (const state of ['fStringBody', 'fDblStringBody', 'fStringDetail']) {
+      const changed = upstreamPythonGrammar()
+      changed.tokenizer = Object.fromEntries(
+        Object.entries(changed.tokenizer).filter(([name]) => name !== state),
+      )
+      assertBailsLoudly(changed)
+    }
   })
 })
+
+/** The grammar comes back untouched and exactly one warning names the fix. */
+function assertBailsLoudly(language: Monaco.languages.IMonarchLanguage): void {
+  const warn = mock.method(console, 'warn', () => {})
+  try {
+    assert.equal(withMultilineFStringFix(language), language)
+    assert.equal(warn.mock.callCount(), 1)
+    const call = warn.mock.calls[0]
+    assert.ok(call)
+    const [message] = call.arguments
+    assert.ok(typeof message === 'string')
+    assert.match(message, /python-monarch-fstring-fix/)
+    assert.match(message, /did not apply/)
+  } finally {
+    warn.mock.restore()
+  }
+}
