@@ -821,7 +821,11 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        await ensureTerminalPermitted({
+          sandboxSupported: true,
+          sandboxEnabled: true,
+          remoteTarget: false,
+        }),
         true,
       )
       assert.equal(prompted, false)
@@ -832,7 +836,7 @@ describe('ensureTerminalPermitted', () => {
     }
   })
 
-  it('requires approval when no project sandbox is active', async () => {
+  it('requires approval when a supported platform failed to start its sandbox', async () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
     let approvalBody = ''
     setApprovalHandler(async (request) => {
@@ -841,10 +845,39 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: false, remoteTarget: false }),
+        await ensureTerminalPermitted({
+          sandboxSupported: true,
+          sandboxEnabled: false,
+          remoteTarget: false,
+        }),
         true,
       )
       assert.match(approvalBody, /full user account, filesystem, and network/i)
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  // The user terminal is *meant* to be unsandboxed, so where the platform
+  // confines nothing there is no expectation to violate and nothing to disclose.
+  it('opens without prompting on a platform with no sandbox backend', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureTerminalPermitted({
+          sandboxSupported: false,
+          sandboxEnabled: false,
+          remoteTarget: false,
+        }),
+        true,
+      )
+      assert.equal(prompted, false)
     } finally {
       setApprovalHandler(null)
       restore()
@@ -856,7 +889,11 @@ describe('ensureTerminalPermitted', () => {
     setApprovalHandler(async () => ({ approved: false, remember: false }))
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: false, remoteTarget: false }),
+        await ensureTerminalPermitted({
+          sandboxSupported: true,
+          sandboxEnabled: false,
+          remoteTarget: false,
+        }),
         false,
       )
     } finally {
@@ -876,7 +913,11 @@ describe('ensureTerminalPermitted', () => {
     })
     try {
       assert.equal(
-        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: true }),
+        await ensureTerminalPermitted({
+          sandboxSupported: true,
+          sandboxEnabled: true,
+          remoteTarget: true,
+        }),
         true,
       )
       assert.match(approvalTitle, /remote terminal/i)

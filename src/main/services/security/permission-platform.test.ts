@@ -44,6 +44,7 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
   it('auto-opens a local user terminal on macOS', () => {
     assert.deepEqual(
       decideTerminalPermission({
+        sandboxSupported: true,
         sandboxEnabled: true,
         remoteTarget: false,
       }),
@@ -51,6 +52,7 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
     )
     assert.deepEqual(
       decideTerminalPermission({
+        sandboxSupported: true,
         sandboxEnabled: true,
         remoteTarget: true,
       }),
@@ -143,18 +145,46 @@ for (const platform of ['Windows', 'sandbox init failure'] as const) {
     it('never claims a command needs to run "outside the sandbox" when there is no sandbox', () => {
       assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, false), false)
     })
-
-    it('prompts for a terminal because the OS sandbox is unavailable', () => {
-      assert.deepEqual(
-        decideTerminalPermission({
-          sandboxEnabled: false,
-          remoteTarget: false,
-        }),
-        { action: 'prompt', reason: 'sandbox-unavailable' },
-      )
-    })
   })
 }
+
+// Terminals are the one surface where "no OS sandbox" is NOT one case. A user
+// terminal is meant to be unsandboxed, so the prompt reports a broken
+// expectation rather than the absence of confinement itself.
+describe('terminal permissions: no OS sandbox', () => {
+  it('opens without prompting on a platform that confines nothing (Windows)', () => {
+    assert.deepEqual(
+      decideTerminalPermission({
+        sandboxSupported: false,
+        sandboxEnabled: false,
+        remoteTarget: false,
+      }),
+      { action: 'allow' },
+    )
+  })
+
+  it('prompts when a supported platform failed to start its sandbox', () => {
+    assert.deepEqual(
+      decideTerminalPermission({
+        sandboxSupported: true,
+        sandboxEnabled: false,
+        remoteTarget: false,
+      }),
+      { action: 'prompt', reason: 'sandbox-init-failed' },
+    )
+  })
+
+  it('still prompts for SSH on a platform that confines nothing', () => {
+    assert.deepEqual(
+      decideTerminalPermission({
+        sandboxSupported: false,
+        sandboxEnabled: false,
+        remoteTarget: true,
+      }),
+      { action: 'prompt', reason: 'remote-target' },
+    )
+  })
+})
 
 describe('shell permissions: agent-declared "expects_sandbox_block" up-front escalation', () => {
   it('is eligible for an ambiguous command when the sandbox is active', () => {

@@ -111,21 +111,36 @@ export type ShellPermissionDecision =
 export type ShellPermissionMode = 'standard' | 'guarded-yolo'
 
 export type TerminalPermissionDecision =
-  { action: 'allow' } | { action: 'prompt'; reason: 'sandbox-unavailable' | 'remote-target' }
+  { action: 'allow' } | { action: 'prompt'; reason: 'sandbox-init-failed' | 'remote-target' }
 
 /**
- * Integrated terminals are user-directed and run outside the project seatbelt on
- * macOS. A local PTY can therefore open without prompting when the sandbox is
- * available; SSH remains an explicit remote boundary.
+ * Integrated terminals are user-directed and deliberately spawn outside the
+ * project seatbelt (terminal-service.ts); agent confinement stays on `run_shell`
+ * / `run_background`. Opening one is therefore not itself a boundary event, and
+ * the prompt exists only where the user's *expectation* of confinement is
+ * violated:
+ *
+ * - **Unsupported platform** (Windows) — nothing on the host is confined, so an
+ *   unsandboxed terminal is the baseline rather than a deviation. Announcing it
+ *   carries no information and only teaches the user to click through prompts.
+ * - **Init failure** on a platform that normally confines — the whole session is
+ *   degraded, not just this terminal, and there is no other moment the user
+ *   learns that.
+ * - **SSH** — the PTY leaves the local host entirely, whatever the local sandbox
+ *   is doing.
  */
 export function decideTerminalPermission(input: {
+  /** This platform has an ASRT backend we start (macOS, Linux). */
+  sandboxSupported: boolean
+  /** The project sandbox is confining subprocesses right now. */
   sandboxEnabled: boolean
   remoteTarget: boolean
 }): TerminalPermissionDecision {
   // SSH PTYs intentionally launch outside the local seatbelt. Treat the actual
   // spawn path as the boundary, not merely the platform's sandbox capability.
   if (input.remoteTarget) return { action: 'prompt', reason: 'remote-target' }
-  if (!input.sandboxEnabled) return { action: 'prompt', reason: 'sandbox-unavailable' }
+  if (!input.sandboxSupported) return { action: 'allow' }
+  if (!input.sandboxEnabled) return { action: 'prompt', reason: 'sandbox-init-failed' }
   return { action: 'allow' }
 }
 

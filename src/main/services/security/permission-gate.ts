@@ -22,6 +22,7 @@ import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
+import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
   activeSandboxNetworkScopeLabels,
   isSandboxNetworkScopeActive,
@@ -159,6 +160,7 @@ export interface ShellCommandPermissionOptions {
 }
 
 export interface TerminalPermissionOptions {
+  sandboxSupported?: boolean
   sandboxEnabled?: boolean
   remoteTarget?: boolean
 }
@@ -1077,18 +1079,24 @@ async function checkBackgroundProcessPermission(
 
 /**
  * User-initiated integrated terminals always spawn outside the project seatbelt
- * (see terminal-service.ts). On platforms without an OS sandbox boundary, or
- * when an SSH-backed PTY necessarily runs outside the local seatbelt, opening
- * one is an explicit user decision. A local integrated terminal is already
+ * (see terminal-service.ts). That is the intended design: a terminal the user
+ * opened and types into is a user decision, and agent shell confinement stays on
+ * run_shell / run_background. A local integrated terminal is already
  * user-directed and unsandboxed, so an agent's process-global network scope does
- * not add a separate approval boundary. Agent shell confinement stays on
- * run_shell / run_background. (#662, #803, #812)
+ * not add a separate approval boundary. (#662, #803, #812)
+ *
+ * The prompt is therefore reserved for the cases where the user would otherwise
+ * hold a *wrong* belief about containment — an SSH PTY that leaves the host, or
+ * a sandbox that was supposed to be running this session and is not. Where the
+ * platform confines nothing at all (Windows), the unsandboxed terminal is the
+ * user's baseline and prompting only devalues the prompts that do carry news.
  */
 export async function ensureTerminalPermitted(
   opts: TerminalPermissionOptions = {},
 ): Promise<boolean> {
   if (!getWorkspaceRoot()) throw new Error('No workspace open.')
   const decision = decideTerminalPermission({
+    sandboxSupported: opts.sandboxSupported ?? isProjectSandboxPlatform(),
     sandboxEnabled: opts.sandboxEnabled ?? isProjectSandboxEnabled(),
     remoteTarget: opts.remoteTarget ?? isSshExecutionTarget(getActiveExecutionTarget()),
   })
@@ -1107,12 +1115,17 @@ export async function ensureTerminalPermitted(
     return approved
   }
 
+  // Only reachable on a platform that should be confining. Quote the init
+  // failure: without it the reason lives solely in the main-process log, which
+  // is exactly where a user hitting this will not look.
+  const failure = projectSandboxInitFailure()
   const { approved } = await requestApproval({
-    title: 'Open unsandboxed terminal?',
+    title: 'Open terminal without the project sandbox?',
     cause: 'terminal-unsandboxed',
     body:
-      'The integrated terminal cannot be confined by the project sandbox on this platform. ' +
-      'Commands you run in it can access your full user account, filesystem, and network.',
+      'The project sandbox failed to start this session, so commands you run in this terminal ' +
+      'can access your full user account, filesystem, and network.' +
+      (failure ? ` (${failure})` : ''),
     type: 'shell',
     allowRemember: false,
   })
