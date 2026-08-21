@@ -4,9 +4,15 @@
  * delete entries as Servo grows the API.
  */
 
-// crypto.randomUUID (Servo has getRandomValues but not randomUUID). The
-// renderer mints project/thread/message ids with it, and the unhandled
-// rejection from its absence killed thread-list restore on first run.
+// crypto.randomUUID — implemented in Servo (servo/servo#33158) but gated
+// [SecureContext], and a tauri:// page never qualifies: non-special schemes
+// get opaque origins, which are never potentially-trustworthy, and script's
+// GlobalScope::is_secure_context() ignores the ProtocolHandler::is_secure()
+// registration that the runtime already makes (net's fetch path honors it —
+// script's does not). Same root cause as CSP 'self' never matching. Until
+// upstream threads the registry into script, SecureContext-gated APIs
+// (crypto.subtle included) are absent here; this shims the one the renderer
+// needs at boot (project/thread/message ids).
 if (typeof crypto.randomUUID !== 'function') {
   const randomUUID = (): string => {
     const bytes = crypto.getRandomValues(new Uint8Array(16))
