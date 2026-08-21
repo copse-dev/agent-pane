@@ -11,4 +11,6 @@ export interface ProjectInstructionSummary {
   scope: InstructionScope
   /** Byte length of the trimmed content fed to the prompt. */
   bytes: number
+  /** False when discovered but inert (project file in an untrusted workspace). */
+  active: boolean
 }

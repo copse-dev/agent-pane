@@ -16,6 +16,11 @@ describe('settings sources cursor rules (#636)', () => {
     resetUserData()
 
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-cursor-rules-'))
+    writeFileSync(
+      join(workspaceRoot, 'AGENTS.md'),
+      'Use the project-specific release checklist before shipping.\n',
+      'utf8',
+    )
     mkdirSync(join(workspaceRoot, '.cursor', 'rules'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, '.cursor', 'rules', 'always.mdc'),
@@ -57,7 +62,32 @@ describe('settings sources cursor rules (#636)', () => {
 
     const sources = dialog.$('.settings-section[data-section="customise"]')
     await expect(sources).toBeDisplayed()
+    await expect(sources.$('legend=Instructions')).toBeDisplayed()
     await expect(sources.$('legend=Cursor rules')).toBeDisplayed()
+
+    const instructionsList = sources.$('#sources-instructions-list')
+    await browser.waitUntil(async () => (await instructionsList.getText()).includes('AGENTS.md'), {
+      timeout: 15_000,
+      timeoutMsg: 'expected the project instructions in Sources',
+    })
+    const instructionRow = instructionsList.$('.sources-row*=AGENTS.md')
+    const trustBadge = instructionRow.$('.sources-badge-untrusted')
+    await expect(trustBadge).toHaveText('not loaded')
+    await expect(instructionRow.$('.sources-row-detail')).toHaveText(
+      expect.stringContaining('inert until you trust this workspace'),
+    )
+
+    await browser.execute(() => {
+      document
+        .querySelector('#sources-instructions-list')
+        ?.closest('fieldset')
+        ?.scrollIntoView({ block: 'start' })
+    })
+    await browser.pause(100)
+    await saveElementScreenshot(
+      'fieldset:has(#sources-instructions-list)',
+      'settings-sources-untrusted-instructions.png',
+    )
 
     const rulesList = sources.$('#sources-cursor-rules-list')
     await browser.waitUntil(

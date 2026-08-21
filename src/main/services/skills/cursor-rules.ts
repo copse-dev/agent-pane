@@ -18,8 +18,10 @@ import { splitSkillMarkdown } from './parse-skill-frontmatter.ts'
  *        - neither → manual; injected only when `@`-mentioned in the user message
  *   2. `<root>/.cursorrules` — the legacy single-file format, always applied.
  *
- * Like `AGENT.md`, these are prompt text (not executed), so they are read whenever
- * present — the workspace-trust gate is reserved for things that *run* (hooks, MCP).
+ * Like `AGENT.md`, these are prompt text rather than executables — but for an agent
+ * with run_shell, instruction text is one approval away from execution, so they share
+ * the workspace-trust gate with hooks and MCP: discovered whenever present, inert in
+ * the prompt until the workspace is trusted (context-provenance plan, Phase 2).
  */
 
 const SKIP_DIRS = new Set(['node_modules', '.git'])

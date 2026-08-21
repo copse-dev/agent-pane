@@ -2461,9 +2461,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       fillSourceList(
         '#sources-instructions-list',
         instructions.map((f) =>
-          makeSourceRow(f.name, f.scope, `${f.path} · ${String(f.bytes)} B`, {
-            badgeClass: f.scope === 'project' ? 'sources-badge-project' : undefined,
-          }),
+          makeSourceRow(
+            f.name,
+            f.active ? f.scope : 'not loaded',
+            `${f.path} · ${String(f.bytes)} B` +
+              (f.active ? '' : ' · inert until you trust this workspace (see MCP servers)'),
+            {
+              badgeClass: !f.active
+                ? 'sources-badge-untrusted'
+                : f.scope === 'project'
+                  ? 'sources-badge-project'
+                  : undefined,
+            },
+          ),
         ),
         'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root, or ~/AGENTS.md globally).',
       )
@@ -3324,6 +3334,23 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const text = document.createElement('span')
       text.textContent =
         'This workspace defines its own MCP servers. They will not run until you trust this workspace.'
+      // Trusting also activates the workspace's instruction files (AGENTS.md,
+      // Cursor rules) — say so at the consent moment, not only in Sources.
+      void api.instructions
+        .list()
+        .then((files) => {
+          const inert = files.filter((f) => !f.active)
+          if (inert.length === 0) return
+          const note = document.createElement('span')
+          note.className = 'mcp-trust-instructions-note'
+          note.textContent =
+            ` It also ships agent instruction files (${inert.map((f) => f.name).join(', ')}), ` +
+            'inert until trusted.'
+          text.append(note)
+        })
+        .catch(() => {
+          /* display-only */
+        })
       const trustBtn = document.createElement('button')
       trustBtn.type = 'button'
       trustBtn.textContent = 'Trust this workspace'

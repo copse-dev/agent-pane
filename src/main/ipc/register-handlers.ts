@@ -2006,11 +2006,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return listUnsandboxedProjectHooks(root)
   })
   ipcMain.handle('instructions:list', async () =>
-    (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({
+    (await loadProjectInstructionSources()).map(({ path, name, scope, content, active }) => ({
       path,
       name,
       scope,
       bytes: Buffer.byteLength(content, 'utf-8'),
+      active,
     })),
   )
   ipcMain.handle('cursorRules:list', async () => {
