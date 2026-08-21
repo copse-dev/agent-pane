@@ -10,6 +10,11 @@ import {
   type OngoingPrediction,
   type PredictionResult,
 } from '@lmstudio/sdk'
+import {
+  openAiParameterFields,
+  recommendedOutputCeiling,
+  type ModelParameters,
+} from './model-parameters.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
@@ -21,7 +26,11 @@ type RespondOptions = Pick<
   | 'onPromptProcessingProgress'
   | 'onToolCallRequestEnd'
   | 'onToolCallRequestFailure'
->
+> &
+  Pick<
+    LLMRespondOpts,
+    'maxTokens' | 'temperature' | 'topKSampling' | 'topPSampling' | 'minPSampling' | 'repeatPenalty'
+  >
 
 interface PredictionAdapter {
   result(): Promise<Pick<PredictionResult, 'stats'>>
@@ -126,6 +135,8 @@ class AsyncChunkQueue<T> implements AsyncIterableIterator<T> {
 
 export interface LMStudioProviderOptions {
   baseURL?: string
+  /** User-tuned generation parameters; mapped onto the SDK's sampling fields. */
+  params?: ModelParameters
   /** Test seam: production callers use the official SDK adapter. */
   client?: ClientAdapter
 }
@@ -140,9 +151,11 @@ export class LMStudioProvider implements LLMProvider {
   lastUsage: { inputTokens: number; outputTokens: number } | null = null
   private readonly client: ClientAdapter
   private readonly modelName: string
+  private readonly params: ModelParameters
 
   constructor(modelName: string, opts: LMStudioProviderOptions = {}) {
     this.modelName = modelName
+    this.params = opts.params ?? {}
     this.client = opts.client ?? new SdkClientAdapter(opts.baseURL ?? 'http://localhost:1234/v1')
   }
 
@@ -170,6 +183,28 @@ export class LMStudioProvider implements LLMProvider {
     yield* queue
   }
 
+  /** The SDK prediction config carrying tuned parameters and the output ceiling. */
+  private predictionConfig(): RespondOptions {
+    // The SDK names its knobs differently from the OpenAI wire (topKSampling vs
+    // top_k, repeatPenalty vs repetition_penalty), so remap field by field rather
+    // than spreading — a knob added to one side must not silently vanish from
+    // the other. `reasoning` has no SDK equivalent and is dropped, matching how
+    // the compat path treats routes that cannot express an effort ladder;
+    // `presence_penalty` is likewise absent from LLMPredictionConfigInput.
+    const fields = openAiParameterFields(this.params)
+    const ceiling = recommendedOutputCeiling(this.modelName, this.params)
+    return {
+      ...(fields.temperature !== undefined ? { temperature: fields.temperature } : {}),
+      ...(fields.top_p !== undefined ? { topPSampling: fields.top_p } : {}),
+      ...(fields.top_k !== undefined ? { topKSampling: fields.top_k } : {}),
+      ...(fields.min_p !== undefined ? { minPSampling: fields.min_p } : {}),
+      ...(fields.repetition_penalty !== undefined
+        ? { repeatPenalty: fields.repetition_penalty }
+        : {}),
+      ...(ceiling === undefined ? {} : { maxTokens: ceiling }),
+    }
+  }
+
   private async produce(
     messages: LLMMessage[],
     tools: LLMTool[],
@@ -183,6 +218,7 @@ export class LMStudioProvider implements LLMProvider {
       ])
       const rawTools = toLmStudioTools(tools)
       const prediction = model.respond(chat, {
+        ...this.predictionConfig(),
         rawTools: rawTools.length ? { type: 'toolArray', tools: rawTools } : { type: 'none' },
         ...(signal ? { signal } : {}),
         onPromptProcessingProgress: (progress) => {

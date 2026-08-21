@@ -9,7 +9,6 @@ import { OPENROUTER_BASE_URL } from './openrouter.ts'
 import { assertProviderHostAllowed } from './provider-host-policy.ts'
 import { validateCredentialBaseUrl } from './credential-url.ts'
 import {
-  isEmptyModelParameters,
   openRouterReasoningBody,
   resolvedOutputCeiling,
   type ModelParameters,
@@ -209,10 +208,10 @@ export function createLMStudioProvider(
   // WebSocket authentication is a separate client handshake and cannot carry
   // the HTTP bearer token configured for the OpenAI-compatible API. Preserve
   // authenticated server setups by retaining the compatible endpoint there.
-  if ((apiKey && apiKey !== 'lm-studio') || !isEmptyModelParameters(params)) {
+  if (apiKey && apiKey !== 'lm-studio') {
     return createLocalOpenAIProvider(baseURL, model, apiKey, params)
   }
-  return new LMStudioProvider(model, { baseURL })
+  return new LMStudioProvider(model, { baseURL, params })
 }
 
 // OpenRouter is an OpenAI-compatible cloud aggregator, so it reuses OpenAIProvider
