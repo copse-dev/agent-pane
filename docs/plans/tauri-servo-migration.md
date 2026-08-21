@@ -132,6 +132,34 @@ day-to-day usability. The honest sequencing is: get the shell + sidecar running
 gaps upstream where Servo intends to support them (`servo/servo` tracks
 `contenteditable` and `:has()` actively).
 
+### Engine-gap probe verdicts (2026-08-21, seven-patch build)
+
+An in-Servo feature panel (`dist/renderer/probe4.html`, behavioral tests, not
+just presence checks) settled the table's open questions:
+
+- **`<dialog>.showModal()` works**: the dialog opens (`open` set) and paints
+  centered over content. `::backdrop`/`inert` fidelity not yet verified.
+- **`:has()` is one flipped boolean away**: stylo ships full matching and
+  invalidation; Servo-mode parsing is a hardcoded `false` in
+  `style/servo/selector_parser.rs`. With the flip
+  (`servo-patches/stylo-0001…` in the tauri fork), `CSS.supports` reports it,
+  live rules match, and add/remove of a matching child restyles the parent in
+  both directions.
+- **Popover is genuinely absent** (API commented out of the webidl at the
+  pin) — and worse, un-upgraded `[popover]` content **renders inline** because
+  the UA `display:none` rule is missing too. Until a fallback layer exists,
+  ship `[popover] { display: none }` in app CSS so hidden popover content
+  doesn't leak into layout.
+- **Genuinely missing, fallbacks stand**: CSS anchor positioning,
+  `CSS.highlights`/`Highlight`, WebCodecs `VideoDecoder`, `Sanitizer`
+  (DOMPurify fallback already), `navigator.clipboard` (8 call sites — route
+  through the sidecar instead of polyfilling), `OffscreenCanvas`,
+  `IntersectionObserver` (zero renderer uses — non-issue).
+- **Working**: canvas 2D (xterm.js canvas renderer viable), `ResizeObserver`,
+  `structuredClone`, `queryCommandSupported` (pref), `crypto.randomUUID`
+  (patch 0001), and **module-worker top-level await (patch 0004) validated
+  in-browser** via a blob module worker.
+
 Also inherited from the runtime's own limitations: no printing, one Servo
 webview per native window (fine — `<webview>` already falls back to `<iframe>`
 outside Electron by design), no in-process devtools window, Linux is X11-only
