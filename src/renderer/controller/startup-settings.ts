@@ -1,5 +1,9 @@
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
-import { migrateLegacyAppearanceDefaults } from '@shared/appearance.ts'
+import {
+  APPEARANCE_DEFAULTS_MIGRATION_SETTING,
+  APPEARANCE_DEFAULTS_MIGRATION_VERSION,
+  migrateLegacyAppearanceDefaults,
+} from '@shared/appearance.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
 export interface StartupSettings {
@@ -40,6 +44,7 @@ export async function loadStartupSettings(
     uiTintColor,
     uiTintStrength,
     developerMode,
+    appearanceDefaultsMigrationVersion,
   ] = await Promise.all([
     settings.get('model'),
     settings.get('layout'),
@@ -53,6 +58,7 @@ export async function loadStartupSettings(
     settings.get('uiTintColor'),
     settings.get('uiTintStrength'),
     settings.get(DEVELOPER_MODE_SETTING),
+    settings.get(APPEARANCE_DEFAULTS_MIGRATION_SETTING),
   ])
 
   const loaded: StartupSettings = {
@@ -70,8 +76,15 @@ export async function loadStartupSettings(
     developerMode,
   }
 
+  if (appearanceDefaultsMigrationVersion === APPEARANCE_DEFAULTS_MIGRATION_VERSION) {
+    return loaded
+  }
+
   const migratedAppearance = migrateLegacyAppearanceDefaults(loaded)
-  if (!migratedAppearance) return loaded
+  if (!migratedAppearance) {
+    await settings.set(APPEARANCE_DEFAULTS_MIGRATION_SETTING, APPEARANCE_DEFAULTS_MIGRATION_VERSION)
+    return loaded
+  }
 
   await Promise.all([
     settings.set('theme', migratedAppearance.theme),
@@ -79,6 +92,7 @@ export async function loadStartupSettings(
     settings.set('uiTintColor', migratedAppearance.uiTintColor),
     settings.set('uiTintStrength', migratedAppearance.uiTintStrength),
   ])
+  await settings.set(APPEARANCE_DEFAULTS_MIGRATION_SETTING, APPEARANCE_DEFAULTS_MIGRATION_VERSION)
 
   return { ...loaded, ...migratedAppearance }
 }

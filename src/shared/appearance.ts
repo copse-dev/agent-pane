@@ -5,6 +5,8 @@ export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
 export const DEFAULT_ACCENT_COLOR = '#FF93D0'
 export const DEFAULT_TINT_COLOR = '#244C25'
 export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'subtle'
+export const APPEARANCE_DEFAULTS_MIGRATION_SETTING = 'appearanceDefaultsMigrationVersion'
+export const APPEARANCE_DEFAULTS_MIGRATION_VERSION = 1
 
 interface StoredAppearance {
   theme: unknown

@@ -33,6 +33,7 @@ test('loads every first-paint setting concurrently', async () => {
     'uiTintColor',
     'uiTintStrength',
     'developerMode',
+    'appearanceDefaultsMigrationVersion',
   ])
 
   for (const release of releases) release()
@@ -48,6 +49,7 @@ test('persists and applies the exact legacy Appearance default migration', async
     uiAccentColor: '#20FD85',
     uiTintColor: '#002E2B',
     uiTintStrength: 'subtle',
+    appearanceDefaultsMigrationVersion: null,
   }
   const writes = new Map<string, unknown>()
   const settings = {
@@ -65,6 +67,7 @@ test('persists and applies the exact legacy Appearance default migration', async
     uiAccentColor: '#FF93D0',
     uiTintColor: '#244C25',
     uiTintStrength: 'subtle',
+    appearanceDefaultsMigrationVersion: 1,
   })
   assert.equal(loaded.theme, 'dark')
   assert.equal(loaded.uiAccentColor, '#FF93D0')
@@ -72,12 +75,37 @@ test('persists and applies the exact legacy Appearance default migration', async
   assert.equal(loaded.uiTintStrength, 'subtle')
 })
 
-test('does not rewrite a customised Appearance combination', async () => {
+test('marks a customised Appearance combination as evaluated without rewriting it', async () => {
   const values: Record<string, unknown> = {
     theme: 'light',
     uiAccentColor: '#20FD85',
     uiTintColor: '#002E2B',
     uiTintStrength: 'subtle',
+    appearanceDefaultsMigrationVersion: null,
+  }
+  const writes = new Map<string, unknown>()
+  const settings = {
+    get: (key: string): Promise<unknown> => Promise.resolve(values[key] ?? null),
+    set: (key: string, value: unknown): Promise<void> => {
+      writes.set(key, value)
+      return Promise.resolve()
+    },
+  } satisfies Pick<ApiClient['settings'], 'get' | 'set'>
+
+  const loaded = await loadStartupSettings(settings)
+
+  assert.deepEqual(Object.fromEntries(writes), { appearanceDefaultsMigrationVersion: 1 })
+  assert.equal(loaded.theme, 'light')
+  assert.equal(loaded.uiAccentColor, '#20FD85')
+})
+
+test('does not migrate an exact legacy tuple after the one-time marker is set', async () => {
+  const values: Record<string, unknown> = {
+    theme: 'system',
+    uiAccentColor: '#20FD85',
+    uiTintColor: '#002E2B',
+    uiTintStrength: 'subtle',
+    appearanceDefaultsMigrationVersion: 1,
   }
   const writes: string[] = []
   const settings = {
@@ -91,6 +119,6 @@ test('does not rewrite a customised Appearance combination', async () => {
   const loaded = await loadStartupSettings(settings)
 
   assert.deepEqual(writes, [])
-  assert.equal(loaded.theme, 'light')
+  assert.equal(loaded.theme, 'system')
   assert.equal(loaded.uiAccentColor, '#20FD85')
 })
