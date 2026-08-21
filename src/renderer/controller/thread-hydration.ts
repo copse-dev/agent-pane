@@ -138,9 +138,16 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
         if (state.activeProjectId !== projectId) return
         if (!state.threads.some((t) => t.id === threadId)) return
         store.setState({
-          threads: state.threads.map((t) =>
-            t.id === threadId ? { ...t, messages, messagesLoaded: true } : t,
-          ),
+          threads: state.threads.map((t) => {
+            if (t.id !== threadId) return t
+            // Union, not overwrite: the agent may have streamed messages into
+            // this thread while the read was in flight — or while its project
+            // was backgrounded (#1841) — and those are not in the disk
+            // transcript yet. Disk history first, then the streamed tail.
+            const diskIds = new Set(messages.map((m) => m.id))
+            const streamedMeanwhile = t.messages.filter((m) => !diskIds.has(m.id))
+            return { ...t, messages: [...messages, ...streamedMeanwhile], messagesLoaded: true }
+          }),
         })
         touch(threadId)
         evict()

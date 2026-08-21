@@ -38,6 +38,7 @@ import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from 
 import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread } from './thread-naming.ts'
 import { takeQuietRun } from './quiet-runs.ts'
+import { backgroundProjectOf } from './background-threads.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
@@ -84,9 +85,11 @@ function recordUsageToLedger(
   delta: UsageDelta,
 ): void {
   if (!delta.inputTokens && !delta.outputTokens) return
-  const { activeProjectId } = store.getState()
+  // A carried background run bills its own project, not whichever project the
+  // user happens to be looking at when the chunk lands (#1841).
+  const projectId = backgroundProjectOf(store, threadId) ?? store.getState().activeProjectId
   void api.usage
-    .record(usageRecordFromAgentDelta(threadId, delta, activeProjectId))
+    .record(usageRecordFromAgentDelta(threadId, delta, projectId))
     .catch((err: unknown) => {
       console.error('[usage] failed to record usage event:', err)
     })
@@ -446,7 +449,32 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         if (threadId === store.getState().activeThreadId) {
           void syncThreadGitBranchAfterShell(store, api, threadId)
         }
-        drainMessageQueue(store, api, threadId)
+        const backgroundProjectId = backgroundProjectOf(store, threadId)
+        if (backgroundProjectId) {
+          // Autosave's reconcile only covers the active project, so a carried
+          // run's final metadata (idle status, usage, todos) would otherwise
+          // stay `running` on disk until the project is revisited — or forever,
+          // if the app quits first (#1841). Write it directly. The queue is
+          // deliberately not drained here: draining resolves checkout and
+          // workspace state from the active project, so a carried thread's
+          // queue waits for `resumePendingQueues` when its project reactivates.
+          const finished = getThreadById(store, threadId)
+          if (finished) {
+            void api.threads
+              .updateMeta(backgroundProjectId, threadId, {
+                status: finished.status,
+                usage: finished.usage,
+                updatedAt: finished.updatedAt,
+                title: finished.title,
+                ...(finished.todos !== undefined ? { todos: finished.todos } : {}),
+              })
+              .catch((err: unknown) => {
+                console.error('[threads] could not persist a background run finish', err)
+              })
+          }
+        } else {
+          drainMessageQueue(store, api, threadId)
+        }
         // A queued user or machine continuation immediately flips the thread
         // back to running. Only alert when the queue drain leaves it genuinely
         // finished, rather than chiming between consecutive turns — and never

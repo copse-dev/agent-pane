@@ -412,6 +412,40 @@ test('a finalized message is appended immediately on message_done', async () => 
   autosave.detach()
 })
 
+test('a carried background run finalizing appends into its own project, without reconcile', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  // The user is on p2; the run's thread was carried when p1 was switched away.
+  const store = createStore({
+    activeProjectId: 'p2',
+    activeThreadId: 't2',
+    threads: [thread('t2')],
+    projects: [],
+  })
+  store.setState({
+    backgroundThreads: [
+      {
+        projectId: 'p1',
+        thread: thread('t1', { status: 'running', messages: [userMsg('m1')] }),
+      },
+    ],
+  })
+  const autosave = attachAutosave(store, api)
+
+  store.emit('message_done', 'm1')
+  await tick()
+
+  assert.deepEqual(
+    calls.appends.map((a) => [a.projectId, a.threadId, a.message.id]),
+    [['p1', 't1', 'm1']],
+  )
+  // No reconcile ran for p1: reconciling a background project against the
+  // active project's thread list would read its threads as deleted (#1841).
+  assert.deepEqual(calls.creates, [])
+  assert.deepEqual(calls.deletes, [])
+  autosave.detach()
+})
+
 test('a settled ACP tool update re-finalizes its message with the latest args and response', async () => {
   __resetPersistenceForTest()
   const running: Message = {

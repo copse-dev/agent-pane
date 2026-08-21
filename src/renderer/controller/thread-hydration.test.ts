@@ -63,6 +63,32 @@ test('hydrates the active thread and marks it loaded', async () => {
   detach()
 })
 
+test('messages streamed while the read was in flight survive hydration', async () => {
+  const store = createStore()
+  const { api, release } = apiWithControlledLoad()
+  store.setState({ activeProjectId: 'p', activeThreadId: 't1', threads: [unloaded('t1')] })
+  const detach = attachThreadHydration(store, api)
+
+  // The agent streams into the thread while the disk read is pending — e.g. a
+  // run carried across a project switch (#1841). The disk transcript does not
+  // hold that message yet; overwriting with the read would drop it.
+  const [t1] = store.getState().threads
+  assert.ok(t1)
+  t1.messages.push(message('m-streamed'))
+
+  release('t1', [message('m-disk')])
+  await new Promise((r) => setTimeout(r, 0))
+
+  const thread = store.getState().threads[0]
+  assert.ok(thread)
+  assert.deepEqual(
+    thread.messages.map((m) => m.id),
+    ['m-disk', 'm-streamed'],
+  )
+  assert.equal(thread.messagesLoaded, true)
+  detach()
+})
+
 test('does not refetch a thread that is already loaded', async () => {
   const store = createStore()
   const { api, calls, release } = apiWithControlledLoad()

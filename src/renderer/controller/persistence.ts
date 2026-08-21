@@ -2,7 +2,8 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Project, Thread } from '@shared/types'
 import type { MainWindowNavigation } from '@shared/types/main-window.ts'
-import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
+import { getThreadById, sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
+import { backgroundProjectOf } from './background-threads.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 
 // On-disk persistence for projects and their chat threads. Projects stay in the
@@ -355,16 +356,38 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     )
   }
 
+  // Persist a finalized message of a carried background run (#1841). No
+  // reconcile: reconcileThreads diffs a project's baseline against
+  // `state.threads`, which belongs to the *active* project — running it with
+  // the background project's id would read its threads as deleted. The thread
+  // was created while its project was active, so the append alone is enough.
+  const persistBackgroundMessage = (
+    projectId: string,
+    threadId: string,
+    messageId: string,
+  ): void => {
+    const message = getThreadById(store, threadId)?.messages.find((m) => m.id === messageId)
+    if (!message) return
+    void serializedWrite(threadWriteKey(projectId, threadId), () =>
+      api.threads.appendMessage(projectId, threadId, message),
+    )
+  }
+
   const threadIdOfMessage = (messageId: string): string | undefined => {
-    const { threads, activeThreadId } = store.getState()
+    const { threads, backgroundThreads, activeThreadId } = store.getState()
     const active = threads.find((t) => t.id === activeThreadId)
     if (active?.messages.some((m) => m.id === messageId)) return active.id
     // Skip threads whose transcript is not in memory: their empty `messages`
     // proves nothing, and matching against it would silently attribute the
     // message to the wrong thread or to none. Anything actually streaming a
     // message has been hydrated first (see `ensureThreadMessages` callers).
-    return threads.find(
-      (t) => t.messagesLoaded !== false && t.messages.some((m) => m.id === messageId),
+    return (
+      threads.find(
+        (t) => t.messagesLoaded !== false && t.messages.some((m) => m.id === messageId),
+      ) ??
+      backgroundThreads
+        .map((b) => b.thread)
+        .find((t) => t.messagesLoaded !== false && t.messages.some((m) => m.id === messageId))
     )?.id
   }
 
@@ -451,22 +474,35 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
       schedule()
     }),
     store.on('message_added', (threadId, messageId) => {
-      const { activeProjectId, threads } = store.getState()
-      if (!activeProjectId) return
-      const message = threads
-        .find((t) => t.id === threadId)
-        ?.messages.find((m) => m.id === messageId)
+      const message = getThreadById(store, threadId)?.messages.find((m) => m.id === messageId)
       // User messages are complete when added — persist now. An assistant message
       // is created empty and streamed, so it waits for `message_done`; still
       // reconcile so the thread's create/meta lands.
+      if (message?.role === 'user') {
+        const backgroundProjectId = backgroundProjectOf(store, threadId)
+        if (backgroundProjectId) {
+          persistBackgroundMessage(backgroundProjectId, threadId, messageId)
+          return
+        }
+      }
+      const { activeProjectId } = store.getState()
+      if (!activeProjectId) return
       if (message?.role === 'user') persistMessage(activeProjectId, threadId, messageId)
       else schedule()
     }),
     store.on('message_done', (messageId) => {
-      const { activeProjectId } = store.getState()
-      if (!activeProjectId) return
       const threadId = threadIdOfMessage(messageId)
-      if (threadId) persistMessage(activeProjectId, threadId, messageId)
+      if (!threadId) return
+      // A carried background run persists into its own project's store; the
+      // active-project path would either miss the message or file it under
+      // the wrong project (#1841).
+      const backgroundProjectId = backgroundProjectOf(store, threadId)
+      if (backgroundProjectId) {
+        persistBackgroundMessage(backgroundProjectId, threadId, messageId)
+        return
+      }
+      const { activeProjectId } = store.getState()
+      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId)
     }),
     // ACP agents may patch raw input/output after the turn's message was first
     // finalized (including between-turn background updates). Re-finalize the
@@ -475,15 +511,20 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     // running tool: the v1 spine deliberately has no running status.
     store.on('tool_call_updated', (messageId, toolCallId) => {
       if (!toolCallId) return
-      const { activeProjectId, threads } = store.getState()
-      if (!activeProjectId) return
       const threadId = threadIdOfMessage(messageId)
-      const message = threads
-        .find((thread) => thread.id === threadId)
-        ?.messages.find((candidate) => candidate.id === messageId)
+      if (!threadId) return
+      const message = getThreadById(store, threadId)?.messages.find(
+        (candidate) => candidate.id === messageId,
+      )
       const toolCall = message?.toolCalls.find((candidate) => candidate.id === toolCallId)
-      if (!threadId || !toolCall || toolCall.status === 'running') return
-      persistMessage(activeProjectId, threadId, messageId)
+      if (!toolCall || toolCall.status === 'running') return
+      const backgroundProjectId = backgroundProjectOf(store, threadId)
+      if (backgroundProjectId) {
+        persistBackgroundMessage(backgroundProjectId, threadId, messageId)
+        return
+      }
+      const { activeProjectId } = store.getState()
+      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId)
     }),
   ]
 
