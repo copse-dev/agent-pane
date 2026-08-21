@@ -80,9 +80,9 @@ interface DiffQueueState {
   projectRoot: string | null
   /**
    * Whether this thread executes in its own linked worktree. Cached alongside
-   * `root` because the ACP native-tool bridge binds only the owner (see
-   * `runWithThreadExecutionOwner`), so `getThreadExecutionContext()` is null on
-   * that async chain and the last resolved mode is the honest answer.
+   * `root` because renderer IPCs pass an explicit owner with no bound turn
+   * context, so `getThreadExecutionContext()` is null on those calls and the
+   * last resolved mode is the honest answer.
    */
   checkoutMode: ThreadCheckoutMode
   readonly queue: QueueEntry[]
