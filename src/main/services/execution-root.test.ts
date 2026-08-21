@@ -8,7 +8,11 @@ import { gitStatusTool } from '../tools/git-tools.ts'
 import { runShellTool } from '../tools/shell-tool.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
 import { clearDiffQueueForTest } from './diff-queue.ts'
-import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
+import {
+  agentWorkspaceLabel,
+  getAgentExecutionRoot,
+  getAgentProjectRoot,
+} from './execution-root.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import {
   runWithThreadExecutionContext,
@@ -99,5 +103,31 @@ describe('thread execution roots', () => {
     await assert.rejects(readFile(join(projectRoot, 'same.txt'), 'utf-8'))
     assert.equal(git(rootA, ['show', `${a.backupRef}:same.txt`]), 'from a\n')
     assert.equal(git(rootB, ['show', `${b.backupRef}:same.txt`]), 'from b\n')
+  })
+
+  it('labels a subagent workspace with the execution root, not the renderer root', async () => {
+    // Subagent briefs state this label as "Workspace:". Naming the shared
+    // checkout while the tools resolve the worktree sends the model to a tree
+    // its tools never touch (#1724).
+    const projectRoot = await realpath(await mkdtemp(join(tmpdir(), 'copse-project-root-')))
+    const worktreeRoot = await realpath(await mkdtemp(join(tmpdir(), 'copse-thread-root-')))
+    cleanups.push(async () => rm(projectRoot, { recursive: true, force: true }))
+    cleanups.push(async () => rm(worktreeRoot, { recursive: true, force: true }))
+    cleanups.push(setWorkspaceRootForTest(projectRoot))
+
+    const label = runWithThreadExecutionContext(
+      {
+        projectId: 'project',
+        threadId: 'thread',
+        projectRoot,
+        root: worktreeRoot,
+        checkoutMode: 'worktree',
+        branch: 'copse/label',
+      },
+      () => agentWorkspaceLabel(),
+    )
+    assert.equal(label, worktreeRoot)
+    // Outside a turn the renderer-selected workspace root remains the label.
+    assert.equal(agentWorkspaceLabel(), projectRoot)
   })
 })

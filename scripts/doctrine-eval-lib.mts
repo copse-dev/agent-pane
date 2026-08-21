@@ -419,9 +419,13 @@ export function buildDoctrineEvalPrompt(
   workspace: string,
   omit: readonly PromptSectionId[],
 ): string {
-  return assemblePromptFromSections(buildPromptSections(EVAL_PROMPT_VARS), omit)
-    .replace('{WORKSPACE_ROOT}', workspace)
-    .replace('{SKILLS_TOOLS_LINE}', '')
+  return (
+    assemblePromptFromSections(buildPromptSections(EVAL_PROMPT_VARS), omit)
+      .replace('{WORKSPACE_ROOT}', workspace)
+      // Evals run outside a turn: no repository context to state.
+      .replace('{REPO_CONTEXT}', '')
+      .replace('{SKILLS_TOOLS_LINE}', '')
+  )
 }
 
 export function buildDoctrineEvalArms(sections: readonly PromptSectionId[]): DoctrineEvalArm[] {
