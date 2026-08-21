@@ -3,6 +3,8 @@ import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { chevronRightIcon, externalLinkIcon, refreshIcon } from '../dom/icons.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { setTooltip } from '../dom/tooltip.ts'
+import { setInlineStatus } from '../dom/inline-status.ts'
+import { paneLoadingRow } from '../dom/pane-loading.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -213,6 +215,24 @@ export function mountPrPane(
     return diffEditor
   }
 
+  /**
+   * `ghStatus` is null until the first `gh.status()` answers — which, on a cold
+   * start, is after this pane has already painted. Treating that null as "gh is
+   * missing" told users to install a CLI they already have, so the unavailable
+   * copy waits for a real answer.
+   */
+  function renderGhLoading(): void {
+    clear(listBody)
+    listBody.append(paneLoadingRow('Loading pull requests…'))
+    clear(metaHost)
+    clear(descriptionHost)
+    descriptionHost.classList.remove('pr-viewer-description-fill')
+    clear(filesHost)
+    diffWrap.hidden = true
+    emptyState.hidden = false
+    setInlineStatus(emptyState, 'pending', 'Loading pull requests…')
+  }
+
   function renderGhUnavailable(): void {
     clear(listBody)
     const message =
@@ -287,7 +307,15 @@ export function mountPrPane(
       (pr) => !linkedKeys.has(githubPrKey(pr)) && !workspaceKeys.has(githubPrKey(pr)),
     )
 
-    if (!ghStatus?.installed || !ghStatus.authenticated) {
+    if (!ghStatus) {
+      // Chat-linked PRs come from the thread, not from gh, so they are already
+      // accurate; only the gh-derived sections are unknown this early.
+      if (linkedPrs.length === 0) {
+        renderGhLoading()
+        return
+      }
+      listBody.append(paneLoadingRow('Loading pull requests…'))
+    } else if (!ghStatus.installed || !ghStatus.authenticated) {
       if (linkedPrs.length === 0) {
         renderGhUnavailable()
         return
@@ -296,8 +324,8 @@ export function mountPrPane(
         el(
           'div',
           { class: 'git-changes-empty pr-empty-state' },
-          ghStatus?.message ??
-            (ghStatus?.installed
+          ghStatus.message ??
+            (ghStatus.installed
               ? 'Sign in with `gh auth login` to load diffs and your open PRs.'
               : 'Install GitHub CLI (`gh`) to load diffs and your open PRs.'),
         ),
@@ -677,7 +705,12 @@ export function mountPrPane(
     const descriptionFills = Boolean(prDetails?.body.trim())
     descriptionHost.classList.toggle('pr-viewer-description-fill', descriptionFills)
     emptyState.hidden = descriptionFills
-    emptyState.textContent = prDetails ? 'Select a changed file' : 'Select a pull request'
+    if (!ghStatus && !prDetails) {
+      // Nothing to select yet — the PR list itself is still loading.
+      setInlineStatus(emptyState, 'pending', 'Loading pull requests…')
+    } else {
+      emptyState.textContent = prDetails ? 'Select a changed file' : 'Select a pull request'
+    }
     if (diffEditor) disposeDiffModels(diffEditor)
   }
 

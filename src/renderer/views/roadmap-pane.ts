@@ -1,6 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
+import { paneLoadingRow } from '../dom/pane-loading.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import {
@@ -1078,15 +1079,17 @@ export function mountRoadmapPane(
     clear(listBody)
     const visible = items.filter(isListVisible)
     if (visible.length === 0) {
+      if (loading) {
+        listBody.append(paneLoadingRow('Loading roadmap…'))
+        return
+      }
       // An empty *list* and an empty *roadmap* read very differently: the
       // onboarding copy below is a lie once items exist and a facet or the
       // search box is simply hiding them all.
-      let hint = loading
-        ? 'Loading roadmap…'
-        : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
-      if (!loading && items.length > 0) {
-        hint = 'No roadmap items match your filter.'
-      }
+      const hint =
+        items.length > 0
+          ? 'No roadmap items match your filter.'
+          : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
       listBody.append(el('div', { class: 'git-changes-empty roadmap-list-empty' }, hint))
       return
     }

@@ -1,5 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
+import { setInlineStatus } from '../dom/inline-status.ts'
+import { paneLoadingRow } from '../dom/pane-loading.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
@@ -193,6 +195,14 @@ export function mountGitChangesPane(
   let status: GitStatusResult | null = null
   let committed: GitCommittedChanges | null = null
   let gitAvailable = false
+  // False until the first refresh for the current owner has settled (and reset
+  // whenever a workspace/thread switch invalidates what we know). The empty
+  // states below — "Not a git repository", "No changes" — are answers about the
+  // repo, and rendering them before the probe returns states them about a repo
+  // we have not looked at yet. They look identical to the real thing, so that
+  // guess is what the user believes; on a cold start it is also the first thing
+  // they see, because this pane mounts behind the Monaco bundle.
+  let loaded = false
   let sessionBackup: SessionBackup | null = null
   let restoreInFlight = false
   let selection: ChangeSelection | null = null
@@ -383,6 +393,13 @@ export function mountGitChangesPane(
     clear(listBody)
 
     renderProposedSection(queue)
+
+    if (!loaded) {
+      // Proposed diffs come from the store and are already accurate; only the
+      // git-derived part of the list is unknown this early.
+      if (queue.length === 0) listBody.append(paneLoadingRow('Loading changes…'))
+      return
+    }
 
     if (!gitAvailable) {
       if (queue.length === 0) {
@@ -685,7 +702,8 @@ export function mountGitChangesPane(
     pendingSelect = null
     hideApprovalButtons()
     emptyState.hidden = false
-    emptyState.textContent = 'Select a changed file'
+    if (loaded) emptyState.textContent = 'Select a changed file'
+    else setInlineStatus(emptyState, 'pending', 'Loading changes…')
     diffWrap.hidden = true
     imageWrap.hidden = true
     clear(imageWrap)
@@ -797,7 +815,12 @@ export function mountGitChangesPane(
     const requestId = ++refreshRequestId
     const owner = activeOwner()
     if (!owner) {
+      // No thread yet — the usual cause is the launch window before threads
+      // hydrate, so this is "not known yet", not "no repo". Stay in the loading
+      // state; the `threads_changed` that selects a thread refreshes again.
       gitAvailable = false
+      loaded = false
+      renderList()
       return
     }
     const available = await api.git.isAvailable(owner.projectId, owner.threadId)
@@ -810,6 +833,7 @@ export function mountGitChangesPane(
       return
     gitAvailable = available
     if (!gitAvailable) {
+      loaded = true
       status = null
       committed = null
       sessionBackup = null
@@ -824,6 +848,11 @@ export function mountGitChangesPane(
     if (requestId !== refreshRequestId) return
     const nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
     if (requestId !== refreshRequestId) return
+    // Only now: `gitAvailable` alone still leaves `status`/`committed` null for
+    // three more awaits, and any event that repaints the list in that window
+    // (an approve, a pop-out sync) would render "No changes" over a repo that
+    // has them.
+    loaded = true
     status = nextStatus
     committed = nextCommitted
     sessionBackup = nextBackup
@@ -876,6 +905,9 @@ export function mountGitChangesPane(
       if (changesModeActive(store)) void refresh()
     }),
     store.on('workspace_changed', () => {
+      // The new workspace's git state is unknown until the refresh below lands;
+      // holding `loaded` true would show the previous repo's answer as this one's.
+      loaded = false
       status = null
       committed = null
       sessionBackup = null
@@ -890,6 +922,7 @@ export function mountGitChangesPane(
     store.on('threads_changed', () => {
       refreshRequestId++
       selectRequestId++
+      loaded = false
       status = null
       committed = null
       sessionBackup = null

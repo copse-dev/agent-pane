@@ -1132,6 +1132,14 @@
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
+/* A pane whose first fetch is still in flight, as opposed to one that has
+   looked and found nothing. Same muted row; the spinner is what separates
+   "loading" from a settled "No changes". */
+.pane-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
 .pr-list-host {
   flex: 1;
   display: flex;

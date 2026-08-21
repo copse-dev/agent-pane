@@ -22,13 +22,15 @@ describe('inlineStatus', () => {
     assert.equal(host.querySelector('.ui-icon')?.getAttribute('data-icon'), 'dot')
   })
 
-  it('uses a static minus for idle (settled absence), not the pending spinner circle', () => {
+  it('uses a static minus for idle (settled absence), not the pending spinner', () => {
     const idle = inlineStatus('idle', 'Not loaded')
     const pending = inlineStatus('pending', 'Checking…')
 
     assert.equal(idle.dataset['statusKind'], 'idle')
     assert.equal(idle.querySelector('.ui-icon')?.getAttribute('data-icon'), 'minus')
     assert.equal(pending.dataset['statusKind'], 'pending')
-    assert.equal(pending.querySelector('.ui-icon')?.getAttribute('data-icon'), 'circle')
+    // An arc, not a closed circle: the CSS spins this icon, and rotating a
+    // rotationally-symmetric shape animates nothing.
+    assert.equal(pending.querySelector('.ui-icon')?.getAttribute('data-icon'), 'loader-circle')
   })
 })
