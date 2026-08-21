@@ -48,6 +48,24 @@ const endpoint = JSON.parse(readFileSync(endpointFile, 'utf8')) as {
 }
 console.log(`endpoint up on 127.0.0.1:${String(endpoint.port)}`)
 
+// An unauthenticated local peer can discover the ephemeral port, but malformed
+// input must only close that socket — never crash the sidecar before the real
+// renderer arrives.
+const malformedSocket = new WebSocket(`ws://127.0.0.1:${String(endpoint.port)}/`)
+const malformedCloseCode = await new Promise<number>((resolve) => {
+  malformedSocket.addEventListener('open', () => {
+    malformedSocket.send('null')
+  })
+  malformedSocket.addEventListener('close', (event) => {
+    resolve(event.code)
+  })
+})
+if (malformedCloseCode !== 4002) {
+  fail(`malformed pre-auth frame closed with ${String(malformedCloseCode)}, expected 4002`)
+}
+if (sidecar.exitCode !== null) fail(`malformed pre-auth frame crashed the sidecar`)
+console.log('malformed pre-auth frame rejected without crashing sidecar')
+
 // The primary window is the shim's first BrowserWindow; its id is 1. Give the
 // boot chain time to create it (sandbox init and gortex reaping come first).
 const socket = await (async (): Promise<WebSocket> => {

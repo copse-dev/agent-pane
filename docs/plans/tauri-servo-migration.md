@@ -73,8 +73,8 @@ in-process channel. Tauri (with the Servo runtime) provides the windows.
 - **Sender trust.** Electron gives handlers an unforgeable `event.senderFrame`
   checked by `assertMainFrameSender` + the `app-frames.ts` allowlist. The WS
   transport replaces this with: bind to `127.0.0.1`, a per-launch random bearer
-  token handed only to the webview via the boot query string, `Origin` checking,
-  and one WS connection ↔ one shim `BrowserWindow` binding established at
+  token handed only to the webview via the boot query string, and one WS
+  connection ↔ one shim `BrowserWindow` binding established at
   handshake. The shim fabricates `event.senderFrame` as the bound window's
   `mainFrame` so the existing guards keep working unmodified.
 - **Direction-inverted flows** (main pushes `agent:approval_request` then awaits

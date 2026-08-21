@@ -15,6 +15,10 @@
  * the tag is the only thing that would change.
  */
 
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { isRecord } from '@shared/unknown-value.mts'
+import { z } from 'zod'
+
 export type ClientFrame =
   | { t: 'hello'; winId: number; token: string }
   | { t: 'invoke'; id: number; channel: string; args: unknown[] }
@@ -80,27 +84,66 @@ export function encodeFrame(frame: ClientFrame | ServerFrame): string {
   })
 }
 
-function parseWithBinary(text: string): unknown {
-  return JSON.parse(text, (_key, value: unknown) => {
-    if (typeof value === 'object' && value !== null && BIN_MARKER in value) {
-      const record: Record<string, unknown> = { ...value }
-      const b64 = record[BIN_MARKER]
-      if (typeof b64 === 'string') return fromBase64(b64)
+function reviveBinary(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reviveBinary)
+  if (!isRecord(value)) return value
+  const encoded = value[BIN_MARKER]
+  if (typeof encoded === 'string') {
+    if (
+      encoded.length % 4 !== 0 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
+    ) {
+      throw new Error('invalid binary marker')
     }
-    return value
-  })
+    return fromBase64(encoded)
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, reviveBinary(entry)]))
 }
 
-// The frame shape is trusted-by-construction on both ends of the loopback
-// socket (the peer is our own code, authenticated by the per-launch token);
-// a zod schema here would only re-validate what the dispatch switch already
-// pins by discriminant.
+const clientFrameSchema = z.discriminatedUnion('t', [
+  z.object({
+    t: z.literal('hello'),
+    winId: z.number().int().positive(),
+    token: z.string().length(64),
+  }),
+  z.object({
+    t: z.literal('invoke'),
+    id: z.number().int().nonnegative(),
+    channel: z.string().min(1),
+    args: z.array(z.unknown()),
+  }),
+  z.object({ t: z.literal('send'), channel: z.string().min(1), args: z.array(z.unknown()) }),
+])
+
+const serverFrameSchema = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('hello-ok') }),
+  z.object({
+    t: z.literal('result'),
+    id: z.number().int().nonnegative(),
+    ok: z.boolean(),
+    value: z.unknown().optional(),
+    error: z.string().optional(),
+  }),
+  z.object({ t: z.literal('event'), channel: z.string().min(1), args: z.array(z.unknown()) }),
+])
+
 export function decodeClientFrame(text: string): ClientFrame {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
-  return parseWithBinary(text) as ClientFrame
+  const frame = safeJsonParse(text, decodeWithSchema(clientFrameSchema))
+  if (!frame) throw new Error('invalid client frame')
+  if (frame.t === 'hello') return frame
+  return { ...frame, args: frame.args.map(reviveBinary) }
 }
 
 export function decodeServerFrame(text: string): ServerFrame {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
-  return parseWithBinary(text) as ServerFrame
+  const frame = safeJsonParse(text, decodeWithSchema(serverFrameSchema))
+  if (!frame) throw new Error('invalid server frame')
+  if (frame.t === 'hello-ok') return frame
+  if (frame.t === 'event') return { ...frame, args: frame.args.map(reviveBinary) }
+  return {
+    t: frame.t,
+    id: frame.id,
+    ok: frame.ok,
+    ...(frame.value === undefined ? {} : { value: reviveBinary(frame.value) }),
+    ...(frame.error === undefined ? {} : { error: frame.error }),
+  }
 }
