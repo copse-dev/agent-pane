@@ -12,6 +12,23 @@ import {
 } from './ws-protocol.ts'
 
 describe('Tauri WebSocket protocol', () => {
+  it('round-trips undefined positional args like structured clone', () => {
+    // Electron IPC preserves undefined optional args; plain JSON would turn
+    // [path, undefined] into [path, null] and fail z.optional() guards.
+    const frame = decodeClientFrame(
+      encodeFrame({ t: 'invoke', id: 1, channel: 'workspace:set', args: ['/p', undefined] }),
+    )
+    if (frame.t !== 'invoke') throw new Error('wrong frame type')
+    assert.equal(frame.args.length, 2)
+    assert.equal(frame.args[0], '/p')
+    assert.equal(frame.args[1], undefined)
+    const event = decodeServerFrame(
+      encodeFrame({ t: 'event', channel: 'x', args: [{ keep: 1, gone: undefined }] }),
+    )
+    if (event.t !== 'event') throw new Error('wrong frame type')
+    assert.deepEqual(event.args[0], { keep: 1, gone: undefined })
+  })
+
   it('round-trips client frames and nested binary values', () => {
     const frame: ClientFrame = {
       t: 'invoke',
