@@ -1,4 +1,5 @@
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
+import { migrateLegacyAppearanceDefaults } from '@shared/appearance.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
 export interface StartupSettings {
@@ -24,7 +25,7 @@ export interface StartupSettings {
  * preference is introduced.
  */
 export async function loadStartupSettings(
-  settings: Pick<ApiClient['settings'], 'get'>,
+  settings: Pick<ApiClient['settings'], 'get' | 'set'>,
 ): Promise<StartupSettings> {
   const [
     model,
@@ -54,7 +55,7 @@ export async function loadStartupSettings(
     settings.get(DEVELOPER_MODE_SETTING),
   ])
 
-  return {
+  const loaded: StartupSettings = {
     model,
     layout,
     autoPortraitRightPanel,
@@ -68,4 +69,16 @@ export async function loadStartupSettings(
     uiTintStrength,
     developerMode,
   }
+
+  const migratedAppearance = migrateLegacyAppearanceDefaults(loaded)
+  if (!migratedAppearance) return loaded
+
+  await Promise.all([
+    settings.set('theme', migratedAppearance.theme),
+    settings.set('uiAccentColor', migratedAppearance.uiAccentColor),
+    settings.set('uiTintColor', migratedAppearance.uiTintColor),
+    settings.set('uiTintStrength', migratedAppearance.uiTintStrength),
+  ])
+
+  return { ...loaded, ...migratedAppearance }
 }
