@@ -98,7 +98,9 @@ describe('Monaco python multi-line f-string highlighting', () => {
           const lines = Array.from(
             document.querySelectorAll('#file-viewer .monaco-editor .view-line'),
           )
-          const defLine = lines.find((line) => line.textContent?.includes('def after_the_string'))
+          const defLine = lines.find((line) =>
+            line.textContent?.replaceAll('\u00a0', ' ').includes('def after_the_string'),
+          )
           if (!defLine) return false
           const classes = new Set(
             Array.from(defLine.querySelectorAll('span[class*="mtk"]')).map((s) => s.className),
