@@ -79,11 +79,26 @@ export function backgroundProjectOf(store: AppStore, threadId: string): string |
   return store.getState().backgroundThreads.find((b) => b.thread.id === threadId)?.projectId
 }
 
-/** Drop a removed project's carried threads (its store directory keeps them). */
+/** Drop one carried thread after its final background bookkeeping is complete. */
+export function dropBackgroundThread(store: AppStore, threadId: string): void {
+  const { backgroundThreads } = store.getState()
+  if (!backgroundThreads.some((b) => b.thread.id === threadId)) return
+  store.setState({
+    backgroundThreads: backgroundThreads.filter((b) => b.thread.id !== threadId),
+  })
+}
+
+/**
+ * Release a removed project's completed carried threads. A live run must stay
+ * reachable until `done` persists its final message and metadata; the agent
+ * controller drops that last entry afterwards.
+ */
 export function dropProjectBackgroundThreads(store: AppStore, projectId: string): void {
   const { backgroundThreads } = store.getState()
   if (!backgroundThreads.some((b) => b.projectId === projectId)) return
   store.setState({
-    backgroundThreads: backgroundThreads.filter((b) => b.projectId !== projectId),
+    backgroundThreads: backgroundThreads.filter(
+      (b) => b.projectId !== projectId || b.thread.status === 'running',
+    ),
   })
 }

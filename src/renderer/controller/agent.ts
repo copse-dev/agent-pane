@@ -38,7 +38,7 @@ import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from 
 import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread } from './thread-naming.ts'
 import { takeQuietRun } from './quiet-runs.ts'
-import { backgroundProjectOf } from './background-threads.ts'
+import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
@@ -450,6 +450,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           void syncThreadGitBranchAfterShell(store, api, threadId)
         }
         const backgroundProjectId = backgroundProjectOf(store, threadId)
+        const backgroundProjectWasRemoved =
+          backgroundProjectId !== undefined &&
+          !store.getState().projects.some((project) => project.id === backgroundProjectId)
         if (backgroundProjectId) {
           // Autosave's reconcile only covers the active project, so a carried
           // run's final metadata (idle status, usage, todos) would otherwise
@@ -491,6 +494,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
               })
           }
         }
+        // Removing an inactive project from the sidebar must not detach its
+        // live run. `removeProject` keeps the carried entry until this final
+        // message/meta handling is complete, after which nothing else needs
+        // the in-memory copy.
+        if (backgroundProjectWasRemoved) dropBackgroundThread(store, threadId)
         break
       }
     }

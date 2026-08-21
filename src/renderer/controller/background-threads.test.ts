@@ -91,14 +91,21 @@ test('adoptBackgroundThreads keeps a carried thread the disk read is missing', (
   )
 })
 
-test('dropProjectBackgroundThreads forgets a removed project', () => {
+test('dropProjectBackgroundThreads keeps a removed project alive until its run finishes', () => {
   const store = createStore()
   store.setState({
-    backgroundThreads: [{ projectId: 'project-a', thread: thread('t1', { status: 'running' }) }],
+    backgroundThreads: [
+      { projectId: 'project-a', thread: thread('t-running', { status: 'running' }) },
+      { projectId: 'project-a', thread: thread('t-finished') },
+    ],
   })
   dropProjectBackgroundThreads(store, 'project-a')
-  assert.deepEqual(store.getState().backgroundThreads, [])
-  assert.equal(backgroundProjectOf(store, 't1'), undefined)
+  assert.deepEqual(
+    store.getState().backgroundThreads.map((entry) => entry.thread.id),
+    ['t-running'],
+  )
+  assert.equal(backgroundProjectOf(store, 't-running'), 'project-a')
+  assert.equal(backgroundProjectOf(store, 't-finished'), undefined)
 })
 
 test('store helpers keep mutating a carried thread', () => {
@@ -140,6 +147,10 @@ function agentSetup(carried: Thread): {
   runs: string[]
 } {
   const store = createStore({
+    projects: [
+      { id: 'project-a', path: '/a', name: 'A' },
+      { id: 'project-b', path: '/b', name: 'B' },
+    ],
     activeProjectId: 'project-b',
     threads: [thread('t-active')],
     activeThreadId: 't-active',
@@ -210,5 +221,24 @@ test('chunks stream into a carried thread and done persists meta to its own proj
 
   // The queue is not drained from a foreign project's context.
   assert.deepEqual(runs, [])
+  unsub()
+})
+
+test('a removed project keeps its carried run through done, then releases it', async () => {
+  const carried = thread('t-bg', { status: 'running', messagesLoaded: true })
+  const { store, send, unsub, metas } = agentSetup(carried)
+  store.setState({
+    projects: store.getState().projects.filter((project) => project.id !== 'project-a'),
+  })
+  dropProjectBackgroundThreads(store, 'project-a')
+
+  assert.equal(backgroundProjectOf(store, 't-bg'), 'project-a')
+  send({ type: 'text', text: 'last chunk after removal' }, 't-bg')
+  send({ type: 'done', stopReason: 'end_turn' }, 't-bg')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(metas[0]?.projectId, 'project-a')
+  assert.equal(metas[0]?.patch.status, 'idle')
+  assert.deepEqual(store.getState().backgroundThreads, [])
   unsub()
 })

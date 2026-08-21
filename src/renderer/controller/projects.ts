@@ -324,8 +324,9 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
   forgetProjectViewState(projectViewState, id)
   threadCache.delete(id)
   if (liveCacheProjectId === id) liveCacheProjectId = null
-  // Carried live runs of a removed project have nowhere to fold back into;
-  // their transcripts stay in the project's store directory on disk (#1841).
+  // Completed carried entries can go now. Live ones remain reachable until
+  // their final message/meta writes finish, then the agent controller releases
+  // them — removing a sidebar row must not detach a running agent (#1841).
   dropProjectBackgroundThreads(store, id)
 
   const projects = state.projects.filter((p) => p.id !== id)
