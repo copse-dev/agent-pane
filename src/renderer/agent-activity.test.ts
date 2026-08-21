@@ -14,4 +14,17 @@ describe('promptProgressLabel', () => {
     assert.equal(promptProgressLabel(1.5), 'Processing prompt… 100%')
     assert.equal(promptProgressLabel(Number.NaN), 'Processing prompt…')
   })
+
+  it('collapses sub-percent steps to the same label, which the controller dedupes on', () => {
+    // The controller emits only when the label changes; these fractions arrive
+    // in sequence during one prefill and must produce just three strings.
+    const labels = [0.471, 0.473, 0.4749, 0.475, 0.481].map(promptProgressLabel)
+    assert.deepEqual(labels, [
+      'Processing prompt… 47%',
+      'Processing prompt… 47%',
+      'Processing prompt… 47%',
+      'Processing prompt… 48%',
+      'Processing prompt… 48%',
+    ])
+  })
 })

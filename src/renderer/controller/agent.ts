@@ -99,6 +99,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     // Same guard for the whole-turn tool rollup polish (`toolSummary`).
     toolSummaryMsgId: string | null
     toolSummaryCount: number
+    // Last activity label this thread emitted, so progress chunks that round
+    // to the same percent do not re-announce through the aria-live region.
+    lastActivityLabel: string | null
   }
   const state = new Map<string, ThreadStreamState>()
   const get = (tid: string): ThreadStreamState => {
@@ -113,6 +116,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         summaryCount: 0,
         toolSummaryMsgId: null,
         toolSummaryCount: 0,
+        lastActivityLabel: null,
       }
       state.set(tid, st)
     }
@@ -294,7 +298,14 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'prompt_progress': {
-        store.emit('agent_activity', threadId, promptProgressLabel(chunk.fraction))
+        // Progress callbacks can arrive far more often than the label's whole
+        // percent changes; skip the emit when rounding collapses them, so the
+        // aria-live region is not re-announced with an unchanged string.
+        const label = promptProgressLabel(chunk.fraction)
+        if (label !== st.lastActivityLabel) {
+          st.lastActivityLabel = label
+          store.emit('agent_activity', threadId, label)
+        }
         break
       }
       case 'context_pressure': {
