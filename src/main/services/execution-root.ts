@@ -28,3 +28,13 @@ export function requireAgentExecutionRoot(): string {
   if (!root) throw new Error('No workspace open. Use Open Folder first.')
   return root
 }
+
+/**
+ * The workspace path stated to a subagent in its brief. Must be the execution
+ * root, not the renderer workspace root: a subagent's tools resolve against the
+ * turn's root, so in worktree mode naming the shared checkout would point the
+ * model at a tree its tools never touch (#1724).
+ */
+export function agentWorkspaceLabel(): string {
+  return getAgentExecutionRoot() ?? '(none)'
+}
