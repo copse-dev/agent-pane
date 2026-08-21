@@ -22,7 +22,7 @@ describe('demo scenarios', () => {
     assert.equal(scenario.threads[0]?.title, 'Crumb & Bloom coming soon')
     assert.deepEqual(scenario.settings['registeredAcpAgents'], [
       {
-        id: 'codex',
+        id: 'codex-acp',
         title: 'Codex',
         command: 'codex-acp',
         args: [],
