@@ -169,7 +169,12 @@ export function mountContextPanel(
             return openFile ? { path: openFile.path, detail: 'after' } : null
           })
         }
-        await setGitFileDiffModel(diffEditor, monaco, diff, diffContainer)
+        // isCurrent lets a superseding file selection abandon this attach (and
+        // self-cancel its armed late-compute listener) instead of racing the
+        // next file's presentation.
+        await setGitFileDiffModel(diffEditor, monaco, diff, diffContainer, () => {
+          return store.getState().openFile?.path === diff.path
+        })
         renderedDiff = diff
       })
   }
