@@ -38,3 +38,21 @@ serde_json = "1"
 # uncomment — cargo then builds the whole servo graph from the local tree.
 # [patch."https://github.com/servo/servo.git"]
 # servo = { path = "../../servo/components/servo" }
+
+# :has() — used by 26 rules in the core chat stylesheets — needs one flipped
+# boolean in the STYLO repo (servo-patches/stylo-0001-… in the tauri fork):
+# check stylo out beside the repos at the rev pinned in servo's Cargo.lock,
+# apply the patch, and uncomment. All eleven stylo-repo crates must redirect
+# together or the build gets two copies of the selector machinery.
+# [patch."https://github.com/servo/stylo"]
+# stylo = { path = "../../stylo/style" }
+# selectors = { path = "../../stylo/selectors" }
+# servo_arc = { path = "../../stylo/servo_arc" }
+# stylo_atoms = { path = "../../stylo/stylo_atoms" }
+# stylo_derive = { path = "../../stylo/style_derive" }
+# stylo_dom = { path = "../../stylo/stylo_dom" }
+# stylo_malloc_size_of = { path = "../../stylo/malloc_size_of" }
+# stylo_static_prefs = { path = "../../stylo/stylo_static_prefs" }
+# stylo_traits = { path = "../../stylo/style_traits" }
+# to_shmem = { path = "../../stylo/to_shmem" }
+# to_shmem_derive = { path = "../../stylo/to_shmem_derive" }
