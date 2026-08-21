@@ -22,6 +22,7 @@ function formatListLine(info: { id: string; label: string; active: boolean }): s
  */
 export const readTerminalTool = defineTool({
   name: 'read_terminal',
+  provenance: 'external',
   description:
     "Read output from the user's open Shells tabs (interactive terminals in the right panel), not agent-run commands. Actions: `list` open shells for this chat; `read` recent scrollback (defaults to the active tab). Pass `id` from list to pick a tab; `max_lines` (default 200, max 2000) to control how much history to pull — use a smaller window for a quick check, or a larger one / hand the result to a subagent when the log is noisy. Prefer this over asking the user to paste when a shell is already open. Users can also `@shell` a tab into chat explicitly.",
   parameters: z.object({
