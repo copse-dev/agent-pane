@@ -38,6 +38,10 @@ export default ts.config(
       'wdio.ci.conf.ts',
       'wdio.eval.conf.ts',
       'wdio.demo.conf.ts',
+      // Cargo build artifacts — tauri codegen embeds renderer assets as .js
+      // files under target/, which are not lintable sources.
+      'tauri-shell/target/**',
+      'tauri-shell/gen/**',
       // One-line side-effect import of the preload for the Tauri ws-bridge
       // bundle; in no tsconfig project (the preload typechecks under
       // tsconfig.node.json, this entry is browser-side). See scripts/build-tauri.mts.
