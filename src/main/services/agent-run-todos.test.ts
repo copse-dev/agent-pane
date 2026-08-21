@@ -102,7 +102,7 @@ describe('agent-run-todos ALS isolation', () => {
       },
     )
 
-    const runB = (async () => {
+    const runB = (async (): Promise<void> => {
       await bStarted
       await runWithAgentRunTodoContext(
         {
@@ -156,7 +156,7 @@ describe('agent-run-todos ALS isolation', () => {
       },
     )
 
-    const inner = (async () => {
+    const inner = (async (): Promise<void> => {
       await innerGate
       await runWithAgentRunTodoContext(
         {
@@ -203,7 +203,7 @@ describe('agent-run-todos ALS isolation', () => {
       },
     )
 
-    const b = (async () => {
+    const b = (async (): Promise<void> => {
       await bGo
       await runWithAgentRunTodoContext(
         {
