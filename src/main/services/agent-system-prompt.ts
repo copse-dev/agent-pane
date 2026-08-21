@@ -1,4 +1,4 @@
-import { loadAgentRequestedRulesCatalog, loadProjectInstructions } from './project-instructions.ts'
+import { loadAgentRequestedRulesCatalog, loadInstructionLayers } from './project-instructions.ts'
 import { getSetting, getSettingTrimmed } from './storage/settings.ts'
 import { getAgentExecutionRoot } from './execution-root.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
@@ -96,7 +96,7 @@ export async function buildSystemPrompt(opts: {
     contextPaths: extractContextPathsFromText(userText),
     userText,
   }
-  const projectInstructions = await loadProjectInstructions({ cursorRuleContext })
+  const instructionLayers = await loadInstructionLayers({ cursorRuleContext })
   const agentRulesCatalog = await loadAgentRequestedRulesCatalog()
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
@@ -127,6 +127,11 @@ export async function buildSystemPrompt(opts: {
       .replace('{WORKSPACE_ROOT}', getAgentExecutionRoot() ?? '(none)')
       .replace('{REPO_CONTEXT}', await buildRepositoryContext()) +
     (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +
+    // Workspace-authored instructions sit here — above every Copse-authored
+    // steering block instead of terminal, so workspace text is never the
+    // closing word of the prompt (context-provenance plan, Phase 2). The
+    // user-global layer keeps the old end-of-prompt position below.
+    (instructionLayers.project ? `\n\n---\n\n${instructionLayers.project}` : '') +
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
     EXTERNAL_CONTENT_BLOCK +
     (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +
@@ -139,6 +144,8 @@ export async function buildSystemPrompt(opts: {
     buildSemanticSearchPromptBlock() +
     (opus5 ? OPUS_5_TONE_REMINDER : '') +
     (customInstructions ? `\n\n---\n\n## Custom instructions\n\n${customInstructions}` : '') +
-    (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
+    (instructionLayers.global
+      ? `\n\n---\n\n## User instructions\n\n${instructionLayers.global}`
+      : '')
   )
 }
