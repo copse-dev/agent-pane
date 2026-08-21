@@ -181,8 +181,8 @@ export interface AcpNativeBridge {
    * Bind the turn's already-resolved execution context so bridged tools resolve
    * paths against the same root as the turn itself — in worktree checkout mode
    * the thread's worktree, never the shared checkout (#1439). Set around each
-   * turn like the advisor context; null between turns, when owner-scoped tools
-   * fail closed rather than guessing.
+   * turn like the advisor context; null between turns, when every bridged tool
+   * call is rejected outright rather than running against a fallback root.
    */
   setExecutionContext: (context: ThreadExecutionContext | null) => void
   /**
@@ -220,8 +220,8 @@ interface BridgeExecuteContext {
    * Live reader for the in-flight turn's resolved execution context; null
    * between turns. Read at request time rather than captured at session start
    * so bridged calls always execute against the current turn's root and
-   * identity, and a call landing outside any turn fails closed on owner-scoped
-   * state rather than guessing.
+   * identity, and a call landing outside any turn is rejected outright rather
+   * than falling back to the shared checkout.
    */
   getExecutionContext: () => ThreadExecutionContext | null
   networkScopeAlreadyApplies: boolean
@@ -309,6 +309,29 @@ function buildMcpServer(
         isError: true,
       }
     }
+    // Fail closed at the turn boundary (#1439): the turn's execution context is
+    // nulled when the prompt settles, but the pooled bridge stays live and the
+    // turn's abort fires slightly later, so a straggling call can land in that
+    // gap (ACP agents do end turns with bridged calls still outstanding).
+    // Running it unbound would resolve roots via the shared-checkout fallback
+    // in getAgentExecutionRoot() — the exact wrong-tree write the bound context
+    // exists to prevent — so reject every bridged call outright instead.
+    // tools/list stays unguarded: agents list at session setup, between turns.
+    const executionContext = ctx.getExecutionContext()
+    if (!executionContext) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              `Tool call "${name}" arrived after its agent turn ended; ` +
+              'no thread execution context is bound, so the bridge refuses to run it ' +
+              'against a fallback workspace root.',
+          },
+        ],
+        isError: true,
+      }
+    }
     try {
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
@@ -330,14 +353,10 @@ function buildMcpServer(
       // so a bridged tool in a worktree-mode thread would edit a different tree
       // than the turn itself. The context is the turn's already-resolved one —
       // set by agent-service around the prompt — not a fresh per-request
-      // resolve. Between turns there is no context and owner-scoped tools fail
-      // closed rather than guessing.
-      const executionContext = ctx.getExecutionContext()
+      // resolve; the guard above already rejected any call with none bound.
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
         runWithActiveRunIdentity(ctx.threadId, () =>
-          executionContext
-            ? runWithThreadExecutionContext(executionContext, withPermissionContext)
-            : withPermissionContext(),
+          runWithThreadExecutionContext(executionContext, withPermissionContext),
         )
       const advisor = advisorContext.current
       const { result, images } =

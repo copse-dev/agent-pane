@@ -164,6 +164,7 @@ describe('startAcpNativeBridge', () => {
       threadId: 'bridge-test',
     })
     assert.ok(bridge, 'bridge should start when a bridgeable tool is registered')
+    bridge.setExecutionContext(worktreeContext('bridge-test', '/worktrees/bridge-test'))
 
     for (const init of initialized()) await rpc(bridge, init)
     const list = await rpc(bridge, LIST_TOOLS)
@@ -212,6 +213,7 @@ describe('startAcpNativeBridge', () => {
       threadId: 'bridge-test',
     })
     assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-test', '/worktrees/bridge-test'))
     const writes: string[] = []
     bridge.setWorkspaceWriteObserver((path) => writes.push(path))
     for (const init of initialized()) await rpc(bridge, init)
@@ -252,6 +254,7 @@ describe('startAcpNativeBridge', () => {
       threadId: 'bridge-test',
     })
     assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-test', '/worktrees/bridge-test'))
     for (const init of initialized()) await rpc(bridge, init)
 
     const call = await rpc(bridge, {
@@ -277,7 +280,7 @@ describe('startAcpNativeBridge', () => {
     // shared checkout while the turn itself runs in the thread's worktree, and
     // `requireThreadExecutionOwner()` throws for any tool that keeps run-scoped
     // state (read_archive). The turn's already-resolved context is set around
-    // each prompt (#1439); between turns owner-scoped tools fail closed.
+    // each prompt (#1439); between turns every bridged call is rejected.
     setPermissionGateForTests(() => Promise.resolve(true))
     const seen: { root: string | null; owner: ThreadExecutionOwner | string }[] = []
     const registry = testRegistry([])
@@ -319,12 +322,45 @@ describe('startAcpNativeBridge', () => {
       },
     ])
 
-    // Turn over: the context is cleared, and a straggling call must fail closed
-    // on run-scoped state rather than landing on a guessed thread.
+    // Turn over: the context is cleared, and a straggling call must be rejected
+    // outright — not run against a guessed thread or a fallback root.
     bridge.setExecutionContext(null)
     const betweenTurns = await rpc(bridge, call(3))
-    assert.equal(contentText(betweenTurns), 'unpacked')
-    assert.equal(seen[1]?.owner, 'No thread execution context is active')
+    assert.equal(rpcResult(betweenTurns)['isError'], true)
+    assert.match(contentText(betweenTurns) ?? '', /after its agent turn ended/)
+    assert.equal(seen.length, 1, 'the straggling call must never reach the tool')
+  })
+
+  it('rejects a bridged call dispatched with no bound execution context', async () => {
+    // The turn's inner finally nulls the bridge context before the caller's
+    // outer finally aborts straggling bridged calls, so a call can land in that
+    // gap. It must fail with an explicit error, not execute against the shared
+    // checkout via getAgentExecutionRoot()'s workspace fallback (#1439).
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const executed: string[] = []
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId: 'bridge-thread',
+    })
+    assert.ok(bridge)
+    for (const init of initialized()) await rpc(bridge, init)
+
+    const straggler = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'run_shell', arguments: { command: 'echo wrong-tree' } },
+    })
+    assert.equal(rpcResult(straggler)['isError'], true)
+    assert.match(
+      contentText(straggler) ?? '',
+      /after its agent turn ended.*no thread execution context is bound/s,
+    )
+    assert.deepEqual(executed, [], 'an unbound call must never reach the registry')
+
+    // Listing stays available between turns: agents enumerate tools at session
+    // setup, before any turn has bound a context.
+    const list = await rpc(bridge, LIST_TOOLS)
+    assert.ok(recordArrayOrEmpty(rpcResult(list)['tools']).length > 0)
   })
 
   it('keeps concurrent thread bridges resolving their own worktree roots', async () => {
@@ -386,6 +422,7 @@ describe('startAcpNativeBridge', () => {
       threadId: 'bridge-test',
     })
     assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-test', '/worktrees/bridge-test'))
 
     for (const init of initialized()) await rpc(bridge, init)
     const list = await rpc(bridge, LIST_TOOLS)
@@ -428,6 +465,7 @@ describe('startAcpNativeBridge', () => {
       threadId: 'bridge-test',
     })
     assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-test', '/worktrees/bridge-test'))
 
     for (const init of initialized()) await rpc(bridge, init)
     const listed = await rpc(bridge, LIST_TOOLS)
@@ -480,6 +518,8 @@ describe('startAcpNativeBridge', () => {
     assert.ok(bridgeA)
     assert.ok(bridgeB)
     try {
+      bridgeA.setExecutionContext(worktreeContext('bridge-test', '/worktrees/bridge-test'))
+      bridgeB.setExecutionContext(worktreeContext('bridge-test', '/worktrees/bridge-test'))
       bridgeA.setAdvisorContext({
         advisorModel: 'advisor-a',
         executorModel: 'executor-a',
