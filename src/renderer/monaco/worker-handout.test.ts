@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { createWorkerHandout } from './worker-handout.ts'
 
@@ -88,5 +88,107 @@ describe('createWorkerHandout', () => {
       owned,
       'an instance Monaco already owns must never be handed out again',
     )
+  })
+
+  // A window that never computes a diff (chat-only session, pop-out) must not
+  // park its pre-warmed worker forever: the TTL discards an unclaimed warm
+  // instance, surrendering it to onDiscard so the caller can terminate it.
+  describe('ttl discard of unclaimed warm instances', () => {
+    beforeEach(() => {
+      mock.timers.enable({ apis: ['setTimeout'] })
+    })
+    afterEach(() => {
+      mock.timers.reset()
+    })
+
+    /** Let the discard path's promise callbacks run after a timer tick. */
+    async function flushMicrotasks(): Promise<void> {
+      for (let i = 0; i < 5; i++) await Promise.resolve()
+    }
+
+    it('discards an unclaimed warm instance after the ttl; a later take boots cold', async () => {
+      const discarded: FakeWorker[] = []
+      const { create, created } = makeFactory()
+      const handout = createWorkerHandout(create, {
+        ttlMs: 1_000,
+        onDiscard: (worker) => discarded.push(worker),
+      })
+
+      const warmedWorker = await handout.warm('editorWorkerService')
+      mock.timers.tick(1_000)
+      await flushMicrotasks()
+      assert.deepEqual(discarded, [warmedWorker], 'the expired instance reaches onDiscard')
+
+      const cold = await handout.take('editorWorkerService')
+      assert.notEqual(cold, warmedWorker, 'a take after expiry must not receive the discarded one')
+      assert.equal(created.length, 2)
+    })
+
+    it('a take before expiry claims the instance and cancels the discard', async () => {
+      const discarded: FakeWorker[] = []
+      const { create, created } = makeFactory()
+      const handout = createWorkerHandout(create, {
+        ttlMs: 1_000,
+        onDiscard: (worker) => discarded.push(worker),
+      })
+
+      const warmedWorker = await handout.warm('editorWorkerService')
+      mock.timers.tick(999)
+      const taken = await handout.take('editorWorkerService')
+      assert.equal(taken, warmedWorker, 'a take inside the ttl still gets the warm instance')
+
+      mock.timers.tick(10_000)
+      await flushMicrotasks()
+      assert.deepEqual(discarded, [], 'an instance Monaco owns must never be discarded')
+      assert.equal(created.length, 1)
+    })
+
+    it('re-warming after expiry boots a fresh instance with its own ttl', async () => {
+      const discarded: FakeWorker[] = []
+      const { create } = makeFactory()
+      const handout = createWorkerHandout(create, {
+        ttlMs: 1_000,
+        onDiscard: (worker) => discarded.push(worker),
+      })
+
+      const first = await handout.warm('editorWorkerService')
+      mock.timers.tick(1_000)
+      await flushMicrotasks()
+
+      const second = await handout.warm('editorWorkerService')
+      assert.notEqual(second, first, 'the expired instance never comes back')
+      mock.timers.tick(1_000)
+      await flushMicrotasks()
+      assert.deepEqual(discarded, [first, second], 'each unclaimed warm expires on its own timer')
+    })
+
+    it('a warm boot that fails is dropped without reaching onDiscard', async () => {
+      const discarded: FakeWorker[] = []
+      const { create, created } = makeFactory(1)
+      const handout = createWorkerHandout(create, {
+        ttlMs: 1_000,
+        onDiscard: (worker) => discarded.push(worker),
+      })
+
+      await assert.rejects(handout.warm('editorWorkerService'), /boot failed/)
+      mock.timers.tick(10_000)
+      await flushMicrotasks()
+      assert.deepEqual(discarded, [], 'there is no instance to discard after a failed boot')
+
+      const recovered = await handout.take('editorWorkerService')
+      assert.equal(recovered.id, 0, 'the failure is not cached')
+      assert.equal(created.length, 2)
+    })
+
+    it('without a ttl a warm instance waits indefinitely', async () => {
+      const { create, created } = makeFactory()
+      const handout = createWorkerHandout(create)
+
+      const warmedWorker = await handout.warm('editorWorkerService')
+      mock.timers.tick(3_600_000)
+      const taken = await handout.take('editorWorkerService')
+      assert.equal(taken, warmedWorker)
+      assert.equal(created.length, 1)
+    })
   })
 })

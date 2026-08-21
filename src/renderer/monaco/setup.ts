@@ -71,8 +71,30 @@ function workerEntryRelativeToMonacoRoot(label: string): string {
  * this window — every Changes diff rendered as plain uncoloured text while a
  * freshly opened pop-out window still coloured the same file (#1753). The
  * handout keeps the pre-warm (below) but surrenders each instance at most once.
+ *
+ * The TTL keeps windows that never compute a diff (chat-only sessions,
+ * pop-outs) from parking an idle worker thread forever: a warm instance no
+ * `getWorker` call claims in time is terminated, and Monaco's first request
+ * after that simply boots cold.
  */
-const monacoWorkers = createWorkerHandout(createMonacoWorkerOnce)
+const WARM_WORKER_TTL_MS = 45_000
+
+const monacoWorkers = createWorkerHandout(createMonacoWorkerOnce, {
+  ttlMs: WARM_WORKER_TTL_MS,
+  onDiscard: (worker) => {
+    worker.terminate()
+  },
+})
+
+/**
+ * The label Monaco's `EditorWorkerService` passes to `getWorker` when it needs
+ * the generic editor worker (diff computation lives there). Monaco offers no
+ * public constant for it, so this coupling is pinned by
+ * `editor-worker-label.test.ts`, which fails if a monaco-editor upgrade renames
+ * the label — silently warming a never-claimed label would re-create the
+ * orphan-worker leak this module exists to prevent.
+ */
+export const EDITOR_WORKER_SERVICE_LABEL = 'editorWorkerService'
 
 function createMonacoWorkerOnce(label: string): Promise<Worker> {
   // Resolved against the Monaco root, not the page: when the tree is shared
@@ -202,10 +224,9 @@ export function ensureMonacoEditorWorker(): Promise<void> {
   if (typeof Worker === 'undefined') return Promise.resolve()
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   return Promise.race([
-    // 'editorWorkerService' is the label Monaco's EditorWorkerService requests
-    // for diff computation, so this warmed instance is the one its first
-    // request takes over.
-    monacoWorkers.warm('editorWorkerService').then(
+    // This warmed instance is the one EditorWorkerService's first diff request
+    // takes over (see EDITOR_WORKER_SERVICE_LABEL for the coupling contract).
+    monacoWorkers.warm(EDITOR_WORKER_SERVICE_LABEL).then(
       () => undefined,
       () => undefined,
     ),
