@@ -100,11 +100,17 @@ await esbuild.build({
   banner: { js: 'var process = { env: {} };' },
 })
 
-// 4. tauri.html: index.html + the bridge, CSP widened for the loopback WS.
+// 4. tauri.html: index.html + the bridge, minus the CSP meta. Servo (at the
+// pinned rev) fails to match CSP 'self' against the tauri://localhost origin,
+// so any policy blocks every same-origin subresource (app.js, app.css, …) and
+// the window stays blank — observed on the first real run, worth an upstream
+// servo issue. The Electron build keeps its CSP untouched; restore a widened
+// policy here (connect-src needs the loopback WS) once Servo's CSP handles
+// custom-scheme origins.
 const indexHtml = readFileSync('dist/renderer/index.html', 'utf8')
 const withCsp = indexHtml.replace(
-  "default-src 'self';",
-  "default-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*;",
+  /[ \t]*<meta\s+http-equiv="Content-Security-Policy"[^>]*\/>\n?/,
+  '',
 )
 if (withCsp === indexHtml) {
   console.error('CSP meta not found in index.html — tauri.html transform needs updating.')
