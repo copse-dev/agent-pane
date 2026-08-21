@@ -448,6 +448,23 @@ describe('fetchModelOptions visibility', () => {
     assert.match(current.label, /not configured/)
   })
 
+  it('keeps a legacy ACP id attached to its renamed configured agent', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
+        ],
+      }),
+      'acp:codex',
+    )
+    const current = options.find((option) => option.value === 'acp:codex')
+    assert.deepEqual(current, {
+      value: 'acp:codex',
+      label: 'Codex',
+      group: 'Codex on this device',
+    })
+  })
+
   it('distinguishes an unadvertised model from an unconfigured ACP agent', async () => {
     const staleValue = 'acp:cursor#composer-2.5[fast=true]'
     const options = await fetchModelOptions(

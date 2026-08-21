@@ -49,6 +49,7 @@ import {
   parseAcpAgentConfigs,
   parseAcpModelSelection,
 } from '@shared/acp.ts'
+import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import {
   PLUGIN_MODEL_PREFIX,
@@ -186,6 +187,17 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
     }
   }
   return options
+}
+
+function isSameAcpSelection(left: string, right: string): boolean {
+  const leftSelection = parseAcpModelSelection(left)
+  const rightSelection = parseAcpModelSelection(right)
+  return (
+    leftSelection !== null &&
+    rightSelection !== null &&
+    canonicalAcpAgentId(leftSelection.id) === canonicalAcpAgentId(rightSelection.id) &&
+    leftSelection.model === rightSelection.model
+  )
 }
 
 // OpenRouter tool-capable models fetched live from its catalog (free-only when
@@ -527,7 +539,13 @@ export async function fetchModelOptions(
   // ahead of ACP.
   if (includeAgentModels) {
     const remote = await remoteAgentOptions(api, isAvailable, current, preferAcpForClaude)
-    const acp = acpAgentOptions(acpAgents)
+    // A thread spine keeps the model value it originally ran with. If that id
+    // has since been renamed, keep the current value on the equivalent picker
+    // row so the select can render the configured agent instead of adding a
+    // misleading "not configured" fallback for the legacy spelling.
+    const acp = acpAgentOptions(acpAgents).map((option) =>
+      isSameAcpSelection(option.value, current) ? { ...option, value: current } : option,
+    )
     options.push(...(preferAcpForClaude ? [...acp, ...remote] : [...remote, ...acp]))
     options.push(...(await pluginModelOptions(api, includeAgentModels, current)))
   }
