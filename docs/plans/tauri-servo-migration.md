@@ -170,6 +170,16 @@ Findings folded back into this branch:
   `tauri://localhost` origin, so any CSP blocks every same-origin subresource;
   tauri.html ships without the CSP meta until that's fixed upstream (the
   Electron build keeps its CSP).
+- A full chat ran end to end (mock provider): project created, agent
+  dispatched, 68 chunks streamed over the bridge, conversation persisted to
+  the thread store, and the Servo UI rendered it — thread sidebar, message
+  bubbles, live context estimate. Two more gaps found and fixed on the way:
+  Servo lacks `crypto.randomUUID` (now polyfilled in the ws-bridge) and JSON
+  was flattening `undefined` optional args to `null` (now marker-encoded in
+  the ws protocol, restoring structured-clone semantics).
+- Composer typing confirmed broken under Servo (`contenteditable`), exactly
+  as the risk table predicts — synthetic keystrokes never reach the input.
+  The `<textarea>` fallback is the top phase-2 item.
 - Rendering fidelity is usable but rough: heading fonts fall back to serif
   (font-stack gap worth a look), spacing is slightly off versus Chromium.
   The engine-gap table below remains the burn-down list.
