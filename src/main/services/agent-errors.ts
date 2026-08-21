@@ -4,6 +4,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 import { IMAGE_INPUT_UNSUPPORTED_MESSAGE } from '@shared/image-input-support.ts'
 import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
+import type { TurnErrorDetail } from '@shared/types/turn-outcome.ts'
 
 /** Optional context so ACP failures can name the agent and its auth steps. */
 export interface ClassifyAgentErrorContext {
@@ -123,6 +124,58 @@ function formatErrorData(data: unknown): string | null {
     return String(data)
   }
   return null
+}
+
+const TURN_ERROR_FIELD_LIMIT = 4_000
+
+function boundedDiagnostic(value: string): string {
+  return value.length <= TURN_ERROR_FIELD_LIMIT
+    ? value
+    : `${value.slice(0, TURN_ERROR_FIELD_LIMIT)}…`
+}
+
+/**
+ * Preserve the provider/transport facts that user-facing classification may
+ * intentionally simplify. The result is bounded and stack-free so it is safe
+ * to persist in the thread spine and portable JSONL export.
+ */
+export function turnErrorDetail(err: unknown): TurnErrorDetail {
+  const rpc = findJsonRpcError(err)
+  const provider = parseProviderError(err)
+  const message = boundedDiagnostic(errorMessage(err))
+  const detailCandidates: string[] = []
+  if (rpc?.data != null) {
+    try {
+      const serialized = JSON.stringify(rpc.data)
+      if (serialized && serialized !== message) detailCandidates.push(serialized)
+    } catch {
+      // Fall through to the safe scalar/record formatter below.
+    }
+  }
+  const dataDetail = rpc ? formatErrorData(rpc.data) : null
+  if (dataDetail && dataDetail !== message && !detailCandidates.includes(dataDetail)) {
+    detailCandidates.push(dataDetail)
+  }
+
+  let current: unknown = err instanceof Error ? err.cause : null
+  for (let depth = 0; depth < 8 && current != null; depth++) {
+    const causeMessage = errorMessage(current).trim()
+    if (causeMessage && causeMessage !== message && !detailCandidates.includes(causeMessage)) {
+      detailCandidates.push(causeMessage)
+    }
+    current = current instanceof Error ? current.cause : null
+  }
+
+  const code = rpc?.code ?? provider.code ?? provider.status
+  const name = err instanceof Error && err.name ? err.name : undefined
+  const details =
+    detailCandidates.length > 0 ? boundedDiagnostic(detailCandidates.join('\n')) : null
+  return {
+    message,
+    ...(name !== undefined ? { name } : {}),
+    ...(code !== undefined ? { code } : {}),
+    ...(details !== null ? { details } : {}),
+  }
 }
 
 /**
