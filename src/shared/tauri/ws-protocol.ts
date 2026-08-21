@@ -35,6 +35,16 @@ export type ServerFrame =
  */
 export const BIN_MARKER = '$copse-tauri-bin$'
 
+/**
+ * Marker for an `undefined` leaf. Electron's structured clone carries
+ * `undefined` through IPC intact; JSON silently turns array elements into
+ * `null` and drops object properties — which broke every invoke with an
+ * optional trailing argument (`workspace.set(path, undefined)` arrived as
+ * `[path, null]`, failed the handler's `z.string().optional()` guard, and
+ * the renderer quarantined the project as missing).
+ */
+export const UNDEF_MARKER = '$copse-tauri-undefined$'
+
 const B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
 // Hand-rolled base64 rather than Buffer/btoa so the module is truly
@@ -78,6 +88,7 @@ export function fromBase64(text: string): Uint8Array {
 
 export function encodeFrame(frame: ClientFrame | ServerFrame): string {
   return JSON.stringify(frame, (_key, value: unknown) => {
+    if (value === undefined) return { [UNDEF_MARKER]: true }
     if (value instanceof Uint8Array) return { [BIN_MARKER]: toBase64(value) }
     if (value instanceof ArrayBuffer) return { [BIN_MARKER]: toBase64(new Uint8Array(value)) }
     return value
@@ -87,6 +98,7 @@ export function encodeFrame(frame: ClientFrame | ServerFrame): string {
 function reviveBinary(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(reviveBinary)
   if (!isRecord(value)) return value
+  if (value[UNDEF_MARKER] === true) return undefined
   const encoded = value[BIN_MARKER]
   if (typeof encoded === 'string') {
     if (
