@@ -28,6 +28,11 @@ import {
   shouldSteerSiteBuilding,
   SITE_BUILDING_STEERING_PROMPT,
 } from '../site-building-steering.ts'
+import {
+  buildCanvasPrototypeSteeringPrompt,
+  CANVAS_ARTEFACT_TOOL,
+  shouldSteerCanvasPrototype,
+} from '../canvas-prototype-steering.ts'
 
 /** Todo multi-step steering block when the user message looks plan-worthy. */
 export const todoSteeringHook: BlockingHook<'turnStart'> = {
@@ -55,6 +60,33 @@ export const siteBuildingSteeringHook: BlockingHook<'turnStart'> = {
   run(payload) {
     if (!shouldSteerSiteBuilding(payload.userText)) return undefined
     return { injectContext: SITE_BUILDING_STEERING_PROMPT }
+  },
+}
+
+/**
+ * Steer a prototype request onto the MCP-UI canvas (the `copse.mcp-ui-canvas`
+ * plugin). Registered by that plugin rather than listed in
+ * {@link TURN_START_HOOKS}, so disabling the plugin drops the steering in the
+ * same flag flip that unregisters the bundled canvas server.
+ *
+ * The tool check is the load-bearing part. `render_html_artefact` reaches the
+ * model through the MCP registry, so its offered name is prefixed with the
+ * server (`mcp__copse-canvas__render_html_artefact`) and the block must name it
+ * exactly. With no `toolNames` on the payload the hook cannot know the canvas is
+ * offered at all, so it abstains rather than steering toward a tool that this
+ * turn may have filtered out (the conservative reading `forcedPlanningHook`
+ * already takes).
+ */
+export const canvasPrototypeSteeringHook: BlockingHook<'turnStart'> = {
+  id: 'canvas-prototype-steering',
+  event: 'turnStart',
+  run(payload) {
+    if (!shouldSteerCanvasPrototype(payload.userText)) return undefined
+    const toolName = payload.toolNames?.find(
+      (name) => name === CANVAS_ARTEFACT_TOOL || name.endsWith(`__${CANVAS_ARTEFACT_TOOL}`),
+    )
+    if (!toolName) return undefined
+    return { injectContext: buildCanvasPrototypeSteeringPrompt(toolName) }
   },
 }
 
