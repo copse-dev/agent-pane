@@ -45,6 +45,20 @@ export interface DemoScenario {
    * clicking the URL and then the pane's Expand control.
    */
   revealFinalPreview?: boolean
+  /**
+   * Never answer transcript hydration (`threads:loadMessages`), freezing an
+   * unhydrated thread in its mid-switch state. The conversation's hydration
+   * notice is only ever on screen for the moment a transcript takes to read;
+   * this holds that moment open so the visual spec can assert and capture it.
+   */
+  holdThreadHydration?: boolean
+  /**
+   * Reject transcript hydration (`threads:loadMessages`), leaving an
+   * unhydrated thread in its failed state: the conversation must own up with
+   * a failure line — and keep the live activity row — instead of a
+   * "Loading…" notice that never finishes.
+   */
+  failThreadHydration?: boolean
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -565,6 +579,59 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         model: 'claude-opus-5',
         reasoning: 'max',
         messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'thread-hydration',
+    label: 'Thread switch hydration notice',
+    project: project('demo-thread-hydration-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // The state under test is the moment after selecting a thread whose
+    // transcript has not been read yet while its agent run is still going:
+    // metadata only, no messages, status running. holdThreadHydration keeps
+    // the loading notice on screen instead of letting it resolve instantly.
+    holdThreadHydration: true,
+    threads: [
+      {
+        id: 'demo-thread-hydration-thread',
+        title: 'Long refactor still running',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'thread-hydration-failed',
+    label: 'Thread switch hydration failure',
+    project: project('demo-thread-hydration-failed-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    // Same mid-switch moment as `thread-hydration`, but the transcript read
+    // rejects: the pane must render the honest failure line and let the live
+    // activity row through (the agent is still running).
+    failThreadHydration: true,
+    threads: [
+      {
+        id: 'demo-thread-hydration-failed-thread',
+        title: 'Long refactor still running',
+        status: 'running',
+        messages: [],
+        messagesLoaded: false,
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,
