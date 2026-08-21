@@ -123,7 +123,7 @@ describe('export thread', () => {
     t.draftPrompt = 'unsent'
 
     const header = expectRecord(parseJsonUnknown(at(threadToJsonl(t).trimEnd().split('\n'), 0)))
-    assert.equal(header['exportVersion'], 5)
+    assert.equal(header['exportVersion'], 6)
     assert.equal(header['status'], 'error')
     assert.deepEqual(header['todos'], t.todos)
     assert.equal(header['workingBrief'], 'fix the bug')
@@ -213,6 +213,39 @@ describe('export thread', () => {
 
     const line = expectRecord(parseJsonUnknown(at(jsonl.trimEnd().split('\n'), 1)))
     assert.equal(line['reasoning'], 'thinking step by step')
+  })
+
+  it('exports structured turn outcomes for offline diagnosis', () => {
+    const turnOutcome = {
+      status: 'failed' as const,
+      stopReason: 'error' as const,
+      source: 'provider' as const,
+      executor: 'acp' as const,
+      provider: 'claude-agent-acp',
+      model: 'acp:claude-agent-acp#opus[1m]',
+      lastEvent: 'tool' as const,
+      error: {
+        code: -32603,
+        message: 'Internal error',
+        details: 'Internal error during token generation',
+      },
+      endedAt: 3,
+    }
+    const jsonl = threadToJsonl(
+      thread([
+        {
+          id: 'message-1',
+          role: 'assistant',
+          content: 'An error occurred: Internal error',
+          turnOutcome,
+          toolCalls: [],
+          createdAt: 2,
+        },
+      ]),
+    )
+
+    const line = expectRecord(parseJsonUnknown(at(jsonl.trimEnd().split('\n'), 1)))
+    assert.deepEqual(line['turnOutcome'], turnOutcome)
   })
 
   it('exports a message-anchored post-turn review on its message line', () => {

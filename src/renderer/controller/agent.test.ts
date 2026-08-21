@@ -543,6 +543,27 @@ test('done marks a background thread unread', () => {
   assert.equal(requireThread(store, 't2').unreadAt, undefined)
 })
 
+test('turn_outcome is attached before done and survives a provider failure before text', () => {
+  const { send, messages } = setup()
+  const outcome = {
+    status: 'failed' as const,
+    stopReason: 'error' as const,
+    source: 'provider' as const,
+    executor: 'acp' as const,
+    provider: 'claude-agent-acp',
+    model: 'acp:claude-agent-acp#opus[1m]',
+    error: { code: -32603, message: 'Internal error during token generation' },
+    endedAt: 10,
+  }
+
+  send({ type: 'turn_outcome', outcome })
+  send({ type: 'done' })
+
+  assert.equal(messages().length, 1)
+  assert.equal(at(messages(), 0).content, '')
+  assert.deepEqual(at(messages(), 0).turnOutcome, outcome)
+})
+
 test('done does not alert between queued turns', () => {
   const queued = thread('t1')
   queued.pendingMessages = [
