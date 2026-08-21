@@ -174,9 +174,22 @@ Findings folded back into this branch:
   dispatched, 68 chunks streamed over the bridge, conversation persisted to
   the thread store, and the Servo UI rendered it — thread sidebar, message
   bubbles, live context estimate. Two more gaps found and fixed on the way:
-  Servo lacks `crypto.randomUUID` (now polyfilled in the ws-bridge) and JSON
-  was flattening `undefined` optional args to `null` (now marker-encoded in
-  the ws protocol, restoring structured-clone semantics).
+  `crypto.randomUUID` is absent on tauri:// pages (now polyfilled in the
+  ws-bridge) and JSON was flattening `undefined` optional args to `null`
+  (now marker-encoded in the ws protocol, restoring structured-clone
+  semantics).
+- Root cause unifying the CSP and randomUUID failures, confirmed against the
+  pinned Servo source: `tauri://` is a non-special scheme, so its origin is
+  _opaque_ — opaque origins are never potentially-trustworthy (no secure
+  context → every `[SecureContext]` API is absent, `crypto.subtle` included)
+  and never match CSP `'self'`. Servo already has the embedder hook —
+  `ProtocolHandler::is_secure()`, which tauri-runtime-servo sets — but only
+  net's fetch path consults it; `GlobalScope::is_secure_context()` in script
+  uses the registry-unaware check. Upstream fix: thread the protocol
+  registry (or a secure-scheme set) into script's secure-context and CSP
+  'self' handling. Workaround candidates until then: serve the frontend from
+  `http://localhost` (a trustworthy tuple origin) instead of the custom
+  scheme, or carry the polyfills.
 - Composer typing confirmed broken under Servo (`contenteditable`), exactly
   as the risk table predicts — synthetic keystrokes never reach the input.
   The `<textarea>` fallback is the top phase-2 item.
