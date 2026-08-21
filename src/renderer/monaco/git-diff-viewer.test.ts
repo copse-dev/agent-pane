@@ -59,8 +59,12 @@ interface FakeDiff {
   finishDiff: () => void
   /** What getLineChanges answers: null = compute still pending. */
   setLineChanges: (value: LineChanges) => void
+  /** Whether the (finished) compute hit maxComputationTime and gave up. */
+  setQuitEarly: (value: boolean) => void
   /** Emit the editor's onDidUpdateDiff to every live listener. */
   fireDiffUpdated: () => void
+  /** Live onDidUpdateDiff listeners (armed pending presentations). */
+  listenerCount: () => number
   counts: { reveal: number }
 }
 
@@ -70,6 +74,7 @@ function createFakeDiff(): FakeDiff {
   let attached: { original: GitDiffModel; modified: GitDiffModel } | null = null
   let releaseDiff: (() => void) | null = null
   let lineChanges: LineChanges = []
+  let quitEarly = false
   const diffUpdateListeners = new Set<() => void>()
   const counts = { reveal: 0 }
 
@@ -100,6 +105,7 @@ function createFakeDiff(): FakeDiff {
       },
     }),
     dispose: (): void => {},
+    getDiffComputationResult: () => (lineChanges === null ? null : { quitEarly }),
     getLineChanges: () => lineChanges,
     getModel: () => attached,
     getModifiedEditor: codeEditor,
@@ -141,9 +147,13 @@ function createFakeDiff(): FakeDiff {
     setLineChanges: (value): void => {
       lineChanges = value
     },
+    setQuitEarly: (value): void => {
+      quitEarly = value
+    },
     fireDiffUpdated: (): void => {
       for (const listener of [...diffUpdateListeners]) listener()
     },
+    listenerCount: () => diffUpdateListeners.size,
     counts,
   }
 }
@@ -402,6 +412,102 @@ describe('a diff attached before its compute finished re-presents when it lands 
     const third = setGitFileDiffModel(editor, monaco, diff, host)
     assert.equal(await withDeadline(third, 2_000), true)
     assert.equal(counts.reveal, revealsAfterHeal, 'a presented diff is not re-revealed')
+  })
+
+  it('does not latch a quit-early compute as presented; the next entry rebuilds', async () => {
+    const host = document.createElement('div')
+    forceSize(host, 400, 300)
+    document.body.append(host)
+    const fake = createFakeDiff()
+    const { monaco, editor } = fake
+    const diff = { path: 'huge.ts', before: 'h-before', after: 'h-after', language: 'typescript' }
+
+    let createCount = 0
+    const createModel = monaco.editor.createModel.bind(monaco.editor)
+    monaco.editor.createModel = (value, language, uri): ReturnType<typeof createModel> => {
+      createCount++
+      return createModel(value, language, uri)
+    }
+
+    // The compute hit maxComputationTime: it reports non-null line changes (one
+    // degenerate whole-file hunk) but quitEarly — nothing worth preserving.
+    fake.setLineChanges([
+      {
+        originalStartLineNumber: 1,
+        originalEndLineNumber: 2_000,
+        modifiedStartLineNumber: 1,
+        modifiedEndLineNumber: 2_000,
+      },
+    ])
+    fake.setQuitEarly(true)
+    const attach = setGitFileDiffModel(editor, monaco, diff, host)
+    await flush()
+    fake.finishDiff()
+    assert.equal(await withDeadline(attach, 2_000), true)
+    assert.equal(createCount, 2)
+
+    // Re-entry with identical content: a quit-early presentation must fall
+    // through the identical-content skip to a full model rebuild — a fresh
+    // compute is the only way to heal it (Monaco will not recompute for the
+    // same models).
+    fake.setQuitEarly(false)
+    fake.setLineChanges(MID_FILE_CHANGE)
+    const second = setGitFileDiffModel(editor, monaco, diff, host)
+    await flush()
+    fake.finishDiff()
+    assert.equal(await withDeadline(second, 2_000), true)
+    assert.equal(createCount, 4, 'a quit-early presentation must rebuild, not skip')
+
+    // Once presented from a finished compute, identical refreshes skip again.
+    const third = setGitFileDiffModel(editor, monaco, diff, host)
+    assert.equal(await withDeadline(third, 2_000), true)
+    assert.equal(createCount, 4, 'a healed diff goes back to the no-op skip')
+  })
+
+  it('drops a stale late-compute listener when a new attach begins', async () => {
+    const host = document.createElement('div')
+    forceSize(host, 400, 300)
+    document.body.append(host)
+    const fake = createFakeDiff()
+    const { monaco, editor, counts } = fake
+
+    fake.setLineChanges(null)
+    const first = setGitFileDiffModel(
+      editor,
+      monaco,
+      { path: 'a.ts', before: 'a-before', after: 'a-after', language: 'typescript' },
+      host,
+    )
+    await flush()
+    fake.finishDiff()
+    assert.equal(await withDeadline(first, 2_000), true)
+    assert.equal(fake.listenerCount(), 1, 'the unfinished compute arms a one-shot listener')
+    const revealsAfterAttach = counts.reveal
+    assert.equal(revealsAfterAttach, 0)
+
+    // A different file attaches through the same editor without isCurrent
+    // (context-panel's default). File A's armed listener must be dropped before
+    // any model work: B's setModel emits diff updates, which would fire the
+    // stale listener into a duplicate presentAttachedDiff racing B's own.
+    const second = setGitFileDiffModel(
+      editor,
+      monaco,
+      { path: 'b.ts', before: 'b-before', after: 'b-after', language: 'typescript' },
+      host,
+    )
+    await flush()
+    assert.equal(fake.listenerCount(), 0, 'the stale listener is dropped before model work')
+
+    // The compute that would have satisfied A's listener lands mid-attach.
+    fake.setLineChanges(MID_FILE_CHANGE)
+    fake.fireDiffUpdated()
+    await flush()
+    const revealsMidAttach = counts.reveal
+    assert.equal(revealsMidAttach, 0, 'no duplicate presentation from the stale listener')
+
+    fake.finishDiff()
+    assert.equal(await withDeadline(second, 2_000), true)
+    assert.ok(counts.reveal >= 1, "the new attach's own presentation still runs")
   })
 })
 
