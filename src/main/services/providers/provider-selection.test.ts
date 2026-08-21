@@ -172,10 +172,12 @@ describe('per-model parameters reach the built provider', () => {
 
   beforeEach(() => {
     delete process.env['COPSE_PANEL_MOCK_LLM']
+    setApiKey('lmstudio', 'configured-token')
   })
 
   afterEach(() => {
     setSetting('modelParameters', {})
+    setApiKey('lmstudio', '')
     if (prevMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
     else process.env['COPSE_PANEL_MOCK_LLM'] = prevMock
   })

@@ -8,6 +8,7 @@ import { SERVICE_TIERS } from './service-tier.ts'
 import type { LLMProvider } from './wire-types.ts'
 import {
   createExtraCloudProvider,
+  createLMStudioProvider,
   createLocalOpenAIProvider,
   createOpenRouterProvider,
   createProvider,
@@ -16,6 +17,7 @@ import { BUILTIN_EXTRA_PROVIDERS } from './extra-providers.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import { ResponsesProvider } from './responses-provider.ts'
+import { LMStudioProvider } from './lm-studio-provider.ts'
 
 describe('anthropicMaxOutputTokens', () => {
   it('uses per-model catalog metadata', () => {
@@ -354,6 +356,34 @@ describe('createLocalOpenAIProvider', () => {
     )
     const request = await captureRequest(provider)
     assert.equal(request.stream_options?.include_usage, true)
+  })
+})
+
+describe('createLMStudioProvider', () => {
+  it('uses the native SDK transport when bearer authentication is disabled', () => {
+    const provider = createLMStudioProvider('http://localhost:1234/v1', 'qwen/qwen3.6-35b-a3b')
+    assert.ok(provider instanceof LMStudioProvider)
+  })
+
+  it('preserves the OpenAI-compatible transport for bearer-authenticated servers', () => {
+    const provider = createLMStudioProvider(
+      'http://localhost:1234/v1',
+      'qwen/qwen3.6-35b-a3b',
+      'configured-token',
+    )
+    assert.ok(provider instanceof OpenAIProvider)
+  })
+
+  it('preserves tuned model parameters through the OpenAI-compatible transport', async () => {
+    const provider = createLMStudioProvider(
+      'http://localhost:1234/v1',
+      'qwen/qwen3.6-35b-a3b',
+      'lm-studio',
+      { temperature: 0.4 },
+    )
+    assert.ok(provider instanceof OpenAIProvider)
+    const request = await captureRequest(provider)
+    assert.equal(request.temperature, 0.4)
   })
 })
 

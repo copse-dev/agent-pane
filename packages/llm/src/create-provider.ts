@@ -1,6 +1,7 @@
 import { AnthropicProvider } from './anthropic-provider.ts'
 import { OPENROUTER_ATTRIBUTION_HEADERS } from './app-attribution.ts'
 import { OpenAIProvider } from './openai-provider.ts'
+import { LMStudioProvider } from './lm-studio-provider.ts'
 import { ResponsesProvider } from './responses-provider.ts'
 import { MockLLMProvider } from './mock-provider.ts'
 import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
@@ -8,6 +9,7 @@ import { OPENROUTER_BASE_URL } from './openrouter.ts'
 import { assertProviderHostAllowed } from './provider-host-policy.ts'
 import { validateCredentialBaseUrl } from './credential-url.ts'
 import {
+  isEmptyModelParameters,
   openRouterReasoningBody,
   recommendedOutputCeiling,
   type ModelParameters,
@@ -197,7 +199,21 @@ export function createLocalOpenAIProvider(
   })
 }
 
-export const createLMStudioProvider = createLocalOpenAIProvider
+export function createLMStudioProvider(
+  baseURL: string,
+  model: string,
+  apiKey = 'lm-studio',
+  params: ModelParameters = {},
+): LLMProvider {
+  // LM Studio's SDK transport exposes prompt-processing progress, but its
+  // WebSocket authentication is a separate client handshake and cannot carry
+  // the HTTP bearer token configured for the OpenAI-compatible API. Preserve
+  // authenticated server setups by retaining the compatible endpoint there.
+  if ((apiKey && apiKey !== 'lm-studio') || !isEmptyModelParameters(params)) {
+    return createLocalOpenAIProvider(baseURL, model, apiKey, params)
+  }
+  return new LMStudioProvider(model, { baseURL })
+}
 
 // OpenRouter is an OpenAI-compatible cloud aggregator, so it reuses OpenAIProvider
 // with OpenRouter's base URL. Unlike a local server it is billed and reports usage,
