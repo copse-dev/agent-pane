@@ -56,7 +56,7 @@ class SdkClientAdapter implements ClientAdapter {
   }
 
   async model(identifier: string): Promise<ModelAdapter> {
-    return new SdkModelAdapter(await this.client.llm.model(identifier))
+    return new SdkModelAdapter(await this.client.llm.model(identifier, { verbose: false }))
   }
 
   prepareImageBase64(fileName: string, contentBase64: string): Promise<FileHandle> {

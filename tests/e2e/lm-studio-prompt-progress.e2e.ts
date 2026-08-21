@@ -37,7 +37,7 @@ describe('LM Studio prompt processing progress', () => {
     await expect(activity.$('.agent-activity-label')).toHaveText('Processing prompt… 47%')
     await expect(activity).toHaveAttribute('role', 'status')
     await expect(activity).toHaveAttribute('aria-live', 'polite')
-    await saveElementScreenshot('#input-bar', 'lm-studio-prompt-progress.png')
+    await saveElementScreenshot('.agent-activity', 'lm-studio-prompt-progress.png')
 
     await $('.stop-btn').click()
     await activity.waitForDisplayed({ reverse: true, timeout: 10_000 })
