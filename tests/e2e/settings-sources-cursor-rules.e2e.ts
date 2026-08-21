@@ -72,7 +72,8 @@ describe('settings sources cursor rules (#636)', () => {
     })
     const instructionRow = instructionsList.$('.sources-row*=AGENTS.md')
     const trustBadge = instructionRow.$('.sources-badge-untrusted')
-    await expect(trustBadge).toHaveText('not loaded')
+    // getText() reports the badge's rendered (CSS-uppercased) label.
+    await expect(trustBadge).toHaveText('not loaded', { ignoreCase: true })
     await expect(instructionRow.$('.sources-row-detail')).toHaveText(
       expect.stringContaining('inert until you trust this workspace'),
     )
