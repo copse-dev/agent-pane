@@ -1,5 +1,6 @@
 import { RequestError } from '@agentclientprotocol/sdk'
 import { acpReauthCommand, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
+import { isContextOverflowMessage } from '@shared/context-window-advice.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 import { IMAGE_INPUT_UNSUPPORTED_MESSAGE } from '@shared/image-input-support.ts'
@@ -467,11 +468,9 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   if (status === 529 || type === 'overloaded_error' || /\boverloaded\b/i.test(detail))
     return 'The model provider is temporarily overloaded. This is transient — wait a moment and try again.'
 
-  if (
-    detail.includes('context_length') ||
-    detail.includes('context window') ||
-    detail.includes('tokens to keep from the initial prompt')
-  )
+  // `detail` is the provider's own message where one parsed out; LM Studio buries
+  // the engine's wording in a JSON body that only survives in `raw`.
+  if (isContextOverflowMessage(detail) || isContextOverflowMessage(raw))
     return 'Conversation too long for the loaded model context. Reload the model in LM Studio with a larger context, start a new thread, or use smaller reads.'
 
   if (detail.includes('No user query found in messages') || detail.includes('jinja template'))
