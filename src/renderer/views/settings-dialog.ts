@@ -1013,7 +1013,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </div>
             </fieldset>
 
-            <fieldset>
+            <fieldset id="cursor-rules-fieldset" hidden>
               <legend>Cursor rules</legend>
               <p class="settings-fieldset-desc">
                 Project rules under <code>.cursor/rules/*.mdc</code> (and legacy
@@ -2648,6 +2648,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         }),
         'No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file).',
       )
+      // Most projects have no Cursor rules, and a fieldset whose only content is
+      // "there are none" is noise: the section stays hidden until the workspace
+      // actually has rules to disclose. Instruction files above already name
+      // where rules would come from, so nothing is lost by the absence.
+      qsRequired(overlay, '#cursor-rules-fieldset').hidden = cursorRules.length === 0
+      // The sidebar contents list is read off the DOM when a section opens, so a
+      // fieldset that appears after that read has to ask for a re-read — unless
+      // a search is running, which lifts blocks out of their sections and drops
+      // the contents list on purpose.
+      if (!contentEl.classList.contains('settings-searching')) renderNavSubheadings(activeSection)
 
       fillSourceList(
         '#sources-skills-list',
