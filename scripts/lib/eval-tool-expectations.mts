@@ -5,6 +5,12 @@
  */
 import { matchesBridgedToolName } from '../../src/main/services/acp/acp-bridge-name.ts'
 import {
+  SHELL_COMMAND_TOOLS,
+  defaultScratchRoots,
+  globalTempWrites,
+  type ScratchRoots,
+} from './eval-scratch-paths.mts'
+import {
   SANDBOX_NETWORK_AUDIT_BLOCKED_ARG,
   SANDBOX_NETWORK_AUDIT_TOOL,
   isGithubDenialHost,
@@ -46,6 +52,15 @@ export interface ToolExpectations {
    * is denied the npm registry, neither of which says anything about GitHub.
    */
   forbidGithubNetworkDenial?: boolean | undefined
+  /**
+   * Fail when a shell call writes scratch under a global temp root instead of
+   * the `$TMPDIR` the sandbox hands it or the workspace (issue #1846).
+   *
+   * The only expectation here that reads a call's *arguments* rather than its
+   * name: the offending run uses exactly the tool it should (`run_shell`) and
+   * redirects into `/tmp` inside the command, which no name-based check sees.
+   */
+  forbidGlobalTempWrites?: boolean | undefined
 }
 
 /**
@@ -342,6 +357,7 @@ export function shellEscalationPromptCount(
 export function toolExpectationViolations(
   observed: readonly ObservedToolCall[],
   expectations: ToolExpectations,
+  options?: { scratchRoots?: ScratchRoots | undefined },
 ): string[] {
   const observedNames = observed.map((call) => call.name)
   const violations: string[] = []
@@ -370,7 +386,22 @@ export function toolExpectationViolations(
       violations.push(`the agent's own process was denied GitHub: ${github.join(', ')}`)
     }
   }
+  if (expectations.forbidGlobalTempWrites === true) {
+    const roots = options?.scratchRoots ?? defaultScratchRoots()
+    for (const write of globalTempWrites(observed, roots, isShellCommandTool)) {
+      // The command string, not just the path: the failure artifact has to show
+      // what the agent actually ran, or triaging it means re-reading the trace.
+      violations.push(
+        `scratch written to global temp (${write.target}) instead of $TMPDIR or the workspace: ${write.tool}: ${write.command}`,
+      )
+    }
+  }
   return violations
+}
+
+/** Whether an observed name is one of the shell tools, bridged forms included. */
+function isShellCommandTool(observedName: string): boolean {
+  return SHELL_COMMAND_TOOLS.some((tool) => toolCallIsNamed(observedName, tool))
 }
 
 /**
