@@ -2,6 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  createGitChangesDiffEditor,
   disposeDiffModels,
   setGitFileDiffModel,
   whenDiffHostVisible,
@@ -90,6 +91,7 @@ function createFakeDiff(): FakeDiff {
     getSelection: () => null,
     getModel: () => null,
     onKeyDown: () => ({ dispose: (): void => {} }),
+    updateOptions: (): void => {},
   })
 
   const editor: GitDiffEditor = {
@@ -550,5 +552,69 @@ describe('whenDiffHostVisible', () => {
       forceSize(host, 200, 100)
     })
     assert.equal(await withDeadline(pending), true)
+  })
+})
+
+describe('createGitChangesDiffEditor keeps a single gutter in the inline view', () => {
+  async function waitForCalls(calls: unknown[], count: number): Promise<void> {
+    const deadline = Date.now() + 2_000
+    while (calls.length < count && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+  }
+
+  it('hides original line numbers while inline and restores them side-by-side', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+
+    const lineNumberModes: unknown[] = []
+    const originalEditor: GitDiffCodeEditor = {
+      revealLineInCenterIfOutsideViewport: (): void => {},
+      getSelection: () => null,
+      getModel: () => null,
+      onKeyDown: () => ({ dispose: (): void => {} }),
+      updateOptions: (options): void => {
+        lineNumberModes.push(options.lineNumbers)
+      },
+    }
+    const fake = createFakeDiff()
+    const editor: GitDiffEditor = { ...fake.editor, getOriginalEditor: () => originalEditor }
+    const monaco: GitDiffMonaco = {
+      ...fake.monaco,
+      editor: {
+        ...fake.monaco.editor,
+        createDiffEditor: (host): GitDiffEditor => {
+          // Mirror the piece of Monaco's DOM the gutter sync watches: the root
+          // element whose `side-by-side` class tracks the active view.
+          const fakeRoot = document.createElement('div')
+          fakeRoot.className = 'monaco-diff-editor side-by-side'
+          host.append(fakeRoot)
+          return editor
+        },
+      },
+    }
+
+    createGitChangesDiffEditor(container, monaco, 12, 'vs')
+    assert.deepEqual(lineNumberModes, ['on'], 'side-by-side keeps original line numbers')
+
+    const root = container.querySelector('.monaco-diff-editor')
+    assert.ok(root)
+    root.classList.remove('side-by-side')
+    await waitForCalls(lineNumberModes, 2)
+    assert.deepEqual(lineNumberModes, ['on', 'off'], 'inline view drops the duplicate gutter')
+
+    root.classList.add('side-by-side')
+    await waitForCalls(lineNumberModes, 3)
+    assert.deepEqual(lineNumberModes, ['on', 'off', 'on'], 'widening restores the gutter')
+  })
+
+  it('is a no-op when the editor factory builds no DOM', () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const fake = createFakeDiff()
+    // Test doubles (and Monaco failures) leave the container empty; creation
+    // must still return the editor without touching sub-editor options.
+    const created = createGitChangesDiffEditor(container, fake.monaco, 12, 'vs')
+    assert.equal(created, fake.editor)
   })
 })
