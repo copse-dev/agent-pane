@@ -172,15 +172,19 @@ export function mountGitChangesPane(
 
   const conflictBanner = el('div', { class: 'diff-conflict-banner' })
   conflictBanner.hidden = true
-  const diffWrap = el('div', { class: 'git-diff-editor-wrap git-diff-editor-wrap-proposed' })
+  const diffWrap = el('div', { class: 'git-diff-editor-wrap' })
   const acceptBtn = el('button', { type: 'button', class: 'diff-accept-btn' }, 'Accept')
   const rejectBtn = el('button', { type: 'button', class: 'diff-reject-btn' }, 'Reject')
   acceptBtn.hidden = true
   rejectBtn.hidden = true
-  diffWrap.append(acceptBtn, rejectBtn)
+  // A bar below the editor, not an overlay: floating buttons sat on top of the
+  // last visible lines (and the editor's right-edge chrome) in narrow panes (#1702).
+  const approvalBar = el('div', { class: 'diff-approval-bar' })
+  approvalBar.hidden = true
+  approvalBar.append(rejectBtn, acceptBtn)
   const imageWrap = el('div', { class: 'git-image-diff-wrap' })
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a changed file')
-  viewerRoot.append(conflictBanner, diffWrap, imageWrap, emptyState)
+  viewerRoot.append(conflictBanner, diffWrap, approvalBar, imageWrap, emptyState)
 
   let diffEditor: GitDiffEditor | null = null
   let pendingSelect: ChangeSelection | null = null
@@ -458,6 +462,7 @@ export function mountGitChangesPane(
   restoreBtn.addEventListener('click', () => void restorePreSessionChanges())
 
   function hideApprovalButtons(): void {
+    approvalBar.hidden = true
     acceptBtn.hidden = true
     rejectBtn.hidden = true
   }
@@ -465,6 +470,7 @@ export function mountGitChangesPane(
   async function showProposedDiff(view: ActiveDiff): Promise<void> {
     const requestId = ++selectRequestId
     pendingSelect = { kind: 'proposed', path: view.path }
+    approvalBar.hidden = false
     acceptBtn.hidden = false
     rejectBtn.hidden = false
     acceptBtn.onclick = (): void => {

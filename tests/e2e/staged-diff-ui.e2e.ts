@@ -69,6 +69,24 @@ describe('staged diff approval UI', () => {
     await expect(rejectBtn).toHaveText('Reject')
     await expect($('.git-changes-bulk-actions')).not.toBeDisplayed()
 
+    // Accept/Reject live in a bar below the editor; floating copies used to
+    // cover the last diff lines and the editor's right-edge chrome (#1702).
+    await expect($('#git-diff-viewer-host .diff-approval-bar')).toBeDisplayed()
+    const editorRect = await browser.execute(() => {
+      const editor = document.querySelector('#git-diff-viewer-host .monaco-diff-editor')
+      if (!editor) return null
+      const { top, bottom } = editor.getBoundingClientRect()
+      return { top, bottom }
+    })
+    const acceptRect = await browser.execute(() => {
+      const btn = document.querySelector('#git-diff-viewer-host .diff-accept-btn')
+      if (!btn) return null
+      const { top, bottom } = btn.getBoundingClientRect()
+      return { top, bottom }
+    })
+    if (!editorRect || !acceptRect) throw new Error('missing diff editor or accept button rect')
+    await expect(acceptRect.top >= editorRect.bottom).toBe(true)
+
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-single.png'))
 
     await runWriteFileDirective('src/e2e-staged-b.ts', 'export const b = 2\n')

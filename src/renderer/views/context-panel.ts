@@ -49,6 +49,7 @@ export interface ContextPanelEditor extends MonacoShortcutSource {
   revealLineInCenterIfOutsideViewport(line: number): void
   setModel(model: ContextPanelModel | null): void
   setPosition(position: { lineNumber: number; column: number }): void
+  updateOptions(options: Monaco.editor.IEditorOptions): void
 }
 
 export interface ContextPanelMonaco extends GitDiffMonaco {

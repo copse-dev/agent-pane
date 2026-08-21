@@ -1300,9 +1300,6 @@
   flex: 1;
   min-height: 0;
 }
-.git-diff-editor-wrap-proposed {
-  position: relative;
-}
 .git-diff-editor-wrap .line-insert,
 .git-diff-editor-wrap .char-insert {
   background-color: color-mix(in srgb, #2ea043 28%, transparent) !important;

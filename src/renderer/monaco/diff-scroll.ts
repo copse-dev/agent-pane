@@ -35,6 +35,10 @@ export const GIT_CHANGES_DIFF_EDITOR_OPTIONS: Monaco.editor.IDiffEditorConstruct
   useInlineViewWhenSpaceIsLimited: true,
   ignoreTrimWhitespace: false,
   renderIndicators: true,
+  // The overview ruler draws a miniature map of the file down the right edge.
+  // In the docked Changes pane that strip reads as a broken border under the
+  // floating controls (#1702), so trade it for content width.
+  renderOverviewRuler: false,
   hideUnchangedRegions: HIDE_UNCHANGED_REGIONS,
 }
 

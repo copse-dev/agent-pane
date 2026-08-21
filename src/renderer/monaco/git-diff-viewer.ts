@@ -15,6 +15,7 @@ export interface GitDiffModel {
 
 export interface GitDiffCodeEditor extends MonacoShortcutSource {
   revealLineInCenterIfOutsideViewport(line: number): void
+  updateOptions(options: Monaco.editor.IEditorOptions): void
 }
 
 export interface GitDiffViewModel {
@@ -127,11 +128,40 @@ export function createGitChangesDiffEditor(
   fontSize: number,
   theme: 'vs' | 'vs-dark',
 ): GitDiffEditor {
-  return monaco.editor.createDiffEditor(container, {
+  const diffEditor = monaco.editor.createDiffEditor(container, {
     ...GIT_CHANGES_DIFF_EDITOR_OPTIONS,
     fontSize,
     theme,
   })
+  keepSingleGutterInInlineView(container, diffEditor)
+  return diffEditor
+}
+
+/**
+ * Show one line-number gutter when the diff collapses to the inline view.
+ *
+ * With `useInlineViewWhenSpaceIsLimited`, a narrow host makes Monaco lay the
+ * original editor out as a margin-only strip beside the modified gutter, so
+ * every row reads as its line number printed twice (#1702). Monaco's only
+ * switch for that strip is `compactMode`, which also removes the expand
+ * controls from the first and last collapsed unchanged regions — a loss the
+ * Changes pane can't take. Instead, track the `side-by-side` class Monaco
+ * keeps on its root element and drop the original editor's line numbers only
+ * while the inline view is active.
+ */
+function keepSingleGutterInInlineView(container: HTMLElement, diffEditor: GitDiffEditor): void {
+  // Absent with test doubles that don't build Monaco's DOM.
+  const root = container.querySelector('.monaco-diff-editor')
+  if (!root) return
+  const sync = (): void => {
+    diffEditor.getOriginalEditor().updateOptions({
+      lineNumbers: root.classList.contains('side-by-side') ? 'on' : 'off',
+    })
+  }
+  // The observer lives as long as the root it watches; these editors are
+  // created once per pane and kept for the window's lifetime.
+  new MutationObserver(sync).observe(root, { attributes: true, attributeFilter: ['class'] })
+  sync()
 }
 
 /**
