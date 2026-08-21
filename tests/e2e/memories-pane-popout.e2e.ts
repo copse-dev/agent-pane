@@ -112,7 +112,7 @@ describe('Memories pane pop-out', () => {
       },
       { timeout: 10_000, timeoutMsg: 'expected the editor to load the selected memory' },
     )
-    await expect(await $('.memories-editor-meta')).toHaveText(
+    await expect(await $('.memories-meta')).toHaveText(
       expect.stringContaining('saved with external content in context'),
     )
 
