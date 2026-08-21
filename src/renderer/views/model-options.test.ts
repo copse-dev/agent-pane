@@ -451,9 +451,7 @@ describe('fetchModelOptions visibility', () => {
   it('keeps a legacy ACP id attached to its renamed configured agent', async () => {
     const options = await fetchModelOptions(
       mockApi({
-        acpAgents: [
-          { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
-        ],
+        acpAgents: [{ id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true }],
       }),
       'acp:codex',
     )
