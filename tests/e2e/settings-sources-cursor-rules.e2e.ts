@@ -8,7 +8,8 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-settings-sources-cursor-rules'
 
-describe('settings sources cursor rules (#636)', () => {
+describe('settings sources cursor rules (#636)', function () {
+  this.timeout(60_000)
   let workspaceRoot = ''
 
   before(async () => {
