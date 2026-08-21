@@ -156,21 +156,32 @@ one 9B local model, and a frontier model may well comply — but a feature whose
 "this runs when you ask for it" cannot depend on which model is selected.
 
 **Verification of the deterministic path.** The same scenario passes on the same machine
-and model. The artifact carries a card with `tool=task kind=custom
-agentName=copse-eval-reviewer status=done` that no model chose to call, and the parent
-answered correctly afterwards. Two limits worth stating plainly:
+and model, and the run is now asserted rather than eyeballed: `assertSubagents.require`
+(added to the eval scenario contract) matches on `kind`, `agentName`, `status` and summary
+text, so a run that fires the wrong definition — or fires one that dies — fails. It was
+checked against the two captured artifacts before being trusted: it fails the
+pre-change run (`explore` only) and passes the deterministic one
+(`custom:copse-eval-reviewer`).
 
-- **The mechanism is proven; the end-to-end quality is not.** Neither local model produced
-  a usable _report_. `qwen3.5-9b` hit the loop's own reasoning-circle guard inside the
-  subagent ("the model got stuck repeating its reasoning"), and `gemma-4-12b` emitted
-  malformed tool-call syntax as prose and then died on its 8k context. The parent degraded
-  well in both cases — it did the work itself and answered correctly — but a run where the
-  agent returns something genuinely useful still needs a capable model to demonstrate.
-- **`requireTools: ["task"]` is now a regression guard, not a behavioural test.** It fails
-  if pre-invocation stops firing, which is worth having, but it cannot distinguish one
-  agent from another. Asserting the subagent's `kind` and `agentName` needs a small
-  addition to the eval scenario schema (`EvalScenario` has no subagent block today); the
-  identity above was confirmed by reading the artifact by hand.
+The final run shows the whole path working end to end:
+
+- the card is `task / kind=custom / agentName=copse-eval-reviewer`, fired by the turn
+  rather than chosen by the model;
+- the agent used `read_file`, so its `tools: Read, Grep` survived translation;
+- its report opens with the marker line the definition's body demands, which is direct
+  evidence the Markdown body became the system prompt; and
+- the report correctly names the seeded off-by-one bug in the format the body specified.
+
+**The eval earned its keep by finding a real bug.** An earlier run passed the identity
+assertion while the agent reported that "no file content was provided" — it had run with
+_no tools at all_. Its candidates were being intersected with the parent turn's offered
+set, which sounds like a safety property but is not one: with subagents enabled the parent
+has no `read_file`/`search_*`, because it delegates reads to `explore`. Candidates now
+come from the registry, as `explore`'s already did, with read-only still filtering them.
+See the regression test in `custom-agent-strategy.test.ts`.
+
+Remaining caveat: this is one 9B local model on one small scenario. It demonstrates the
+contract holds and the pieces connect, not that agents produce good reviews in general.
 
 ### 3. Default on, with a disable switch later
 
