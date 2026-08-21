@@ -19,6 +19,11 @@ import {
 } from './project-view-state.ts'
 import { showErrorToast } from '../views/toast.ts'
 import { compactSidebarThread, type SidebarThread } from './sidebar-thread.ts'
+import {
+  adoptBackgroundThreads,
+  carryRunningThreads,
+  dropProjectBackgroundThreads,
+} from './background-threads.ts'
 import { begin as perfBegin, mark as perfMark } from '../perf.ts'
 
 const uuid = (): string => globalThis.crypto.randomUUID()
@@ -319,6 +324,10 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
   forgetProjectViewState(projectViewState, id)
   threadCache.delete(id)
   if (liveCacheProjectId === id) liveCacheProjectId = null
+  // Completed carried entries can go now. Live ones remain reachable until
+  // their final message/meta writes finish, then the agent controller releases
+  // them — removing a sidebar row must not detach a running agent (#1841).
+  dropProjectBackgroundThreads(store, id)
 
   const projects = state.projects.filter((p) => p.id !== id)
   const wasActive = state.activeProjectId === id
@@ -490,19 +499,36 @@ async function finishActivate(
     return
   }
   const endApply = perfBegin('switch:apply-state')
-  cacheThreads(id, loaded)
+  // Live runs survive the switch: carry the outgoing project's running threads
+  // into the background list so chunks keep applying and finalized messages
+  // keep persisting, and fold any carried threads of the incoming project back
+  // into its list (#1841).
+  if (outgoingId && outgoingId !== id) {
+    // `outgoingThreads` was captured when activation began so the initial
+    // persistence flush has a stable input. The agent can keep streaming while
+    // workspace.set/loadProject are in flight, though, and those chunks replace
+    // `state.threads` with fresher thread objects. Carry the live list at the
+    // hand-off point or we would resurrect the stale pre-switch snapshot and
+    // lose everything that landed during the switch window.
+    const state = store.getState()
+    const liveOutgoingThreads =
+      state.activeProjectId === outgoingId ? state.threads : outgoingThreads
+    carryRunningThreads(store, outgoingId, liveOutgoingThreads)
+  }
+  const merged = adoptBackgroundThreads(store, id, loaded)
+  cacheThreads(id, merged)
 
   const activeThreadId =
-    pendingThreadId && loaded.some((t) => t.id === pendingThreadId)
+    pendingThreadId && merged.some((t) => t.id === pendingThreadId)
       ? pendingThreadId
-      : (loaded[0]?.id ?? null)
+      : (merged[0]?.id ?? null)
 
   const view = resolveProjectViewState(projectViewState, id)
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
     workspaceRoot: path,
-    threads: loaded,
+    threads: merged,
     activeThreadId,
     openFile: null,
     panelTab: view.panelTab,
@@ -512,7 +538,7 @@ async function finishActivate(
     projects: projectsWithMissingCleared(store.getState().projects, id),
   })
   if (activeThreadId) markThreadRead(store, activeThreadId)
-  if (loaded.length === 0) createThread(store)
+  if (merged.length === 0) createThread(store)
   else normalizeBlankThreads(store)
 
   await saveProjects(api, store.getState().projects, id, store.getState().activeThreadId)
@@ -521,9 +547,9 @@ async function finishActivate(
   store.emit('threads_changed')
   store.emit('panel_changed')
   store.emit('files_pane_changed')
-  endApply({ threads: loaded.length })
+  endApply({ threads: merged.length })
   endSwitch(gen, id)
-  endActivate({ outcome: 'ok', threads: loaded.length })
+  endActivate({ outcome: 'ok', threads: merged.length })
   void resumePendingQueues(store, api)
 }
 
@@ -736,16 +762,19 @@ export async function restoreProject(
     await quarantineAndRestoreNext(store, api, id)
     return
   }
-  cacheThreads(id, loaded)
+  // Carried live runs of this project fold back in (#1841); a fresh launch has
+  // none and this is the disk list unchanged.
+  const merged = adoptBackgroundThreads(store, id, loaded)
+  cacheThreads(id, merged)
   store.setState({
     activeProjectId: id,
     expandedProjectId: id,
     workspaceRoot: proj.path,
-    threads: loaded,
+    threads: merged,
     activeThreadId:
-      preferredThreadId && loaded.some((thread) => thread.id === preferredThreadId)
+      preferredThreadId && merged.some((thread) => thread.id === preferredThreadId)
         ? preferredThreadId
-        : (loaded[0]?.id ?? null),
+        : (merged[0]?.id ?? null),
     // Opening succeeded — lift any prior quarantine on this project (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id),
   })
@@ -759,7 +788,7 @@ export async function restoreProject(
   await saveProjects(api, store.getState().projects, id, activeThreadId).catch((error: unknown) => {
     console.warn(`[projects] could not persist the restored project ${id}:`, error)
   })
-  if (loaded.length === 0) createThread(store)
+  if (merged.length === 0) createThread(store)
   else normalizeBlankThreads(store)
   store.emit('projects_changed')
   store.emit('workspace_changed')
