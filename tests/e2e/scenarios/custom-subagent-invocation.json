@@ -1,6 +1,6 @@
 {
   "id": "custom-subagent-invocation",
-  "description": "Explicit `/name` invocation of a user-authored subagent (docs/plans/custom-subagents.md P2). Requires a definition seeded at ~/.claude/agents/copse-eval-reviewer.md — see the plan's validation section. Proves the load-bearing assumption of the design: that a turn directive is enough to make the parent delegate through `task` rather than answering directly.",
+  "description": "Explicit `/name` invocation of a user-authored subagent (docs/plans/custom-subagents.md P2). Requires a definition seeded at ~/.claude/agents/copse-eval-reviewer.md — see the plan's validation section. Proves the agent the user named is the one that runs: the turn pre-invokes it deterministically, so this fails if pre-invocation stops firing, fires the wrong definition, or the agent dies.",
   "workspace": {
     "type": "tempProject",
     "prefix": "custom-subagent-eval",
@@ -15,5 +15,14 @@
   "prompts": ["/copse-eval-reviewer review src/greet.ts and tell me what is wrong with it"],
   "toolUse": {
     "requireTools": ["task"]
+  },
+  "assertSubagents": {
+    "require": [
+      {
+        "kind": "custom",
+        "agentName": "copse-eval-reviewer",
+        "status": "done"
+      }
+    ]
   }
 }
