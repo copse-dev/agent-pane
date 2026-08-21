@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { ToolDefinition, LLMTool, ToolExecuteResult, ToolProvenance } from '@shared/types'
 import { normalizeToolExecuteResult, type ToolResultImage } from '@shared/types'
 import { wrapExternalContent } from '@copse/agent/external-content.ts'
+import { markTurnExternalIngestion } from './security/turn-taint.ts'
 import {
   getReadonlyToolBlockReason,
   isToolAllowedInReadonlyMode,
@@ -182,6 +183,9 @@ export class ToolRegistry {
     // after caching (the cache holds the bare result) and before hook-injected
     // context, which is Copse-authored and must stay outside the envelope.
     if (tool.provenance === 'external') {
+      // Phase 4: the turn now carries untrusted bytes — remembered memories
+      // record that provenance so recall can surface it in later threads.
+      markTurnExternalIngestion()
       result = wrapProvenance(tool.name, result)
     }
     // H2: a `toolGate` hook injected context into the current turn. Append the
