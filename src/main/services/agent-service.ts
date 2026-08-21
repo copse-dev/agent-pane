@@ -126,8 +126,7 @@ import {
 import type { ComparisonModels } from './model-comparison.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
-  setAgentRunTodoContext,
-  clearAgentRunTodos,
+  runWithAgentRunTodoContext,
   getAgentRunTodos,
   setAgentRunTodos,
 } from './agent-run-todos.ts'
@@ -156,7 +155,6 @@ import {
   shouldRouteToLocal,
 } from '@shared/todos/todo-logic.ts'
 import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
-import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
 import { todosToPanelListData } from '@copse/agent/plugins/plugin-panel.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import {
@@ -1505,14 +1503,6 @@ export async function runAgent(
       })
     }
 
-    setAgentRunTodoContext({
-      initial: priorTodos,
-      onUpdate: (todos) => {
-        sendChunk({ type: 'todo_update', todos })
-        emitTodoPanelUpdate(todos)
-      },
-    })
-
     // Briefs later local todo workers with what earlier ones already found (#i2jsed):
     // each `runTodoWorker` call starts a fresh, isolated context, so without this a
     // plan like "mirror complexity" (todo 2) has no way to know todo 1 just built it.
@@ -1520,89 +1510,106 @@ export async function runAgent(
     // the plan, so a worker sees background to reuse rather than other work to drift into.
     const localWorkerSummaries = new Map<string, { content: string; summary: string }>()
 
-    setTodoToolPostProcess(async (before, after) => {
-      let todos = after
-      let extraMessage: string | undefined
-
-      const localItem = findNewlyInProgressLocal(before, after)
-      if (
-        localItem &&
-        shouldRouteToLocal(localItem, {
-          localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
-          parentIsLocal: isLocalChatModel(model),
-        }) &&
-        subagentRoute
-      ) {
-        sendChunk({ type: 'todo_worker_start', todoId: localItem.id, content: localItem.content })
-        try {
-          const worker = await runTodoWorker({
-            item: localItem,
-            provider: subagentRoute.provider,
-            registry,
-            contextWindow: subagentRoute.contextWindow,
-            toolSchemaReserve: subagentRoute.toolSchemaReserve,
-            signal: controller.signal,
-            onChunk: sendChunk,
-            parentGoal,
-            priorSummaries: localWorkerSummaries,
-          })
-          localWorkerSummaries.set(localItem.id, {
-            content: localItem.content,
-            summary: worker.summary,
-          })
-          inputTokens += worker.usage.inputTokens
-          outputTokens += worker.usage.outputTokens
-          sendChunk({
-            type: 'usage',
-            model: subagentUsageModel,
-            inputTokens: worker.usage.inputTokens,
-            outputTokens: worker.usage.outputTokens,
-          })
-
-          let passed = true
-          if (localItem.check) {
-            const check = await verifyTodoCheck(localItem.check, controller.signal)
-            passed = check.passed
-            extraMessage = passed
-              ? `Local worker completed "${localItem.content}" (${check.detail})`
-              : `Local worker finished but check failed: ${check.detail}`
-          }
-
-          todos = todos.map((t) =>
-            t.id === localItem.id ? { ...t, status: passed ? 'completed' : 'in_progress' } : t,
-          )
+    // ALS-scoped plan + postProcess (not module globals): concurrent turns on
+    // different threads must not share one activeTodos / onUpdate / postProcess
+    // slot or one run's update_todos can patch and stream another's plan.
+    await runWithAgentRunTodoContext(
+      {
+        initial: priorTodos,
+        onUpdate: (todos) => {
           sendChunk({ type: 'todo_update', todos })
           emitTodoPanelUpdate(todos)
-          sendChunk({
-            type: 'todo_worker_done',
-            todoId: localItem.id,
-            summary: worker.summary,
-            passed,
-          })
-        } catch (err) {
-          const msg = errorMessage(err)
-          extraMessage = `Local worker failed: ${msg}`
-          sendChunk({
-            type: 'todo_worker_done',
-            todoId: localItem.id,
-            summary: msg,
-            passed: false,
-          })
-        }
-      }
+        },
+        postProcess: async (before, after) => {
+          let todos = after
+          let extraMessage: string | undefined
 
-      const completed = findNewlyCompleted(before, todos)
-      // Measured at the boundary, not from the turn's opening snapshot: the run
-      // has been appending to `trimmed` ever since, and it is the size right now
-      // that decides whether there is any headroom to buy.
-      const fillRatio = estimateConversationTokens(trimmed) / conversationBudget
-      if (completed && compactAtTodoBoundary(trimmed, todos, { fillRatio })) {
-        notifyTrimmed(sendTrimNotice)
-      }
+          const localItem = findNewlyInProgressLocal(before, after)
+          if (
+            localItem &&
+            shouldRouteToLocal(localItem, {
+              localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
+              parentIsLocal: isLocalChatModel(model),
+            }) &&
+            subagentRoute
+          ) {
+            sendChunk({
+              type: 'todo_worker_start',
+              todoId: localItem.id,
+              content: localItem.content,
+            })
+            try {
+              const worker = await runTodoWorker({
+                item: localItem,
+                provider: subagentRoute.provider,
+                registry,
+                contextWindow: subagentRoute.contextWindow,
+                toolSchemaReserve: subagentRoute.toolSchemaReserve,
+                signal: controller.signal,
+                onChunk: sendChunk,
+                parentGoal,
+                priorSummaries: localWorkerSummaries,
+              })
+              localWorkerSummaries.set(localItem.id, {
+                content: localItem.content,
+                summary: worker.summary,
+              })
+              inputTokens += worker.usage.inputTokens
+              outputTokens += worker.usage.outputTokens
+              sendChunk({
+                type: 'usage',
+                model: subagentUsageModel,
+                inputTokens: worker.usage.inputTokens,
+                outputTokens: worker.usage.outputTokens,
+              })
 
-      return { todos, ...(extraMessage ? { extraMessage } : {}) }
-    })
+              let passed = true
+              if (localItem.check) {
+                const check = await verifyTodoCheck(localItem.check, controller.signal)
+                passed = check.passed
+                extraMessage = passed
+                  ? `Local worker completed "${localItem.content}" (${check.detail})`
+                  : `Local worker finished but check failed: ${check.detail}`
+              }
 
+              todos = todos.map((t) =>
+                t.id === localItem.id
+                  ? { ...t, status: passed ? 'completed' : 'in_progress' }
+                  : t,
+              )
+              sendChunk({ type: 'todo_update', todos })
+              emitTodoPanelUpdate(todos)
+              sendChunk({
+                type: 'todo_worker_done',
+                todoId: localItem.id,
+                summary: worker.summary,
+                passed,
+              })
+            } catch (err) {
+              const msg = errorMessage(err)
+              extraMessage = `Local worker failed: ${msg}`
+              sendChunk({
+                type: 'todo_worker_done',
+                todoId: localItem.id,
+                summary: msg,
+                passed: false,
+              })
+            }
+          }
+
+          const completed = findNewlyCompleted(before, todos)
+          // Measured at the boundary, not from the turn's opening snapshot: the run
+          // has been appending to `trimmed` ever since, and it is the size right now
+          // that decides whether there is any headroom to buy.
+          const fillRatio = estimateConversationTokens(trimmed) / conversationBudget
+          if (completed && compactAtTodoBoundary(trimmed, todos, { fillRatio })) {
+            notifyTrimmed(sendTrimNotice)
+          }
+
+          return { todos, ...(extraMessage ? { extraMessage } : {}) }
+        },
+      },
+      async () => {
     // The parent tool executor, shared by the main loop and any post-turn parent
     // continuation turns (pre-review todo gate, review remediation) so both route
     // subagents, advisor, comparison, and shell tagging identically.
@@ -2006,6 +2013,8 @@ export async function runAgent(
     // shared cap. Emitted before the terminal `done` (which triggers the drain).
     sendChunk(continuationBudgetChunk(budgetLedger.used(turnTreeId), turnTreeId))
     sendChunk(withHookHaltStopReason(terminalDone, hookHaltStopReason))
+      },
+    )
   } catch (err) {
     const msg = classifyAgentError(err)
     sendChunk({ type: 'text', text: msg })
@@ -2044,8 +2053,7 @@ export async function runAgent(
     cancelApprovalsForThread(threadId)
     runAbort.clear()
     clearRunDeadline(threadId, runAbort.deadline)
-    clearAgentRunTodos()
-    setTodoToolPostProcess(null)
+    // Todo context is ALS-scoped to the run body above; no process-global clear.
     clearHookRunLiveSink(hookCardSink)
     endHookRunRecording(threadId)
     clearActiveRunThread(threadId)
