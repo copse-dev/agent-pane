@@ -11,6 +11,16 @@
 // retired `mcpUiArtefactsEnabled` standalone setting, so a Settings > Plugins
 // disable turns canvas rendering off in one atomic flag flip (decision 15).
 //
+// It also contributes one **conditional turn-start hook**
+// (`canvasPrototypeSteeringHook`). A canvas that exists but is never reached is
+// worth nothing: asked to prototype something, a model with a long tool list
+// answers in prose or writes a file the user has to open. The hook fires only on
+// a prototype request, and only when this turn actually offers the bundled
+// `render_html_artefact` tool, so the steering and the tool it names appear and
+// disappear together. Hook rather than a static prompt block for the same
+// reason `copse.site-building` uses one: the guidance is worth its tokens on a
+// prototype turn and pure noise on every other.
+//
 // **Default DISABLED.** Canvas was opt-in (off by default via
 // `mcpUiArtefactsEnabled`); this plugin must not silently enable it for existing
 // users. Default-off is expressed the same way as every other experimental plugin:
@@ -22,14 +32,16 @@
 // gone (removed from the zod schema and the settings dialog) — the plugin
 // capability is the single source of truth.
 //
-// Electron-free (execution-guidance rule 4): pure declarations. Host wiring (the
-// canvas gates) reads the plugin registry via the shared `getDefaultPluginRegistry()`
-// seam.
+// Electron-free (execution-guidance rule 4): declarations plus a pure steering
+// hook whose policy and text live in `../canvas-prototype-steering.ts`. Host
+// wiring (the canvas gates) reads the plugin registry via the shared
+// `getDefaultPluginRegistry()` seam.
 import {
   definePlugin,
   type PluginCapabilityDecl,
   type RegisteredPlugin,
 } from './plugin-manifest.ts'
+import { canvasPrototypeSteeringHook } from '../hooks/turn-start-hooks.ts'
 
 /** Stable plugin id — the manifest name + the grouping key across contributions. */
 export const MCP_UI_CANVAS_PLUGIN_ID = 'copse.mcp-ui-canvas'
@@ -47,20 +59,22 @@ const MCP_UI_CANVAS_CAPABILITY_DECL: PluginCapabilityDecl = {
 
 /**
  * The `copse.mcp-ui-canvas` plugin: manifest declares the capability; runtime
- * contributions carry the same capability so `activeCapabilities()` reports it
+ * contributions carry the same capability plus the prototype steering hook, so
+ * `activeCapabilities()` reports the flag and `activeBlockingHooks()` the hook
  * while enabled (the atomicity contract test in `enable-disable-atomicity.test.ts`
- * asserts that `disable()` drops the capability in one flag flip).
+ * asserts that `disable()` drops both in one flag flip).
  */
 export const mcpUiCanvasPlugin: RegisteredPlugin = definePlugin(
   {
     name: MCP_UI_CANVAS_PLUGIN_ID,
     description:
-      'MCP-UI artefacts (canvas) — render self-contained HTML UI resources from MCP tools as live, fully sandboxed artefacts in the Browser pane (no Node, no app access), and ship a bundled canvas server with a render_html_artefact tool for demos, charts, and small interactive UIs.',
+      'MCP-UI artefacts (canvas) — render self-contained HTML UI resources from MCP tools as live, fully sandboxed artefacts in the Browser pane (no Node, no app access), ship a bundled canvas server with a render_html_artefact tool for demos, charts, and small interactive UIs, and steer prototype requests onto it.',
     trust: 'first-party',
     stability: 'experimental',
     capabilities: [MCP_UI_CANVAS_CAPABILITY_DECL],
   },
   {
     capabilities: [MCP_UI_CANVAS_CAPABILITY_DECL],
+    blockingHooks: [canvasPrototypeSteeringHook],
   },
 )

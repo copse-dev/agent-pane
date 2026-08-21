@@ -63,7 +63,9 @@
 //    the `mcp-ui-canvas` **capability** — the canvas gates in `mcp-registry.ts`
 //    read `isCapabilityActive('mcp-ui-canvas')` instead of the retired
 //    `mcpUiArtefactsEnabled` setting, so the plugin toggle atomically turns canvas
-//    rendering (and the bundled canvas server) on/off. Default DISABLED.
+//    rendering (and the bundled canvas server) on/off — plus one conditional
+//    turn-start hook that steers a prototype request onto the bundled
+//    `render_html_artefact` tool when that tool is offered. Default DISABLED.
 //  - `devtoolsShortcutPlugin` — the first-party plugin for the experimental DevTools
 //    shortcut. Contributes no tool: it declares the `devtools-shortcut`
 //    **capability** — `create-main-window.ts` reads
