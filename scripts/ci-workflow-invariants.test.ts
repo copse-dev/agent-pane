@@ -261,6 +261,28 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('lets every branch-checkout job no-op when the PR merged and deleted its head', () => {
+    // These jobs are dispatched by `pull_request` but can execute minutes later,
+    // queued behind the fleet. If the PR merges meanwhile, auto-delete takes the
+    // head branch and `checkout` with `ref: github.head_ref` dies with "branch
+    // not found" — a red X on an already-merged PR, and pure noise, since there
+    // is no longer a branch to push to. `commit-screenshots` hit this first
+    // (#1001) and `autoformat` reddened 11 of 26 PRs in one night before getting
+    // the same guard. Any future job that checks out the head ref needs it too.
+    for (const name of ['autoformat', 'commit-screenshots']) {
+      const job = jobBlock(name)
+      assert.match(job, /id: head\n/, `${name} must probe the head branch before checking it out`)
+      assert.match(
+        job,
+        /- uses: actions\/checkout@[^\n]*\n {8}if: steps\.head\.outputs\.exists == 'true'/,
+        `${name} must skip checkout once the head branch is gone`,
+      )
+      // A transport blip must not read as deletion — that would silently skip
+      // real work rather than fail loudly.
+      assert.match(job, /refusing to/, `${name} must fail closed on a non-404 lookup`)
+    }
+  })
+
   it('has no merge_group trigger (queue needs Enterprise Cloud; org is on Team)', () => {
     // Re-adding the trigger would look harmless but can never fire, and its
     // presence previously justified `github.event_name != 'merge_group'` guards
