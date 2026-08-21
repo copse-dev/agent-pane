@@ -22,6 +22,7 @@ import {
   type SpineToolCall,
   type ThreadMeta,
   SPINE_SCHEMA_VERSION,
+  isContentRef,
   parseSpine,
   serializeSpine,
 } from './spine-schema.ts'
@@ -75,6 +76,30 @@ function contentRef(ref: string, content: string, hash: HashFn): ContentRef {
   return { ref, sha256: hash(content) }
 }
 
+/** Inline tool args below this UTF-8 size; larger args spill to `blobs/<id>.args.json`. */
+export const TOOL_ARGS_INLINE_MAX_BYTES = 2048
+
+function utf8ByteLength(text: string): number {
+  return new TextEncoder().encode(text).byteLength
+}
+
+function toolArgsBlobPath(toolCallId: string): string {
+  return `blobs/${toolCallId}.args.json`
+}
+
+/** True when spine `args` is the spilled blob ref for this tool call (not a coincidental object). */
+export function isToolArgsBlobRef(toolCallId: string, value: unknown): value is ContentRef {
+  return isContentRef(value) && value.ref === toolArgsBlobPath(toolCallId)
+}
+
+function serializeToolArgsJson(args: unknown): string {
+  return JSON.stringify(args === undefined ? null : args)
+}
+
+function parseToolArgsJson(raw: string): unknown {
+  return JSON.parse(raw) as unknown
+}
+
 function explodeToolCall(
   tc: ToolCall,
   hash: HashFn,
@@ -88,10 +113,18 @@ function explodeToolCall(
     result = contentRef(ref, tc.result, hash)
   }
 
+  const argsJson = serializeToolArgsJson(tc.args)
+  let args: unknown = tc.args
+  if (utf8ByteLength(argsJson) > TOOL_ARGS_INLINE_MAX_BYTES) {
+    const ref = toolArgsBlobPath(tc.id)
+    files.push({ ref, contents: argsJson })
+    args = contentRef(ref, argsJson, hash)
+  }
+
   const spine: SpineToolCall = {
     id: tc.id,
     name: tc.name,
-    args: tc.args,
+    args,
     status: tc.status === 'error' ? 'error' : 'done',
     result,
     ...(tc.editStats !== undefined ? { editStats: tc.editStats } : {}),
@@ -255,6 +288,7 @@ export function refsOfLine(line: SpineMessageLine): {
   }
   for (const tc of line.toolCalls) {
     if (tc.result !== null) files.push(tc.result.ref)
+    if (isToolArgsBlobRef(tc.id, tc.args)) files.push(tc.args.ref)
     if (tc.subagent) subagentDirs.push(tc.subagent.ref)
   }
   return { files, subagentDirs }
@@ -284,10 +318,17 @@ function foldToolCall(
     verify(spine.result, result, hash)
   }
 
+  let args: unknown = spine.args
+  if (isToolArgsBlobRef(spine.id, spine.args)) {
+    const raw = resolve(spine.args.ref)
+    verify(spine.args, raw, hash)
+    args = parseToolArgsJson(raw)
+  }
+
   const tc: ToolCall = {
     id: spine.id,
     name: spine.name,
-    args: spine.args,
+    args,
     status: spine.status,
     result,
     ...(spine.editStats !== undefined ? { editStats: spine.editStats } : {}),

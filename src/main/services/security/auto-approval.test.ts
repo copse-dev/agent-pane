@@ -446,7 +446,7 @@ describe('assessAutoApproval — the motivating session, end to end', () => {
 
 describe('rejection reasons are accurate', () => {
   it('names the flag, not the remote, when a push flag is refused', () => {
-    // These strings land in decisions.jsonl; a wrong one sends an auditor after
+    // These strings land in decision spine lines; a wrong one sends an auditor after
     // the wrong thing.
     const decision = assessAutoApproval(
       'git push origin main --force-with-lease',

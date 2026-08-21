@@ -14,8 +14,8 @@ import {
   parseSpine,
   parseSpineEntries,
   toolsetBlobRef,
+  type SpineDecisionLine,
   type SpineHookRunLine,
-  type SpinePermissionDecisionLine,
 } from '@shared/threads/spine-schema.ts'
 import {
   appendHookRun,
@@ -83,11 +83,11 @@ function readHookRuns(root: string): SpineHookRunLine[] {
     .filter((l): l is SpineHookRunLine => l?.type === 'hook_run')
 }
 
-function readPermissionDecisions(root: string): SpinePermissionDecisionLine[] {
+function readDecisions(root: string): SpineDecisionLine[] {
   const raw = readFileSync(join(root, PROJECT, THREAD, 'events.jsonl'), 'utf8')
   return parseSpineEntries(raw)
     .map((entry) => entry.line)
-    .filter((line): line is SpinePermissionDecisionLine => line?.type === 'permission_decision')
+    .filter((line): line is SpineDecisionLine => line?.type === 'decision')
 }
 
 /** Flush the store's per-project write queue (recording appends are fire-and-forget). */
@@ -190,13 +190,19 @@ describe('hook_run survives full save (decision 6)', () => {
     await flushStore()
     await saveProjectThread(PROJECT, thread([m1, userMsg('m2', 'done')]))
 
-    const decisions = readPermissionDecisions(root)
+    const decisions = readDecisions(root)
     assert.equal(decisions.length, 1)
     const [decision] = decisions
     assert.ok(decision)
-    assert.equal(decision.originalCommand, 'echo safe')
-    assert.equal(decision.effectiveCommand, 'rm -rf build')
+    assert.equal(decision.cause, 'shell-guarded-yolo-harm')
+    assert.equal(decision.verdict, 'denied')
     assert.equal(decision.step, 3)
+    assert.ok(decision.detail)
+    const detailRaw = readFileSync(join(root, PROJECT, THREAD, decision.detail.ref), 'utf8')
+    const detail: unknown = JSON.parse(detailRaw)
+    assert.ok(detail && typeof detail === 'object')
+    assert.equal((detail as { originalCommand?: string }).originalCommand, 'echo safe')
+    assert.equal((detail as { effectiveCommand?: string }).effectiveCommand, 'rm -rf build')
   })
 
   it('a detached hook records against a snapshot taken before endHookRunRecording (C1, decision 3/6)', async () => {

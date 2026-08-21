@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   SPINE_SCHEMA_VERSION,
+  decisionDetailBlobRef,
   hookRunBlobRefs,
   parseSpine,
   parseSpineEntries,
@@ -11,6 +12,7 @@ import {
   serializeSpineEntries,
   serializeSpineLine,
   toolsetBlobRef,
+  type SpineDecisionLine,
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
   type SpineMessageLine,
@@ -69,6 +71,25 @@ function permissionDecisionLine(id: string): SpinePermissionDecisionLine {
   }
 }
 
+function decisionLine(id: string): SpineDecisionLine {
+  return {
+    v: 1,
+    type: 'decision',
+    id,
+    at: 120,
+    kind: 'shell',
+    actor: 'user',
+    verdict: 'denied',
+    subject: 'shell command (arguments omitted)',
+    scope: 'sandbox',
+    cause: 'shell-guarded-yolo-harm',
+    threadId: 't-1',
+    turnId: 'turn-1',
+    step: 2,
+    detail: { ref: decisionDetailBlobRef(id), sha256: 'abc' },
+  }
+}
+
 function machineContinuationLine(id: string): SpineMachineContinuationLine {
   return {
     v: SPINE_SCHEMA_VERSION,
@@ -107,6 +128,28 @@ describe('spine-schema hook_run union (decision 6)', () => {
       parseSpine(body).map((message) => message.id),
       ['m1'],
     )
+  })
+
+  it('round-trips unified decision lines and hides them from message readers', () => {
+    const line = decisionLine('d1')
+    assert.deepEqual(parseSpineLine(serializeSpineLine(line)), line)
+    const body = serializeSpine([messageLine('m1'), line])
+    assert.deepEqual(
+      parseSpine(body).map((message) => message.id),
+      ['m1'],
+    )
+  })
+
+  it('preserves decision detail blob refs across full rewrites', () => {
+    const m1 = messageLine('m1')
+    const decision = decisionLine('d1')
+    const existing = serializeSpine([m1, decision])
+    const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(existing, [m1])
+    assert.deepEqual(
+      parseSpineEntries(body).map((entry) => entry.line?.id),
+      ['m1', 'd1'],
+    )
+    assert.ok(preservedRefs.includes(decisionDetailBlobRef('d1')))
   })
 
   it('round-trips machine continuation audit lines without exposing them as messages', () => {

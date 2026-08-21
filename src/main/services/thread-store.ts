@@ -42,6 +42,7 @@ import {
   type ContentRef,
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
+  type SpineDecisionLine,
   type SpinePermissionDecisionLine,
   type ThreadMeta,
 } from '@shared/threads/spine-schema.ts'
@@ -71,7 +72,7 @@ import { runSerialized } from './storage/write-queue.ts'
  *   acp-session.json    private external-agent session binding
  *   acp-debug.jsonl     opt-in ACP wire trace (COPSE_DEBUG_ACP_UPDATES=1 only)
  *   messages/*.md       OKF prose (message content + reasoning)
- *   blobs/*             verbatim tool results and images
+ *   blobs/*             tool results, oversized tool args, decision detail, images
  *   subagents/**        nested subagent sessions, same structure recursively
  *
  * A per-project `catalog.jsonl` indexes threads for fast cross-thread lookup
@@ -1271,15 +1272,21 @@ export function readHookRun(
   })
 }
 
-/** Append one durable Guarded YOLO shell authorization record. */
-export function appendPermissionDecision(
+/** Append one control-plane decision (and optional detail blob) to the thread spine. */
+export function appendSpineDecision(
   projectId: string,
   threadId: string,
-  line: SpinePermissionDecisionLine,
+  line: SpineDecisionLine | SpinePermissionDecisionLine,
+  detailContents?: string,
 ): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
     const dir = threadDir(projectId, threadId)
     mkdirSync(dir, { recursive: true })
+    if (detailContents !== undefined && line.type === 'decision' && line.detail) {
+      const full = join(dir, line.detail.ref)
+      mkdirSync(dirname(full), { recursive: true })
+      writeFileSync(full, detailContents)
+    }
     const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
     const prefix =
       existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
