@@ -29,3 +29,5 @@ schemas/headless-contract.schema.json
 # ESLint's own JSON shape by `--suppress-rule` / `--prune-suppressions`. Leave it
 # untouched so prettier and ESLint don't fight over its formatting on every prune.
 eslint-suppressions.json
+tauri-shell/target/
+tauri-shell/gen/
