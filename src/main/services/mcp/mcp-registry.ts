@@ -375,6 +375,9 @@ async function registerClientTools(
     registry.register({
       name: fullName,
       description: `[MCP:${serverName}] ${tool.description ?? ''}`.trim(),
+      // MCP servers are untrusted (see mcp-schema.ts); their results carry the
+      // external-content provenance envelope.
+      provenance: 'external',
       parameters: z.unknown(),
       rawParameters: sanitizeMcpInputSchema(tool.inputSchema),
       async execute(args, signal) {
