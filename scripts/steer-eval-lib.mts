@@ -668,6 +668,8 @@ export function buildSteerEvalPrompt(
   const omit: PromptSectionId[] = spec.kind === 'section' && armId === 'without' ? [spec.ref] : []
   const base = assemblePromptFromSections(buildPromptSections(EVAL_PROMPT_VARS), omit)
     .replace('{WORKSPACE_ROOT}', workspace)
+    // Evals run outside a turn: no repository context to state.
+    .replace('{REPO_CONTEXT}', '')
     .replace('{SKILLS_TOOLS_LINE}', '')
   if (armId === 'without') return base
   if (spec.kind === 'block') return `${base}${STEER_BLOCK_TEXTS[spec.ref]}`
