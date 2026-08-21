@@ -19,7 +19,9 @@ describe('agent-run-todos ALS isolation', () => {
   })
 
   it('throws when setting todos outside a run context', () => {
-    assert.throws(() => setAgentRunTodos([item('x', 'nope')]), /No agent-run todo context/)
+    assert.throws(() => {
+      setAgentRunTodos([item('x', 'nope')])
+    }, /No agent-run todo context/)
   })
 
   it('scopes todos and onUpdate to nested run contexts', async () => {
@@ -88,7 +90,10 @@ describe('agent-run-todos ALS isolation', () => {
       },
       async () => {
         assert.equal(getAgentRunTodos()[0]?.content, 'from-A')
-        assert.equal((await getTodoToolPostProcess()?.([], getAgentRunTodos()))?.todos[0]?.content, 'from-A+A')
+        assert.equal(
+          (await getTodoToolPostProcess()?.([], getAgentRunTodos()))?.todos[0]?.content,
+          'from-A+A',
+        )
         releaseB()
         await aMayFinish
         // Still A's plan after B has mutated its own store.
