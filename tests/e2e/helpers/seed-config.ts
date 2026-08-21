@@ -25,7 +25,7 @@ import {
   serializeSpineLine,
   type SpineHookRunLine,
 } from '../../../src/shared/threads/spine-schema.ts'
-import { copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
+import { copseDataRoot, copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -443,6 +443,12 @@ export function seedEmptyProject(
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
+    /**
+     * Opt into the `copse.mcp-ui-canvas` pack (the bundled canvas MCP server's
+     * `render_html_artefact` tool, artefact rendering in the Browser pane, and
+     * the prototype steering hook). Ships off, like the other experimental packs.
+     */
+    mcpUiCanvasEnabled?: boolean
     developerMode?: boolean
     /** Opt into the read-only Remote Desktop pane. */
     vncEnabled?: boolean
@@ -508,6 +514,7 @@ export function seedEmptyProject(
   if (options?.modelComparisonEnabled) enabledPlugins.push('copse.model-comparison')
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
+  if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
   seedConfig.pluginDisabled =
     options?.pluginDisabled !== undefined
       ? [...options.pluginDisabled]
@@ -639,10 +646,53 @@ export function seedRoadmapNotes(
   return knowledgeDir
 }
 
+/**
+ * Seed OKF memory notes for a project, including provenance fields that can only
+ * be produced by an agent turn. The files use the product's real knowledge-store
+ * format; no test-only renderer or IPC state is introduced.
+ */
+export function seedMemoryNotes(
+  projectId: string,
+  notes: {
+    id: string
+    title: string
+    body: string
+    tags?: string[]
+    externalContext?: boolean
+  }[],
+): string {
+  const knowledgeDir = join(copseDataRoot(), 'knowledge', projectId)
+  const memoryDir = join(knowledgeDir, 'memory')
+  rmSync(knowledgeDir, { recursive: true, force: true })
+  mkdirSync(memoryDir, { recursive: true })
+  const iso = new Date().toISOString()
+  for (const note of notes) {
+    const contents = [
+      '---',
+      'type: Memory',
+      `id: ${note.id}`,
+      `title: "${note.title}"`,
+      `tags: [${(note.tags ?? []).join(', ')}]`,
+      `createdAt: ${iso}`,
+      `updatedAt: ${iso}`,
+      ...(note.externalContext ? ['externalContext: "true"'] : []),
+      '---',
+      '',
+      note.body,
+      '',
+    ].join('\n')
+    writeFileSync(join(memoryDir, `${note.id}.md`), contents, 'utf8')
+  }
+  return knowledgeDir
+}
+
 /** Two projects on the same workspace root for project-switch e2e (#502). */
 export function seedProjectSwitchFixture(
   workspaceRoot: string,
-  options?: { activeProjectId?: 'project-a' | 'project-b' },
+  options?: {
+    activeProjectId?: 'project-a' | 'project-b'
+    windowBounds?: { width: number; height: number }
+  },
 ): { projectAId: string; projectBId: string } {
   const projectAId = 'e2e-project-switch-a'
   const projectBId = 'e2e-project-switch-b'
@@ -654,6 +704,7 @@ export function seedProjectSwitchFixture(
       { id: projectBId, path: workspaceRoot, name: 'Project B' },
     ],
     activeProjectId,
+    ...(options?.windowBounds ? { windowBounds: options.windowBounds } : {}),
     [`threads:${projectAId}`]: [],
     [`threads:${projectBId}`]: [],
   })
@@ -1278,6 +1329,62 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
   })
 }
 
+/** Long sticky user prompt (>10 lines) for mid-fold accordion visual eval. */
+export function seedUserPromptFoldFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-user-prompt-fold-project'
+  const threadId = 'e2e-user-prompt-fold-thread'
+  const now = Date.now()
+  const longPrompt = [
+    'Session notes: this session persists across turns, and background agents keep running.',
+    'The session is reaped after idle timeout; keep background work bounded.',
+    '',
+    'Environment note: sandbox writes only in the workspace and TMPDIR.',
+    'Prefer targeted searches over broad directory dumps.',
+    'Use copse MCP tools for shell, git, and GitHub when available.',
+    'Archive under review includes meta.json, events.jsonl, and messages.',
+    'Distinguish observed findings from inferences; cite evidence first.',
+    'Do not invent paths that were not in the archive listing.',
+    'Keep the sticky prompt short enough that the answer stays readable.',
+    '',
+    'What I saw: Lots of prompts — can you explore why?',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'User prompt fold',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-fold',
+            role: 'user',
+            content: longPrompt,
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-fold',
+            role: 'assistant',
+            content:
+              'The sticky prompt should stay compact while folded so this reply remains visible underneath.',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        todos: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+}
+
 /** A representative completed coding turn for conversation hierarchy visual evaluation. */
 export function seedConversationVisualHierarchyFixture(workspaceRoot: string): void {
   const projectId = 'e2e-conversation-hierarchy-project'
@@ -1376,6 +1483,53 @@ export function seedConversationVisualHierarchyFixture(workspaceRoot: string): v
       },
     ],
   })
+}
+
+/**
+ * Assistant answer trailed by a Cursor ACP transport RetriableError.
+ * Seeds developer mode so the collapsed transport-note disclosure is visible.
+ */
+export function seedAcpTransportNoiseFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-transport-noise-project'
+  const threadId = 'e2e-acp-transport-noise-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP transport noise',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-noise',
+            role: 'user',
+            content: 'make a pr',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-noise',
+            role: 'assistant',
+            content: [
+              'https://github.com/copse-dev/agent-pane/pull/1818',
+              '',
+              'Error: RetriableError: WritableIterable is closed',
+            ].join('\n'),
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+  writeSettings({ developerMode: true })
 }
 
 /** Two user turns followed by enough output to exercise the latest-prompt sticky anchor. */
@@ -1992,6 +2146,79 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
+/** ACP turn that exhausted its one recovery attempt without producing final prose. */
+export function seedAcpUnfinishedTurnFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-unfinished-project'
+  const threadId = 'e2e-acp-unfinished-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP unfinished turn recovery',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-unfinished',
+            role: 'user',
+            content: 'Update the Selenium ADR with the spec findings.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-tools',
+            role: 'assistant',
+            content:
+              'Confirmed the key spec facts. Let me check the upstream issue before I write.',
+            toolCalls: [
+              {
+                id: 'tc-acp-upstream-search',
+                name: 'run_shell',
+                args: { command: 'rg "WebDriver BiDi" docs/' },
+                status: 'done',
+                result: 'docs/adr/selenium.md:WebDriver BiDi migration notes',
+                kind: 'search',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-acp-fallback',
+            role: 'assistant',
+            content:
+              'The external agent stopped after using its tools without providing a final result. Send “continue” to resume.',
+            turnOutcome: {
+              status: 'failed',
+              stopReason: 'error',
+              rawStopReason: 'end_turn',
+              source: 'host',
+              executor: 'acp',
+              provider: 'claude-agent-acp',
+              model: 'acp:claude-agent-acp#opus[1m]',
+              lastEvent: 'text',
+              recovery: {
+                reason: 'ended_after_tools',
+                attempted: true,
+                recovered: false,
+              },
+              endedAt: now + 2,
+            },
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+        ],
+        usage: { inputTokens: 800, outputTokens: 120 },
+        createdAt: now,
+        updatedAt: now + 2,
       },
     ],
   })

@@ -7,7 +7,11 @@ import {
   invalidateIndex,
 } from './file-index.ts'
 import { ensureSemanticIndex } from './semantic-index.ts'
-import { setSemanticIndexScaleGuarded, setSemanticIndexUnavailable } from './index-status.ts'
+import {
+  clearSemanticIndexStatus,
+  setSemanticIndexScaleGuarded,
+  setSemanticIndexUnavailable,
+} from './index-status.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import {
   isRootWatched,
@@ -156,6 +160,10 @@ export function startWorkspaceIndexing(root: string): void {
   if (previous && previous !== key) {
     stopWorkspaceIndexWatcher(previous)
     retainDormantPrimaryIndex(previous)
+    // Status is global — drop the outgoing root's skipped/limited/unavailable
+    // chip so it cannot linger on the incoming project while scale evidence
+    // loads (and so a missing semantic backend cannot leave it stuck forever).
+    clearSemanticIndexStatus()
   }
 
   perfMark('index:requested', { root: pathLabel(key) })

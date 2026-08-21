@@ -158,16 +158,25 @@ jobs:
             echo "::notice::PR #$PR_NUMBER is $state — skipping reconcile."
             echo "open=false" >> "$GITHUB_OUTPUT"
           fi
-      # PAT so the resolving push re-triggers the PR's CI (GITHUB_TOKEN pushes are
-      # recursion-guarded and wouldn't fire `synchronize`, leaving ci-passed stale
-      # on the new head). Falls back to github.token: the conflict still clears,
-      # just without the CI re-trigger.
+      # Push as the copse-release-bot App so the resolving push re-triggers the
+      # PR's CI (GITHUB_TOKEN pushes are recursion-guarded and wouldn't fire
+      # `synchronize`, leaving ci-passed stale on the new head). continue-on-error
+      # keeps the github.token fallback: the conflict still clears, just without
+      # the CI re-trigger.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        if: steps.pr.outputs.open == 'true'
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - uses: actions/checkout@v7.0.1
         if: steps.pr.outputs.open == 'true'
         with:
           ref: ${{ matrix.pr.head }}
           fetch-depth: 0
-          token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
       # Only to run check-screenshots.mts --own-paths, which walks the repo and git
       # with no external dependencies — no `npm ci`, so this stays a cheap job.
       - uses: actions/setup-node@v7
@@ -280,13 +289,16 @@ jobs:
           done <<< "$conflicts"
           git add tests/e2e/screenshots/
           # If the base advanced a file under .github/workflows/, the merge folds
-          # that change in, and a token without `workflow` scope has its push
-          # rejected ("refusing to allow a Personal Access Token to create or
-          # update workflow ... without workflow scope").
+          # that change in, and a token without the workflow-file privilege has its
+          # push rejected ("refusing to allow a GitHub App to create or update
+          # workflow ... without `workflows` permission"). The copse-release-bot
+          # App is deliberately NOT granted `workflows: write` — it is installed
+          # org-wide, and an actor that can rewrite CI definitions everywhere is a
+          # bigger grant than resolving these merges is worth.
           #
           # This used to bail BEFORE pushing whenever the merge touched a workflow
           # file at all — which made the hand-off unconditional and unfixable: it
-          # fired even once SCREENSHOTS_PAT *had* the scope, so the note telling
+          # fired even once the pushing identity *had* the privilege, so the note telling
           # people that granting it "lets CI resolve these automatically" was
           # false. It also scaled badly. A single base commit touching
           # .github/workflows/ puts that change in EVERY stale branch's merge, so
@@ -344,14 +356,14 @@ jobs:
             const workflow = (process.env.WORKFLOW_FILES || '').split('\n').filter(Boolean);
             // Two reasons CI can't finish the merge for you: a non-screenshot file
             // genuinely conflicts, or the base advanced a workflow file that CI's
-            // PAT isn't scoped to push. Both need a human to merge/rebase.
+            // App isn't permitted to push. Both need a human to merge/rebase.
             const base = process.env.BASE_BRANCH;
             const bullets = (process.env.WORKFLOW_FILES ? workflow : manual).map((p) => `- \`${p}\``);
             const reason = process.env.WORKFLOW_FILES
               ? `\`${base}\` advanced and screenshot conflicts were resolved automatically, but the ` +
-                'merge updates these **workflow** files, which CI\'s token isn\'t scoped to push. ' +
-                `Merge or rebase \`${base}\` by hand (or grant the \`SCREENSHOTS_PAT\` the \`workflow\` scope ` +
-                'to let CI resolve these automatically):'
+                'merge updates these **workflow** files, which CI\'s token isn\'t permitted to push. ' +
+                `Merge or rebase \`${base}\` by hand (or grant the release App the \`workflows: write\` ` +
+                'permission to let CI resolve these automatically):'
               : `\`${base}\` advanced and screenshot conflicts were resolved automatically, but ` +
                 'these **non-screenshot** files conflict and can\'t be auto-merged. ' +
                 `Resolve them by hand (merge or rebase \`${base}\`):`;

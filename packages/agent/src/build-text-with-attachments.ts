@@ -219,6 +219,36 @@ function buildArchiveRefBlock(refs: ArchiveRefAttachment[]): string {
 }
 
 /**
+ * A fence the content cannot close: one backtick longer than the longest
+ * backtick run inside it (minimum the usual three). CommonMark only terminates
+ * a fenced block at a run at least as long as the opener, so escalating keeps
+ * embedded ``` fences inert — an attachment must not be able to end its own
+ * container and have the remainder read as message text.
+ */
+function fenceFor(content: string): string {
+  let longest = 0
+  let run = 0
+  for (const ch of content) {
+    if (ch === '`') {
+      run++
+      if (run > longest) longest = run
+    } else {
+      run = 0
+    }
+  }
+  return '`'.repeat(Math.max(3, longest + 1))
+}
+
+/**
+ * Labels come from file paths and paste previews; a newline or other control
+ * character in one would split the `// label` header line and let label text
+ * masquerade as attachment content.
+ */
+function sanitizeLabel(label: string): string {
+  return label.replace(/\p{Cc}+/gu, ' ').trim()
+}
+
+/**
  * The fenced block a labelled attachment inlines into the prompt. Shared by the
  * end-of-message attachment path below and the composer's inline paste chips,
  * which expand in place, so both render the one format the agent sees.
@@ -228,7 +258,9 @@ export function renderTextBlock(
   content: string,
   maxChars: number = ATTACHMENT_MAX_CHARS,
 ): string {
-  return `\`\`\`\n// ${label}\n${truncateAttachmentContent(content, maxChars)}\n\`\`\``
+  const body = truncateAttachmentContent(content, maxChars)
+  const fence = fenceFor(body)
+  return `${fence}\n// ${sanitizeLabel(label)}\n${body}\n${fence}`
 }
 
 export function buildTextWithAttachments(

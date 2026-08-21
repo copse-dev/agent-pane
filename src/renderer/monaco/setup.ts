@@ -1,4 +1,5 @@
 import type * as Monaco from 'monaco-editor'
+import { createWorkerHandout } from './worker-handout.ts'
 
 declare global {
   // Monaco's ESM worker loader joins `vs/...` module ids against this root.
@@ -62,19 +63,38 @@ function workerEntryRelativeToMonacoRoot(label: string): string {
   }
 }
 
-function createMonacoWorker(label: string): Promise<Worker> {
-  const cached = workerPromises.get(label)
-  if (cached) return cached
+/**
+ * Monaco owns every worker {@link loadMonaco}'s `getWorker` hands it: after
+ * five idle minutes (or a model-less window) it terminates the instance and
+ * asks `getWorker` again on the next request. Memoising the instance per label
+ * returned that already-terminated worker, so no diff ever computed again in
+ * this window — every Changes diff rendered as plain uncoloured text while a
+ * freshly opened pop-out window still coloured the same file (#1753). The
+ * handout keeps the pre-warm (below) but surrenders each instance at most once.
+ *
+ * The TTL keeps windows that never compute a diff (chat-only sessions,
+ * pop-outs) from parking an idle worker thread forever: a warm instance no
+ * `getWorker` call claims in time is terminated, and Monaco's first request
+ * after that simply boots cold.
+ */
+const WARM_WORKER_TTL_MS = 45_000
 
-  const promise = createMonacoWorkerOnce(label).catch((err: unknown) => {
-    workerPromises.delete(label)
-    throw err
-  })
-  workerPromises.set(label, promise)
-  return promise
-}
+const monacoWorkers = createWorkerHandout(createMonacoWorkerOnce, {
+  ttlMs: WARM_WORKER_TTL_MS,
+  onDiscard: (worker) => {
+    worker.terminate()
+  },
+})
 
-const workerPromises = new Map<string, Promise<Worker>>()
+/**
+ * The label Monaco's `EditorWorkerService` passes to `getWorker` when it needs
+ * the generic editor worker (diff computation lives there). Monaco offers no
+ * public constant for it, so this coupling is pinned by
+ * `editor-worker-label.test.ts`, which fails if a monaco-editor upgrade renames
+ * the label — silently warming a never-claimed label would re-create the
+ * orphan-worker leak this module exists to prevent.
+ */
+export const EDITOR_WORKER_SERVICE_LABEL = 'editorWorkerService'
 
 function createMonacoWorkerOnce(label: string): Promise<Worker> {
   // Resolved against the Monaco root, not the page: when the tree is shared
@@ -184,7 +204,7 @@ export function loadMonaco(): Promise<typeof Monaco> {
     // ESM worker or requests such as TypeScript diagnostics hit the editor worker.
     window.MonacoEnvironment = {
       getWorker(_workerId: string, label: string): Promise<Worker> {
-        return createMonacoWorker(label)
+        return monacoWorkers.take(label)
       },
     }
     // Diff computation uses the generic editor worker. Await it before resolving
@@ -204,7 +224,9 @@ export function ensureMonacoEditorWorker(): Promise<void> {
   if (typeof Worker === 'undefined') return Promise.resolve()
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   return Promise.race([
-    createMonacoWorker('editor').then(
+    // This warmed instance is the one EditorWorkerService's first diff request
+    // takes over (see EDITOR_WORKER_SERVICE_LABEL for the coupling contract).
+    monacoWorkers.warm(EDITOR_WORKER_SERVICE_LABEL).then(
       () => undefined,
       () => undefined,
     ),

@@ -172,6 +172,11 @@ const STORAGE_KEY = z.enum(RENDERER_STORAGE_KEYS)
 
 export const zProjectId = z.string().regex(/^[\w-]{1,128}$/)
 
+export const mainWindowNavigationSchema = z.object({
+  activeProjectId: zProjectId.nullable(),
+  activeThreadId: zThreadId.nullable(),
+})
+
 const imageDataUrlSchema = z
   .string()
   .max(12 * 1024 * 1024)

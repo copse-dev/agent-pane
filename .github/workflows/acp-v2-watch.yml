@@ -1,0 +1,70 @@
+name: ACP v2 SDK watch
+
+# Nightly re-check of the question docs/acp-v2-readiness.md leaves open: how much
+# of ACP protocol v2 does the published SDK expose, and has that surface moved?
+# Copse's integration is v1 by design (the SDK's MAIN entry is
+# PROTOCOL_VERSION === 1), but since 1.3.0 the same package also publishes
+# ./experimental/v2 — which arrived in a MINOR release, with no major bump and no
+# new dist-tag. That is why the watch reads the package's export map rather than
+# just its version numbers, and why it exists at all: the last surface change
+# went unnoticed for weeks.
+#
+# Deliberately its OWN workflow rather than a nightly job in ci.yml: it is
+# advisory, not a merge gate (docs/testing-strategy.md), it needs no build, no
+# dependency restore, and no runner fleet, and a red run here must not read as
+# "CI is broken". Same posture as codeql.yml / gitleaks.yml.
+#
+# The offline half of the check — that the SDK we build against still reports
+# protocol v1 — is a unit test (scripts/acp-v2-watch.test.ts) and runs in the
+# normal gate on every PR.
+
+on:
+  schedule:
+    # Ahead of ci.yml's 06:17 UTC nightly, and off the top of the hour to avoid
+    # GitHub Actions' busiest cron window. A registry poll has no deadline; this
+    # only keeps the day's first look at the fleet uncluttered.
+    - cron: '43 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Nothing here races anything: a delayed cron overlapping a manual dispatch
+# should queue, not cancel — cancelling would silently skip a night's check.
+concurrency:
+  group: acp-v2-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    # CHECKS_RUNNER routes to the self-hosted check fleet when set (see ci.yml's
+    # routing note); hosted otherwise. Scheduled/manual, trusted only.
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Node only — NOT ./.github/actions/setup. The watch is dependency-free by
+      # design (node builtins plus repo-local modules), so it skips the
+      # multi-minute node_modules restore that action pays for. If the script
+      # ever grows a package dependency, this has to become the setup action.
+      - uses: actions/setup-node@v7
+        with: { node-version-file: '.nvmrc' }
+
+      # Activate the packageManager-pinned pnpm so the run uses the same command
+      # as a developer would locally. No install follows — `pnpm run` on a
+      # dependency-free script needs nothing from node_modules.
+      - run: |
+          corepack enable
+          corepack prepare --activate
+        shell: bash
+
+      # Exits non-zero when the published v2 surface differs from the one already
+      # triaged — above all a v2 entry point outside ./experimental/ — and appends
+      # its report to the run summary.
+      # The red run IS the notification; GitHub emails the workflow's author when
+      # a scheduled run fails. docs/acp-v2-readiness.md has the migration plan,
+      # and scripts/acp-v2-watch.mts documents how to acknowledge a candidate so
+      # the watch stops going red for the length of a migration.
+      - name: Check npm for a protocol-v2 SDK
+        run: pnpm run watch:acp-v2

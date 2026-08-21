@@ -44,7 +44,8 @@ function applyOrder(store: AppStore, api: ApiClient, next: ProjectOrder): boolea
   // Persist only what moved: `projects` also carries the active-project pointer,
   // and rewriting it for a pure group rename would be a needless config write.
   if (projectsChanged) {
-    void saveProjects(api, next.projects, store.getState().activeProjectId)
+    const { activeProjectId, activeThreadId } = store.getState()
+    void saveProjects(api, next.projects, activeProjectId, activeThreadId)
   }
   if (groupsChanged) void saveProjectGroups(api, next.groups)
   return true

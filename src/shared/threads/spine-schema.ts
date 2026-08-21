@@ -6,6 +6,7 @@ import type {
   Thread,
   ThreadReview,
   TranscriptAttachment,
+  TurnOutcome,
 } from '@shared/types'
 import { planArtifactRefs } from './plan-schema.ts'
 
@@ -115,6 +116,8 @@ export interface SpineMessageLine {
    * before they were recorded.
    */
   parameters?: ModelParameters
+  /** Terminal state and bounded diagnostics for this turn. */
+  turnOutcome?: TurnOutcome
   /** Post-turn review verdict anchored to this message (kept inline — small). */
   review?: ThreadReview
   /**

@@ -10,6 +10,7 @@ import type { ToolRegistry } from '../services/tool-registry.ts'
 
 export const browserNavigateTool = defineTool({
   name: 'browser_navigate',
+  provenance: 'external',
   description:
     'Open a URL in the built-in headless browser. Loopback (localhost) targets run automatically; other origins prompt for approval. Returns the resolved title and URL.',
   parameters: z.object({
@@ -47,6 +48,7 @@ export const browserPreviewTool = defineTool({
 
 export const browserSnapshotTool = defineTool({
   name: 'browser_snapshot',
+  provenance: 'external',
   description:
     'Capture an accessibility snapshot of the current page as an indented outline. Interactive elements carry [ref=…] handles for browser_click / browser_type. Prefer this over a screenshot for reading or interacting with a page.',
   parameters: z.object({
@@ -72,6 +74,7 @@ export const browserScreenshotTool = defineTool({
 
 export const browserClickTool = defineTool({
   name: 'browser_click',
+  provenance: 'external',
   description:
     'Click an element by its snapshot ref (e.g. e7). Run browser_snapshot first to obtain refs.',
   parameters: z.object({
@@ -85,6 +88,7 @@ export const browserClickTool = defineTool({
 
 export const browserTypeTool = defineTool({
   name: 'browser_type',
+  provenance: 'external',
   description: 'Type text into an input/textarea identified by its snapshot ref.',
   parameters: z.object({
     ref: z.string().describe('Element ref from a snapshot, e.g. e5'),
@@ -98,6 +102,7 @@ export const browserTypeTool = defineTool({
 
 export const browserTabsTool = defineTool({
   name: 'browser_tabs',
+  provenance: 'external',
   description: 'List open browser tabs, or close one with action "close" and a viewId.',
   parameters: z.object({
     action: z.enum(['list', 'close']).optional().default('list'),

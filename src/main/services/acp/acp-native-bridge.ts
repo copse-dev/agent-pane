@@ -13,11 +13,13 @@ import { runWithAdvisorContext } from '../advisor-runner-context.ts'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
-import { runWithThreadExecutionOwner } from '../thread-execution-context.ts'
-import { getActiveProjectId } from '../workspace.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../thread-execution-context.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
-import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import { BRIDGE_MCP_SERVER_NAME, matchesBridgedToolName } from './acp-bridge-name.ts'
 
 export { BRIDGE_MCP_SERVER_NAME }
 
@@ -128,48 +130,6 @@ export function activeBridgeToolNames(): readonly string[] {
 }
 
 /**
- * Per-tool matchers over a permission request's title, anchored at the *start*
- * of the (code-unwrapped, trimmed) title: an optional `mcp` prefix, the bridge
- * server name (`copse`), a separator, then a bridged tool name. Both observed
- * shapes match:
- *
- * - `copse-gh_pr_list: gh_pr_list` — Cursor, server name leading.
- * - `mcp__copse__gh_pr_view` — Claude, server name *infixed* under the
- *   conventional `mcp__` prefix.
- *
- * Claude's shape was missed until a wire trace (#1659) showed it: `^copse`
- * cannot match a title starting `mcp__`, so every bridged call under Claude fell
- * through to a duplicate permission prompt — exactly what this gate exists to
- * remove. The optional prefix is the literal `mcp` rather than "any leading
- * token" on purpose; see the anchoring note below.
- *
- * Anchoring — rather than searching anywhere in the title — matters because
- * `copse` is a common token in this very repo: a prose title like
- * `Edit copse-gh_pr_list-notes.md` must not be mistaken for a bridged call.
- * Admitting an arbitrary leading word would reopen exactly that, since
- * `Run copse gh_pr_list now` would then match. The separator is any run of
- * non-alphanumeric joiners (the inherent shape of `server<sep>tool`) rather than
- * hard-coded to `-`, so an agent that joins with `/`, `_`, `.`, or `__` still
- * matches; a title in some entirely different shape just falls through to the
- * normal prompt.
- *
- * Codex is a third shape this cannot help: it sends no `title` on permission
- * requests at all (only `kind`, `rawInput`, `status`, `toolCallId`), so its
- * bridged calls still double-prompt. Fixing that needs a non-title signal and
- * a trace of a Codex MCP call, which we do not have yet.
- */
-function escapeRegex(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function bridgeTitleMatcher(tool: string): RegExp {
-  return new RegExp(
-    `^(?:mcp[^a-z0-9]+)?${BRIDGE_MCP_SERVER_NAME}[^a-z0-9]+${escapeRegex(tool)}(?![a-z0-9_])`,
-    'i',
-  )
-}
-
-/**
  * Best-effort check that an ACP permission request describes one of Copse's own
  * bridged native tools, so the client can auto-approve it instead of showing a
  * prompt that only duplicates the bridge's own gate.
@@ -190,11 +150,18 @@ function bridgeTitleMatcher(tool: string): RegExp {
  * and a dishonest agent forging the title is already outside this gate's remit:
  * its own read/edit/execute tools are the larger surface, gated by these same
  * prompts. All this removes is the duplicate approval for the honest case.
+ *
+ * Codex is a shape this cannot help with: it sends no `title` on permission
+ * requests at all (only `kind`, `rawInput`, `status`, `toolCallId`), so its
+ * bridged calls still double-prompt. Fixing that needs a non-title signal and a
+ * trace of a Codex MCP permission request, which we do not have yet. Codex's
+ * dot-joined *tool-call* names do match `matchesBridgedToolName`, which is what
+ * the agent-eval harness scores.
  */
 export function isBridgedNativeToolTitle(title: string | null | undefined): boolean {
   if (!title) return false
   const text = unwrapInlineCode(title)
-  return activeBridgeToolNames().some((tool) => bridgeTitleMatcher(tool).test(text))
+  return activeBridgeToolNames().some((tool) => matchesBridgedToolName(text, tool))
 }
 
 export interface AcpNativeBridge {
@@ -210,6 +177,14 @@ export interface AcpNativeBridge {
   token: string
   /** Set only while this bridge's owning thread is running an ACP turn. */
   setAdvisorContext: (context: AdvisorRunnerContext | null) => void
+  /**
+   * Bind the turn's already-resolved execution context so bridged tools resolve
+   * paths against the same root as the turn itself — in worktree checkout mode
+   * the thread's worktree, never the shared checkout (#1439). Set around each
+   * turn like the advisor context; null between turns, when every bridged tool
+   * call is rejected outright rather than running against a fallback root.
+   */
+  setExecutionContext: (context: ThreadExecutionContext | null) => void
   /**
    * Bind the current turn's abort signal so in-flight bridged tools (and their
    * approval prompts) cancel when the turn ends — including the case where the
@@ -242,12 +217,13 @@ interface BridgeExecuteContext {
   /** Owning Copse thread — rebound into ALS so approvals attribute correctly. */
   threadId: string
   /**
-   * Owning project, read at request time rather than captured at session start
-   * so a project switch mid-session cannot write run-scoped state to the thread
-   * store of a project the user has left. Null when no project is active, in
-   * which case owner-scoped tools fail closed rather than guessing.
+   * Live reader for the in-flight turn's resolved execution context; null
+   * between turns. Read at request time rather than captured at session start
+   * so bridged calls always execute against the current turn's root and
+   * identity, and a call landing outside any turn is rejected outright rather
+   * than falling back to the shared checkout.
    */
-  projectId: string | null
+  getExecutionContext: () => ThreadExecutionContext | null
   networkScopeAlreadyApplies: boolean
   recordWorkspaceWrite: (path: string) => void
 }
@@ -333,6 +309,29 @@ function buildMcpServer(
         isError: true,
       }
     }
+    // Fail closed at the turn boundary (#1439): the turn's execution context is
+    // nulled when the prompt settles, but the pooled bridge stays live and the
+    // turn's abort fires slightly later, so a straggling call can land in that
+    // gap (ACP agents do end turns with bridged calls still outstanding).
+    // Running it unbound would resolve roots via the shared-checkout fallback
+    // in getAgentExecutionRoot() — the exact wrong-tree write the bound context
+    // exists to prevent — so reject every bridged call outright instead.
+    // tools/list stays unguarded: agents list at session setup, between turns.
+    const executionContext = ctx.getExecutionContext()
+    if (!executionContext) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              `Tool call "${name}" arrived after its agent turn ended; ` +
+              'no thread execution context is bound, so the bridge refuses to run it ' +
+              'against a fallback workspace root.',
+          },
+        ],
+        isError: true,
+      }
+    }
     try {
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
@@ -349,16 +348,15 @@ function buildMcpServer(
       // the thread identity so approval prompts / idle-deadline pauses attribute
       // to the owning thread (and cancelApprovalsForThread can find them).
       //
-      // The execution *owner* is rebound for the same reason: a tool that keeps
-      // run-scoped state (read_archive unpacks into the owning thread's
-      // directory) needs to know whose thread this is. Identity only — roots
-      // stay as they resolve today, so no other bridged tool changes.
-      const owner = ctx.projectId ? { projectId: ctx.projectId, threadId: ctx.threadId } : null
+      // The turn's full execution context is rebound for the same reason
+      // (#1439): without it, root resolution falls back to the shared checkout,
+      // so a bridged tool in a worktree-mode thread would edit a different tree
+      // than the turn itself. The context is the turn's already-resolved one —
+      // set by agent-service around the prompt — not a fresh per-request
+      // resolve; the guard above already rejected any call with none bound.
       const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
         runWithActiveRunIdentity(ctx.threadId, () =>
-          owner
-            ? runWithThreadExecutionOwner(owner, withPermissionContext)
-            : withPermissionContext(),
+          runWithThreadExecutionContext(executionContext, withPermissionContext),
         )
       const advisor = advisorContext.current
       const { result, images } =
@@ -459,6 +457,7 @@ export async function startAcpNativeBridge(
   // advisor call; simultaneous bridges can never see one another's transcript.
   const advisorContext: { current: AdvisorRunnerContext | null } = { current: null }
   let turnSignal: AbortSignal | null = null
+  let executionContext: ThreadExecutionContext | null = null
   let workspaceWriteObserver: ((path: string) => void) | null = null
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
@@ -484,7 +483,7 @@ export async function startAcpNativeBridge(
         getTurnSignal: () => turnSignal,
         getCallSignal: () => callAbort.signal,
         threadId: opts.threadId,
-        projectId: getActiveProjectId(),
+        getExecutionContext: () => executionContext,
         networkScopeAlreadyApplies,
         recordWorkspaceWrite: (path) => workspaceWriteObserver?.(path),
       })
@@ -522,6 +521,9 @@ export async function startAcpNativeBridge(
     toolNames: bridgedTools(registry).map((tool) => tool.name),
     setAdvisorContext: (context): void => {
       advisorContext.current = context
+    },
+    setExecutionContext: (context): void => {
+      executionContext = context
     },
     setTurnSignal: (next): void => {
       turnSignal = next

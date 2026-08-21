@@ -44,6 +44,21 @@ interface Hydrator {
 /** Set by {@link attachThreadHydration}; the imperative API routes through it. */
 let activeHydrator: Hydrator | null = null
 
+/** Threads whose most recent transcript read failed; see `fetchInto`'s catch. */
+const failedThreadIds = new Set<string>()
+
+/**
+ * True when this thread's last hydration attempt failed. The conversation view
+ * renders an honest failure line instead of a "Loading…" that will never
+ * finish, and stops suppressing the live activity row — the agent may still be
+ * running even though the transcript could not be read. The mark clears when a
+ * new attempt starts (reselecting the thread, or an imperative
+ * {@link ensureThreadMessages}).
+ */
+export function hydrationFailed(threadId: string): boolean {
+  return failedThreadIds.has(threadId)
+}
+
 /**
  * Load `threadId`'s transcript if it is not already in memory, and resolve once
  * the store holds it. Safe to call for a thread that is already hydrated (it
@@ -107,6 +122,9 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
     const existing = inFlight.get(key)
     if (existing) return existing
 
+    // A new attempt supersedes any recorded failure: the view goes back to the
+    // ordinary loading notice while this read is in flight.
+    failedThreadIds.delete(threadId)
     const endHydrate = perfBegin('thread:hydrate')
     const request = api.threads
       .loadMessages(projectId, threadId)
@@ -120,9 +138,16 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
         if (state.activeProjectId !== projectId) return
         if (!state.threads.some((t) => t.id === threadId)) return
         store.setState({
-          threads: state.threads.map((t) =>
-            t.id === threadId ? { ...t, messages, messagesLoaded: true } : t,
-          ),
+          threads: state.threads.map((t) => {
+            if (t.id !== threadId) return t
+            // Union, not overwrite: the agent may have streamed messages into
+            // this thread while the read was in flight — or while its project
+            // was backgrounded (#1841) — and those are not in the disk
+            // transcript yet. Disk history first, then the streamed tail.
+            const diskIds = new Set(messages.map((m) => m.id))
+            const streamedMeanwhile = t.messages.filter((m) => !diskIds.has(m.id))
+            return { ...t, messages: [...messages, ...streamedMeanwhile], messagesLoaded: true }
+          }),
         })
         touch(threadId)
         evict()
@@ -130,8 +155,13 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
       })
       .catch((err: unknown) => {
         // Leaving `messagesLoaded` false means selecting the thread again
-        // retries, rather than showing an empty transcript forever.
+        // retries, rather than showing an empty transcript forever. Record the
+        // failure and announce it so the view stops claiming "Loading…" —
+        // `hydrateActive` skips a failed thread until it is reselected, so this
+        // emit cannot refetch in a loop.
         console.error('[threads] could not load transcript', err)
+        failedThreadIds.add(threadId)
+        store.emit('threads_changed')
       })
       .finally(() => {
         inFlight.delete(key)
@@ -153,15 +183,27 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
     },
   }
 
+  /**
+   * The thread `hydrateActive` last saw active, for telling a fresh selection
+   * from a re-entrant `threads_changed` about the same thread. A failed thread
+   * retries on the former and never on the latter — the failure announcement
+   * itself is a `threads_changed`, so retrying on it would fetch in a loop.
+   */
+  let lastActiveThreadId: string | null = null
+
   const hydrateActive = (): void => {
     const { activeProjectId, activeThreadId, threads } = store.getState()
     if (!activeProjectId || !activeThreadId) return
+    const freshlySelected = activeThreadId !== lastActiveThreadId
+    lastActiveThreadId = activeThreadId
     const thread = threads.find((t) => t.id === activeThreadId)
     if (!thread) return
     if (!needsHydration(thread)) {
       touch(activeThreadId)
       return
     }
+    if (freshlySelected) failedThreadIds.delete(activeThreadId)
+    if (failedThreadIds.has(activeThreadId)) return
     void fetchInto(activeProjectId, activeThreadId)
   }
 
@@ -196,6 +238,7 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
     activeHydrator = null
     recency = []
     inFlight.clear()
+    failedThreadIds.clear()
   }
 }
 

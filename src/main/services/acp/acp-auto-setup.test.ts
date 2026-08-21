@@ -52,7 +52,7 @@ const nonPreset: KnownAcpAgent = {
   id: 'gemini-cli',
   title: 'Gemini CLI',
   command: 'gemini',
-  args: ['--experimental-acp'],
+  args: ['--acp'],
 }
 
 const input = (known: KnownAcpAgent, over: Partial<AcpAutoSetupInput> = {}): AcpAutoSetupInput => ({
@@ -313,9 +313,11 @@ describe('updateCurrentAcpAgentModels', () => {
     ])
 
     assert.equal(updated, true)
+    // The seed uses the pre-rename id on purpose: the merge must find it, and
+    // the list must read back canonically (`LEGACY_ACP_AGENT_IDS`).
     assert.deepEqual(listAcpAgents(), [
       {
-        id: 'claude-agent-acp',
+        id: 'claude-acp',
         title: 'User renamed Claude',
         command: 'custom-claude-acp',
         env: { CLAUDE_CONFIG_DIR: '/custom' },
