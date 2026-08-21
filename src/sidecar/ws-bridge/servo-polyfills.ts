@@ -26,4 +26,22 @@ if (typeof crypto.randomUUID !== 'function') {
   Reflect.set(crypto, 'randomUUID', randomUUID)
 }
 
+// document.queryCommandSupported and the rest of the legacy editing API —
+// implemented in Servo but pref-gated (`dom_exec_command_enabled`, default
+// off). monaco-editor's clipboard contrib probes it at module-init, and the
+// missing function kills the whole monaco bundle (no diff or file views).
+// The shell enables the pref (tauri-runtime-servo sets it at Servo startup);
+// this shim keeps the bundle alive on runtimes that don't. Returning false
+// is a spec-permitted answer for any command.
+// The API is deprecated (hence the indirection instead of typed member
+// access — the lint ban on deprecated APIs is the point of this shim).
+const legacyEditingProbe = (name: string): boolean =>
+  typeof Reflect.get(document, name) === 'function'
+if (!legacyEditingProbe('queryCommandSupported')) {
+  Reflect.set(document, 'queryCommandSupported', () => false)
+}
+if (!legacyEditingProbe('queryCommandEnabled')) {
+  Reflect.set(document, 'queryCommandEnabled', () => false)
+}
+
 export {}
