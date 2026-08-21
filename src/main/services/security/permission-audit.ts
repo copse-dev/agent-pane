@@ -1,35 +1,57 @@
-import { randomUUID } from 'node:crypto'
-import {
-  SPINE_SCHEMA_VERSION,
-  type SpinePermissionDecisionLine,
-} from '@shared/threads/spine-schema.ts'
+import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { getHookRunRecordingContext } from '../hook-run-recorder.ts'
-import { appendPermissionDecision } from '../thread-store.ts'
+import { recordDecision } from './decision-log-store.ts'
 
-export type PermissionAuditInput = Omit<
-  SpinePermissionDecisionLine,
-  'v' | 'type' | 'id' | 'turnId' | 'step' | 'decidedAt'
->
+export type PermissionAuditInput = {
+  originalCommand: string
+  effectiveCommand?: string
+  originalMode: 'guarded-yolo'
+  effectiveMode: 'guarded-yolo'
+  sandboxState: 'project-sandbox' | 'unsandboxed'
+  harmDecision: 'allow' | 'prompt' | 'deny'
+  policyDecision: 'allow' | 'prompt' | 'deny'
+  reasons: string[]
+  userResponse: 'approved' | 'declined' | 'not-required'
+}
 
 /**
- * Best-effort durable recording. Authorization never depends on observability:
- * an audit write failure warns after the host-owned decision has already been made.
+ * Best-effort durable recording for Guarded YOLO shell authorizations. Writes a
+ * unified spine `decision` line (with command text in a detail blob) rather than
+ * the legacy `permission_decision` line shape.
  */
 export function recordPermissionDecision(input: PermissionAuditInput): void {
   const context = getHookRunRecordingContext()
-  if (!context) return
-  const line: SpinePermissionDecisionLine = {
-    v: SPINE_SCHEMA_VERSION,
-    type: 'permission_decision',
-    id: randomUUID(),
-    turnId: context.turnId,
-    step: context.step,
-    decidedAt: Date.now(),
-    ...input,
-  }
-  void appendPermissionDecision(context.projectId, context.threadId, line).catch(
-    (error: unknown) => {
-      console.warn('[permission-audit] failed to append permission_decision:', error)
+  const verdict =
+    input.userResponse === 'approved'
+      ? 'approved'
+      : input.userResponse === 'declined'
+        ? 'denied'
+        : 'allowed'
+  recordDecision({
+    kind: 'shell',
+    actor: input.userResponse === 'not-required' ? 'system' : 'user',
+    verdict,
+    subject: SHELL_DECISION_SUBJECT,
+    scope: input.sandboxState === 'unsandboxed' ? 'external' : 'sandbox',
+    reasons: input.reasons,
+    cause: 'shell-guarded-yolo-harm',
+    ...(context
+      ? {
+          projectId: context.projectId,
+          threadId: context.threadId,
+          turnId: context.turnId,
+          step: context.step,
+        }
+      : {}),
+    detail: {
+      originalCommand: input.originalCommand,
+      ...(input.effectiveCommand !== undefined ? { effectiveCommand: input.effectiveCommand } : {}),
+      originalMode: input.originalMode,
+      effectiveMode: input.effectiveMode,
+      sandboxState: input.sandboxState,
+      harmDecision: input.harmDecision,
+      policyDecision: input.policyDecision,
+      userResponse: input.userResponse,
     },
-  )
+  })
 }
