@@ -155,6 +155,25 @@ for now.
    for as long as the burn-down table demands — same renderer, same sidecar
    logic, two `BrowserWindow`/`WebviewWindow` providers.
 
+## First real run (2026-08-21, headless Linux)
+
+The prototype ran windowed under Xvfb + Mesa llvmpipe: Servo composited the
+window, the renderer booted over the WS bridge, the onboarding wizard and the
+main workspace rendered, and a synthetic click on "Skip for now" completed a
+full input → renderer → WebSocket → sidecar → settings-persist round trip.
+Findings folded back into this branch:
+
+- Hidden-then-show windows don't work on Linux: an unmapped GTK window has no
+  X11 handle and Servo needs one for its surface — shell windows are born
+  visible (theme-boot.js covers the flash).
+- Servo (pinned rev) fails to match CSP `'self'` against the
+  `tauri://localhost` origin, so any CSP blocks every same-origin subresource;
+  tauri.html ships without the CSP meta until that's fixed upstream (the
+  Electron build keeps its CSP).
+- Rendering fidelity is usable but rough: heading fonts fall back to serif
+  (font-stack gap worth a look), spacing is slightly off versus Chromium.
+  The engine-gap table below remains the burn-down list.
+
 ## Prototype validation status (this environment)
 
 - `cargo metadata --locked` resolves the full `tauri-runtime-servo` graph (989
