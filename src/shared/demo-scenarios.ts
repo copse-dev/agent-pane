@@ -8,7 +8,7 @@ const FOOTER_INPUT_TOKENS = 50_000
 const FOOTER_OUTPUT_TOKENS = 1_800
 
 const DEMO_CODEX_ACP_AGENT = {
-  id: 'codex',
+  id: 'codex-acp',
   title: 'Codex',
   command: 'codex-acp',
   args: [],

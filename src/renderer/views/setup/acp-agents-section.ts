@@ -305,7 +305,7 @@ export function createAcpAgentsSection(
     const isEdit = Boolean(options.initial)
     const idInput = el('input', {
       type: 'text',
-      placeholder: 'gemini-cli',
+      placeholder: 'gemini',
       autocomplete: 'off',
       ...(isEdit ? { readonly: true } : {}),
     })
