@@ -1,6 +1,6 @@
 import {
   createProvider,
-  createLocalOpenAIProvider,
+  createLMStudioProvider,
   createOpenRouterProvider,
   createExtraCloudProvider,
 } from '@copse/llm/create-provider.ts'
@@ -16,9 +16,9 @@ import {
   resolveLocalServerUrl,
 } from '@shared/lm-studio-defaults.ts'
 import {
+  getLmStudioApiKey,
   getSetting,
   getSettingTrimmed,
-  getLmStudioApiKey,
   resolveApiKey,
 } from '../storage/settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
@@ -242,7 +242,7 @@ export async function buildProvider(
         'No local model available. Open Settings → Local models, check the server URL/API key, and pick a model.',
       )
     }
-    return createLocalOpenAIProvider(url, id, getLmStudioApiKey(), params)
+    return createLMStudioProvider(url, id, getLmStudioApiKey(), params)
   }
   if (isOpenRouterModel(model)) {
     const apiKey = storedOrEnvApiKey('openrouter')
