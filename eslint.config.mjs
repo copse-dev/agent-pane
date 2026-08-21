@@ -38,6 +38,10 @@ export default ts.config(
       'wdio.ci.conf.ts',
       'wdio.eval.conf.ts',
       'wdio.demo.conf.ts',
+      // One-line side-effect import of the preload for the Tauri ws-bridge
+      // bundle; in no tsconfig project (the preload typechecks under
+      // tsconfig.node.json, this entry is browser-side). See scripts/build-tauri.mts.
+      'src/sidecar/ws-bridge/entry.ts',
       'tests/e2e/**',
       'tests/demo/**',
       'tests/fixtures/git-changes-repo/**',
