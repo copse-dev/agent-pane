@@ -1887,7 +1887,10 @@ describe('input bar context fit warning', () => {
 })
 
 describe('next-step tab complete in the composer', () => {
-  function mountWithHint(hint: string | null): { host: HTMLElement; store: ReturnType<typeof createStore> } {
+  function mountWithHint(hint: string | null): {
+    host: HTMLElement
+    store: ReturnType<typeof createStore>
+  } {
     const store = createStore({
       workspaceRoot: '/repo',
       projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
@@ -1963,7 +1966,11 @@ describe('next-step tab complete in the composer', () => {
     const composer = host.querySelector<HTMLElement>('.prompt-input')
     assert.ok(composer)
     composer.textContent = 'my own plan'
-    const event = new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    const event = new window.KeyboardEvent('keydown', {
+      key: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    })
     composer.dispatchEvent(event)
     await flush()
 
