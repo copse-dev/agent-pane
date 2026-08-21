@@ -428,7 +428,7 @@ async function boot(): Promise<void> {
   })
 
   const endLoadProjects = perfBegin('renderer:load-projects')
-  const { projects, activeProjectId, activeThreadId } = await loadProjects(api)
+  const { projects, projectGroups, activeProjectId, activeThreadId } = await loadProjects(api)
   endLoadProjects({ projects: projects.length })
   // Resolve the restored id against the projects actually loaded *before* it
   // reaches the store. Navigation is now per-window, and a window's record can
@@ -443,7 +443,7 @@ async function boot(): Promise<void> {
   const active = firstProject
     ? (projects.find((p) => p.id === activeProjectId) ?? firstProject)
     : undefined
-  store.setState({ projects, activeProjectId: active?.id ?? null })
+  store.setState({ projects, projectGroups, activeProjectId: active?.id ?? null })
   // The baseline stays the value that was *restored*, not the resolved one, so
   // a correction here is a real change and the next flush heals the record.
   markNavigationRestored({ activeProjectId, activeThreadId })
