@@ -41,6 +41,7 @@ function makeMonacoStub(
     onKeyDown: (): { dispose(): void } => ({ dispose(): void {} }),
     getModel: (): null => null,
     getSelection: (): null => null,
+    updateOptions: (): void => {},
   }
   const createModel = (value: string): StubModel => ({
     value,
