@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
+import { addMessage, setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
@@ -1883,5 +1883,103 @@ describe('input bar context fit warning', () => {
     const host = await mountWithEstimate('gpt-4o-mini', 12_000, 128_000)
 
     assert.equal(host.querySelector<HTMLElement>('.composer-context-warning')?.hidden, true)
+  })
+})
+
+describe('next-step tab complete in the composer', () => {
+  function mountWithHint(hint: string | null): { host: HTMLElement; store: ReturnType<typeof createStore> } {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const base = createApi({ currentBranch: 'main' })
+    const api: ApiClient = {
+      ...base,
+      settings: {
+        ...base['settings'],
+        get: (key: string) =>
+          Promise.resolve(key === 'nextStepSuggestionEnabled' ? true : undefined),
+      },
+      agent: {
+        ...base['agent'],
+        suggestNextStep: () => Promise.resolve(hint),
+      },
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, api)
+    return { host, store }
+  }
+
+  function finishTurn(store: ReturnType<typeof createStore>): void {
+    addMessage(store, 'thread-1', 'user', 'fix the parser bug')
+    addMessage(store, 'thread-1', 'assistant', 'Fixed it in parser.ts.')
+    store.emit('thread_status_changed', 'thread-1', 'idle')
+  }
+
+  it('shows the hint as the placeholder with the Tab marker after a turn', async () => {
+    const { host, store } = mountWithHint('Run the tests to verify the fix')
+    await settle()
+    finishTurn(store)
+    await flush()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    assert.equal(composer.getAttribute('data-placeholder'), 'Run the tests to verify the fix')
+    assert.equal(composer.hasAttribute('data-next-step'), true)
+    assert.equal(
+      composer.getAttribute('aria-description'),
+      'Press Tab to insert: Run the tests to verify the fix',
+    )
+  })
+
+  it('Tab inserts the hint into the empty composer and spends the offer', async () => {
+    const { host, store } = mountWithHint('Run the tests to verify the fix')
+    await settle()
+    finishTurn(store)
+    await flush()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }),
+    )
+    await flush()
+
+    assert.equal(composer.textContent, 'Run the tests to verify the fix')
+    assert.equal(composer.getAttribute('data-placeholder'), 'Message…')
+    assert.equal(composer.hasAttribute('data-next-step'), false)
+  })
+
+  it('Tab in a composer with typed text keeps its default behavior', async () => {
+    const { host, store } = mountWithHint('Run the tests to verify the fix')
+    await settle()
+    finishTurn(store)
+    await flush()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'my own plan'
+    const event = new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    composer.dispatchEvent(event)
+    await flush()
+
+    assert.equal(event.defaultPrevented, false)
+    assert.equal(composer.textContent, 'my own plan')
+  })
+
+  it('keeps the plain placeholder when the model offers nothing', async () => {
+    const { host, store } = mountWithHint(null)
+    await settle()
+    finishTurn(store)
+    await flush()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    assert.equal(composer.getAttribute('data-placeholder'), 'Message…')
+    assert.equal(composer.hasAttribute('data-next-step'), false)
   })
 })
