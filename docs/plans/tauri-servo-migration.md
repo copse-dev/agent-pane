@@ -190,9 +190,14 @@ Findings folded back into this branch:
   'self' handling. Workaround candidates until then: serve the frontend from
   `http://localhost` (a trustworthy tuple origin) instead of the custom
   scheme, or carry the polyfills.
-- Composer typing confirmed broken under Servo (`contenteditable`), exactly
-  as the risk table predicts — synthetic keystrokes never reach the input.
-  The `<textarea>` fallback is the top phase-2 item.
+- Composer typing confirmed broken under stock Servo (`contenteditable`),
+  exactly as the risk table predicts — and then **fixed by servo patch 0002**
+  (cherry-picked from the fork branch `codex/contenteditable-user-input`,
+  see the runtime repo's `servo-patches/`): typing, Send, and a model reply
+  all validated in the Servo UI. With the patch series applied, the
+  `<textarea>` fallback becomes optional insurance rather than a
+  prerequisite. Known issue: shift-wrapped characters double-insert under
+  synthetic X11 input; needs a real-keyboard repro.
 - Rendering fidelity is usable but rough: heading fonts fall back to serif
   (font-stack gap worth a look), spacing is slightly off versus Chromium.
   The engine-gap table below remains the burn-down list.
