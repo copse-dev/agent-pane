@@ -110,6 +110,26 @@ describe('git changes viewer', function () {
     const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor')
     await diffViewer.waitForDisplayed({ timeout: 30_000 })
 
+    // The docked pane renders neither the overview-ruler "mini file" strip nor
+    // a second line-number gutter once the narrow host collapses to the inline
+    // view (#1702). The original editor keeps its numbers only side-by-side.
+    await expect($('#git-diff-viewer-host .diffOverview')).not.toBeExisting()
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const root = document.querySelector('#git-diff-viewer-host .monaco-diff-editor')
+          if (!root || root.classList.contains('side-by-side')) return false
+          const originalLineNumbers = root.querySelectorAll(
+            '.original-in-monaco-diff-editor .line-numbers',
+          )
+          return originalLineNumbers.length === 0
+        }),
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the inline view to render a single line-number gutter',
+      },
+    )
+
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff.png'))
 
     // Large staged.ts diffs collapse unchanged lines with context + expandable regions.
