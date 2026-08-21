@@ -211,6 +211,11 @@ export class LMStudioProvider implements LLMProvider {
     signal: AbortSignal | undefined,
     queue: AsyncChunkQueue<ProviderStreamChunk>,
   ): Promise<void> {
+    // Failing the queue ends the stream for our consumer, but the server keeps
+    // predicting until it is told to stop. Own an abort controller for the
+    // prediction so those exits can cancel it instead of leaving a local model
+    // generating tokens nobody will read.
+    const cancel = new AbortController()
     try {
       const [model, chat] = await Promise.all([
         this.client.model(this.modelName),
@@ -220,7 +225,7 @@ export class LMStudioProvider implements LLMProvider {
       const prediction = model.respond(chat, {
         ...this.predictionConfig(),
         rawTools: rawTools.length ? { type: 'toolArray', tools: rawTools } : { type: 'none' },
-        ...(signal ? { signal } : {}),
+        signal: signal ? AbortSignal.any([signal, cancel.signal]) : cancel.signal,
         onPromptProcessingProgress: (progress) => {
           queue.push({ type: 'prompt_progress', fraction: clampProgress(progress) })
         },
@@ -232,7 +237,10 @@ export class LMStudioProvider implements LLMProvider {
           queue.push(toolCallChunk(callId, toolCallRequest))
         },
         onToolCallRequestFailure: (_callId, error) => {
+          // The model emitted a tool call we cannot parse; nothing later in this
+          // prediction can be used, so stop it rather than paying for the rest.
           queue.fail(error)
+          cancel.abort(error)
         },
       })
       const result = await prediction.result()

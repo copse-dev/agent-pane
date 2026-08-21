@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Chat, LLMRespondOpts } from '@lmstudio/sdk'
+import { ToolCallRequestError, type Chat, type LLMRespondOpts } from '@lmstudio/sdk'
 import { LMStudioProvider, lmStudioWebSocketUrl } from './lm-studio-provider.ts'
 import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
@@ -60,6 +60,43 @@ class FakeModel {
     this.chat = chat
     this.opts = opts
     return new FakePrediction(opts)
+  }
+}
+
+/**
+ * Reports an unparseable tool call the way the SDK does — through a callback,
+ * while the prediction keeps running — and settles only once it is cancelled.
+ */
+class FakeToolFailureModel {
+  opts: LLMRespondOpts | null = null
+
+  respond(_chat: Chat, opts: LLMRespondOpts): { result: () => Promise<never> } {
+    this.opts = opts
+    return {
+      result: (): Promise<never> =>
+        new Promise<never>((_resolve, reject) => {
+          opts.onToolCallRequestFailure?.(1, new ToolCallRequestError('bad tool call', '{['))
+          opts.signal?.addEventListener(
+            'abort',
+            (): void => {
+              reject(new Error('prediction cancelled'))
+            },
+            { once: true },
+          )
+        }),
+    }
+  }
+}
+
+class FakeToolFailureClient {
+  readonly modelHandle = new FakeToolFailureModel()
+
+  model(): Promise<FakeToolFailureModel> {
+    return Promise.resolve(this.modelHandle)
+  }
+
+  prepareImageBase64(): Promise<never> {
+    return Promise.reject(new Error('unexpected image'))
   }
 }
 
@@ -214,6 +251,24 @@ describe('LMStudioProvider', () => {
         },
       ],
     )
+  })
+
+  it('cancels the prediction when the model emits an unparseable tool call', async () => {
+    // The SDK reports the bad tool call through a callback and keeps predicting
+    // until it is cancelled, so failing our queue alone would leave the local
+    // model generating tokens no one can read.
+    const client = new FakeToolFailureClient()
+    const provider = new LMStudioProvider('local-model', { client })
+
+    await assert.rejects(
+      async () => {
+        for await (const _ of provider.stream([{ role: 'user', content: 'hello' }], [])) void _
+      },
+      // The parse failure surfaces to the caller rather than being retried:
+      // replaying the same prompt would produce the same broken tool call.
+      /bad tool call/,
+    )
+    assert.equal(client.modelHandle.opts?.signal?.aborted, true)
   })
 
   it('converts the configured OpenAI endpoint into the SDK WebSocket origin', () => {
