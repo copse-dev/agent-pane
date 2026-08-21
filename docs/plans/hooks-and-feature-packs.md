@@ -222,7 +222,8 @@ revisiting this document, not silently diverging in an implementation PR.
     command is assessed by the host-owned Guarded YOLO harm gate after the rewrite.
     Hook allow results, ACP callers, remembered trust, classifier output, and model
     routing hints cannot downgrade a host `prompt` or `deny`. Both the original and
-    effective command are retained in the durable `permission_decision` spine line.
+    effective command are retained on the unified spine `decision` line (command
+    text in `blobs/decision-*.detail.json`).
 19. **Pack stability is manifest data, not inferred UI copy.** Every first-party
     pack declares `stable` or `experimental`; a user pack that omits the field is
     treated as experimental. Settings shows that status before enablement.

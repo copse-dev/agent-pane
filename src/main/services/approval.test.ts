@@ -24,8 +24,18 @@ import {
   resetRunDeadlinesForTest,
 } from './hooks/run-deadline.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
+import { storageSet } from './storage/storage.ts'
 
+const PROJECT = 'proj-approval'
+const THREAD = 't-approval'
 const req: ApprovalRequest = { title: 'Run shell', body: 'rm -rf build', type: 'shell' }
+
+async function requestUnderThread(
+  request: ApprovalRequest,
+  signal?: AbortSignal,
+): Promise<ApprovalResponse> {
+  return runWithActiveRunIdentity(THREAD, () => requestApproval(request, signal))
+}
 
 describe('requestApproval pluggable transport', () => {
   let auditRoot: string
@@ -35,6 +45,7 @@ describe('requestApproval pluggable transport', () => {
     previousRoot = process.env['COPSE_WORKSPACE_DIR']
     auditRoot = mkdtempSync(join(tmpdir(), 'copse-approval-audit-'))
     process.env['COPSE_WORKSPACE_DIR'] = auditRoot
+    storageSet('activeProjectId', PROJECT)
   })
 
   afterEach(() => {
@@ -47,12 +58,12 @@ describe('requestApproval pluggable transport', () => {
 
   it('denies (without hanging) when no handler is registered', async () => {
     setApprovalHandler(null)
-    assert.deepEqual(await requestApproval(req), {
+    assert.deepEqual(await requestUnderThread(req), {
       approved: false,
       remember: false,
       resolution: 'unavailable',
     })
-    const events = await readDecisionLog('_global')
+    const events = await readDecisionLog(PROJECT)
     assert.equal(events.at(-1)?.actor, 'system')
     assert.equal(events.at(-1)?.verdict, 'cancelled')
     assert.equal(events.at(-1)?.source, 'unavailable')
@@ -64,15 +75,15 @@ describe('requestApproval pluggable transport', () => {
       seen.push(r)
       return { approved: true, remember: true }
     })
-    assert.deepEqual(await requestApproval(req), { approved: true, remember: true })
+    assert.deepEqual(await requestUnderThread(req), { approved: true, remember: true })
     assert.deepEqual(seen, [req])
   })
 
   it('reverts to denying once the handler is cleared', async () => {
     setApprovalHandler(async () => ({ approved: true, remember: false }))
-    assert.equal((await requestApproval(req)).approved, true)
+    assert.equal((await requestUnderThread(req)).approved, true)
     setApprovalHandler(null)
-    assert.equal((await requestApproval(req)).approved, false)
+    assert.equal((await requestUnderThread(req)).approved, false)
   })
 
   it('returns denied immediately when the signal is already aborted', async () => {
@@ -81,7 +92,7 @@ describe('requestApproval pluggable transport', () => {
       called = true
       return { approved: true, remember: false }
     })
-    assert.deepEqual(await requestApproval(req, AbortSignal.abort()), {
+    assert.deepEqual(await requestUnderThread(req, AbortSignal.abort()), {
       approved: false,
       remember: false,
     })
@@ -95,7 +106,7 @@ describe('requestApproval pluggable transport', () => {
       return { approved: false, remember: false }
     })
     const controller = new AbortController()
-    const pending = requestApproval(req, controller.signal)
+    const pending = requestUnderThread(req, controller.signal)
     await Promise.resolve()
     controller.abort()
     assert.deepEqual(await pending, { approved: false, remember: false })
@@ -107,15 +118,15 @@ describe('requestApproval pluggable transport', () => {
       remember: false,
       resolution: 'timeout',
     }))
-    await requestApproval(req)
+    await requestUnderThread(req)
     setApprovalHandler(async () => ({
       approved: false,
       remember: false,
       resolution: 'window-closed',
     }))
-    await requestApproval(req)
+    await requestUnderThread(req)
 
-    const events = await readDecisionLog('_global')
+    const events = await readDecisionLog(PROJECT)
     assert.deepEqual(
       events.slice(-2).map(({ actor, verdict, source }) => ({ actor, verdict, source })),
       [
@@ -127,14 +138,14 @@ describe('requestApproval pluggable transport', () => {
 
   it("records a request's reasons alongside the answer", async () => {
     setApprovalHandler(async () => ({ approved: true, remember: true }))
-    await requestApproval({
+    await requestUnderThread({
       ...req,
       subject: 'shell command (arguments omitted)',
       scope: 'external-read',
       reasons: ['reads outside the project: ~/.copse'],
     })
 
-    const event = (await readDecisionLog('_global')).at(-1)
+    const event = (await readDecisionLog(PROJECT)).at(-1)
     assert.ok(event)
     // The durable line omits the command, so its reasons are the only record of
     // what the user actually widened access to.
@@ -145,8 +156,8 @@ describe('requestApproval pluggable transport', () => {
 
   it('omits reasons from the log when the request carries none', async () => {
     setApprovalHandler(async () => ({ approved: true, remember: false }))
-    await requestApproval(req)
-    assert.equal((await readDecisionLog('_global')).at(-1)?.reasons, undefined)
+    await requestUnderThread(req)
+    assert.equal((await readDecisionLog(PROJECT)).at(-1)?.reasons, undefined)
   })
 
   it('coalesces identical in-flight requests into one handler call', async () => {

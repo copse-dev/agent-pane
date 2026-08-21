@@ -3,7 +3,11 @@ import { firstNonEmptyString, matchesFallbackType } from '@shared/unknown-value.
 import { getSettingSchema } from './settings-schema.ts'
 import { getExplicitSettingsProfile } from './settings-context.ts'
 
-const settings = new Map<string, unknown>()
+const settings = new Map<string, unknown>([
+  // Unit tests must not wait on an optional LM Studio scope classifier. Suites
+  // that specifically exercise it can `setSetting('safetyClassifierEnabled', true)`.
+  ['safetyClassifierEnabled', false],
+])
 const apiKeys = new Map<string, string>()
 
 function schemaAccepts<T>(

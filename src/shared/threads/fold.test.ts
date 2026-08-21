@@ -172,6 +172,44 @@ test('round-trips tool calls with inline args and a spilled result', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('spills oversized tool args to a blob and folds them back', () => {
+  const fat = 'x'.repeat(3000)
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc-fat',
+          name: 'run_shell',
+          args: { command: `echo ${fat}` },
+          status: 'done',
+          result: 'ok',
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+  const { spine, files } = explodeThread(messages, hash)
+  const argsBlob = files.find((f) => f.ref === 'blobs/tc-fat.args.json')
+  ok(argsBlob)
+  const parsedArgs: unknown = JSON.parse(argsBlob.contents)
+  ok(isRecord(parsedArgs))
+  strictEqual(typeof parsedArgs['command'], 'string')
+  ok(String(parsedArgs['command']).includes(fat))
+  const tc = spine[0]?.toolCalls[0]
+  ok(tc)
+  const tcArgs: unknown = tc.args
+  ok(isRecord(tcArgs))
+  strictEqual(tcArgs['ref'], 'blobs/tc-fat.args.json')
+  deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
+})
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 test('round-trips ACP tool-call display metadata (kind + resultFormat)', () => {
   // External ACP agents tag calls with a kind ('read', 'execute', …) and
   // Markdown-formatted results; both must survive persistence or reloaded

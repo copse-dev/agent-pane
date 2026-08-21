@@ -21,7 +21,7 @@
 
 /**
  * The enumerated reasons a gate interrupts. Stable slugs: they are persisted in
- * `decisions.jsonl` and read back by tooling, so renaming one is a log-format
+ * `decision` spine lines and read back by tooling, so renaming one is a log-format
  * change. Add rather than repurpose.
  */
 export const PROMPT_CAUSES = [
