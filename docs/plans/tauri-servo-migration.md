@@ -198,6 +198,12 @@ Findings folded back into this branch:
   `<textarea>` fallback becomes optional insurance rather than a
   prerequisite. Known issue: shift-wrapped characters double-insert under
   synthetic X11 input; needs a real-keyboard repro.
+- The icon "black blobs" had two stacked causes, both fixed: Servo rasterizes
+  inline SVG from a serialized copy with no CSS context (servo patch 0003
+  injects the computed `color` onto the serialized root), and the app's
+  outline icons carried their fill/stroke entirely in CSS classes (now also
+  set as presentation-attribute fallbacks, inert under Chromium). Titlebar
+  icon set verified pixel-correct under Servo.
 - Rendering fidelity is usable but rough: heading fonts fall back to serif
   (font-stack gap worth a look), spacing is slightly off versus Chromium.
   The engine-gap table below remains the burn-down list.
