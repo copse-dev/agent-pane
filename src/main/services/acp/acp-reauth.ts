@@ -1,4 +1,4 @@
-import { acpReauthCommand, KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
+import { acpReauthCommand, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import type { AcpAuthFailureKind } from '../agent-errors.ts'
 import { requestUserAnswers } from '../ask-user.ts'
 import { canRunTerminalCommand, requestTerminalCommand } from '../exec/terminal-launch.ts'
@@ -45,7 +45,7 @@ function offerQuestion(agentName: string, kind: AcpAuthFailureKind, command: str
  * (headless), or the user declining.
  */
 export async function offerAcpReauth(offer: AcpReauthOffer): Promise<string | null> {
-  const known = KNOWN_ACP_AGENTS.find((agent) => agent.id === offer.agentId)
+  const known = findAcpCatalogEntry(offer.agentId)
   const command = acpReauthCommand(known)
   if (!command) return null
   // Don't ask a question we can't act on — with no Shells pane attached, the

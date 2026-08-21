@@ -253,7 +253,7 @@ function cancelPendingSwitch(store: AppStore, api: ApiClient): void {
   // through setWorkspaceInOrder, the selection through saveProjects' per-key
   // chain), so the project being kept is the one that lands last.
   void setWorkspaceInOrder(api, active.path, active.sshHost)
-  void saveProjects(api, projects, active.id)
+  void saveProjects(api, projects, active.id, store.getState().activeThreadId)
 }
 
 function abortProjectActivation(
@@ -299,7 +299,12 @@ function projectsWithMissingCleared(projects: Project[], id: string): Project[] 
 async function markProjectMissing(store: AppStore, api: ApiClient, id: string): Promise<void> {
   const projects = store.getState().projects.map((p) => (p.id === id ? { ...p, missing: true } : p))
   store.setState({ projects })
-  await saveProjects(api, projects, store.getState().activeProjectId)
+  await saveProjects(
+    api,
+    projects,
+    store.getState().activeProjectId,
+    store.getState().activeThreadId,
+  )
   store.emit('projects_changed')
 }
 
@@ -323,7 +328,7 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
     // Cancel an in-flight switch that was targeting this project, putting the
     // workspace back on the project that stays active.
     if (wasExpanded) cancelPendingSwitch(store, api)
-    await saveProjects(api, projects, state.activeProjectId)
+    await saveProjects(api, projects, state.activeProjectId, state.activeThreadId)
     store.setState({
       projects,
       expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId,
@@ -336,7 +341,7 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
   supersedePendingSwitch()
   switchGeneration += 1
   const next = projects[0] ?? null
-  await saveProjects(api, projects, next?.id ?? null)
+  await saveProjects(api, projects, next?.id ?? null, null)
 
   if (!next) {
     store.setState({
@@ -442,7 +447,7 @@ async function finishActivate(
   // flight has to know main and config were pointed at `id`, and put them back
   // (see cancelPendingSwitch).
   if (pendingSwitch?.gen === gen) pendingSwitch.dispatched = true
-  const persistSelection = saveProjects(api, store.getState().projects, id)
+  const persistSelection = saveProjects(api, store.getState().projects, id, pendingThreadId)
   const endWorkspace = perfBegin('switch:workspace-set')
   const workspaceOpened = setWorkspaceInOrder(api, path, sshHost)
   const [, , opened] = await Promise.all([flushOutgoing, persistSelection, workspaceOpened])
@@ -510,7 +515,7 @@ async function finishActivate(
   if (loaded.length === 0) createThread(store)
   else normalizeBlankThreads(store)
 
-  await saveProjects(api, store.getState().projects, id)
+  await saveProjects(api, store.getState().projects, id, store.getState().activeThreadId)
   store.emit('projects_changed')
   store.emit('workspace_changed')
   store.emit('threads_changed')
@@ -695,13 +700,18 @@ async function quarantineAndRestoreNext(
     threads: [],
     activeThreadId: null,
   })
-  await saveProjects(api, store.getState().projects, null)
+  await saveProjects(api, store.getState().projects, null, null)
   store.emit('workspace_changed')
   store.emit('threads_changed')
 }
 
 // Restore a project on launch without re-creating threads it already has.
-export async function restoreProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
+export async function restoreProject(
+  store: AppStore,
+  api: ApiClient,
+  id: string,
+  preferredThreadId: string | null = null,
+): Promise<void> {
   const proj = store.getState().projects.find((p) => p.id === id)
   if (!proj) return
   if (proj.sshHost) {
@@ -732,12 +742,23 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
     expandedProjectId: id,
     workspaceRoot: proj.path,
     threads: loaded,
-    activeThreadId: loaded[0]?.id ?? null,
+    activeThreadId:
+      preferredThreadId && loaded.some((thread) => thread.id === preferredThreadId)
+        ? preferredThreadId
+        : (loaded[0]?.id ?? null),
     // Opening succeeded — lift any prior quarantine on this project (#997).
     projects: projectsWithMissingCleared(store.getState().projects, id),
   })
-  if (loaded[0]) markThreadRead(store, loaded[0].id)
-  await saveProjects(api, store.getState().projects, id)
+  const activeThreadId = store.getState().activeThreadId
+  if (activeThreadId) markThreadRead(store, activeThreadId)
+  // Recording where we landed must not decide whether we render it. The project
+  // is already in the store by this point; letting this write reject took the
+  // three emits below with it, so a single refused IPC left a window with its
+  // chrome up and no workspace in it — the pane never heard `workspace_changed`.
+  // Persistence is recoverable (the next save re-sends it); a blank window is not.
+  await saveProjects(api, store.getState().projects, id, activeThreadId).catch((error: unknown) => {
+    console.warn(`[projects] could not persist the restored project ${id}:`, error)
+  })
   if (loaded.length === 0) createThread(store)
   else normalizeBlankThreads(store)
   store.emit('projects_changed')

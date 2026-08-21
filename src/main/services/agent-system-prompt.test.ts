@@ -1,6 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
@@ -204,5 +205,118 @@ describe('buildSystemPrompt working directory', () => {
     } finally {
       await rm(worktreeRoot, { recursive: true, force: true })
     }
+  })
+})
+
+describe('buildSystemPrompt Git repository root', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+  const extraRoots: string[] = []
+
+  beforeEach(async () => {
+    setSetting('skillsEnabled', false)
+    setSetting('skillPluginPaths', [])
+    setSetting('customInstructions', '')
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-repo-prompt-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+    while (extraRoots.length > 0) {
+      const root = extraRoots.pop()
+      if (root) await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  const build = (): Promise<string> =>
+    buildSystemPrompt({ subagentsEnabled: false, invokedSkills: [] })
+
+  async function gitRepository(prefix: string): Promise<string> {
+    const repo = await mkdtemp(join(tmpdir(), prefix))
+    extraRoots.push(repo)
+    const env = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Copse Test',
+      GIT_AUTHOR_EMAIL: 'copse@example.invalid',
+      GIT_COMMITTER_NAME: 'Copse Test',
+      GIT_COMMITTER_EMAIL: 'copse@example.invalid',
+    }
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo, env })
+    await writeFile(join(repo, 'README.md'), 'base\n')
+    execFileSync('git', ['add', '.'], { cwd: repo, env })
+    execFileSync('git', ['commit', '-q', '-m', 'initial'], { cwd: repo, env })
+    return repo
+  }
+
+  const context = (partial: Partial<ThreadExecutionContext>): ThreadExecutionContext =>
+    Object.freeze({
+      projectId: 'test-project',
+      threadId: 'test-thread',
+      projectRoot: tempRoot,
+      root: tempRoot,
+      checkoutMode: 'shared' as const,
+      branch: null,
+      ...partial,
+    })
+
+  it('states the worktree as the repository even when the renderer root is a stale checkout', async () => {
+    // The #1724 shape: the renderer-selected workspace root points at a stale
+    // checkout while the thread's tools run in its own worktree. The prompt
+    // must name the worktree as the one authoritative repository.
+    const worktree = await gitRepository('copse-repo-prompt-worktree-')
+    const canonical = await realpath(worktree)
+    const prompt = await runWithThreadExecutionContext(
+      context({ root: worktree, checkoutMode: 'worktree', branch: 'copse/fix-network-scope' }),
+      () => build(),
+    )
+    assert.ok(
+      prompt.includes(`Git repository root: ${canonical} — this thread's own linked Git worktree.`),
+      `prompt should state the worktree as the repository root, got:\n${prompt}`,
+    )
+    assert.ok(prompt.includes("not the project's shared checkout"))
+    assert.ok(prompt.includes('git rev-parse --show-toplevel'))
+    assert.ok(
+      !prompt.includes(`Git repository root: ${tempRoot}`),
+      'the stale renderer checkout must not be stated as the repository',
+    )
+  })
+
+  it('notes when the working directory is a subdirectory of the repository', async () => {
+    const repo = await gitRepository('copse-repo-prompt-shared-')
+    const canonical = await realpath(repo)
+    const nested = join(repo, 'packages', 'app')
+    await mkdir(nested, { recursive: true })
+    const prompt = await runWithThreadExecutionContext(context({ root: nested }), () => build())
+    assert.ok(
+      prompt.includes(
+        `Git repository root: ${canonical} (the working directory is a subdirectory of this repository)`,
+      ),
+      `prompt should state the repository top level for a nested project, got:\n${prompt}`,
+    )
+  })
+
+  it('states a plain repository root without a subdirectory note when they coincide', async () => {
+    const repo = await gitRepository('copse-repo-prompt-top-')
+    const canonical = await realpath(repo)
+    const prompt = await runWithThreadExecutionContext(context({ root: repo }), () => build())
+    assert.ok(prompt.includes(`Git repository root: ${canonical}\n`))
+    assert.ok(!prompt.includes('subdirectory of this repository'))
+  })
+
+  it('omits the repository line outside a turn context and leaves no placeholder', async () => {
+    // Composer estimates build the prompt with no bound context; they must not
+    // probe Git at all, and the template placeholder must never leak.
+    const prompt = await build()
+    assert.ok(!prompt.includes('Git repository root:'))
+    assert.ok(!prompt.includes('{REPO_CONTEXT}'))
+    assert.ok(prompt.includes(`Working directory: ${tempRoot}`))
+  })
+
+  it('omits the repository line when the execution root is not a Git checkout', async () => {
+    const prompt = await runWithThreadExecutionContext(context({}), () => build())
+    assert.ok(!prompt.includes('Git repository root:'))
+    assert.ok(prompt.includes(`Working directory: ${tempRoot}`))
   })
 })

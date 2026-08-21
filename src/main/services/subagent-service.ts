@@ -11,7 +11,7 @@ import type {
 } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { agentWorkspaceLabel } from './execution-root.ts'
 import { buildExploreSearchRoutingAddon } from '@copse/agent/search-routing.ts'
 import { isSemanticSearchAvailable } from './search/semantic-index.ts'
 import { subagentHookCallbacks } from './hooks/subagent.ts'
@@ -72,7 +72,7 @@ export async function runExploreSubagent(
     localFallback,
   } = opts
 
-  const workspace = getWorkspaceRoot() ?? '(none)'
+  const workspace = agentWorkspaceLabel()
   const prompt = paths?.length ? `${query}\n\nFocus on: ${paths.join(', ')}` : query
 
   const subagentMessages: LLMMessage[] = [

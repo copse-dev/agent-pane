@@ -1,5 +1,5 @@
 import { RequestError } from '@agentclientprotocol/sdk'
-import { acpReauthCommand, KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
+import { acpReauthCommand, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 import { IMAGE_INPUT_UNSUPPORTED_MESSAGE } from '@shared/image-input-support.ts'
@@ -186,7 +186,7 @@ export function classifyAcpAuthFailure(
 
 /** What to call the agent in prose, falling back through id to a generic noun. */
 function acpAgentDisplayName(agentId?: string): string {
-  const known = agentId ? KNOWN_ACP_AGENTS.find((agent) => agent.id === agentId) : undefined
+  const known = agentId ? findAcpCatalogEntry(agentId) : undefined
   return known?.title ?? agentId ?? 'The external agent'
 }
 
@@ -289,7 +289,7 @@ function formatAcpAuthError(
   kind: AcpAuthFailureKind,
   agentId?: string,
 ): string {
-  const known = agentId ? KNOWN_ACP_AGENTS.find((agent) => agent.id === agentId) : undefined
+  const known = agentId ? findAcpCatalogEntry(agentId) : undefined
   const agentName = acpAgentDisplayName(agentId)
 
   // An expired credential is a *different* message: the agent is configured and

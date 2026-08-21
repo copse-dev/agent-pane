@@ -36,7 +36,7 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { subagentHookCallbacks } from './hooks/subagent.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { agentWorkspaceLabel } from './execution-root.ts'
 import { getGitDiffText } from './github/git-service.ts'
 import { classifyAgentError } from './agent-errors.ts'
 
@@ -199,7 +199,7 @@ export interface RunPostTurnReviewOnceOptions {
 export async function runPostTurnReviewOnce(
   opts: RunPostTurnReviewOnceOptions,
 ): Promise<PostTurnReviewOutcome> {
-  const workspace = getWorkspaceRoot() ?? '(none)'
+  const workspace = agentWorkspaceLabel()
   const diff = await getGitDiffText()
   const prompt = buildReviewPrompt(opts.parentGoal, diff, opts.todos)
 

@@ -642,7 +642,10 @@ export function seedRoadmapNotes(
 /** Two projects on the same workspace root for project-switch e2e (#502). */
 export function seedProjectSwitchFixture(
   workspaceRoot: string,
-  options?: { activeProjectId?: 'project-a' | 'project-b' },
+  options?: {
+    activeProjectId?: 'project-a' | 'project-b'
+    windowBounds?: { width: number; height: number }
+  },
 ): { projectAId: string; projectBId: string } {
   const projectAId = 'e2e-project-switch-a'
   const projectBId = 'e2e-project-switch-b'
@@ -654,6 +657,7 @@ export function seedProjectSwitchFixture(
       { id: projectBId, path: workspaceRoot, name: 'Project B' },
     ],
     activeProjectId,
+    ...(options?.windowBounds ? { windowBounds: options.windowBounds } : {}),
     [`threads:${projectAId}`]: [],
     [`threads:${projectBId}`]: [],
   })
@@ -1233,6 +1237,62 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
               'line one\nline two\n\n**bold item**\n\nI typed <placeholder command> and kept it.',
             toolCalls: [],
             createdAt: now,
+          },
+        ],
+        todos: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+}
+
+/** Long sticky user prompt (>10 lines) for mid-fold accordion visual eval. */
+export function seedUserPromptFoldFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-user-prompt-fold-project'
+  const threadId = 'e2e-user-prompt-fold-thread'
+  const now = Date.now()
+  const longPrompt = [
+    'Session notes: this session persists across turns, and background agents keep running.',
+    'The session is reaped after idle timeout; keep background work bounded.',
+    '',
+    'Environment note: sandbox writes only in the workspace and TMPDIR.',
+    'Prefer targeted searches over broad directory dumps.',
+    'Use copse MCP tools for shell, git, and GitHub when available.',
+    'Archive under review includes meta.json, events.jsonl, and messages.',
+    'Distinguish observed findings from inferences; cite evidence first.',
+    'Do not invent paths that were not in the archive listing.',
+    'Keep the sticky prompt short enough that the answer stays readable.',
+    '',
+    'What I saw: Lots of prompts — can you explore why?',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'User prompt fold',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-fold',
+            role: 'user',
+            content: longPrompt,
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-fold',
+            role: 'assistant',
+            content:
+              'The sticky prompt should stay compact while folded so this reply remains visible underneath.',
+            toolCalls: [],
+            createdAt: now + 1,
           },
         ],
         todos: [],

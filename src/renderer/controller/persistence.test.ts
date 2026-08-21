@@ -6,6 +6,10 @@ import {
   attachAutosave,
   awaitPendingThreadPersistence,
   __resetPersistenceForTest,
+  saveProjects,
+  setNavigationOwnership,
+  markNavigationRestored,
+  suspendNavigationWrites,
   AUTOSAVE_DEBOUNCE_MS,
 } from './persistence.ts'
 import { createStore } from '@shared/store/store.ts'
@@ -28,6 +32,7 @@ const pagehideHandlers = new Set<() => void>()
 
 interface FakeApiCalls {
   storageSets: Array<[string, unknown]>
+  navigations: import('@shared/types/main-window.ts').MainWindowNavigation[]
   creates: Array<{ projectId: string; thread: Thread }>
   appends: Array<{ projectId: string; threadId: string; message: Message }>
   metas: Array<{ projectId: string; threadId: string; patch: unknown }>
@@ -42,6 +47,7 @@ function fakeApi(
 ): { api: ApiClient; calls: FakeApiCalls } {
   const calls: FakeApiCalls = {
     storageSets: [],
+    navigations: [],
     creates: [],
     appends: [],
     metas: [],
@@ -51,6 +57,12 @@ function fakeApi(
     const base = createFakeApi()
     return {
       ...base,
+      windowState: {
+        ...base['windowState'],
+        setNavigation: async (navigation): Promise<void> => {
+          calls.navigations.push(structuredClone(navigation))
+        },
+      },
       storage: {
         ...base['storage'],
         get: async (): Promise<unknown> => null,
@@ -190,7 +202,96 @@ test('debounces a metadata burst into one projects save after the immediate crea
 
   assert.equal(calls.creates.length, 1)
   assert.deepEqual(calls.metas, [])
-  assert.deepEqual(calls.storageSets.map((c) => c[0]).sort(), ['activeProjectId', 'projects'])
+  assert.deepEqual(
+    calls.storageSets.map((call) => call[0]),
+    ['projects'],
+  )
+  assert.deepEqual(calls.navigations.at(-1), {
+    activeProjectId: 'p1',
+    activeThreadId: null,
+  })
+  autosave.detach()
+})
+
+test('a window that does not own navigation persists projects but never navigation', async () => {
+  // A pane pop-out boots this renderer and restores the same project, but the
+  // main process rejects `setNavigation` from any window that is not a
+  // registered full main window. Sending it anyway rejected mid-`restoreProject`
+  // and took the `workspace_changed` emit with it, so the detached pane came up
+  // empty. Projects still save — only the navigation half is withheld.
+  __resetPersistenceForTest()
+  setNavigationOwnership(false)
+  const popout = fakeApi()
+
+  await saveProjects(popout.api, [], 'p1', 't1')
+  assert.equal(popout.calls.navigations.length, 0, 'a pop-out must not write navigation')
+  assert.deepEqual(
+    popout.calls.storageSets.map((call) => call[0]),
+    ['projects'],
+    'the projects list is shared state and still saves',
+  )
+
+  // Ownership is per-window, so a main window is unaffected. Its own fake API,
+  // deliberately: asserting `deepEqual(navigations, [])` above would narrow the
+  // shared object to `never[]` and make every later read of it statically
+  // `undefined` — passing at runtime while the types describe a different test.
+  __resetPersistenceForTest()
+  const main = fakeApi()
+  const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
+  const autosave = attachAutosave(store, main.api)
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.deepEqual(main.calls.navigations.at(-1), { activeProjectId: 'p1', activeThreadId: null })
+  autosave.detach()
+})
+
+test('does not persist navigation before boot has restored it', async () => {
+  // `attachAutosave` is attached long before `loadProjects` resolves. Until the
+  // restored value is in the store, `activeProjectId` reads as null, and writing
+  // that back overwrote the window's record and the legacy mirror — leaving a
+  // window that lists its projects with none of them active (the SSH disconnect
+  // banner short-circuits on `!activeProjectId` and never renders).
+  __resetPersistenceForTest()
+  suspendNavigationWrites()
+  const { api, calls } = fakeApi()
+  const store = createStore({ activeProjectId: null, threads: [], projects: [] })
+  const autosave = attachAutosave(store, api)
+
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.equal(calls.navigations.length, 0, 'a pre-restore flush must not write navigation')
+
+  // Boot restores, and from then on the real value is persisted.
+  markNavigationRestored({ activeProjectId: null, activeThreadId: null })
+  store.setState({ activeProjectId: 'p1' })
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.deepEqual(calls.navigations.at(-1), { activeProjectId: 'p1', activeThreadId: null })
+  autosave.detach()
+})
+
+test('does not rewrite navigation that has not changed', async () => {
+  // `flushNow` writes navigation on every flush, and one of those is the
+  // `pagehide` fired while the window is being torn down — which in e2e happens
+  // *after* the next fixture has seeded config.json. Writing an unchanged value
+  // there put the dying window's project back over the seed, so the next launch
+  // booted with no active project (and the SSH banner, gated on
+  // `activeProjectId`, never rendered).
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const store = createStore({ activeProjectId: 'p1', threads: [], projects: [] })
+  markNavigationRestored({ activeProjectId: 'p1', activeThreadId: null })
+  const autosave = attachAutosave(store, api)
+
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.equal(calls.navigations.length, 0, 'an unchanged navigation must not be written')
+
+  // A real navigation change still lands.
+  store.setState({ activeProjectId: 'p2' })
+  store.emit('projects_changed')
+  await waitDebounce()
+  assert.deepEqual(calls.navigations.at(-1), { activeProjectId: 'p2', activeThreadId: null })
   autosave.detach()
 })
 

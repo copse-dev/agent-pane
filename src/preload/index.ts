@@ -8,6 +8,11 @@ installPreloadPerfTracing()
 exposePerfBridge()
 
 contextBridge.exposeInMainWorld('api', {
+  windowState: {
+    getNavigation: () => ipcRenderer.invoke('mainWindow:getNavigation'),
+    setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>
+      ipcRenderer.invoke('mainWindow:setNavigation', navigation),
+  },
   workspace: {
     open: () => ipcRenderer.invoke('workspace:open'),
     get: () => ipcRenderer.invoke('workspace:get'),

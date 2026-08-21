@@ -120,7 +120,7 @@ follow-up.) This is the direct application of zed#38392.
 guidance. Before the first spawn, Copse checks the agent command resolves on the
 remote login-shell PATH (`command -v` over the connection). If it doesn't, the
 turn fails with the known agent's own install line (e.g.
-`npm install -g @zed-industries/claude-code-acp`) to run **on the remote host**.
+`npm install -g @agentclientprotocol/claude-agent-acp`) to run **on the remote host**.
 Copse does **not** auto-install remotely in v1: the Socket-Firewall supply-chain
 wrapper that guards local auto-setup does not extend to the remote host, so
 auto-installing there would bypass a security control (and zed#47910 shows how
