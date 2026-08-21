@@ -14,14 +14,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * The SDK speaks its own WebSocket protocol rather than HTTP, so its failures
  * carry neither an SDK error class nor a numeric status — a dropped server
  * surfaces as a plain Error whose message names the socket layer. Matched on
- * message for that reason. Deliberately narrow: a false positive retries a
- * request that could never succeed, and deterministic failures such as
+ * message for that reason. Two shapes reach a prediction: the transport error
+ * itself, forwarded verbatim to every open channel ("WebSocket connection
+ * closed", "WebSocket timed out", or the raw `ECONNREFUSED`), and a bare
+ * channel closure when the channel ends without a result ("Channel closed
+ * unexpectedly."). Deliberately narrow: a false positive retries a request that
+ * could never succeed, and deterministic failures such as
  * {@link ToolCallRequestError} (the model produced an unparseable tool call)
  * must fall through to the no-retry default.
  */
 export function isLmStudioTransportError(err: unknown): boolean {
   if (!(err instanceof Error)) return false
-  return /websocket|socket hang up|econnrefused|econnreset|epipe|etimedout|ehostunreach|enet(unreachable|down)/i.test(
+  return /websocket|channel closed|socket hang up|econnrefused|econnreset|epipe|etimedout|ehostunreach|enet(unreachable|down)/i.test(
     err.message,
   )
 }

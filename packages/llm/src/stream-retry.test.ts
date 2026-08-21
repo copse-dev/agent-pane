@@ -66,9 +66,23 @@ describe('isRetryableStreamError', () => {
   })
 
   it('retries an LM Studio WebSocket connection loss', () => {
+    // The exact strings the SDK's WebSocket transport raises and forwards to
+    // every open channel.
+    assert.equal(isRetryableStreamError(new Error('WebSocket connection closed')), true)
+    assert.equal(isRetryableStreamError(new Error('WebSocket timed out')), true)
     assert.equal(isRetryableStreamError(new Error('WebSocket connection failed')), true)
     assert.equal(isRetryableStreamError(new Error('Socket hang up')), true)
     assert.equal(isRetryableStreamError(new Error('connect ECONNREFUSED 127.0.0.1:1234')), true)
+  })
+
+  it('retries an LM Studio channel that closed without a result', () => {
+    // A channel can end without the transport itself erroring; the prediction
+    // then rejects with a bare closure rather than a socket-level message.
+    assert.equal(isRetryableStreamError(new Error('Channel closed unexpectedly.')), true)
+    assert.equal(
+      isRetryableStreamError(new Error('Channel closed before receiving a result.')),
+      true,
+    )
   })
 
   it('does not retry an LM Studio tool-call parse failure', () => {
