@@ -83,18 +83,21 @@ export const config: Options.Testrunner = {
           '--disable-gpu',
           '--no-sandbox',
           '--disable-dev-shm-usage',
-          // `safeStorage` binds to the OS secret service, which a headless
-          // Linux runner has none of — the containers cannot even reach the
-          // session bus. `isEncryptionAvailable()` is then false and every
-          // feature guarded on it silently no-ops, which is not a product
-          // failure but is indistinguishable from one in a spec: it is why
-          // `vnc.rememberUsername` returns false and `vnc-viewer` fails on
-          // Linux while passing on macOS, where the Keychain answers.
-          // `basic` selects Chromium's built-in password store instead of
-          // probing for gnome-keyring/kwallet, so encryption reports available
-          // and round-trips. Safe for the seeded API keys: those records carry
-          // `plain: true`, and `getApiKey` returns them before it consults the
-          // cipher (settings.ts), so they read identically either way.
+          // Keeps Chromium off the desktop keyring: it uses its built-in store
+          // instead of auto-detecting gnome-keyring/kwallet over a session bus
+          // these containers do not have.
+          //
+          // It does NOT make `safeStorage` work, which is why #1793 added it.
+          // That was verified wrong — `vnc-viewer` failed identically with the
+          // flag present. Selecting the `basic` backend is not opting into it:
+          // Electron still reports encryption unavailable unless
+          // `setUsePlainTextEncryption(true)` is called before `app` ready.
+          //
+          // Nothing needs to make `safeStorage` work here. #1797 settled that
+          // the right way round: `rememberVncUsername` returning false with no
+          // cipher is the product being *correct*, so the spec asserts that
+          // outcome on Linux and the persisted one on macOS. Giving the runner
+          // a fake secret store would only have made it lie to the test.
           '--password-store=basic',
         ],
       },
