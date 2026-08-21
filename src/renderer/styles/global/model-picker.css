@@ -320,3 +320,25 @@
 .approval-comparison-row .model-picker-field-host {
   max-width: none;
 }
+
+/* Engines without CSS anchor positioning (Servo): approximate the anchored
+   geometry with plain absolute positioning. The anchor() declarations above
+   contain var(), so they fail at computed-value time and reset to `auto`
+   rather than yielding to earlier declarations — these later rules supply
+   the geometry instead. The field host rejoins the positioning chain so its
+   menu drops directly below the field; @position-try clamping and flipping
+   have no equivalent here, so a menu hard against a surface edge may clip
+   instead of flipping. */
+@supports not (anchor-name: --a) {
+  .model-picker-field-host,
+  .model-picker-field {
+    position: relative;
+  }
+  .model-picker-field .model-picker-menu {
+    top: calc(100% + var(--spacing-xs));
+    bottom: auto;
+    left: 0;
+    right: auto;
+    min-width: 100%;
+  }
+}
