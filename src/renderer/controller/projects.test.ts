@@ -240,6 +240,58 @@ test('switching away compacts the outgoing project, keeping its rows but not its
   assert.equal(row.messages, undefined)
 })
 
+test('switchProject carries chunks that land while activation is in flight', async () => {
+  resetProjectSwitchStateForTest()
+  const running = thread('t-a')
+  running.status = 'running'
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [running],
+    activeThreadId: running.id,
+  })
+
+  let releaseLoad: ((threads: Thread[]) => void) | undefined
+  const load = new Promise<Thread[]>((resolve) => {
+    releaseLoad = resolve
+  })
+  const api = makeApi({
+    loadProjectThreads: async (projectId) =>
+      projectId === 'b' ? load : Promise.resolve([thread('t-a')]),
+  })
+
+  switchProject(store, api, 'b')
+  await waitUntil(() => releaseLoad !== undefined)
+
+  const streamed = {
+    id: 't-a-streamed-during-switch',
+    role: 'assistant' as const,
+    content: 'landed while project B was loading',
+    toolCalls: [],
+    createdAt: 2,
+  }
+  store.setState({
+    threads: store
+      .getState()
+      .threads.map((candidate) =>
+        candidate.id === running.id
+          ? { ...candidate, messages: [...candidate.messages, streamed] }
+          : candidate,
+      ),
+  })
+  releaseLoad?.([thread('t-b')])
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+
+  const carried = store.getState().backgroundThreads.find((entry) => entry.thread.id === running.id)
+  assert.equal(carried?.projectId, 'a')
+  assert.equal(carried.thread.messages.at(-1)?.id, streamed.id)
+})
+
 test('switchProject starts outgoing persistence and workspace activation concurrently', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({

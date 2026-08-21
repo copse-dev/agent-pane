@@ -4,7 +4,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { Message, Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import { attachThreadHydration, ensureThreadMessages } from './thread-hydration.ts'
+import { attachThreadHydration, ensureThreadMessages, hydrationFailed } from './thread-hydration.ts'
 
 function unloaded(id: string, overrides: Partial<Thread> = {}): Thread {
   return {
@@ -59,6 +59,32 @@ test('hydrates the active thread and marks it loaded', async () => {
   const thread = store.getState().threads[0]
   assert.ok(thread)
   assert.equal(thread.messages.length, 1)
+  assert.equal(thread.messagesLoaded, true)
+  detach()
+})
+
+test('messages streamed while the read was in flight survive hydration', async () => {
+  const store = createStore()
+  const { api, release } = apiWithControlledLoad()
+  store.setState({ activeProjectId: 'p', activeThreadId: 't1', threads: [unloaded('t1')] })
+  const detach = attachThreadHydration(store, api)
+
+  // The agent streams into the thread while the disk read is pending — e.g. a
+  // run carried across a project switch (#1841). The disk transcript does not
+  // hold that message yet; overwriting with the read would drop it.
+  const [t1] = store.getState().threads
+  assert.ok(t1)
+  t1.messages.push(message('m-streamed'))
+
+  release('t1', [message('m-disk')])
+  await new Promise((r) => setTimeout(r, 0))
+
+  const thread = store.getState().threads[0]
+  assert.ok(thread)
+  assert.deepEqual(
+    thread.messages.map((m) => m.id),
+    ['m-disk', 'm-streamed'],
+  )
   assert.equal(thread.messagesLoaded, true)
   detach()
 })
@@ -133,6 +159,49 @@ test('a failed load leaves the thread retryable rather than silently empty', asy
   assert.equal(store.getState().threads[0]?.messagesLoaded, false, 'still marked unloaded')
   await ensureThreadMessages('p', 't1')
   assert.equal(attempts, 2, 'selecting the thread again retries')
+  detach()
+})
+
+test('a failed load is marked, announced once, and retried on reselection', async () => {
+  const store = createStore()
+  const api = createFakeApi()
+  let attempts = 0
+  const failing: ApiClient = {
+    ...api,
+    threads: {
+      ...api.threads,
+      loadMessages: () => {
+        attempts += 1
+        return Promise.reject(new Error('disk gone'))
+      },
+    },
+  }
+  store.setState({
+    activeProjectId: 'p',
+    activeThreadId: 't1',
+    threads: [unloaded('t1'), unloaded('t2', { messagesLoaded: true })],
+  })
+  let announcements = 0
+  const offAnnounce = store.on('threads_changed', () => {
+    announcements += 1
+  })
+  const detach = attachThreadHydration(store, failing)
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(hydrationFailed('t1'), true, 'the failure is recorded for the view')
+  assert.ok(announcements >= 1, 'the failure is announced so the view can rebuild')
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(attempts, 1, 'the failure announcement must not refetch in a loop')
+
+  // Switching away and back is a fresh selection: the mark clears and the
+  // ordinary hydration path retries.
+  store.setState({ activeThreadId: 't2' })
+  store.emit('threads_changed')
+  store.setState({ activeThreadId: 't1' })
+  store.emit('threads_changed')
+  assert.equal(hydrationFailed('t1'), false, 'reselecting the thread clears the mark')
+  assert.equal(attempts, 2, 'reselecting the thread retries the read')
+  offAnnounce()
   detach()
 })
 

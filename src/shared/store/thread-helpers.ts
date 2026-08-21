@@ -14,7 +14,13 @@ import type {
   TranscriptAttachment,
 } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
-import type { HookCard, ModelComparison, Thread, ThreadReview } from '@shared/types'
+import type {
+  BackgroundThread,
+  HookCard,
+  ModelComparison,
+  Thread,
+  ThreadReview,
+} from '@shared/types'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
@@ -23,10 +29,44 @@ export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
   return [...threads].sort((a, b) => b.createdAt - a.createdAt)
 }
 
-/** Look up a thread by id (undefined for null/unknown ids). */
+/**
+ * Look up a thread by id (undefined for null/unknown ids). Finds background
+ * threads too — a live run carried across a project switch (#1841) — so the
+ * streaming path reads the same object it is writing. Ids are globally unique
+ * across projects, so the two lists cannot collide.
+ */
 export function getThreadById(store: AppStore, id: string | null | undefined): Thread | undefined {
   if (!id) return undefined
-  return store.getState().threads.find((t) => t.id === id)
+  const { threads, backgroundThreads } = store.getState()
+  return (
+    threads.find((t) => t.id === id) ?? backgroundThreads.find((b) => b.thread.id === id)?.thread
+  )
+}
+
+/**
+ * Apply a pure update to one thread wherever it lives — the active project's
+ * `threads` or the carried `backgroundThreads` (#1841). The streaming mutators
+ * below route through this so an agent chunk keeps landing after its project
+ * is switched away from. Returns false when the id is unknown to both lists.
+ */
+export function patchThreadAnywhere(
+  store: AppStore,
+  threadId: string,
+  patch: (thread: Thread) => Thread,
+): boolean {
+  const { threads, backgroundThreads } = store.getState()
+  if (threads.some((t) => t.id === threadId)) {
+    store.setState({ threads: threads.map((t) => (t.id === threadId ? patch(t) : t)) })
+    return true
+  }
+  const carried = backgroundThreads.find((b) => b.thread.id === threadId)
+  if (!carried) return false
+  store.setState({
+    backgroundThreads: backgroundThreads.map((b) =>
+      b.thread.id === threadId ? { ...b, thread: patch(b.thread) } : b,
+    ),
+  })
+  return true
 }
 
 /** The currently active thread, if any. */
@@ -227,13 +267,8 @@ export function prevThreadId(store: AppStore): string | null {
 
 /** Mark a background agent completion unread. The selected thread is already being viewed. */
 export function markThreadUnread(store: AppStore, threadId: string, at = Date.now()): void {
-  const { activeThreadId, threads } = store.getState()
-  if (threadId === activeThreadId || !threads.some((thread) => thread.id === threadId)) return
-  store.setState({
-    threads: threads.map((thread) =>
-      thread.id === threadId ? { ...thread, unreadAt: at } : thread,
-    ),
-  })
+  if (threadId === store.getState().activeThreadId) return
+  if (!patchThreadAnywhere(store, threadId, (thread) => ({ ...thread, unreadAt: at }))) return
   store.emit('threads_changed')
 }
 
@@ -319,8 +354,7 @@ export function recordContextTrim(
   threadId: string,
   record: Omit<ContextTrimRecord, 'at'>,
 ): void {
-  const threads = store.getState().threads.map((t) => {
-    if (t.id !== threadId) return t
+  patchThreadAnywhere(store, threadId, (t) => {
     const entry: ContextTrimRecord = { ...record, at: Date.now() }
     return {
       ...t,
@@ -328,7 +362,6 @@ export function recordContextTrim(
       updatedAt: Date.now(),
     }
   })
-  store.setState({ threads })
   store.emit('threads_changed')
 }
 
@@ -348,40 +381,30 @@ export function addMessage(
   },
 ): string {
   const id = randomUUID()
-  const { threads } = store.getState()
-  const updated = threads.map((t) =>
-    t.id !== threadId
-      ? t
-      : {
-          ...t,
-          messages: [
-            ...t.messages,
-            {
-              id,
-              role,
-              content,
-              ...(images?.length ? { images } : {}),
-              ...(attachments?.length ? { attachments } : {}),
-              ...(opts?.model !== undefined ? { model: opts.model } : {}),
-              ...(opts?.requestedModel !== undefined
-                ? { requestedModel: opts.requestedModel }
-                : {}),
-              ...(opts?.parameters !== undefined ? { parameters: opts.parameters } : {}),
-              ...(opts?.startingCommit !== undefined
-                ? { startingCommit: opts.startingCommit }
-                : {}),
-              ...(opts?.dirty !== undefined ? { dirty: opts.dirty } : {}),
-              toolCalls: [],
-              createdAt: Date.now(),
-            },
-          ],
-          updatedAt: Date.now(),
-        },
-  )
-  store.setState({ threads: updated })
+  const message: Message = {
+    id,
+    role,
+    content,
+    ...(images?.length ? { images } : {}),
+    ...(attachments?.length ? { attachments } : {}),
+    ...(opts?.model !== undefined ? { model: opts.model } : {}),
+    ...(opts?.requestedModel !== undefined ? { requestedModel: opts.requestedModel } : {}),
+    ...(opts?.parameters !== undefined ? { parameters: opts.parameters } : {}),
+    ...(opts?.startingCommit !== undefined ? { startingCommit: opts.startingCommit } : {}),
+    ...(opts?.dirty !== undefined ? { dirty: opts.dirty } : {}),
+    toolCalls: [],
+    createdAt: Date.now(),
+  }
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    messages: [...t.messages, message],
+    updatedAt: Date.now(),
+  }))
   store.emit('message_added', threadId, id)
 
-  const thread = updated.find((t) => t.id === threadId)
+  // Blank-thread pruning is an active-project concern; a carried background
+  // thread is never blank (it has a live run).
+  const thread = store.getState().threads.find((t) => t.id === threadId)
   if (thread && thread.messages.length === 1) {
     pruneBlankThreads(store, new Set([threadId]))
   }
@@ -429,22 +452,31 @@ interface MessageLocation {
 // Keyed weakly so a discarded store's index is collected with it.
 const messageIndexByStore = new WeakMap<
   AppStore,
-  { threads: readonly Thread[]; byId: Map<string, MessageLocation> }
+  {
+    threads: readonly Thread[]
+    backgroundThreads: readonly BackgroundThread[]
+    byId: Map<string, MessageLocation>
+  }
 >()
 
 function messageLocations(store: AppStore): Map<string, MessageLocation> {
-  const { threads } = store.getState()
+  const { threads, backgroundThreads } = store.getState()
   const cached = messageIndexByStore.get(store)
-  if (cached && cached.threads === threads) return cached.byId
+  if (cached && cached.threads === threads && cached.backgroundThreads === backgroundThreads) {
+    return cached.byId
+  }
   const byId = new Map<string, MessageLocation>()
-  for (const thread of threads) {
+  // Background threads too (#1841): the streaming mutators must keep reaching a
+  // carried run's messages after its project is switched away from.
+  const allThreads = [...threads, ...backgroundThreads.map((b) => b.thread)]
+  for (const thread of allThreads) {
     for (const message of thread.messages) {
       // Message ids are globally unique (forks reissue them); first match wins,
       // matching the previous whole-history seek.
       if (!byId.has(message.id)) byId.set(message.id, { thread, message })
     }
   }
-  messageIndexByStore.set(store, { threads, byId })
+  messageIndexByStore.set(store, { threads, backgroundThreads, byId })
   return byId
 }
 
@@ -562,9 +594,7 @@ export function addHookCard(store: AppStore, messageId: string, card: HookCard):
 }
 
 export function updateUsage(store: AppStore, threadId: string, usage: ThreadUsage): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => (t.id !== threadId ? t : { ...t, usage }))
-  store.setState({ threads: updated })
+  patchThreadAnywhere(store, threadId, (t) => ({ ...t, usage }))
   store.emit('usage_updated', threadId)
 }
 
@@ -619,16 +649,11 @@ export function updateContextSnapshot(
   threadId: string,
   snapshot: Omit<ContextSnapshot, 'updatedAt'>,
 ): void {
-  const threads = store.getState().threads.map((t) =>
-    t.id !== threadId
-      ? t
-      : {
-          ...t,
-          contextSnapshot: { ...snapshot, updatedAt: Date.now() },
-          updatedAt: Date.now(),
-        },
-  )
-  store.setState({ threads })
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    contextSnapshot: { ...snapshot, updatedAt: Date.now() },
+    updatedAt: Date.now(),
+  }))
   store.emit('context_updated', threadId)
 }
 
@@ -643,10 +668,7 @@ export function clearContextSnapshot(store: AppStore, threadId: string): void {
 }
 
 export function setThreadTodos(store: AppStore, threadId: string, todos: TodoItem[]): void {
-  const threads = store
-    .getState()
-    .threads.map((t) => (t.id !== threadId ? t : { ...t, todos, updatedAt: Date.now() }))
-  store.setState({ threads })
+  patchThreadAnywhere(store, threadId, (t) => ({ ...t, todos, updatedAt: Date.now() }))
   store.emit('todos_changed', threadId)
 }
 
@@ -662,8 +684,7 @@ export function setMessageReview(
   messageId: string,
   review: ThreadReview | null,
 ): void {
-  const threads = store.getState().threads.map((t) => {
-    if (t.id !== threadId) return t
+  patchThreadAnywhere(store, threadId, (t) => {
     const messages = t.messages.map((m) => {
       if (m.id !== messageId) return m
       if (review) return { ...m, review }
@@ -672,7 +693,6 @@ export function setMessageReview(
     })
     return { ...t, messages, updatedAt: Date.now() }
   })
-  store.setState({ threads })
   store.emit('review_changed', threadId, messageId)
 }
 
@@ -682,14 +702,12 @@ export function setThreadComparison(
   threadId: string,
   comparison: ModelComparison | null,
 ): void {
-  const threads = store.getState().threads.map((t) => {
-    if (t.id !== threadId) return t
+  patchThreadAnywhere(store, threadId, (t) => {
     const next = { ...t, updatedAt: Date.now() }
     if (comparison) next.comparison = comparison
     else delete next.comparison
     return next
   })
-  store.setState({ threads })
   store.emit('comparison_changed', threadId)
 }
 
@@ -713,16 +731,12 @@ export function setThreadStatus(
   threadId: string,
   status: 'idle' | 'running' | 'error',
 ): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => (t.id !== threadId ? t : { ...t, status }))
-  store.setState({ threads: updated })
+  patchThreadAnywhere(store, threadId, (t) => ({ ...t, status }))
   store.emit('thread_status_changed', threadId, status)
 }
 
 export function setThreadTitle(store: AppStore, threadId: string, title: string): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => (t.id !== threadId ? t : { ...t, title }))
-  store.setState({ threads: updated })
+  patchThreadAnywhere(store, threadId, (t) => ({ ...t, title }))
   store.emit('threads_changed')
 }
 

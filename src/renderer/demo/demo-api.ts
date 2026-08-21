@@ -366,7 +366,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         replay?.abort()
         return resolvedVoid()
       },
-      runningThreadIds: emptyArray,
+      // A fixture thread seeded as running IS the live run in the demo world.
+      // Answering [] here would have resumePendingQueues flip it to idle as a
+      // crash leftover the moment the project loads (#1406's reconciliation).
+      runningThreadIds: () =>
+        resolved(threads.filter((t) => t.status === 'running').map((t) => t.id)),
       retryReview: resolvedVoid,
       retryComparison: resolvedVoid,
       comparisonModels: () => resolved({ a: '', b: '', judge: '' }),
@@ -466,9 +470,16 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       loadProject: (projectId: string) =>
         resolved(projectId === scenario.project.id ? structuredClone(threads) : []),
       // The demo always hands back whole threads, so nothing ever asks to
-      // hydrate one; answering from the in-memory list keeps that true.
+      // hydrate one; answering from the in-memory list keeps that true. The
+      // exceptions are scenarios built around the hydration window itself,
+      // which hold the read open (or fail it) so the mid-switch state stays
+      // on screen.
       loadMessages: (_projectId: string, threadId: string) =>
-        resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
+        scenario.holdThreadHydration === true
+          ? new Promise<never>(() => undefined)
+          : scenario.failThreadHydration === true
+            ? Promise.reject(new Error('demo: transcript read failed'))
+            : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
       onPrRefs: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {
