@@ -10,8 +10,13 @@ import {
 } from '@shared/agent/doctrine-compliance.ts'
 import { shouldSteerGithubLinks } from '@shared/git/github-link-steering.ts'
 import { shouldSteerTodos } from '@shared/todos/todo-logic.ts'
-import { expectString } from '../src/shared/unknown-value.mts'
-import { toolExpectationViolations, type ObservedToolCall } from './lib/eval-tool-expectations.mts'
+import { expectString, isRecord } from '../src/shared/unknown-value.mts'
+import {
+  shellCommandDisplacements,
+  toolExpectationViolations,
+  usedTool,
+  type ObservedToolCall,
+} from './lib/eval-tool-expectations.mts'
 import { z } from 'zod'
 
 interface ScenarioExpect {
@@ -24,6 +29,8 @@ interface ScenarioExpect {
   /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
   requireAnyTools?: string[] | undefined
   forbidTools?: string[] | undefined
+  /** Fail when `run_shell` ran a command a first-class tool already covers. */
+  forbidDisplacedShell?: boolean | undefined
   /** Fail when a `sandbox_network_audit` card names a GitHub host. */
   forbidGithubNetworkDenial?: boolean | undefined
   maxInputTokens?: number | undefined
@@ -129,6 +136,7 @@ const scenarioSchema: z.ZodType<Scenario> = z.object({
       requireTools: z.array(z.string()).optional(),
       requireAnyTools: z.array(z.string()).optional(),
       forbidTools: z.array(z.string()).optional(),
+      forbidDisplacedShell: z.boolean().optional(),
       forbidGithubNetworkDenial: z.boolean().optional(),
       maxInputTokens: z.number().optional(),
       requireUpdateTodos: z.boolean().optional(),
@@ -182,6 +190,27 @@ function subagentUsages(records: JsonlRecord[]): Array<{
     }
   }
   return out
+}
+
+/**
+ * Shell shapes a first-class tool already covers, counted per shape.
+ *
+ * Reported whether or not the scenario fails on them: measuring how often a
+ * model reaches for external shell is the baseline #1845 asks for, and that has
+ * to be readable from a run that passes.
+ */
+function displacedShellHistogram(observed: readonly ObservedToolCall[]): Record<string, number> {
+  const histogram: Record<string, number> = {}
+  for (const call of observed) {
+    if (!usedTool([call.name], 'run_shell')) continue
+    if (!isRecord(call.args)) continue
+    const command = call.args['command']
+    if (typeof command !== 'string') continue
+    for (const shape of shellCommandDisplacements(command)) {
+      histogram[shape.id] = (histogram[shape.id] ?? 0) + 1
+    }
+  }
+  return histogram
 }
 
 function loadJsonl(path: string): JsonlRecord[] {
@@ -299,6 +328,7 @@ function analyze(path: string, scenario?: Scenario): void {
       requireTools: exp?.requireTools,
       requireAnyTools: exp?.requireAnyTools,
       forbidTools: exp?.forbidTools,
+      forbidDisplacedShell: exp?.forbidDisplacedShell,
       forbidGithubNetworkDenial: exp?.forbidGithubNetworkDenial,
     }),
   )
@@ -336,6 +366,7 @@ function analyze(path: string, scenario?: Scenario): void {
     cache: cacheBreakdown(usage),
     subagents: subagentUsages(records),
     toolHistogram: toolHist,
+    displacedShellHistogram: displacedShellHistogram(observedCalls),
     exploreCount,
     updateTodosCount: updateTodos,
     assistantTurns: assistants.length,

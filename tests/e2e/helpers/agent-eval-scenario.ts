@@ -51,10 +51,18 @@ const evalScenarioSchema = z.object({
       /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
       requireAnyTools: z.array(z.string()).optional(),
       forbidTools: z.array(z.string()).optional(),
+      /** Fail when `run_shell` ran a command a first-class tool already covers. */
+      forbidDisplacedShell: z.boolean().optional(),
       /** Fail when a `sandbox_network_audit` card names a GitHub host. */
       forbidGithubNetworkDenial: z.boolean().optional(),
       requireBackgroundWakeStart: z.boolean().optional(),
       maxApprovals: z.number().int().nonnegative().optional(),
+      /**
+       * Ceiling on decisions that interrupted the user to let a shell command
+       * out of the sandbox. Narrower than `maxApprovals`, which counts every
+       * dialog the run raised whatever asked for it.
+       */
+      maxShellEscalationPrompts: z.number().int().nonnegative().optional(),
     })
     .optional(),
   assertWorkspace: z

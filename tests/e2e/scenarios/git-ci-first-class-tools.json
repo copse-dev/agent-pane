@@ -1,0 +1,35 @@
+{
+  "id": "git-ci-first-class-tools",
+  "description": "Asked to validate what landed on main and whether CI is green, the agent should answer through Copse's first-class git/gh/CI tools rather than driving `gh` and network `git` through run_shell. The exported thread in issue #1845 (Copse 43.3.0, 7c688363f) is the failure this pins: five external-shell approvals in about three minutes for a read-only question, while gh_run_list answered part of it with no decision at all. Those tools run the GitHub CLI through runGh(..., unsandboxed: true) inside the host, so the shell route bought the user approval prompts and nothing else. Three signals score it, deliberately layered. requireAnyTools proves the agent actually did the work through Copse — without it a run that never attempted the task would pass, since the forbidden route is absent either way. forbidDisplacedShell fails on any single shell call whose shape a dedicated tool covers; it does not fail local `git log` or a `gh api` call with no first-class equivalent, both of which stay legitimate (issue non-goals). maxShellEscalationPrompts is the looser backstop over everything the shape table does not name: 2 leaves room for one honest slip while still failing the exported thread's five. Runs against the current workspace because the bridged tools resolve the repo from this checkout's GitHub remote; a temp project has no remote and would push the agent to its own shell for a reason unrelated to tool preference. Scoring goes through matchesBridgedToolName, so the same scenario is meaningful under an ACP model (COPSE_EVAL_MODEL=codex / claude-code), whose bridged calls arrive namespaced.",
+  "workspace": { "type": "current" },
+  "promptVariants": [
+    "Can you validate what has landed on main since last night?",
+    "What's merged into main recently, and is CI green on the tip of main? Don't change any files.",
+    "Give me a read-only rundown of the last few commits on main and whether their checks passed."
+  ],
+  "toolUse": {
+    "requireAnyTools": [
+      "git_log",
+      "gh_pr_list",
+      "gh_pr_view",
+      "gh_run_list",
+      "gh_run_view",
+      "get_ci_status"
+    ],
+    "forbidDisplacedShell": true,
+    "forbidGithubNetworkDenial": true,
+    "maxShellEscalationPrompts": 2
+  },
+  "expect": {
+    "requireAnyTools": [
+      "git_log",
+      "gh_pr_list",
+      "gh_pr_view",
+      "gh_run_list",
+      "gh_run_view",
+      "get_ci_status"
+    ],
+    "forbidDisplacedShell": true,
+    "forbidGithubNetworkDenial": true
+  }
+}
