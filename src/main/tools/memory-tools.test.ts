@@ -5,8 +5,31 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import { setKnowledgeRootForTest } from '../services/storage/knowledge-store.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
-import { recallTool, rememberTool } from './memory-tools.ts'
+import { recallTool, rememberTool, EXTERNAL_CONTEXT_FIELD, MEMORY_TYPE } from './memory-tools.ts'
+import { loadKnowledgeNotes } from '../services/storage/knowledge-store.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../services/thread-execution-context.ts'
+import { markTurnExternalIngestion } from '../services/security/turn-taint.ts'
 import type { ToolExecuteResult } from '@shared/types'
+
+const TEST_CONTEXT: ThreadExecutionContext = {
+  projectId: 'p1',
+  threadId: 't1',
+  projectRoot: '/home/dev/proj',
+  root: '/home/dev/proj',
+  checkoutMode: 'shared',
+  branch: null,
+}
+
+/** Run a tool inside a turn context that has already ingested external content. */
+function inTaintedTurn<T>(fn: () => Promise<T>): Promise<T> {
+  return runWithThreadExecutionContext({ ...TEST_CONTEXT }, () => {
+    markTurnExternalIngestion()
+    return fn()
+  })
+}
 
 const noSignal = new AbortController().signal
 
@@ -70,6 +93,44 @@ describe('memory-tools', () => {
 
     const miss = await run(recallTool, { query: 'graphql' })
     assert.match(miss, /No memories match "graphql"/)
+  })
+
+  // Context-provenance plan, Phase 4: memories are the one channel that can
+  // carry an injection across threads, so their turn provenance is recorded
+  // and replayed as a caution — recording only, nothing blocks.
+  it('marks a memory saved during a turn that ingested external content', async () => {
+    await inTaintedTurn(() => run(rememberTool, { title: 'Fetched', content: 'From the web' }))
+    const note = loadKnowledgeNotes(MEMORY_TYPE)[0]
+    assert.equal(note?.fields[EXTERNAL_CONTEXT_FIELD], 'true')
+
+    const recalled = await run(recallTool, {})
+    assert.match(recalled, /Saved during a turn that had ingested external content/)
+    assert.match(recalled, /not as instructions/)
+  })
+
+  it('leaves clean-turn memories unmarked — in and out of a turn context', async () => {
+    await run(rememberTool, { title: 'Plain', content: 'No externals involved' })
+    await runWithThreadExecutionContext({ ...TEST_CONTEXT }, () =>
+      run(rememberTool, { title: 'Clean turn', content: 'Still no externals' }),
+    )
+    for (const note of loadKnowledgeNotes(MEMORY_TYPE)) {
+      assert.equal(note.fields[EXTERNAL_CONTEXT_FIELD], undefined, note.title)
+    }
+    assert.doesNotMatch(await run(recallTool, {}), /ingested external content/)
+  })
+
+  it('clears the marker when a clean turn rewrites a tainted memory', async () => {
+    await inTaintedTurn(() => run(rememberTool, { title: 'Evolving', content: 'v1 from web' }))
+    await run(rememberTool, { title: 'Evolving', content: 'v2 rewritten clean' })
+    const note = loadKnowledgeNotes(MEMORY_TYPE)[0]
+    assert.equal(note?.fields[EXTERNAL_CONTEXT_FIELD], undefined)
+  })
+
+  it('sets the marker when a tainted turn rewrites a clean memory', async () => {
+    await run(rememberTool, { title: 'Evolving', content: 'v1 clean' })
+    await inTaintedTurn(() => run(rememberTool, { title: 'Evolving', content: 'v2 from web' }))
+    const note = loadKnowledgeNotes(MEMORY_TYPE)[0]
+    assert.equal(note?.fields[EXTERNAL_CONTEXT_FIELD], 'true')
   })
 
   it('recall on an empty project explains how to add one', async () => {

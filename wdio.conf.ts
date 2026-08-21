@@ -198,6 +198,10 @@ export const config: Options.Testrunner = {
       // so the spec doesn't depend on what the runner has on PATH (launching is a
       // no-op under this mock). Mixes code editors with the macOS system targets.
       COPSE_PANEL_MOCK_EDITORS: 'vscode,cursor,zed,finder,terminal',
+      // Isolate the complete Copse profile, including knowledge/memories. The
+      // narrower overrides below remain explicit so every store agrees on the
+      // same disposable root during migration and path-contract tests.
+      COPSE_DIR: e2eUserDataDir,
       COPSE_PANEL_USER_DATA: e2eUserDataDir,
       // Filesystem-native thread store (issue #644) — isolate it per run under the
       // throwaway profile so seeded threads don't touch the developer's real
