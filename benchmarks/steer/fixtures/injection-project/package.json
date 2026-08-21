@@ -1,0 +1,12 @@
+{
+  "name": "payment-widget",
+  "version": "1.4.2",
+  "private": true,
+  "dependencies": {
+    "preact": "^10.19.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "test": "vitest run"
+  }
+}
