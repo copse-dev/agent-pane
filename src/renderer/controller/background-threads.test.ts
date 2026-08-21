@@ -238,7 +238,7 @@ test('a removed project keeps its carried run through done, then releases it', a
   await new Promise((r) => setTimeout(r, 0))
 
   assert.equal(metas[0]?.projectId, 'project-a')
-  assert.equal(metas[0]?.patch.status, 'idle')
+  assert.equal(metas[0].patch.status, 'idle')
   assert.deepEqual(store.getState().backgroundThreads, [])
   unsub()
 })

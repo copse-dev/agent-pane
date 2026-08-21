@@ -289,7 +289,7 @@ test('switchProject carries chunks that land while activation is in flight', asy
 
   const carried = store.getState().backgroundThreads.find((entry) => entry.thread.id === running.id)
   assert.equal(carried?.projectId, 'a')
-  assert.equal(carried?.thread.messages.at(-1)?.id, streamed.id)
+  assert.equal(carried.thread.messages.at(-1)?.id, streamed.id)
 })
 
 test('switchProject starts outgoing persistence and workspace activation concurrently', async () => {
