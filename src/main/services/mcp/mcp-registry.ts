@@ -532,23 +532,29 @@ async function teardown(registry: ToolRegistry): Promise<void> {
 }
 
 export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
-  // Skip all MCP server connections under agent-eval and e2e. e2e mocks the LLM
-  // and must not reach the network — a curated HTTP server (e.g. the MDN server
-  // at https://mcp.mdn.mozilla.net/) would block the awaited startup connect for
-  // CONNECT_TIMEOUT_MS on a runner with no egress, wedging the whole app and
-  // hanging every workspace-loading spec. (Onboarding has no active servers, so
-  // it was unaffected.)
+  const generation = ++loadGeneration
+  // Bundled in-process servers (e.g. the canvas) are always considered, even with
+  // no user config, so the feature "just works" once the experimental flag is on.
+  // They connect ahead of the eval/e2e bail below: that bail exists to keep those
+  // runs off the network, and an in-process server is a linked memory pair with
+  // no socket, no subprocess, and nothing to time out. Skipping them there would
+  // make the canvas untestable in the only tier that can render it — and the gate
+  // above still applies, so a run whose profile leaves the plugin off connects
+  // nothing at all.
+  const bundledStatuses = await connectBundledServers(registry, generation)
+  // Skip *configured* MCP server connections under agent-eval and e2e. e2e mocks
+  // the LLM and must not reach the network — a curated HTTP server (e.g. the MDN
+  // server at https://mcp.mdn.mozilla.net/) would block the awaited startup
+  // connect for CONNECT_TIMEOUT_MS on a runner with no egress, wedging the whole
+  // app and hanging every workspace-loading spec. (Onboarding has no active
+  // servers, so it was unaffected.)
   if (process.env['COPSE_AGENT_EVAL'] === '1' || process.env['COPSE_E2E'] === '1') {
-    serverStatuses = []
+    if (generation === loadGeneration) serverStatuses = bundledStatuses
     return
   }
-  const generation = ++loadGeneration
   const { active, untrusted } = await collectConfigs()
   if (generation !== loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
-  // Bundled in-process servers (e.g. the canvas) are always considered, even with
-  // no user config, so the feature "just works" once the experimental flag is on.
-  const bundledStatuses = await connectBundledServers(registry, generation)
   if (active.length === 0 && untrusted.length === 0 && bundledStatuses.length === 0) {
     serverStatuses = []
     return

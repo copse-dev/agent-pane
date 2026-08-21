@@ -443,6 +443,12 @@ export function seedEmptyProject(
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
+    /**
+     * Opt into the `copse.mcp-ui-canvas` pack (the bundled canvas MCP server's
+     * `render_html_artefact` tool, artefact rendering in the Browser pane, and
+     * the prototype steering hook). Ships off, like the other experimental packs.
+     */
+    mcpUiCanvasEnabled?: boolean
     developerMode?: boolean
     /** Opt into the read-only Remote Desktop pane. */
     vncEnabled?: boolean
@@ -508,6 +514,7 @@ export function seedEmptyProject(
   if (options?.modelComparisonEnabled) enabledPlugins.push('copse.model-comparison')
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
+  if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
   seedConfig.pluginDisabled =
     options?.pluginDisabled !== undefined
       ? [...options.pluginDisabled]
