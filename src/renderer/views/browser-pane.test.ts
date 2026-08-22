@@ -378,7 +378,7 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const resizeObserverDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver')
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -401,9 +401,11 @@ describe('browser pane requested URLs', () => {
       assert.match(tabLabel ?? '', /example\.com/)
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (resizeObserverDescriptor) {
+        Object.defineProperty(globalThis, 'ResizeObserver', resizeObserverDescriptor)
+      } else {
+        Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      }
       unmount()
     }
   })

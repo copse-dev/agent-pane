@@ -65,6 +65,17 @@ describe('mirrorArtefactToAgent', () => {
     assert.deepEqual(s.calls[1]?.opts, { newTab: true })
   })
 
+  it('does not navigate to an external URI-list artefact without origin approval', async () => {
+    const s = session()
+    const preview = await mirrorArtefactToAgent(
+      artefact({ mimeType: 'text/uri-list', body: 'https://example.com/dashboard' }),
+      s,
+    )
+
+    assert.equal(preview, null)
+    assert.deepEqual(s.calls, [])
+  })
+
   it('reopens in a fresh tab when the remembered one is gone', async () => {
     // The agent can close its own tabs with browser_tabs; without the retry a
     // single close would wedge the mirror for that title for the whole session.

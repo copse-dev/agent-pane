@@ -50,6 +50,12 @@ export async function mirrorArtefactToAgent(
   artefact: CanvasArtefact,
   session: CanvasMirrorSession,
 ): Promise<string | null> {
+  // `text/uri-list` is supplied by an MCP server and may name any external
+  // origin. Navigating it here would bypass the approval that guards
+  // `browser_navigate`, merely because a tool returned a canvas resource.
+  // Self-contained HTML becomes an opaque data: document and is safe to mirror
+  // automatically; external artefacts remain visible in the canvas only.
+  if (artefact.mimeType !== 'text/html') return null
   const url = artefactUrl(artefact)
   const known = viewIdByTitle.get(artefact.title)
 

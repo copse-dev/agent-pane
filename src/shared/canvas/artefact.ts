@@ -27,8 +27,8 @@ export function htmlDataUrl(html: string): string {
 
 /**
  * The URL that renders `artefact`: an opaque `data:` URL for inline HTML, or a
- * normalized target for a URL-list artefact (still subject to the browser
- * origin policy when the agent session loads it).
+ * normalized target for a URL-list artefact. Callers that load external URLs
+ * must apply the appropriate origin policy; this helper only derives the URL.
  */
 export function artefactUrl(artefact: CanvasArtefact): string {
   return artefact.mimeType === 'text/html'
