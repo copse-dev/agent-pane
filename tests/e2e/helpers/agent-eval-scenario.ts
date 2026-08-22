@@ -4,71 +4,6 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 
-export type PromptAttachment = {
-  path: string
-  content?: string
-  fixture?: string
-}
-
-export type EvalPrompt =
-  | string
-  | {
-      text: string
-      attachments?: PromptAttachment[]
-    }
-
-export interface EvalScenario {
-  id: string
-  description?: string
-  workspace?: {
-    type: 'current' | 'tempProject'
-    prefix?: string
-    initializeGit?: boolean
-    seedFiles?: PromptAttachment[]
-  }
-  prompts?: EvalPrompt[]
-  promptVariants?: string[]
-  autonomy?: {
-    tracePath: string
-    requireShellApproval?: boolean
-  }
-  backgroundWake?: {
-    continuationCount: number
-    reloadRenderer?: boolean
-    finalAssistantContains: string
-    timeoutMs?: number
-  }
-  toolUse?: {
-    requireTools?: string[]
-    /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
-    requireAnyTools?: string[]
-    forbidTools?: string[]
-    /** Fail when a `sandbox_network_audit` card names a GitHub host. */
-    forbidGithubNetworkDenial?: boolean
-    requireBackgroundWakeStart?: boolean
-    maxApprovals?: number
-  }
-  assertWorkspace?: {
-    git?: {
-      minCommits?: number
-      allCommitMessagesContain?: string[]
-    }
-    homePage?: {
-      path?: string
-      contains?: string[]
-      linksTo?: string
-    }
-    menuPage?: {
-      path?: string
-      contains?: string[]
-    }
-    filesContain?: Array<{
-      glob?: string
-      contains: string[]
-    }>
-  }
-}
-
 const promptAttachmentSchema = z.object({
   path: z.string(),
   content: z.string().optional(),
@@ -83,7 +18,7 @@ const evalPromptSchema = z.union([
   }),
 ])
 
-const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
+const evalScenarioSchema = z.object({
   id: z.string(),
   description: z.string().optional(),
   workspace: z
@@ -113,8 +48,10 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
   toolUse: z
     .object({
       requireTools: z.array(z.string()).optional(),
+      /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
       requireAnyTools: z.array(z.string()).optional(),
       forbidTools: z.array(z.string()).optional(),
+      /** Fail when a `sandbox_network_audit` card names a GitHub host. */
       forbidGithubNetworkDenial: z.boolean().optional(),
       requireBackgroundWakeStart: z.boolean().optional(),
       maxApprovals: z.number().int().nonnegative().optional(),
@@ -152,6 +89,20 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
     })
     .optional(),
 })
+
+/**
+ * Scenario shape, inferred from the schema that parses it.
+ *
+ * This was written twice — a hand-written interface plus the same object
+ * annotated `z.ZodType<EvalScenario>` — and under `exactOptionalPropertyTypes`
+ * the two cannot agree: zod types an omitted field as `T | undefined`, the
+ * interface as "absent, or `T`". `tsc` rejects the annotation outright, so the
+ * file only typechecked while nothing in a checked project imported it.
+ * Inferring leaves the parser as the single declaration of the shape.
+ */
+export type EvalScenario = z.infer<typeof evalScenarioSchema>
+export type EvalPrompt = z.infer<typeof evalPromptSchema>
+export type PromptAttachment = z.infer<typeof promptAttachmentSchema>
 
 export function loadEvalScenario(path: string): EvalScenario {
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
