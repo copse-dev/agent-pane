@@ -77,6 +77,15 @@ describe('splitUserPromptForFold', () => {
     assert.equal([parts.head, parts.middle, parts.tail].join(' '), proseOf(400))
   })
 
+  it('does not flatten a few long hard lines into single-paragraph prose', () => {
+    const content = [`# ${proseOf(180)}`, `- ${proseOf(180)}`].join('\n')
+    assert.ok(
+      userPromptWrappedLineEstimate(content) > USER_PROMPT_FOLD_LINE_THRESHOLD,
+      'fixture should exceed the visual-height threshold',
+    )
+    assert.equal(splitUserPromptForFold(content), null)
+  })
+
   it('leaves a short single paragraph unfolded', () => {
     assert.equal(splitUserPromptForFold(proseOf(20)), null)
   })

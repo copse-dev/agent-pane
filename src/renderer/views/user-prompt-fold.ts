@@ -97,7 +97,14 @@ export function splitUserPromptForFold(content: string): UserPromptFoldParts | n
 
   const headCount = USER_PROMPT_FOLD_HEAD_LINES
   const tailCount = USER_PROMPT_FOLD_TAIL_LINES
-  if (lineCount <= headCount + tailCount) return splitProseFold(content)
+  // Word-carving is only safe for true single-paragraph prose. Applying it to
+  // two or three hard lines normalises every newline to a space, so expanding
+  // the prompt no longer shows what the user submitted (and can flatten
+  // Markdown structure). With too few hard lines to form distinct bookends,
+  // leave the prompt intact.
+  if (lineCount <= headCount + tailCount) {
+    return lineCount === 1 ? splitProseFold(content) : null
+  }
   const middleLines = lines.slice(headCount, lines.length - tailCount)
   if (middleLines.length === 0) return null
   return {
