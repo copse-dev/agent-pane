@@ -341,23 +341,28 @@ async function canApplyDirectly(
   }
 
   const root = executionRootFor(state)
+  const status = await getGitStatus(root)
+  if (!status) {
+    return { ok: false, reason: 'git is unavailable or the workspace is not a git worktree' }
+  }
+
   // Creating a file that does not exist yet destroys nothing, so there is
   // nothing for approval to protect — the same reasoning `canApplyFileOpDirectly`
   // already applies to `mkdir`, and the reason a "prototype this" turn can write
   // its HTML and render it in one step instead of stopping at a diff panel for a
-  // file the user has never seen. The creation stays fully visible and
-  // reversible: it lands untracked in `git status` and deleting it loses nothing.
+  // file the user has never seen.
+  //
+  // Deliberately *after* the git check, because the safety this leans on is
+  // git's: the creation stays visible and reversible only because it lands
+  // untracked in `git status` and deleting it loses nothing. A workspace with no
+  // worktree has neither that visibility nor a backup to fall back on, so it
+  // keeps staging every write for approval.
   //
   // Writes only. `canApplyFileOpDirectly` routes deletes and renames through
   // here too, and for those the path *not* existing is a failure to report, not
   // a licence to skip review.
   if (op === 'write' && !(await pathExistsInWorktree(path, root))) {
     return { ok: true, newFile: true }
-  }
-
-  const status = await getGitStatus(root)
-  if (!status) {
-    return { ok: false, reason: 'git is unavailable or the workspace is not a git worktree' }
   }
 
   const changedPaths = [...status.staged, ...status.unstaged].map((change) => change.path)

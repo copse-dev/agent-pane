@@ -305,6 +305,19 @@ describe('applyOrStageDiff direct-apply policy', () => {
     assert.equal(getDiffQueueForTest().length, 0)
   })
 
+  ownedIt('still stages a new file when the workspace is not a git worktree', async () => {
+    // The exemption's safety argument is git's: a creation is recoverable
+    // because it shows up untracked in `git status` and deleting it loses
+    // nothing. With no worktree there is neither that visibility nor a backup,
+    // so creation goes back through approval like every other write. Regression
+    // guard for #1753's non-git fixture, which the exemption originally bypassed.
+    setGitAvailableForTest(false)
+
+    const result = await applyOrStageDiff('prototypes/nogit.html', '', '<p>new</p>\n', 'html')
+    assert.match(result, /approval is required/)
+    assert.equal(getStagedDiffEntry('prototypes/nogit.html')?.after, '<p>new</p>\n')
+  })
+
   ownedIt('creates a new file directly even while the worktree is dirty', async () => {
     await writeFile(join(workspaceRoot, 'dirty.txt'), "the user's work\n", 'utf-8')
 
