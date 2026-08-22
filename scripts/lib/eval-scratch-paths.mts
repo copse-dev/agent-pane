@@ -32,6 +32,7 @@ import {
   unwrapWrappers,
 } from '../../src/main/services/security/shell-argv.ts'
 import { copseWorkspaceTmpDir } from '../../src/main/services/storage/copse-paths.ts'
+import { isRecord } from '../../src/shared/unknown-value.mts'
 
 /**
  * Tools whose `command` argument is a shell command line.
@@ -256,7 +257,7 @@ export interface GlobalTempWrite {
 /** One observed call, narrowed to what this scorer reads. */
 export interface ShellObservation {
   name: string
-  args?: Record<string, unknown> | undefined
+  args?: unknown
 }
 
 /**
@@ -273,7 +274,7 @@ export function globalTempWrites(
   const writes: GlobalTempWrite[] = []
   for (const call of observed) {
     if (!isShellTool(call.name)) continue
-    const command = call.args?.[SHELL_COMMAND_ARG]
+    const command = isRecord(call.args) ? call.args[SHELL_COMMAND_ARG] : undefined
     if (typeof command !== 'string' || command.trim().length === 0) continue
     for (const target of shellWriteTargets(command)) {
       if (isGlobalTempWriteTarget(target, roots)) {
