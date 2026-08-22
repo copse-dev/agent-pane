@@ -71,18 +71,20 @@ npm run analyze:thread -- tests/e2e/artifacts/<file>.jsonl tests/e2e/scenarios/m
 
 Optional `expect` block in scenario JSON:
 
-| Field                        | Meaning                                                    |
-| ---------------------------- | ---------------------------------------------------------- |
-| `shouldSteerTodos`           | User message should match `shouldSteerTodos()`             |
-| `requireUpdateTodos`         | At least one `update_todos` tool call                      |
-| `maxExplore` / `minExplore`  | Explore count bounds                                       |
-| `requireTools`               | e.g. `["git_diff"]` for review tasks                       |
-| `forbidTools`                | Tools that should not appear                               |
-| `maxInputTokens`             | Token budget guard                                         |
-| `forbidParallelExploreTurn1` | First assistant turn must not launch 2+ explores           |
-| `requireDoctrineCompliance`  | Fail when working-style doctrine heuristics violate (#744) |
-| `userIntent`                 | Optional `question` / `request` label for doctrine scoring |
-| `inScopePaths`               | Optional paths for doctrine `scopeDiscipline`              |
+| Field                        | Meaning                                                               |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `shouldSteerTodos`           | User message should match `shouldSteerTodos()`                        |
+| `requireUpdateTodos`         | At least one `update_todos` tool call                                 |
+| `maxExplore` / `minExplore`  | Explore count bounds                                                  |
+| `requireTools`               | e.g. `["git_diff"]` for review tasks                                  |
+| `requireAnyTools`            | Passes when the run used at least one of these                        |
+| `forbidTools`                | Tools that should not appear                                          |
+| `forbidDisplacedShell`       | Fail when `run_shell` ran a command a first-class tool covers (#1845) |
+| `maxInputTokens`             | Token budget guard                                                    |
+| `forbidParallelExploreTurn1` | First assistant turn must not launch 2+ explores                      |
+| `requireDoctrineCompliance`  | Fail when working-style doctrine heuristics violate (#744)            |
+| `userIntent`                 | Optional `question` / `request` label for doctrine scoring            |
+| `inScopePaths`               | Optional paths for doctrine `scopeDiscipline`                         |
 
 ## LLM judge (you)
 
@@ -104,6 +106,8 @@ Use the user’s exported JSONL from Downloads the same way: `npm run analyze:th
 - Multi-turn: add follow-up strings to `prompts` in order; the driver waits for idle between each.
 - For “review my diff” issues, set `expect.requireTools: ["git_diff"]`.
 - For todo steering issues, set `expect.shouldSteerTodos: true` and optionally `requireUpdateTodos: true` when you want strict compliance.
+- **Tool preference over shell:** `forbidDisplacedShell` fails a run that drove `gh` or network `git` through `run_shell` when a dedicated tool (`gh_pr_view`, `gh_run_list`, `get_ci_status`, …) would have done the job — see `DISPLACED_SHELL_SHAPES` in `scripts/lib/eval-tool-expectations.mts` for the exact table. Local `git log` and `gh api` are deliberately NOT flagged, so this is not "forbid all `run_shell`". The analyzer reports a `displacedShellHistogram` whether or not the scenario fails on it, which is how you take a baseline before turning the gate on. The e2e-only `toolUse.maxShellEscalationPrompts` adds a looser ceiling read from the thread spine's decision causes.
+- Prompt classes with fixed intent but varied wording go in `promptVariants`; select one with `COPSE_EVAL_PROMPT_VARIANT=<index>`. `git-ci-first-class-tools.json` is the worked example.
 
 ## When not to use this skill
 

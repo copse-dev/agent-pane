@@ -51,6 +51,18 @@
   color: var(--text-muted);
   pointer-events: none;
 }
+/* Tab-completable next step: the suggestion rides in the placeholder slot and
+   ::after paints the "Tab" keycap affordance beside it. */
+.prompt-input[data-next-step]:empty::after {
+  content: 'Tab';
+  margin-left: var(--spacing-sm);
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.75em;
+  color: var(--text-muted);
+  pointer-events: none;
+}
 .input-row {
   position: relative;
 }

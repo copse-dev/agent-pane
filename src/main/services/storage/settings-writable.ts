@@ -331,6 +331,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // first-party plugin's `mcp-ui-canvas` capability (Settings > Plugins), so the
   // former `mcpUiArtefactsEnabled` top-level boolean is retired.
   modelClassifierEnabled: z.boolean(),
+  // Experimental next-step tab complete: after a turn, a small-tasks model may
+  // offer one obvious next step as composer placeholder text the user accepts
+  // with Tab. See next-step-service.ts.
+  nextStepSuggestionEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
   // cheaper worker model implements delegated steps. See orchestration-strategy.ts.

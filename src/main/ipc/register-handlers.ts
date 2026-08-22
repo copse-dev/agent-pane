@@ -2014,6 +2014,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       active,
     })),
   )
+  /**
+   * Read one instruction file for display (Settings → Sources opens it in the
+   * shared preview dialog). Narrow and fail-closed: the path must still be a
+   * discovered instruction source, so this is not a general file-read channel.
+   * Reading is trust-independent on purpose — seeing what a repo's AGENTS.md
+   * says is how the user decides whether to trust the workspace at all — and it
+   * returns the same trimmed text the prompt would get, not the raw bytes.
+   */
+  ipcMain.handle('instructions:read', async (event, rawPath: unknown) => {
+    assertMainFrameSender(event, win)
+    const path = parseIpcArgs(zPathString, [rawPath])
+    const source = (await loadProjectInstructionSources()).find((s) => s.path === path)
+    if (!source) throw new IpcValidationError('Not a discovered instruction file')
+    return source.content
+  })
   ipcMain.handle('cursorRules:list', async () => {
     const root = getWorkspaceRoot()
     if (!root) return []
