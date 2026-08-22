@@ -54,10 +54,7 @@ export function mockNextStepHint(): string {
  */
 export async function suggestNextStep(context: FollowUpContext): Promise<string | null> {
   if (!getSetting<boolean>('nextStepSuggestionEnabled', false)) return null
-  if (
-    process.env['COPSE_PANEL_MOCK_NEXT_STEP'] === '1' ||
-    getSetting<boolean>('mockNextStep', false)
-  ) {
+  if (process.env['COPSE_PANEL_MOCK_NEXT_STEP'] === '1') {
     return mockNextStepHint()
   }
 

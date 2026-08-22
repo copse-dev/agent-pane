@@ -1,23 +1,20 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 // Must match mockNextStepHint() in src/main/services/next-step-service.ts.
 const MOCK_HINT = 'Run the test suite to verify the fix'
 
 describe('next-step tab complete (experimental)', () => {
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    writeE2eEnv({ COPSE_PANEL_MOCK_NEXT_STEP: '1' })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-next-step-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
-      mockNextStep: true,
       nextStepSuggestionEnabled: true,
     })
     await browser.reloadSession()
@@ -39,13 +36,13 @@ describe('next-step tab complete (experimental)', () => {
       { timeout: 30_000, timeoutMsg: 'next-step hint never reached the placeholder' },
     )
     await expect($('.prompt-input')).toHaveAttribute('data-next-step')
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'next-step-hint.png'))
+    await saveAppScreenshot('next-step-hint.png')
 
     // Tab accepts: the hint becomes composer text and the offer is spent.
     await $('.prompt-input').click()
     await browser.keys('Tab')
     await expect($('.prompt-input')).toHaveText(MOCK_HINT)
     await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Message…')
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'next-step-hint-accepted.png'))
+    await saveAppScreenshot('next-step-hint-accepted.png')
   })
 })

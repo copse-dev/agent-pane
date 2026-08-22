@@ -416,7 +416,6 @@ export function seedEmptyProject(
   options?: {
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
-    mockNextStep?: boolean
     nextStepSuggestionEnabled?: boolean
     model?: string
     advisorModel?: string
@@ -531,9 +530,6 @@ export function seedEmptyProject(
   }
   if (options?.mockFollowUps) {
     settings.mockFollowUps = true
-  }
-  if (options?.mockNextStep) {
-    settings.mockNextStep = true
   }
   if (options?.nextStepSuggestionEnabled !== undefined) {
     settings.nextStepSuggestionEnabled = options.nextStepSuggestionEnabled

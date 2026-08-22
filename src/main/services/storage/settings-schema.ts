@@ -116,7 +116,6 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   defaultReadonlyMode: z.boolean(),
   safeInstallEnabled: z.boolean(),
   mockFollowUps: z.boolean(),
-  mockNextStep: z.boolean(),
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
   browserAllowUserApproval: z.boolean(),
