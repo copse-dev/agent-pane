@@ -119,6 +119,15 @@ export function circleIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('circle', ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z'], className)
 }
 
+/**
+ * Three-quarter arc — the in-progress marker, meant to be spun by CSS.
+ * `circleIcon` cannot do this job: a closed circle is rotationally symmetric, so
+ * animating it produces no visible motion and the status reads as settled.
+ */
+export function spinnerIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('loader-circle', ['M21 12a9 9 0 1 1-6.219-8.56'], className)
+}
+
 /** Horizontal minus — a settled "absent / not loaded" marker (not in-progress). */
 export function minusIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('minus', ['M5 12h14'], className)

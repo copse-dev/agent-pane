@@ -6,9 +6,14 @@ useful only when that workflow needs them.
 
 ## Runtime and standard scripts
 
-Copse is an Electron desktop app with no backend service. The standard scripts live in
-`package.json`; use `dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`, `test:e2e`,
-and `check` rather than recreating their behavior.
+Copse is an Electron desktop app with no backend service. `make run` is the normal entry point: it
+runs `check-node`, reinstalls dependencies only when `pnpm-lock.yaml` changes, rebuilds `dist/` only
+when source changes, and then starts the app — so it is safe to repeat and does the minimum work
+each time. `make build` stops after the rebuild, and `make clean` drops `dist/` and the stamps.
+
+The standard scripts live in `package.json`; use `dev`, `build`, `start`, `typecheck`, `lint`,
+`format:check`, `test`, `test:e2e`, and `check` rather than recreating their behavior. Reach for
+`dev` over `make run` when you want watch mode rather than a single build.
 
 The repo pins Node `22.22.2` in `.nvmrc` and requires Node `>=22.22.2` plus pnpm
 (`packageManager`: `pnpm@10.34.5`; enable with `corepack enable`). Tooling under
@@ -20,7 +25,8 @@ through `node_modules/.pnpm` while store bytes are shared when the filesystem
 allows. Electron’s macOS `dist/` is shared under `~/.copse/cache/electron-dist/`
 (see `scripts/patch-dev-name.mts`); gortex is shared under
 `~/.copse/cache/gortex/` (see `scripts/fetch-gortex.mts`). Each worktree still
-runs `pnpm install` to link its own `node_modules` and symlink those caches.
+runs its own install — `make run` or `pnpm install` — to link its own `node_modules`
+and symlink those caches.
 
 Cursor Cloud setup normally installs the pinned version through `.cursor/cloud-setup.sh`. If an
 older executable still shadows it, activate the repo version:
