@@ -448,3 +448,57 @@ the native pref on and off, as before. That is the scripted-geometry category
 WPT evidence. Two unit tests plus the empirical validation above are reasonable
 for a 78-line geometry change, but the standing rule was WPT numbers per
 change.
+
+### Why Mermaid still fails, after `getBBox` landed (2026-08-22)
+
+`getBBox` was implemented and Mermaid still shows "Diagram could not be
+rendered". The reason is specific and easy to miss.
+
+Probed in-page, creating an `<svg><text>Mg</text></svg>` and calling the APIs
+Mermaid uses:
+
+|                           | Servo                                      | Electron             |
+| ------------------------- | ------------------------------------------ | -------------------- |
+| `<text>.getBBox`          | **`TypeError: getBBox is not a function`** | `function`, width 20 |
+| `getComputedTextLength`   | (unreached)                                | `function`           |
+| `foreignObject` creatable | (unreached)                                | `true`               |
+
+`getBBox` was added to **`SVGGraphicsElement`**
+(`components/script/dom/svg/svggraphicselement.rs:65`), which is correct. But
+Servo's SVG element hierarchy has no text types at all — the directory contains
+circle, defs, ellipse, g, geometry, gradient, graphics, image, line,
+linearGradient, path, polygon, polyline, radialGradient, rect, stop, svg,
+symbol and use, and **no `SVGTextElement`, no `SVGTextContentElement`, no
+`SVGTSpanElement`**. A `<text>` element therefore never gets the
+`SVGGraphicsElement` interface, so it does not inherit `getBBox`, and the call
+throws.
+
+Mermaid measures every label with `getBBox` on a `<text>` node to size the
+boxes it draws around them. The first measurement throws, `mermaid.run` bails,
+no `<svg>` is produced, and the app's `diagramRenderFailed` check — which is
+just "is there an svg?" — reports failure. `suppressErrors: true` is why
+nothing appears in the console.
+
+**What it would take.** Not a small addition, and worth being explicit that it
+crosses into the phase this project deferred:
+
+1. `SVGTextContentElement` → `SVGTextPositioningElement` → `SVGTextElement` and
+   `SVGTSpanElement`, plus the element-creation mapping so `<text>`/`<tspan>`
+   are constructed as those types rather than falling back to a generic
+   element. That alone makes `getBBox` _reachable_.
+2. A real text bounding box behind it, which requires SVG text layout — font
+   selection, shaping and positioning of `x`/`y`/`dx`/`dy`. **This is phase 2b,
+   explicitly out of scope.** A stub returning zeros would be worse than the
+   current failure, not better: Mermaid would "succeed" and lay every node out
+   on top of every other, and the app would render a broken diagram instead of
+   an honest error.
+3. `getComputedTextLength()` on `SVGTextContentElement`, which Mermaid also
+   uses.
+4. Painting `<text>`, or the diagram renders with boxes and arrows and no
+   labels.
+
+So the honest summary for anyone picking this up: **Mermaid is blocked on SVG
+text, not on `getBBox`.** Adding `getBBox` to shapes was necessary and is not
+sufficient, and the remaining work is the text phase in full — interfaces,
+layout and painting — rather than another interface-shaped patch. Nothing about
+the current failure indicates a defect in the work that has landed.
