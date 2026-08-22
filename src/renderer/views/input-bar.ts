@@ -3,7 +3,9 @@ import { outlineIcon } from '../dom/outline-icon.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
+import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
+import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { IMAGE_DETAILS, type ImageDetail } from '@copse/llm/wire-types.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -1711,6 +1713,8 @@ export function mountInputBar(
     meta.className = 'attachment-chip-meta'
     meta.textContent = formatByteSize(ref.sizeBytes)
     chip.title = `${ref.name} — read as stills by the agent, not sent as video`
+    // Label, not the pill: the pill already holds the close button.
+    attachVideoExpand(label, api, ref.path, ref.name)
     chip.append(attachmentIcon('video', 'video-chip-icon'), label, meta)
     const remove = document.createElement('button')
     remove.append(closeIcon('ui-icon ui-icon-sm'))
@@ -1776,6 +1780,8 @@ export function mountInputBar(
     thumb.src = dataUrl
     thumb.width = 40
     thumb.height = 40
+    // Same shared lightbox as transcript/roadmap thumbs — openable before send.
+    attachImageExpand(thumb, 'Attached image')
     const remove = document.createElement('button')
     remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {

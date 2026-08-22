@@ -67,8 +67,9 @@ output, and content density.
 
 ## Attached screenshot expand
 
-Thread message images (`.message-image`), sent text attachments, roadmap image
-chips (`.roadmap-attachment-thumb`), and videos use the shared viewer shell in
+Thread message images (`.message-image`), composer image/video chips (empty-thread
+centered composer included), sent text attachments, roadmap image chips
+(`.roadmap-attachment-thumb`), and videos use the shared viewer shell in
 [`src/renderer/attachments/attachment-preview.ts`](../src/renderer/attachments/attachment-preview.ts)
 (`dialog.attachment-preview-dialog`). Each media adapter owns its content and
 resource cleanup; wire future types through `openAttachmentPreview` rather than

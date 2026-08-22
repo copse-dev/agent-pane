@@ -8,6 +8,12 @@ every published entry.
 
 ## Unreleased
 
+- Clicking an image or video chip in the empty-thread (centered) composer now
+  opens the same attachment preview modal used after send. Text chips already
+  did; media chips only expanded from the transcript or roadmap, so a new
+  thread — where the composer is the only place the attachment exists — had no
+  way to inspect what was attached before sending.
+
 - Asking Copse to prototype something now gets you a prototype you can look at.
   The MCP-UI canvas has always been able to render a self-contained HTML
   document as a live sandboxed artefact, but nothing pointed the model at it, so

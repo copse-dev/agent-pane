@@ -11,6 +11,7 @@ const THREAD_SHOT = 'image-expand-thread.png'
 const THREAD_DISMISSED_SHOT = 'image-expand-thread-dismissed.png'
 const TEXT_SHOT = 'attachment-preview-text.png'
 const ROADMAP_SHOT = 'image-expand-roadmap.png'
+const COMPOSER_SHOT = 'image-expand-composer-new-thread.png'
 
 /** 64×40 teal checker PNG so the modal has visible content for visual review. */
 const PNG_BASE64 =
@@ -105,6 +106,53 @@ describe('Screenshot click-to-expand', () => {
     )
     await saveAppScreenshot(TEXT_SHOT)
     await $('.attachment-preview-close').click()
+  })
+
+  /**
+   * Empty-thread (centered) composer is the only place an attachment exists
+   * before the first send. Clicking the chip must still open the shared modal —
+   * not a no-op, and not a different overlay.
+   */
+  it('expands a composer image chip on a new empty thread', async () => {
+    const newThreadBtn = $('.project-new-thread-btn')
+    await newThreadBtn.waitForClickable({ timeout: 15_000 })
+    await newThreadBtn.click()
+    await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
+    await $('.prompt-input').waitForExist({ timeout: 10_000 })
+
+    await browser.execute((base64: string) => {
+      const png = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+      const transfer = new DataTransfer()
+      transfer.items.add(new File([png], 'composer-shot.png', { type: 'image/png' }))
+      document.dispatchEvent(
+        new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: transfer }),
+      )
+    }, PNG_BASE64)
+
+    const thumb = $('.attachment-chips .image-chip img.image-expandable')
+    await thumb.waitForDisplayed({ timeout: 10_000 })
+    assert.equal(await thumb.getAttribute('role'), 'button')
+    assert.equal(await thumb.getAttribute('aria-label'), 'Expand Attached image')
+
+    await thumb.click()
+    const dialog = $('dialog.attachment-preview-dialog[open]')
+    await dialog.waitForExist({ timeout: 5_000 })
+    assert.equal(await dialog.getAttribute('data-preview-kind'), 'image')
+    const expandedSrc = await $('.image-expand-image').getAttribute('src')
+    assert.ok(
+      typeof expandedSrc === 'string' && expandedSrc.startsWith('data:image/png;base64,'),
+      'composer modal shows the attached image data URL',
+    )
+    await saveAppScreenshot(COMPOSER_SHOT)
+    await $('.attachment-preview-close').click()
+    await browser.waitUntil(
+      async () => {
+        const closed = $('dialog.attachment-preview-dialog')
+        if (!(await closed.isExisting())) return true
+        return (await closed.getAttribute('open')) == null
+      },
+      { timeout: 5_000, timeoutMsg: 'expected composer image preview to close' },
+    )
   })
 
   it('expands a roadmap plan attachment thumb in the same modal', async () => {
