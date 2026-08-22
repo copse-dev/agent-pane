@@ -852,6 +852,8 @@ export interface ApiClient {
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
+    /** Trimmed contents of one discovered instruction file, for the preview dialog. */
+    read: (path: string) => Promise<string>
   }
   cursorRules: {
     list: () => Promise<CursorRuleSummary[]>

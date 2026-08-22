@@ -792,7 +792,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       runNow: unsupported,
       onTriggered: subscribe,
     },
-    instructions: { list: emptyArray },
+    instructions: { list: emptyArray, read: () => resolved('') },
     cursorRules: { list: emptyArray },
     terminal: {
       create: () =>
