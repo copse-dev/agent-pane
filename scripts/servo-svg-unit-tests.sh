@@ -72,7 +72,7 @@ sed -e 's/^pub struct NumberListParser/pub(crate) struct NumberListParser/' \
 # are deliberately thin for exactly this reason: everything with real edge
 # cases lives in the pure modules, which is what gets tested here. If this
 # list has to grow, that is a signal logic has leaked into the bridge.
-for coupled in image integration resolve tree; do
+for coupled in foreign image integration pservers resolve text tree; do
   rm -f "$harness/src/svg/$coupled.rs"
   sed -i.bak "/^pub(crate) mod $coupled;$/d" "$harness/src/svg/mod.rs"
 done
