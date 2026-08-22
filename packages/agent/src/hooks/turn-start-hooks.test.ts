@@ -50,6 +50,11 @@ describe('TURN_START_HOOKS registration', () => {
 })
 
 describe('todo-steering', () => {
+  it('does not promise parallel execution before the fan-out implementation ships', () => {
+    assert.match(TODO_STEERING_PROMPT, /one item in_progress at a time/)
+    assert.doesNotMatch(TODO_STEERING_PROMPT, /run concurrently|isolated worktrees/)
+  })
+
   it('injects the steering prompt for multi-step work and abstains otherwise', async () => {
     assert.deepEqual(
       await todoSteeringHook.run({ userText: multiStepPrompt, priorTodos: [] }, {}),

@@ -61,10 +61,12 @@ Semantics:
   (`assignedModel: 'local'`, `status: 'in_progress'`, has a `check`,
   `localTodoItemsEnabled`, parent not local). Anything else falls back to the
   existing serial path unchanged.
-- Steering updates in `packages/agent/src/todo-steering.ts` and the
-  `update_todos` description: mark independent items in_progress together;
-  keep sequential items one-at-a-time. The blanket "one item at a time" rule is
-  replaced, not deleted — undeclared items stay serial.
+- When fan-out ships, steering in `packages/agent/src/todo-steering.ts` and the
+  `update_todos` description changes to mark independent items in_progress
+  together while sequential items stay one-at-a-time. The blanket "one item at
+  a time" rule remains in force during the serial foundation phases: promising
+  concurrency before the host can provide it would strand sibling items that
+  are no longer newly in progress.
 
 The plan is already a declarative surface emitted in one call, so this is the
 honest version of what `startLeadingParallelExplores` approximates with its
@@ -243,7 +245,8 @@ flowchart LR
 ## Phasing
 
 1. **Foundations (serial, flag-off behaviour identical).** Schema field, plural
-   finder, usage-race fix, steering copy. Independently shippable.
+   finder, and usage-race fix. Keep the one-at-a-time steering until phase 3;
+   the schema describes `parallel` as inert groundwork in this phase.
 2. **Single worker in a worktree.** Route even the existing one-item path through
    allocation + exec context + commit-on-complete + cleanup. This de-risks the
    worktree mechanics before any concurrency exists.

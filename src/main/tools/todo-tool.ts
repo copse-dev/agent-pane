@@ -36,7 +36,7 @@ const todoInputSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      'Marks the item as independent: safe to run concurrently with other parallel items in isolated worktrees. Only set when it touches different files and has no ordering dependency on them.',
+      'Records that the item is independent groundwork for a future parallel-worker rollout. It does not change execution in this build; continue marking only one item in progress at a time.',
     ),
 })
 

@@ -33,7 +33,6 @@ export function formatTodosForPrompt(todos: readonly TodoItem[]): string {
 
 export const TODO_STEERING_PROMPT = `When the user asks for multi-step work (refactors, implement-and-test, changes across several files):
 1. Call update_todos once with 3+ concrete steps before executing tools.
-2. Mark items in_progress when you start them; set completed when done (checks run automatically). Items you declared parallel: true run concurrently in isolated worktrees — only mark items parallel when they touch different files and have no ordering dependency.
-3. Sequential or overlapping items stay one-at-a-time.
-4. Tag mechanical items with assignedModel: "local" only when they include a verifiable check (shell, fileExists, or typecheck).
-5. For simple one-shot questions or single-file edits, do NOT create todos.`
+2. Mark one item in_progress at a time; set completed when done (checks run automatically).
+3. Tag mechanical items with assignedModel: "local" only when they include a verifiable check (shell, fileExists, or typecheck).
+4. For simple one-shot questions or single-file edits, do NOT create todos.`
