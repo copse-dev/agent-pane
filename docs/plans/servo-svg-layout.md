@@ -302,3 +302,115 @@ practical options remain, in order of cost:
    the fork's series) if animated SVG specifically must keep working.
 3. Treat native SVG layout as a multi-quarter upstream effort that would need to
    be proposed and staffed. It is not on anyone's roadmap today.
+
+## 5. Review of the prototype series (2026-08-22)
+
+Two corrections to earlier claims in this document, both found by running the
+app rather than reading the code.
+
+### `pathLength` is missing, and that — not animation — is why the indicator is frozen
+
+The reasoning indicator still does not move under native SVG. It is tempting to
+call that an animation bug. It is not: **CSS animations on SVG work**. The
+sidebar's three running dots animate 4–8 px per frame under Servo against 6–12 px
+in Electron, and the prototype's own rotation spinner animates too. An earlier
+guess in review — that `SVGTree` was not rebuilt on style-only changes, so
+`content_hash` saw stale values — was wrong, and so was a guess that CSS Grid was
+involved. Both were tested and eliminated.
+
+The actual setup, from `src/renderer/dom/reasoning-activity-icon.ts`:
+
+```
+<svg viewBox="-540 -540 1080 1080">
+  <path class="reasoning-activity-path" d="M416 -141 C…"  pathLength="1" />
+</svg>
+```
+
+```css
+.reasoning-activity-path {
+  stroke: currentColor;
+  stroke-width: 152;
+  stroke-dasharray: 1 1; /* in pathLength units, so 1 == the whole path */
+  stroke-dashoffset: 1;
+  animation: reasoning-activity-draw 2.5s ease-in-out infinite;
+}
+@keyframes reasoning-activity-draw {
+  0%,
+  1% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  2% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  46%,
+  56% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  98% {
+    stroke-dashoffset: -1;
+    opacity: 1;
+  }
+  99%,
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
+  }
+}
+```
+
+This is the standard "draw a line on" trick, and **it depends entirely on
+`pathLength="1"`**, which renormalizes the path's length so `stroke-dasharray: 1 1`
+means one dash covering the whole path and one gap of the same size. Animating
+`stroke-dashoffset` from 1 to −1 then sweeps the dash across, drawing and erasing
+the spiral.
+
+`pathLength` is absent from Servo — it appears nowhere in
+`components/script/dom/svg/` nor in the new `components/layout/svg/`. Without it
+the dash pattern is computed against the path's _real_ length, which for this
+spiral is on the order of thousands of user units. A 1-unit dash and 1-unit gap
+at `stroke-width: 152` is then indistinguishable from a solid stroke, and moving
+`stroke-dashoffset` by ±1 shifts it by well under a thousandth of the path.
+Frozen, and fully drawn — which is exactly what the pixels show: Servo renders
+the complete spiral, statically, while Electron sweeps it.
+
+Note this is consistent with the measured evidence that ruled out an animation
+bug: `stroke-dashoffset` **does** advance in computed style under Servo
+(0.1191px → 0px) essentially as under Electron (0.137251px → 0px). Style is
+correct; the dash geometry it feeds is computed against the wrong length.
+
+**The discriminating test**, which should be run before any code is written:
+animate `stroke-dashoffset` on a path with a _known_ length and **no**
+`pathLength` attribute (e.g. a 100-unit straight line with
+`stroke-dasharray: 50 50`). If that animates, `pathLength` is confirmed as the
+only defect and the fix is a geometry feature, not an invalidation one. If it
+also freezes, dash handling is not being re-resolved per frame and the
+invalidation theory is back on the table.
+
+### Phase 0 — the prototype was right, this document was wrong
+
+The plan listed a DOM/geometry interface phase first. The prototype skipped it
+and reported it was unnecessary, and for _rendering_ that is correct: layout
+reads geometry from attributes directly and never needs the scripted interfaces.
+The working renderer is the proof.
+
+The distinction the plan should have drawn is between three separate things:
+
+1. **Scripted geometry APIs** (`getBBox`, `getCTM`, `SVGLength`, `SVGRect`) —
+   not needed to paint, needed by _content that scripts SVG_. `getBBox` is
+   commented out in `SVGGraphicsElement.webidl` today. This is why Mermaid fails:
+   it measures text with `getBBox` to lay out nodes, and it fails **identically
+   with the native pref on and off**, which is the signature of a missing DOM API
+   rather than a painting gap.
+2. **Rendering-affecting geometry attributes** (`pathLength`, `preserveAspectRatio`) —
+   not scripting APIs at all, and genuinely required for correct painting. These
+   belong in the geometry phase, and `pathLength` slipping through is a hole in
+   that phase rather than in Phase 0.
+3. **Element types** (`<marker>`, `<clipPath>`, `<mask>`, `<pattern>`) — needed
+   for both.
+
+So Phase 0 is deprioritisable for a rendering prototype and blocking for
+JS-driven SVG. Mermaid is the concrete case: it will not work until (1) lands,
+no matter how good the painting gets.
