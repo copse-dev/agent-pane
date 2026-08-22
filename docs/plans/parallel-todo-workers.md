@@ -35,8 +35,8 @@ either absorbed or explicitly discarded — a crashed run never loses work silen
 - Workers run **directly in the thread execution root** with implementation tools
   (`read_file`, `list_dir`, `search_codebase`, `write_file`, `run_shell`), so they
   see the parent's uncommitted state but also contend with the parent for it.
-- `TODO_STEERING_PROMPT` and the `update_todos` description both say *"mark one item
-  in_progress at a time"* — the model is trained to serialize.
+- `TODO_STEERING_PROMPT` and the `update_todos` description both say _"mark one item
+  in_progress at a time"_ — the model is trained to serialize.
 - Two known shared-state races limit concurrency even before worktrees enter the
   picture: `runTodoWorker` reads usage from the shared mutable `provider.lastUsage`
   (the exact race explore fixed via per-chunk accumulation in `runSubagent`), and
@@ -57,7 +57,7 @@ Semantics:
 - `parallel: true` asserts the item touches no file or resource another
   same-batch item touches, and carries no ordering dependency on one.
 - Items flagged in the same `update_todos` call form the candidate fan-out set.
-  A qualifying item must *also* satisfy today's routing gate
+  A qualifying item must _also_ satisfy today's routing gate
   (`assignedModel: 'local'`, `status: 'in_progress'`, has a `check`,
   `localTodoItemsEnabled`, parent not local). Anything else falls back to the
   existing serial path unchanged.
@@ -151,11 +151,11 @@ work. History ends up as one commit per todo, in plan order, on the thread branc
 
 Three terminal states per worker:
 
-| State | Worktree | Branch |
-| --- | --- | --- |
-| Merged (picked cleanly) | removed immediately | deleted (`-d`; content verified absorbed by pick success) |
-| Conflicted, later resolved/discarded | removed on absorb/discard | deleted with the same verification |
-| Errored/failed-check, never absorbed | retained for parent inspection | retained |
+| State                                | Worktree                       | Branch                                                    |
+| ------------------------------------ | ------------------------------ | --------------------------------------------------------- |
+| Merged (picked cleanly)              | removed immediately            | deleted (`-d`; content verified absorbed by pick success) |
+| Conflicted, later resolved/discarded | removed on absorb/discard      | deleted with the same verification                        |
+| Errored/failed-check, never absorbed | retained for parent inspection | retained                                                  |
 
 Startup recovery follows the worktree-inventory pattern: sweep the managed
 namespace by naming convention, prune worker worktrees whose commits are provably
@@ -209,19 +209,19 @@ flowchart LR
 
 ## Integration points
 
-| Area | Entry point | Change |
-| --- | --- | --- |
-| Todo schema | `src/shared/types/todo.ts`, `todo-tool.ts` input schema | optional `parallel` field, carried through `applyTodoUpdate` like `assignedModel` |
-| Finder | `findNewlyInProgressLocal`, `src/shared/todos/todo-logic.ts` | plural variant returning the whole newly-in-progress local set |
-| Routing + fan-out | `setTodoToolPostProcess` block, `src/main/services/agent-service.ts` | batch allocation, semaphore, join; replaces the single awaited worker |
-| Worker runtime | `src/main/services/todo-worker-runner.ts` | exec-context wrapping, cwd-scoped checks, per-chunk usage, host-side commit |
-| Worktrees | `src/main/services/worktree-manager.ts` | owner-id prefix for todo workers; reuse allocation/snapshot/serialization primitives |
-| Consolidation | new `src/main/services/todo-consolidation.ts` | cherry-pick driver, conflict reporting, absorb verification, discard |
-| New tool | `src/main/tools/` | `consolidate_todo_workers` (registered only while merges pending) |
-| Recovery | `worktree-inventory.ts`, `pruneSafeOrphans` | todo-worker sweep with `unmerged` retention |
-| Steering | `packages/agent/src/todo-steering.ts`, tool description | relaxed concurrency rule for declared-independent items |
-| Settings | `settings-writable.ts` | `parallelTodoWorkersEnabled` (default off), `todoWorkerParallelism` (default 2) |
-| Renderer | worker cards (`todo_worker_start/done`) | add `todo_worker_merged`, `needs_consolidation` chip, discard affordance |
+| Area              | Entry point                                                          | Change                                                                               |
+| ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Todo schema       | `src/shared/types/todo.ts`, `todo-tool.ts` input schema              | optional `parallel` field, carried through `applyTodoUpdate` like `assignedModel`    |
+| Finder            | `findNewlyInProgressLocal`, `src/shared/todos/todo-logic.ts`         | plural variant returning the whole newly-in-progress local set                       |
+| Routing + fan-out | `setTodoToolPostProcess` block, `src/main/services/agent-service.ts` | batch allocation, semaphore, join; replaces the single awaited worker                |
+| Worker runtime    | `src/main/services/todo-worker-runner.ts`                            | exec-context wrapping, cwd-scoped checks, per-chunk usage, host-side commit          |
+| Worktrees         | `src/main/services/worktree-manager.ts`                              | owner-id prefix for todo workers; reuse allocation/snapshot/serialization primitives |
+| Consolidation     | new `src/main/services/todo-consolidation.ts`                        | cherry-pick driver, conflict reporting, absorb verification, discard                 |
+| New tool          | `src/main/tools/`                                                    | `consolidate_todo_workers` (registered only while merges pending)                    |
+| Recovery          | `worktree-inventory.ts`, `pruneSafeOrphans`                          | todo-worker sweep with `unmerged` retention                                          |
+| Steering          | `packages/agent/src/todo-steering.ts`, tool description              | relaxed concurrency rule for declared-independent items                              |
+| Settings          | `settings-writable.ts`                                               | `parallelTodoWorkersEnabled` (default off), `todoWorkerParallelism` (default 2)      |
+| Renderer          | worker cards (`todo_worker_start/done`)                              | add `todo_worker_merged`, `needs_consolidation` chip, discard affordance             |
 
 ## Risks and mitigations
 

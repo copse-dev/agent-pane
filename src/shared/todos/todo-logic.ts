@@ -71,7 +71,11 @@ export function applyTodoUpdate(
         : prev?.assignedModel
           ? { assignedModel: prev.assignedModel }
           : {}),
-      ...(raw.parallel !== undefined ? { parallel: raw.parallel } : prev?.parallel !== undefined ? { parallel: prev.parallel } : {}),
+      ...(raw.parallel !== undefined
+        ? { parallel: raw.parallel }
+        : prev?.parallel !== undefined
+          ? { parallel: prev.parallel }
+          : {}),
     })
   }
   return [...byId.values()]
