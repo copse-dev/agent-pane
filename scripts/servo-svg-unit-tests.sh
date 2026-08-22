@@ -35,11 +35,13 @@ cat > "$harness/Cargo.toml" <<'TOML'
 [package]
 name = "servo-layout-svg-tests"
 version = "0.0.0"
-edition = "2021"
+edition = "2024"          # servo uses let-chains
 publish = false
 
 [dependencies]
 euclid = "0.22"
+kurbo = "0.13.1"
+vello_cpu = { version = "0.0.9", features = ["multithreading"] }
 TOML
 
 # `servo_config::pref!` is the module's only dependency on the rest of Servo.
@@ -58,6 +60,15 @@ RUST
 
 cp -R "$svg_dir" "$harness/src/svg"
 sed -i.bak '/^use servo_config::pref;$/d' "$harness/src/svg/mod.rs"
+
+# Two modules bridge to stylo and the DOM and cannot build standalone. They
+# are deliberately thin for exactly this reason: everything with real edge
+# cases lives in the pure modules, which is what gets tested here. If this
+# list has to grow, that is a signal logic has leaked into the bridge.
+for coupled in image resolve tree; do
+  rm -f "$harness/src/svg/$coupled.rs"
+  sed -i.bak "/^pub(crate) mod $coupled;$/d" "$harness/src/svg/mod.rs"
+done
 rm -f "$harness/src/svg/mod.rs.bak"
 
 cd "$harness"
