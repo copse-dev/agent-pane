@@ -1039,6 +1039,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
+    read: (path: string) => ipcRenderer.invoke('instructions:read', path),
   },
   cursorRules: {
     list: () => ipcRenderer.invoke('cursorRules:list'),
