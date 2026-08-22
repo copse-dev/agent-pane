@@ -101,7 +101,7 @@ describe('unwrapWrappers', () => {
     // Looking deeper is always safe for harm analysis but is a privilege grant for
     // routing: if `commandHead('sudo xcodebuild')` resolved to `xcodebuild`, an
     // allow-list entry for `xcodebuild` would authorise running it as root.
-    for (const wrapper of ['sudo', 'env', 'xargs', 'command']) {
+    for (const wrapper of ['sudo', 'env', 'xargs', 'command', 'exec']) {
       assert.ok(PASS_THROUGH_WRAPPERS.has(wrapper), wrapper)
       assert.ok(!TRUST_TRANSPARENT_WRAPPERS.has(wrapper), wrapper)
     }

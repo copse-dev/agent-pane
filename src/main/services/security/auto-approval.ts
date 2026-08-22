@@ -730,23 +730,6 @@ export function classifyGhSegment(argv: readonly string[]): AutoApprovalTier | n
   return flags.every((flag) => GH_WRITE_FLAGS.has(flag)) ? 'remote-write' : null
 }
 
-/**
- * True when any segment is a `gh` invocation that is not a known read-only
- * subcommand pair. Used by the Guarded YOLO harm gate so writes / `gh api` /
- * unknown verbs still prompt while `gh pr view` and friends stay routine.
- */
-export function shellCommandHasMutatingGithubCli(command: string): boolean {
-  for (const segment of splitSegments(command)) {
-    const argv = argvOf(stripClearedRedirects(segment))
-    if (!argv) continue
-    const effective = effectiveArgv(argv)
-    if (!effective || commandName(effective[0]) !== 'gh') continue
-    if (classifyGhSegment(effective) === 'read') continue
-    return true
-  }
-  return false
-}
-
 // ---------------------------------------------------------------------------
 // Segment classification
 // ---------------------------------------------------------------------------

@@ -31,9 +31,7 @@ export function grantReadOutsideProject(threadId: string): void {
 }
 
 export function hasReadOutsideProjectGrant(threadId: string | null): boolean {
-  return (
-    threadId !== null && (grantedThreads.has(threadId) || isGuardedYoloActive(threadId))
-  )
+  return threadId !== null && (grantedThreads.has(threadId) || isGuardedYoloActive(threadId))
 }
 
 /** Drop every grant. For tests and teardown; not wired to any user action. */
