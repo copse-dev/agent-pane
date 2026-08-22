@@ -95,7 +95,13 @@ describe('Memories pane pop-out', () => {
     await expect(await $('.pane-popout-btn')).not.toBeDisplayed()
 
     const taintedRow = await $('.memories-row*=Where the API key lives')
-    await expect(await taintedRow.$('.memories-row-taint')).toHaveText('external context')
+    // `.memories-row-taint` is `text-transform: uppercase`, and WebDriver's
+    // `getText()` returns rendered text, so the badge reads EXTERNAL CONTEXT.
+    // Assert the label case-insensitively: the wording is the contract here,
+    // the casing is presentation and belongs to the stylesheet.
+    await expect(await taintedRow.$('.memories-row-taint')).toHaveText('external context', {
+      ignoreCase: true,
+    })
     await expect(await taintedRow.$('.memories-row-taint')).toHaveAttribute(
       'data-tooltip',
       expect.stringContaining('Saved by the agent during a turn that had read external content'),
