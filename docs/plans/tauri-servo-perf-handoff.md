@@ -102,6 +102,14 @@ pnpm start                       # electron dist/main/index.js
 ./tauri-shell/target/release/copse-tauri-shell
 ```
 
+The shell used to resolve its sidecar as `../dist/sidecar/index.js` relative to
+the **current working directory**, so that second command — run from the repo
+root, exactly as written above — died with a bare Node `MODULE_NOT_FOUND` for a
+path nobody wrote. It only ever worked under `cargo run` from inside
+`tauri-shell/`. `sidecar_entry()` in `tauri-shell/src/main.rs` now also tries
+the location relative to the executable and, when both miss, says what it
+tried; `COPSE_SIDECAR_ENTRY` still overrides.
+
 Both boot into the same onboarding/workspace UI. Under the dev-profile Servo
 build the full app boot took ~30 s in a container; expect release to be much
 faster — measure, don't assume.
@@ -194,7 +202,7 @@ must then say which column is absent and why.
 | Metric                    | How                                                                                                                                                                                              |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Cold start → booted       | Wall clock from spawn to the `renderer:boot` span landing in the trace, plus the trace's own `main:boot-complete` / `renderer:boot-start` marks. See the note below on why not `layout-mounted`. |
-| Memory at idle            | Median RSS summed over the root process and every descendant, over the second half of the idle window: Electron = main + gpu + utility + renderer; Servo = shell + node sidecar.                 |
+| Memory at idle            | `phys_footprint` (macOS `footprint`) or `Pss` (Linux `smaps_rollup`) summed over the tree, once, at the end of the idle window. Summed RSS is reported too — as a control, not as the answer.    |
 | CPU during idle           | Delta of cumulative CPU time across the same tree over the same window, as a percentage of one core.                                                                                             |
 | Process count             | Size of that tree once settled — the cheapest single number that shows the architectural difference.                                                                                             |
 | Disk footprint (dev tree) | `node_modules/electron/dist` + `dist/` versus the release binary (which already embeds `dist/renderer`) + `dist/sidecar`. Order of magnitude only; neither side is a packaged, pruned app.       |
@@ -233,6 +241,19 @@ publishing the mock's sleep timer as a result.
 
 - ≥ 5 runs per metric per stack, report **median + spread**, alternate stacks
   between runs (thermal/cache fairness).
+- **Discard a warmup run per stack** (`--warmup`, default 1). The first launch
+  of either stack faults in a large cold binary — 229 MB for the Servo shell,
+  the Electron framework for the other — and lands 400–500 ms above every
+  later run. It does not move the median, but leaving it in widens the reported
+  spread by more than the gap between the stacks, which reads as noise the
+  measurement does not actually have.
+- **Override `HOME`, not just `COPSE_DIR`.** `COPSE_DIR` does not cover
+  everything the app reads from the home directory: MCP servers come from
+  `~/.cursor/mcp.json` and skills from `~/.cursor/plugins`. On the machine
+  these numbers came from, that pulled a `uv` + Python MCP server — ~98 MB and
+  its own idle CPU — into _both_ process trees. It is neither stack's cost, it
+  compressed the ratio between them, and it made the result depend on whose
+  laptop ran it.
 - Fresh `COPSE_DIR` per cold-start run; reuse one warmed profile for the
   streaming/idle metrics.
 - Identical Xvfb geometry for both stacks. Same machine, note its specs.
@@ -245,14 +266,14 @@ publishing the mock's sleep timer as a result.
   which distorts absolute numbers and may not penalize both equally
   (WebRender leans on GPU harder than Chromium's fallback paths). Run on a
   real GPU if at all possible; if not, label every number "software GL".
-- **Summed RSS over-counts, and it over-counts asymmetrically.** Adding
-  `ps` RSS across a process tree counts every shared page once per process that
-  maps it — and Electron idles at seven processes sharing one large framework
-  binary while the Servo stack idles at two. The bias therefore runs _against_
-  Electron by construction. Treat the memory row as an upper bound on the
-  Electron column and a near-exact figure for the Servo one; if the gap it
-  shows is decision-relevant, re-measure with PSS
-  (`/proc/<pid>/smaps_rollup`, Linux only) before quoting it.
+- **Do not report summed RSS as memory. It inverts the result.** Adding `ps`
+  RSS across a tree counts every shared page once per process that maps it, and
+  Electron idles at five processes sharing one ~276 MB framework against the
+  Servo stack's two. Measured on the same machine, in the same runs: summed RSS
+  says Electron 616 MB versus Servo 589 MB — Servo ahead. `phys_footprint` on
+  the identical processes says Electron 240 MB versus Servo 626 MB — Electron
+  ahead by 2.6×. The harness reports both, and the RSS row exists only to keep
+  that trap visible.
 - Servo numbers are a _patched prototype_, not tuned; Electron has a decade
   of startup/memory tuning. Frame the result as "current gap", not verdict.
 - The Servo stack pays for a loopback WebSocket hop where Electron uses
