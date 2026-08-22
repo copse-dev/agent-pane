@@ -502,3 +502,36 @@ text, not on `getBBox`.** Adding `getBBox` to shapes was necessary and is not
 sufficient, and the remaining work is the text phase in full — interfaces,
 layout and painting — rather than another interface-shaped patch. Nothing about
 the current failure indicates a defect in the work that has landed.
+
+### Retest 2026-08-23 — SVG text and `<foreignObject>` landed; Mermaid renders
+
+Five further commits: `isPointInFill`/`isPointInStroke`/`getPointAtLength`, SVG
+text (measure and paint), `SVGForeignObjectElement` plus laying out and painting
+its content, and `SVGStyleElement`. The series is now 5 787 insertions across 47
+files, seam +60 in pre-existing layout/script files.
+
+The element hierarchy has grown the types whose absence blocked Mermaid:
+`svgtextelement`, `svgtextcontentelement`, `svgtextpositioningelement`,
+`svgtspanelement`, plus `svgforeignobjectelement` and `svgstyleelement`.
+
+**Mermaid renders.** The same flowchart that previously produced "Diagram could
+not be rendered" now draws: `Start` box, `Choice` diamond, `Done` box, the
+`yes`/`no` edge labels, and the connecting edges. This was the case that
+motivated calling the text phase a blocker, and it is closed.
+
+**Remaining fidelity gap: no arrowheads.** Edges terminate as plain lines where
+Chromium draws arrow tips. There is no `SVGMarkerElement`, and
+`components/layout/svg/tree.rs` classes `marker` with the non-rendering
+container elements. Everything else in the diagram matches. `<marker>` is the
+obvious next element type, and unlike text it is small — marker placement and
+orientation on a path, not a layout subsystem.
+
+**No animation regression.** Same regions and method as before:
+
+| Region              | This retest               | Previous                  | Electron control          |
+| ------------------- | ------------------------- | ------------------------- | ------------------------- |
+| Reasoning indicator | 30–69 px/frame, max Δ 223 | 30–66 px/frame, max Δ 223 | 34–52 px/frame, max Δ 223 |
+| Sidebar dots        | 12 px/frame               | 8–12 px/frame             | 6–12 px/frame             |
+
+So the text and `<foreignObject>` work did not disturb the painting or
+invalidation paths that the animation depends on.
