@@ -61,6 +61,13 @@ describe('shellWriteTargets', () => {
     assert.deepEqual(shellWriteTargets('mv ./out /tmp/in'), ['/tmp/in'])
   })
 
+  it('finds a copy-family target directory even when it precedes the sources', () => {
+    assert.deepEqual(shellWriteTargets('cp -t /tmp ./one ./two'), ['/tmp'])
+    assert.deepEqual(shellWriteTargets('mv --target-directory=/var/tmp ./out'), ['/var/tmp'])
+    assert.deepEqual(shellWriteTargets('install -m 755 -t /tmp ./tool'), ['/tmp'])
+    assert.deepEqual(shellWriteTargets('ln --target-directory /tmp ./target'), ['/tmp'])
+  })
+
   it('treats a bare mktemp as writing nothing, and an explicit template as a target', () => {
     // Bare `mktemp` honours the $TMPDIR the sandbox overlays — the sanctioned
     // form, and the one a scorer must not punish.

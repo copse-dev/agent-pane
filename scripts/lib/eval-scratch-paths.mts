@@ -93,7 +93,16 @@ const WRITE_TARGET_FLAGS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['dd', new Set(['of'])],
   ['mktemp', new Set(['-p', '--tmpdir'])],
   ['git', new Set(['--output'])],
+  // GNU copy-family tools can put the destination before every source. Without
+  // these forms, `cp -t /tmp file` was misread as writing `file` and an eval
+  // could hardcode global temp while still passing the scorer.
+  ['cp', new Set(['-t', '--target-directory'])],
+  ['mv', new Set(['-t', '--target-directory'])],
+  ['install', new Set(['-t', '--target-directory'])],
+  ['ln', new Set(['-t', '--target-directory'])],
 ])
+
+const TARGET_DIRECTORY_VERBS: ReadonlySet<string> = new Set(['cp', 'mv', 'install', 'ln'])
 
 /** Env vars the sandbox overlays at the sanctioned scratch dir (see spawn.ts). */
 const TMPDIR_VARS = ['TMPDIR', 'TMP', 'TEMP'] as const
@@ -205,18 +214,25 @@ export function shellWriteTargets(command: string, depth = 0): string[] {
     const verb = commandName(argv[0])
     const operands = argv.slice(1)
     const flags = WRITE_TARGET_FLAGS.get(verb)
+    let hasTargetDirectory = false
     if (flags) {
       for (const [index, token] of operands.entries()) {
         const next = operands[index + 1]
-        if (flags.has(token) && next !== undefined) targets.push(next)
+        if (flags.has(token) && next !== undefined) {
+          targets.push(next)
+          if (TARGET_DIRECTORY_VERBS.has(verb)) hasTargetDirectory = true
+        }
         const named = [...flags].find((flag) => token.startsWith(`${flag}=`))
-        if (named) targets.push(token.slice(named.length + 1))
+        if (named) {
+          targets.push(token.slice(named.length + 1))
+          if (TARGET_DIRECTORY_VERBS.has(verb)) hasTargetDirectory = true
+        }
       }
     }
     const rule = WRITE_VERB_OPERANDS.get(verb)
     if (rule) {
       const paths = operands.filter((token) => !token.startsWith('-'))
-      const chosen = rule === 'all' ? paths : paths.slice(-1)
+      const chosen = rule === 'all' ? paths : hasTargetDirectory ? [] : paths.slice(-1)
       targets.push(...chosen)
     }
     if (depth < MAX_INLINE_DEPTH && SHELL_INTERPRETERS.has(verb)) {
