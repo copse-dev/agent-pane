@@ -1304,13 +1304,16 @@ describe('input bar attachment previews', () => {
     const videoBytes = new Uint8Array([0, 0, 0, 1, 0x66, 0x74, 0x79, 0x70])
     api.video = {
       ...api.video,
-      attach: async () => ({
+      attach: async (): ReturnType<ApiClient['video']['attach']> => ({
         path: '/store/thread-1/blobs/media/clip.webm',
         name: 'clip.webm',
         mimeType: 'video/webm',
         sizeBytes: videoBytes.byteLength,
       }),
-      read: async () => ({ bytes: videoBytes, mimeType: 'video/webm' }),
+      read: async (): ReturnType<ApiClient['video']['read']> => ({
+        bytes: videoBytes,
+        mimeType: 'video/webm',
+      }),
     }
     mountInputBar(host, store, api)
     await settle()
