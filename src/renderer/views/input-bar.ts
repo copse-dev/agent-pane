@@ -87,6 +87,7 @@ import {
 } from '@shared/lm-studio-defaults.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
+import { mountNextStepHint } from './next-step-hint.ts'
 import {
   threadGitBranchMismatch,
   threadGitBranchMismatchMessage,
@@ -584,6 +585,30 @@ export function mountInputBar(
   root.insertBefore(followUps.root, inputRow)
   const defaultPlaceholder = 'Message…'
   const followUpPlaceholder = 'Send follow-up'
+
+  const nextStepHint = mountNextStepHint(store, api, () => {
+    updateComposerPlaceholder()
+  })
+
+  // The one writer for the composer placeholder: a Tab-completable next step
+  // wins (it is this turn's content, not a generic nudge), then the follow-up
+  // bubbles' nudge, then the default. `data-next-step` drives the CSS "Tab"
+  // keycap beside the placeholder text.
+  // The placeholder only shows in an empty composer (CSS `:empty`), so the
+  // hint naturally hides while the user types and returns if they clear the
+  // draft — Tab stays available either way.
+  function updateComposerPlaceholder(): void {
+    const hint = nextStepHint.current()
+    if (hint !== null) {
+      composer.setPlaceholder(hint)
+      composer.el.setAttribute('data-next-step', '')
+      composer.el.setAttribute('aria-description', `Press Tab to insert: ${hint}`)
+      return
+    }
+    composer.el.removeAttribute('data-next-step')
+    composer.el.removeAttribute('aria-description')
+    composer.setPlaceholder(followUps.root.hidden ? defaultPlaceholder : followUpPlaceholder)
+  }
 
   let attachedFiles: { path: string; content: string }[] = []
   let attachedImages: AttachedImage[] = []
@@ -1342,6 +1367,23 @@ export function mountInputBar(
 
   composer.el.addEventListener('keydown', (e) => {
     if (e.isComposing) return
+    // Tab accepts the offered next step into an empty composer. Plain Tab only
+    // — modified Tabs keep their meanings (Ctrl+Tab switches threads) — and a
+    // visible mention/skill picker keeps its own Tab-to-accept.
+    if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const hint = nextStepHint.current()
+      if (hint !== null && !composer.value.trim() && !isAutocompletePickerOpen()) {
+        e.preventDefault()
+        composer.value = hint
+        nextStepHint.clear()
+        updateComposerPlaceholder()
+        composer.focus()
+        // The value setter is silent; drafts and the context estimate listen
+        // for input, and an accepted hint is exactly a typed message.
+        composer.el.dispatchEvent(new Event('input', { bubbles: true }))
+        return
+      }
+    }
     if (e.key !== 'Enter' || e.shiftKey) return
     if (isAutocompletePickerOpen()) return
     e.preventDefault()
@@ -1367,7 +1409,8 @@ export function mountInputBar(
 
   async function performSubmit(): Promise<void> {
     followUps.clearSuggestions()
-    composer.setPlaceholder(defaultPlaceholder)
+    nextStepHint.clear()
+    updateComposerPlaceholder()
     // Visible text keeps chips as single placeholder chars (for the transcript
     // display); the expanded text inlines each chip's fenced block in place and
     // is what actually gets sent.
@@ -2025,8 +2068,7 @@ export function mountInputBar(
   ]
 
   const observer = new MutationObserver(() => {
-    const hasSuggestions = !followUps.root.hidden
-    composer.setPlaceholder(hasSuggestions ? followUpPlaceholder : defaultPlaceholder)
+    updateComposerPlaceholder()
   })
   observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
 
@@ -2054,6 +2096,7 @@ export function mountInputBar(
       document.removeEventListener('click', closeCheckoutMenu)
       observer.disconnect()
       followUps.destroy()
+      nextStepHint.destroy()
       unbindDrop()
       unregisterAttachments()
       modelPicker.destroy()
