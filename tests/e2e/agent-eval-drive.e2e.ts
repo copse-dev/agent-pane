@@ -333,6 +333,7 @@ function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void
   const violations = toolExpectationViolations(calls, {
     requireTools: expectation.requireTools,
     requireAnyTools: expectation.requireAnyTools,
+    requireSuccessfulToolGroups: expectation.requireSuccessfulToolGroups,
     forbidTools: expectation.forbidTools,
     forbidDisplacedShell: expectation.forbidDisplacedShell,
     forbidGithubNetworkDenial: expectation.forbidGithubNetworkDenial,

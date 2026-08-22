@@ -21,6 +21,11 @@ import {
 export interface ToolExpectations {
   requireTools?: readonly string[] | undefined
   requireAnyTools?: readonly string[] | undefined
+  /**
+   * Every inner group is a disjunction, while the groups are a conjunction.
+   * Only calls that completed with `done` satisfy a group.
+   */
+  requireSuccessfulToolGroups?: readonly (readonly string[])[] | undefined
   forbidTools?: readonly string[] | undefined
   /**
    * Fail when a `run_shell` call ran a command shape that a first-class tool
@@ -53,6 +58,7 @@ export interface ToolExpectations {
 export interface ObservedToolCall {
   name: string
   args?: unknown
+  status?: unknown
 }
 
 /**
@@ -345,6 +351,12 @@ export function toolExpectationViolations(
   const anyOf = expectations.requireAnyTools ?? []
   if (anyOf.length > 0 && !anyOf.some((name) => usedTool(observedNames, name))) {
     violations.push(`expected at least one of these tools: ${anyOf.join(', ')}`)
+  }
+  for (const group of expectations.requireSuccessfulToolGroups ?? []) {
+    const matched = observed.some(
+      (call) => call.status === 'done' && group.some((name) => toolCallIsNamed(call.name, name)),
+    )
+    if (!matched) violations.push(`expected a successful tool from this group: ${group.join(', ')}`)
   }
   for (const name of expectations.forbidTools ?? []) {
     if (usedTool(observedNames, name)) violations.push(`forbidden tool used: ${name}`)

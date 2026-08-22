@@ -24,6 +24,7 @@ const scenario = loadEvalScenario(SCENARIO_PATH)
 
 const expectations: ToolExpectations = {
   requireAnyTools: scenario.toolUse?.requireAnyTools,
+  requireSuccessfulToolGroups: scenario.toolUse?.requireSuccessfulToolGroups,
   forbidDisplacedShell: scenario.toolUse?.forbidDisplacedShell,
   forbidGithubNetworkDenial: scenario.toolUse?.forbidGithubNetworkDenial,
 }
@@ -36,7 +37,7 @@ const shell = (command: string): ObservedToolCall => ({ name: 'run_shell', args:
  * everything else went through the shell.
  */
 const EXPORTED_FAILURE: ObservedToolCall[] = [
-  { name: 'gh_run_list' },
+  { name: 'gh_run_list', status: 'done' },
   shell('git log --oneline -30 origin/main'),
   shell('git fetch origin main'),
   shell('gh run view 18234567 --log-failed'),
@@ -46,9 +47,9 @@ const EXPORTED_FAILURE: ObservedToolCall[] = [
 
 /** The same question answered through the tools, with only local shell. */
 const GOOD_RUN: ObservedToolCall[] = [
-  { name: 'git_log' },
-  { name: 'gh_pr_list' },
-  { name: 'get_ci_status' },
+  { name: 'git_log', status: 'done' },
+  { name: 'gh_pr_list', status: 'done' },
+  { name: 'get_ci_status', status: 'done' },
   shell('git log --oneline -20'),
   shell('npm run typecheck'),
 ]
@@ -56,12 +57,14 @@ const GOOD_RUN: ObservedToolCall[] = [
 describe('git-ci-first-class-tools scenario', () => {
   it('fails the exported thread from #1845', () => {
     const violations = toolExpectationViolations(EXPORTED_FAILURE, expectations)
-    // Four of the five shell calls, each named: a looped shell is the pattern
+    // The trace never completed the merge-history half through a first-class
+    // tool, then made four displaced shell calls. A looped shell is the pattern
     // that made the run expensive, so the count has to grow with it rather than
     // stopping at the first offender.
     assert.deepEqual(
       violations.map((violation) => violation.split(';')[0]),
       [
+        'expected a successful tool from this group: git_log, gh_pr_list, gh_pr_view',
         'run_shell ran `git fetch`',
         'run_shell ran `gh run view`',
         'run_shell ran `gh pr view`',
@@ -95,9 +98,40 @@ describe('git-ci-first-class-tools scenario', () => {
   it('fails a run that never attempted the task', () => {
     // The forbidden route is absent from a run that did nothing, so the
     // requireAnyTools conjunct is what keeps the pass meaningful.
-    assert.deepEqual(toolExpectationViolations([{ name: 'read_file' }], expectations), [
+    const violations = toolExpectationViolations([{ name: 'read_file' }], expectations)
+    assert.equal(violations.length, 3)
+    assert.equal(
+      violations[0],
       `expected at least one of these tools: ${(expectations.requireAnyTools ?? []).join(', ')}`,
+    )
+  })
+
+  it('fails when the run listed merges but its CI tool errored', () => {
+    const violations = toolExpectationViolations(
+      [
+        { name: 'gh_pr_list', status: 'done' },
+        { name: 'get_ci_status', status: 'error' },
+      ],
+      expectations,
+    )
+    assert.deepEqual(violations, [
+      'expected a successful tool from this group: gh_run_list, gh_run_view, get_ci_status',
     ])
+  })
+
+  it('does not count an unfinished or status-less call as successful', () => {
+    for (const status of ['running', undefined] as const) {
+      const violations = toolExpectationViolations(
+        [
+          { name: 'gh_pr_list', status: 'done' },
+          { name: 'get_ci_status', ...(status === undefined ? {} : { status }) },
+        ],
+        expectations,
+      )
+      assert.deepEqual(violations, [
+        'expected a successful tool from this group: gh_run_list, gh_run_view, get_ci_status',
+      ])
+    }
   })
 
   it('requires at least one of the tools issue #1845 named', () => {
@@ -118,7 +152,12 @@ describe('git-ci-first-class-tools scenario', () => {
     const raw = expectRecord(JSON.parse(readFileSync(SCENARIO_PATH, 'utf8')), SCENARIO_PATH)
     const toolUse = expectRecord(raw['toolUse'], 'toolUse')
     const expect = expectRecord(raw['expect'], 'expect')
-    for (const key of ['requireAnyTools', 'forbidDisplacedShell', 'forbidGithubNetworkDenial']) {
+    for (const key of [
+      'requireAnyTools',
+      'requireSuccessfulToolGroups',
+      'forbidDisplacedShell',
+      'forbidGithubNetworkDenial',
+    ]) {
       assert.deepEqual(expect[key], toolUse[key], key)
     }
   })

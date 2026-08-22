@@ -28,6 +28,7 @@ interface ScenarioExpect {
   requireTools?: string[] | undefined
   /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
   requireAnyTools?: string[] | undefined
+  requireSuccessfulToolGroups?: string[][] | undefined
   forbidTools?: string[] | undefined
   /** Fail when `run_shell` ran a command a first-class tool already covers. */
   forbidDisplacedShell?: boolean | undefined
@@ -135,6 +136,7 @@ const scenarioSchema: z.ZodType<Scenario> = z.object({
       minExplore: z.number().optional(),
       requireTools: z.array(z.string()).optional(),
       requireAnyTools: z.array(z.string()).optional(),
+      requireSuccessfulToolGroups: z.array(z.array(z.string().min(1)).min(1)).optional(),
       forbidTools: z.array(z.string()).optional(),
       forbidDisplacedShell: z.boolean().optional(),
       forbidGithubNetworkDenial: z.boolean().optional(),
@@ -263,7 +265,11 @@ function analyze(path: string, scenario?: Scenario): void {
     }
     for (const tc of tcs) {
       toolHist[tc.name] = (toolHist[tc.name] ?? 0) + 1
-      observedCalls.push(tc.args ? { name: tc.name, args: tc.args } : { name: tc.name })
+      observedCalls.push({
+        name: tc.name,
+        ...(tc.args ? { args: tc.args } : {}),
+        ...(tc.status ? { status: tc.status } : {}),
+      })
       if (tc.name === 'explore') exploreCount++
       if (tc.name === 'update_todos') updateTodos++
       const doctrineCall: DoctrineToolCall = { name: tc.name }
@@ -327,6 +333,7 @@ function analyze(path: string, scenario?: Scenario): void {
     ...toolExpectationViolations(observedCalls, {
       requireTools: exp?.requireTools,
       requireAnyTools: exp?.requireAnyTools,
+      requireSuccessfulToolGroups: exp?.requireSuccessfulToolGroups,
       forbidTools: exp?.forbidTools,
       forbidDisplacedShell: exp?.forbidDisplacedShell,
       forbidGithubNetworkDenial: exp?.forbidGithubNetworkDenial,
