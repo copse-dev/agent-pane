@@ -27,9 +27,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  lstatSync,
   readdirSync,
+  realpathSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -45,6 +46,14 @@ function flag(name: string, fallback: string): string {
 }
 
 const RUNS = Number(flag('runs', '5'))
+/**
+ * Discarded runs before the measured ones. The first launch of either stack
+ * pays cold page cache for a large binary — 240 MB for the Servo shell, the
+ * Electron framework for the other — and lands 400–500 ms above every
+ * subsequent run. Keeping it would not move the median but would widen the
+ * reported spread by more than the gap between the stacks.
+ */
+const WARMUP = Number(flag('warmup', '1'))
 const OUT_DIR = resolve(flag('out', 'docs/plans/perf-data'))
 /** Seconds to hold each stack open after boot before reading idle cost. */
 const IDLE_SECONDS = Number(flag('idle-seconds', '30'))
@@ -87,11 +96,11 @@ const STACKS: Stack[] = [
         : !existsSync(resolve('dist/main/index.js'))
           ? 'dist/main/index.js missing — run pnpm build'
           : null,
-    footprint: () => [
-      resolve('dist/main'),
-      resolve('dist/renderer'),
-      resolve('node_modules/electron/dist'),
-    ],
+    // `node_modules/electron/dist` is a symlink into a shared runtime cache
+    // that holds *two* copies of the same runtime — `Electron.app` and the
+    // `Copse.app` rename the app-name branding produces. Counting the
+    // directory counts both, and a shipped app has one, so name the bundle.
+    footprint: () => [electronRuntimeApp(), resolve('dist/main'), resolve('dist/renderer')],
   },
   {
     key: 'tauri',
@@ -112,6 +121,17 @@ const STACKS: Stack[] = [
     footprint: () => [TAURI_BIN, resolve('dist/sidecar')],
   },
 ]
+
+/** The single Electron.app inside the runtime cache, resolved through the symlink. */
+function electronRuntimeApp(): string {
+  try {
+    const root = realpathSync(resolve('node_modules/electron/dist'))
+    const app = join(root, 'Electron.app')
+    return existsSync(app) ? app : root
+  } catch {
+    return resolve('node_modules/electron/dist')
+  }
+}
 
 function electronVersion(): string {
   try {
@@ -169,6 +189,57 @@ interface TreeSample {
   rssKb: number
   cpuSeconds: number
   processes: number
+  pids: number[]
+}
+
+/**
+ * Memory for one process that does not double-count pages shared with its
+ * siblings — the thing summed RSS gets wrong, and gets wrong worse the more
+ * processes a stack has. Electron idles at five processes sharing one ~200 MB
+ * framework binary against the Servo stack's two, so summed RSS overstates
+ * Electron by roughly the framework size times the number of helpers, and a
+ * naive reading hands Servo a win it has not earned.
+ *
+ * macOS: `phys_footprint`, the ledger figure Activity Monitor calls "Memory";
+ * clean file-backed pages (the mapped framework) are not charged per process.
+ * Linux: `Pss` from `smaps_rollup`, which divides each shared page by the
+ * number of mappers. Returns null where neither is available, and the caller
+ * falls back to RSS with the caveat that implies.
+ */
+function processMemoryKb(pid: number): number | null {
+  try {
+    if (process.platform === 'darwin') {
+      const raw = execFileSync('footprint', ['-p', String(pid)], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      const match = /phys_footprint:\s*([\d.]+)\s*(KB|MB|GB)/i.exec(raw)
+      if (!match) return null
+      const value = Number(match[1])
+      const unit = (match[2] ?? 'KB').toUpperCase()
+      return unit === 'GB' ? value * 1_048_576 : unit === 'MB' ? value * 1024 : value
+    }
+    if (process.platform === 'linux') {
+      const raw = readFileSync(`/proc/${String(pid)}/smaps_rollup`, 'utf8')
+      const match = /^Pss:\s*(\d+)\s*kB/m.exec(raw)
+      return match ? Number(match[1]) : null
+    }
+  } catch {
+    // The process exited between the tree walk and the query, or the tool is
+    // unavailable. Either way: no number, fall back to RSS.
+  }
+  return null
+}
+
+/** Sum over a tree, or null if any member could not be measured. */
+function treeMemoryMb(pids: number[]): number | null {
+  let total = 0
+  for (const pid of pids) {
+    const kb = processMemoryKb(pid)
+    if (kb === null) return null
+    total += kb
+  }
+  return Math.round(total / 1024)
 }
 
 /**
@@ -188,7 +259,7 @@ function sampleTree(rootPid: number, rows: ProcRow[]): TreeSample {
   const seen = new Set<number>()
   let rssKb = 0
   let cpuSeconds = 0
-  let processes = 0
+  const pids: number[] = []
   while (stack.length > 0) {
     const pid = stack.pop()
     if (pid === undefined || seen.has(pid)) continue
@@ -197,11 +268,11 @@ function sampleTree(rootPid: number, rows: ProcRow[]): TreeSample {
     if (row) {
       rssKb += row.rssKb
       cpuSeconds += row.cpuSeconds
-      processes++
+      pids.push(pid)
     }
     stack.push(...(children.get(pid) ?? []))
   }
-  return { rssKb, cpuSeconds, processes }
+  return { rssKb, cpuSeconds, processes: pids.length, pids }
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +312,17 @@ function spanMs(trace: TraceRecord[], name: string): number | null {
   return trace.find((record) => record.name === name && record.kind === 'span')?.ms ?? null
 }
 
+/**
+ * When a span *closed*, on the trace's shared axis. Sub-millisecond where the
+ * wall clock is quantised to the poll interval — but it starts at the moment
+ * main armed the tracer, so it excludes the runtime startup that precedes
+ * main's first line of JS (larger for Electron than for plain Node). The two
+ * figures bracket the truth; report both.
+ */
+function spanEndAt(trace: TraceRecord[], name: string): number | null {
+  return trace.find((record) => record.name === name && record.kind === 'span')?.t ?? null
+}
+
 // ---------------------------------------------------------------------------
 // One run
 // ---------------------------------------------------------------------------
@@ -257,6 +339,10 @@ interface RunResult {
   rendererBootSpanMs: number | null
   /** Harness wall clock, spawn → the `renderer:boot` span appearing on disk. */
   wallToBootedMs: number | null
+  /** Same event on the trace axis: precise, but starts at main's arm. */
+  traceToBootedMs: number | null
+  /** phys_footprint (macOS) / PSS (Linux); null when neither was available. */
+  idleMemoryMb: number | null
   idleRssMb: number | null
   idleCpuPercent: number | null
   processes: number | null
@@ -265,6 +351,7 @@ interface RunResult {
 async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunResult> {
   mkdirSync(runDir, { recursive: true })
   const profile = mkdtempSync(join(tmpdir(), `copse-perf-${stack.key}-`))
+  mkdirSync(join(profile, 'home'), { recursive: true })
   const tracePath = join(runDir, 'trace.ndjson')
 
   const base: RunResult = {
@@ -276,6 +363,8 @@ async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunRe
     rendererLayoutMountedMs: null,
     rendererBootSpanMs: null,
     wallToBootedMs: null,
+    traceToBootedMs: null,
+    idleMemoryMb: null,
     idleRssMb: null,
     idleCpuPercent: null,
     processes: null,
@@ -291,6 +380,13 @@ async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunRe
       // cold start, and neither stack may touch the developer's real data.
       COPSE_DIR: join(profile, 'copse-home'),
       COPSE_PANEL_USER_DATA: join(profile, 'user-data'),
+      // `COPSE_DIR` does not cover everything the app reads from the home
+      // directory: MCP servers come from `~/.cursor/mcp.json` and skills from
+      // `~/.cursor/plugins`. On this machine that pulled a `uv` + Python MCP
+      // server — ~98 MB — into *both* process trees, which is neither stack's
+      // cost and makes the ratio between them look closer than it is. It also
+      // made the numbers depend on whoever's laptop ran them.
+      HOME: join(profile, 'home'),
       // Offline, deterministic model responses — no network in the numbers.
       COPSE_PANEL_MOCK_LLM: '1',
       ...stack.env,
@@ -340,7 +436,9 @@ async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunRe
       bootedAt = Date.now()
       break
     }
-    await sleep(100)
+    // 25 ms, not 100: the wall-clock figure is quantised to this interval, and
+    // at 100 ms the quantisation was the same size as the gap between stacks.
+    await sleep(25)
   }
 
   // Idle: sample the settled tree. The first samples are still boot tail, so
@@ -351,6 +449,11 @@ async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunRe
     samples.push(sampleTree(child.pid ?? -1, snapshot()))
     await sleep(1000)
   }
+
+  // One authoritative memory reading at the end of the settled window rather
+  // than per-sample: `footprint` is a subprocess per pid, and sampling it every
+  // second would add measurable load to the thing being measured.
+  const idleMemoryMb = treeMemoryMb(samples[samples.length - 1]?.pids ?? [])
 
   const trace = readTrace(tracePath)
   const settled = samples.slice(Math.floor(samples.length / 2))
@@ -368,6 +471,8 @@ async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunRe
     rendererLayoutMountedMs: markAt(trace, 'renderer:layout-mounted'),
     rendererBootSpanMs: spanMs(trace, 'renderer:boot'),
     wallToBootedMs: bootedAt - spawnedAt,
+    traceToBootedMs: spanEndAt(trace, 'renderer:boot'),
+    idleMemoryMb,
     idleRssMb: last ? Math.round(median(settled.map((s) => s.rssKb)) / 1024) : null,
     idleCpuPercent:
       first && last
@@ -394,13 +499,21 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? (low + high) / 2 : high
 }
 
-function dirBytes(path: string): number {
-  if (!existsSync(path)) return 0
-  const stats = statSync(path)
+/**
+ * Bytes under a path, resolving the path itself but never following symlinks
+ * inside it. Following them double-counts: macOS app bundles are full of
+ * internal links, and following those turned the Electron column into 1.8 GB
+ * — four times the truth.
+ */
+function dirBytes(path: string, top = true): number {
+  const target = top ? (existsSync(path) ? realpathSync(path) : path) : path
+  if (!existsSync(target)) return 0
+  const stats = lstatSync(target)
+  if (stats.isSymbolicLink()) return 0
   if (!stats.isDirectory()) return stats.size
   let total = 0
-  for (const entry of readdirSync(path, { withFileTypes: true })) {
-    total += dirBytes(join(path, entry.name))
+  for (const entry of readdirSync(target, { withFileTypes: true })) {
+    total += dirBytes(join(target, entry.name), false)
   }
   return total
 }
@@ -409,6 +522,12 @@ const METRICS: { key: keyof RunResult; label: string; unit: string; lowerIsBette
   {
     key: 'wallToBootedMs',
     label: 'Cold start → renderer booted (wall clock)',
+    unit: 'ms',
+    lowerIsBetter: true,
+  },
+  {
+    key: 'traceToBootedMs',
+    label: 'Tracer arm → renderer booted',
     unit: 'ms',
     lowerIsBetter: true,
   },
@@ -430,7 +549,18 @@ const METRICS: { key: keyof RunResult; label: string; unit: string; lowerIsBette
     unit: 'ms',
     lowerIsBetter: true,
   },
-  { key: 'idleRssMb', label: 'Idle RSS, whole process tree', unit: 'MB', lowerIsBetter: true },
+  {
+    key: 'idleMemoryMb',
+    label: 'Idle memory, whole tree (footprint/PSS)',
+    unit: 'MB',
+    lowerIsBetter: true,
+  },
+  {
+    key: 'idleRssMb',
+    label: 'Idle RSS, whole tree (summed — over-counts sharing)',
+    unit: 'MB',
+    lowerIsBetter: true,
+  },
   { key: 'idleCpuPercent', label: 'Idle CPU', unit: '%', lowerIsBetter: true },
   { key: 'processes', label: 'Processes', unit: '', lowerIsBetter: false },
 ]
@@ -491,6 +621,17 @@ if (runnable.length === 0) {
 
 mkdirSync(OUT_DIR, { recursive: true })
 const results: RunResult[] = []
+for (let warm = 1; warm <= WARMUP; warm++) {
+  for (const stack of runnable) {
+    process.stderr.write(`warmup ${String(warm)}/${String(WARMUP)} — ${stack.key}… `)
+    const result = await runOnce(
+      stack,
+      0,
+      join(OUT_DIR, 'runs', `${stack.key}-warmup-${String(warm)}`),
+    )
+    process.stderr.write(result.ok ? 'discarded\n' : `FAILED: ${result.note ?? 'unknown'}\n`)
+  }
+}
 for (let run = 1; run <= RUNS; run++) {
   // Alternate the order each round so neither stack systematically gets the
   // colder page cache or the hotter CPU.
@@ -501,7 +642,7 @@ for (let run = 1; run <= RUNS; run++) {
     results.push(result)
     process.stderr.write(
       result.ok
-        ? `booted ${String(result.wallToBootedMs)}ms, ${String(result.idleRssMb)}MB\n`
+        ? `booted ${String(result.wallToBootedMs)}ms, ${String(result.idleMemoryMb ?? result.idleRssMb)}MB\n`
         : `FAILED: ${result.note ?? 'unknown'}\n`,
     )
   }

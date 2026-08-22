@@ -253,55 +253,81 @@ Findings folded back into this branch:
 
 ## Performance vs Electron
 
-Status: **Electron baseline collected; the Servo column is still open.** The
-harness, the instrumentation and the methodology are in place and the numbers
-below are real; the Servo side needs a release build of the shell, which needs
-the four side-by-side checkouts and a ~30–60 min full Servo compile
-(docs/plans/tauri-servo-perf-handoff.md §2).
-
 Collected with `pnpm perf:compare --runs 5 --idle-seconds 30`
-(`scripts/perf-compare.mts`): each run boots the stack on a fresh, isolated
-profile under `COPSE_PERF=1` and `COPSE_PANEL_MOCK_LLM=1`, waits for the
-renderer's own `renderer:boot` span, then samples the whole process tree once a
-second for 30 s. Reported as median (min–max, n).
+(`scripts/perf-compare.mts`). Each run boots the stack on a fresh, isolated
+profile — `COPSE_DIR`, `COPSE_PANEL_USER_DATA` **and `HOME`** — under
+`COPSE_PERF=1` and `COPSE_PANEL_MOCK_LLM=1`, waits for the renderer's own
+`renderer:boot` span, then samples the whole process tree for 30 s. One warmup
+run per stack is discarded; stacks alternate between rounds. Median
+(min–max, n).
 
-| Metric                                          | Electron 43.3.0          | Tauri + Servo (release) |
-| ----------------------------------------------- | ------------------------ | ----------------------- |
-| Cold start → renderer booted (wall clock)       | 815ms (713–914, n=5)     | not measured            |
-| Trace: layout mounted (workspace profiles only) | n/a                      | not measured            |
-| Trace: renderer boot span                       | 25ms (21.8–32.8, n=5)    | not measured            |
-| Trace: main boot complete                       | 483ms (443.5–631.7, n=5) | not measured            |
-| Idle RSS, whole process tree                    | 726MB (721–727, n=5)     | not measured            |
-| Idle CPU                                        | 0.7% (0.6–1, n=5)        | not measured            |
-| Processes                                       | 7 (7–7, n=5)             | not measured            |
-| Disk footprint (dev tree)                       | 1783MB                   | not measured            |
+| Metric                                              | Electron 43.3.0            | Tauri + Servo (release)    |
+| --------------------------------------------------- | -------------------------- | -------------------------- |
+| Cold start → renderer booted (wall clock)           | 811ms (806–831, n=5)       | 912ms (909–915, n=5)       |
+| Tracer arm → renderer booted                        | 322ms (317–329, n=5)       | 447ms (437–451, n=5)       |
+| Trace: layout mounted (workspace profiles only)     | n/a                        | n/a                        |
+| Trace: renderer boot span                           | 20.3ms (19.1–20.8, n=5)    | 58.4ms (56.6–58.7, n=5)    |
+| Trace: main boot complete                           | 253.7ms (247.2–256.8, n=5) | 265.7ms (260.1–327.3, n=5) |
+| Idle memory, whole tree (footprint/PSS)             | 240MB (236–248, n=5)       | 626MB (511–635, n=5)       |
+| Idle RSS, whole tree (summed — over-counts sharing) | 616MB (615–617, n=5)       | 589MB (518–592, n=5)       |
+| Idle CPU                                            | 1.2% (0.9–1.2, n=5)        | 0.1% (0.1–0.1, n=5)        |
+| Processes                                           | 5 (5–5, n=5)               | 2 (2–2, n=5)               |
+| Disk footprint (dev tree)                           | 396MB                      | 260MB                      |
 
 Pinning:
 
-- agent-pane `8275bdf0b` (branch `claude/tauri-servo-prototype-8ugtq4`), Electron
-  43.3.0 from `package.json`, JS built with `pnpm build` (`COPSE_RELEASE`
-  unset — see the handoff's §2.5 note on why that matters for symmetry).
-- Apple M4, 16 GB, macOS 26.5.2, real GPU (no llvmpipe caveat applies to this
-  column; the Linux runs in §2.3 of the handoff will need it).
-- Fresh `COPSE_DIR`/`COPSE_PANEL_USER_DATA` per run, so every run is a genuine
-  cold start onto the welcome screen — no project restore is included.
+- agent-pane `099d1d2e1` (branch `claude/tauri-servo-prototype-8ugtq4`); Electron
+  43.3.0; JS built with `pnpm build` + `pnpm build:tauri`, `COPSE_RELEASE`
+  unset so both mains compile identically (handoff §2.5).
+- Servo `f4dde2701` + patches 0001–0008, stylo `2d289c14` + `:has()` patch,
+  content-security-policy `6a523bab` + csp-0001; `cargo build --release`
+  (986 packages, 4 min on this machine — `mozjs_sys` used a prebuilt
+  SpiderMonkey).
+- Apple M4, 16 GB, macOS 26.5.2, real GPU. No llvmpipe caveat applies to these
+  numbers; Linux runs under Xvfb will need it.
 
-Reading the Electron column:
+### What the numbers say
 
-- Boot is consistent: 815 ms median wall clock from spawn to the renderer
-  finishing boot, spread 713–914 ms across five runs. Of that, main reaches
-  `boot-complete` at 483 ms and the renderer's own boot work is only ~25 ms —
-  so almost the entire cold start is process/runtime startup plus main's
-  service initialisation, not rendering. That is the part Servo has to beat.
-- 726 MB idle across 7 processes is **summed RSS, which double-counts shared
-  pages once per process** — see the handoff's §3.4 caveat before quoting it
-  against a 2-process Servo tree.
-- The disk figure is the development tree, not a packaged app.
+**Memory is the headline, and the obvious metric gets it backwards.** Summed
+RSS says Electron 616 MB against Servo 589 MB — Servo ahead. On the very same
+processes in the very same runs, `phys_footprint` says Electron 240 MB against
+Servo 626 MB — Electron ahead by 2.6×. RSS charges every shared page once per
+process that maps it, and Electron idles at five processes sharing one ~276 MB
+framework while the Servo stack idles at two, so the naive metric flatters
+Servo by roughly the framework size times the helper count. The RSS row is kept
+only to keep that trap visible. **On the metric that is actually right, the
+Servo prototype costs 2.6× Electron's memory.** Its spread is also much wider
+(511–635 MB against Electron's 236–248 MB), so it is not merely higher but less
+predictable.
 
-Not measured, and why: streaming throughput. The obvious version of that metric
-measures `MockLLMProvider`'s own 10 ms-per-character sleep rather than either
-stack, and there is no automation for the Servo webview to drive the same
-interaction. Handoff §3.2 records the design a real version needs.
+**Cold start is close, and the gap is in the engine, not the app.** 811 ms
+against 912 ms wall clock, ~12% behind. Main-process boot is nearly a tie
+(254 ms against 266 ms), which is the point of the architecture: the same
+main-process code runs at the same speed as a plain Node sidecar as it does
+inside Electron. The renderer's own boot span is where the difference lives —
+20.3 ms against 58.4 ms, Servo 2.9× slower on identical renderer code.
 
-Raw data: `docs/plans/perf-data/` (`results.json` plus one NDJSON trace per
-run).
+**Idle CPU favours Servo by an order of magnitude** — 1.2% against 0.1%.
+Chromium keeps more machinery ticking at rest than Servo does.
+
+**Disk: 396 MB against 260 MB.** Neither is a packaged app; the Electron figure
+is one `Electron.app` (the runtime cache holds a second, rebranded copy that a
+shipped app would not) plus `dist/main` and `dist/renderer`, and the Servo
+figure is a 229 MB release binary that already embeds `dist/renderer`, plus
+`dist/sidecar`.
+
+### Caveats
+
+- These are prototype numbers. Servo is untuned and Electron has a decade of
+  startup and memory work behind it; read the table as "current gap", not as a
+  verdict.
+- Streaming throughput is **not measured**. The obvious design times
+  `MockLLMProvider`'s own 10 ms-per-character sleep rather than either stack,
+  and the Servo webview has no automation to drive the interaction. Handoff
+  §3.2 records what a real version needs.
+- `renderer:layout-mounted` is `n/a` in both columns because a cold start onto
+  an empty profile lands on the welcome screen and never mounts a workspace.
+  Warm-profile runs would fill that row.
+
+Raw data: `docs/plans/perf-data/` — `results.json` plus one NDJSON trace per
+run.
