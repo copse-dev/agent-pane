@@ -300,6 +300,7 @@ export class BrowserWindow extends EventEmitter {
     if (process.env['COPSE_PERF'] === '1') {
       query.set('copsePerf', '1')
       query.set('copsePerfOrigin', process.env['COPSE_PERF_ORIGIN'] ?? '')
+      if (process.env['COPSE_PERF_AUTOPILOT'] === '1') query.set('copseAutopilot', '1')
     }
     const url = `${page}?${query.toString()}`
     this.webContents.setURLForShim(url)

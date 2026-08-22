@@ -75,6 +75,6 @@ docs/acp-behavior-matrix.json
 # Raw per-run process output from `pnpm perf:compare` — machine-local, and it
 # carries absolute paths from the developer's home. The NDJSON traces beside it
 # are path-free and are meant to be committed.
-docs/plans/perf-data/runs/**/process.log
+docs/plans/perf-data*/runs/**/process.log
 # Warmup runs are discarded by the harness; keeping them would commit noise.
-docs/plans/perf-data/runs/*warmup*/
+docs/plans/perf-data*/runs/*warmup*/
