@@ -1,12 +1,12 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type * as Monaco from 'monaco-editor'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus } from '@shared/types/git.ts'
 import { mountPrPane } from './pr-pane.ts'
 import { createFakeApi, createPendingApi } from '../fake-api.test-support.ts'
+import type { GitDiffMonaco } from '../monaco/git-diff-viewer.ts'
 
 // `gh.status()` is an IPC round-trip that shells out, so the pane paints well
 // before it answers. Reading that unanswered null as "gh is missing" told users
@@ -14,11 +14,21 @@ import { createFakeApi, createPendingApi } from '../fake-api.test-support.ts'
 
 const noopUnsub = (): (() => void) => () => {}
 
-// The pane only touches Monaco when a diff actually renders, so mount reaches
-// nothing but the theme subscription. Building the real 500-symbol module
-// surface to satisfy the parameter type would swamp the two assertions below.
-// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test double for a module the list-only path never calls into
-const MONACO_STUB = { editor: { setTheme: (): void => {} } } as unknown as typeof Monaco
+function unreachableMonacoCall(): never {
+  throw new Error('loading-state tests must not create a Monaco diff editor')
+}
+
+// The pane only touches setTheme on this list-only path. Satisfy the deliberately
+// narrow GitDiffMonaco boundary so an accidental diff render fails loudly.
+const MONACO_STUB: GitDiffMonaco = {
+  KeyCode: { KeyL: 0 },
+  Uri: { parse: (value) => ({ toString: () => value }) },
+  editor: {
+    createDiffEditor: unreachableMonacoCall,
+    createModel: unreachableMonacoCall,
+    setTheme: (): void => {},
+  },
+}
 
 function mount(api: ApiClient): { listRoot: HTMLElement; viewerRoot: HTMLElement } {
   const store = createStore({

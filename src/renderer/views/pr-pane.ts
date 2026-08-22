@@ -1,4 +1,3 @@
-import type * as Monaco from 'monaco-editor'
 import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { chevronRightIcon, externalLinkIcon, refreshIcon } from '../dom/icons.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
@@ -33,6 +32,7 @@ import {
   observeDiffHostLayout,
   setGitFileDiffModel,
   type GitDiffEditor,
+  type GitDiffMonaco,
 } from '../monaco/git-diff-viewer.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 
@@ -91,7 +91,7 @@ export function mountPrPane(
   viewerRoot: HTMLElement,
   store: AppStore,
   api: ApiClient,
-  monaco: typeof Monaco,
+  monaco: GitDiffMonaco,
 ): () => void {
   const listHeader = el('div', { class: 'git-changes-header' })
   listHeader.append(
