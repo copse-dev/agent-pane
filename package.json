@@ -16,6 +16,7 @@
     "build:demo": "node scripts/build.mts --demo",
     "build:tauri": "node scripts/build-tauri.mts",
     "smoke:tauri-sidecar": "node scripts/smoke-sidecar.mts",
+    "perf:compare": "node scripts/perf-compare.mts",
     "build:release": "COPSE_RELEASE=1 node scripts/build.mts",
     "generate:icon": "node scripts/generate-icon.mts",
     "detect:acp": "node scripts/detect-acp-agents.mts",
