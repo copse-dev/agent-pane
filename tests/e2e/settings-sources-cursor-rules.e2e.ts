@@ -62,7 +62,7 @@ describe('settings sources cursor rules (#636)', () => {
 
     const sources = dialog.$('.settings-section[data-section="customise"]')
     await expect(sources).toBeDisplayed()
-    await expect(sources.$('legend=Instructions')).toBeDisplayed()
+    await expect(sources.$('legend=Instruction files')).toBeDisplayed()
     await expect(sources.$('legend=Cursor rules')).toBeDisplayed()
 
     const instructionsList = sources.$('#sources-instructions-list')
