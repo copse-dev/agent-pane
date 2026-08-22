@@ -194,22 +194,3 @@ export function listAgents(): AgentsListResult {
 export function getAgent(name: string): AgentMetadata | null {
   return cachedMetadata.find((agent) => agent.name === name) ?? null
 }
-
-/** Test helper — replace the cache without touching disk. */
-export function setAgentsForTest(agents: AgentMetadata[]): void {
-  cachedMetadata = agents
-  cached = {
-    agents: agents.map(
-      ({ name, description, source, container, agentPath, unsupportedFields }) => ({
-        name,
-        description,
-        source,
-        container,
-        agentPath,
-        unsupportedFields,
-      }),
-    ),
-    skipped: [],
-    shadowed: [],
-  }
-}
