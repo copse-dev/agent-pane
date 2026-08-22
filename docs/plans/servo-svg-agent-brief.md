@@ -7,46 +7,68 @@ the evidence.
 
 ## Status
 
-| Phase                     | State                | Evidence                                     |
-| ------------------------- | -------------------- | -------------------------------------------- |
-| 1 — viewport              | **done**             | patch 0009; 15 unit tests                    |
-| 2 — geometry traversal    | **done, less `<use>`** | patch 0010; 22 unit tests                  |
-| 3 — painting              | **renderer done, delivery blocked** | patch 0010/0012; 9 pixel tests |
-| 4 — animation             | **blocked on 3**     | —                                            |
-| 5 — hit testing           | **geometry done, `pointer-events` blocked on stylo** | patch 0011; 8 tests |
-| 0 — DOM interfaces        | not started          | —                                            |
+| Phase                  | State        | Evidence                                    |
+| ---------------------- | ------------ | ------------------------------------------- |
+| 1 — viewport           | **done**     | patch 0009; 15 unit tests                   |
+| 2 — geometry traversal | **done**, less `<use>` and paint servers | patch 0010; 22 unit tests |
+| 3 — painting           | **done**     | patches 0010/0012/0013; 9 pixel tests       |
+| 4 — animation          | **done**     | patch 0013; pixel diff over time            |
+| 5 — hit testing        | **done**     | patch 0011 + stylo-0002; 9 unit tests       |
+| 0 — DOM interfaces     | not started  | —                                           |
 
-45 unit tests pass; `cargo build --release -p servo-layout` and the full
-Tauri+Servo shell both build clean. **No WPT numbers, and therefore no
-conformance claim** — see correction 5. With the pref on, native SVG paints
-nothing yet, because of the delivery blocker below.
+With `layout.svg.native.enabled` on, inline `<svg>` is laid out and painted
+natively and CSS animations on its descendants run. 46 unit tests, and the
+numbers below come from a real browser.
 
-### The two blockers, both external to this work
+### Measured
 
-1. **`CrossProcessPaintApi` is `!Sync`; `LayoutContext` must be `Sync`.** It
-   holds `Cell`s, and layout runs in parallel, so putting one where fragment
-   construction can reach it fails to compile at every parallel-layout call
-   site. An `ImageKey` therefore cannot be minted or uploaded from the code
-   that first knows the used size. Rendering in parallel is fine — the
-   renderer is pure — only registration has to happen on the layout thread.
-   `components/layout/svg/image.rs` documents three ways out; the recommended
-   one queues `(node, pixmap)` exactly as `pending_rasterization_images`
-   already queues work. **This blocks Phase 3's exit criterion and all of
-   Phase 4**, and it is a fragment-tree design decision, so it was left as a
-   decision rather than guessed at.
+- **Rendering matches the rasterization path.** A page of rects, circles,
+  paths, lines, polylines, a `<g transform>` and a stylesheet-driven `fill`:
+  **0.13%** of pixels differ at zero tolerance, **0.02%** at tolerance 8, all
+  on shape edges where vello and resvg antialias differently.
+- **Animation — Phase 4's exit criterion.** A 4s spinner sampled at +1.1s,
+  +2.1s and +3.1s. Pref off: **0 and 0** pixels change — frozen, the original
+  bug. Pref on: **2016 and 2201** pixels change. Confirmed again in a headed
+  window: three captures a second apart differ by 3163 and 9121 pixels.
+- **WPT `svg/`, same build, pref off vs on: +1 test, 0 regressions** across
+  1261 tests and 3925 subtests. Which test improves varies run to run — the
+  suite's reftests are not stable — so the net and the absence of regressions
+  are the reliable part, not the identity of the winner.
+- **`viewBox` intrinsic ratio, on the default path.** `viewBox="0 0 24.5
+  12.25"` in a 200px-wide box laid out **150px** tall (the no-ratio default)
+  before the fix and **100px** after.
 
-2. **SVG's `pointer-events` keywords do not exist in Servo.**
-   `visiblePainted`, `visibleFill`, `visibleStroke`, `visible`, `painted`,
-   `fill`, `stroke` and `all` are all `#[cfg(feature = "gecko")]` in stylo's
-   `PointerEvents`, leaving `auto` and `none`. Phase 5's hit regions are
-   implemented and tested but nothing can select between them from CSS. The
-   fix is a one-line ungating in the stylo repo, the same shape as
-   `stylo-0001` in the patch series.
+### Still not done
 
-Also found, worth a standalone upstream patch: `ratio_from_view_box` parses
-`viewBox` with `parse_integer`/`parse_unsigned_integer`, so a fractional
-`viewBox` yields **no intrinsic aspect ratio at all**. Fixed on the native
-path in 0009; the rasterization path is still wrong.
+- `<use>`: Servo's `SVGUseElement` is a bare DOM stub with no shadow
+  instancing, so there is nothing under it to walk.
+- Paint servers (gradients, patterns), clip, mask, marker. An unresolved paint
+  server renders nothing rather than black, so these fail visibly.
+- Nested `<svg>` viewports, treated as plain groups.
+- Phase 0's DOM geometry interfaces.
+
+### Things the plan got wrong, found by building it
+
+Beyond the six corrections below, three surprises that cost real time:
+
+1. **`svg > * { display: none }` in `servo.css` prunes the style traversal**,
+   so nothing below a *direct child* of the `<svg>` is ever styled. Invisible
+   to the rasterization path, which re-parses serialized markup, but fatal to
+   native layout: a `<g>`'s children simply did not exist, and the first test
+   page rendered its top-level shapes and dropped every group. Now in its own
+   stylesheet, applied only when the pref is off.
+2. **Phase 4 was not "mostly deletions".** The blocker was not damage
+   propagation, which already works — `traversal.rs` escalates damage at the
+   `<svg>` boundary. It was that `Animations::do_post_reflow_update` cancels
+   every animation on a node that is not "being rendered", and a boxless node
+   reports exactly that, so an SVG animation registered for one tick and was
+   then dropped. `node_rendering_type` now reports an SVG descendant as
+   rendered.
+3. **Headless tests missed `transform-origin` entirely.** Every one passed
+   while an animated `rotate()` swung elements around the viewport corner and
+   off the canvas, because no headless case rotated about a non-zero origin.
+   Running it headed found it in one frame. The pixel tests were necessary and
+   not sufficient.
 
 ## Corrections after first contact (2026-08-22)
 
@@ -84,16 +106,16 @@ section records what changed and why, so the reasoning is reviewable.
    stated scope. That is a quarter of the budget for the smallest phase, so the
    budget is tight but real — which is the point of having one.
 
-5. **WPT cannot be the per-commit oracle here, only the phase gate.** Rule 1
-   said WPT is the only evidence of progress. It is the only evidence of
-   *conformance*, and it stays the exit criterion — but it cannot be run in this
-   stack. Servo is built as a path dependency of `tauri-shell`, so there is no
-   `servo/target` and no `./mach` build; and servo's own workspace cannot be
-   built here at all (it resolves a different `mozjs_sys` than the one
-   `tauri-shell` has already compiled, and that build fails at linker
-   detection). `cargo test -p servo-layout` fails for a third reason: from
-   `tauri-shell/` it is a path dependency, not a workspace member, and cargo
-   refuses to test those. See "The validation loop" below for what does work.
+5. **WPT is the phase gate, not the per-commit oracle.** Rule 1 said WPT is
+   the only evidence of progress; it is the only evidence of *conformance*.
+   ~~It cannot be run in this stack.~~ **It can** — that first conclusion was
+   wrong, and cost a phase's worth of confidence. `./mach build` fails only for
+   two removable reasons (a pinned `mozjs_sys` that fails linker detection on
+   this SDK, and a GStreamer dependency servoshell does not need); both are one
+   flag or one `cargo update` away, and the suite then runs in 4.5 minutes. The
+   loop below now has four tiers, not three. `cargo test -p servo-layout` still
+   does not work — from `tauri-shell/` servo-layout is a path dependency, not a
+   workspace member — which is why the unit-test harness exists.
 
 6. **Develop on the pinned rev; rebase onto `main` to submit.** This brief said
    to work against `main`. That throws away an 8-patch series and a warm 3.8 GB
@@ -114,26 +136,70 @@ path is still wrong.
 
 ## The validation loop
 
-Three tiers, fastest first. Use the cheap ones per commit; the expensive one is
-a phase gate, not an inner loop.
+Four tiers, fastest first.
 
 ```bash
-# 1. Compile (~1 s warm). The only fast signal that the tree is consistent.
-cd tauri-shell && cargo build --release -p servo-layout
+# 1. Compile (~1 s warm), from tauri-shell/.
+cargo build --release -p servo-layout
 
 # 2. Unit tests for the pure geometry (~1 s).
 scripts/servo-svg-unit-tests.sh
 ```
 
-`scripts/servo-svg-unit-tests.sh` copies `components/layout/svg/` verbatim into
-a throwaway crate that depends only on `euclid`, stubs the one `pref!` lookup,
-and runs `cargo test`. No source is duplicated — the files are re-copied every
-run — so a test cannot drift from the code. This is only possible because the
-SVG geometry is deliberately written as pure functions; keep it that way.
+`scripts/servo-svg-unit-tests.sh` copies the pure SVG modules verbatim into a
+throwaway crate depending only on `euclid`, `kurbo` and `vello_cpu`, stubs the
+one `pref!` lookup, and runs `cargo test`. No source is duplicated — files are
+re-copied every run — so a test cannot drift from the code. It deliberately
+*cannot* compile `image.rs`, `integration.rs`, `resolve.rs` or `tree.rs`, the
+four modules that touch stylo, the DOM and the fragment tree. That is the
+constraint the module is organised around: if that exclusion list has to grow,
+logic has leaked into the bridge.
 
-3. **WPT, per phase, elsewhere.** `./mach build --release && ./mach test-wpt
-   tests/wpt/tests/svg/` on a standalone servo checkout. Report before/after
-   expectation counts. Nothing in tiers 1–2 is evidence of conformance.
+**3. A real browser (~2 min rebuild, seconds to run).** This stack *can* build
+servoshell standalone, which the first pass wrongly concluded it could not.
+Three things were in the way:
+
+```bash
+cargo update -p mozjs           # 0.21.0 -> 0.21.6; the pinned mozjs_sys
+                                # 140.13 fails linker detection on this SDK,
+                                # 140.14 (what tauri-shell already builds) does not
+./mach build --release --media-stack dummy   # avoids a GStreamer dependency
+                                             # servoshell does not need here
+```
+
+plus a `[patch."https://github.com/servo/stylo"]` block in servo's own
+`Cargo.toml` redirecting all eleven stylo crates at `../stylo`, mirroring what
+`tauri-shell/Cargo.toml` does, so the build picks up stylo-0001 and stylo-0002.
+**All three are local-only and must not be committed to the patch series.**
+
+```bash
+./target/release/servoshell -z -x -o out.png --pref layout_svg_native_enabled URL
+./target/release/servoshell --pref layout_svg_native_enabled URL      # headed
+COPSE_SERVO_ANIM_DEBUG=1 ./target/release/servoshell -z URL           # animation tracing
+```
+
+Screenshot with the pref off and on and diff the PNGs; that is how the
+rendering numbers above were produced. For animation, delay the `load` event
+with a busy-wait so the screenshot lands at a chosen wall-clock time, and
+sample the same page at several offsets — a single screenshot cannot tell a
+stopped animation from a still frame, and two runs of a *stopped* animation can
+differ by chance, so use three points and require change at each.
+
+**And run it headed at least once per phase.** The `transform-origin` bug
+survived every headless test and was obvious in one frame of a real window.
+
+**4. WPT, per phase (~4.5 min).**
+
+```bash
+./mach test-wpt --release --headless --processes 6 \
+  --pref layout_svg_native_enabled --log-raw out.jsonl tests/wpt/tests/svg/
+```
+
+Compare pref-off against pref-on **on the same build**, not against the
+checked-in expectations: the fork's patches 0003/0005/0006 already diverge from
+those, so 47 results are "unexpected" before this work starts. The suite's
+reftests are also not stable run to run, so treat a single test flipping as
+noise and the net plus the regression count as the signal.
 
 ## Why this is a reasonable thing to hand to an agent
 
@@ -181,12 +247,14 @@ Added, not changed, and with those exclusions — see correction 4. Deletions ar
 the point of Phase 4, and pref boilerplate is a fixed cost every pref pays;
 charging either against the budget makes it unmeetable rather than tight.
 
-Spent so far: **12 lines** in the budget's scope, 22 across all pre-existing
-files (21 for Phase 1's pref plumbing and sizing seam, 1 for Phase 2's
-`vello_cpu` dependency). Phases 2, 3 and 5 cost almost nothing because they are
-entirely new files — which is the evidence that the seam-first design works.
-The remaining spend is Phase 3's delivery, and blocker 1 is the reason it has
-not been paid yet.
+Final spend across all six phases: **47 added lines** in the budget's scope,
+**56** across all pre-existing files including the pref and stylesheet
+plumbing, against **~2 900 lines** of new code in `components/layout/svg/`.
+Under budget, and the ratio is the point: phases 2, 3 and 5 cost almost nothing
+because they are entirely new files. Twice during Phase 3 the seam drifted over
+50 lines and the fix was the same both times — move the logic, and the comment
+explaining it, into `svg/`. That is the budget doing its job rather than merely
+being met.
 
 If a phase cannot be done inside that budget, stop and report why rather than
 spreading edits.
@@ -272,7 +340,7 @@ the viewport transform, 15 unit tests, 21 seam lines. The transform is applied
 at paint time rather than baked into the tree, because it depends on the used
 content-box size — which also means a resize repaints without rebuilding.
 
-### Phase 2 — geometry traversal (~2 500–4 000 LOC, all new files)
+### Phase 2 — geometry traversal (~2 500–4 000 LOC, all new files) — **done**
 
 Per-element geometry from properties/attributes; transform composition; object
 and stroke bounding boxes; `<use>` shadow instancing; group opacity/clip/mask;
@@ -290,7 +358,7 @@ because Servo's `SVGUseElement` is a bare DOM stub with no shadow instancing —
 rendering it needs an id lookup layout does not have. Gradients are skipped
 because an unresolved paint server resolving to black would look deliberate.
 
-### Phase 3 — painting via vello (~1 500–3 000 LOC)
+### Phase 3 — painting via vello (~1 500–3 000 LOC) — **done**
 
 **Follow `components/canvas` exactly.** Build `kurbo` paths, paint with
 `vello_cpu`, deliver a snapshot behind a WebRender `ImageKey`. Map paint servers
@@ -300,26 +368,28 @@ handle group isolation and opacity.
 **Do not** write a rasterizer. **Do not** add `lyon`. **Do not** attempt
 WebRender path primitives — they do not exist.
 
-_Status: **renderer done, delivery blocked**._ Patch 0010 paints the scene
-with `vello_cpu`; 9 tests assert on real pixels, including that group opacity
-composites as a unit. Patch 0012 has the `ImageKey` registry but cannot be
-connected — see blocker 1. Until it is, the pref renders nothing.
+_Status: **done**._ Patch 0010 paints with `vello_cpu` (9 pixel tests,
+including that group opacity composites as a unit); 0012 is the `ImageKey`
+registry; 0013 connects it. Delivery is split because `CrossProcessPaintApi`
+is `!Sync` and `LayoutContext` must be `Sync`: keys come from
+`ImageCache::get_image_key`, which is reachable from parallel layout, and the
+upload is queued and drained on the layout thread before the display list is
+sent — the same shape as `pending_rasterization_images`.
 
 _Exit:_ with the pref on, a `<rect>` renders at the right position and size
 (inherited from Phase 1, see correction 3); `svg/painting/` WPT improves;
 strokes and dashes are visually correct.
 
-### Phase 4 — animation (~150–400 LOC, mostly deletions)
+### Phase 4 — animation (~150–400 LOC, *not* mostly deletions) — **done**
 
 Remove the serialize-and-rasterize special case for the native path and confirm
 `NodeDamage::Style` propagates from an SVG descendant to its viewport box. The
 existing `Animations` machinery should then work unchanged.
 
-_Status: **blocked on Phase 3's delivery**._ There is nothing to animate until
-painted pixels reach the compositor. The prerequisite this phase actually
-tests — that SVG descendants keep real computed styles — is already true as of
-Phase 2, so once delivery lands this should be close to the "mostly deletions"
-the estimate assumes.
+_Status: **done**, and it was not deletions._ See "Things the plan got wrong"
+above: `Animations::do_post_reflow_update` cancels animations on any node that
+is not "being rendered", which a boxless SVG descendant reports. Fixed in
+`node_rendering_type`, patch 0013.
 
 _Exit — this is the end-to-end proof:_ a page with
 `<path style="animation: spin 1s linear infinite">` must produce **changing
@@ -327,7 +397,7 @@ pixels across consecutive frames**. Verify by screenshotting twice ~500 ms apart
 and diffing; a static screenshot cannot distinguish a stopped animation from a
 still frame. Report the pixel-difference count.
 
-### Phase 5 — hit testing (~300–600 LOC)
+### Phase 5 — hit testing (~300–600 LOC) — **done**
 
 Per-shape `pointer-events`, `fill` vs `stroke` regions. `display_list/hit_test.rs`
 already imports `kurbo::Shape`.

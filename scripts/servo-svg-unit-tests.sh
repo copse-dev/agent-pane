@@ -61,11 +61,18 @@ RUST
 cp -R "$svg_dir" "$harness/src/svg"
 sed -i.bak '/^use servo_config::pref;$/d' "$harness/src/svg/mod.rs"
 
+# `svg/number.rs` in-tree only re-exports the parser, which lives in
+# layout_api so `SVGElementData::ratio_from_view_box` can share it. Substitute
+# the real source so the harness tests the same code, not a stub.
+sed -e 's/^pub struct NumberListParser/pub(crate) struct NumberListParser/' \
+    -e 's/^    pub fn /    pub(crate) fn /' \
+    "$servo_dir/components/shared/layout/svg_number.rs" > "$harness/src/svg/number.rs"
+
 # Two modules bridge to stylo and the DOM and cannot build standalone. They
 # are deliberately thin for exactly this reason: everything with real edge
 # cases lives in the pure modules, which is what gets tested here. If this
 # list has to grow, that is a signal logic has leaked into the bridge.
-for coupled in image resolve tree; do
+for coupled in image integration resolve tree; do
   rm -f "$harness/src/svg/$coupled.rs"
   sed -i.bak "/^pub(crate) mod $coupled;$/d" "$harness/src/svg/mod.rs"
 done
