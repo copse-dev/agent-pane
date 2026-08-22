@@ -425,6 +425,7 @@ export function seedEmptyProject(
   options?: {
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
+    nextStepSuggestionEnabled?: boolean
     model?: string
     advisorModel?: string
     localServerUrl?: string
@@ -538,6 +539,9 @@ export function seedEmptyProject(
   }
   if (options?.mockFollowUps) {
     settings.mockFollowUps = true
+  }
+  if (options?.nextStepSuggestionEnabled !== undefined) {
+    settings.nextStepSuggestionEnabled = options.nextStepSuggestionEnabled
   }
   if (options?.model) {
     settings.model = options.model

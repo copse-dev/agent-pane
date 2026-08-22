@@ -23,7 +23,12 @@ import {
   terminalReportFromAssistantText,
   type AutonomyTrace,
 } from '../../scripts/lib/autonomy-regression.mts'
-import { toolExpectationViolations } from '../../scripts/lib/eval-tool-expectations.mts'
+import {
+  SHELL_ESCALATION_PROMPT_CAUSES,
+  shellEscalationPromptCount,
+  toolExpectationViolations,
+} from '../../scripts/lib/eval-tool-expectations.mts'
+import { readDecisionLog } from '../../src/main/services/security/decision-log-store.ts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -270,11 +275,18 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
   }
 }
 
-async function readActiveThread(): Promise<Thread> {
+function readEvalConfig(): Record<string, unknown> {
   const configPath = join(getCopseUserDataDir(), 'config.json')
-  const config = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>
-  const projectId = config.activeProjectId as string
-  const threads = await loadProjectThreads(projectId)
+  return JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>
+}
+
+function activeProjectId(): string {
+  return readEvalConfig().activeProjectId as string
+}
+
+async function readActiveThread(): Promise<Thread> {
+  const config = readEvalConfig()
+  const threads = await loadProjectThreads(config.activeProjectId as string)
   if (threads.length === 0) throw new Error('No threads in the thread store after eval run')
   const activeId = config.activeThreadId as string | undefined
   const thread = threads.find((t) => t.id === activeId) ?? threads[threads.length - 1]
@@ -293,6 +305,26 @@ function assertExploreSubagentCompleted(thread: Thread): void {
   assert.ok(completed.length > 0, 'expected explore to complete with a non-empty summary result')
 }
 
+/**
+ * Assert the cause-scoped ceiling on shell-escalation prompts.
+ *
+ * Read from the thread spine rather than from the harness `approvalCount`,
+ * which cannot tell an external-shell prompt apart from any other dialog the
+ * run happened to raise. Scored separately from `toolExpectationViolations`
+ * because the decision log lives on disk, not in the exported thread.
+ */
+async function assertShellEscalationPrompts(scenario: EvalScenario): Promise<void> {
+  const max = scenario.toolUse?.maxShellEscalationPrompts
+  if (max === undefined) return
+  const decisions = await readDecisionLog(activeProjectId())
+  const count = shellEscalationPromptCount(decisions)
+  assert.ok(
+    count <= max,
+    `${String(count)} shell-escalation prompt(s) > max ${String(max)} ` +
+      `(causes counted: ${SHELL_ESCALATION_PROMPT_CAUSES.join(', ')})`,
+  )
+}
+
 function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void {
   const expectation = scenario.toolUse
   if (!expectation) return
@@ -301,7 +333,9 @@ function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void
   const violations = toolExpectationViolations(calls, {
     requireTools: expectation.requireTools,
     requireAnyTools: expectation.requireAnyTools,
+    requireSuccessfulToolGroups: expectation.requireSuccessfulToolGroups,
     forbidTools: expectation.forbidTools,
+    forbidDisplacedShell: expectation.forbidDisplacedShell,
     forbidGithubNetworkDenial: expectation.forbidGithubNetworkDenial,
   })
   assert.deepEqual(violations, [], `${violations.join('; ')} (observed: ${names.join(', ')})`)
@@ -408,6 +442,7 @@ describe('agent eval drive', () => {
     process.stdout.write(`\nCOPSE_EVAL_ARTIFACT=${outPath}\n`)
 
     assertWorkspaceExpectations(workspaceRoot, scenario)
+    await assertShellEscalationPrompts(scenario)
     assertToolUseExpectations(thread, scenario)
     if (
       scenario.id === 'working-brief-eval' ||

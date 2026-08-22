@@ -5,7 +5,7 @@ import { resolveDepRoot } from './resolve-dep.mts'
 
 /**
  * node-pty ships spawn-helper without the executable bit (prebuilds); PTY spawn
- * then fails with posix_spawnp. After electron-rebuild, loadNativeModule prefers
+ * then fails with posix_spawnp. After the rebuild, loadNativeModule prefers
  * `build/Release`, so chmod both trees. Verify X_OK so a skipped/no-op chmod
  * fails the install instead of shipping a broken terminal.
  */
@@ -46,17 +46,17 @@ if (process.env['SKIP_ELECTRON_REBUILD'] === '1') {
   process.exit(0)
 }
 
-// Invoke the LOCAL electron-rebuild CLI (pinned devDependency) instead of
+// Invoke the LOCAL @electron/rebuild CLI (pinned devDependency) instead of
 // `npx electron-rebuild`. `npx` would implicitly fetch-and-execute an unpinned
 // version from the network if it were ever missing locally; resolving the
 // already-installed package avoids any implicit network fetch and arbitrary
 // lifecycle-script execution (supply-chain hardening, finding L5).
 let rebuildCli: string
 try {
-  rebuildCli = join(resolveDepRoot('electron-rebuild'), 'lib', 'src', 'cli.js')
+  rebuildCli = join(resolveDepRoot('@electron/rebuild'), 'lib', 'cli.js')
 } catch {
   console.error(
-    '[postinstall] electron-rebuild package not found. ' +
+    '[postinstall] @electron/rebuild package not found. ' +
       'It is a pinned devDependency — run a full `pnpm install` first, ' +
       'or set SKIP_ELECTRON_REBUILD=1 to skip the native rebuild.',
   )
@@ -65,7 +65,7 @@ try {
 
 if (!existsSync(rebuildCli)) {
   console.error(
-    `[postinstall] electron-rebuild CLI not found at ${rebuildCli}. ` +
+    `[postinstall] @electron/rebuild CLI not found at ${rebuildCli}. ` +
       'It is a pinned devDependency — run a full `pnpm install` first, ' +
       'or set SKIP_ELECTRON_REBUILD=1 to skip the native rebuild.',
   )

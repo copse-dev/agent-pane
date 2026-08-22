@@ -756,6 +756,81 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+  # Tool-preference eval (#1845): asked a read-only "what landed on main, is CI
+  # green?" question, does the agent answer through the first-class git/gh/CI
+  # tools, or does it drive `gh` and network `git` through run_shell and charge
+  # the user an external-shell approval for each? The exported thread in that
+  # issue took five. A GA blocker, but deliberately NOT a merge gate: the
+  # scoring it rests on is unit-tested on every PR
+  # (scripts/lib/eval-scenario-git-ci-tools.test.ts, which replays that thread),
+  # while this lane measures what real models actually do. Nightly, or on demand
+  # via the `eval-tool-preference` PR label, and only on a configured eval
+  # runner.
+  #
+  # The matrix is what the issue's acceptance criteria ask for: the native loop
+  # across the prompt class's wordings, plus one ACP path, whose namespaced
+  # bridged calls the scorer matches through `matchesBridgedToolName`.
+  # `fail-fast` is off because which wording an agent trips on IS the finding —
+  # stopping the matrix at the first red would throw that away.
+  eval-tool-preference:
+    needs: precheck
+    if: >-
+      vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name == 'schedule' ||
+       contains(github.event.pull_request.labels.*.name, 'eval-tool-preference'))
+    runs-on: ${{ vars.LM_EVAL_RUNNER }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { path: native, model: '', variant: '0' }
+          - { path: native, model: '', variant: '1' }
+          - { path: native, model: '', variant: '2' }
+          # The ACP arm runs the wording taken verbatim from the exported
+          # thread, so a regression there is comparable to the recorded case.
+          - { path: acp-codex, model: 'acp:codex-acp', variant: '0' }
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+      # The eval drives the packaged renderer through Electron, not the dev
+      # server, so the bundle has to exist before WDIO launches.
+      - run: npm run build
+      - env:
+          COPSE_EVAL_SCENARIO: tests/e2e/scenarios/git-ci-first-class-tools.json
+          COPSE_EVAL_PROMPT_VARIANT: ${{ matrix.variant }}
+          COPSE_EVAL_MODEL: ${{ matrix.model }}
+          LM_STUDIO_URL: ${{ vars.LM_STUDIO_URL }}
+          LM_STUDIO_MODEL: ${{ vars.LM_STUDIO_MODEL }}
+          LM_STUDIO_API_KEY: ${{ secrets.LM_STUDIO_API_KEY }}
+        run: npm run test:e2e:agent-eval
+      # Publish the pass/fail artifact even when the step above already failed
+      # its in-run asserts: a run that violated the expectations is exactly the
+      # one whose scored trace is worth reading. Same scoring a human gets from
+      # `npm run analyze:thread` on the captured JSONL, so the lane and a local
+      # investigation cannot disagree.
+      - if: always()
+        shell: bash
+        run: |
+          artifact=$(ls -t tests/e2e/artifacts/git-ci-first-class-tools-*.jsonl 2>/dev/null | head -1)
+          if [ -z "$artifact" ]; then
+            echo "no eval artifact captured — the run died before writing a thread"
+            exit 1
+          fi
+          report="tests/e2e/artifacts/report-${{ matrix.path }}-${{ matrix.variant }}.json"
+          npm run --silent analyze:thread -- "$artifact" \
+            tests/e2e/scenarios/git-ci-first-class-tools.json > "$report"
+          cat "$report"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: eval-tool-preference-${{ matrix.path }}-${{ matrix.variant }}
+          path: tests/e2e/artifacts/
+          if-no-files-found: ignore
+          # Trend + triage data for a GA gate; a month covers a release cycle.
+          retention-days: 30
+
   build:
     needs: precheck
     if: >-
