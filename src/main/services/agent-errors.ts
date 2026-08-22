@@ -204,7 +204,7 @@ const EXPIRED_AUTH_RE =
 
 /** Auth failures that are not specifically an expiry (never signed in, key refused). */
 const AUTH_FAILURE_RE =
-  /authentication[\s_-]*(?:required|failed|error)|failed to authenticate|not (?:logged in|authenticated)|unauthenticated|invalid api key|(?:was\s+|has\s+been\s+)?rejected|\/login\b/i
+  /authentication[\s_-]*(?:required|failed|error)|failed to authenticate|not (?:logged in|authenticated)|unauthenticated|invalid api key|\/login\b/i
 
 /** Every string an agent might have hidden the auth signal in, joined for matching. */
 function authSignalText(rpc: JsonRpcError | null, detail: string): string {
