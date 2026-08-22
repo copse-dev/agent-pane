@@ -32,6 +32,7 @@ import { deleteFileTool, renameFileTool, makeDirectoryTool } from '../tools/file
 import { exploreTool } from '../tools/explore-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
+import { consolidateTodoWorkersTool } from '../tools/consolidate-todo-workers-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { registerBrowserTools } from '../tools/browser-tools.ts'
@@ -183,6 +184,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
+  registry.register(consolidateTodoWorkersTool)
   registry.register(askUserTool)
   // Always-on setup health check ("doctor"). Read-only — gathers diagnostics and
   // returns a report; the agent proposes any fixes for the user to approve.

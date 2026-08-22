@@ -27,7 +27,7 @@ export function todoWorkerBranchName(todoId: string, collision = 0): string {
 }
 
 export function todoWorkerCommitMessage(item: TodoItem): string {
-  const firstLine = item.content.trim().split('\n')[0]?.trim() || 'Todo worker output'
+  const firstLine = item.content.trim().split('\n')[0]?.trim() ?? 'Todo worker output'
   return `${firstLine}\n\nHost-side commit of the local todo worker's output for plan item ${item.id}.`
 }
 
@@ -49,15 +49,13 @@ export async function resolveTodoWorkerBranch(
   throw new Error(`Cannot find a free branch for todo worker ${todoId}`)
 }
 
-export async function commitTodoWorkerOutput(
-  input: {
-    worktreePath: string
-    branch: string
-    item: TodoItem
-    authorName: string
-    authorEmail: string
-  },
-): Promise<TodoWorkerCommit> {
+export async function commitTodoWorkerOutput(input: {
+  worktreePath: string
+  branch: string
+  item: TodoItem
+  authorName: string
+  authorEmail: string
+}): Promise<TodoWorkerCommit> {
   const { worktreePath, item } = input
   try {
     const add = await runWorktreeGit(worktreePath, ['add', '-A'])
@@ -101,9 +99,9 @@ export async function commitTodoWorkerOutput(
     // A commit failure must not lose the worker's files: they are still on disk
     // in the worktree, which the caller retains on failure. The error text goes
     // back to the parent via the normal todo_worker_done path.
-    throw new Error(
-      `Todo worker commit failed on branch ${input.branch}: ${errorMessage(error)}`,
-    )
+    throw new Error(`Todo worker commit failed on branch ${input.branch}: ${errorMessage(error)}`, {
+      cause: error,
+    })
   }
 }
 

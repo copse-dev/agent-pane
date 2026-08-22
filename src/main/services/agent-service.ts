@@ -44,7 +44,10 @@ import {
   setActiveRunThread,
   setActiveRunTurnTreeId,
 } from './thread-models.ts'
-import { getThreadExecutionContext } from './thread-execution-context.ts'
+import {
+  getThreadExecutionContext,
+  requireThreadExecutionContext,
+} from './thread-execution-context.ts'
 import { updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
@@ -168,7 +171,8 @@ import {
   inertPluginSources,
   pluginUnavailableReason,
 } from './plugins/plugin-service.ts'
-import { runTodoWorker, runTodoWorkerInWorktree } from './todo-worker-runner.ts'
+import { runTodoWorker, runTodoWorkerBatch, runTodoWorkerInWorktree } from './todo-worker-runner.ts'
+import { consolidateTodoWorkers } from './todo-consolidation.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { type ReasoningLevel } from '@copse/llm/model-parameters.ts'
@@ -1544,94 +1548,164 @@ export async function runAgent(
           let extraMessage: string | undefined
 
           const localItems = findNewlyInProgressLocalSet(before, after)
-          const localItem = localItems[0] ?? null
+          // Phase 3 fan-out set (docs/plans/parallel-todo-workers.md): items the
+          // parent declared parallel:true run concurrently in their own
+          // worktrees under a semaphore; everything else keeps the serial path.
+          const fanoutSet = localItems.filter((t) => t.parallel)
           if (
-            localItem &&
-            shouldRouteToLocal(localItem, {
-              localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
-              parentIsLocal: isLocalChatModel(model),
-            }) &&
-            subagentRoute
+            getSetting<boolean>('parallelTodoWorkersEnabled', false) &&
+            subagentRoute !== null &&
+            localItems.length > 0 &&
+            fanoutSet.length > 0 &&
+            localItems.every((t) =>
+              shouldRouteToLocal(t, {
+                localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
+                parentIsLocal: isLocalChatModel(model),
+              }),
+            )
           ) {
-            sendChunk({
-              type: 'todo_worker_start',
-              todoId: localItem.id,
-              content: localItem.content,
+            const batchContext = requireThreadExecutionContext()
+            await runTodoWorkerBatch({
+              items: fanoutSet,
+              projectId: batchContext.projectId,
+              threadId: batchContext.threadId,
+              parentContext: batchContext,
+              provider: subagentRoute.provider,
+              registry,
+              contextWindow: subagentRoute.contextWindow,
+              toolSchemaReserve: subagentRoute.toolSchemaReserve,
+              signal: controller.signal,
+              onChunk: sendChunk,
+              parentGoal,
+              priorSummaries: localWorkerSummaries,
+              parallelism: getSetting<number>('todoWorkerParallelism', 2),
+              onUsage: (usage) => {
+                inputTokens += usage.inputTokens
+                outputTokens += usage.outputTokens
+                sendChunk({
+                  type: 'usage',
+                  model: subagentUsageModel,
+                  inputTokens: usage.inputTokens,
+                  outputTokens: usage.outputTokens,
+                })
+              },
+              onItemDone: (item, passed) => {
+                todos = todos.map((t) =>
+                  t.id === item.id ? { ...t, status: passed ? 'completed' : 'in_progress' } : t,
+                )
+                sendChunk({ type: 'todo_update', todos })
+                emitTodoPanelUpdate(todos)
+              },
+              onItemFailed: (item, message) => {
+                extraMessage = `Local worker failed (${item.id}): ${message}`
+              },
             })
-            try {
-              // Flag-gated phase 2 (docs/plans/parallel-todo-workers.md): run
-              // the worker in its own linked worktree and commit its output on
-              // the worker branch host-side. Off — or no execution context, as
-              // in some tests/ACP bridges — keeps today's in-checkout worker.
-              const parallelEnabled = getSetting<boolean>('parallelTodoWorkersEnabled', false)
-              const parentContext = getThreadExecutionContext()
-              const useWorktree =
-                parallelEnabled &&
-                parentContext !== null &&
-                parentContext.projectRoot === parentContext.root
-              const serialWorkerOpts = {
-                item: localItem,
-                provider: subagentRoute.provider,
-                registry,
-                contextWindow: subagentRoute.contextWindow,
-                toolSchemaReserve: subagentRoute.toolSchemaReserve,
-                signal: controller.signal,
-                onChunk: sendChunk,
-                parentGoal,
-                priorSummaries: localWorkerSummaries,
-              }
-              const worker = await (useWorktree && parentContext
-                ? runTodoWorkerInWorktree({
-                    ...serialWorkerOpts,
-                    projectId: parentContext.projectId,
-                    threadId: parentContext.threadId,
-                    parentContext,
-                    authorName: 'Copse Todo Worker',
-                    authorEmail: 'todo-worker@copse.local',
-                  }).then((outcome) => outcome.result)
-                : runTodoWorker(serialWorkerOpts))
-              localWorkerSummaries.set(localItem.id, {
+
+            // Join: cherry-pick absorbed worker commits in plan order. Conflicts
+            // hold the item for the parent, who resolves with edit tools and
+            // retries via consolidate_todo_workers.
+            const context = getThreadExecutionContext()
+            if (context && context.projectRoot === context.root) {
+              const report = await consolidateTodoWorkers({
+                projectRoot: context.root,
+                orderedTodoIds: fanoutSet.map((t) => t.id),
+              })
+              extraMessage = report.message
+            }
+          } else if (localItems.length > 0) {
+            const localItem = localItems[0] ?? null
+            if (
+              localItem &&
+              shouldRouteToLocal(localItem, {
+                localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
+                parentIsLocal: isLocalChatModel(model),
+              }) &&
+              subagentRoute
+            ) {
+              sendChunk({
+                type: 'todo_worker_start',
+                todoId: localItem.id,
                 content: localItem.content,
-                summary: worker.summary,
               })
-              inputTokens += worker.usage.inputTokens
-              outputTokens += worker.usage.outputTokens
-              sendChunk({
-                type: 'usage',
-                model: subagentUsageModel,
-                inputTokens: worker.usage.inputTokens,
-                outputTokens: worker.usage.outputTokens,
-              })
+              try {
+                // Flag-gated phase 2 (docs/plans/parallel-todo-workers.md): run
+                // the worker in its own linked worktree and commit its output on
+                // the worker branch host-side. Off — or no execution context, as
+                // in some tests/ACP bridges — keeps today's in-checkout worker.
+                const parallelEnabled = getSetting<boolean>('parallelTodoWorkersEnabled', false)
+                const parentContext = getThreadExecutionContext()
+                const worktreeContext =
+                  parallelEnabled &&
+                  parentContext !== null &&
+                  parentContext.projectRoot === parentContext.root
+                    ? parentContext
+                    : null
+                const serialWorkerOpts = {
+                  item: localItem,
+                  provider: subagentRoute.provider,
+                  registry,
+                  contextWindow: subagentRoute.contextWindow,
+                  toolSchemaReserve: subagentRoute.toolSchemaReserve,
+                  signal: controller.signal,
+                  onChunk: sendChunk,
+                  parentGoal,
+                  priorSummaries: localWorkerSummaries,
+                }
+                const worker = await (worktreeContext !== null
+                  ? runTodoWorkerInWorktree({
+                      ...serialWorkerOpts,
+                      projectId: worktreeContext.projectId,
+                      threadId: worktreeContext.threadId,
+                      parentContext: worktreeContext,
+                      authorName: 'Copse Todo Worker',
+                      authorEmail: 'todo-worker@copse.local',
+                    }).then((outcome) => outcome.result)
+                  : runTodoWorker(serialWorkerOpts))
+                localWorkerSummaries.set(localItem.id, {
+                  content: localItem.content,
+                  summary: worker.summary,
+                })
+                inputTokens += worker.usage.inputTokens
+                outputTokens += worker.usage.outputTokens
+                sendChunk({
+                  type: 'usage',
+                  model: subagentUsageModel,
+                  inputTokens: worker.usage.inputTokens,
+                  outputTokens: worker.usage.outputTokens,
+                })
 
-              let passed = true
-              if (localItem.check) {
-                const check = await verifyTodoCheck(localItem.check, controller.signal)
-                passed = check.passed
-                extraMessage = passed
-                  ? `Local worker completed "${localItem.content}" (${check.detail})`
-                  : `Local worker finished but check failed: ${check.detail}`
+                let passed = true
+                if (localItem.check) {
+                  const check = await verifyTodoCheck(localItem.check, controller.signal)
+                  passed = check.passed
+                  extraMessage = passed
+                    ? `Local worker completed "${localItem.content}" (${check.detail})`
+                    : `Local worker finished but check failed: ${check.detail}`
+                }
+
+                todos = todos.map((t) =>
+                  t.id === localItem.id
+                    ? { ...t, status: passed ? 'completed' : 'in_progress' }
+                    : t,
+                )
+                sendChunk({ type: 'todo_update', todos })
+                emitTodoPanelUpdate(todos)
+                sendChunk({
+                  type: 'todo_worker_done',
+                  todoId: localItem.id,
+                  summary: worker.summary,
+                  passed,
+                })
+              } catch (err) {
+                const msg = errorMessage(err)
+                extraMessage = `Local worker failed: ${msg}`
+                sendChunk({
+                  type: 'todo_worker_done',
+                  todoId: localItem.id,
+                  summary: msg,
+                  passed: false,
+                })
               }
-
-              todos = todos.map((t) =>
-                t.id === localItem.id ? { ...t, status: passed ? 'completed' : 'in_progress' } : t,
-              )
-              sendChunk({ type: 'todo_update', todos })
-              emitTodoPanelUpdate(todos)
-              sendChunk({
-                type: 'todo_worker_done',
-                todoId: localItem.id,
-                summary: worker.summary,
-                passed,
-              })
-            } catch (err) {
-              const msg = errorMessage(err)
-              extraMessage = `Local worker failed: ${msg}`
-              sendChunk({
-                type: 'todo_worker_done',
-                todoId: localItem.id,
-                summary: msg,
-                passed: false,
-              })
             }
           }
 

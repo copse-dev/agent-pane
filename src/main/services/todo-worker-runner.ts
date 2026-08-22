@@ -9,6 +9,7 @@ import type { LLMMessage, LLMProvider, LLMTool, StreamChunk } from '@shared/type
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import type { ToolRegistry } from './tool-registry.ts'
+import { errorMessage } from '@shared/errors.ts'
 import type { ThreadExecutionContext } from './thread-execution-context.ts'
 import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 import {
@@ -236,15 +237,9 @@ export async function runTodoWorkerInWorktree(
   )
   const target = expectedTodoWorkerWorktreePath(projectId, item.id)
   await mkdir(dirname(target), { recursive: true })
-  const add = await runWorktreeGit(repoRoot, [
-    'worktree',
-    'add',
-    '-b',
-    branch,
-    target,
-    baseCommit,
-  ])
-  if (add.code !== 0) throw new Error(`Cannot create todo worker worktree: ${(add.stderr || add.stdout).trim()}`)
+  const add = await runWorktreeGit(repoRoot, ['worktree', 'add', '-b', branch, target, baseCommit])
+  if (add.code !== 0)
+    throw new Error(`Cannot create todo worker worktree: ${(add.stderr || add.stdout).trim()}`)
 
   const canonicalPath = await realpath(target)
   const executionRoot = resolve(canonicalPath, location.projectRelativePath)
@@ -257,7 +252,7 @@ export async function runTodoWorkerInWorktree(
     createdAt: Date.now(),
     seededFromDirtyProject: false,
   }
-  registerInternalWorkspaceRoot(canonicalPath, executionRoot)
+  await registerInternalWorkspaceRoot(canonicalPath, executionRoot)
 
   const workerContext: ThreadExecutionContext = Object.freeze({
     projectId,
@@ -269,37 +264,158 @@ export async function runTodoWorkerInWorktree(
   })
 
   let retired = false
-  try {
-    const result = await runWithThreadExecutionContext(workerContext, () =>
-      runTodoWorker(opts),
-    )
-    const commit = await commitTodoWorkerOutput({
-      worktreePath: canonicalPath,
-      branch,
-      item,
-      authorName: opts.authorName,
-      authorEmail: opts.authorEmail,
-    })
-    // Phase 2 keeps the branch (the consolidator absorbs it in phase 3); the
-    // checkout itself is dropped as soon as the commit exists, because the
-    // commit fully captures the tree.
-    const remove = await runWorktreeGit(repoRoot, ['worktree', 'remove', canonicalPath])
-    if (remove.code === 0) {
-      releaseWorktreeRoot(executionRoot)
-      retired = true
-    }
-    return {
-      result: {
-        ...result,
-        ...(retired ? { worktree: { branch, sha: commit.sha, retired } } : {}),
-      },
-      worktree,
-      commit,
-      retired,
-    }
-  } catch (error) {
-    // Retain the worktree and branch: the worker's partial output stays on disk
-    // for inspection, and the orphan sweep surfaces it in the inventory.
-    throw error
+  // No try/catch here by design: on any failure the worktree and branch are
+  // deliberately retained — the worker's partial output stays on disk for
+  // inspection and the orphan sweep surfaces it in the inventory. Callers see
+  // the original error untouched.
+  const result = await runWithThreadExecutionContext(workerContext, () => runTodoWorker(opts))
+  const commit = await commitTodoWorkerOutput({
+    worktreePath: canonicalPath,
+    branch,
+    item,
+    authorName: opts.authorName,
+    authorEmail: opts.authorEmail,
+  })
+  // Phase 2 keeps the branch (the consolidator absorbs it in phase 3); the
+  // checkout itself is dropped as soon as the commit exists, because the
+  // commit fully captures the tree.
+  const remove = await runWorktreeGit(repoRoot, ['worktree', 'remove', canonicalPath])
+  if (remove.code === 0) {
+    releaseWorktreeRoot(executionRoot)
+    retired = true
   }
+  return {
+    result: {
+      ...result,
+      ...(retired ? { worktree: { branch, sha: commit.sha, retired } } : {}),
+    },
+    worktree,
+    commit,
+    retired,
+  }
+}
+
+export interface RunTodoWorkerBatchOptions {
+  items: TodoItem[]
+  projectId: string
+  threadId: string
+  parentContext: ThreadExecutionContext
+  provider: LLMProvider
+  registry: ToolRegistry
+  contextWindow: number
+  toolSchemaReserve: number
+  signal: AbortSignal
+  onChunk?: (chunk: StreamChunk) => void
+  parentGoal?: string
+  priorSummaries?: ReadonlyMap<string, { content: string; summary: string }>
+  /** Concurrent worker cap (todoWorkerParallelism). */
+  parallelism: number
+  onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void
+  /**
+   * Per-item completion. `passed` is true whenever the run finished; a thrown
+   * worker reports through {@link onItemFailed} instead, never here.
+   */
+  onItemDone?: (item: TodoItem, passed: boolean) => void
+  onItemFailed?: (item: TodoItem, message: string) => void
+}
+
+export interface TodoWorkerBatchEntry {
+  item: TodoItem
+  ok: boolean
+  summary: string
+  branch: string | null
+  sha: string | null
+  error?: string
+}
+
+/**
+ * Fan out independent local workers concurrently (phase 3,
+ * docs/plans/parallel-todo-workers.md). All worktrees cut from the parent
+ * checkout's current HEAD so later cherry-picks are clean three-way merges.
+ * Bounded by a semaphore at `parallelism`; one worker's crash never strands its
+ * siblings (`Promise.all` over per-entry catches). Every settled entry carries
+ * its worker branch and commit for the consolidator; failures retain their
+ * worktrees for inspection.
+ */
+export async function runTodoWorkerBatch(
+  opts: RunTodoWorkerBatchOptions,
+): Promise<TodoWorkerBatchEntry[]> {
+  const { items, parallelism, signal } = opts
+
+  let active = 0
+  const waiters: (() => void)[] = []
+  const acquire = async (): Promise<void> => {
+    // Waiter handoff, not a re-check: a slot release wakes exactly one queued
+    // worker and that worker owns it unconditionally. Re-checking `active`
+    // after waking would let a fresh arrival race past queued waiters and
+    // exceed `parallelism` (observed peak 5 at cap 2 in the batch test).
+    if (active < Math.max(1, parallelism) && waiters.length === 0) {
+      active += 1
+      return
+    }
+    await new Promise<void>((resolve) => waiters.push(resolve))
+    active += 1
+  }
+  const release = (): void => {
+    active -= 1
+    waiters.shift()?.()
+  }
+
+  return Promise.all(
+    items.map(async (item): Promise<TodoWorkerBatchEntry> => {
+      await acquire()
+      try {
+        sendWorkerStart(opts.onChunk, item)
+        const outcome = await runTodoWorkerInWorktree({
+          item,
+          provider: opts.provider,
+          registry: opts.registry,
+          contextWindow: opts.contextWindow,
+          toolSchemaReserve: opts.toolSchemaReserve,
+          signal,
+          ...(opts.onChunk ? { onChunk: opts.onChunk } : {}),
+          ...(opts.parentGoal !== undefined ? { parentGoal: opts.parentGoal } : {}),
+          ...(opts.priorSummaries ? { priorSummaries: opts.priorSummaries } : {}),
+          projectId: opts.projectId,
+          threadId: opts.threadId,
+          parentContext: opts.parentContext,
+          authorName: 'Copse Todo Worker',
+          authorEmail: 'todo-worker@copse.local',
+        })
+        opts.onUsage?.(outcome.result.usage)
+        opts.onItemDone?.(item, true)
+        sendWorkerDone(opts.onChunk, item.id, outcome.result.summary, true)
+        return {
+          item,
+          ok: true,
+          summary: outcome.result.summary,
+          branch: outcome.commit.branch,
+          sha: outcome.commit.sha,
+        }
+      } catch (error) {
+        const message = errorMessage(error)
+        opts.onItemFailed?.(item, message)
+        sendWorkerDone(opts.onChunk, item.id, message, false)
+        return { item, ok: false, summary: '', branch: null, sha: null, error: message }
+      } finally {
+        release()
+      }
+    }),
+  )
+}
+
+function sendWorkerStart(
+  onChunk: ((chunk: StreamChunk) => void) | undefined,
+  item: TodoItem,
+): void {
+  onChunk?.({ type: 'todo_worker_start', todoId: item.id, content: item.content })
+}
+
+function sendWorkerDone(
+  onChunk: ((chunk: StreamChunk) => void) | undefined,
+  todoId: string,
+  summary: string,
+  passed: boolean,
+): void {
+  onChunk?.({ type: 'todo_worker_done', todoId, summary, passed })
 }
