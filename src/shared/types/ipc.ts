@@ -88,6 +88,10 @@ export interface IpcInvokeMap {
     args: [projectId: string, threadId: string, contextJson: string]
     result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
   }
+  // The composer's Tab-completable next step (experimental, off by default).
+  // Same context shape as suggestFollowUps; null means "no obvious next step",
+  // which is the expected answer for most turns.
+  'agent:suggestNextStep': { args: [contextJson: string]; result: string | null }
 
   // Explicit high-risk, session-only shell mode (issue #1249).
   'security:getGuardedYolo': {

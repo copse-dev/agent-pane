@@ -288,6 +288,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Experimental, opt-in features (off by default). The MCP-UI artefacts
   // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   // P5: the master model-comparison toggle moved to Settings > Plugins
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
@@ -1312,6 +1313,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="field-hint">
                 View a VNC server on this machine or through the active SSH workspace's encrypted
                 tunnel. The first release cannot send keyboard, pointer, or clipboard input.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Next-step tab complete</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="nextStepSuggestionEnabled" />
+                Offer an obvious next step in the message box after each turn
+              </label>
+              <p class="field-hint">
+                When a turn ends with one clearly valuable next move, it appears as placeholder
+                text in the message box — press Tab to accept it, or just type to ignore it.
+                Uses the small-tasks model; most turns show nothing.
               </p>
             </fieldset>
 
