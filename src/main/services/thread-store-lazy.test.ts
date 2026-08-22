@@ -202,10 +202,7 @@ describe('thread-store meta cache', () => {
     await loadProjectThreadMetas('p', { includeArchived: false })
     const all = await loadProjectThreadMetas('p')
 
-    assert.deepEqual(
-      all.map((t) => t.id).sort(),
-      ['gone', 'live'],
-    )
+    assert.deepEqual(all.map((t) => t.id).sort(), ['gone', 'live'])
   })
 
   it('still reads fresh from disk when a load is the first in the process', async () => {

@@ -1183,9 +1183,7 @@ export function loadProjectThreadMetas(
   projectId: string,
   options: ThreadLoadOptions = {},
 ): Promise<Thread[]> {
-  return runSerialized(queueKey(projectId), () =>
-    readProjectThreadMetasCached(projectId, options),
-  )
+  return runSerialized(queueKey(projectId), () => readProjectThreadMetasCached(projectId, options))
 }
 
 export function saveProjectThread(projectId: string, thread: Thread): Promise<void> {
