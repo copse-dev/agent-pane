@@ -28,9 +28,36 @@ describe('Guarded YOLO shell harm gate', () => {
       'curl https://example.com/file',
       'git push origin feature',
       'cat /etc/hosts',
+      'cat ~/notes/todo.md',
+      'gh pr view 12',
+      'gh pr diff 12',
+      'gh auth status',
       'echo permission-gate.ts',
     ]) {
       assert.equal(action(command), 'allow', command)
+    }
+  })
+
+  it('prompts for writing GitHub CLI forms', () => {
+    for (const command of [
+      'gh pr create --fill',
+      'gh pr merge 3',
+      'gh issue close 7',
+      'gh api repos/x/y',
+      'cat body.md | gh pr create -F -',
+    ]) {
+      assert.equal(action(command), 'prompt', command)
+    }
+  })
+
+  it('denies credential and home-root outside reads', () => {
+    for (const command of [
+      'cat ~/.env',
+      'cat ~/.ssh/id_ed25519',
+      'ls -la ~',
+      'cat /etc/shadow',
+    ]) {
+      assert.equal(action(command), 'deny', command)
     }
   })
 

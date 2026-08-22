@@ -111,6 +111,11 @@ command list.
   where it can contain the command. Commands which require host/network scope run
   unsandboxed; Linux and Windows always report that no OS sandbox is active. The
   persistent composer strip and shell/background output state the actual containment.
+- Active Guarded YOLO also implies the thread-scoped outside-project **read** grant:
+  eligible plain reads of non-credential paths skip the read-access prompt (and stay
+  seatbelt-contained on macOS/Linux). Credential targets and `~` / `/` breadth stay
+  hard-denied by the harm gate. Writing / opaque GitHub CLI forms prompt; dedicated
+  mutating GitHub tools still always prompt.
 - Every effective command passes `shell-harm.ts` **after** blocking-hook rewrites. The
   deterministic host verdict is authoritative: `allow` auto-runs, `prompt` requires a
   one-time confirmation which cannot be remembered, and `deny` cannot be approved.

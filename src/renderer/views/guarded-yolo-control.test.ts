@@ -85,7 +85,8 @@ describe('Guarded YOLO composer control', () => {
     assert.equal(control.element.dataset['phase'], 'armed')
     assert.equal(control.element.dataset['containment'], 'project-sandbox')
     assert.match(control.element.textContent, /armed/i)
-    assert.match(control.element.textContent, /external commands may run unsandboxed/i)
+    assert.match(control.element.textContent, /outside reads of non-credential paths auto-run/i)
+    assert.match(control.element.textContent, /GitHub writes still ask/i)
     assert.equal(control.menuLabel(), 'Disable Guarded YOLO')
 
     harness.emit({
