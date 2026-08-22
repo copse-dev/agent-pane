@@ -36,7 +36,7 @@ composer typing, the themed icon set, module-worker TLA, rasterized SVG
 text). To run with them:
 
 ```bash
-# servo series (0001–0007)
+# servo series (0001–0008)
 git clone https://github.com/servo/servo ../../servo
 git -C ../../servo checkout -b tauri-runtime-patches f4dde2701bacd4972e6cfa319a3f0cbc9be21f64
 git -C ../../servo am ../../tauri/tauri-runtime-servo/servo-patches/00*.patch
@@ -46,10 +46,18 @@ git -C ../../servo am ../../tauri/tauri-runtime-servo/servo-patches/00*.patch
 git clone https://github.com/servo/stylo ../../stylo
 git -C ../../stylo checkout <stylo rev from servo Cargo.lock>
 git -C ../../stylo apply ../../tauri/tauri-runtime-servo/servo-patches/stylo-0001-enable-has-selector-parsing.patch
+
+# csp-0001 pairs with servo 0008 to make CSP 'self' match tauri://localhost,
+# which is what lets tauri.html ship with its CSP enforced
+git clone https://github.com/rust-ammonia/rust-content-security-policy ../../rust-content-security-policy
+git -C ../../rust-content-security-policy checkout 6a523bab5e6a1c484857f99dc28b7ce417012d33
+git -C ../../rust-content-security-policy am ../../tauri/tauri-runtime-servo/servo-patches/csp-0001-match-self-for-custom-scheme-origins.patch
 ```
 
-Then uncomment the two `[patch]` blocks at the bottom of `Cargo.toml` and
-rebuild.
+Then uncomment the three `[patch]` blocks at the bottom of `Cargo.toml` and
+rebuild. Without the engine patches, build with `COPSE_TAURI_STRIP_CSP=1
+pnpm build:tauri` — stock pinned Servo cannot match CSP `'self'` against
+`tauri://localhost`, so an enforced policy blocks every subresource.
 
 ## Headless sidecar smoke test (no Servo build needed)
 
