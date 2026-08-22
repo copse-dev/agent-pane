@@ -976,26 +976,22 @@ export function mountInputBar(
    * are data-URLs and archives/videos already live under that thread's media
    * dir, so we do not write them into `draftPrompt` / thread meta.
    */
-  const draftAttachmentsByThread = new Map<
-    string,
-    {
-      files: { path: string; content: string }[]
-      images: AttachedImage[]
-      videos: VideoAttachmentRef[]
-      archives: ArchiveAttachmentRef[]
-      threads: AttachedThreadRef[]
-      shells: AttachedShellRef[]
-    }
-  >()
-
-  function snapshotDraftAttachments(): {
+  type DraftAttachments = {
     files: { path: string; content: string }[]
     images: AttachedImage[]
     videos: VideoAttachmentRef[]
     archives: ArchiveAttachmentRef[]
     threads: AttachedThreadRef[]
     shells: AttachedShellRef[]
-  } {
+  }
+
+  const draftAttachmentsByThread = new Map<string, DraftAttachments>()
+
+  function emptyDraftAttachments(): DraftAttachments {
+    return { files: [], images: [], videos: [], archives: [], threads: [], shells: [] }
+  }
+
+  function snapshotDraftAttachments(): DraftAttachments {
     return {
       files: attachedFiles.map((file) => ({ ...file })),
       images: attachedImages.map((image) => ({ ...image })),
@@ -1033,6 +1029,34 @@ export function mountInputBar(
     for (const archive of snapshot.archives) renderArchiveChip(archive)
     for (const thread of snapshot.threads) addThreadChip(thread)
     for (const shell of snapshot.shells) addShellChip(shell)
+  }
+
+  /**
+   * Keep an async store result with the composer that started it. Comparing
+   * against `activeComposerThreadId` (rather than the store's active pointer)
+   * also covers the small interval before a thread-change event has synced the
+   * DOM: the next sync will stash the newly rendered chip with that composer.
+   */
+  function placeStoredVideo(threadId: string, ref: VideoAttachmentRef): void {
+    if (activeComposerThreadId === threadId) {
+      renderVideoChip(ref)
+      return
+    }
+    const snapshot = draftAttachmentsByThread.get(threadId) ?? emptyDraftAttachments()
+    if (snapshot.videos.some((video) => video.path === ref.path)) return
+    snapshot.videos.push({ ...ref })
+    draftAttachmentsByThread.set(threadId, snapshot)
+  }
+
+  function placeStoredArchive(threadId: string, ref: ArchiveAttachmentRef): void {
+    if (activeComposerThreadId === threadId) {
+      renderArchiveChip(ref)
+      return
+    }
+    const snapshot = draftAttachmentsByThread.get(threadId) ?? emptyDraftAttachments()
+    if (snapshot.archives.some((archive) => archive.path === ref.path)) return
+    snapshot.archives.push({ ...ref })
+    draftAttachmentsByThread.set(threadId, snapshot)
   }
 
   function syncComposerThread(): void {
@@ -1859,7 +1883,7 @@ export function mountInputBar(
       showErrorToast('Could not attach video', err)
       return
     }
-    renderVideoChip(ref)
+    placeStoredVideo(threadId, ref)
   }
 
   function renderArchiveChip(ref: ArchiveAttachmentRef): void {
@@ -1906,7 +1930,7 @@ export function mountInputBar(
       showErrorToast('Could not attach archive', err)
       return
     }
-    renderArchiveChip(ref)
+    placeStoredArchive(threadId, ref)
   }
 
   function addImageChip(dataUrl: string, mimeType: string, detail: ImageDetail = 'auto'): void {
