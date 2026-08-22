@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
@@ -8,10 +8,12 @@ import type { Message, Thread } from '@shared/types'
 import {
   appendMessage,
   backfillThreadPrRefs,
+  deleteProjectThread,
   loadProjectThreadMetas,
   loadProjectThreads,
   loadThreadMessages,
   saveProjectThread,
+  updateMeta,
 } from './thread-store.ts'
 
 /**
@@ -111,6 +113,107 @@ describe('thread-store metadata-only load', () => {
   })
 })
 
+describe('thread-store meta cache', () => {
+  let root: string
+  let previousRoot: string | undefined
+
+  beforeEach(() => {
+    previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    root = mkdtempSync(join(tmpdir(), 'copse-meta-cache-'))
+    process.env['COPSE_WORKSPACE_DIR'] = root
+  })
+
+  afterEach(() => {
+    if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+    else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('serves a second load from the cache without re-reading meta.json', async () => {
+    await saveProjectThread('p', thread('t1'))
+
+    const [first] = await loadProjectThreadMetas('p')
+    // Rewrite the file behind the cache's back; a re-read would see the change.
+    writeFileSync(join(root, 'p', 't1', 'meta.json'), `${JSON.stringify({ id: 't1' })}\n`)
+
+    const [second] = await loadProjectThreadMetas('p')
+
+    assert.equal(first?.title, 't1')
+    assert.deepEqual(second, first, 'a warm load must serve the cached snapshot')
+  })
+
+  it('reflects writes made through the store after a cached load', async () => {
+    await saveProjectThread('p', thread('t1'))
+    await loadProjectThreadMetas('p')
+
+    await saveProjectThread('p', thread('t1', { title: 'renamed', updatedAt: 5 }))
+
+    const [loaded] = await loadProjectThreadMetas('p')
+    assert.equal(loaded?.title, 'renamed')
+  })
+
+  it('reflects meta patches made through the store after a cached load', async () => {
+    await saveProjectThread('p', thread('t1'))
+    await loadProjectThreadMetas('p')
+
+    await updateMeta('p', 't1', { title: 'patched' })
+
+    const [loaded] = await loadProjectThreadMetas('p')
+    assert.equal(loaded?.title, 'patched')
+  })
+
+  it('drops a deleted thread from the next cached load', async () => {
+    await saveProjectThread('p', thread('t1'))
+    await saveProjectThread('p', thread('t2'))
+    await loadProjectThreadMetas('p')
+
+    await deleteProjectThread('p', 't1')
+
+    const ids = (await loadProjectThreadMetas('p')).map((t) => t.id)
+    assert.deepEqual(ids, ['t2'])
+  })
+
+  it('reflects a spine append after a cached load (messagesLoaded flips)', async () => {
+    await saveProjectThread('p', thread('t1'))
+    const [before] = await loadProjectThreadMetas('p')
+    assert.equal(before?.messagesLoaded, true)
+
+    await appendMessage('p', 't1', userMsg('m1', 'hello'))
+
+    const [after] = await loadProjectThreadMetas('p')
+    assert.equal(after?.messagesLoaded, false, 'the spine append must invalidate the cache')
+  })
+
+  it('does not let one project’s cache leak into another', async () => {
+    await saveProjectThread('p1', thread('shared-id', { title: 'one' }))
+    await saveProjectThread('p2', thread('shared-id', { title: 'two' }))
+
+    const [first] = await loadProjectThreadMetas('p1')
+
+    const [second] = await loadProjectThreadMetas('p2')
+    assert.equal(first?.title, 'one')
+    assert.equal(second?.title, 'two')
+  })
+
+  it('serves the two includeArchived variants independently', async () => {
+    await saveProjectThread('p', thread('live'))
+    await saveProjectThread('p', thread('gone', { archivedAt: 99 }))
+
+    await loadProjectThreadMetas('p', { includeArchived: false })
+    const all = await loadProjectThreadMetas('p')
+
+    assert.deepEqual(all.map((t) => t.id).sort(), ['gone', 'live'])
+  })
+
+  it('still reads fresh from disk when a load is the first in the process', async () => {
+    await saveProjectThread('p', thread('t1', { title: 'from disk' }))
+
+    const [loaded] = await loadProjectThreadMetas('p')
+
+    assert.equal(loaded?.title, 'from disk')
+  })
+})
+
 describe('thread-store PR-ref cache', () => {
   let root: string
   let previousRoot: string | undefined
@@ -175,6 +278,20 @@ describe('thread-store PR-ref cache', () => {
     // A thread with no links must still be marked as scanned, or the backfill
     // would re-read the whole project on every open forever.
     assert.deepEqual(metaOnDisk(root, 'p', 'plain')['prRefs'], [])
+  })
+
+  it('invalidates a warm metadata snapshot when the background backfill writes', async () => {
+    await saveProjectThread(
+      'p',
+      thread('old', { messages: [userMsg('m1', 'https://github.com/acme/widget/pull/5')] }),
+    )
+    const [before] = await loadProjectThreadMetas('p')
+    assert.equal(before?.prRefs, undefined)
+
+    await backfillThreadPrRefs('p', () => undefined)
+
+    const [after] = await loadProjectThreadMetas('p')
+    assert.equal(after?.prRefs?.[0]?.number, 5)
   })
 
   it('does not re-scan a thread that has already been backfilled', async () => {
