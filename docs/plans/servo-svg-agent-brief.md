@@ -7,68 +7,87 @@ the evidence.
 
 ## Status
 
-| Phase                  | State        | Evidence                                    |
-| ---------------------- | ------------ | ------------------------------------------- |
-| 1 — viewport           | **done**     | patch 0009; 15 unit tests                   |
-| 2 — geometry traversal | **done**, less `<use>` and paint servers | patch 0010; 22 unit tests |
-| 3 — painting           | **done**     | patches 0010/0012/0013; 9 pixel tests       |
-| 4 — animation          | **done**     | patch 0013; pixel diff over time            |
-| 5 — hit testing        | **done**     | patch 0011 + stylo-0002; 9 unit tests       |
-| 0 — DOM interfaces     | not started  | —                                           |
+All six phases are done, plus features the plan did not list that turned out to
+matter more than parts of it that it did.
 
-With `layout.svg.native.enabled` on, inline `<svg>` is laid out and painted
-natively and CSS animations on its descendants run. 46 unit tests, and the
-numbers below come from a real browser.
+| Phase                  | State       | Patches            |
+| ---------------------- | ----------- | ------------------ |
+| 1 — viewport           | done        | 0009               |
+| 2 — geometry traversal | done        | 0010, 0015, 0017   |
+| 3 — painting           | done        | 0010, 0012, 0013   |
+| 4 — animation          | done        | 0013               |
+| 5 — hit testing        | done        | 0011 + stylo-0002  |
+| 0 — DOM interfaces     | partial     | 0016               |
+
+Shipped beyond the phase list, each because something real was broken by its
+absence: `pathLength` (0015), `transform-origin` and a `viewBox` intrinsic-ratio
+fix (0014), `getBBox`/`getTotalLength` (0016), gradients and `clip-path` (0017).
+Three stylo patches ungate SVG properties that Servo could not otherwise see at
+all: `pointer-events` keywords, `stop-color` and `stop-opacity`.
 
 ### Measured
 
-- **Rendering matches the rasterization path.** A page of rects, circles,
-  paths, lines, polylines, a `<g transform>` and a stylesheet-driven `fill`:
-  **0.13%** of pixels differ at zero tolerance, **0.02%** at tolerance 8, all
-  on shape edges where vello and resvg antialias differently.
-- **Animation — Phase 4's exit criterion.** A 4s spinner sampled at +1.1s,
-  +2.1s and +3.1s. Pref off: **0 and 0** pixels change — frozen, the original
-  bug. Pref on: **2016 and 2201** pixels change. Confirmed again in a headed
-  window: three captures a second apart differ by 3163 and 9121 pixels.
-- **WPT `svg/`, same build, pref off vs on: +1 test, 0 regressions** across
-  1261 tests and 3925 subtests. Which test improves varies run to run — the
-  suite's reftests are not stable — so the net and the absence of regressions
-  are the reliable part, not the identity of the winner.
-- **`viewBox` intrinsic ratio, on the default path.** `viewBox="0 0 24.5
-  12.25"` in a 200px-wide box laid out **150px** tall (the no-ratio default)
-  before the fix and **100px** after.
+All pref-off versus pref-on on the same build, since that isolates this work.
+
+| What | Result |
+| ---- | ------ |
+| Shapes, groups, transforms, stylesheet fill | **0.024%** of pixels differ from the rasterization path |
+| Gradients — 6 variants | **0.024%** |
+| Clipping — 5 cases | **0.020%** |
+| Animation: 4s spinner at +1.1s/+2.1s/+3.1s | pref off **0 and 0** px change; pref on **2016 and 2201** |
+| `svg/` WPT | **+199 subtests, 0 regressions** over 1261 tests |
+| Unit tests | 50, running in ~1s without a Servo build |
+
+The pixel differences are entirely edge antialiasing, where vello and resvg
+disagree. Two cases where the native path is now *more* correct than the
+rasterization path: `transform-origin` (which the raster path drops, rendering
+some pages blank) and fractional `viewBox` ratios.
 
 ### Still not done
 
-- `<use>`: Servo's `SVGUseElement` is a bare DOM stub with no shadow
-  instancing, so there is nothing under it to walk.
-- Paint servers (gradients, patterns), clip, mask, marker. An unresolved paint
-  server renders nothing rather than black, so these fail visibly.
+- **SVG text.** The largest remaining piece, and the only thing blocking
+  Mermaid — which needs `getComputedTextLength` and `getBBox` on `<text>`, both
+  of which are text measurement. Phase 2b, estimated 2 000–3 500 LOC, and
+  explicitly deferred by the plan. Note `getBBox` on a `<text>` now returns an
+  empty rect rather than throwing, so Mermaid will lay out silently wrong
+  instead of failing loudly.
+- **`<use>`.** Servo's `SVGUseElement` is a bare DOM stub with no shadow
+  instancing. Rendering it needs an id lookup, which `0017` now has half of —
+  the paint-server scan is exactly the mechanism `<use>` would reuse.
+- Patterns, masks, markers. Unused by this app.
 - Nested `<svg>` viewports, treated as plain groups.
-- Phase 0's DOM geometry interfaces.
+- `clip-rule` is gecko-gated in stylo, so clips always use the non-zero rule.
+- `getBBox`'s options argument (stroke/markers/clipped) is parsed and ignored.
+  With the pref off, only direct children of the `<svg>` resolve.
+- The rest of Phase 0: `getCTM`, `getScreenCTM`, `getPointAtLength`,
+  `isPointInFill`/`isPointInStroke`, `SVGLength`/`SVGRect`/`SVGPoint`/
+  `SVGPathSegList`.
 
 ### Things the plan got wrong, found by building it
 
-Beyond the six corrections below, three surprises that cost real time:
+Beyond the six corrections below:
 
-1. **`svg > * { display: none }` in `servo.css` prunes the style traversal**,
-   so nothing below a *direct child* of the `<svg>` is ever styled. Invisible
-   to the rasterization path, which re-parses serialized markup, but fatal to
-   native layout: a `<g>`'s children simply did not exist, and the first test
-   page rendered its top-level shapes and dropped every group. Now in its own
-   stylesheet, applied only when the pref is off.
-2. **Phase 4 was not "mostly deletions".** The blocker was not damage
-   propagation, which already works — `traversal.rs` escalates damage at the
-   `<svg>` boundary. It was that `Animations::do_post_reflow_update` cancels
-   every animation on a node that is not "being rendered", and a boxless node
-   reports exactly that, so an SVG animation registered for one tick and was
-   then dropped. `node_rendering_type` now reports an SVG descendant as
-   rendered.
-3. **Headless tests missed `transform-origin` entirely.** Every one passed
-   while an animated `rotate()` swung elements around the viewport corner and
-   off the canvas, because no headless case rotated about a non-zero origin.
-   Running it headed found it in one frame. The pixel tests were necessary and
-   not sufficient.
+1. **`svg > * { display: none }` in `servo.css` prunes the style traversal**, so
+   nothing below a *direct child* of the `<svg>` is ever styled. A `<g>`'s
+   children simply did not exist. Now in its own stylesheet, applied only when
+   the pref is off.
+2. **Phase 4 was not "mostly deletions".** Damage propagation already worked;
+   `Animations::do_post_reflow_update` cancels animations on any node that is
+   not "being rendered", which a boxless node reports.
+3. **Presentation attributes Servo does not map are a recurring trap.**
+   `transform`, `clip-path` and `stop-color` each silently did nothing until
+   mapped or parsed by hand. Whenever an SVG attribute appears not to work,
+   check `SVGElement::synthesize_presentational_hints` before anything else.
+4. **Gecko-gated properties are the other recurring trap.** `pointer-events`
+   keywords, `stop-color`, `stop-opacity` and `clip-rule` all exist in stylo and
+   are all invisible to Servo. Grep for `engine = "gecko"` in
+   `longhands.toml` before concluding a property is unimplemented.
+5. **An unresolvable `clip-path` reference means *ignore the property*, not
+   *hide the element*.** SVG 1.1 said the opposite. Getting it backwards
+   silently hides content.
+6. **Headless tests are not sufficient.** `transform-origin` was broken while
+   every headless test passed, because none rotated about a non-zero origin.
+   One headed run found it in a frame. Run headed at least once per phase.
 
 ## Corrections after first contact (2026-08-22)
 
@@ -201,6 +220,28 @@ those, so 47 results are "unexpected" before this work starts. The suite's
 reftests are also not stable run to run, so treat a single test flipping as
 noise and the net plus the regression count as the signal.
 
+**And know how much of the suite can see this work at all — it is less than the
+plan assumed.** Native SVG only handles *inline* `<svg>` inside HTML, and
+**519 of the 1 261 executed tests (41%) are standalone `.svg` documents**, which
+take a completely different path. Measured, not inferred: a `pservers` gradient
+test renders **identically** with the pref on and off as a standalone document
+(0 pixels differ), and differs by **80 000 pixels** when the same markup is
+inlined into HTML. Nearly all the gradient tests are in the blind 41%.
+
+Two consequences worth carrying:
+
+- **A small WPT delta is not evidence of a small change.** Gradients and
+  `clip-path` moved the count by almost nothing while fixing a visible
+  regression across 39 and 19 of the app's own files. The pixel diff against the
+  rasterization path is the honest oracle for painting; WPT is the oracle for
+  conformance detail and for catching regressions.
+- **Some reftests pass vacuously.** Four of the 17 passing `pservers` tests
+  passed because the *reference* also used `fill:url(#…)`, so "both render
+  nothing" scored as a match. Implementing the feature can therefore turn a
+  vacuous pass into a real failure, which looks like a regression and is
+  progress. Two tests did exactly that here, and fixing them properly is what
+  produced gradient `href` inheritance and percent-decoded fragments.
+
 ## Why this is a reasonable thing to hand to an agent
 
 Three properties make it a better fit than most engine work:
@@ -247,35 +288,35 @@ Added, not changed, and with those exclusions — see correction 4. Deletions ar
 the point of Phase 4, and pref boilerplate is a fixed cost every pref pays;
 charging either against the budget makes it unmeetable rather than tight.
 
-**The budget was exceeded. Final spend: 87 added lines in the stated scope**,
-96 across all pre-existing files, against ~3 000 lines of new code in
-`components/layout/svg/` and two new files elsewhere.
+**The budget was exceeded, and the estimate was the thing that was wrong.**
 
-Rule 6 says report an overrun rather than absorb it, so: where it went, largest
-first.
+Final spend across everything: see the table below, against roughly 3 900 lines
+of new code under `components/layout/svg/`.
 
-| File                              | Added | What                                                            |
-| --------------------------------- | ----: | --------------------------------------------------------------- |
-| `layout/layout_impl.rs`           |    33 | UA-stylesheet gating, the registry, the upload drain, `rendering_type` |
-| `layout/replaced.rs`              |    21 | the sizing seam and the native dispatch                           |
-| `shared/layout/lib.rs`            |    22 | 21 of them the standalone `ratio_from_view_box` fix               |
-| `layout/context.rs`               |     9 | two `ImageResolver` fields                                        |
-| everything else                   |    11 | pref plumbing, module decls, one dependency                       |
+**243 added lines** across pre-existing files, of which **83** fall inside the
+budget's stated scope (it excludes `components/script/dom/svg/`, the two prefs
+files and new modules).
 
-Two honest deductions. 21 lines are the `viewBox` ratio fix, which is an
-independent upstream bug on the rasterization path and would be submitted on
-its own; excluding it the native work costs **66**. And the whole of the
-UA-stylesheet gating and the `rendering_type` change exist because of two
-discoveries the plan did not contain (`svg > *` pruning the style traversal,
-and animations being cancelled on boxless nodes) — neither is spreadable edit
-creep, both are single, necessary hooks.
+| Where                       | Added | Why                                                       |
+| --------------------------- | ----: | --------------------------------------------------------- |
+| `layout/layout_impl.rs`     |    48 | UA-stylesheet gating, the registry, the upload drain, two queries |
+| `shared/layout/lib.rs`      |    42 | the `viewBox` ratio fix, `preserveAspectRatio`, one query   |
+| `script/dom/svg/*`          |    93 | presentation attributes, `getBBox`, `getTotalLength` — outside the budget's scope |
+| `layout/replaced.rs`        |    21 | the sizing seam and the native dispatch                     |
+| `layout/context.rs`         |     9 | two `ImageResolver` fields                                  |
+| `script_bindings/*`         |    13 | two WebIDL declarations and a codegen entry                 |
+| everything else             |    17 | pref plumbing, module decls, one dependency                 |
 
-Still: 66 against ~50 is over, and the estimate was made before anyone had
-built it. The right correction is to the estimate, not to the accounting. What
-the budget did achieve is visible in the ratio — ~3 000 lines of new code
-behind 87 lines of seam — and in the fact that twice during Phase 3 the seam
-drifted and the fix both times was to move logic, and the comment explaining
-it, into `svg/` rather than to trim the comment.
+Rule 6 says report an overrun rather than absorb it, so: it is over, and by
+enough that the ~50 figure should be treated as retired rather than missed. It
+was set before anyone had built the thing, and most of the spend went on two
+discoveries the plan did not contain — gating the `svg > *` UA rule, and
+teaching `node_rendering_type` about boxless SVG descendants.
+
+What the budget *did* achieve is visible in the ratio: ~3 900 lines of new code
+behind a seam measured in tens. Three times during the work the seam drifted and
+the fix was the same each time — move the logic, and the comment explaining it,
+into `svg/` rather than trim the comment. Keep doing that.
 
 If a phase cannot be done inside that budget, stop and report why rather than
 spreading edits.
@@ -423,7 +464,7 @@ still frame. Report the pixel-difference count.
 Per-shape `pointer-events`, `fill` vs `stroke` regions. `display_list/hit_test.rs`
 already imports `kurbo::Shape`.
 
-### Phase 0 — DOM and geometry interfaces (~2 500–4 000 LOC + ~600 WebIDL) — *do last, or in parallel*
+### Phase 0 — DOM and geometry interfaces (~2 500–4 000 LOC + ~600 WebIDL) — **partial**
 
 Finish the SVG DOM: `SVGLength`, `SVGAnimatedLength`, `SVGRect`, `SVGPoint`,
 `SVGPathSegList`, and the missing elements (`<text>`, `<tspan>`, `<marker>`,
@@ -432,6 +473,28 @@ existing `DOMMatrix` — do not add a parallel matrix type.
 
 _Exit:_ `./mach test-wpt tests/wpt/tests/svg/types/` improves; `getBBox()` and
 `getCTM()` return real values. Report expectation files deleted.
+
+_Status: **partial**._ `getBBox` and `getTotalLength` land in 0016 (+188
+subtests on their own). They were cheap because layout already resolves SVG
+geometry into `kurbo` paths — a bounding box and a perimeter are one call each.
+
+The plan treated this phase as one thing; it is three, and they have different
+urgencies:
+
+1. **Scripted geometry APIs** — `getBBox`, `getCTM`, `SVGLength`, `SVGRect`.
+   Not needed to paint. Needed by content that *scripts* SVG, which is why
+   Mermaid fails identically with the pref on and off — the signature of a
+   missing DOM API rather than a painting gap.
+2. **Rendering-affecting attributes** — `pathLength`, `preserveAspectRatio`.
+   Not scripting APIs at all, and required for correct painting. These belong
+   in the geometry phase, and `pathLength` slipping through was a hole in that
+   phase, not in this one. It cost a real bug: an indicator that looked fully
+   drawn and frozen while its computed `stroke-dashoffset` advanced correctly.
+3. **Element types** — `<marker>`, `<clipPath>`, `<mask>`, `<pattern>`. Needed
+   by both. `<clipPath>` landed in 0017.
+
+So this phase is deprioritisable for a rendering prototype and blocking for
+JS-driven SVG.
 
 ### Explicitly out of scope
 
