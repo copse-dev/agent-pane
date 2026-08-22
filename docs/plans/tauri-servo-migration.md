@@ -195,9 +195,16 @@ Findings folded back into this branch:
   X11 handle and Servo needs one for its surface — shell windows are born
   visible (theme-boot.js covers the flash).
 - Servo (pinned rev) fails to match CSP `'self'` against the
-  `tauri://localhost` origin, so any CSP blocks every same-origin subresource;
-  tauri.html ships without the CSP meta until that's fixed upstream (the
-  Electron build keeps its CSP).
+  `tauri://localhost` origin, so any CSP blocks every same-origin subresource.
+  **Fixed by servo patch 0008 + csp-0001** (custom schemes get tuple origins;
+  the CSP crate matches `'self'` against them): tauri.html now ships with the
+  Electron policy plus a `connect-src` for the loopback WS, enforced —
+  validated 7/7 on a dedicated probe (same-origin loads pass, inline and
+  cross-origin scripts blocked with violation events, `location.origin` =
+  `tauri://localhost`, localStorage works on the now-stable origin) and with
+  a full app boot under the policy, zero violations. Building for an
+  unpatched engine: `COPSE_TAURI_STRIP_CSP=1 pnpm build:tauri` restores the
+  old stripped-meta tauri.html.
 - A full chat ran end to end (mock provider): project created, agent
   dispatched, 68 chunks streamed over the bridge, conversation persisted to
   the thread store, and the Servo UI rendered it — thread sidebar, message
@@ -213,11 +220,10 @@ Findings folded back into this branch:
   and never match CSP `'self'`. Servo already has the embedder hook —
   `ProtocolHandler::is_secure()`, which tauri-runtime-servo sets — but only
   net's fetch path consults it; `GlobalScope::is_secure_context()` in script
-  uses the registry-unaware check. Upstream fix: thread the protocol
-  registry (or a secure-scheme set) into script's secure-context and CSP
-  'self' handling. Workaround candidates until then: serve the frontend from
-  `http://localhost` (a trustworthy tuple origin) instead of the custom
-  scheme, or carry the polyfills.
+  uses the registry-unaware check. Both halves are now patched: servo 0001
+  threads the secure-scheme registry into script's secure-context check, and
+  servo 0008 + csp-0001 give registered schemes tuple origins that CSP
+  `'self'` matches (see the runtime repo's `servo-patches/`).
 - Composer typing confirmed broken under stock Servo (`contenteditable`),
   exactly as the risk table predicts — and then **fixed by servo patch 0002**
   (cherry-picked from the fork branch `codex/contenteditable-user-input`,
