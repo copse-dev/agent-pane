@@ -247,14 +247,35 @@ Added, not changed, and with those exclusions — see correction 4. Deletions ar
 the point of Phase 4, and pref boilerplate is a fixed cost every pref pays;
 charging either against the budget makes it unmeetable rather than tight.
 
-Final spend across all six phases: **47 added lines** in the budget's scope,
-**56** across all pre-existing files including the pref and stylesheet
-plumbing, against **~2 900 lines** of new code in `components/layout/svg/`.
-Under budget, and the ratio is the point: phases 2, 3 and 5 cost almost nothing
-because they are entirely new files. Twice during Phase 3 the seam drifted over
-50 lines and the fix was the same both times — move the logic, and the comment
-explaining it, into `svg/`. That is the budget doing its job rather than merely
-being met.
+**The budget was exceeded. Final spend: 87 added lines in the stated scope**,
+96 across all pre-existing files, against ~3 000 lines of new code in
+`components/layout/svg/` and two new files elsewhere.
+
+Rule 6 says report an overrun rather than absorb it, so: where it went, largest
+first.
+
+| File                              | Added | What                                                            |
+| --------------------------------- | ----: | --------------------------------------------------------------- |
+| `layout/layout_impl.rs`           |    33 | UA-stylesheet gating, the registry, the upload drain, `rendering_type` |
+| `layout/replaced.rs`              |    21 | the sizing seam and the native dispatch                           |
+| `shared/layout/lib.rs`            |    22 | 21 of them the standalone `ratio_from_view_box` fix               |
+| `layout/context.rs`               |     9 | two `ImageResolver` fields                                        |
+| everything else                   |    11 | pref plumbing, module decls, one dependency                       |
+
+Two honest deductions. 21 lines are the `viewBox` ratio fix, which is an
+independent upstream bug on the rasterization path and would be submitted on
+its own; excluding it the native work costs **66**. And the whole of the
+UA-stylesheet gating and the `rendering_type` change exist because of two
+discoveries the plan did not contain (`svg > *` pruning the style traversal,
+and animations being cancelled on boxless nodes) — neither is spreadable edit
+creep, both are single, necessary hooks.
+
+Still: 66 against ~50 is over, and the estimate was made before anyone had
+built it. The right correction is to the estimate, not to the accounting. What
+the budget did achieve is visible in the ratio — ~3 000 lines of new code
+behind 87 lines of seam — and in the fact that twice during Phase 3 the seam
+drifted and the fix both times was to move logic, and the comment explaining
+it, into `svg/` rather than to trim the comment.
 
 If a phase cannot be done inside that budget, stop and report why rather than
 spreading edits.
