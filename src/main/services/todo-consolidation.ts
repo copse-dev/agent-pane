@@ -13,6 +13,8 @@ export interface ConsolidateInput {
   projectRoot: string
   /** Ordered todo ids: plan order decides pick order. */
   orderedTodoIds: readonly string[]
+  /** Exact batch outputs, so a collision-suffixed retry cannot resolve to an older branch. */
+  workers?: readonly { todoId: string; branch: string; sha: string }[]
 }
 
 export interface TodoWorkerConflict {
@@ -102,6 +104,7 @@ async function conflictedPaths(cwd: string): Promise<string[]> {
  */
 export async function consolidateTodoWorkers(input: ConsolidateInput): Promise<ConsolidateReport> {
   const { projectRoot, orderedTodoIds } = input
+  const exactWorkers = new Map(input.workers?.map((worker) => [worker.todoId, worker]))
 
   // A dirty thread checkout must not be merged into — phase 2's invariant: the
   // host never commits, stashes, or resets the parent's uncommitted work.
@@ -124,9 +127,10 @@ export async function consolidateTodoWorkers(input: ConsolidateInput): Promise<C
 
   const outcomes: ConsolidationOutcome[] = []
   for (const todoId of orderedTodoIds) {
-    const branch = branchFor(todoId)
+    const exact = exactWorkers.get(todoId)
+    const branch = exact?.branch ?? branchFor(todoId)
     try {
-      const sha = await branchHead(projectRoot, branch)
+      const sha = exact?.sha ?? (await branchHead(projectRoot, branch))
       if (!sha) {
         outcomes.push({ todoId, status: 'missing-commit', branch })
         continue

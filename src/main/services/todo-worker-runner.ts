@@ -24,6 +24,7 @@ import {
   runWorktreeGit,
 } from './worktree-manager.ts'
 import { registerInternalWorkspaceRoot } from './workspace.ts'
+import type { TodoCheckResult } from './todo-verification.ts'
 
 /**
  * Worker checkouts live beside thread worktrees but under a `todo-` owner
@@ -197,6 +198,8 @@ export interface RunTodoWorkerInWorktreeOptions extends RunTodoWorkerOptions {
   baseBranch?: string
   authorName: string
   authorEmail: string
+  /** Acceptance check, executed while the worker execution root is still active. */
+  verify?: (signal: AbortSignal) => Promise<TodoCheckResult>
 }
 
 export interface TodoWorktreeOutcome {
@@ -204,6 +207,20 @@ export interface TodoWorktreeOutcome {
   worktree: ThreadWorktree
   commit: TodoWorkerCommit
   retired: boolean
+  verification?: TodoCheckResult
+}
+
+/**
+ * V1 worktree workers can only cut from a clean shared checkout. A dirty base
+ * would silently omit the parent's staged/unstaged/untracked work, and nesting
+ * below a thread worktree currently has no safe consolidation target.
+ */
+export async function canRunTodoWorkerInWorktree(
+  context: ThreadExecutionContext | null,
+): Promise<boolean> {
+  if (context === null || context.projectRoot !== context.root) return false
+  const status = await runWorktreeGit(context.root, ['status', '--porcelain=v1', '-z'])
+  return status.code === 0 && status.stdout === ''
 }
 
 /**
@@ -263,12 +280,11 @@ export async function runTodoWorkerInWorktree(
     branch,
   })
 
-  let retired = false
-  // No try/catch here by design: on any failure the worktree and branch are
-  // deliberately retained — the worker's partial output stays on disk for
-  // inspection and the orphan sweep surfaces it in the inventory. Callers see
-  // the original error untouched.
-  const result = await runWithThreadExecutionContext(workerContext, () => runTodoWorker(opts))
+  const execution = await runWithThreadExecutionContext(workerContext, async () => {
+    const result = await runTodoWorker(opts)
+    const verification = opts.verify ? await opts.verify(opts.signal) : undefined
+    return { result, verification }
+  })
   const commit = await commitTodoWorkerOutput({
     worktreePath: canonicalPath,
     branch,
@@ -276,22 +292,26 @@ export async function runTodoWorkerInWorktree(
     authorName: opts.authorName,
     authorEmail: opts.authorEmail,
   })
-  // Phase 2 keeps the branch (the consolidator absorbs it in phase 3); the
-  // checkout itself is dropped as soon as the commit exists, because the
-  // commit fully captures the tree.
-  const remove = await runWorktreeGit(repoRoot, ['worktree', 'remove', canonicalPath])
-  if (remove.code === 0) {
+  // A failed acceptance check is deliberately retained. The commit preserves
+  // the attempted work, while the live checkout gives the parent somewhere to
+  // inspect and repair it; only passing/no-check workers are safe to retire.
+  const mayRetire = execution.verification?.passed !== false
+  const remove = mayRetire
+    ? await runWorktreeGit(repoRoot, ['worktree', 'remove', canonicalPath])
+    : null
+  const retired = remove?.code === 0
+  if (retired) {
     releaseWorktreeRoot(executionRoot)
-    retired = true
   }
   return {
     result: {
-      ...result,
-      ...(retired ? { worktree: { branch, sha: commit.sha, retired } } : {}),
+      ...execution.result,
+      worktree: { branch, sha: commit.sha, retired },
     },
     worktree,
     commit,
     retired,
+    ...(execution.verification ? { verification: execution.verification } : {}),
   }
 }
 
@@ -311,9 +331,11 @@ export interface RunTodoWorkerBatchOptions {
   /** Concurrent worker cap (todoWorkerParallelism). */
   parallelism: number
   onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void
+  /** Acceptance-check dependency, run inside each worker's execution context. */
+  verifyItem?: (item: TodoItem, signal: AbortSignal) => Promise<TodoCheckResult>
   /**
-   * Per-item completion. `passed` is true whenever the run finished; a thrown
-   * worker reports through {@link onItemFailed} instead, never here.
+   * Per-item completion. `passed` reflects the acceptance check when present;
+   * a thrown worker reports through {@link onItemFailed} instead, never here.
    */
   onItemDone?: (item: TodoItem, passed: boolean) => void
   onItemFailed?: (item: TodoItem, message: string) => void
@@ -366,6 +388,7 @@ export async function runTodoWorkerBatch(
       await acquire()
       try {
         sendWorkerStart(opts.onChunk, item)
+        const verifyItem = opts.verifyItem
         const outcome = await runTodoWorkerInWorktree({
           item,
           provider: opts.provider,
@@ -381,16 +404,26 @@ export async function runTodoWorkerBatch(
           parentContext: opts.parentContext,
           authorName: 'Copse Todo Worker',
           authorEmail: 'todo-worker@copse.local',
+          ...(verifyItem
+            ? {
+                verify: (workerSignal: AbortSignal): Promise<TodoCheckResult> =>
+                  verifyItem(item, workerSignal),
+              }
+            : {}),
         })
         opts.onUsage?.(outcome.result.usage)
-        opts.onItemDone?.(item, true)
-        sendWorkerDone(opts.onChunk, item.id, outcome.result.summary, true)
+        const passed = outcome.verification?.passed ?? true
+        opts.onItemDone?.(item, passed)
+        sendWorkerDone(opts.onChunk, item.id, outcome.result.summary, passed)
         return {
           item,
-          ok: true,
+          ok: passed,
           summary: outcome.result.summary,
           branch: outcome.commit.branch,
           sha: outcome.commit.sha,
+          ...(!passed && outcome.verification
+            ? { error: `Acceptance check failed: ${outcome.verification.detail}` }
+            : {}),
         }
       } catch (error) {
         const message = errorMessage(error)

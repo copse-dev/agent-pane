@@ -9,6 +9,7 @@ import {
   setWorkspaceRootForTest,
 } from './workspace.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
+import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 
 describe('verifyTodoCheck', () => {
   let cleanupRoot: (() => void) | undefined
@@ -51,5 +52,31 @@ describe('verifyTodoCheck', () => {
 
     assert.equal(result.passed, true)
     assert.match(result.detail, /File exists/)
+  })
+
+  it('uses the active worker execution root instead of the shared workspace', async () => {
+    const shared = mkdtempSync(join(tmpdir(), 'copse-todo-shared-'))
+    const worker = mkdtempSync(join(tmpdir(), 'copse-todo-worker-'))
+    writeFileSync(join(worker, 'worker-only.txt'), 'ok')
+    await registerAllowedWorkspaceRoot(shared)
+    cleanupRoot = setWorkspaceRootForTest(shared)
+
+    const result = await runWithThreadExecutionContext(
+      {
+        projectId: 'p1',
+        threadId: 't1',
+        projectRoot: shared,
+        root: worker,
+        checkoutMode: 'worktree',
+        branch: 'worker',
+      },
+      () =>
+        verifyTodoCheck(
+          { kind: 'fileExists', path: 'worker-only.txt' },
+          new AbortController().signal,
+        ),
+    )
+
+    assert.equal(result.passed, true)
   })
 })

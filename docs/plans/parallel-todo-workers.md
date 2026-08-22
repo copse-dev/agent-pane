@@ -1,11 +1,8 @@
 # Parallel todo workers in isolated worktrees
 
-Status: **Foundation implemented behind a default-off flag.** Todo declarations carry
-the optional `parallel` marker, worker usage is accumulated per run, and enabling
-`parallelTodoWorkersEnabled` routes the existing single local worker through an
-isolated worktree with a host-created commit. Concurrent fan-out, consolidation,
-and lifecycle cleanup remain proposal work. This extends the
-[thread worktrees](./thread-worktrees.md) stack and the existing local todo worker.
+Status: **Implemented behind `parallelTodoWorkersEnabled` (default off).** Extends the
+[thread worktrees](./thread-worktrees.md) stack and the existing local todo worker
+with fan-out execution, commit-per-todo, and parent-driven consolidation.
 
 ## Outcome
 
@@ -29,7 +26,7 @@ either absorbed or explicitly discarded — a crashed run never loses work silen
 - Automatic semantic merging. V1 consolidation is cherry-pick-or-escalate; there is
   no line-level auto-merge beyond what git itself performs on a clean pick.
 
-## Current behaviour
+## Previous behaviour
 
 - `update_todos` post-processing (`agent-service.ts`) routes at most **one** local
   worker per call: `findNewlyInProgressLocal` returns the first newly in-progress

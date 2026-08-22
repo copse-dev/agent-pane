@@ -4,7 +4,8 @@ import type { TodoCheck } from '@shared/types/todo.ts'
 import { runCommand } from './exec/command-runner.ts'
 import { ensureShellCommandPermitted } from './security/permission-gate.ts'
 import { shellRunsOutsideSandbox } from './security/command-routing-config.ts'
-import { getWorkspaceRoot, resolveWorkspacePath } from './workspace.ts'
+import { getAgentExecutionRoot } from './execution-root.ts'
+import { resolvePathWithinRoot } from './workspace.ts'
 
 export interface TodoCheckResult {
   passed: boolean
@@ -23,13 +24,13 @@ export async function verifyTodoCheck(
   check: TodoCheck,
   signal: AbortSignal,
 ): Promise<TodoCheckResult> {
-  const root = getWorkspaceRoot() ?? process.cwd()
+  const root = getAgentExecutionRoot() ?? process.cwd()
 
   switch (check.kind) {
     case 'fileExists': {
       let absPath: string
       try {
-        absPath = await resolveWorkspacePath(check.path)
+        absPath = await resolvePathWithinRoot(check.path, root)
       } catch (err) {
         const msg = errorMessage(err)
         return { passed: false, detail: msg }

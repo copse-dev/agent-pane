@@ -1,10 +1,11 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runTodoWorkerBatch } from './todo-worker-runner.ts'
+import { canRunTodoWorkerInWorktree, runTodoWorkerBatch } from './todo-worker-runner.ts'
+import { getAgentExecutionRoot } from './execution-root.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { clearAllowedWorkspaceRootsForTest } from './workspace.ts'
@@ -141,6 +142,19 @@ describe('runTodoWorkerBatch', () => {
     )
   })
 
+  it('only enables worker worktrees for a clean shared checkout', async () => {
+    const { repo } = await setup()
+    const shared = parentContext('p1', 't1', repo)
+    assert.equal(await canRunTodoWorkerInWorktree(shared), true)
+
+    await writeFile(join(repo, 'dirty.txt'), 'not in HEAD\n')
+    assert.equal(await canRunTodoWorkerInWorktree(shared), false)
+    assert.equal(
+      await canRunTodoWorkerInWorktree({ ...shared, root: join(repo, 'thread-worktree') }),
+      false,
+    )
+  })
+
   it('isolates a failing worker: siblings still complete and merge branches exist only for them', async () => {
     const { repo } = await setup()
     const observed = { inFlight: 0, peak: 0, failOn: 'boom' }
@@ -199,5 +213,45 @@ describe('runTodoWorkerBatch', () => {
     assert.equal(branches.length, 2)
     assert.equal(new Set(branches).size, branches.length, 'each worker gets its own branch')
     assert.ok(branches.every((b) => b.startsWith('copse/todo-worker/')))
+  })
+
+  it('runs acceptance checks inside each worker root and retains failed checks', async () => {
+    const { repo } = await setup()
+    const roots = new Map<string, string>()
+    const completions = new Map<string, boolean>()
+    const results = await runTodoWorkerBatch({
+      items: [item('pass'), item('check-fails')],
+      projectId: 'p1',
+      threadId: 't1',
+      parentContext: parentContext('p1', 't1', repo),
+      provider: trackingProvider({ inFlight: 0, peak: 0 }),
+      registry: new ToolRegistry(),
+      contextWindow: 100_000,
+      toolSchemaReserve: 0,
+      signal: new AbortController().signal,
+      parallelism: 2,
+      verifyItem: async (todo) => {
+        const root = getAgentExecutionRoot()
+        assert.ok(root, 'verification must have a worker execution root')
+        roots.set(todo.id, root)
+        return todo.id === 'pass'
+          ? { passed: true, detail: 'passed' }
+          : { passed: false, detail: 'simulated check failure' }
+      },
+      onItemDone: (todo, passed) => completions.set(todo.id, passed),
+    })
+
+    const passed = results.find((entry) => entry.item.id === 'pass')
+    const failed = results.find((entry) => entry.item.id === 'check-fails')
+    assert.ok(passed && failed)
+    assert.equal(passed.ok, true)
+    assert.equal(failed.ok, false)
+    assert.match(failed.error ?? '', /simulated check failure/)
+    assert.equal(completions.get('pass'), true)
+    assert.equal(completions.get('check-fails'), false)
+    assert.notEqual(roots.get('pass'), repo)
+    assert.notEqual(roots.get('check-fails'), repo)
+    await assert.rejects(() => access(roots.get('pass') ?? ''))
+    assert.doesNotThrow(() => git(roots.get('check-fails') ?? '', ['status', '--short']))
   })
 })

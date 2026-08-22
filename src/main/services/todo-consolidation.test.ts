@@ -38,8 +38,9 @@ async function workerBranch(
   todoId: string,
   file: string,
   content: string,
+  branchTodoId = todoId,
 ): Promise<string> {
-  const branch = `copse/todo-worker/${todoId}`
+  const branch = `copse/todo-worker/${branchTodoId}`
   const wt = join(repo, '..', `wt-${todoId}`)
   git(repo, ['worktree', 'add', '-b', branch, wt, 'HEAD'])
   await writeFile(join(wt, file), content)
@@ -125,6 +126,22 @@ describe('consolidateTodoWorkers', () => {
     const second = await consolidateTodoWorkers({ projectRoot: repo, orderedTodoIds: ['tf'] })
     assert.equal(second.clean, true)
     assert.equal(second.outcomes[0]?.status, 'already-merged')
+  })
+
+  it('uses an exact collision-suffixed batch branch instead of an older attempt', async () => {
+    const { repo } = await setup()
+    await workerBranch(repo, 'old-attempt', 'old.txt', 'old\n', 'retry')
+    const branch = await workerBranch(repo, 'new-attempt', 'new.txt', 'new\n', 'retry-2')
+    const sha = git(repo, ['rev-parse', branch]).trim()
+    const report = await consolidateTodoWorkers({
+      projectRoot: repo,
+      orderedTodoIds: ['retry'],
+      workers: [{ todoId: 'retry', branch, sha }],
+    })
+
+    assert.equal(report.clean, true)
+    assert.ok(git(repo, ['show', 'HEAD:new.txt']).includes('new'))
+    assert.throws(() => git(repo, ['show', 'HEAD:old.txt']))
   })
 
   it('discard removes the worker branch', async () => {

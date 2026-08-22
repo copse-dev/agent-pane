@@ -171,7 +171,12 @@ import {
   inertPluginSources,
   pluginUnavailableReason,
 } from './plugins/plugin-service.ts'
-import { runTodoWorker, runTodoWorkerBatch, runTodoWorkerInWorktree } from './todo-worker-runner.ts'
+import {
+  canRunTodoWorkerInWorktree,
+  runTodoWorker,
+  runTodoWorkerBatch,
+  runTodoWorkerInWorktree,
+} from './todo-worker-runner.ts'
 import { consolidateTodoWorkers } from './todo-consolidation.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -1552,8 +1557,14 @@ export async function runAgent(
           // parent declared parallel:true run concurrently in their own
           // worktrees under a semaphore; everything else keeps the serial path.
           const fanoutSet = localItems.filter((t) => t.parallel)
-          if (
+          const localItem = localItems[0] ?? null
+          void localItem
+          const currentExecutionContext = getThreadExecutionContext()
+          const parallelWorktreeReady =
             getSetting<boolean>('parallelTodoWorkersEnabled', false) &&
+            (await canRunTodoWorkerInWorktree(currentExecutionContext))
+          if (
+            parallelWorktreeReady &&
             subagentRoute !== null &&
             localItems.length > 0 &&
             fanoutSet.length > 0 &&
@@ -1565,7 +1576,7 @@ export async function runAgent(
             )
           ) {
             const batchContext = requireThreadExecutionContext()
-            await runTodoWorkerBatch({
+            const batch = await runTodoWorkerBatch({
               items: fanoutSet,
               projectId: batchContext.projectId,
               threadId: batchContext.threadId,
@@ -1579,6 +1590,12 @@ export async function runAgent(
               parentGoal,
               priorSummaries: localWorkerSummaries,
               parallelism: getSetting<number>('todoWorkerParallelism', 2),
+              verifyItem: (item, signal) => {
+                if (!item.check) {
+                  return Promise.resolve({ passed: true, detail: 'No acceptance check configured' })
+                }
+                return verifyTodoCheck(item.check, signal)
+              },
               onUsage: (usage) => {
                 inputTokens += usage.inputTokens
                 outputTokens += usage.outputTokens
@@ -1605,12 +1622,27 @@ export async function runAgent(
             // hold the item for the parent, who resolves with edit tools and
             // retries via consolidate_todo_workers.
             const context = getThreadExecutionContext()
-            if (context && context.projectRoot === context.root) {
+            const mergeable = batch.filter(
+              (entry): entry is typeof entry & { branch: string; sha: string } =>
+                entry.ok && entry.branch !== null && entry.sha !== null,
+            )
+            const checkFailures = batch
+              .filter((entry) => !entry.ok && entry.branch !== null && entry.error)
+              .map((entry) => `${entry.item.id}: ${entry.error ?? 'acceptance check failed'}`)
+            if (checkFailures.length > 0) {
+              extraMessage = [extraMessage, ...checkFailures].filter(Boolean).join('\n')
+            }
+            if (context && context.projectRoot === context.root && mergeable.length > 0) {
               const report = await consolidateTodoWorkers({
                 projectRoot: context.root,
-                orderedTodoIds: fanoutSet.map((t) => t.id),
+                orderedTodoIds: mergeable.map((entry) => entry.item.id),
+                workers: mergeable.map((entry) => ({
+                  todoId: entry.item.id,
+                  branch: entry.branch,
+                  sha: entry.sha,
+                })),
               })
-              extraMessage = report.message
+              extraMessage = [extraMessage, report.message].filter(Boolean).join('\n')
             }
           } else if (localItems.length > 0) {
             const localItem = localItems[0] ?? null
@@ -1632,14 +1664,9 @@ export async function runAgent(
                 // the worker in its own linked worktree and commit its output on
                 // the worker branch host-side. Off — or no execution context, as
                 // in some tests/ACP bridges — keeps today's in-checkout worker.
-                const parallelEnabled = getSetting<boolean>('parallelTodoWorkersEnabled', false)
                 const parentContext = getThreadExecutionContext()
                 const worktreeContext =
-                  parallelEnabled &&
-                  parentContext !== null &&
-                  parentContext.projectRoot === parentContext.root
-                    ? parentContext
-                    : null
+                  parallelWorktreeReady && parentContext !== null ? parentContext : null
                 const serialWorkerOpts = {
                   item: localItem,
                   provider: subagentRoute.provider,
@@ -1651,6 +1678,7 @@ export async function runAgent(
                   parentGoal,
                   priorSummaries: localWorkerSummaries,
                 }
+                const localCheck = localItem.check
                 const worker = await (worktreeContext !== null
                   ? runTodoWorkerInWorktree({
                       ...serialWorkerOpts,
@@ -1659,24 +1687,34 @@ export async function runAgent(
                       parentContext: worktreeContext,
                       authorName: 'Copse Todo Worker',
                       authorEmail: 'todo-worker@copse.local',
-                    }).then((outcome) => outcome.result)
+                      ...(localCheck
+                        ? {
+                            verify: (signal: AbortSignal): ReturnType<typeof verifyTodoCheck> =>
+                              verifyTodoCheck(localCheck, signal),
+                          }
+                        : {}),
+                    })
                   : runTodoWorker(serialWorkerOpts))
+                const workerResult = 'result' in worker ? worker.result : worker
                 localWorkerSummaries.set(localItem.id, {
                   content: localItem.content,
-                  summary: worker.summary,
+                  summary: workerResult.summary,
                 })
-                inputTokens += worker.usage.inputTokens
-                outputTokens += worker.usage.outputTokens
+                inputTokens += workerResult.usage.inputTokens
+                outputTokens += workerResult.usage.outputTokens
                 sendChunk({
                   type: 'usage',
                   model: subagentUsageModel,
-                  inputTokens: worker.usage.inputTokens,
-                  outputTokens: worker.usage.outputTokens,
+                  inputTokens: workerResult.usage.inputTokens,
+                  outputTokens: workerResult.usage.outputTokens,
                 })
 
                 let passed = true
-                if (localItem.check) {
-                  const check = await verifyTodoCheck(localItem.check, controller.signal)
+                if (localCheck) {
+                  const check =
+                    'verification' in worker
+                      ? worker.verification
+                      : await verifyTodoCheck(localCheck, controller.signal)
                   passed = check.passed
                   extraMessage = passed
                     ? `Local worker completed "${localItem.content}" (${check.detail})`
@@ -1693,7 +1731,7 @@ export async function runAgent(
                 sendChunk({
                   type: 'todo_worker_done',
                   todoId: localItem.id,
-                  summary: worker.summary,
+                  summary: workerResult.summary,
                   passed,
                 })
               } catch (err) {
