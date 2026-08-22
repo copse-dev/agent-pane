@@ -124,6 +124,18 @@ function defaultProposedPath(
   return first.path
 }
 
+/**
+ * A failed git IPC read leaves the pane with nothing trustworthy to render, but
+ * the failure itself is not user-actionable: it is usually a thread whose
+ * worktree is mid-validation or not persisted yet (#1880). Log once per burst
+ * and render the same empty list as an unavailable repository rather than
+ * throwing from refresh timers and stacking error toasts; the next event-driven
+ * refresh restores normal rendering once main answers again.
+ */
+function markGitUnavailable(scope: string, error: unknown): void {
+  console.warn(`[git-changes-pane] ${scope} failed:`, error)
+}
+
 export function mountGitChangesPane(
   listRoot: HTMLElement,
   viewerRoot: HTMLElement,
@@ -591,7 +603,12 @@ export function mountGitChangesPane(
     renderList()
     const owner = activeOwner()
     if (!owner) return
-    const diff = await api.git.fileDiff(owner.projectId, owner.threadId, path, staged)
+    let diff: GitFileDiff | null = null
+    try {
+      diff = await api.git.fileDiff(owner.projectId, owner.threadId, path, staged)
+    } catch (error) {
+      markGitUnavailable(`diff read for ${path}`, error)
+    }
     if (
       requestId !== selectRequestId ||
       activeOwner()?.projectId !== owner.projectId ||
@@ -652,7 +669,12 @@ export function mountGitChangesPane(
     renderList()
     const owner = activeOwner()
     if (!owner) return
-    const diff = await api.git.committedFileDiff(owner.projectId, owner.threadId, path)
+    let diff: GitFileDiff | null = null
+    try {
+      diff = await api.git.committedFileDiff(owner.projectId, owner.threadId, path)
+    } catch (error) {
+      markGitUnavailable(`committed diff read for ${path}`, error)
+    }
     if (
       requestId !== selectRequestId ||
       activeOwner()?.projectId !== owner.projectId ||
@@ -823,7 +845,12 @@ export function mountGitChangesPane(
       renderList()
       return
     }
-    const available = await api.git.isAvailable(owner.projectId, owner.threadId)
+    let available = false
+    try {
+      available = await api.git.isAvailable(owner.projectId, owner.threadId)
+    } catch (error) {
+      markGitUnavailable('git availability check', error)
+    }
     const currentOwner = activeOwner()
     if (
       requestId !== refreshRequestId ||
@@ -842,12 +869,29 @@ export function mountGitChangesPane(
       await syncSelection()
       return
     }
-    const nextStatus = await api.git.status(owner.projectId, owner.threadId)
-    if (requestId !== refreshRequestId) return
-    const nextCommitted = await api.git.committedChanges(owner.projectId, owner.threadId)
-    if (requestId !== refreshRequestId) return
-    const nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
-    if (requestId !== refreshRequestId) return
+    let nextStatus
+    let nextCommitted
+    let nextBackup
+    try {
+      nextStatus = await api.git.status(owner.projectId, owner.threadId)
+      if (requestId !== refreshRequestId) return
+      nextCommitted = await api.git.committedChanges(owner.projectId, owner.threadId)
+      if (requestId !== refreshRequestId) return
+      nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
+      if (requestId !== refreshRequestId) return
+    } catch (error) {
+      markGitUnavailable('git status read', error)
+      if (requestId !== refreshRequestId) return
+      status = null
+      committed = null
+      sessionBackup = null
+      gitAvailable = false
+      loaded = true
+      renderRestoreBanner()
+      renderList()
+      clearViewer()
+      return
+    }
     // Only now: `gitAvailable` alone still leaves `status`/`committed` null for
     // three more awaits, and any event that repaints the list in that window
     // (an approve, a pop-out sync) would render "No changes" over a repo that
