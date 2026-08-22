@@ -5,6 +5,7 @@ import {
   applyTodoUpdate,
   gateCompletedStatus,
   findNewlyInProgressLocal,
+  findNewlyInProgressLocalSet,
   findNewlyCompleted,
 } from '@shared/todos/todo-logic.ts'
 import {
@@ -31,6 +32,12 @@ const todoInputSchema = z.object({
   status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
   check: todoCheckSchema.optional(),
   assignedModel: z.enum(['cloud', 'local']).optional(),
+  parallel: z
+    .boolean()
+    .optional()
+    .describe(
+      'Marks the item as independent: safe to run concurrently with other parallel items in isolated worktrees. Only set when it touches different files and has no ordering dependency on them.',
+    ),
 })
 
 export type { TodoToolPostProcess }
@@ -86,4 +93,9 @@ export const updateTodosTool = defineTool({
   },
 })
 
-export { findNewlyInProgressLocal, findNewlyCompleted, applyTodoUpdate }
+export {
+  findNewlyInProgressLocal,
+  findNewlyInProgressLocalSet,
+  findNewlyCompleted,
+  applyTodoUpdate,
+}

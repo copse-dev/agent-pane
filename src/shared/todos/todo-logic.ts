@@ -71,6 +71,7 @@ export function applyTodoUpdate(
         : prev?.assignedModel
           ? { assignedModel: prev.assignedModel }
           : {}),
+      ...(raw.parallel !== undefined ? { parallel: raw.parallel } : prev?.parallel !== undefined ? { parallel: prev.parallel } : {}),
     })
   }
   return [...byId.values()]
@@ -110,7 +111,20 @@ export function findNewlyInProgressLocal(
   before: readonly TodoItem[],
   after: readonly TodoItem[],
 ): TodoItem | null {
+  return findNewlyInProgressLocalSet(before, after)[0] ?? null
+}
+
+/**
+ * All newly in-progress local items in plan order. The serial worker path uses
+ * the first; the parallel fan-out (docs/plans/parallel-todo-workers.md) runs the
+ * whole declared-independent set concurrently.
+ */
+export function findNewlyInProgressLocalSet(
+  before: readonly TodoItem[],
+  after: readonly TodoItem[],
+): TodoItem[] {
   const beforeMap = new Map(before.map((t) => [t.id, t]))
+  const found: TodoItem[] = []
   for (const t of after) {
     const prev = beforeMap.get(t.id)
     if (
@@ -118,10 +132,10 @@ export function findNewlyInProgressLocal(
       prev?.status !== 'in_progress' &&
       t.assignedModel === 'local'
     ) {
-      return t
+      found.push(t)
     }
   }
-  return null
+  return found
 }
 
 export function findNewlyCompleted(

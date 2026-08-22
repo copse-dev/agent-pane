@@ -106,14 +106,6 @@ function filterWorkerTools(registry: ToolRegistry): LLMTool[] {
   return registry.toLLMTools().filter((t) => allowed.has(t.name))
 }
 
-interface ProviderWithUsage {
-  lastUsage: { inputTokens: number; outputTokens: number } | null
-}
-
-function hasLastUsage(p: unknown): p is ProviderWithUsage {
-  return typeof p === 'object' && p !== null && 'lastUsage' in p
-}
-
 export async function runTodoWorker(opts: RunTodoWorkerOptions): Promise<TodoWorkerResult> {
   const { provider, registry, contextWindow, toolSchemaReserve, signal, onChunk } = opts
 
@@ -123,6 +115,12 @@ export async function runTodoWorker(opts: RunTodoWorkerOptions): Promise<TodoWor
   ]
 
   let summary = ''
+  // Accumulated from the loop's per-stream `usage` chunks rather than read back
+  // from the shared mutable `provider.lastUsage`: parallel workers (see
+  // docs/plans/parallel-todo-workers.md) would otherwise attribute a sibling's
+  // final stream to themselves (#112 made the same fix for subagents).
+  let inputTokens = 0
+  let outputTokens = 0
   await runAgentLoop({
     provider,
     messages,
@@ -136,16 +134,14 @@ export async function runTodoWorker(opts: RunTodoWorkerOptions): Promise<TodoWor
     executeTool: (name, args, sig) => registry.execute(name, args, sig),
     onChunk: (chunk) => {
       onChunk?.(chunk)
+      if (chunk.type === 'usage') {
+        inputTokens += chunk.inputTokens
+        outputTokens += chunk.outputTokens
+      }
       if (chunk.type === 'text') summary += chunk.text
     },
   })
 
   const trimmed = summary.trim() || 'Worker finished with no summary.'
-  let inputTokens = 0
-  let outputTokens = 0
-  if (hasLastUsage(provider) && provider.lastUsage) {
-    inputTokens = provider.lastUsage.inputTokens
-    outputTokens = provider.lastUsage.outputTokens
-  }
   return { summary: trimmed, usage: { inputTokens, outputTokens } }
 }

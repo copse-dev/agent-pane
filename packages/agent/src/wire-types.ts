@@ -34,6 +34,8 @@ export interface TodoItem {
   status: TodoStatus
   check?: TodoCheck
   assignedModel?: TodoAssignedModel
+  /** Parent-declared independence: safe to fan out to a concurrent worker. */
+  parallel?: boolean
 }
 
 /** A todo patch: merges into an existing item by `id`, or adds a new one when
@@ -44,6 +46,7 @@ export interface TodoUpdateInput {
   status: TodoStatus
   check?: TodoCheck | undefined
   assignedModel?: TodoAssignedModel | undefined
+  parallel?: boolean | undefined
 }
 
 /**

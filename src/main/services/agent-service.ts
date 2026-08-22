@@ -150,7 +150,7 @@ import { currentAgentSessionInfo } from './hooks/agent-session.ts'
 import { getContinuationLedger } from './hooks/continuation-ledger.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import {
-  findNewlyInProgressLocal,
+  findNewlyInProgressLocalSet,
   findNewlyCompleted,
   shouldRouteToLocal,
 } from '@shared/todos/todo-logic.ts'
@@ -1543,7 +1543,8 @@ export async function runAgent(
           let todos = after
           let extraMessage: string | undefined
 
-          const localItem = findNewlyInProgressLocal(before, after)
+          const localItems = findNewlyInProgressLocalSet(before, after)
+          const localItem = localItems[0] ?? null
           if (
             localItem &&
             shouldRouteToLocal(localItem, {

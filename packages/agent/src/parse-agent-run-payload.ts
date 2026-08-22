@@ -30,6 +30,7 @@ const todoSchema = z.object({
     ])
     .optional(),
   assignedModel: z.enum(['cloud', 'local']).optional(),
+  parallel: z.boolean().optional(),
 })
 
 export function parseAgentRunPayload(rawPrompt: string): {
@@ -59,6 +60,7 @@ export function parseAgentRunPayload(rawPrompt: string): {
             status: todo.status,
             ...(todo.check !== undefined ? { check: todo.check } : {}),
             ...(todo.assignedModel !== undefined ? { assignedModel: todo.assignedModel } : {}),
+            ...(todo.parallel !== undefined ? { parallel: todo.parallel } : {}),
           }))
         : []
       return {

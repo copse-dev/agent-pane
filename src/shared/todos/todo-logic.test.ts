@@ -8,6 +8,7 @@ import {
   shouldSteerTodos,
   todoProgress,
   findNewlyInProgressLocal,
+  findNewlyInProgressLocalSet,
   findNewlyCompleted,
 } from './todo-logic.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -163,6 +164,30 @@ describe('todo-logic', () => {
       { id: '1', content: 'x', status: 'in_progress', assignedModel: 'local' },
     ]
     assert.equal(findNewlyInProgressLocal(before, after)?.id, '1')
+  })
+
+  it('findNewlyInProgressLocalSet returns every newly in-progress local item in plan order', () => {
+    const before: TodoItem[] = [
+      { id: '1', content: 'a', status: 'in_progress', assignedModel: 'local' },
+      { id: '2', content: 'b', status: 'pending', assignedModel: 'local' },
+      { id: '3', content: 'c', status: 'pending', assignedModel: 'local' },
+      { id: '4', content: 'cloud step', status: 'pending', assignedModel: 'cloud' },
+      { id: '5', content: 'unassigned', status: 'pending' },
+    ]
+    const after: TodoItem[] = [
+      { id: '1', content: 'a', status: 'completed', assignedModel: 'local' },
+      { id: '2', content: 'b', status: 'in_progress', assignedModel: 'local' },
+      { id: '3', content: 'c', status: 'in_progress', assignedModel: 'local' },
+      { id: '4', content: 'cloud step', status: 'in_progress', assignedModel: 'cloud' },
+      { id: '5', content: 'unassigned', status: 'in_progress' },
+    ]
+    assert.deepEqual(
+      findNewlyInProgressLocalSet(before, after).map((t) => t.id),
+      ['2', '3'],
+      'only newly-in-progress local items, plan order, already-active item excluded',
+    )
+    // Singular wrapper stays the first of the set.
+    assert.equal(findNewlyInProgressLocal(before, after)?.id, '2')
   })
 
   it('findNewlyCompleted detects transition', () => {
