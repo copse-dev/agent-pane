@@ -393,6 +393,26 @@ async function run(store: AppStore): Promise<void> {
   await afterNextFrame()
   composer.submit.click()
 
+  // Which animations are actually *applied* while the model is thinking?
+  //
+  // Servo registers zero animations during this phase, but that only matters if
+  // the app is asking for one. Chromium is the control: if it lists a running
+  // animation here and Servo lists the same one, Servo is failing to run an
+  // applied animation; if Servo lists none, the app never applied it under this
+  // engine and the bug is somewhere else entirely.
+  void sleep(3000).then(() => {
+    const running: string[] = []
+    for (const element of document.querySelectorAll('*')) {
+      const name = getComputedStyle(element).animationName
+      if (name && name !== 'none') running.push(`${element.className || element.tagName}:${name}`)
+    }
+    mark('autopilot:running-animations', {
+      count: running.length,
+      // Bounded: a pathological page should not write an unbounded trace line.
+      names: running.slice(0, 6).join(' | ') || 'none',
+    })
+  })
+
   const outcome = await Promise.race([
     donePromise,
     sleep(TURN_TIMEOUT_MS).then(() => 'timeout' as const),
