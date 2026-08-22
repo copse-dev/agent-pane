@@ -389,6 +389,11 @@ describe('VNC viewer', function () {
         timeoutMsg: 'expected local screen sharing discovery to complete',
       },
     )
+    // `data-kind` is the settled outcome: `ok` once discovery returned at least
+    // one listener, `idle` when it found none, `error` when the probe failed.
+    // Read it from the attribute rather than the sentence, which is prose.
+    const discoveredLocalPort =
+      (await $('.vnc-discovery-status').getAttribute('data-kind')) === 'ok'
     if ((await $('.vnc-discovery-status').getText()) === 'Screen sharing is available.') {
       assert.equal(await $('.vnc-discovered-ports').isDisplayed(), false)
       assert.equal(await $$('.vnc-discovered-port').length, 0)
@@ -402,7 +407,13 @@ describe('VNC viewer', function () {
     )
     await advancedSummary.click()
     await portInput.waitForDisplayed()
-    assert.equal(await portInput.getValue(), '5900')
+    // The 5900 default only survives when discovery found nothing:
+    // `renderDiscoveredPorts` pins `ports[0]` into this input for any non-empty
+    // result. This spec runs its own fake RFB server on a conventional VNC port
+    // (5900-5999, which `isPlausibleVncListener` accepts), so on a host whose
+    // image ships `ss`/`lsof` the feature under test discovers the spec's own
+    // server and legitimately shows that port instead.
+    if (!discoveredLocalPort) assert.equal(await portInput.getValue(), '5900')
     await portInput.setValue(String(authenticationPort))
     await advancedSummary.click()
     await browser.waitUntil(async () => !(await portInput.isDisplayed()))
