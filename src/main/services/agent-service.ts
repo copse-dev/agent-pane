@@ -126,8 +126,7 @@ import {
 import type { ComparisonModels } from './model-comparison.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
-  setAgentRunTodoContext,
-  clearAgentRunTodos,
+  runWithAgentRunTodoContext,
   getAgentRunTodos,
   setAgentRunTodos,
 } from './agent-run-todos.ts'
@@ -156,7 +155,6 @@ import {
   shouldRouteToLocal,
 } from '@shared/todos/todo-logic.ts'
 import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
-import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
 import { todosToPanelListData } from '@copse/agent/plugins/plugin-panel.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import {
@@ -1505,14 +1503,6 @@ export async function runAgent(
       })
     }
 
-    setAgentRunTodoContext({
-      initial: priorTodos,
-      onUpdate: (todos) => {
-        sendChunk({ type: 'todo_update', todos })
-        emitTodoPanelUpdate(todos)
-      },
-    })
-
     // Briefs later local todo workers with what earlier ones already found (#i2jsed):
     // each `runTodoWorker` call starts a fresh, isolated context, so without this a
     // plan like "mirror complexity" (todo 2) has no way to know todo 1 just built it.
@@ -1520,262 +1510,362 @@ export async function runAgent(
     // the plan, so a worker sees background to reuse rather than other work to drift into.
     const localWorkerSummaries = new Map<string, { content: string; summary: string }>()
 
-    setTodoToolPostProcess(async (before, after) => {
-      let todos = after
-      let extraMessage: string | undefined
-
-      const localItem = findNewlyInProgressLocal(before, after)
-      if (
-        localItem &&
-        shouldRouteToLocal(localItem, {
-          localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
-          parentIsLocal: isLocalChatModel(model),
-        }) &&
-        subagentRoute
-      ) {
-        sendChunk({ type: 'todo_worker_start', todoId: localItem.id, content: localItem.content })
-        try {
-          const worker = await runTodoWorker({
-            item: localItem,
-            provider: subagentRoute.provider,
-            registry,
-            contextWindow: subagentRoute.contextWindow,
-            toolSchemaReserve: subagentRoute.toolSchemaReserve,
-            signal: controller.signal,
-            onChunk: sendChunk,
-            parentGoal,
-            priorSummaries: localWorkerSummaries,
-          })
-          localWorkerSummaries.set(localItem.id, {
-            content: localItem.content,
-            summary: worker.summary,
-          })
-          inputTokens += worker.usage.inputTokens
-          outputTokens += worker.usage.outputTokens
-          sendChunk({
-            type: 'usage',
-            model: subagentUsageModel,
-            inputTokens: worker.usage.inputTokens,
-            outputTokens: worker.usage.outputTokens,
-          })
-
-          let passed = true
-          if (localItem.check) {
-            const check = await verifyTodoCheck(localItem.check, controller.signal)
-            passed = check.passed
-            extraMessage = passed
-              ? `Local worker completed "${localItem.content}" (${check.detail})`
-              : `Local worker finished but check failed: ${check.detail}`
-          }
-
-          todos = todos.map((t) =>
-            t.id === localItem.id ? { ...t, status: passed ? 'completed' : 'in_progress' } : t,
-          )
+    // ALS-scoped plan + postProcess (not module globals): concurrent turns on
+    // different threads must not share one activeTodos / onUpdate / postProcess
+    // slot or one run's update_todos can patch and stream another's plan.
+    await runWithAgentRunTodoContext(
+      {
+        initial: priorTodos,
+        onUpdate: (todos) => {
           sendChunk({ type: 'todo_update', todos })
           emitTodoPanelUpdate(todos)
-          sendChunk({
-            type: 'todo_worker_done',
-            todoId: localItem.id,
-            summary: worker.summary,
-            passed,
+        },
+        postProcess: async (before, after) => {
+          let todos = after
+          let extraMessage: string | undefined
+
+          const localItem = findNewlyInProgressLocal(before, after)
+          if (
+            localItem &&
+            shouldRouteToLocal(localItem, {
+              localTodoItemsEnabled: getSetting<boolean>('localTodoItemsEnabled', true),
+              parentIsLocal: isLocalChatModel(model),
+            }) &&
+            subagentRoute
+          ) {
+            sendChunk({
+              type: 'todo_worker_start',
+              todoId: localItem.id,
+              content: localItem.content,
+            })
+            try {
+              const worker = await runTodoWorker({
+                item: localItem,
+                provider: subagentRoute.provider,
+                registry,
+                contextWindow: subagentRoute.contextWindow,
+                toolSchemaReserve: subagentRoute.toolSchemaReserve,
+                signal: controller.signal,
+                onChunk: sendChunk,
+                parentGoal,
+                priorSummaries: localWorkerSummaries,
+              })
+              localWorkerSummaries.set(localItem.id, {
+                content: localItem.content,
+                summary: worker.summary,
+              })
+              inputTokens += worker.usage.inputTokens
+              outputTokens += worker.usage.outputTokens
+              sendChunk({
+                type: 'usage',
+                model: subagentUsageModel,
+                inputTokens: worker.usage.inputTokens,
+                outputTokens: worker.usage.outputTokens,
+              })
+
+              let passed = true
+              if (localItem.check) {
+                const check = await verifyTodoCheck(localItem.check, controller.signal)
+                passed = check.passed
+                extraMessage = passed
+                  ? `Local worker completed "${localItem.content}" (${check.detail})`
+                  : `Local worker finished but check failed: ${check.detail}`
+              }
+
+              todos = todos.map((t) =>
+                t.id === localItem.id ? { ...t, status: passed ? 'completed' : 'in_progress' } : t,
+              )
+              sendChunk({ type: 'todo_update', todos })
+              emitTodoPanelUpdate(todos)
+              sendChunk({
+                type: 'todo_worker_done',
+                todoId: localItem.id,
+                summary: worker.summary,
+                passed,
+              })
+            } catch (err) {
+              const msg = errorMessage(err)
+              extraMessage = `Local worker failed: ${msg}`
+              sendChunk({
+                type: 'todo_worker_done',
+                todoId: localItem.id,
+                summary: msg,
+                passed: false,
+              })
+            }
+          }
+
+          const completed = findNewlyCompleted(before, todos)
+          // Measured at the boundary, not from the turn's opening snapshot: the run
+          // has been appending to `trimmed` ever since, and it is the size right now
+          // that decides whether there is any headroom to buy.
+          const fillRatio = estimateConversationTokens(trimmed) / conversationBudget
+          if (completed && compactAtTodoBoundary(trimmed, todos, { fillRatio })) {
+            notifyTrimmed(sendTrimNotice)
+          }
+
+          return { todos, ...(extraMessage ? { extraMessage } : {}) }
+        },
+      },
+      async () => {
+        // The parent tool executor, shared by the main loop and any post-turn parent
+        // continuation turns (pre-review todo gate, review remediation) so both route
+        // subagents, advisor, comparison, and shell tagging identically.
+        const runParentTool = async (
+          name: string,
+          args: unknown,
+          signal: AbortSignal,
+          toolCallId: string,
+        ): Promise<ToolExecuteResult> => {
+          if (isEditTool(name)) turnChangedFiles = true
+          if (name === 'explore' && subagentsEnabled) {
+            // ALS-scoped (not a global slot): the loop runs fanned-out
+            // explore calls concurrently, each with its own context.
+            return runWithExploreSubagentContext(
+              {
+                parentToolCallId: toolCallId,
+                parentGoal,
+                provider: subagentRoute?.provider ?? provider,
+                registry,
+                contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+                toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+                onChunk: sendChunk,
+                usageModel: subagentUsageModel,
+                localFallback: subagentLocalFallback,
+              },
+              () => registry.execute(name, args, signal),
+            )
+          }
+          if (name === 'investigate_ci' && subagentsEnabled) {
+            setCiInvestigatorContext({
+              parentToolCallId: toolCallId,
+              parentGoal,
+              provider: subagentRoute?.provider ?? provider,
+              registry,
+              contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+              toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+              onChunk: sendChunk,
+              usageModel: subagentUsageModel,
+              localFallback: subagentLocalFallback,
+            })
+            try {
+              return await registry.execute(name, args, signal)
+            } finally {
+              setCiInvestigatorContext(null)
+            }
+          }
+          if (name === 'advisor') {
+            // Client-side advisor: hand the tool the live transcript so it can
+            // forward it to a larger advisor model (issue #566). Mirrors the
+            // native tool's automatic transcript forwarding.
+            return runWithAdvisorContext(
+              {
+                advisorModel: resolveAdvisorModelId(),
+                executorModel: model,
+                getTranscript: () => trimmed,
+                onChunk: sendChunk,
+              },
+              () => registry.executeNormalized(name, args, signal),
+            )
+          }
+          if (name === 'delegate_step') {
+            // Orchestration strategy: the parent stays the orchestrator while a
+            // cheaper worker model implements this one step as a subagent; the
+            // tool result carries the worker's report + working-tree snapshot so
+            // the parent observes between steps. ALS-scoped like explore so
+            // fanned-out independent steps each keep their own context. A
+            // delegated step is file-mutating by design, so it gates the
+            // post-turn review like a direct edit would.
+            turnChangedFiles = true
+            return runWithOrchestrationContext(
+              {
+                parentToolCallId: toolCallId,
+                parentGoal,
+                workerModel: resolveOrchestrationWorkerModelId(),
+                registry,
+                onChunk: sendChunk,
+              },
+              () => registry.execute(name, args, signal),
+            )
+          }
+          if (name === 'compare_models') {
+            // Manual trigger: run the two-model diff comparison on demand, with
+            // the live parent goal/registry so the reviewers see the same diff.
+            comparisonRanThisTurn = true
+            setModelComparisonContext({
+              threadId,
+              parentGoal,
+              registry,
+              chatModel: model,
+              onChunk: sendChunk,
+            })
+            try {
+              return await registry.executeNormalized(name, args, signal)
+            } finally {
+              setModelComparisonContext(null)
+            }
+          }
+          if (name === 'run_shell') {
+            // Tag the command's streamed output with this tool-call id so the
+            // terminal pane can route it into the matching "Agent tasks" card.
+            setCurrentShellTaskId(toolCallId)
+            try {
+              return await registry.executeNormalized(name, args, signal)
+            } finally {
+              setCurrentShellTaskId(null)
+            }
+          }
+          return registry.executeNormalized(name, args, signal)
+        }
+
+        // D2: fire the canonical `afterToolUse` observation after each tool result
+        // (shell / MCP flavors), detached — never blocking the loop. Wrapping the
+        // shared executor is the single tool-result choke point that covers the main
+        // loop and every post-turn continuation turn. The output snapshot is capped
+        // downstream (`runAfterToolUseHooks`) before it reaches a hook's stdin.
+        const executeParentTool = async (
+          name: string,
+          args: unknown,
+          signal: AbortSignal,
+          toolCallId: string,
+        ): Promise<ToolExecuteResult> => {
+          const startedAt = Date.now()
+          try {
+            const raw = await runParentTool(name, args, signal, toolCallId)
+            fireAfterToolUseHook({
+              threadId,
+              turnTreeId,
+              toolName: name,
+              toolCallId,
+              isError: false,
+              input: args,
+              output: normalizeToolExecuteResult(raw).result,
+              durationMs: Date.now() - startedAt,
+            })
+            return raw
+          } catch (err) {
+            // The loop turns a thrown tool into an error tool-result; mirror that so
+            // the observation sees the same `isError: true` + message the model does.
+            fireAfterToolUseHook({
+              threadId,
+              turnTreeId,
+              toolName: name,
+              toolCallId,
+              isError: true,
+              input: args,
+              output: `Error: ${errorMessage(err)}`,
+              durationMs: Date.now() - startedAt,
+            })
+            throw err
+          }
+        }
+
+        await runWithAgentRunReadonly(readonlyMode, async () => {
+          await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+            await runAgentLoop({
+              provider,
+              messages: trimmed,
+              tools: parentLoopTools,
+              usageModel: model,
+              maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
+              ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+              reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+              reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+              runDeadline: runAbort.deadline,
+              onRunDeadlineActivity: runAbort.schedule,
+              coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+              getOpenTodos: () => getAgentRunTodos(),
+              continuationBudget,
+              recordHookRun: recordFunctionHookRun,
+              onLlmCall: (count) => {
+                setHookRunStep(count)
+                // `messages` above is `trimmed`, mutated in place as turns land, so
+                // this persists everything the previous step produced.
+                checkpointHistory()
+              },
+              recordStreamCut: (record) => {
+                recordStreamCut(record, model)
+              },
+              recordReasoningCheckpoint: (record) => {
+                recordReasoningCheckpoint(record, model)
+              },
+              executeTool: executeParentTool,
+              signal: controller.signal,
+              maxContextTokens: contextWindow,
+              toolSchemaReserveTokens: toolSchemaReserve,
+              onHistoryTrimmed: () => {
+                notifyTrimmed(sendTrimNotice)
+              },
+              getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
+              onChunk: (chunk) => {
+                if (chunk.type === 'done') {
+                  // Suppress the loop's terminal `done` (E3): the run emits one
+                  // terminal `done` after post-turn work. Keep its stop reason.
+                  loopStopReason = chunk.stopReason
+                  return
+                }
+                sendChunk(chunk)
+                if (chunk.type === 'usage') {
+                  inputTokens += chunk.inputTokens
+                  outputTokens += chunk.outputTokens
+                }
+              },
+            })
+
+            const subUsage = getAccumulatedSubagentUsage()
+            if (subUsage.inputTokens || subUsage.outputTokens) {
+              inputTokens += subUsage.inputTokens
+              outputTokens += subUsage.outputTokens
+              sendChunk({
+                type: 'usage',
+                model: subagentUsageModel,
+                inputTokens: subUsage.inputTokens,
+                outputTokens: subUsage.outputTokens,
+                ...(subUsage.cacheReadTokens !== undefined
+                  ? { cacheReadTokens: subUsage.cacheReadTokens }
+                  : {}),
+                ...(subUsage.cacheCreationTokens !== undefined
+                  ? { cacheCreationTokens: subUsage.cacheCreationTokens }
+                  : {}),
+              })
+            }
           })
-        } catch (err) {
-          const msg = errorMessage(err)
-          extraMessage = `Local worker failed: ${msg}`
-          sendChunk({
-            type: 'todo_worker_done',
-            todoId: localItem.id,
-            summary: msg,
-            passed: false,
-          })
-        }
-      }
-
-      const completed = findNewlyCompleted(before, todos)
-      // Measured at the boundary, not from the turn's opening snapshot: the run
-      // has been appending to `trimmed` ever since, and it is the size right now
-      // that decides whether there is any headroom to buy.
-      const fillRatio = estimateConversationTokens(trimmed) / conversationBudget
-      if (completed && compactAtTodoBoundary(trimmed, todos, { fillRatio })) {
-        notifyTrimmed(sendTrimNotice)
-      }
-
-      return { todos, ...(extraMessage ? { extraMessage } : {}) }
-    })
-
-    // The parent tool executor, shared by the main loop and any post-turn parent
-    // continuation turns (pre-review todo gate, review remediation) so both route
-    // subagents, advisor, comparison, and shell tagging identically.
-    const runParentTool = async (
-      name: string,
-      args: unknown,
-      signal: AbortSignal,
-      toolCallId: string,
-    ): Promise<ToolExecuteResult> => {
-      if (isEditTool(name)) turnChangedFiles = true
-      if (name === 'explore' && subagentsEnabled) {
-        // ALS-scoped (not a global slot): the loop runs fanned-out
-        // explore calls concurrently, each with its own context.
-        return runWithExploreSubagentContext(
-          {
-            parentToolCallId: toolCallId,
-            parentGoal,
-            provider: subagentRoute?.provider ?? provider,
-            registry,
-            contextWindow: subagentRoute?.contextWindow ?? contextWindow,
-            toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
-            onChunk: sendChunk,
-            usageModel: subagentUsageModel,
-            localFallback: subagentLocalFallback,
-          },
-          () => registry.execute(name, args, signal),
-        )
-      }
-      if (name === 'investigate_ci' && subagentsEnabled) {
-        setCiInvestigatorContext({
-          parentToolCallId: toolCallId,
-          parentGoal,
-          provider: subagentRoute?.provider ?? provider,
-          registry,
-          contextWindow: subagentRoute?.contextWindow ?? contextWindow,
-          toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
-          onChunk: sendChunk,
-          usageModel: subagentUsageModel,
-          localFallback: subagentLocalFallback,
         })
-        try {
-          return await registry.execute(name, args, signal)
-        } finally {
-          setCiInvestigatorContext(null)
-        }
-      }
-      if (name === 'advisor') {
-        // Client-side advisor: hand the tool the live transcript so it can
-        // forward it to a larger advisor model (issue #566). Mirrors the
-        // native tool's automatic transcript forwarding.
-        return runWithAdvisorContext(
-          {
-            advisorModel: resolveAdvisorModelId(),
-            executorModel: model,
-            getTranscript: () => trimmed,
-            onChunk: sendChunk,
-          },
-          () => registry.executeNormalized(name, args, signal),
-        )
-      }
-      if (name === 'delegate_step') {
-        // Orchestration strategy: the parent stays the orchestrator while a
-        // cheaper worker model implements this one step as a subagent; the
-        // tool result carries the worker's report + working-tree snapshot so
-        // the parent observes between steps. ALS-scoped like explore so
-        // fanned-out independent steps each keep their own context. A
-        // delegated step is file-mutating by design, so it gates the
-        // post-turn review like a direct edit would.
-        turnChangedFiles = true
-        return runWithOrchestrationContext(
-          {
-            parentToolCallId: toolCallId,
-            parentGoal,
-            workerModel: resolveOrchestrationWorkerModelId(),
-            registry,
-            onChunk: sendChunk,
-          },
-          () => registry.execute(name, args, signal),
-        )
-      }
-      if (name === 'compare_models') {
-        // Manual trigger: run the two-model diff comparison on demand, with
-        // the live parent goal/registry so the reviewers see the same diff.
-        comparisonRanThisTurn = true
-        setModelComparisonContext({
-          threadId,
-          parentGoal,
-          registry,
-          chatModel: model,
-          onChunk: sendChunk,
-        })
-        try {
-          return await registry.executeNormalized(name, args, signal)
-        } finally {
-          setModelComparisonContext(null)
-        }
-      }
-      if (name === 'run_shell') {
-        // Tag the command's streamed output with this tool-call id so the
-        // terminal pane can route it into the matching "Agent tasks" card.
-        setCurrentShellTaskId(toolCallId)
-        try {
-          return await registry.executeNormalized(name, args, signal)
-        } finally {
-          setCurrentShellTaskId(null)
-        }
-      }
-      return registry.executeNormalized(name, args, signal)
-    }
 
-    // D2: fire the canonical `afterToolUse` observation after each tool result
-    // (shell / MCP flavors), detached — never blocking the loop. Wrapping the
-    // shared executor is the single tool-result choke point that covers the main
-    // loop and every post-turn continuation turn. The output snapshot is capped
-    // downstream (`runAfterToolUseHooks`) before it reaches a hook's stdin.
-    const executeParentTool = async (
-      name: string,
-      args: unknown,
-      signal: AbortSignal,
-      toolCallId: string,
-    ): Promise<ToolExecuteResult> => {
-      const startedAt = Date.now()
-      try {
-        const raw = await runParentTool(name, args, signal, toolCallId)
-        fireAfterToolUseHook({
-          threadId,
-          turnTreeId,
-          toolName: name,
-          toolCallId,
-          isError: false,
-          input: args,
-          output: normalizeToolExecuteResult(raw).result,
-          durationMs: Date.now() - startedAt,
-        })
-        return raw
-      } catch (err) {
-        // The loop turns a thrown tool into an error tool-result; mirror that so
-        // the observation sees the same `isError: true` + message the model does.
-        fireAfterToolUseHook({
-          threadId,
-          turnTreeId,
-          toolName: name,
-          toolCallId,
-          isError: true,
-          input: args,
-          output: `Error: ${errorMessage(err)}`,
-          durationMs: Date.now() - startedAt,
-        })
-        throw err
-      }
-    }
-
-    await runWithAgentRunReadonly(readonlyMode, async () => {
-      await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-        await runAgentLoop({
+        const parentContinuationBase: RunParentContinuationOptions = {
           provider,
           messages: trimmed,
           tools: parentLoopTools,
+          contextWindow,
+          toolSchemaReserve,
+          signal: controller.signal,
           usageModel: model,
-          maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
-          ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
-          reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
-          reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
-          runDeadline: runAbort.deadline,
-          onRunDeadlineActivity: runAbort.schedule,
-          coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
-          getOpenTodos: () => getAgentRunTodos(),
-          continuationBudget,
+          executeTool: executeParentTool,
+          onChunk: (chunk: StreamChunk): void => {
+            if (chunk.type === 'done') return
+            sendChunk(chunk)
+            if (chunk.type === 'usage') {
+              inputTokens += chunk.inputTokens
+              outputTokens += chunk.outputTokens
+            }
+          },
+          getOpenTodos: (): TodoItem[] => getAgentRunTodos(),
+          setTodos: (todos: TodoItem[]): void => {
+            setAgentRunTodos(todos)
+          },
+          onHistoryTrimmed: (): void => {
+            notifyTrimmed(sendTrimNotice)
+          },
+          getLastUsage: (): { inputTokens: number; outputTokens: number } | null =>
+            hasLastUsage(provider) ? provider.lastUsage : null,
+          coerceTextToolCallArgs: (name: string, args: unknown) =>
+            registry.tryCoerceArgs(name, args),
+          onEditTool: (name: string): void => {
+            if (isEditTool(name)) turnChangedFiles = true
+          },
           recordHookRun: recordFunctionHookRun,
-          onLlmCall: (count) => {
+          onLlmCall: (count: number): void => {
             setHookRunStep(count)
-            // `messages` above is `trimmed`, mutated in place as turns land, so
-            // this persists everything the previous step produced.
             checkpointHistory()
           },
           recordStreamCut: (record) => {
@@ -1784,228 +1874,148 @@ export async function runAgent(
           recordReasoningCheckpoint: (record) => {
             recordReasoningCheckpoint(record, model)
           },
-          executeTool: executeParentTool,
-          signal: controller.signal,
-          maxContextTokens: contextWindow,
-          toolSchemaReserveTokens: toolSchemaReserve,
-          onHistoryTrimmed: () => {
-            notifyTrimmed(sendTrimNotice)
-          },
-          getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
-          onChunk: (chunk) => {
-            if (chunk.type === 'done') {
-              // Suppress the loop's terminal `done` (E3): the run emits one
-              // terminal `done` after post-turn work. Keep its stop reason.
-              loopStopReason = chunk.stopReason
-              return
-            }
-            sendChunk(chunk)
-            if (chunk.type === 'usage') {
-              inputTokens += chunk.inputTokens
-              outputTokens += chunk.outputTokens
-            }
-          },
-        })
-
-        const subUsage = getAccumulatedSubagentUsage()
-        if (subUsage.inputTokens || subUsage.outputTokens) {
-          inputTokens += subUsage.inputTokens
-          outputTokens += subUsage.outputTokens
-          sendChunk({
-            type: 'usage',
-            model: subagentUsageModel,
-            inputTokens: subUsage.inputTokens,
-            outputTokens: subUsage.outputTokens,
-            ...(subUsage.cacheReadTokens !== undefined
-              ? { cacheReadTokens: subUsage.cacheReadTokens }
-              : {}),
-            ...(subUsage.cacheCreationTokens !== undefined
-              ? { cacheCreationTokens: subUsage.cacheCreationTokens }
-              : {}),
-          })
+          continuationBudget,
+          userNudge: '',
+          maxSteps: 6,
         }
-      })
-    })
 
-    const parentContinuationBase: RunParentContinuationOptions = {
-      provider,
-      messages: trimmed,
-      tools: parentLoopTools,
-      contextWindow,
-      toolSchemaReserve,
-      signal: controller.signal,
-      usageModel: model,
-      executeTool: executeParentTool,
-      onChunk: (chunk: StreamChunk): void => {
-        if (chunk.type === 'done') return
-        sendChunk(chunk)
-        if (chunk.type === 'usage') {
-          inputTokens += chunk.inputTokens
-          outputTokens += chunk.outputTokens
-        }
-      },
-      getOpenTodos: (): TodoItem[] => getAgentRunTodos(),
-      setTodos: (todos: TodoItem[]): void => {
-        setAgentRunTodos(todos)
-      },
-      onHistoryTrimmed: (): void => {
-        notifyTrimmed(sendTrimNotice)
-      },
-      getLastUsage: (): { inputTokens: number; outputTokens: number } | null =>
-        hasLastUsage(provider) ? provider.lastUsage : null,
-      coerceTextToolCallArgs: (name: string, args: unknown) => registry.tryCoerceArgs(name, args),
-      onEditTool: (name: string): void => {
-        if (isEditTool(name)) turnChangedFiles = true
-      },
-      recordHookRun: recordFunctionHookRun,
-      onLlmCall: (count: number): void => {
-        setHookRunStep(count)
-        checkpointHistory()
-      },
-      recordStreamCut: (record) => {
-        recordStreamCut(record, model)
-      },
-      recordReasoningCheckpoint: (record) => {
-        recordReasoningCheckpoint(record, model)
-      },
-      continuationBudget,
-      userNudge: '',
-      maxSteps: 6,
-    }
-
-    // Pre-review gate: if the plan still has open todos, give the parent a couple
-    // of deterministic continuation turns to reconcile them before review runs.
-    if (getAgentRunTodos().length > 0 && hasOpenTodos(getAgentRunTodos())) {
-      await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-        await runPreReviewTodoGate(parentContinuationBase)
-      })
-    }
-
-    // Post-turn review: read-only review over the working diff, with an optional
-    // bounded parent remediation loop when the reviewer requests follow-up. Runs
-    // before the single terminal `done` so the thread stays "running" until it
-    // lands (E3: the orchestration is awaited inline — no held-back `done`).
-    //
-    // Cost gates (#584): (a) skip when the working diff is empty / below
-    // `postTurnReviewMinChangedLines` — there's nothing worth a review LLM run; and
-    // (b) when the review would use a billable model, ask once per chat for spend
-    // approval (remembered) so paid reviews on every file-mutating turn are opt-in.
-    // A free / local review model runs on the full diff with no prompt. The
-    // host-interactive gate resolution stays here; `runPostTurnReviewCycle` owns
-    // the review/remediation *sequencing* + the shared C3 budget (decision 5).
-    // P5: the plugin toggle in Settings > Plugins is the atomic master switch —
-    // disabling `copse.post-turn-review` drops the review trigger for new turns
-    // in one flag flip (decision 15). The plugin registry replaces the standalone
-    // `postTurnReviewEnabled` setting the trigger used to consult; the
-    // fine-grained `postTurnReviewMinChangedLines` threshold stays a top-level
-    // setting (orthogonal to enablement) and is read below.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
-    if (turnChangedFiles && getDefaultPluginRegistry().isEnabled(POST_TURN_REVIEW_PLUGIN_ID)) {
-      const reviewRoute = await buildReviewRoute()
-      const reviewProvider = reviewRoute?.provider ?? provider
-      const reviewUsageModel = reviewRoute?.usageModel ?? model
-      const reviewContextWindow = reviewRoute?.contextWindow ?? contextWindow
-      const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
-      // How many review passes this turn may run. A failing verdict buys the
-      // parent one remediation turn plus a re-review (the next pass), so this is
-      // the "do we do another post turn after a failed review?" knob — plugin-scoped
-      // because it is meaningless with the plugin off (decision 15).
-      const maxReviewCycles = resolveMaxReviewCycles(
-        resolvePluginSetting(POST_TURN_REVIEW_PLUGIN_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
-      )
-      const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
-      const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
-      const reviewApproved =
-        nothingToReview ||
-        !isBillableModel(reviewUsageModel) ||
-        (await ensureReviewApproved(reviewUsageModel, threadId, controller.signal))
-
-      const onReviewUsage = (u: { inputTokens: number; outputTokens: number }): void => {
-        inputTokens += u.inputTokens
-        outputTokens += u.outputTokens
-        sendChunk({
-          type: 'usage',
-          model: reviewUsageModel,
-          inputTokens: u.inputTokens,
-          outputTokens: u.outputTokens,
-        })
-      }
-
-      await runPostTurnReviewCycle({
-        reviewUsageModel,
-        nothingToReview,
-        reviewApproved,
-        signal: controller.signal,
-        getTodos: () => getAgentRunTodos(),
-        setTodos: (todos) => {
-          setAgentRunTodos(todos)
-        },
-        emitChunk: sendChunk,
-        continuationBudget,
-        maxCycles: maxReviewCycles,
-        runReviewOnce: (todos) =>
-          runPostTurnReviewOnce({
-            parentGoal,
-            todos,
-            provider: reviewProvider,
-            registry,
-            contextWindow: reviewContextWindow,
-            toolSchemaReserve: reviewToolSchemaReserve,
-            signal: controller.signal,
-            usageModel: reviewUsageModel,
-            onUsage: onReviewUsage,
-          }),
-        runRemediationTurn: async (nudge) => {
-          const remediation = { madeEdits: false }
+        // Pre-review gate: if the plan still has open todos, give the parent a couple
+        // of deterministic continuation turns to reconcile them before review runs.
+        if (getAgentRunTodos().length > 0 && hasOpenTodos(getAgentRunTodos())) {
           await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-            await runParentContinuationTurn({
-              ...parentContinuationBase,
-              userNudge: nudge,
-              maxSteps: 8,
-              onEditTool: (name: string): void => {
-                if (isEditTool(name)) {
-                  turnChangedFiles = true
-                  remediation.madeEdits = true
-                }
-              },
+            await runPreReviewTodoGate(parentContinuationBase)
+          })
+        }
+
+        // Post-turn review: read-only review over the working diff, with an optional
+        // bounded parent remediation loop when the reviewer requests follow-up. Runs
+        // before the single terminal `done` so the thread stays "running" until it
+        // lands (E3: the orchestration is awaited inline — no held-back `done`).
+        //
+        // Cost gates (#584): (a) skip when the working diff is empty / below
+        // `postTurnReviewMinChangedLines` — there's nothing worth a review LLM run; and
+        // (b) when the review would use a billable model, ask once per chat for spend
+        // approval (remembered) so paid reviews on every file-mutating turn are opt-in.
+        // A free / local review model runs on the full diff with no prompt. The
+        // host-interactive gate resolution stays here; `runPostTurnReviewCycle` owns
+        // the review/remediation *sequencing* + the shared C3 budget (decision 5).
+        // P5: the plugin toggle in Settings > Plugins is the atomic master switch —
+        // disabling `copse.post-turn-review` drops the review trigger for new turns
+        // in one flag flip (decision 15). The plugin registry replaces the standalone
+        // `postTurnReviewEnabled` setting the trigger used to consult; the
+        // fine-grained `postTurnReviewMinChangedLines` threshold stays a top-level
+        // setting (orthogonal to enablement) and is read below.
+
+        if (turnChangedFiles && getDefaultPluginRegistry().isEnabled(POST_TURN_REVIEW_PLUGIN_ID)) {
+          const reviewRoute = await buildReviewRoute()
+          const reviewProvider = reviewRoute?.provider ?? provider
+          const reviewUsageModel = reviewRoute?.usageModel ?? model
+          const reviewContextWindow = reviewRoute?.contextWindow ?? contextWindow
+          const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
+          // How many review passes this turn may run. A failing verdict buys the
+          // parent one remediation turn plus a re-review (the next pass), so this is
+          // the "do we do another post turn after a failed review?" knob — plugin-scoped
+          // because it is meaningless with the plugin off (decision 15).
+          const maxReviewCycles = resolveMaxReviewCycles(
+            resolvePluginSetting(POST_TURN_REVIEW_PLUGIN_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
+          )
+          const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
+          const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
+          const reviewApproved =
+            nothingToReview ||
+            !isBillableModel(reviewUsageModel) ||
+            (await ensureReviewApproved(reviewUsageModel, threadId, controller.signal))
+
+          const onReviewUsage = (u: { inputTokens: number; outputTokens: number }): void => {
+            inputTokens += u.inputTokens
+            outputTokens += u.outputTokens
+            sendChunk({
+              type: 'usage',
+              model: reviewUsageModel,
+              inputTokens: u.inputTokens,
+              outputTokens: u.outputTokens,
             })
-          })
-          return remediation
-        },
-        // F2: fire the Copse-native `postTurnReview` observation (detached) for
-        // each review verdict the cycle produces.
-        onReviewVerdict: (review) => {
-          firePostTurnReviewHook(threadId, turnTreeId, {
-            issuesFound: review.verdict.issuesFound,
-            summary: review.summary,
-          })
-        },
-      })
-    }
+          }
 
-    // Auto model comparison: when this turn changed files and the harness is set
-    // to run on review, compare two models on the working diff (gated by a spend
-    // approval for billable models). Usage is folded in via the emitted chunks.
-    // P5: gate on the `copse.model-comparison` plugin toggle in addition to the
-    // fine-grained `modelComparisonAutoOnReview` sub-setting — the plugin toggle
-    // is the atomic master switch (`isAutoComparisonEnabled()` already reads
-    // both).
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
-    if (turnChangedFiles && !comparisonRanThisTurn && isAutoComparisonEnabled()) {
-      await runModelComparison(
-        { threadId, parentGoal, registry, chatModel: model, onChunk: sendChunk },
-        controller.signal,
-      )
-    }
+          await runPostTurnReviewCycle({
+            reviewUsageModel,
+            nothingToReview,
+            reviewApproved,
+            signal: controller.signal,
+            getTodos: () => getAgentRunTodos(),
+            setTodos: (todos) => {
+              setAgentRunTodos(todos)
+            },
+            emitChunk: sendChunk,
+            continuationBudget,
+            maxCycles: maxReviewCycles,
+            runReviewOnce: (todos) =>
+              runPostTurnReviewOnce({
+                parentGoal,
+                todos,
+                provider: reviewProvider,
+                registry,
+                contextWindow: reviewContextWindow,
+                toolSchemaReserve: reviewToolSchemaReserve,
+                signal: controller.signal,
+                usageModel: reviewUsageModel,
+                onUsage: onReviewUsage,
+              }),
+            runRemediationTurn: async (nudge) => {
+              const remediation = { madeEdits: false }
+              await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+                await runParentContinuationTurn({
+                  ...parentContinuationBase,
+                  userNudge: nudge,
+                  maxSteps: 8,
+                  onEditTool: (name: string): void => {
+                    if (isEditTool(name)) {
+                      turnChangedFiles = true
+                      remediation.madeEdits = true
+                    }
+                  },
+                })
+              })
+              return remediation
+            },
+            // F2: fire the Copse-native `postTurnReview` observation (detached) for
+            // each review verdict the cycle produces.
+            onReviewVerdict: (review) => {
+              firePostTurnReviewHook(threadId, turnTreeId, {
+                issuesFound: review.verdict.issuesFound,
+                summary: review.summary,
+              })
+            },
+          })
+        }
 
-    const terminalDone: Extract<StreamChunk, { type: 'done' }> =
-      loopStopReason !== undefined ? { type: 'done', stopReason: loopStopReason } : { type: 'done' }
-    // C3 run→drain fold-back (E3): report the machine turns this run spent
-    // in-process (closeout / pre-review / remediation) so the renderer folds them
-    // back onto the turn tree's counter and its *next* queue drain respects the
-    // shared cap. Emitted before the terminal `done` (which triggers the drain).
-    sendChunk(continuationBudgetChunk(budgetLedger.used(turnTreeId), turnTreeId))
-    sendChunk(withHookHaltStopReason(terminalDone, hookHaltStopReason))
+        // Auto model comparison: when this turn changed files and the harness is set
+        // to run on review, compare two models on the working diff (gated by a spend
+        // approval for billable models). Usage is folded in via the emitted chunks.
+        // P5: gate on the `copse.model-comparison` plugin toggle in addition to the
+        // fine-grained `modelComparisonAutoOnReview` sub-setting — the plugin toggle
+        // is the atomic master switch (`isAutoComparisonEnabled()` already reads
+        // both).
+
+        if (turnChangedFiles && !comparisonRanThisTurn && isAutoComparisonEnabled()) {
+          await runModelComparison(
+            { threadId, parentGoal, registry, chatModel: model, onChunk: sendChunk },
+            controller.signal,
+          )
+        }
+
+        const terminalDone: Extract<StreamChunk, { type: 'done' }> =
+          loopStopReason !== undefined
+            ? { type: 'done', stopReason: loopStopReason }
+            : { type: 'done' }
+        // C3 run→drain fold-back (E3): report the machine turns this run spent
+        // in-process (closeout / pre-review / remediation) so the renderer folds them
+        // back onto the turn tree's counter and its *next* queue drain respects the
+        // shared cap. Emitted before the terminal `done` (which triggers the drain).
+        sendChunk(continuationBudgetChunk(budgetLedger.used(turnTreeId), turnTreeId))
+        sendChunk(withHookHaltStopReason(terminalDone, hookHaltStopReason))
+      },
+    )
   } catch (err) {
     const msg = classifyAgentError(err)
     sendChunk({ type: 'text', text: msg })
@@ -2044,8 +2054,7 @@ export async function runAgent(
     cancelApprovalsForThread(threadId)
     runAbort.clear()
     clearRunDeadline(threadId, runAbort.deadline)
-    clearAgentRunTodos()
-    setTodoToolPostProcess(null)
+    // Todo context is ALS-scoped to the run body above; no process-global clear.
     clearHookRunLiveSink(hookCardSink)
     endHookRunRecording(threadId)
     clearActiveRunThread(threadId)
