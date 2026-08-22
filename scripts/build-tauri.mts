@@ -104,17 +104,24 @@ await esbuild.build({
   banner: { js: 'var process = { env: {} };' },
 })
 
-// 4. tauri.html: index.html + the bridge, minus the CSP meta. Servo (at the
-// pinned rev) fails to match CSP 'self' against the tauri://localhost origin,
-// so any policy blocks every same-origin subresource (app.js, app.css, …) and
-// the window stays blank — observed on the first real run, worth an upstream
-// servo issue. The Electron build keeps its CSP untouched; restore a widened
-// policy here (connect-src needs the loopback WS) once Servo's CSP handles
-// custom-scheme origins.
+// 4. tauri.html: index.html + the bridge, with the CSP rewritten for the
+// tauri:// origin. The policy is the Electron one plus a connect-src for the
+// loopback WebSocket the renderer uses to reach the sidecar. Enforcing it
+// requires the recommended engine patches (servo 0008 + csp-0001 in the tauri
+// fork's servo-patches/): stock pinned Servo gives tauri://localhost an opaque
+// origin that CSP 'self' can never match, so there any policy blocks every
+// same-origin subresource and the window stays blank — set
+// COPSE_TAURI_STRIP_CSP=1 to reproduce the old stripped-meta build for
+// unpatched-engine runs.
+const TAURI_CSP =
+  "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; connect-src 'self' ws://127.0.0.1:*;"
 const indexHtml = readFileSync('dist/renderer/index.html', 'utf8')
+const cspMetaPattern = /[ \t]*<meta\s+http-equiv="Content-Security-Policy"[^>]*\/>\n?/
 const withCsp = indexHtml.replace(
-  /[ \t]*<meta\s+http-equiv="Content-Security-Policy"[^>]*\/>\n?/,
-  '',
+  cspMetaPattern,
+  process.env.COPSE_TAURI_STRIP_CSP === '1'
+    ? ''
+    : `    <meta http-equiv="Content-Security-Policy" content="${TAURI_CSP}" />\n`,
 )
 if (withCsp === indexHtml) {
   console.error('CSP meta not found in index.html — tauri.html transform needs updating.')
