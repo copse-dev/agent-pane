@@ -28,6 +28,13 @@ export interface FollowUpContext {
   userMessage: string
   assistantMessage: string
   toolNames: string[]
+  /**
+   * Contents of the thread's task-plan items still open when the turn ended
+   * (pending / in_progress). Absent or empty when the plan was fully reconciled
+   * or the thread runs no plan. Drives the deterministic "continue the plan"
+   * bubble; the model-picked suggestions see it too.
+   */
+  openTodos?: string[] | undefined
 }
 
 export interface PrWorkspaceContext {

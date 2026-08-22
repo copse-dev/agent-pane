@@ -127,6 +127,9 @@ export const followUpContextSchema = z.object({
   userMessage: z.string(),
   assistantMessage: z.string(),
   toolNames: z.array(z.string()),
+  // Open task-plan item contents at turn end; bounded so a runaway plan cannot
+  // balloon the IPC payload or the suggestion prompts built from it.
+  openTodos: z.array(z.string().min(1).max(500)).max(20).optional(),
 })
 
 /**
