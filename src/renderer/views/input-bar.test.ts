@@ -1247,6 +1247,103 @@ describe('input bar attachment previews', () => {
       unregister()
     }
   })
+
+  const PNG =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
+
+  /**
+   * New-thread view is an empty composer — there is no transcript yet — so the
+   * only place to inspect an attached image is the chip itself. It must open the
+   * same shared lightbox as a sent message thumb.
+   */
+  it('opens an attached image in the preview modal from the composer', async () => {
+    const store = createStore({
+      workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers, 'composer registered its attachment handlers')
+    handlers.attachImage(PNG, 'image/png')
+    await flush()
+
+    const thumb = host.querySelector<HTMLImageElement>('.image-chip img.image-expandable')
+    assert.ok(thumb, 'the image chip renders an expandable thumbnail')
+    assert.equal(thumb.getAttribute('role'), 'button')
+    assert.equal(thumb.getAttribute('aria-label'), 'Expand Attached image')
+    thumb.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog)
+    assert.equal(dialog.open, true)
+    assert.equal(dialog.dataset['previewKind'], 'image')
+    const expanded = dialog.querySelector<HTMLImageElement>('.image-expand-image')
+    assert.ok(expanded)
+    assert.equal(expanded.src, PNG)
+    dialog.close()
+  })
+
+  it('opens an attached video in the preview modal from the composer', async () => {
+    const store = createStore({
+      workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const api = createApi({ currentBranch: 'main' })
+    const videoBytes = new Uint8Array([0, 0, 0, 1, 0x66, 0x74, 0x79, 0x70])
+    api.video = {
+      ...api.video,
+      attach: async (): ReturnType<ApiClient['video']['attach']> => ({
+        path: '/store/thread-1/blobs/media/clip.webm',
+        name: 'clip.webm',
+        mimeType: 'video/webm',
+        sizeBytes: videoBytes.byteLength,
+      }),
+      read: async (): ReturnType<ApiClient['video']['read']> => ({
+        bytes: videoBytes,
+        mimeType: 'video/webm',
+      }),
+    }
+    mountInputBar(host, store, api)
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers, 'composer registered its attachment handlers')
+    await handlers.attachVideo({
+      name: 'clip.webm',
+      mimeType: 'video/webm',
+      bytes: videoBytes.buffer.slice(
+        videoBytes.byteOffset,
+        videoBytes.byteOffset + videoBytes.byteLength,
+      ),
+    })
+    await flush()
+
+    const label = host.querySelector<HTMLElement>('.video-chip .attachment-chip-label')
+    assert.ok(label, 'the video chip renders its label')
+    assert.equal(label.getAttribute('role'), 'button')
+    assert.equal(label.getAttribute('aria-label'), 'Play clip.webm')
+    label.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+    await flush()
+
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog)
+    assert.equal(dialog.open, true)
+    assert.equal(dialog.dataset['previewKind'], 'video')
+    assert.ok(dialog.querySelector('video.video-expand-video'))
+    dialog.close()
+  })
 })
 
 describe('input bar image compatibility', () => {
