@@ -62,85 +62,233 @@ and the Servo blog through June 2026 does not mention native SVG layout.
 **Conclusion for our purposes:** if the animated-spinner problem is to be fixed
 upstream, someone has to propose the work. It does not exist as a plan today.
 
-## 2. What building it would take
+## 2. Calibration: measured sizes, so the estimates can be checked
 
-### The crux, stated first
+Every estimate below is anchored to something measured in the trees at the
+pinned revs, not to intuition. Reviewers should attack the anchors first.
 
-CSS layout inside `<svg>` is _not_ the hard part — SVG geometry comes from
-attributes and properties, not from a block/inline layout algorithm. The hard
-part is **painting arbitrary filled and stroked paths**. WebRender has no general
-path primitive; it draws rectangles, borders, gradients, shadows, text runs and
-images. Gecko solves this with a full 2D path rasterizer feeding WebRender.
-Servo would need an equivalent. Any plan that hand-waves this is not a plan.
+**Servo layout subsystems** (`components/layout`, 46 228 LOC total):
 
-### Phases
+| Subsystem       |   LOC | Why it is a useful anchor                            |
+| --------------- | ----: | ---------------------------------------------------- |
+| `flow/inline/`  | 6 937 | Hardest existing formatting context                  |
+| `display_list/` | 6 580 | Fragment tree → WebRender                            |
+| `table/`        | 5 061 | A whole self-contained formatting context            |
+| `flow/mod.rs`   | 2 259 | Block layout                                         |
+| `taffy/`        | 1 640 | Grid+flex **integration** (Taffy itself is external) |
+| `positioned.rs` | 1 112 | Abspos handling                                      |
+| `replaced.rs`   | 1 050 | Where `<svg>` is handled today                       |
 
-**Phase 0 — DOM and style completeness.** Largely underway upstream (#46558,
-#45405). Remaining: SVG DOM geometry interfaces (`SVGLength`, `SVGRect`,
-`getBBox`, `getScreenCTM`), and confirming SVG-only properties (`fill`, `stroke`,
-`stroke-width`, `stroke-dasharray`, `stroke-dashoffset`, `paint-order`,
-`clip-path`, `mask`) are real computed properties with interpolation. stylo
-already carries most of this for Gecko, so this is mostly wiring, not invention.
+**Existing SVG code in Servo:**
 
-**Phase 1 — an SVG formatting context in the box tree.** Replace
-`ReplacedContents::SVGElement` for _inline_ `<svg>` with a real box that
-establishes an SVG viewport. The outer `<svg>` keeps its current CSS sizing
-(`svg_kind_size` already handles intrinsic ratio from `viewBox`); what is new is
-that its children become fragments rather than pixels. `<foreignObject>` is the
-inverse hinge and should be deferred.
+| Piece                        |   LOC |
+| ---------------------------- | ----: |
+| `script/dom/svg/` (21 files) | 1 823 |
+| 20 SVG WebIDL files          |   295 |
+| `script/svg_font.rs`         |   127 |
 
-**Phase 2 — the SVG layout traversal.** Not a layout algorithm so much as a
-geometry pass: resolve each element's geometry properties, compose
-`transform`/`viewBox` matrices, compute object and stroke bounding boxes,
-propagate clip/mask/opacity grouping. `<use>` needs shadow-tree instancing;
-`<text>` and `textPath` are the genuinely hard sub-problem and deserve their own
-phase.
+The WebIDL total is the tell: 295 lines across 20 interfaces means these are
+mostly empty shells. The DOM hierarchy exists; the geometry APIs do not.
 
-**Phase 3 — path painting (the crux).** Options, roughly in ascending order of
-work and quality:
+**The reference implementation, split by what Servo would and would not need:**
 
-1. **Per-path rasterization.** Keep resvg (or tiny-skia directly) but rasterize
-   _each path_ to an image rather than the whole subtree. Invalidation becomes
-   local, so an animating path re-rasterizes alone. Cheapest route, keeps a
-   raster dependency, and would already fix animation.
-2. **Tessellation via `lyon`.** Convert paths to triangle meshes and push them
-   through WebRender. Rust-native, no new C++ dependency; antialiasing quality
-   and stroke joins/dashes need care.
-3. **A real 2D path backend.** `vello` (GPU compute) or `tiny-skia` (CPU) as a
-   first-class painting target alongside WebRender. Best quality, largest
-   architectural commitment, and overlaps with Servo's existing canvas backend
-   work.
+| Crate / part                                 |    LOC | Servo needs it?                              |
+| -------------------------------------------- | -----: | -------------------------------------------- |
+| `usvg` **parser/**                           | 10 097 | **No** — Servo has a DOM and stylo's cascade |
+| `usvg` **tree/**                             |  3 883 | Yes, as fragment-tree semantics              |
+| `usvg` **text/**                             |  2 790 | Yes if `<text>` is in scope                  |
+| `usvg` `writer.rs`                           |  1 591 | No                                           |
+| `resvg` core paint (`render`+`path`+`image`) |    571 | Yes — and note how small it is               |
+| `resvg` `filter/`                            | ~2 416 | Only if filters are in scope                 |
+| `tiny-skia` + `tiny-skia-path`               | 25 883 | **No** — see below                           |
 
-**Phase 4 — animation and invalidation.** This is the phase that fixes our bug,
-and it is nearly free once phases 1–3 land: with SVG elements as real layout
-participants carrying real computed styles, Servo's existing machinery
-(`Animations`, `mark_animating_nodes_as_dirty`, `NodeDamage::Style`) picks them
-up with no new code. The spinner works because nothing special was done for it.
+**The architectural finding that dominates the cost.** Servo has already made
+its path-rendering decision, and it is not WebRender primitives:
 
-**Phase 5 — hit testing, events, WPT.** Pointer-events per shape; then enable the
-`svg/` and `css/css-svg` WPT suites and burn down expectations. That test corpus
-is how "how done is this" becomes a number instead of an opinion.
+- `components/canvas` (2 824 LOC) paints via **`vello`** and **`vello_cpu`**,
+  already workspace dependencies (`vello_cpu` 11 977 + `vello_common` 14 832 LOC).
+- Canvas output reaches the compositor as a snapshot behind a WebRender
+  `ImageKey` (`canvas_paint_thread.rs`).
+- `components/layout` **already depends on `kurbo`** (currently only in
+  `display_list/hit_test.rs`).
 
-### A cheap interim that is not the real thing
+So "native SVG layout" in Servo does **not** mean teaching WebRender to draw
+paths. It means SVG becomes a real box/fragment tree whose painting goes through
+vello into an image, exactly as canvas already does. That removes the single
+scariest line item — nobody has to write a rasterizer.
 
-If the goal is only to un-freeze animated SVG, there is a much smaller change:
-register animations for elements inside an SVG subtree and dirty the **SVG root**
-on each tick, so the existing re-rasterization path emits new frames. It is maybe
-a few hundred lines and needs no painting work.
+## 3. The plan, phase by phase
 
-The cost is that it re-serializes and re-rasterizes the entire SVG every frame.
-For a 24px spinner that is probably acceptable; for anything substantial it is
-not. It is worth proposing as a stopgap precisely because it is honest about
-being one — and because it would let an embedder like this prototype ship a
-working progress indicator without waiting for phases 1–3.
+Estimates are **implementation LOC only** (Rust + WebIDL), excluding tests and
+WPT expectation churn. Ranges are wide on purpose; the low end assumes heavy
+reuse of stylo and Servo's fragment tree, the high end assumes each piece needs
+its own machinery.
 
-### Effort and risk
+### Phase 0 — DOM and geometry interfaces
 
-Phases 0–2 are tractable and incremental. Phase 3 is the one that decides the
-schedule and is a genuine architectural decision for Servo, not a bug fix.
-Phase 4 is nearly free. A realistic framing for a proposal is: "per-path
-rasterization plus an SVG box tree" as a first milestone that unblocks animation
-and correctness, with a real path backend as the follow-on.
+**Scope.** Finish the SVG DOM. The element hierarchy landed in #46558; what is
+missing is the geometry and animated-value layer that content and layout both
+need: `SVGLength`, `SVGAnimatedLength`, `SVGRect`, `SVGPoint`, `SVGMatrix` /
+`SVGTransform` (or `DOMMatrix` reuse), `SVGPathSegList`, plus the element types
+still absent (`<text>`, `<tspan>`, `<marker>`, `<clipPath>`, `<mask>`,
+`<pattern>`, `<filter>`).
+
+**Files.** `components/script/dom/svg/*`, `components/script_bindings/webidls/SVG*.webidl`.
+
+**Reuse.** Presentation-attribute → CSS mapping already exists (#45405). `DOMMatrix`
+already exists and should back `SVGMatrix` rather than a parallel type.
+
+**Estimate: 2 500–4 000 LOC script + ~600 LOC WebIDL.**
+_Basis:_ roughly doubles the current interface count (1 823 LOC) while adding
+animated-value wrappers, which are mechanical but numerous.
+
+**Risk:** low. Mostly volume. Parallelisable across contributors.
+
+**Exit criteria:** `svg/types/` WPT subtree runs; `getBBox()` / `getCTM()` return
+real values.
+
+### Phase 1 — an SVG formatting context in the box tree
+
+**Scope.** Inline `<svg>` stops being `ReplacedContents::SVGElement` and becomes a
+box establishing an SVG viewport: `viewBox` → viewport transform,
+`preserveAspectRatio`, and child fragment construction for shapes and groups.
+Outer sizing already works (`svg_kind_size`, `ratio_from_view_box`).
+`<foreignObject>` is the inverse hinge — explicitly deferred.
+
+**Files.** `components/layout/replaced.rs` (subtract), new
+`components/layout/svg/` (add), `components/layout/flow/construct.rs`,
+`components/layout/dom.rs`.
+
+**Estimate: 1 500–2 500 LOC.**
+_Basis:_ `taffy/` integration is 1 640 and `positioned.rs` 1 112 for problems of
+comparable structural complexity. This is a new formatting context but a shallow
+one — no line breaking, no fragmentation.
+
+**Risk:** medium. Touches box construction, which is central.
+
+### Phase 2 — geometry traversal (non-text)
+
+**Scope.** Per-element geometry resolution from properties/attributes; transform
+composition; object and stroke bounding boxes; `<use>` shadow instancing; group
+opacity/clip/mask grouping; paint servers (gradients).
+
+**Reuse.** Servo already emits gradient display items
+(`display_list/gradient.rs`); stylo already computes `fill`, `stroke`,
+`stroke-width`, `stroke-dasharray`, `stroke-dashoffset` for Gecko.
+
+**Estimate: 2 500–4 000 LOC.**
+_Basis:_ `usvg/tree/` is 3 883 LOC for the same semantics, and some of that
+(node storage, attribute plumbing) is replaced by Servo's existing fragment tree
+and cascade rather than reimplemented.
+
+**Risk:** medium. `<use>` instancing interacts with shadow DOM and with style
+sharing.
+
+### Phase 2b — SVG text _(recommend deferring)_
+
+**Scope.** `<text>`, `<tspan>`, `x`/`y`/`dx`/`dy`/`rotate` lists, `textPath`.
+
+**Estimate: 2 000–3 500 LOC.**
+_Basis:_ `usvg/text/` is 2 790 LOC _and_ delegates shaping to an external stack;
+Servo has its own font and shaping machinery to integrate against, which cuts
+some work and adds some.
+
+**Risk:** high, and almost entirely separable. Ship without it.
+
+### Phase 3 — painting
+
+**Option A — vello, following the canvas model (recommended).**
+Build `kurbo` paths from Phase 2 geometry, paint with `vello_cpu`, deliver a
+snapshot behind a WebRender `ImageKey`. Work is: paint-server → vello brush
+mapping, stroke/dash/join/cap, clip and mask application, group isolation and
+opacity, and invalidation keyed on computed style.
+
+**Estimate: 1 500–3 000 LOC.**
+_Basis:_ `resvg`'s equivalent core is **571 LOC** on top of a rasterizer;
+`components/canvas` is 2 824 LOC for the whole vello-and-ImageKey integration,
+and much of that plumbing already exists to copy.
+
+**Option B — WebRender primitives via `lyon` tessellation.** Tessellate to
+triangle meshes and push through WebRender. Adds a dependency, and antialiasing,
+stroke joins and dashing all become someone's problem. **Estimate: 3 000–5 000
+LOC** and worse output. Not recommended given Option A exists.
+
+**Option C — write a rasterizer.** `tiny-skia` is 25 883 LOC. Do not.
+
+**Risk:** low-to-medium for Option A, precisely because the backend decision is
+already made and proven in-tree by canvas.
+
+### Phase 4 — animation and invalidation _(the phase that fixes our bug)_
+
+**Scope.** Essentially deletion. Once SVG elements are layout participants with
+real computed styles, `Animations` / `mark_animating_nodes_as_dirty` /
+`NodeDamage::Style` pick them up unchanged. Work is removing the
+serialize-and-rasterize special case and confirming damage propagates from an
+SVG descendant to its viewport box.
+
+**Estimate: 150–400 LOC** (mostly removals).
+
+**Risk:** low. This is the phase where the spinner starts turning because nothing
+special was done for it.
+
+### Phase 5 — hit testing and events
+
+**Scope.** Per-shape `pointer-events`, `stroke` vs `fill` hit regions.
+
+**Reuse.** `display_list/hit_test.rs` already imports `kurbo::Shape`.
+
+**Estimate: 300–600 LOC.**
+
+### Deferred — filters and masks
+
+**Estimate: 2 000–3 500 LOC.** _Basis:_ `resvg/filter/` is ~2 416 LOC. Nothing in
+a typical application UI needs SVG filters; defer indefinitely.
+
+### Totals
+
+| Milestone                                           | Estimate LOC     |
+| --------------------------------------------------- | ---------------- |
+| **MVP** — phases 0,1,2,3A,4,5 (no text, no filters) | **8 450–14 500** |
+| \+ SVG text (2b)                                    | 10 450–18 000    |
+| \+ filters and masks                                | 12 450–21 500    |
+
+**Cross-check.** `usvg` + `resvg` together are 23 527 LOC for a standalone
+_static_ SVG renderer that includes its own parser. Servo's version drops the
+parser (−10 097) and adds DOM, box-tree and animation integration. Landing at
+12–21 k for the full thing is consistent from both directions, which is the main
+reason to trust the range at all.
+
+**Rough schedule.** At a deliberately conservative 3 000–5 000 LOC per
+person-quarter for spec-conformant engine code with review and WPT burn-down,
+the MVP is **roughly 2–5 person-quarters**, with phases 0 and 2 parallelisable
+across contributors and phase 2b/filters excluded. Treat this as an order of
+magnitude, not a commitment: WPT conformance work, not code volume, is what
+usually dominates the tail.
+
+### Verification plan
+
+The corpus already exists and is the honest measure of done:
+
+- `tests/wpt/tests/svg/` — **2 131 tests**, of which **973** already carry Servo
+  expectation files.
+- A phase is "done" when its slice of that corpus moves from expectation files to
+  passes; the count of removed `expected: FAIL` lines is the reviewable metric.
+
+## 4. The cheap interim, costed
+
+If the goal is only to un-freeze animated SVG without any of the above: register
+animations for elements inside an SVG subtree and dirty the **SVG root** each
+tick, so the existing serialize-and-rasterize path re-emits frames. The raster
+cache is already keyed on the serialized computed-style state (patch 0006), so
+new frames fall out once the root is marked dirty.
+
+**Estimate: 150–400 LOC**, touching `components/script/animations.rs`,
+`components/script/dom/svg/svgsvgelement.rs` and the layout damage path.
+
+**Cost:** re-serializes and re-rasterizes the entire SVG every frame. For a 24 px
+spinner, fine. For a large illustration, not. It is worth proposing precisely
+because it is small enough to review in one sitting and honest about being a
+stopgap.
 
 ## 3. What this means for the prototype now
 
