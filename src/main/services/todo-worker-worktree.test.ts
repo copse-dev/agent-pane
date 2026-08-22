@@ -124,6 +124,28 @@ describe('todo worker worktree helpers', () => {
     assert.equal(commit.committed, false)
     assert.equal(commit.sha, null)
   })
+
+  it('reports committed=false when the worker produced only ignored build output', async () => {
+    const { temp, repo } = await setup()
+    const wt = join(temp, 'ignored-wt')
+    const branch = todoWorkerBranchName('t4')
+    git(repo, ['worktree', 'add', '-b', branch, wt, 'HEAD'])
+    await writeFile(join(wt, '.gitignore'), 'dist/\n')
+    git(wt, ['add', '.gitignore'])
+    git(wt, ['commit', '-q', '-m', 'ignore build output'])
+    await mkdir(join(wt, 'dist'))
+    await writeFile(join(wt, 'dist', 'bundle.js'), 'generated\n')
+
+    const commit = await commitTodoWorkerOutput({
+      worktreePath: wt,
+      branch,
+      item: ITEM,
+      authorName: 'Copse Todo Worker',
+      authorEmail: 'todo-worker@copse.local',
+    })
+    assert.equal(commit.committed, false)
+    assert.equal(commit.sha, null)
+  })
 })
 
 // The internal-root registration contract the runner relies on: allocating

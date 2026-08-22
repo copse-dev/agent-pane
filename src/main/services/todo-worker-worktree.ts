@@ -27,7 +27,8 @@ export function todoWorkerBranchName(todoId: string, collision = 0): string {
 }
 
 export function todoWorkerCommitMessage(item: TodoItem): string {
-  const firstLine = item.content.trim().split('\n')[0]?.trim() ?? 'Todo worker output'
+  const candidate = item.content.trim().split('\n')[0]?.trim()
+  const firstLine = candidate === undefined || candidate === '' ? 'Todo worker output' : candidate
   return `${firstLine}\n\nHost-side commit of the local todo worker's output for plan item ${item.id}.`
 }
 

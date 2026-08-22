@@ -1,8 +1,11 @@
 # Parallel todo workers in isolated worktrees
 
-Status: **Proposal.** Not implemented. Extends the [thread worktrees](./thread-worktrees.md)
-stack and the existing local todo worker with fan-out execution, commit-per-todo,
-and parent-driven consolidation.
+Status: **Foundation implemented behind a default-off flag.** Todo declarations carry
+the optional `parallel` marker, worker usage is accumulated per run, and enabling
+`parallelTodoWorkersEnabled` routes the existing single local worker through an
+isolated worktree with a host-created commit. Concurrent fan-out, consolidation,
+and lifecycle cleanup remain proposal work. This extends the
+[thread worktrees](./thread-worktrees.md) stack and the existing local todo worker.
 
 ## Outcome
 
@@ -32,15 +35,18 @@ either absorbed or explicitly discarded — a crashed run never loses work silen
   worker per call: `findNewlyInProgressLocal` returns the first newly in-progress
   local item, and `runTodoWorker` is awaited inline, blocking the parent loop for up
   to 12 worker steps.
-- Workers run **directly in the thread execution root** with implementation tools
-  (`read_file`, `list_dir`, `search_codebase`, `write_file`, `run_shell`), so they
-  see the parent's uncommitted state but also contend with the parent for it.
+- With `parallelTodoWorkersEnabled` disabled (the default), workers run **directly
+  in the thread execution root** with implementation tools (`read_file`,
+  `list_dir`, `search_codebase`, `write_file`, `run_shell`), so they see the
+  parent's uncommitted state but also contend with the parent for it. Enabling the
+  flag routes that same single-worker path through an isolated linked worktree and
+  retains its commit on the worker branch; fan-out and parent consolidation are not
+  implemented yet.
 - `TODO_STEERING_PROMPT` and the `update_todos` description both say _"mark one item
   in_progress at a time"_ — the model is trained to serialize.
-- Two known shared-state races limit concurrency even before worktrees enter the
-  picture: `runTodoWorker` reads usage from the shared mutable `provider.lastUsage`
-  (the exact race explore fixed via per-chunk accumulation in `runSubagent`), and
-  concurrent loops share the `lastMeasuredInputTokens` global.
+- The worker usage race has been removed with per-chunk accumulation. Concurrent
+  loops still share the `lastMeasuredInputTokens` global, which remains a limit on
+  enabling fan-out.
 
 ## Design
 
