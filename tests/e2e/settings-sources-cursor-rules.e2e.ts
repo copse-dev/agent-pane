@@ -62,7 +62,7 @@ describe('settings sources cursor rules (#636)', () => {
 
     const sources = dialog.$('.settings-section[data-section="customise"]')
     await expect(sources).toBeDisplayed()
-    await expect(sources.$('legend=Instructions')).toBeDisplayed()
+    await expect(sources.$('legend=Instruction files')).toBeDisplayed()
     await expect(sources.$('legend=Cursor rules')).toBeDisplayed()
 
     const instructionsList = sources.$('#sources-instructions-list')
@@ -72,7 +72,8 @@ describe('settings sources cursor rules (#636)', () => {
     })
     const instructionRow = instructionsList.$('.sources-row*=AGENTS.md')
     const trustBadge = instructionRow.$('.sources-badge-untrusted')
-    await expect(trustBadge).toHaveText('not loaded')
+    // getText() reports the badge's rendered (CSS-uppercased) label.
+    await expect(trustBadge).toHaveText('not loaded', { ignoreCase: true })
     await expect(instructionRow.$('.sources-row-detail')).toHaveText(
       expect.stringContaining('inert until you trust this workspace'),
     )

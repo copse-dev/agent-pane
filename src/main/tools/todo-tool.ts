@@ -7,7 +7,12 @@ import {
   findNewlyInProgressLocal,
   findNewlyCompleted,
 } from '@shared/todos/todo-logic.ts'
-import { getAgentRunTodos, setAgentRunTodos } from '../services/agent-run-todos.ts'
+import {
+  getAgentRunTodos,
+  getTodoToolPostProcess,
+  setAgentRunTodos,
+  type TodoToolPostProcess,
+} from '../services/agent-run-todos.ts'
 import { verifyTodoCheck } from '../services/todo-verification.ts'
 
 const todoCheckSchema = z.discriminatedUnion('kind', [
@@ -28,17 +33,7 @@ const todoInputSchema = z.object({
   assignedModel: z.enum(['cloud', 'local']).optional(),
 })
 
-export type TodoToolPostProcess = (
-  before: TodoItem[],
-  after: TodoItem[],
-) => Promise<{ todos: TodoItem[]; extraMessage?: string }>
-
-let postProcess: TodoToolPostProcess | null = null
-
-/** Test / agent-service hook for verification, local routing, and compaction. */
-export function setTodoToolPostProcess(fn: TodoToolPostProcess | null): void {
-  postProcess = fn
-}
+export type { TodoToolPostProcess }
 
 async function applyAndGate(
   incoming: TodoUpdateInput[],
@@ -59,6 +54,7 @@ async function applyAndGate(
     }),
   )
 
+  const postProcess = getTodoToolPostProcess()
   if (postProcess) {
     const result = await postProcess(before, todos)
     todos = result.todos

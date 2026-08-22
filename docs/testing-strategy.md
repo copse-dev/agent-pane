@@ -283,6 +283,17 @@ loops driven by an actual local model rather than the mock:
   per-rule, and token deltas under `bench-results/doctrine/`. CI runs its mock
   smoke arm in the normal bench job; the real model matrix runs nightly or with
   the `bench-doctrine` label when `LM_EVAL_RUNNER` is configured.
+- The `eval-tool-preference` job scores whether a real model answers a read-only
+  "what landed on main / is CI green?" question through the first-class
+  git/gh/CI tools or drives `gh` and network `git` through `run_shell`, charging
+  the user an external-shell approval each time (#1845). Scenario
+  `tests/e2e/scenarios/git-ci-first-class-tools.json`; nightly or with the
+  `eval-tool-preference` label, matrixed over the prompt class's wordings plus
+  one ACP path. The _scoring_ is not model-gated — the shape table and the
+  scenario's discrimination are unit-tested on every PR
+  (`scripts/lib/eval-tool-expectations.test.ts`,
+  `scripts/lib/eval-scenario-git-ci-tools.test.ts`), so only the measurement
+  waits for a runner.
 
 These are deliberately **out of the per-PR critical path** (they need a model
 host and are slow/non-deterministic), but they remain a supported avenue: a

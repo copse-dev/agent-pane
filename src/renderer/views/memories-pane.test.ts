@@ -5,7 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountMemoriesPane } from './memories-pane.ts'
 import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
-import { createFakeApi } from '../fake-api.test-support.ts'
+import { createFakeApi, createPendingApi } from '../fake-api.test-support.ts'
 import type { KnowledgeNote } from '../../main/services/storage/knowledge-store.ts'
 
 // Minimal KnowledgeNote (Memory) factory; only the fields the pane reads matter.
@@ -116,6 +116,36 @@ describe('memories pane', () => {
       const titles = [...list.querySelectorAll('.memories-row-title')].map((e) => e.textContent)
       assert.deepEqual(titles, ['Build command', 'API key location'])
       assert.equal(list.querySelectorAll('.memories-tag').length, 1, 'renders the one tag')
+    } finally {
+      unmount()
+    }
+  })
+
+  // "No memories yet. The agent saves these with the remember tool…" is
+  // onboarding copy for an empty store — shown before the store has been read,
+  // it tells a user with a full knowledge base that they have none.
+  it('shows a loading row, not the "no memories yet" copy, while the first fetch is in flight', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'memories' })
+    const { list, viewer } = mountHosts()
+    const unmount = mountMemoriesPane(list, viewer, store, createPendingApi())
+    try {
+      await flush()
+      assert.equal(list.querySelectorAll('.pane-loading').length, 1)
+      assert.equal(list.querySelector('.memories-list-empty'), null)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('settles to the "no memories yet" copy once an empty store answers', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'memories' })
+    const { api } = makeApi([])
+    const { list, viewer } = mountHosts()
+    const unmount = mountMemoriesPane(list, viewer, store, api)
+    try {
+      await flush()
+      assert.equal(list.querySelector('.pane-loading'), null)
+      assert.match(list.querySelector('.memories-list-empty')?.textContent ?? '', /No memories yet/)
     } finally {
       unmount()
     }

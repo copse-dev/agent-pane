@@ -189,6 +189,8 @@ export interface ApiClient {
       threadId: string,
       contextJson: string,
     ) => Promise<FollowUpSuggestion[]>
+    /** Tab-completable next step for the composer placeholder; null = no obvious step. */
+    suggestNextStep: (contextJson: string) => Promise<string | null>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
       handler: (req: {
@@ -852,6 +854,8 @@ export interface ApiClient {
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
+    /** Trimmed contents of one discovered instruction file, for the preview dialog. */
+    read: (path: string) => Promise<string>
   }
   cursorRules: {
     list: () => Promise<CursorRuleSummary[]>

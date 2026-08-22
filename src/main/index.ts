@@ -113,6 +113,7 @@ import {
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
+import { suggestNextStep } from './services/next-step-service.ts'
 import { clearAgentHistory } from './services/thread-store.ts'
 import { AgentDispatcher } from './services/agent-dispatcher.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
@@ -752,6 +753,21 @@ app
         return suggestFollowUps(parsed.data, root)
       },
     )
+
+    ipcMain.handle('agent:suggestNextStep', (event, contextJson: string) => {
+      assertMainFrameSender(event, win)
+      let rawContext: unknown
+      try {
+        rawContext = JSON.parse(contextJson)
+      } catch {
+        throw new Error('agent:suggestNextStep: context is not valid JSON')
+      }
+      const parsed = followUpContextSchema.safeParse(rawContext)
+      if (!parsed.success) {
+        throw new Error('agent:suggestNextStep: context failed validation')
+      }
+      return suggestNextStep(parsed.data)
+    })
 
     // Every channel the renderer can invoke is registered by here, so it is now
     // safe to block on the probe. Both syncs read `isGhAvailable()`, which only

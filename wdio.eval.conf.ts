@@ -123,7 +123,10 @@ export const config: Options.Testrunner = {
     process.env.COPSE_EVAL_WORKSPACE_ROOT = project.root
 
     const useMock = process.env.COPSE_EVAL_USE_MOCK === '1'
-    const evalModel = process.env.COPSE_EVAL_MODEL?.trim()
+    // `|| undefined`, not `?.trim()` alone: a matrix that always sets the
+    // variable passes `''` for its native arm, and `'' ?? DEFAULT_APP_CHAT_MODEL`
+    // keeps the empty string — seeding a project with no model at all.
+    const evalModel = process.env.COPSE_EVAL_MODEL?.trim() || undefined
     const acpSelection = evalModel ? parseAcpModelSelection(evalModel) : null
     const acpPreset = acpSelection
       ? KNOWN_ACP_AGENTS.find((candidate) => candidate.id === acpSelection.id)
