@@ -952,11 +952,13 @@ export function mountInputBar(
   /**
    * Drop every composer attachment and its chip.
    *
-   * Called on send, and on a thread switch: an attachment is bound to the
-   * thread that was active when it was attached — a dropped archive or video
-   * is already stored under that thread's `blobs/media/` — so carrying the chip
-   * to another thread would record a path into a directory the receiving thread
-   * does not own, and which disappears if the original thread is deleted.
+   * Called on send, and on a thread switch (after the outgoing thread's chips
+   * are stashed). An attachment is bound to the thread that was active when it
+   * was attached — a dropped archive or video is already stored under that
+   * thread's `blobs/media/` — so carrying the chip to another thread would
+   * record a path into a directory the receiving thread does not own, and which
+   * disappears if the original thread is deleted. Draft chips are restored when
+   * switching *back* to the attaching thread (see `draftAttachmentsByThread`).
    */
   function clearAttachments(): void {
     attachedFiles = []
@@ -969,18 +971,83 @@ export function mountInputBar(
     hideImageCompatibilityWarning()
   }
 
+  /**
+   * Unsent composer chips, keyed by the attaching thread. Session-only: images
+   * are data-URLs and archives/videos already live under that thread's media
+   * dir, so we do not write them into `draftPrompt` / thread meta.
+   */
+  const draftAttachmentsByThread = new Map<
+    string,
+    {
+      files: { path: string; content: string }[]
+      images: AttachedImage[]
+      videos: VideoAttachmentRef[]
+      archives: ArchiveAttachmentRef[]
+      threads: AttachedThreadRef[]
+      shells: AttachedShellRef[]
+    }
+  >()
+
+  function snapshotDraftAttachments(): {
+    files: { path: string; content: string }[]
+    images: AttachedImage[]
+    videos: VideoAttachmentRef[]
+    archives: ArchiveAttachmentRef[]
+    threads: AttachedThreadRef[]
+    shells: AttachedShellRef[]
+  } {
+    return {
+      files: attachedFiles.map((file) => ({ ...file })),
+      images: attachedImages.map((image) => ({ ...image })),
+      videos: attachedVideos.map((video) => ({ ...video })),
+      archives: attachedArchives.map((archive) => ({ ...archive })),
+      threads: attachedThreads.map((thread) => ({ ...thread })),
+      shells: attachedShells.map((shell) => ({ ...shell })),
+    }
+  }
+
+  function stashDraftAttachments(threadId: string): void {
+    const snapshot = snapshotDraftAttachments()
+    const empty =
+      snapshot.files.length === 0 &&
+      snapshot.images.length === 0 &&
+      snapshot.videos.length === 0 &&
+      snapshot.archives.length === 0 &&
+      snapshot.threads.length === 0 &&
+      snapshot.shells.length === 0
+    if (empty) {
+      draftAttachmentsByThread.delete(threadId)
+      return
+    }
+    draftAttachmentsByThread.set(threadId, snapshot)
+  }
+
+  function restoreDraftAttachments(threadId: string): void {
+    const snapshot = draftAttachmentsByThread.get(threadId)
+    if (!snapshot) return
+    for (const file of snapshot.files) addChip(file)
+    for (const image of snapshot.images) {
+      addImageChip(image.dataUrl, image.mimeType, image.detail ?? 'auto')
+    }
+    for (const video of snapshot.videos) renderVideoChip(video)
+    for (const archive of snapshot.archives) renderArchiveChip(archive)
+    for (const thread of snapshot.threads) addThreadChip(thread)
+    for (const shell of snapshot.shells) addShellChip(shell)
+  }
+
   function syncComposerThread(): void {
     const id = getActiveThreadId()
     if (id === activeComposerThreadId) return
     if (activeComposerThreadId) {
       setThreadDraftPrompt(store, activeComposerThreadId, composer.expandedValue())
+      // Keep chips with the draft on the attaching thread; do not carry them.
+      stashDraftAttachments(activeComposerThreadId)
     }
+    clearAttachments()
     const thread = getThreadById(store, id)
     composer.value = thread?.draftPrompt ?? ''
-    // Attachments are thread-bound (see clearAttachments); the draft text that
-    // just moved with the switch is not.
-    if (activeComposerThreadId !== null) clearAttachments()
     activeComposerThreadId = id
+    if (id) restoreDraftAttachments(id)
     hideCheckoutError()
     // New thread → drop the prior thread's estimate and recompute for this one.
     lastBreakdown = null
@@ -1662,6 +1729,7 @@ export function mountInputBar(
     }
     composer.clear()
     setThreadDraftPrompt(store, id, '')
+    draftAttachmentsByThread.delete(id)
     clearAttachments()
     scheduleContextEstimate(0)
   }
@@ -1739,22 +1807,7 @@ export function mountInputBar(
    * only ever represents a video the agent can actually open. A failure (wrong
    * format, too large) surfaces as a toast and attaches nothing.
    */
-  async function addVideoChip(video: PromptVideoAttachment): Promise<void> {
-    const projectId = store.getState().activeProjectId
-    const threadId = getActiveThreadId()
-    if (!projectId || !threadId) return
-    let ref: VideoAttachmentRef
-    try {
-      ref = await api.video.attach(projectId, threadId, {
-        name: video.name,
-        mimeType: video.mimeType,
-        ...(video.bytes ? { bytes: new Uint8Array(video.bytes) } : {}),
-        ...(video.path ? { path: video.path } : {}),
-      })
-    } catch (err) {
-      showErrorToast('Could not attach video', err)
-      return
-    }
+  function renderVideoChip(ref: VideoAttachmentRef): void {
     if (attachedVideos.some((v) => v.path === ref.path)) return
     attachedVideos.push(ref)
 
@@ -1784,21 +1837,32 @@ export function mountInputBar(
     scheduleContextEstimate()
   }
 
-  async function addArchiveChip(archive: PromptArchiveAttachment): Promise<void> {
+  /**
+   * Store an attached video and show its chip. The store round-trip is what
+   * makes this async: the file is written next to the thread first, so the chip
+   * only ever represents a video the agent can actually open. A failure (wrong
+   * format, too large) surfaces as a toast and attaches nothing.
+   */
+  async function addVideoChip(video: PromptVideoAttachment): Promise<void> {
     const projectId = store.getState().activeProjectId
     const threadId = getActiveThreadId()
     if (!projectId || !threadId) return
-    let ref: ArchiveAttachmentRef
+    let ref: VideoAttachmentRef
     try {
-      ref = await api.archive.attach(projectId, threadId, {
-        name: archive.name,
-        ...(archive.bytes ? { bytes: new Uint8Array(archive.bytes) } : {}),
-        ...(archive.path ? { path: archive.path } : {}),
+      ref = await api.video.attach(projectId, threadId, {
+        name: video.name,
+        mimeType: video.mimeType,
+        ...(video.bytes ? { bytes: new Uint8Array(video.bytes) } : {}),
+        ...(video.path ? { path: video.path } : {}),
       })
     } catch (err) {
-      showErrorToast('Could not attach archive', err)
+      showErrorToast('Could not attach video', err)
       return
     }
+    renderVideoChip(ref)
+  }
+
+  function renderArchiveChip(ref: ArchiveAttachmentRef): void {
     if (attachedArchives.some((a) => a.path === ref.path)) return
     attachedArchives.push(ref)
 
@@ -1827,7 +1891,25 @@ export function mountInputBar(
     scheduleContextEstimate()
   }
 
-  function addImageChip(dataUrl: string, mimeType: string): void {
+  async function addArchiveChip(archive: PromptArchiveAttachment): Promise<void> {
+    const projectId = store.getState().activeProjectId
+    const threadId = getActiveThreadId()
+    if (!projectId || !threadId) return
+    let ref: ArchiveAttachmentRef
+    try {
+      ref = await api.archive.attach(projectId, threadId, {
+        name: archive.name,
+        ...(archive.bytes ? { bytes: new Uint8Array(archive.bytes) } : {}),
+        ...(archive.path ? { path: archive.path } : {}),
+      })
+    } catch (err) {
+      showErrorToast('Could not attach archive', err)
+      return
+    }
+    renderArchiveChip(ref)
+  }
+
+  function addImageChip(dataUrl: string, mimeType: string, detail: ImageDetail = 'auto'): void {
     const entry: AttachedImage = { dataUrl, mimeType }
     attachedImages.push(entry)
     const chip = document.createElement('span')
@@ -1849,25 +1931,25 @@ export function mountInputBar(
     // Fidelity is per image, so it is chosen on the image rather than in
     // Settings: a stack trace in one chip and a frame in the next want
     // opposite answers, and only the person attaching them knows which.
-    const applyDetail = (detail: ImageDetail): void => {
-      entry.detail = detail
-      chip.dataset['detail'] = detail
-      chip.title = IMAGE_DETAIL_LABELS[detail]
+    const applyDetail = (next: ImageDetail): void => {
+      entry.detail = next
+      chip.dataset['detail'] = next
+      chip.title = IMAGE_DETAIL_LABELS[next]
       scheduleContextEstimate()
     }
-    applyDetail('auto')
+    applyDetail(detail)
     chip.addEventListener('contextmenu', (e) => {
       e.preventDefault()
       e.stopPropagation()
       showContextMenu(
         e.clientX,
         e.clientY,
-        IMAGE_DETAILS.map((detail) => ({
+        IMAGE_DETAILS.map((menuDetail) => ({
           // The shared menu has no checked state, so the current choice is
           // marked in the label rather than by changing that component.
-          label: `${(entry.detail ?? 'auto') === detail ? '✓ ' : '  '}${IMAGE_DETAIL_LABELS[detail]}`,
+          label: `${(entry.detail ?? 'auto') === menuDetail ? '✓ ' : '  '}${IMAGE_DETAIL_LABELS[menuDetail]}`,
           onSelect: (): void => {
-            applyDetail(detail)
+            applyDetail(menuDetail)
           },
         })),
       )

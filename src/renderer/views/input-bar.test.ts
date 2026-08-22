@@ -1092,9 +1092,10 @@ describe('input bar attachments across a thread switch', () => {
    * `blobs/media/`. Carrying the chip to another thread recorded a path into a
    * directory the receiving thread does not own — observed in the wild as a
    * thread whose `meta.archives` pointed into a different thread's blobs, which
-   * dangles the moment the original thread is deleted.
+   * dangles the moment the original thread is deleted. Draft chips stay with
+   * the attaching thread and come back when the user returns.
    */
-  it('drops attachment chips when the active thread changes', async () => {
+  it('does not carry attachment chips onto a different thread', async () => {
     const first = thread()
     const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
     const store = createStore({
@@ -1128,6 +1129,54 @@ describe('input bar attachments across a thread switch', () => {
       0,
       'switching threads clears the chip rather than re-homing it',
     )
+  })
+
+  it('restores draft attachment chips when returning to the attaching thread', async () => {
+    const first = thread()
+    const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      threads: [first, second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers, 'composer registered its attachment handlers')
+    handlers.attachImage('data:image/png;base64,abc', 'image/png')
+    await handlers.attachArchive({ name: 'bundle.zip', bytes: new ArrayBuffer(8) })
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'look at this'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+
+    store.setState({ activeThreadId: second.id })
+    store.emit('threads_changed')
+    await settle()
+    assert.equal(host.querySelectorAll('.attachment-chips .image-chip').length, 0)
+    assert.equal(host.querySelectorAll('.attachment-chips .archive-chip').length, 0)
+
+    store.setState({ activeThreadId: first.id })
+    store.emit('threads_changed')
+    await settle()
+
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .image-chip').length,
+      1,
+      'the image chip returns with the draft',
+    )
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .archive-chip').length,
+      1,
+      'the archive chip returns with the draft',
+    )
+    assert.equal(composer.textContent, 'look at this')
   })
 
   it('binds a stored archive to the thread that was active when it was attached', async () => {
