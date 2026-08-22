@@ -988,6 +988,93 @@ function pickPrUrlForRepo(refs: GithubPrRef[], repo: string | undefined): string
 
 const queueKey = (projectId: string): string => `thread-store:${projectId}`
 
+// --- In-memory per-project meta cache (issue #1872, finding 1) --------------
+//
+// `threads:loadProject` re-reads every thread's `meta.json` on every project
+// open, so switching back to a large profile costs the same as arriving cold
+// (docs/perf-open-profiling.md). These snapshots survive project switches; the
+// per-project write queue is the invalidation hook: every entry point that
+// writes `meta.json` or the spine goes through {@link runStoreWrite}, which
+// drops the project's snapshots when the queued op settles. A version check
+// additionally discards a snapshot raced by the one deliberate unqueued writer
+// ({@link backfillThreadPrRefs}). As with the spine's known-message-id cache,
+// a `meta.json` rewritten by another *process* stays invisible until this
+// process next writes the project.
+
+interface CachedMetas {
+  /** {@link metaCacheVersionsByDir} value the snapshot was read at. */
+  version: number
+  threads: Thread[]
+}
+
+/** How many projects keep warm snapshots before the least recent is dropped. */
+const META_CACHE_DIR_LIMIT = 16
+const metaCacheVersionsByDir = new Map<string, number>()
+/** Keyed by project store dir (not id) so a changed `COPSE_WORKSPACE_DIR` misses. */
+const metaCacheByDir = new Map<string, Map<boolean, CachedMetas>>()
+
+/** Drop a project's snapshots; the bump also strips in-flight reads of their right to cache. */
+function invalidateProjectMetaCache(projectId: string): void {
+  const dir = projectDir(projectId)
+  metaCacheVersionsByDir.set(dir, (metaCacheVersionsByDir.get(dir) ?? 0) + 1)
+  metaCacheByDir.delete(dir)
+}
+
+/**
+ * Run a store write on the project's queue, dropping the meta cache once the
+ * op settles. Failed ops invalidate too: one that threw may still have
+ * half-written the store, and the cache must never claim to describe it.
+ */
+function runStoreWrite<T>(projectId: string, op: () => T | Promise<T>): Promise<T> {
+  return runSerialized(queueKey(projectId), async () => {
+    try {
+      return await op()
+    } finally {
+      invalidateProjectMetaCache(projectId)
+    }
+  })
+}
+
+/** Refresh LRU order and return the project's cached snapshots, if any. */
+function cachedMetasFor(dir: string): Map<boolean, CachedMetas> | undefined {
+  const cached = metaCacheByDir.get(dir)
+  if (!cached) return undefined
+  metaCacheByDir.delete(dir)
+  metaCacheByDir.set(dir, cached)
+  return cached
+}
+
+async function readProjectThreadMetasCached(
+  projectId: string,
+  options: ThreadLoadOptions,
+): Promise<Thread[]> {
+  const includeArchived = options.includeArchived !== false
+  const dir = projectDir(projectId)
+  const version = metaCacheVersionsByDir.get(dir) ?? 0
+  const hit = cachedMetasFor(dir)?.get(includeArchived)
+  if (hit && hit.version === version) {
+    perfCount('store:meta-cache-hit')
+    return hit.threads
+  }
+  perfCount('store:meta-cache-miss')
+  const threads = await readProjectThreadMetas(projectId, options)
+  // Cache only if nothing wrote the project while the read was in flight (the
+  // unqueued PR-ref backfill can interleave); otherwise let the next read retry.
+  if ((metaCacheVersionsByDir.get(dir) ?? 0) === version) {
+    let entries = metaCacheByDir.get(dir)
+    if (!entries) {
+      if (metaCacheByDir.size >= META_CACHE_DIR_LIMIT) {
+        const oldest: string | undefined = metaCacheByDir.keys().next().value
+        if (oldest !== undefined) metaCacheByDir.delete(oldest)
+      }
+      entries = new Map()
+      metaCacheByDir.set(dir, entries)
+    }
+    entries.set(includeArchived, { version, threads })
+  }
+  return threads
+}
+
 /** A thread's on-disk metadata (`meta.json`), or null if missing/malformed. */
 export function getThreadMeta(projectId: string, threadId: string): Promise<ThreadMeta | null> {
   return runSerialized(queueKey(projectId), () => readMeta(threadDir(projectId, threadId)))
@@ -1010,7 +1097,7 @@ export function recordThreadAgentLink(
   threadId: string,
   link: RemoteAgentLink,
 ): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     // Only patch an existing thread; the renderer writes the initial meta.json.
@@ -1038,7 +1125,7 @@ export function attachThreadPrUrl(
   threadId: string,
   refs: GithubPrRef[],
 ): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     if (refs.length === 0) return
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
@@ -1096,18 +1183,20 @@ export function loadProjectThreadMetas(
   projectId: string,
   options: ThreadLoadOptions = {},
 ): Promise<Thread[]> {
-  return runSerialized(queueKey(projectId), () => readProjectThreadMetas(projectId, options))
+  return runSerialized(queueKey(projectId), () =>
+    readProjectThreadMetasCached(projectId, options),
+  )
 }
 
 export function saveProjectThread(projectId: string, thread: Thread): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     writeThread(projectId, thread)
     upsertCatalogEntry(projectId, thread)
   })
 }
 
 export function saveProjectThreads(projectId: string, threads: Thread[]): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const keepIds = new Set<string>()
     const entries = new Map<string, CatalogEntry>()
     for (const thread of threads) {
@@ -1135,7 +1224,7 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
 
 /** Create a thread directory from its metadata (+ any initial messages). */
 export function createThread(projectId: string, thread: Thread): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     writeThread(projectId, thread)
     upsertCatalogEntry(projectId, thread)
   })
@@ -1159,7 +1248,7 @@ export function appendMessage(
   threadId: string,
   message: Message,
 ): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
     mkdirSync(dir, { recursive: true })
     const { line, files } = explodeMessage(message, sha256)
@@ -1199,7 +1288,7 @@ export function appendHookRun(
   line: SpineHookRunLine,
   blobs: FileToWrite[] = [],
 ): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
     mkdirSync(dir, { recursive: true })
     for (const blob of blobs) {
@@ -1279,7 +1368,7 @@ export function appendSpineDecision(
   line: SpineDecisionLine | SpinePermissionDecisionLine,
   detailContents?: string,
 ): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
     mkdirSync(dir, { recursive: true })
     if (detailContents !== undefined && line.type === 'decision' && line.detail) {
@@ -1300,7 +1389,7 @@ export function appendMachineContinuation(
   threadId: string,
   line: SpineMachineContinuationLine,
 ): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
     mkdirSync(dir, { recursive: true })
     const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
@@ -1312,7 +1401,7 @@ export function appendMachineContinuation(
 
 /** Append one stream-cut observability record (project-level eval source). */
 export function appendStreamStat(projectId: string, line: unknown): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const path = streamStatsPath(projectId)
     mkdirSync(dirname(path), { recursive: true })
     const existingRaw = safeRead(path) ?? ''
@@ -1324,7 +1413,7 @@ export function appendStreamStat(projectId: string, line: unknown): Promise<void
 
 /** Append one reasoning-checkpoint decision (project-level eval source). */
 export function appendReasoningCheckpoint(projectId: string, line: unknown): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const path = reasoningCheckpointsPath(projectId)
     mkdirSync(dirname(path), { recursive: true })
     const existingRaw = safeRead(path) ?? ''
@@ -1340,7 +1429,7 @@ export function updateMeta(
   threadId: string,
   patch: Partial<ThreadMeta>,
 ): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     // updateMeta only patches an existing thread; `createThread` writes the
@@ -1358,7 +1447,7 @@ export function updateMetaOrThrow(
   threadId: string,
   patch: Partial<ThreadMeta>,
 ): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     if (current === null) throw new Error('Thread is not persisted yet; retry sending the message')
@@ -1379,7 +1468,7 @@ export function updateMetaOrThrow(
  * clear, so callers can tell a no-op from a real reversion.
  */
 export function clearThreadWorktree(projectId: string, threadId: string): Promise<boolean> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
     const current = readMeta(dir)
     if (current === null || current.worktree === undefined) return false
@@ -1391,7 +1480,7 @@ export function clearThreadWorktree(projectId: string, threadId: string): Promis
 }
 
 export function deleteProjectThread(projectId: string, threadId: string): Promise<void> {
-  return runSerialized(queueKey(projectId), () => {
+  return runStoreWrite(projectId, () => {
     const dir = threadDir(projectId, threadId)
     rmSync(dir, { recursive: true, force: true })
     invalidateKnownMessageIds(dir)
