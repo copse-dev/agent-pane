@@ -71,3 +71,8 @@ docs/acp-behavior-matrix.json
 # preview; the deploy never reads what it finds.
 /site/*.md
 /site/llms.txt
+
+# Raw per-run process output from `pnpm perf:compare` — machine-local, and it
+# carries absolute paths from the developer's home. The NDJSON traces beside it
+# are path-free and are meant to be committed.
+docs/plans/perf-data/runs/**/process.log

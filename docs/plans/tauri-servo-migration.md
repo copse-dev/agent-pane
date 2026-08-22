@@ -250,3 +250,58 @@ Findings folded back into this branch:
   `threads:*` invokes over an authenticated WS from a headless test client.
 - A full Servo compile + windowed run needs a desktop (or the runtime repo's CI);
   that's the first thing to do on a dev machine: `cd tauri-shell && cargo run`.
+
+## Performance vs Electron
+
+Status: **Electron baseline collected; the Servo column is still open.** The
+harness, the instrumentation and the methodology are in place and the numbers
+below are real; the Servo side needs a release build of the shell, which needs
+the four side-by-side checkouts and a ~30–60 min full Servo compile
+(docs/plans/tauri-servo-perf-handoff.md §2).
+
+Collected with `pnpm perf:compare --runs 5 --idle-seconds 30`
+(`scripts/perf-compare.mts`): each run boots the stack on a fresh, isolated
+profile under `COPSE_PERF=1` and `COPSE_PANEL_MOCK_LLM=1`, waits for the
+renderer's own `renderer:boot` span, then samples the whole process tree once a
+second for 30 s. Reported as median (min–max, n).
+
+| Metric                                          | Electron 43.3.0          | Tauri + Servo (release) |
+| ----------------------------------------------- | ------------------------ | ----------------------- |
+| Cold start → renderer booted (wall clock)       | 815ms (713–914, n=5)     | not measured            |
+| Trace: layout mounted (workspace profiles only) | n/a                      | not measured            |
+| Trace: renderer boot span                       | 25ms (21.8–32.8, n=5)    | not measured            |
+| Trace: main boot complete                       | 483ms (443.5–631.7, n=5) | not measured            |
+| Idle RSS, whole process tree                    | 726MB (721–727, n=5)     | not measured            |
+| Idle CPU                                        | 0.7% (0.6–1, n=5)        | not measured            |
+| Processes                                       | 7 (7–7, n=5)             | not measured            |
+| Disk footprint (dev tree)                       | 1783MB                   | not measured            |
+
+Pinning:
+
+- agent-pane `782b143d5` (branch `claude/tauri-servo-prototype-8ugtq4`), Electron
+  43.3.0 from `package.json`, JS built with `pnpm build` (`COPSE_RELEASE`
+  unset — see the handoff's §2.5 note on why that matters for symmetry).
+- Apple M4, 16 GB, macOS 26.5.2, real GPU (no llvmpipe caveat applies to this
+  column; the Linux runs in §2.3 of the handoff will need it).
+- Fresh `COPSE_DIR`/`COPSE_PANEL_USER_DATA` per run, so every run is a genuine
+  cold start onto the welcome screen — no project restore is included.
+
+Reading the Electron column:
+
+- Boot is consistent: 815 ms median wall clock from spawn to the renderer
+  finishing boot, spread 713–914 ms across five runs. Of that, main reaches
+  `boot-complete` at 483 ms and the renderer's own boot work is only ~25 ms —
+  so almost the entire cold start is process/runtime startup plus main's
+  service initialisation, not rendering. That is the part Servo has to beat.
+- 726 MB idle across 7 processes is **summed RSS, which double-counts shared
+  pages once per process** — see the handoff's §3.4 caveat before quoting it
+  against a 2-process Servo tree.
+- The disk figure is the development tree, not a packaged app.
+
+Not measured, and why: streaming throughput. The obvious version of that metric
+measures `MockLLMProvider`'s own 10 ms-per-character sleep rather than either
+stack, and there is no automation for the Servo webview to drive the same
+interaction. Handoff §3.2 records the design a real version needs.
+
+Raw data: `docs/plans/perf-data/` (`results.json` plus one NDJSON trace per
+run).

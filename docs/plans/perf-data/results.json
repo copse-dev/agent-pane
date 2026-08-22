@@ -1,0 +1,69 @@
+{
+  "results": [
+    {
+      "stack": "electron",
+      "run": 1,
+      "ok": true,
+      "mainBootCompleteMs": 631.667541,
+      "rendererBootStartMs": 328,
+      "rendererLayoutMountedMs": null,
+      "rendererBootSpanMs": 23.2,
+      "wallToBootedMs": 914,
+      "idleRssMb": 727,
+      "idleCpuPercent": 1,
+      "processes": 7
+    },
+    {
+      "stack": "electron",
+      "run": 2,
+      "ok": true,
+      "mainBootCompleteMs": 466.700875,
+      "rendererBootStartMs": 338,
+      "rendererLayoutMountedMs": null,
+      "rendererBootSpanMs": 27.9,
+      "wallToBootedMs": 815,
+      "idleRssMb": 726,
+      "idleCpuPercent": 0.7,
+      "processes": 7
+    },
+    {
+      "stack": "electron",
+      "run": 3,
+      "ok": true,
+      "mainBootCompleteMs": 485.989792,
+      "rendererBootStartMs": 359,
+      "rendererLayoutMountedMs": null,
+      "rendererBootSpanMs": 25,
+      "wallToBootedMs": 818,
+      "idleRssMb": 726,
+      "idleCpuPercent": 0.7,
+      "processes": 7
+    },
+    {
+      "stack": "electron",
+      "run": 4,
+      "ok": true,
+      "mainBootCompleteMs": 482.970709,
+      "rendererBootStartMs": 344,
+      "rendererLayoutMountedMs": null,
+      "rendererBootSpanMs": 32.8,
+      "wallToBootedMs": 815,
+      "idleRssMb": 726,
+      "idleCpuPercent": 0.7,
+      "processes": 7
+    },
+    {
+      "stack": "electron",
+      "run": 5,
+      "ok": true,
+      "mainBootCompleteMs": 443.47825,
+      "rendererBootStartMs": 318,
+      "rendererLayoutMountedMs": null,
+      "rendererBootSpanMs": 21.8,
+      "wallToBootedMs": 713,
+      "idleRssMb": 721,
+      "idleCpuPercent": 0.6,
+      "processes": 7
+    }
+  ]
+}
