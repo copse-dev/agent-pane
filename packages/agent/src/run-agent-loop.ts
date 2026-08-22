@@ -36,8 +36,11 @@ import {
   AGENT_RUN_IDLE_TIMEOUT_MS,
   AgentRunDeadline,
   defaultMaxLlmCallsForSteps,
+  EXTENSION_GRANT_LLM_CALLS,
+  EXTENSION_HEALTH_WINDOW,
   isAgentRunTimeoutAbort,
   isStreamOutputRunaway,
+  shouldExtendRunBudget,
 } from './agent-loop-limits.ts'
 import { hasOpenTodos, OPEN_TODOS_STILL_OPEN_MESSAGE } from './agent-loop-guards.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from './hooks/hook-registry.ts'
@@ -142,6 +145,12 @@ export interface AgentLoopOptions {
   /** Max provider.stream calls (main loop + finalize / forced text). */
   maxLlmCalls?: number
   /**
+   * Whether the loop may extend its own call/step budget when the run is
+   * healthy but long (distinct recent tool activity, no stuck-signals).
+   * Defaults to true; benchmark hosts pass false to keep budgets exact.
+   */
+  adaptiveExtensions?: boolean
+  /**
    * Per-stream output cap used by the reasoning-runaway guard. Defaults to the
    * product-wide limit; benchmark hosts may lower it for slower local models.
    */
@@ -236,6 +245,10 @@ type LlmCallBudget = {
   signal?: AbortSignal
   onRunDeadlineActivity?: () => void
   onLlmCall?: (count: number) => void
+  /** Grants consumed so far; bounded by {@link MAX_EXTENSION_GRANTS}. */
+  extensionGrantsUsed: number
+  /** False when the host disables adaptive extension for this run. */
+  adaptiveExtensions: boolean
 }
 
 function recordRunActivity(budget: LlmCallBudget): void {
@@ -292,8 +305,44 @@ function validateReasoningCheckpointPolicy(policy: ReasoningCheckpointPolicy): v
 
 function runBudgetExhausted(budget: LlmCallBudget): boolean {
   if (budget.deadline.isExpired()) return true
-  if (budget.llmCalls >= budget.maxLlmCalls) return true
-  return false
+  return budget.llmCalls >= budget.maxLlmCalls
+}
+
+/**
+ * One adaptive extension for a healthy-but-long run: distinct recent tool
+ * activity and no stuck-signals buy `EXTENSION_GRANT_LLM_CALLS` more calls and
+ * matching step headroom, so `maxSteps` never becomes the binding constraint a
+ * grant just bought past. Returns false (run ends) when the host disabled
+ * extensions or the grants are spent.
+ */
+function tryExtendRunBudget(
+  budget: LlmCallBudget,
+  recentFingerprints: readonly string[],
+  stuckSignals: { reasoningRunawayStreak: number; nudged: boolean },
+  maxStepsRef: { value: number },
+): boolean {
+  if (!budget.adaptiveExtensions) return false
+  if (
+    !shouldExtendRunBudget(
+      {
+        // Only the most recent window counts: an early healthy phase must not
+        // vouch for a run that has since started thrashing.
+        distinctRecentToolCalls: new Set(recentFingerprints.slice(-EXTENSION_HEALTH_WINDOW))
+          .size,
+        reasoningRunawayStreak: stuckSignals.reasoningRunawayStreak,
+        nudged: stuckSignals.nudged,
+      },
+      budget.extensionGrantsUsed,
+    )
+  ) {
+    return false
+  }
+  budget.extensionGrantsUsed += 1
+  budget.maxLlmCalls += EXTENSION_GRANT_LLM_CALLS
+  // Keep steps ahead of calls: each granted call is usable as a step, plus the
+  // same finalize/forced-text headroom `defaultMaxLlmCallsForSteps` allows.
+  maxStepsRef.value += EXTENSION_GRANT_LLM_CALLS + 3
+  return true
 }
 
 function reserveLlmCall(budget: LlmCallBudget): boolean {
@@ -902,10 +951,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     llmCalls: 0,
     maxLlmCalls,
     deadline,
+    extensionGrantsUsed: 0,
+    adaptiveExtensions: opts.adaptiveExtensions !== false,
     ...(signal !== undefined ? { signal } : {}),
     ...(onRunDeadlineActivity !== undefined ? { onRunDeadlineActivity } : {}),
     ...(onLlmCall !== undefined ? { onLlmCall } : {}),
   }
+  // `maxSteps` is a destructured const; the extension path grows this ref so a
+  // grant buys step room in lockstep with call room.
+  const maxStepsRef = { value: maxSteps }
   let steps = 0
   let finishedWithAnswer = false
   let hitRunLimit = false
@@ -957,10 +1011,18 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     return nudges.truncation
   }
 
-  while (steps < maxSteps) {
+  while (steps < maxStepsRef.value) {
     if (runBudgetExhausted(budget)) {
-      hitRunLimit = true
-      break
+      const extended = tryExtendRunBudget(
+        budget,
+        recentFingerprints,
+        { reasoningRunawayStreak, nudged: loopNudgeSent || forceTextAttempted },
+        maxStepsRef,
+      )
+      if (!extended) {
+        hitRunLimit = true
+        break
+      }
     }
     if (signal?.aborted) break
     steps++
