@@ -280,6 +280,20 @@ describe('thread-store PR-ref cache', () => {
     assert.deepEqual(metaOnDisk(root, 'p', 'plain')['prRefs'], [])
   })
 
+  it('invalidates a warm metadata snapshot when the background backfill writes', async () => {
+    await saveProjectThread(
+      'p',
+      thread('old', { messages: [userMsg('m1', 'https://github.com/acme/widget/pull/5')] }),
+    )
+    const [before] = await loadProjectThreadMetas('p')
+    assert.equal(before?.prRefs, undefined)
+
+    await backfillThreadPrRefs('p', () => undefined)
+
+    const [after] = await loadProjectThreadMetas('p')
+    assert.equal(after?.prRefs?.[0]?.number, 5)
+  })
+
   it('does not re-scan a thread that has already been backfilled', async () => {
     await saveProjectThread(
       'p',

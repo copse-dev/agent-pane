@@ -600,6 +600,10 @@ export async function backfillThreadPrRefs(
       // "scanned, no PRs" — without that distinction this would re-run forever.
       if (meta !== null) {
         atomicWriteFile(path, JSON.stringify({ ...meta, prRefs }, null, 2))
+        // Backfill deliberately runs outside the per-project write queue so it
+        // cannot monopolise foreground thread work. It still mutates meta.json,
+        // therefore an existing or in-flight metadata snapshot must be retired.
+        invalidateProjectMetaCache(projectId)
       }
       if (prRefs.length > 0) batch.push({ threadId, prRefs })
       if (batch.length >= 25) flush()
