@@ -160,75 +160,79 @@ just presence checks) settled the table's open questions:
   (patch 0001), and **module-worker top-level await (patch 0004) validated
   in-browser** via a blob module worker.
 
-### The thinking indicator does not animate — OPEN, not yet root-caused (2026-08-22)
+### CSS animations never run on SVG content — ROOT-CAUSED, not fixable in-engine cheaply (2026-08-22)
 
-Found by eye, not by instrumentation: a human watching the Servo window noticed
-the thinking spinner was not turning. Every automated check the prototype had
-called it working, and still does.
+Found by eye: the thinking spinner does not turn. Every automated check the
+prototype had called it working.
 
-**Observed, and solid:** screenshotting at 1 s intervals during the reasoning
-phase, Servo window frontmost, prompt sent, `Reasoning…` on screen, Stop button
-live:
+**The observation.** Screenshotting at 1 s intervals during the reasoning phase,
+Servo window frontmost, `Reasoning…` on screen and the Stop button live: Electron
+changes 2153 then 262 pixels; Servo changes 88 (all of it the macOS menu-bar
+clock) then **0**. During content streaming Servo repaints heavily (15 703 px),
+so compositing works — it is specifically the animation-only phase that is
+frozen. For this model that is 15–40 s of a completely motionless UI.
 
-| Phase                                     | Electron                     | Tauri + Servo                                             |
-| ----------------------------------------- | ---------------------------- | --------------------------------------------------------- |
-| Reasoning (animation only, no DOM change) | 2153 px, then 262 px changed | 88 px (all of it the macOS menu-bar clock), then **0 px** |
-| Content streaming (DOM changing)          | —                            | 15 703 px, then 15 436 px in the chat area                |
+**A wrong claim, retracted.** An earlier version of this section said "Servo
+never composites CSS animations". Instrumenting
+`Animations::mark_animating_nodes_as_dirty` disproves it: a `transform`
+animation on a plain `<div>` registers and dirties nodes every frame
+(`sets=1 rooted=1 dirtied=1`).
 
-So under Servo the UI is genuinely motionless for the whole reasoning window,
-which for this model is 15–40 s of a user seeing no evidence the app is alive.
-That much is not in doubt, and it is a migration blocker on its own.
+**What is actually applied.** Enumerating computed `animation-name` across the
+DOM mid-turn gives the _same four animations on both engines_:
 
-**An earlier version of this section claimed the cause was "Servo never
-composites CSS animations". That was wrong and is retracted.** It rested on a
-probe that animated `transform` on an `opacity:0` element and watched the
-computed value advance — which proves nothing about painting — plus the pixel
-evidence above. Instrumenting Servo's `Animations::mark_animating_nodes_as_dirty`
-directly (`COPSE_SERVO_ANIM_DEBUG=1`, a local patch in the servo checkout)
-disproves it: with a plain `transform` animation present the set is registered
-and nodes are dirtied every frame (`sets=1 rooted=1 dirtied=1`), so the
-animation → restyle path works.
+    3 × chat-running-dot        on <path>
+    1 × reasoning-activity-draw on .reasoning-activity-path
 
-**What the instrumentation actually shows.** During the reasoning phase the set
-is _empty_ — `sets=0` in 81 of 83 samples — so nothing is dirtied and nothing
-repaints. The app's thinking indicator is not a `transform` spinner: it is
-`.reasoning-activity-path` animating `stroke-dashoffset` on an inline SVG
-(`conversation.css`). The live hypothesis is therefore that Servo does not
-register animations of SVG geometry properties, rather than that compositing is
-broken in general. That is consistent with every measurement so far but is
-**not yet confirmed**.
+So the app applies them identically; Servo registers **zero**
+(`sets=0` in 111 of 111 samples). All four target SVG elements. And
+`chat-running-dot` animates plain `opacity` — so it is not the property being
+exotic, it is the element being SVG.
 
-**Why it is still open.** The obvious next experiment — park a visible, opaque
-`transform` spinner on screen and diff frames — did not settle it, because the
-test element was not painted at all under Servo for an unrelated and still
-unidentified reason (a `position: fixed` element appended to `document.body`
-with `z-index: 2147483647` produced zero pixels). Two unknowns overlapped, so no
-conclusion was drawn. Worth noting for whoever picks this up: the first attempt
-at that probe failed for a _third_ reason — a `linear-gradient` with
-double-position colour stops, which Servo rejects, invalidating the whole
-declaration.
+**Root cause.** Servo does not lay SVG out as boxes. Patch 0006 in the runtime's
+own series says it outright: "Inline `<svg>` is XML-serialized and rasterized by
+resvg with no CSS context." The subtree is serialized, rasterized as an image,
+and cached on the resulting data: URL. SVG descendants are therefore not layout
+participants at all, so there is nothing for the animation machinery to register
+or dirty — while style computation, which runs over the DOM, still reports the
+right `animation-name`. That single fact explains every observation, including
+why patches 0003/0005/0006 were needed to get CSS-driven _static_ SVG styling to
+appear.
 
-Next steps: (1) confirm or refute the SVG-property hypothesis with a minimal
-`stroke-dashoffset` animation page; (2) separately, find out why a
-fixed-position, max-z-index element does not paint — that may be a larger gap
-than the spinner itself.
+**Is it fixable?**
 
-It may also explain an anomaly in the perf table below: "token → frame
-committed" puts Servo at 10.3 ms against a floor of ~74 ms it cannot physically
-beat, which suggests `requestAnimationFrame` there is not tied to compositor
-commits.
+- **Not by a pref.** There is no SVG or animation pref; the audit below found
+  every gated feature and none applies.
+- **App-side: yes, cheaply.** Progress affordances built from HTML elements and
+  CSS rather than SVG paths animate correctly — the `transform` probe on a
+  `<div>` registers and runs. Rebuilding the three running dots and the reasoning
+  activity indicator as non-SVG markup would restore motion under Servo with no
+  engine work. This is the recommended route and has not been done here, since it
+  is a UI change rather than a bug fix.
+- **Engine-side: possible in principle, expensive in practice.** The
+  re-rasterization path already re-renders when computed style changes, so if
+  animation registration were extended to SVG subtrees and dirtied the SVG root
+  each tick, the existing machinery would produce new frames. But that means
+  re-serializing and re-rasterizing the whole SVG every frame, which is a poor
+  trade for a spinner. The real fix is native SVG layout, which is a large
+  Servo feature, not a patch.
 
-### Eager pseudo-elements are not blockified into grid items — FIXED (2026-08-22)
+`src/renderer/perf-autopilot.ts` probes both halves every eval run
+(`autopilot:css-animation`, `autopilot:running-animations`), so a regression
+shows up in the trace rather than needing someone to watch the screen.
 
-Also found by eye: the reasoning disclosure's caret renders as a tall trapezoid
-stripe under Servo where Chromium draws a small `▶`.
+### CSS Grid was disabled by pref — FIXED, and it was not what it looked like (2026-08-22)
 
-The first diagnosis — a paint bug — was wrong, and the way it was wrong is
-instructive. `getComputedStyle(el, '::before')` reported `0px × 0px` with a 5px
-left border, which is correct, so layout looked innocent. But resolved values
-for pseudo-elements are the _computed_ values, not the used ones, so that
-reading proved nothing. Four probes with real, measurable elements
-(`autopilot:border-triangle`) isolated it:
+Started as "the reasoning disclosure's caret renders as a tall trapezoid where
+Chromium draws a `▶`", and went through two wrong diagnoses before landing.
+
+**Wrong diagnosis 1 — a paint bug.** `getComputedStyle(el, '::before')` reported
+`0px × 0px` with a 5px left border, which is correct, so layout looked innocent
+and painting looked guilty. But resolved values for pseudo-elements are the
+_computed_ values, not the used ones, so that reading proved nothing.
+
+**Wrong diagnosis 2 — pseudo-elements are not blockified into grid items.**
+Four probes with real, measurable elements (`autopilot:border-triangle`) gave:
 
 | Construction                              | Chromium | Servo    |
 | ----------------------------------------- | -------- | -------- |
@@ -237,19 +241,56 @@ reading proved nothing. Four probes with real, measurable elements
 | `::before` inside a flex container        | 8px      | 8px      |
 | **`::before` inside a grid container**    | **8px**  | **19px** |
 
-19px is the line-height. Servo leaves the eager pseudo-element at
-`display: inline`, so instead of becoming a grid item it joins a line box and
-takes the line-height as its height — and the border triangle, which depends on
-the box really being zero-sized, paints as a trapezoid. Grid items are
-blockified per spec; Servo does it for real element children and for flex
-containers, but not for pseudo-elements of a grid container.
+19px is the line-height, so the pseudo-element was clearly sitting in a line box
+instead of being blockified. That reading was consistent with every measurement
+and still wrong about the cause.
 
-Fixed app-side in `conversation.css` with an explicit `display: block` on
-`.message-reasoning-icon::before`, which is a no-op under Chromium (grid items
-are blockified anyway) and restores a correct `▶` under Servo — verified by
-screenshot. The engine bug itself is unfixed and the minimal repro is the table
-above; anything using the border-triangle idiom inside a grid container is
-affected.
+**Actual cause: `layout_grid_enabled` defaults to `false`.** CSS Grid is
+implemented in Servo but ships disabled (`components/config/prefs.rs`). With it
+off, `display: grid` does not parse, the declaration is dropped, and every grid
+container silently falls back to its default display — `.message-reasoning-icon`
+is a `<span>`, so it stayed `inline`, and its `::before` fell into a line box.
+Confirmed by dumping resolved displays at box-construction time: across a whole
+session **no element ever had a grid display**, only `inline`, `block` and
+`flex`. The blockification code in stylo was innocent all along —
+`skip_item_display_fixup()` correctly returns `false` for `::before`/`::after`.
+
+Every probe result above is also explained by grid simply not existing: in a
+plain block container a blockified real child is 8px and an inline pseudo-element
+is a 19px line box, which is exactly what was measured.
+
+**Scope is much larger than one caret.** The app has 13 `display: grid` rules
+and 28 grid-property rules; under the prototype none of them were grids. The
+caret was just the one place where the fallback was visually obvious.
+
+Fixed in the runtime by enabling the pref alongside the ones already turned on
+there — `docs/plans/tauri-patches/runtime-0001-enable-css-grid.patch`, applied to
+`tauri-runtime-servo/src/servo/embedder.rs`. Verified by screenshot: the caret
+renders as a correct `▶` with **no app-side change at all**. An earlier
+`display: block` workaround in `conversation.css` was removed, because it only
+ever fixed the one symptom and would have left the other twelve grid layouts
+silently broken.
+
+### Other implemented-but-disabled prefs (2026-08-22)
+
+Finding the grid pref prompted an audit of Servo's defaults, and a good part of
+the "genuinely missing" list in the probe verdicts above is wrong — those
+features are implemented and merely pref-gated off:
+
+| Pref                               | Consequence when off                                                   |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| `layout_grid_enabled`              | all CSS Grid (fixed above)                                             |
+| `layout_variable_fonts_enabled`    | likely the "heading fonts fall back to serif" note in the run log      |
+| `layout_container_queries_enabled` | container queries                                                      |
+| `layout_columns_enabled`           | CSS multi-column                                                       |
+| `dom_offscreen_canvas_enabled`     | listed above as "genuinely missing"                                    |
+| `dom_sanitizer_enabled`            | listed above as "genuinely missing" (DOMPurify fallback in place)      |
+| `dom_web_animations_enabled`       | `element.getAnimations()` absent — which broke an animation probe here |
+| `layout_writing_mode_enabled`      | writing modes                                                          |
+
+Worth working through this list properly before treating anything as a Servo
+gap: the failure mode is silent, and a dropped declaration looks identical to an
+unimplemented feature from inside the page.
 
 ### White flash on startup, and the anti-flash claim that was not true (2026-08-22)
 
