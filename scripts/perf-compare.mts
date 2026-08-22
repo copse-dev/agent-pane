@@ -33,7 +33,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, loadavg, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 // ---------------------------------------------------------------------------
@@ -60,6 +60,16 @@ const IDLE_SECONDS = Number(flag('idle-seconds', '30'))
 /** A boot that has not reached `renderer:layout-mounted` by now is a failure. */
 const BOOT_TIMEOUT_MS = Number(flag('boot-timeout-ms', '180000'))
 const WANTED = flag('stacks', 'electron,tauri').split(',')
+/**
+ * Eval mode: instead of stopping at boot, seed a workspace, point the app at a
+ * real model, and let the renderer autopilot drive one scripted chat turn
+ * (src/renderer/perf-autopilot.ts). Off by default — it costs a model call per
+ * run and needs a decryptable provider key.
+ */
+const EVAL = process.argv.includes('--eval')
+/** Provider-prefixed model id for eval runs. */
+const EVAL_MODEL = flag('model', 'openrouter:stealth/ox-alpha')
+const EVAL_PROVIDER = EVAL_MODEL.split(':')[0] ?? 'openrouter'
 
 // ---------------------------------------------------------------------------
 // Stacks
@@ -130,6 +140,120 @@ function electronRuntimeApp(): string {
     return existsSync(app) ? app : root
   } catch {
     return resolve('node_modules/electron/dist')
+  }
+}
+
+/**
+ * Decrypt the provider key out of the developer's real profile, once per
+ * invocation, and keep it in memory only.
+ *
+ * It cannot simply be read: `safeStorage` binds the ciphertext to a macOS
+ * Keychain item derived from the app name, so only Electron presenting itself
+ * as "Copse" can decrypt it — and the Tauri sidecar stubs `safeStorage` out
+ * entirely, so the Servo stack could never read a stored key. Handing both
+ * stacks the plaintext in the environment is what makes the two columns
+ * comparable at all; `resolveApiKey` falls back to `<PROVIDER>_API_KEY`
+ * identically on both sides.
+ *
+ * An already-exported env var wins, so nobody is forced through the Keychain.
+ */
+function providerKey(): string {
+  const envVar = `${EVAL_PROVIDER.toUpperCase()}_API_KEY`
+  const fromEnv = process.env[envVar]
+  if (fromEnv !== undefined && fromEnv.trim() !== '') return fromEnv.trim()
+  const settings = join(homedir(), '.copse', 'user-data', 'settings.json')
+  if (!existsSync(settings)) {
+    throw new Error(`${envVar} is unset and there is no profile at ${settings} to decrypt from`)
+  }
+  // stdio is piped, so the key never reaches a terminal or a log.
+  const key = execFileSync(
+    ELECTRON_BIN,
+    [resolve('scripts/decrypt-provider-key.cjs'), EVAL_PROVIDER, settings],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
+  ).trim()
+  if (!key) throw new Error(`decrypting the ${EVAL_PROVIDER} key produced nothing`)
+  return key
+}
+
+/**
+ * Give a fresh profile one project and one model, so the app restores a real
+ * workspace instead of landing on the welcome screen.
+ *
+ * Without this an eval run has no composer to type into, and `layout-mounted`
+ * stays `n/a` — the app only marks it on the branch that has a project to
+ * restore. Written straight into the profile's `config.json`/`settings.json`
+ * rather than driven through the UI because it has to be identical on both
+ * stacks and happen before either one boots.
+ */
+function seedWorkspace(profile: string, project: string): void {
+  const userData = join(profile, 'user-data')
+  mkdirSync(userData, { recursive: true })
+  mkdirSync(project, { recursive: true })
+  writeFileSync(join(project, 'README.md'), '# perf-compare fixture\n')
+  writeFileSync(
+    join(userData, 'config.json'),
+    JSON.stringify(
+      {
+        workspaceRoot: project,
+        activeProjectId: 'perf-fixture',
+        projects: [{ id: 'perf-fixture', path: project, name: 'perf-fixture' }],
+      },
+      null,
+      2,
+    ),
+  )
+  writeFileSync(
+    join(userData, 'settings.json'),
+    JSON.stringify(
+      {
+        model: EVAL_MODEL,
+        // Without this a fresh profile opens the onboarding wizard over the
+        // app. Both stacks do it, so the comparison stayed symmetric — but it
+        // measures a modal-over-chat state no real user sits in, and the modal
+        // is itself rendering work. Only a screenshot caught it; the trace
+        // looked perfect either way, because the autopilot drives the composer
+        // through the DOM and a covering modal does not stop a programmatic
+        // click.
+        onboardingCompleted: true,
+        ...providerRoutingSettings(),
+      },
+      null,
+      2,
+    ),
+  )
+}
+
+/**
+ * Copy the provider's non-secret routing settings out of the developer's real
+ * profile into the throwaway one.
+ *
+ * These are privacy choices — OpenRouter's `zdrOnly` defaults to true and
+ * `allowTraining` to false, and a model that satisfies neither is refused
+ * *inside the app*, before any request goes out. A fresh profile therefore gets
+ * an error string back where the real profile gets a stream, and the run
+ * silently measures nothing (ask for 300 words, get 193 characters of "no
+ * provider endpoint satisfies the current routing").
+ *
+ * Mirrored rather than hardcoded on purpose: whether to reach endpoints that
+ * retain or train on data is the developer's decision, already made in their
+ * own settings, and a benchmark has no business quietly relaxing it.
+ */
+function providerRoutingSettings(): Record<string, unknown> {
+  const source = join(homedir(), '.copse', 'user-data', 'settings.json')
+  if (!existsSync(source)) return {}
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(source, 'utf8'))
+    if (typeof parsed !== 'object' || parsed === null) return {}
+    const copied: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      // Routing/preference scalars only — never `apiKey`, never anything
+      // structured that might carry history or pricing caches.
+      if (!key.startsWith('openRouter') || key === 'openRouterPricing') continue
+      if (typeof value === 'boolean' || typeof value === 'string') copied[key] = value
+    }
+    return copied
+  } catch {
+    return {}
   }
 }
 
@@ -285,6 +409,7 @@ interface TraceRecord {
   src: string
   name: string
   ms?: number
+  detail?: Record<string, unknown>
 }
 
 function readTrace(path: string): TraceRecord[] {
@@ -319,6 +444,18 @@ function spanMs(trace: TraceRecord[], name: string): number | null {
  * main's first line of JS (larger for Electron than for plain Node). The two
  * figures bracket the truth; report both.
  */
+function turnCpuMsPerKchar(cpuSeconds: number, chars: number | null): number | null {
+  if (chars === null || chars <= 0 || cpuSeconds <= 0) return null
+  return Math.round(((cpuSeconds * 1000) / (chars / 1000)) * 10) / 10
+}
+
+/** A numeric field out of a record's `detail`, for counts the tracer carries. */
+function detailNumber(trace: TraceRecord[], name: string, field: string): number | null {
+  const detail = trace.find((record) => record.name === name)?.detail
+  const value = detail?.[field]
+  return typeof value === 'number' ? value : null
+}
+
 function spanEndAt(trace: TraceRecord[], name: string): number | null {
   return trace.find((record) => record.name === name && record.kind === 'span')?.t ?? null
 }
@@ -341,6 +478,40 @@ interface RunResult {
   wallToBootedMs: number | null
   /** Same event on the trace axis: precise, but starts at main's arm. */
   traceToBootedMs: number | null
+  /** Eval mode only: spawn → the scripted turn finishing. Model-dominated. */
+  wallToTurnDoneMs: number | null
+  /** Eval mode only: send → first content token. Model- and network-bound. */
+  ttftMs: number | null
+  /** Eval mode only: first token → completion. */
+  streamMs: number | null
+  /** Eval mode only: streamed content tokens the renderer saw. */
+  streamTokens: number | null
+  /** Eval mode only: median token-arrival → frame-committed. Engine cost. */
+  paintMs: number | null
+  /** Eval mode only: idle frame cadence — the control that makes paintMs readable. */
+  frameIntervalMs: number | null
+  /**
+   * Eval mode only: CPU milliseconds the whole tree burned per 1000 characters
+   * streamed. Normalised by payload because the model chunks differently every
+   * run, and bracketed to the turn so the model's own thinking time — which is
+   * idle for us — does not dilute it.
+   */
+  turnCpuMsPerKchar: number | null
+  /** Eval mode only: characters streamed, the comparable unit (tokens are not). */
+  streamChars: number | null
+  /** Eval mode only: characters actually present and laid out in the DOM. */
+  renderedChars: number | null
+  /**
+   * One-minute load average at the end of the run.
+   *
+   * Recorded because an otherwise clean-looking dataset can be quietly ruined
+   * by unrelated work on the machine — a batch of file operations during one
+   * of these runs moved Electron's main-process boot from 254 ms to 994 ms and
+   * tripled its spread, which reads as a regression rather than as noise. A
+   * run whose load is far above its neighbours should be re-taken, and without
+   * this number there is no way to tell after the fact.
+   */
+  loadAvg1: number | null
   /** phys_footprint (macOS) / PSS (Linux); null when neither was available. */
   idleMemoryMb: number | null
   idleRssMb: number | null
@@ -348,10 +519,16 @@ interface RunResult {
   processes: number | null
 }
 
-async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunResult> {
+async function runOnce(
+  stack: Stack,
+  run: number,
+  runDir: string,
+  apiKey: string | null,
+): Promise<RunResult> {
   mkdirSync(runDir, { recursive: true })
   const profile = mkdtempSync(join(tmpdir(), `copse-perf-${stack.key}-`))
   mkdirSync(join(profile, 'home'), { recursive: true })
+  if (EVAL) seedWorkspace(profile, join(profile, 'project'))
   const tracePath = join(runDir, 'trace.ndjson')
 
   const base: RunResult = {
@@ -364,6 +541,16 @@ async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunRe
     rendererBootSpanMs: null,
     wallToBootedMs: null,
     traceToBootedMs: null,
+    wallToTurnDoneMs: null,
+    ttftMs: null,
+    streamMs: null,
+    streamTokens: null,
+    paintMs: null,
+    frameIntervalMs: null,
+    turnCpuMsPerKchar: null,
+    streamChars: null,
+    renderedChars: null,
+    loadAvg1: null,
     idleMemoryMb: null,
     idleRssMb: null,
     idleCpuPercent: null,
@@ -387,8 +574,16 @@ async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunRe
       // cost and makes the ratio between them look closer than it is. It also
       // made the numbers depend on whoever's laptop ran them.
       HOME: join(profile, 'home'),
-      // Offline, deterministic model responses — no network in the numbers.
-      COPSE_PANEL_MOCK_LLM: '1',
+      // Boot-only runs stay offline and deterministic. Eval runs must NOT set
+      // this: provider-selection.ts short-circuits to the mock provider on it,
+      // so leaving it on would silently measure the mock's own sleep timer
+      // instead of the model — the exact trap §3.2 of the handoff warns about.
+      ...(EVAL
+        ? {
+            COPSE_PERF_AUTOPILOT: '1',
+            [`${EVAL_PROVIDER.toUpperCase()}_API_KEY`]: apiKey ?? '',
+          }
+        : { COPSE_PANEL_MOCK_LLM: '1' }),
       ...stack.env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -422,7 +617,13 @@ async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunRe
   // sits on the welcome screen looking hung. `renderer:boot` closes on both
   // paths, and closes at the same place in the same source on both stacks.
   const deadline = Date.now() + BOOT_TIMEOUT_MS
-  let bootedAt: number
+  // Boot and turn are recorded separately. In eval mode the loop keeps going
+  // after boot until the autopilot finishes, and conflating the two would put a
+  // 40-second model call inside a row labelled "cold start".
+  let bootedAt = 0
+  let turnDoneAt = 0
+  let turnCpuStart = 0
+  let turnCpuEnd = 0
   for (;;) {
     if (child.exitCode !== null) {
       cleanup()
@@ -430,10 +631,25 @@ async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunRe
     }
     if (Date.now() > deadline) {
       cleanup()
-      return { ...base, note: `no renderer:boot span within ${String(BOOT_TIMEOUT_MS)} ms` }
+      const reached = bootedAt === 0 ? 'renderer:boot span' : 'autopilot:done'
+      return { ...base, note: `no ${reached} within ${String(BOOT_TIMEOUT_MS)} ms` }
     }
-    if (spanMs(readTrace(tracePath), 'renderer:boot') !== null) {
+    const trace = readTrace(tracePath)
+    if (EVAL && markAt(trace, 'autopilot:failed') !== null) {
+      cleanup()
+      return { ...base, note: 'autopilot reported failure — see trace' }
+    }
+    if (bootedAt === 0 && spanMs(trace, 'renderer:boot') !== null) {
       bootedAt = Date.now()
+      // Bracket the turn with CPU snapshots. Unlike the paint proxy this is
+      // directly comparable between engines: it is real work done, on one
+      // clock, for a payload whose size is recorded alongside it.
+      if (EVAL) turnCpuStart = sampleTree(child.pid ?? -1, snapshot()).cpuSeconds
+      if (!EVAL) break
+    }
+    if (EVAL && markAt(trace, 'autopilot:done') !== null) {
+      turnDoneAt = Date.now()
+      turnCpuEnd = sampleTree(child.pid ?? -1, snapshot()).cpuSeconds
       break
     }
     // 25 ms, not 100: the wall-clock figure is quantised to this interval, and
@@ -466,12 +682,25 @@ async function runOnce(stack: Stack, run: number, runDir: string): Promise<RunRe
   return {
     ...base,
     ok: true,
+    ttftMs: spanMs(trace, 'autopilot:ttft'),
+    streamMs: spanMs(trace, 'autopilot:stream'),
+    streamTokens: detailNumber(trace, 'autopilot:done', 'tokens'),
+    paintMs: detailNumber(trace, 'autopilot:paint', 'medianMs'),
+    frameIntervalMs: detailNumber(trace, 'autopilot:frame-interval', 'medianMs'),
+    streamChars: detailNumber(trace, 'autopilot:done', 'chars'),
+    renderedChars: detailNumber(trace, 'autopilot:dom', 'renderedChars'),
     mainBootCompleteMs: markAt(trace, 'main:boot-complete'),
     rendererBootStartMs: markAt(trace, 'renderer:boot-start'),
     rendererLayoutMountedMs: markAt(trace, 'renderer:layout-mounted'),
     rendererBootSpanMs: spanMs(trace, 'renderer:boot'),
     wallToBootedMs: bootedAt - spawnedAt,
+    wallToTurnDoneMs: turnDoneAt === 0 ? null : turnDoneAt - spawnedAt,
+    turnCpuMsPerKchar: turnCpuMsPerKchar(
+      turnCpuEnd - turnCpuStart,
+      detailNumber(trace, 'autopilot:done', 'chars'),
+    ),
     traceToBootedMs: spanEndAt(trace, 'renderer:boot'),
+    loadAvg1: Math.round((loadavg()[0] ?? 0) * 100) / 100,
     idleMemoryMb,
     idleRssMb: last ? Math.round(median(settled.map((s) => s.rssKb)) / 1024) : null,
     idleCpuPercent:
@@ -550,6 +779,40 @@ const METRICS: { key: keyof RunResult; label: string; unit: string; lowerIsBette
     lowerIsBetter: true,
   },
   {
+    key: 'wallToTurnDoneMs',
+    label: 'Spawn → scripted turn complete (model-dominated)',
+    unit: 'ms',
+    lowerIsBetter: true,
+  },
+  {
+    key: 'turnCpuMsPerKchar',
+    label: 'Streaming: CPU ms per 1000 chars rendered',
+    unit: '',
+    lowerIsBetter: true,
+  },
+  {
+    key: 'paintMs',
+    label: 'Streaming: token → frame committed (median)',
+    unit: 'ms',
+    lowerIsBetter: true,
+  },
+  {
+    key: 'frameIntervalMs',
+    label: 'Streaming: idle frame interval (control for the row above)',
+    unit: 'ms',
+    lowerIsBetter: false,
+  },
+  { key: 'ttftMs', label: 'Streaming: time to first token', unit: 'ms', lowerIsBetter: true },
+  { key: 'streamMs', label: 'Streaming: first token → done', unit: 'ms', lowerIsBetter: true },
+  { key: 'streamTokens', label: 'Streaming: tokens rendered', unit: '', lowerIsBetter: false },
+  { key: 'streamChars', label: 'Streaming: characters streamed', unit: '', lowerIsBetter: false },
+  {
+    key: 'renderedChars',
+    label: 'Streaming: characters actually in the DOM',
+    unit: '',
+    lowerIsBetter: false,
+  },
+  {
     key: 'idleMemoryMb',
     label: 'Idle memory, whole tree (footprint/PSS)',
     unit: 'MB',
@@ -563,6 +826,12 @@ const METRICS: { key: keyof RunResult; label: string; unit: string; lowerIsBette
   },
   { key: 'idleCpuPercent', label: 'Idle CPU', unit: '%', lowerIsBetter: true },
   { key: 'processes', label: 'Processes', unit: '', lowerIsBetter: false },
+  {
+    key: 'loadAvg1',
+    label: 'Machine load during run (contamination check)',
+    unit: '',
+    lowerIsBetter: true,
+  },
 ]
 
 function summarise(results: RunResult[], stacks: Stack[]): string {
@@ -600,6 +869,10 @@ function summarise(results: RunResult[], stacks: Stack[]): string {
 // Main
 // ---------------------------------------------------------------------------
 
+function log(message: string): void {
+  process.stderr.write(`${message}\n`)
+}
+
 const selected = STACKS.filter((stack) => WANTED.includes(stack.key))
 if (selected.length === 0) {
   console.error(`no known stacks in --stacks ${WANTED.join(',')}`)
@@ -620,6 +893,15 @@ if (runnable.length === 0) {
 }
 
 mkdirSync(OUT_DIR, { recursive: true })
+
+// Resolved once, before any run: a Keychain prompt or a missing key should fail
+// immediately rather than after the first stack has already been measured.
+let apiKey: string | null = null
+if (EVAL) {
+  apiKey = providerKey()
+  log(`eval mode: ${EVAL_MODEL}, ${EVAL_PROVIDER} key resolved (${String(apiKey.length)} chars)`)
+}
+
 const results: RunResult[] = []
 for (let warm = 1; warm <= WARMUP; warm++) {
   for (const stack of runnable) {
@@ -628,6 +910,7 @@ for (let warm = 1; warm <= WARMUP; warm++) {
       stack,
       0,
       join(OUT_DIR, 'runs', `${stack.key}-warmup-${String(warm)}`),
+      apiKey,
     )
     process.stderr.write(result.ok ? 'discarded\n' : `FAILED: ${result.note ?? 'unknown'}\n`)
   }
@@ -638,11 +921,16 @@ for (let run = 1; run <= RUNS; run++) {
   const order = run % 2 === 0 ? [...runnable].reverse() : runnable
   for (const stack of order) {
     process.stderr.write(`run ${String(run)}/${String(RUNS)} — ${stack.key}… `)
-    const result = await runOnce(stack, run, join(OUT_DIR, 'runs', `${stack.key}-${String(run)}`))
+    const result = await runOnce(
+      stack,
+      run,
+      join(OUT_DIR, 'runs', `${stack.key}-${String(run)}`),
+      apiKey,
+    )
     results.push(result)
     process.stderr.write(
       result.ok
-        ? `booted ${String(result.wallToBootedMs)}ms, ${String(result.idleMemoryMb ?? result.idleRssMb)}MB\n`
+        ? `booted ${String(result.wallToBootedMs)}ms${EVAL ? `, turn ${String(result.wallToTurnDoneMs)}ms/${String(result.streamTokens)}tok` : ''}, ${String(result.idleMemoryMb ?? result.idleRssMb)}MB\n`
         : `FAILED: ${result.note ?? 'unknown'}\n`,
     )
   }

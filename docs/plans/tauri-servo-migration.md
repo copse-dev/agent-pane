@@ -160,6 +160,118 @@ just presence checks) settled the table's open questions:
   (patch 0001), and **module-worker top-level await (patch 0004) validated
   in-browser** via a blob module worker.
 
+### The thinking indicator does not animate — OPEN, not yet root-caused (2026-08-22)
+
+Found by eye, not by instrumentation: a human watching the Servo window noticed
+the thinking spinner was not turning. Every automated check the prototype had
+called it working, and still does.
+
+**Observed, and solid:** screenshotting at 1 s intervals during the reasoning
+phase, Servo window frontmost, prompt sent, `Reasoning…` on screen, Stop button
+live:
+
+| Phase                                     | Electron                     | Tauri + Servo                                             |
+| ----------------------------------------- | ---------------------------- | --------------------------------------------------------- |
+| Reasoning (animation only, no DOM change) | 2153 px, then 262 px changed | 88 px (all of it the macOS menu-bar clock), then **0 px** |
+| Content streaming (DOM changing)          | —                            | 15 703 px, then 15 436 px in the chat area                |
+
+So under Servo the UI is genuinely motionless for the whole reasoning window,
+which for this model is 15–40 s of a user seeing no evidence the app is alive.
+That much is not in doubt, and it is a migration blocker on its own.
+
+**An earlier version of this section claimed the cause was "Servo never
+composites CSS animations". That was wrong and is retracted.** It rested on a
+probe that animated `transform` on an `opacity:0` element and watched the
+computed value advance — which proves nothing about painting — plus the pixel
+evidence above. Instrumenting Servo's `Animations::mark_animating_nodes_as_dirty`
+directly (`COPSE_SERVO_ANIM_DEBUG=1`, a local patch in the servo checkout)
+disproves it: with a plain `transform` animation present the set is registered
+and nodes are dirtied every frame (`sets=1 rooted=1 dirtied=1`), so the
+animation → restyle path works.
+
+**What the instrumentation actually shows.** During the reasoning phase the set
+is _empty_ — `sets=0` in 81 of 83 samples — so nothing is dirtied and nothing
+repaints. The app's thinking indicator is not a `transform` spinner: it is
+`.reasoning-activity-path` animating `stroke-dashoffset` on an inline SVG
+(`conversation.css`). The live hypothesis is therefore that Servo does not
+register animations of SVG geometry properties, rather than that compositing is
+broken in general. That is consistent with every measurement so far but is
+**not yet confirmed**.
+
+**Why it is still open.** The obvious next experiment — park a visible, opaque
+`transform` spinner on screen and diff frames — did not settle it, because the
+test element was not painted at all under Servo for an unrelated and still
+unidentified reason (a `position: fixed` element appended to `document.body`
+with `z-index: 2147483647` produced zero pixels). Two unknowns overlapped, so no
+conclusion was drawn. Worth noting for whoever picks this up: the first attempt
+at that probe failed for a _third_ reason — a `linear-gradient` with
+double-position colour stops, which Servo rejects, invalidating the whole
+declaration.
+
+Next steps: (1) confirm or refute the SVG-property hypothesis with a minimal
+`stroke-dashoffset` animation page; (2) separately, find out why a
+fixed-position, max-z-index element does not paint — that may be a larger gap
+than the spinner itself.
+
+It may also explain an anomaly in the perf table below: "token → frame
+committed" puts Servo at 10.3 ms against a floor of ~74 ms it cannot physically
+beat, which suggests `requestAnimationFrame` there is not tied to compositor
+commits.
+
+### Eager pseudo-elements are not blockified into grid items — FIXED (2026-08-22)
+
+Also found by eye: the reasoning disclosure's caret renders as a tall trapezoid
+stripe under Servo where Chromium draws a small `▶`.
+
+The first diagnosis — a paint bug — was wrong, and the way it was wrong is
+instructive. `getComputedStyle(el, '::before')` reported `0px × 0px` with a 5px
+left border, which is correct, so layout looked innocent. But resolved values
+for pseudo-elements are the _computed_ values, not the used ones, so that
+reading proved nothing. Four probes with real, measurable elements
+(`autopilot:border-triangle`) isolated it:
+
+| Construction                              | Chromium | Servo    |
+| ----------------------------------------- | -------- | -------- |
+| bare bordered box                         | 8px      | 8px      |
+| inside `display:grid; place-items:center` | 8px      | 8px      |
+| `::before` inside a flex container        | 8px      | 8px      |
+| **`::before` inside a grid container**    | **8px**  | **19px** |
+
+19px is the line-height. Servo leaves the eager pseudo-element at
+`display: inline`, so instead of becoming a grid item it joins a line box and
+takes the line-height as its height — and the border triangle, which depends on
+the box really being zero-sized, paints as a trapezoid. Grid items are
+blockified per spec; Servo does it for real element children and for flex
+containers, but not for pseudo-elements of a grid container.
+
+Fixed app-side in `conversation.css` with an explicit `display: block` on
+`.message-reasoning-icon::before`, which is a no-op under Chromium (grid items
+are blockified anyway) and restores a correct `▶` under Servo — verified by
+screenshot. The engine bug itself is unfixed and the minimal repro is the table
+above; anything using the border-triangle idiom inside a grid container is
+affected.
+
+### White flash on startup, and the anti-flash claim that was not true (2026-08-22)
+
+Servo shows a flash of white before the app paints; Electron never does.
+
+The cause is a dropped field. `BrowserWindow` in the shim has always sent
+`backgroundColor` (`#1e1e1e`) in its `create-window` message, and `shell-link.ts`
+declares it — but `tauri-shell/src/main.rs` had no `background_color` field on
+its `CreateWindow` struct, so serde silently discarded it, and the builder never
+set one. The native window was therefore born with the platform default (white)
+and stayed white until Servo's first paint.
+
+The comment in `main.rs` asserted that `theme-boot.js` was "the same anti-flash
+contract" as Electron's hidden-then-shown window. It is not, and that claim is
+why the gap survived review: theme-boot.js covers the interval between first
+paint and `app.js`, while `backgroundColor` covers the interval _before the
+first paint at all_. Electron uses both. The prototype had only one.
+
+Fixed: `main.rs` now parses the hex colour and passes it to
+`WebviewWindowBuilder::background_color`, which `tauri-runtime-servo` plumbs
+through to the real window (`lib.rs:1191`).
+
 Also inherited from the runtime's own limitations: no printing, one Servo
 webview per native window (fine — `<webview>` already falls back to `<iframe>`
 outside Electron by design), no in-process devtools window, Linux is X11-only
@@ -331,3 +443,95 @@ figure is a 229 MB release binary that already embeds `dist/renderer`, plus
 
 Raw data: `docs/plans/perf-data/` — `results.json` plus one NDJSON trace per
 run.
+
+### Under a real workload (streaming a model reply)
+
+The boot table above measures an empty profile, which lands on the welcome
+screen. This dataset seeds a workspace, dismisses onboarding, points the app at
+a real model (`openrouter:stealth/ox-alpha`, a reasoning model, via the
+developer's own OpenRouter key) and has the renderer drive one scripted chat
+turn end to end: `pnpm perf:compare --eval --runs 5 --idle-seconds 20`.
+
+The driver is `src/renderer/perf-autopilot.ts`, which lives _in the renderer_
+because that is the only layer both stacks share verbatim — WebdriverIO drives
+the Electron shell and there is no equivalent for a Servo webview, so external
+automation could never be symmetric. It writes into the real `contenteditable`
+and clicks the real Send button.
+
+| Metric                                                     | Electron 43.3.0                 | Tauri + Servo (release)          |
+| ---------------------------------------------------------- | ------------------------------- | -------------------------------- |
+| Cold start → renderer booted (wall clock)                  | 1079ms (951–1115, n=5)          | 1402ms (1318–1428, n=5)          |
+| Tracer arm → renderer booted                               | 474ms (417–477, n=5)            | 850ms (774–886, n=5)             |
+| Trace: layout mounted (workspace profiles only)            | 438ms (398–443, n=5)            | 641ms (561–670, n=5)             |
+| Trace: renderer boot span                                  | 82.6ms (55.9–95.4, n=5)         | 295.6ms (191.2–319.8, n=5)       |
+| Trace: main boot complete                                  | 414.9ms (387.7–853.9, n=5)      | 373.7ms (361.3–396.8, n=5)       |
+| Spawn → scripted turn complete (model-dominated)           | 45544ms (32305–52018, n=5)      | 35269ms (33487–57711, n=5)       |
+| Streaming: CPU ms per 1000 chars rendered                  | 3996.8 (3448.1–5186.7, n=5)     | 2684 (2069.7–3519.2, n=5)        |
+| Streaming: token → frame committed (median)                | 52.1ms (46.1–56.5, n=5)         | 12.3ms (12.2–12.3, n=5)          |
+| Streaming: idle frame interval (control for the row above) | 33.3ms (33.3–33.4, n=5)         | 38.9ms (36.8–40, n=5)            |
+| Streaming: time to first token                             | 30113ms (21827.6–41732.2, n=5)  | 18592.6ms (14652.1–46075.4, n=5) |
+| Streaming: first token → done                              | 14303.9ms (8582.8–15080.7, n=5) | 15197.2ms (9312.9–18303.5, n=5)  |
+| Streaming: tokens rendered                                 | 164 (101–366, n=5)              | 183 (118–198, n=5)               |
+| Streaming: characters streamed                             | 1888 (1868–1976, n=5)           | 2005 (1807–2018, n=5)            |
+| Streaming: characters actually in the DOM                  | 1885 (1865–1973, n=5)           | 2002 (1805–2015, n=5)            |
+| Idle memory, whole tree (footprint/PSS)                    | 391MB (368–445, n=5)            | 761MB (647–819, n=5)             |
+| Idle RSS, whole tree (summed — over-counts sharing)        | 673MB (564–772, n=5)            | 610MB (574–694, n=5)             |
+| Idle CPU                                                   | 2.4% (2.2–3.3, n=5)             | 0.8% (0–0.9, n=5)                |
+| Processes                                                  | 6 (6–6, n=5)                    | 3 (3–3, n=5)                     |
+| Machine load during run (contamination check)              | 1.9 (1.8–2.5, n=5)              | 1.6 (1.5–1.9, n=5)               |
+| Disk footprint (dev tree)                                  | 396MB                           | 260MB                            |
+
+**Rows that mean something**
+
+- **`renderer:boot` is where the engines separate, and the gap grows with
+  load.** On the welcome screen it was 20.3 ms against 58.4 ms (2.9×). With a
+  real workspace it is 82.6 ms against 295.6 ms — **3.6×**. Same renderer source
+  both sides; the only variable is the engine.
+- **Cold start widens too**: 811/914 ms (+12%) on the welcome screen becomes
+  1079/1402 ms (**+30%**) with a workspace. `layout-mounted`, `n/a` in the
+  boot-only table because an empty profile never mounts one, is 438 vs 641 ms.
+- **Memory holds at roughly 2× across both datasets** — 240/626 MB idle,
+  391/761 MB after a turn. Summed RSS says 673/610 MB here, i.e. Servo ahead,
+  and is wrong for the reasons given above.
+- **Main-process boot stays close** (415 vs 374 ms), so the sidecar
+  architecture continues to hold under a real workload.
+- **`onboardingCompleted` is now seeded.** Without it both stacks ran with the
+  setup wizard covering the app — symmetric, so not invalid, but measuring a
+  state no user sits in. Only a screenshot caught it: the autopilot drives the
+  composer through the DOM, and a covering modal does not stop a programmatic
+  click, so the trace looked perfect either way.
+
+**Rows that do NOT mean what they look like**
+
+- **Token → frame committed (52.1 vs 12.3 ms) is invalid, and the control row
+  is how we know.** It resolves on the second `requestAnimationFrame` after a
+  token, so its floor is two frame intervals. Electron's idle interval is
+  33.3 ms and it measures 52.1 ms — about 1.6×, as a vsync-locked engine should.
+  Servo's interval is 38.9 ms, so its floor is ~78 ms, and it measures 12.3 ms —
+  below a floor it cannot physically beat. Servo's `rAF` is evidently not tied
+  to compositor commits. Do not quote this as a Servo win.
+- **CPU per 1000 chars (3997 vs 2684) is not trustworthy either.** It flipped
+  direction between datasets (Electron ahead in one, Servo ahead in the other)
+  with heavily overlapping spreads, which is what a model-timing-dominated
+  measurement looks like.
+- **Every time-to-first-token and turn-duration row is model noise.** For the
+  same prompt Electron ranged 21.8–41.7 s and Servo 14.7–46.1 s, and token
+  counts ranged 101–366 for near-identical character counts, because the
+  provider chunks differently every call. Characters rendered (1888 vs 2005) and
+  characters actually in the DOM (1885 vs 2002) are the useful pair: they
+  confirm both stacks rendered the same amount of text, and the DOM row is the
+  only check here that proves anything was painted rather than merely received.
+- **Machine load is recorded per run** (1.9 vs 1.6 here) because it has already
+  ruined one dataset: unrelated file I/O during an earlier run moved Electron's
+  main-process boot from 254 ms to 994 ms and tripled its spread, which reads as
+  a regression rather than as noise.
+
+**Why the mock model is not used here.** `COPSE_PANEL_MOCK_LLM=1`
+short-circuits to `MockLLMProvider`, which sleeps 10 ms per character — a fixed
+floor identical on both stacks that would swamp everything above. Eval mode
+deliberately does not set it. The credential is decrypted once from the
+developer's own profile and handed to both stacks in the environment, because
+`safeStorage` is stubbed in the sidecar and the Servo stack cannot read a stored
+key at all (`scripts/decrypt-provider-key.cjs`).
+
+Raw data: `docs/plans/perf-data-eval/`.
