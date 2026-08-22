@@ -104,6 +104,7 @@ import {
   suspendNavigationWrites,
 } from './controller/persistence.ts'
 import { begin as perfBegin, mark as perfMark } from './perf.ts'
+import { startPerfAutopilot } from './perf-autopilot.ts'
 import { attachThreadHydration } from './controller/thread-hydration.ts'
 import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
 import { loadStartupSettings } from './controller/startup-settings.ts'
@@ -459,6 +460,11 @@ async function boot(): Promise<void> {
     await restoreProject(store, api, active.id, activeThreadId)
     endRestore()
     endBoot({ projects: projects.length })
+    // Debug branch, inert without COPSE_PERF_AUTOPILOT=1. Started only on the
+    // path that has a workspace mounted, because it drives the real composer —
+    // and only after restoreProject, so the thread it types into is the
+    // restored one rather than whatever was on screen mid-restore.
+    startPerfAutopilot(store)
   } else {
     endBoot({ projects: 0 })
     const unmountWelcome = mountWelcome(requireElement('welcome'), store, api)

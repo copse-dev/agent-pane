@@ -212,6 +212,15 @@
 }
 .message-reasoning-icon::before {
   content: '';
+  /* Explicitly blockified because Servo does not do it for us. A grid item is
+     blockified by the spec, so this is a no-op under Chromium — but Servo
+     leaves an eager pseudo-element at `display:inline`, where it joins a line
+     box and takes the line-height (~19px) as its height instead of its own 8px
+     border box. The result is that this CSS border triangle paints as a tall
+     trapezoid rather than a caret. Real element children of the same grid are
+     blockified correctly, and flex containers handle pseudo-elements
+     correctly; the gap is grid + pseudo-element specifically. */
+  display: block;
   width: 0;
   height: 0;
   border-left: 5px solid currentColor;

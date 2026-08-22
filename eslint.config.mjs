@@ -246,12 +246,16 @@ export default ts.config(
         exports: 'writable',
         __dirname: 'readonly',
         __filename: 'readonly',
+        Buffer: 'readonly',
       },
     },
     rules: {
       // .cjs files are executed directly by node and can't carry TypeScript
       // return-type annotations, so this rule can't be satisfied here.
       '@typescript-eslint/explicit-function-return-type': 'off',
+      // `require` is the only module syntax a .cjs file has; the ban exists to
+      // keep it out of the TypeScript sources, which this block already excludes.
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
   {
