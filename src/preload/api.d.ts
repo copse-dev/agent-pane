@@ -189,6 +189,8 @@ export interface ApiClient {
       threadId: string,
       contextJson: string,
     ) => Promise<FollowUpSuggestion[]>
+    /** Tab-completable next step for the composer placeholder; null = no obvious step. */
+    suggestNextStep: (contextJson: string) => Promise<string | null>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
       handler: (req: {

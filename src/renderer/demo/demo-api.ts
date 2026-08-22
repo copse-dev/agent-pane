@@ -381,6 +381,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
       suggestFollowUps: emptyArray,
+      suggestNextStep: () => resolved(null),
       onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => {
         chunkHandlers.add(handler)
         return (): void => {
