@@ -223,6 +223,35 @@ describe('classifyAcpAuthFailure', () => {
     )
   })
 
+  // Cursor words a lapsed WorkosCursorSessionToken this way: "session was
+  // rejected" (not expired/revoked) and "expired WorkosCursorSessionToken" (a
+  // compound noun, not a bare token/session). Both are a dead saved credential,
+  // so both must read as an expiry whose fix is `cursor-agent login`.
+  it('reads a Cursor rejected-session message as an expired sign-in', () => {
+    const cursor = { acpAgentId: 'cursor' }
+    assert.equal(
+      classifyAcpAuthFailure(
+        new RequestError(
+          -32603,
+          'Internal error: Cursor session was rejected (expired WorkosCursorSessionToken). Re-sign in to Cursor or refresh CURSOR_SESSION_TOKEN from cursor.com cookies.',
+        ),
+        cursor,
+      ),
+      'expired',
+    )
+    assert.equal(
+      classifyAcpAuthFailure(
+        new Error('Cursor session was rejected (expired WorkosCursorSessionToken).'),
+        cursor,
+      ),
+      'expired',
+    )
+    assert.equal(
+      classifyAcpAuthFailure(new Error('Session token was rejected by the server'), cursor),
+      'expired',
+    )
+  })
+
   it('leaves non-credentials failures alone', () => {
     assert.equal(classifyAcpAuthFailure(new Error('Overloaded'), claude), null)
     assert.equal(classifyAcpAuthFailure(new Error('socket hang up'), claude), null)
