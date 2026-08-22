@@ -716,7 +716,7 @@ const GH_WRITE_FLAGS: ReadonlySet<string> = new Set([
  * which live in the user's own `~/.config/gh/` — user-controlled configuration,
  * not repository-controlled, and so outside this classifier's threat model.
  */
-function classifyGhSegment(argv: readonly string[]): AutoApprovalTier | null {
+export function classifyGhSegment(argv: readonly string[]): AutoApprovalTier | null {
   const words = argv.slice(1).filter((token) => !isFlag(token))
   const pair = `${words[0] ?? ''} ${words[1] ?? ''}`.trim()
   if (GH_READ_SUBCOMMANDS.has(pair)) return 'read'
@@ -728,6 +728,23 @@ function classifyGhSegment(argv: readonly string[]): AutoApprovalTier | null {
   // the write at a repository other than the workspace's own.
   const flags = argv.filter(isFlag).map(flagName)
   return flags.every((flag) => GH_WRITE_FLAGS.has(flag)) ? 'remote-write' : null
+}
+
+/**
+ * True when any segment is a `gh` invocation that is not a known read-only
+ * subcommand pair. Used by the Guarded YOLO harm gate so writes / `gh api` /
+ * unknown verbs still prompt while `gh pr view` and friends stay routine.
+ */
+export function shellCommandHasMutatingGithubCli(command: string): boolean {
+  for (const segment of splitSegments(command)) {
+    const argv = argvOf(stripClearedRedirects(segment))
+    if (!argv) continue
+    const effective = effectiveArgv(argv)
+    if (!effective || commandName(effective[0]) !== 'gh') continue
+    if (classifyGhSegment(effective) === 'read') continue
+    return true
+  }
+  return false
 }
 
 // ---------------------------------------------------------------------------

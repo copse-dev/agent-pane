@@ -28,6 +28,7 @@ async function enableGuardedYolo(captureWarning = false): Promise<void> {
   await expect(dialog.$('.approval-heading')).toHaveText('Enable Guarded YOLO for this thread?')
   const body = await dialog.$('.approval-body').getText()
   expect(body).toContain('will run without approval in this thread')
+  expect(body).toContain('GitHub CLI writes')
   expect(body).toContain('deterministic host-owned checker')
   expect(body).toContain('stays enabled for this thread until you disable it or restart the app')
   if (captureWarning) {
@@ -77,6 +78,7 @@ describeSkipInCi('Guarded YOLO shell mode', function () {
     const bannerText = await banner.getText()
     expect(bannerText).toContain('active for this thread')
     expect(bannerText).toMatch(/Project sandbox|No OS sandbox/)
+    expect(bannerText).toMatch(/GitHub writes still ask/)
     await saveElementScreenshot('.guarded-yolo-banner', 'guarded-yolo-active.png')
 
     await waitForAgentIdle()

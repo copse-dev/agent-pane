@@ -1470,15 +1470,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (current.phase !== 'off') return current
     const containment =
       current.containment === 'project-sandbox'
-        ? 'The project sandbox remains in use where possible, but external commands may run unsandboxed.'
-        : 'No OS sandbox is active on this platform, so commands run with your full user permissions.'
+        ? 'The project sandbox remains in use where possible. Outside-project reads of non-credential paths auto-run inside a widened seatbelt; other external commands may run unsandboxed.'
+        : 'No OS sandbox is active on this platform, so commands run with your full user permissions. Outside-project reads of non-credential paths still auto-run; credential paths and home-root listings stay refused.'
     const { approved } = await requestApproval({
       title: 'Enable Guarded YOLO for this thread?',
       cause: 'mode-arming',
       body: [
-        'Routine shell commands, including network and outside-workspace commands, will run without approval in this thread.',
+        'Routine shell commands will run without approval in this thread, including outside-project reads of non-credential paths.',
         '',
         containment,
+        '',
+        'GitHub CLI writes (for example `gh pr create`) still require confirmation. Credential files, `~`, and `/` remain refused.',
         '',
         'A deterministic host-owned checker will still ask about bounded destructive work and permanently block obvious catastrophic commands. It reduces obvious harm, but it is not a complete security boundary and cannot understand every script or obfuscation.',
         '',
