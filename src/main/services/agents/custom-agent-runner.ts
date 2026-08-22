@@ -14,6 +14,7 @@ import {
   buildCustomAgentSystemPrompt,
   buildCustomAgentTask,
   resolveCustomAgentMaxSteps,
+  resolveCustomAgentModel,
   resolveCustomAgentTools,
 } from './custom-agent-strategy.ts'
 import { addSubagentUsage } from '../subagent-usage.ts'
@@ -24,6 +25,8 @@ import { subagentHookCallbacks } from '../hooks/subagent.ts'
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from '../mcp/mcp-registry.ts'
+import { buildProvider, isLocalChatModel } from '../providers/provider-selection.ts'
+import { resolveContextWindow } from '../providers/resolve-context-window.ts'
 
 /**
  * Runs a user-authored subagent (docs/plans/custom-subagents.md, P2).
@@ -68,6 +71,15 @@ export async function runCustomAgent(
   signal: AbortSignal,
 ): Promise<string> {
   const workspace = getWorkspaceRoot() ?? '(none)'
+  const model = resolveCustomAgentModel(agent.model, ctx.parentModel)
+  const usesParentModel = model === ctx.parentModel
+  const provider = usesParentModel ? ctx.provider : await buildProvider(model)
+  const contextWindow = usesParentModel ? ctx.contextWindow : await resolveContextWindow(model)
+  const toolSchemaReserve = usesParentModel
+    ? ctx.toolSchemaReserve
+    : isLocalChatModel(model)
+      ? 2_500
+      : 1_000
   // Candidates come from the **registry**, not from the parent turn's offered
   // set, matching how `explore` builds its own tools. The parent's set is
   // narrowed for reasons that are not about safety: with subagents enabled it
@@ -98,34 +110,34 @@ export async function runCustomAgent(
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userTask },
   ]
-  const subagentBudget = conversationTokenBudget(subagentMessages, ctx.contextWindow, {
-    reserveTokens: ctx.toolSchemaReserve,
+  const subagentBudget = conversationTokenBudget(subagentMessages, contextWindow, {
+    reserveTokens: toolSchemaReserve,
   })
   const readLimits = readFileLimitsForSubagent(subagentBudget)
 
   const run = async (): Promise<string> => {
     const { summary, session } = await runSubagent({
-      provider: ctx.provider,
+      provider,
       prompt,
       parentGoal: `${ctx.parentGoal}\nWorkspace: ${workspace}`,
       tools,
       parentToolCallId: ctx.parentToolCallId,
       signal,
       maxSteps: resolveCustomAgentMaxSteps(agent.maxTurns),
-      maxContextTokens: ctx.contextWindow,
-      toolSchemaReserveTokens: ctx.toolSchemaReserve,
+      maxContextTokens: contextWindow,
+      toolSchemaReserveTokens: toolSchemaReserve,
       executeTool: (name, args, sig) => executeAgentTool(ctx.registry, tools, name, args, sig),
       onSubagentChunk: ctx.onChunk,
       systemPrompt,
       userTask,
-      usageModel: ctx.parentModel,
+      usageModel: model,
       kind: 'custom',
       agentName: agent.name,
       ...(agent.color !== null ? { agentColor: agent.color } : {}),
       // The same `subagentStart` gate and `subagentStop` notification every other
       // subagent fires; the matcher is the subagent type, so a user's hooks can
       // gate their own agents by name with no extra wiring.
-      ...subagentHookCallbacks({ usageModel: ctx.parentModel }),
+      ...subagentHookCallbacks({ usageModel: model }),
     })
 
     addSubagentUsage(session.usage ?? { inputTokens: 0, outputTokens: 0 })

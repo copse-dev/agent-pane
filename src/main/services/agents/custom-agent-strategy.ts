@@ -39,6 +39,20 @@ export const CUSTOM_AGENT_DEFAULT_MAX_STEPS = 12
  */
 export const CUSTOM_AGENT_MAX_STEPS_CEILING = 30
 
+const CUSTOM_AGENT_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  sonnet: 'claude-sonnet-4-6',
+  opus: 'claude-opus-4-8',
+  haiku: 'claude-haiku-4-5',
+  fable: 'claude-fable-5',
+}
+
+/** Resolve Claude/Cursor agent-model shorthand, or inherit the parent model. */
+export function resolveCustomAgentModel(model: string, parentModel: string): string {
+  const requested = model.trim()
+  if (requested === '' || requested.toLowerCase() === 'inherit') return parentModel
+  return CUSTOM_AGENT_MODEL_ALIASES[requested.toLowerCase()] ?? requested
+}
+
 /**
  * Does `toolName` match an entry from a definition's tool list?
  *

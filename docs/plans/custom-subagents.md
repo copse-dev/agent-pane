@@ -306,12 +306,12 @@ gate, read-only enforcement, staged-edit approval, sandbox — exactly as `explo
 
 `model` defaults to `inherit` → the parent turn's provider and model, which is what
 `explore` does when no subagent route is configured. An alias (`sonnet`, `opus`, `haiku`,
-`fable`) or a full model id resolves through the existing catalog and `buildProvider`; if
-it cannot be resolved with the user's configured providers, the run falls back to the
-parent model and stamps the card — the `localFallback` precedent on `SubagentSession`
-exists precisely because a silent downgrade is indistinguishable from an intentional
-route. Cursor's `id[fast,effort,context]` parameter suffix is parsed off and dropped in
-v1 (noted on the row); a Cursor-only model id will simply not resolve and fall back.
+`fable`) maps to its concrete Claude model, while a full model id resolves through
+`buildProvider` with that model's context window and tool-schema reserve. If the chosen
+provider cannot run, the invocation fails visibly through the existing custom-agent error
+result instead of silently using a different model. Cursor's
+`id[fast,effort,context]` parameter suffix is parsed off and dropped in v1 (noted on the
+row); an unavailable Cursor-only model id therefore produces the same visible failure.
 
 Local subagent routing (`buildSubagentRoute`, `localSubagentsEnabled`) applies only to
 `inherit`; an explicit `model` in the file is the user's choice and wins.

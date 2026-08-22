@@ -8,6 +8,7 @@ import {
   buildCustomAgentSystemPrompt,
   buildCustomAgentTask,
   customAgentInvocationTask,
+  resolveCustomAgentModel,
   resolveCustomAgentMaxSteps,
   resolveCustomAgentTools,
   toolMatchesEntry,
@@ -124,6 +125,19 @@ describe('resolveCustomAgentMaxSteps', () => {
   it('clamps a definition that asks for an unbounded run', () => {
     assert.equal(resolveCustomAgentMaxSteps(9999), CUSTOM_AGENT_MAX_STEPS_CEILING)
     assert.equal(resolveCustomAgentMaxSteps(0), 1)
+  })
+})
+
+describe('resolveCustomAgentModel', () => {
+  it('inherits the parent model when requested', () => {
+    assert.equal(resolveCustomAgentModel('inherit', 'gpt-5'), 'gpt-5')
+    assert.equal(resolveCustomAgentModel('', 'gpt-5'), 'gpt-5')
+  })
+
+  it('maps ecosystem aliases and preserves full model ids', () => {
+    assert.equal(resolveCustomAgentModel('sonnet', 'gpt-5'), 'claude-sonnet-4-6')
+    assert.equal(resolveCustomAgentModel('OPUS', 'gpt-5'), 'claude-opus-4-8')
+    assert.equal(resolveCustomAgentModel('lmstudio:qwen', 'gpt-5'), 'lmstudio:qwen')
   })
 })
 
