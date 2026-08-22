@@ -414,3 +414,37 @@ The distinction the plan should have drawn is between three separate things:
 So Phase 0 is deprioritisable for a rendering prototype and blocking for
 JS-driven SVG. Mermaid is the concrete case: it will not work until (1) lands,
 no matter how good the painting gets.
+
+### `pathLength` fix — validated 2026-08-22
+
+`81f07f9b89a layout: honor pathLength when scaling dash patterns` (78 lines,
+two unit tests). Measured on the real app, same region and method as the
+original defect report, with Electron as the control:
+
+| Region                   | Servo before        | Servo after                   | Electron control          |
+| ------------------------ | ------------------- | ----------------------------- | ------------------------- |
+| Reasoning indicator      | 0 px/frame, max Δ 1 | **30–66 px/frame, max Δ 223** | 34–52 px/frame, max Δ 223 |
+| Sidebar dots (unchanged) | 4–8 px/frame        | 8–12 px/frame                 | 6–12 px/frame             |
+
+The max delta matching Electron's exactly (223) is the strongest single
+signal: the stroke now reaches full amplitude rather than sitting at a
+near-constant value. Visually confirmed across two frames — a complete spiral
+stroke in one, partially erased in the next, which is the sweep.
+
+Rendering quality improved as a side effect, and the reason is worth noting:
+with the dash miscounted the indicator painted as a fat, blobby, slightly
+translucent mass (fifty sub-pixel dashes overlapping); it now paints as the
+clean thin spiral stroke Chromium draws. So the old rendering was wrong in
+appearance as well as motion, which no static screenshot had flagged.
+
+No regressions observed elsewhere in the app.
+
+**Still open, and untouched by this fix:** `getBBox` remains commented out in
+`SVGGraphicsElement.webidl`, so Mermaid diagrams still fail — identically with
+the native pref on and off, as before. That is the scripted-geometry category
+(1) above and needs its own work.
+
+**Process note:** unlike the earlier commits in the series this one cites no
+WPT evidence. Two unit tests plus the empirical validation above are reasonable
+for a 78-line geometry change, but the standing rule was WPT numbers per
+change.
