@@ -59,8 +59,8 @@ export function mountGuardedYoloControl(
     const phase = state.phase === 'active' ? 'active for this thread' : 'armed'
     const containment =
       state.containment === 'project-sandbox'
-        ? 'Project sandbox where possible; external commands may run unsandboxed.'
-        : 'No OS sandbox; commands run with your full user permissions.'
+        ? 'Project sandbox where possible; outside reads of non-credential paths auto-run; GitHub writes still ask.'
+        : 'No OS sandbox; outside reads of non-credential paths auto-run; GitHub writes still ask.'
     text.textContent = `Guarded YOLO ${phase}. ${containment}`
     onStateChanged()
   }
