@@ -251,6 +251,14 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   openRouterFreeMode: z.boolean(),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
+  // Parallel todo workers (docs/plans/parallel-todo-workers.md): when on, local
+  // todo workers run in their own linked worktree with a host-side commit, so a
+  // later fan-out never shares the thread checkout mid-run. Default OFF until
+  // the fan-out phase lands; off means today's in-checkout worker exactly.
+  parallelTodoWorkersEnabled: z.boolean(),
+  // Concurrent worker cap once fan-out exists. Writing workers spawn shells and
+  // installs, so this starts lower than the explore fan-out cap.
+  todoWorkerParallelism: z.number().int().min(1).max(4),
   // P5: the former top-level `postTurnReviewEnabled` boolean is retired —
   // the `copse.post-turn-review` first-party plugin toggle in Settings > Plugins
   // is the atomic master switch consulted by the trigger site in

@@ -3,9 +3,42 @@ import {
   PRODUCT_REASONING_CHECKPOINT_POLICY,
   PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
 } from '@copse/agent/reasoning-checkpoint-policy.ts'
+import { mkdir, realpath } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import type { LLMMessage, LLMProvider, LLMTool, StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
+import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import type { ToolRegistry } from './tool-registry.ts'
+import type { ThreadExecutionContext } from './thread-execution-context.ts'
+import { runWithThreadExecutionContext } from './thread-execution-context.ts'
+import {
+  commitTodoWorkerOutput,
+  resolveTodoWorkerBranch,
+  type TodoWorkerCommit,
+} from './todo-worker-worktree.ts'
+import {
+  expectedThreadWorktreePath,
+  releaseWorktreeRoot,
+  repositoryLocation,
+  runWorktreeGit,
+} from './worktree-manager.ts'
+import { registerInternalWorkspaceRoot } from './workspace.ts'
+
+/**
+ * Worker checkouts live beside thread worktrees but under a `todo-` owner
+ * prefix, so the orphan sweep can tell them apart by name without new state.
+ */
+function expectedTodoWorkerWorktreePath(projectId: string, todoId: string): string {
+  const compact = todoId.toLowerCase().replace(/[^a-z0-9]/g, '') || 'item'
+  return expectedThreadWorktreePath(projectId, `todo-${compact}`)
+}
+
+async function requireGitValue(cwd: string, args: string[], action: string): Promise<string> {
+  const result = await runWorktreeGit(cwd, args)
+  const value = result.stdout.trim()
+  if (result.code !== 0 || !value) throw new Error(action)
+  return value
+}
 
 const TODO_WORKER_TOOLS = [
   'read_file',
@@ -99,6 +132,14 @@ function buildTodoWorkerBrief(opts: RunTodoWorkerOptions): string {
 export interface TodoWorkerResult {
   summary: string
   usage: { inputTokens: number; outputTokens: number }
+  /**
+   * Set only when the worker ran in its own linked worktree
+   * (`parallelTodoWorkersEnabled`): the branch its one commit landed on, the
+   * commit sha (null when the worker produced no file changes), and whether the
+   * worktree was retired after absorption. The serial in-checkout path leaves
+   * this undefined — its output is the thread checkout's own dirty state.
+   */
+  worktree?: { branch: string; sha: string | null; retired: boolean }
 }
 
 function filterWorkerTools(registry: ToolRegistry): LLMTool[] {
@@ -144,4 +185,121 @@ export async function runTodoWorker(opts: RunTodoWorkerOptions): Promise<TodoWor
 
   const trimmed = summary.trim() || 'Worker finished with no summary.'
   return { summary: trimmed, usage: { inputTokens, outputTokens } }
+}
+
+export interface RunTodoWorkerInWorktreeOptions extends RunTodoWorkerOptions {
+  projectId: string
+  threadId: string
+  /** The thread execution context the parent turn is running under. */
+  parentContext: ThreadExecutionContext
+  /** Base the worker worktree cuts from; defaults to the thread root's HEAD. */
+  baseBranch?: string
+  authorName: string
+  authorEmail: string
+}
+
+export interface TodoWorktreeOutcome {
+  result: TodoWorkerResult
+  worktree: ThreadWorktree
+  commit: TodoWorkerCommit
+  retired: boolean
+}
+
+/**
+ * Run one local todo worker in its own linked worktree, then commit its output
+ * on the worker branch host-side (phase 2, docs/plans/parallel-todo-workers.md).
+ *
+ * The worker loop runs under a nested ThreadExecutionContext pointing at the
+ * worker checkout, so every tool the worker calls resolves there by
+ * construction. On any outcome the worktree is retired when its commit is
+ * absorbed (here: committed and its branch kept — absorption into the thread
+ * branch is the consolidator's job in phase 3, so phase 2 keeps the branch and
+ * reports it); a failed run retains the worktree for inspection. The parent's
+ * checkout is never touched.
+ */
+export async function runTodoWorkerInWorktree(
+  opts: RunTodoWorkerInWorktreeOptions,
+): Promise<TodoWorktreeOutcome> {
+  const { projectId, threadId, parentContext, baseBranch, item } = opts
+  const projectRoot = parentContext.projectRoot
+  const location = await repositoryLocation(projectRoot)
+  const repoRoot = location.repositoryRoot
+  const baseRef =
+    baseBranch ??
+    (await requireGitValue(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD'], 'Cannot read HEAD'))
+
+  const branch = await resolveTodoWorkerBranch(repoRoot, item.id)
+  const baseCommit = await requireGitValue(
+    repoRoot,
+    ['rev-parse', '--verify', `${baseRef}^{commit}`],
+    `Cannot resolve base ${baseRef}`,
+  )
+  const target = expectedTodoWorkerWorktreePath(projectId, item.id)
+  await mkdir(dirname(target), { recursive: true })
+  const add = await runWorktreeGit(repoRoot, [
+    'worktree',
+    'add',
+    '-b',
+    branch,
+    target,
+    baseCommit,
+  ])
+  if (add.code !== 0) throw new Error(`Cannot create todo worker worktree: ${(add.stderr || add.stdout).trim()}`)
+
+  const canonicalPath = await realpath(target)
+  const executionRoot = resolve(canonicalPath, location.projectRelativePath)
+  await mkdir(executionRoot, { recursive: true })
+  const worktree: ThreadWorktree = {
+    path: canonicalPath,
+    branch,
+    baseBranch: baseRef,
+    baseCommit,
+    createdAt: Date.now(),
+    seededFromDirtyProject: false,
+  }
+  registerInternalWorkspaceRoot(canonicalPath, executionRoot)
+
+  const workerContext: ThreadExecutionContext = Object.freeze({
+    projectId,
+    threadId,
+    projectRoot,
+    root: executionRoot,
+    checkoutMode: 'worktree' as const,
+    branch,
+  })
+
+  let retired = false
+  try {
+    const result = await runWithThreadExecutionContext(workerContext, () =>
+      runTodoWorker(opts),
+    )
+    const commit = await commitTodoWorkerOutput({
+      worktreePath: canonicalPath,
+      branch,
+      item,
+      authorName: opts.authorName,
+      authorEmail: opts.authorEmail,
+    })
+    // Phase 2 keeps the branch (the consolidator absorbs it in phase 3); the
+    // checkout itself is dropped as soon as the commit exists, because the
+    // commit fully captures the tree.
+    const remove = await runWorktreeGit(repoRoot, ['worktree', 'remove', canonicalPath])
+    if (remove.code === 0) {
+      releaseWorktreeRoot(executionRoot)
+      retired = true
+    }
+    return {
+      result: {
+        ...result,
+        ...(retired ? { worktree: { branch, sha: commit.sha, retired } } : {}),
+      },
+      worktree,
+      commit,
+      retired,
+    }
+  } catch (error) {
+    // Retain the worktree and branch: the worker's partial output stays on disk
+    // for inspection, and the orphan sweep surfaces it in the inventory.
+    throw error
+  }
 }

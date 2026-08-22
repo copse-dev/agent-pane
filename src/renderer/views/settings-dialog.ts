@@ -269,6 +269,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
     save: true,
   },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'parallelTodoWorkersEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'todoWorkerParallelism', kind: 'number', default: 2, save: true },
   // P5: the master post-turn-review toggle moved to Settings > Plugins
   // (`copse.post-turn-review`); the threshold below stays a top-level setting.
   { name: 'postTurnReviewMinChangedLines', kind: 'number', default: 1, save: true },

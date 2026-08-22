@@ -168,7 +168,7 @@ import {
   inertPluginSources,
   pluginUnavailableReason,
 } from './plugins/plugin-service.ts'
-import { runTodoWorker } from './todo-worker-runner.ts'
+import { runTodoWorker, runTodoWorkerInWorktree } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { type ReasoningLevel } from '@copse/llm/model-parameters.ts'
@@ -1559,7 +1559,17 @@ export async function runAgent(
               content: localItem.content,
             })
             try {
-              const worker = await runTodoWorker({
+              // Flag-gated phase 2 (docs/plans/parallel-todo-workers.md): run
+              // the worker in its own linked worktree and commit its output on
+              // the worker branch host-side. Off — or no execution context, as
+              // in some tests/ACP bridges — keeps today's in-checkout worker.
+              const parallelEnabled = getSetting<boolean>('parallelTodoWorkersEnabled', false)
+              const parentContext = getThreadExecutionContext()
+              const useWorktree =
+                parallelEnabled &&
+                parentContext !== null &&
+                parentContext.projectRoot === parentContext.root
+              const serialWorkerOpts = {
                 item: localItem,
                 provider: subagentRoute.provider,
                 registry,
@@ -1569,7 +1579,17 @@ export async function runAgent(
                 onChunk: sendChunk,
                 parentGoal,
                 priorSummaries: localWorkerSummaries,
-              })
+              }
+              const worker = await (useWorktree && parentContext
+                ? runTodoWorkerInWorktree({
+                    ...serialWorkerOpts,
+                    projectId: parentContext.projectId,
+                    threadId: parentContext.threadId,
+                    parentContext,
+                    authorName: 'Copse Todo Worker',
+                    authorEmail: 'todo-worker@copse.local',
+                  }).then((outcome) => outcome.result)
+                : runTodoWorker(serialWorkerOpts))
               localWorkerSummaries.set(localItem.id, {
                 content: localItem.content,
                 summary: worker.summary,
