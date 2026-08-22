@@ -119,7 +119,7 @@ const indexHtml = readFileSync('dist/renderer/index.html', 'utf8')
 const cspMetaPattern = /[ \t]*<meta\s+http-equiv="Content-Security-Policy"[^>]*\/>\n?/
 const withCsp = indexHtml.replace(
   cspMetaPattern,
-  process.env.COPSE_TAURI_STRIP_CSP === '1'
+  process.env['COPSE_TAURI_STRIP_CSP'] === '1'
     ? ''
     : `    <meta http-equiv="Content-Security-Policy" content="${TAURI_CSP}" />\n`,
 )
