@@ -413,6 +413,29 @@ async function run(store: AppStore): Promise<void> {
     })
   })
 
+  // Split the remaining space on the frozen reasoning indicator: does its
+  // animated property advance in style, or does style advance while paint
+  // stays put? Sampling the same element twice is the only thing that
+  // distinguishes "the animation never runs" from "it runs and never repaints".
+  void sleep(3500).then(async () => {
+    const path = document.querySelector<SVGElement>('.reasoning-activity-path')
+    if (!path) {
+      mark('autopilot:dashoffset', { found: false })
+      return
+    }
+    const read = (): string => getComputedStyle(path).strokeDashoffset
+    const first = read()
+    await sleep(400)
+    const second = read()
+    mark('autopilot:dashoffset', {
+      found: true,
+      first,
+      second,
+      advanced: first !== second,
+      opacity: getComputedStyle(path).opacity,
+    })
+  })
+
   const outcome = await Promise.race([
     donePromise,
     sleep(TURN_TIMEOUT_MS).then(() => 'timeout' as const),
