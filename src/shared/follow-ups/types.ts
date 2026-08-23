@@ -37,6 +37,27 @@ export interface FollowUpContext {
   openTodos?: string[] | undefined
 }
 
+/** IPC/prompt bounds for unfinished plan context. */
+export const MAX_FOLLOW_UP_OPEN_TODOS = 20
+export const MAX_FOLLOW_UP_OPEN_TODO_CHARS = 500
+
+/**
+ * Normalize renderer-owned todo contents before they cross the guarded IPC
+ * boundary. The guard remains fail-closed for compromised callers, while valid
+ * persisted plans are reduced to the same bounded shape instead of disabling
+ * the entire follow-up pipeline.
+ */
+export function normalizeFollowUpOpenTodos(contents: readonly string[]): string[] {
+  const normalized: string[] = []
+  for (const content of contents) {
+    const item = content.trim().slice(0, MAX_FOLLOW_UP_OPEN_TODO_CHARS)
+    if (!item) continue
+    normalized.push(item)
+    if (normalized.length >= MAX_FOLLOW_UP_OPEN_TODOS) break
+  }
+  return normalized
+}
+
 export interface PrWorkspaceContext {
   branch: string | null
   hasOpenPr: boolean

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { addMessage, createThread, setThreadTodos } from '@shared/store/thread-helpers.ts'
+import { followUpContextSchema } from '../../main/ipc/ipc-guards.ts'
 import { lastExchange } from './last-exchange.ts'
 
 function storeWithFinishedTurn(): { store: ReturnType<typeof createStore>; threadId: string } {
@@ -42,5 +43,26 @@ describe('lastExchange openTodos', () => {
     // Absent, not empty: the suggestion prompts treat both alike, but keeping
     // the payload out of the IPC round-trip keeps the common case clean.
     assert.equal(reconciled.context.openTodos, undefined)
+  })
+
+  it('normalizes a runaway persisted plan into an IPC-valid context', () => {
+    const { store, threadId } = storeWithFinishedTurn()
+    setThreadTodos(store, threadId, [
+      { id: 'long', content: `  ${'x'.repeat(600)}  `, status: 'in_progress' },
+      { id: 'blank', content: '   ', status: 'pending' },
+      ...Array.from({ length: 25 }, (_, index) => ({
+        id: `extra-${String(index)}`,
+        content: `Extra item ${String(index)}`,
+        status: 'pending' as const,
+      })),
+    ])
+
+    const exchange = lastExchange(store, threadId)
+    assert.ok(exchange)
+    const { openTodos } = exchange.context
+    assert.ok(openTodos)
+    assert.equal(openTodos.length, 20)
+    assert.equal(openTodos[0]?.length, 500)
+    assert.equal(followUpContextSchema.safeParse(exchange.context).success, true)
   })
 })

@@ -44,9 +44,11 @@ export function buildContinuePlanSuggestion(openTodos: string[]): {
   // Destructure rather than index: callers guard on length, but the label must
   // stay a plain string even if one ever slips through with an empty list.
   const [first = ''] = openTodos
+  const labelItem = first.replace(/\s+/g, ' ').trim()
+  const conciseLabelItem = labelItem.length > 72 ? `${labelItem.slice(0, 71)}…` : labelItem
   return {
     id: DETERMINISTIC_FOLLOW_UP_IDS.continuePlan,
-    label: `Continue: ${first}`,
+    label: `Continue: ${conciseLabelItem}`,
     prompt:
       'The task plan still has open items. Continue with the next unfinished item, ' +
       'and update the plan as you go:\n' +

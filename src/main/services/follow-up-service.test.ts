@@ -281,4 +281,14 @@ describe('buildContinuePlanSuggestion', () => {
     assert.equal(built.label, 'Continue: Only step left')
     assert.match(built.prompt, /- Only step left/)
   })
+
+  it('keeps a long or multiline first item readable as a bubble label', () => {
+    const suggestion = buildContinuePlanSuggestion([
+      `Review the first failure\nand then ${'investigate '.repeat(20)}`,
+    ])
+    assert.ok(suggestion.label.length <= 82)
+    assert.ok(suggestion.label.endsWith('…'))
+    assert.equal(suggestion.label.includes('\n'), false)
+    assert.match(suggestion.prompt, /Review the first failure\nand then/)
+  })
 })

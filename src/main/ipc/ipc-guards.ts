@@ -1,5 +1,9 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
+import {
+  MAX_FOLLOW_UP_OPEN_TODO_CHARS,
+  MAX_FOLLOW_UP_OPEN_TODOS,
+} from '@shared/follow-ups/types.ts'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
 import { RENDERER_STORAGE_KEYS } from '@shared/storage-keys.ts'
 import type { VncDiscoveryHost, VncTarget } from '@shared/types/vnc.ts'
@@ -129,7 +133,10 @@ export const followUpContextSchema = z.object({
   toolNames: z.array(z.string()),
   // Open task-plan item contents at turn end; bounded so a runaway plan cannot
   // balloon the IPC payload or the suggestion prompts built from it.
-  openTodos: z.array(z.string().min(1).max(500)).max(20).optional(),
+  openTodos: z
+    .array(z.string().min(1).max(MAX_FOLLOW_UP_OPEN_TODO_CHARS))
+    .max(MAX_FOLLOW_UP_OPEN_TODOS)
+    .optional(),
 })
 
 /**
