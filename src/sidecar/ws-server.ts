@@ -32,12 +32,42 @@ export function wsEndpointReady(): Promise<WsEndpoint> {
   return endpointPromise
 }
 
+/**
+ * Inbound channel allowlists, generated from the preload contract at bundle
+ * time (scripts/build-tauri.mts). Under Electron the renderer can only reach
+ * channels the preload exposes; here any page script could open its own
+ * socket, so the server enforces the same surface — an invoke/send outside it
+ * closes the connection instead of reaching the ipcMain handler table.
+ * Outside the sidecar bundle the defines are absent and this fails closed.
+ */
+const allowedInvokeChannels: ReadonlySet<string> = new Set(
+  typeof __COPSE_WS_INVOKE_CHANNELS__ === 'undefined' ? [] : __COPSE_WS_INVOKE_CHANNELS__,
+)
+const allowedSendChannels: ReadonlySet<string> = new Set(
+  typeof __COPSE_WS_SEND_CHANNELS__ === 'undefined' ? [] : __COPSE_WS_SEND_CHANNELS__,
+)
+
+/**
+ * Authentication happens only after a complete frame is buffered and decoded,
+ * so this bound is the pre-auth limit on what a local peer can make the
+ * sidecar allocate (ws's default is 100 MiB). 32 MiB comfortably covers the
+ * largest legitimate frames — invoke args carrying base64 attachment data.
+ */
+const MAX_FRAME_BYTES = 32 * 1024 * 1024
+
 function start(): Promise<WsEndpoint> {
   const token = randomBytes(32).toString('hex')
-  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0, maxPayload: MAX_FRAME_BYTES })
 
   server.on('connection', (socket) => {
     let bound: { winId: number; unbind: () => void } | null = null
+    // ws surfaces protocol violations (an over-`maxPayload` frame among them)
+    // as an 'error' event before closing the socket; without a listener that
+    // event throws and takes the whole sidecar down. The socket is already
+    // being closed (1009 for oversize) — just keep the process alive.
+    socket.on('error', (error) => {
+      console.error('[ws-server] socket error:', error.message)
+    })
     // A client that never authenticates gets dropped; nothing before a valid
     // hello is dispatched anywhere.
     const helloTimeout = setTimeout(() => {
@@ -89,6 +119,10 @@ function start(): Promise<WsEndpoint> {
 
       if (frame.t === 'invoke') {
         const { id, channel, args } = frame
+        if (!allowedInvokeChannels.has(channel)) {
+          socket.close(4007, 'channel not allowed')
+          return
+        }
         sidecarInternals.dispatchInvoke(bound.winId, channel, args).then(
           (value) => {
             reply({ t: 'result', id, ok: true, value })
@@ -106,6 +140,10 @@ function start(): Promise<WsEndpoint> {
       }
 
       // Only 'send' remains after the returns above.
+      if (!allowedSendChannels.has(frame.channel)) {
+        socket.close(4007, 'channel not allowed')
+        return
+      }
       sidecarInternals.dispatchSend(bound.winId, frame.channel, frame.args)
     })
 
