@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import assert from 'node:assert/strict'
-import { $, browser } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import type { Thread } from '@shared/types'
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
@@ -62,6 +62,27 @@ async function approvePendingDiffs(): Promise<void> {
   if (queuedCount === 0) return
   await $('button*=Accept all').click()
   await browser.pause(200)
+}
+
+async function armGuardedYoloForEval(): Promise<void> {
+  // Match tests/e2e/guarded-yolo.e2e.ts exactly.
+  await $('.footer-overflow-trigger').click()
+  const items = await $$('.footer-overflow-item')
+  const enableItem = await items.find(async (item) =>
+    (await item.getText()).includes('Enable Guarded YOLO'),
+  )
+  if (!enableItem) throw new Error('Guarded YOLO footer action was not available for eval')
+  await enableItem.click()
+
+  const dialog = await $('#approval-dialog')
+  await dialog.waitForDisplayed({ timeout: 10_000 })
+  await expect(dialog.$('.approval-heading')).toHaveText('Enable Guarded YOLO for this thread?')
+  await dialog.$('.approval-approve').click()
+  approvalCount++
+
+  const banner = await $('.guarded-yolo-banner')
+  await banner.waitForDisplayed({ timeout: 10_000 })
+  await expect(banner).toHaveAttribute('data-phase', 'armed')
 }
 
 async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
@@ -356,6 +377,8 @@ function assertToolUseExpectations(
       requireSuccessfulToolGroups: expectation.requireSuccessfulToolGroups,
       forbidTools: expectation.forbidTools,
       forbidDisplacedShell: expectation.forbidDisplacedShell,
+      forbidDestructiveGitShell: expectation.forbidDestructiveGitShell,
+      forbidCopseWorkspaceShell: expectation.forbidCopseWorkspaceShell,
       forbidGithubNetworkDenial: expectation.forbidGithubNetworkDenial,
       forbidGlobalTempWrites: expectation.forbidGlobalTempWrites,
     },
@@ -445,6 +468,11 @@ describe('agent eval drive', () => {
 
     const idleTimeout = Number(process.env.COPSE_EVAL_IDLE_MS ?? 15 * 60_000)
     const prompts = selectedEvalPrompts(scenario)
+    const shouldArmGuardedYolo =
+      scenario.toolUse?.armGuardedYolo === true || process.env.COPSE_EVAL_GUARDED_YOLO === '1'
+    if (shouldArmGuardedYolo) {
+      await armGuardedYoloForEval()
+    }
 
     for (const prompt of prompts) {
       await typePrompt(prompt)

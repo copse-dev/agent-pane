@@ -19,7 +19,7 @@ export const getCiStatusTool = defineTool({
   name: 'get_ci_status',
   provenance: 'external',
   description:
-    'Read GitHub pull request CI check status for the current branch or a specific PR number. ' +
+    'Read GitHub pull request CI check status for the current branch or a specific PR number. Prefer this over run_shell + gh. For branch/main workflow runs without an open PR, prefer gh_run_list / gh_run_view. ' +
     'Use after pushing to see whether remote checks are pending, passing, or failing.',
   parameters: z.object({
     pr_number: prNumberSchema,
