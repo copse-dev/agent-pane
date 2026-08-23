@@ -271,6 +271,47 @@ renders as a correct `▶` with **no app-side change at all**. An earlier
 ever fixed the one symptom and would have left the other twelve grid layouts
 silently broken.
 
+### Popover: the top-listed risk is a false alarm (2026-08-23)
+
+The risk table above ranks the Popover API first, at "181 uses" across
+"menus/tooltips/pickers", and the probe verdicts call it "genuinely absent".
+Absent it is. Used it is not.
+
+**The app does not use the Popover API at all.** Searched for every real form:
+no `popover` attribute set anywhere, no `popovertarget`, and no `.showPopover()`
+/ `.togglePopover()` / `.hidePopover()` called on any DOM node. What the count
+found was the _word_. The 185 hits are naming conventions — CSS classes like
+`popover-row`, `popover-header`, `popover-value`, and local identifiers like
+`popoverActive`. `context-wheel.ts` defines its own `showPopover()`/
+`hidePopover()` as plain local functions that toggle `element.hidden` on a
+CSS-positioned div.
+
+So the app's menus, tooltips and pickers are built from ordinary elements,
+CSS and `hidden`, all of which work under Servo today. The `[popover] { display:
+none }` guard the probe verdicts recommend shipping is unnecessary here, though
+harmless.
+
+**The engine gap is real, it just does not touch us.** Measured in-page:
+
+|                                           | Servo       | Electron   |
+| ----------------------------------------- | ----------- | ---------- |
+| `showPopover`                             | `undefined` | `function` |
+| `[popover]` `display` before opening      | **`block`** | `none`     |
+| Layout height leaked by hidden content    | **17 px**   | 0          |
+| `CSS.supports('selector(:popover-open)')` | **`true`**  | `true`     |
+
+Two things worth carrying forward. The un-upgraded content really does render
+inline and occupy layout, so any _future_ use of the API in this app would leak
+hidden menu content into the page rather than merely failing to open. And
+**`CSS.supports('selector(:popover-open)')` returns `true` under Servo while the
+API is absent** — so the obvious feature detection reports support that is not
+there. Detect with `typeof el.showPopover === 'function'` instead.
+
+The lesson generalises beyond popover: the risk table was built by counting
+identifier occurrences, and at least its top entry does not survive contact with
+what the code actually calls. The other entries deserve the same check before
+they are treated as blockers.
+
 ### Pref sweep against Servo's own defaults and WPT runs (2026-08-22)
 
 Finding the grid pref prompted a full audit. Servo curates a list of
