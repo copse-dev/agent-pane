@@ -64,7 +64,10 @@ describe('agent-loop-limits', () => {
       // The threshold is MIN_DISTINCT_TOOL_CALLS_FOR_EXTENSION; one lucky call
       // plus fifteen repeats must read as stuck, as must a tool-less run.
       for (let distinct = 0; distinct <= 1; distinct++) {
-        assert.equal(shouldExtendRunBudget({ ...healthy, distinctRecentToolCalls: distinct }, 0), false)
+        assert.equal(
+          shouldExtendRunBudget({ ...healthy, distinctRecentToolCalls: distinct }, 0),
+          false,
+        )
       }
       assert.equal(shouldExtendRunBudget({ ...healthy, distinctRecentToolCalls: 2 }, 0), true)
     })

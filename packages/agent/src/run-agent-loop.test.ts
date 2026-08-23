@@ -1428,7 +1428,10 @@ src/renderer/views/projects-pane.ts
         provider: {
           async *stream() {
             n++
-            yield { type: 'tool_call', toolCall: { id: String(n), name: `t${String(n)}`, args: {} } }
+            yield {
+              type: 'tool_call',
+              toolCall: { id: String(n), name: `t${String(n)}`, args: {} },
+            }
             yield { type: 'done' }
           },
         },
@@ -1451,10 +1454,7 @@ src/renderer/views/projects-pane.ts
         onChunk: (c) => chunks.push(c),
         executeTool: async () => 'ok',
       })
-      assert.ok(
-        calls() > 3,
-        `expected the grant to buy more calls, saw ${String(calls())}`,
-      )
+      assert.ok(calls() > 3, `expected the grant to buy more calls, saw ${String(calls())}`)
       assert.equal(chunks.at(-1)?.type, 'done')
     })
 

@@ -327,8 +327,7 @@ function tryExtendRunBudget(
       {
         // Only the most recent window counts: an early healthy phase must not
         // vouch for a run that has since started thrashing.
-        distinctRecentToolCalls: new Set(recentFingerprints.slice(-EXTENSION_HEALTH_WINDOW))
-          .size,
+        distinctRecentToolCalls: new Set(recentFingerprints.slice(-EXTENSION_HEALTH_WINDOW)).size,
         reasoningRunawayStreak: stuckSignals.reasoningRunawayStreak,
         nudged: stuckSignals.nudged,
       },
