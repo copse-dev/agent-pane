@@ -102,11 +102,21 @@ export function initCloseConfirm(win: BrowserWindow): void {
     }
   })
 
+  const releaseAll = (): void => {
+    for (const id of [...pending.keys()]) settle(id, true)
+  }
+
   // A renderer that is gone can no longer refuse; release every waiter so the
   // close it was blocking completes.
-  win.on('closed', () => {
-    for (const id of [...pending.keys()]) settle(id, true)
-  })
+  win.on('closed', releaseAll)
+
+  // The renderer can also die while the window object lives on, and then no
+  // `closed` ever arrives. That is the normal shape of a terminal hangup: the
+  // SIGHUP that starts the quit kills the renderer milliseconds later, so the
+  // question `before-quit` just asked can never be answered and the quit sat
+  // out the full two-minute timeout with the app pinned in the background
+  // (issue #1911). Fails open, like every other path here.
+  win.webContents.on('render-process-gone', releaseAll)
 
   requestConfirm = (): Promise<boolean> =>
     new Promise<boolean>((resolve) => {
