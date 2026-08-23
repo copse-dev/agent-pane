@@ -6,7 +6,7 @@ import { $, browser } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import type { Thread } from '@shared/types'
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
-import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
+import { agentIsIdle, getCopseUserDataDir, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import {
   loadEvalScenario,
@@ -29,6 +29,7 @@ import {
   toolExpectationViolations,
 } from '../../scripts/lib/eval-tool-expectations.mts'
 import { readDecisionLog } from '../../src/main/services/security/decision-log-store.ts'
+import { defaultScratchRoots } from '../../scripts/lib/eval-scratch-paths.mts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -77,7 +78,20 @@ async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
       timeoutMsg: 'Agent did not start (Stop button visible)',
     },
   )
-  await waitForAgentIdle(timeoutMs)
+  // Keep dismissing approvals for the whole turn, not just while waiting for it
+  // to start. A command the scope heuristic classes as external — a hardcoded
+  // `/tmp/...` write is exactly one (#1846) — prompts partway through, and a
+  // drive that stopped polling there left the run hanging until the idle
+  // timeout. That throws before the artifact is written, so the trace that
+  // explains the failure is the one thing the operator does not get.
+  await browser.waitUntil(
+    async () => {
+      await approvePendingApprovalDialogs()
+      await approvePendingDiffs()
+      return await agentIsIdle()
+    },
+    { timeout: timeoutMs, interval: 250, timeoutMsg: 'Agent did not return to idle' },
+  )
   await approvePendingDiffs()
   await $('.msg-assistant').waitForExist({ timeout: 30_000 })
   // Autosave debounces thread writes (~250ms); give persistence a beat before export.
@@ -325,19 +339,31 @@ async function assertShellEscalationPrompts(scenario: EvalScenario): Promise<voi
   )
 }
 
-function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void {
+function assertToolUseExpectations(
+  thread: Thread,
+  scenario: EvalScenario,
+  workspaceRoot: string,
+): void {
   const expectation = scenario.toolUse
   if (!expectation) return
   const calls = thread.messages.flatMap((message) => message.toolCalls)
   const names = [...new Set(calls.map((call) => call.name))]
-  const violations = toolExpectationViolations(calls, {
-    requireTools: expectation.requireTools,
-    requireAnyTools: expectation.requireAnyTools,
-    requireSuccessfulToolGroups: expectation.requireSuccessfulToolGroups,
-    forbidTools: expectation.forbidTools,
-    forbidDisplacedShell: expectation.forbidDisplacedShell,
-    forbidGithubNetworkDenial: expectation.forbidGithubNetworkDenial,
-  })
+  const violations = toolExpectationViolations(
+    calls,
+    {
+      requireTools: expectation.requireTools,
+      requireAnyTools: expectation.requireAnyTools,
+      requireSuccessfulToolGroups: expectation.requireSuccessfulToolGroups,
+      forbidTools: expectation.forbidTools,
+      forbidDisplacedShell: expectation.forbidDisplacedShell,
+      forbidGithubNetworkDenial: expectation.forbidGithubNetworkDenial,
+      forbidGlobalTempWrites: expectation.forbidGlobalTempWrites,
+    },
+    // The run's own workspace, not this process's cwd: a `tempProject` scenario
+    // puts the agent somewhere else entirely, and scratch written there is
+    // sanctioned.
+    { scratchRoots: defaultScratchRoots({ workspaceRoot }) },
+  )
   assert.deepEqual(violations, [], `${violations.join('; ')} (observed: ${names.join(', ')})`)
   if (expectation.requireBackgroundWakeStart === true) {
     assert.ok(
@@ -443,7 +469,7 @@ describe('agent eval drive', () => {
 
     assertWorkspaceExpectations(workspaceRoot, scenario)
     await assertShellEscalationPrompts(scenario)
-    assertToolUseExpectations(thread, scenario)
+    assertToolUseExpectations(thread, scenario, workspaceRoot)
     if (
       scenario.id === 'working-brief-eval' ||
       scenario.id === 'working-brief-eval-lmstudio' ||
