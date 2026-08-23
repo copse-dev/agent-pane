@@ -456,6 +456,7 @@ async function runTask(
       executeTool: (name, args) => executeTool(workspace, name, args),
       signal: controller.signal,
       maxSteps: task.maxSteps ?? 20,
+      adaptiveExtensions: false,
       onChunk: (c: AgentStreamChunk) => {
         chunks.push(c)
         if (c.type === 'text') {

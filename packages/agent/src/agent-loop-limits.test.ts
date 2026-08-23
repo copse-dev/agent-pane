@@ -10,13 +10,67 @@ import {
   DEFAULT_MAX_LLM_CALLS,
   isAgentRunTimeoutAbort,
   isStreamOutputRunaway,
+  MAX_EXTENSION_GRANTS,
   MAX_STREAM_OUTPUT_TOKENS,
+  shouldExtendRunBudget,
 } from './agent-loop-limits.ts'
 
 describe('agent-loop-limits', () => {
   it('caps max LLM calls relative to maxSteps', () => {
     assert.equal(defaultMaxLlmCallsForSteps(10), 13)
     assert.equal(defaultMaxLlmCallsForSteps(100), DEFAULT_MAX_LLM_CALLS)
+  })
+
+  describe('shouldExtendRunBudget', () => {
+    const healthy = {
+      distinctRecentToolCalls: 3,
+      reasoningRunawayStreak: 0,
+      nudged: false,
+    }
+
+    it('grants a healthy-but-long run one more extension', () => {
+      assert.equal(shouldExtendRunBudget(healthy, 0), true)
+    })
+
+    it('stops granting once the grants are spent', () => {
+      assert.equal(shouldExtendRunBudget(healthy, MAX_EXTENSION_GRANTS - 1), true)
+      assert.equal(shouldExtendRunBudget(healthy, MAX_EXTENSION_GRANTS), false)
+      assert.equal(shouldExtendRunBudget(healthy, MAX_EXTENSION_GRANTS + 1), false)
+    })
+
+    it('honours a custom grant cap', () => {
+      assert.equal(shouldExtendRunBudget(healthy, 1, 1), false)
+      assert.equal(shouldExtendRunBudget(healthy, 0, 1), true)
+    })
+
+    it('denies a run whose recent tool calls are all repeats (thrashing)', () => {
+      assert.equal(
+        shouldExtendRunBudget({ ...healthy, distinctRecentToolCalls: 1 }, 0),
+        false,
+        'one distinct fingerprint in a window of repeats is not progress',
+      )
+      assert.equal(shouldExtendRunBudget({ ...healthy, distinctRecentToolCalls: 0 }, 0), false)
+    })
+
+    it('denies a run that needed nudging back on track', () => {
+      assert.equal(shouldExtendRunBudget({ ...healthy, nudged: true }, 0), false)
+    })
+
+    it('denies a run mid reasoning-runaway recovery', () => {
+      assert.equal(shouldExtendRunBudget({ ...healthy, reasoningRunawayStreak: 1 }, 0), false)
+    })
+
+    it('requires at least two distinct recent tool calls', () => {
+      // The threshold is MIN_DISTINCT_TOOL_CALLS_FOR_EXTENSION; one lucky call
+      // plus fifteen repeats must read as stuck, as must a tool-less run.
+      for (let distinct = 0; distinct <= 1; distinct++) {
+        assert.equal(
+          shouldExtendRunBudget({ ...healthy, distinctRecentToolCalls: distinct }, 0),
+          false,
+        )
+      }
+      assert.equal(shouldExtendRunBudget({ ...healthy, distinctRecentToolCalls: 2 }, 0), true)
+    })
   })
 
   it('flags a single stream as runaway only past the output-token cap', () => {
