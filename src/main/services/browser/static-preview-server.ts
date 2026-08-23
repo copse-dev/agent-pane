@@ -160,11 +160,12 @@ export async function getStaticPreviewServer(root: string): Promise<StaticPrevie
 
 /** Loopback http(s) URL for a file already resolved inside `root`. Never `file://`. */
 export async function workspacePreviewFileUrl(root: string, absolutePath: string): Promise<string> {
-  const preview = await getStaticPreviewServer(root)
-  if (!isInsideRoot(preview.root, absolutePath)) {
+  const [canonicalRoot, canonicalPath] = await Promise.all([realpath(root), realpath(absolutePath)])
+  if (!isInsideRoot(canonicalRoot, canonicalPath)) {
     throw new Error('Preview path must stay inside the workspace preview root.')
   }
-  const previewPath = relative(preview.root, absolutePath)
+  const preview = await getStaticPreviewServer(canonicalRoot)
+  const previewPath = relative(canonicalRoot, canonicalPath)
     .split(sep)
     .map(encodeURIComponent)
     .join('/')

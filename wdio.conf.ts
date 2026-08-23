@@ -249,7 +249,7 @@ export const config: Options.Testrunner = {
     }
     assignDebugPort(cap)
   },
-  beforeCommand(commandName) {
+  async beforeCommand(commandName) {
     // beforeSession runs once per worker, but every spec calls
     // browser.reloadSession() (196 call sites) and reloadSession re-launches
     // Electron from the capabilities captured back then — so without this the
@@ -257,6 +257,15 @@ export const config: Options.Testrunner = {
     // onto the port the process it is replacing has only just released. Rotate
     // it first; see helpers/debug-port.ts for why reuse is what breaks.
     if (commandName !== 'reloadSession') return
+    // On macOS, ChromeDriver can leave the Electron process alive long enough
+    // for its replacement to lose the app's single-instance lock. Closing the
+    // current app window first lets Electron terminate cleanly before
+    // reloadSession deletes the WebDriver session and launches its successor.
+    try {
+      await browser.closeWindow()
+    } catch {
+      // A session that is already gone needs no extra shutdown work.
+    }
     const requested = browser.requestedCapabilities as
       (ChromeCapabilities & { alwaysMatch?: ChromeCapabilities }) | undefined
     if (!requested) return
