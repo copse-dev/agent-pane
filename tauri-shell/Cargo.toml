@@ -31,14 +31,16 @@ tauri-runtime-servo = { path = "../../tauri-runtime-servo" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# To try a servo patch locally (see tauri-runtime-servo/servo-patches/ in the
-# tauri fork): check servo out beside the repos, `git am` the series, and
-# uncomment — cargo then builds the whole servo graph from the local tree.
+# To run with the servo patch series (servo-patches/ in the runtime repo):
+# check servo out beside the repos, `git am` the series, uncomment this block,
+# and add `features = ["patched-servo"]` to the tauri-runtime-servo dependency
+# above — cargo then builds the whole servo graph from the local tree. Without
+# all of that, the shell builds against the stock pinned servo.
 # [patch."https://github.com/servo/servo.git"]
 # servo = { path = "../../servo/components/servo" }
 
 # CSP 'self' on tauri:// needs servo patch 0008 plus csp-0001 (both in the
-# tauri fork's servo-patches/): 0008 gives registered custom schemes tuple
+# runtime repo's servo-patches/): 0008 gives registered custom schemes tuple
 # origins; csp-0001 teaches the CSP crate to match 'self' against them. Check
 # rust-content-security-policy out beside the repos at the published 0.8.1
 # rev (6a523bab), `git am` csp-0001, and uncomment.

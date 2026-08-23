@@ -55,8 +55,9 @@ git -C ../../rust-content-security-policy checkout 6a523bab5e6a1c484857f99dc28b7
 git -C ../../rust-content-security-policy am ../../tauri-runtime-servo/servo-patches/csp-0001-match-self-for-custom-scheme-origins.patch
 ```
 
-Then uncomment the three `[patch]` blocks at the bottom of `Cargo.toml` and
-rebuild. Without the engine patches, build with `COPSE_TAURI_STRIP_CSP=1
+Then uncomment the three `[patch]` blocks at the bottom of `Cargo.toml`, add
+`features = ["patched-servo"]` to the `tauri-runtime-servo` dependency (the
+native-SVG preference only exists on the patched tree), and rebuild. Without the engine patches, build with `COPSE_TAURI_STRIP_CSP=1
 pnpm build:tauri` — stock pinned Servo cannot match CSP `'self'` against
 `tauri://localhost`, so an enforced policy blocks every subresource.
 
