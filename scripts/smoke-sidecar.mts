@@ -34,6 +34,12 @@ function fail(message: string): never {
   process.exit(1)
 }
 
+// Behind a call so TypeScript doesn't narrow `exitCode` across awaits — the
+// process can exit at any point between checks.
+function sidecarExited(): boolean {
+  return sidecar.exitCode !== null
+}
+
 const deadline = Date.now() + 90_000
 while (!existsSync(endpointFile)) {
   if (Date.now() > deadline) fail('endpoint file never appeared')
@@ -65,6 +71,25 @@ if (malformedCloseCode !== 4002) {
 }
 if (sidecar.exitCode !== null) fail(`malformed pre-auth frame crashed the sidecar`)
 console.log('malformed pre-auth frame rejected without crashing sidecar')
+
+// Same posture for size: authentication happens only after a whole frame is
+// buffered, so the server's maxPayload bound (32 MiB) is what stops an
+// unauthenticated peer from making the sidecar buffer arbitrary amounts.
+// ws closes an oversized message with 1009 before it ever reaches decode.
+const oversizedSocket = new WebSocket(`ws://127.0.0.1:${String(endpoint.port)}/`)
+const oversizedCloseCode = await new Promise<number>((resolve) => {
+  oversizedSocket.addEventListener('open', () => {
+    oversizedSocket.send('x'.repeat(32 * 1024 * 1024 + 64))
+  })
+  oversizedSocket.addEventListener('close', (event) => {
+    resolve(event.code)
+  })
+})
+if (oversizedCloseCode !== 1009) {
+  fail(`oversized pre-auth frame closed with ${String(oversizedCloseCode)}, expected 1009`)
+}
+if (sidecarExited()) fail(`oversized pre-auth frame crashed the sidecar`)
+console.log('oversized pre-auth frame rejected without crashing sidecar')
 
 // The primary window is the shim's first BrowserWindow; its id is 1. Give the
 // boot chain time to create it (sandbox init and gortex reaping come first).
@@ -141,6 +166,29 @@ console.log(`workspace:isTrusted → ${JSON.stringify(trusted)}`)
 // register-handlers, but hit a second cluster for good measure.
 const navigation = await invoke('mainWindow:getNavigation')
 console.log(`mainWindow:getNavigation → ${JSON.stringify(navigation)}`)
+
+// The transport must enforce the preload contract: a channel outside the
+// bundle-time allowlist closes the socket (4007) instead of reaching the
+// ipcMain handler table — the difference between "no handler" (an invoke
+// error result) and rejection at the transport boundary. Runs last: it
+// sacrifices the authenticated socket.
+const disallowedCloseCode = await new Promise<number>((resolve) => {
+  socket.addEventListener(
+    'close',
+    (event) => {
+      resolve(event.code)
+    },
+    { once: true },
+  )
+  socket.send(
+    JSON.stringify({ t: 'invoke', id: nextId++, channel: 'smoke:not-in-preload', args: [] }),
+  )
+})
+if (disallowedCloseCode !== 4007) {
+  fail(`non-preload channel closed with ${String(disallowedCloseCode)}, expected 4007`)
+}
+if (sidecarExited()) fail('non-preload channel invoke crashed the sidecar')
+console.log('non-preload channel rejected at the transport boundary')
 
 console.log('SMOKE PASS')
 socket.close()
