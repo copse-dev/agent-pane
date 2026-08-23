@@ -35,6 +35,7 @@ if (params.get('copsePerf') === '1') {
   // costs a shared axis with main but still yields usable durations.
   if (origin !== null && origin !== '') process.env['COPSE_PERF_ORIGIN'] = origin
   if (params.get('copseAutopilot') === '1') process.env['COPSE_PERF_AUTOPILOT'] = '1'
+  if (params.get('copseSweep') === '1') process.env['COPSE_PERF_SWEEP'] = '1'
 }
 
 export {}
