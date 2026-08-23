@@ -45,6 +45,12 @@ describe('settings usage model value map cost axis', () => {
     await expect(taskBtn).toBeDisplayed()
     assert.equal(await taskBtn.getAttribute('disabled'), null)
 
+    // Active state must not reflow pill width (font-weight stays constant).
+    const widthBefore = {
+      blended: await blendedBtn.getSize('width'),
+      task: await taskBtn.getSize('width'),
+    }
+
     const chart = fieldset.$('.frontier-chart svg')
     await expect(chart).toBeDisplayed()
     assert.equal(await chart.getAttribute('data-cost-axis'), 'blended')
@@ -70,6 +76,16 @@ describe('settings usage model value map cost axis', () => {
       async () => (await chart.getAttribute('data-cost-axis')) === 'perTask',
       { timeout: 5000, timeoutMsg: 'value map did not switch to $/task axis' },
     )
+    assert.equal(
+      await blendedBtn.getSize('width'),
+      widthBefore.blended,
+      '$/MTok pill width must not change when deselected',
+    )
+    assert.equal(
+      await taskBtn.getSize('width'),
+      widthBefore.task,
+      '$/task pill width must not change when selected',
+    )
     const taskChartText = await chart.getText()
     assert.match(taskChartText, /AA cost per Intelligence Index task/)
     // Non-plan models (GPT) must spread across the task-cost axis — not collapse
@@ -83,10 +99,16 @@ describe('settings usage model value map cost axis', () => {
 
     const discoverBtn = fieldset.$('button.frontier-discover')
     await expect(discoverBtn).toBeDisplayed()
+    const discoverWidthBefore = await discoverBtn.getSize('width')
     await discoverBtn.click()
     await browser.waitUntil(
       async () => (await discoverBtn.getAttribute('aria-pressed')) === 'true',
       { timeout: 5000, timeoutMsg: 'value map did not enable model discovery' },
+    )
+    assert.equal(
+      await discoverBtn.getSize('width'),
+      discoverWidthBefore,
+      'Discover models pill width must not change when selected',
     )
     // The AA fixture includes a curated, unroutable $240/MTok legacy model.
     // It belongs in the dominated disclosure and must not stretch the plot.
