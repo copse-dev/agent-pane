@@ -28,22 +28,22 @@ differences, not app differences.
 
 ```bash
 git clone -b claude/tauri-servo-prototype-8ugtq4 https://github.com/copse-dev/agent-pane
-git clone -b claude/tauri-servo-prototype-8ugtq4 https://github.com/jonathanKingston/tauri
+git clone https://github.com/copse-dev/tauri-runtime-servo
 
 # Servo at the pinned rev + the validated patch series (0001–0008)
 git clone https://github.com/servo/servo
 git -C servo checkout -b tauri-runtime-patches f4dde2701bacd4972e6cfa319a3f0cbc9be21f64
-git -C servo am ../tauri/tauri-runtime-servo/servo-patches/00*.patch
+git -C servo am ../tauri-runtime-servo/servo-patches/00*.patch
 
 # Stylo at the rev pinned in servo/Cargo.lock, with :has() parsing enabled
 git clone https://github.com/servo/stylo
 git -C stylo checkout 2d289c14fdf46952d52cabce63b1f0dc55b2ccde
-git -C stylo apply ../tauri/tauri-runtime-servo/servo-patches/stylo-0001-enable-has-selector-parsing.patch
+git -C stylo apply ../tauri-runtime-servo/servo-patches/stylo-0001-enable-has-selector-parsing.patch
 
 # CSP crate at the published 0.8.1 rev, with 'self'-on-custom-schemes
 git clone https://github.com/rust-ammonia/rust-content-security-policy
 git -C rust-content-security-policy checkout 6a523bab5e6a1c484857f99dc28b7ce417012d33
-git -C rust-content-security-policy apply ../tauri/tauri-runtime-servo/servo-patches/csp-0001-match-self-for-custom-scheme-origins.patch
+git -C rust-content-security-policy apply ../tauri-runtime-servo/servo-patches/csp-0001-match-self-for-custom-scheme-origins.patch
 ```
 
 Then uncomment **all three** `[patch]` blocks at the bottom of

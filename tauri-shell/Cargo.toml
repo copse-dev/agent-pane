@@ -1,16 +1,14 @@
 # The Tauri/Servo shell for the Copse prototype — its own workspace,
 # deliberately outside any parent workspace resolution.
 #
-# `tauri-runtime-servo` is consumed from a sibling checkout of
-# jonathanKingston/tauri (branch claude/tauri-servo-prototype-8ugtq4, which
-# contains jonathanKingston/tauri#1's `tauri-runtime-servo/` directory):
+# `tauri-runtime-servo` is consumed from a sibling checkout of its standalone
+# repository:
 #
-#   git clone -b claude/tauri-servo-prototype-8ugtq4 \
-#     https://github.com/jonathanKingston/tauri ../../tauri
+#   git clone https://github.com/copse-dev/tauri-runtime-servo ../../tauri-runtime-servo
 #
-# Once that crate lives in its own repository (the PR is structured to be
-# lifted verbatim), swap the path dependency for:
-#   tauri-runtime-servo = { git = "https://github.com/jonathanKingston/tauri-runtime-servo" }
+# The path dependency keeps local engine iteration cheap; swap it for
+#   tauri-runtime-servo = { git = "https://github.com/copse-dev/tauri-runtime-servo" }
+# once the crate is pinned rather than co-developed.
 [workspace]
 
 [package]
@@ -29,7 +27,7 @@ tauri-build = "2"
 tauri = { version = "2.11", default-features = false, features = [
   "common-controls-v6",
 ] }
-tauri-runtime-servo = { path = "../../tauri/tauri-runtime-servo" }
+tauri-runtime-servo = { path = "../../tauri-runtime-servo" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
