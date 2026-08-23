@@ -26,7 +26,8 @@ expected to run, read [Approvals](approvals.md).
 
 ## What “in control” looks like
 
-- File edits appear as diffs you can review before they land.
+- File edits appear in the Changes pane. Safe worktree edits land directly with
+  a backup; edits that cannot be applied safely wait for your approval.
 - Commands that leave the [project sandbox](project-sandbox.md) ask first,
   unless they match a [recognised auto-approval shape](auto-approval.md).
 - The integrated **Shells** tab is your terminal. It is not the agent’s

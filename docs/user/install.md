@@ -42,5 +42,13 @@ required: connect a local model, or launch with
 `COPSE_PANEL_MOCK_LLM=1 pnpm run dev` to opt into the built-in mock agent. An
 otherwise unconfigured app asks you to add a provider.
 
-More install troubleshooting lives in the [README](../../README.md#contributing)
+If `pnpm install` fails with `No module named 'distutils'`, a newer Homebrew
+Python was selected for the native rebuild. Retry with the Python supplied by
+Xcode's command-line tools:
+
+```bash
+PYTHON=/usr/bin/python3 pnpm install
+```
+
+More install troubleshooting lives in the [README](../../README.md#install-troubleshooting)
 and [CONTRIBUTING.md](../../CONTRIBUTING.md).

@@ -27,7 +27,7 @@ Copse has no hosted backend of its own. Connect your preferred cloud provider di
 - **Everything in one workspace.** Chat with an agent beside a Monaco editor, terminal, file explorer, git changes, and an in-app browser.
 - **Bring the models you want.** Use Anthropic, OpenAI, OpenRouter, and other hosted providers, or connect local models through LM Studio, Ollama, llama.cpp, Jan, vLLM, and OpenAI-compatible endpoints.
 - **See the work, not just the answer.** Tool activity, diffs, commands, subagents, and failures stay visible in the conversation.
-- **Keep meaningful control.** Review proposed file edits and approve actions that need access beyond the project sandbox. Copse sends requests directly to the provider you select and does not add its own cloud service in the middle.
+- **Keep meaningful control.** Inspect every file edit in the Changes pane; edits that cannot be applied safely wait for your approval. Actions that need access beyond the project sandbox ask first. Copse sends requests directly to the provider you select and does not add its own cloud service in the middle.
 - **Extend the agent.** Add reusable skills, MCP servers, custom tools, hooks, and compatible ACP coding agents. Copse can also reuse supported skills and MCP servers from your existing Cursor setup.
 - **Work your way.** Attach files, editor selections, or screen recordings; search code by meaning; fork conversations; queue follow-up messages; and hand exploration to subagents.
 
@@ -101,7 +101,16 @@ Changes to the Electron UI should also be built and covered by a focused end-to-
 <details>
 <summary><strong>Install troubleshooting</strong></summary>
 
-Copse's postinstall prepares native Electron dependencies and downloads the bundled semantic-search engine. Project [`.npmrc`](.npmrc) sets `ignore-scripts=false`. An inherited `npm_config_ignore_scripts=true` still wins over `.npmrc` — `make deps` forces scripts on for that reason. To install without scripts and finish natives manually:
+Copse's postinstall prepares native Electron dependencies and downloads the bundled semantic-search engine. Project [`.npmrc`](.npmrc) sets `ignore-scripts=false`. An inherited `npm_config_ignore_scripts=true` still wins over `.npmrc` — `make deps` forces scripts on for that reason.
+
+If `electron-rebuild` fails because a Homebrew Python cannot import
+`distutils`, use the Python supplied with Xcode's command-line tools:
+
+```bash
+PYTHON=/usr/bin/python3 pnpm install
+```
+
+To install without scripts and finish natives manually:
 
 ```bash
 pnpm install --config.ignore-scripts=true
