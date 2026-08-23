@@ -55,6 +55,10 @@ const evalScenarioSchema = z.object({
       forbidTools: z.array(z.string()).optional(),
       /** Fail when `run_shell` ran a command a first-class tool already covers. */
       forbidDisplacedShell: z.boolean().optional(),
+      /** Fail when `run_shell` ran destructive VCS recovery (`reset --hard` / `clean -fd`). */
+      forbidDestructiveGitShell: z.boolean().optional(),
+      /** Fail when `run_shell` touched `~/.copse/workspace` (use read_archive / file tools). */
+      forbidCopseWorkspaceShell: z.boolean().optional(),
       /** Fail when a `sandbox_network_audit` card names a GitHub host. */
       forbidGithubNetworkDenial: z.boolean().optional(),
       requireBackgroundWakeStart: z.boolean().optional(),
@@ -65,6 +69,13 @@ const evalScenarioSchema = z.object({
        * dialog the run raised whatever asked for it.
        */
       maxShellEscalationPrompts: z.number().int().nonnegative().optional(),
+      /**
+       * Arm Guarded YOLO on the eval thread before the first prompt. Non-harm
+       * external shell (including `gh` / `git push`) then auto-allows; the harm
+       * gate still prompts. Prefer this over relying on the harness clicker when
+       * scoring `maxShellEscalationPrompts` under ACP or slow models.
+       */
+      armGuardedYolo: z.boolean().optional(),
     })
     .optional(),
   assertWorkspace: z

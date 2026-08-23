@@ -2,11 +2,11 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import assert from 'node:assert/strict'
-import { $, browser } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import type { Thread } from '@shared/types'
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
-import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
+import { getCopseUserDataDir, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import {
   loadEvalScenario,
@@ -63,6 +63,27 @@ async function approvePendingDiffs(): Promise<void> {
   await browser.pause(200)
 }
 
+async function armGuardedYoloForEval(): Promise<void> {
+  // Match tests/e2e/guarded-yolo.e2e.ts exactly.
+  await $('.footer-overflow-trigger').click()
+  const items = await $$('.footer-overflow-item')
+  const enableItem = await items.find(async (item) =>
+    (await item.getText()).includes('Enable Guarded YOLO'),
+  )
+  if (!enableItem) throw new Error('Guarded YOLO footer action was not available for eval')
+  await enableItem.click()
+
+  const dialog = await $('#approval-dialog')
+  await dialog.waitForDisplayed({ timeout: 10_000 })
+  await expect(dialog.$('.approval-heading')).toHaveText('Enable Guarded YOLO for this thread?')
+  await dialog.$('.approval-approve').click()
+  approvalCount++
+
+  const banner = await $('.guarded-yolo-banner')
+  await banner.waitForDisplayed({ timeout: 10_000 })
+  await expect(banner).toHaveAttribute('data-phase', 'armed')
+}
+
 async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
   await browser.waitUntil(
     async () => {
@@ -77,7 +98,27 @@ async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
       timeoutMsg: 'Agent did not start (Stop button visible)',
     },
   )
-  await waitForAgentIdle(timeoutMs)
+  // Keep clearing approval/diff cards for the whole idle window. Mid-turn
+  // escalation dialogs otherwise leave Stop visible forever and the eval
+  // times out even though the model is only blocked on the harness.
+  await browser.waitUntil(
+    async () => {
+      await approvePendingApprovalDialogs()
+      await approvePendingDiffs()
+      const stopBtn = await $('.stop-btn')
+      const stopVisible =
+        (await stopBtn.isExisting()) && (await stopBtn.getProperty('hidden')) !== true
+      if (stopVisible) return false
+
+      const queue = await $('.footer-queue')
+      if (await queue.isExisting()) {
+        const queueHidden = await queue.getProperty('hidden')
+        if (queueHidden !== true) return false
+      }
+      return true
+    },
+    { timeout: timeoutMs, interval: 250, timeoutMsg: 'Agent did not return to idle' },
+  )
   await approvePendingDiffs()
   await $('.msg-assistant').waitForExist({ timeout: 30_000 })
   // Autosave debounces thread writes (~250ms); give persistence a beat before export.
@@ -336,6 +377,8 @@ function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void
     requireSuccessfulToolGroups: expectation.requireSuccessfulToolGroups,
     forbidTools: expectation.forbidTools,
     forbidDisplacedShell: expectation.forbidDisplacedShell,
+    forbidDestructiveGitShell: expectation.forbidDestructiveGitShell,
+    forbidCopseWorkspaceShell: expectation.forbidCopseWorkspaceShell,
     forbidGithubNetworkDenial: expectation.forbidGithubNetworkDenial,
   })
   assert.deepEqual(violations, [], `${violations.join('; ')} (observed: ${names.join(', ')})`)
@@ -419,6 +462,11 @@ describe('agent eval drive', () => {
 
     const idleTimeout = Number(process.env.COPSE_EVAL_IDLE_MS ?? 15 * 60_000)
     const prompts = selectedEvalPrompts(scenario)
+    const shouldArmGuardedYolo =
+      scenario.toolUse?.armGuardedYolo === true || process.env.COPSE_EVAL_GUARDED_YOLO === "1"
+    if (shouldArmGuardedYolo) {
+      await armGuardedYoloForEval()
+    }
 
     for (const prompt of prompts) {
       await typePrompt(prompt)
