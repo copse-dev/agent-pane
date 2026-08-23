@@ -869,3 +869,48 @@ benchmark — `syspolicyd` at 86% CPU, `trustd` at 17%, plus a VM — and Gateke
 thrash pushes session creation past its timeout. Running 204 parallel workers
 under those conditions would have produced noise and starved the benchmark, so
 the suite was left alone.
+
+### e2e: the app is drivable, wdio's managed driver is not (2026-08-23)
+
+Yesterday's conclusion that machine load broke the suite was **wrong** — it
+fails identically on an idle machine. What follows is what the evidence
+actually supports.
+
+**The app is drivable over WebDriver.** A session creates in a few seconds
+against the real `electron-chromedriver`, the real Electron binary, wdio's full
+argument list, wdio's capabilities including the `browserVersion` pin, and
+wdio's own driver flags (`--allowed-ips=0.0.0.0 --allowed-origins=*`). Every
+combination tried by hand succeeds.
+
+**Pointing wdio at an already-running driver works.** With `hostname`/`port`
+set so wdio attaches instead of spawning, the session is created and the spec
+runs — it reaches `accent-color.e2e.ts`'s `before all`, which then fails
+creating a _second_ session against a profile the first still holds. That is the
+closest thing to a working configuration and the obvious place to continue.
+
+**wdio's own managed driver fails** with `session not created: from chrome not
+reachable`, and the driver log contains **no app output at all** — not one line
+of the app's stdout, no `DevTools listening`. The app never gets far enough to
+serve DevTools.
+
+**One mechanism is identified and is worth fixing regardless.** `app-init.ts`
+relocates Electron's `userData`. Chromium writes `DevToolsActivePort` into the
+_final_ userData, so unless that equals chromedriver's `--user-data-dir` the
+driver looks somewhere the file will never appear. Confirmed by finding
+`DevToolsActivePort` in `~/.copse/user-data/` after a failed launch. Putting
+`COPSE_PANEL_USER_DATA` into the **driver's** environment makes the file land
+correctly and the session succeed — that is exactly what the by-hand runs do
+and what `beforeSession` cannot do, since it runs in the worker.
+
+**Ruled out, with evidence:** machine load (fails when idle); the
+single-instance lock (the launched process stays alive for the full timeout);
+the argument list (full list works by hand); the capability set (works by hand);
+`browserVersion` — it is load-bearing, since without it wdio cannot map
+Electron's `v43.3.0` to a Chrome version at all; and seeding
+`COPSE_PANEL_USER_DATA` at config-module load, which did not help.
+
+**Recommended next step:** stop letting wdio manage the driver. Start
+`electron-chromedriver` from a wrapper with the profile environment already set,
+give each session its own profile, and point wdio at it with `hostname`/`port`.
+That path is already proven to create sessions and run specs; what remains is
+per-session profile handling rather than an unexplained handshake failure.
