@@ -50,7 +50,9 @@ git -C rust-content-security-policy apply ../tauri-runtime-servo/servo-patches/c
 
 Then uncomment **all three** `[patch]` blocks at the bottom of
 `agent-pane/tauri-shell/Cargo.toml` (servo, crates-io/content-security-policy,
-stylo — the stylo block redirects eleven crates; uncomment every line of it).
+stylo — the stylo block redirects eleven crates; uncomment every line of it)
+and add `features = ["patched-servo"]` to the `tauri-runtime-servo`
+dependency in the same file.
 
 ### 2.2 System deps and build
 
