@@ -387,9 +387,88 @@ function typeInto(input: HTMLElement, text: string): void {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+/**
+ * Surface sweep: park the UI on each major panel in turn so an external
+ * screenshot can compare engines.
+ *
+ * Driven through the store rather than by clicking, because the point is to
+ * compare *rendering* across two engines, and a selector that misses under one
+ * of them would silently turn a rendering comparison into a navigation bug.
+ * Setting state and emitting the event the panels already listen for is the
+ * same path the real UI takes, minus the fragility.
+ *
+ * Each surface is held for a fixed dwell so the harness can screenshot on a
+ * schedule; the marks record what was on screen when, so a misaligned capture
+ * is detectable afterwards rather than silently mislabelled.
+ */
+const SWEEP_SURFACES = [
+  'explorer',
+  'changes',
+  'terminal',
+  'browser',
+  'roadmap',
+  'memories',
+] as const
+const SWEEP_DWELL_MS = 6000
+
+async function runSurfaceSweep(store: AppStore): Promise<void> {
+  mark('autopilot:sweep-start', { dwellMs: SWEEP_DWELL_MS, count: SWEEP_SURFACES.length })
+  for (const surface of SWEEP_SURFACES) {
+    store.setState({ rightPanelMode: surface, filesPaneOpen: true })
+    store.emit('right_panel_mode_changed')
+    store.emit('files_pane_changed')
+    await afterNextFrame()
+    mark('autopilot:surface', { surface })
+    await sleep(SWEEP_DWELL_MS)
+  }
+  // Settings last: it is a dialog over everything else, so opening it earlier
+  // would contaminate every surface after it.
+  const settings = document.querySelector<HTMLElement>('.projects-settings-btn')
+  if (settings) {
+    settings.click()
+    await afterNextFrame()
+    mark('autopilot:surface', { surface: 'settings' })
+    await sleep(SWEEP_DWELL_MS)
+  } else {
+    mark('autopilot:surface', { surface: 'settings', missing: true })
+  }
+  // The settings panel is the only surface that differs materially between
+  // engines. Measure the text rather than infer from pixels: if a heading
+  // resolves to a different family, weight or width, that is the cause, and a
+  // pixel diff can only ever suggest it.
+  const specimens: Record<string, string | number> = {}
+  const heads = [...document.querySelectorAll('h1, h2, h3')].slice(0, 3)
+  heads.forEach((el, i) => {
+    const cs = getComputedStyle(el)
+    const rect = el.getBoundingClientRect()
+    specimens[`h${String(i)}`] =
+      `${el.textContent.slice(0, 18)}|${String(cs.fontFamily.split(',')[0])}` +
+      `|w=${cs.fontWeight}|sz=${cs.fontSize}|lh=${cs.lineHeight}` +
+      `|rect=${String(Math.round(rect.width))}x${String(Math.round(rect.height))}` +
+      `|top=${String(Math.round(rect.top))}`
+  })
+  const body = getComputedStyle(document.body)
+  specimens['body'] = `${String(body.fontFamily.split(',')[0])}|${body.fontSize}|${body.lineHeight}`
+  specimens['headCount'] = heads.length
+  mark('autopilot:fonts', specimens)
+
+  mark('autopilot:sweep-done')
+}
+
 export function startPerfAutopilot(store: AppStore): void {
   if (!autopilotOn) return
+  // COPSE_PERF_SWEEP=1 selects the surface sweep instead of the chat turn.
+  if (sweepRequested()) {
+    void runSurfaceSweep(store)
+    return
+  }
   void run(store)
+}
+
+/** The sweep flag rides the same channel as the autopilot flag. */
+function sweepRequested(): boolean {
+  const bridge: unknown = Reflect.get(globalThis, '__copsePerf')
+  return typeof bridge === 'object' && bridge !== null && Reflect.get(bridge, 'sweep') === true
 }
 
 async function run(store: AppStore): Promise<void> {
