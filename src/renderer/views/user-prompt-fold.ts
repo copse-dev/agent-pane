@@ -64,7 +64,8 @@ function budgetWordRun(words: string[], budget: number, fromEnd: boolean): numbe
  * there is no middle to hide (too few words to be genuinely large).
  */
 function splitProseFold(content: string): UserPromptFoldParts | null {
-  const words = content.split(/\s+/).filter((w) => w.length > 0)
+  const wordMatches = [...content.matchAll(/\S+/g)]
+  const words = wordMatches.map((match) => match[0])
   if (words.length === 0) return null
   const headBudget = USER_PROMPT_FOLD_HEAD_LINES * USER_PROMPT_FOLD_CHARS_PER_LINE
   const tailBudget = USER_PROMPT_FOLD_TAIL_LINES * USER_PROMPT_FOLD_CHARS_PER_LINE
@@ -73,10 +74,15 @@ function splitProseFold(content: string): UserPromptFoldParts | null {
   if (headCount === 0 || headCount + tailCount >= words.length) return null
   const middle = words.slice(headCount, words.length - tailCount)
   if (middle.length === 0) return null
+  const middleStart = wordMatches[headCount]?.index
+  const tailStart = wordMatches[words.length - tailCount]?.index
+  if (middleStart === undefined || tailStart === undefined || middleStart >= tailStart) return null
   return {
-    head: words.slice(0, headCount).join(' '),
-    middle: middle.join(' '),
-    tail: words.slice(words.length - tailCount).join(' '),
+    // Slice the source rather than rejoining words: expanding a prompt must
+    // preserve tabs, repeated spaces, and inline-code whitespace exactly.
+    head: content.slice(0, middleStart),
+    middle: content.slice(middleStart, tailStart),
+    tail: content.slice(tailStart),
   }
 }
 

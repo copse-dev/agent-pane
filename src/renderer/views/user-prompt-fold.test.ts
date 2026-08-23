@@ -74,7 +74,14 @@ describe('splitUserPromptForFold', () => {
     assert.match(parts.tail, /word400$/)
     assert.ok(parts.middle.length > 0)
     // Nothing is lost: head + middle + tail reconstruct the prompt.
-    assert.equal([parts.head, parts.middle, parts.tail].join(' '), proseOf(400))
+    assert.equal(parts.head + parts.middle + parts.tail, proseOf(400))
+  })
+
+  it('preserves repeated whitespace when carving a long single line', () => {
+    const content = `${proseOf(200)}  \t  ${proseOf(200)}`
+    const parts = splitUserPromptForFold(content)
+    assert.ok(parts, 'a long single line should fold')
+    assert.equal(parts.head + parts.middle + parts.tail, content)
   })
 
   it('does not flatten a few long hard lines into single-paragraph prose', () => {
