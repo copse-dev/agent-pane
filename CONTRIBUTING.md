@@ -15,8 +15,10 @@ is the full contributor contract.
    [docs/testing-strategy.md](docs/testing-strategy.md) and
    [docs/ui-taste.md](docs/ui-taste.md).
 
-No model key is required to explore the development build: with no provider
-configured, Copse uses a built-in mock agent.
+No paid model key is required to explore the development build: connect a local
+model, or launch with `COPSE_PANEL_MOCK_LLM=1 pnpm run dev` to use the built-in
+mock agent. The mock is opt-in; an otherwise unconfigured app reports that no
+provider is available.
 
 ## What not to file in public issues
 

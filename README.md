@@ -74,7 +74,7 @@ Install, first run, approvals, and the project sandbox:
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). No model key is required to explore the development build: when no provider is configured, Copse uses a small built-in mock agent.
+See [CONTRIBUTING.md](CONTRIBUTING.md). No paid model key is required to explore the development build: connect a local model, or launch with `COPSE_PANEL_MOCK_LLM=1 pnpm run dev` to opt into the built-in mock agent.
 
 Before submitting a change, run:
 

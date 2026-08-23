@@ -9,8 +9,9 @@ description: Open a project, pick a model, and send a first prompt you can verif
 
 1. [Install](install.md) Copse and launch it.
 2. Open a project folder — a Git checkout you are happy to let the agent read.
-3. [Connect a model](connect-a-model.md), or skip this and use the built-in mock
-   agent to explore the UI.
+3. [Connect a model](connect-a-model.md). If you are running from source and
+   want the development mock instead, restart with
+   `COPSE_PANEL_MOCK_LLM=1 pnpm run dev`.
 4. Trust the project when Copse asks. An untrusted checkout does not get
    auto-run or project MCP servers.
 5. Type a concrete request, for example “explain how authentication works” or

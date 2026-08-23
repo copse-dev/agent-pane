@@ -37,8 +37,10 @@ pnpm install
 pnpm run dev
 ```
 
-**You should see** an Electron window titled Copse. No model key is required:
-with nothing configured, Copse uses a built-in mock agent.
+**You should see** an Electron window titled Copse. No paid model key is
+required: connect a local model, or launch with
+`COPSE_PANEL_MOCK_LLM=1 pnpm run dev` to opt into the built-in mock agent. An
+otherwise unconfigured app asks you to add a provider.
 
 More install troubleshooting lives in the [README](../../README.md#contributing)
 and [CONTRIBUTING.md](../../CONTRIBUTING.md).
