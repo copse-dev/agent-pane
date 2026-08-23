@@ -161,16 +161,22 @@ describe('acp probe worker', () => {
     const dir = makeBundleDir('fail-')
     const workerPath = bundleWorker(dir)
 
-    const { stdout } = await runWorker(
-      workerPath,
-      {
-        config: { command: process.execPath, args: ['-e', 'process.exit(3)'], cwd: dir },
-        timeoutMs: 10_000,
-      },
-      dir,
+    const attempts = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        runWorker(
+          workerPath,
+          {
+            config: { command: process.execPath, args: ['-e', 'process.exit(3)'], cwd: dir },
+            timeoutMs: 10_000,
+          },
+          dir,
+        ),
+      ),
     )
 
-    assert.throws(() => parseProbeWorkerOutput(stdout), /ACP agent|exited/i)
+    for (const { stdout } of attempts) {
+      assert.throws(() => parseProbeWorkerOutput(stdout), /ACP agent.*exited.*code 3/i)
+    }
   })
 
   it('rejects a malformed request instead of probing', async () => {
