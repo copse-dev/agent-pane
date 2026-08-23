@@ -402,6 +402,49 @@ function acpProcessSpawnError(command: string, err: Error, stderr: string): Erro
   )
 }
 
+/** The SDK can observe the request-pipe closure before the child exit event. */
+function isAcpPipeClosureError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const code = 'code' in err && typeof err.code === 'string' ? err.code : ''
+  return code === 'EPIPE' || code === 'ECONNRESET' || /\b(?:EPIPE|ECONNRESET)\b/.test(err.message)
+}
+
+/** Wait for the process outcome that explains a preceding request-pipe closure. */
+function waitForAcpChildExit(
+  child: ChildProcess,
+): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve({ code: child.exitCode, signal: child.signalCode })
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const cleanup = (): void => {
+      child.off('exit', onExit)
+      child.off('error', onError)
+    }
+    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve({ code, signal })
+    }
+    const onError = (err: Error): void => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(err)
+    }
+    child.once('exit', onExit)
+    child.once('error', onError)
+    // The child can exit between the state check above and listener
+    // registration. Re-check after registering so that narrow window cannot
+    // leave the probe waiting until its timeout kills an already-dead child.
+    if (child.exitCode !== null || child.signalCode !== null) {
+      onExit(child.exitCode, child.signalCode)
+    }
+  })
+}
+
 export async function spawnAcpAgentProcess(
   config: AcpAgentSpawnConfig,
   options: {
@@ -1217,6 +1260,14 @@ export async function probeAcpAgent(
         return probe
       })
     })
+  } catch (err) {
+    if (!isAcpPipeClosureError(err)) throw err
+    // A fast-failing agent can close stdin before its `exit` reaches the
+    // readable side. The SDK then rejects its first write as raw EPIPE, racing
+    // the useful process error from acpChildStdoutStream. Wait for the process
+    // outcome (the existing probe timer still bounds this) and report that.
+    const { code, signal } = await waitForAcpChildExit(child)
+    throw acpProcessExitError(config.command, code, signal, stderr.tail())
   } finally {
     clearTimeout(timer)
     terminateAcpChild(child)
