@@ -10,14 +10,14 @@ the evidence.
 All six phases are done, plus features the plan did not list that turned out to
 matter more than parts of it that it did.
 
-| Phase                  | State       | Patches            |
-| ---------------------- | ----------- | ------------------ |
-| 1 — viewport           | done        | 0009               |
-| 2 — geometry traversal | done        | 0010, 0015, 0017   |
-| 3 — painting           | done        | 0010, 0012, 0013   |
-| 4 — animation          | done        | 0013               |
-| 5 — hit testing        | done        | 0011 + stylo-0002  |
-| 0 — DOM interfaces     | partial     | 0016               |
+| Phase                  | State   | Patches           |
+| ---------------------- | ------- | ----------------- |
+| 1 — viewport           | done    | 0009              |
+| 2 — geometry traversal | done    | 0010, 0015, 0017  |
+| 3 — painting           | done    | 0010, 0012, 0013  |
+| 4 — animation          | done    | 0013              |
+| 5 — hit testing        | done    | 0011 + stylo-0002 |
+| 0 — DOM interfaces     | partial | 0016              |
 
 Shipped beyond the phase list, each because something real was broken by its
 absence: `pathLength` (0015), `transform-origin` and a `viewBox` intrinsic-ratio
@@ -29,17 +29,17 @@ all: `pointer-events` keywords, `stop-color` and `stop-opacity`.
 
 All pref-off versus pref-on on the same build, since that isolates this work.
 
-| What | Result |
-| ---- | ------ |
-| Shapes, groups, transforms, stylesheet fill | **0.024%** of pixels differ from the rasterization path |
-| Gradients — 6 variants | **0.024%** |
-| Clipping — 5 cases | **0.020%** |
-| Animation: 4s spinner at +1.1s/+2.1s/+3.1s | pref off **0 and 0** px change; pref on **2016 and 2201** |
-| `svg/` WPT | **+199 subtests, 0 regressions** over 1261 tests |
-| Unit tests | 50, running in ~1s without a Servo build |
+| What                                        | Result                                                    |
+| ------------------------------------------- | --------------------------------------------------------- |
+| Shapes, groups, transforms, stylesheet fill | **0.024%** of pixels differ from the rasterization path   |
+| Gradients — 6 variants                      | **0.024%**                                                |
+| Clipping — 5 cases                          | **0.020%**                                                |
+| Animation: 4s spinner at +1.1s/+2.1s/+3.1s  | pref off **0 and 0** px change; pref on **2016 and 2201** |
+| `svg/` WPT                                  | **+199 subtests, 0 regressions** over 1261 tests          |
+| Unit tests                                  | 50, running in ~1s without a Servo build                  |
 
 The pixel differences are entirely edge antialiasing, where vello and resvg
-disagree. Two cases where the native path is now *more* correct than the
+disagree. Two cases where the native path is now _more_ correct than the
 rasterization path: `transform-origin` (which the raster path drops, rendering
 some pages blank) and fractional `viewBox` ratios.
 
@@ -68,7 +68,7 @@ some pages blank) and fractional `viewBox` ratios.
 Beyond the six corrections below:
 
 1. **`svg > * { display: none }` in `servo.css` prunes the style traversal**, so
-   nothing below a *direct child* of the `<svg>` is ever styled. A `<g>`'s
+   nothing below a _direct child_ of the `<svg>` is ever styled. A `<g>`'s
    children simply did not exist. Now in its own stylesheet, applied only when
    the pref is off.
 2. **Phase 4 was not "mostly deletions".** Damage propagation already worked;
@@ -82,8 +82,8 @@ Beyond the six corrections below:
    keywords, `stop-color`, `stop-opacity` and `clip-rule` all exist in stylo and
    are all invisible to Servo. Grep for `engine = "gecko"` in
    `longhands.toml` before concluding a property is unimplemented.
-5. **An unresolvable `clip-path` reference means *ignore the property*, not
-   *hide the element*.** SVG 1.1 said the opposite. Getting it backwards
+5. **An unresolvable `clip-path` reference means _ignore the property_, not
+   _hide the element_.** SVG 1.1 said the opposite. Getting it backwards
    silently hides content.
 6. **Headless tests are not sufficient.** `transform-origin` was broken while
    every headless test passed, because none rotated about a non-zero origin.
@@ -116,7 +116,7 @@ section records what changed and why, so the reasoning is reviewable.
    exit is the viewport transform being correct across the meet/slice ×
    alignment matrix, plus the pref selecting the code path.
 
-4. **The seam budget counts *added* lines, and excludes two things.** Phase 4 is
+4. **The seam budget counts _added_ lines, and excludes two things.** Phase 4 is
    "mostly deletions" of the rasterization special case; charging those against
    a 50-line budget makes it unfinishable by construction. And the pref's own
    plumbing (`components/config/prefs.rs`, `ports/servoshell/prefs.rs`) is
@@ -126,7 +126,7 @@ section records what changed and why, so the reasoning is reviewable.
    budget is tight but real — which is the point of having one.
 
 5. **WPT is the phase gate, not the per-commit oracle.** Rule 1 said WPT is
-   the only evidence of progress; it is the only evidence of *conformance*.
+   the only evidence of progress; it is the only evidence of _conformance_.
    ~~It cannot be run in this stack.~~ **It can** — that first conclusion was
    wrong, and cost a phase's worth of confidence. `./mach build` fails only for
    two removable reasons (a pinned `mozjs_sys` that fails linker detection on
@@ -169,12 +169,12 @@ scripts/servo-svg-unit-tests.sh
 throwaway crate depending only on `euclid`, `kurbo` and `vello_cpu`, stubs the
 one `pref!` lookup, and runs `cargo test`. No source is duplicated — files are
 re-copied every run — so a test cannot drift from the code. It deliberately
-*cannot* compile `image.rs`, `integration.rs`, `resolve.rs` or `tree.rs`, the
+_cannot_ compile `image.rs`, `integration.rs`, `resolve.rs` or `tree.rs`, the
 four modules that touch stylo, the DOM and the fragment tree. That is the
 constraint the module is organised around: if that exclusion list has to grow,
 logic has leaked into the bridge.
 
-**3. A real browser (~2 min rebuild, seconds to run).** This stack *can* build
+**3. A real browser (~2 min rebuild, seconds to run).** This stack _can_ build
 servoshell standalone, which the first pass wrongly concluded it could not.
 Three things were in the way:
 
@@ -201,7 +201,7 @@ Screenshot with the pref off and on and diff the PNGs; that is how the
 rendering numbers above were produced. For animation, delay the `load` event
 with a busy-wait so the screenshot lands at a chosen wall-clock time, and
 sample the same page at several offsets — a single screenshot cannot tell a
-stopped animation from a still frame, and two runs of a *stopped* animation can
+stopped animation from a still frame, and two runs of a _stopped_ animation can
 differ by chance, so use three points and require change at each.
 
 **And run it headed at least once per phase.** The `transform-origin` bug
@@ -221,7 +221,7 @@ reftests are also not stable run to run, so treat a single test flipping as
 noise and the net plus the regression count as the signal.
 
 **And know how much of the suite can see this work at all — it is less than the
-plan assumed.** Native SVG only handles *inline* `<svg>` inside HTML, and
+plan assumed.** Native SVG only handles _inline_ `<svg>` inside HTML, and
 **519 of the 1 261 executed tests (41%) are standalone `.svg` documents**, which
 take a completely different path. Measured, not inferred: a `pservers` gradient
 test renders **identically** with the pref on and off as a standalone document
@@ -236,7 +236,7 @@ Two consequences worth carrying:
   rasterization path is the honest oracle for painting; WPT is the oracle for
   conformance detail and for catching regressions.
 - **Some reftests pass vacuously.** Four of the 17 passing `pservers` tests
-  passed because the *reference* also used `fill:url(#…)`, so "both render
+  passed because the _reference_ also used `fill:url(#…)`, so "both render
   nothing" scored as a match. Implementing the feature can therefore turn a
   vacuous pass into a real failure, which looks like a regression and is
   progress. Two tests did exactly that here, and fixing them properly is what
@@ -278,7 +278,7 @@ File-level churn overstates the risk. The actual SVG dispatch seam in
 `replaced.rs` is a two-line `else if` arm that has been touched **7 times in its
 entire history**. So:
 
-> **Seam budget: no more than ~50 *added* lines total across all pre-existing
+> **Seam budget: no more than ~50 _added_ lines total across all pre-existing
 > files in `components/layout/` and `components/script/` (excluding
 > `components/script/dom/svg/`, `components/config/prefs.rs`,
 > `ports/servoshell/prefs.rs`, and any new modules). Everything else goes in new
@@ -297,15 +297,15 @@ of new code under `components/layout/svg/`.
 budget's stated scope (it excludes `components/script/dom/svg/`, the two prefs
 files and new modules).
 
-| Where                       | Added | Why                                                       |
-| --------------------------- | ----: | --------------------------------------------------------- |
-| `layout/layout_impl.rs`     |    48 | UA-stylesheet gating, the registry, the upload drain, two queries |
-| `shared/layout/lib.rs`      |    42 | the `viewBox` ratio fix, `preserveAspectRatio`, one query   |
-| `script/dom/svg/*`          |    93 | presentation attributes, `getBBox`, `getTotalLength` — outside the budget's scope |
-| `layout/replaced.rs`        |    21 | the sizing seam and the native dispatch                     |
-| `layout/context.rs`         |     9 | two `ImageResolver` fields                                  |
-| `script_bindings/*`         |    13 | two WebIDL declarations and a codegen entry                 |
-| everything else             |    17 | pref plumbing, module decls, one dependency                 |
+| Where                   | Added | Why                                                                               |
+| ----------------------- | ----: | --------------------------------------------------------------------------------- |
+| `layout/layout_impl.rs` |    48 | UA-stylesheet gating, the registry, the upload drain, two queries                 |
+| `shared/layout/lib.rs`  |    42 | the `viewBox` ratio fix, `preserveAspectRatio`, one query                         |
+| `script/dom/svg/*`      |    93 | presentation attributes, `getBBox`, `getTotalLength` — outside the budget's scope |
+| `layout/replaced.rs`    |    21 | the sizing seam and the native dispatch                                           |
+| `layout/context.rs`     |     9 | two `ImageResolver` fields                                                        |
+| `script_bindings/*`     |    13 | two WebIDL declarations and a codegen entry                                       |
+| everything else         |    17 | pref plumbing, module decls, one dependency                                       |
 
 Rule 6 says report an overrun rather than absorb it, so: it is over, and by
 enough that the ~50 figure should be treated as retired rather than missed. It
@@ -313,7 +313,7 @@ was set before anyone had built the thing, and most of the spend went on two
 discoveries the plan did not contain — gating the `svg > *` UA rule, and
 teaching `node_rendering_type` about boxless SVG descendants.
 
-What the budget *did* achieve is visible in the ratio: ~3 900 lines of new code
+What the budget _did_ achieve is visible in the ratio: ~3 900 lines of new code
 behind a seam measured in tens. Three times during the work the seam drifted and
 the fix was the same each time — move the logic, and the comment explaining it,
 into `svg/` rather than trim the comment. Keep doing that.
@@ -442,7 +442,7 @@ _Exit:_ with the pref on, a `<rect>` renders at the right position and size
 (inherited from Phase 1, see correction 3); `svg/painting/` WPT improves;
 strokes and dashes are visually correct.
 
-### Phase 4 — animation (~150–400 LOC, *not* mostly deletions) — **done**
+### Phase 4 — animation (~150–400 LOC, _not_ mostly deletions) — **done**
 
 Remove the serialize-and-rasterize special case for the native path and confirm
 `NodeDamage::Style` propagates from an SVG descendant to its viewport box. The
@@ -482,7 +482,7 @@ The plan treated this phase as one thing; it is three, and they have different
 urgencies:
 
 1. **Scripted geometry APIs** — `getBBox`, `getCTM`, `SVGLength`, `SVGRect`.
-   Not needed to paint. Needed by content that *scripts* SVG, which is why
+   Not needed to paint. Needed by content that _scripts_ SVG, which is why
    Mermaid fails identically with the pref on and off — the signature of a
    missing DOM API rather than a painting gap.
 2. **Rendering-affecting attributes** — `pathLength`, `preserveAspectRatio`.
@@ -512,11 +512,11 @@ re-rasterize per frame. Propose it as a stopgap, labelled as one.
 
 ## Rules
 
-1. **WPT is the only evidence of *conformance*, and it is a phase gate, not an
+1. **WPT is the only evidence of _conformance_, and it is a phase gate, not an
    inner loop.** "It renders correctly on my test page" is not a result. Report
    expectation files deleted per phase. Per commit, use the two cheap tiers in
    "The validation loop" — and never report those as conformance (correction 5).
-2. **Respect the seam budget.** ≤ ~50 *added* lines in pre-existing
+2. **Respect the seam budget.** ≤ ~50 _added_ lines in pre-existing
    layout/script files across the whole project, with the exclusions above.
    Report the count in every phase report.
 3. **One PR per phase**, behind `layout_svg_native_enabled` until Phase 4 lands.
