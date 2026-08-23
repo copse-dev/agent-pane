@@ -28,6 +28,34 @@ export interface FollowUpContext {
   userMessage: string
   assistantMessage: string
   toolNames: string[]
+  /**
+   * Contents of the thread's task-plan items still open when the turn ended
+   * (pending / in_progress). Absent or empty when the plan was fully reconciled
+   * or the thread runs no plan. Drives the deterministic "continue the plan"
+   * bubble; the model-picked suggestions see it too.
+   */
+  openTodos?: string[] | undefined
+}
+
+/** IPC/prompt bounds for unfinished plan context. */
+export const MAX_FOLLOW_UP_OPEN_TODOS = 20
+export const MAX_FOLLOW_UP_OPEN_TODO_CHARS = 500
+
+/**
+ * Normalize renderer-owned todo contents before they cross the guarded IPC
+ * boundary. The guard remains fail-closed for compromised callers, while valid
+ * persisted plans are reduced to the same bounded shape instead of disabling
+ * the entire follow-up pipeline.
+ */
+export function normalizeFollowUpOpenTodos(contents: readonly string[]): string[] {
+  const normalized: string[] = []
+  for (const content of contents) {
+    const item = content.trim().slice(0, MAX_FOLLOW_UP_OPEN_TODO_CHARS)
+    if (!item) continue
+    normalized.push(item)
+    if (normalized.length >= MAX_FOLLOW_UP_OPEN_TODOS) break
+  }
+  return normalized
 }
 
 export interface PrWorkspaceContext {
