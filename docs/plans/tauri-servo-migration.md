@@ -3,7 +3,7 @@
 **Status: prototype in progress** — see `tauri-shell/` and `src/sidecar/` on this branch.
 
 The goal: replace Electron as Copse's desktop shell with [Tauri](https://tauri.app/)
-running the [`tauri-runtime-servo`](https://github.com/jonathanKingston/tauri/pull/1)
+running the [`tauri-runtime-servo`](https://github.com/copse-dev/tauri-runtime-servo)
 runtime — the same Servo engine on every platform, statically linked, no system
 webview lottery — while keeping the entire existing main-process codebase running
 unchanged as a **Node.js sidecar**.
