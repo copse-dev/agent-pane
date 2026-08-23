@@ -97,6 +97,53 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.ok(card.querySelector('.tool-args'), 'expected the args body to already be built')
   })
 
+  it('shows an empty state when an MCP card has no arguments or result', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Working…')
+    addToolCall(store, messageId, {
+      id: 'tc-mcp-empty-1',
+      name: 'MCP: tool',
+      args: {},
+      status: 'done',
+      result: '',
+      resultFormat: 'markdown',
+    })
+    addToolCall(store, messageId, {
+      id: 'tc-mcp-empty-2',
+      name: 'MCP: tool',
+      args: {},
+      status: 'done',
+      result: '',
+      resultFormat: 'markdown',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const rollup = host.querySelector<HTMLDetailsElement>('.tool-card-rollup')
+    assert.ok(rollup, 'multiple MCP calls should render inside a turn rollup')
+    rollup.open = true
+
+    const card = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-mcp-empty-1"]')
+    assert.ok(card)
+    card.querySelector('.tool-card-header')?.dispatchEvent(new MouseEvent('click'))
+    card.open = true
+
+    const emptyState = card.querySelector('.tool-result-empty')
+    assert.ok(emptyState, 'an open card with no payload should visibly reveal a body')
+    assert.match(emptyState.textContent, /No tool details were provided/)
+
+    updateToolCall(store, messageId, 'tc-mcp-empty-1', { status: 'done' })
+    const reconciled = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-mcp-empty-1"]')
+    assert.strictEqual(reconciled, card, 'an unchanged empty card should be reused')
+    assert.equal(
+      reconciled.open,
+      true,
+      'the empty card should remain expanded after reconciliation',
+    )
+  })
+
   it('builds the body for a card restored open across a reconcile tick', () => {
     const store = createStore()
     const threadId = createThread(store)
