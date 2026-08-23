@@ -190,6 +190,7 @@ export async function runSkillsBenchAgent(): Promise<void> {
       tools,
       maxSteps: envPositiveInt('COPSE_SKILLSBENCH_MAX_STEPS', 80),
       maxLlmCalls: envPositiveInt('COPSE_SKILLSBENCH_MAX_LLM_CALLS', 83),
+      adaptiveExtensions: false,
       maxContextTokens: envPositiveInt('COPSE_SKILLSBENCH_CONTEXT_TOKENS', 32_768),
       maxStreamOutputTokens,
       ...(reasoningCheckpointPolicy ? { reasoningCheckpointPolicy } : {}),

@@ -317,7 +317,7 @@ function runBudgetExhausted(budget: LlmCallBudget): boolean {
  */
 function tryExtendRunBudget(
   budget: LlmCallBudget,
-  recentFingerprints: readonly string[],
+  recentToolProgress: readonly (string | null)[],
   stuckSignals: { reasoningRunawayStreak: number; nudged: boolean },
   maxStepsRef: { value: number },
 ): boolean {
@@ -327,7 +327,11 @@ function tryExtendRunBudget(
       {
         // Only the most recent window counts: an early healthy phase must not
         // vouch for a run that has since started thrashing.
-        distinctRecentToolCalls: new Set(recentFingerprints.slice(-EXTENSION_HEALTH_WINDOW)).size,
+        distinctRecentToolCalls: new Set(
+          recentToolProgress
+            .slice(-EXTENSION_HEALTH_WINDOW)
+            .flatMap((fingerprint) => (fingerprint === null ? [] : [fingerprint])),
+        ).size,
         reasoningRunawayStreak: stuckSignals.reasoningRunawayStreak,
         nudged: stuckSignals.nudged,
       },
@@ -557,6 +561,7 @@ type AgentStepContext = {
   signal?: AbortSignal | undefined
   budget: LlmCallBudget
   recentFingerprints: string[]
+  recentToolProgress: (string | null)[]
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
   usageModel?: string
   coerceTextToolCallArgs?: CoerceToolArgsFn
@@ -581,6 +586,7 @@ async function runToolEnabledNudgeTurn(
     signal,
     budget,
     recentFingerprints,
+    recentToolProgress,
     getLastUsage,
     usageModel,
     coerceTextToolCallArgs,
@@ -649,6 +655,7 @@ async function runToolEnabledNudgeTurn(
       signal,
       onChunk,
       recentFingerprints,
+      recentToolProgress,
       budget,
     })
     if (maxContextTokens) {
@@ -705,6 +712,7 @@ type ToolBatchContext = {
   signal?: AbortSignal | undefined
   onChunk: (chunk: AgentStreamChunk) => void
   recentFingerprints: string[]
+  recentToolProgress: (string | null)[]
   budget: LlmCallBudget
 }
 
@@ -794,8 +802,16 @@ function startLeadingParallelExplores(
 }
 
 async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
-  const { pendingToolCalls, messages, executeTool, signal, onChunk, recentFingerprints, budget } =
-    ctx
+  const {
+    pendingToolCalls,
+    messages,
+    executeTool,
+    signal,
+    onChunk,
+    recentFingerprints,
+    recentToolProgress,
+    budget,
+  } = ctx
   const measuredInputBeforeTools = getLastMeasuredInputTokens()
   const toolResults: ToolResult[] = []
   budget.deadline.pause()
@@ -822,6 +838,10 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
         const result = `Error: ${tc.argsError}`
         toolResults.push({ toolCallId: tc.id, result })
         onChunk({ type: 'tool_result', toolCallId: tc.id, result, isError: true })
+        recentToolProgress.push(null)
+        if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
+          recentToolProgress.shift()
+        }
         continue
       }
       const normalizedArgs = normalizeExploreArgs(tc.name, tc.args)
@@ -852,6 +872,10 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           }
         }
         const { result, editStats, resultFormat, images } = normalizeToolExecuteResult(raw)
+        recentToolProgress.push(duplicate ? null : fp)
+        if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
+          recentToolProgress.shift()
+        }
         // Images ride on the history message (so the model sees them on the
         // next provider call) but not on the stream chunk: the transcript
         // persists tool results as text, and a reloaded thread re-reads them
@@ -870,6 +894,10 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           ...(resultFormat ? { resultFormat } : {}),
         })
       } catch (err) {
+        recentToolProgress.push(null)
+        if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
+          recentToolProgress.shift()
+        }
         const msg = errorMessage(err)
         toolResults.push({ toolCallId: tc.id, result: `Error: ${msg}` })
         onChunk({ type: 'tool_result', toolCallId: tc.id, result: `Error: ${msg}`, isError: true })
@@ -971,6 +999,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // second means the model is stuck looping, so the run ends instead of re-priming.
   let reasoningRunawayStreak = 0
   const recentFingerprints: string[] = []
+  // One entry per recent tool attempt: a fingerprint means successful,
+  // non-duplicate progress; null means duplicate, malformed, or failed. Keeping
+  // attempts in the window lets a current thrash phase age out old success.
+  const recentToolProgress: (string | null)[] = []
   // Cross-turn reasoning fingerprint (#1408): see RECENT_REASONING_TEXT_WINDOW.
   const recentReasoningTexts: string[] = []
 
@@ -1010,20 +1042,29 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     return nudges.truncation
   }
 
-  while (steps < maxStepsRef.value) {
-    if (runBudgetExhausted(budget)) {
+  for (;;) {
+    if (signal?.aborted) break
+    if (budget.deadline.isExpired()) {
+      hitRunLimit = true
+      break
+    }
+    const stepBudgetExhausted = steps >= maxStepsRef.value
+    const callBudgetExhausted = budget.llmCalls >= budget.maxLlmCalls
+    if (stepBudgetExhausted || callBudgetExhausted) {
       const extended = tryExtendRunBudget(
         budget,
-        recentFingerprints,
+        recentToolProgress,
         { reasoningRunawayStreak, nudged: loopNudgeSent || forceTextAttempted },
         maxStepsRef,
       )
       if (!extended) {
-        hitRunLimit = true
+        // Preserve the pre-extension boundary semantics: exhausting maxSteps
+        // falls through to the bounded finalize path, while a call-only cap has
+        // no reservation left and emits the run-limit result.
+        hitRunLimit = callBudgetExhausted && !stepBudgetExhausted
         break
       }
     }
-    if (signal?.aborted) break
     steps++
 
     repairToolUseToolResultPairing(messages)
@@ -1089,6 +1130,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
                 signal,
                 onChunk,
                 recentFingerprints,
+                recentToolProgress,
                 budget,
               })
               toolOnlySteps++
@@ -1527,6 +1569,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       signal,
       onChunk,
       recentFingerprints,
+      recentToolProgress,
       budget,
     })
 
@@ -1550,6 +1593,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       signal,
       budget,
       recentFingerprints,
+      recentToolProgress,
       ...(getLastUsage !== undefined ? { getLastUsage } : {}),
       ...(usageModel !== undefined ? { usageModel } : {}),
       ...(coerceTextToolCallArgs !== undefined ? { coerceTextToolCallArgs } : {}),
@@ -1591,6 +1635,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           signal,
           onChunk,
           recentFingerprints,
+          recentToolProgress,
           budget,
         })
         finalResult = await streamTextOnlyTurn(
