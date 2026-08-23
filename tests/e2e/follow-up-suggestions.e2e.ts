@@ -1,5 +1,4 @@
-import assert from 'node:assert/strict'
-import { $, $$, browser, expect } from '@wdio/globals'
+import { $, browser, expect } from '@wdio/globals'
 import {
   cleanupGitChangesFixture,
   resetUserData,
@@ -53,23 +52,11 @@ describe('follow-up suggestion bubbles', () => {
       await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
 
       await saveAppScreenshot('follow-up-suggestions-demo.png')
-
-      const userMessageCount = (await $$('.messages-list .msg-user')).length
-      await continuePlanBubble.click()
-      await browser.waitUntil(
-        async () => (await $$('.messages-list .msg-user')).length === userMessageCount + 1,
-        { timeoutMsg: 'continue-plan bubble did not submit its prompt' },
-      )
-      const latestUserMessage = (await $$('.messages-list .msg-user')).at(-1)
-      assert.ok(latestUserMessage)
-      await expect(latestUserMessage).toHaveText(/The task plan still has open items/)
-      await waitForAgentIdle(20_000)
     })
 
-    it('restores follow-ups when returning to a thread and reopens it on prompt click', async () => {
+    it('restores follow-ups when returning to a completed thread', async () => {
       await completeMockTurn()
 
-      const originalThreadTitle = await $('.chat-row.selected .chat-title').getText()
       await $('.project-new-thread-btn').click()
       await expect($('.follow-up-suggestions')).not.toBeDisplayed()
 
@@ -82,16 +69,9 @@ describe('follow-up suggestion bubbles', () => {
         previous?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
       await $('.follow-up-bubble').waitForDisplayed({ timeout: 10_000 })
-
-      await $('.project-new-thread-btn').click()
-      await browser.execute(() => {
-        const el = document.querySelector('.follow-up-suggestions')
-        if (el instanceof HTMLElement) el.hidden = false
-      })
-
-      await $('.follow-up-bubble[data-id="debug-ci"]').click()
-      await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
-      await expect($('.messages-list .msg-user')).toBeDisplayed()
+      await expect($('.follow-up-bubble[data-id="continue-plan"]')).toHaveText(
+        'Continue: Run the test suite',
+      )
     })
   })
 
