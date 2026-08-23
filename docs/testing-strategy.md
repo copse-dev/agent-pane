@@ -294,6 +294,25 @@ loops driven by an actual local model rather than the mock:
   (`scripts/lib/eval-tool-expectations.test.ts`,
   `scripts/lib/eval-scenario-git-ci-tools.test.ts`), so only the measurement
   waits for a runner.
+- `tests/e2e/scenarios/tmpdir-scratch-eval.json` is the scratch-path GA bar
+  (#1846): does a sandboxed agent asked to stage intermediate output somewhere
+  temporary use the `$TMPDIR` the sandbox hands it, or hardcode `/tmp/...` and
+  charge the user a "Run outside sandbox?" approval for a file that had a
+  sanctioned home? Scoring reads the shell command's **arguments**, not the tool
+  name, because the failing run calls exactly the right tool
+  (`scripts/lib/eval-scratch-paths.mts`). Nightly or with the `bench-agent-eval`
+  label; both arms run every prompt variant, and the failure names the offending
+  command string. Run one arm by hand with:
+
+  ```bash
+  COPSE_EVAL_SCENARIO=tests/e2e/scenarios/tmpdir-scratch-eval.json npm run test:e2e:agent-eval
+  ```
+
+  Add `COPSE_EVAL_MODEL=acp:codex-acp` for the ACP arm and
+  `COPSE_EVAL_PROMPT_VARIANT=1` to pick a different phrasing. The scenario files
+  themselves are schema- and fixture-checked per PR in
+  `scripts/lib/eval-scenarios.test.ts`, so a typo does not wait for the nightly
+  to surface.
 
 These are deliberately **out of the per-PR critical path** (they need a model
 host and are slow/non-deterministic), but they remain a supported avenue: a
