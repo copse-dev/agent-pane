@@ -124,18 +124,6 @@ function defaultProposedPath(
   return first.path
 }
 
-/**
- * A failed git IPC read leaves the pane with nothing trustworthy to render, but
- * the failure itself is not user-actionable: it is usually a thread whose
- * worktree is mid-validation or not persisted yet (#1880). Log once per burst
- * and render the same empty list as an unavailable repository rather than
- * throwing from refresh timers and stacking error toasts; the next event-driven
- * refresh restores normal rendering once main answers again.
- */
-function markGitUnavailable(scope: string, error: unknown): void {
-  console.warn(`[git-changes-pane] ${scope} failed:`, error)
-}
-
 export function mountGitChangesPane(
   listRoot: HTMLElement,
   viewerRoot: HTMLElement,
@@ -220,11 +208,24 @@ export function mountGitChangesPane(
   let selection: ChangeSelection | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let refreshRequestId = 0
+  let gitFailureLogged = false
   const proposedDiffCachesByOwner = new Map<string, Map<string, ActiveDiff>>()
   let pendingNavigate: string | null = null
   // Path of a freshly proposed diff the pane should jump to on the next sync,
   // even if an earlier (still-valid) selection would otherwise be preserved.
   let pendingProposedNavigate: string | null = null
+
+  /**
+   * A failed git IPC read leaves the pane with nothing trustworthy to render,
+   * but the failure itself is not user-actionable: it is usually a thread whose
+   * worktree is mid-validation or not persisted yet (#1880). Log once per burst
+   * and render the same empty state instead of stacking inspector warnings.
+   */
+  function markGitUnavailable(scope: string, error: unknown): void {
+    if (gitFailureLogged) return
+    gitFailureLogged = true
+    console.warn(`[git-changes-pane] ${scope} failed:`, error)
+  }
   // A pop-out is seeded with the parent window's selection before its own diff
   // queue has hydrated, so an early `refresh()` would see an empty queue, judge
   // the selection dead, and fall through to an unrelated git file (#1704). Hold
@@ -846,9 +847,11 @@ export function mountGitChangesPane(
       return
     }
     let available = false
+    let availabilityFailed = false
     try {
       available = await api.git.isAvailable(owner.projectId, owner.threadId)
     } catch (error) {
+      availabilityFailed = true
       markGitUnavailable('git availability check', error)
     }
     const currentOwner = activeOwner()
@@ -860,6 +863,7 @@ export function mountGitChangesPane(
       return
     gitAvailable = available
     if (!gitAvailable) {
+      if (!availabilityFailed) gitFailureLogged = false
       loaded = true
       status = null
       committed = null
@@ -892,6 +896,7 @@ export function mountGitChangesPane(
       clearViewer()
       return
     }
+    gitFailureLogged = false
     // Only now: `gitAvailable` alone still leaves `status`/`committed` null for
     // three more awaits, and any event that repaints the list in that window
     // (an approve, a pop-out sync) would render "No changes" over a repo that

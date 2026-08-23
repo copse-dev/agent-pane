@@ -140,6 +140,33 @@ describe('git changes pane survives failing git IPC reads (#1880)', () => {
     dispose()
   })
 
+  it('logs one warning per failure burst and resets after recovery', async () => {
+    const originalWarn = console.warn
+    const warnings: unknown[][] = []
+    console.warn = (...args: unknown[]): void => {
+      warnings.push(args)
+    }
+    const { store, dispose } = mountPane({ availability: ['throw', 'throw', true, 'throw'] })
+
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 20))
+      store.emit('right_panel_mode_changed')
+      await new Promise<void>((resolve) => setTimeout(resolve, 20))
+      assert.equal(warnings.length, 1)
+
+      store.emit('right_panel_mode_changed')
+      await new Promise<void>((resolve) => setTimeout(resolve, 20))
+      assert.equal(emptyMessage(document.body), 'No changes')
+
+      store.emit('right_panel_mode_changed')
+      await new Promise<void>((resolve) => setTimeout(resolve, 20))
+      assert.equal(warnings.length, 2)
+    } finally {
+      dispose()
+      console.warn = originalWarn
+    }
+  })
+
   it('clears to the unavailable state instead of rejecting when status reads throw', async () => {
     const { listRoot, dispose } = mountPane({
       availability: [true],
