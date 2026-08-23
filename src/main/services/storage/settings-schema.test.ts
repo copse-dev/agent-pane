@@ -42,6 +42,13 @@ describe('settings-schema', () => {
     assert.equal(autoPortraitRightPanel.safeParse('true').success, false)
   })
 
+  it('registers the one-time Appearance defaults migration marker', () => {
+    const schema = getSettingSchema('appearanceDefaultsMigrationVersion')
+    assert.ok(schema)
+    assert.equal(schema.safeParse(1).success, true)
+    assert.equal(schema.safeParse(2).success, false)
+  })
+
   it('validates the right panel position setting', () => {
     const rightPanelPosition = getSettingSchema('rightPanelPosition')
     assert.ok(rightPanelPosition)
