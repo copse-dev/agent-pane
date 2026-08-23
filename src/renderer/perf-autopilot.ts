@@ -268,6 +268,55 @@ function probeBorderTriangle(): {
   return measured
 }
 
+/**
+ * Popover support, which the migration plan calls the top engine risk: the app
+ * has ~164 references across menus, tooltips and pickers.
+ *
+ * Two separate questions, and the second matters more than the first. Whether
+ * `showPopover()` exists is easy to feature-detect and easy to fall back from.
+ * Whether un-upgraded `[popover]` content is hidden by the UA stylesheet is the
+ * dangerous one: if it is not, every popover in the app renders inline, and
+ * hidden menu content leaks into the layout rather than simply failing to open.
+ */
+function probePopover(): Record<string, string | boolean | number> {
+  const el = document.createElement('div')
+  el.setAttribute('popover', 'auto')
+  el.textContent = 'popover probe content'
+  const host = document.createElement('div')
+  host.style.cssText = 'position:absolute;top:-9999px;left:0;width:200px'
+  host.append(el)
+  document.body.append(host)
+
+  const displayBefore = getComputedStyle(el).display
+  const leakedHeight = Math.round(el.getBoundingClientRect().height)
+
+  let showResult = 'not attempted'
+  let displayAfter = 'n/a'
+  const show = Reflect.get(el, 'showPopover')
+  if (typeof show === 'function') {
+    try {
+      Reflect.apply(show, el, [])
+      showResult = 'ok'
+      displayAfter = getComputedStyle(el).display
+    } catch (error) {
+      showResult = String(error)
+    }
+  }
+  const result = {
+    showPopover: typeof show,
+    togglePopover: typeof Reflect.get(el, 'togglePopover'),
+    // 'none' is correct: the UA stylesheet hides un-opened popovers.
+    displayBefore,
+    // Non-zero here means hidden content is occupying layout — the bad case.
+    leakedHeight,
+    showResult,
+    displayAfter,
+    supportsSelector: CSS.supports('selector(:popover-open)'),
+  }
+  host.remove()
+  return result
+}
+
 /** Write into the real contenteditable and let the composer's own listeners see it. */
 function typeInto(input: HTMLElement, text: string): void {
   input.focus()
@@ -345,6 +394,8 @@ async function run(store: AppStore): Promise<void> {
   const offDone = store.on('message_done', () => {
     resolveDone('done')
   })
+
+  mark('autopilot:popover', probePopover())
 
   const triangle = probeBorderTriangle()
   mark('autopilot:border-triangle', {
