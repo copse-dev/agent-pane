@@ -1288,8 +1288,14 @@ dialog.settings-overlay::backdrop {
   cursor: not-allowed;
 }
 .frontier-discover {
-  /* The label toggles between “Discover models” and “Hide discoverable”. */
-  inline-size: 128px;
+  /* Both translated state labels share a cell, so the wider one reserves the width. */
+  display: inline-grid;
+}
+.frontier-discover-label {
+  grid-area: 1 / 1;
+}
+.frontier-discover-label[aria-hidden='true'] {
+  visibility: hidden;
 }
 .frontier-cost-axis {
   display: inline-flex;
