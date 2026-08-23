@@ -26,6 +26,20 @@ const winId = Number(params.get('winId') ?? '0')
 const wsPort = params.get('wsPort')
 const wsToken = params.get('wsToken') ?? ''
 
+// The token authenticates this window to the sidecar. Once captured, remove
+// it from page-visible location state: this module runs before app.js, and
+// nothing after this line — app code or anything injected into the page —
+// should be able to recover the credential from `location.search`.
+if (params.has('wsToken')) {
+  params.delete('wsToken')
+  const query = params.toString()
+  history.replaceState(
+    history.state,
+    '',
+    `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
+  )
+}
+
 let ready = false
 let socket: WebSocket | null = null
 const sendQueue: ClientFrame[] = []

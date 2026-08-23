@@ -15,7 +15,7 @@
  * `cd tauri-shell && cargo run`. See docs/plans/tauri-servo-migration.md.
  */
 import * as esbuild from 'esbuild'
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, basename } from 'node:path'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 
@@ -36,6 +36,56 @@ const define = {
   __COPSE_BUILD_COMMIT__: JSON.stringify(null),
   __COPSE_BUILD_DIRTY__: JSON.stringify(null),
 }
+
+// The sidecar's inbound channel allowlist, generated from the preload
+// contract. Under Electron the renderer reaches only the channels the preload
+// exposes; over the WS transport any page script could open its own socket,
+// so the server must enforce the same surface or a renderer compromise would
+// escalate to every registered ipcMain channel. Extracted from the literal
+// channel names in the preload sources at build time — the same sources the
+// ws-bridge bundle is built from, so the two cannot drift.
+function extractPreloadChannels(): { invoke: string[]; send: string[] } {
+  const preloadDir = 'src/preload'
+  const invoke = new Set<string>()
+  const send = new Set<string>()
+  for (const name of readdirSync(preloadDir)) {
+    if (!name.endsWith('.ts') || name.endsWith('.test.ts')) continue
+    // The decoder window's preload is not part of the ws-bridge bundle — the
+    // prototype does not bridge that window — so its channels stay off the
+    // allowlist (fail closed). Bridging it later means adding its channels
+    // here, or the transport will reject them with 4007.
+    if (name === 'video-decoder.ts') continue
+    const source = readFileSync(resolve(preloadDir, name), 'utf8')
+    for (const match of source.matchAll(/ipcRenderer\s*\.\s*invoke\(\s*'([^']+)'/g)) {
+      invoke.add(match[1] ?? '')
+    }
+    for (const match of source.matchAll(/ipcRenderer\s*\.\s*send\(\s*'([^']+)'/g)) {
+      send.add(match[1] ?? '')
+    }
+    // A computed channel name would silently escape the allowlist; the
+    // preload only ever uses literals, so treat anything else as a build
+    // error rather than shipping a broken contract.
+    // `(?![\s'])` rather than `(?!')`: `\s*` backtracks, so a lookahead for
+    // just the quote would false-positive on multi-line literal calls.
+    for (const match of source.matchAll(/ipcRenderer\s*\.\s*(invoke|send)\(\s*(?![\s'])/g)) {
+      console.error(`non-literal ipcRenderer.${match[1] ?? ''}( channel in ${preloadDir}/${name}`)
+      process.exit(1)
+    }
+  }
+  invoke.delete('')
+  send.delete('')
+  if (invoke.size < 100) {
+    console.error(
+      `preload channel extraction found only ${String(invoke.size)} invoke channels — the scanner is broken.`,
+    )
+    process.exit(1)
+  }
+  return { invoke: [...invoke].sort(), send: [...send].sort() }
+}
+const preloadChannels = extractPreloadChannels()
+console.log(
+  `preload contract: ${String(preloadChannels.invoke.length)} invoke + ${String(preloadChannels.send.length)} send channels`,
+)
 
 const nodeOpts = {
   bundle: true,
@@ -60,6 +110,11 @@ const nodeOpts = {
 // 1. The sidecar: the whole main process with the electron shim.
 await esbuild.build({
   ...nodeOpts,
+  define: {
+    ...define,
+    __COPSE_WS_INVOKE_CHANNELS__: JSON.stringify(preloadChannels.invoke),
+    __COPSE_WS_SEND_CHANNELS__: JSON.stringify(preloadChannels.send),
+  },
   external: nodeOpts.external.filter((name) => name !== 'electron-updater'),
   entryPoints: ['src/sidecar/index.ts'],
   outfile: 'dist/sidecar/index.js',
