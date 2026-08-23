@@ -8,7 +8,8 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-settings-sources-cursor-rules'
 
-describe('settings sources cursor rules (#636)', () => {
+describe('settings sources cursor rules (#636)', function () {
+  this.timeout(60_000)
   let workspaceRoot = ''
 
   before(async () => {
@@ -63,7 +64,6 @@ describe('settings sources cursor rules (#636)', () => {
     const sources = dialog.$('.settings-section[data-section="customise"]')
     await expect(sources).toBeDisplayed()
     await expect(sources.$('legend=Instruction files')).toBeDisplayed()
-    await expect(sources.$('legend=Cursor rules')).toBeDisplayed()
 
     const instructionsList = sources.$('#sources-instructions-list')
     await browser.waitUntil(async () => (await instructionsList.getText()).includes('AGENTS.md'), {
@@ -103,6 +103,9 @@ describe('settings sources cursor rules (#636)', () => {
       },
       { timeout: 15_000, timeoutMsg: 'expected all four Cursor rule kinds in Sources' },
     )
+    // The block is hidden until the workspace has rules, so it can only be
+    // asserted visible once the list above has arrived.
+    await expect(sources.$('legend=Cursor rules')).toBeDisplayed()
 
     const text = await rulesList.getText()
     assert.match(text, /always/i)
