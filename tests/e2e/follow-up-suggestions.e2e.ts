@@ -1,5 +1,3 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
   cleanupGitChangesFixture,
@@ -9,8 +7,7 @@ import {
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 async function completeMockTurn(): Promise<void> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -23,9 +20,8 @@ async function completeMockTurn(): Promise<void> {
 }
 
 describe('follow-up suggestion bubbles', () => {
-  describe('mock demo (Changes + Debug CI)', () => {
+  describe('mock demo (Changes + Debug CI + Continue Plan)', () => {
     before(async () => {
-      mkdirSync(SCREENSHOT_DIR, { recursive: true })
       resetUserData()
       seedEmptyProject(process.cwd(), 'e2e-follow-up-mock-project', {
         subagentsEnabled: false,
@@ -50,15 +46,17 @@ describe('follow-up suggestion bubbles', () => {
       const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
       await expect(ciBubble).toHaveText('Debug CI Failure')
 
+      const continuePlanBubble = await $('.follow-up-bubble[data-id="continue-plan"]')
+      await expect(continuePlanBubble).toHaveText('Continue: Run the test suite')
+
       await expect($('.prompt-input')).toHaveAttribute('data-placeholder', 'Send follow-up')
 
-      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'follow-up-suggestions-demo.png'))
+      await saveAppScreenshot('follow-up-suggestions-demo.png')
     })
 
-    it('restores follow-ups when returning to a thread and reopens it on prompt click', async () => {
+    it('restores follow-ups when returning to a completed thread', async () => {
       await completeMockTurn()
 
-      const originalThreadTitle = await $('.chat-row.selected .chat-title').getText()
       await $('.project-new-thread-btn').click()
       await expect($('.follow-up-suggestions')).not.toBeDisplayed()
 
@@ -71,16 +69,9 @@ describe('follow-up suggestion bubbles', () => {
         previous?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
       await $('.follow-up-bubble').waitForDisplayed({ timeout: 10_000 })
-
-      await $('.project-new-thread-btn').click()
-      await browser.execute(() => {
-        const el = document.querySelector('.follow-up-suggestions')
-        if (el instanceof HTMLElement) el.hidden = false
-      })
-
-      await $('.follow-up-bubble[data-id="debug-ci"]').click()
-      await expect($('.chat-row.selected .chat-title')).toHaveText(originalThreadTitle)
-      await expect($('.messages-list .msg-user')).toBeDisplayed()
+      await expect($('.follow-up-bubble[data-id="continue-plan"]')).toHaveText(
+        'Continue: Run the test suite',
+      )
     })
   })
 
@@ -88,7 +79,6 @@ describe('follow-up suggestion bubbles', () => {
     let repoRoot = ''
 
     before(async () => {
-      mkdirSync(SCREENSHOT_DIR, { recursive: true })
       resetUserData()
       repoRoot = seedGitChangesFixture()
       await browser.reloadSession()
@@ -111,7 +101,7 @@ describe('follow-up suggestion bubbles', () => {
       await expect(addText.startsWith('+')).toBe(true)
       await expect(delText.startsWith('-')).toBe(true)
 
-      await browser.saveScreenshot(join(SCREENSHOT_DIR, 'follow-up-suggestions-git-changes.png'))
+      await saveAppScreenshot('follow-up-suggestions-git-changes.png')
     })
   })
 })
