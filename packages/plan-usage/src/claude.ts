@@ -186,8 +186,49 @@ function planLabelFromDollars(body: Record<string, unknown>): string | null {
   return null
 }
 
-/** Extra-usage / spend credits label when dollar windows are absent. */
-function planLabelFromSpend(body: Record<string, unknown>): string | null {
+function planLabelForClaude(body: Record<string, unknown>): string | null {
+  // Spend / extra_usage become real windows — keep the plan line for legacy
+  // dollar rate windows only so we do not duplicate the same meter.
+  return planLabelFromDollars(body)
+}
+
+
+/**
+ * Enterprise / team overage pool. Prefer `extra_usage` credits (matches
+ * Anthropic copy); fall back to `spend` money when credits are absent.
+ * Never emit both — they are the same pool on live payloads.
+ */
+function parseExtraUsageWindow(body: Record<string, unknown>): PlanWindow | null {
+  const extra = body['extra_usage']
+  if (isRecord(extra)) {
+    const usedCredits = extra['used_credits']
+    const limitCredits = extra['monthly_limit']
+    if (
+      typeof usedCredits === 'number' &&
+      Number.isFinite(usedCredits) &&
+      usedCredits >= 0 &&
+      typeof limitCredits === 'number' &&
+      Number.isFinite(limitCredits) &&
+      limitCredits > 0
+    ) {
+      const utilization = extra['utilization']
+      const usedPercent =
+        typeof utilization === 'number' && Number.isFinite(utilization)
+          ? normalizePercent(utilization)
+          : normalizePercent((usedCredits / limitCredits) * 100)
+      const enabled = extra['is_enabled'] !== false
+      return {
+        id: 'extra_usage',
+        label: enabled ? 'Extra usage' : 'Extra usage (disabled)',
+        usedPercent,
+        resetsAt: null,
+        unit: 'credits',
+        usedCredits,
+        limitCredits,
+      }
+    }
+  }
+
   const spend = body['spend']
   if (!isRecord(spend)) return null
   const used = spend['used']
@@ -197,17 +238,61 @@ function planLabelFromSpend(body: Record<string, unknown>): string | null {
   const limitMinor = limit['amount_minor']
   const currency = used['currency'] ?? limit['currency']
   const exponent = used['exponent'] ?? limit['exponent'] ?? 2
-  if (typeof usedMinor !== 'number' || !Number.isFinite(usedMinor)) return null
+  if (typeof usedMinor !== 'number' || !Number.isFinite(usedMinor) || usedMinor < 0) return null
   if (typeof limitMinor !== 'number' || !Number.isFinite(limitMinor) || limitMinor <= 0) return null
   if (typeof currency !== 'string' || !currency.trim()) return null
-  const exp = typeof exponent === 'number' && Number.isFinite(exponent) ? exponent : 2
-  const pair = `${formatMoneyMinor(usedMinor, currency.trim(), exp)} / ${formatMoneyMinor(limitMinor, currency.trim(), exp)}`
+  const exp = typeof exponent === 'number' && Number.isFinite(exponent) ? Math.max(0, exponent) : 2
+  const scale = 10 ** Math.min(6, exp)
+  const usedMajor = usedMinor / scale
+  const limitMajor = limitMinor / scale
+  const percent = spend['percent']
+  const usedPercent =
+    typeof percent === 'number' && Number.isFinite(percent)
+      ? normalizePercent(percent)
+      : normalizePercent((usedMajor / limitMajor) * 100)
   const enabled = spend['enabled'] === true
-  return enabled ? `Extra usage ${pair}` : `Extra usage ${pair} (disabled)`
+  const severity = parseSeverity(spend['severity'])
+  const currencyCode = currency.trim().toUpperCase()
+  if (currencyCode === 'USD') {
+    return {
+      id: 'extra_usage',
+      label: enabled ? 'Extra usage' : 'Extra usage (disabled)',
+      usedPercent,
+      resetsAt: null,
+      unit: 'usd',
+      usedDollars: usedMajor,
+      limitDollars: limitMajor,
+      severity,
+    }
+  }
+  const pair = `${formatMoneyMinor(usedMinor, currencyCode, exp)} / ${formatMoneyMinor(limitMinor, currencyCode, exp)}`
+  return {
+    id: 'extra_usage',
+    label: enabled ? `Extra usage ${pair}` : `Extra usage ${pair} (disabled)`,
+    usedPercent,
+    resetsAt: null,
+    unit: 'percent',
+    severity,
+  }
 }
 
-function planLabelForClaude(body: Record<string, unknown>): string | null {
-  return planLabelFromDollars(body) ?? planLabelFromSpend(body)
+/**
+ * One-time Claude Code / Cowork credit bucket. Claude Code's `/usage` UI only
+ * shows utilization % (not `used_dollars`) — mirror that to avoid the ~10×
+ * dollar field confusing the Enterprise spend dashboard.
+ */
+function parseCinderCoveWindow(body: Record<string, unknown>, nowMs: number): PlanWindow | null {
+  const raw = body['cinder_cove']
+  if (!isRecord(raw)) return null
+  const utilization = raw['utilization']
+  if (typeof utilization !== 'number' || !Number.isFinite(utilization)) return null
+  return {
+    id: 'cinder_cove',
+    label: 'Claude Code and Cowork credit',
+    usedPercent: normalizePercent(utilization),
+    resetsAt: toIsoTimestamp(raw['resets_at'], nowMs),
+    unit: 'percent',
+  }
 }
 
 /**
@@ -238,31 +323,41 @@ function mergeClaudeWindows(fromLimits: PlanWindow[], fromLegacy: PlanWindow[]):
     seen.add(window.id)
     out.push(window)
   }
-  // Stable order: five_hour, seven_day, then scoped / extras.
-  const rank = (id: string): number => {
-    if (id === 'five_hour') return 0
-    if (id === 'seven_day') return 1
-    return 2
-  }
-  out.sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id))
   return out
 }
 
-/** Exported for unit tests. */
+function sortClaudeWindows(windows: PlanWindow[]): PlanWindow[] {
+  const rank = (id: string): number => {
+    if (id === 'five_hour') return 0
+    if (id === 'seven_day') return 1
+    if (id.startsWith('seven_day')) return 2
+    if (id === 'cinder_cove') return 3
+    if (id === 'extra_usage') return 4
+    return 5
+  }
+  return [...windows].sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id))
+}
+
+/**
+ * Parse a Claude usage JSON body into plan windows.
+ * Empty windows (e.g. enterprise accounts that omit consumer limits) are
+ * returned as-is — {@link fetchClaudePlanUsage} maps that to `unavailable`.
+ */
 export function parseClaudeUsage(body: unknown, nowMs: number): ProviderPlanUsage {
   if (!isRecord(body)) throw new Error('Claude usage payload was not an object')
 
   const fromLimits = parseLimitsArray(body['limits'], nowMs)
   const fromLegacy = parseLegacyFlatKeys(body, nowMs)
   const windows = mergeClaudeWindows(fromLimits, fromLegacy)
-  if (windows.length === 0) {
-    throw new Error('Claude usage payload had no recognizable windows')
-  }
+  const cinder = parseCinderCoveWindow(body, nowMs)
+  if (cinder && !windows.some((w) => w.id === cinder.id)) windows.push(cinder)
+  const extra = parseExtraUsageWindow(body)
+  if (extra && !windows.some((w) => w.id === extra.id)) windows.push(extra)
 
   return {
     provider: 'claude',
     plan: planLabelForClaude(body),
-    windows,
+    windows: sortClaudeWindows(windows),
     checkedAt: new Date(nowMs).toISOString(),
   }
 }
@@ -306,7 +401,17 @@ export async function fetchClaudePlanUsage(
       ...(options.signal ? { signal: options.signal } : {}),
     })
     const body = await readJsonBody(response, 'Claude plan usage')
-    return { status: 'ok', provider: 'claude', usage: parseClaudeUsage(body, now()) }
+    const usage = parseClaudeUsage(body, now())
+    // Enterprise / team payloads often authenticate but omit consumer plan
+    // windows — soft-unavailable like Cursor/HF, not a red load error.
+    if (usage.windows.length === 0) {
+      return {
+        status: 'unavailable',
+        provider: 'claude',
+        reason: 'Claude usage response had no recognizable plan windows',
+      }
+    }
+    return { status: 'ok', provider: 'claude', usage }
   } catch (err) {
     const message = errorMessage(err)
     if (isClaudeProfileScopeError(message)) {

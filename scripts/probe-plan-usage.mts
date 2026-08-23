@@ -20,7 +20,6 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { copseUserDataDir } from '../src/main/services/storage/copse-paths.ts'
 import {
   fetchClaudePlanUsageFromCandidates,
   fetchCodexPlanUsage,
@@ -46,6 +45,19 @@ import {
   firstNonEmptyString,
   nonEmptyStringOr,
 } from '../src/shared/unknown-value.mts'
+
+/**
+ * Mirror of `copseUserDataDir` in `copse-paths.ts`. Kept inline because this
+ * script runs as plain node: the repo root is `"type": "commonjs"`, so importing
+ * named ESM exports from root `src/*.ts` fails even though `@copse/plan-usage`
+ * is ESM.
+ */
+function copseUserDataDir(): string {
+  const override = process.env['COPSE_PANEL_USER_DATA']?.trim()
+  if (override) return override
+  const root = process.env['COPSE_DIR']?.trim() || join(homedir(), '.copse')
+  return join(root, 'user-data')
+}
 
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 const CURSOR_KEYCHAIN_SERVICE = 'cursor-access-token'

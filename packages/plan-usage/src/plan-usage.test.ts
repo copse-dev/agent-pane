@@ -280,7 +280,7 @@ describe('fetchClaudePlanUsage', () => {
     )
   })
 
-  it('labels plan from spend credits when dollar windows are null', async () => {
+  it('surfaces spend money as an Extra usage window when rate windows exist', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
       fetch: jsonFetch({
         five_hour: { utilization: 0, resets_at: '2026-07-15T14:30:00Z' },
@@ -304,7 +304,54 @@ describe('fetchClaudePlanUsage', () => {
       }),
     })
     assert.equal(result.status, 'ok')
-    assert.equal(result.usage.plan, 'Extra usage £55.25 / £50 (disabled)')
+    assert.equal(result.usage.plan, null)
+    const extra = result.usage.windows.find((w) => w.id === 'extra_usage')
+    assert.ok(extra)
+    assert.equal(extra.label, 'Extra usage £55.25 / £50 (disabled)')
+    assert.equal(extra.usedPercent, 100)
+    assert.equal(extra.severity, 'critical')
+  })
+
+  it('parses enterprise extra_usage credits and cinder_cove percent credit', async () => {
+    const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
+      fetch: jsonFetch({
+        five_hour: null,
+        seven_day: null,
+        limits: [],
+        cinder_cove: {
+          utilization: 91.2602045,
+          resets_at: '2026-09-14T06:04:34.900999+00:00',
+          limit_dollars: 1000,
+          used_dollars: 912.602045,
+          remaining_dollars: 87.397955,
+        },
+        extra_usage: {
+          is_enabled: true,
+          monthly_limit: 100000,
+          used_credits: 10577,
+          utilization: 10.577,
+          currency: 'USD',
+        },
+        spend: {
+          used: { amount_minor: 10577, currency: 'USD', exponent: 2 },
+          limit: { amount_minor: 100000, currency: 'USD', exponent: 2 },
+          percent: 11,
+          enabled: true,
+        },
+      }),
+      now: () => Date.parse('2026-08-23T12:00:00Z'),
+    })
+    assert.equal(result.status, 'ok')
+    const byId = Object.fromEntries(result.usage.windows.map((w) => [w.id, w]))
+    assert.equal(byId['cinder_cove']?.label, 'Claude Code and Cowork credit')
+    assert.equal(byId['cinder_cove']?.unit, 'percent')
+    assert.equal(byId['cinder_cove']?.usedDollars, undefined)
+    assert.equal(byId['extra_usage']?.unit, 'credits')
+    assert.equal(byId['extra_usage']?.usedCredits, 10577)
+    assert.equal(byId['extra_usage']?.limitCredits, 100000)
+    assert.equal(byId['extra_usage']?.usedPercent, 10.58)
+    // Prefer extra_usage credits over duplicate spend money.
+    assert.equal(result.usage.windows.filter((w) => w.id === 'extra_usage').length, 1)
   })
 
   it('fills five_hour from dollar fields when limits[] only has weekly', async () => {
@@ -357,6 +404,18 @@ describe('fetchClaudePlanUsage', () => {
       fetch: jsonFetch({ error: { message: 'nope' } }, 500),
     })
     assert.equal(result.status, 'error')
+  })
+
+  it('maps empty enterprise-style payloads to soft unavailable', async () => {
+    const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
+      fetch: jsonFetch({
+        five_hour: null,
+        seven_day: null,
+        limits: [],
+      }),
+    })
+    assert.equal(result.status, 'unavailable')
+    assert.match(result.reason, /no recognizable plan windows/i)
   })
 })
 
@@ -522,6 +581,58 @@ describe('fetchCodexPlanUsage', () => {
     assert.equal(result.status, 'unavailable')
     assert.match(result.reason, /codex login/i)
     assert.doesNotMatch(result.reason, /Invalid authentication credentials/)
+  })
+
+  it('maps missing rate_limit (enterprise-style) to soft unavailable', async () => {
+    const result = await fetchCodexPlanUsage(
+      { accessToken: 'tok' },
+      {
+        fetch: jsonFetch({
+          plan_type: 'enterprise',
+          // Authenticated account payload with no consumer rate windows.
+        }),
+      },
+    )
+    assert.equal(result.status, 'unavailable')
+    assert.match(result.reason, /no rate-limit or credit data/i)
+  })
+
+  it('surfaces spend_control as monthly credits (not dollars)', async () => {
+    const result = await fetchCodexPlanUsage(
+      { accessToken: 'tok' },
+      {
+        fetch: jsonFetch({
+          plan_type: 'business',
+          rate_limit: null,
+          spend_control: {
+            reached: false,
+            individual_limit: {
+              source: 'workspace_spend_controls',
+              limit: '15000',
+              used: '971.8711901903152',
+              remaining: '14028.128809809685',
+              used_percent: 6,
+              remaining_percent: 94,
+              reset_after_seconds: 739023,
+              reset_at: 1788220800,
+            },
+          },
+        }),
+        now: () => 1_783_000_000_000,
+      },
+    )
+    assert.equal(result.status, 'ok')
+    assert.equal(result.usage.plan, 'business')
+    assert.equal(result.usage.windows.length, 1)
+    const window = result.usage.windows[0]
+    assert.ok(window)
+    assert.equal(window.id, 'spend_control')
+    assert.equal(window.label, 'Monthly credits')
+    assert.equal(window.unit, 'credits')
+    assert.equal(window.usedCredits, 972)
+    assert.equal(window.limitCredits, 15000)
+    assert.equal(window.usedPercent, 6)
+    assert.equal(window.resetsAt, '2026-09-01T00:00:00.000Z')
   })
 })
 

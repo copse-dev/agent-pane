@@ -38,6 +38,10 @@ describe('claudeReasonNeedsLogin', () => {
       claudeReasonNeedsLogin('Console API keys do not expose subscription plan windows'),
       false,
     )
+    assert.equal(
+      claudeReasonNeedsLogin('Claude usage response had no recognizable plan windows'),
+      false,
+    )
   })
 })
 
@@ -95,6 +99,34 @@ describe('renderPlanProvider sign-in button', () => {
   })
 })
 
+describe('renderPlanProvider empty-plan tone', () => {
+  it('renders soft unavailable (not red error) when plan windows are absent', () => {
+    const host = document.createElement('div')
+    renderPlanProvider(host, {
+      status: 'unavailable',
+      provider: 'claude',
+      reason: 'Claude usage response had no recognizable plan windows',
+    })
+    const status = host.querySelector('.usage-plan-status')
+    assert.ok(status)
+    assert.equal(status.classList.contains('usage-plan-status-error'), false)
+    assert.match(status.textContent ?? '', /no recognizable plan windows/i)
+  })
+
+  it('keeps the error tone for hard load failures', () => {
+    const host = document.createElement('div')
+    renderPlanProvider(host, {
+      status: 'error',
+      provider: 'claude',
+      message: 'network down',
+    })
+    const status = host.querySelector('.usage-plan-status')
+    assert.ok(status)
+    assert.equal(status.classList.contains('usage-plan-status-error'), true)
+    assert.match(status.textContent ?? '', /Couldn’t load Claude plan usage/i)
+  })
+})
+
 describe('renderPlanProvider credit grant', () => {
   it('shows the exact remaining balance and an accessible used-credit bar', () => {
     const host = document.createElement('div')
@@ -121,6 +153,65 @@ describe('renderPlanProvider credit grant', () => {
     assert.ok(progress)
     assert.equal(progress.getAttribute('aria-valuenow'), '33')
     assert.equal(progress.getAttribute('aria-label'), 'Cursor credits $32.97 used of $100.00')
+  })
+})
+
+describe('renderPlanProvider credit windows', () => {
+  it('renders Codex spend_control amounts as credits, not dollars', () => {
+    const host = document.createElement('div')
+    renderPlanProvider(host, {
+      status: 'ok',
+      provider: 'codex',
+      usage: {
+        provider: 'codex',
+        plan: 'business',
+        windows: [
+          {
+            id: 'spend_control',
+            label: 'Monthly credits',
+            usedPercent: 6,
+            resetsAt: '2026-09-01T00:00:00.000Z',
+            unit: 'credits',
+            usedCredits: 972,
+            limitCredits: 15000,
+          },
+        ],
+        checkedAt: '2026-08-23T12:00:00.000Z',
+      },
+    })
+    const row = host.querySelector('.usage-plan-window')
+    assert.ok(row)
+    assert.equal(row.getAttribute('data-unit'), 'credits')
+    assert.match(row.textContent ?? '', /972 \/ 15000 credits/)
+    assert.doesNotMatch(row.textContent ?? '', /\$972/)
+  })
+
+  it('renders Claude extra_usage credit stats on the window line', () => {
+    const host = document.createElement('div')
+    renderPlanProvider(host, {
+      status: 'ok',
+      provider: 'claude',
+      usage: {
+        provider: 'claude',
+        plan: null,
+        windows: [
+          {
+            id: 'extra_usage',
+            label: 'Extra usage',
+            usedPercent: 10.58,
+            resetsAt: null,
+            unit: 'credits',
+            usedCredits: 10577,
+            limitCredits: 100000,
+          },
+        ],
+        checkedAt: '2026-08-23T12:00:00.000Z',
+      },
+    })
+    const stats = host.querySelector('.usage-plan-window-stats')
+    assert.ok(stats)
+    assert.match(stats.textContent ?? '', /10577 \/ 100000 credits/)
+    assert.match(stats.textContent ?? '', /11% used/)
   })
 })
 
