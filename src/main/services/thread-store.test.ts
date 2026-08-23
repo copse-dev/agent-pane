@@ -1,8 +1,8 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
-// A raw `require` (rather than `import * as`) so this is the exact module
-// object thread-store.ts's own `require("node:fs")` resolves to — see #1222.
+// A raw `require` (rather than `import * as`) so this is the exact module and
+// promises object thread-store.ts's own `require("node:fs")` resolves to.
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
 const fsModule: typeof import('node:fs') = require('node:fs')
 import { tmpdir } from 'node:os'
@@ -623,15 +623,13 @@ describe('thread-store', () => {
         await appendMessage('proj-1', 't1', userMsg(`u${String(i)}`, `message number ${String(i)}`))
       }
 
-      // `appendFileSync` and `writeFileSync` are the same underlying Node
-      // primitive (the former delegates to the latter with an 'a' flag), so
-      // spying on `writeFileSync` alone observes the bytes either one writes.
       const eventsPath = join(root, 'proj-1', 't1', 'events.jsonl')
-      const writeSpy = mock.method(fsModule, 'writeFileSync')
+      const appendSpy = mock.method(fsModule.promises, 'appendFile')
+      const writeSpy = mock.method(fsModule.promises, 'writeFile')
       await appendMessage('proj-1', 't1', userMsg('u200', 'the 201st message'))
       mock.restoreAll()
 
-      const bytesWrittenToEvents = writeSpy.mock.calls
+      const bytesAppendedToEvents = appendSpy.mock.calls
         .filter((c) => c.arguments[0] === eventsPath)
         .reduce(
           (sum, c) => sum + (typeof c.arguments[1] === 'string' ? c.arguments[1].length : 0),
@@ -640,8 +638,104 @@ describe('thread-store', () => {
       // One new spine line is well under 500 bytes; a full rewrite of the
       // prior 200 lines would be tens of thousands.
       assert.ok(
-        bytesWrittenToEvents > 0 && bytesWrittenToEvents < 500,
-        `expected a pure append (~1 line) but wrote ${String(bytesWrittenToEvents)} bytes to events.jsonl`,
+        bytesAppendedToEvents > 0 && bytesAppendedToEvents < 500,
+        `expected a pure append (~1 line) but appended ${String(bytesAppendedToEvents)} bytes to events.jsonl`,
+      )
+      assert.equal(
+        writeSpy.mock.calls.some((c) => c.arguments[0] === eventsPath),
+        false,
+        'a new id must not rewrite events.jsonl',
+      )
+    })
+
+    it('does not cache a message id when its asynchronous spine append fails', async () => {
+      await createThread('proj-1', thread('t1'))
+      const eventsPath = join(root, 'proj-1', 't1', 'events.jsonl')
+      const originalAppend = fsModule.promises.appendFile.bind(fsModule.promises)
+      let rejectNext = true
+      mock.method(
+        fsModule.promises,
+        'appendFile',
+        async (
+          path: Parameters<typeof fsModule.promises.appendFile>[0],
+          data: Parameters<typeof fsModule.promises.appendFile>[1],
+          options?: Parameters<typeof fsModule.promises.appendFile>[2],
+        ) => {
+          if (path === eventsPath && rejectNext) {
+            rejectNext = false
+            throw new Error('simulated append failure')
+          }
+          await originalAppend(path, data, options)
+        },
+      )
+
+      await assert.rejects(
+        appendMessage('proj-1', 't1', userMsg('u1', 'retry me')),
+        /simulated append failure/,
+      )
+      mock.restoreAll()
+
+      const retryAppendSpy = mock.method(fsModule.promises, 'appendFile')
+      await appendMessage('proj-1', 't1', userMsg('u1', 'retry me'))
+      mock.restoreAll()
+
+      assert.equal(
+        retryAppendSpy.mock.calls.filter((c) => c.arguments[0] === eventsPath).length,
+        1,
+        'the retry must still take the new-id append path',
+      )
+      const [loaded] = await loadProjectThreads('proj-1')
+      assert.deepEqual(
+        loaded?.messages.map((message) => message.id),
+        ['u1'],
+      )
+    })
+
+    it('keeps authoritative reads behind an in-flight asynchronous append', async () => {
+      await createThread('proj-1', thread('t1'))
+      const eventsPath = join(root, 'proj-1', 't1', 'events.jsonl')
+      const originalAppend = fsModule.promises.appendFile.bind(fsModule.promises)
+      let releaseAppend!: () => void
+      const appendGate = new Promise<void>((resolve) => {
+        releaseAppend = resolve
+      })
+      let appendStarted!: () => void
+      const started = new Promise<void>((resolve) => {
+        appendStarted = resolve
+      })
+      mock.method(
+        fsModule.promises,
+        'appendFile',
+        async (
+          path: Parameters<typeof fsModule.promises.appendFile>[0],
+          data: Parameters<typeof fsModule.promises.appendFile>[1],
+          options?: Parameters<typeof fsModule.promises.appendFile>[2],
+        ) => {
+          if (path === eventsPath) {
+            appendStarted()
+            await appendGate
+          }
+          await originalAppend(path, data, options)
+        },
+      )
+
+      const append = appendMessage('proj-1', 't1', userMsg('u1', 'committed'))
+      await started
+      let readSettled = false
+      const read = loadProjectThreads('proj-1').then((threads) => {
+        readSettled = true
+        return threads
+      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(readSettled, false, 'the read must remain queued behind the append commit')
+
+      releaseAppend()
+      await append
+      const [loaded] = await read
+      mock.restoreAll()
+      assert.deepEqual(
+        loaded?.messages.map((message) => message.id),
+        ['u1'],
       )
     })
 
