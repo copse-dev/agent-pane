@@ -19,6 +19,8 @@ import {
   type ServerFrame,
 } from '@shared/tauri/ws-protocol.ts'
 import { sidecarInternals } from './electron-shim/index.ts'
+import { MAX_VIDEO_BYTES } from '@shared/video/video-media.ts'
+import { WS_AUTH_PROTOCOL_PREFIX } from '@shared/tauri/ws-protocol.ts'
 
 export interface WsEndpoint {
   port: number
@@ -48,16 +50,49 @@ const allowedSendChannels: ReadonlySet<string> = new Set(
 )
 
 /**
- * Authentication happens only after a complete frame is buffered and decoded,
- * so this bound is the pre-auth limit on what a local peer can make the
- * sidecar allocate (ws's default is 100 MiB). 32 MiB comfortably covers the
- * largest legitimate frames — invoke args carrying base64 attachment data.
+ * The frame bound must admit the largest legitimate invoke: a dropped video
+ * attachment (`MAX_VIDEO_BYTES`, the biggest of the documented attachment
+ * limits) rides base64-encoded inside a JSON frame (×4/3), plus marker and
+ * framing overhead. Deriving it from the product limit keeps the transport
+ * and the attachment contract from drifting apart. Peers that cannot present
+ * the token never reach frame buffering at all — authentication happens at
+ * the HTTP upgrade below — so this bound is defense-in-depth on
+ * authenticated traffic, not the pre-auth gate.
  */
-const MAX_FRAME_BYTES = 32 * 1024 * 1024
+const MAX_FRAME_BYTES = Math.ceil((MAX_VIDEO_BYTES * 4) / 3) + 64 * 1024
 
 function start(): Promise<WsEndpoint> {
   const token = randomBytes(32).toString('hex')
-  const server = new WebSocketServer({ host: '127.0.0.1', port: 0, maxPayload: MAX_FRAME_BYTES })
+  const server = new WebSocketServer({
+    host: '127.0.0.1',
+    port: 0,
+    maxPayload: MAX_FRAME_BYTES,
+    // Authentication starts at the HTTP upgrade, before any WS frame can be
+    // buffered: the browser WebSocket API cannot set request headers, so the
+    // bearer token rides the subprotocol list. `verifyClient` is the actual
+    // gate — it sees the raw header, including its absence (`handleProtocols`
+    // is never consulted for a client that offers no subprotocols, so it
+    // cannot refuse one). A request without the exact token protocol is
+    // rejected at the handshake; an unauthenticated local peer never gets a
+    // connection to feed frames (of any size) into. The hello frame then
+    // re-checks the token and binds the window id.
+    verifyClient: (info: {
+      req: { headers: Record<string, string | string[] | undefined> }
+    }): boolean => {
+      const header = info.req.headers['sec-websocket-protocol']
+      if (typeof header !== 'string') return false
+      return header
+        .split(',')
+        .map((protocol) => protocol.trim())
+        .includes(`${WS_AUTH_PROTOCOL_PREFIX}${token}`)
+    },
+    // Echo the token protocol back so the client's handshake validation
+    // (which requires the server to select an offered protocol) succeeds.
+    handleProtocols: (protocols): string | false => {
+      const expected = `${WS_AUTH_PROTOCOL_PREFIX}${token}`
+      return protocols.has(expected) ? expected : false
+    },
+  })
 
   server.on('connection', (socket) => {
     let bound: { winId: number; unbind: () => void } | null = null

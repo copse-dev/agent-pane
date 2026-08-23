@@ -30,6 +30,15 @@ export type ServerFrame =
   | { t: 'event'; channel: string; args: unknown[] }
 
 /**
+ * Prefix for the WebSocket subprotocol that carries the per-launch bearer
+ * token into the HTTP upgrade (`copse.auth.<token>`). The browser WebSocket
+ * API cannot set request headers, so the subprotocol list is the only
+ * channel a page has to authenticate the handshake itself — which lets the
+ * server refuse unauthenticated peers before buffering a single frame.
+ */
+export const WS_AUTH_PROTOCOL_PREFIX = 'copse.auth.'
+
+/**
  * Marker key for a binary leaf inside a frame's JSON. Chosen to be impossible
  * to collide with app payload keys (none of ours start with `$`).
  */

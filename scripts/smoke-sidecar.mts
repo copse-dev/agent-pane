@@ -54,10 +54,34 @@ const endpoint = JSON.parse(readFileSync(endpointFile, 'utf8')) as {
 }
 console.log(`endpoint up on 127.0.0.1:${String(endpoint.port)}`)
 
-// An unauthenticated local peer can discover the ephemeral port, but malformed
-// input must only close that socket — never crash the sidecar before the real
-// renderer arrives.
-const malformedSocket = new WebSocket(`ws://127.0.0.1:${String(endpoint.port)}/`)
+const authProtocol = `copse.auth.${endpoint.token}`
+
+// Authentication starts at the HTTP upgrade: a local peer that cannot present
+// the token subprotocol never gets a WebSocket at all, so nothing it sends is
+// ever buffered — regardless of size. Assert the handshake is refused.
+const tokenlessRefused = await new Promise<boolean>((resolve) => {
+  const ws = new WebSocket(`ws://127.0.0.1:${String(endpoint.port)}/`)
+  let opened = false
+  ws.addEventListener('open', () => {
+    opened = true
+    ws.close()
+  })
+  // A refused handshake surfaces as 'error'; whether 'close' follows differs
+  // between implementations, so settle on either (double-resolve is inert).
+  ws.addEventListener('error', () => {
+    resolve(!opened)
+  })
+  ws.addEventListener('close', () => {
+    resolve(!opened)
+  })
+})
+if (!tokenlessRefused) fail('token-less upgrade was accepted; expected handshake refusal')
+if (sidecarExited()) fail('token-less upgrade attempt crashed the sidecar')
+console.log('token-less upgrade refused at the handshake')
+
+// An upgrade-authenticated peer that then sends garbage must only lose its own
+// socket — never crash the sidecar before the real renderer arrives.
+const malformedSocket = new WebSocket(`ws://127.0.0.1:${String(endpoint.port)}/`, authProtocol)
 const malformedCloseCode = await new Promise<number>((resolve) => {
   malformedSocket.addEventListener('open', () => {
     malformedSocket.send('null')
@@ -67,36 +91,17 @@ const malformedCloseCode = await new Promise<number>((resolve) => {
   })
 })
 if (malformedCloseCode !== 4002) {
-  fail(`malformed pre-auth frame closed with ${String(malformedCloseCode)}, expected 4002`)
+  fail(`malformed pre-hello frame closed with ${String(malformedCloseCode)}, expected 4002`)
 }
-if (sidecar.exitCode !== null) fail(`malformed pre-auth frame crashed the sidecar`)
-console.log('malformed pre-auth frame rejected without crashing sidecar')
-
-// Same posture for size: authentication happens only after a whole frame is
-// buffered, so the server's maxPayload bound (32 MiB) is what stops an
-// unauthenticated peer from making the sidecar buffer arbitrary amounts.
-// ws closes an oversized message with 1009 before it ever reaches decode.
-const oversizedSocket = new WebSocket(`ws://127.0.0.1:${String(endpoint.port)}/`)
-const oversizedCloseCode = await new Promise<number>((resolve) => {
-  oversizedSocket.addEventListener('open', () => {
-    oversizedSocket.send('x'.repeat(32 * 1024 * 1024 + 64))
-  })
-  oversizedSocket.addEventListener('close', (event) => {
-    resolve(event.code)
-  })
-})
-if (oversizedCloseCode !== 1009) {
-  fail(`oversized pre-auth frame closed with ${String(oversizedCloseCode)}, expected 1009`)
-}
-if (sidecarExited()) fail(`oversized pre-auth frame crashed the sidecar`)
-console.log('oversized pre-auth frame rejected without crashing sidecar')
+if (sidecar.exitCode !== null) fail(`malformed pre-hello frame crashed the sidecar`)
+console.log('malformed pre-hello frame rejected without crashing sidecar')
 
 // The primary window is the shim's first BrowserWindow; its id is 1. Give the
 // boot chain time to create it (sandbox init and gortex reaping come first).
 const socket = await (async (): Promise<WebSocket> => {
   const connectDeadline = Date.now() + 90_000
   for (;;) {
-    const ws = new WebSocket(`ws://127.0.0.1:${String(endpoint.port)}/`)
+    const ws = new WebSocket(`ws://127.0.0.1:${String(endpoint.port)}/`, authProtocol)
     const outcome = await new Promise<'ok' | 'closed'>((resolve) => {
       ws.addEventListener('open', () => {
         ws.send(JSON.stringify({ t: 'hello', winId: 1, token: endpoint.token }))
@@ -166,6 +171,25 @@ console.log(`workspace:isTrusted → ${JSON.stringify(trusted)}`)
 // register-handlers, but hit a second cluster for good measure.
 const navigation = await invoke('mainWindow:getNavigation')
 console.log(`mainWindow:getNavigation → ${JSON.stringify(navigation)}`)
+
+// Attachment-scale traffic must survive the frame bound: the product permits
+// 256 MiB videos over `video:attach`, which ride base64-encoded (×4/3) in a
+// JSON frame, so the transport must accept frames far beyond typical invoke
+// sizes. Send a 40 MiB frame (≈30 MiB of binary — above the ~24 MiB a
+// 32 MiB text bound would have allowed) on an allowlisted channel; the extra
+// argument is ignored by the handler, so a *result* frame coming back proves
+// the transport accepted it. A close instead means the bound regressed.
+const bigFrameOutcome = await invoke('settings:get', 'model', 'x'.repeat(40 * 1024 * 1024)).then(
+  (value) => ({ ok: true, detail: JSON.stringify(value) }),
+  (error: unknown) => ({ ok: false, detail: error instanceof Error ? error.message : '?' }),
+)
+// A handler-level error result still proves the transport accepted the frame;
+// only a dead socket (timeout / connection closed) means the bound regressed.
+if (!bigFrameOutcome.ok && /timed out|connection closed/i.test(bigFrameOutcome.detail)) {
+  fail(`attachment-scale frame rejected by the transport: ${bigFrameOutcome.detail}`)
+}
+if (sidecarExited()) fail('attachment-scale frame crashed the sidecar')
+console.log(`attachment-scale (40 MiB) frame accepted → ${bigFrameOutcome.detail}`)
 
 // The transport must enforce the preload contract: a channel outside the
 // bundle-time allowlist closes the socket (4007) instead of reaching the
