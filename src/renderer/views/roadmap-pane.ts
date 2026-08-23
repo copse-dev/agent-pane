@@ -226,6 +226,10 @@ export function mountRoadmapPane(
   let resolutionCheckInFlight = false
   let resolutionCheckItemId: string | null = null
   let resolutionCheckToken = 0
+  // Why the last deep check for this item failed. Held as state rather than
+  // written straight to the box so a background refresh cannot quietly wipe the
+  // explanation — the check produced no verdict, so nothing else would fill it.
+  let resolutionCheckError: { itemId: string; message: string } | null = null
   let loadToken = 0
   // True while the first (or a re-triggered empty-list) fetch is in flight, so
   // renderList() can show "Loading…" instead of the "No roadmap items yet"
@@ -999,11 +1003,22 @@ export function mountRoadmapPane(
     const review = item ? item.fields['reviewVerdict'] : undefined
     const showingResolutionCheck =
       resolutionCheckInFlight && item != null && resolutionCheckItemId === item.id
+    const checkError =
+      item && resolutionCheckError?.itemId === item.id ? resolutionCheckError.message : null
+    reviewResult.classList.toggle('is-error', !showingResolutionCheck && checkError !== null)
     if (showingResolutionCheck) {
       reviewResult.hidden = false
       reviewResultMeta.textContent = 'Deep resolution check…'
       reviewResultBody.hidden = true
       reviewResultBody.replaceChildren()
+    } else if (checkError) {
+      // The meta line is styled for short lowercase status text, so the failure
+      // keeps its label there and the explanation — a full sentence naming the
+      // way out — goes in the body, where it reads and wraps normally.
+      reviewResult.hidden = false
+      reviewResultMeta.textContent = 'resolution check failed'
+      reviewResultBody.hidden = false
+      reviewResultBody.textContent = checkError
     } else if (item && isRoadmapReviewVerdict(review)) {
       reviewResult.hidden = false
       const detail = item.fields['reviewDetail']
@@ -1497,6 +1512,8 @@ export function mountRoadmapPane(
 
   /** Drop in-flight deep-check UI when navigating away from the item under check. */
   function cancelResolutionCheckUi(): void {
+    // A failure explains the item the user is leaving, not the one they land on.
+    resolutionCheckError = null
     if (!resolutionCheckInFlight) return
     resolutionCheckToken++
     resolutionCheckInFlight = false
@@ -1552,8 +1569,10 @@ export function mountRoadmapPane(
     const token = ++resolutionCheckToken
     const itemId = selectedId
     resolutionCheckItemId = itemId
+    resolutionCheckError = null
     resolutionBtn.disabled = true
     resolutionCheckInFlight = true
+    reviewResult.classList.remove('is-error')
     reviewResult.hidden = false
     reviewResultMeta.textContent = 'Deep resolution check…'
     reviewResultBody.hidden = true
@@ -1566,9 +1585,13 @@ export function mountRoadmapPane(
       await refresh({ preserveDirty: true })
     } catch (err) {
       if (token !== resolutionCheckToken) return
-      reviewResultMeta.textContent = ipcErrorMessage(err, 'Resolution check failed.')
-      reviewResultBody.hidden = true
-      reviewResultBody.replaceChildren()
+      resolutionCheckInFlight = false
+      resolutionCheckItemId = null
+      resolutionCheckError = {
+        itemId,
+        message: ipcErrorMessage(err, 'Resolution check failed.'),
+      }
+      renderEditor({ preserveDirty: true })
     } finally {
       if (token === resolutionCheckToken) {
         resolutionCheckInFlight = false
