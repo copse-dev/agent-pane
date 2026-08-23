@@ -141,8 +141,17 @@ export function isIgnorableDeleteSessionError(error: unknown): boolean {
  * able to serve the next one. Drivers that genuinely leak are reaped by
  * `cleanup_e2e_processes` in ci.yml, which runs between attempts and on exit —
  * the only moments when nothing is about to need them.
+ *
+ * The second pattern is what matches on a macOS dev machine. `dist/` there
+ * holds the branded `Copse.app` the dev build creates alongside `Electron.app`,
+ * and `import electron from 'electron'` resolves into it — so the launched
+ * binary is `electron/dist/Copse.app/Contents/MacOS/Electron` and the first
+ * pattern matches nothing at all. Keying off the e2e shell the session was
+ * launched with (`--app=<repo>/tests/e2e/electron-shell`) matches on either
+ * platform and, unlike a bare `Copse`, cannot match the developer's own running
+ * copy of the app.
  */
-const WEDGED_SESSION_PATTERNS = ['[e]lectron/dist/electron'] as const
+const WEDGED_SESSION_PATTERNS = ['[e]lectron/dist/electron', '[t]ests/e2e/electron-shell'] as const
 
 /** The kill list, so a test can hold the chromedriver exclusion above. */
 export function wedgedSessionPatternsForTest(): readonly string[] {

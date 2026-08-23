@@ -10,6 +10,7 @@ import {
 import { createHash } from 'node:crypto'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { e2eGitBranch } from './e2e-env.ts'
+import { forceKillWedgedE2eSession } from './after-test-safety.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
@@ -238,7 +239,30 @@ export function writeSeedConfig(config: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Clear the fixture-owned userData files, and stop the outgoing app first.
+ *
+ * Specs seed with the *previous* session's app still running: the shape is
+ * always `resetUserData(); seed…; await browser.reloadSession()`, so every write
+ * below races a live process that holds the same config in memory. It loses the
+ * race about as often as it wins. Watching `config.json` through one spec:
+ *
+ *   t+0.00s  projects=0  mainWindowState      the outgoing app's own config
+ *   t+0.16s  projects=1  activeProjectId set  the seed lands
+ *   t+0.33s  projects=0  mainWindowState      the app writes its state back
+ *
+ * The app re-serialises its own empty `projects` over the fixture, so the
+ * replacement process starts on "No project open" and the spec waits out its
+ * timeout on an element that will never exist. Killing first means the seed is
+ * written with nobody left to overwrite it.
+ *
+ * Safe as the universal hook: 200 of the 205 specs already call this, always
+ * before the `reloadSession()` that would replace the session anyway, and a
+ * `deleteSession` against the killed app is already absorbed by
+ * `installDeleteSessionSafety`.
+ */
 export function resetUserData(): void {
+  forceKillWedgedE2eSession()
   rmSync(CONFIG_PATH, { force: true })
   rmSync(SETTINGS_PATH, { force: true })
   writeSettings({})

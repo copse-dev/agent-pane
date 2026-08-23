@@ -7,6 +7,33 @@ import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 installPreloadPerfTracing()
 exposePerfBridge()
 
+/**
+ * Main asks whether the app may close by *sending* on this channel, and an
+ * `ipcRenderer` send with no listener attached is dropped on the floor. The
+ * renderer only attaches in `mountCloseConfirm`, which runs partway through
+ * `boot()` — after the sanitizer and the code-split highlighter have loaded —
+ * so a close arriving before then asked a question nobody could hear. Main got
+ * no answer, nothing re-sent the request, and its two-minute fail-open timeout
+ * was the only thing that eventually let the window go.
+ *
+ * Preload runs before any renderer code, so listening here instead means the
+ * request is always heard, and replaying it to the first subscriber means it is
+ * always answered. Requests that arrive after the renderer has subscribed take
+ * the same path they always did.
+ *
+ * The queue is why e2e could not run a second session: WebDriver creates a
+ * session and immediately calls `reloadSession()`, whose `Browser.close` landed
+ * squarely in that gap. The app then sat with its window open holding
+ * `requestSingleInstanceLock()`, so every relaunch onto the same profile quit at
+ * once and the spec died in `before all`.
+ */
+const pendingCloseConfirmRequests: { id: string }[] = []
+let closeConfirmHandler: ((req: { id: string }) => void) | null = null
+ipcRenderer.on('app:close_confirm_request', (_e, req: { id: string }): void => {
+  if (closeConfirmHandler) closeConfirmHandler(req)
+  else pendingCloseConfirmRequests.push(req)
+})
+
 contextBridge.exposeInMainWorld('api', {
   windowState: {
     getNavigation: () => ipcRenderer.invoke('mainWindow:getNavigation'),
@@ -505,12 +532,11 @@ contextBridge.exposeInMainWorld('api', {
     respond: (id: string, confirmed: boolean) =>
       ipcRenderer.invoke('close-confirm:respond', id, confirmed),
     onRequest: (handler: (req: { id: string }) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
-        handler(req)
-      }
-      ipcRenderer.on('app:close_confirm_request', listener)
+      closeConfirmHandler = handler
+      // Anything that arrived while the renderer was still booting is asked now.
+      for (const req of pendingCloseConfirmRequests.splice(0)) handler(req)
       return (): void => {
-        ipcRenderer.off('app:close_confirm_request', listener)
+        if (closeConfirmHandler === handler) closeConfirmHandler = null
       }
     },
   },
