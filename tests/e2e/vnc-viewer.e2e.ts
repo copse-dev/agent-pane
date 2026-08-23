@@ -392,9 +392,10 @@ describe('VNC viewer', function () {
     // `data-kind` is the settled outcome: `ok` once discovery returned at least
     // one listener, `idle` when it found none, `error` when the probe failed.
     // Read it from the attribute rather than the sentence, which is prose.
-    const discoveredLocalPort =
-      (await $('.vnc-discovery-status').getAttribute('data-kind')) === 'ok'
-    if ((await $('.vnc-discovery-status').getText()) === 'Screen sharing is available.') {
+    const discoveryStatus = $('.vnc-discovery-status')
+    const discoveredLocalPort = (await discoveryStatus.getAttribute('data-kind')) === 'ok'
+    const discoveryText = await discoveryStatus.getText()
+    if (discoveryText === 'Screen sharing is available.') {
       assert.equal(await $('.vnc-discovered-ports').isDisplayed(), false)
       assert.equal(await $$('.vnc-discovered-port').length, 0)
       assert.equal(await $('.vnc-discover-btn').isDisplayed(), false)
@@ -413,7 +414,21 @@ describe('VNC viewer', function () {
     // (5900-5999, which `isPlausibleVncListener` accepts), so on a host whose
     // image ships `ss`/`lsof` the feature under test discovers the spec's own
     // server and legitimately shows that port instead.
-    if (!discoveredLocalPort) assert.equal(await portInput.getValue(), '5900')
+    const selectedPort = await portInput.getValue()
+    if (!discoveredLocalPort) {
+      assert.equal(selectedPort, '5900')
+    } else if (discoveryText === 'Screen sharing is available.') {
+      // Exactly one listener was found. The fixture's RFB server is the only
+      // conventional VNC listener guaranteed by the spec.
+      assert.equal(selectedPort, String(port))
+    } else {
+      // Multiple listeners render as buttons. Pin the input to the button the
+      // product selected and prove the fixture server is among the results.
+      const selected = $('.vnc-discovered-port.selected')
+      await selected.waitForExist()
+      assert.equal(selectedPort, await selected.getAttribute('data-port'))
+      assert.equal(await $(`.vnc-discovered-port[data-port="${String(port)}"]`).isExisting(), true)
+    }
     await portInput.setValue(String(authenticationPort))
     await advancedSummary.click()
     await browser.waitUntil(async () => !(await portInput.isDisplayed()))
