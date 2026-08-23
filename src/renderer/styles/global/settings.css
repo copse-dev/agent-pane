@@ -1287,6 +1287,10 @@ dialog.settings-overlay::backdrop {
   opacity: 0.45;
   cursor: not-allowed;
 }
+.frontier-discover {
+  /* The label toggles between “Discover models” and “Hide discoverable”. */
+  inline-size: 128px;
+}
 .frontier-cost-axis {
   display: inline-flex;
   margin-left: 6px;
