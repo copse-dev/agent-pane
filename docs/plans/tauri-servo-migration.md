@@ -893,21 +893,36 @@ reachable`, and the driver log contains **no app output at all** — not one lin
 of the app's stdout, no `DevTools listening`. The app never gets far enough to
 serve DevTools.
 
-**One mechanism is identified and is worth fixing regardless.** `app-init.ts`
-relocates Electron's `userData`. Chromium writes `DevToolsActivePort` into the
-_final_ userData, so unless that equals chromedriver's `--user-data-dir` the
-driver looks somewhere the file will never appear. Confirmed by finding
-`DevToolsActivePort` in `~/.copse/user-data/` after a failed launch. Putting
-`COPSE_PANEL_USER_DATA` into the **driver's** environment makes the file land
-correctly and the session succeed — that is exactly what the by-hand runs do
-and what `beforeSession` cannot do, since it runs in the worker.
+**A mechanism that looked like the cause, and is not.** `app-init.ts` relocates
+Electron's `userData`, and Chromium writes `DevToolsActivePort` into the _final_
+userData — so with chromedriver using port 0 the driver watches a path the file
+never appears at, and the session dies as `DevToolsActivePort file doesn't
+exist`. That is real, reproducible, and confirmed by finding the file in
+`~/.copse/user-data/`. It is **not** what breaks wdio: wdio passes an explicit
+`--remote-debugging-port`, and a by-hand session with an explicit port and no
+profile environment succeeds. Recorded because it will bite anyone driving this
+app with a port-0 driver, not because it explains the suite.
 
 **Ruled out, with evidence:** machine load (fails when idle); the
 single-instance lock (the launched process stays alive for the full timeout);
 the argument list (full list works by hand); the capability set (works by hand);
 `browserVersion` — it is load-bearing, since without it wdio cannot map
-Electron's `v43.3.0` to a Chrome version at all; and seeding
-`COPSE_PANEL_USER_DATA` at config-module load, which did not help.
+Electron's `v43.3.0` to a Chrome version at all; seeding
+`COPSE_PANEL_USER_DATA` at config-module load; and the userData/DevToolsActivePort
+mechanism above.
+
+**So the cause of the managed-driver failure is unknown.** Every component works
+by hand, including the exact argument list, capability set and driver flags wdio
+uses. Whatever differs is in how wdio spawns or negotiates with the driver, and
+seven hypotheses have now been falsified rather than confirmed. The attach-mode
+result is the useful lever, not another theory.
+
+The attach-mode failure, by contrast, **is** understood: `accent-color`'s
+`before()` calls `resetUserData()` and then `browser.reloadSession()`, which
+relaunches Electron against the single fixed profile the attach hack pinned.
+Normal wdio hands each session a fresh `.wdio-profile-*`, which is exactly what
+makes `reloadSession()` work; pinning one profile breaks it. Per-session
+profiles are the fix.
 
 **Recommended next step:** stop letting wdio manage the driver. Start
 `electron-chromedriver` from a wrapper with the profile environment already set,
