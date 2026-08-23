@@ -351,6 +351,25 @@ describe('forbidDestructiveGitShell', () => {
     )
   })
 
+  it('does not mistake quoted search text for an executed destructive command', () => {
+    assert.deepEqual(
+      toolExpectationViolations(
+        [shell("rg 'git reset --hard|git clean -fd' docs"), shell("git grep 'git reset --hard'")],
+        { forbidDestructiveGitShell: true },
+      ),
+      [],
+    )
+  })
+
+  it('sees destructive git through a shell wrapper', () => {
+    assert.equal(
+      toolExpectationViolations([shell("bash -lc 'git reset --hard HEAD'")], {
+        forbidDestructiveGitShell: true,
+      }).length,
+      1,
+    )
+  })
+
   it('is inert when the scenario does not set it', () => {
     assert.deepEqual(toolExpectationViolations([shell('git reset --hard')], {}), [])
   })
@@ -392,6 +411,35 @@ describe('forbidCopseWorkspaceShell', () => {
       }),
       [],
     )
+  })
+
+  it('does not mistake a literal search pattern for reading the thread store', () => {
+    for (const command of [
+      "rg '~/.copse/workspace' docs",
+      "grep -R '$HOME/.copse/workspace' src",
+      "git grep '$COPSE_DIR/workspace'",
+      "echo '~/.copse/workspace'",
+    ]) {
+      assert.equal(
+        toolExpectationViolations([shell(command)], { forbidCopseWorkspaceShell: true }).length,
+        0,
+        command,
+      )
+    }
+  })
+
+  it('sees thread-store access through wrappers and redirects', () => {
+    for (const command of [
+      "bash -lc 'cat ~/.copse/workspace/x/events.jsonl'",
+      "printf x > '$COPSE_DIR/workspace/x/out.txt'",
+      "rg --files -g '*.jsonl' ~/.copse/workspace",
+    ]) {
+      assert.equal(
+        toolExpectationViolations([shell(command)], { forbidCopseWorkspaceShell: true }).length,
+        1,
+        command,
+      )
+    }
   })
 
   it('is inert when the scenario does not set it', () => {

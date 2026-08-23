@@ -26,6 +26,8 @@ const evalScenarioSchema = z.object({
       type: z.enum(['current', 'tempProject']),
       prefix: z.string().optional(),
       initializeGit: z.boolean().optional(),
+      /** Copy the current checkout's origin into an isolated temp repo for GitHub-tool evals. */
+      copyGitRemoteFromCurrent: z.boolean().optional(),
       seedFiles: z.array(promptAttachmentSchema).optional(),
     })
     .optional(),
@@ -70,12 +72,7 @@ const evalScenarioSchema = z.object({
        * dialog the run raised whatever asked for it.
        */
       maxShellEscalationPrompts: z.number().int().nonnegative().optional(),
-      /**
-       * Arm Guarded YOLO on the eval thread before the first prompt. Non-harm
-       * external shell (including `gh` / `git push`) then auto-allows; the harm
-       * gate still prompts. Prefer this over relying on the harness clicker when
-       * scoring `maxShellEscalationPrompts` under ACP or slow models.
-       */
+      /** Arm Guarded YOLO before the first prompt; harm prompts still require rejection. */
       armGuardedYolo: z.boolean().optional(),
     })
     .optional(),
@@ -202,5 +199,16 @@ export function seedEvalWorkspace(root: string, scenario: EvalScenario): void {
     // chat. Mirror that boundary so native write tools can apply new files
     // directly instead of staging approval-only diffs in an untracked folder.
     execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'ignore' })
+  }
+  if (scenario.workspace?.copyGitRemoteFromCurrent === true) {
+    if (scenario.workspace.initializeGit !== true) {
+      throw new Error('copyGitRemoteFromCurrent requires initializeGit')
+    }
+    const origin = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    }).trim()
+    if (!origin) throw new Error('Current checkout has no origin remote for the eval workspace')
+    execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: root, stdio: 'ignore' })
   }
 }
