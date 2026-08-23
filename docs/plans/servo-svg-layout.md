@@ -535,3 +535,46 @@ orientation on a path, not a layout subsystem.
 
 So the text and `<foreignObject>` work did not disturb the painting or
 invalidation paths that the animation depends on.
+
+### Retest 2026-08-23b — vertex markers: arrowheads render
+
+`a67ee5ec38d layout: vertex markers` — 684 insertions, almost all of it a new
+`components/layout/svg/marker.rs` (503 lines) plus paint-server and tree
+changes; +21 lines in `svgelement.rs` and nothing else outside the SVG module.
+
+**Arrowheads render on all three edges of the Mermaid flowchart**, including
+the `no` edge whose arrow points back left into `Start` — so `orient="auto"`
+and the reversed case both work, not just the trivial one.
+
+**Geometry matches Chromium exactly.** Scanline through the boxes: the `Start`
+box measures 190 px wide in both engines, and every feature — box borders, text
+glyphs, diamond edges, arrow tips — sits at a uniform 16 px horizontal offset,
+which is window placement, not rendering. There is no accumulated layout drift.
+
+**Whole-diagram difference at best alignment (dx=16, dy=0):** 7.0% of pixels at
+tolerance 8, 2.2% at 24, 0.88% at 48.
+
+That is more than the 0.13%/0.02% the earlier simple-shape comparison reported,
+so it is worth saying where it comes from. Region by region, at tolerance 48:
+
+| Region                | Servo vs Chromium |
+| --------------------- | ----------------- |
+| Start box top border  | 33.2%             |
+| Plain edge line       | 32.3%             |
+| Arrowhead into Done   | 12.3%             |
+| Arrowhead into Choice | 7.2%              |
+| `Start` text glyphs   | 5.1%              |
+| Diamond outline       | 3.4%              |
+
+The difference is concentrated on **thin axis-aligned strokes**, not on text and
+not on diagonals. Sampling a vertical profile through the box's top border
+shows why: Servo puts the line across rows 166–168 with intensities 139/198/101,
+Chromium across 167–169 with 179/197/47. Total ink is the same (438 versus 423
+above background) and the peak is one row apart — a **sub-pixel vertical
+placement difference of roughly half a pixel**, i.e. Chromium snaps thin
+axis-aligned strokes to the pixel grid and vello does not.
+
+That is a rasterizer characteristic rather than a defect: hairlines read very
+slightly softer and offset under Servo. Worth knowing before anyone reads a
+whole-image percentage as a correctness signal, since it will put a floor under
+every diff involving thin horizontal or vertical strokes.
