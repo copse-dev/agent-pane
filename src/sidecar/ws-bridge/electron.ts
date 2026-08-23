@@ -15,6 +15,7 @@
 import {
   decodeServerFrame,
   encodeFrame,
+  WS_AUTH_PROTOCOL_PREFIX,
   type ClientFrame,
   type ServerFrame,
 } from '@shared/tauri/ws-protocol.ts'
@@ -78,7 +79,9 @@ function handleFrame(frame: ServerFrame): void {
 if (wsPort === null) {
   console.error('[ws-bridge] no wsPort in boot URL; window.api will reject every call')
 } else {
-  const ws = new WebSocket(`ws://127.0.0.1:${wsPort}/`)
+  // The token subprotocol authenticates the HTTP upgrade itself — the server
+  // refuses the handshake without it, before buffering any frame.
+  const ws = new WebSocket(`ws://127.0.0.1:${wsPort}/`, `${WS_AUTH_PROTOCOL_PREFIX}${wsToken}`)
   socket = ws
   ws.addEventListener('open', () => {
     ws.send(encodeFrame({ t: 'hello', winId, token: wsToken }))
