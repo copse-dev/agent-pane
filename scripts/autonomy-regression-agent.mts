@@ -174,7 +174,7 @@ async function main(): Promise<void> {
           },
           stagedDiff: () => Promise.resolve(true),
         },
-        limits: { maxSteps: 12, maxLlmCalls: 12 },
+        limits: { maxSteps: 12, maxLlmCalls: 12, adaptiveExtensions: false },
       },
       {
         prompt: selected.prompt,
