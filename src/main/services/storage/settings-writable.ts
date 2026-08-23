@@ -187,6 +187,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // the renderer (off = no tint). See tokens.css --tint-hue / --tint-amount.
   uiTintColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   uiTintStrength: z.enum(['off', 'subtle', 'medium', 'strong']),
+  // One-time renderer startup migration marker for the legacy Appearance
+  // default tuple. It must be registered because settings:get uses a null
+  // fallback and otherwise can never read back the value written here.
+  appearanceDefaultsMigrationVersion: z.literal(1),
   appIconVariant: z.enum(APP_ICON_VARIANTS),
   layout: z.object({
     projectsPaneWidth: z.number().int().min(180).max(400),

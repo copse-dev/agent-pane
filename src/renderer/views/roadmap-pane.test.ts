@@ -1907,6 +1907,40 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('explains a failed deep check in the body and keeps it through a refresh', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const item = makeItem('a', 'Fix startup flash', 'ready', undefined, '#41')
+    const { api } = makeApi([item])
+    const advice =
+      'The resolution check did not fit “qwen3-4b”’s 4K context window. In LM Studio, ' +
+      'raise the model’s “Context Length” and reload it, or choose a larger model under ' +
+      'Settings → General → Models → Small tasks.'
+    api.roadmap.reviewItemDeep = (): Promise<never> => Promise.reject(new Error(advice))
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      await flush()
+      viewer.querySelector<HTMLButtonElement>('.roadmap-resolution-btn')?.click()
+      await flush()
+      // The lowercase-styled meta line keeps the short label; the advice reads
+      // in body casing underneath it.
+      assert.equal(
+        viewer.querySelector('.roadmap-review-result-meta')?.textContent,
+        'resolution check failed',
+      )
+      assert.equal(viewer.querySelector('.roadmap-review-result-body')?.textContent, advice)
+      assert.ok(viewer.querySelector('.roadmap-review-result.is-error'))
+      // A background re-render (there is no verdict to show) must not wipe it.
+      store.emit('threads_changed')
+      await flush()
+      assert.equal(viewer.querySelector('.roadmap-review-result-body')?.textContent, advice)
+    } finally {
+      unmount()
+    }
+  })
+
   it('clears the deep-check spinner when switching items mid-flight', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const itemA = makeItem('a', 'Fix A', 'ready', undefined, '#41')

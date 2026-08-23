@@ -7,11 +7,15 @@ import { parseReviewVerdict, reviewDetailMarkdown } from '@shared/roadmap/review
 import {
   clearBulkRunIssueCacheForTest,
   completeRoadmapReview,
+  completeReviewPrompt,
   gatherIssueEvidenceWithBulkCache,
   orderRoadmapNotesForReview,
   prepareRoadmapReview,
   reviewRoadmapItem,
+  reviewSectionChars,
+  type ReviewSectionChars,
 } from './roadmap-review.ts'
+import type { LLMProvider } from '@shared/types'
 import type { PrRef } from './github/backend/backend.ts'
 import { mockGitHubBackend } from './github/backend/mock-backend.ts'
 import {
@@ -194,5 +198,126 @@ describe('roadmap review service', () => {
       delete process.env['COPSE_PANEL_MOCK_GH_STATUS']
       clearBulkRunIssueCacheForTest()
     }
+  })
+})
+
+/** Characters the evidence sections may use for a window, per the 70% budget. */
+function evidenceBudget(contextWindow: number): number {
+  return Math.floor(contextWindow * 0.7 * 4)
+}
+
+function sectionTotal(sections: ReviewSectionChars): number {
+  return sections.prompt + sections.notes + sections.issue + sections.commits
+}
+
+describe('reviewSectionChars', () => {
+  it('sends the whole prompt when the model has room for it', () => {
+    const sections = reviewSectionChars(128_000, 'deep')
+    assert.deepEqual(sections, { prompt: 4000, notes: 1000, issue: 2000, commits: 12_000 })
+  })
+
+  it('shrinks the commit log first on a 4K local model', () => {
+    const sections = reviewSectionChars(4096, 'deep')
+    // The item's own prompt is what the verdict is about — it keeps its ceiling.
+    assert.equal(sections.prompt, 4000)
+    assert.equal(sections.issue, 2000)
+    assert.ok(sections.commits < 12_000, 'commit log shrank')
+    assert.ok(sections.commits >= 800, `commit log stayed useful: ${String(sections.commits)}`)
+    assert.ok(sectionTotal(sections) <= evidenceBudget(4096))
+  })
+
+  it('keeps a share of every section when even the item does not fit', () => {
+    const sections = reviewSectionChars(1024, 'deep')
+    assert.ok(sections.prompt > 0 && sections.issue > 0 && sections.commits > 0)
+    assert.ok(sections.prompt < 4000)
+    assert.ok(sectionTotal(sections) <= evidenceBudget(1024))
+  })
+})
+
+/** Provider that fails the first `failures` calls with `error`, then answers. */
+function fakeProvider(opts: { failures: number; error: string }): {
+  provider: LLMProvider
+  asks: string[]
+} {
+  const asks: string[] = []
+  const provider: LLMProvider = {
+    async *stream(messages) {
+      const first = messages[0]
+      asks.push(
+        first && 'content' in first && typeof first.content === 'string' ? first.content : '',
+      )
+      if (asks.length <= opts.failures) throw new Error(opts.error)
+      yield { type: 'text', text: 'resolved\n- the commits close this out' }
+    },
+  }
+  return { provider, asks }
+}
+
+const LM_STUDIO_CONTEXT_ERROR =
+  'engine protocol predict stream returned an error: ' +
+  '{"code":500,"message":"context size has been exceeded.","type":"server_error"}'
+
+const REVIEW_INPUT = {
+  note: { body: 'x'.repeat(5000), status: 'ready', fields: {} },
+  pinned: null,
+  linked: [],
+  commits: 'c'.repeat(20_000),
+  depth: 'deep' as const,
+}
+
+describe('completeReviewPrompt', () => {
+  it('sizes the prompt to the reported context window', async () => {
+    const { provider, asks } = fakeProvider({ failures: 0, error: '' })
+    const { text } = await completeReviewPrompt(
+      provider,
+      REVIEW_INPUT,
+      'lmstudio:qwen3-4b',
+      4096,
+      1000,
+    )
+    assert.match(text, /^resolved/)
+    assert.equal(asks.length, 1)
+    assert.ok((asks[0]?.length ?? 0) <= evidenceBudget(4096) + 1000, 'prompt fits the window')
+  })
+
+  it('retries smaller when the engine rejects the prompt for context', async () => {
+    const { provider, asks } = fakeProvider({ failures: 1, error: LM_STUDIO_CONTEXT_ERROR })
+    const { text } = await completeReviewPrompt(
+      provider,
+      REVIEW_INPUT,
+      'lmstudio:qwen3-4b',
+      32_768,
+      1000,
+    )
+    assert.match(text, /^resolved/)
+    assert.equal(asks.length, 2)
+    assert.ok((asks[1]?.length ?? 0) < (asks[0]?.length ?? 0), 'second attempt was smaller')
+  })
+
+  it('reports advice, not the engine blob, when the retry also fails', async () => {
+    const { provider, asks } = fakeProvider({ failures: 2, error: LM_STUDIO_CONTEXT_ERROR })
+    await assert.rejects(
+      completeReviewPrompt(provider, REVIEW_INPUT, 'lmstudio:qwen3-4b', 32_768, 1000),
+      (err: Error) => {
+        assert.match(
+          err.message,
+          /The resolution check did not fit “lmstudio:qwen3-4b”’s 4K context/,
+        )
+        assert.match(err.message, /raise the model’s “Context Length”/)
+        assert.match(err.message, /Settings → General → Models → Small tasks/)
+        assert.doesNotMatch(err.message, /engine protocol/)
+        return true
+      },
+    )
+    assert.equal(asks.length, 2)
+  })
+
+  it('does not retry failures that are not about context', async () => {
+    const { provider, asks } = fakeProvider({ failures: 1, error: 'fetch failed: ECONNREFUSED' })
+    await assert.rejects(
+      completeReviewPrompt(provider, REVIEW_INPUT, 'lmstudio:qwen3-4b', 32_768, 1000),
+      /ECONNREFUSED/,
+    )
+    assert.equal(asks.length, 1)
   })
 })

@@ -983,6 +983,7 @@ async function runAttempt(
         appendSeededReads(messages, workspace, task.seedReadFiles)
       } else {
         await runAgentLoop({
+          adaptiveExtensions: false,
           provider,
           messages,
           tools,
@@ -998,6 +999,7 @@ async function runAttempt(
           : (pack.steer.controlText ?? DEFAULT_NUDGE_CONTROL_TEXT)
       messages.push({ role: 'user', content: nudge })
       await runAgentLoop({
+        adaptiveExtensions: false,
         provider,
         messages,
         tools,
@@ -1008,6 +1010,7 @@ async function runAttempt(
       })
     } else {
       await runAgentLoop({
+        adaptiveExtensions: false,
         provider,
         messages,
         tools,

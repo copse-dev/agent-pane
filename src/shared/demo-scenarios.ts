@@ -59,6 +59,16 @@ export interface DemoScenario {
    * "Loading…" notice that never finishes.
    */
   failThreadHydration?: boolean
+  /** Seed one host approval so browser geometry specs can inspect the real dialog. */
+  approvalRequest?: {
+    id: string
+    title: string
+    body: string
+    bodyAdvice?: string
+    bodyFooter?: string
+    type: string
+    allowRemember?: boolean
+  }
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -524,6 +534,37 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         updatedAt: FIXED_TIME,
       },
     ],
+  },
+  {
+    id: 'approval-light-accent',
+    label: 'Light-theme approval with a bright accent',
+    project: project('demo-approval-light-accent-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'light',
+      uiAccentColor: '#20FD85',
+      uiTintColor: '#244C25',
+      uiTintStrength: 'subtle',
+    },
+    threads: [
+      {
+        id: 'demo-approval-light-accent-thread',
+        title: 'Approval contrast',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    approvalRequest: {
+      id: 'demo-approval-light-accent-request',
+      title: 'Run outside sandbox?',
+      body: 'npm install',
+      bodyAdvice: 'This command needs access the project sandbox blocks.',
+      bodyFooter: 'Allow running it once outside the sandbox?',
+      type: 'shell',
+    },
   },
   {
     id: 'settings-footer',

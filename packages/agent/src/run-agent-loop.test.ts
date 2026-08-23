@@ -2,7 +2,12 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at, isRecord } from './internal-utils.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
-import { AGENT_RUN_ABORT_REASON_TIMEOUT, AgentRunDeadline } from './agent-loop-limits.ts'
+import {
+  AGENT_RUN_ABORT_REASON_TIMEOUT,
+  AgentRunDeadline,
+  EXTENSION_GRANT_LLM_CALLS,
+  MAX_EXTENSION_GRANTS,
+} from './agent-loop-limits.ts'
 import { getLastMeasuredInputTokens, setLastMeasuredInputTokens } from './trim-history.ts'
 import {
   REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
@@ -1413,6 +1418,171 @@ src/renderer/views/projects-pane.ts
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
     assert.equal(chunks.at(-1)?.type, 'done')
     assertToolPairingValid(messages)
+  })
+
+  describe('adaptive extension grants', () => {
+    /** A provider that always calls one distinct tool, then yields done. */
+    function toolCallProvider(): { provider: LLMProvider; calls: () => number } {
+      let n = 0
+      return {
+        provider: {
+          async *stream(): AsyncIterable<ProviderStreamChunk> {
+            n++
+            yield {
+              type: 'tool_call',
+              toolCall: { id: String(n), name: `t${String(n)}`, args: {} },
+            }
+            yield { type: 'done' }
+          },
+        },
+        calls: () => n,
+      }
+    }
+
+    it('extends a healthy desktop-default run past both original limits', async () => {
+      const { provider, calls } = toolCallProvider()
+      const chunks: AgentStreamChunk[] = []
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [],
+        // Desktop passes a 40-call cap while leaving maxSteps at its default 20.
+        // The step boundary must be eligible for a grant; otherwise the loop
+        // exits before the call-budget-only extension path can ever run.
+        maxLlmCalls: 40,
+        adaptiveExtensions: true,
+        onChunk: (c) => chunks.push(c),
+        executeTool: async () => 'ok',
+      })
+      assert.ok(
+        calls() > 40,
+        `expected grants to carry the run past both base limits, saw ${String(calls())}`,
+      )
+      assert.equal(chunks.at(-1)?.type, 'done')
+    })
+
+    it('ends a stuck run at the original budget (no distinct recent activity)', async () => {
+      let n = 0
+      const provider: LLMProvider = {
+        async *stream() {
+          n++
+          // Same name + args every time -> one fingerprint, zero distinct.
+          yield { type: 'tool_call', toolCall: { id: String(n), name: 'same', args: {} } }
+          yield { type: 'done' }
+        },
+      }
+      const chunks: AgentStreamChunk[] = []
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [],
+        maxSteps: 100,
+        maxLlmCalls: 2,
+        adaptiveExtensions: true,
+        onChunk: (c) => chunks.push(c),
+        executeTool: async () => 'ok',
+      })
+      assert.equal(n, 2, 'no grant without distinct recent tool activity')
+      assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
+      assert.equal(chunks.at(-1)?.type, 'done')
+    })
+
+    it('stops extending after MAX_EXTENSION_GRANTS grants', async () => {
+      const { provider, calls } = toolCallProvider()
+      const chunks: AgentStreamChunk[] = []
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [],
+        maxSteps: 100,
+        // Two distinct tool calls land inside the base budget, so the first
+        // exhaustion check sees a healthy window and grants; the run then
+        // burns each grant to exactly the extended cap before being denied.
+        maxLlmCalls: 2,
+        adaptiveExtensions: true,
+        onChunk: (c) => chunks.push(c),
+        executeTool: async () => 'ok',
+      })
+      assert.equal(calls(), 2 + MAX_EXTENSION_GRANTS * EXTENSION_GRANT_LLM_CALLS)
+      assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
+      assert.equal(chunks.at(-1)?.type, 'done')
+    })
+
+    it('honours adaptiveExtensions: false even for a healthy run', async () => {
+      const { provider, calls } = toolCallProvider()
+      const chunks: AgentStreamChunk[] = []
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [],
+        maxSteps: 100,
+        maxLlmCalls: 2,
+        adaptiveExtensions: false,
+        onChunk: (c) => chunks.push(c),
+        executeTool: async () => 'ok',
+      })
+      assert.equal(calls(), 2)
+      assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
+      assert.equal(chunks.at(-1)?.type, 'done')
+    })
+
+    it('does not extend an alternating duplicate-call thrash', async () => {
+      let n = 0
+      const provider: LLMProvider = {
+        async *stream() {
+          n++
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: String(n),
+              name: 'read_file',
+              args: { path: n % 2 === 0 ? 'a.ts' : 'b.ts' },
+            },
+          }
+          yield { type: 'done' }
+        },
+      }
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [],
+        maxSteps: 100,
+        // The first A/B pair executes; the remaining calls are duplicate
+        // suppressions. Argument diversity alone must not earn an extension.
+        maxLlmCalls: 10,
+        adaptiveExtensions: true,
+        onChunk: () => {},
+        executeTool: async () => 'ok',
+      })
+      assert.equal(n, 10)
+    })
+
+    it('does not extend alternating tool failures', async () => {
+      let n = 0
+      const provider: LLMProvider = {
+        async *stream() {
+          n++
+          yield {
+            type: 'tool_call',
+            toolCall: { id: String(n), name: n % 2 === 0 ? 'a' : 'b', args: { attempt: n } },
+          }
+          yield { type: 'done' }
+        },
+      }
+      await runAgentLoop({
+        provider,
+        messages: [{ role: 'user', content: 'go' }],
+        tools: [],
+        maxSteps: 100,
+        maxLlmCalls: 8,
+        adaptiveExtensions: true,
+        onChunk: () => {},
+        executeTool: async () => {
+          throw new Error('failed')
+        },
+      })
+      assert.equal(n, 8)
+    })
   })
 
   it('surfaces the run limit message when aborted for timeout', async () => {

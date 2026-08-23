@@ -425,6 +425,14 @@
   font-size: var(--font-size-xs, 11px);
   text-transform: lowercase;
 }
+/* A check that failed carries no verdict — mark the label so the box does not
+   read as a judgement, and leave the explanation below it in body casing. */
+.roadmap-review-result.is-error .roadmap-review-result-meta {
+  color: var(--danger, #f14c4c);
+}
+.roadmap-review-result.is-error .roadmap-review-result-body {
+  white-space: pre-wrap;
+}
 .roadmap-review-row-detail {
   color: var(--text-secondary);
 }
