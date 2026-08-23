@@ -423,17 +423,18 @@ async function boot(): Promise<void> {
     ensureLayout()
     // Record the thumbnail before the pane reacts, so a card rendered for this
     // turn's tool result already has one to show.
-    setArtefactPreview(artefact.title, artefact.preview)
+    const threadId = artefact.threadId ?? store.getState().activeThreadId
+    if (threadId) setArtefactPreview(threadId, artefact.title, artefact.preview)
     openCanvasArtefact(store, artefact)
   })
-  setArtefactShowHandler((title) => {
-    showCanvasArtefact(store, title)
+  setArtefactShowHandler((threadId, title) => {
+    showCanvasArtefact(store, { threadId, title })
   })
 
   // The agent promoting an artefact it is happy with (browser_show).
-  api.canvas.onShowArtefact((title) => {
+  api.canvas.onShowArtefact((identity) => {
     ensureLayout()
-    showCanvasArtefact(store, title)
+    showCanvasArtefact(store, identity)
   })
 
   // File ▸ Open Folder… registers the chosen folder as a project and switches.

@@ -3,10 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { setComposerValue } from './helpers/composer.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-canvas-artefact-project'
+const ACTIVE_THREAD_ID = 'e2e-canvas-active-thread'
+const HISTORY_THREAD_ID = 'e2e-canvas-history-thread'
 const CANVAS_TOOL = 'mcp__copse-canvas__render_html_artefact'
 let projectRoot = ''
 
@@ -78,12 +80,11 @@ describe('canvas artefact refresh', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     projectRoot = mkdtempSync(join(tmpdir(), 'copse-canvas-artefact-'))
+    process.env.COPSE_PANEL_MOCK_LLM = '1'
+    process.env.ANTHROPIC_API_KEY = ''
+    process.env.OPENAI_API_KEY = ''
     resetUserData()
-    seedEmptyProject(projectRoot, PROJECT_ID, {
-      subagentsEnabled: false,
-      model: 'claude-sonnet-4-6',
-      mcpUiCanvasEnabled: true,
-    })
+    seedCanvasArtefactThreadFixture(projectRoot, PROJECT_ID, ACTIVE_THREAD_ID, HISTORY_THREAD_ID)
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
@@ -159,5 +160,19 @@ describe('canvas artefact refresh', () => {
       () => document.querySelector('.canvas-preview-image')?.getAttribute('src') ?? '',
     )
     expect(src).toContain('data:image/png')
+  })
+
+  it('does not show one thread’s thumbnail on a same-title card in another thread', async () => {
+    await $(`.chat-row[data-thread-id="${HISTORY_THREAD_ID}"]`).click()
+    await expect($(`.chat-row[data-thread-id="${HISTORY_THREAD_ID}"]`)).toHaveElementClass(
+      'selected',
+    )
+
+    const card = $('.tool-card[data-tool-id="historical-canvas-tool"]')
+    await card.waitForExist({ timeout: 20_000 })
+    await card.$('summary').click()
+    await expect(card.$('.tool-result')).toExist()
+    expect(await card.$('.canvas-preview-card').isExisting()).toEqual(false)
+    await saveAppScreenshot('canvas-preview-thread-isolation.png')
   })
 })

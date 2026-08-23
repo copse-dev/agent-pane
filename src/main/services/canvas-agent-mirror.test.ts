@@ -65,6 +65,14 @@ describe('mirrorArtefactToAgent', () => {
     assert.deepEqual(s.calls[1]?.opts, { newTab: true })
   })
 
+  it('gives the same title in a different thread its own tab', async () => {
+    const s = session()
+    await mirrorArtefactToAgent(artefact({ threadId: 'thread-a' }), s)
+    await mirrorArtefactToAgent(artefact({ threadId: 'thread-b' }), s)
+
+    assert.deepEqual(s.calls[1]?.opts, { newTab: true })
+  })
+
   it('does not navigate to an external URI-list artefact without origin approval', async () => {
     const s = session()
     const preview = await mirrorArtefactToAgent(

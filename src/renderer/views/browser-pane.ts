@@ -61,6 +61,8 @@ interface BrowserTab {
   /** When set, this tab renders a sandboxed MCP-UI artefact; the data: URL is
    * hidden from the address bar in favour of this friendly title. */
   artefactTitle: string | null
+  /** Thread that owns the artefact, so equal titles cannot overwrite each other. */
+  artefactThreadId: string | null
   /** Collapse this tab's overflow ("…") menu, if open. */
   closeMenu: () => void
 }
@@ -106,7 +108,12 @@ function shareableWebContentsId(tab: BrowserTab): number | null {
 const WEBVIEW_PREFS = 'contextIsolation=true'
 
 interface BrowserPopoutSeed {
-  tabs: Array<{ url: string; label?: string; artefactTitle?: string | null }>
+  tabs: Array<{
+    url: string
+    label?: string
+    artefactTitle?: string | null
+    artefactThreadId?: string | null
+  }>
   activeTabIndex: number
 }
 
@@ -673,8 +680,10 @@ export function mountBrowserPane(
    * enormous) data: URL — so re-rendering the same title means "here is a new
    * version of that", not "here is a second thing".
    */
-  function artefactTabFor(title: string): BrowserTab | undefined {
-    for (const tab of tabs.values()) if (tab.artefactTitle === title) return tab
+  function artefactTabFor(title: string, threadId: string | undefined): BrowserTab | undefined {
+    for (const tab of tabs.values()) {
+      if (tab.artefactTitle === title && tab.artefactThreadId === (threadId ?? null)) return tab
+    }
     return undefined
   }
 
@@ -684,8 +693,8 @@ export function mountBrowserPane(
    * `browser_show`) or the transcript's preview card calls this once a
    * prototype is worth looking at. Returns false when no such tab is open.
    */
-  function showArtefact(title: string): boolean {
-    const tab = artefactTabFor(title)
+  function showArtefact(title: string, threadId: string | undefined): boolean {
+    const tab = artefactTabFor(title, threadId)
     if (!tab) return false
     openRightPanel(store, 'browser')
     tab.pendingUrl = null
@@ -703,7 +712,7 @@ export function mountBrowserPane(
     // user has to close: the canvas they are looking at becomes the new version
     // in place. `navigateWebview` reloads when the URL is unchanged, so a
     // re-render of byte-identical HTML still repaints.
-    const existing = artefactTabFor(artefact.title)
+    const existing = artefactTabFor(artefact.title, artefact.threadId)
     if (existing) {
       // A re-render refreshes in place and stays where it is: the first render
       // earned the user's attention, later ones are the agent iterating and
@@ -722,6 +731,7 @@ export function mountBrowserPane(
     const tab = existing ?? tabs.get(addTab({ activate: true }))
     if (!tab) return
     tab.artefactTitle = artefact.title
+    tab.artefactThreadId = artefact.threadId ?? null
     tab.urlInput.value = ''
     tab.urlInput.placeholder = artefact.title
     syncTabLabel(tab)
@@ -875,6 +885,7 @@ export function mountBrowserPane(
       pendingUrl: null,
       loadError: null,
       artefactTitle: null,
+      artefactThreadId: null,
       closeMenu: () => {
         setMenuOpen(false)
       },
@@ -1053,6 +1064,7 @@ export function mountBrowserPane(
           'about:blank',
         label: tab.label,
         artefactTitle: tab.artefactTitle,
+        artefactThreadId: tab.artefactThreadId,
       })),
       activeTabIndex: activeIndex,
     }
@@ -1069,6 +1081,7 @@ export function mountBrowserPane(
       if (!tab) continue
       if (entry.artefactTitle) {
         tab.artefactTitle = entry.artefactTitle
+        tab.artefactThreadId = entry.artefactThreadId ?? null
         tab.urlInput.placeholder = entry.artefactTitle
       }
       if (entry.url && entry.url !== 'about:blank') {
@@ -1124,8 +1137,8 @@ export function mountBrowserPane(
     store.on('browser_url_requested', openRequestedBrowserUrl),
     store.on('browser_url_bar_focus_requested', focusUrlBar),
     store.on('canvas_artefact_requested', openArtefact),
-    store.on('canvas_artefact_show_requested', (title) => {
-      showArtefact(title)
+    store.on('canvas_artefact_show_requested', (identity) => {
+      showArtefact(identity.title, identity.threadId)
     }),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).

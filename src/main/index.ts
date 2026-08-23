@@ -218,10 +218,10 @@ setBrowserSessionPlatform({
     if (!win || win.isDestroyed()) return
     win.webContents.send('browser:show-tab', url)
   },
-  showArtefact: (title) => {
+  showArtefact: (identity) => {
     const win = getMainWindow()
     if (!win || win.isDestroyed()) return
-    win.webContents.send(CANVAS_ARTEFACT_SHOW_CHANNEL, title)
+    win.webContents.send(CANVAS_ARTEFACT_SHOW_CHANNEL, identity)
   },
 })
 

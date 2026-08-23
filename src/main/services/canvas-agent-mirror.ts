@@ -33,11 +33,16 @@ export interface CanvasMirrorSession {
  * (see `artefactTabFor` in the Browser pane), so re-rendering reuses the tab on
  * both sides and the agent's `viewId` stays stable across versions.
  */
-const viewIdByTitle = new Map<string, string>()
+const viewIdByArtefact = new Map<string, string>()
 
-/** @internal test helper — drop the title→tab mapping. */
+/** Stable collision-free key for a title within one thread. */
+function artefactKey(threadId: string | undefined, title: string): string {
+  return JSON.stringify([threadId ?? '', title])
+}
+
+/** @internal test helper — drop the thread-and-title→tab mapping. */
 export function resetCanvasAgentMirrorForTest(): void {
-  viewIdByTitle.clear()
+  viewIdByArtefact.clear()
 }
 
 /**
@@ -57,7 +62,8 @@ export async function mirrorArtefactToAgent(
   // automatically; external artefacts remain visible in the canvas only.
   if (artefact.mimeType !== 'text/html') return null
   const url = artefactUrl(artefact)
-  const known = viewIdByTitle.get(artefact.title)
+  const key = artefactKey(artefact.threadId, artefact.title)
+  const known = viewIdByArtefact.get(key)
 
   let viewId: string
   try {
@@ -68,7 +74,7 @@ export async function mirrorArtefactToAgent(
     // Without this a single closed tab would wedge the mirror for that title
     // for the rest of the session.
     if (!known) return null
-    viewIdByTitle.delete(artefact.title)
+    viewIdByArtefact.delete(key)
     try {
       viewId = (await session.navigate(url, { newTab: true })).viewId
     } catch {
@@ -76,7 +82,7 @@ export async function mirrorArtefactToAgent(
     }
   }
 
-  viewIdByTitle.set(artefact.title, viewId)
+  viewIdByArtefact.set(key, viewId)
   try {
     return await session.capturePreview(viewId)
   } catch {

@@ -1,6 +1,6 @@
 // src/shared/store/events.ts
 import type { ThreadStatus, ToolCall } from '@shared/types'
-import type { CanvasArtefact } from '@shared/types/canvas.ts'
+import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 
 export interface StoreEvents {
   message_added: [threadId: string, messageId: string]
@@ -40,8 +40,8 @@ export interface StoreEvents {
   pr_open_requested: [owner: string, repo: string, number: number]
   // An MCP-UI artefact should be rendered in the canvas (Browser pane).
   canvas_artefact_requested: [artefact: CanvasArtefact]
-  /** Promote an already-rendered artefact tab to the front, by title. */
-  canvas_artefact_show_requested: [title: string]
+  /** Promote an already-rendered artefact tab to the front. */
+  canvas_artefact_show_requested: [identity: CanvasArtefactIdentity]
   settings_changed: []
   theme_changed: ['light' | 'dark']
   staged_diffs_changed: []

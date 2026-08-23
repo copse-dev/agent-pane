@@ -13,31 +13,41 @@
  * trade than this seam.
  */
 
-/** Artefact title -> PNG `data:` URL captured from the agent browser session. */
+/** Thread + artefact title -> PNG `data:` URL captured from the agent browser session. */
 const previews = new Map<string, string>()
 
-let showHandler: ((title: string) => void) | null = null
+let showHandler: ((threadId: string, title: string) => void) | null = null
+
+function previewKey(threadId: string, title: string): string {
+  return JSON.stringify([threadId, title])
+}
 
 /**
  * Remember the newest thumbnail for `title`. Later versions overwrite earlier
  * ones deliberately: the tab shows the newest render, so the card must too, and
  * keeping a history would pin every version's bitmap in memory for the session.
  */
-export function setArtefactPreview(title: string, preview: string | undefined): void {
-  if (preview) previews.set(title, preview)
+export function setArtefactPreview(
+  threadId: string,
+  title: string,
+  preview: string | undefined,
+): void {
+  if (preview) previews.set(previewKey(threadId, title), preview)
 }
 
-export function getArtefactPreview(title: string): string | undefined {
-  return previews.get(title)
+export function getArtefactPreview(threadId: string, title: string): string | undefined {
+  return previews.get(previewKey(threadId, title))
 }
 
 /** Wire the Open button to the Browser pane (see `showCanvasArtefact`). */
-export function setArtefactShowHandler(handler: ((title: string) => void) | null): void {
+export function setArtefactShowHandler(
+  handler: ((threadId: string, title: string) => void) | null,
+): void {
   showHandler = handler
 }
 
-export function requestArtefactShow(title: string): void {
-  showHandler?.(title)
+export function requestArtefactShow(threadId: string, title: string): void {
+  showHandler?.(threadId, title)
 }
 
 /** @internal test helper — drop previews and the handler. */

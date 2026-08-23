@@ -46,8 +46,10 @@ export function setCanvasArtefactMirror(next: CanvasArtefactMirror | null): void
  * A mirror failure is swallowed to a null preview: being unable to *inspect* an
  * artefact must not stop it reaching the user's canvas.
  */
-export async function dispatchCanvasArtefacts(content: unknown): Promise<void> {
-  const artefacts = extractUiResources(content).map(toCanvasArtefact)
+export async function dispatchCanvasArtefacts(content: unknown, threadId?: string): Promise<void> {
+  const artefacts = extractUiResources(content)
+    .map(toCanvasArtefact)
+    .map((artefact) => (threadId ? { ...artefact, threadId } : artefact))
   if (artefacts.length === 0) return
   for (const artefact of artefacts) {
     let preview: string | null = null

@@ -532,6 +532,7 @@ describe('browser pane requested URLs', () => {
         title: 'Sales Dashboard',
         mimeType: 'text/html',
         body: '<!doctype html><h1>v1</h1>',
+        threadId: 'thread-a',
       })
       const firstPanel = viewer.querySelector('.browser-tab-panel.is-active')
       assert.ok(firstPanel)
@@ -545,6 +546,7 @@ describe('browser pane requested URLs', () => {
         title: 'Sales Dashboard',
         mimeType: 'text/html',
         body: '<!doctype html><h1>v2</h1>',
+        threadId: 'thread-a',
       })
 
       // Still one Sales Dashboard tab, still the same one, now carrying v2.
@@ -560,6 +562,16 @@ describe('browser pane requested URLs', () => {
       assert.match(decoded, /<h1>v2<\/h1>/)
       const activeLabel = list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')
       assert.equal(activeLabel?.textContent, 'Sales Dashboard')
+
+      // The same friendly title in another thread is a different artefact.
+      const beforeOtherThread = list.querySelectorAll('.browser-tabs-tab').length
+      openCanvasArtefact(store, {
+        title: 'Sales Dashboard',
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>other thread</h1>',
+        threadId: 'thread-b',
+      })
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, beforeOtherThread + 1)
 
       // A differently titled artefact is a different thing and gets its own tab.
       const beforePricing = list.querySelectorAll('.browser-tabs-tab').length
@@ -645,7 +657,7 @@ describe('browser pane requested URLs', () => {
       assert.equal(store.getState().rightPanelMode, 'explorer')
 
       // Promoting it is the explicit step — browser_show, or the preview card.
-      showCanvasArtefact(store, 'Sales Dashboard')
+      showCanvasArtefact(store, { title: 'Sales Dashboard' })
       assert.equal(store.getState().rightPanelMode, 'browser')
       assert.equal(
         list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,

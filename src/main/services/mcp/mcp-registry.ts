@@ -30,6 +30,7 @@ import {
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
 import { createBundledMcpServers } from './bundled-mcp-server.ts'
 import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
+import { getActiveRunThread } from '../thread-models.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { MCP_UI_CANVAS_CAPABILITY } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
 import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
@@ -393,7 +394,9 @@ async function registerClientTools(
         // toggle in Settings > Plugins is the atomic master switch.
         const summarizeUiResources =
           getDefaultPluginRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)
-        if (summarizeUiResources) await dispatchCanvasArtefacts(result.content)
+        if (summarizeUiResources) {
+          await dispatchCanvasArtefacts(result.content, getActiveRunThread() ?? undefined)
+        }
         const text = flattenMcpContent(result.content, { summarizeUiResources })
         if (result.isError) {
           throw new Error(text || `MCP tool ${tool.name} reported an error`)

@@ -15,38 +15,43 @@ describe('artefact preview registry', () => {
   })
 
   it('stores and returns a preview by title', () => {
-    setArtefactPreview('Sales Dashboard', 'data:image/png;base64,AAA')
-    assert.equal(getArtefactPreview('Sales Dashboard'), 'data:image/png;base64,AAA')
+    setArtefactPreview('thread-a', 'Sales Dashboard', 'data:image/png;base64,AAA')
+    assert.equal(getArtefactPreview('thread-a', 'Sales Dashboard'), 'data:image/png;base64,AAA')
   })
 
   it('keeps the newest render, since the tab shows the newest too', () => {
-    setArtefactPreview('Sales Dashboard', 'data:image/png;base64,V1')
-    setArtefactPreview('Sales Dashboard', 'data:image/png;base64,V2')
-    assert.equal(getArtefactPreview('Sales Dashboard'), 'data:image/png;base64,V2')
+    setArtefactPreview('thread-a', 'Sales Dashboard', 'data:image/png;base64,V1')
+    setArtefactPreview('thread-a', 'Sales Dashboard', 'data:image/png;base64,V2')
+    assert.equal(getArtefactPreview('thread-a', 'Sales Dashboard'), 'data:image/png;base64,V2')
+  })
+
+  it('does not expose a same-title preview to another thread', () => {
+    setArtefactPreview('thread-a', 'Sales Dashboard', 'data:image/png;base64,A')
+    assert.equal(getArtefactPreview('thread-b', 'Sales Dashboard'), undefined)
   })
 
   it('ignores a missing preview rather than clearing the one it has', () => {
     // A capture can fail on any single render (see `CanvasArtefact.preview`);
     // that must not blank a thumbnail the card is already showing.
-    setArtefactPreview('Sales Dashboard', 'data:image/png;base64,V1')
-    setArtefactPreview('Sales Dashboard', undefined)
-    assert.equal(getArtefactPreview('Sales Dashboard'), 'data:image/png;base64,V1')
+    setArtefactPreview('thread-a', 'Sales Dashboard', 'data:image/png;base64,V1')
+    setArtefactPreview('thread-a', 'Sales Dashboard', undefined)
+    assert.equal(getArtefactPreview('thread-a', 'Sales Dashboard'), 'data:image/png;base64,V1')
   })
 
   it('returns undefined for a title never rendered', () => {
-    assert.equal(getArtefactPreview('Nothing Here'), undefined)
+    assert.equal(getArtefactPreview('thread-a', 'Nothing Here'), undefined)
   })
 
   it('routes a show request to the registered handler', () => {
-    const shown: string[] = []
-    setArtefactShowHandler((title) => shown.push(title))
-    requestArtefactShow('Sales Dashboard')
-    assert.deepEqual(shown, ['Sales Dashboard'])
+    const shown: Array<[string, string]> = []
+    setArtefactShowHandler((threadId, title) => shown.push([threadId, title]))
+    requestArtefactShow('thread-a', 'Sales Dashboard')
+    assert.deepEqual(shown, [['thread-a', 'Sales Dashboard']])
   })
 
   it('is inert with no handler registered', () => {
     assert.doesNotThrow(() => {
-      requestArtefactShow('Sales Dashboard')
+      requestArtefactShow('thread-a', 'Sales Dashboard')
     })
   })
 })

@@ -1,7 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
-import type { CanvasArtefact } from '@shared/types/canvas.ts'
+import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { addProject } from './projects.ts'
 
 /** Keep `#pane-files` visibility in sync with store state (also wired via `files_pane_changed`). */
@@ -104,8 +104,8 @@ export function openCanvasArtefact(store: AppStore, artefact: CanvasArtefact): v
 }
 
 /** Bring an already-rendered artefact tab to the front (the promote step). */
-export function showCanvasArtefact(store: AppStore, title: string): void {
-  store.emit('canvas_artefact_show_requested', title)
+export function showCanvasArtefact(store: AppStore, identity: CanvasArtefactIdentity): void {
+  store.emit('canvas_artefact_show_requested', identity)
 }
 
 export function toggleRightPanel(store: AppStore, mode: RightPanelMode): void {

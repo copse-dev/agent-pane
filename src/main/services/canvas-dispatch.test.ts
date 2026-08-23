@@ -47,6 +47,21 @@ describe('dispatchCanvasArtefacts', () => {
     assert.equal(withPreview.preview, 'data:image/png;base64,AAA')
   })
 
+  it('carries the running thread into the mirror and renderer', async () => {
+    const mirrored: CanvasArtefact[] = []
+    const seen: CanvasArtefact[] = []
+    setCanvasArtefactMirror((artefact) => {
+      mirrored.push(artefact)
+      return Promise.resolve(null)
+    })
+    setCanvasArtefactSink((artefact) => seen.push(artefact))
+
+    await dispatchCanvasArtefacts(uiResult(), 'thread-a')
+
+    assert.equal(mirrored[0]?.threadId, 'thread-a')
+    assert.equal(seen[0]?.threadId, 'thread-a')
+  })
+
   it('awaits the mirror before handing the artefact on', async () => {
     // The tool result returns straight after this resolves, so the artefact must
     // already be loaded in an agent tab — otherwise the model's very next call,

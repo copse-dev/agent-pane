@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapshot-format.ts'
 import { expectBoolean } from '@shared/unknown-value.ts'
+import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 const MAX_TABS = 8
@@ -22,8 +23,8 @@ export interface BrowserSessionPlatform {
   createWindow(options: BrowserWindowConstructorOptions): BrowserWindow
   getAgentSession(): Session
   showUrl(url: string): void
-  /** Promote an already-rendered canvas artefact tab to the front, by title. */
-  showArtefact(title: string): void
+  /** Promote an already-rendered canvas artefact tab to the front. */
+  showArtefact(identity: CanvasArtefactIdentity): void
 }
 
 let platform: BrowserSessionPlatform | null = null
@@ -134,8 +135,8 @@ export class BrowserSessionManager {
     requirePlatform().showUrl(url)
   }
 
-  showArtefact(title: string): void {
-    requirePlatform().showArtefact(title)
+  showArtefact(identity: CanvasArtefactIdentity): void {
+    requirePlatform().showArtefact(identity)
   }
 
   async snapshot(viewId?: string): Promise<string> {

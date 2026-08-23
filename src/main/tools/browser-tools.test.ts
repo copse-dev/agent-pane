@@ -77,7 +77,7 @@ describe('browser_show', () => {
   })
 
   it('promotes a canvas artefact by title', () => {
-    const shown: string[] = []
+    const shown: Array<{ title: string; threadId?: string }> = []
     setBrowserSessionPlatform({
       createWindow: () => {
         throw new Error('not used')
@@ -88,12 +88,12 @@ describe('browser_show', () => {
       showUrl: () => {
         throw new Error('not used')
       },
-      showArtefact: (title) => shown.push(title),
+      showArtefact: (identity) => shown.push(identity),
     })
 
     const out = browserShowTool.execute({ title: 'Sales Dashboard', url: undefined }, signal)
 
-    assert.deepEqual(shown, ['Sales Dashboard'])
+    assert.deepEqual(shown, [{ title: 'Sales Dashboard' }])
     assert.ok(typeof out === 'string')
     assert.match(out, /Sales Dashboard/)
   })

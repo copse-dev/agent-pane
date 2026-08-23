@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { getActiveRunThread } from '../services/thread-models.ts'
 import { defineTool } from '@shared/types'
 import { getBrowserSession } from '../services/browser/session-manager.ts'
 import {
@@ -139,7 +140,8 @@ export const browserShowTool = defineTool({
   execute({ title, url }) {
     if (title && url) throw new Error('Pass either title or url, not both')
     if (title) {
-      getBrowserSession().showArtefact(title)
+      const threadId = getActiveRunThread()
+      getBrowserSession().showArtefact({ title, ...(threadId ? { threadId } : {}) })
       return `Brought the "${title}" artefact to the front of the Browser panel.`
     }
     if (!url) throw new Error('Pass a title (canvas artefact) or a url')
