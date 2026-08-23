@@ -694,3 +694,56 @@ developer's own profile and handed to both stacks in the environment, because
 key at all (`scripts/decrypt-provider-key.cjs`).
 
 Raw data: `docs/plans/perf-data-eval/`.
+
+### Is the 2× memory explainable? (2026-08-23)
+
+Partly, and the shape of it is now measured rather than guessed.
+
+**Per-process `phys_footprint`, same workload, HOME isolated:**
+
+| Electron          |            | Tauri + Servo       |            |
+| ----------------- | ---------: | ------------------- | ---------: |
+| Electron main     |     109 MB | `copse-tauri-shell` |     525 MB |
+| Helper (Renderer) |     115 MB | node sidecar        |     192 MB |
+| Helper (GPU)      |     104 MB | node worker         |      12 MB |
+| Helper (utility)  |       8 MB |                     |            |
+| Electron (2nd)    |      14 MB |                     |            |
+| node worker       |      12 MB |                     |            |
+| **total**         | **362 MB** | **total**           | **729 MB** |
+
+Two like-for-like comparisons fall out:
+
+- **Engine:** Servo's shell (525 MB) against Chromium's renderer + GPU + utility
+  (227 MB) — about **2.3×**, and roughly 300 MB of the ~370 MB gap. This is the
+  dominant term.
+- **Main process:** the node sidecar (192 MB) against Electron's main (~123 MB)
+  — about **1.6×**, for _identical JavaScript_. Most likely V8 heap-sizing
+  differences between Node 25 and the Node bundled in Electron 43, which is at
+  least a tunable in principle (`--max-old-space-size`).
+
+**What it is not.** Three hypotheses tested and eliminated:
+
+- **Not a leak, and not content-proportional.** Sampling the shell every few
+  seconds: 635 MB at t=2 s, settling to 520–528 MB by t=6 s and flat through
+  t=40 s. The baseline is established almost immediately and does not grow.
+- **Not the native SVG work.** Same run with `layout_svg_native_enabled` off
+  plateaus at 514–522 MB against 520–528 MB with it on — about 6 MB, ~1%.
+- **Not the JS heap.** Servo runs SpiderMonkey with `js_mem_max: -1`, which
+  falls through to `JSGC_MAX_BYTES = u32::MAX`, i.e. uncapped, and with
+  `js_mem_gc_incremental_enabled: false`. Capping it at 128 MB did **not**
+  reduce the footprint — it rose slightly, to 578 MB, presumably from extra GC
+  churn. The app still booted and did not OOM. So the JS heap is not the
+  dominant term and this pref is not the lever.
+
+**What is still unattributed** is the ~300 MB inside the Servo shell that is not
+JS heap. The remaining candidates — WebRender and GPU resource caches, font
+caches, allocator arenas — cannot be separated from outside the process.
+
+Servo does have the machinery to answer this: `components/profile/mem.rs` and
+`system_reporter.rs` implement per-category reporters (`system-heap-allocated`,
+`resident`, `pss`, per-segment breakdowns). They are not wired to a CLI flag or
+pref in this build, so getting a category breakdown means plumbing the reporter
+to an embedder-triggerable dump. That is a small, well-bounded piece of work and
+it is the difference between "explainable in shape" and "attributed" — worth
+doing before anyone tries to optimise, since three plausible-sounding
+hypotheses have already been wrong.
