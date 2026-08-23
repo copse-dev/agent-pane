@@ -208,11 +208,24 @@ export function mountGitChangesPane(
   let selection: ChangeSelection | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let refreshRequestId = 0
+  let gitFailureLogged = false
   const proposedDiffCachesByOwner = new Map<string, Map<string, ActiveDiff>>()
   let pendingNavigate: string | null = null
   // Path of a freshly proposed diff the pane should jump to on the next sync,
   // even if an earlier (still-valid) selection would otherwise be preserved.
   let pendingProposedNavigate: string | null = null
+
+  /**
+   * A failed git IPC read leaves the pane with nothing trustworthy to render,
+   * but the failure itself is not user-actionable: it is usually a thread whose
+   * worktree is mid-validation or not persisted yet (#1880). Log once per burst
+   * and render the same empty state instead of stacking inspector warnings.
+   */
+  function markGitUnavailable(scope: string, error: unknown): void {
+    if (gitFailureLogged) return
+    gitFailureLogged = true
+    console.warn(`[git-changes-pane] ${scope} failed:`, error)
+  }
   // A pop-out is seeded with the parent window's selection before its own diff
   // queue has hydrated, so an early `refresh()` would see an empty queue, judge
   // the selection dead, and fall through to an unrelated git file (#1704). Hold
@@ -591,7 +604,12 @@ export function mountGitChangesPane(
     renderList()
     const owner = activeOwner()
     if (!owner) return
-    const diff = await api.git.fileDiff(owner.projectId, owner.threadId, path, staged)
+    let diff: GitFileDiff | null = null
+    try {
+      diff = await api.git.fileDiff(owner.projectId, owner.threadId, path, staged)
+    } catch (error) {
+      markGitUnavailable(`diff read for ${path}`, error)
+    }
     if (
       requestId !== selectRequestId ||
       activeOwner()?.projectId !== owner.projectId ||
@@ -652,7 +670,12 @@ export function mountGitChangesPane(
     renderList()
     const owner = activeOwner()
     if (!owner) return
-    const diff = await api.git.committedFileDiff(owner.projectId, owner.threadId, path)
+    let diff: GitFileDiff | null = null
+    try {
+      diff = await api.git.committedFileDiff(owner.projectId, owner.threadId, path)
+    } catch (error) {
+      markGitUnavailable(`committed diff read for ${path}`, error)
+    }
     if (
       requestId !== selectRequestId ||
       activeOwner()?.projectId !== owner.projectId ||
@@ -823,7 +846,14 @@ export function mountGitChangesPane(
       renderList()
       return
     }
-    const available = await api.git.isAvailable(owner.projectId, owner.threadId)
+    let available = false
+    let availabilityFailed = false
+    try {
+      available = await api.git.isAvailable(owner.projectId, owner.threadId)
+    } catch (error) {
+      availabilityFailed = true
+      markGitUnavailable('git availability check', error)
+    }
     const currentOwner = activeOwner()
     if (
       requestId !== refreshRequestId ||
@@ -833,6 +863,7 @@ export function mountGitChangesPane(
       return
     gitAvailable = available
     if (!gitAvailable) {
+      if (!availabilityFailed) gitFailureLogged = false
       loaded = true
       status = null
       committed = null
@@ -842,12 +873,30 @@ export function mountGitChangesPane(
       await syncSelection()
       return
     }
-    const nextStatus = await api.git.status(owner.projectId, owner.threadId)
-    if (requestId !== refreshRequestId) return
-    const nextCommitted = await api.git.committedChanges(owner.projectId, owner.threadId)
-    if (requestId !== refreshRequestId) return
-    const nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
-    if (requestId !== refreshRequestId) return
+    let nextStatus
+    let nextCommitted
+    let nextBackup
+    try {
+      nextStatus = await api.git.status(owner.projectId, owner.threadId)
+      if (requestId !== refreshRequestId) return
+      nextCommitted = await api.git.committedChanges(owner.projectId, owner.threadId)
+      if (requestId !== refreshRequestId) return
+      nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
+      if (requestId !== refreshRequestId) return
+    } catch (error) {
+      markGitUnavailable('git status read', error)
+      if (requestId !== refreshRequestId) return
+      status = null
+      committed = null
+      sessionBackup = null
+      gitAvailable = false
+      loaded = true
+      renderRestoreBanner()
+      renderList()
+      clearViewer()
+      return
+    }
+    gitFailureLogged = false
     // Only now: `gitAvailable` alone still leaves `status`/`committed` null for
     // three more awaits, and any event that repaints the list in that window
     // (an approve, a pop-out sync) would render "No changes" over a repo that
