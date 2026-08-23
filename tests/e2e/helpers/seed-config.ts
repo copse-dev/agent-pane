@@ -2191,7 +2191,7 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
   const projectId = 'e2e-acp-auth-error-project'
   const threadId = 'e2e-acp-auth-error-thread'
   const now = Date.now()
-  const content = [
+  const claudeContent = [
     '> [!WARNING]',
     '> **Claude sign-in expired**',
     '>',
@@ -2211,6 +2211,27 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '```text',
     'ACP error -32603 (Internal error): Failed to authenticate. API Error: 401 OAuth access token has been revoked.',
     'Details: {"errorKind":"authentication_failed"}',
+    '```',
+  ].join('\n')
+  const cursorContent = [
+    '> [!WARNING]',
+    '> **Cursor sign-in expired**',
+    '>',
+    '> This turn couldn’t run because Cursor’s saved credentials are no longer valid.',
+    '',
+    '**To continue**',
+    '',
+    '1. Run `cursor-agent login` in a terminal.',
+    '2. Finish signing in, then re-send your message.',
+    '',
+    'Alternatively, set `CURSOR_SESSION_TOKEN` for Cursor in Settings → General → Providers.',
+    '',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.',
+    '',
+    '**Technical details**',
+    '',
+    '```text',
+    'ACP error -32603 (Internal error): Cursor session was rejected (expired WorkosCursorSessionToken). Re-sign in to Cursor or refresh CURSOR_SESSION_TOKEN from cursor.com cookies.',
     '```',
   ].join('\n')
   mkdirSync(USER_DATA, { recursive: true })
@@ -2234,14 +2255,28 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
           {
             id: 'msg-assistant-acp-auth',
             role: 'assistant',
-            content,
+            content: claudeContent,
             toolCalls: [],
             createdAt: now + 1,
+          },
+          {
+            id: 'msg-user-cursor-auth',
+            role: 'user',
+            content: 'Try the same request with Cursor.',
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-cursor-auth',
+            role: 'assistant',
+            content: cursorContent,
+            toolCalls: [],
+            createdAt: now + 3,
           },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 1,
+        updatedAt: now + 3,
       },
     ],
   })

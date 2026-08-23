@@ -13,6 +13,9 @@ describe('ACP authentication error presentation', () => {
     await $('[data-message-id="msg-assistant-acp-auth"] .message-text').waitForExist({
       timeout: 30_000,
     })
+    await $('[data-message-id="msg-assistant-cursor-auth"] .message-text').waitForExist({
+      timeout: 30_000,
+    })
   })
 
   after(() => {
@@ -53,6 +56,22 @@ describe('ACP authentication error presentation', () => {
     await savePreparedElementScreenshot(
       '[data-message-id="msg-assistant-acp-auth"]',
       'acp-auth-error.png',
+    )
+  })
+
+  it("shows Cursor's rejected session as an expired sign-in with its own recovery path", async () => {
+    const message = await $('[data-message-id="msg-assistant-cursor-auth"] .message-text')
+    const warning = await message.$('.markdown-alert-warning')
+    await expect(warning.$('strong')).toHaveText('Cursor sign-in expired')
+    await expect(message.$('ol code')).toHaveText('cursor-agent login')
+    await expect(message.$('p code')).toHaveText('CURSOR_SESSION_TOKEN')
+    await expect(message.$('pre code')).toHaveText(
+      expect.stringContaining('expired WorkosCursorSessionToken'),
+    )
+
+    await savePreparedElementScreenshot(
+      '[data-message-id="msg-assistant-cursor-auth"]',
+      'cursor-acp-auth-error.png',
     )
   })
 })
