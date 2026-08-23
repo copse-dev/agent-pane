@@ -4,7 +4,9 @@ import {
   RECOMMENDED_MIN_CONTEXT_WINDOW,
   bestKnownContextWindow,
   contextFitAdvice,
+  contextOverflowAdvice,
   hasDecentContextWindow,
+  isContextOverflowMessage,
   isContextWindowLow,
   lowContextAdvice,
 } from './context-window-advice.ts'
@@ -143,5 +145,66 @@ describe('contextFitAdvice', () => {
     const fit = { totalTokens: 8000, contextWindow: 10_000 }
     assert.equal(contextFitAdvice(fit), null)
     assert.equal(contextFitAdvice(fit, { nearlyFullRatio: 0.75 })?.level, 'near')
+  })
+})
+
+describe('isContextOverflowMessage', () => {
+  it('matches how each provider says the prompt did not fit', () => {
+    // LM Studio forwards its engine's 500 body verbatim.
+    assert.equal(
+      isContextOverflowMessage(
+        'engine protocol predict stream returned an error: ' +
+          '{"code":500,"message":"context size has been exceeded.","type":"server_error"}',
+      ),
+      true,
+    )
+    assert.equal(isContextOverflowMessage('context_length_exceeded'), true)
+    assert.equal(
+      isContextOverflowMessage("This model's maximum context length is 4096 tokens"),
+      true,
+    )
+    assert.equal(isContextOverflowMessage('prompt is too long: 210000 tokens > 200000'), true)
+    assert.equal(isContextOverflowMessage('exceeds the context window of this model'), true)
+    assert.equal(
+      isContextOverflowMessage('Not enough tokens to keep from the initial prompt'),
+      true,
+    )
+  })
+
+  it('leaves unrelated failures alone', () => {
+    assert.equal(isContextOverflowMessage('fetch failed: ECONNREFUSED 127.0.0.1:1234'), false)
+    assert.equal(isContextOverflowMessage('The model returned no verdict — try again.'), false)
+  })
+})
+
+describe('contextOverflowAdvice', () => {
+  it('names the task, the model, its window, and both ways out', () => {
+    const advice = contextOverflowAdvice({
+      task: 'The resolution check',
+      modelLabel: 'qwen3-4b',
+      contextWindow: 4096,
+      settingsPath: 'Settings → General → Models → Small tasks',
+      lmStudioModel: true,
+    })
+    assert.match(advice, /^The resolution check did not fit “qwen3-4b”’s 4K context window\./)
+    assert.match(advice, /raise the model’s “Context Length” and reload it/)
+    assert.match(advice, /Settings → General → Models → Small tasks/)
+  })
+
+  it('offers a cloud model only the model swap', () => {
+    const advice = contextOverflowAdvice({
+      task: 'The resolution check',
+      modelLabel: 'claude-haiku-4-5',
+      contextWindow: 200_000,
+      settingsPath: 'Settings → General → Models → Small tasks',
+    })
+    assert.doesNotMatch(advice, /LM Studio/)
+    assert.match(advice, /Choose a larger model under Settings → General → Models → Small tasks\./)
+  })
+
+  it('drops the parts it does not know', () => {
+    const advice = contextOverflowAdvice({ task: 'The roadmap review' })
+    assert.match(advice, /The roadmap review did not fit the model’s context window\./)
+    assert.match(advice, /Choose a larger model\./)
   })
 })
