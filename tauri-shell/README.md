@@ -14,7 +14,8 @@ git clone https://github.com/copse-dev/tauri-runtime-servo ../../tauri-runtime-s
 
 # 2. Servo's build deps (Linux; see the runtime's README for other platforms)
 sudo apt-get install -y libdbus-1-dev libegl1-mesa-dev libfontconfig1-dev \
-  libfreetype6-dev libharfbuzz-dev libx11-dev libxkbcommon-x11-dev lld
+  libfreetype6-dev libgtk-3-dev libharfbuzz-dev libwebkit2gtk-4.1-dev \
+  libx11-dev libxkbcommon-x11-dev lld
 export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
 
 # 3. Build the web + sidecar artifacts, then the shell
