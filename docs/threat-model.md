@@ -185,8 +185,9 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
   presents an explicit warning and approval.
 - **Trust gating.** Project-supplied MCP config is gated behind workspace trust;
   full-privilege custom tools load only from `<userData>/tools/`.
-- **Secret handling.** Provider keys stored via `safeStorage` where a keyring is
-  available; model-provider secrets scrubbed from ordinary spawned child-process
+- **Secret handling.** Provider keys encrypted (AES-256-GCM) under a data key
+  held in the OS keyring where one is available, with `safeStorage` blobs from
+  earlier versions read and migrated; model-provider secrets scrubbed from ordinary spawned child-process
   environments; env-var keys never persisted to disk. Explicit tool/server/agent
   configuration can still pass selected credentials by design.
 - **Renderer hardening.** Narrow `contextBridge` API, main-frame IPC gating,

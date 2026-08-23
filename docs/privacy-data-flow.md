@@ -99,11 +99,14 @@ the implementation plan in
 
 ## Credentials
 
-Keys entered in Settings are stored in `settings.json` under the Electron
-user-data directory. Electron `safeStorage` encrypts them with the macOS
-Keychain, Windows DPAPI, or a supported Linux keyring when encryption is
-available. If it is unavailable, Copse refuses to persist the key until the user
-explicitly consents to base64 plaintext storage. Base64 is not encryption.
+Keys entered in Settings are stored in `settings.json` under the Copse
+profile. They are encrypted with AES-256-GCM under a random data key that Copse
+keeps as a single item in the operating system's keyring — the macOS Keychain,
+Windows Credential Manager, or a Linux Secret Service keyring (item `Copse` /
+`secret-data-key`). Keys sealed by earlier versions with Electron `safeStorage`
+are still read and are rewritten in the new format the first time they are
+used. If no keyring is available, Copse refuses to persist the key until the
+user explicitly consents to base64 plaintext storage. Base64 is not encryption.
 
 Keys supplied only through environment variables are not written to
 `settings.json`. The opt-in environment scan reads raw values only in the main

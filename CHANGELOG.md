@@ -8,6 +8,15 @@ every published entry.
 
 ## Unreleased
 
+- Stored API keys are now encrypted with a cipher Copse owns rather than
+  Electron's `safeStorage`: a random data key kept as one item in the OS
+  keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+  and AES-256-GCM over the key itself. Existing keys keep working and are
+  rewritten in the new format the first time they are read, so nothing needs
+  re-entering. This removes the last dependency on Chromium internals for
+  reading secrets, which is what lets a future non-Electron Copse shell open
+  the same profile.
+
 - Clicking an image or video chip in the empty-thread (centered) composer now
   opens the same attachment preview modal used after send. Text chips already
   did; media chips only expanded from the transcript or roadmap, so a new

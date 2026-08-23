@@ -47,15 +47,38 @@ export function getVncUsername(
 ): string | null {
   const stored = dependencies.read(settingKey(target))
   if (!isStoredVncUsername(stored) || stored.enc.length === 0) return null
+  const cipher = dependencies.getCipher()
+  if (!cipher) return null
+  const encrypted = Buffer.from(stored.enc, 'base64')
+  let username: string
   try {
-    const username = dependencies
-      .getCipher()
-      ?.decryptString(Buffer.from(stored.enc, 'base64'))
-      .trim()
-    return username && username.length <= 256 ? username : null
+    username = cipher.decryptString(encrypted).trim()
   } catch {
     return null
   }
+  if (!username || username.length > 256) return null
+  // Same lazy format migration as API keys (see settings.ts): a blob in a
+  // read-only legacy format is rewritten through the current cipher. The read
+  // already succeeded; a failed rewrite only means the next read tries again.
+  if (cipher.shouldReencrypt?.(encrypted)) {
+    try {
+      const record: StoredVncUsername = {
+        v: 1,
+        enc: cipher.encryptString(username).toString('base64'),
+      }
+      dependencies.write(settingKey(target), record).catch(reportMigrationFailure)
+    } catch (error) {
+      reportMigrationFailure(error)
+    }
+  }
+  return username
+}
+
+function reportMigrationFailure(error: unknown): void {
+  console.warn(
+    '[vnc] could not migrate a stored username to the keyring cipher:',
+    error instanceof Error ? error.message : error,
+  )
 }
 
 /**

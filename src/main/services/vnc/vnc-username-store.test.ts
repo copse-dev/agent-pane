@@ -97,4 +97,59 @@ describe('encrypted VNC usernames', () => {
       null,
     )
   })
+
+  it('rewrites a legacy-format username through the current cipher on read', async () => {
+    const { dependencies, values } = testStore()
+    const target = { kind: 'ssh', hostId: 'studio', remotePort: 5900 } as const
+    await rememberVncUsername(target, 'studio-user', dependencies)
+    const [key, before] = [...values.entries()][0] ?? []
+    assert.ok(typeof key === 'string')
+
+    // A cipher that reads the stored format but prefers a new one for writes.
+    let encrypts = 0
+    const migrating: SecretCipher = {
+      isEncryptionAvailable: () => true,
+      encryptString: (plainText) => {
+        encrypts += 1
+        return Buffer.from(`v2:${plainText}`, 'utf8')
+      },
+      decryptString: (encrypted) => {
+        const value = encrypted.toString('utf8')
+        const prefix = value.startsWith('v2:') ? 'v2:' : 'encrypted:'
+        if (!value.startsWith(prefix)) throw new Error('Invalid ciphertext')
+        return value.slice(prefix.length)
+      },
+      shouldReencrypt: (encrypted) => !encrypted.toString('utf8').startsWith('v2:'),
+    }
+    const upgraded = { ...dependencies, getCipher: (): SecretCipher => migrating }
+
+    assert.equal(getVncUsername(target, upgraded), 'studio-user')
+    await Promise.resolve()
+    assert.equal(encrypts, 1)
+    assert.notDeepEqual(values.get(key), before)
+    assert.match(JSON.stringify(values.get(key)), /"v":1/)
+
+    // Already in the new format: read again, no further rewrite.
+    assert.equal(getVncUsername(target, upgraded), 'studio-user')
+    assert.equal(encrypts, 1)
+  })
+
+  it('still returns the username when the migration rewrite fails', async () => {
+    const { dependencies } = testStore()
+    const target = { kind: 'ssh', hostId: 'studio', remotePort: 5900 } as const
+    await rememberVncUsername(target, 'studio-user', dependencies)
+    const base = dependencies.getCipher()
+    assert.ok(base)
+    const failing: SecretCipher = {
+      ...base,
+      encryptString: () => {
+        throw new Error('keyring write refused')
+      },
+      shouldReencrypt: () => true,
+    }
+    assert.equal(
+      getVncUsername(target, { ...dependencies, getCipher: (): SecretCipher => failing }),
+      'studio-user',
+    )
+  })
 })
