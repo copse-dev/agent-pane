@@ -1,8 +1,6 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { sshExecArgs, sshPtyArgs } from './openssh-transport.ts'
 import { controlSocketPath, setSshControlDirForTests } from './ssh-paths.ts'
@@ -25,7 +23,7 @@ describe('sshExecArgs / ControlPath', () => {
       skip: process.platform === 'win32' ? 'ControlMaster / -S unused on Windows OpenSSH' : false,
     },
     () => {
-      const dir = mkdtempSync(join(tmpdir(), 'copse-cm-'))
+      const dir = mkdtempSync('/tmp/copse-cm-')
       try {
         setSshControlDirForTests(dir)
         const sock = controlSocketPath(host.id)
@@ -53,7 +51,7 @@ describe('sshExecArgs / ControlPath', () => {
       skip: process.platform === 'win32' ? 'ControlMaster / -S unused on Windows OpenSSH' : false,
     },
     () => {
-      const dir = mkdtempSync(join(tmpdir(), 'copse-cm-'))
+      const dir = mkdtempSync('/tmp/copse-cm-')
       try {
         setSshControlDirForTests(dir)
         const sock = controlSocketPath(host.id)
