@@ -388,7 +388,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           chunkHandlers.delete(handler)
         }
       },
-      onApprovalRequest: subscribe,
+      onApprovalRequest: (handler) => {
+        if (scenario.approvalRequest) {
+          const request = structuredClone(scenario.approvalRequest)
+          setTimeout(() => {
+            handler(request)
+          }, 0)
+        }
+        return (): void => undefined
+      },
       onApprovalCancelled: subscribe,
       onAskUserRequest: subscribe,
       onShellOutput: subscribe,
