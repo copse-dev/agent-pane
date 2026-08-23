@@ -98,6 +98,7 @@ interface CapturedRequestBody {
   reasoning_effort?: string
   temperature?: number
   top_p?: number
+  presence_penalty?: number
   max_tokens?: number
   maxOutputTokens?: number
 }
@@ -389,6 +390,20 @@ describe('createLMStudioProvider', () => {
     // The factory is the only place that can drop `params` on the way in, and
     // the transport assertion above would still pass if it did.
     assert.deepEqual(Reflect.get(provider, 'params'), { temperature: 0.4 })
+  })
+
+  it('keeps parameters the native SDK cannot represent on the compatible transport', async () => {
+    const provider = createLMStudioProvider(
+      'http://localhost:1234/v1',
+      'local-model',
+      'lm-studio',
+      { reasoning: 'high', presencePenalty: 1.25 },
+    )
+
+    assert.ok(provider instanceof OpenAIProvider)
+    const request = await captureRequest(provider)
+    assert.equal(request.reasoning_effort, 'high')
+    assert.equal(request.presence_penalty, 1.25)
   })
 })
 

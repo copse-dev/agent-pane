@@ -191,6 +191,8 @@ export class LMStudioProvider implements LLMProvider {
     // the other. `reasoning` has no SDK equivalent and is dropped, matching how
     // the compat path treats routes that cannot express an effort ladder;
     // `presence_penalty` is likewise absent from LLMPredictionConfigInput.
+    // The production factory keeps either unsupported setting on LM Studio's
+    // OpenAI-compatible transport, so this mapper only receives SDK fields.
     const fields = openAiParameterFields(this.params)
     const ceiling = recommendedOutputCeiling(this.modelName, this.params)
     return {

@@ -127,7 +127,6 @@ describe('LMStudioProvider tuned parameters', () => {
         topK: 20,
         minP: 0,
         repetitionPenalty: 1,
-        presencePenalty: 1.5,
       },
     })
     const messages: LLMMessage[] = [{ role: 'user', content: 'hello' }]
@@ -140,9 +139,6 @@ describe('LMStudioProvider tuned parameters', () => {
     assert.equal(opts['minPSampling'], 0)
     assert.equal(opts['repeatPenalty'], 1)
     assert.equal(opts['maxTokens'], 81_920)
-    // presence_penalty has no SDK equivalent; it must be dropped rather than
-    // silently sent under a wrong name.
-    assert.equal('presencePenalty' in opts, false)
   })
 
   it('sends no ceiling when the model card publishes none', async () => {
