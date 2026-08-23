@@ -49,6 +49,21 @@ export function copseWorkspaceDir(env: NodeJS.ProcessEnv = process.env): string 
   return nonEmpty(env['COPSE_WORKSPACE_DIR']) ?? join(copseDataRoot(env), 'workspace')
 }
 
+/**
+ * The workspace-owned scratch directory the sandbox points `$TMPDIR` at (#481).
+ *
+ * A leaf resolver here rather than only in the seatbelt overlay because three
+ * parties must name the same directory or the contract silently splits: the
+ * overlay that allows writes to it, the spawn that sets `$TMPDIR`, and the eval
+ * scorer that decides whether an agent's scratch file landed somewhere
+ * sanctioned. `project-sandbox/config.ts` re-exports it as `workspaceTmpDir`
+ * together with the best-effort `mkdir`; callers that must not drag in the
+ * seatbelt's dependency graph (the eval harness, notably) import it from here.
+ */
+export function copseWorkspaceTmpDir(env: NodeJS.ProcessEnv = process.env): string {
+  return join(copseWorkspaceDir(env), 'tmp')
+}
+
 /** Root for Copse-managed Git worktrees. */
 export function copseWorktreesDir(env: NodeJS.ProcessEnv = process.env): string {
   return nonEmpty(env['COPSE_WORKTREES_DIR']) ?? join(copseDataRoot(env), 'worktrees')

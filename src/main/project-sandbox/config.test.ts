@@ -22,6 +22,7 @@ import {
   workspaceSandboxOverlay,
   workspaceTmpDir,
 } from './config.ts'
+import { copseWorkspaceTmpDir } from '../services/storage/copse-paths.ts'
 import {
   assertAllowedWorkspaceRoot,
   clearAllowedWorkspaceRootsForTest,
@@ -385,6 +386,16 @@ describe('workspaceSandboxOverlay', () => {
     assert.ok(allowWrite.some((p) => p === `${tmpDir}/**`))
     assert.ok(allowRead.includes(tmpDir))
     assert.ok(allowRead.some((p) => p === `${tmpDir}/**`))
+  })
+
+  it('resolves that tmp dir through the leaf every other party uses', () => {
+    // Three parties must name one directory or the scratch contract splits: the
+    // overlay above, the spawn that sets $TMPDIR, and the agent eval that scores
+    // whether a model's scratch file landed somewhere sanctioned (#1846). The
+    // eval cannot import this module — its graph reaches settings and node-pty —
+    // so it resolves the path from `copse-paths.ts` instead. Pinned here so a
+    // move cannot leave the eval passing runs the seatbelt would block.
+    assert.equal(workspaceTmpDir(), copseWorkspaceTmpDir())
   })
 
   it('falls back to resolve for a non-existent workspace root', () => {

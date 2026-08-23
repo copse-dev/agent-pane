@@ -149,6 +149,25 @@ describe('analyzeShellCommand', () => {
     assert.equal(r.verdict, 'external')
   })
 
+  it('flags a hardcoded global temp scratch write as external', () => {
+    // The approval this costs is the whole of #1846: the sandbox already hands
+    // the shell a workspace-owned $TMPDIR it may write to freely, so a model
+    // that hardcodes /tmp buys a "Run outside sandbox?" prompt for a file that
+    // had a sanctioned home. Pinned here so the eval that scores the behaviour
+    // and the classifier that punishes it cannot drift apart.
+    const r = analyzeShellCommand('rg -c TODO src > /tmp/counts.txt', root)
+    assert.equal(r.verdict, 'external')
+    assert.ok(r.reasons.some((x) => x.includes('global temp path (/tmp/)')))
+  })
+
+  it('keeps a $TMPDIR scratch write inside the sandbox', () => {
+    // The pass side of the same contract: the redirect the steer asks for must
+    // not itself prompt, or the steer would be telling agents to trade one
+    // approval for another.
+    const r = analyzeShellCommand('rg -c TODO src > "$TMPDIR/counts.txt"', root)
+    assert.equal(r.verdict, 'sandbox')
+  })
+
   it('flags a sibling dir sharing the workspace name prefix as outside', () => {
     const ext = analyzeShellCommand('cat /srv/project-secrets/x', '/srv/project')
     assert.equal(ext.verdict, 'external')

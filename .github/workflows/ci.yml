@@ -831,6 +831,68 @@ jobs:
           # Trend + triage data for a GA gate; a month covers a release cycle.
           retention-days: 30
 
+  # Scratch-path GA bar (#1846): a sandboxed agent asked to stage intermediate
+  # output somewhere temporary must use the $TMPDIR the sandbox hands it (or the
+  # workspace), never a hardcoded /tmp/... — which the scope heuristic classes as
+  # external and charges the user an approval for. Deterministic scoring lives in
+  # `npm test` (eval-scratch-paths / eval-tool-expectations); this job is the
+  # behavioural half, so it needs a real model and the real Electron app.
+  #
+  # Runs nightly or on the `bench-agent-eval` label, on the same LM Studio eval
+  # runner as doctrine-eval-model. Every prompt variant runs even after one
+  # fails: the wording is meant to vary while the intent stays fixed, so one red
+  # phrasing out of three is a different finding from three reds, and fail-fast
+  # would report them as the same thing.
+  scratch-path-eval-model:
+    needs: precheck
+    if: >-
+      vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name == 'schedule' ||
+       contains(github.event.pull_request.labels.*.name, 'bench-agent-eval'))
+    runs-on: ${{ vars.LM_EVAL_RUNNER }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+      - run: npm run build
+      # The ACP arm only runs where an adapter is actually installed, so the
+      # agent is named by a repo variable (e.g. `acp:codex-acp`) rather than
+      # assumed. Unset, the native arm still gates on its own.
+      - name: Agent scratch-path eval
+        env:
+          COPSE_EVAL_SCENARIO: tests/e2e/scenarios/tmpdir-scratch-eval.json
+          COPSE_ACP_EVAL_MODEL: ${{ vars.ACP_EVAL_MODEL }}
+          LM_STUDIO_URL: ${{ vars.LM_STUDIO_URL }}
+          COPSE_EVAL_LOCAL_SERVER_URL: ${{ vars.LM_STUDIO_URL }}
+          LM_STUDIO_API_KEY: ${{ secrets.LM_STUDIO_API_KEY }}
+        run: |
+          set -uo pipefail
+          failed=0
+          for arm in native acp; do
+            if [ "$arm" = acp ]; then
+              [ -n "${COPSE_ACP_EVAL_MODEL:-}" ] || { echo "::notice::ACP_EVAL_MODEL unset, skipping the ACP arm"; continue; }
+              export COPSE_EVAL_MODEL="$COPSE_ACP_EVAL_MODEL"
+            else
+              unset COPSE_EVAL_MODEL
+            fi
+            for variant in 0 1 2; do
+              echo "::group::$arm prompt variant $variant"
+              COPSE_EVAL_PROMPT_VARIANT="$variant" npm run test:e2e:agent-eval || failed=1
+              echo "::endgroup::"
+            done
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: scratch-path-eval-model
+          # The JSONL thread export per run. A failure message names the
+          # offending command; the trace is how you see what led to it.
+          path: tests/e2e/artifacts/
+          if-no-files-found: ignore
+          retention-days: 30
+
   build:
     needs: precheck
     if: >-
