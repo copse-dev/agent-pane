@@ -1269,6 +1269,8 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-elevated);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
+  /* Weight stays constant so active/inactive never widens the glyph box. */
+  font-weight: 600;
 }
 .frontier-btn:hover {
   background: var(--bg-hover);
@@ -1277,7 +1279,9 @@ dialog.settings-overlay::backdrop {
 .frontier-btn.active {
   border-color: var(--accent);
   color: var(--text-primary);
-  font-weight: 600;
+  /* Sit above overlapping segment neighbors so the accent border wraps all four sides. */
+  position: relative;
+  z-index: 1;
 }
 .frontier-btn:disabled {
   opacity: 0.45;
@@ -1292,12 +1296,14 @@ dialog.settings-overlay::backdrop {
   margin-left: 0;
   border-radius: 0;
 }
+.frontier-cost-axis .frontier-btn + .frontier-btn {
+  margin-left: -1px;
+}
 .frontier-cost-axis .frontier-btn:first-child {
   border-radius: var(--radius) 0 0 var(--radius);
 }
 .frontier-cost-axis .frontier-btn:last-child {
   border-radius: 0 var(--radius) var(--radius) 0;
-  margin-left: -1px;
 }
 .frontier-expand-dialog {
   /* position:relative makes the dialog the containing block for the hover
