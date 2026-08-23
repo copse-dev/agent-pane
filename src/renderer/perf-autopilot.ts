@@ -317,6 +317,67 @@ function probePopover(): Record<string, string | boolean | number> {
   return result
 }
 
+/**
+ * Behavioural check of the remaining risk-register entries.
+ *
+ * Deliberately does not trust `CSS.supports`: it reports `true` for
+ * `selector(:popover-open)` under Servo while the Popover API is absent, so a
+ * support string proves nothing. Each entry here either calls the API and
+ * observes the result, or applies a rule and reads back a computed value.
+ */
+function probeCapabilities(): Record<string, string | boolean | number> {
+  const out: Record<string, string | boolean | number> = {}
+
+  // <dialog>.showModal — 14 real calls in the app.
+  const dialog = document.createElement('dialog')
+  dialog.textContent = 'probe'
+  document.body.append(dialog)
+  const showModal = Reflect.get(dialog, 'showModal')
+  out['showModal'] = typeof showModal
+  if (typeof showModal === 'function') {
+    try {
+      Reflect.apply(showModal, dialog, [])
+      out['dialogOpens'] = dialog.hasAttribute('open')
+      out['dialogDisplay'] = getComputedStyle(dialog).display
+    } catch (error) {
+      out['dialogOpens'] = `threw: ${String(error)}`
+    }
+  }
+  dialog.remove()
+
+  // :has() — 26 stylesheet rules. Behavioural: does the parent restyle?
+  const sheet = document.createElement('style')
+  sheet.textContent =
+    '.probe-has{color:rgb(1,2,3)}.probe-has:has(.probe-child){color:rgb(9,8,7)}' +
+    '.probe-anchor{anchor-name:--probe}'
+  const hasParent = document.createElement('div')
+  hasParent.className = 'probe-has'
+  const hasChild = document.createElement('span')
+  hasChild.className = 'probe-child'
+  hasParent.append(hasChild)
+  const holder = document.createElement('div')
+  holder.style.cssText = 'position:absolute;top:-9999px'
+  holder.append(sheet, hasParent)
+  document.body.append(holder)
+  out['hasSelectorWorks'] = getComputedStyle(hasParent).color === 'rgb(9, 8, 7)'
+
+  // CSS anchor positioning — 20 declarations, with a documented JS fallback.
+  const anchorEl = document.createElement('div')
+  anchorEl.className = 'probe-anchor'
+  holder.append(anchorEl)
+  out['anchorNameApplied'] = getComputedStyle(anchorEl).getPropertyValue('anchor-name') || 'unset'
+  holder.remove()
+
+  // CSS.highlights — 7 uses, find-in-chat.
+  out['cssHighlights'] = typeof Reflect.get(CSS, 'highlights')
+  out['HighlightCtor'] = typeof Reflect.get(globalThis, 'Highlight')
+
+  // WebCodecs — video pane and VNC H.264.
+  out['VideoDecoder'] = typeof Reflect.get(globalThis, 'VideoDecoder')
+
+  return out
+}
+
 /** Write into the real contenteditable and let the composer's own listeners see it. */
 function typeInto(input: HTMLElement, text: string): void {
   input.focus()
@@ -396,6 +457,7 @@ async function run(store: AppStore): Promise<void> {
   })
 
   mark('autopilot:popover', probePopover())
+  mark('autopilot:capabilities', probeCapabilities())
 
   const triangle = probeBorderTriangle()
   mark('autopilot:border-triangle', {

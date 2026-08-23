@@ -271,6 +271,50 @@ renders as a correct `▶` with **no app-side change at all**. An earlier
 ever fixed the one symptom and would have left the other twelve grid layouts
 silently broken.
 
+### Risk register re-audited behaviourally (2026-08-23)
+
+The register above was built by counting identifier occurrences. Popover showed
+that does not survive contact with what the code calls, so every remaining entry
+was re-checked twice: is the feature _actually used_, and does Servo _actually_
+support it — tested by calling the API or applying a rule and reading back a
+computed value, never by `CSS.supports`, which reports `true` for
+`selector(:popover-open)` while the API is absent.
+
+| Entry                    |  Claimed | Real usage         | Servo (measured)                     | Verdict                                     |
+| ------------------------ | -------: | ------------------ | ------------------------------------ | ------------------------------------------- |
+| `contenteditable`        | composer | composer           | works (patch 0002)                   | resolved                                    |
+| **Popover API**          |      181 | **0**              | absent                               | **false alarm — unused**                    |
+| `<dialog>.showModal`     |       56 | 14 calls, 26 nodes | `function`; opens; `display: block`  | **works**                                   |
+| CSS `:has()`             |       30 | 26 rules           | parent restyles correctly            | **works** (stylo patch)                     |
+| CSS anchor positioning   |        8 | 20 declarations    | `anchor-name` computes to unset      | absent — **fallback shipped** (`b14f8f064`) |
+| `CSS.highlights`         |        6 | 7 uses             | `undefined`; `Highlight` `undefined` | absent — **guarded, degrades**              |
+| WebCodecs `VideoDecoder` |  2+noVNC | 33 references      | `undefined`                          | **absent — genuinely open**                 |
+| Monaco / `Sanitizer`     |        — | Sanitizer **0**    | Monaco works; Sanitizer pref-gated   | resolved                                    |
+
+**Seven of eight are resolved, mitigated or non-issues.** Two were simply wrong
+about usage (Popover, Sanitizer). Two now work because of patches this project
+already carries (`contenteditable`, `:has()`). One works and was only ever
+listed as unverified (`<dialog>`). Two are absent but already handled — anchor
+positioning has a shipped CSS fallback, and `CSS.highlights` is properly
+feature-detected:
+
+```js
+const highlightsSupported =
+  typeof CSS !== 'undefined' && 'highlights' in CSS && typeof globalThis.Highlight === 'function'
+```
+
+with every call site behind it, so find-in-chat still finds, it just does not
+paint highlights. That is also the correct detection idiom — `in`/`typeof` on
+the actual objects rather than a support string.
+
+**The single genuinely open item is WebCodecs**, and it is contained: the video
+pane and VNC H.264 decoding. Both already degrade by design in the prototype.
+
+The practical consequence is that engine capability is no longer the main risk
+in this migration. The open questions are breadth of untested UI surfaces,
+the deliberately stubbed subsystems (`safeStorage` above all — API keys cannot
+be stored encrypted), the 30-patch fork burden, and the 2x memory figure.
+
 ### Popover: the top-listed risk is a false alarm (2026-08-23)
 
 The risk table above ranks the Popover API first, at "181 uses" across
