@@ -395,10 +395,7 @@ describe('forbidCopseWorkspaceShell', () => {
   })
 
   it('is inert when the scenario does not set it', () => {
-    assert.deepEqual(
-      toolExpectationViolations([shell('cat ~/.copse/workspace/x')], {}),
-      [],
-    )
+    assert.deepEqual(toolExpectationViolations([shell('cat ~/.copse/workspace/x')], {}), [])
   })
 })
 
