@@ -35,16 +35,18 @@ composer typing, the themed icon set, module-worker TLA, rasterized SVG
 text). To run with them:
 
 ```bash
-# servo series (0001–0008)
+# the servo series (see servo-patches/README.md in the runtime repo)
 git clone https://github.com/servo/servo ../../servo
 git -C ../../servo checkout -b tauri-runtime-patches f4dde2701bacd4972e6cfa319a3f0cbc9be21f64
 git -C ../../servo am ../../tauri-runtime-servo/servo-patches/00*.patch
 
-# stylo-0001 enables :has(), which 26 rules in the chat stylesheets use
-# (rev = the stylo rev in ../../servo/Cargo.lock)
+# the stylo series — :has() parsing plus the ungated SVG properties the
+# native-SVG patches rely on (rev = the stylo rev in ../../servo/Cargo.lock)
 git clone https://github.com/servo/stylo ../../stylo
 git -C ../../stylo checkout <stylo rev from servo Cargo.lock>
-git -C ../../stylo apply ../../tauri-runtime-servo/servo-patches/stylo-0001-enable-has-selector-parsing.patch
+for p in ../../tauri-runtime-servo/servo-patches/stylo-*.patch; do
+  git -C ../../stylo apply "$p"
+done
 
 # csp-0001 pairs with servo 0008 to make CSP 'self' match tauri://localhost,
 # which is what lets tauri.html ship with its CSP enforced

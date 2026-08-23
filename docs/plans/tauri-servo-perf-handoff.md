@@ -30,15 +30,17 @@ differences, not app differences.
 git clone -b claude/tauri-servo-prototype-8ugtq4 https://github.com/copse-dev/agent-pane
 git clone https://github.com/copse-dev/tauri-runtime-servo
 
-# Servo at the pinned rev + the validated patch series (0001–0008)
+# Servo at the pinned rev + the validated patch series (see its README)
 git clone https://github.com/servo/servo
 git -C servo checkout -b tauri-runtime-patches f4dde2701bacd4972e6cfa319a3f0cbc9be21f64
 git -C servo am ../tauri-runtime-servo/servo-patches/00*.patch
 
-# Stylo at the rev pinned in servo/Cargo.lock, with :has() parsing enabled
+# Stylo at the rev pinned in servo/Cargo.lock, with the stylo patch series
 git clone https://github.com/servo/stylo
 git -C stylo checkout 2d289c14fdf46952d52cabce63b1f0dc55b2ccde
-git -C stylo apply ../tauri-runtime-servo/servo-patches/stylo-0001-enable-has-selector-parsing.patch
+for p in tauri-runtime-servo/servo-patches/stylo-*.patch; do
+  git -C stylo apply "../$p"
+done
 
 # CSP crate at the published 0.8.1 rev, with 'self'-on-custom-schemes
 git clone https://github.com/rust-ammonia/rust-content-security-policy
