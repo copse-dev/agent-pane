@@ -110,7 +110,7 @@ describe('renderPlanProvider empty-plan tone', () => {
     const status = host.querySelector('.usage-plan-status')
     assert.ok(status)
     assert.equal(status.classList.contains('usage-plan-status-error'), false)
-    assert.match(status.textContent ?? '', /no recognizable plan windows/i)
+    assert.match(status.textContent, /no recognizable plan windows/i)
   })
 
   it('keeps the error tone for hard load failures', () => {
@@ -123,7 +123,7 @@ describe('renderPlanProvider empty-plan tone', () => {
     const status = host.querySelector('.usage-plan-status')
     assert.ok(status)
     assert.equal(status.classList.contains('usage-plan-status-error'), true)
-    assert.match(status.textContent ?? '', /Couldn’t load Claude plan usage/i)
+    assert.match(status.textContent, /Couldn’t load Claude plan usage/i)
   })
 })
 
@@ -182,8 +182,8 @@ describe('renderPlanProvider credit windows', () => {
     const row = host.querySelector('.usage-plan-window')
     assert.ok(row)
     assert.equal(row.getAttribute('data-unit'), 'credits')
-    assert.match(row.textContent ?? '', /972 \/ 15000 credits/)
-    assert.doesNotMatch(row.textContent ?? '', /\$972/)
+    assert.match(row.textContent, /972 \/ 15000 credits/)
+    assert.doesNotMatch(row.textContent, /\$972/)
   })
 
   it('renders Claude extra_usage credit stats on the window line', () => {
@@ -210,8 +210,8 @@ describe('renderPlanProvider credit windows', () => {
     })
     const stats = host.querySelector('.usage-plan-window-stats')
     assert.ok(stats)
-    assert.match(stats.textContent ?? '', /10577 \/ 100000 credits/)
-    assert.match(stats.textContent ?? '', /11% used/)
+    assert.match(stats.textContent, /10577 \/ 100000 credits/)
+    assert.match(stats.textContent, /11% used/)
   })
 })
 

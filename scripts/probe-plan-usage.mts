@@ -55,7 +55,7 @@ import {
 function copseUserDataDir(): string {
   const override = process.env['COPSE_PANEL_USER_DATA']?.trim()
   if (override) return override
-  const root = process.env['COPSE_DIR']?.trim() || join(homedir(), '.copse')
+  const root = process.env['COPSE_DIR']?.trim() ?? join(homedir(), '.copse')
   return join(root, 'user-data')
 }
 
