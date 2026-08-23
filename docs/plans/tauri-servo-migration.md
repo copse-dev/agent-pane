@@ -909,13 +909,40 @@ the argument list (full list works by hand); the capability set (works by hand);
 `browserVersion` — it is load-bearing, since without it wdio cannot map
 Electron's `v43.3.0` to a Chrome version at all; seeding
 `COPSE_PANEL_USER_DATA` at config-module load; and the userData/DevToolsActivePort
-mechanism above.
+mechanism above — all real, none of them the cause.
 
-**So the cause of the managed-driver failure is unknown.** Every component works
-by hand, including the exact argument list, capability set and driver flags wdio
-uses. Whatever differs is in how wdio spawns or negotiates with the driver, and
-seven hypotheses have now been falsified rather than confirmed. The attach-mode
-result is the useful lever, not another theory.
+**The cause, found:** macOS TCC denies the chromedriver-spawned Electron access
+to the external volume this worktree lives on. The first file the app reads is
+`tests/e2e/electron-shell/package.json`, the open fails with `EPERM`, and
+Electron puts up a modal — _Error launching app / Unable to parse … / EPERM:
+operation not permitted_ — which blocks the main thread. That is the 0% CPU
+park: the process is alive, has no children, has opened nothing in the profile,
+and is waiting on a dialog nobody is going to click. chromedriver polls for
+DevTools until it times out.
+
+It only bites when chromedriver is the launcher. TCC attributes filesystem
+access to the _responsible process_, and a shell-launched Electron inherits the
+terminal's granted access to `/Volumes`, while one spawned by chromedriver does
+not. That is why every by-hand reproduction succeeded and every wdio run failed
+on identical arguments.
+
+Confirmed by changing one variable — the app directory — with the same driver,
+binary and arguments:
+
+| App directory                 | Result                                              |
+| ----------------------------- | --------------------------------------------------- |
+| `/Volumes/KingstonExternal/…` | `EPERM` on `package.json`, modal, session times out |
+| `/tmp/…` (internal disk)      | **session created, app bootstrap runs**             |
+
+**Fixes**, in order of preference: run the checkout from the internal disk; or
+grant the chromedriver binary (and/or the terminal) Full Disk Access in
+System Settings → Privacy & Security. Nothing about this is specific to the
+Servo branch — the suite would fail the same way on `main` from this path.
+
+**Worth knowing generally:** each failed attempt leaves a live Electron holding
+a modal. They accumulate silently across runs, and any that reached the app's
+own startup would also hold the single-instance lock on the real profile — so a
+`pgrep -f electron-shell` before blaming the suite is cheap insurance.
 
 The attach-mode failure, by contrast, **is** understood: `accent-color`'s
 `before()` calls `resetUserData()` and then `browser.reloadSession()`, which
