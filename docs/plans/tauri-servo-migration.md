@@ -801,3 +801,71 @@ The practical read: the gap is not one pathology but three ordinary ones — a
 large JS malloc heap, ~60 MB of allocator slack, and ~47 MB of image caching in
 an icon-heavy UI. None is obviously a bug, and none has a single pref that fixes
 it.
+
+### Surface sweep: Servo vs Electron across the app (2026-08-23)
+
+`COPSE_PERF_SWEEP=1` parks the UI on each right-panel surface in turn, driven
+through the store rather than by clicking, so a selector that misses under one
+engine cannot masquerade as a rendering difference. Each surface is captured on
+both stacks and diffed over the app-window interior (`x[800..3600] y[260..1560]`
+— full-screen captures otherwise diff the desktop behind differently-sized
+windows, which is how the first pass produced a spurious 17% hotspot that turned
+out to be Activity Monitor showing through).
+
+| Surface      |        >8 |       >24 |       >48 |
+| ------------ | --------: | --------: | --------: |
+| explorer     |     3.64% |     2.23% |     1.15% |
+| changes      |     3.62% |     2.22% |     1.13% |
+| terminal     |     5.00% |     3.37% |     1.54% |
+| browser      |     4.40% |     2.87% |     1.08% |
+| roadmap      |     4.01% |     2.54% |     1.36% |
+| memories     |     3.71% |     2.31% |     1.20% |
+| **settings** | **8.77%** | **7.26%** | **5.05%** |
+
+Six of seven surfaces sit in a tight 3.6–5.0% band at tolerance 8 and ~1.1–1.5%
+at 48 — the same signature as the Mermaid comparison, i.e. thin-stroke and
+glyph rasterization differences rather than layout. **Nothing is missing or
+misplaced on any of them.**
+
+**Settings is the one real outlier** at 5.05% versus ~1.2%. Localised: the
+difference is spread across the text column, and inspecting it shows Servo's
+serif headings rendering lighter than Chromium's, with content sitting roughly
+one line lower — consistent with a weight difference producing cumulative
+vertical drift down a long document.
+
+Two hypotheses tested and both **rejected**:
+
+- **Not the serif fallback the plan flagged.** Electron renders those headings
+  in the same serif (`Averia Serif Libre`); it is the intended design, not a
+  Servo font-stack failure. That note in the first-run log was a misreading.
+- **Not variable fonts.** Enabling `layout_variable_fonts_enabled` and
+  `dom_fontface_enabled` moved settings from 8.77%/5.05% to 8.75%/5.01% — no
+  effect. My earlier recommendation to enable them for this reason was wrong;
+  they remain harmless but they do not fix this.
+
+In-page measurement under Servo gives `Averia Serif Libre`, weight 400,
+28px/33.6px line-height for the `General` heading. The matching Electron
+measurement was not captured before the environment incident below, so the
+cause of the settings difference is **still open** — it is a weight or metrics
+difference in one serif face, affecting one panel, and it is cosmetic.
+
+### The e2e suite could not be run, and why
+
+205 specs, and the suite is more portable than expected: **no spec uses
+`browser.electron.*`**, 143 use plain `browser.execute`, and the 13 using
+`__copseE2e` go through the preload the ws-bridge also bundles. So it should
+run against any W3C WebDriver endpoint — and Servo ships a full WebDriver
+server (`components/webdriver_server`, exposed by servoshell as
+`--webdriver-port`). Wiring it into `tauri-runtime-servo` would need
+`webdriver_server` as a direct dependency plus a command pump; that is the
+single highest-value next step for this migration, because it would let the
+real suite arbitrate instead of screenshot diffs.
+
+It could not be run tonight. Every spec failed at `Failed to create a session:
+timeout POST /session`. The app itself launches fine standalone, and the
+Electron process stays alive for the full 120 s timeout, so it is not the
+single-instance lock. The machine was busy with an unrelated overnight
+benchmark — `syspolicyd` at 86% CPU, `trustd` at 17%, plus a VM — and Gatekeeper
+thrash pushes session creation past its timeout. Running 204 parallel workers
+under those conditions would have produced noise and starved the benchmark, so
+the suite was left alone.
