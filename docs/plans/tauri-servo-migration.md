@@ -747,3 +747,57 @@ to an embedder-triggerable dump. That is a small, well-bounded piece of work and
 it is the difference between "explainable in shape" and "attributed" — worth
 doing before anyone tries to optimise, since three plausible-sounding
 hypotheses have already been wrong.
+
+### Memory, attributed (2026-08-23)
+
+Servo's own reporters answer what process-level `phys_footprint` cannot. They
+were unreachable from an embedder only because `Servo::create_memory_report` is
+public while the `GenericCallback` it takes was not re-exported from the `servo`
+crate — a one-line upstream fix (`pub use servo_base::generic_channel::GenericCallback`).
+With that, `tauri-runtime-servo` dumps a report on
+`COPSE_SERVO_MEM_REPORT_SECS=<n>`.
+
+Shell at 604 MB `phys_footprint`, Servo's own `resident` 485 MB:
+
+| Category                          |        Size | Note                                                 |
+| --------------------------------- | ----------: | ---------------------------------------------------- |
+| `js/malloc-heap` (main page)      | **99.0 MB** | the single largest attributable item                 |
+| `system-heap-reserved`            |    171.9 MB | of which allocated 112.5 MB — ~60 MB allocator slack |
+| `system-heap-allocated`           |    112.5 MB |                                                      |
+| `js/gc-heap/used` (main page)     |     28.6 MB |                                                      |
+| `image-cache` (main page)         |     27.8 MB | icon-heavy UI                                        |
+| `webrender/images`                |     19.3 MB |                                                      |
+| `js/gc-heap/unused` (main page)   |     10.1 MB |                                                      |
+| Monaco worker JS heaps (×2)       |      ~14 MB | see below                                            |
+| `hsts-preload-list`               |      2.0 MB | fixed cost                                           |
+| layout (stylist, box tree, fonts) |     ~2.0 MB | genuinely small                                      |
+| `webrender/fonts`                 |      0.6 MB |                                                      |
+
+**JS is the dominant term: ~154 MB** across the main page (99 malloc + 28.6 GC
+used + 10.1 GC unused + ~2 admin/non-heap) plus ~14 MB of Monaco workers.
+
+**This explains the earlier failed experiment.** Capping `js_mem_max` at 128 MB
+did not reduce the footprint, which seemed to rule out JS. It does not:
+`js_mem_max` sets `JSGC_MAX_BYTES`, which caps the **GC heap** — 28.6 MB here —
+while the **malloc heap** at 99 MB is 3.5× larger and entirely outside that cap.
+The pref was aimed at the wrong 20% of the JS total. That is worth knowing
+before anyone retries it.
+
+**Two other things fall out of the report:**
+
+- **Monaco is instantiated at startup.** Two `monaco/esm-worker-host.js` worker
+  JS heaps are live in a session that never opened an editor. That is app
+  behaviour, not an engine cost, and it is paid under Electron too — but it is
+  ~14 MB and a candidate for lazy loading.
+- **~185 MB is unattributed** even by Servo's own reporters (485 MB resident
+  against roughly 300 MB of explicit categories). Thread stacks, mmap'd regions
+  and GPU driver allocations live there. Some of that is irreducible.
+
+**Layout and fonts are not the problem** — about 2.6 MB combined. Any instinct
+that Servo's layout is memory-hungry is wrong; the cost is JS heap, allocator
+slack and images.
+
+The practical read: the gap is not one pathology but three ordinary ones — a
+large JS malloc heap, ~60 MB of allocator slack, and ~47 MB of image caching in
+an icon-heavy UI. None is obviously a bug, and none has a single pref that fixes
+it.
