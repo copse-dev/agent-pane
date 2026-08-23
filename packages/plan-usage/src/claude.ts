@@ -192,7 +192,6 @@ function planLabelForClaude(body: Record<string, unknown>): string | null {
   return planLabelFromDollars(body)
 }
 
-
 /**
  * Enterprise / team overage pool. Prefer `extra_usage` credits (matches
  * Anthropic copy); fall back to `spend` money when credits are absent.
