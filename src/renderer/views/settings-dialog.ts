@@ -11,6 +11,7 @@ import {
   isThemePreference,
   DEFAULT_THEME_PREFERENCE,
 } from '@shared/types/state.ts'
+import { createOverlayDialog } from './dialog-shell.ts'
 import { resolveTheme } from '../dom/theme.ts'
 import { applyUiScale } from '../dom/ui-scale.ts'
 import { clampUiScale, normalizeUiScale } from '@shared/ui-scale.ts'
@@ -512,9 +513,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // A native <dialog> (opened via showModal in openSettingsDialog) rather than a
   // div: the platform handles focus-trapping, inert background, top-layer
   // stacking, and Esc-to-close. Closed by default — no `hidden` needed.
-  const overlay = document.createElement('dialog')
-  overlay.id = 'settings-dialog'
-  overlay.className = 'settings-overlay'
+  const { dialog: overlay } = createOverlayDialog({
+    id: 'settings-dialog',
+    className: 'settings-overlay',
+  })
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
@@ -1416,7 +1418,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       </div>
     </div>
   `
-  document.body.append(overlay)
   overlayEl = overlay
   qsRequired(overlay, '#settings-close').append(closeIcon('ui-icon'))
 

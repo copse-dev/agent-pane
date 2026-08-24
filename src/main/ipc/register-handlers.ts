@@ -76,6 +76,11 @@ import {
 import { createElectronUserAlertSender } from '../services/user-alerts-electron.ts'
 import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
 import {
+  assertEnvKeyDetectionConsent,
+  importDetectedEnvKeys,
+  EnvKeyImportConsentError,
+} from '../services/providers/env-key-import.ts'
+import {
   isRendererWritableSettingKey,
   isSecretSettingKey,
   parseRendererWritableSetting,
@@ -296,6 +301,7 @@ import {
 import { applyAppIcon } from '../app-icon.ts'
 import {
   createMainWindow,
+  freezeMainWindowStateForQuit,
   getFocusedMainWindow,
   getMainWindow,
   syncDevtoolsShortcut,
@@ -1317,10 +1323,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Opt-in environment scan: look for provider API keys the user already has
   // exported (process.env + well-known shell files) and offer to import them.
   // Raw secrets stay in the main process — the renderer only sees the masked
-  // preview. Both handlers re-scan on each call; the import handler is gated on
-  // the persisted consent flag set when the user approves the scan.
+  // preview. Both handlers re-scan on each call and both are gated on the
+  // persisted consent flag set when the user approves the scan.
   ipcMain.handle('settings:scanEnvKeys', (event) => {
     assertMainFrameSender(event, win)
+    try {
+      assertEnvKeyDetectionConsent()
+    } catch (err) {
+      if (err instanceof EnvKeyImportConsentError) throw new IpcValidationError(err.message)
+      throw err
+    }
     return scanEnvForKeys().map((d) => ({
       provider: d.provider,
       envVar: d.envVar,
@@ -1329,31 +1341,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       alreadyConfigured: hasApiKey(d.provider),
     }))
   })
-  ipcMain.handle('settings:importEnvKeys', (event) => {
+  ipcMain.handle('settings:importEnvKeys', (event, rawProviders?: unknown) => {
     assertMainFrameSender(event, win)
-    if (!getSetting<boolean>('envKeyAutoDetectEnabled', false)) {
-      throw new IpcValidationError('Environment key detection has not been enabled')
+    const providers = parseIpcArgs(z.array(z.string().max(64)).max(32).optional(), [rawProviders])
+    try {
+      return importDetectedEnvKeys(providers ? { providers } : {})
+    } catch (err) {
+      if (err instanceof EnvKeyImportConsentError) throw new IpcValidationError(err.message)
+      throw err
     }
-    const imported: { provider: string; source: string }[] = []
-    const skipped: { provider: string; reason: string }[] = []
-    for (const d of scanEnvForKeys()) {
-      // Never overwrite a key the user has already configured.
-      if (hasApiKey(d.provider)) {
-        skipped.push({ provider: d.provider, reason: 'already-configured' })
-        continue
-      }
-      // Honour the plaintext gate here too: a bulk env import must not write keys
-      // unencrypted without consent. Skipped rather than silently stored in clear.
-      // The user can add the key manually via the Settings UI where the per-save
-      // confirm dialog lets them approve plaintext storage explicitly.
-      const result = setApiKey(d.provider, d.value)
-      if (!result.ok) {
-        skipped.push({ provider: d.provider, reason: 'plaintext-storage-refused' })
-        continue
-      }
-      imported.push({ provider: d.provider, source: d.source })
-    }
-    return { imported, skipped }
   })
   ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
   // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
@@ -2475,6 +2471,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:createMainWindow', (event) => {
       assertMainFrameSender(event, win)
       createMainWindow()
+    })
+    // The wdio harness closes a window before reloadSession so Electron can
+    // release its single-instance lock (wdio.conf.ts beforeCommand). Without
+    // this, that close reads as the user discarding the window (its persisted
+    // record is dropped) and the close-time state capture re-writes this
+    // process's stale records over whatever the spec just seeded on disk —
+    // which is how the multi-window restore spec broke. Quit + freeze keeps
+    // the on-disk state exactly as the spec left it.
+    ipcMain.handle('test:markQuit', (event) => {
+      assertMainFrameSender(event, win)
+      freezeMainWindowStateForQuit()
     })
     // Local macOS WebDriver sessions cannot always relaunch Electron after a
     // fixture rewrite. Let focused specs drive the same workspace-open event as
