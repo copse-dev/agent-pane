@@ -178,7 +178,14 @@ import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
 import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
 import { installCiWatchConsumer } from './services/github/ci-watch-service.ts'
-import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
+import {
+  CANVAS_ARTEFACT_CHANNEL,
+  CANVAS_ARTEFACT_SHOW_CHANNEL,
+  setCanvasArtefactMirror,
+  setCanvasArtefactSink,
+} from './services/canvas-dispatch.ts'
+import { mirrorArtefactToAgent } from './services/canvas-agent-mirror.ts'
+import { getBrowserSession } from './services/browser/session-manager.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
 import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
@@ -231,6 +238,11 @@ setBrowserSessionPlatform({
     if (!win || win.isDestroyed()) return
     win.webContents.send('browser:show-tab', url)
   },
+  showArtefact: (identity) => {
+    const win = getMainWindow()
+    if (!win || win.isDestroyed()) return
+    win.webContents.send(CANVAS_ARTEFACT_SHOW_CHANNEL, identity)
+  },
 })
 
 setVideoDecoderPlatform({
@@ -244,6 +256,10 @@ setCanvasArtefactSink((artefact) => {
   if (!win || win.isDestroyed()) return
   win.webContents.send(CANVAS_ARTEFACT_CHANNEL, artefact)
 })
+
+// Load every artefact into the headless agent session as well, so the model can
+// snapshot and screenshot the canvas it just rendered instead of working blind.
+setCanvasArtefactMirror((artefact) => mirrorArtefactToAgent(artefact, getBrowserSession()))
 
 setContextEstimateRefreshSink(() => {
   const win = getMainWindow()
