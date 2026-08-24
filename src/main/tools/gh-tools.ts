@@ -77,7 +77,7 @@ export const ghRunListTool = defineTool({
   name: 'gh_run_list',
   provenance: 'external',
   description:
-    'List recent CI workflow runs for a branch via GitHub CLI (read-only). Use to find the run id of a failing check before fetching its logs.',
+    'List recent CI workflow runs for a branch via GitHub CLI (read-only). Prefer over run_shell + gh. Use to find the run id of a failing check before fetching its logs.',
   parameters: z.object({
     branch: z
       .string()
