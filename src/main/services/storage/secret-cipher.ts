@@ -30,6 +30,12 @@ export interface SecretCipher {
    * format leaves this undefined.
    */
   shouldReencrypt?(encrypted: Buffer): boolean
+  /**
+   * Encrypt through the preferred format without using an availability
+   * fallback. Migration callers leave the readable legacy blob untouched if
+   * this throws, rather than rewriting it into the same legacy format.
+   */
+  encryptStringForMigration?(plainText: string): Buffer
 }
 
 let cipher: SecretCipher | null = null

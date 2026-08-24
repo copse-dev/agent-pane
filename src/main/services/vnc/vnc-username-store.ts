@@ -64,7 +64,9 @@ export function getVncUsername(
     try {
       const record: StoredVncUsername = {
         v: 1,
-        enc: cipher.encryptString(username).toString('base64'),
+        enc: (
+          cipher.encryptStringForMigration?.(username) ?? cipher.encryptString(username)
+        ).toString('base64'),
       }
       dependencies.write(settingKey(target), record).catch(reportMigrationFailure)
     } catch (error) {

@@ -190,6 +190,26 @@ describe('createMigratingCipher', () => {
     assert.equal(cipher.decryptString(blob), 'fallback')
   })
 
+  it('falls back when a readable keyring refuses to create the data key', () => {
+    const store: DataKeyStore = {
+      read: () => null,
+      write: () => {
+        throw new Error('user interaction is not allowed')
+      },
+    }
+    const legacy = legacyCipher()
+    const cipher = createMigratingCipher(createKeyringCipher(store), legacy)
+
+    assert.equal(cipher.isEncryptionAvailable(), true, 'the read probe itself succeeds')
+    const blob = cipher.encryptString('fallback after write refusal')
+    assert.equal(legacy.encrypts, 1)
+    assert.equal(cipher.decryptString(blob), 'fallback after write refusal')
+    assert.throws(
+      () => cipher.encryptStringForMigration?.('must use the preferred format'),
+      /user interaction is not allowed/,
+    )
+  })
+
   it('is unavailable and refuses to write when neither cipher can', () => {
     const cipher = createMigratingCipher(createKeyringCipher(brokenStore()), legacyCipher(false))
     assert.equal(cipher.isEncryptionAvailable(), false)

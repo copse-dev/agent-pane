@@ -135,14 +135,17 @@ describe('encrypted VNC usernames', () => {
   })
 
   it('still returns the username when the migration rewrite fails', async () => {
-    const { dependencies } = testStore()
+    const { dependencies, values } = testStore()
     const target = { kind: 'ssh', hostId: 'studio', remotePort: 5900 } as const
     await rememberVncUsername(target, 'studio-user', dependencies)
+    const [key, before] = [...values.entries()][0] ?? []
+    assert.ok(typeof key === 'string')
     const base = dependencies.getCipher()
     assert.ok(base)
     const failing: SecretCipher = {
       ...base,
-      encryptString: () => {
+      encryptString: () => Buffer.from('legacy-fallback', 'utf8'),
+      encryptStringForMigration: () => {
         throw new Error('keyring write refused')
       },
       shouldReencrypt: () => true,
@@ -151,5 +154,7 @@ describe('encrypted VNC usernames', () => {
       getVncUsername(target, { ...dependencies, getCipher: (): SecretCipher => failing }),
       'studio-user',
     )
+    await Promise.resolve()
+    assert.deepEqual(values.get(key), before, 'failed migration must leave the legacy blob intact')
   })
 })

@@ -147,9 +147,22 @@ export function createMigratingCipher(
       return primary.isEncryptionAvailable() || (legacy?.isEncryptionAvailable() ?? false)
     },
     encryptString(plainText: string): Buffer {
-      if (primary.isEncryptionAvailable()) return primary.encryptString(plainText)
+      let primaryFailure: { error: unknown } | null = null
+      try {
+        if (primary.isEncryptionAvailable()) return primary.encryptString(plainText)
+      } catch (error) {
+        // A successful read probe does not prove the keyring will permit a
+        // first write. Preserve the existing safeStorage availability contract
+        // when creation is denied or the keyring locks between the two calls.
+        primaryFailure = { error }
+      }
       if (legacy?.isEncryptionAvailable()) return legacy.encryptString(plainText)
+      if (primaryFailure) throw primaryFailure.error
       throw new Error('no secret cipher is available')
+    },
+    encryptStringForMigration(plainText: string): Buffer {
+      if (!primary.isEncryptionAvailable()) throw new Error('primary secret cipher is unavailable')
+      return primary.encryptString(plainText)
     },
     decryptString(encrypted: Buffer): string {
       if (isKeyringCipherBlob(encrypted)) return primary.decryptString(encrypted)

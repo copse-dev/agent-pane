@@ -124,7 +124,9 @@ function migrateStoredKey(
   try {
     const record: StoredKey = {
       v: 1,
-      enc: cipher.encryptString(value).toString('base64'),
+      enc: (cipher.encryptStringForMigration?.(value) ?? cipher.encryptString(value)).toString(
+        'base64',
+      ),
       plain: false,
     }
     cached.set(`apiKey.${provider}`, record)
