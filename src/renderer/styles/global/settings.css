@@ -484,14 +484,14 @@ dialog.settings-overlay::backdrop {
 .model-parameter-fields input[type='number'] {
   max-width: 10rem;
 }
-/* The vendor-recipe offer sits after the fields it fills, reading as a shortcut
-   to them rather than a fourth control. */
+/* The recipe offer introduces the fields it fills, so the action, provenance,
+   and resulting reasoning/output budget remain together near the top. */
 .model-parameter-recommend {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--spacing-sm);
-  margin-top: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
 }
 .model-parameter-recommend-note {
   margin: 0;
