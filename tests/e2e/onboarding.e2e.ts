@@ -61,11 +61,18 @@ describe('onboarding: nothing detected → providers fallback', () => {
     await keyInput.setValue('sk-ant-e2e-onboarding-fallback-0001')
 
     await overlay.$('#onboarding-finish').click()
+    // On runners without an OS keyring (Linux docker), saving the key raises the
+    // plaintext-consent confirm dialog and finish waits on it. Approve it —
+    // which also makes the on-disk key assertion below hold on every platform.
     await browser.waitUntil(
       async () =>
-        browser.execute(
-          () => document.querySelector<HTMLDialogElement>('#onboarding-dialog')?.open === false,
-        ),
+        browser.execute(() => {
+          const confirm = document.querySelector<HTMLDialogElement>('#confirm-dialog')
+          if (confirm?.open) {
+            confirm.querySelector<HTMLButtonElement>('.confirm-dialog-confirm')?.click()
+          }
+          return document.querySelector<HTMLDialogElement>('#onboarding-dialog')?.open === false
+        }),
       { timeout: 30_000, timeoutMsg: 'onboarding did not close after finish' },
     )
 

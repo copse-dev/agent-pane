@@ -127,8 +127,24 @@ describe('onboarding: scan finds keys and local servers', () => {
     expect(settings['envKeyAutoDetectEnabled']).toBe(true)
 
     const apiKeys = (settings['apiKey'] ?? {}) as Record<string, unknown>
-    expect(apiKeys['anthropic'] ?? settings['apiKey.anthropic']).toBeDefined()
+    // The unticked key must never land, on any platform.
     expect(apiKeys['openai'] ?? settings['apiKey.openai']).toBeUndefined()
+    // The ticked key lands wherever an OS keyring exists. On keyring-less
+    // runners (Linux docker) the bulk import deliberately refuses plaintext —
+    // prove that refusal, not a broken pipeline, is why the key is absent:
+    // consent is on and the detection still resolves, so a re-run reports the
+    // key as refused (or already-configured where the first import stored it).
+    const anthropicKey = apiKeys['anthropic'] ?? settings['apiKey.anthropic']
+    const rerun = (await browser.execute(() =>
+      window.api.settings.importEnvKeys(['anthropic']),
+    )) as { imported: unknown[]; skipped: { provider: string; reason: string }[] }
+    expect(rerun.imported).toEqual([])
+    expect(rerun.skipped).toEqual([
+      {
+        provider: 'anthropic',
+        reason: anthropicKey !== undefined ? 'already-configured' : 'plaintext-storage-refused',
+      },
+    ])
 
     // The Jan fixture's model was imported into the extra-provider store.
     expect(JSON.stringify(settings['extraProviders'] ?? '')).toContain('e2e-jan-model')
