@@ -13,6 +13,7 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import type { UsageEvent } from '../../../src/shared/usage/usage-event.ts'
 import {
   supervisedTaskMetaSchema,
   type SupervisedTaskMeta,
@@ -487,6 +488,8 @@ export function seedEmptyProject(
     parallelApiKey?: string
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
+    /** Seed rolling usage-ledger events before the app launches. */
+    usageEvents?: readonly UsageEvent[]
     /**
      * The exact `pluginDisabled` list to write, replacing the host defaults. Use
      * this to opt out of a pack that ships enabled (e.g. drop
@@ -535,6 +538,9 @@ export function seedEmptyProject(
       : pluginDisabledSeed(enabledPlugins)
   if (options?.pluginSources) {
     seedConfig.pluginSources = [...options.pluginSources]
+  }
+  if (options?.usageEvents) {
+    seedConfig.usageEvents = [...options.usageEvents]
   }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}

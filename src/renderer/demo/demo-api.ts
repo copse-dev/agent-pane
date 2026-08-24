@@ -633,7 +633,6 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     appIcon: { apply: resolvedVoid },
     usage: {
-      record: resolvedVoid,
       getSummary: () => {
         const emptyPeriod = {
           totalCostUsd: 0,

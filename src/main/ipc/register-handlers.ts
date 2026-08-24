@@ -307,8 +307,7 @@ import {
   isProviderKeyUsable,
   recordProviderKeyValidation,
 } from '../services/providers/provider-key-status.ts'
-import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
-import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
+import { getUsageSummary } from '../services/storage/usage-ledger.ts'
 import {
   getPlanWorthItPayload,
   loadPlanUsageSnapshotAndSample,
@@ -1408,10 +1407,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('app-icon:apply', () => {
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
-  })
-  ipcMain.handle('usage:record', (event, input: unknown) => {
-    assertMainFrameSender(event, win)
-    recordUsageEvent(parseUsageRecordInput(input))
   })
   ipcMain.handle('usage:getSummary', () => getUsageSummary())
   ipcMain.handle('usage:getPlanUsage', async () => loadPlanUsageSnapshotAndSample())
