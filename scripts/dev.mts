@@ -95,7 +95,13 @@ const nodeOpts = {
   bundle: true,
   platform: 'node' as const,
   format: 'cjs' as const,
-  external: ['electron', '@anthropic-ai/sandbox-runtime', 'shell-quote', 'node-pty'],
+  external: [
+    'electron',
+    '@anthropic-ai/sandbox-runtime',
+    'shell-quote',
+    'node-pty',
+    '@napi-rs/keyring',
+  ],
   sourcemap: true,
   define,
 }
