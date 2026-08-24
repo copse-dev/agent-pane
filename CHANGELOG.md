@@ -12,10 +12,12 @@ every published entry.
   Electron's `safeStorage`: a random data key kept as one item in the OS
   keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
   and AES-256-GCM over the key itself. Existing keys keep working and are
-  rewritten in the new format the first time they are read, so nothing needs
-  re-entering. This removes the last dependency on Chromium internals for
-  reading secrets, which is what lets a future non-Electron Copse shell open
-  the same profile.
+  rewritten in the new format the first time one is read — the first rewrite
+  sweeps every other stored secret with it, so a profile finishes migrating in
+  one go rather than leaving keys nobody happens to read in the old format.
+  Nothing needs re-entering. This removes the last dependency on Chromium
+  internals for reading secrets, which is what lets a future non-Electron Copse
+  shell open the same profile.
 
 - Clicking an image or video chip in the empty-thread (centered) composer now
   opens the same attachment preview modal used after send. Text chips already
