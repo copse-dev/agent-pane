@@ -3268,6 +3268,62 @@ export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
   })
 }
 
+/** Completed MCP calls whose provider supplied neither arguments nor result text. */
+export function seedEmptyMcpToolFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-empty-mcp-tool-project'
+  const threadId = 'e2e-empty-mcp-tool-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Empty MCP tool details',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-empty-mcp',
+            role: 'user',
+            content: 'Run the two provider checks.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-empty-mcp',
+            role: 'assistant',
+            content: 'Both provider checks completed without returning details.',
+            toolCalls: [
+              {
+                id: 'tc-empty-mcp-ping',
+                name: 'MCP: tool',
+                args: {},
+                status: 'done',
+                result: '',
+                resultFormat: 'markdown',
+              },
+              {
+                id: 'tc-empty-mcp-refresh',
+                name: 'MCP: tool',
+                args: {},
+                status: 'done',
+                result: '',
+                resultFormat: 'markdown',
+              },
+            ],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
 /** Thread showing built-in browser tool cards (navigate/snapshot/screenshot/interact). */
 export function seedBrowserToolsFixture(workspaceRoot: string): void {
   const projectId = 'e2e-browser-tools-project'
