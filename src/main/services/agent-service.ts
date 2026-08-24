@@ -629,6 +629,8 @@ export interface RunAgentOptions {
   /** Optional tighter loop bounds for benchmark profiles; product defaults remain unchanged. */
   maxSteps?: number
   maxLlmCalls?: number
+  /** Disable adaptive budget grants when a host requires exact loop limits. */
+  adaptiveExtensions?: boolean
   /** Plugin-scoped setting resolver owned by an explicit host profile. */
   resolvePluginSetting?: (pluginId: string, key: string) => unknown
   /**
@@ -1769,6 +1771,9 @@ export async function runAgent(
               usageModel: model,
               maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
               ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+              ...(options?.adaptiveExtensions !== undefined
+                ? { adaptiveExtensions: options.adaptiveExtensions }
+                : {}),
               reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
               reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
               runDeadline: runAbort.deadline,

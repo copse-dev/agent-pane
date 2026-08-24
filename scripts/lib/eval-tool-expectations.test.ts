@@ -344,3 +344,65 @@ describe('shellEscalationPromptCount', () => {
     assert.equal(shellEscalationPromptCount([]), 0)
   })
 })
+
+describe('forbidGlobalTempWrites', () => {
+  const roots = {
+    allowed: ['/Users/dev/.copse/workspace/tmp', '/Users/dev/project'],
+    global: ['/tmp', '/private/tmp'],
+  }
+  const shell = (command: string, name = 'run_shell'): ObservedToolCall => ({
+    name,
+    args: { command },
+  })
+
+  it('fails a sanctioned tool call that redirects into global temp', () => {
+    // The reason this expectation reads args at all: the tool name is right.
+    const command = 'gh pr view 1842 --json title > /tmp/pr.json'
+    assert.deepEqual(
+      toolExpectationViolations(
+        [shell(command)],
+        { forbidGlobalTempWrites: true },
+        { scratchRoots: roots },
+      ),
+      [
+        `scratch written to global temp (/tmp/pr.json) instead of $TMPDIR or the workspace: run_shell: ${command}`,
+      ],
+    )
+  })
+
+  it('fails the bridged ACP form of the same call', () => {
+    const violations = toolExpectationViolations(
+      [shell('echo hi > /tmp/x', 'mcp__copse__run_background')],
+      { forbidGlobalTempWrites: true },
+      { scratchRoots: roots },
+    )
+    assert.equal(violations.length, 1)
+    assert.match(violations[0] ?? '', /mcp__copse__run_background/)
+  })
+
+  it('passes scratch under $TMPDIR or the workspace', () => {
+    for (const command of [
+      'rg -c TODO src > "$TMPDIR/counts.txt"',
+      'rg -c TODO src > /Users/dev/.copse/workspace/tmp/counts.txt',
+      'rg -c TODO src > counts.txt',
+      'rg -c TODO src',
+    ]) {
+      assert.deepEqual(
+        toolExpectationViolations(
+          [shell(command)],
+          { forbidGlobalTempWrites: true },
+          { scratchRoots: roots },
+        ),
+        [],
+        command,
+      )
+    }
+  })
+
+  it('is inert when the scenario does not set it', () => {
+    assert.deepEqual(
+      toolExpectationViolations([shell('echo hi > /tmp/x')], {}, { scratchRoots: roots }),
+      [],
+    )
+  })
+})

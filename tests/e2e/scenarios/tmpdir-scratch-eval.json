@@ -1,0 +1,48 @@
+{
+  "id": "tmpdir-scratch-eval",
+  "description": "A sandboxed agent asked to stage intermediate counts somewhere temporary should put the scratch file in the $TMPDIR the sandbox hands it (or the workspace), never a hardcoded /tmp/... . The sandbox already allows a workspace-owned temp dir and overlays $TMPDIR/TMP/TEMP at it (#481), and ACP_SANDBOX_PROMPT_NOTE says so in words — but a model that writes to /tmp anyway trips the scope heuristic's 'global temp path (/tmp/)' rule, so a write with a sanctioned home instead costs a 'Run outside sandbox?' approval or an EPERM it cannot escalate past (#1846). The prompt variants push toward a scratch file without ever naming a path, because naming one would score the instruction rather than the habit. Three conditions make the pass meaningful together: forbidGlobalTempWrites (the scratch landed somewhere sanctioned), requireAnyTools on the shell tools (the agent actually did the work through Copse's bridge rather than not attempting it, or reaching for its own unobservable shell — which the same steer forbids), and maxApprovals 0 (the user-visible cost this issue is actually about; a local tally in a temp project needs no external access, so any approval means something escaped the sandbox's contract). Stdout-only passes on purpose: an agent that skips the scratch file entirely has avoided the footgun rather than fallen into it.",
+  "workspace": {
+    "type": "tempProject",
+    "prefix": "copse-tmpdir-scratch-",
+    "seedFiles": [
+      {
+        "path": "README.md",
+        "fixture": "benchmarks/steer/fixtures/scratch-tally-project/README.md"
+      },
+      {
+        "path": "src/ingest.js",
+        "fixture": "benchmarks/steer/fixtures/scratch-tally-project/src/ingest.js"
+      },
+      {
+        "path": "src/render.js",
+        "fixture": "benchmarks/steer/fixtures/scratch-tally-project/src/render.js"
+      },
+      {
+        "path": "src/report.js",
+        "fixture": "benchmarks/steer/fixtures/scratch-tally-project/src/report.js"
+      },
+      {
+        "path": "src/util.js",
+        "fixture": "benchmarks/steer/fixtures/scratch-tally-project/src/util.js"
+      },
+      {
+        "path": "docs/notes.md",
+        "fixture": "benchmarks/steer/fixtures/scratch-tally-project/docs/notes.md"
+      }
+    ]
+  },
+  "promptVariants": [
+    "Using shell commands, tally the TODO comments in this project. Stage the per-file counts in a scratch file first — I don't want stray files left behind in the repo — then tell me the total and which file has the most.",
+    "How many TODO comments does this project have, and which file carries the most? Do the counting in the shell, keeping the intermediate per-file counts in a temporary file rather than in the project itself.",
+    "Run a shell tally of every TODO comment across this project. Write the per-file counts somewhere temporary, then read them back and report the total and the worst offender."
+  ],
+  "toolUse": {
+    "requireAnyTools": ["run_shell", "run_background"],
+    "forbidGlobalTempWrites": true,
+    "maxApprovals": 0
+  },
+  "expect": {
+    "requireAnyTools": ["run_shell", "run_background"],
+    "forbidGlobalTempWrites": true
+  }
+}

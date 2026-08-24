@@ -122,6 +122,59 @@ export function contextFitAdvice(
   return { level: fillRatio >= 1 ? 'over' : 'near', fillRatio, message }
 }
 
+/**
+ * How the providers Copse talks to word "your prompt did not fit". They agree on
+ * nothing: OpenAI-compatible servers return the `context_length_exceeded` code,
+ * Anthropic writes prose about the prompt being too long, and LM Studio forwards
+ * its engine's own 500 (`engine protocol predict stream returned an error:
+ * {"code":500,"message":"context size has been exceeded.",…}`). Matching all of
+ * them in one place keeps every caller — chat error copy, one-shot background
+ * prompts — from growing its own partial list.
+ */
+const CONTEXT_OVERFLOW_PATTERNS: readonly RegExp[] = [
+  /context[ _-]?length/i,
+  /context window/i,
+  /context size has been exceeded/i,
+  /prompt is too long/i,
+  // llama.cpp gives up on the chat template when trimming leaves it no room.
+  /tokens to keep from the initial prompt/i,
+]
+
+/** True when an error message says the prompt exceeded the model's context. */
+export function isContextOverflowMessage(text: string): boolean {
+  return CONTEXT_OVERFLOW_PATTERNS.some((pattern) => pattern.test(text))
+}
+
+/**
+ * Advice for a one-shot background prompt — a roadmap resolution check, a fit
+ * check — that the model refused for context. Unlike a chat thread there is no
+ * history to trim and nothing the user did wrong, so the message names the task
+ * that failed and the two ways out: give the model more context, or send the
+ * work to a bigger one.
+ */
+export function contextOverflowAdvice(opts: {
+  /** The task, capitalised for the start of a sentence ("The resolution check"). */
+  task: string
+  modelLabel?: string
+  contextWindow?: number | null
+  /** Where the model for this task is chosen, when the user can change it. */
+  settingsPath?: string
+  /** Local models get the load-time fix too; their window is a setting, not a limit. */
+  lmStudioModel?: boolean
+}): string {
+  const subject = opts.modelLabel ? `“${opts.modelLabel}”` : 'the model'
+  const window =
+    typeof opts.contextWindow === 'number' && opts.contextWindow > 0
+      ? `${formatTokens(opts.contextWindow)} `
+      : ''
+  const where = opts.settingsPath ? ` under ${opts.settingsPath}` : ''
+  const remedy =
+    opts.lmStudioModel === true
+      ? `In LM Studio, raise the model’s “Context Length” and reload it, or choose a larger model${where}.`
+      : `Choose a larger model${where}.`
+  return `${opts.task} did not fit ${subject}’s ${window}context window. ${remedy}`
+}
+
 /** Round context-window sizes, which are whole thousands in practice ("8K"). */
 function formatTokens(tokens: number): string {
   if (tokens >= 1000 && tokens % 1000 === 0) return `${String(tokens / 1000)}K`

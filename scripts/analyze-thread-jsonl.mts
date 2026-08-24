@@ -17,6 +17,7 @@ import {
   usedTool,
   type ObservedToolCall,
 } from './lib/eval-tool-expectations.mts'
+import { defaultScratchRoots } from './lib/eval-scratch-paths.mts'
 import { z } from 'zod'
 
 interface ScenarioExpect {
@@ -34,6 +35,8 @@ interface ScenarioExpect {
   forbidDisplacedShell?: boolean | undefined
   /** Fail when a `sandbox_network_audit` card names a GitHub host. */
   forbidGithubNetworkDenial?: boolean | undefined
+  /** Fail when a shell call writes scratch under a global temp root (#1846). */
+  forbidGlobalTempWrites?: boolean | undefined
   maxInputTokens?: number | undefined
   requireUpdateTodos?: boolean | undefined
   forbidParallelExploreTurn1?: boolean | undefined
@@ -140,6 +143,7 @@ const scenarioSchema: z.ZodType<Scenario> = z.object({
       forbidTools: z.array(z.string()).optional(),
       forbidDisplacedShell: z.boolean().optional(),
       forbidGithubNetworkDenial: z.boolean().optional(),
+      forbidGlobalTempWrites: z.boolean().optional(),
       maxInputTokens: z.number().optional(),
       requireUpdateTodos: z.boolean().optional(),
       forbidParallelExploreTurn1: z.boolean().optional(),
@@ -242,6 +246,16 @@ function subagentReads(records: JsonlRecord[]): { path: string; exploreId: strin
   return out
 }
 
+/**
+ * The workspace the eval harness prepared for the run being analysed, if this
+ * analysis follows one. Absent when an operator points the script at a saved
+ * JSONL by hand, which only widens what counts as a global-temp write.
+ */
+function evalWorkspaceRoot(): string | undefined {
+  const root = process.env['COPSE_EVAL_WORKSPACE_ROOT']?.trim()
+  return root && root.length > 0 ? root : undefined
+}
+
 function analyze(path: string, scenario?: Scenario): void {
   const records = loadJsonl(path)
   const thread = records[0]
@@ -330,14 +344,23 @@ function analyze(path: string, scenario?: Scenario): void {
     violations.push(`explore count ${String(exploreCount)} < min ${String(exp.minExplore)}`)
   }
   violations.push(
-    ...toolExpectationViolations(observedCalls, {
-      requireTools: exp?.requireTools,
-      requireAnyTools: exp?.requireAnyTools,
-      requireSuccessfulToolGroups: exp?.requireSuccessfulToolGroups,
-      forbidTools: exp?.forbidTools,
-      forbidDisplacedShell: exp?.forbidDisplacedShell,
-      forbidGithubNetworkDenial: exp?.forbidGithubNetworkDenial,
-    }),
+    ...toolExpectationViolations(
+      observedCalls,
+      {
+        requireTools: exp?.requireTools,
+        requireAnyTools: exp?.requireAnyTools,
+        requireSuccessfulToolGroups: exp?.requireSuccessfulToolGroups,
+        forbidTools: exp?.forbidTools,
+        forbidDisplacedShell: exp?.forbidDisplacedShell,
+        forbidGithubNetworkDenial: exp?.forbidGithubNetworkDenial,
+        forbidGlobalTempWrites: exp?.forbidGlobalTempWrites,
+      },
+      // A `tempProject` scenario's workspace is itself a `mkdtemp` under the OS
+      // temp dir, so without naming it here every legitimate write into the
+      // workspace would read as a global-temp scratch write. The eval harness
+      // exports the root it prepared.
+      { scratchRoots: defaultScratchRoots({ workspaceRoot: evalWorkspaceRoot() }) },
+    ),
   )
   if (exp?.maxInputTokens !== undefined && (usage.inputTokens ?? 0) > exp.maxInputTokens) {
     violations.push(`input tokens ${String(usage.inputTokens)} > max ${String(exp.maxInputTokens)}`)

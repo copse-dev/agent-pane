@@ -76,6 +76,20 @@ describe('static browser preview server', () => {
     assert.equal(new URL(url).protocol, 'http:')
   })
 
+  it('rejects a workspace file URL that resolves through a symlink outside the preview root', async () => {
+    const root = await temporaryRoot('copse-static-preview-file-root-')
+    const outside = await temporaryRoot('copse-static-preview-file-outside-')
+    const outsideFile = join(outside, 'secret.html')
+    const linkedFile = join(root, 'secret.html')
+    await writeFile(outsideFile, '<p>outside</p>')
+    await symlink(outsideFile, linkedFile)
+
+    await assert.rejects(
+      workspacePreviewFileUrl(root, linkedFile),
+      /must stay inside the workspace preview root/,
+    )
+  })
+
   it('builds only workspace-relative entry URLs', () => {
     const base = 'http://localhost:4321/'
     assert.equal(staticPreviewUrl(base), base)

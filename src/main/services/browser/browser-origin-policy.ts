@@ -15,6 +15,7 @@ export const BROWSER_TOOLS = new Set([
   'browser_click',
   'browser_type',
   'browser_tabs',
+  'browser_show',
 ])
 
 /** Browser tools that never leave the current page and so never need an origin prompt. */
@@ -22,6 +23,10 @@ export const READ_ONLY_BROWSER_TOOLS = new Set([
   'browser_snapshot',
   'browser_screenshot',
   'browser_tabs',
+  // Promotes a canvas artefact, or a page already open in this session, into the
+  // visible pane. It cannot reach a new origin (the tool rejects a URL that is
+  // not already open), so there is nothing for an origin prompt to decide.
+  'browser_show',
 ])
 
 export const BROWSER_TOOLS_ENABLED_SETTING = 'browserToolsEnabled'

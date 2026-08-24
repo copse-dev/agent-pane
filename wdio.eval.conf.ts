@@ -16,7 +16,7 @@ import {
   resolveLocalServerUrl,
 } from './src/shared/lm-studio-defaults.ts'
 import { parseAcpModelSelection } from './src/shared/acp.ts'
-import { KNOWN_ACP_AGENTS } from './src/shared/acp-known-agents.ts'
+import { KNOWN_ACP_AGENTS, canonicalAcpAgentId } from './src/shared/acp-known-agents.ts'
 
 const EVAL_ENV_FILE = join(process.cwd(), 'tests/e2e/electron-shell/.eval-env.json')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
@@ -128,8 +128,13 @@ export const config: Options.Testrunner = {
     // keeps the empty string — seeding a project with no model at all.
     const evalModel = process.env.COPSE_EVAL_MODEL?.trim() || undefined
     const acpSelection = evalModel ? parseAcpModelSelection(evalModel) : null
-    const acpPreset = acpSelection
-      ? KNOWN_ACP_AGENTS.find((candidate) => candidate.id === acpSelection.id)
+    // Through the rename map, so `acp:codex` (the id in older docs and configs)
+    // resolves the same preset as `acp:codex-acp`. Without it the lookup below
+    // misses and an operator gets "unknown ACP agent" for a name the product
+    // still accepts everywhere else.
+    const acpAgentId = acpSelection ? canonicalAcpAgentId(acpSelection.id) : null
+    const acpPreset = acpAgentId
+      ? KNOWN_ACP_AGENTS.find((candidate) => candidate.id === acpAgentId)
       : undefined
     if (acpSelection && !acpPreset) {
       throw new Error(`COPSE_EVAL_MODEL selected unknown ACP agent "${acpSelection.id}"`)
@@ -171,7 +176,7 @@ export const config: Options.Testrunner = {
                       // disposable and the adapter is already wrapped in Copse's
                       // workspace-only seatbelt; select the adapter's no-prompt
                       // mode explicitly so an unattended recording can finish.
-                      ...(acpPreset.id === 'codex'
+                      ...(acpPreset.id === 'codex-acp'
                         ? { permissionMode: codexEvalPermissionMode() }
                         : {}),
                     },

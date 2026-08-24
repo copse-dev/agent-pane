@@ -31,3 +31,29 @@ overrides:
   extract-zip: file:packages/extract-zip
   undici@6: 6.28.0
   undici@7: 7.29.0
+
+# Dependabot's `cooldown.default-days: 7` (.github/dependabot.yml) runs pnpm
+# with --config.minimumReleaseAge=10080, which makes pnpm refuse to resolve
+# any version published in the last 7 days — including the security pins in
+# `overrides` above, which are by nature a few days old when added. That
+# aborted every version-update job with ERR_PNPM_NO_MATURE_MATCHING_VERSION
+# ("Version 8.0.0 of deepmerge-ts does not meet the minimumReleaseAge
+# constraint"). Overridden versions are chosen by hand, so exempt them from
+# the age check. Keep this list in sync with `overrides`
+# (scripts/pnpm-workspace-invariants.test.ts enforces it).
+minimumReleaseAgeExclude:
+  - '@hono/node-server'
+  - adm-zip
+  - brace-expansion
+  - minimatch
+  - deepmerge-ts
+  - dompurify
+  - js-yaml
+  - serialize-javascript
+  - tar
+  - sharp
+  - fast-xml-parser
+  - fast-uri
+  - hono
+  - ip-address
+  - undici

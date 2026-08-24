@@ -75,7 +75,22 @@ import {
 } from '@shared/command-routing.ts'
 import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
+import {
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_TINT_COLOR,
+  DEFAULT_TINT_STRENGTH,
+  isUiTintStrength,
+  type UiTintStrength,
+} from '@shared/appearance.ts'
 import { switchProjectThread } from '../controller/projects.ts'
+
+export {
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_TINT_COLOR,
+  DEFAULT_TINT_STRENGTH,
+  isUiTintStrength,
+  type UiTintStrength,
+} from '@shared/appearance.ts'
 
 export type SettingsSection =
   | 'general'
@@ -151,10 +166,6 @@ function pluginDisplayName(plugin: import('@shared/types/plugins.ts').PluginSumm
  * Applied by writing --tint-hue / --tint-amount on the document root, which
  * tokens.css folds into every --bg-* surface (see its --tint-* comment).
  */
-export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
-export const DEFAULT_ACCENT_COLOR = '#FF93D0'
-export const DEFAULT_TINT_COLOR = '#244C25'
-export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'subtle'
 const COPSE_SITE_TINT_COLOR = '#002E2B'
 const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   off: '0%',
@@ -204,10 +215,6 @@ export function applyUiAccent(color: string): void {
   const root = document.documentElement
   root.style.setProperty('--accent-color', color)
   root.style.setProperty('--text-on-accent', accentTextColor(color))
-}
-
-export function isUiTintStrength(value: unknown): value is UiTintStrength {
-  return value === 'off' || value === 'subtle' || value === 'medium' || value === 'strong'
 }
 
 /** Push the tint onto the document root so every surface picks it up at once. */
@@ -1013,7 +1020,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </div>
             </fieldset>
 
-            <fieldset>
+            <fieldset id="cursor-rules-fieldset" hidden>
               <legend>Cursor rules</legend>
               <p class="settings-fieldset-desc">
                 Project rules under <code>.cursor/rules/*.mdc</code> (and legacy
@@ -2648,6 +2655,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         }),
         'No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file).',
       )
+      // Most projects have no Cursor rules, and a fieldset whose only content is
+      // "there are none" is noise: the section stays hidden until the workspace
+      // actually has rules to disclose. Instruction files above already name
+      // where rules would come from, so nothing is lost by the absence.
+      qsRequired(overlay, '#cursor-rules-fieldset').hidden = cursorRules.length === 0
+      // The sidebar contents list is read off the DOM when a section opens, so a
+      // fieldset that appears after that read has to ask for a re-read — unless
+      // a search is running, which lifts blocks out of their sections and drops
+      // the contents list on purpose.
+      if (!contentEl.classList.contains('settings-searching')) renderNavSubheadings(activeSection)
 
       fillSourceList(
         '#sources-skills-list',

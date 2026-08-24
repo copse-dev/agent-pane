@@ -533,6 +533,7 @@ async function runAttempt(
 
   try {
     await runAgentLoop({
+      adaptiveExtensions: false,
       provider,
       messages,
       tools: DOCTRINE_EVAL_TOOLS,
