@@ -440,13 +440,17 @@ export function createCustomProvidersSection(
     const test = el('button', { type: 'button', class: 'ui-btn ui-btn-secondary' }, 'Test key')
     test.addEventListener('click', () => {
       void (async (): Promise<void> => {
+        // The field is write-only — a saved key is never read back into it — so
+        // an empty box with a key on file means "test the saved one", which the
+        // main process resolves. Only a provider with nothing stored has
+        // nothing to test.
         const key = input.value.trim()
-        if (!key) {
+        if (!key && !configured.has(slug)) {
           setInlineStatus(status, 'error', 'Enter a key first')
           status.className = 'key-status err'
           return
         }
-        setInlineStatus(status, 'pending', 'Testing…')
+        setInlineStatus(status, 'pending', key ? 'Testing…' : 'Testing saved key…')
         status.className = 'key-status'
         try {
           const res = await api.settings.validateKey(slug, key)
