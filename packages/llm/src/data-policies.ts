@@ -15,10 +15,13 @@
 // advertise). A provider can offer stricter arrangements (enterprise ZDR
 // contracts etc.); `zdr` records how to get there.
 //
-// provider-metadata.test.ts fails the suite if a non-local preset has no policy,
-// and data-policies.test.ts enforces coverage of the built-ins and of the fixed
-// cloud providers (create-provider.ts) and known-endpoint prefills
-// (custom-providers-section.ts).
+// Coverage guarantees, honestly stated: the catalog loader throws at import if
+// a hosted preset has no policy (provider-metadata.ts), so preset coverage is
+// structural. The fixed cloud providers and the Settings known-endpoint
+// prefills are NOT derivable here (their lists live in create-provider.ts and
+// unexported consts in custom-providers-section.ts); data-policies.test.ts
+// checks them against hardcoded name lists that must be extended by hand when
+// either grows.
 
 import { PROVIDER_DATA_POLICIES, PROVIDER_METADATA_LAST_VERIFIED } from './provider-metadata.ts'
 
@@ -32,7 +35,7 @@ export interface ProviderDataPolicy {
    */
   retainsPrompts: boolean | null
   /** Stated retention window in days, when the provider publishes one. */
-  retentionDays?: number
+  retentionDays?: number | undefined
   /**
    * Inputs/outputs may be used to train or improve models by default. `null` =
    * unknown / partner-dependent.
@@ -55,14 +58,18 @@ export interface ProviderDataPolicy {
 }
 
 // Both lookups are built from the same catalog entries, so a policy shared by a
-// slug and its API hostname stays a single object. A slug-less entry is
-// host-only on purpose (see the `api.x.ai` note in the catalog): adding a slug
-// would change which branch of `dataPolicyForModelPath` claims a model id.
-const POLICIES_BY_SLUG: Record<string, ProviderDataPolicy> = {}
-const POLICIES_BY_HOST: Record<string, ProviderDataPolicy> = {}
+// slug and its API hostname stays a single object. Maps, not plain objects:
+// lookups are keyed by user-influenced strings (custom slugs, URL hostnames),
+// and a plain record would answer `constructor` / `__proto__` with inherited
+// Object.prototype members — a truthy non-policy that privacyBadge would read
+// as "Zero data retention". A slug-less entry is host-only on purpose (see the
+// `api.x.ai` note in the catalog): adding a slug would change which branch of
+// `dataPolicyForModelPath` claims a model id.
+const POLICIES_BY_SLUG = new Map<string, ProviderDataPolicy>()
+const POLICIES_BY_HOST = new Map<string, ProviderDataPolicy>()
 for (const { slugs, hosts, ...policy } of PROVIDER_DATA_POLICIES) {
-  for (const slug of slugs) POLICIES_BY_SLUG[slug] = policy
-  for (const host of hosts ?? []) POLICIES_BY_HOST[host] = policy
+  for (const slug of slugs) POLICIES_BY_SLUG.set(slug, policy)
+  for (const host of hosts ?? []) POLICIES_BY_HOST.set(host, policy)
 }
 
 function hostFromBaseUrl(baseUrl: string | undefined): string | null {
@@ -84,11 +91,11 @@ export function dataPolicyForProvider(provider: {
   id: string
   baseUrl?: string
 }): ProviderDataPolicy | null {
-  const bySlug = POLICIES_BY_SLUG[provider.id]
+  const bySlug = POLICIES_BY_SLUG.get(provider.id)
   if (bySlug) return bySlug
   const host = hostFromBaseUrl(provider.baseUrl)
   if (host) {
-    const byHost = POLICIES_BY_HOST[host]
+    const byHost = POLICIES_BY_HOST.get(host)
     if (byHost) return byHost
   }
   return null
@@ -107,7 +114,7 @@ export function openRouterDataPolicy(zdrOnly: boolean, allowTraining = false): P
   // also unable to train on your data" — OpenRouter ZDR docs), so ZDR-only
   // routing yields the zero-retention policy regardless of the training flag.
   if (zdrOnly) {
-    const policy = POLICIES_BY_SLUG['openrouter']
+    const policy = POLICIES_BY_SLUG.get('openrouter')
     if (!policy) throw new Error('OpenRouter data policy is missing')
     return policy
   }

@@ -22,7 +22,11 @@
 // touches TypeScript.
 
 import { isSafeCredentialBaseUrl } from './credential-url.ts'
-import { PROVIDER_PRESETS } from './provider-metadata.ts'
+import {
+  PROVIDER_PRESETS,
+  type ProviderPreset,
+  type ProviderPresetModel,
+} from './provider-metadata.ts'
 import { isProviderSlug, parseModelSelection } from './model-selection.ts'
 import { blendedRate } from './pareto-frontier.ts'
 import type { ModelPricing, ModelPricingMap } from './model-pricing.ts'
@@ -61,17 +65,13 @@ export function isLocalBaseUrl(baseUrl: string): boolean {
   }
 }
 
-export interface ExtraProviderModel {
-  /** Upstream model id sent to the provider. */
-  id: string
-  /** Context window (tokens) used for history trimming; falls back per provider. */
-  contextWindow?: number
-  /** USD per million input tokens, when the provider reports a rate (e.g. HF router). */
-  inputPricePerMTok?: number
-  /** USD per million output tokens, when the provider reports a rate. */
-  outputPricePerMTok?: number
+/**
+ * A preset/custom model entry: the schema-derived catalog shape (see
+ * provider-metadata.ts for per-field docs) plus the one computed field.
+ */
+export interface ExtraProviderModel extends ProviderPresetModel {
   /** 80/20 blended price (0.8 * input + 0.2 * output), pre-calculated for comparison. */
-  blendedCostPerMTok?: number
+  blendedCostPerMTok?: number | undefined
 }
 
 /**
@@ -95,17 +95,13 @@ export function extraProviderDisplayLabel(
   return extraProviderModelId(model)
 }
 
-export interface ExtraProvider {
-  /** Stable slug: model-selection prefix source and API-key lookup id. */
-  id: string
-  /** Human label / picker optgroup heading. */
-  label: string
+/**
+ * An effective provider: the schema-derived preset shape (see
+ * provider-metadata.ts for per-field docs) plus the fields derived here.
+ */
+export interface ExtraProvider extends Omit<ProviderPreset, 'models' | 'fallbackContextWindow'> {
   /** Model-selection prefix, always `${id}:`. */
   prefix: string
-  /** OpenAI-compatible base URL the SDK talks to. */
-  baseUrl: string
-  /** Wire protocol used by the provider. Defaults to Chat Completions. */
-  apiStyle?: 'chat-completions' | 'responses'
   /** True for a shipped preset (locked label/base URL, env-var fallback). */
   builtin: boolean
   /**
@@ -114,20 +110,8 @@ export interface ExtraProvider {
    * without an API key. Derived from the base URL via `isLocalBaseUrl`.
    */
   local: boolean
-  /** Env var that can also supply the key (presets only). */
-  envVar?: string
-  /** Settings → API Keys field copy. */
-  keyLabel: string
-  keyPlaceholder: string
-  keyHint: string
-  /** Optional key-format prefix, checked before any network call. */
-  keyPrefix?: string
-  /** Context window used when a selected model has no known size of its own. */
+  /** Always resolved: the catalog value or DEFAULT_EXTRA_PROVIDER_CONTEXT. */
   fallbackContextWindow: number
-  /** OpenAI `stream_options.include_usage`. Defaults on for cloud, off for localhost. */
-  includeUsage?: boolean
-  /** Extra fields merged into every request body (e.g. OpenRouter routing hints). */
-  extraBody?: Record<string, unknown>
   /** Curated/known model shortlist for the picker (may be empty for a fresh custom). */
   models: readonly ExtraProviderModel[]
 }
@@ -159,6 +143,9 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = PROVIDER_PRESET
   prefix: `${preset.id}:`,
   builtin: true,
   local: isLocalBaseUrl(preset.baseUrl),
+  // One default for presets and user customs alike — the catalog only records
+  // a fallback when it genuinely differs (see provider-metadata.ts).
+  fallbackContextWindow: preset.fallbackContextWindow ?? DEFAULT_EXTRA_PROVIDER_CONTEXT,
 }))
 
 export const BUILTIN_EXTRA_PROVIDER_SLUGS: readonly string[] = BUILTIN_EXTRA_PROVIDERS.map(

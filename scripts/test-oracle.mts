@@ -450,7 +450,12 @@ function resolveImport(fromRel: string, spec: string): string | null {
     const abs = resolve(join(ROOT, fromRel), '..', spec)
     baseRel = relative(ROOT, abs)
   } else return null // bare third-party import
-  baseRel = baseRel.replace(/\\/g, '/').replace(/\.(ts|mts|tsx|js|mjs)$/, '')
+  baseRel = baseRel.replace(/\\/g, '/')
+  // A .json specifier (e.g. the provider catalog imported by @copse/llm) is an
+  // exact path — resolve it as-is so data-file edits map to the tests that
+  // exercise them instead of silently falling out of the graph.
+  if (baseRel.endsWith('.json')) return existsSync(join(ROOT, baseRel)) ? baseRel : null
+  baseRel = baseRel.replace(/\.(ts|mts|tsx|js|mjs)$/, '')
   for (const ext of CODE_EXTS) if (existsSync(join(ROOT, baseRel + ext))) return baseRel + ext
   for (const ext of CODE_EXTS)
     if (existsSync(join(ROOT, `${baseRel}/index${ext}`))) return `${baseRel}/index${ext}`
