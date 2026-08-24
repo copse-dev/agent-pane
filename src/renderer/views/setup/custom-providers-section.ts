@@ -84,7 +84,7 @@ const FIXED_PROVIDERS: readonly FixedProvider[] = [
 ]
 // Order of the leading cloud chips, per design. Remaining customs follow, then
 // "Other". Local-server presets are ordered separately (LOCAL_CHIP_ORDER).
-const CHIP_ORDER: readonly string[] = [
+export const CHIP_ORDER: readonly string[] = [
   'openai',
   'perplexity',
   'groq',
@@ -99,7 +99,7 @@ const CHIP_ORDER: readonly string[] = [
 ]
 
 // Built-in local-server preset slugs, in chip order (see BUILTIN_EXTRA_PROVIDERS).
-const LOCAL_CHIP_ORDER: readonly string[] = ['ollama', 'llamacpp', 'jan', 'vllm']
+export const LOCAL_CHIP_ORDER: readonly string[] = ['ollama', 'llamacpp', 'jan', 'vllm']
 
 interface KnownEndpoint {
   label: string
