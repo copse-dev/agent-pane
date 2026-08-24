@@ -46,10 +46,19 @@ describe('user prompt mid-fold in conversation', () => {
     const toggle = text.querySelector<HTMLButtonElement>('.msg-user-fold-toggle')
     assert.ok(toggle)
     assert.equal(toggle.getAttribute('aria-expanded'), 'false')
-    assert.match(text.querySelector('.msg-user-fold-label')?.textContent ?? '', /lines hidden/)
+    assert.equal(text.querySelector('.msg-user-fold-label')?.textContent, 'expand')
 
     toggle.click()
     assert.ok(text.classList.contains('is-expanded'))
     assert.equal(text.querySelector('.msg-user-fold-label')?.textContent, 'collapse')
+  })
+
+  it('folds a long soft-wrapped prompt that has too few newlines to trip the line count', () => {
+    const paragraph = Array.from({ length: 60 }, (_, i) => `word${String(i + 1)}`).join(' ')
+    mountWithUserMessage([paragraph, paragraph, paragraph, paragraph].join('\n\n'))
+    const text = document.querySelector('.msg-user .message-text')
+    assert.ok(text)
+    assert.ok(text.classList.contains('msg-user-fold'))
+    assert.ok(text.querySelector('.msg-user-fold-toggle'))
   })
 })
