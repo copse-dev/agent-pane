@@ -289,9 +289,18 @@ export function restoreUserCursorHooks(): void {
 }
 
 /** Fresh profile that triggers the first-run onboarding wizard. */
-export function seedOnboardingFixture(): void {
+export function seedOnboardingFixture(extra: Record<string, unknown> = {}): void {
   resetUserData()
-  writeSettings({ onboardingCompleted: false })
+  writeSettings({ onboardingCompleted: false, ...extra })
+}
+
+/**
+ * The settings.json currently on disk, for asserting what a flow persisted
+ * (read after the app wrote — the file is the source of truth the next launch
+ * will see).
+ */
+export function readSeededSettings(): Record<string, unknown> {
+  return JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')) as Record<string, unknown>
 }
 
 function writeSettings(settings: Record<string, unknown>): void {

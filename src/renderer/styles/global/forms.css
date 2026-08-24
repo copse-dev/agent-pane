@@ -43,6 +43,14 @@ dialog {
   /* The global `* { margin: 0 }` reset removes the UA `margin: auto` that
      centers a modal <dialog>, jamming it into the top-left. Restore it. */
   margin: auto;
+  /* Dialogs paint above window drag regions (the titlebar, or a full-window
+     drag surface like #welcome), and drag regions are geometric: without an
+     explicit opt-out, clicks on a dialog's controls are swallowed by the drag
+     region behind it (issue #1914 — the New Project dialog's Browse button).
+     no-drag on the dialog subtracts its whole rect; descendants that want to
+     drag the window (e.g. .settings-header) still can — drag regions are
+     collected in paint order, so a child's `drag` re-adds its own rect. */
+  -webkit-app-region: no-drag;
   background: var(--bg-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border);

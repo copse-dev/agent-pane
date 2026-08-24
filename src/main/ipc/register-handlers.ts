@@ -75,6 +75,10 @@ import {
 import { createElectronUserAlertSender } from '../services/user-alerts-electron.ts'
 import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
 import {
+  importDetectedEnvKeys,
+  EnvKeyImportConsentError,
+} from '../services/providers/env-key-import.ts'
+import {
   isRendererWritableSettingKey,
   isSecretSettingKey,
   parseRendererWritableSetting,
@@ -1324,31 +1328,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       alreadyConfigured: hasApiKey(d.provider),
     }))
   })
-  ipcMain.handle('settings:importEnvKeys', (event) => {
+  ipcMain.handle('settings:importEnvKeys', (event, rawProviders?: unknown) => {
     assertMainFrameSender(event, win)
-    if (!getSetting<boolean>('envKeyAutoDetectEnabled', false)) {
-      throw new IpcValidationError('Environment key detection has not been enabled')
+    const providers = parseIpcArgs(z.array(z.string().max(64)).max(32).optional(), [rawProviders])
+    try {
+      return importDetectedEnvKeys(providers ? { providers } : {})
+    } catch (err) {
+      if (err instanceof EnvKeyImportConsentError) throw new IpcValidationError(err.message)
+      throw err
     }
-    const imported: { provider: string; source: string }[] = []
-    const skipped: { provider: string; reason: string }[] = []
-    for (const d of scanEnvForKeys()) {
-      // Never overwrite a key the user has already configured.
-      if (hasApiKey(d.provider)) {
-        skipped.push({ provider: d.provider, reason: 'already-configured' })
-        continue
-      }
-      // Honour the plaintext gate here too: a bulk env import must not write keys
-      // unencrypted without consent. Skipped rather than silently stored in clear.
-      // The user can add the key manually via the Settings UI where the per-save
-      // confirm dialog lets them approve plaintext storage explicitly.
-      const result = setApiKey(d.provider, d.value)
-      if (!result.ok) {
-        skipped.push({ provider: d.provider, reason: 'plaintext-storage-refused' })
-        continue
-      }
-      imported.push({ provider: d.provider, source: d.source })
-    }
-    return { imported, skipped }
   })
   ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
   // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
