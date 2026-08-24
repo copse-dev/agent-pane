@@ -189,11 +189,22 @@ export async function detectOutdatedNpmAdapter(
   binaryPath: string,
   packageName: string,
   signal?: AbortSignal,
+  pinnedVersion?: string,
 ): Promise<AcpAdapterOutdated | null> {
   const installedVersion = await readInstalledNpmPackageVersion(binaryPath, packageName)
   if (!installedVersion) return null
-  const npmBin = npmBinBesideBinary(binaryPath)
-  const latestVersion = await fetchLatestNpmPackageVersion(packageName, signal, Date.now(), npmBin)
+  // A registry-pinned version (the ACP catalog's cooled snapshot) replaces the
+  // live `npm view latest` lookup entirely: upgrades are offered up to the
+  // reviewed pin, never to whatever was published five minutes ago. The
+  // network path survives only for packages with no pin.
+  const latestVersion =
+    pinnedVersion ??
+    (await fetchLatestNpmPackageVersion(
+      packageName,
+      signal,
+      Date.now(),
+      npmBinBesideBinary(binaryPath),
+    ))
   if (!latestVersion) return null
   if (!isNpmVersionOlder(installedVersion, latestVersion)) return null
   return { installedVersion, latestVersion }

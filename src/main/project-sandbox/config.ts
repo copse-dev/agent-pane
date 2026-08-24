@@ -403,7 +403,11 @@ export function expandScratchPath(template: string): string[] {
 
 export function acpAgentSandboxOverlay(
   workspaceRoot: string,
-  sandbox: { allowedDomains: string[]; homeDirs?: string[]; scratchPaths?: string[] },
+  sandbox: {
+    allowedDomains: string[]
+    homeDirs?: string[] | undefined
+    scratchPaths?: string[] | undefined
+  },
   opts?: {
     /**
      * Also allow loopback traffic — required when the turn runs the native-tool

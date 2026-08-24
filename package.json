@@ -18,6 +18,7 @@
     "build:release": "COPSE_RELEASE=1 node scripts/build.mts",
     "generate:icon": "node scripts/generate-icon.mts",
     "detect:acp": "node scripts/detect-acp-agents.mts",
+    "sync:acp-registry": "node scripts/sync-acp-registry.mts",
     "probe:acp": "node scripts/run-probe-acp-agents.mts",
     "probe:acp:behavior": "node scripts/run-probe-acp-behavior.mts",
     "probe:acp:long": "node scripts/run-probe-acp-long-run.mts",

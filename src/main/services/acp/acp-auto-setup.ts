@@ -197,7 +197,12 @@ async function detectPresetInputs(signal: AbortSignal): Promise<AcpAutoSetupInpu
         clientInstalled &&
         !signal.aborted
       ) {
-        outdated = await detectOutdatedNpmAdapter(agentPath, known.installPackage, signal)
+        outdated = await detectOutdatedNpmAdapter(
+          agentPath,
+          known.installPackage,
+          signal,
+          known.registryVersion,
+        )
       }
       return {
         known,
@@ -240,8 +245,11 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
     for (const change of packageChanges) {
       if (signal.aborted || !change.agent.installPackage) break
       const npmBin = await resolveNpmBinForChange(change)
+      // Prefer the registry-pinned spec (name@version from the cooled ACP
+      // snapshot) so the install through Socket Firewall gets exactly the
+      // version the pin was reviewed with, not whatever `latest` is today.
       const ok = await installGlobalNpmPackage(
-        change.agent.installPackage,
+        change.agent.installPackagePinned ?? change.agent.installPackage,
         signal,
         npmBin ? { npmBin } : {},
       )

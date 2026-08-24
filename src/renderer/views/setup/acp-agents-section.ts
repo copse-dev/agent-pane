@@ -6,6 +6,12 @@ import {
   type DetectedAcpAgent,
   type KnownAcpAgent,
 } from '@shared/acp-known-agents.ts'
+import {
+  ACP_REGISTRY_AGENTS,
+  ACP_REGISTRY_PIN,
+  suggestedCommandFromNpx,
+  type AcpRegistryAgent,
+} from '@shared/acp-metadata.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 import type { ModelOption } from '../model-options.ts'
@@ -299,6 +305,8 @@ export function createAcpAgentsSection(
 
   function agentForm(options: {
     initial?: AcpAgentConfig
+    /** Pre-populate a NEW agent's fields (id stays editable, unlike `initial`). */
+    prefill?: AcpAgentConfig
     submitLabel: string
     onSubmit: (draft: AcpAgentConfig) => void
   }): HTMLElement {
@@ -364,13 +372,14 @@ export function createAcpAgentsSection(
       modeSelect.value = selected
     }
 
-    if (options.initial) {
-      idInput.value = options.initial.id
-      titleInput.value = options.initial.title
-      commandInput.value = options.initial.command
-      argsArea.value = formatArgsText(options.initial.args)
-      envArea.value = formatEnvText(options.initial.env)
-      enabledBox.checked = options.initial.enabled
+    const populate = options.initial ?? options.prefill
+    if (populate) {
+      idInput.value = populate.id
+      titleInput.value = populate.title
+      commandInput.value = populate.command
+      argsArea.value = formatArgsText(populate.args)
+      envArea.value = formatEnvText(populate.env)
+      enabledBox.checked = populate.enabled
     }
     // Cached list persisted with the agent so the model picker can list models
     // without re-spawning; seeded from the saved config, refreshed by "Detect".
@@ -595,9 +604,71 @@ export function createAcpAgentsSection(
     return card
   }
 
-  /** The "Add agent" chip: a blank form for any ACP-speaking command. */
+  /** Registry agents not already curated or configured, for the add-form picker. */
+  function registryChoices(): AcpRegistryAgent[] {
+    return ACP_REGISTRY_AGENTS.filter(
+      (agent) => !knownById.has(agent.id) && !agents.some((a) => a.id === agent.id),
+    )
+  }
+
+  /**
+   * Prefill for a registry-only agent. The command is a SUGGESTION (the npx
+   * package basename) the user can correct — never used for detection, since a
+   * guessed name could match an unrelated binary. Registry npx args are the
+   * arguments the registry says put the package into ACP mode.
+   */
+  function registryPrefill(agent: AcpRegistryAgent): AcpAgentConfig {
+    const npx = agent.distribution.npx
+    return {
+      id: agent.id,
+      title: agent.name,
+      command: npx ? suggestedCommandFromNpx(npx.package) : '',
+      ...(npx?.args?.length ? { args: npx.args } : {}),
+      enabled: true,
+    }
+  }
+
+  /** Install guidance for a registry agent, by distribution channel. */
+  function registryGuidance(agent: AcpRegistryAgent): HTMLElement[] {
+    const rows: HTMLElement[] = []
+    const npx = agent.distribution.npx
+    if (npx) {
+      // The registry spec is version-pinned; installing exactly that version is
+      // what the pin's review + cooldown vouched for.
+      rows.push(commandRow('Install', `npm install -g ${npx.package}`))
+    } else {
+      rows.push(
+        el(
+          'p',
+          { class: 'field-hint' },
+          'This agent is not distributed on npm — install it per its own docs, ' +
+            'then enter the command it provides.',
+        ),
+      )
+    }
+    if (agent.website ?? agent.repository) {
+      rows.push(
+        el(
+          'p',
+          { class: 'field-hint' },
+          el(
+            'a',
+            {
+              href: agent.website ?? agent.repository ?? '',
+              target: '_blank',
+              rel: 'noopener noreferrer',
+            },
+            'Documentation',
+          ),
+        ),
+      )
+    }
+    return rows
+  }
+
+  /** The "Add agent" chip: registry picker plus a form for any ACP command. */
   function addForm(): HTMLElement {
-    return el(
+    const root = el(
       'div',
       { class: 'provider-form' },
       el('h4', { class: 'provider-form-title' }, 'Add a custom agent'),
@@ -608,6 +679,53 @@ export function createAcpAgentsSection(
           'Give it a name, the command that launches it, and the arguments it ' +
           'needs to start in agent mode.',
       ),
+    )
+    const choices = registryChoices()
+    const formSlot = el('div', {})
+    const guidanceSlot = el('div', {})
+    if (choices.length > 0) {
+      const picker = el('select', { class: 'acp-registry-picker' })
+      picker.append(el('option', { value: '' }, 'Start from scratch…'))
+      for (const agent of choices) {
+        picker.append(el('option', { value: agent.id }, `${agent.name} (${agent.version})`))
+      }
+      const mountForm = (prefill?: AcpAgentConfig): void => {
+        clear(formSlot)
+        formSlot.append(
+          agentForm({
+            ...(prefill ? { prefill } : {}),
+            submitLabel: 'Add agent',
+            onSubmit: (draft) => {
+              selected = draft.id
+              void persist(upsertAgent(agents, draft))
+            },
+          }),
+        )
+      }
+      picker.addEventListener('change', () => {
+        const agent = choices.find((candidate) => candidate.id === picker.value)
+        clear(guidanceSlot)
+        if (agent) {
+          guidanceSlot.append(...registryGuidance(agent))
+          mountForm(registryPrefill(agent))
+        } else {
+          mountForm()
+        }
+      })
+      root.append(
+        el(
+          'label',
+          { class: 'field-label' },
+          `Or pick from the ACP registry (pinned ${ACP_REGISTRY_PIN.tag}):`,
+          picker,
+        ),
+        guidanceSlot,
+      )
+      mountForm()
+      root.append(formSlot)
+      return root
+    }
+    root.append(
       agentForm({
         submitLabel: 'Add agent',
         onSubmit: (draft) => {
@@ -616,6 +734,7 @@ export function createAcpAgentsSection(
         },
       }),
     )
+    return root
   }
 
   function renderForm(): void {

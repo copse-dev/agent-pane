@@ -6,14 +6,22 @@
 //   node scripts/detect-acp-agents.mts        (or: npm run detect:acp)
 //
 // Standalone on purpose — no build step, runs anywhere with node. The catalog
-// below mirrors src/shared/acp-known-agents.ts (the app's in-built "Detect"
-// button uses that copy); keep the two in sync when adding agents.
+// comes from src/shared/acp-known-agents.ts (the same one the app's in-built
+// "Detect" button uses), so there is nothing to keep in sync.
 
 import { execFile } from 'node:child_process'
 import { basename } from 'node:path'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
+
+// One catalog, not a third copy: this used to mirror src/shared/acp-known-agents.ts
+// by hand and had already drifted (stale ids, the deprecated --experimental-acp
+// flag, a retired adapter). The data now comes straight from the shared catalog
+// JSON (src/shared/acp-metadata.ts is the app's validating loader; plain node
+// cannot import it because src/ has no ESM marker, but a JSON import needs no
+// module interpretation at all).
+import catalog from '../src/shared/data/acp-metadata.json' with { type: 'json' }
 
 interface KnownAgent {
   id: string
@@ -26,57 +34,20 @@ interface KnownAgent {
   note?: string
 }
 
-const KNOWN_AGENTS: KnownAgent[] = [
-  {
-    id: 'gemini-cli',
-    title: 'Gemini CLI',
-    command: 'gemini',
-    args: ['--experimental-acp'],
-    envHints: ['GEMINI_API_KEY'],
-    install: 'npm install -g @google/gemini-cli',
-    setup: 'gemini',
-    note: 'Sign in by running `gemini` once, or set GEMINI_API_KEY.',
-  },
-  {
-    id: 'claude-agent-acp',
-    title: 'Claude Agent (ACP)',
-    command: 'claude-agent-acp',
-    args: [],
-    envHints: ['ANTHROPIC_API_KEY'],
-    install: 'npm install -g @agentclientprotocol/claude-agent-acp',
-    setup: 'claude setup-token',
-    note: 'Claude Agent SDK over ACP. Auth with `claude setup-token` or ANTHROPIC_API_KEY.',
-  },
-  {
-    id: 'claude-code-acp',
-    title: 'Claude Code (ACP, Zed)',
-    command: 'claude-code-acp',
-    args: [],
-    envHints: ['ANTHROPIC_API_KEY'],
-    install: 'npm install -g @zed-industries/claude-code-acp',
-    setup: 'claude setup-token',
-    note: "Zed's Claude Code ACP adapter. Auth with `claude setup-token` or ANTHROPIC_API_KEY.",
-  },
-  {
-    id: 'cursor',
-    title: 'Cursor',
-    command: 'cursor-agent',
-    args: ['acp'],
-    install: 'curl https://cursor.com/install | bash',
-    setup: 'cursor-agent login',
-    note: 'Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`.',
-  },
-  {
-    id: 'codex',
-    title: 'Codex',
-    command: 'codex-acp',
-    args: [],
-    envHints: ['CODEX_API_KEY', 'OPENAI_API_KEY'],
-    install: 'npm install -g @agentclientprotocol/codex-acp',
-    setup: 'codex login',
-    note: 'OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set CODEX_API_KEY.',
-  },
-]
+const KNOWN_AGENTS: KnownAgent[] = Object.entries(catalog.curated).map(([id, entry]) => ({
+  id,
+  title: entry.title,
+  command: entry.command,
+  args: entry.args,
+  // envHints is absent on some curated entries, so it surfaces as
+  // `string[] | undefined` in the imported JSON's inferred union type;
+  // install/setup/note exist on all of today's entries and would become
+  // possibly-undefined (a compile error here) if a future entry drops them.
+  ...('envHints' in entry ? { envHints: entry.envHints } : {}),
+  install: entry.install,
+  setup: entry.setup,
+  note: entry.note,
+}))
 
 async function resolveOnPath(command: string): Promise<string | null> {
   const finder = process.platform === 'win32' ? 'where' : 'which'

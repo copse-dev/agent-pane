@@ -280,7 +280,7 @@ export function acpTurnInterruptionMarker(outcome: AcpTurnInterruption, agentId?
  * agents under their vendor chip (Claude sits under Anthropic), and that mapping
  * lives in the renderer — repeating it here would be a second copy to rot.
  */
-function acpEnvHint(known: { title: string; envHints?: string[] } | undefined): string {
+function acpEnvHint(known: { title: string; envHints?: string[] | undefined } | undefined): string {
   if (!known?.envHints || known.envHints.length === 0) return ''
   const variables = known.envHints.map((name) => `\`${name}\``).join(' or ')
   return `Alternatively, set ${variables} for ${known.title} in Settings → General → Providers.`

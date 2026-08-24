@@ -1,0 +1,823 @@
+{
+  "registry": {
+    "pin": {
+      "tag": "v2026.08.16-07c9f6a",
+      "publishedAt": "2026-08-16T23:15:01Z",
+      "syncedAt": "2026-08-24",
+      "cooldownDays": 7,
+      "source": "https://github.com/agentclientprotocol/registry"
+    },
+    "agents": [
+      {
+        "id": "agoragentic-acp",
+        "name": "Agoragentic",
+        "version": "1.3.0",
+        "description": "Agent marketplace with 174+ AI capabilities. Browse, invoke, and pay for agent services settled in USDC on Base L2.",
+        "license": "MIT",
+        "repository": "https://github.com/rhein1/agoragentic-integrations",
+        "website": "https://agoragentic.com",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/agoragentic-acp.svg",
+        "distribution": {
+          "npx": {
+            "package": "agoragentic-mcp@1.3.0",
+            "args": ["--acp"]
+          }
+        }
+      },
+      {
+        "id": "amp-acp",
+        "name": "Amp",
+        "version": "0.9.0",
+        "description": "ACP wrapper for Amp - the frontier coding agent",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/tao12345666333/amp-acp",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/amp-acp.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": true
+          }
+        }
+      },
+      {
+        "id": "auggie",
+        "name": "Auggie CLI",
+        "version": "0.35.0",
+        "description": "Augment Code's powerful software agent, backed by industry-leading context engine",
+        "license": "proprietary",
+        "repository": "https://github.com/augmentcode/auggie",
+        "website": "https://www.augmentcode.com/",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/auggie.svg",
+        "distribution": {
+          "npx": {
+            "package": "@augmentcode/auggie@0.35.0",
+            "args": ["--acp"]
+          }
+        }
+      },
+      {
+        "id": "autohand",
+        "name": "Autohand Code",
+        "version": "0.2.1",
+        "description": "Autohand Code - AI coding agent powered by Autohand AI",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/autohandai/autohand-acp",
+        "website": "https://www.autohand.ai/cli/",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/autohand.svg",
+        "distribution": {
+          "npx": {
+            "package": "@autohandai/autohand-acp@0.2.1"
+          }
+        }
+      },
+      {
+        "id": "claude-acp",
+        "name": "Claude Agent",
+        "version": "0.69.0",
+        "description": "ACP wrapper for Anthropic's Claude",
+        "license": "proprietary",
+        "repository": "https://github.com/agentclientprotocol/claude-agent-acp",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/claude-acp.svg",
+        "distribution": {
+          "npx": {
+            "package": "@agentclientprotocol/claude-agent-acp@0.69.0"
+          }
+        }
+      },
+      {
+        "id": "cline",
+        "name": "Cline",
+        "version": "3.0.55",
+        "description": "Autonomous coding agent CLI - capable of creating/editing files, running commands, using the browser, and more",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/cline/cline",
+        "website": "https://cline.bot/cli",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/cline.svg",
+        "distribution": {
+          "npx": {
+            "package": "cline@3.0.55",
+            "args": ["--acp"]
+          }
+        }
+      },
+      {
+        "id": "codebuddy-code",
+        "name": "Codebuddy Code",
+        "version": "2.106.7",
+        "description": "Tencent Cloud's official intelligent coding tool",
+        "license": "Proprietary",
+        "website": "https://www.codebuddy.cn/cli/",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/codebuddy-code.svg",
+        "distribution": {
+          "npx": {
+            "package": "@tencent-ai/codebuddy-code@2.106.7",
+            "args": ["--acp"]
+          }
+        }
+      },
+      {
+        "id": "codex-acp",
+        "name": "Codex",
+        "version": "1.4.0",
+        "description": "ACP adapter for OpenAI's coding assistant",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/agentclientprotocol/codex-acp",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/codex-acp.svg",
+        "distribution": {
+          "npx": {
+            "package": "@agentclientprotocol/codex-acp@1.4.0"
+          }
+        }
+      },
+      {
+        "id": "cortex-code",
+        "name": "Cortex Code",
+        "version": "1.0.73",
+        "description": "Snowflake's Cortex Code coding agent",
+        "license": "proprietary",
+        "repository": "https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/cortex-code.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-aarch64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": false
+          }
+        }
+      },
+      {
+        "id": "corust-agent",
+        "name": "Corust Agent",
+        "version": "0.6.0",
+        "description": "Co-building with a seasoned Rust partner.",
+        "license": "GPL-3.0-or-later",
+        "repository": "https://github.com/Corust-ai/corust-agent-release",
+        "website": "https://corust.ai/",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/corust-agent.svg",
+        "distribution": {
+          "binary": {
+            "platforms": ["darwin-aarch64", "darwin-x86_64", "linux-x86_64", "windows-x86_64"],
+            "sha256Complete": false
+          }
+        }
+      },
+      {
+        "id": "crow-cli",
+        "name": "crow-cli",
+        "version": "0.1.24",
+        "description": "Minimal ACP Native Coding Agent",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/crow-cli/crow-cli",
+        "website": "https://crow-ai.dev",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/crow-cli.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": false
+          }
+        }
+      },
+      {
+        "id": "cursor",
+        "name": "Cursor",
+        "version": "2026.08.11",
+        "description": "Cursor's coding agent",
+        "license": "proprietary",
+        "website": "https://cursor.com/docs/cli/acp",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/cursor.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-aarch64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": false
+          }
+        }
+      },
+      {
+        "id": "deepagents",
+        "name": "DeepAgents",
+        "version": "0.1.7",
+        "description": "Batteries-included AI coding and general purpose agent powered by LangChain.",
+        "license": "MIT",
+        "repository": "https://github.com/langchain-ai/deepagentsjs",
+        "website": "https://docs.langchain.com/oss/javascript/deepagents/overview",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/deepagents.svg",
+        "distribution": {
+          "npx": {
+            "package": "deepagents-acp@0.1.7"
+          }
+        }
+      },
+      {
+        "id": "devin",
+        "name": "Devin",
+        "version": "3000.4.25",
+        "description": "Devin CLI coding agent by Cognition",
+        "license": "proprietary",
+        "repository": "https://github.com/CognitionAI/devin-cli",
+        "website": "https://docs.devin.ai/cli",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/devin.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-aarch64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": false
+          }
+        }
+      },
+      {
+        "id": "dimcode",
+        "name": "DimCode",
+        "version": "0.3.13",
+        "description": "A coding agent that puts leading models at your command.",
+        "license": "proprietary",
+        "website": "https://dimcode.dev/docs/acp.html",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/dimcode.svg",
+        "distribution": {
+          "npx": {
+            "package": "dimcode@0.3.13",
+            "args": ["acp"]
+          }
+        }
+      },
+      {
+        "id": "dirac",
+        "name": "Dirac",
+        "version": "0.4.36",
+        "description": "Reduces API costs by more than 50%, produces better and faster work. Uses Hash anchored parallel edits, AST manipulation and a whole lot of neat optimizations. Fully Open Source.",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/dirac-run/dirac",
+        "website": "https://dirac.run",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/dirac.svg",
+        "distribution": {
+          "npx": {
+            "package": "dirac-cli@0.4.36",
+            "args": ["--acp"]
+          }
+        }
+      },
+      {
+        "id": "factory-droid",
+        "name": "Factory Droid",
+        "version": "0.197.0",
+        "description": "Factory Droid - AI coding agent powered by Factory AI",
+        "license": "proprietary",
+        "website": "https://factory.ai/product/cli",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/factory-droid.svg",
+        "distribution": {
+          "npx": {
+            "package": "droid@0.197.0",
+            "args": ["exec", "--output-format", "acp-daemon"]
+          }
+        }
+      },
+      {
+        "id": "fast-agent",
+        "name": "fast-agent",
+        "version": "0.10.1",
+        "description": "Code and build agents with comprehensive multi-provider support",
+        "license": "Apache 2.0",
+        "repository": "https://github.com/evalstate/fast-agent",
+        "website": "https://fast-agent.ai",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/fast-agent.svg",
+        "distribution": {
+          "uvx": {
+            "package": "fast-agent-acp==0.10.1",
+            "args": ["-x"]
+          }
+        }
+      },
+      {
+        "id": "gemini",
+        "name": "Gemini CLI",
+        "version": "0.55.1",
+        "description": "Google's official CLI for Gemini",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/google-gemini/gemini-cli",
+        "website": "https://geminicli.com",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/gemini.svg",
+        "distribution": {
+          "npx": {
+            "package": "@google/gemini-cli@0.55.1",
+            "args": ["--acp"]
+          }
+        }
+      },
+      {
+        "id": "github-copilot-cli",
+        "name": "GitHub Copilot",
+        "version": "1.0.80",
+        "description": "GitHub's AI pair programmer",
+        "license": "proprietary",
+        "repository": "https://github.com/github/copilot-cli",
+        "website": "https://github.com/features/copilot/cli/",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/github-copilot-cli.svg",
+        "distribution": {
+          "npx": {
+            "package": "@github/copilot@1.0.80",
+            "args": ["--acp"]
+          }
+        }
+      },
+      {
+        "id": "glm-acp-agent",
+        "name": "GLM Agent",
+        "version": "1.5.0",
+        "description": "ACP agent powered by Zhipu AI's GLM Coding Plan models (glm-5.1, glm-5-turbo, glm-4.7, glm-4.5-air). Supports streaming, tool calls, mid-session model switching, image input via Z.AI Coding Plan Vision MCP, and session load/fork/resume with on-disk persistence.",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/stefandevo/glm-acp-agent",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/glm-acp-agent.svg",
+        "distribution": {
+          "npx": {
+            "package": "glm-acp-agent@1.5.0"
+          }
+        }
+      },
+      {
+        "id": "goose",
+        "name": "goose",
+        "version": "1.46.0",
+        "description": "A local, extensible, open source AI agent that automates engineering tasks",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/block/goose",
+        "website": "https://block.github.io/goose/",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/goose.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": true
+          }
+        }
+      },
+      {
+        "id": "grok-build",
+        "name": "Grok Build",
+        "version": "1.0.5",
+        "description": "xAI's coding agent and CLI",
+        "license": "proprietary",
+        "website": "https://x.ai/cli",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/grok-build.svg",
+        "distribution": {
+          "npx": {
+            "package": "@xai-official/grok@1.0.5",
+            "args": ["agent", "stdio"]
+          }
+        }
+      },
+      {
+        "id": "harn",
+        "name": "Harn",
+        "version": "0.10.103",
+        "description": "Harn runs .harn agent pipelines as a native ACP coding agent over stdio.",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/burin-labs/harn",
+        "website": "https://harnlang.com",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/harn.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": true
+          }
+        }
+      },
+      {
+        "id": "junie",
+        "name": "Junie",
+        "version": "2783.5.0",
+        "description": "AI Coding Agent by JetBrains",
+        "license": "proprietary",
+        "repository": "https://github.com/JetBrains/junie-acp-release",
+        "website": "https://junie.jetbrains.com",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/junie.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-aarch64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": false
+          }
+        }
+      },
+      {
+        "id": "kilo",
+        "name": "Kilo",
+        "version": "7.4.22",
+        "description": "The open source coding agent",
+        "license": "MIT",
+        "repository": "https://github.com/Kilo-Org/kilocode",
+        "website": "https://kilo.ai/",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/kilo.svg",
+        "distribution": {
+          "npx": {
+            "package": "@kilocode/cli@7.4.22",
+            "args": ["acp"]
+          },
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": true
+          }
+        }
+      },
+      {
+        "id": "kimi",
+        "name": "Kimi CLI",
+        "version": "1.49.0",
+        "description": "Moonshot AI's coding assistant",
+        "license": "MIT",
+        "repository": "https://github.com/MoonshotAI/kimi-cli",
+        "website": "https://moonshotai.github.io/kimi-cli/",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/kimi.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-aarch64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": true
+          }
+        }
+      },
+      {
+        "id": "minion-code",
+        "name": "Minion Code",
+        "version": "0.1.44",
+        "description": "An enhanced AI code assistant built on the Minion framework with rich development tools",
+        "license": "AGPL-3.0",
+        "repository": "https://github.com/femto/minion-code",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/minion-code.svg",
+        "distribution": {
+          "uvx": {
+            "package": "minion-code@0.1.44",
+            "args": ["acp"]
+          }
+        }
+      },
+      {
+        "id": "mistral-vibe",
+        "name": "Mistral Vibe",
+        "version": "2.24.1",
+        "description": "Mistral's open-source coding assistant",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/mistralai/mistral-vibe",
+        "website": "https://mistral.ai/products/vibe",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/mistral-vibe.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": true
+          }
+        }
+      },
+      {
+        "id": "nova",
+        "name": "Nova",
+        "version": "1.1.35",
+        "description": "Nova by Compass AI - a fully-fledged software engineer at your command",
+        "license": "proprietary",
+        "repository": "https://github.com/Compass-Agentic-Platform/nova",
+        "website": "https://www.compassap.ai/portfolio/nova.html",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/nova.svg",
+        "distribution": {
+          "npx": {
+            "package": "@compass-ai/nova@1.1.35",
+            "args": ["acp"]
+          }
+        }
+      },
+      {
+        "id": "opencode",
+        "name": "OpenCode",
+        "version": "1.18.18",
+        "description": "The open source coding agent",
+        "license": "MIT",
+        "repository": "https://github.com/anomalyco/opencode",
+        "website": "https://opencode.ai",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/opencode.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-aarch64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": true
+          }
+        }
+      },
+      {
+        "id": "pi-acp",
+        "name": "pi ACP",
+        "version": "0.0.33",
+        "description": "ACP adapter for pi coding agent",
+        "license": "MIT",
+        "repository": "https://github.com/svkozak/pi-acp",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/pi-acp.svg",
+        "distribution": {
+          "npx": {
+            "package": "pi-acp@0.0.33"
+          }
+        }
+      },
+      {
+        "id": "poolside",
+        "name": "Poolside",
+        "version": "1.0.16",
+        "description": "Poolside's coding agent",
+        "license": "proprietary",
+        "repository": "https://github.com/poolsideai/pool",
+        "website": "https://poolside.ai",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/poolside.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-aarch64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": true
+          }
+        }
+      },
+      {
+        "id": "qoder",
+        "name": "Qoder CLI",
+        "version": "0.2.14",
+        "description": "AI coding assistant with agentic capabilities",
+        "license": "proprietary",
+        "website": "https://qoder.com",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/qoder.svg",
+        "distribution": {
+          "npx": {
+            "package": "@qoder-ai/qodercli@0.2.14",
+            "args": ["--acp"]
+          }
+        }
+      },
+      {
+        "id": "qwen-code",
+        "name": "Qwen Code",
+        "version": "0.21.12",
+        "description": "Alibaba's Qwen coding assistant",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/QwenLM/qwen-code",
+        "website": "https://qwenlm.github.io/qwen-code-docs/en/users/overview",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/qwen-code.svg",
+        "distribution": {
+          "npx": {
+            "package": "@qwen-code/qwen-code@0.21.12",
+            "args": ["--acp", "--experimental-skills"]
+          }
+        }
+      },
+      {
+        "id": "sigit",
+        "name": "siGit Code",
+        "version": "1.5.2",
+        "description": "Local-first coding agent. Runs entirely on your machine with optional on-device LLM inference via Onde.",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/getsigit/sigit",
+        "website": "https://github.com/getsigit/sigit",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/sigit.svg",
+        "distribution": {
+          "npx": {
+            "package": "@smbcloud/sigit@1.5.2"
+          },
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-aarch64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": true
+          }
+        }
+      },
+      {
+        "id": "stakpak",
+        "name": "Stakpak",
+        "version": "0.3.88",
+        "description": "Open-source DevOps agent in Rust with enterprise-grade security",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/stakpak/agent",
+        "website": "https://stakpak.dev",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/stakpak.svg",
+        "distribution": {
+          "binary": {
+            "platforms": [
+              "darwin-aarch64",
+              "darwin-x86_64",
+              "linux-aarch64",
+              "linux-x86_64",
+              "windows-x86_64"
+            ],
+            "sha256Complete": false
+          }
+        }
+      },
+      {
+        "id": "vtcode",
+        "name": "VT Code",
+        "version": "0.96.14",
+        "description": "An open-source coding agent with LLM-native code understanding and robust shell safety. Supports multiple LLM providers with automatic failover and efficient context management.",
+        "license": "MIT",
+        "repository": "https://github.com/vinhnx/VTCode",
+        "website": "https://github.com/vinhnx/VTCode/blob/main/docs/guides/zed-acp.md",
+        "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/vtcode.svg",
+        "distribution": {
+          "binary": {
+            "platforms": ["darwin-aarch64", "darwin-x86_64", "linux-x86_64", "windows-x86_64"],
+            "sha256Complete": false
+          }
+        }
+      }
+    ]
+  },
+  "curated": {
+    "gemini": {
+      "title": "Gemini CLI",
+      "command": "gemini",
+      "args": ["--acp"],
+      "envHints": ["GEMINI_API_KEY"],
+      "install": "npm install -g @google/gemini-cli",
+      "sandbox": {
+        "allowedDomains": ["*.googleapis.com", "accounts.google.com"],
+        "homeDirs": [".gemini", ".config/gemini"]
+      },
+      "setup": "gemini",
+      "reauth": "gemini",
+      "docsUrl": "https://github.com/google-gemini/gemini-cli",
+      "note": "Sign in by running `gemini` once, or set GEMINI_API_KEY.",
+      "comment": "`--acp` is the canonical flag, added in @google/gemini-cli 0.33.0 (2026-03-11); it is what the ACP registry lists for agent id `gemini`. The older `--experimental-acp` still works as a deprecated alias (the CLI computes `isAcpMode = !!argv.acp || !!argv.experimentalAcp`) but is deprecated in --help and will eventually be removed, so we track the canonical spelling. Cost: installs older than 0.33.0 reject `--acp` and need an upgrade. Sandbox: Google API infra wholesale (model + OAuth endpoints move between *.googleapis.com subdomains) plus the account login host. setup/reauth: first run walks through Google sign-in; re-running re-prompts once the stored token lapses."
+    },
+    "claude-acp": {
+      "title": "Claude",
+      "command": "claude-agent-acp",
+      "args": [],
+      "envHints": ["ANTHROPIC_API_KEY"],
+      "install": "npm install -g @agentclientprotocol/claude-agent-acp",
+      "installPackage": "@agentclientprotocol/claude-agent-acp",
+      "requiresClient": "claude",
+      "autoInstall": true,
+      "preset": true,
+      "sandbox": {
+        "allowedDomains": [
+          "anthropic.com",
+          "*.anthropic.com",
+          "claude.ai",
+          "*.claude.ai",
+          "claude.com",
+          "*.claude.com"
+        ],
+        "homeDirs": [".claude", ".claude.json", ".claude.json.backup", ".config/claude"],
+        "scratchPaths": ["/tmp/claude-${uid}", "/tmp/claude-*"]
+      },
+      "sandboxedPermissionMode": "acceptEdits",
+      "setup": "claude setup-token",
+      "reauth": "claude /login",
+      "docsUrl": "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
+      "note": "Claude Agent SDK over ACP. Uses your existing `claude` login (or ANTHROPIC_API_KEY).",
+      "comment": "Anthropic-owned infra wholesale: the API lives on api.anthropic.com, but OAuth token refresh and telemetry move between subdomains — pinning individual hosts breaks auth (\"403 Connection blocked by network allowlist\") when they do. `claude.com` is not optional: the console moved to platform.claude.com, which is where an OAuth login refreshes its access token; blocking it doesn't fail loudly — the token simply never refreshes and the next turn dies on \"OAuth access token has expired.\" Scratch paths: Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring $TMPDIR — a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir without it) and per-command /tmp/claude-<hex>-cwd tracking files. BOTH forms are required: the literal dir gets recursive subpath coverage (ASRT strips trailing /** from write globs, so a glob can never grant a subtree), while the single-segment glob covers the sibling -cwd files."
+    },
+    "cursor": {
+      "title": "Cursor",
+      "command": "cursor-agent",
+      "args": ["acp"],
+      "requiresClient": "cursor-agent",
+      "preset": true,
+      "sandbox": {
+        "allowedDomains": ["cursor.com", "*.cursor.com", "cursor.sh", "*.cursor.sh"],
+        "homeDirs": [".cursor", ".local/share/cursor-agent"],
+        "scratchPaths": ["/tmp/.cursor"]
+      },
+      "sandboxedPermissionMode": "acceptEdits",
+      "install": "curl https://cursor.com/install | bash",
+      "setup": "cursor-agent login",
+      "reauth": "cursor-agent login",
+      "docsUrl": "https://docs.cursor.com/en/cli/overview",
+      "note": "Cursor CLI as a native ACP server (`cursor-agent acp`). Sign in with `cursor-agent login`.",
+      "comment": "cursor-agent is its own ACP server; the binary is the gate. Not on npm, so auto-setup never installs it (Socket Firewall can't wrap `curl | bash`; the registry's binary archives are not uniformly checksummed either). Sandbox: Cursor-owned infra wholesale — OAuth and telemetry move between subdomains (cursor.sh etc.); /tmp/.cursor is session bookkeeping, same pattern as Claude's /tmp dirs."
+    },
+    "codex-acp": {
+      "title": "Codex",
+      "command": "codex-acp",
+      "args": [],
+      "envHints": ["CODEX_API_KEY", "OPENAI_API_KEY"],
+      "install": "npm install -g @agentclientprotocol/codex-acp",
+      "installPackage": "@agentclientprotocol/codex-acp",
+      "autoInstall": true,
+      "preset": true,
+      "sandbox": {
+        "allowedDomains": ["openai.com", "*.openai.com", "chatgpt.com", "*.chatgpt.com"],
+        "homeDirs": [".codex", ".config/codex"]
+      },
+      "setup": "codex login",
+      "reauth": "codex login",
+      "docsUrl": "https://www.npmjs.com/package/@agentclientprotocol/codex-acp",
+      "note": "OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set CODEX_API_KEY.",
+      "comment": "Codex reads CODEX_API_KEY (or, as a fallback, OPENAI_API_KEY). OPENAI_API_KEY is scrubbed from the inherited env (child-process-env.ts), so a user relying on it must pass it through the agent's `env`; CODEX_API_KEY survives untouched. Standalone npm adapter (bundles @openai/codex, self-authenticates) — no parent client to gate on, so Socket-Firewall auto-setup may install it directly when missing. Sandbox: OpenAI-owned infra wholesale — the ChatGPT-login flow talks to chatgpt.com / auth.openai.com and these move between subdomains. setup: ChatGPT sign-in; set NO_BROWSER=1 for headless."
+    }
+  },
+  "retired": [
+    {
+      "id": "claude-code-acp",
+      "reason": "Renamed upstream to @agentclientprotocol/claude-agent-acp.",
+      "title": "Claude Code (ACP, Zed)",
+      "command": "claude-code-acp",
+      "args": [],
+      "envHints": ["ANTHROPIC_API_KEY"],
+      "requiresClient": "claude",
+      "sandbox": {
+        "allowedDomains": [
+          "anthropic.com",
+          "*.anthropic.com",
+          "claude.ai",
+          "*.claude.ai",
+          "claude.com",
+          "*.claude.com"
+        ],
+        "homeDirs": [".claude", ".claude.json", ".claude.json.backup", ".config/claude"],
+        "scratchPaths": ["/tmp/claude-${uid}", "/tmp/claude-*"]
+      },
+      "sandboxedPermissionMode": "acceptEdits",
+      "docsUrl": "https://www.npmjs.com/package/@zed-industries/claude-code-acp",
+      "note": "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",
+      "comment": "npm marks @zed-industries/claude-code-acp deprecated: \"This package has been renamed to @agentclientprotocol/claude-agent-acp.\" It stopped at 0.16.2 (2026-02-17); the renamed package carries on from 0.24.0. Kept, sandbox included: resolveAcpSandbox reads the catalog at spawn time, so an entry that simply disappears downgrades an existing user's agent to spawning unconfined. Anthropic-owned infra wholesale: the API lives on api.anthropic.com, but OAuth token refresh and telemetry move between subdomains — pinning individual hosts breaks auth (\"403 Connection blocked by network allowlist\") when they do. `claude.com` is not optional: the console moved to platform.claude.com, which is where an OAuth login refreshes its access token; blocking it doesn't fail loudly — the token simply never refreshes and the next turn dies on \"OAuth access token has expired.\" Scratch paths: Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring $TMPDIR — a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir without it) and per-command /tmp/claude-<hex>-cwd tracking files. BOTH forms are required: the literal dir gets recursive subpath coverage (ASRT strips trailing /** from write globs, so a glob can never grant a subtree), while the single-segment glob covers the sibling -cwd files."
+    }
+  ],
+  "legacyIds": {
+    "claude-agent-acp": "claude-acp",
+    "codex": "codex-acp",
+    "gemini-cli": "gemini"
+  }
+}

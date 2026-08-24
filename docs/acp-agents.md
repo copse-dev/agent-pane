@@ -273,6 +273,54 @@ The agent must bring its own credentials: pass them explicitly through `env`
 (as in the example above), or rely on the agent's own login/config. Non-LLM tool
 tokens such as `GITHUB_TOKEN` are passed through.
 
+## The agent catalog and the registry pin
+
+Everything Copse knows about external ACP agents lives in one data file,
+[`src/shared/data/acp-metadata.json`](../src/shared/data/acp-metadata.json),
+loaded and zod-validated at import by
+[`src/shared/acp-metadata.ts`](../src/shared/acp-metadata.ts). It has two
+halves with two owners:
+
+- **`registry`** — a **pinned snapshot** of the public
+  [ACP registry](https://github.com/agentclientprotocol/registry): id, name,
+  version, description, icon, and distribution for every listed agent
+  (~40 of them). Updated only by `pnpm run sync:acp-registry`, which adopts
+  the newest upstream release **at least 7 days old** (`cooldownDays` in the
+  pin). The cooldown is a supply-chain guard, the same reasoning as the
+  Dependabot cooldown in `.github/dependabot.yml`: a compromised or broken
+  upstream publish gets a week to be noticed and yanked before Copse adopts
+  it. The sync also refuses a shrinking agent list (`--allow-shrink` after
+  checking upstream) and refuses to orphan a curated entry.
+- **`curated` / `retired` / `legacyIds`** — hand-maintained. `curated` is the
+  overlay Copse itself is responsible for: spawn command and args, seatbelt
+  confinement, sign-in commands, env hints. The sync script never touches
+  these. `src/shared/acp-known-agents.ts` merges the two halves into
+  `KNOWN_ACP_AGENTS`; `scripts/detect-acp-agents.mts` reads the same JSON, so
+  there is no second copy to keep in sync.
+
+Install policy, derived per agent from its distribution:
+
+- **npx** — installable by auto-setup: the registry spec is version-pinned
+  (`@agentclientprotocol/claude-agent-acp@0.69.0`), and that exact spec goes
+  through Socket Firewall (`sfw npm install -g …`), which scans the package
+  before it lands. Upgrade offers compare the installed version against the
+  **pinned** version — never live `npm view latest` — so nothing newer than
+  the reviewed, cooled snapshot is ever proposed.
+- **binary** — guidance only, never auto-downloaded: the registry's binary
+  archives are not uniformly checksummed, and Copse has no scanner for opaque
+  archives. The Settings form links the agent's own docs instead.
+- **uvx** — guidance only for now (no PyPI scanning path).
+
+Discovery: Settings → Providers → agents "Add agent" offers a picker over the
+pinned registry (also reachable from onboarding's fallback panel, which embeds
+the same section). Picking an agent prefills the custom form — title, the
+registry's ACP args, and a _suggested_ command (the npm package basename).
+Registry-only agents are never auto-detected on PATH: detection stays limited
+to curated commands, because probing for a guessed binary name could match an
+unrelated executable and register it as an agent. They also never carry
+`preset`/`autoInstall` powers or a seatbelt profile — those come only from the
+hand-reviewed overlay (enforced by `src/shared/acp-metadata.test.ts`).
+
 ## Tool parity with native Copse
 
 ACP client mode and the **built-in Copse agent loop** (cloud/local models such as

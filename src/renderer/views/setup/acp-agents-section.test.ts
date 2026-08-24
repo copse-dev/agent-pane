@@ -2,6 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import type { KnownAcpAgent } from '@shared/acp-known-agents.ts'
+import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
+import { ACP_REGISTRY_AGENTS, suggestedCommandFromNpx } from '@shared/acp-metadata.ts'
 import {
   knownToConfig,
   formatArgsText,
@@ -128,5 +130,26 @@ describe('validateDraft', () => {
     assert.match(validateDraft({ id: 'dup', title: 'x', command: 'x' }, ['dup']) ?? '', /already/)
     assert.match(validateDraft({ id: 'ok', title: ' ', command: 'x' }, []) ?? '', /Title/)
     assert.match(validateDraft({ id: 'ok', title: 'x', command: '' }, []) ?? '', /Command/)
+  })
+})
+
+describe('registry picker prefill', () => {
+  it('prefills a registry npx agent with suggested command and ACP args', () => {
+    const agent = ACP_REGISTRY_AGENTS.find((candidate) => candidate.id === 'gemini')
+    assert.ok(agent?.distribution.npx)
+    assert.equal(suggestedCommandFromNpx(agent.distribution.npx.package), 'gemini-cli')
+    // The registry's args are what put the package into ACP mode.
+    assert.deepEqual(agent.distribution.npx.args, ['--acp'])
+  })
+
+  it('offers only agents that are neither curated nor configured', () => {
+    // The picker in the section filters KNOWN + configured out of the registry
+    // list; the invariant that matters here is that every curated id IS in the
+    // registry (so the subtraction is well-defined). The loader enforces it at
+    // import; assert it stays visible from this module's imports.
+    const registryIds = new Set(ACP_REGISTRY_AGENTS.map((candidate) => candidate.id))
+    for (const known of KNOWN_ACP_AGENTS) {
+      assert.ok(registryIds.has(known.id), `curated '${known.id}' missing from the pinned registry`)
+    }
   })
 })
