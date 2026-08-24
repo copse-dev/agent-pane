@@ -1283,6 +1283,16 @@ dialog.settings-overlay::backdrop {
   opacity: 0.45;
   cursor: not-allowed;
 }
+.frontier-discover {
+  /* Both translated state labels share a cell, so the wider one reserves the width. */
+  display: inline-grid;
+}
+.frontier-discover-label {
+  grid-area: 1 / 1;
+}
+.frontier-discover-label[aria-hidden='true'] {
+  visibility: hidden;
+}
 .frontier-cost-axis {
   display: inline-flex;
   margin-left: 6px;
