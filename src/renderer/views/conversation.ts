@@ -256,7 +256,11 @@ function appendStandardToolSections(
     const argsSection = createToolArgsSection(tc.args)
     card.append(
       ...appendIfPresent(argsSection),
-      createToolResultSection(tc.result, tc.resultFormat, argsSection === null),
+      createToolResultSection(
+        tc.result,
+        tc.resultFormat,
+        argsSection === null && tc.status !== 'running',
+      ),
     )
   }
   if (card.open) {

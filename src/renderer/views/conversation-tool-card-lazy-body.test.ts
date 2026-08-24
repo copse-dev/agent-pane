@@ -97,6 +97,28 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.ok(card.querySelector('.tool-args'), 'expected the args body to already be built')
   })
 
+  it('does not claim a no-argument tool has no details while it is still running', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Working…')
+    addToolCall(store, messageId, {
+      id: 'tc-running-empty',
+      name: 'MCP: tool',
+      args: {},
+      status: 'running',
+      result: null,
+      resultFormat: 'markdown',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-running-empty"]')
+    assert.ok(card)
+    assert.equal(card.open, true)
+    assert.equal(Boolean(card.querySelector('.tool-result-empty')), false)
+  })
+
   it('shows an empty state when an MCP card has no arguments or result', () => {
     const store = createStore()
     const threadId = createThread(store)
