@@ -142,29 +142,34 @@ export function isIgnorableDeleteSessionError(error: unknown): boolean {
  * `cleanup_e2e_processes` in ci.yml, which runs between attempts and on exit —
  * the only moments when nothing is about to need them.
  *
- * The second pattern is what matches on a macOS dev machine. `dist/` there
- * holds the branded `Copse.app` the dev build creates alongside `Electron.app`,
- * and `import electron from 'electron'` resolves into it — so the launched
- * binary is `electron/dist/Copse.app/Contents/MacOS/Electron` and the first
- * pattern matches nothing at all. Keying off the e2e shell the session was
- * launched with (`--app=<repo>/tests/e2e/electron-shell`) matches on either
- * platform and, unlike a bare `Copse`, cannot match the developer's own running
- * copy of the app.
+ * Match the unique profile assigned in `wdio.conf.ts`, not a process name or
+ * the shared e2e-shell path. A Mac can run several worktrees at once; a broad
+ * `tests/e2e/electron-shell` match lets one worker's fixture reset kill every
+ * other worker on the host. Chromium copies `--user-data-dir` to its Electron
+ * child processes, so the profile scopes the reap to this WDIO worker on both
+ * macOS and Linux without ever matching a developer's own Copse process.
  */
-const WEDGED_SESSION_PATTERNS = ['[e]lectron/dist/electron', '[t]ests/e2e/electron-shell'] as const
+function escapePkillExtendedRegex(value: string): string {
+  return value.replace(/[\\.^$|?*+()[\]{}]/g, '\\$&')
+}
 
 /** The kill list, so a test can hold the chromedriver exclusion above. */
-export function wedgedSessionPatternsForTest(): readonly string[] {
-  return WEDGED_SESSION_PATTERNS
+export function wedgedSessionPatternsForTest(profileRoot: string | undefined): readonly string[] {
+  const scope = profileRoot?.trim()
+  if (!scope) return []
+  return [`[u]ser-data-dir=${escapePkillExtendedRegex(scope)}`]
 }
 
 /**
  * Best-effort: TERM then KILL a wedged Electron so a subsequent deleteSession
  * fails fast instead of burning connectionRetryTimeout.
  */
-export function forceKillWedgedE2eSession(): void {
+export function forceKillWedgedE2eSession(
+  profileRoot: string | undefined = process.env['COPSE_DIR'],
+): void {
+  const patterns = wedgedSessionPatternsForTest(profileRoot)
   for (const signal of ['-TERM', '-KILL'] as const) {
-    for (const pattern of WEDGED_SESSION_PATTERNS) {
+    for (const pattern of patterns) {
       try {
         execFileSync('pkill', [signal, '-f', pattern], { stdio: 'ignore' })
       } catch {

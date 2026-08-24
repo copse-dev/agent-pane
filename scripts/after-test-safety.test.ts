@@ -226,13 +226,28 @@ describe('installDeleteSessionSafety', () => {
 // while the previous tears down, so the driver this session is "done with" is
 // the one the next session already holds.
 describe('wedged-session kill scope', () => {
-  it('never names chromedriver', () => {
-    const patterns = wedgedSessionPatternsForTest()
+  it('targets only the current WDIO profile', () => {
+    const profile = '/tmp/review.one/.wdio-profile-own'
+    const patterns = wedgedSessionPatternsForTest(profile)
+    assert.equal(patterns.length, 1)
+    const [pattern] = patterns
+    assert.ok(pattern)
+    const matcher = new RegExp(pattern)
+    assert.equal(matcher.test(`Electron --user-data-dir=${profile}`), true)
+    assert.equal(
+      matcher.test('Electron --user-data-dir=/tmp/review.two/.wdio-profile-other'),
+      false,
+    )
+    assert.equal(matcher.test('Electron --app=/repo/tests/e2e/electron-shell'), false)
     assert.ok(
       patterns.every((pattern) => !/chromedriver/i.test(pattern)),
       `killing chromedriver reaps the next worker's driver: ${patterns.join(', ')}`,
     )
-    assert.ok(patterns.some((pattern) => /electron/i.test(pattern)))
+  })
+
+  it('fails closed before WDIO has assigned a disposable profile', () => {
+    assert.deepEqual(wedgedSessionPatternsForTest(undefined), [])
+    assert.deepEqual(wedgedSessionPatternsForTest('  '), [])
   })
 
   it('treats a socket death on deleteSession as ignorable rather than fatal', () => {
