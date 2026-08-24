@@ -49,6 +49,16 @@ dialog {
   border-radius: var(--radius-lg);
   padding: var(--spacing-xl);
   min-width: 400px;
+  /* Dialogs mount on <body>, outside the containers that already opt out of a
+     drag region — `#welcome` is `-webkit-app-region: drag` over the whole card
+     area and opts out only its own buttons/inputs (welcome.css). Painting above
+     a drag region is not enough: the OS hit-tests the region first and swallows
+     the press before the DOM sees it (the same trap `.open-in-editor-backdrop`
+     works around in titlebar.css), so a modal opened over one is dead to the
+     mouse. Opt the element out here rather than per dialog — every dialog is
+     the same shape. One that does want a drag handle re-declares `drag` on that
+     child and still wins on specificity (`.settings-header`). */
+  -webkit-app-region: no-drag;
 }
 /* A class like `.attachment-preview-dialog { display: flex }` outranks the UA
    `dialog { display: none }`, so `close()` drops the top-layer/backdrop but
