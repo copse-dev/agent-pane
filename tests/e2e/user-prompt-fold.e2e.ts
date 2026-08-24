@@ -31,7 +31,7 @@ describe('user prompt mid-fold accordion', () => {
     await expect(fold).toHaveElementClass('msg-user-fold')
     await expect(fold).not.toHaveElementClass('is-expanded')
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    await expect(bubble.$('.msg-user-fold-label')).toHaveText(/lines hidden/)
+    await expect(bubble.$('.msg-user-fold-label')).toHaveText('expand')
     await expect(bubble.$('.msg-user-fold-head')).toHaveText(/Session notes/)
     await expect(bubble.$('.msg-user-fold-tail')).toHaveText(/What I saw/)
     await expect(bubble.$('.msg-user-fold-middle')).not.toBeDisplayed()
