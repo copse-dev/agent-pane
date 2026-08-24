@@ -104,7 +104,13 @@ jobs:
     # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
     # under load (exit 137). If that recurs, add fleet headroom rather than
     # re-pinning the static gate to hosted.
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    #
+    # Fork PRs are pinned to GitHub-hosted: this is the one job that executes
+    # fork code (typecheck/lint run the PR's package scripts and plugins), and
+    # it must never reach the self-hosted fleet — same invariant gitleaks.yml
+    # states for its standalone fork scan. Hosted minutes are free once the
+    # repository is public, so this costs nothing on the runs it applies to.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -700,6 +706,8 @@ jobs:
     needs: precheck
     if: >-
       vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
        contains(github.event.pull_request.labels.*.name, 'bench-agent'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
@@ -732,6 +740,8 @@ jobs:
     needs: precheck
     if: >-
       vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
        contains(github.event.pull_request.labels.*.name, 'bench-doctrine'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
@@ -776,6 +786,8 @@ jobs:
     needs: precheck
     if: >-
       vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
        contains(github.event.pull_request.labels.*.name, 'eval-tool-preference'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
@@ -847,6 +859,8 @@ jobs:
     needs: precheck
     if: >-
       vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
        contains(github.event.pull_request.labels.*.name, 'bench-agent-eval'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
@@ -2205,7 +2219,11 @@ jobs:
     # Pinning this one job to `ubuntu-latest` is the other way to buy that (it
     # would start in seconds and could never queue behind the fleet), at roughly
     # one billed hosted minute per run; deliberately not taken.
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    #
+    # Fork PRs go to GitHub-hosted regardless: fork runs must stay off the
+    # fleet entirely, and the fleet's runner group should not serve public-repo
+    # jobs anyway — routing there would queue this gate forever.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
