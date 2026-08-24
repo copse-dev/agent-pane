@@ -177,13 +177,11 @@ jobs:
           sleep 10
           npm run typecheck
       - name: Lint
-        env:
-          # Cap the V8 heap so eslint stays inside the ~6 GB check-runner cgroup
-          # instead of racing other jobs for the whole container.
-          NODE_OPTIONS: --max-old-space-size=3072
         run: |
           # Typecheck just exited; give the cgroup a beat to reclaim before
-          # eslint's peak allocation, then retry a couple of times on 137.
+          # lint starts, then retry a couple of times on 137. The lint script
+          # runs typed projects sequentially so their programs do not share one
+          # V8 heap; a retry is still useful for external cgroup pressure.
           sleep 15
           attempt=1
           while true; do
