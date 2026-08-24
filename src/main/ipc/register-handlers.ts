@@ -236,6 +236,7 @@ import {
   getGitWorkingFileDiff,
   getGithubRepoSlug,
   isInsideGitWorkTree,
+  resetDefaultBranchCache,
 } from '../services/github/git-service.ts'
 import { parseIssueRef, issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
@@ -2124,6 +2125,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getBranches(await resolveWatchedGitRoot(projectId, threadId))
+  })
+  ipcMain.handle('agent:resetDefaultBranchCache', (event) => {
+    assertMainFrameSender(event, win)
+    resetDefaultBranchCache()
   })
   ipcMain.handle('git:getDefaultBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

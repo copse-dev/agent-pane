@@ -132,11 +132,11 @@ describe('first-message checkout transaction', () => {
     assert.equal(getThread().gitBranch, 'main')
   })
 
-  it('bases an automatic worktree on the default branch, not the live checkout', async () => {
+  it('bases an automatic worktree on the branch selected in the blank-thread picker', async () => {
     const allocations: Array<{ baseBranch: string; seedFromDirtyProject: boolean }> = []
     const { prepare } = fixture({
-      // The user's checkout is parked on the previous thread's branch, with
-      // that thread's uncommitted work still in it.
+      // The picker changes the live checkout, so this is the branch the user
+      // sees selected when they send the first message.
       inspect: async () => ({
         isGitRepository: true,
         currentBranch: 'copse/previous-thread',
@@ -165,7 +165,9 @@ describe('first-message checkout transaction', () => {
     })
 
     assert.equal(result.checkoutMode, 'worktree')
-    assert.deepEqual(allocations, [{ baseBranch: 'main', seedFromDirtyProject: false }])
+    assert.deepEqual(allocations, [
+      { baseBranch: 'copse/previous-thread', seedFromDirtyProject: true },
+    ])
   })
 
   it('allocates exactly once under concurrent isolated preparation and reuses metadata', async () => {

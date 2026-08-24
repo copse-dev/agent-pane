@@ -193,6 +193,7 @@ contextBridge.exposeInMainWorld('api', {
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
     ) => ipcRenderer.invoke('agent:previewCheckout', projectId, choice, model),
+    resetDefaultBranchCache: () => ipcRenderer.invoke('agent:resetDefaultBranchCache'),
     estimateContext: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', projectId, threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),

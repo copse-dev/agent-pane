@@ -1550,6 +1550,9 @@ export function mountInputBar(
         // decision remains durable, but their prompt must stay with its composer.
         if (getActiveThreadId() !== id) return
       } catch (error) {
+        // The failure may be a stale cached default branch (fixed git config,
+        // renamed branch); drop the cache so Retry re-reads it.
+        await api.agent.resetDefaultBranchCache().catch(() => undefined)
         checkoutErrorText.textContent = checkoutErrorMessage(error)
         checkoutError.hidden = false
         return

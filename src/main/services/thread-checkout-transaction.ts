@@ -2,6 +2,7 @@ import { realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { Project } from '@shared/types/state.ts'
 import type { Thread } from '@shared/types/thread.ts'
+import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
 import type {
   PreparedThreadCheckout,
   ThreadCheckoutPreview,
@@ -49,6 +50,16 @@ interface CheckoutInspection {
   defaultBranch: string | null
   isDirty: boolean
   hasSubmodules: boolean
+}
+
+/**
+ * The blank-thread branch picker speaks for the live local checkout, so its
+ * selected branch is the worktree base. A remote default is the next useful
+ * choice when there is no local selection, with `main` as the conventional
+ * final fallback.
+ */
+function checkoutBaseBranch(inspection: CheckoutInspection): string {
+  return inspection.currentBranch ?? inspection.defaultBranch ?? DEFAULT_GIT_BRANCH
 }
 
 export interface ThreadCheckoutTransactionDependencies {
@@ -266,15 +277,11 @@ export function createThreadCheckoutTransaction(
         return persistedResult(input.choice, inspection.currentBranch ?? undefined)
       }
 
-      // The base is the repository's default branch, never the branch the
-      // project checkout happens to be sitting on. Cutting from live HEAD meant
-      // a thread started on top of whatever the previous thread had left
-      // checked out, which is precisely the isolation the worktree promises.
-      // `unsupportedReason` already routed an unresolved default branch to
-      // shared (or blocked an explicit choice), so this is a type guard.
-      if (!inspection.defaultBranch)
-        throw new Error('Cannot create a worktree without a resolved default branch')
-      const baseBranch = inspection.defaultBranch
+      // The footer picker changes the local checkout before first send, so its
+      // current selection is authoritative. Allocation separately recognizes
+      // when this is the repository default and then fetches/uses the latest
+      // upstream tip instead of a stale local commit.
+      const baseBranch = checkoutBaseBranch(inspection)
       // A prior allocate may have succeeded while meta persistence failed. Prefer
       // reclaiming that registration over a second allocate that would throw
       // "already registered" and strand the thread.

@@ -425,6 +425,9 @@ export async function allocateThreadWorktree(
     const remoteRef = `refs/remotes/origin/${input.baseBranch}`
     const useRemoteRef = isDefaultBranch && (await refExists(projectRoot, remoteRef))
     const baseRef = useRemoteRef ? remoteRef : branchRef(input.baseBranch)
+    if (!(await refExists(projectRoot, baseRef))) {
+      throw new Error(`Base branch "${input.baseBranch}" does not exist in this repository`)
+    }
     const baseCommit = await requireGitValue(
       projectRoot,
       ['rev-parse', '--verify', `${baseRef}^{commit}`],

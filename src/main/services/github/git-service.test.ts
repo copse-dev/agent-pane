@@ -962,11 +962,43 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
 
   it('uses init.defaultBranch from git config when origin is absent', async () => {
     repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-'))
-    git('init', '-q')
+    git('init', '-q', '-b', 'develop')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'init')
     git('config', 'init.defaultBranch', 'develop')
     restore = setWorkspaceRootForTest(repo)
 
     assert.equal(await getDefaultBranch(), 'develop')
+  })
+
+  it('falls back to main when init.defaultBranch names a missing branch', async () => {
+    // A global `init.defaultBranch` follows the machine, not the repository:
+    // `git branch -M main` renames the branch but leaves the config pointing at
+    // a name this repo never created — the "Cannot resolve base branch trunk"
+    // composer failure.
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-rename-'))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'init')
+    git('config', 'init.defaultBranch', 'trunk')
+    restore = setWorkspaceRootForTest(repo)
+
+    assert.equal(await getDefaultBranch(), 'main')
+  })
+
+  it('does not treat a checked-out feature branch as the repository default', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-feature-'))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'init')
+    git('switch', '-c', 'feature')
+    git('config', 'init.defaultBranch', 'trunk')
+    restore = setWorkspaceRootForTest(repo)
+
+    assert.equal(await getDefaultBranch(), 'main')
   })
 
   it('returns null when no remote or configured default resolves the branch', async () => {
@@ -1008,12 +1040,25 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     try {
       repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-first-'))
       git('init', '-q', '-b', 'main')
+      git('config', 'user.email', 'test@example.com')
+      git('config', 'user.name', 'Test')
+      git('commit', '--allow-empty', '-m', 'init')
+      git('branch', 'develop')
       git('config', 'init.defaultBranch', 'develop')
       restore = setWorkspaceRootForTest(repo)
       assert.equal(await getDefaultBranch(), 'develop')
 
-      spawnSync('git', ['init', '-q'], { cwd: other, encoding: 'utf8' })
-      spawnSync('git', ['config', 'init.defaultBranch', 'trunk'], { cwd: other, encoding: 'utf8' })
+      spawnSync('git', ['init', '-q', '-b', 'trunk'], { cwd: other, encoding: 'utf8' })
+      spawnSync('git', ['-C', other, 'config', 'user.email', 'test@example.com'], {
+        encoding: 'utf8',
+      })
+      spawnSync('git', ['-C', other, 'config', 'user.name', 'Test'], { encoding: 'utf8' })
+      spawnSync('git', ['-C', other, 'commit', '--allow-empty', '-m', 'init'], {
+        encoding: 'utf8',
+      })
+      spawnSync('git', ['-C', other, 'config', 'init.defaultBranch', 'trunk'], {
+        encoding: 'utf8',
+      })
       assert.equal(await getDefaultBranch(other), 'trunk')
     } finally {
       await rm(other, { recursive: true, force: true })

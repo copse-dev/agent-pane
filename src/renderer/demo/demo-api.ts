@@ -350,6 +350,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       prepareCheckout: (_projectId: string, _threadId: string, _prompt: string, choice) =>
         resolved({ checkoutMode: 'shared' as const, choice, branch: currentBranch }),
       previewCheckout: () => resolved({ checkoutMode: 'shared' as const }),
+      resetDefaultBranchCache: () => resolvedVoid(),
       estimateContext: (_projectId: string, _threadId: string, payload: string) =>
         resolved({
           segments: [
