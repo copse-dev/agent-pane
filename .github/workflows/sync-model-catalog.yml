@@ -37,11 +37,6 @@ jobs:
       # entry has data. If LiteLLM ever drops or renames a tracked id, this
       # step fails and the PR is never opened — exactly the fail-fast we want.
       - name: Validate
-        env:
-          # Match the normal CI lint guard. ESLint's default ~2 GB V8 heap can
-          # OOM here even when the tiny generated catalog is valid; the check
-          # fleet leaves enough room for a 3 GB heap inside its ~6 GB cgroup.
-          NODE_OPTIONS: --max-old-space-size=3072
         run: npm run check
 
       # Short-lived installation token from the copse-release-bot App, in place
