@@ -19,6 +19,7 @@ import {
   allocateThreadWorktree,
   expectedThreadWorktreePath,
   listProjectWorktrees,
+  readThreadWorktreeRecoveryMetadata,
   retireThreadWorktree,
   validateThreadWorktree,
 } from './worktree-manager.ts'
@@ -88,7 +89,6 @@ export interface ThreadCheckoutTransactionDependencies {
     projectId: string
     threadId: string
     projectRoot: string
-    baseBranch: string
   }) => Promise<ThreadWorktree | null>
   validate: (input: {
     projectId: string
@@ -153,7 +153,6 @@ async function recoverUnpersistedWorktree(input: {
   projectId: string
   threadId: string
   projectRoot: string
-  baseBranch: string
 }): Promise<ThreadWorktree | null> {
   const target = expectedThreadWorktreePath(input.projectId, input.threadId)
   const records = await listProjectWorktrees(input.projectRoot)
@@ -161,15 +160,12 @@ async function recoverUnpersistedWorktree(input: {
   if (!existing?.branch || !existing.head) return null
   const canonicalPath = await realpath(existing.path).catch(() => null)
   if (!canonicalPath) return null
+  const metadata = await readThreadWorktreeRecoveryMetadata(input.projectRoot, existing.branch)
+  if (!metadata) return null
   return {
     path: canonicalPath,
     branch: existing.branch,
-    baseBranch: input.baseBranch,
-    baseCommit: existing.head,
-    createdAt: Date.now(),
-    // Conservative: a reclaim path is only needed when retirement was refused
-    // (dirty seed / dirty worktree). Marking true preserves that retention.
-    seededFromDirtyProject: true,
+    ...metadata,
   }
 }
 
@@ -289,7 +285,6 @@ export function createThreadCheckoutTransaction(
         projectId: input.projectId,
         threadId: input.threadId,
         projectRoot: project.path,
-        baseBranch,
       })
       const worktree =
         recovered ??

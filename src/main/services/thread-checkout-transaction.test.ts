@@ -261,7 +261,7 @@ describe('first-message checkout transaction', () => {
     assert.equal(patches[0]?.gitBranch, 'feat/live')
   })
 
-  it('reclaims an unpersisted dirty worktree when meta write failed earlier', async () => {
+  it('reclaims the original allocation metadata after the project branch changed', async () => {
     const recovered: ThreadWorktree = {
       path: '/worktrees/thread-1',
       branch: 'copse/task-thread1',
@@ -275,7 +275,7 @@ describe('first-message checkout transaction', () => {
     const { prepare, getThread } = fixture({
       inspect: async () => ({
         isGitRepository: true,
-        currentBranch: 'main',
+        currentBranch: 'feature/switched-after-failure',
         defaultBranch: 'main',
         isDirty: true,
         hasSubmodules: false,
@@ -302,6 +302,8 @@ describe('first-message checkout transaction', () => {
     assert.equal(retireCalls, 0)
     assert.equal(result.checkoutMode, 'worktree')
     assert.deepEqual(result.worktree, recovered)
+    assert.equal(result.worktree.baseBranch, 'main')
+    assert.equal(result.worktree.baseCommit, 'b'.repeat(40))
     assert.equal(getThread().worktreeChoice, 'worktree')
     assert.equal(getThread().gitBranch, recovered.branch)
     assert.deepEqual(getThread().worktree, recovered)
