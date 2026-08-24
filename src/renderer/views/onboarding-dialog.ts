@@ -1,9 +1,10 @@
-// First-run setup: one screen that scans the machine (API keys in the
-// environment, local model servers, installed ACP agents) as soon as it opens,
-// shows what it found as a pre-checked list, and imports whatever stays ticked
-// on Finish. When the scan finds no usable model source, the Settings providers
-// panel mounts in its place so the user can set one up by hand. Dismissing in
-// any form (Skip, ✕, Esc) marks onboarding complete — it never nags twice.
+// First-run setup: one screen that scans non-sensitive machine state (local
+// model servers and installed ACP agents) as soon as it opens. Reading API keys
+// from the environment or shell startup files requires an explicit click; any
+// findings then join the same pre-checked list and import on Finish. When no
+// usable model source is found, the Settings providers panel mounts in place so
+// the user can set one up by hand. Dismissing in any form (Skip, ✕, Esc) marks
+// onboarding complete — it never nags twice.
 
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -59,11 +60,24 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
       </header>
 
       <p class="onboarding-tagline">
-        Copse looks for models you already have — API keys, local model servers, and
-        coding agents on this machine — and sets them up for you.
+        Copse looks for local model servers and coding agents already on this machine,
+        and can import provider API keys when you ask it to.
       </p>
 
       <div class="onboarding-body">
+        <fieldset class="onboarding-env-scan">
+          <legend>API keys in your environment</legend>
+          <p class="field-hint">
+            Copse can check your exported environment and shell startup files for provider
+            keys. Nothing is read until you choose Scan environment.
+          </p>
+          <div class="env-key-actions">
+            <button type="button" class="ui-btn ui-btn-secondary" id="onboarding-scan-env">
+              Scan environment
+            </button>
+            <span class="key-status" id="onboarding-env-status" role="status"></span>
+          </div>
+        </fieldset>
         <section id="onboarding-scan-panel">
           <fieldset>
             <legend>Found on this machine</legend>
@@ -93,10 +107,13 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
   const statusEl = qsRequired(overlay, '.onboarding-scan-status')
   const resultsEl = qsRequired(overlay, '.onboarding-scan-results')
   const finishBtn = qsRequired<HTMLButtonElement>(overlay, '#onboarding-finish')
+  const envScanBtn = qsRequired<HTMLButtonElement>(overlay, '#onboarding-scan-env')
+  const envStatusEl = qsRequired(overlay, '#onboarding-env-status')
 
   let mode: 'scan' | 'fallback' = 'scan'
   let findings: ScanFindings | null = null
   let scanning = false
+  let scanPromise: Promise<void> | null = null
   // Set by the finish path so the close listener doesn't double-write; every
   // other way out (Skip, ✕, Esc) is a dismissal that still completes onboarding.
   let completed = false
@@ -266,6 +283,49 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
+  async function scanEnvironment(): Promise<void> {
+    envScanBtn.disabled = true
+    finishBtn.disabled = true
+    envStatusEl.className = 'key-status'
+    envStatusEl.textContent = 'Scanning…'
+    try {
+      // Let the automatic, non-sensitive probes settle first so their findings
+      // cannot overwrite the key rows this explicit scan is about to add.
+      await scanPromise
+      // The click is the opt-in. Persist it before invoking the main-process
+      // scan, which independently enforces the same consent gate.
+      await api.settings.set('envKeyAutoDetectEnabled', true)
+      const envKeys = await api.settings.scanEnvKeys()
+      const current = findings ?? {
+        envKeys: [],
+        localServers: [],
+        acpAgents: [],
+        lmStudio: null,
+        errors: [],
+      }
+      findings = { ...current, envKeys }
+      const importable = envKeys.filter((key) => !key.alreadyConfigured)
+      if (importable.length > 0 && mode === 'fallback') {
+        mode = 'scan'
+        fallbackPanel.hidden = true
+        scanPanel.hidden = false
+        finishBtn.textContent = 'Use these & finish'
+      }
+      if (mode === 'scan') renderChecklist(findings)
+      envStatusEl.className = `key-status${importable.length > 0 ? ' ok' : ''}`
+      envStatusEl.textContent =
+        importable.length > 0
+          ? `Found ${String(importable.length)} key${importable.length === 1 ? '' : 's'}.`
+          : 'No new provider keys found.'
+    } catch (err) {
+      envStatusEl.className = 'key-status err'
+      envStatusEl.textContent = err instanceof Error ? err.message : 'Environment scan failed'
+    } finally {
+      envScanBtn.disabled = false
+      finishBtn.disabled = false
+    }
+  }
+
   async function writeDefaultsAndComplete(defaults: OnboardingDefaults): Promise<void> {
     for (const [key, value] of Object.entries(defaults)) {
       await api.settings.set(key, value)
@@ -318,6 +378,9 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
   finishBtn.addEventListener('click', () => {
     void finishSetup()
   })
+  envScanBtn.addEventListener('click', () => {
+    void scanEnvironment()
+  })
   qsRequired(overlay, '#onboarding-skip').addEventListener('click', () => {
     dialogShell.close()
   })
@@ -339,12 +402,16 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     scanPanel.hidden = false
     mode = 'scan'
     findings = null
+    scanPromise = null
+    envScanBtn.disabled = false
+    envStatusEl.textContent = ''
+    envStatusEl.className = 'key-status'
   })
 
   overlay.addEventListener('onboarding-open', () => {
     finishBtn.textContent = 'Use these & finish'
     finishBtn.disabled = true
     clear(resultsEl)
-    void runScan()
+    scanPromise = runScan()
   })
 }

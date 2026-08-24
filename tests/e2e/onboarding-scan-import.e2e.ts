@@ -1,11 +1,9 @@
 import { createServer, type Server } from 'node:http'
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { readSeededSettings, resetUserData, seedOnboardingFixture } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 // The happy path with real detections, made deterministic by injecting them:
 // two provider keys through the electron-shell env file (bootstrap.cjs applies
@@ -50,7 +48,6 @@ describe('onboarding: scan finds keys and local servers', () => {
 
   before(async function () {
     this.timeout(120_000)
-    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     // Jan's preset probe URL is fixed (http://127.0.0.1:1337/v1), so the fixture
     // must own the real port; LM Studio's probe honours localServerUrl, so its
     // fixture takes any free port.
@@ -77,6 +74,15 @@ describe('onboarding: scan finds keys and local servers', () => {
     const overlay = await $('#onboarding-dialog')
     await overlay.waitForDisplayed({ timeout: 30_000 })
 
+    // Automatic onboarding may inspect local services, but shell startup files
+    // stay untouched until this explicit choice records consent.
+    expect(readSeededSettings()['envKeyAutoDetectEnabled']).toBeUndefined()
+    await overlay.$('#onboarding-scan-env').click()
+    await browser.waitUntil(async () => readSeededSettings()['envKeyAutoDetectEnabled'] === true, {
+      timeout: 15_000,
+      timeoutMsg: 'environment scan consent was not persisted',
+    })
+
     const row = (kind: string, id: string): string =>
       `.detected-item-row[data-kind="${kind}"][data-id="${id}"]`
     await overlay.$(row('env-key', 'anthropic')).waitForDisplayed({ timeout: 30_000 })
@@ -96,8 +102,7 @@ describe('onboarding: scan finds keys and local servers', () => {
     expect(await lmRow.getText()).toContain('used automatically')
     expect(await lmRow.$$('input').length).toBe(0)
 
-    await prepareE2eScreenshot()
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'onboarding-scan-results.png'))
+    await saveAppScreenshot('onboarding-scan-results.png')
   })
 
   it('finish imports what stayed ticked and writes relative-selector defaults', async function () {

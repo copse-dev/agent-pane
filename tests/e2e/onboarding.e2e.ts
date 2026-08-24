@@ -1,18 +1,14 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { readSeededSettings, resetUserData, seedOnboardingFixture } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
-// First-run with nothing detected: CI blanks every provider env var
-// (wdio.conf.ts beforeSession) and runs no local model servers, so the scan
-// finds nothing usable and onboarding swaps in the providers fallback panel.
-// A developer machine with keys in ~/.zshrc or a live local server lands in
-// checklist mode instead — the spec detects that and skips (the scan-import
-// spec covers the checklist path deterministically by injecting detections).
+// First-run with nothing detected: the automatic scan only checks local model
+// servers and agents, so shell keys cannot make this host-dependent. A developer
+// machine with a live local server lands in checklist mode instead; the spec
+// detects that and skips. The scan-import spec covers both the explicit
+// environment-key choice and checklist path with deterministic detections.
 describe('onboarding: nothing detected → providers fallback', () => {
   before(async () => {
-    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     seedOnboardingFixture()
     await browser.reloadSession()
   })
@@ -49,16 +45,14 @@ describe('onboarding: nothing detected → providers fallback', () => {
       () => document.querySelector<HTMLElement>('#onboarding-fallback-panel')?.hidden === false,
     )
     if (!fallbackShown) {
-      // Real keys/servers on this machine put onboarding in checklist mode; the
-      // fallback path is CI-deterministic only.
+      // A real local server on this machine put onboarding in checklist mode.
       this.skip()
       return
     }
 
     const chips = overlay.$('#onboarding-fallback-panel .provider-chips')
     await chips.waitForDisplayed({ timeout: 15_000 })
-    await prepareE2eScreenshot()
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'onboarding-fallback-providers.png'))
+    await saveAppScreenshot('onboarding-fallback-providers.png')
 
     // Enter an Anthropic key by hand — the same form Settings → General shows.
     await overlay.$('.provider-chip[data-provider="anthropic"]').click()

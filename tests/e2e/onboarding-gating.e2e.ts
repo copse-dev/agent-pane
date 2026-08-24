@@ -24,6 +24,19 @@ describe('onboarding gating', () => {
     ).toBe(true)
   })
 
+  it('refuses an environment-key scan before the user opts in', async () => {
+    const result = await browser.execute(async () => {
+      try {
+        await window.api.settings.scanEnvKeys()
+        return 'unexpectedly allowed'
+      } catch (err) {
+        return err instanceof Error ? err.message : String(err)
+      }
+    })
+    expect(result).toContain('Environment key detection has not been enabled')
+    expect(readSeededSettings()['envKeyAutoDetectEnabled']).toBeUndefined()
+  })
+
   it('skip completes onboarding and leaves the welcome screen fully usable', async function () {
     this.timeout(60_000)
     await $('#onboarding-skip').click()

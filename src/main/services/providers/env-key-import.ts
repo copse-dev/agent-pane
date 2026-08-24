@@ -26,6 +26,14 @@ export interface EnvKeyImportResult {
   skipped: { provider: string; reason: string }[]
 }
 
+/** Enforce the consent gate shared by masked scans and raw-value imports. */
+export function assertEnvKeyDetectionConsent(
+  consentGranted: () => boolean = (): boolean =>
+    getSetting<boolean>('envKeyAutoDetectEnabled', false),
+): void {
+  if (!consentGranted()) throw new EnvKeyImportConsentError()
+}
+
 /**
  * Import every detected environment key whose provider isn't configured yet.
  * With `opts.providers`, only those slugs are considered — detections outside
@@ -45,7 +53,7 @@ export function importDetectedEnvKeys(
   const consentGranted =
     deps.consentGranted ?? ((): boolean => getSetting<boolean>('envKeyAutoDetectEnabled', false))
 
-  if (!consentGranted()) throw new EnvKeyImportConsentError()
+  assertEnvKeyDetectionConsent(consentGranted)
 
   const allowed = opts.providers ? new Set(opts.providers) : null
   const imported: { provider: string; source: string }[] = []

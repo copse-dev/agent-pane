@@ -131,20 +131,37 @@ describe('onboarding dialog', () => {
     mount()
   })
 
-  it('is a native <dialog> that opens modally and scans with zero clicks', async () => {
+  it('opens modally and auto-scans without reading shell files', async () => {
     assert.equal(dialog.tagName, 'DIALOG')
     assert.equal(isOnboardingDialogOpen(), false)
     assert.equal(state.scanCalls, 0)
     await open()
     assert.equal(isOnboardingDialogOpen(), true)
     assert.equal(dialog.open, true)
+    assert.equal(state.scanCalls, 0)
+    assert.equal(state.settings['envKeyAutoDetectEnabled'], undefined)
+  })
+
+  it('records consent before an explicitly requested environment scan', async () => {
+    state.envKeys = [envKey('anthropic')]
+    state.lmRunning = true
+    await open()
+
+    qsRequired<HTMLButtonElement>(dialog, '#onboarding-scan-env').click()
+    await flush()
+
     assert.equal(state.scanCalls, 1)
+    assert.equal(state.settings['envKeyAutoDetectEnabled'], true)
+    assert.ok(state.ops.includes('set:envKeyAutoDetectEnabled'))
+    assert.equal(rows('env-key').length, 1)
   })
 
   it('renders findings as grouped rows, pre-checked unless already configured', async () => {
     state.envKeys = [envKey('anthropic'), envKey('openai', true)]
     state.lmRunning = true
     await open()
+    qsRequired<HTMLButtonElement>(dialog, '#onboarding-scan-env').click()
+    await flush()
 
     const anthropic = rows('env-key').find((row) => row.dataset['id'] === 'anthropic')
     const openai = rows('env-key').find((row) => row.dataset['id'] === 'openai')
@@ -167,6 +184,8 @@ describe('onboarding dialog', () => {
   it('finish imports only what stayed ticked', async () => {
     state.envKeys = [envKey('anthropic'), envKey('mistral')]
     await open()
+    qsRequired<HTMLButtonElement>(dialog, '#onboarding-scan-env').click()
+    await flush()
 
     const mistralBox = rows('env-key')
       .find((row) => row.dataset['id'] === 'mistral')
@@ -182,7 +201,6 @@ describe('onboarding dialog', () => {
   })
 
   it('finish writes relative-selector defaults, completes, and closes', async () => {
-    state.envKeys = [envKey('anthropic')]
     let settingsChanged = 0
     store.on('settings_changed', () => {
       settingsChanged += 1
@@ -199,13 +217,16 @@ describe('onboarding dialog', () => {
     assert.equal(dialog.open, false)
   })
 
-  it('a failed probe still renders the rest and finish stays available', async () => {
+  it('a failed explicit environment scan leaves automatic findings usable', async () => {
     state.envScanFails = true
     state.lmRunning = true
     await open()
+    qsRequired<HTMLButtonElement>(dialog, '#onboarding-scan-env').click()
+    await flush()
 
     assert.ok(rows('local-server').length > 0)
-    assert.match(qsRequired(dialog, '.onboarding-scan-status').textContent, /Some checks failed/)
+    assert.match(qsRequired(dialog, '#onboarding-env-status').textContent, /scan failed/)
+    assert.equal(state.settings['envKeyAutoDetectEnabled'], true)
     assert.equal(qsRequired<HTMLButtonElement>(dialog, '#onboarding-finish').disabled, false)
   })
 
@@ -264,12 +285,13 @@ describe('onboarding dialog', () => {
     })
   }
 
-  it('re-dispatching open while visible does not duplicate rows', async () => {
-    state.envKeys = [envKey('anthropic')]
+  it('re-dispatching open while visible does not duplicate automatic rows or scan shell files', async () => {
+    state.lmRunning = true
     await open()
     dialog.dispatchEvent(new Event('onboarding-open'))
     await flush()
-    assert.equal(rows('env-key').length, 1)
+    assert.equal(rows('local-server').filter((row) => row.dataset['id'] === 'lmstudio').length, 1)
+    assert.equal(state.scanCalls, 0)
   })
 })
 

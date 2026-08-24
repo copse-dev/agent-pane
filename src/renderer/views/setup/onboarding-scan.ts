@@ -1,8 +1,8 @@
-// The onboarding environment scan: one read-only sweep over everything Copse
-// can detect on this machine (API keys in the environment, local model servers,
-// LM Studio, installed ACP agents), plus the import step that acts on whatever
-// the user left ticked. Kept apart from the dialog so probe aggregation, the
-// consent-before-import ordering, and the derived defaults are unit-testable.
+// The onboarding machine scan: one automatic read-only sweep over local model
+// servers, LM Studio and installed ACP agents, plus the import step that acts on
+// whatever the user left ticked. Environment and shell-file API keys are added
+// separately after explicit consent in the dialog. Kept apart so probe
+// aggregation, consent-before-import ordering and defaults are unit-testable.
 
 import type { ApiClient, DetectedEnvKey, DetectedAcpAgent } from '../../../preload/api.d.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
@@ -20,7 +20,7 @@ import {
 } from './local-detection.ts'
 import { knownToConfig, upsertAgent } from './acp-agents-section.ts'
 
-export type ScanProbe = 'env-keys' | 'local-servers' | 'acp-agents' | 'lm-studio'
+export type ScanProbe = 'local-servers' | 'acp-agents' | 'lm-studio'
 
 export interface LmStudioFinding {
   installed: boolean
@@ -57,13 +57,13 @@ function message(err: unknown): string {
 }
 
 /**
- * Run every probe concurrently; a failed probe contributes an `errors` entry
- * and an empty result rather than sinking the scan. Read-only throughout — no
- * consent flags are written and nothing is imported.
+ * Run every non-sensitive probe concurrently; a failed probe contributes an
+ * `errors` entry and an empty result rather than sinking the scan. Shell startup
+ * files are deliberately excluded: the onboarding dialog only calls
+ * `settings.scanEnvKeys()` after the user explicitly chooses that scan.
  */
 export async function runOnboardingScan(api: ApiClient): Promise<ScanFindings> {
-  const [envKeys, localServers, acpAgents, lmStudio] = await Promise.allSettled([
-    api.settings.scanEnvKeys(),
+  const [localServers, acpAgents, lmStudio] = await Promise.allSettled([
     detectLocalServers(api),
     api.acp.detectAgents(),
     api.lmStudio.detect(),
@@ -80,7 +80,7 @@ export async function runOnboardingScan(api: ApiClient): Promise<ScanFindings> {
     null as Awaited<ReturnType<ApiClient['lmStudio']['detect']>> | null,
   )
   return {
-    envKeys: take(envKeys, 'env-keys', []),
+    envKeys: [],
     // LM Studio has its own detect above; the fixed-URL probe row would be a
     // duplicate (and importDetectedPreset skips it anyway).
     localServers: take(localServers, 'local-servers', [] as LocalServerResult[]).filter(

@@ -613,7 +613,8 @@ export interface ApiClient {
     /**
      * Scan `process.env` and well-known shell start-up files for provider API
      * keys the user already has. Returns masked previews only — raw secrets never
-     * cross IPC. Requires no consent (read-only preview); importing does.
+     * cross IPC. Gated on `envKeyAutoDetectEnabled`; the UI records consent only
+     * after the user explicitly chooses the scan.
      */
     scanEnvKeys: () => Promise<DetectedEnvKey[]>
     /**

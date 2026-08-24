@@ -75,6 +75,7 @@ import {
 import { createElectronUserAlertSender } from '../services/user-alerts-electron.ts'
 import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
 import {
+  assertEnvKeyDetectionConsent,
   importDetectedEnvKeys,
   EnvKeyImportConsentError,
 } from '../services/providers/env-key-import.ts'
@@ -1316,10 +1317,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Opt-in environment scan: look for provider API keys the user already has
   // exported (process.env + well-known shell files) and offer to import them.
   // Raw secrets stay in the main process — the renderer only sees the masked
-  // preview. Both handlers re-scan on each call; the import handler is gated on
-  // the persisted consent flag set when the user approves the scan.
+  // preview. Both handlers re-scan on each call and both are gated on the
+  // persisted consent flag set when the user approves the scan.
   ipcMain.handle('settings:scanEnvKeys', (event) => {
     assertMainFrameSender(event, win)
+    try {
+      assertEnvKeyDetectionConsent()
+    } catch (err) {
+      if (err instanceof EnvKeyImportConsentError) throw new IpcValidationError(err.message)
+      throw err
+    }
     return scanEnvForKeys().map((d) => ({
       provider: d.provider,
       envVar: d.envVar,

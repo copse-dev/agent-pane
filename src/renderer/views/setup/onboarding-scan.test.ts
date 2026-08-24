@@ -68,6 +68,7 @@ interface StubState {
   agents: DetectedAcpAgent[]
   lmDetect: { serverRunning: boolean; installDetected: boolean; models: string[] }
   autoSetupCalls: number
+  envScanCalls: number
   importedProviders: string[][]
 }
 
@@ -81,6 +82,7 @@ function makeState(): StubState {
     agents: [],
     lmDetect: { serverRunning: false, installDetected: false, models: [] },
     autoSetupCalls: 0,
+    envScanCalls: 0,
     importedProviders: [],
   }
 }
@@ -97,7 +99,10 @@ function stubApi(state: StubState): ApiClient {
         state.ops.push(`set:${key}`)
         state.settings[key] = value
       },
-      scanEnvKeys: async (): Promise<DetectedEnvKey[]> => state.envKeys,
+      scanEnvKeys: async (): Promise<DetectedEnvKey[]> => {
+        state.envScanCalls += 1
+        return state.envKeys
+      },
       importEnvKeys: async (
         providers?: string[],
       ): Promise<{
@@ -172,7 +177,7 @@ describe('runOnboardingScan', () => {
     state = makeState()
   })
 
-  it('aggregates all four probes into one findings object', async () => {
+  it('aggregates the automatic machine probes without reading environment keys', async () => {
     state.envKeys = [envKey('anthropic')]
     state.servers = { jan: ['jan-model'] }
     state.agents = [acpAgent('claude-code')]
@@ -180,10 +185,8 @@ describe('runOnboardingScan', () => {
 
     const findings = await runOnboardingScan(stubApi(state))
     assert.deepEqual(findings.errors, [])
-    assert.deepEqual(
-      findings.envKeys.map((key) => key.provider),
-      ['anthropic'],
-    )
+    assert.deepEqual(findings.envKeys, [])
+    assert.equal(state.envScanCalls, 0)
     const jan = findings.localServers.find((server) => server.id === 'jan')
     assert.ok(jan?.reachable)
     assert.deepEqual(jan.models, ['jan-model'])
@@ -213,20 +216,18 @@ describe('runOnboardingScan', () => {
     const findings = await runOnboardingScan(api)
     assert.deepEqual(findings.errors, [{ probe: 'acp-agents', message: 'acp exploded' }])
     assert.equal(findings.acpAgents.length, 0)
-    assert.deepEqual(
-      findings.envKeys.map((key) => key.provider),
-      ['anthropic'],
-    )
+    assert.deepEqual(findings.envKeys, [])
+    assert.equal(state.envScanCalls, 0)
   })
 
-  it('a rejected env-key scan still leaves servers and agents intact', async () => {
+  it('never invokes an environment-key scan during the automatic sweep', async () => {
     state.servers = { ollama: ['llama'] }
     const api = stubApi(state)
     api.settings.scanEnvKeys = async (): Promise<DetectedEnvKey[]> => {
       throw new Error('scan failed')
     }
     const findings = await runOnboardingScan(api)
-    assert.deepEqual(findings.errors, [{ probe: 'env-keys', message: 'scan failed' }])
+    assert.deepEqual(findings.errors, [])
     assert.ok(findings.localServers.find((server) => server.id === 'ollama')?.reachable)
   })
 })

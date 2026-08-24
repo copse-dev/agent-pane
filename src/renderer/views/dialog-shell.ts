@@ -7,7 +7,7 @@
  * the dialog's native `close` event, which is where consumers do their cleanup.
  *
  * Dialogs built through this helper are also covered by the global
- * `dialog { -webkit-app-region: no-drag; }` rule (layout.css), so their
+ * `dialog { -webkit-app-region: no-drag; }` rule (forms.css), so their
  * controls can never be swallowed by a titlebar/window drag region behind
  * them (issue #1914).
  */
