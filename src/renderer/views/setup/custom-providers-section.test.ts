@@ -71,16 +71,18 @@ describe('custom providers: Test key', () => {
     assert.match(status(), /Key looks valid/)
   })
 
-  it('still refuses when nothing is typed and nothing is stored', async () => {
+  it('lets the main process distinguish an environment key from no configured key', async () => {
     const calls: [string, string][] = []
-    const section = createCustomProvidersSection(stubApi([], calls))
+    const section = createCustomProvidersSection(
+      stubApi([], calls, { ok: false, error: 'No key configured for this provider' }),
+    )
     await section.refresh()
 
     const { test, status } = keyRow(section.root)
     await click(test)
 
-    assert.deepEqual(calls, [], 'nothing to test')
-    assert.match(status(), /Enter a key first/)
+    assert.deepEqual(calls, [['openai', '']])
+    assert.match(status(), /No key configured for this provider/)
   })
 
   it('prefers a typed key over the saved one', async () => {
@@ -99,13 +101,13 @@ describe('custom providers: Test key', () => {
   it('surfaces the reason a saved key fails', async () => {
     const calls: [string, string][] = []
     const section = createCustomProvidersSection(
-      stubApi(['openai'], calls, { ok: false, error: 'No key stored for this provider' }),
+      stubApi(['openai'], calls, { ok: false, error: 'Key rejected by OpenAI' }),
     )
     await section.refresh()
 
     const { test, status } = keyRow(section.root)
     await click(test)
 
-    assert.match(status(), /No key stored for this provider/)
+    assert.match(status(), /Key rejected by OpenAI/)
   })
 })

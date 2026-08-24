@@ -1309,7 +1309,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // contract): resolve it here so the stored secret never crosses to the
     // renderer just to be handed straight back.
     const candidate = apiKey.trim() ? apiKey : (resolveApiKey(p) ?? '')
-    if (!candidate) return { ok: false, error: 'No key stored for this provider' }
+    if (!candidate) return { ok: false, error: 'No key configured for this provider' }
     const result = await validateApiKey(p, candidate)
     recordProviderKeyValidation(p, result.ok)
     return result

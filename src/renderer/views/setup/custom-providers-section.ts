@@ -440,17 +440,13 @@ export function createCustomProvidersSection(
     const test = el('button', { type: 'button', class: 'ui-btn ui-btn-secondary' }, 'Test key')
     test.addEventListener('click', () => {
       void (async (): Promise<void> => {
-        // The field is write-only — a saved key is never read back into it — so
-        // an empty box with a key on file means "test the saved one", which the
-        // main process resolves. Only a provider with nothing stored has
-        // nothing to test.
+        // The field is write-only — a saved or environment key is never read
+        // back into it. Delegate an empty box to the main process, which can
+        // resolve either source without exposing the secret to the renderer.
+        // This also avoids making the renderer's stored-key snapshot the
+        // authority for whether an environment key exists.
         const key = input.value.trim()
-        if (!key && !configured.has(slug)) {
-          setInlineStatus(status, 'error', 'Enter a key first')
-          status.className = 'key-status err'
-          return
-        }
-        setInlineStatus(status, 'pending', key ? 'Testing…' : 'Testing saved key…')
+        setInlineStatus(status, 'pending', key ? 'Testing…' : 'Testing configured key…')
         status.className = 'key-status'
         try {
           const res = await api.settings.validateKey(slug, key)
