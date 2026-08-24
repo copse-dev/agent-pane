@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto'
+import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
+import { isLocalModel } from '@copse/llm/estimate-cost.ts'
+import { contextOverflowAdvice, isContextOverflowMessage } from '@shared/context-window-advice.ts'
+import { errorMessage } from '@shared/errors.ts'
 import { resolveIssueRef } from '@shared/git/issue-ref.ts'
 import { parseReviewVerdict, type RoadmapReviewVerdict } from '@shared/roadmap/review.ts'
 import type { GhIssueSummary } from '@shared/types/git.ts'
+import type { LLMProvider, ModelUsage } from '@shared/types'
 import {
   resolveSmallTasksProvider,
   resolveSmallTasksModelId,
 } from './providers/small-tasks-provider.ts'
+import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import {
@@ -43,6 +49,40 @@ const DEEP_REVIEW_TIMEOUT_MS = 60_000
 const BULK_COMMIT_MAX = 80
 const DEEP_COMMIT_MAX = 200
 const LINKED_ISSUE_LIMIT = 8
+
+/** Characters of each evidence section the prompt carries, before any trimming. */
+export interface ReviewSectionChars {
+  prompt: number
+  notes: number
+  issue: number
+  commits: number
+}
+
+/** What each section is worth when the model has room for the whole prompt. */
+const SECTION_CEILINGS: Readonly<Record<RoadmapReviewDepth, ReviewSectionChars>> = {
+  bulk: { prompt: 4000, notes: 1000, issue: 2000, commits: 6000 },
+  deep: { prompt: 4000, notes: 1000, issue: 2000, commits: 12_000 },
+}
+
+/**
+ * Share of the model's context window the evidence may fill. The rest covers the
+ * verdict the model writes back, the fixed instructions, and the slack the
+ * ~4 chars/token estimate needs on hash-heavy commit lines.
+ */
+const REVIEW_PROMPT_CONTEXT_RATIO = 0.7
+
+/** Commit history below this is not worth sending; other sections shrink instead. */
+const MIN_COMMIT_CHARS = 800
+
+/**
+ * The context size to retry at when the model rejects the prompt anyway. LM
+ * Studio's OpenAI `/models` reports a model's catalog maximum, which can be far
+ * larger than the length it was actually loaded with — 4K is its usual default.
+ */
+const FALLBACK_CONTEXT_WINDOW = 4096
+
+/** Where the model used for reviews is chosen, named in the failure advice. */
+const SMALL_TASKS_SETTINGS_PATH = 'Settings → General → Models → Small tasks'
 
 export interface RoadmapReviewPrepareResult {
   /** Id for this bulk pass — stamped on each item and returned on acknowledge. */
@@ -114,12 +154,51 @@ function formatReviewDetail(text: string, depth: RoadmapReviewDepth): string {
   return lines.join(' · ').slice(0, maxLen)
 }
 
+/**
+ * Trim each evidence section to what the reviewing model can actually read.
+ *
+ * The full deep prompt is ~19K characters — comfortably over a local model
+ * loaded with 4K tokens of context, which is LM Studio's default and the size
+ * the small-tasks model usually runs at. Sending it anyway is not a slow path
+ * but a hard failure: the engine rejects the request outright ("context size has
+ * been exceeded") and the item gets no verdict at all.
+ *
+ * The commit log shrinks first — it is the largest section and the most
+ * repetitive — and only once it is down to {@link MIN_COMMIT_CHARS} does the
+ * item's own prompt start giving up characters, since that is what the verdict
+ * is about.
+ */
+export function reviewSectionChars(
+  contextWindow: number,
+  depth: RoadmapReviewDepth,
+): ReviewSectionChars {
+  const ceilings = SECTION_CEILINGS[depth]
+  const total = ceilings.prompt + ceilings.notes + ceilings.issue + ceilings.commits
+  const budget = Math.max(
+    MIN_COMMIT_CHARS,
+    Math.floor(contextWindow * REVIEW_PROMPT_CONTEXT_RATIO * CHARS_PER_TOKEN),
+  )
+  if (budget >= total) return ceilings
+  const fixed = ceilings.prompt + ceilings.notes + ceilings.issue
+  if (budget - fixed >= MIN_COMMIT_CHARS) return { ...ceilings, commits: budget - fixed }
+  // Too small even for the item alone: keep every section's share of what fits
+  // so the model still sees a prompt, an issue, and some history.
+  const scale = budget / total
+  return {
+    prompt: Math.floor(ceilings.prompt * scale),
+    notes: Math.floor(ceilings.notes * scale),
+    issue: Math.floor(ceilings.issue * scale),
+    commits: Math.floor(ceilings.commits * scale),
+  }
+}
+
 function reviewPrompt(
   note: { body: string; status: string | null; fields: Record<string, string> },
   pinned: GhIssueSummary | null,
   linked: RoadmapReviewIssueEvidence[],
   commits: string,
   depth: RoadmapReviewDepth,
+  sections: ReviewSectionChars,
 ): string {
   const notesField = note.fields['notes'] ?? ''
   const commitLabel =
@@ -137,14 +216,69 @@ function reviewPrompt(
     'likely, partial, or open. Then up to six short bullet points explaining your ' +
     'reasoning and what to verify. Judge only from the evidence given.\n\n' +
     `ROADMAP STATUS: ${note.status ?? 'ready'}\n` +
-    `PROMPT:\n${note.body.slice(0, 4000)}\n` +
-    (notesField ? `\nNOTES:\n${notesField.slice(0, 1000)}\n` : '') +
+    `PROMPT:\n${note.body.slice(0, sections.prompt)}\n` +
+    (notesField ? `\nNOTES:\n${notesField.slice(0, sections.notes)}\n` : '') +
     (pinned
-      ? `\nPINNED ISSUE #${String(pinned.number)} [${issueState(pinned)}]: ${pinned.title}\n${pinned.body.slice(0, 2000)}\n`
+      ? `\nPINNED ISSUE #${String(pinned.number)} [${issueState(pinned)}]: ${pinned.title}\n${pinned.body.slice(0, sections.issue)}\n`
       : '\nPINNED ISSUE: (none)\n') +
     formatIssueBlock('LINKED ISSUES', linked) +
-    `\n${commitLabel}:\n${commits.slice(0, depth === 'deep' ? 12_000 : 6000)}\n`
+    `\n${commitLabel}:\n${commits.slice(0, sections.commits)}\n`
   )
+}
+
+interface ReviewPromptInput {
+  note: { body: string; status: string | null; fields: Record<string, string> }
+  pinned: GhIssueSummary | null
+  linked: RoadmapReviewIssueEvidence[]
+  commits: string
+  depth: RoadmapReviewDepth
+}
+
+/**
+ * Ask the model for a verdict, shrinking the prompt once if it is refused for
+ * context. The reported window can overstate the loaded one (see
+ * {@link FALLBACK_CONTEXT_WINDOW}), so a rejection is worth one cheap retry at
+ * the size local models are usually loaded with before giving up. What comes
+ * back then is advice the user can act on, not the engine's raw 500.
+ */
+export async function completeReviewPrompt(
+  provider: LLMProvider,
+  input: ReviewPromptInput,
+  model: string,
+  contextWindow: number,
+  timeoutMs: number,
+): Promise<{ text: string; usage: ModelUsage }> {
+  const windows =
+    contextWindow > FALLBACK_CONTEXT_WINDOW
+      ? [contextWindow, FALLBACK_CONTEXT_WINDOW]
+      : [contextWindow]
+  const { note, pinned, linked, commits, depth } = input
+  for (const [index, window] of windows.entries()) {
+    const sections = reviewSectionChars(window, depth)
+    try {
+      return await completeTextWithUsage(
+        provider,
+        reviewPrompt(note, pinned, linked, commits, depth, sections),
+        timeoutMs,
+      )
+    } catch (err) {
+      if (!isContextOverflowMessage(errorMessage(err))) throw err
+      if (index === windows.length - 1) {
+        throw new Error(
+          contextOverflowAdvice({
+            task: depth === 'deep' ? 'The resolution check' : 'The roadmap review',
+            modelLabel: model,
+            contextWindow: window,
+            settingsPath: SMALL_TASKS_SETTINGS_PATH,
+            lmStudioModel: isLocalModel(model),
+          }),
+          { cause: err },
+        )
+      }
+    }
+  }
+  // Unreachable: the loop either returns or throws on its last attempt.
+  throw new Error('The roadmap review made no model call.')
 }
 
 /**
@@ -336,9 +470,19 @@ export async function reviewRoadmapItem(
   }
 
   const model = resolveSmallTasksModelId()
-  const ask = reviewPrompt(note, pinned, linked, commits, depth)
+  // The configured small-tasks model, which is what the provider above resolves
+  // to unless it could not be built and fell back to the chat model. A window
+  // read from the wrong model of the two is what the retry inside
+  // completeReviewPrompt exists to absorb.
+  const contextWindow = await resolveContextWindow(model)
   const timeout = depth === 'deep' ? DEEP_REVIEW_TIMEOUT_MS : BULK_REVIEW_TIMEOUT_MS
-  const { text, usage } = await completeTextWithUsage(provider, ask, timeout)
+  const { text, usage } = await completeReviewPrompt(
+    provider,
+    { note, pinned, linked, commits, depth },
+    model,
+    contextWindow,
+    timeout,
+  )
   if (usage.inputTokens || usage.outputTokens) {
     recordUsageEvent({
       model,

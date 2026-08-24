@@ -1,8 +1,6 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 import {
   CONTROL_SOCKET_PATH_BUDGET,
   controlSocketFileName,
@@ -17,7 +15,10 @@ describe('controlSocketPath', () => {
   })
 
   it('uses a short hashed filename so long host ids stay under the Unix socket budget', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'copse-cm-'))
+    // This test is about the filename budget. macOS TMPDIR normally lives
+    // under /var/folders and can itself exceed the entire stable socket-path
+    // budget; production deliberately uses /tmp for that reason.
+    const dir = mkdtempSync('/tmp/copse-cm-')
     try {
       setSshControlDirForTests(dir)
       const hostId = 'euw-serp-dev-testing16'

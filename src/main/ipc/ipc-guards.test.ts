@@ -169,7 +169,26 @@ describe('ipc-guards agent payload schemas', () => {
       }).success,
       true,
     )
+    assert.equal(
+      followUpContextSchema.safeParse({
+        userMessage: 'u',
+        assistantMessage: 'a',
+        toolNames: [],
+        openTodos: ['Write tests'],
+      }).success,
+      true,
+    )
     assert.equal(followUpContextSchema.safeParse({ userMessage: 'u' }).success, false)
     assert.equal(followUpContextSchema.safeParse('nope').success, false)
+    // A runaway plan must not ride through the IPC guard unbounded.
+    assert.equal(
+      followUpContextSchema.safeParse({
+        userMessage: 'u',
+        assistantMessage: 'a',
+        toolNames: [],
+        openTodos: Array.from({ length: 21 }, () => 'item'),
+      }).success,
+      false,
+    )
   })
 })

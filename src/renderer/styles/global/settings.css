@@ -646,21 +646,17 @@ dialog.settings-overlay::backdrop {
 .settings-content input[type='color']::-webkit-color-swatch-wrapper {
   padding: 0;
 }
+/* The onboarding half of this list is gone: `.onboarding-overlay` now opts the
+   whole overlay out in one rect (onboarding.css), which covers the containers
+   an enumeration of leaves always missed. These are the settings panel's own,
+   and are themselves redundant now that the shared `dialog` rule (forms.css)
+   opts out `dialog.settings-overlay` — kept for now because removing them is a
+   separate change from the drag-region fix. */
 .settings-nav,
 .settings-content,
 .settings-content button,
 .settings-content input,
-.settings-content select,
-.onboarding-footer,
-.onboarding-footer button,
-.onboarding-tagline,
-.onboarding-steps,
-.onboarding-steps button,
-.onboarding-body,
-.onboarding-body button,
-.onboarding-body input,
-.onboarding-body select,
-.onboarding-body a {
+.settings-content select {
   -webkit-app-region: no-drag;
 }
 .key-status {
@@ -1269,6 +1265,8 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-elevated);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
+  /* Weight stays constant so active/inactive never widens the glyph box. */
+  font-weight: 600;
 }
 .frontier-btn:hover {
   background: var(--bg-hover);
@@ -1277,11 +1275,23 @@ dialog.settings-overlay::backdrop {
 .frontier-btn.active {
   border-color: var(--accent);
   color: var(--text-primary);
-  font-weight: 600;
+  /* Sit above overlapping segment neighbors so the accent border wraps all four sides. */
+  position: relative;
+  z-index: 1;
 }
 .frontier-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+.frontier-discover {
+  /* Both translated state labels share a cell, so the wider one reserves the width. */
+  display: inline-grid;
+}
+.frontier-discover-label {
+  grid-area: 1 / 1;
+}
+.frontier-discover-label[aria-hidden='true'] {
+  visibility: hidden;
 }
 .frontier-cost-axis {
   display: inline-flex;
@@ -1292,12 +1302,14 @@ dialog.settings-overlay::backdrop {
   margin-left: 0;
   border-radius: 0;
 }
+.frontier-cost-axis .frontier-btn + .frontier-btn {
+  margin-left: -1px;
+}
 .frontier-cost-axis .frontier-btn:first-child {
   border-radius: var(--radius) 0 0 var(--radius);
 }
 .frontier-cost-axis .frontier-btn:last-child {
   border-radius: 0 var(--radius) var(--radius) 0;
-  margin-left: -1px;
 }
 .frontier-expand-dialog {
   /* position:relative makes the dialog the containing block for the hover

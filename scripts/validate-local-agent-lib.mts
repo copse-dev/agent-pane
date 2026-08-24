@@ -128,6 +128,7 @@ export async function validateLocalAgentFinalAnswer(): Promise<void> {
 
   try {
     await runAgentLoop({
+      adaptiveExtensions: false,
       provider,
       messages,
       tools,

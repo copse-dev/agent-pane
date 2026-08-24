@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { MAX_VIDEO_BYTES } from '@shared/video/video-media.ts'
@@ -109,7 +109,9 @@ describe('video attachment store', () => {
     it('references a workspace video in place instead of copying it', async () => {
       await writeFile(join(workspaceRoot, 'demo.mp4'), Buffer.from(BYTES))
       const ref = await describeWorkspaceVideo('demo.mp4', 'demo.mp4', 'video/mp4')
-      assert.equal(ref.path, join(workspaceRoot, 'demo.mp4'))
+      // Workspace resolution returns a canonical path. On macOS the temporary
+      // directory exposed as /var/folders resolves through /private/var.
+      assert.equal(ref.path, await realpath(join(workspaceRoot, 'demo.mp4')))
       assert.equal(ref.sizeBytes, BYTES.byteLength)
     })
 
