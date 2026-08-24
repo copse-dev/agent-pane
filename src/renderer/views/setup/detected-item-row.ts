@@ -37,7 +37,7 @@ export function createDetectedItemRow(opts: {
   /** Stable id for selection/tests (provider slug, server slug, agent id). */
   id: string
   label: string
-  /** Where/how it was found (env var + file, base URL, resolved path). */
+  /** Where/how it was found (env var + file, base URL, or launch command). */
   detail: string
   /** Masked secret preview, when the item is a key. */
   masked?: string

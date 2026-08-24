@@ -112,8 +112,11 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
 
   let mode: 'scan' | 'fallback' = 'scan'
   let findings: ScanFindings | null = null
-  let scanning = false
   let scanPromise: Promise<void> | null = null
+  // Every open/close starts a new lifecycle. Async probes from an older one
+  // must never repaint or reconfigure a dialog that has since been dismissed
+  // and reopened.
+  let lifecycle = 0
   // Set by the finish path so the close listener doesn't double-write; every
   // other way out (Skip, ✕, Esc) is a dismissal that still completes onboarding.
   let completed = false
@@ -196,7 +199,11 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
             kind: 'acp-agent',
             id: agent.id,
             label: agent.title,
-            detail: agent.path ?? agent.command,
+            // The resolved path can contain the user's home directory and
+            // varies between machines. The launch command is enough context
+            // here; the full path remains available to the main process for
+            // detection without exposing it in onboarding or screenshots.
+            detail: agent.command,
             status: { text: agent.running ? 'running' : 'installed', ok: true },
             checkbox: { checked: true },
           }).root,
@@ -266,24 +273,29 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     void fallback.panel.refresh()
   }
 
-  async function runScan(): Promise<void> {
-    if (scanning) return
-    scanning = true
+  function isCurrent(run: number): boolean {
+    return run === lifecycle && dialogShell.isOpen()
+  }
+
+  async function runScan(run: number): Promise<void> {
     finishBtn.disabled = true
     setStatus('Scanning…')
-    try {
-      findings = await runOnboardingScan(api)
-      if (hasUsableFindings(findings)) {
-        renderChecklist(findings)
-      } else {
-        showFallback()
-      }
-    } finally {
-      scanning = false
+    const nextFindings = await runOnboardingScan(api)
+    if (!isCurrent(run)) return
+    findings = nextFindings
+    if (hasUsableFindings(findings)) {
+      mode = 'scan'
+      fallbackPanel.hidden = true
+      scanPanel.hidden = false
+      finishBtn.textContent = 'Use these & finish'
+      renderChecklist(findings)
+    } else {
+      showFallback()
     }
   }
 
   async function scanEnvironment(): Promise<void> {
+    const run = lifecycle
     envScanBtn.disabled = true
     finishBtn.disabled = true
     envStatusEl.className = 'key-status'
@@ -292,10 +304,13 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
       // Let the automatic, non-sensitive probes settle first so their findings
       // cannot overwrite the key rows this explicit scan is about to add.
       await scanPromise
+      if (!isCurrent(run)) return
       // The click is the opt-in. Persist it before invoking the main-process
       // scan, which independently enforces the same consent gate.
       await api.settings.set('envKeyAutoDetectEnabled', true)
+      if (!isCurrent(run)) return
       const envKeys = await api.settings.scanEnvKeys()
+      if (!isCurrent(run)) return
       const current = findings ?? {
         envKeys: [],
         localServers: [],
@@ -318,11 +333,14 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
           ? `Found ${String(importable.length)} key${importable.length === 1 ? '' : 's'}.`
           : 'No new provider keys found.'
     } catch (err) {
+      if (!isCurrent(run)) return
       envStatusEl.className = 'key-status err'
       envStatusEl.textContent = err instanceof Error ? err.message : 'Environment scan failed'
     } finally {
-      envScanBtn.disabled = false
-      finishBtn.disabled = false
+      if (isCurrent(run)) {
+        envScanBtn.disabled = false
+        finishBtn.disabled = false
+      }
     }
   }
 
@@ -393,6 +411,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
   // Every close funnels through the native event (Skip, ✕, Esc, and the finish
   // path): dismissal counts as completion so onboarding never shows twice.
   overlay.addEventListener('close', () => {
+    lifecycle += 1
     if (!completed) void api.settings.set('onboardingCompleted', true)
     completed = false
     fallback?.lmStudio.destroy()
@@ -409,9 +428,13 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
   })
 
   overlay.addEventListener('onboarding-open', () => {
+    const run = ++lifecycle
+    mode = 'scan'
+    fallbackPanel.hidden = true
+    scanPanel.hidden = false
     finishBtn.textContent = 'Use these & finish'
     finishBtn.disabled = true
     clear(resultsEl)
-    scanPromise = runScan()
+    scanPromise = runScan(run)
   })
 }

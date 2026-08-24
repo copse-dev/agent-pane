@@ -181,6 +181,27 @@ describe('onboarding dialog', () => {
     assert.match(lmRow.textContent, /used automatically/)
   })
 
+  it('shows an installed agent command without exposing its resolved path', async () => {
+    state.lmRunning = true
+    state.agents = [
+      {
+        id: 'cursor',
+        title: 'Cursor',
+        command: 'cursor-agent',
+        args: ['acp'],
+        installed: true,
+        path: '/Users/private-user/.local/bin/cursor-agent',
+        running: false,
+      },
+    ]
+    await open()
+
+    const cursor = rows('acp-agent').find((row) => row.dataset['id'] === 'cursor')
+    assert.ok(cursor)
+    assert.match(cursor.textContent, /cursor-agent/)
+    assert.doesNotMatch(cursor.textContent, /private-user|\/Users\//)
+  })
+
   it('finish imports only what stayed ticked', async () => {
     state.envKeys = [envKey('anthropic'), envKey('mistral')]
     await open()
@@ -292,6 +313,64 @@ describe('onboarding dialog', () => {
     await flush()
     assert.equal(rows('local-server').filter((row) => row.dataset['id'] === 'lmstudio').length, 1)
     assert.equal(state.scanCalls, 0)
+  })
+
+  it('ignores an older scan that resolves after the dialog is closed and reopened', async () => {
+    const base = createFakeApi()
+    const resolveScans: Array<
+      (value: Awaited<ReturnType<ApiClient['lmStudio']['detect']>>) => void
+    > = []
+    const api: ApiClient = {
+      ...base,
+      lmStudio: {
+        ...base.lmStudio,
+        test: async (): Promise<{ ok: boolean; error?: string }> => ({
+          ok: false,
+          error: 'unreachable',
+        }),
+        detect: () =>
+          new Promise((resolve) => {
+            resolveScans.push(resolve)
+          }),
+      },
+    }
+    mount(api)
+
+    openOnboardingDialog()
+    await flush(1)
+    assert.equal(resolveScans.length, 1)
+    dialog.close()
+    openOnboardingDialog()
+    await flush(1)
+    assert.equal(resolveScans.length, 2)
+
+    const finding = (running: boolean): Awaited<ReturnType<ApiClient['lmStudio']['detect']>> => ({
+      serverRunning: running,
+      serverUrl: 'http://127.0.0.1:1234/v1',
+      installDetected: running,
+      models: running ? ['new-session-model'] : [],
+      modelContexts: {},
+      preferredPresent: [],
+      preferredMissing: [],
+    })
+    resolveScans[1]?.(finding(true))
+    await flush()
+    assert.equal(
+      rows('local-server').some((row) => row.dataset['id'] === 'lmstudio'),
+      true,
+    )
+    assert.equal(qsRequired(dialog, '#onboarding-scan-panel').hidden, false)
+
+    // The first session resolves last and must not switch the reopened dialog
+    // back to the empty-scan fallback.
+    resolveScans[0]?.(finding(false))
+    await flush()
+    assert.equal(
+      rows('local-server').some((row) => row.dataset['id'] === 'lmstudio'),
+      true,
+    )
+    assert.equal(qsRequired(dialog, '#onboarding-scan-panel').hidden, false)
+    assert.equal(qsRequired(dialog, '#onboarding-fallback-panel').hidden, true)
   })
 })
 

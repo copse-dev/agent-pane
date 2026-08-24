@@ -1,5 +1,8 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { readSeededSettings, resetUserData, seedOnboardingFixture } from './helpers/seed-config.ts'
@@ -45,6 +48,8 @@ function listen(server: Server, port: number, what: string): Promise<number> {
 describe('onboarding: scan finds keys and local servers', () => {
   const janServer = modelServer('e2e-jan-model')
   const lmServer = modelServer('e2e-lm-model')
+  const originalPath = process.env['PATH']
+  let agentBinDir = ''
 
   before(async function () {
     this.timeout(120_000)
@@ -53,9 +58,16 @@ describe('onboarding: scan finds keys and local servers', () => {
     // fixture takes any free port.
     await listen(janServer, 1337, 'Jan (or something else on its port)')
     const lmPort = await listen(lmServer, 0, 'unused')
+    // Exercise normal PATH-based ACP discovery against a controlled fixture so
+    // the checklist and its screenshot don't depend on the runner's installs.
+    agentBinDir = mkdtempSync(join(tmpdir(), 'copse-onboarding-agent-'))
+    const cursorAgent = join(agentBinDir, 'cursor-agent')
+    writeFileSync(cursorAgent, '#!/bin/sh\nexit 0\n', 'utf8')
+    chmodSync(cursorAgent, 0o755)
     writeE2eEnv({
       ANTHROPIC_API_KEY: 'sk-ant-e2e-scan-import-0001',
       OPENAI_API_KEY: 'sk-oai-e2e-scan-import-0001',
+      PATH: [agentBinDir, '/usr/bin', '/bin'].join(delimiter),
     })
     seedOnboardingFixture({ localServerUrl: `http://127.0.0.1:${String(lmPort)}/v1` })
     await browser.reloadSession()
@@ -63,9 +75,10 @@ describe('onboarding: scan finds keys and local servers', () => {
 
   after(async () => {
     // Restore the blanked-key base env for later specs in this worker.
-    writeE2eEnv({})
+    writeE2eEnv({ PATH: originalPath })
     await new Promise((resolve) => janServer.close(resolve))
     await new Promise((resolve) => lmServer.close(resolve))
+    rmSync(agentBinDir, { recursive: true, force: true })
     resetUserData()
   })
 
@@ -101,6 +114,11 @@ describe('onboarding: scan finds keys and local servers', () => {
     await lmRow.waitForExist({ timeout: 10_000 })
     expect(await lmRow.getText()).toContain('used automatically')
     expect(await lmRow.$$('input').length).toBe(0)
+
+    const cursorRow = overlay.$(row('acp-agent', 'cursor'))
+    await cursorRow.waitForExist({ timeout: 10_000 })
+    expect(await cursorRow.getText()).toContain('cursor-agent')
+    expect(await cursorRow.getText()).not.toContain(agentBinDir)
 
     await saveAppScreenshot('onboarding-scan-results.png')
   })
