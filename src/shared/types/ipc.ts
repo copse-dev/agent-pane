@@ -221,7 +221,7 @@ export interface IpcInvokeMap {
     }[]
   }
   'settings:importEnvKeys': {
-    args: []
+    args: [providers?: string[]]
     result: {
       imported: { provider: string; source: string }[]
       skipped: { provider: string; reason: string }[]
