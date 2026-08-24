@@ -1,38 +1,42 @@
+// First-run setup: one screen that scans the machine (API keys in the
+// environment, local model servers, installed ACP agents) as soon as it opens,
+// shows what it found as a pre-checked list, and imports whatever stays ticked
+// on Finish. When the scan finds no usable model source, the Settings providers
+// panel mounts in its place so the user can set one up by hand. Dismissing in
+// any form (Skip, ✕, Esc) marks onboarding complete — it never nags twice.
+
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { at } from '@shared/array-utils.ts'
-import { qsRequired } from '../dom/helpers.ts'
+import { qsRequired, el, clear } from '../dom/helpers.ts'
 import { closeIcon } from '../dom/icons.ts'
-import { inlineStatus } from '../dom/inline-status.ts'
-import {
-  DEFAULT_APP_CHAT_MODEL,
-  LM_STUDIO_MODEL_IDS,
-  lmStudioChatModelValue,
-} from '@shared/lm-studio-defaults.ts'
-import { createApiKeysSection } from './setup/api-keys-section.ts'
-import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
+import { createOverlayDialog, type OverlayDialog } from './dialog-shell.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
-import { createModelRoutingSection } from './setup/model-routing-section.ts'
-import { detectLocalServers, importDetectedPreset } from './setup/local-detection.ts'
-import { el, clear } from '../dom/helpers.ts'
+import { createProvidersPanel } from './setup/providers-section.ts'
+import { createDetectedItemRow, providerLabel } from './setup/detected-item-row.ts'
+import {
+  runOnboardingScan,
+  hasUsableFindings,
+  importScanFindings,
+  deriveDefaultSettings,
+  type OnboardingDefaults,
+  type ScanFindings,
+  type ScanSelection,
+} from './setup/onboarding-scan.ts'
 
-type OnboardingStep = 'welcome' | 'cloud' | 'local' | 'routing'
-
-let overlayEl: HTMLElement | null = null
+let shell: OverlayDialog | null = null
 
 export function openOnboardingDialog(): void {
-  if (!overlayEl || !overlayEl.hidden) return
-  overlayEl.hidden = false
-  overlayEl.dispatchEvent(new Event('onboarding-open'))
+  if (!shell || shell.isOpen()) return
+  shell.open()
+  shell.dialog.dispatchEvent(new Event('onboarding-open'))
 }
 
 export function closeOnboardingDialog(): void {
-  if (!overlayEl || overlayEl.hidden) return
-  overlayEl.hidden = true
+  shell?.close()
 }
 
 export function isOnboardingDialogOpen(): boolean {
-  return !!overlayEl && !overlayEl.hidden
+  return !!shell && shell.isOpen()
 }
 
 export async function shouldShowOnboarding(api: ApiClient): Promise<boolean> {
@@ -41,10 +45,12 @@ export async function shouldShowOnboarding(api: ApiClient): Promise<boolean> {
 }
 
 export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
-  const overlay = document.createElement('div')
-  overlay.id = 'onboarding-dialog'
-  overlay.className = 'onboarding-overlay settings-overlay'
-  overlay.hidden = true
+  const dialogShell = createOverlayDialog({
+    id: 'onboarding-dialog',
+    className: 'onboarding-overlay settings-overlay',
+  })
+  shell = dialogShell
+  const overlay = dialogShell.dialog
   overlay.innerHTML = `
     <div class="onboarding-shell settings-shell">
       <header class="settings-header onboarding-header">
@@ -53,269 +59,292 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
       </header>
 
       <p class="onboarding-tagline">
-        Set up models once. Use local models for everyday work and cloud models when you need them.
+        Copse looks for models you already have — API keys, local model servers, and
+        coding agents on this machine — and sets them up for you.
       </p>
 
-      <nav class="onboarding-steps" aria-label="Setup steps">
-        <button type="button" class="onboarding-step-btn active" data-step="welcome">1. Intro</button>
-        <button type="button" class="onboarding-step-btn" data-step="cloud">2. Cloud keys</button>
-        <button type="button" class="onboarding-step-btn" data-step="local">3. Local models</button>
-        <button type="button" class="onboarding-step-btn" data-step="routing">4. Routing</button>
-      </nav>
-
       <div class="onboarding-body">
-        <section class="onboarding-panel active" data-step="welcome"></section>
-        <section class="onboarding-panel" data-step="cloud"></section>
-        <section class="onboarding-panel" data-step="local"></section>
-        <section class="onboarding-panel" data-step="routing"></section>
+        <section id="onboarding-scan-panel">
+          <fieldset>
+            <legend>Found on this machine</legend>
+            <p class="onboarding-scan-status field-hint" role="status">Scanning…</p>
+            <div class="onboarding-scan-results"></div>
+          </fieldset>
+          <p class="field-hint">
+            Untick anything you don’t want. Keys found in your shell files are imported
+            into Copse’s own storage and never overwrite one you already saved. You can
+            change everything later in Settings, under General.
+          </p>
+        </section>
+        <section id="onboarding-fallback-panel" hidden></section>
       </div>
 
       <footer class="onboarding-footer">
         <button type="button" class="onboarding-skip" id="onboarding-skip">Skip for now</button>
-        <div class="onboarding-nav-buttons">
-          <button type="button" id="onboarding-back" class="onboarding-back" disabled>Back</button>
-          <button type="button" id="onboarding-next" class="onboarding-primary">Continue</button>
-        </div>
+        <button type="button" id="onboarding-finish" class="onboarding-primary" disabled>
+          Use these &amp; finish
+        </button>
       </footer>
     </div>
   `
-  document.body.append(overlay)
-  overlayEl = overlay
 
-  const stepOrder: OnboardingStep[] = ['welcome', 'cloud', 'local', 'routing']
-  let currentStep: OnboardingStep = 'welcome'
+  const scanPanel = qsRequired(overlay, '#onboarding-scan-panel')
+  const fallbackPanel = qsRequired(overlay, '#onboarding-fallback-panel')
+  const statusEl = qsRequired(overlay, '.onboarding-scan-status')
+  const resultsEl = qsRequired(overlay, '.onboarding-scan-results')
+  const finishBtn = qsRequired<HTMLButtonElement>(overlay, '#onboarding-finish')
 
-  const stepBtns = overlay.querySelectorAll<HTMLButtonElement>('.onboarding-step-btn')
-  const panels = overlay.querySelectorAll<HTMLElement>('.onboarding-panel')
-  const backBtn = qsRequired<HTMLButtonElement>(overlay, '#onboarding-back')
-  const nextBtn = qsRequired<HTMLButtonElement>(overlay, '#onboarding-next')
+  let mode: 'scan' | 'fallback' = 'scan'
+  let findings: ScanFindings | null = null
+  let scanning = false
+  // Set by the finish path so the close listener doesn't double-write; every
+  // other way out (Skip, ✕, Esc) is a dismissal that still completes onboarding.
+  let completed = false
 
-  const welcomePanel = qsRequired(overlay, '.onboarding-panel[data-step="welcome"]')
-  welcomePanel.innerHTML = `
-    <h3>A different kind of coding assistant</h3>
-    <p class="settings-section-desc">
-      Most AI editors rely almost entirely on frontier cloud models. Copse is built for a hybrid approach:
-      fast, private local models handle exploration, titles, and safety checks, while cloud models tackle
-      the hardest problems when you add API keys.
-    </p>
-    <ul class="onboarding-benefits">
-      <li><strong>Local first</strong>: models on your own machine handle exploration, titles, and safety checks.</li>
-      <li><strong>Cloud when it counts</strong>: add an API key to reach Claude, GPT, and other frontier models.</li>
-      <li><strong>Best of both</strong>: set up both and Copse sends each task to the model that suits it.</li>
-    </ul>
-    <p class="field-hint">This setup takes a few minutes. You can revisit it anytime in Settings.</p>
-  `
+  // The fallback providers panel is built on first use — most runs never need it.
+  let fallback: {
+    panel: ReturnType<typeof createProvidersPanel>
+    lmStudio: ReturnType<typeof createLmStudioSection>
+  } | null = null
 
-  const cloudPanel = qsRequired(overlay, '.onboarding-panel[data-step="cloud"]')
-  const apiKeys = createApiKeysSection(api, { legend: 'Cloud API keys (optional)' })
-  const envKeyDetect = createEnvKeyDetectSection(api, {
-    legend: 'Already have keys in your environment?',
-    onImported: () => void apiKeys.refreshKeyStatus(),
-  })
-  cloudPanel.append(
-    Object.assign(document.createElement('p'), {
-      className: 'settings-section-desc',
-      textContent:
-        'Add one or both keys if you want frontier models in chat. Each key is checked with a free request, so no tokens are charged.',
-    }),
-    apiKeys.root,
-    envKeyDetect.root,
-  )
+  function setStatus(text: string, kind: 'ok' | 'warn' | 'err' | '' = ''): void {
+    statusEl.textContent = text
+    statusEl.className = `onboarding-scan-status field-hint${kind ? ` ${kind}` : ''}`
+  }
 
-  // Created before the local panel so auto-detection can refresh the routing
-  // model lists after importing newly-discovered local models.
-  const routing = createModelRoutingSection(api)
+  function renderChecklist(found: ScanFindings): void {
+    clear(resultsEl)
+    const groups: { title: string; rows: HTMLElement[] }[] = []
 
-  const localPanel = qsRequired(overlay, '.onboarding-panel[data-step="local"]')
-  const lmStudio = createLmStudioSection(api, { showInstallGuide: true })
+    const keyRows = found.envKeys.map(
+      (key) =>
+        createDetectedItemRow({
+          kind: 'env-key',
+          id: key.provider,
+          label: providerLabel(key.provider),
+          detail: `${key.envVar} · ${key.source}`,
+          masked: key.masked,
+          status: key.alreadyConfigured
+            ? { text: 'already set' }
+            : { text: 'will import', ok: true },
+          checkbox: { checked: !key.alreadyConfigured, disabled: key.alreadyConfigured },
+        }).root,
+    )
+    if (keyRows.length) groups.push({ title: 'Cloud API keys', rows: keyRows })
 
-  // Auto-detection: probe every known local server (LM Studio, Ollama, llama.cpp,
-  // Jan, vLLM) so first-run users see what's already running without hunting for
-  // URLs. Reachable presets have their models imported so they're usable at once.
-  const detectStatus = el('span', { class: 'setup-detection-status' })
-  const detectList = el('div', { class: 'preferred-models-list' })
-  const detectBtn = el(
-    'button',
-    { type: 'button', class: 'setup-test-btn' },
-    'Scan for local servers',
-  )
+    const serverRows = found.localServers
+      .filter((server) => server.reachable)
+      .map(
+        (server) =>
+          createDetectedItemRow({
+            kind: 'local-server',
+            id: server.id,
+            label: server.label,
+            detail: server.baseUrl,
+            status: { text: `running, ${String(server.models.length)} model(s)`, ok: true },
+            checkbox: { checked: true },
+          }).root,
+      )
+    if (found.lmStudio?.running) {
+      serverRows.push(
+        createDetectedItemRow({
+          kind: 'local-server',
+          id: 'lmstudio',
+          label: 'LM Studio',
+          detail: found.lmStudio.serverUrl,
+          status: {
+            text: `running, ${String(found.lmStudio.models.length)} model(s) — used automatically`,
+            ok: true,
+          },
+        }).root,
+      )
+    } else if (found.lmStudio?.installed) {
+      serverRows.push(
+        createDetectedItemRow({
+          kind: 'local-server',
+          id: 'lmstudio',
+          label: 'LM Studio',
+          detail: found.lmStudio.serverUrl,
+          status: { text: 'installed — start its server to use it' },
+        }).root,
+      )
+    }
+    if (serverRows.length) groups.push({ title: 'Local model servers', rows: serverRows })
 
-  let detecting = false
-  async function runLocalDetection(): Promise<void> {
-    if (detecting) return
-    detecting = true
-    detectBtn.disabled = true
-    detectStatus.textContent = 'Scanning…'
-    detectStatus.className = 'setup-detection-status'
-    try {
-      const results = await detectLocalServers(api)
-      clear(detectList)
-      for (const r of results) {
-        const meta = el(
-          'div',
-          { class: 'preferred-model-meta' },
-          el('strong', {}, r.label),
-          el('span', { class: 'field-hint' }, r.baseUrl),
-        )
-        const status = el('span', {
-          class: r.reachable ? 'preferred-model-status ok' : 'preferred-model-status',
-        })
-        status.append(
-          inlineStatus(
-            r.reachable ? 'ok' : 'idle',
-            r.reachable ? `running, ${String(r.models.length)} model(s)` : 'not found',
-          ),
-        )
-        detectList.append(el('div', { class: 'preferred-model-row' }, meta, status))
-      }
-      const reachable = results.filter((r) => r.reachable)
-      // Persist discovered models for reachable presets so they're immediately
-      // selectable; LM Studio is handled by its own section below. Import
-      // SEQUENTIALLY: each importDetectedPreset does a read-modify-write of the
-      // single `extraProviders` setting, so running them concurrently would have
-      // them clobber each other and drop all but one discovered preset.
-      for (const r of reachable) {
-        await importDetectedPreset(api, r)
-      }
-      detectStatus.textContent = reachable.length
-        ? `Found ${String(reachable.length)} local server(s)`
-        : 'No local servers detected'
-      detectStatus.className = `setup-detection-status ${reachable.length ? 'ok' : 'warn'}`
-      await lmStudio.refreshDetection()
-      void routing.refresh()
-    } catch {
-      detectStatus.textContent = 'Detection failed'
-      detectStatus.className = 'setup-detection-status err'
-    } finally {
-      detecting = false
-      detectBtn.disabled = false
+    const agentRows = found.acpAgents
+      .filter((agent) => agent.installed)
+      .map(
+        (agent) =>
+          createDetectedItemRow({
+            kind: 'acp-agent',
+            id: agent.id,
+            label: agent.title,
+            detail: agent.path ?? agent.command,
+            status: { text: agent.running ? 'running' : 'installed', ok: true },
+            checkbox: { checked: true },
+          }).root,
+      )
+    if (agentRows.length) groups.push({ title: 'Agents on this machine', rows: agentRows })
+
+    for (const group of groups) {
+      resultsEl.append(el('p', { class: 'onboarding-scan-group' }, group.title), ...group.rows)
+    }
+
+    const failures = found.errors.map((error) => `${error.probe}: ${error.message}`)
+    setStatus(
+      failures.length
+        ? `Some checks failed (${failures.join('; ')}) — the rest is listed below.`
+        : 'Here’s what Copse found. Untick anything you don’t want.',
+      failures.length ? 'warn' : 'ok',
+    )
+    finishBtn.disabled = false
+  }
+
+  function readSelection(): ScanSelection {
+    const picked = (kind: string): string[] =>
+      [
+        ...resultsEl.querySelectorAll<HTMLInputElement>(
+          `[data-kind="${kind}"] input.detected-item-check:checked:not(:disabled)`,
+        ),
+      ].map((box) => box.closest<HTMLElement>('[data-kind]')?.dataset['id'] ?? '')
+    return {
+      envKeyProviders: picked('env-key'),
+      localServerIds: picked('local-server'),
+      acpAgentIds: picked('acp-agent'),
     }
   }
 
-  detectBtn.addEventListener('click', () => {
-    void runLocalDetection()
-  })
-  const detectFieldset = el(
-    'fieldset',
-    {},
-    el('legend', {}, 'Detected local servers'),
-    el(
-      'p',
-      { class: 'settings-fieldset-desc' },
-      'Start LM Studio, Ollama, llama.cpp, Jan, or vLLM, then scan. Anything found is set up for you.',
-    ),
-    el('div', { class: 'lmstudio-test-row' }, detectBtn, detectStatus),
-    detectList,
-  )
-
-  localPanel.append(
-    Object.assign(document.createElement('p'), {
-      className: 'settings-section-desc',
-      textContent:
-        'Local models power most of Copse’s background work. Copse finds LM Studio, Ollama, llama.cpp, Jan, and vLLM on its own whenever they’re running.',
-    }),
-    detectFieldset,
-    lmStudio.root,
-  )
-
-  const routingPanel = qsRequired(overlay, '.onboarding-panel[data-step="routing"]')
-  routingPanel.append(
-    Object.assign(document.createElement('p'), {
-      className: 'settings-section-desc',
-      textContent:
-        'Choose local models for chat, exploration, and safety. Small tasks such as titles and follow-ups can use any model, and you can change all of this later in Settings, under General.',
-    }),
-    routing.root,
-    Object.assign(document.createElement('p'), {
-      className: 'field-hint',
-      textContent:
-        'Tip: load downloaded models in LM Studio (Developer → Load model) so they appear in these lists.',
-    }),
-  )
-
-  function showStep(step: OnboardingStep): void {
-    currentStep = step
-    stepBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset['step'] === step))
-    panels.forEach((panel) => panel.classList.toggle('active', panel.dataset['step'] === step))
-    backBtn.disabled = step === 'welcome'
-    nextBtn.textContent = step === 'routing' ? 'Finish setup' : 'Continue'
+  function showFallback(): void {
+    mode = 'fallback'
+    scanPanel.hidden = true
+    fallbackPanel.hidden = false
+    finishBtn.textContent = 'Finish'
+    finishBtn.disabled = false
+    if (!fallback) {
+      const lmStudio = createLmStudioSection(api, { showInstallGuide: true })
+      const panel = createProvidersPanel(api, {
+        nativeLocalProviders: [
+          {
+            id: 'lmstudio',
+            label: 'LM Studio',
+            element: lmStudio.root,
+            refresh: (): Promise<void> => lmStudio.refreshDetection(),
+          },
+        ],
+        // First run must stay side-effect-free: no adapter installs until the
+        // user actually uses an agent.
+        deviceAutoSetup: false,
+      })
+      fallbackPanel.append(
+        el(
+          'p',
+          { class: 'settings-section-desc' },
+          'Nothing set up yet — pick a provider to get started. Add an API key for ' +
+            'cloud models, or point Copse at a model server on this machine.',
+        ),
+        panel.root,
+      )
+      fallback = { panel, lmStudio }
+    }
+    void fallback.panel.refresh()
   }
 
-  stepBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const step = btn.dataset['step']
-      if (step === 'welcome' || step === 'cloud' || step === 'local' || step === 'routing') {
-        showStep(step)
+  async function runScan(): Promise<void> {
+    if (scanning) return
+    scanning = true
+    finishBtn.disabled = true
+    setStatus('Scanning…')
+    try {
+      findings = await runOnboardingScan(api)
+      if (hasUsableFindings(findings)) {
+        renderChecklist(findings)
+      } else {
+        showFallback()
       }
-    })
-  })
+    } finally {
+      scanning = false
+    }
+  }
 
-  backBtn.addEventListener('click', () => {
-    const idx = stepOrder.indexOf(currentStep)
-    if (idx > 0) showStep(at(stepOrder, idx - 1))
-  })
-
-  async function finishSetup(): Promise<void> {
-    await apiKeys.saveKeys()
-    const routingValues = routing.readValues()
-    await lmStudio.saveConnection({
-      safetyModel: routingValues.safetyModel || LM_STUDIO_MODEL_IDS.safety,
-    })
-    await api.settings.set(
-      'localDefaultModel',
-      routingValues.localDefaultModel || LM_STUDIO_MODEL_IDS.chat,
-    )
-    await api.settings.set(
-      'smallTasksModel',
-      lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.smallTasks),
-    )
-    await api.settings.set('subagentModel', routingValues.subagentModel)
-    await api.settings.set('localSubagentsEnabled', true)
-    await api.settings.set('localTodoItemsEnabled', true)
-    // Chat default is the plan/price Pareto mode; local models stay on the
-    // coder / small-tasks / research role slots set above.
-    await api.settings.set('model', DEFAULT_APP_CHAT_MODEL)
+  async function writeDefaultsAndComplete(defaults: OnboardingDefaults): Promise<void> {
+    for (const [key, value] of Object.entries(defaults)) {
+      await api.settings.set(key, value)
+    }
     await api.settings.set('onboardingCompleted', true)
+    completed = true
     store.setState({
-      settings: { ...store.getState().settings, model: DEFAULT_APP_CHAT_MODEL },
+      settings: { ...store.getState().settings, ...defaults },
     })
     store.emit('settings_changed')
-    lmStudio.destroy()
-    closeOnboardingDialog()
   }
 
-  async function skipSetup(): Promise<void> {
-    await api.settings.set('onboardingCompleted', true)
-    lmStudio.destroy()
-    closeOnboardingDialog()
-  }
-
-  nextBtn.addEventListener('click', () => {
-    const idx = stepOrder.indexOf(currentStep)
-    if (currentStep === 'cloud') void apiKeys.saveKeys()
-    if (currentStep === 'local') void lmStudio.saveConnection()
-    if (currentStep === 'routing') {
-      void finishSetup()
-      return
+  async function finishSetup(): Promise<void> {
+    finishBtn.disabled = true
+    try {
+      const found = findings ?? {
+        envKeys: [],
+        localServers: [],
+        acpAgents: [],
+        lmStudio: null,
+        errors: [],
+      }
+      const selection =
+        mode === 'scan'
+          ? readSelection()
+          : { envKeyProviders: [], localServerIds: [], acpAgentIds: [] }
+      const importErrors: string[] = []
+      if (mode === 'scan') {
+        const result = await importScanFindings(api, found, selection)
+        importErrors.push(...result.errors)
+      } else if (fallback) {
+        try {
+          await fallback.panel.saveKeys()
+        } catch (err) {
+          importErrors.push(err instanceof Error ? err.message : 'Could not save keys')
+        }
+      }
+      // Imports that failed are reported but don't hold onboarding hostage —
+      // everything here is redoable from Settings.
+      if (importErrors.length) setStatus(importErrors.join(' · '), 'err')
+      await writeDefaultsAndComplete(
+        deriveDefaultSettings(mode === 'scan' ? found : { ...found, lmStudio: null }, selection),
+      )
+      dialogShell.close()
+    } finally {
+      finishBtn.disabled = false
     }
-    if (idx < stepOrder.length - 1) showStep(at(stepOrder, idx + 1))
+  }
+
+  finishBtn.addEventListener('click', () => {
+    void finishSetup()
+  })
+  qsRequired(overlay, '#onboarding-skip').addEventListener('click', () => {
+    dialogShell.close()
+  })
+  const closeBtn = qsRequired(overlay, '#onboarding-close')
+  closeBtn.append(closeIcon('ui-icon'))
+  closeBtn.addEventListener('click', () => {
+    dialogShell.close()
   })
 
-  overlay.querySelector('#onboarding-skip')?.addEventListener('click', () => {
-    void skipSetup()
-  })
-  const onboardingCloseBtn = qsRequired(overlay, '#onboarding-close')
-  onboardingCloseBtn.append(closeIcon('ui-icon'))
-  onboardingCloseBtn.addEventListener('click', () => {
-    void skipSetup()
+  // Every close funnels through the native event (Skip, ✕, Esc, and the finish
+  // path): dismissal counts as completion so onboarding never shows twice.
+  overlay.addEventListener('close', () => {
+    if (!completed) void api.settings.set('onboardingCompleted', true)
+    completed = false
+    fallback?.lmStudio.destroy()
+    fallback = null
+    clear(fallbackPanel)
+    fallbackPanel.hidden = true
+    scanPanel.hidden = false
+    mode = 'scan'
+    findings = null
   })
 
   overlay.addEventListener('onboarding-open', () => {
-    showStep('welcome')
-    void apiKeys.refreshKeyStatus()
-    void envKeyDetect.refresh()
-    void lmStudio.refreshDetection()
-    void runLocalDetection()
-    void routing.refresh()
+    finishBtn.textContent = 'Use these & finish'
+    finishBtn.disabled = true
+    clear(resultsEl)
+    void runScan()
   })
 }

@@ -618,9 +618,10 @@ export interface ApiClient {
     scanEnvKeys: () => Promise<DetectedEnvKey[]>
     /**
      * Import detected environment keys into Settings for any provider not already
-     * configured. Gated on the `envKeyAutoDetectEnabled` consent flag.
+     * configured. Gated on the `envKeyAutoDetectEnabled` consent flag. With
+     * `providers`, only those slugs are imported (unticked rows stay untouched).
      */
-    importEnvKeys: () => Promise<{
+    importEnvKeys: (providers?: string[]) => Promise<{
       imported: { provider: string; source: string }[]
       skipped: { provider: string; reason: string }[]
     }>
