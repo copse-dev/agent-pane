@@ -53,7 +53,7 @@ export function mountFooterBranchStatus(
   host: HTMLElement,
   store: AppStore,
   api: ApiClient,
-): { destroy: () => void; refresh: () => void } {
+): { destroy: () => void; refresh: () => void; waitForPendingCheckout: () => Promise<void> } {
   const wrap = el('div', { class: 'branch-picker', hidden: '' })
   const trigger = el('button', {
     type: 'button',
@@ -78,6 +78,7 @@ export function mountFooterBranchStatus(
   let defaultBranch: string | null = null
   let open = false
   let refreshToken = 0
+  let pendingCheckout: Promise<void> | null = null
 
   function getActiveThread(): Thread | undefined {
     return getThreadById(store, store.getState().activeThreadId)
@@ -232,7 +233,9 @@ export function mountFooterBranchStatus(
         setOpen(false)
         const owner = getActiveThreadOwner(store)
         if (!owner) return
-        void api.git.checkoutBranch(owner.projectId, owner.threadId, branch.name).then(
+        const checkout = api.git.checkoutBranch(owner.projectId, owner.threadId, branch.name)
+        pendingCheckout = checkout
+        const observed = checkout.then(
           () => {
             showToast(`Checked out ${branch.name}`)
             store.emit('git_branch_changed')
@@ -241,6 +244,9 @@ export function mountFooterBranchStatus(
             showErrorToast(`Failed to check out ${branch.name}`, error)
           },
         )
+        void observed.finally(() => {
+          if (pendingCheckout === checkout) pendingCheckout = null
+        })
       })
       menu.append(item)
     }
@@ -385,6 +391,10 @@ export function mountFooterBranchStatus(
 
   return {
     refresh: () => void refresh(),
+    waitForPendingCheckout: async (): Promise<void> => {
+      const pending = pendingCheckout
+      if (pending) await pending
+    },
     destroy: (): void => {
       refreshToken += 1
       if (refreshTimer) clearTimeout(refreshTimer)
