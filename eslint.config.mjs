@@ -25,6 +25,10 @@ export default ts.config(
       'dist-types/',
       'coverage/',
       'node_modules/',
+      // Local dependency stores and nested review worktrees can contain complete
+      // copies of the repository. The standalone `eslint .` shard must not walk them.
+      '.pnpm-store/',
+      '.pr-validation/',
       '.tmp/',
       '.claude/**',
       'eslint.config.mjs',
