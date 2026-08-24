@@ -478,6 +478,11 @@ describe('input bar first-message checkout', () => {
     )
     assert.ok(selected)
     selected.click()
+    branchTrigger.click()
+    await flush()
+    const branchMenu = host.querySelector<HTMLElement>('.branch-picker-menu')
+    assert.ok(branchMenu)
+    assert.equal(branchMenu.hidden, true, 'a pending checkout keeps the branch picker closed')
     composer.textContent = 'Start from the selected feature'
     submit.click()
     await settle()

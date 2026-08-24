@@ -226,6 +226,10 @@ export function mountFooterBranchStatus(
       }
       if (branch.name === current) item.classList.add('is-selected')
       item.addEventListener('click', () => {
+        // Keep branch changes single-flight. Reopening the picker and starting
+        // a second `git switch` would make Send wait only for the newer promise
+        // while the older checkout could still win afterward.
+        if (pendingCheckout) return
         if (branch.name === current) {
           setOpen(false)
           return
@@ -338,6 +342,9 @@ export function mountFooterBranchStatus(
   }
 
   trigger.addEventListener('click', () => {
+    // The menu closes as soon as a branch is selected, but the checkout itself
+    // is asynchronous. Do not let it reopen until that selection has settled.
+    if (pendingCheckout) return
     if (!isPickerMode()) {
       const url = getVisiblePr()?.url
       if (url) {
