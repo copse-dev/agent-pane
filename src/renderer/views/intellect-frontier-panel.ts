@@ -1734,11 +1734,33 @@ export function createIntellectFrontierPanel(
     }
   }
 
-  const discoverBtn = el('button', {
-    type: 'button',
-    class: 'frontier-btn frontier-discover',
-  })
-  discoverBtn.addEventListener('click', toggleDiscover)
+  function makeDiscoverButton(): HTMLButtonElement {
+    const button = el(
+      'button',
+      {
+        type: 'button',
+        class: 'frontier-btn frontier-discover',
+      },
+      el(
+        'span',
+        { class: 'frontier-discover-label', 'data-discover-label': 'inactive' },
+        'Discover models',
+      ),
+      el(
+        'span',
+        {
+          class: 'frontier-discover-label',
+          'data-discover-label': 'active',
+          'aria-hidden': 'true',
+        },
+        'Hide discoverable',
+      ),
+    )
+    button.addEventListener('click', toggleDiscover)
+    return button
+  }
+
+  const discoverBtn = makeDiscoverButton()
   const unpricedBtn = el('button', {
     type: 'button',
     class: 'frontier-btn frontier-unpriced-toggle',
@@ -1765,11 +1787,7 @@ export function createIntellectFrontierPanel(
     if (lastPoints.length === 0) return
     const dialog = el('dialog', { class: 'frontier-expand-dialog' })
     const close = el('button', { type: 'button', class: 'frontier-btn' }, 'Close')
-    expandDiscoverBtn = el('button', {
-      type: 'button',
-      class: 'frontier-btn frontier-discover',
-    })
-    expandDiscoverBtn.addEventListener('click', toggleDiscover)
+    expandDiscoverBtn = makeDiscoverButton()
     expandUnpricedBtn = el('button', {
       type: 'button',
       class: 'frontier-btn frontier-unpriced-toggle',
@@ -2093,7 +2111,10 @@ export function createIntellectFrontierPanel(
     const applyDiscover = (btn: HTMLButtonElement | null): void => {
       if (!btn) return
       btn.hidden = discoverableCandidates.length === 0
-      btn.textContent = discover ? 'Hide discoverable' : 'Discover models'
+      for (const label of btn.querySelectorAll<HTMLElement>('[data-discover-label]')) {
+        const labelIsActive = label.dataset['discoverLabel'] === 'active'
+        label.setAttribute('aria-hidden', labelIsActive === discover ? 'false' : 'true')
+      }
       btn.classList.toggle('active', discover)
       btn.setAttribute('aria-pressed', discover ? 'true' : 'false')
     }
