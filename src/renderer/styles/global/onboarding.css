@@ -3,6 +3,17 @@
   z-index: 250;
   display: flex;
   justify-content: center;
+  /* First-run only, so this sits on top of `#welcome` — one full-bleed
+     `-webkit-app-region: drag` region (welcome.css). `app-region` is not
+     inherited; it composes geometrically, each box unioning or subtracting in
+     tree order. So painting above the region does nothing, and opting out only
+     the leaves (as settings.css used to) leaves every container between them —
+     the card, the button row — as live window-drag handles. Subtract the whole
+     overlay in one rect; `.settings-header` re-declares `drag` below for the
+     title row, which is the one part that should move the window. Folds into
+     the shared `dialog` rule (forms.css) if this ever becomes a real
+     <dialog>. */
+  -webkit-app-region: no-drag;
 }
 .onboarding-shell {
   width: min(720px, 100%);

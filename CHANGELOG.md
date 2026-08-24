@@ -611,6 +611,23 @@ every published entry.
   error in `/checkup`, naming the limit the agent was launched under (macOS
   gives an app 256 by default) and how to raise it, so it can be found by
   someone who never sees the console.
+- A roadmap item's resolution check now fits the model judging it, and says so
+  in words when it cannot. The deep check hands that model the item's prompt,
+  its pinned issue and every commit since the item was created — around 19,000
+  characters, which does not fit a local model loaded with LM Studio's default
+  4K of context. The engine did not answer short; it rejected the request
+  outright, and the pane pasted the raw 500 it came back with — JSON braces,
+  `server_error` and all — into the status line, lowercased, where the item's
+  verdict belongs. Each piece of that evidence is now sized to the context
+  window the reviewing model reports, with the commit history giving up
+  characters first and the item's own prompt last. A rejection is retried once
+  at the size local models are usually loaded with, because LM Studio's model
+  list reports a model's catalogue maximum rather than the length it was loaded
+  at. When the check still does not fit, the box names the model, its context
+  window and the two ways out — raise the context length in LM Studio, or pick
+  a larger model for small tasks — and keeps that explanation on screen instead
+  of losing it to the next background refresh. Chat recognises the same engine
+  wording too, where it previously came through as an unexplained error.
 
 ## Release-note process
 

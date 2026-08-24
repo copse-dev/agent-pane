@@ -440,6 +440,10 @@ export function seedEmptyProject(
     localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
+    theme?: 'system' | 'light' | 'dark'
+    uiAccentColor?: string
+    uiTintColor?: string
+    uiTintStrength?: 'off' | 'subtle' | 'medium' | 'strong'
     /**
      * Opt into the `copse.okf-memories` pack (its `remember`/`recall` tools, the
      * memory prompt block, and the Memories pane). The pack ships off, so a test
@@ -582,6 +586,10 @@ export function seedEmptyProject(
   if (options?.rightPanelPosition !== undefined) {
     settings.rightPanelPosition = options.rightPanelPosition
   }
+  if (options?.theme !== undefined) settings.theme = options.theme
+  if (options?.uiAccentColor !== undefined) settings.uiAccentColor = options.uiAccentColor
+  if (options?.uiTintColor !== undefined) settings.uiTintColor = options.uiTintColor
+  if (options?.uiTintStrength !== undefined) settings.uiTintStrength = options.uiTintStrength
   if (options?.developerMode !== undefined) {
     settings.developerMode = options.developerMode
   }
@@ -611,6 +619,65 @@ export function seedEmptyProject(
   } else {
     writeSettings({})
   }
+}
+
+/**
+ * Two canvas threads sharing an artefact title: the active thread can render a
+ * live preview while the historical thread proves that preview never leaks
+ * across the thread boundary.
+ */
+export function seedCanvasArtefactThreadFixture(
+  workspaceRoot: string,
+  projectId: string,
+  activeThreadId: string,
+  historyThreadId: string,
+): void {
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId,
+    pluginDisabled: pluginDisabledSeed(['copse.mcp-ui-canvas']),
+    [`threads:${projectId}`]: [
+      {
+        id: activeThreadId,
+        title: 'Current canvas work',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: historyThreadId,
+        title: 'Historical canvas work',
+        status: 'idle',
+        messages: [
+          {
+            id: 'historical-canvas-answer',
+            role: 'assistant',
+            content: 'Here is the earlier dashboard render.',
+            toolCalls: [
+              {
+                id: 'historical-canvas-tool',
+                name: 'mcp__copse-canvas__render_html_artefact',
+                args: { title: 'Sales Dashboard', html: '<h1>historical</h1>' },
+                status: 'done',
+                result:
+                  '[ui resource: ui://canvas/sales-dashboard (text/html, 0.1 KB) — rendered in the canvas]',
+              },
+            ],
+            createdAt: now - 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 1,
+        updatedAt: now - 1,
+      },
+    ],
+  })
+  writeSettings({ subagentsEnabled: false, model: 'claude-sonnet-4-6' })
 }
 
 /**

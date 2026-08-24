@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { localWorkspaceFs } from './local-workspace-fs.ts'
@@ -32,6 +32,6 @@ describe('localWorkspaceFs', () => {
     const file = join(dir, 'b.txt')
     writeFileSync(file, 'ok')
     assert.equal(await localWorkspaceFs.exists(file), true)
-    assert.equal(await localWorkspaceFs.realpath(file), file)
+    assert.equal(await localWorkspaceFs.realpath(file), realpathSync.native(file))
   })
 })

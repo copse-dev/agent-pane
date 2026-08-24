@@ -388,7 +388,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           chunkHandlers.delete(handler)
         }
       },
-      onApprovalRequest: subscribe,
+      onApprovalRequest: (handler) => {
+        if (scenario.approvalRequest) {
+          const request = structuredClone(scenario.approvalRequest)
+          setTimeout(() => {
+            handler(request)
+          }, 0)
+        }
+        return (): void => undefined
+      },
       onApprovalCancelled: subscribe,
       onAskUserRequest: subscribe,
       onShellOutput: subscribe,
@@ -457,7 +465,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       setCuratedEnabled: emptyArray,
       onStatusChanged: subscribe,
     },
-    canvas: { onArtefact: subscribe },
+    canvas: { onArtefact: subscribe, onShowArtefact: subscribe },
     storage: {
       get: (key: string) => resolved(storage.get(key)),
       set: (key: string, value: unknown) => {

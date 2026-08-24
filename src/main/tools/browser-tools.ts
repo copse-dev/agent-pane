@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { getActiveRunThread } from '../services/thread-models.ts'
 import { defineTool } from '@shared/types'
 import { getBrowserSession } from '../services/browser/session-manager.ts'
 import {
@@ -122,6 +123,44 @@ export const browserTabsTool = defineTool({
   },
 })
 
+export const browserShowTool = defineTool({
+  name: 'browser_show',
+  description:
+    "Bring something you have already rendered into the user's visible Browser panel: a canvas " +
+    'artefact by `title`, or a page by `url`. Rendering an artefact you are still iterating on ' +
+    'leaves it in the background — check it with browser_snapshot / browser_screenshot first, ' +
+    'and call this once it is worth the user looking at. No approval is needed.',
+  parameters: z.object({
+    title: z
+      .string()
+      .optional()
+      .describe('Title of a canvas artefact already rendered with render_html_artefact.'),
+    url: z.url().optional().describe('A URL already open in the agent browser.'),
+  }),
+  execute({ title, url }) {
+    if (title && url) throw new Error('Pass either title or url, not both')
+    if (title) {
+      const threadId = getActiveRunThread()
+      getBrowserSession().showArtefact({ title, ...(threadId ? { threadId } : {}) })
+      return `Brought the "${title}" artefact to the front of the Browser panel.`
+    }
+    if (!url) throw new Error('Pass a title (canvas artefact) or a url')
+    // Only promote a page this session already has open. `showUrl` puts a URL
+    // straight into the user's visible pane, and the origin policy that gates
+    // browser_navigate does not run here — so accepting an arbitrary URL would
+    // turn this into an unprompted way to navigate the user's browser anywhere.
+    // Requiring an open tab keeps it to "show me what you were just looking at".
+    const session = getBrowserSession()
+    if (!session.listTabs().some((tab) => tab.url === url)) {
+      throw new Error(
+        `${url} is not open in the agent browser — navigate to it with browser_navigate first`,
+      )
+    }
+    session.showUrl(url)
+    return `Opened ${url} in the visible Browser panel.`
+  },
+})
+
 // Single source of truth for registration. ToolDefinition<TArgs> is invariant
 // in TArgs, so a heterogeneous list can't be typed as ToolDefinition[] without
 // erasing here; the registry validates each tool's args at runtime.
@@ -133,6 +172,7 @@ export const browserTools = [
   browserClickTool,
   browserTypeTool,
   browserTabsTool,
+  browserShowTool,
 ]
 
 export function registerBrowserTools(registry: ToolRegistry): void {
@@ -143,4 +183,5 @@ export function registerBrowserTools(registry: ToolRegistry): void {
   registry.register(browserClickTool)
   registry.register(browserTypeTool)
   registry.register(browserTabsTool)
+  registry.register(browserShowTool)
 }

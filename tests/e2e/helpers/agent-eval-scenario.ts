@@ -57,6 +57,7 @@ const evalScenarioSchema = z.object({
       forbidDisplacedShell: z.boolean().optional(),
       /** Fail when a `sandbox_network_audit` card names a GitHub host. */
       forbidGithubNetworkDenial: z.boolean().optional(),
+      forbidGlobalTempWrites: z.boolean().optional(),
       requireBackgroundWakeStart: z.boolean().optional(),
       maxApprovals: z.number().int().nonnegative().optional(),
       /**

@@ -7,11 +7,15 @@
 module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return
 
+  // `Arch` originates in builder-util, but that is only a transitive dependency:
+  // pnpm's isolated linker gives top-level symlinks to direct dependencies alone,
+  // so a bare import of it from this script fails to resolve on a clean install.
+  // electron-builder is a direct dependency and re-exports the very same enum.
   const [{ execFileSync }, { renameSync, rmSync }, { join }, { Arch }] = await Promise.all([
     import('node:child_process'),
     import('node:fs'),
     import('node:path'),
-    import('builder-util'),
+    import('electron-builder'),
   ])
 
   const targetArch =

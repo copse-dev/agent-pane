@@ -435,6 +435,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
       tools: terminalTools,
       maxSteps,
       maxLlmCalls,
+      adaptiveExtensions: false,
       maxContextTokens,
       maxStreamOutputTokens,
       reasoningRunawayRecoveryOutputTokens,

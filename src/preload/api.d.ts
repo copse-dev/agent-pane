@@ -39,7 +39,7 @@ import type {
   DeclaredMcpServer,
 } from '@shared/types/mcp.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
-import type { CanvasArtefact } from '@shared/types/canvas.ts'
+import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import type {
   ExtraProvider,
@@ -337,6 +337,7 @@ export interface ApiClient {
   }
   canvas: {
     onArtefact: (handler: (artefact: CanvasArtefact) => void) => () => void
+    onShowArtefact: (handler: (identity: CanvasArtefactIdentity) => void) => () => void
   }
   storage: {
     get: (key: string) => Promise<unknown>
