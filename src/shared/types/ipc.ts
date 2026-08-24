@@ -225,10 +225,6 @@ export interface IpcInvokeMap {
   'app-icon:apply': { args: []; result: undefined }
 
   // Usage ledger
-  'usage:record': {
-    args: [input: import('@shared/usage/usage-event.ts').UsageRecordInput]
-    result: undefined
-  }
   'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
   'usage:getPlanUsage': {
     args: []

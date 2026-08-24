@@ -839,8 +839,6 @@ contextBridge.exposeInMainWorld('api', {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
   },
   usage: {
-    record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) =>
-      ipcRenderer.invoke('usage:record', input),
     getSummary: () => ipcRenderer.invoke('usage:getSummary'),
     getPlanUsage: () => ipcRenderer.invoke('usage:getPlanUsage'),
     getPlanWorthIt: () => ipcRenderer.invoke('usage:getPlanWorthIt'),
