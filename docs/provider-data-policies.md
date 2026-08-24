@@ -126,8 +126,9 @@ a provider or correcting a policy is a data edit rather than a code change:
    A `comment` field on any entry is prose for the next person to read the
    catalog — it is validated but never shipped as data, so use it for the "why"
    the way the hand-written table used to.
-2. Run the tests. That is the whole loop: there is no generated mirror of the
-   catalog and nothing to regenerate.
+2. Run `pnpm run check` (per AGENTS.md). There is no generated mirror of the
+   catalog and nothing to regenerate; a preset change is visible in Settings →
+   Providers, so include the visual evidence AGENTS.md asks for.
 
 [`packages/llm/src/provider-metadata.ts`](../packages/llm/src/provider-metadata.ts)
 imports the JSON directly and validates it with zod at load, so the catalog is
@@ -153,9 +154,13 @@ Three things deliberately stay in TypeScript rather than moving into the JSON:
   OpenRouter policy variants (`openRouterDataPolicy`), which depend on Copse's
   own routing settings rather than on a provider fact.
 
-That split is what would let this catalog become a shared registry later — a
-separate repo or a fetched feed would carry the JSON and nothing else — while
-the security decisions stay local and non-remote-configurable.
+One caution before this catalog ever becomes a shared registry or fetched
+feed: preset base URLs feed `builtinProviderHosts()` (provider-host-policy.ts),
+the set of hosts API keys may reach **without** a user approval prompt. The
+catalog is therefore part of the credential-egress trust base — it must stay
+compiled into the bundle and code-reviewed. A remotely-synced catalog would
+have to keep the host allowlist derivation pointed at the reviewed, vendored
+copy, never at fetched data.
 
 ## Sources
 

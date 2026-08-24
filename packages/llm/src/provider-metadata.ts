@@ -3,24 +3,31 @@
 // `packages/llm/data/provider-metadata.json`.
 //
 // The JSON file is the single source of truth — there is no generated mirror of
-// it. This module is the contract: a zod schema that both types the catalog and
-// rejects a malformed one at load, so adding a provider stays a data edit while
-// the compiler still knows `zdr` is a six-way union rather than `string`.
+// it. This module is the contract: zod schemas that both type the catalog
+// (every exported type is schema-derived per docs/type-safety.md) and reject a
+// malformed catalog at load, so adding a provider stays a data edit while the
+// compiler still knows `zdr` is a six-way union rather than `string`.
 //
-// Descriptive facts belong in the JSON. Anything derived or security-relevant
-// stays in code, on purpose:
-//   - `local` / `prefix` / `builtin` are computed in extra-providers.ts —
-//     `local` from the base URL, so no catalog edit can mark a remote endpoint
-//     local and skip the "data leaves this machine" treatment in Settings.
-//   - The wire dialect behind `apiStyle` lives in create-provider.ts.
-//   - The provider-host allowlist lives in provider-host-policy.ts.
-// That split is what would let this catalog move to a shared registry later
-// without the security decisions travelling with it.
+// SECURITY: the catalog is part of the credential-egress trust base. Preset
+// base URLs feed `builtinProviderHosts()` (provider-host-policy.ts), the set of
+// hosts API keys may reach WITHOUT a user approval prompt. That is why
+// `baseUrl` is refined through `isSafeCredentialBaseUrl` at load — the same
+// floor user-added customs get — and why this file must stay compiled into the
+// bundle and code-reviewed: a fetched or remotely-synced catalog must never
+// reach BUILTIN_EXTRA_PROVIDERS without revisiting that gate.
 //
-// See docs/provider-data-policies.md.
+// Beyond the URL floor, what stays in code: `local`/`prefix`/`builtin` are
+// derived in extra-providers.ts (`local` from the base URL, so no catalog edit
+// can mark a remote endpoint local); the wire dialect behind `apiStyle` lives
+// in create-provider.ts; the OpenRouter policy variants live in
+// data-policies.ts. See docs/provider-data-policies.md.
 
 import { z } from 'zod'
-import catalog from '../data/provider-metadata.json'
+import { isSafeCredentialBaseUrl } from './credential-url.ts'
+import catalog from '../data/provider-metadata.json' with { type: 'json' }
+
+/** Reserved-slug shape shared by preset ids and policy slugs. */
+const slug = z.string().regex(/^[a-z][a-z0-9-]*$/)
 
 const presetModelSchema = z
   .object({
@@ -38,11 +45,17 @@ const presetModelSchema = z
 const presetSchema = z
   .object({
     /** Stable slug: model-selection prefix source and API-key lookup id. */
-    id: z.string().regex(/^[a-z][a-z0-9-]*$/),
+    id: slug,
     /** Human label / picker optgroup heading. */
     label: z.string().min(1),
-    /** OpenAI-compatible base URL the SDK talks to. */
-    baseUrl: z.url(),
+    /**
+     * OpenAI-compatible base URL the SDK talks to. Held to the same floor as
+     * user-added customs (`isSafeCredentialBaseUrl`): https only — no embedded
+     * credentials, no private/link-local hosts — except http to loopback for
+     * the local-server presets. Enforced here, not in a test, because a preset
+     * host is credential-egress-allowlisted without a prompt.
+     */
+    baseUrl: z.url().refine(isSafeCredentialBaseUrl, 'unsafe credential base URL'),
     /** Wire protocol. Absent means Chat Completions. */
     apiStyle: z.enum(['chat-completions', 'responses']).optional(),
     /** Env var that can also supply the key. */
@@ -55,7 +68,12 @@ const presetSchema = z
     keyHint: z.string().min(1),
     /** Key-format prefix, checked before any network call. */
     keyPrefix: z.string().min(1).optional(),
-    fallbackContextWindow: z.int().positive(),
+    /**
+     * Context window used when a selected model has no known size of its own.
+     * Absent means DEFAULT_EXTRA_PROVIDER_CONTEXT (applied in
+     * extra-providers.ts, so the catalog and user customs share one default).
+     */
+    fallbackContextWindow: z.int().positive().optional(),
     /** OpenAI `stream_options.include_usage`. */
     includeUsage: z.boolean().optional(),
     /** Extra fields merged into every request body. */
@@ -68,19 +86,46 @@ const presetSchema = z
 
 const dataPolicySchema = z
   .object({
-    /** Provider slugs this policy applies to; empty means host-only. */
-    slugs: z.array(z.string().min(1)),
-    /** API hostnames that resolve to this policy for custom endpoints. */
-    hosts: z.array(z.string().min(1)).optional(),
+    /** Provider slugs this policy applies to; empty only for host-only entries. */
+    slugs: z.array(slug),
+    /** API hostnames (lowercase) that resolve to this policy for custom endpoints. */
+    hosts: z.array(z.string().regex(/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/)).optional(),
+    /**
+     * Prompts/completions are retained at rest by default. `null` = unknown or
+     * depends on a third party (e.g. Hugging Face's routed partners).
+     */
     retainsPrompts: z.union([z.boolean(), z.null()]),
+    /** Stated retention window in days, when the provider publishes one. */
     retentionDays: z.int().positive().optional(),
+    /**
+     * Inputs/outputs may be used to train or improve models by default.
+     * `null` = unknown / partner-dependent.
+     */
     trainsOnData: z.union([z.boolean(), z.null()]),
+    /**
+     * How zero-data-retention can be achieved with this provider:
+     * - `default`   — ZDR is the provider's default behavior
+     * - `request`   — a per-request parameter or self-serve program enables it
+     * - `setting`   — an account/console toggle enables it
+     * - `contract`  — only via a sales/enterprise arrangement
+     * - `none`      — no documented ZDR path
+     * - `unknown`   — not determinable (e.g. depends on a routed partner)
+     */
     zdr: z.enum(['default', 'request', 'setting', 'contract', 'none', 'unknown']),
+    /** One-line summary shown as a Settings hint. */
     note: z.string().min(1),
+    /** Primary source (provider's own docs/policy). */
     policyUrl: z.url().startsWith('https://'),
     comment: z.string().optional(),
   })
   .strict()
+  // An entry reachable by neither slug nor host would validate, load, and then
+  // resolve for nothing — Settings would show "Data policy unknown" for a
+  // provider whose policy sits right here in the file.
+  .refine(
+    (entry) => entry.slugs.length > 0 || (entry.hosts?.length ?? 0) > 0,
+    'policy entry has neither slugs nor hosts and can never be resolved',
+  )
 
 const catalogSchema = z
   .object({
@@ -94,101 +139,46 @@ const catalogSchema = z
   .strict()
 
 /** A model in a preset's curated shortlist. */
-export interface ProviderPresetModel {
-  id: string
-  contextWindow?: number
-  inputPricePerMTok?: number
-  outputPricePerMTok?: number
-}
+export type ProviderPresetModel = Omit<z.infer<typeof presetModelSchema>, 'comment'>
 
 /** A shipped OpenAI-compatible provider preset, minus its derived fields. */
-export interface ProviderPreset {
-  id: string
-  label: string
-  baseUrl: string
-  apiStyle?: 'chat-completions' | 'responses'
-  envVar?: string
-  keyLabel: string
-  keyPlaceholder: string
-  keyHint: string
-  keyPrefix?: string
-  fallbackContextWindow: number
-  includeUsage?: boolean
-  extraBody?: Record<string, unknown>
+export type ProviderPreset = Omit<z.infer<typeof presetSchema>, 'comment' | 'models'> & {
   models: readonly ProviderPresetModel[]
 }
 
 /** A data-retention policy plus the slugs and API hosts it resolves for. */
-export interface ProviderDataPolicyEntry {
-  slugs: readonly string[]
-  hosts?: readonly string[]
-  retainsPrompts: boolean | null
-  retentionDays?: number
-  trainsOnData: boolean | null
-  zdr: 'default' | 'request' | 'setting' | 'contract' | 'none' | 'unknown'
-  note: string
-  policyUrl: string
+export type ProviderDataPolicyEntry = Omit<z.infer<typeof dataPolicySchema>, 'comment'>
+
+/**
+ * Strip the `comment` field — prose for whoever edits the catalog, never data.
+ * A destructure-rest, so every other field survives generically: a field added
+ * to a schema can not be silently dropped here.
+ */
+function withoutComment<T extends { comment?: string | undefined }>(entry: T): Omit<T, 'comment'> {
+  const { comment: _comment, ...rest } = entry
+  return rest
 }
 
-// zod models an absent key as `T | undefined`, which `exactOptionalPropertyTypes`
-// rejects against a plain `?: T`. These three functions are that bridge, and the
-// only reason the shapes above are written out rather than inferred: they copy
-// the validated catalog into the exact-optional form the rest of the app uses,
-// dropping `comment` (prose for whoever edits the catalog, never data).
-function toModel(model: z.infer<typeof presetModelSchema>): ProviderPresetModel {
-  return {
-    id: model.id,
-    ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}),
-    ...(model.inputPricePerMTok !== undefined
-      ? { inputPricePerMTok: model.inputPricePerMTok }
-      : {}),
-    ...(model.outputPricePerMTok !== undefined
-      ? { outputPricePerMTok: model.outputPricePerMTok }
-      : {}),
+const parsed = catalogSchema.parse(catalog)
+
+// Load-time invariant the per-entry schemas cannot express: a hosted preset
+// must have a data policy, or Settings silently shows "Data policy unknown"
+// next to a provider we ship. (Local presets need none: data stays on-device.)
+{
+  const policySlugs = new Set(parsed.dataPolicies.flatMap((policy) => policy.slugs))
+  for (const preset of parsed.presets) {
+    if (preset.baseUrl.startsWith('http://')) continue // loopback-only, per the baseUrl refine
+    if (!policySlugs.has(preset.id)) {
+      throw new Error(`provider-metadata.json: hosted preset '${preset.id}' has no data policy`)
+    }
   }
-}
-
-function toPreset(preset: z.infer<typeof presetSchema>): ProviderPreset {
-  return {
-    id: preset.id,
-    label: preset.label,
-    baseUrl: preset.baseUrl,
-    ...(preset.apiStyle !== undefined ? { apiStyle: preset.apiStyle } : {}),
-    ...(preset.envVar !== undefined ? { envVar: preset.envVar } : {}),
-    keyLabel: preset.keyLabel,
-    keyPlaceholder: preset.keyPlaceholder,
-    keyHint: preset.keyHint,
-    ...(preset.keyPrefix !== undefined ? { keyPrefix: preset.keyPrefix } : {}),
-    fallbackContextWindow: preset.fallbackContextWindow,
-    ...(preset.includeUsage !== undefined ? { includeUsage: preset.includeUsage } : {}),
-    ...(preset.extraBody !== undefined ? { extraBody: preset.extraBody } : {}),
-    models: preset.models.map(toModel),
-  }
-}
-
-function toDataPolicy(entry: z.infer<typeof dataPolicySchema>): ProviderDataPolicyEntry {
-  return {
-    slugs: entry.slugs,
-    ...(entry.hosts !== undefined ? { hosts: entry.hosts } : {}),
-    retainsPrompts: entry.retainsPrompts,
-    ...(entry.retentionDays !== undefined ? { retentionDays: entry.retentionDays } : {}),
-    trainsOnData: entry.trainsOnData,
-    zdr: entry.zdr,
-    note: entry.note,
-    policyUrl: entry.policyUrl,
-  }
-}
-
-const parsed = catalogSchema.safeParse(catalog)
-if (!parsed.success) {
-  // The catalog is compiled in, so this can only fire on a bad edit — and
-  // provider-metadata.test.ts fails first. Throw rather than degrade: a
-  // half-loaded catalog would silently drop providers or privacy badges.
-  throw new Error(`provider-metadata.json is invalid:\n${z.prettifyError(parsed.error)}`)
 }
 
 /** The presets in catalog order, which is picker and local-chip order. */
-export const PROVIDER_PRESETS: readonly ProviderPreset[] = parsed.data.presets.map(toPreset)
+export const PROVIDER_PRESETS: readonly ProviderPreset[] = parsed.presets.map((preset) => ({
+  ...withoutComment(preset),
+  models: preset.models.map(withoutComment),
+}))
 export const PROVIDER_DATA_POLICIES: readonly ProviderDataPolicyEntry[] =
-  parsed.data.dataPolicies.map(toDataPolicy)
-export const PROVIDER_METADATA_LAST_VERIFIED = parsed.data.lastVerified
+  parsed.dataPolicies.map(withoutComment)
+export const PROVIDER_METADATA_LAST_VERIFIED = parsed.lastVerified
