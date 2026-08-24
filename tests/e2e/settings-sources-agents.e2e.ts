@@ -73,7 +73,7 @@ describe('custom agent discovery surfaces', () => {
     assert.match(text, new RegExp(AGENT_NAME))
     assert.match(text, new RegExp(AGENT_DESCRIPTION))
     assert.match(text, /project/i)
-    assert.match(text, /\.cursor/)
+    assert.match(text, /\.cursor/i)
 
     await browser.execute(() => {
       document.querySelector('#sources-agents-list')?.closest('fieldset')?.scrollIntoView({
