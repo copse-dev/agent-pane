@@ -11,6 +11,7 @@
     "oracle": "node scripts/test-oracle.mts",
     "check:oracle": "node scripts/check-oracle.mts",
     "check:screenshots": "node scripts/check-screenshots.mts",
+    "check:e2e-syntax": "node scripts/check-e2e-syntax.mts",
     "filter:screenshots": "node scripts/filter-screenshots.mts",
     "build": "node scripts/build.mts",
     "build:demo": "node scripts/build.mts --demo",
@@ -90,7 +91,7 @@
     "pack:mac": "pnpm run build:release && pnpm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "pnpm run prepare:gortex:mac && pnpm run build:release && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
     "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run prepare:gortex:mac && pnpm run build:release && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm test"
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm run check:e2e-syntax && pnpm test"
   },
   "build": {
     "appId": "app.copse-panel",

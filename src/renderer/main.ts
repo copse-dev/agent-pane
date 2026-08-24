@@ -491,7 +491,9 @@ async function boot(): Promise<void> {
     return
   }
 
-  if (await shouldShowOnboarding(api)) openOnboardingDialog()
+  // Never in a pop-out: the early return above only covers popouts that already
+  // restored a workspace, but a fresh-profile popout would fall through here.
+  if (!popoutMode && (await shouldShowOnboarding(api))) openOnboardingDialog()
 }
 
 function ensureLayout(): void {

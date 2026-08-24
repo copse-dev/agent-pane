@@ -93,6 +93,7 @@ export class MainWindowStateRepository {
   readonly #createId: () => string
   readonly #now: () => number
   #state: MainWindowState | null = null
+  #frozen = false
 
   constructor(
     storage: MainWindowStateStorage,
@@ -164,6 +165,16 @@ export class MainWindowStateRepository {
     this.#persist()
   }
 
+  /**
+   * Stop persisting: the stored snapshot is final. Used by the e2e harness
+   * before it tears a session down — the outgoing process must not write its
+   * (possibly pre-seed) window records over state a spec just seeded on disk.
+   * In-memory updates still apply so the closing windows behave normally.
+   */
+  freeze(): void {
+    this.#frozen = true
+  }
+
   #ensureLoaded(): void {
     if (this.#state) return
     this.#state = decodeState(this.#storage.get(MAIN_WINDOW_STATE_KEY)) ?? {
@@ -173,6 +184,7 @@ export class MainWindowStateRepository {
   }
 
   #persist(): void {
+    if (this.#frozen) return
     if (this.#state) this.#storage.set(MAIN_WINDOW_STATE_KEY, this.#state)
   }
 }

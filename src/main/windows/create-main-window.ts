@@ -79,6 +79,19 @@ export function beginMainWindowQuit(): void {
   quitting = true
 }
 
+/**
+ * E2E teardown seam (`test:markQuit`): treat the shutdown as a quit AND stop
+ * persisting window state. The wdio harness closes a window so the outgoing
+ * Electron terminates before its replacement launches (wdio.conf.ts
+ * beforeCommand); without this, that close both dropped the window's record
+ * (read as a user close) and re-wrote the outgoing process's stale records
+ * over state the spec had just seeded on disk.
+ */
+export function freezeMainWindowStateForQuit(): void {
+  quitting = true
+  mainWindowState.freeze()
+}
+
 function contextRecord(webContents: WebContents): MainWindowRecord | undefined {
   const context = mainWindowRegistry.fromWebContents(webContents)
   return context ? mainWindowState.get(context.id) : undefined
