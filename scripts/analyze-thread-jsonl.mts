@@ -33,6 +33,10 @@ interface ScenarioExpect {
   forbidTools?: string[] | undefined
   /** Fail when `run_shell` ran a command a first-class tool already covers. */
   forbidDisplacedShell?: boolean | undefined
+  /** Fail when `run_shell` ran destructive VCS recovery (`reset --hard` / `clean -fd`). */
+  forbidDestructiveGitShell?: boolean | undefined
+  /** Fail when `run_shell` touched `~/.copse/workspace` (use read_archive / file tools). */
+  forbidCopseWorkspaceShell?: boolean | undefined
   /** Fail when a `sandbox_network_audit` card names a GitHub host. */
   forbidGithubNetworkDenial?: boolean | undefined
   /** Fail when a shell call writes scratch under a global temp root (#1846). */
@@ -142,6 +146,8 @@ const scenarioSchema: z.ZodType<Scenario> = z.object({
       requireSuccessfulToolGroups: z.array(z.array(z.string().min(1)).min(1)).optional(),
       forbidTools: z.array(z.string()).optional(),
       forbidDisplacedShell: z.boolean().optional(),
+      forbidDestructiveGitShell: z.boolean().optional(),
+      forbidCopseWorkspaceShell: z.boolean().optional(),
       forbidGithubNetworkDenial: z.boolean().optional(),
       forbidGlobalTempWrites: z.boolean().optional(),
       maxInputTokens: z.number().optional(),
@@ -352,6 +358,8 @@ function analyze(path: string, scenario?: Scenario): void {
         requireSuccessfulToolGroups: exp?.requireSuccessfulToolGroups,
         forbidTools: exp?.forbidTools,
         forbidDisplacedShell: exp?.forbidDisplacedShell,
+        forbidDestructiveGitShell: exp?.forbidDestructiveGitShell,
+        forbidCopseWorkspaceShell: exp?.forbidCopseWorkspaceShell,
         forbidGithubNetworkDenial: exp?.forbidGithubNetworkDenial,
         forbidGlobalTempWrites: exp?.forbidGlobalTempWrites,
       },
