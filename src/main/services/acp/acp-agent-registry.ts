@@ -1,5 +1,5 @@
 import type { AcpAgentConfig, AcpAgentSandboxConfig } from '@shared/types/acp.ts'
-import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
+import { canonicalAcpAgentId, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
 
 /**
@@ -12,7 +12,14 @@ import { getSetting, setSetting } from '../storage/settings.ts'
  * the spawn config the run service hands to the ACP client.
  */
 export function listAcpAgents(): AcpAgentConfig[] {
-  return getSetting<AcpAgentConfig[]>('registeredAcpAgents', [])
+  // Normalise renamed ids on the way out (`LEGACY_ACP_AGENT_IDS`), so a config
+  // written before an agent was renamed still resolves its catalog entry — and
+  // therefore its seatbelt — rather than silently reading as a custom agent.
+  return getSetting<AcpAgentConfig[]>('registeredAcpAgents', []).map((agent) =>
+    agent.id === canonicalAcpAgentId(agent.id)
+      ? agent
+      : { ...agent, id: canonicalAcpAgentId(agent.id) },
+  )
 }
 
 /** Configured agents the user has enabled — the ones the picker should offer. */
@@ -26,15 +33,20 @@ export function listEnabledAcpAgents(): AcpAgentConfig[] {
  * than spawning something the user turned off.
  */
 export function getAcpAgent(id: string): AcpAgentConfig | null {
-  const agent = listAcpAgents().find((candidate) => candidate.id === id)
+  // `id` often comes from a thread's `acp:<id>` model value, which is history
+  // and keeps whatever id was current when the turn ran.
+  const canonical = canonicalAcpAgentId(id)
+  const agent = listAcpAgents().find((candidate) => candidate.id === canonical)
   return agent && agent.enabled ? agent : null
 }
 
 /**
  * Resolve the seatbelt confines an agent should spawn under (issue #590). The
- * `KNOWN_ACP_AGENTS` catalog is the source of truth for presets — resolved
- * here at spawn time rather than copied into the persisted config, so catalog
- * updates apply without config migrations. The config's `sandbox` field is an
+ * catalog is the source of truth for presets — resolved here at spawn time
+ * rather than copied into the persisted config, so catalog updates apply
+ * without config migrations. That read-through is why the lookup spans retired
+ * entries too (`findAcpCatalogEntry`): withdrawing an agent must not quietly
+ * drop the seatbelt from a config that still names it. The config's `sandbox` field is an
  * override only: an object replaces the catalog preset, `false` opts the agent
  * out, and absence means "whatever the catalog says" (custom agents with no
  * catalog entry spawn unsandboxed).
@@ -42,13 +54,13 @@ export function getAcpAgent(id: string): AcpAgentConfig | null {
 export function resolveAcpSandbox(config: AcpAgentConfig): AcpAgentSandboxConfig | undefined {
   if (config.sandbox === false) return undefined
   if (config.sandbox) return config.sandbox
-  return KNOWN_ACP_AGENTS.find((known) => known.id === config.id)?.sandbox
+  return findAcpCatalogEntry(config.id)?.sandbox
 }
 
 /**
  * Resolve the ACP **session mode** an agent should start each session in
  * (issue #607). A user-set `permissionMode` on the config always wins. Absent,
- * we fall back to the `KNOWN_ACP_AGENTS` catalog's `sandboxedPermissionMode`
+ * we fall back to the catalog's `sandboxedPermissionMode`
  * **only when the agent will actually spawn sandboxed** — the seatbelt makes
  * prompt-per-edit friction without safety, so the Claude presets relax to
  * `acceptEdits`. Unsandboxed agents (and any agent with no catalog default)
@@ -63,7 +75,7 @@ export function resolveAcpPermissionMode(
 ): string | undefined {
   if (config.permissionMode) return config.permissionMode
   if (!sandboxed) return undefined
-  return KNOWN_ACP_AGENTS.find((known) => known.id === config.id)?.sandboxedPermissionMode
+  return findAcpCatalogEntry(config.id)?.sandboxedPermissionMode
 }
 
 /**
@@ -73,6 +85,7 @@ export function resolveAcpPermissionMode(
  */
 export async function upsertAcpAgent(config: AcpAgentConfig): Promise<AcpAgentConfig[]> {
   const list = listAcpAgents()
+  config = { ...config, id: canonicalAcpAgentId(config.id) }
   const index = list.findIndex((candidate) => candidate.id === config.id)
   const next = index === -1 ? [...list, config] : list.map((c) => (c.id === config.id ? config : c))
   await setSetting('registeredAcpAgents', next)

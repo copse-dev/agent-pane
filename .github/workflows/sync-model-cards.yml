@@ -46,13 +46,24 @@ jobs:
       - name: Validate
         run: npm run check
 
+      # copse-release-bot installation token, scoped to this repository and to
+      # the two permissions create-pull-request needs. See
+      # sync-model-catalog.yml for why the permissions are pinned explicitly.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Open PR if cards changed
         uses: peter-evans/create-pull-request@v8
         with:
-          # A PAT / App token rather than GITHUB_TOKEN, for the same two reasons
-          # as sync-model-catalog.yml: org policy blocks GITHUB_TOKEN from
+          # The App rather than GITHUB_TOKEN, for the same two reasons as
+          # sync-model-catalog.yml: org policy blocks GITHUB_TOKEN from
           # opening PRs, and a GITHUB_TOKEN PR would not trigger CI.
-          token: ${{ secrets.SYNC_PR_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           branch: chore/sync-model-cards
           delete-branch: true
           commit-message: 'chore(models): sync vendor model cards'

@@ -4,71 +4,6 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 
-export type PromptAttachment = {
-  path: string
-  content?: string
-  fixture?: string
-}
-
-export type EvalPrompt =
-  | string
-  | {
-      text: string
-      attachments?: PromptAttachment[]
-    }
-
-export interface EvalScenario {
-  id: string
-  description?: string
-  workspace?: {
-    type: 'current' | 'tempProject'
-    prefix?: string
-    initializeGit?: boolean
-    seedFiles?: PromptAttachment[]
-  }
-  prompts?: EvalPrompt[]
-  promptVariants?: string[]
-  autonomy?: {
-    tracePath: string
-    requireShellApproval?: boolean
-  }
-  backgroundWake?: {
-    continuationCount: number
-    reloadRenderer?: boolean
-    finalAssistantContains: string
-    timeoutMs?: number
-  }
-  toolUse?: {
-    requireTools?: string[]
-    /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
-    requireAnyTools?: string[]
-    forbidTools?: string[]
-    /** Fail when a `sandbox_network_audit` card names a GitHub host. */
-    forbidGithubNetworkDenial?: boolean
-    requireBackgroundWakeStart?: boolean
-    maxApprovals?: number
-  }
-  assertWorkspace?: {
-    git?: {
-      minCommits?: number
-      allCommitMessagesContain?: string[]
-    }
-    homePage?: {
-      path?: string
-      contains?: string[]
-      linksTo?: string
-    }
-    menuPage?: {
-      path?: string
-      contains?: string[]
-    }
-    filesContain?: Array<{
-      glob?: string
-      contains: string[]
-    }>
-  }
-}
-
 const promptAttachmentSchema = z.object({
   path: z.string(),
   content: z.string().optional(),
@@ -83,7 +18,7 @@ const evalPromptSchema = z.union([
   }),
 ])
 
-const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
+const evalScenarioSchema = z.object({
   id: z.string(),
   description: z.string().optional(),
   workspace: z
@@ -91,6 +26,8 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
       type: z.enum(['current', 'tempProject']),
       prefix: z.string().optional(),
       initializeGit: z.boolean().optional(),
+      /** Copy the current checkout's origin into an isolated temp repo for GitHub-tool evals. */
+      copyGitRemoteFromCurrent: z.boolean().optional(),
       seedFiles: z.array(promptAttachmentSchema).optional(),
     })
     .optional(),
@@ -113,11 +50,30 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
   toolUse: z
     .object({
       requireTools: z.array(z.string()).optional(),
+      /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
       requireAnyTools: z.array(z.string()).optional(),
+      /** Require one completed call from every group of alternative tools. */
+      requireSuccessfulToolGroups: z.array(z.array(z.string().min(1)).min(1)).optional(),
       forbidTools: z.array(z.string()).optional(),
+      /** Fail when `run_shell` ran a command a first-class tool already covers. */
+      forbidDisplacedShell: z.boolean().optional(),
+      /** Fail when `run_shell` ran destructive VCS recovery (`reset --hard` / `clean -fd`). */
+      forbidDestructiveGitShell: z.boolean().optional(),
+      /** Fail when `run_shell` touched `~/.copse/workspace` (use read_archive / file tools). */
+      forbidCopseWorkspaceShell: z.boolean().optional(),
+      /** Fail when a `sandbox_network_audit` card names a GitHub host. */
       forbidGithubNetworkDenial: z.boolean().optional(),
+      forbidGlobalTempWrites: z.boolean().optional(),
       requireBackgroundWakeStart: z.boolean().optional(),
       maxApprovals: z.number().int().nonnegative().optional(),
+      /**
+       * Ceiling on decisions that interrupted the user to let a shell command
+       * out of the sandbox. Narrower than `maxApprovals`, which counts every
+       * dialog the run raised whatever asked for it.
+       */
+      maxShellEscalationPrompts: z.number().int().nonnegative().optional(),
+      /** Arm Guarded YOLO before the first prompt; harm prompts still require rejection. */
+      armGuardedYolo: z.boolean().optional(),
     })
     .optional(),
   assertWorkspace: z
@@ -152,6 +108,20 @@ const evalScenarioSchema: z.ZodType<EvalScenario> = z.object({
     })
     .optional(),
 })
+
+/**
+ * Scenario shape, inferred from the schema that parses it.
+ *
+ * This was written twice — a hand-written interface plus the same object
+ * annotated `z.ZodType<EvalScenario>` — and under `exactOptionalPropertyTypes`
+ * the two cannot agree: zod types an omitted field as `T | undefined`, the
+ * interface as "absent, or `T`". `tsc` rejects the annotation outright, so the
+ * file only typechecked while nothing in a checked project imported it.
+ * Inferring leaves the parser as the single declaration of the shape.
+ */
+export type EvalScenario = z.infer<typeof evalScenarioSchema>
+export type EvalPrompt = z.infer<typeof evalPromptSchema>
+export type PromptAttachment = z.infer<typeof promptAttachmentSchema>
 
 export function loadEvalScenario(path: string): EvalScenario {
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
@@ -229,5 +199,16 @@ export function seedEvalWorkspace(root: string, scenario: EvalScenario): void {
     // chat. Mirror that boundary so native write tools can apply new files
     // directly instead of staging approval-only diffs in an untracked folder.
     execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'ignore' })
+  }
+  if (scenario.workspace?.copyGitRemoteFromCurrent === true) {
+    if (scenario.workspace.initializeGit !== true) {
+      throw new Error('copyGitRemoteFromCurrent requires initializeGit')
+    }
+    const origin = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    }).trim()
+    if (!origin) throw new Error('Current checkout has no origin remote for the eval workspace')
+    execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: root, stdio: 'ignore' })
   }
 }

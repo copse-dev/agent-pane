@@ -50,6 +50,7 @@ import {
   zPathString,
   zProjectId,
   zThreadId,
+  mainWindowNavigationSchema,
 } from './ipc-guards.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
@@ -68,18 +69,27 @@ import {
   getSetting,
   setSetting,
   hasApiKey,
+  resolveApiKey,
   setApiKey,
   isApiKeyEncrypted,
 } from '../services/storage/settings.ts'
 import { createElectronUserAlertSender } from '../services/user-alerts-electron.ts'
 import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
 import {
+  assertEnvKeyDetectionConsent,
+  importDetectedEnvKeys,
+  EnvKeyImportConsentError,
+} from '../services/providers/env-key-import.ts'
+import {
   isRendererWritableSettingKey,
   isSecretSettingKey,
   parseRendererWritableSetting,
   securitySettingsSchema,
 } from '../services/storage/settings-writable.ts'
-import { storedExtraProviderSchema } from '../services/storage/settings-schema.ts'
+import {
+  isRegisteredSettingKey,
+  storedExtraProviderSchema,
+} from '../services/storage/settings-schema.ts'
 import {
   getResolvedExtraProviders,
   saveExtraProvider,
@@ -92,6 +102,7 @@ import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/pr
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
+import { getMainWindowNavigation, setMainWindowNavigation } from '../windows/create-main-window.ts'
 import {
   backfillThreadPrRefs,
   loadProjectThreadMetas,
@@ -193,7 +204,7 @@ import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-senso
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
-import { MEMORY_TYPE } from '../tools/memory-tools.ts'
+import { EXTERNAL_CONTEXT_FIELD, MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
 import { ROADMAP_CATEGORIES, isRoadmapCategory } from '@shared/roadmap/complexity.ts'
 import {
@@ -290,6 +301,7 @@ import {
 import { applyAppIcon } from '../app-icon.ts'
 import {
   createMainWindow,
+  freezeMainWindowStateForQuit,
   getFocusedMainWindow,
   getMainWindow,
   syncDevtoolsShortcut,
@@ -302,8 +314,7 @@ import {
   isProviderKeyUsable,
   recordProviderKeyValidation,
 } from '../services/providers/provider-key-status.ts'
-import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
-import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
+import { getUsageSummary } from '../services/storage/usage-ledger.ts'
 import {
   getPlanWorthItPayload,
   loadPlanUsageSnapshotAndSample,
@@ -420,6 +431,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         // Stale workspaceRoot in config — ignore until user picks a folder.
       }
     }
+  })
+
+  ipcMain.handle('mainWindow:getNavigation', (event) => {
+    assertMainFrameSender(event, win)
+    return getMainWindowNavigation(event.sender)
+  })
+
+  ipcMain.handle('mainWindow:setNavigation', (event, rawNavigation: unknown) => {
+    assertMainFrameSender(event, win)
+    const navigation = parseIpcArgs(mainWindowNavigationSchema, [rawNavigation])
+    setMainWindowNavigation(event.sender, navigation)
   })
 
   ipcMain.handle('workspace:open', async () => {
@@ -702,7 +724,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       const title = parseIpcArgs(zMemoryTitle, [rawTitle])
       const body = parseIpcArgs(zMemoryBody, [rawBody])
       const tags = parseIpcArgs(zMemoryTags.optional(), [rawTags])
-      return updateKnowledgeNote(id, { title, body, tags })
+      // A user edit is a review: saving from the Memories pane clears the
+      // saved-with-external-content marker (context-provenance plan, Phase 4).
+      const current = getKnowledgeNote(id)
+      const fields = current
+        ? Object.fromEntries(
+            Object.entries(current.fields).filter(([key]) => key !== EXTERNAL_CONTEXT_FIELD),
+          )
+        : undefined
+      return updateKnowledgeNote(id, { title, body, tags, ...(fields ? { fields } : {}) })
     },
   )
 
@@ -1140,6 +1170,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (isSecretSettingKey(k)) {
       throw new IpcValidationError(`Setting key not readable from renderer: ${k}`)
     }
+    // An unregistered key cannot survive this read: `getSetting` falls back to a
+    // type-check against the fallback, and `null` matches only `null`, so the
+    // renderer would receive `null` whatever is stored — and then write that
+    // emptied value back on the next save (#1804). Fail the read instead of
+    // silently serving a default, so a key added without a schema is found the
+    // first time it is read rather than after it has eaten someone's settings.
+    if (!isRegisteredSettingKey(k)) {
+      throw new IpcValidationError(
+        `Setting key has no registered schema, so it cannot be read from the renderer: ${k}. ` +
+          'Register it in settings-schema.ts.',
+      )
+    }
     return getSetting(k, null)
   })
   ipcMain.handle('alerts:threadFinished', (event, rawThreadId: unknown, rawTitle: unknown) => {
@@ -1269,17 +1311,28 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
-    const result = await validateApiKey(p, apiKey)
+    // Empty means "the key already in use" (see the `settings:validateKey`
+    // contract): resolve it here so the stored secret never crosses to the
+    // renderer just to be handed straight back.
+    const candidate = apiKey.trim() ? apiKey : (resolveApiKey(p) ?? '')
+    if (!candidate) return { ok: false, error: 'No key configured for this provider' }
+    const result = await validateApiKey(p, candidate)
     recordProviderKeyValidation(p, result.ok)
     return result
   })
   // Opt-in environment scan: look for provider API keys the user already has
   // exported (process.env + well-known shell files) and offer to import them.
   // Raw secrets stay in the main process — the renderer only sees the masked
-  // preview. Both handlers re-scan on each call; the import handler is gated on
-  // the persisted consent flag set when the user approves the scan.
+  // preview. Both handlers re-scan on each call and both are gated on the
+  // persisted consent flag set when the user approves the scan.
   ipcMain.handle('settings:scanEnvKeys', (event) => {
     assertMainFrameSender(event, win)
+    try {
+      assertEnvKeyDetectionConsent()
+    } catch (err) {
+      if (err instanceof EnvKeyImportConsentError) throw new IpcValidationError(err.message)
+      throw err
+    }
     return scanEnvForKeys().map((d) => ({
       provider: d.provider,
       envVar: d.envVar,
@@ -1288,31 +1341,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       alreadyConfigured: hasApiKey(d.provider),
     }))
   })
-  ipcMain.handle('settings:importEnvKeys', (event) => {
+  ipcMain.handle('settings:importEnvKeys', (event, rawProviders?: unknown) => {
     assertMainFrameSender(event, win)
-    if (!getSetting<boolean>('envKeyAutoDetectEnabled', false)) {
-      throw new IpcValidationError('Environment key detection has not been enabled')
+    const providers = parseIpcArgs(z.array(z.string().max(64)).max(32).optional(), [rawProviders])
+    try {
+      return importDetectedEnvKeys(providers ? { providers } : {})
+    } catch (err) {
+      if (err instanceof EnvKeyImportConsentError) throw new IpcValidationError(err.message)
+      throw err
     }
-    const imported: { provider: string; source: string }[] = []
-    const skipped: { provider: string; reason: string }[] = []
-    for (const d of scanEnvForKeys()) {
-      // Never overwrite a key the user has already configured.
-      if (hasApiKey(d.provider)) {
-        skipped.push({ provider: d.provider, reason: 'already-configured' })
-        continue
-      }
-      // Honour the plaintext gate here too: a bulk env import must not write keys
-      // unencrypted without consent. Skipped rather than silently stored in clear.
-      // The user can add the key manually via the Settings UI where the per-save
-      // confirm dialog lets them approve plaintext storage explicitly.
-      const result = setApiKey(d.provider, d.value)
-      if (!result.ok) {
-        skipped.push({ provider: d.provider, reason: 'plaintext-storage-refused' })
-        continue
-      }
-      imported.push({ provider: d.provider, source: d.source })
-    }
-    return { imported, skipped }
   })
   ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
   // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
@@ -1372,10 +1409,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('app-icon:apply', () => {
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
-  })
-  ipcMain.handle('usage:record', (event, input: unknown) => {
-    assertMainFrameSender(event, win)
-    recordUsageEvent(parseUsageRecordInput(input))
   })
   ipcMain.handle('usage:getSummary', () => getUsageSummary())
   ipcMain.handle('usage:getPlanUsage', async () => loadPlanUsageSnapshotAndSample())
@@ -1970,13 +2003,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return listUnsandboxedProjectHooks(root)
   })
   ipcMain.handle('instructions:list', async () =>
-    (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({
+    (await loadProjectInstructionSources()).map(({ path, name, scope, content, active }) => ({
       path,
       name,
       scope,
       bytes: Buffer.byteLength(content, 'utf-8'),
+      active,
     })),
   )
+  /**
+   * Read one instruction file for display (Settings → Sources opens it in the
+   * shared preview dialog). Narrow and fail-closed: the path must still be a
+   * discovered instruction source, so this is not a general file-read channel.
+   * Reading is trust-independent on purpose — seeing what a repo's AGENTS.md
+   * says is how the user decides whether to trust the workspace at all — and it
+   * returns the same trimmed text the prompt would get, not the raw bytes.
+   */
+  ipcMain.handle('instructions:read', async (event, rawPath: unknown) => {
+    assertMainFrameSender(event, win)
+    const path = parseIpcArgs(zPathString, [rawPath])
+    const source = (await loadProjectInstructionSources()).find((s) => s.path === path)
+    if (!source) throw new IpcValidationError('Not a discovered instruction file')
+    return source.content
+  })
   ipcMain.handle('cursorRules:list', async () => {
     const root = getWorkspaceRoot()
     if (!root) return []
@@ -2423,6 +2472,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       createMainWindow()
     })
+    // The wdio harness closes a window before reloadSession so Electron can
+    // release its single-instance lock (wdio.conf.ts beforeCommand). Without
+    // this, that close reads as the user discarding the window (its persisted
+    // record is dropped) and the close-time state capture re-writes this
+    // process's stale records over whatever the spec just seeded on disk —
+    // which is how the multi-window restore spec broke. Quit + freeze keeps
+    // the on-disk state exactly as the spec left it.
+    ipcMain.handle('test:markQuit', (event) => {
+      assertMainFrameSender(event, win)
+      freezeMainWindowStateForQuit()
+    })
     // Local macOS WebDriver sessions cannot always relaunch Electron after a
     // fixture rewrite. Let focused specs drive the same workspace-open event as
     // the native folder picker while keeping this seam entirely e2e-only.
@@ -2435,13 +2495,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     })
     ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
       assertMainFrameSender(event, win)
-      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
+      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
       return requestAcpPackageInstallApproval([{ agent: codex, action: 'install' }])
     })
     ipcMain.handle('test:requestAcpPackageUpgradeApproval', (event) => {
       assertMainFrameSender(event, win)
-      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
+      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex-acp')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
       return requestAcpPackageInstallApproval([
         {

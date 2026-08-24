@@ -1,6 +1,11 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
+import {
+  MAX_FOLLOW_UP_OPEN_TODO_CHARS,
+  MAX_FOLLOW_UP_OPEN_TODOS,
+} from '@shared/follow-ups/types.ts'
 import { isTrustedAppFrame } from '../windows/app-frames.ts'
+import { RENDERER_STORAGE_KEYS } from '@shared/storage-keys.ts'
 import type { VncDiscoveryHost, VncTarget } from '@shared/types/vnc.ts'
 
 export class IpcValidationError extends Error {
@@ -126,6 +131,12 @@ export const followUpContextSchema = z.object({
   userMessage: z.string(),
   assistantMessage: z.string(),
   toolNames: z.array(z.string()),
+  // Open task-plan item contents at turn end; bounded so a runaway plan cannot
+  // balloon the IPC payload or the suggestion prompts built from it.
+  openTodos: z
+    .array(z.string().min(1).max(MAX_FOLLOW_UP_OPEN_TODO_CHARS))
+    .max(MAX_FOLLOW_UP_OPEN_TODOS)
+    .optional(),
 })
 
 /**
@@ -164,9 +175,17 @@ export function assertFsWriteContent(content: string): void {
   }
 }
 
-const STORAGE_KEY = z.union([z.literal('projects'), z.literal('activeProjectId')])
+// Derived from the shared list rather than restated here: a renderer key that is
+// not in the allowlist fails at runtime during boot, not in any renderer test
+// (see src/shared/storage-keys.ts).
+const STORAGE_KEY = z.enum(RENDERER_STORAGE_KEYS)
 
 export const zProjectId = z.string().regex(/^[\w-]{1,128}$/)
+
+export const mainWindowNavigationSchema = z.object({
+  activeProjectId: zProjectId.nullable(),
+  activeThreadId: zThreadId.nullable(),
+})
 
 const imageDataUrlSchema = z
   .string()

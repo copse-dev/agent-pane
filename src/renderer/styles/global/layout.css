@@ -230,6 +230,75 @@
   margin-top: 2px;
   border-top: 1px solid var(--border);
 }
+/* Projects sidebar drag-and-drop (issue #1685). The insertion line is drawn as
+   an inset box-shadow on the dragged-over block rather than a border, so nothing
+   reflows mid-drag and rows never jump under the pointer. */
+.project-entry.drop-before,
+.project-group.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.project-entry.drop-after,
+.project-group.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+/* "Into" is a container highlight, not a line — a project dropped here joins the
+   group rather than landing at a position. */
+.project-group.drop-into,
+.projects-list.drop-into {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.project-entry.is-dragging,
+.project-group.is-dragging {
+  opacity: 0.45;
+}
+.project-row[draggable='true'],
+.project-group-row[draggable='true'] {
+  cursor: grab;
+}
+.project-group-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 5px var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.project-group-row:hover {
+  background: var(--bg-hover);
+}
+.project-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.project-group-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-input, var(--bg-elevated));
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0 4px;
+  outline: none;
+}
+.project-group-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Members indent under the header so the grouping reads at a glance; the empty
+   hint sits at the same indent so a fresh group looks like a drop target. */
+.project-group-children .project-row,
+.project-group-children .sidebar-empty {
+  padding-left: calc(12px + var(--spacing-md));
+}
 .project-twisty {
   width: 12px;
   height: 12px;
@@ -1063,6 +1132,14 @@
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
+/* A pane whose first fetch is still in flight, as opposed to one that has
+   looked and found nothing. Same muted row; the spinner is what separates
+   "loading" from a settled "No changes". */
+.pane-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
 .pr-list-host {
   flex: 1;
   display: flex;
@@ -1300,9 +1377,6 @@
   flex: 1;
   min-height: 0;
 }
-.git-diff-editor-wrap-proposed {
-  position: relative;
-}
 .git-diff-editor-wrap .line-insert,
 .git-diff-editor-wrap .char-insert {
   background-color: color-mix(in srgb, #2ea043 28%, transparent) !important;
@@ -1379,6 +1453,16 @@
 }
 .terminal-container .xterm {
   height: 100%;
+}
+.terminal-container .xterm .xterm-viewport {
+  /* xterm 6 paints the theme background on the inner `.xterm-scrollable-element`,
+     which is only as tall as the whole rows that fit. The viewport behind it
+     spans the full pane and keeps xterm.css's hardcoded `#000`, so the sub-row
+     remainder left over by the fit addon showed as a black stripe under the
+     last line. `--xterm-bg` is the same background handed to `term.options`
+     (see XTERM_THEME in terminals-pane.ts). Three classes because xterm.css is
+     bundled after this sheet and would otherwise win the specificity tie. */
+  background-color: var(--xterm-bg);
 }
 .terminal-container .xterm .xterm-helper-textarea {
   /* Keep IME/focus target above any pane chrome. */

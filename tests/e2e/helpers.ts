@@ -5,25 +5,34 @@ import { $, browser } from '@wdio/globals'
 import { writeSeedConfig } from './helpers/seed-config.ts'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
 
+/**
+ * Whether the agent is not running and no prompts remain queued.
+ *
+ * Exported as a predicate, not just as {@link waitForAgentIdle}, because a
+ * caller may need to do work on every poll — the agent-eval drive dismisses
+ * approval dialogs, which can appear at any point in a turn.
+ */
+export async function agentIsIdle(): Promise<boolean> {
+  const stopBtn = await $('.stop-btn')
+  const stopVisible = (await stopBtn.isExisting()) && (await stopBtn.getProperty('hidden')) !== true
+  if (stopVisible) return false
+
+  const queue = await $('.footer-queue')
+  if (await queue.isExisting()) {
+    const queueHidden = await queue.getProperty('hidden')
+    if (queueHidden !== true) return false
+  }
+
+  return true
+}
+
 /** Wait until the agent is not running and no prompts remain queued. */
 export async function waitForAgentIdle(timeoutMs = 15_000): Promise<void> {
-  await browser.waitUntil(
-    async () => {
-      const stopBtn = await $('.stop-btn')
-      const stopVisible =
-        (await stopBtn.isExisting()) && (await stopBtn.getProperty('hidden')) !== true
-      if (stopVisible) return false
-
-      const queue = await $('.footer-queue')
-      if (await queue.isExisting()) {
-        const queueHidden = await queue.getProperty('hidden')
-        if (queueHidden !== true) return false
-      }
-
-      return true
-    },
-    { timeout: timeoutMs, interval: 100, timeoutMsg: 'Agent did not return to idle' },
-  )
+  await browser.waitUntil(agentIsIdle, {
+    timeout: timeoutMs,
+    interval: 100,
+    timeoutMsg: 'Agent did not return to idle',
+  })
 }
 
 /** Composer is always enabled; wait until it is mounted. */

@@ -11,6 +11,7 @@ import {
   isThemePreference,
   DEFAULT_THEME_PREFERENCE,
 } from '@shared/types/state.ts'
+import { createOverlayDialog } from './dialog-shell.ts'
 import { resolveTheme } from '../dom/theme.ts'
 import { applyUiScale } from '../dom/ui-scale.ts'
 import { clampUiScale, normalizeUiScale } from '@shared/ui-scale.ts'
@@ -31,7 +32,9 @@ import {
 } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { chevronDownIcon, closeIcon, warningIcon } from '../dom/icons.ts'
 import type { WorktreeInventoryEntry } from '@shared/types/worktree.ts'
+import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import { formatByteSize } from '@shared/file-bytes.ts'
+import { openAttachmentPreview } from '../attachments/attachment-preview.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
@@ -73,7 +76,22 @@ import {
 } from '@shared/command-routing.ts'
 import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
+import {
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_TINT_COLOR,
+  DEFAULT_TINT_STRENGTH,
+  isUiTintStrength,
+  type UiTintStrength,
+} from '@shared/appearance.ts'
 import { switchProjectThread } from '../controller/projects.ts'
+
+export {
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_TINT_COLOR,
+  DEFAULT_TINT_STRENGTH,
+  isUiTintStrength,
+  type UiTintStrength,
+} from '@shared/appearance.ts'
 
 export type SettingsSection =
   | 'general'
@@ -149,10 +167,6 @@ function pluginDisplayName(plugin: import('@shared/types/plugins.ts').PluginSumm
  * Applied by writing --tint-hue / --tint-amount on the document root, which
  * tokens.css folds into every --bg-* surface (see its --tint-* comment).
  */
-export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
-export const DEFAULT_ACCENT_COLOR = '#FF93D0'
-export const DEFAULT_TINT_COLOR = '#244C25'
-export const DEFAULT_TINT_STRENGTH: UiTintStrength = 'subtle'
 const COPSE_SITE_TINT_COLOR = '#002E2B'
 const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   off: '0%',
@@ -202,10 +216,6 @@ export function applyUiAccent(color: string): void {
   const root = document.documentElement
   root.style.setProperty('--accent-color', color)
   root.style.setProperty('--text-on-accent', accentTextColor(color))
-}
-
-export function isUiTintStrength(value: unknown): value is UiTintStrength {
-  return value === 'off' || value === 'subtle' || value === 'medium' || value === 'strong'
 }
 
 /** Push the tint onto the document root so every surface picks it up at once. */
@@ -286,6 +296,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Experimental, opt-in features (off by default). The MCP-UI artefacts
   // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   // P5: the master model-comparison toggle moved to Settings > Plugins
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
@@ -502,9 +513,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // A native <dialog> (opened via showModal in openSettingsDialog) rather than a
   // div: the platform handles focus-trapping, inert background, top-layer
   // stacking, and Esc-to-close. Closed by default — no `hidden` needed.
-  const overlay = document.createElement('dialog')
-  overlay.id = 'settings-dialog'
-  overlay.className = 'settings-overlay'
+  const { dialog: overlay } = createOverlayDialog({
+    id: 'settings-dialog',
+    className: 'settings-overlay',
+  })
   overlay.innerHTML = `
     <div class="settings-shell">
       <header class="settings-header">
@@ -1010,7 +1022,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </div>
             </fieldset>
 
-            <fieldset>
+            <fieldset id="cursor-rules-fieldset" hidden>
               <legend>Cursor rules</legend>
               <p class="settings-fieldset-desc">
                 Project rules under <code>.cursor/rules/*.mdc</code> (and legacy
@@ -1314,6 +1326,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Next-step tab complete</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="nextStepSuggestionEnabled" />
+                Offer an obvious next step in the message box after each turn
+              </label>
+              <p class="field-hint">
+                When a turn ends with one clearly valuable next move, it appears as placeholder
+                text in the message box — press Tab to accept it, or just type to ignore it.
+                Uses the small-tasks model; most turns show nothing.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -1393,7 +1418,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       </div>
     </div>
   `
-  document.body.append(overlay)
   overlayEl = overlay
   qsRequired(overlay, '#settings-close').append(closeIcon('ui-icon'))
 
@@ -1830,6 +1854,32 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     await modelRoutingSection.refresh()
   }
 
+  /**
+   * The row title, as a plain span or — when the row can open something — a
+   * real `<button>`. A button (rather than a click handler on the span) is what
+   * gives the affordance keyboard focus and a name for assistive tech; the
+   * shared `.sources-row-title` class keeps both variants looking identical.
+   */
+  function makeSourceRowTitle(
+    title: string,
+    action?: { label: string; run: () => void },
+  ): HTMLElement {
+    if (!action) {
+      const span = document.createElement('span')
+      span.className = 'sources-row-title'
+      span.textContent = title
+      return span
+    }
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'sources-row-title sources-row-title-btn'
+    button.textContent = title
+    button.title = action.label
+    button.setAttribute('aria-label', action.label)
+    button.addEventListener('click', action.run)
+    return button
+  }
+
   function makeSourceRow(
     title: string,
     badge: string | null,
@@ -1842,6 +1892,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       titleAttr?: string | undefined
       /** Path/origin shown only while the row is hovered or focused. */
       hoverDetail?: string | undefined
+      /** Makes the row title a button (e.g. open the file in the preview dialog). */
+      titleAction?: { label: string; run: () => void }
     } = {},
   ): HTMLElement {
     const row = document.createElement('div')
@@ -1854,9 +1906,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // otherwise win over the section width).
     const primary = document.createElement('div')
     primary.className = 'sources-row-primary'
-    const titleEl = document.createElement('span')
-    titleEl.className = 'sources-row-title'
-    titleEl.textContent = title
+    const titleEl = makeSourceRowTitle(title, opts.titleAction)
     primary.append(titleEl)
     // Origin sits in the primary gutter (title → badge) on hover so the row
     // height never grows; long paths ellipsize from the left. `<bdi>` keeps
@@ -2447,6 +2497,124 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
+  /**
+   * Show one instruction file in the shared preview dialog, as plain text.
+   *
+   * Deliberately not rendered as markdown: this is the text that steers the
+   * agent (and, for an untrusted workspace, the text the user is deciding
+   * whether to trust), so it is shown exactly as the prompt would receive it
+   * rather than as formatted prose that could hide its own markup.
+   */
+  function openInstructionFile(file: ProjectInstructionSummary): void {
+    const session = openAttachmentPreview({
+      kind: 'text',
+      title: file.name,
+      ariaLabel: `Instruction file: ${file.path}`,
+      status: `Loading ${file.name}…`,
+    })
+    void api.instructions
+      .read(file.path)
+      .then((content) => {
+        const text = document.createElement('pre')
+        text.className = 'attachment-preview-text'
+        text.textContent = content
+        session.setContent(text)
+      })
+      .catch((error: unknown) => {
+        session.setStatus(errorMessage(error))
+      })
+  }
+
+  /** Both trust entry points land here: the MCP list and Sources must agree. */
+  function applyWorkspaceTrusted(statuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
+    renderMcpServers(statuses)
+    void refreshSources()
+  }
+
+  /**
+   * Trust the workspace from the Sources list. The MCP banner states the stakes
+   * in its own copy before its button; a badge cannot, so the same consent —
+   * including the `sandbox: false` hook warning (F3, decision 7) — is put in a
+   * confirmation dialog rather than dropped.
+   */
+  async function trustWorkspaceFromBadge(button: HTMLButtonElement): Promise<void> {
+    const unsandboxed = await api.workspace.unsandboxedProjectHooks().catch(() => [])
+    const detail = [
+      'Its instruction files join the system prompt, and the MCP servers and hooks it defines are allowed to run.',
+      unsandboxed.length > 0
+        ? `${String(unsandboxed.length)} of those hooks declare "sandbox": false and run OUTSIDE the project sandbox: ${unsandboxed
+            .map((h) => `${h.event}: ${h.command}`)
+            .join('; ')}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+    const confirmed = await showConfirmDialog({
+      message: 'Trust this workspace?',
+      detail,
+      confirmLabel: 'Trust workspace',
+    })
+    if (!confirmed) return
+    button.disabled = true
+    const statusEl = qsRequired(overlay, '#sources-reload-status')
+    statusEl.textContent = 'Trusting workspace…'
+    // `setTrusted` only answers once the workspace's MCP servers have been
+    // restarted — seconds, for a repo that defines any. The trust flag itself is
+    // written before that starts, so reload the instruction list right away and
+    // let the server statuses catch up. Settling both branches here (rather than
+    // awaiting inside a try) keeps a rejection handled while that refresh runs.
+    const pending = api.workspace.setTrusted(true).then(
+      (statuses) => ({ statuses }),
+      (error: unknown) => ({ error }),
+    )
+    await refreshSources()
+    const result = await pending
+    if ('statuses' in result) applyWorkspaceTrusted(result.statuses)
+    // The row was rebuilt above, so the failed badge is already clickable again;
+    // this says why nothing happened.
+    else statusEl.textContent = errorMessage(result.error)
+  }
+
+  /**
+   * One Sources → Instructions row. The name opens the file; an inert
+   * (untrusted) file's badge is the button that trusts the workspace, so the
+   * fix for "discovered but not loaded" sits on the thing reporting it.
+   */
+  function makeInstructionRow(file: ProjectInstructionSummary): HTMLElement {
+    const detail =
+      `${file.path} · ${formatByteSize(file.bytes)}` +
+      (file.active ? '' : ' · inert until you trust this workspace — click the badge to trust it')
+    const row = makeSourceRow(file.name, file.active ? file.scope : 'not loaded', detail, {
+      badgeClass: !file.active
+        ? 'sources-badge-untrusted'
+        : file.scope === 'project'
+          ? 'sources-badge-project'
+          : undefined,
+      titleAction: {
+        label: `Open ${file.name}`,
+        run: () => {
+          openInstructionFile(file)
+        },
+      },
+    })
+    if (file.active) return row
+
+    const badgeEl = row.querySelector<HTMLElement>('.sources-badge')
+    if (badgeEl) {
+      const trustBtn = document.createElement('button')
+      trustBtn.type = 'button'
+      trustBtn.className = `${badgeEl.className} sources-badge-btn`
+      trustBtn.textContent = badgeEl.textContent
+      trustBtn.title = `Trust this workspace to load ${file.name}`
+      trustBtn.setAttribute('aria-label', `Trust this workspace to load ${file.name}`)
+      trustBtn.addEventListener('click', () => {
+        void trustWorkspaceFromBadge(trustBtn)
+      })
+      badgeEl.replaceWith(trustBtn)
+    }
+    return row
+  }
+
   async function refreshSources(): Promise<void> {
     const statusEl = qsRequired(overlay, '#sources-reload-status')
     statusEl.textContent = 'Loading…'
@@ -2460,11 +2628,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       fillSourceList(
         '#sources-instructions-list',
-        instructions.map((f) =>
-          makeSourceRow(f.name, f.scope, `${f.path} · ${String(f.bytes)} B`, {
-            badgeClass: f.scope === 'project' ? 'sources-badge-project' : undefined,
-          }),
-        ),
+        instructions.map((f) => makeInstructionRow(f)),
         'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root, or ~/AGENTS.md globally).',
       )
 
@@ -2477,7 +2641,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       fillSourceList(
         '#sources-cursor-rules-list',
         cursorRules.map((r) => {
-          const bits = [`${String(r.bytes)} B`]
+          const bits = [formatByteSize(r.bytes)]
           if (r.globs?.length) bits.push(`globs: ${r.globs.join(', ')}`)
           if (r.description) bits.push(r.description)
           bits.push(r.path)
@@ -2492,6 +2656,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         }),
         'No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file).',
       )
+      // Most projects have no Cursor rules, and a fieldset whose only content is
+      // "there are none" is noise: the section stays hidden until the workspace
+      // actually has rules to disclose. Instruction files above already name
+      // where rules would come from, so nothing is lost by the absence.
+      qsRequired(overlay, '#cursor-rules-fieldset').hidden = cursorRules.length === 0
+      // The sidebar contents list is read off the DOM when a section opens, so a
+      // fieldset that appears after that read has to ask for a re-read — unless
+      // a search is running, which lifts blocks out of their sections and drops
+      // the contents list on purpose.
+      if (!contentEl.classList.contains('settings-searching')) renderNavSubheadings(activeSection)
 
       fillSourceList(
         '#sources-skills-list',
@@ -3324,6 +3498,23 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const text = document.createElement('span')
       text.textContent =
         'This workspace defines its own MCP servers. They will not run until you trust this workspace.'
+      // Trusting also activates the workspace's instruction files (AGENTS.md,
+      // Cursor rules) — say so at the consent moment, not only in Sources.
+      void api.instructions
+        .list()
+        .then((files) => {
+          const inert = files.filter((f) => !f.active)
+          if (inert.length === 0) return
+          const note = document.createElement('span')
+          note.className = 'mcp-trust-instructions-note'
+          note.textContent =
+            ` It also ships agent instruction files (${inert.map((f) => f.name).join(', ')}), ` +
+            'inert until trusted.'
+          text.append(note)
+        })
+        .catch(() => {
+          /* display-only */
+        })
       const trustBtn = document.createElement('button')
       trustBtn.type = 'button'
       trustBtn.textContent = 'Trust this workspace'
@@ -3332,7 +3523,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         void api.workspace
           .setTrusted(true)
           .then((next) => {
-            renderMcpServers(next)
+            // Sources is listing the same workspace's now-loaded instruction
+            // files, so it re-renders with the MCP list rather than staying
+            // stale until the dialog is reopened.
+            applyWorkspaceTrusted(next)
           })
           .catch(() => {
             trustBtn.disabled = false

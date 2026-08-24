@@ -261,6 +261,28 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('lets every branch-checkout job no-op when the PR merged and deleted its head', () => {
+    // These jobs are dispatched by `pull_request` but can execute minutes later,
+    // queued behind the fleet. If the PR merges meanwhile, auto-delete takes the
+    // head branch and `checkout` with `ref: github.head_ref` dies with "branch
+    // not found" — a red X on an already-merged PR, and pure noise, since there
+    // is no longer a branch to push to. `commit-screenshots` hit this first
+    // (#1001) and `autoformat` reddened 11 of 26 PRs in one night before getting
+    // the same guard. Any future job that checks out the head ref needs it too.
+    for (const name of ['autoformat', 'commit-screenshots']) {
+      const job = jobBlock(name)
+      assert.match(job, /id: head\n/, `${name} must probe the head branch before checking it out`)
+      assert.match(
+        job,
+        /- uses: actions\/checkout@[^\n]*\n {8}if: steps\.head\.outputs\.exists == 'true'/,
+        `${name} must skip checkout once the head branch is gone`,
+      )
+      // A transport blip must not read as deletion — that would silently skip
+      // real work rather than fail loudly.
+      assert.match(job, /refusing to/, `${name} must fail closed on a non-404 lookup`)
+    }
+  })
+
   it('has no merge_group trigger (queue needs Enterprise Cloud; org is on Team)', () => {
     // Re-adding the trigger would look harmless but can never fire, and its
     // presence previously justified `github.event_name != 'merge_group'` guards
@@ -368,7 +390,7 @@ describe('promote-develop.yml workflow invariants', () => {
     assert.match(workflow, /enablePullRequestAutoMerge/)
     assert.match(workflow, /mergeMethod: MERGE/)
     assert.doesNotMatch(workflow, /mergeMethod: SQUASH/)
-    assert.match(workflow, /github-token: \$\{\{ secrets\.SYNC_PR_TOKEN \}\}/)
+    assert.match(workflow, /github-token: \$\{\{ steps\.app-token\.outputs\.token \}\}/)
   })
 })
 
@@ -499,6 +521,26 @@ describe('codeql.yml workflow invariants', () => {
   it('scans trusted main and schedule events without spending hosted PR minutes', () => {
     assert.doesNotMatch(workflow, /^ {2}pull_request:/m)
     assert.match(workflow, /^ {4}runs-on: \$\{\{ vars\.CHECKS_RUNNER \}\}$/m)
+  })
+})
+
+describe('acp-v2-watch.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/acp-v2-watch.yml'), 'utf8')
+
+  it('runs nightly and never gates a PR', () => {
+    // The watch polls npm for a protocol-v2 ACP SDK (docs/acp-v2-readiness.md).
+    // Its red run means "upstream moved", not "this change is broken", so it
+    // must stay off pull_request — on a PR trigger every unrelated PR would go
+    // red the day v2 ships.
+    assert.match(workflow, /^ {4}- cron: '[^']+'$/m)
+    assert.doesNotMatch(workflow, /^ {2}pull_request:/m)
+  })
+
+  it('skips the dependency restore the watch is written to avoid', () => {
+    // Dependency-free is the whole reason this is a 30-second job. A setup-action
+    // call here would quietly reintroduce the multi-minute node_modules restore.
+    assert.doesNotMatch(workflow, /uses: \.\/\.github\/actions\/setup/)
+    assert.match(workflow, /run: pnpm run watch:acp-v2/)
   })
 })
 

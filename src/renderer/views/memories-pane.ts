@@ -7,6 +7,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { knowledgeDate } from './knowledge-date.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { plusIcon, refreshIcon } from '../dom/icons.ts'
+import { paneLoadingRow } from '../dom/pane-loading.ts'
 
 // A memory is one `Memory`-typed knowledge note. Derive the shape from the IPC
 // surface so this view never imports main-process types directly.
@@ -41,6 +42,11 @@ export function mountMemoriesPane(
   let selectedId: string | null = null
   let creating = false
   let loadToken = 0
+  // True while the first (or a re-triggered empty-list) fetch is in flight, so
+  // renderList() shows "Loading…" rather than the "No memories yet" onboarding
+  // copy — which, before the fetch answers, is a claim about a store we have
+  // not read. Mirrors the roadmap pane.
+  let loading = false
 
   // --- list column ----------------------------------------------------------
   const listHeader = el('div', { class: 'git-changes-header' })
@@ -169,6 +175,9 @@ export function mountMemoriesPane(
     if (note?.updatedAt) {
       metaLine.hidden = false
       metaLine.textContent = `Updated ${knowledgeDate(note.updatedAt)}`
+      if (note.fields['externalContext'] === 'true') {
+        metaLine.textContent += ' · saved with external content in context — saving clears this'
+      }
     } else {
       metaLine.hidden = true
       metaLine.textContent = ''
@@ -179,11 +188,13 @@ export function mountMemoriesPane(
     clear(listBody)
     if (memories.length === 0) {
       listBody.append(
-        el(
-          'div',
-          { class: 'git-changes-empty memories-list-empty' },
-          'No memories yet. The agent saves these with the remember tool, or add one with +.',
-        ),
+        loading
+          ? paneLoadingRow('Loading memories…')
+          : el(
+              'div',
+              { class: 'git-changes-empty memories-list-empty' },
+              'No memories yet. The agent saves these with the remember tool, or add one with +.',
+            ),
       )
       return
     }
@@ -195,6 +206,20 @@ export function mountMemoriesPane(
       })
       const main = el('div', { class: 'memories-row-main' })
       main.append(el('span', { class: 'memories-row-title' }, note.title || '(untitled)'))
+      if (note.fields['externalContext'] === 'true') {
+        main.append(
+          el(
+            'span',
+            {
+              class: 'memories-row-taint',
+              'data-tooltip':
+                'Saved by the agent during a turn that had read external content ' +
+                '(web, MCP, CI, or terminal). Review it; saving an edit clears this marker.',
+            },
+            'external context',
+          ),
+        )
+      }
       if (note.tags.length > 0) {
         const tagWrap = el('span', { class: 'memories-row-tags' })
         for (const tag of note.tags) {
@@ -218,6 +243,13 @@ export function mountMemoriesPane(
   // workspace change) refresh without it so the editor renders fresh.
   async function refresh(opts?: { preserveDirty?: boolean }): Promise<void> {
     const token = ++loadToken
+    // Only flip on the loading state (and repaint) when the list is currently
+    // empty — a background refresh of an already-populated list shouldn't flash
+    // "Loading…" over the existing rows.
+    if (memories.length === 0 && !loading) {
+      loading = true
+      renderList()
+    }
     let next: Memory[]
     try {
       next = await api.memories.list()
@@ -225,6 +257,7 @@ export function mountMemoriesPane(
       next = []
     }
     if (token !== loadToken) return
+    loading = false
     memories = next
     // Drop a selection whose note vanished (deleted elsewhere), but keep an
     // in-progress new-note form open.

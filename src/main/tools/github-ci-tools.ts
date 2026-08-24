@@ -17,8 +17,9 @@ const prNumberSchema = z
 
 export const getCiStatusTool = defineTool({
   name: 'get_ci_status',
+  provenance: 'external',
   description:
-    'Read GitHub pull request CI check status for the current branch or a specific PR number. ' +
+    'Read GitHub pull request CI check status for the current branch or a specific PR number. Prefer this over run_shell + gh. For branch/main workflow runs without an open PR, prefer gh_run_list / gh_run_view. ' +
     'Use after pushing to see whether remote checks are pending, passing, or failing.',
   parameters: z.object({
     pr_number: prNumberSchema,
@@ -76,6 +77,7 @@ export const waitForCiChecksTool = defineTool({
 
 export const getCiFailureLogsTool = defineTool({
   name: 'get_ci_failure_logs',
+  provenance: 'external',
   description:
     'Fetch failed GitHub Actions log output for a pull request workflow run. ' +
     'Use after get_ci_status or wait_for_ci_checks reports failure.',

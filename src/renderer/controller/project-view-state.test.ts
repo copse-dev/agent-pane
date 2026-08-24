@@ -15,9 +15,11 @@ function stateWith(partial: Partial<AppState>): AppState {
   return {
     workspaceRoot: '/proj',
     projects: [],
+    projectGroups: [],
     activeProjectId: 'p1',
     expandedProjectId: 'p1',
     threads: [],
+    backgroundThreads: [],
     activeThreadId: null,
     panelTab: 'file',
     openFile: null,

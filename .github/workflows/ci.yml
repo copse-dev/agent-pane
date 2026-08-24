@@ -104,7 +104,13 @@ jobs:
     # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
     # under load (exit 137). If that recurs, add fleet headroom rather than
     # re-pinning the static gate to hosted.
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    #
+    # Fork PRs are pinned to GitHub-hosted: this is the one job that executes
+    # fork code (typecheck/lint run the PR's package scripts and plugins), and
+    # it must never reach the self-hosted fleet — same invariant gitleaks.yml
+    # states for its standalone fork scan. Hosted minutes are free once the
+    # repository is public, so this costs nothing on the runs it applies to.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -171,13 +177,11 @@ jobs:
           sleep 10
           npm run typecheck
       - name: Lint
-        env:
-          # Cap the V8 heap so eslint stays inside the ~6 GB check-runner cgroup
-          # instead of racing other jobs for the whole container.
-          NODE_OPTIONS: --max-old-space-size=3072
         run: |
           # Typecheck just exited; give the cgroup a beat to reclaim before
-          # eslint's peak allocation, then retry a couple of times on 137.
+          # lint starts, then retry a couple of times on 137. The lint script
+          # runs typed projects sequentially so their programs do not share one
+          # V8 heap; a retry is still useful for external cgroup pressure.
           sleep 15
           attempt=1
           while true; do
@@ -374,15 +378,17 @@ jobs:
   # `commit-screenshots` its own job. Prettier runs last so it tidies whatever
   # ESLint rewrote; `eslint-config-prettier` means the two never fight.
   #
-  # Pushed with SCREENSHOTS_PAT (reused) rather than the default GITHUB_TOKEN:
-  # GitHub won't start a run for a GITHUB_TOKEN push (recursion guard), so a
-  # token-pushed format commit would land as the PR head with no CI and leave
-  # the PR blocked. The PAT push fires `pull_request: synchronize`, and the
-  # top-level `concurrency: cancel-in-progress` supersedes THIS run with one on
-  # the formatted commit — so build/e2e aren't paid for twice. It terminates in
-  # one extra run: the re-triggered run reformats nothing (idempotent), so this
-  # job finds no diff and pushes nothing. Falls back to github.token when the
-  # secret is unset (commit lands, just no CI re-trigger — pre-PAT behaviour).
+  # Pushed as the copse-release-bot App rather than with the default
+  # GITHUB_TOKEN: GitHub won't start a run for a GITHUB_TOKEN push (recursion
+  # guard), so a token-pushed format commit would land as the PR head with no CI
+  # and leave the PR blocked. An App push is a distinct actor and fires
+  # `pull_request: synchronize` normally, and the top-level
+  # `concurrency: cancel-in-progress` supersedes THIS run with one on the
+  # formatted commit — so build/e2e aren't paid for twice. It terminates in one
+  # extra run: the re-triggered run reformats nothing (idempotent), so this job
+  # finds no diff and pushes nothing. Falls back to github.token when the App
+  # credentials are unset (commit lands, just no CI re-trigger — the behaviour
+  # before any push identity was configured).
   autoformat:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
@@ -392,11 +398,60 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Dispatched by `pull_request` but often EXECUTED minutes later, queued
+      # behind the fleet. A PR that merges in the meantime takes its head branch
+      # with it (auto-delete on merge), so checking out by branch name fails with
+      # "branch not found" and paints a red X on an already-merged PR — the same
+      # failure mode `commit-screenshots` fixed in #1001. There is nothing to push
+      # formatting fixes to once the branch is gone; detect that first and no-op
+      # green. Skipping `changed` leaves `steps.changed.outputs.any` empty, which
+      # already gates setup and every step after it.
+      - name: Check head branch still exists
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref }}
+          # Self-hosted CHECKS_RUNNER images ship curl+jq but not the gh CLI
+          # (ci-runners/Dockerfile). Prefer the REST API over `gh api`.
+          GITHUB_API_URL: ${{ github.api_url }}
+        run: |
+          ENC_BRANCH=$(printf '%s' "$BRANCH" | jq -sRr @uri)
+          HTTP_STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${{ github.repository }}/branches/${ENC_BRANCH}") || {
+              echo "::error::Could not query head branch '$BRANCH'; refusing to treat a transport failure as branch deletion."
+              exit 1
+            }
+          case "$HTTP_STATUS" in
+            200) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            404)
+              echo "::notice::Head branch '$BRANCH' no longer exists (PR merged and branch deleted) — nothing to autoformat."
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Head branch lookup returned HTTP $HTTP_STATUS; refusing to skip autoformat."
+              exit 1
+              ;;
+          esac
+      # continue-on-error preserves that documented degradation: a missing or
+      # broken App credential leaves `outputs.token` empty and the checkout
+      # below falls through to github.token rather than reddening the PR.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        if: steps.head.outputs.exists == 'true'
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - uses: actions/checkout@v7.0.1
+        if: steps.head.outputs.exists == 'true'
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-          token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
       # Decide whether there is anything to fix BEFORE installing. `npm ci` /
       # cache-restore is ~2-5 min on this fleet and the autofix itself takes
       # seconds, so on a diff with no formattable file the old order paid the
@@ -404,6 +459,7 @@ jobs:
       # question, and checkout has already run.
       - id: changed
         name: List autofixable changed files
+        if: steps.head.outputs.exists == 'true'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -648,6 +704,8 @@ jobs:
     needs: precheck
     if: >-
       vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
        contains(github.event.pull_request.labels.*.name, 'bench-agent'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
@@ -680,6 +738,8 @@ jobs:
     needs: precheck
     if: >-
       vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
        contains(github.event.pull_request.labels.*.name, 'bench-doctrine'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
@@ -701,6 +761,147 @@ jobs:
         with:
           name: doctrine-eval-model
           path: bench-results/doctrine/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # Tool-preference eval (#1845): asked a read-only "what landed on main, is CI
+  # green?" question, does the agent answer through the first-class git/gh/CI
+  # tools, or does it drive `gh` and network `git` through run_shell and charge
+  # the user an external-shell approval for each? The exported thread in that
+  # issue took five. A GA blocker, but deliberately NOT a merge gate: the
+  # scoring it rests on is unit-tested on every PR
+  # (scripts/lib/eval-scenario-git-ci-tools.test.ts, which replays that thread),
+  # while this lane measures what real models actually do. Nightly, or on demand
+  # via the `eval-tool-preference` PR label, and only on a configured eval
+  # runner.
+  #
+  # The matrix is what the issue's acceptance criteria ask for: the native loop
+  # across the prompt class's wordings, plus one ACP path, whose namespaced
+  # bridged calls the scorer matches through `matchesBridgedToolName`.
+  # `fail-fast` is off because which wording an agent trips on IS the finding —
+  # stopping the matrix at the first red would throw that away.
+  eval-tool-preference:
+    needs: precheck
+    if: >-
+      vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name == 'schedule' ||
+       contains(github.event.pull_request.labels.*.name, 'eval-tool-preference'))
+    runs-on: ${{ vars.LM_EVAL_RUNNER }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { path: native, model: '', variant: '0' }
+          - { path: native, model: '', variant: '1' }
+          - { path: native, model: '', variant: '2' }
+          # The ACP arm runs the wording taken verbatim from the exported
+          # thread, so a regression there is comparable to the recorded case.
+          - { path: acp-codex, model: 'acp:codex-acp', variant: '0' }
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+      # The eval drives the packaged renderer through Electron, not the dev
+      # server, so the bundle has to exist before WDIO launches.
+      - run: npm run build
+      - env:
+          COPSE_EVAL_SCENARIO: tests/e2e/scenarios/git-ci-first-class-tools.json
+          COPSE_EVAL_PROMPT_VARIANT: ${{ matrix.variant }}
+          COPSE_EVAL_MODEL: ${{ matrix.model }}
+          LM_STUDIO_URL: ${{ vars.LM_STUDIO_URL }}
+          LM_STUDIO_MODEL: ${{ vars.LM_STUDIO_MODEL }}
+          LM_STUDIO_API_KEY: ${{ secrets.LM_STUDIO_API_KEY }}
+        run: npm run test:e2e:agent-eval
+      # Publish the pass/fail artifact even when the step above already failed
+      # its in-run asserts: a run that violated the expectations is exactly the
+      # one whose scored trace is worth reading. Same scoring a human gets from
+      # `npm run analyze:thread` on the captured JSONL, so the lane and a local
+      # investigation cannot disagree.
+      - if: always()
+        shell: bash
+        run: |
+          artifact=$(ls -t tests/e2e/artifacts/git-ci-first-class-tools-*.jsonl 2>/dev/null | head -1)
+          if [ -z "$artifact" ]; then
+            echo "no eval artifact captured — the run died before writing a thread"
+            exit 1
+          fi
+          report="tests/e2e/artifacts/report-${{ matrix.path }}-${{ matrix.variant }}.json"
+          npm run --silent analyze:thread -- "$artifact" \
+            tests/e2e/scenarios/git-ci-first-class-tools.json > "$report"
+          cat "$report"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: eval-tool-preference-${{ matrix.path }}-${{ matrix.variant }}
+          path: tests/e2e/artifacts/
+          if-no-files-found: ignore
+          # Trend + triage data for a GA gate; a month covers a release cycle.
+          retention-days: 30
+
+  # Scratch-path GA bar (#1846): a sandboxed agent asked to stage intermediate
+  # output somewhere temporary must use the $TMPDIR the sandbox hands it (or the
+  # workspace), never a hardcoded /tmp/... — which the scope heuristic classes as
+  # external and charges the user an approval for. Deterministic scoring lives in
+  # `npm test` (eval-scratch-paths / eval-tool-expectations); this job is the
+  # behavioural half, so it needs a real model and the real Electron app.
+  #
+  # Runs nightly or on the `bench-agent-eval` label, on the same LM Studio eval
+  # runner as doctrine-eval-model. Every prompt variant runs even after one
+  # fails: the wording is meant to vary while the intent stays fixed, so one red
+  # phrasing out of three is a different finding from three reds, and fail-fast
+  # would report them as the same thing.
+  scratch-path-eval-model:
+    needs: precheck
+    if: >-
+      vars.LM_EVAL_RUNNER != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name == 'schedule' ||
+       contains(github.event.pull_request.labels.*.name, 'bench-agent-eval'))
+    runs-on: ${{ vars.LM_EVAL_RUNNER }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+      - run: npm run build
+      # The ACP arm only runs where an adapter is actually installed, so the
+      # agent is named by a repo variable (e.g. `acp:codex-acp`) rather than
+      # assumed. Unset, the native arm still gates on its own.
+      - name: Agent scratch-path eval
+        env:
+          COPSE_EVAL_SCENARIO: tests/e2e/scenarios/tmpdir-scratch-eval.json
+          COPSE_ACP_EVAL_MODEL: ${{ vars.ACP_EVAL_MODEL }}
+          LM_STUDIO_URL: ${{ vars.LM_STUDIO_URL }}
+          COPSE_EVAL_LOCAL_SERVER_URL: ${{ vars.LM_STUDIO_URL }}
+          LM_STUDIO_API_KEY: ${{ secrets.LM_STUDIO_API_KEY }}
+        run: |
+          set -uo pipefail
+          failed=0
+          for arm in native acp; do
+            if [ "$arm" = acp ]; then
+              [ -n "${COPSE_ACP_EVAL_MODEL:-}" ] || { echo "::notice::ACP_EVAL_MODEL unset, skipping the ACP arm"; continue; }
+              export COPSE_EVAL_MODEL="$COPSE_ACP_EVAL_MODEL"
+            else
+              unset COPSE_EVAL_MODEL
+            fi
+            for variant in 0 1 2; do
+              echo "::group::$arm prompt variant $variant"
+              COPSE_EVAL_PROMPT_VARIANT="$variant" npm run test:e2e:agent-eval || failed=1
+              echo "::endgroup::"
+            done
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: scratch-path-eval-model
+          # The JSONL thread export per run. A failure message names the
+          # offending command; the trace is how you see what led to it.
+          path: tests/e2e/artifacts/
           if-no-files-found: ignore
           retention-days: 30
 
@@ -783,6 +984,26 @@ jobs:
 
   e2e:
     needs: [build, precheck]
+    # `mode == 'subset'` is what makes a PR run its own e2e specs automatically.
+    # `precheck` already asks the oracle what this diff can reach and sizes the
+    # shard matrix to the answer; before this clause that plan was computed,
+    # printed to the step summary, and then discarded on every PR into `main`.
+    #
+    # The cost ceiling holds *by construction* rather than by promise: `subset`
+    # is only ever emitted when the oracle managed to thin the suite, so the
+    # matrix is already small. Everything the oracle refuses to thin — a broad
+    # change, a `LOW` confidence verdict, an empty selection — comes back as
+    # `full`, which still needs `ci-full` or a `release` base exactly as before.
+    # So this widens what runs automatically without widening what it can cost.
+    #
+    # Deliberately not "e2e on every PR". The e2e mapping is selector-vocabulary
+    # heuristics, not the exact import graph the unit tier gets, so a subset is a
+    # filter and never the gate — see docs/testing-strategy.md, which keeps the
+    # tier "small enough to stay green" and leaves the real net to the nightly
+    # schedule and the promotion PR into `release`. Both still run `full`.
+    #
+    # Draft PRs are unaffected: the `draft == false` clause below still applies,
+    # so a subset does not start dispatching shards on work in progress.
     if: >-
       needs.precheck.outputs.e2e_shard_total != '0' &&
       (github.event_name != 'push' || github.ref != 'refs/heads/main') &&
@@ -790,6 +1011,7 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
        github.base_ref == 'release' ||
+       needs.precheck.outputs.mode == 'subset' ||
        contains(github.event.pull_request.labels.*.name, 'ci-full') ||
        contains(github.event.pull_request.labels.*.name, 'update-screenshots')) &&
       (github.event_name != 'pull_request' ||
@@ -1350,15 +1572,15 @@ jobs:
   # conflict (regenerated PNGs have no meaningful merge). Source-code conflicts are
   # NEVER auto-resolved — they abort the merge and get a "needs a human" PR comment.
   #
-  # The checkout uses a PAT (secrets.SCREENSHOTS_PAT) rather than the default
-  # GITHUB_TOKEN: GitHub will not start a new workflow run for a commit pushed with
-  # GITHUB_TOKEN (recursion guard), so a token-pushed screenshot commit would land
-  # as the PR head with no CI run and no `ci-passed` status — leaving the PR blocked
-  # and auto-merge stuck. Pushing with a PAT makes the commit trigger CI normally so
-  # `ci-passed` reports on the new head. That re-run is cheap: plan-e2e skips the
-  # e2e tier for a screenshot-only commit (see its `mode=skip` shortcut). Falls back
-  # to github.token when the secret is unset — commits still land, just without the
-  # CI re-trigger (the pre-PAT behaviour).
+  # The checkout authenticates as the copse-release-bot App rather than with the
+  # default GITHUB_TOKEN: GitHub will not start a new workflow run for a commit
+  # pushed with GITHUB_TOKEN (recursion guard), so a token-pushed screenshot commit
+  # would land as the PR head with no CI run and no `ci-passed` status — leaving the
+  # PR blocked and auto-merge stuck. An App push is a distinct actor, so the commit
+  # triggers CI normally and `ci-passed` reports on the new head. That re-run is
+  # cheap: plan-e2e skips the e2e tier for a screenshot-only commit (see its
+  # `mode=skip` shortcut). Falls back to github.token when the App credentials are
+  # unset — commits still land, just without the CI re-trigger.
   commit-screenshots:
     needs: [build, e2e]
     if: >-
@@ -1417,12 +1639,23 @@ jobs:
               exit 1
               ;;
           esac
+      # continue-on-error preserves the documented degradation: a missing or
+      # broken App credential leaves `outputs.token` empty and the checkout falls
+      # through to github.token rather than reddening an otherwise-green PR.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        if: steps.head.outputs.exists == 'true'
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - uses: actions/checkout@v7.0.1
         if: steps.head.outputs.exists == 'true'
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-          token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
       - name: Download regenerated screenshots
         if: steps.head.outputs.exists == 'true'
         uses: actions/download-artifact@v8
@@ -1645,19 +1878,22 @@ jobs:
             fi
           done <<< "$conflicts"
           git add tests/e2e/screenshots/
-          # The push authenticates with SCREENSHOTS_PAT, a classic PAT without
-          # `workflow` scope. If main advanced a file under .github/workflows/, the
-          # merge folds it in and GitHub rejects the push ("refusing to allow a
-          # Personal Access Token to create or update workflow ... without workflow
-          # scope"), hard-failing the job. We can't drop main's workflow change
+          # The push authenticates as the copse-release-bot App, which is
+          # deliberately NOT granted `workflows: write` (it is installed org-wide,
+          # and an actor that can rewrite CI definitions everywhere is a bigger
+          # grant than resolving these merges is worth). If main advanced a file
+          # under .github/workflows/, the merge folds it in and GitHub rejects the
+          # push ("refusing to allow a GitHub App to create or update workflow ...
+          # without `workflows` permission"), hard-failing the job. We can't drop
+          # main's workflow change
           # (reverting it to --ours would undo it when the PR merges), so abort the
           # merge and hand it to a human — the same policy as a source conflict.
           # Any screenshot render commit made above still pushes below; only the
-          # unpushable merge is skipped. Grant the PAT `workflow` scope to let CI
+          # unpushable merge is skipped. Grant the App `workflows: write` to let CI
           # resolve these automatically.
           wf="$(git diff --cached --name-only -- .github/workflows/ || true)"
           if [ -n "$wf" ]; then
-            echo "Merge updates workflow files the PAT can't push — leaving to a human:"
+            echo "Merge updates workflow files the App can't push — leaving to a human:"
             printf '%s\n' "$wf"
             git merge --abort
             {
@@ -1771,9 +2007,9 @@ jobs:
               sections.push(
                 `### Merge needs a human (${workflowMerge.length})\n\n` +
                   `Screenshot conflicts with \`main\` were resolved automatically, but the merge ` +
-                  `updates these **workflow** files, which CI's token isn't scoped to push. Merge ` +
-                  `or rebase \`main\` by hand — or grant the \`SCREENSHOTS_PAT\` the \`workflow\` ` +
-                  `scope to let CI resolve these automatically:\n\n` +
+                  `updates these **workflow** files, which CI's token isn't permitted to push. Merge ` +
+                  `or rebase \`main\` by hand — or grant the release App the \`workflows: write\` ` +
+                  `permission to let CI resolve these automatically:\n\n` +
                   lines.join('\n'),
               );
             }
@@ -1981,7 +2217,11 @@ jobs:
     # Pinning this one job to `ubuntu-latest` is the other way to buy that (it
     # would start in seconds and could never queue behind the fleet), at roughly
     # one billed hosted minute per run; deliberately not taken.
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    #
+    # Fork PRs go to GitHub-hosted regardless: fork runs must stay off the
+    # fleet entirely, and the fleet's runner group should not serve public-repo
+    # jobs anyway — routing there would queue this gate forever.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read

@@ -1,3 +1,4 @@
+import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import { KNOWN_ACP_AGENTS, type KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpAgentConfig, AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
@@ -142,7 +143,10 @@ async function updateCurrentAcpAgentSelectors(
   agentId: string,
   selectors: ProbedSelectorFields,
 ): Promise<boolean> {
-  const config = listAcpAgents().find((agent) => agent.id === agentId)
+  // `agentId` reaches here from probes and thread model values, either of
+  // which may name the agent by an id it has since outgrown.
+  const canonical = canonicalAcpAgentId(agentId)
+  const config = listAcpAgents().find((agent) => agent.id === canonical)
   if (!config) return false
   await upsertAcpAgent({ ...config, ...selectors })
   return true

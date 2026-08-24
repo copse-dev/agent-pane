@@ -177,6 +177,13 @@ You can read the user's open Shells tabs (interactive terminals in the right pan
 - read: snapshot recent scrollback (defaults to the active tab; pass id / max_lines to target another or pull more history)
 This is for user-run terminals, not your own run_shell / run_background output. Prefer read_terminal over asking the user to paste when a relevant shell is open. Users may also @shell a tab into the message explicitly.`
 
+// Provenance-envelope definition for external tool results (context-provenance
+// plan, Phase 3). The wrapping itself happens in the tool registry; this block
+// defines the tag once so per-result wrappers stay one line each side. Owned by
+// `@copse/agent` beside the wrapper so the two cannot drift; re-exported here to
+// keep this module's block-export surface stable for `agent-system-prompt.ts`.
+export { EXTERNAL_CONTENT_BLOCK } from '@copse/agent/external-content.ts'
+
 // Optional steering, gated by the `copse.okf-memories` first-party plugin. Only
 // appended when the remember/recall tools are actually registered. The block
 // text lives in the plugin (its `promptBlocks` declaration) so the plugin decl and

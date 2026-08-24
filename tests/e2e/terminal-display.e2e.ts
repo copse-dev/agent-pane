@@ -1,9 +1,6 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 const PROJECT_ID = 'e2e-terminal-project'
 
 async function xtermText(): Promise<string> {
@@ -13,7 +10,6 @@ async function xtermText(): Promise<string> {
 describe('integrated terminal', () => {
   before(async function () {
     this.timeout(90_000)
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), PROJECT_ID)
     await browser.reloadSession()
@@ -75,6 +71,28 @@ describe('integrated terminal', () => {
       containerPaddingLeft: '0px',
     })
 
+    const viewportPaint = await browser.execute(() => {
+      const container = document.querySelector<HTMLElement>('.terminal-container')
+      const viewport = container?.querySelector<HTMLElement>('.xterm-viewport')
+      if (!container || !viewport) return null
+
+      // Resolve the custom property through a real CSS color declaration so the
+      // comparison stays correct if the terminal palette changes later.
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--xterm-bg)'
+      container.append(probe)
+      const themeBackground = getComputedStyle(probe).color
+      probe.remove()
+
+      return {
+        themeBackground,
+        viewportBackground: getComputedStyle(viewport).backgroundColor,
+      }
+    })
+    expect(viewportPaint).not.toBeNull()
+    expect(viewportPaint?.viewportBackground).toBe(viewportPaint?.themeBackground)
+    expect(viewportPaint?.viewportBackground).not.toBe('rgb(0, 0, 0)')
+
     await browser.waitUntil(
       async () => {
         const text = await xtermText()
@@ -90,7 +108,7 @@ describe('integrated terminal', () => {
       },
     )
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'terminal-shell-prompt.png'))
+    await saveAppScreenshot('terminal-shell-prompt.png')
 
     const helper = await $('.xterm-helper-textarea')
     await helper.click()
@@ -101,6 +119,6 @@ describe('integrated terminal', () => {
       timeoutMsg: 'expected echo hello output in xterm buffer',
     })
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'terminal-echo-hello.png'))
+    await saveAppScreenshot('terminal-echo-hello.png')
   })
 })

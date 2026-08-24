@@ -40,6 +40,16 @@ const XTERM_THEME = {
   },
 } as const
 
+/* xterm only renders whole rows, so the fit addon leaves a few pixels of
+   remainder at the bottom of the pane. xterm 6 paints the theme background on
+   an inner element sized to those rows, leaving the full-height viewport behind
+   it on xterm.css's hardcoded #000 — which read as a black stripe under the
+   last line. Publish the palette background so the viewport can match it (see
+   `.terminal-container .xterm .xterm-viewport` in layout.css). */
+function applyXtermBg(container: HTMLElement, theme: 'light' | 'dark'): void {
+  container.style.setProperty('--xterm-bg', XTERM_THEME[theme].background)
+}
+
 interface TerminalTab {
   id: string
   /** Project that owns the shell; paired with scopeId to resolve its trusted cwd. */
@@ -423,6 +433,7 @@ export function mountTerminalsPane(
 
     const panel = el('div', { class: 'terminals-tab-panel', 'data-tab-id': id })
     const container = el('div', { class: 'terminal-container' })
+    applyXtermBg(container, store.getState().theme)
     panel.append(container)
 
     const { term, fitAddon } = createXterm()
@@ -588,6 +599,7 @@ export function mountTerminalsPane(
   function onThemeChange(theme: 'light' | 'dark'): void {
     for (const tab of tabs.values()) {
       tab.term.options.theme = XTERM_THEME[theme]
+      applyXtermBg(tab.container, theme)
     }
   }
 

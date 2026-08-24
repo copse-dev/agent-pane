@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { getSettingSchema } from './settings-schema.ts'
+import { getSettingSchema, isRegisteredSettingKey } from './settings-schema.ts'
 import { securitySettingsSchema } from './settings-writable.ts'
 
 describe('settings-schema', () => {
@@ -42,6 +42,13 @@ describe('settings-schema', () => {
     assert.equal(autoPortraitRightPanel.safeParse('true').success, false)
   })
 
+  it('registers the one-time Appearance defaults migration marker', () => {
+    const schema = getSettingSchema('appearanceDefaultsMigrationVersion')
+    assert.ok(schema)
+    assert.equal(schema.safeParse(1).success, true)
+    assert.equal(schema.safeParse(2).success, false)
+  })
+
   it('validates the right panel position setting', () => {
     const rightPanelPosition = getSettingSchema('rightPanelPosition')
     assert.ok(rightPanelPosition)
@@ -75,6 +82,17 @@ describe('settings-schema', () => {
 
   it('returns undefined for keys without a registered schema', () => {
     assert.equal(getSettingSchema('someUnknownKey'), undefined)
+  })
+
+  // `settings:get` gates renderer reads on this, so it has to agree with
+  // `getSettingSchema` exactly — a key it reports as registered but has no
+  // schema for would pass the gate and then read back as null.
+  it('reports registration consistently with the schema lookup', () => {
+    for (const key of ['theme', 'windowBounds', 'trustedShellCommands', 'someUnknownKey']) {
+      assert.equal(isRegisteredSettingKey(key), getSettingSchema(key) !== undefined, key)
+    }
+    assert.equal(isRegisteredSettingKey('someUnknownKey'), false)
+    assert.equal(isRegisteredSettingKey('trustedShellCommands'), true)
   })
 
   it('rejects extra-provider base URLs that could leak the API key', () => {

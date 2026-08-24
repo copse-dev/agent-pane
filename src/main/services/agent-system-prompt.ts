@@ -1,6 +1,8 @@
-import { loadAgentRequestedRulesCatalog, loadProjectInstructions } from './project-instructions.ts'
+import { loadAgentRequestedRulesCatalog, loadInstructionLayers } from './project-instructions.ts'
 import { getSetting, getSettingTrimmed } from './storage/settings.ts'
 import { getAgentExecutionRoot } from './execution-root.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { repositoryLocation } from './worktree-manager.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
@@ -16,6 +18,7 @@ import {
   BASE_SYSTEM_PROMPT_DIRECT_READS,
   BROWSER_TOOLS_BLOCK,
   EXTERNAL_API_SAFETY_BLOCK,
+  EXTERNAL_CONTENT_BLOCK,
   MEMORY_TOOLS_BLOCK,
   OPUS_5_RESPONSE_LENGTH_BLOCK,
   OPUS_5_TONE_REMINDER,
@@ -35,6 +38,42 @@ import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { isProjectSandboxActive } from '../project-sandbox/state.ts'
 import type { UserContent } from '@shared/types'
 import { userContentToText } from '@shared/remote-agent-stream.ts'
+
+/**
+ * State the Git repository root next to the working directory, from the turn's
+ * trusted execution context (#1724). A thread whose tools run in a linked
+ * worktree must be told which tree is its repository — an agent that guesses
+ * from a shell's inherited cwd can edit, test, and commit against the project's
+ * shared checkout instead. Resolved only when a turn context is bound: composer
+ * estimates and other off-turn builds skip the Git probe and emit nothing.
+ */
+async function buildRepositoryContext(): Promise<string> {
+  const context = getThreadExecutionContext()
+  if (!context) return ''
+  let repositoryRoot: string
+  let projectRelativePath: string
+  try {
+    ;({ repositoryRoot, projectRelativePath } = await repositoryLocation(context.root))
+  } catch {
+    // Not a Git checkout, or Git is unavailable (e.g. a remote project root):
+    // the working-directory line stands alone rather than failing the turn.
+    return ''
+  }
+  if (context.checkoutMode === 'worktree') {
+    // No branch name here: it can be adopted mid-thread, and naming it would
+    // invalidate the cached prompt prefix on every adoption (#1286). The path
+    // is the stable, authoritative fact.
+    return (
+      `\nGit repository root: ${repositoryRoot} — this thread's own linked Git worktree. ` +
+      "All file, git, and shell tools resolve against this worktree, not the project's shared checkout. " +
+      'If a path or Git result looks inconsistent, verify with `git rev-parse --show-toplevel` before acting on it.'
+    )
+  }
+  const subdirNote = projectRelativePath
+    ? ' (the working directory is a subdirectory of this repository)'
+    : ''
+  return `\nGit repository root: ${repositoryRoot}${subdirNote}`
+}
 
 /** Assemble the system prompt for a run from base prompt + skills + instructions. */
 export async function buildSystemPrompt(opts: {
@@ -57,7 +96,7 @@ export async function buildSystemPrompt(opts: {
     contextPaths: extractContextPathsFromText(userText),
     userText,
   }
-  const projectInstructions = await loadProjectInstructions({ cursorRuleContext })
+  const instructionLayers = await loadInstructionLayers({ cursorRuleContext })
   const agentRulesCatalog = await loadAgentRequestedRulesCatalog()
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
@@ -85,9 +124,16 @@ export async function buildSystemPrompt(opts: {
       // Must be the agent execution root, not the renderer workspace root: the
       // sandbox read grant and run_shell's cwd are the worktree root, so naming
       // the main repo here makes the agent `cd` outside the grant and hit EPERM.
-      .replace('{WORKSPACE_ROOT}', getAgentExecutionRoot() ?? '(none)') +
+      .replace('{WORKSPACE_ROOT}', getAgentExecutionRoot() ?? '(none)')
+      .replace('{REPO_CONTEXT}', await buildRepositoryContext()) +
     (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +
+    // Workspace-authored instructions sit here — above every Copse-authored
+    // steering block instead of terminal, so workspace text is never the
+    // closing word of the prompt (context-provenance plan, Phase 2). The
+    // user-global layer keeps the old end-of-prompt position below.
+    (instructionLayers.project ? `\n\n---\n\n${instructionLayers.project}` : '') +
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
+    EXTERNAL_CONTENT_BLOCK +
     (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +
     (readTerminalEnabled ? READ_TERMINAL_BLOCK : '') +
     (okfMemoriesEnabled ? MEMORY_TOOLS_BLOCK : '') +
@@ -98,6 +144,8 @@ export async function buildSystemPrompt(opts: {
     buildSemanticSearchPromptBlock() +
     (opus5 ? OPUS_5_TONE_REMINDER : '') +
     (customInstructions ? `\n\n---\n\n## Custom instructions\n\n${customInstructions}` : '') +
-    (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')
+    (instructionLayers.global
+      ? `\n\n---\n\n## User instructions\n\n${instructionLayers.global}`
+      : '')
   )
 }

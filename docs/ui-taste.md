@@ -67,8 +67,9 @@ output, and content density.
 
 ## Attached screenshot expand
 
-Thread message images (`.message-image`), sent text attachments, roadmap image
-chips (`.roadmap-attachment-thumb`), and videos use the shared viewer shell in
+Thread message images (`.message-image`), composer image/video chips (empty-thread
+centered composer included), sent text attachments, roadmap image chips
+(`.roadmap-attachment-thumb`), and videos use the shared viewer shell in
 [`src/renderer/attachments/attachment-preview.ts`](../src/renderer/attachments/attachment-preview.ts)
 (`dialog.attachment-preview-dialog`). Each media adapter owns its content and
 resource cleanup; wire future types through `openAttachmentPreview` rather than
@@ -381,6 +382,15 @@ It fills the window and its sections run several screens, so it is typed and spa
   wells, and the provider chips all take `--action-min-height`; a checkbox's whole line is
   clickable (padding on `.checkbox-label`, pulled back with a negative `margin-inline-start` so the
   box still sits on the section's left edge).
+- **Toggle / filter pills keep a constant width.** Active state is border colour + text colour only
+  (see `.frontier-btn` on the Usage value map). Do not bump `font-weight` on `.active` /
+  `[aria-pressed='true']` — bold glyphs are wider, so the pill reflows a few pixels and the whole
+  control row jitters when you click between options. Keep weight on the base rule (or reserve space
+  another way); signal selection with colour and border.
+- **Segmented pill groups need a full active perimeter.** Adjacent segments share an edge with
+  `margin-left: -1px`. Raise the pressed segment (`position: relative; z-index: 1`) so its accent
+  border paints over both neighbors — otherwise a middle option like Inference only shows top/bottom
+  accent and looks half-outlined.
 - **The sidebar doubles as the open section's contents.** `renderNavSubheadings()` reads the active
   section's top-level legends straight off the DOM on every section change and lists them under
   that nav row; clicking one scrolls to its group. Reading the DOM rather than a registry means a

@@ -10,6 +10,7 @@ import {
 
 export const ghPrListTool = defineTool({
   name: 'gh_pr_list',
+  provenance: 'external',
   description:
     'List pull requests for the current repository via GitHub CLI (read-only). Prefer over run_shell + gh.',
   parameters: z.object({
@@ -36,6 +37,7 @@ export const ghPrListTool = defineTool({
 
 export const ghPrViewTool = defineTool({
   name: 'gh_pr_view',
+  provenance: 'external',
   description:
     'Show details for one pull request via GitHub CLI (read-only). Omit number for the PR on the current branch.',
   parameters: z.object({
@@ -57,6 +59,7 @@ export const ghPrViewTool = defineTool({
 
 export const ghPrFilesTool = defineTool({
   name: 'gh_pr_files',
+  provenance: 'external',
   description:
     'List the files changed in a pull request, with per-file change type and +/- line counts, via GitHub CLI (read-only). Use this to answer "what files changed" instead of run_shell + gh/curl. Omit number for the PR on the current branch.',
   parameters: z.object({
@@ -72,8 +75,9 @@ export const ghPrFilesTool = defineTool({
 
 export const ghRunListTool = defineTool({
   name: 'gh_run_list',
+  provenance: 'external',
   description:
-    'List recent CI workflow runs for a branch via GitHub CLI (read-only). Use to find the run id of a failing check before fetching its logs.',
+    'List recent CI workflow runs for a branch via GitHub CLI (read-only). Prefer over run_shell + gh. Use to find the run id of a failing check before fetching its logs.',
   parameters: z.object({
     branch: z
       .string()
@@ -99,6 +103,7 @@ export const ghRunListTool = defineTool({
 
 export const ghRunViewTool = defineTool({
   name: 'gh_run_view',
+  provenance: 'external',
   description:
     'Fetch the logs of a CI workflow run via GitHub CLI (read-only). Defaults to only the failed steps; long logs are truncated to the tail. Use after gh_run_list to read why a check failed.',
   parameters: z.object({

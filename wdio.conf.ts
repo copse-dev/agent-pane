@@ -83,18 +83,21 @@ export const config: Options.Testrunner = {
           '--disable-gpu',
           '--no-sandbox',
           '--disable-dev-shm-usage',
-          // `safeStorage` binds to the OS secret service, which a headless
-          // Linux runner has none of — the containers cannot even reach the
-          // session bus. `isEncryptionAvailable()` is then false and every
-          // feature guarded on it silently no-ops, which is not a product
-          // failure but is indistinguishable from one in a spec: it is why
-          // `vnc.rememberUsername` returns false and `vnc-viewer` fails on
-          // Linux while passing on macOS, where the Keychain answers.
-          // `basic` selects Chromium's built-in password store instead of
-          // probing for gnome-keyring/kwallet, so encryption reports available
-          // and round-trips. Safe for the seeded API keys: those records carry
-          // `plain: true`, and `getApiKey` returns them before it consults the
-          // cipher (settings.ts), so they read identically either way.
+          // Keeps Chromium off the desktop keyring: it uses its built-in store
+          // instead of auto-detecting gnome-keyring/kwallet over a session bus
+          // these containers do not have.
+          //
+          // It does NOT make `safeStorage` work, which is why #1793 added it.
+          // That was verified wrong — `vnc-viewer` failed identically with the
+          // flag present. Selecting the `basic` backend is not opting into it:
+          // Electron still reports encryption unavailable unless
+          // `setUsePlainTextEncryption(true)` is called before `app` ready.
+          //
+          // Nothing needs to make `safeStorage` work here. #1797 settled that
+          // the right way round: `rememberVncUsername` returning false with no
+          // cipher is the product being *correct*, so the spec asserts that
+          // outcome on Linux and the persisted one on macOS. Giving the runner
+          // a fake secret store would only have made it lie to the test.
           '--password-store=basic',
         ],
       },
@@ -195,6 +198,10 @@ export const config: Options.Testrunner = {
       // so the spec doesn't depend on what the runner has on PATH (launching is a
       // no-op under this mock). Mixes code editors with the macOS system targets.
       COPSE_PANEL_MOCK_EDITORS: 'vscode,cursor,zed,finder,terminal',
+      // Isolate the complete Copse profile, including knowledge/memories. The
+      // narrower overrides below remain explicit so every store agrees on the
+      // same disposable root during migration and path-contract tests.
+      COPSE_DIR: e2eUserDataDir,
       COPSE_PANEL_USER_DATA: e2eUserDataDir,
       // Filesystem-native thread store (issue #644) — isolate it per run under the
       // throwaway profile so seeded threads don't touch the developer's real
@@ -242,7 +249,7 @@ export const config: Options.Testrunner = {
     }
     assignDebugPort(cap)
   },
-  beforeCommand(commandName) {
+  async beforeCommand(commandName) {
     // beforeSession runs once per worker, but every spec calls
     // browser.reloadSession() (196 call sites) and reloadSession re-launches
     // Electron from the capabilities captured back then — so without this the
@@ -250,6 +257,24 @@ export const config: Options.Testrunner = {
     // onto the port the process it is replacing has only just released. Rotate
     // it first; see helpers/debug-port.ts for why reuse is what breaks.
     if (commandName !== 'reloadSession') return
+    // On macOS, ChromeDriver can leave the Electron process alive long enough
+    // for its replacement to lose the app's single-instance lock. Closing the
+    // current app window first lets Electron terminate cleanly before
+    // reloadSession deletes the WebDriver session and launches its successor.
+    try {
+      // Mark the shutdown as a quit first: a bare window close reads as the
+      // user discarding that window, and multi-window persistence would drop
+      // its record — breaking any spec that relaunches expecting the full
+      // window set to restore (multiple-main-windows.e2e.ts).
+      await browser.execute(() =>
+        (
+          window as unknown as { __copseE2e?: { markQuit?: () => Promise<void> } }
+        ).__copseE2e?.markQuit?.(),
+      )
+      await browser.closeWindow()
+    } catch {
+      // A session that is already gone needs no extra shutdown work.
+    }
     const requested = browser.requestedCapabilities as
       (ChromeCapabilities & { alwaysMatch?: ChromeCapabilities }) | undefined
     if (!requested) return

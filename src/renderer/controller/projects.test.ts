@@ -46,6 +46,9 @@ function makeApi(handlers: {
   workspaceSet?: (path: string, sshHost?: string) => Promise<string>
   storageGet?: (key: string) => Promise<unknown>
   storageSet?: (key: string, value: unknown) => Promise<void>
+  setNavigation?: (
+    navigation: import('@shared/types/main-window.ts').MainWindowNavigation,
+  ) => Promise<void>
   loadProjectThreads?: (projectId: string) => Promise<Thread[]>
   createProjectThread?: (projectId: string, thread: Thread) => Promise<void>
   settingsGet?: (key: string) => Promise<unknown>
@@ -56,6 +59,10 @@ function makeApi(handlers: {
     const base = createFakeApi()
     return {
       ...base,
+      windowState: {
+        ...base['windowState'],
+        setNavigation: handlers.setNavigation ?? (async (): Promise<void> => undefined),
+      },
       workspace: {
         ...base['workspace'],
         open: handlers.workspaceOpen ?? (async (): Promise<string | null> => null),
@@ -233,6 +240,58 @@ test('switching away compacts the outgoing project, keeping its rows but not its
   assert.equal(row.messages, undefined)
 })
 
+test('switchProject carries chunks that land while activation is in flight', async () => {
+  resetProjectSwitchStateForTest()
+  const running = thread('t-a')
+  running.status = 'running'
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [running],
+    activeThreadId: running.id,
+  })
+
+  let releaseLoad: ((threads: Thread[]) => void) | undefined
+  const load = new Promise<Thread[]>((resolve) => {
+    releaseLoad = resolve
+  })
+  const api = makeApi({
+    loadProjectThreads: async (projectId) =>
+      projectId === 'b' ? load : Promise.resolve([thread('t-a')]),
+  })
+
+  switchProject(store, api, 'b')
+  await waitUntil(() => releaseLoad !== undefined)
+
+  const streamed = {
+    id: 't-a-streamed-during-switch',
+    role: 'assistant' as const,
+    content: 'landed while project B was loading',
+    toolCalls: [],
+    createdAt: 2,
+  }
+  store.setState({
+    threads: store
+      .getState()
+      .threads.map((candidate) =>
+        candidate.id === running.id
+          ? { ...candidate, messages: [...candidate.messages, streamed] }
+          : candidate,
+      ),
+  })
+  releaseLoad?.([thread('t-b')])
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+
+  const carried = store.getState().backgroundThreads.find((entry) => entry.thread.id === running.id)
+  assert.equal(carried?.projectId, 'a')
+  assert.equal(carried.thread.messages.at(-1)?.id, streamed.id)
+})
+
 test('switchProject starts outgoing persistence and workspace activation concurrently', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({
@@ -262,6 +321,9 @@ test('switchProject starts outgoing persistence and workspace activation concurr
     storageSet: async (key) => {
       if (blockInitialWrites) await gate(`storage:${key}`)
     },
+    setNavigation: async () => {
+      if (blockInitialWrites) await gate('window:navigation')
+    },
     createProjectThread: async () => gate('threads'),
     loadProjectThreads: async () => [thread('t-b')],
   })
@@ -271,7 +333,7 @@ test('switchProject starts outgoing persistence and workspace activation concurr
 
   assert.deepEqual(
     new Set(started),
-    new Set(['workspace', 'threads', 'storage:projects', 'storage:activeProjectId']),
+    new Set(['workspace', 'threads', 'storage:projects', 'window:navigation']),
   )
   blockInitialWrites = false
   for (const release of releases) release()
@@ -379,8 +441,8 @@ test('switching back cancels the in-flight switch and keeps the workspace put', 
       if (path === '/b') return workspaceGate
       return path
     },
-    storageSet: async (key, value) => {
-      if (key === 'activeProjectId') selections.push(value)
+    setNavigation: async (navigation) => {
+      selections.push(navigation.activeProjectId)
     },
     loadProjectThreads: async (projectId) => (projectId === 'b' ? [thread('t-b')] : []),
   })
@@ -572,6 +634,22 @@ test('restoreProject does not emit projects_changed before threads are loaded', 
   assert.deepEqual(events, ['projects_changed', 'workspace_changed', 'threads_changed'])
 })
 
+test('restoreProject restores the window-preferred thread when it still exists', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    threads: [],
+  })
+  const api = makeApi({
+    loadProjectThreads: async () => [thread('t-newest'), thread('t-preferred')],
+  })
+
+  await restoreProject(store, api, 'a', 't-preferred')
+
+  assert.equal(store.getState().activeThreadId, 't-preferred')
+})
+
 test('restoreProject overlaps workspace activation with thread loading', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({
@@ -671,6 +749,9 @@ test('removeProject drops an inactive project without changing the workspace', a
   const api = makeApi({
     storageSet: async (key, value) => {
       saved.push({ key, value })
+    },
+    setNavigation: async (navigation) => {
+      saved.push({ key: 'activeProjectId', value: navigation.activeProjectId })
     },
   })
 

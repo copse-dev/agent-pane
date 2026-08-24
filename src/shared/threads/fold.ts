@@ -9,6 +9,7 @@ import type {
   ThreadReview,
   ToolCall,
   TranscriptAttachment,
+  TurnOutcome,
 } from '@shared/types'
 import { hookCardFromSpineLine } from '../hooks/hook-card.ts'
 import {
@@ -21,6 +22,7 @@ import {
   type SpineToolCall,
   type ThreadMeta,
   SPINE_SCHEMA_VERSION,
+  isContentRef,
   parseSpine,
   serializeSpine,
 } from './spine-schema.ts'
@@ -54,6 +56,7 @@ interface MessageLike {
   model?: string
   requestedModel?: string
   parameters?: ModelParameters
+  turnOutcome?: TurnOutcome
   review?: ThreadReview
   origin?: QueuedMessageOrigin
   editedByUser?: boolean
@@ -73,6 +76,30 @@ function contentRef(ref: string, content: string, hash: HashFn): ContentRef {
   return { ref, sha256: hash(content) }
 }
 
+/** Inline tool args below this UTF-8 size; larger args spill to `blobs/<id>.args.json`. */
+export const TOOL_ARGS_INLINE_MAX_BYTES = 2048
+
+function utf8ByteLength(text: string): number {
+  return new TextEncoder().encode(text).byteLength
+}
+
+function toolArgsBlobPath(toolCallId: string): string {
+  return `blobs/${toolCallId}.args.json`
+}
+
+/** True when spine `args` is the spilled blob ref for this tool call (not a coincidental object). */
+export function isToolArgsBlobRef(toolCallId: string, value: unknown): value is ContentRef {
+  return isContentRef(value) && value.ref === toolArgsBlobPath(toolCallId)
+}
+
+function serializeToolArgsJson(args: unknown): string {
+  return JSON.stringify(args === undefined ? null : args)
+}
+
+function parseToolArgsJson(raw: string): unknown {
+  return JSON.parse(raw) as unknown
+}
+
 function explodeToolCall(
   tc: ToolCall,
   hash: HashFn,
@@ -86,10 +113,18 @@ function explodeToolCall(
     result = contentRef(ref, tc.result, hash)
   }
 
+  const argsJson = serializeToolArgsJson(tc.args)
+  let args: unknown = tc.args
+  if (utf8ByteLength(argsJson) > TOOL_ARGS_INLINE_MAX_BYTES) {
+    const ref = toolArgsBlobPath(tc.id)
+    files.push({ ref, contents: argsJson })
+    args = contentRef(ref, argsJson, hash)
+  }
+
   const spine: SpineToolCall = {
     id: tc.id,
     name: tc.name,
-    args: tc.args,
+    args,
     status: tc.status === 'error' ? 'error' : 'done',
     result,
     ...(tc.editStats !== undefined ? { editStats: tc.editStats } : {}),
@@ -185,6 +220,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   if (msg.model !== undefined) line.model = msg.model
   if (msg.requestedModel !== undefined) line.requestedModel = msg.requestedModel
   if (msg.parameters !== undefined) line.parameters = msg.parameters
+  if (msg.turnOutcome !== undefined) line.turnOutcome = msg.turnOutcome
   if (msg.review !== undefined) line.review = msg.review
   if (msg.origin !== undefined) line.origin = msg.origin
   if (msg.editedByUser !== undefined) line.editedByUser = msg.editedByUser
@@ -252,6 +288,7 @@ export function refsOfLine(line: SpineMessageLine): {
   }
   for (const tc of line.toolCalls) {
     if (tc.result !== null) files.push(tc.result.ref)
+    if (isToolArgsBlobRef(tc.id, tc.args)) files.push(tc.args.ref)
     if (tc.subagent) subagentDirs.push(tc.subagent.ref)
   }
   return { files, subagentDirs }
@@ -281,10 +318,17 @@ function foldToolCall(
     verify(spine.result, result, hash)
   }
 
+  let args: unknown = spine.args
+  if (isToolArgsBlobRef(spine.id, spine.args)) {
+    const raw = resolve(spine.args.ref)
+    verify(spine.args, raw, hash)
+    args = parseToolArgsJson(raw)
+  }
+
   const tc: ToolCall = {
     id: spine.id,
     name: spine.name,
-    args: spine.args,
+    args,
     status: spine.status,
     result,
     ...(spine.editStats !== undefined ? { editStats: spine.editStats } : {}),
@@ -377,6 +421,7 @@ function foldOne(
   if (line.model !== undefined) msg.model = line.model
   if (line.requestedModel !== undefined) msg.requestedModel = line.requestedModel
   if (line.parameters !== undefined) msg.parameters = line.parameters
+  if (line.turnOutcome !== undefined) msg.turnOutcome = line.turnOutcome
   if (line.review !== undefined) msg.review = line.review
   if (line.origin !== undefined) msg.origin = line.origin
   if (line.editedByUser !== undefined) msg.editedByUser = line.editedByUser
@@ -405,6 +450,8 @@ export function foldMessage(
     ...(m.attachments !== undefined ? { attachments: m.attachments } : {}),
     ...(m.model !== undefined ? { model: m.model } : {}),
     ...(m.requestedModel !== undefined ? { requestedModel: m.requestedModel } : {}),
+    ...(m.parameters !== undefined ? { parameters: m.parameters } : {}),
+    ...(m.turnOutcome !== undefined ? { turnOutcome: m.turnOutcome } : {}),
     ...(m.review !== undefined ? { review: m.review } : {}),
     ...(m.origin !== undefined ? { origin: m.origin } : {}),
     ...(m.editedByUser !== undefined ? { editedByUser: m.editedByUser } : {}),

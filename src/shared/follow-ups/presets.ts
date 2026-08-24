@@ -27,7 +27,34 @@ export const DETERMINISTIC_FOLLOW_UP_IDS = {
   changes: 'changes',
   debugCi: 'debug-ci',
   fixMergeConflicts: 'fix-merge-conflicts',
+  continuePlan: 'continue-plan',
 } as const
+
+/**
+ * The bubble for a turn that ended with task-plan items still open. It names
+ * the first unfinished item so the user can see what "continue" means before
+ * sending; the prompt hands the whole remaining plan back to the agent.
+ */
+export function buildContinuePlanSuggestion(openTodos: string[]): {
+  id: string
+  label: string
+  prompt: string
+} {
+  const items = openTodos.map((t) => `- ${t}`).join('\n')
+  // Destructure rather than index: callers guard on length, but the label must
+  // stay a plain string even if one ever slips through with an empty list.
+  const [first = ''] = openTodos
+  const labelItem = first.replace(/\s+/g, ' ').trim()
+  const conciseLabelItem = labelItem.length > 72 ? `${labelItem.slice(0, 71)}…` : labelItem
+  return {
+    id: DETERMINISTIC_FOLLOW_UP_IDS.continuePlan,
+    label: `Continue: ${conciseLabelItem}`,
+    prompt:
+      'The task plan still has open items. Continue with the next unfinished item, ' +
+      'and update the plan as you go:\n' +
+      items,
+  }
+}
 
 /**
  * The changeset chip's content. It still carries a prompt even though callers

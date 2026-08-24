@@ -6,6 +6,8 @@ import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 import {
   addMessage,
   clearContextSnapshot,
+  getThreadById,
+  patchThreadAnywhere,
   setMessageContent,
   setQueuePaused,
   setThreadStatus,
@@ -121,16 +123,15 @@ export function foldBackContinuationUsed(
   turnTreeId: string,
   used: number,
 ): void {
-  const thread = store.getState().threads.find((t) => t.id === threadId)
+  // Background-aware (#1841): the report arrives just before `done`, which can
+  // land while the thread's project is switched away from.
+  const thread = getThreadById(store, threadId)
   if (!thread) return
   const currentKey = thread.currentEpoch ?? threadId
   if (currentKey !== turnTreeId) return
   const next = Math.max(thread.continuationUsed ?? 0, used)
   if (next === (thread.continuationUsed ?? 0)) return
-  const threads = store
-    .getState()
-    .threads.map((t) => (t.id !== threadId ? t : { ...t, continuationUsed: next }))
-  store.setState({ threads })
+  patchThreadAnywhere(store, threadId, (t) => ({ ...t, continuationUsed: next }))
 }
 
 /**

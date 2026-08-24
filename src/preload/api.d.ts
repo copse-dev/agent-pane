@@ -39,7 +39,7 @@ import type {
   DeclaredMcpServer,
 } from '@shared/types/mcp.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
-import type { CanvasArtefact } from '@shared/types/canvas.ts'
+import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import type {
   ExtraProvider,
@@ -93,6 +93,12 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  windowState: {
+    getNavigation: () => Promise<import('@shared/types/main-window.ts').MainWindowNavigation>
+    setNavigation: (
+      navigation: import('@shared/types/main-window.ts').MainWindowNavigation,
+    ) => Promise<void>
+  }
   workspace: {
     open: () => Promise<string | null>
     get: () => Promise<string | null>
@@ -183,6 +189,8 @@ export interface ApiClient {
       threadId: string,
       contextJson: string,
     ) => Promise<FollowUpSuggestion[]>
+    /** Tab-completable next step for the composer placeholder; null = no obvious step. */
+    suggestNextStep: (contextJson: string) => Promise<string | null>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
     onApprovalRequest: (
       handler: (req: {
@@ -329,6 +337,7 @@ export interface ApiClient {
   }
   canvas: {
     onArtefact: (handler: (artefact: CanvasArtefact) => void) => () => void
+    onShowArtefact: (handler: (identity: CanvasArtefactIdentity) => void) => () => void
   }
   storage: {
     get: (key: string) => Promise<unknown>
@@ -605,14 +614,16 @@ export interface ApiClient {
     /**
      * Scan `process.env` and well-known shell start-up files for provider API
      * keys the user already has. Returns masked previews only — raw secrets never
-     * cross IPC. Requires no consent (read-only preview); importing does.
+     * cross IPC. Gated on `envKeyAutoDetectEnabled`; the UI records consent only
+     * after the user explicitly chooses the scan.
      */
     scanEnvKeys: () => Promise<DetectedEnvKey[]>
     /**
      * Import detected environment keys into Settings for any provider not already
-     * configured. Gated on the `envKeyAutoDetectEnabled` consent flag.
+     * configured. Gated on the `envKeyAutoDetectEnabled` consent flag. With
+     * `providers`, only those slugs are imported (unticked rows stay untouched).
      */
-    importEnvKeys: () => Promise<{
+    importEnvKeys: (providers?: string[]) => Promise<{
       imported: { provider: string; source: string }[]
       skipped: { provider: string; reason: string }[]
     }>
@@ -652,7 +663,6 @@ export interface ApiClient {
     apply: () => Promise<void>
   }
   usage: {
-    record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) => Promise<void>
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
     getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
     getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>
@@ -846,6 +856,8 @@ export interface ApiClient {
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
+    /** Trimmed contents of one discovered instruction file, for the preview dialog. */
+    read: (path: string) => Promise<string>
   }
   cursorRules: {
     list: () => Promise<CursorRuleSummary[]>

@@ -11,9 +11,11 @@ import {
 } from './github/pr-context-service.ts'
 import {
   buildPluginFollowUps,
+  buildDeterministicFollowUps,
   pluginFollowUpConditionMet,
   parseModelFollowUpIds,
 } from './follow-up-service.ts'
+import { buildContinuePlanSuggestion } from '@shared/follow-ups/presets.ts'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import { definePlugin, type RegisteredPlugin } from '@copse/agent/plugins/plugin-manifest.ts'
 import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
@@ -225,5 +227,68 @@ describe('pluginFollowUpConditionMet', () => {
       true,
     )
     assert.equal(pluginFollowUpConditionMet('always', { changeStats: null }), true)
+  })
+})
+
+describe('continue-plan deterministic bubble', () => {
+  const workspaceCtx = {
+    branch: 'main',
+    hasOpenPr: false,
+    hasMergeConflicts: false,
+    hasCiFailures: false,
+    changeStats: null,
+  }
+
+  it('leads with the plan when open todos survive the turn', () => {
+    const suggestions = buildDeterministicFollowUps(workspaceCtx, {
+      userMessage: 'ship it',
+      assistantMessage: 'Done, mostly.',
+      toolNames: [],
+      openTodos: ['Write unit tests', 'Update changelog'],
+    })
+    assert.deepEqual(
+      suggestions.map((s) => s.id),
+      ['continue-plan'],
+    )
+    const plan = suggestions[0]
+    assert.ok(plan)
+    assert.match(plan.label, /^Continue: Write unit tests$/)
+    // The prompt carries every open item so a click resumes the whole
+    // remaining plan, not just its first line.
+    assert.match(plan.prompt ?? '', /- Write unit tests/)
+    assert.match(plan.prompt ?? '', /- Update changelog/)
+  })
+
+  it('offers nothing when the plan was fully reconciled', () => {
+    const suggestions = buildDeterministicFollowUps(workspaceCtx, {
+      userMessage: 'ship it',
+      assistantMessage: 'Done.',
+      toolNames: [],
+    })
+    assert.deepEqual(suggestions, [])
+  })
+})
+
+describe('buildContinuePlanSuggestion', () => {
+  it('labels the bubble with the first open item', () => {
+    const built = buildContinuePlanSuggestion(['Add tests', 'Run typecheck'])
+    assert.equal(built.id, 'continue-plan')
+    assert.equal(built.label, 'Continue: Add tests')
+  })
+
+  it('handles a single-item plan', () => {
+    const built = buildContinuePlanSuggestion(['Only step left'])
+    assert.equal(built.label, 'Continue: Only step left')
+    assert.match(built.prompt, /- Only step left/)
+  })
+
+  it('keeps a long or multiline first item readable as a bubble label', () => {
+    const suggestion = buildContinuePlanSuggestion([
+      `Review the first failure\nand then ${'investigate '.repeat(20)}`,
+    ])
+    assert.ok(suggestion.label.length <= 82)
+    assert.ok(suggestion.label.endsWith('…'))
+    assert.equal(suggestion.label.includes('\n'), false)
+    assert.match(suggestion.prompt, /Review the first failure\nand then/)
   })
 })

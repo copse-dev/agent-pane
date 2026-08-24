@@ -71,7 +71,7 @@ revisiting this document, not silently diverging in an implementation PR.
    descending from one human-originated submission). The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
    follow-ups, bounded background-task completion wakes, durable CI status-change wakes,
-   post-turn remediation cycles,
+   ACP unfinished-turn recovery, post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. **In-loop nudges do not count**
    (truncation-continue, finalize, loop, and
    reasoning-runaway nudges are mid-turn message pushes inside one `runAgentLoop`
@@ -222,7 +222,8 @@ revisiting this document, not silently diverging in an implementation PR.
     command is assessed by the host-owned Guarded YOLO harm gate after the rewrite.
     Hook allow results, ACP callers, remembered trust, classifier output, and model
     routing hints cannot downgrade a host `prompt` or `deny`. Both the original and
-    effective command are retained in the durable `permission_decision` spine line.
+    effective command are retained on the unified spine `decision` line (command
+    text in `blobs/decision-*.detail.json`).
 19. **Pack stability is manifest data, not inferred UI copy.** Every first-party
     pack declares `stable` or `experimental`; a user pack that omits the field is
     treated as experimental. Settings shows that status before enablement.

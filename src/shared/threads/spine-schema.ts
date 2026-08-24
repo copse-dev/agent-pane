@@ -6,7 +6,10 @@ import type {
   Thread,
   ThreadReview,
   TranscriptAttachment,
+  TurnOutcome,
 } from '@shared/types'
+import { type DecisionEvent } from './decision-log.ts'
+import { isPromptCause } from './prompt-cause.ts'
 import { planArtifactRefs } from './plan-schema.ts'
 
 /**
@@ -14,9 +17,9 @@ import { planArtifactRefs } from './plan-schema.ts'
  *
  * A thread is a directory whose linear history is an append-only JSONL "spine"
  * (`events.jsonl`), one {@link SpineMessageLine} per finalized message, plus
- * non-message observability lines (`hook_run`, Plan Mode `plan`). Prose
+ * non-message observability lines (`hook_run`, `decision`, Plan Mode `plan`). Prose
  * (message text, reasoning) lives in referenced OKF markdown files; large or
- * opaque content (tool results, images, plan revisions) lives in referenced
+ * opaque content (tool results, tool args, plan revisions) lives in referenced
  * files. This module is pure — no `node:fs`/Electron — so the fidelity
  * round-trip is unit-testable without shims. See {@link foldThread} /
  * {@link explodeMessage}.
@@ -115,6 +118,8 @@ export interface SpineMessageLine {
    * before they were recorded.
    */
   parameters?: ModelParameters
+  /** Terminal state and bounded diagnostics for this turn. */
+  turnOutcome?: TurnOutcome
   /** Post-turn review verdict anchored to this message (kept inline — small). */
   review?: ThreadReview
   /**
@@ -289,7 +294,7 @@ export interface SpinePlanLine {
   contentHash?: string
 }
 
-/** Durable host-owned shell authorization record (issue #1249 / #656). */
+/** Durable host-owned shell authorization record (legacy Guarded YOLO shape). */
 export interface SpinePermissionDecisionLine {
   v: number
   type: 'permission_decision'
@@ -307,6 +312,27 @@ export interface SpinePermissionDecisionLine {
   policyDecision: 'allow' | 'prompt' | 'deny'
   reasons: string[]
   userResponse: 'approved' | 'declined' | 'not-required'
+}
+
+/**
+ * Unified control-plane decision on the thread spine (issue #656). Same fields as
+ * {@link DecisionEvent}, plus optional `detail` blob (argv / YOLO extras) and
+ * turn correlation. Written for user, classifier, hook, and system actors.
+ */
+export type SpineDecisionLine = DecisionEvent & {
+  detail?: ContentRef
+  turnId?: string
+  step?: number
+}
+
+/** Thread-relative path for a decision detail blob. */
+export function decisionDetailBlobRef(decisionId: string): string {
+  return `blobs/decision-${decisionId}.detail.json`
+}
+
+/** Blob refs a decision line points at (kept alive across full rewrites). */
+export function decisionBlobRefs(line: SpineDecisionLine): string[] {
+  return line.detail ? [line.detail.ref] : []
 }
 
 export const MACHINE_CONTINUATION_RESULTS = [
@@ -337,6 +363,7 @@ export type SpineLine =
   | SpineHookRunLine
   | SpinePlanLine
   | SpinePermissionDecisionLine
+  | SpineDecisionLine
   | SpineMachineContinuationLine
 
 /** Thread-relative ref of the content-addressed toolset fingerprint blob. */
@@ -363,7 +390,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function isContentRef(value: unknown): value is ContentRef {
+export function isContentRef(value: unknown): value is ContentRef {
   return isRecord(value) && typeof value['ref'] === 'string' && typeof value['sha256'] === 'string'
 }
 
@@ -394,6 +421,35 @@ function isSpineHookRunLine(value: unknown): value is SpineHookRunLine {
     typeof value['durationMs'] === 'number' &&
     typeof value['parseOk'] === 'boolean' &&
     isRecord(value['decision'])
+  )
+}
+
+function isSpineDecisionLine(value: unknown): value is SpineDecisionLine {
+  if (!isRecord(value)) return false
+  const actor = value['actor']
+  const verdict = value['verdict']
+  return (
+    value['type'] === 'decision' &&
+    typeof value['v'] === 'number' &&
+    typeof value['id'] === 'string' &&
+    typeof value['at'] === 'number' &&
+    typeof value['kind'] === 'string' &&
+    typeof value['subject'] === 'string' &&
+    (actor === 'user' || actor === 'classifier' || actor === 'hook' || actor === 'system') &&
+    (verdict === 'approved' ||
+      verdict === 'denied' ||
+      verdict === 'allowed' ||
+      verdict === 'blocked' ||
+      verdict === 'ask' ||
+      verdict === 'classified' ||
+      verdict === 'timeout' ||
+      verdict === 'cancelled' ||
+      verdict === 'deferred') &&
+    (value['detail'] === undefined || isContentRef(value['detail'])) &&
+    (value['cause'] === undefined || isPromptCause(value['cause'])) &&
+    (value['toolCallId'] === undefined || typeof value['toolCallId'] === 'string') &&
+    (value['turnId'] === undefined || typeof value['turnId'] === 'string') &&
+    (value['step'] === undefined || typeof value['step'] === 'number')
   )
 }
 
@@ -495,6 +551,7 @@ export function parseSpineLine(raw: string): SpineLine | null {
   if (type === 'plan' && isSpinePlanLine(parsed)) return parsed
 
   if (type === 'hook_run' && isSpineHookRunLine(parsed)) return parsed
+  if (type === 'decision' && isSpineDecisionLine(parsed)) return parsed
   if (type === 'permission_decision' && isSpinePermissionDecisionLine(parsed)) return parsed
   if (type === 'machine_continuation' && isSpineMachineContinuationLine(parsed)) return parsed
 
@@ -591,6 +648,7 @@ export function rebuildSpinePreservingNonMessageLines(
     }
     preserved.push({ raw: entry.raw, anchor: lastMessageId })
     if (entry.line?.type === 'hook_run') preservedRefs.push(...hookRunBlobRefs(entry.line))
+    if (entry.line?.type === 'decision') preservedRefs.push(...decisionBlobRefs(entry.line))
     if (entry.line?.type === 'plan') preservedRefs.push(...planArtifactRefs(entry.line.artifact))
   }
   if (preserved.length === 0) {

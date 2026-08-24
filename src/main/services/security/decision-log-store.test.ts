@@ -1,14 +1,28 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs'
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parseSpineEntries } from '@shared/threads/spine-schema.ts'
 import { recordDecision, readDecisionLog, exportDecisionLog } from './decision-log-store.ts'
 
 const PROJECT = 'proj-1'
+const THREAD = 't-42'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function threadEventsPath(root: string, threadId = THREAD): string {
+  return join(root, PROJECT, threadId, 'events.jsonl')
 }
 
 describe('decision-log-store', () => {
@@ -27,7 +41,7 @@ describe('decision-log-store', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('records a decision and reads it back with fields intact', async () => {
+  it('records a decision onto the thread spine and reads it back', async () => {
     recordDecision({
       projectId: PROJECT,
       kind: 'shell',
@@ -36,7 +50,8 @@ describe('decision-log-store', () => {
       subject: 'echo hi',
       scope: 'sandbox',
       remembered: true,
-      threadId: 't-42',
+      threadId: THREAD,
+      toolCallId: 'tc-1',
     })
     // Same per-project queue key → the read runs strictly after the append.
     const events = await readDecisionLog(PROJECT)
@@ -50,33 +65,68 @@ describe('decision-log-store', () => {
     assert.equal(e.subject, 'echo hi')
     assert.equal(e.scope, 'sandbox')
     assert.equal(e.remembered, true)
-    assert.equal(e.threadId, 't-42')
+    assert.equal(e.threadId, THREAD)
+    assert.equal(e.toolCallId, 'tc-1')
     assert.equal(typeof e.id, 'string')
     assert.equal(typeof e.at, 'number')
+    assert.equal(existsSync(join(root, PROJECT, 'decisions.jsonl')), false)
+    assert.equal(existsSync(threadEventsPath(root)), true)
   })
 
-  it('writes decisions.jsonl under the project dir', async () => {
+  it('writes a detail blob when detail is supplied', async () => {
     recordDecision({
       projectId: PROJECT,
+      threadId: THREAD,
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'approved',
+      subject: 'shell command (arguments omitted)',
+      detail: { originalCommand: 'echo safe', harmDecision: 'prompt' },
+    })
+    const events = await readDecisionLog(PROJECT)
+    assert.equal(events.length, 1)
+    const id = events[0]?.id
+    assert.ok(id)
+    const raw = readFileSync(threadEventsPath(root), 'utf8')
+    const line = parseSpineEntries(raw).map((e) => e.line)[0]
+    assert.ok(line?.type === 'decision')
+    assert.ok(line.detail)
+    assert.equal(line.detail.ref, `blobs/decision-${id}.detail.json`)
+    const detail: unknown = JSON.parse(
+      readFileSync(join(root, PROJECT, THREAD, line.detail.ref), 'utf8'),
+    )
+    assert.deepEqual(detail, { originalCommand: 'echo safe', harmDecision: 'prompt' })
+  })
+
+  it('deletes a legacy project decisions.jsonl on read', async () => {
+    recordDecision({
+      projectId: PROJECT,
+      threadId: THREAD,
       kind: 'mcp',
       actor: 'user',
       verdict: 'denied',
       subject: 'mcp__x__y',
     })
     await readDecisionLog(PROJECT)
-    assert.equal(existsSync(join(root, PROJECT, 'decisions.jsonl')), true)
+    const legacy = join(root, PROJECT, 'decisions.jsonl')
+    mkdirSync(join(root, PROJECT), { recursive: true })
+    writeFileSync(legacy, '{"v":1,"type":"decision"}\n')
+    assert.equal(existsSync(legacy), true)
+    await readDecisionLog(PROJECT)
+    assert.equal(existsSync(legacy), false)
   })
 
   it('redacts secrets before persisting', async () => {
     recordDecision({
       projectId: PROJECT,
+      threadId: THREAD,
       kind: 'shell',
       actor: 'user',
       verdict: 'approved',
       subject: 'GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz012345 gh pr view',
     })
     await readDecisionLog(PROJECT)
-    const raw = readFileSync(join(root, PROJECT, 'decisions.jsonl'), 'utf8')
+    const raw = readFileSync(threadEventsPath(root), 'utf8')
     assert.equal(raw.includes('ghp_abcdefghijklmnopqrstuvwxyz012345'), false)
     assert.equal(raw.includes('<redacted>'), true)
   })
@@ -85,6 +135,7 @@ describe('decision-log-store', () => {
     for (let i = 0; i < 5; i++) {
       recordDecision({
         projectId: PROJECT,
+        threadId: THREAD,
         kind: 'shell',
         actor: 'user',
         verdict: 'approved',
@@ -102,9 +153,20 @@ describe('decision-log-store', () => {
     assert.deepEqual(await readDecisionLog('never-used'), [])
   })
 
+  it('drops recordings without a project+thread (no _global bucket)', async () => {
+    recordDecision({
+      kind: 'shell',
+      actor: 'user',
+      verdict: 'approved',
+      subject: 'orphan',
+    })
+    assert.deepEqual(await readDecisionLog(PROJECT), [])
+  })
+
   it('exports a manifest + events bundle', async () => {
     recordDecision({
       projectId: PROJECT,
+      threadId: THREAD,
       kind: 'shell',
       actor: 'user',
       verdict: 'approved',
@@ -112,6 +174,7 @@ describe('decision-log-store', () => {
     })
     recordDecision({
       projectId: PROJECT,
+      threadId: THREAD,
       kind: 'web',
       actor: 'user',
       verdict: 'denied',
@@ -129,16 +192,15 @@ describe('decision-log-store', () => {
     assert.equal(manifest['type'], 'decision-log-manifest')
     assert.equal(manifest['count'], 2)
     assert.equal(manifest['mediaType'], 'application/vnd.copse.decision-log+jsonl')
-    // The export lives under <project>/exports/.
     const exportsDir = join(root, PROJECT, 'exports')
     assert.equal(readdirSync(exportsDir).length, 1)
   })
 
   it('does not throw when recording is impossible', () => {
-    // A record with a bogus (unstringifiable) confidence still must not throw.
     assert.doesNotThrow(() => {
       recordDecision({
         projectId: PROJECT,
+        threadId: THREAD,
         kind: 'hook',
         actor: 'hook',
         verdict: 'blocked',

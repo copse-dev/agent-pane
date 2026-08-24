@@ -10,6 +10,7 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import {
   mountSettingsDialog,
   openSettingsDialog,
@@ -223,6 +224,52 @@ describe('appearance live preview', () => {
     assert.deepEqual(settingWrites, [['theme', 'light']])
     assert.equal(securityWrites, 0)
     assert.equal(iconApplies, 0)
+  })
+})
+
+// A fieldset whose only content would be "there are none" is noise, and most
+// projects carry no Cursor rules at all — so the block only earns its space once
+// the workspace actually has rules to list.
+describe('Cursor rules block visibility', () => {
+  function mountWithRules(rules: CursorRuleSummary[]): HTMLElement {
+    document.body.innerHTML = ''
+    mountSettingsDialog(
+      createStore(),
+      createPendingApi({
+        'instructions.list': () => Promise.resolve([]),
+        'cursorRules.list': () => Promise.resolve(rules),
+        'skills.list': () => Promise.resolve([]),
+        'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
+      }),
+    )
+    return qsRequired(document, '#cursor-rules-fieldset')
+  }
+
+  // refreshSources awaits an api round-trip; drain the microtask queue after it.
+  async function reloadSources(): Promise<void> {
+    qsRequired(document, '#sources-reload-btn').dispatchEvent(new Event('click'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  it('stays hidden when the workspace has no Cursor rules', async () => {
+    const fieldset = mountWithRules([])
+    assert.equal(fieldset.hidden, true)
+    await reloadSources()
+    assert.equal(fieldset.hidden, true)
+  })
+
+  it('appears once the workspace has a rule to list', async () => {
+    const fieldset = mountWithRules([
+      {
+        path: '/repo/.cursor/rules/style.mdc',
+        name: '.cursor/rules/style.mdc',
+        kind: 'always',
+        bytes: 42,
+      },
+    ])
+    await reloadSources()
+    assert.equal(fieldset.hidden, false)
+    assert.match(qsRequired(document, '#sources-cursor-rules-list').textContent, /style\.mdc/)
   })
 })
 
