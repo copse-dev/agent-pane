@@ -72,7 +72,7 @@ describe('usage ledger', () => {
     assert.equal(at(summary.day.localModels, 0).estimatedCostUsd, 0)
   })
 
-  it('dedupes identical back-to-back records from main and renderer', async () => {
+  it('keeps distinct calls with identical token counts', async () => {
     storageSet(USAGE_EVENTS_STORAGE_KEY, [])
     const input = {
       model: 'gpt-4o',
@@ -83,6 +83,6 @@ describe('usage ledger', () => {
     }
     recordUsageEvent(input)
     recordUsageEvent(input)
-    assert.equal((await getUsageSummary()).ledgerEventCount, 1)
+    assert.equal((await getUsageSummary()).ledgerEventCount, 2)
   })
 })

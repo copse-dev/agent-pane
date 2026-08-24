@@ -1,4 +1,6 @@
 node_modules/
+.pnpm-store/
+.pr-validation/
 dist/
 dist-test/
 dist-types/

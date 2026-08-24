@@ -614,14 +614,16 @@ export interface ApiClient {
     /**
      * Scan `process.env` and well-known shell start-up files for provider API
      * keys the user already has. Returns masked previews only — raw secrets never
-     * cross IPC. Requires no consent (read-only preview); importing does.
+     * cross IPC. Gated on `envKeyAutoDetectEnabled`; the UI records consent only
+     * after the user explicitly chooses the scan.
      */
     scanEnvKeys: () => Promise<DetectedEnvKey[]>
     /**
      * Import detected environment keys into Settings for any provider not already
-     * configured. Gated on the `envKeyAutoDetectEnabled` consent flag.
+     * configured. Gated on the `envKeyAutoDetectEnabled` consent flag. With
+     * `providers`, only those slugs are imported (unticked rows stay untouched).
      */
-    importEnvKeys: () => Promise<{
+    importEnvKeys: (providers?: string[]) => Promise<{
       imported: { provider: string; source: string }[]
       skipped: { provider: string; reason: string }[]
     }>
@@ -661,7 +663,6 @@ export interface ApiClient {
     apply: () => Promise<void>
   }
   usage: {
-    record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) => Promise<void>
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
     getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
     getPlanWorthIt: () => Promise<import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload>

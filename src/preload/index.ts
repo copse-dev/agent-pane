@@ -824,7 +824,8 @@ contextBridge.exposeInMainWorld('api', {
     validateKey: (provider: string, key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
     scanEnvKeys: () => ipcRenderer.invoke('settings:scanEnvKeys'),
-    importEnvKeys: () => ipcRenderer.invoke('settings:importEnvKeys'),
+    importEnvKeys: (providers?: string[]) =>
+      ipcRenderer.invoke('settings:importEnvKeys', providers),
     extraProviders: () => ipcRenderer.invoke('settings:extraProviders'),
     modelPricing: () => ipcRenderer.invoke('settings:modelPricing'),
     saveExtraProvider: (record: unknown) =>
@@ -839,8 +840,6 @@ contextBridge.exposeInMainWorld('api', {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
   },
   usage: {
-    record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) =>
-      ipcRenderer.invoke('usage:record', input),
     getSummary: () => ipcRenderer.invoke('usage:getSummary'),
     getPlanUsage: () => ipcRenderer.invoke('usage:getPlanUsage'),
     getPlanWorthIt: () => ipcRenderer.invoke('usage:getPlanWorthIt'),
@@ -1222,6 +1221,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')
+    },
+    markQuit() {
+      return ipcRenderer.invoke('test:markQuit')
     },
     openWorkspace(root: string) {
       return ipcRenderer.invoke('test:openWorkspace', root)
