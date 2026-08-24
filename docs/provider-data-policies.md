@@ -9,8 +9,12 @@ the request-level protections Copse enables, and how the in-app metadata is
 maintained.
 
 The machine-readable version of this table lives in
-`packages/llm/src/data-policies.ts` and drives the privacy badges in
-Settings → Providers and the annotations in the model picker.
+[`packages/llm/data/provider-metadata.json`](../packages/llm/data/provider-metadata.json),
+alongside the built-in OpenAI-compatible provider presets, and drives the
+privacy badges in Settings → Providers and the annotations in the model picker.
+`packages/llm/src/data-policies.ts` consumes it and owns only the resolution
+rules (slug, then API hostname). See
+[Editing the catalog](#editing-the-catalog) below.
 
 Last verified: **2026-07-19** (each claim against the provider's own
 documentation; see sources).
@@ -103,15 +107,55 @@ What exists:
   fields — so the existing model-catalog sync cannot supply this.
 
 Because the first-party providers (Anthropic, OpenAI, Google, Mistral,
-DeepSeek, Hugging Face) publish policy changes in prose, the table in
-`data-policies.ts` is hand-maintained against primary sources, with
-`DATA_POLICIES_LAST_VERIFIED` recording the audit date. Re-verify it on the
+DeepSeek, Hugging Face) publish policy changes in prose, the catalog is
+hand-maintained against primary sources, with its `lastVerified` field (exported
+as `DATA_POLICIES_LAST_VERIFIED`) recording the audit date. Re-verify it on the
 same cadence as the model-catalog sync (see
 `.github/workflows/sync-model-catalog.yml`) or when adding a provider. If
 automated drift-detection is added later, the right shape is the existing
 sync-script pattern: fetch OpenRouter's feeds, diff against the table, and
 open a PR for human review — not silent auto-merge, since a wrong "safe" label
 is worse than a stale one.
+
+## Editing the catalog
+
+Both the provider presets and the policy table live in one JSON file, so adding
+a provider or correcting a policy is a data edit rather than a code change:
+
+1. Edit [`packages/llm/data/provider-metadata.json`](../packages/llm/data/provider-metadata.json).
+   A `comment` field on any entry is prose for the next person to read the
+   catalog — it is validated but never shipped as data, so use it for the "why"
+   the way the hand-written table used to.
+2. Run the tests. That is the whole loop: there is no generated mirror of the
+   catalog and nothing to regenerate.
+
+[`packages/llm/src/provider-metadata.ts`](../packages/llm/src/provider-metadata.ts)
+imports the JSON directly and validates it with zod at load, so the catalog is
+both the source of truth and the only copy. A malformed edit fails at import —
+which means it fails the unit suite long before it could reach a user. The
+schema is strict: an unrecognized key is an error rather than a silently
+ignored one.
+
+`provider-metadata.test.ts` then covers what a schema cannot express — unique
+ids, slugs and hosts, and the safety floor for a hosted endpoint: it must use
+`https` and must have a data policy, since without one Settings would quietly
+read "Data policy unknown".
+
+Three things deliberately stay in TypeScript rather than moving into the JSON:
+
+- **`local`, `prefix`, `builtin`** — derived in `extra-providers.ts`. `local` in
+  particular is computed from the base URL, so no catalog edit can mark a remote
+  endpoint local and skip the "data leaves this machine" treatment.
+- **Wire dialect handling** — `apiStyle` selects between the Chat Completions
+  and Responses paths in `create-provider.ts`, but the paths themselves are
+  code. A provider whose quirks need new handling is not a pure data addition.
+- **The provider-host allowlist** (`provider-host-policy.ts`) and the
+  OpenRouter policy variants (`openRouterDataPolicy`), which depend on Copse's
+  own routing settings rather than on a provider fact.
+
+That split is what would let this catalog become a shared registry later — a
+separate repo or a fetched feed would carry the JSON and nothing else — while
+the security decisions stay local and non-remote-configurable.
 
 ## Sources
 
