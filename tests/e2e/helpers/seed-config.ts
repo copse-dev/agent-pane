@@ -13,6 +13,7 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import type { UsageEvent } from '../../../src/shared/usage/usage-event.ts'
 import {
   supervisedTaskMetaSchema,
   type SupervisedTaskMeta,
@@ -496,6 +497,8 @@ export function seedEmptyProject(
     parallelApiKey?: string
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
+    /** Seed rolling usage-ledger events before the app launches. */
+    usageEvents?: readonly UsageEvent[]
     /**
      * The exact `pluginDisabled` list to write, replacing the host defaults. Use
      * this to opt out of a pack that ships enabled (e.g. drop
@@ -544,6 +547,9 @@ export function seedEmptyProject(
       : pluginDisabledSeed(enabledPlugins)
   if (options?.pluginSources) {
     seedConfig.pluginSources = [...options.pluginSources]
+  }
+  if (options?.usageEvents) {
+    seedConfig.usageEvents = [...options.usageEvents]
   }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
@@ -628,6 +634,65 @@ export function seedEmptyProject(
   } else {
     writeSettings({})
   }
+}
+
+/**
+ * Two canvas threads sharing an artefact title: the active thread can render a
+ * live preview while the historical thread proves that preview never leaks
+ * across the thread boundary.
+ */
+export function seedCanvasArtefactThreadFixture(
+  workspaceRoot: string,
+  projectId: string,
+  activeThreadId: string,
+  historyThreadId: string,
+): void {
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId,
+    pluginDisabled: pluginDisabledSeed(['copse.mcp-ui-canvas']),
+    [`threads:${projectId}`]: [
+      {
+        id: activeThreadId,
+        title: 'Current canvas work',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: historyThreadId,
+        title: 'Historical canvas work',
+        status: 'idle',
+        messages: [
+          {
+            id: 'historical-canvas-answer',
+            role: 'assistant',
+            content: 'Here is the earlier dashboard render.',
+            toolCalls: [
+              {
+                id: 'historical-canvas-tool',
+                name: 'mcp__copse-canvas__render_html_artefact',
+                args: { title: 'Sales Dashboard', html: '<h1>historical</h1>' },
+                status: 'done',
+                result:
+                  '[ui resource: ui://canvas/sales-dashboard (text/html, 0.1 KB) — rendered in the canvas]',
+              },
+            ],
+            createdAt: now - 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 1,
+        updatedAt: now - 1,
+      },
+    ],
+  })
+  writeSettings({ subagentsEnabled: false, model: 'claude-sonnet-4-6' })
 }
 
 /**
@@ -3213,6 +3278,62 @@ export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
+/** Completed MCP calls whose provider supplied neither arguments nor result text. */
+export function seedEmptyMcpToolFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-empty-mcp-tool-project'
+  const threadId = 'e2e-empty-mcp-tool-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Empty MCP tool details',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-empty-mcp',
+            role: 'user',
+            content: 'Run the two provider checks.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-empty-mcp',
+            role: 'assistant',
+            content: 'Both provider checks completed without returning details.',
+            toolCalls: [
+              {
+                id: 'tc-empty-mcp-ping',
+                name: 'MCP: tool',
+                args: {},
+                status: 'done',
+                result: '',
+                resultFormat: 'markdown',
+              },
+              {
+                id: 'tc-empty-mcp-refresh',
+                name: 'MCP: tool',
+                args: {},
+                status: 'done',
+                result: '',
+                resultFormat: 'markdown',
+              },
+            ],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 1,
       },
     ],
   })

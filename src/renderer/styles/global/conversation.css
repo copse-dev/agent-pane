@@ -394,7 +394,7 @@
   box-shadow: var(--shadow-sm);
 }
 /* Mid-fold accordion for long user prompts: head + tail stay visible; middle
-   collapses behind a dashed "N lines hidden" / "collapse" control. */
+   collapses behind a dashed "expand" / "collapse" control. */
 .msg-user-fold-head,
 .msg-user-fold-middle,
 .msg-user-fold-tail {
@@ -683,4 +683,40 @@
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 6px;
+}
+
+/* Canvas preview card: the thumbnail of a rendered artefact, with the Open
+   button that promotes its (background) Browser-pane tab to the front. */
+.canvas-preview-card {
+  margin: 8px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-elevated, var(--bg));
+}
+.canvas-preview-image {
+  display: block;
+  width: 100%;
+  /* Prototypes are wide and often tall; cap the height so a long page cannot
+     push the rest of the transcript off screen. */
+  max-height: 260px;
+  object-fit: cover;
+  object-position: top center;
+  background: var(--bg);
+}
+.canvas-preview-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+}
+.canvas-preview-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-muted, var(--text));
 }

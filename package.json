@@ -153,9 +153,9 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.3.0",
-    "@anthropic-ai/sandbox-runtime": "^0.0.71",
-    "@anthropic-ai/sdk": "^0.116.0",
-    "@copse/streaming-markdown": "^1.0.3",
+    "@anthropic-ai/sandbox-runtime": "^0.0.73",
+    "@anthropic-ai/sdk": "^0.117.1",
+    "@copse/streaming-markdown": "^1.0.6",
     "@lmstudio/sdk": "^1.5.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@mozilla/readability": "^0.6.0",

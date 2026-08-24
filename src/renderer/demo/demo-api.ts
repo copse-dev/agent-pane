@@ -465,7 +465,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       setCuratedEnabled: emptyArray,
       onStatusChanged: subscribe,
     },
-    canvas: { onArtefact: subscribe },
+    canvas: { onArtefact: subscribe, onShowArtefact: subscribe },
     storage: {
       get: (key: string) => resolved(storage.get(key)),
       set: (key: string, value: unknown) => {
@@ -633,7 +633,6 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     appIcon: { apply: resolvedVoid },
     usage: {
-      record: resolvedVoid,
       getSummary: () => {
         const emptyPeriod = {
           totalCostUsd: 0,

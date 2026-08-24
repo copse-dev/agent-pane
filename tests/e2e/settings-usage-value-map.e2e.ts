@@ -99,6 +99,20 @@ describe('settings usage model value map cost axis', () => {
 
     const discoverBtn = fieldset.$('button.frontier-discover')
     await expect(discoverBtn).toBeDisplayed()
+    const discoverLabels = await discoverBtn.$$('.frontier-discover-label')
+    assert.equal(discoverLabels.length, 2)
+    const inactiveDiscoverLabel = discoverLabels[0]
+    const activeDiscoverLabel = discoverLabels[1]
+    assert.ok(inactiveDiscoverLabel)
+    assert.ok(activeDiscoverLabel)
+    assert.deepEqual(
+      [
+        await inactiveDiscoverLabel.getAttribute('aria-hidden'),
+        await activeDiscoverLabel.getAttribute('aria-hidden'),
+      ],
+      ['false', 'true'],
+      'only the inactive action label should be exposed before selection',
+    )
     const discoverWidthBefore = await discoverBtn.getSize('width')
     await discoverBtn.click()
     await browser.waitUntil(
@@ -109,6 +123,14 @@ describe('settings usage model value map cost axis', () => {
       await discoverBtn.getSize('width'),
       discoverWidthBefore,
       'Discover models pill width must not change when selected',
+    )
+    assert.deepEqual(
+      [
+        await inactiveDiscoverLabel.getAttribute('aria-hidden'),
+        await activeDiscoverLabel.getAttribute('aria-hidden'),
+      ],
+      ['true', 'false'],
+      'only the active action label should be exposed after selection',
     )
     // The AA fixture includes a curated, unroutable $240/MTok legacy model.
     // It belongs in the dominated disclosure and must not stretch the plot.
@@ -129,5 +151,29 @@ describe('settings usage model value map cost axis', () => {
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-discovery.png')
+
+    // A translation can make either state the wider label. The hidden label
+    // must still reserve intrinsic space so switching state never reflows.
+    await browser.execute(() => {
+      const labels = document.querySelectorAll<HTMLElement>(
+        '.frontier-fieldset .frontier-discover-label',
+      )
+      const inactiveLabel = labels[0]
+      const activeLabel = labels[1]
+      if (!inactiveLabel || !activeLabel) throw new Error('Discover labels not found')
+      inactiveLabel.textContent = 'Discover every available model in this workspace'
+      activeLabel.textContent = 'Hide'
+    })
+    const translatedWidth = await discoverBtn.getSize('width')
+    await discoverBtn.click()
+    await browser.waitUntil(
+      async () => (await discoverBtn.getAttribute('aria-pressed')) === 'false',
+      { timeout: 5000, timeoutMsg: 'value map did not disable model discovery' },
+    )
+    assert.equal(
+      await discoverBtn.getSize('width'),
+      translatedWidth,
+      'translated pill width must remain stable when the inactive label is wider',
+    )
   })
 })

@@ -1,7 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
-import type { CanvasArtefact } from '@shared/types/canvas.ts'
+import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { addProject } from './projects.ts'
 
 /** Keep `#pane-files` visibility in sync with store state (also wired via `files_pane_changed`). */
@@ -91,10 +91,21 @@ export function openPullRequest(
   store.emit('pr_open_requested', ref.owner, ref.repo, ref.number)
 }
 
-/** Surface an MCP-UI artefact in the canvas (Browser pane). */
+/**
+ * Surface an MCP-UI artefact in the canvas (Browser pane).
+ *
+ * Deliberately does not open the pane: only the Browser pane knows whether this
+ * title is already on a tab, and a re-render of an open artefact must refresh
+ * quietly rather than seize the pane while the user is reading something else.
+ * The pane opens itself for a title it has not rendered before.
+ */
 export function openCanvasArtefact(store: AppStore, artefact: CanvasArtefact): void {
-  openRightPanel(store, 'browser')
   store.emit('canvas_artefact_requested', artefact)
+}
+
+/** Bring an already-rendered artefact tab to the front (the promote step). */
+export function showCanvasArtefact(store: AppStore, identity: CanvasArtefactIdentity): void {
+  store.emit('canvas_artefact_show_requested', identity)
 }
 
 export function toggleRightPanel(store: AppStore, mode: RightPanelMode): void {

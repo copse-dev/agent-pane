@@ -8,6 +8,7 @@ import { getUsageEventCount } from './storage/usage-ledger.ts'
 import { storageSet, storageGet } from './storage/storage.ts'
 import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
 import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
+import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 
 describe('createAgentChunkSink', () => {
   it('records usage ledger events and thread models for usage chunks', () => {
@@ -59,5 +60,53 @@ describe('createAgentChunkSink', () => {
     assert.ok(event)
     assert.equal(event['source'], 'advisor')
     assert.equal(event['model'], 'claude-opus-4-8')
+  })
+
+  it('records usage against the execution context project for background runs', () => {
+    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    storageSet('activeProjectId', 'project-being-viewed')
+    const host: AgentHost<StreamChunk> = { emit: () => undefined }
+    const sink = createAgentChunkSink('thread-background', host)
+
+    runWithThreadExecutionContext(
+      {
+        projectId: 'project-owning-run',
+        threadId: 'thread-background',
+        projectRoot: '/project',
+        root: '/project',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () => {
+        sink({
+          type: 'usage',
+          model: 'openrouter:stealth/ox-alpha',
+          inputTokens: 1000,
+          outputTokens: 100,
+        })
+      },
+    )
+
+    const records = recordArrayOrEmpty(storageGet(USAGE_EVENTS_STORAGE_KEY))
+    const event = records[0]
+    assert.ok(event)
+    assert.equal(event['projectId'], 'project-owning-run')
+  })
+
+  it('keeps equal-sized usage chunks from distinct billed calls', () => {
+    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    const host: AgentHost<StreamChunk> = { emit: () => undefined }
+    const sink = createAgentChunkSink('thread-1', host)
+    const usage: StreamChunk = {
+      type: 'usage',
+      model: 'openrouter:stealth/ox-alpha',
+      inputTokens: 1000,
+      outputTokens: 100,
+    }
+
+    sink(usage)
+    sink(usage)
+
+    assert.equal(getUsageEventCount(), 2)
   })
 })
