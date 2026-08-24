@@ -155,6 +155,9 @@ const nodeOpts = {
     '@anthropic-ai/sandbox-runtime',
     'shell-quote',
     'node-pty',
+    // Native keyring binding (prebuilt .node per platform); resolved from the
+    // packaged node_modules at runtime like node-pty.
+    '@napi-rs/keyring',
     'jsdom',
     '@mozilla/readability',
     'turndown',
