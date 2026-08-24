@@ -46,7 +46,13 @@ function trackingProvider(observed: {
   inFlight: number
   peak: number
   failOn?: string
+  holdUntilInFlight?: number
 }): LLMProvider {
+  let releaseOverlapWait: (() => void) | undefined
+  const overlapReached = new Promise<void>((resolve) => {
+    releaseOverlapWait = resolve
+  })
+
   return {
     async *stream(messages: LLMMessage[]): AsyncIterable<ProviderStreamChunk> {
       const brief = messages.find((m) => m.role === 'user')
@@ -63,6 +69,11 @@ function trackingProvider(observed: {
       observed.inFlight += 1
       observed.peak = Math.max(observed.peak, observed.inFlight)
       try {
+        const holdUntil = observed.holdUntilInFlight
+        if (holdUntil !== undefined) {
+          if (observed.inFlight >= holdUntil) releaseOverlapWait?.()
+          await Promise.race([overlapReached, new Promise((resolve) => setTimeout(resolve, 500))])
+        }
         await new Promise((resolve) => setTimeout(resolve, 25))
         yield { type: 'text', text: 'done' }
         yield { type: 'done' }
@@ -114,7 +125,7 @@ describe('runTodoWorkerBatch', () => {
 
   it('caps concurrency at the semaphore, saturates, and drains every item', async () => {
     const { repo } = await setup()
-    const observed = { inFlight: 0, peak: 0 }
+    const observed = { inFlight: 0, peak: 0, holdUntilInFlight: 2 }
 
     const results = await runTodoWorkerBatch({
       items: [item('a'), item('b'), item('c'), item('d'), item('e')],

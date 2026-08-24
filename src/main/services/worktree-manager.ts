@@ -326,6 +326,19 @@ export async function runWorktreeGit(
   })
 }
 
+/**
+ * Serialize mutations of Git's shared worktree administration directory.
+ * Callers must pass the canonical repository root returned by
+ * {@link repositoryLocation}; worker checkouts and thread checkouts then share
+ * one queue even when their execution roots differ.
+ */
+export function runSerializedWorktreeMutation<T>(
+  repositoryRoot: string,
+  operation: () => T | Promise<T>,
+): Promise<T> {
+  return runSerialized(`worktree-manager:${repositoryRoot}`, operation)
+}
+
 /** Local shorthand: every call in this module goes through the exported helper above. */
 const git = runWorktreeGit
 

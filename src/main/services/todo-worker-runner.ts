@@ -21,6 +21,7 @@ import {
   expectedThreadWorktreePath,
   releaseWorktreeRoot,
   repositoryLocation,
+  runSerializedWorktreeMutation,
   runWorktreeGit,
 } from './worktree-manager.ts'
 import { registerInternalWorkspaceRoot } from './workspace.ts'
@@ -246,17 +247,31 @@ export async function runTodoWorkerInWorktree(
     baseBranch ??
     (await requireGitValue(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD'], 'Cannot read HEAD'))
 
-  const branch = await resolveTodoWorkerBranch(repoRoot, item.id)
   const baseCommit = await requireGitValue(
     repoRoot,
     ['rev-parse', '--verify', `${baseRef}^{commit}`],
     `Cannot resolve base ${baseRef}`,
   )
-  const target = expectedTodoWorkerWorktreePath(projectId, item.id)
-  await mkdir(dirname(target), { recursive: true })
-  const add = await runWorktreeGit(repoRoot, ['worktree', 'add', '-b', branch, target, baseCommit])
-  if (add.code !== 0)
-    throw new Error(`Cannot create todo worker worktree: ${(add.stderr || add.stdout).trim()}`)
+  const { branch, target } = await runSerializedWorktreeMutation(repoRoot, async () => {
+    const workerBranch = await resolveTodoWorkerBranch(repoRoot, item.id)
+    // Derive the owner path from the collision-resolved branch, not only the
+    // todo id. A retained failed attempt therefore cannot make every retry
+    // collide with its still-registered checkout.
+    const workerTarget = expectedTodoWorkerWorktreePath(projectId, workerBranch)
+    await mkdir(dirname(workerTarget), { recursive: true })
+    const add = await runWorktreeGit(repoRoot, [
+      'worktree',
+      'add',
+      '-b',
+      workerBranch,
+      workerTarget,
+      baseCommit,
+    ])
+    if (add.code !== 0) {
+      throw new Error(`Cannot create todo worker worktree: ${(add.stderr || add.stdout).trim()}`)
+    }
+    return { branch: workerBranch, target: workerTarget }
+  })
 
   const canonicalPath = await realpath(target)
   const executionRoot = resolve(canonicalPath, location.projectRelativePath)
@@ -297,7 +312,9 @@ export async function runTodoWorkerInWorktree(
   // inspect and repair it; only passing/no-check workers are safe to retire.
   const mayRetire = execution.verification?.passed !== false
   const remove = mayRetire
-    ? await runWorktreeGit(repoRoot, ['worktree', 'remove', canonicalPath])
+    ? await runSerializedWorktreeMutation(repoRoot, () =>
+        runWorktreeGit(repoRoot, ['worktree', 'remove', canonicalPath]),
+      )
     : null
   const retired = remove?.code === 0
   if (retired) {
