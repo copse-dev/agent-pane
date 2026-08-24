@@ -13,7 +13,11 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const STYLES = resolve(process.cwd(), 'src/renderer/styles/global')
-const read = (file: string): string => readFileSync(resolve(STYLES, file), 'utf8')
+// Comments are stripped first: they can carry braces (`* { margin: 0 }`) and
+// selector-like text, either of which would truncate or misplace the block scan
+// below.
+const read = (file: string): string =>
+  readFileSync(resolve(STYLES, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
 
 // Matches `selector { … prop … }` for a *flat* rule (no nested braces between the
 // selector and the declaration), which is all of the selectors asserted here.
@@ -27,6 +31,27 @@ function declares(css: string, selector: string, prop: RegExp): boolean {
 }
 
 describe('modern CSS adoptions', () => {
+  it('opts overlays out of the window drag regions', () => {
+    // Modals mount on <body>, so they float above `#welcome` — one full-bleed
+    // `-webkit-app-region: drag` region that opts out only its own
+    // buttons/inputs. A drag region is hit-tested by the OS before the renderer
+    // sees the press, so an overlay with no opt-out of its own is dead to the
+    // mouse (#1914). Neither harness can observe that: happy-dom has no drag
+    // regions, and WebDriver clicks are injected straight into the renderer, so
+    // the e2e suite passes either way. Pin the declarations instead.
+    assert.ok(
+      declares(read('forms.css'), 'dialog', /-webkit-app-region:\s*no-drag/),
+      'the shared dialog rule must opt out of the titlebar/welcome drag regions',
+    )
+    // `app-region` is not inherited — it composes as geometry, so opting out
+    // only the leaves leaves every container between them draggable. This has
+    // to be on the overlay, not its buttons.
+    assert.ok(
+      declares(read('onboarding.css'), '.onboarding-overlay', /-webkit-app-region:\s*no-drag/),
+      '.onboarding-overlay must opt the whole overlay out, not just its controls',
+    )
+  })
+
   it('reserves the scrollbar gutter on the streaming conversation scrollers', () => {
     const css = read('conversation.css')
     assert.ok(
