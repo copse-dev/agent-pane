@@ -155,7 +155,8 @@ async function writeThreadWorktreeRecoveryMetadata(
     recoveryConfigKey(branch),
     encodeRecoveryMetadata(metadata),
   ])
-  if (result.code !== 0) throw commandFailure('Cannot retain thread worktree recovery metadata', result)
+  if (result.code !== 0)
+    throw commandFailure('Cannot retain thread worktree recovery metadata', result)
 }
 
 /**
