@@ -39,6 +39,7 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
  */
 const DEFAULT_DISABLED_PLUGIN_IDS = [
   'copse.advisor-strategy',
+  'copse.artifact-checkpoint',
   'copse.automations',
   'copse.ci-investigator',
   'copse.devtools-shortcut',

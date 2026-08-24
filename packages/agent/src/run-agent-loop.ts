@@ -54,6 +54,7 @@ import {
 } from './hooks/step-boundary-hooks.ts'
 import type { ContinuationGrant } from './hooks/continuation-budget.ts'
 import type { StreamCutRecord } from './stream-cut-record.ts'
+import { ARTIFACT_CHECKPOINT_HOOK_ID } from './artifact-checkpoint.ts'
 import { truncateStreamCutReasoning } from './stream-cut-record.ts'
 import {
   detectCrossTurnCircle,
@@ -84,7 +85,7 @@ const TRIM_DEFER_MAX_TOOL_STEPS = 2
 /**
  * The nudge texts the `stepBoundary` hooks (E1) selected at one boundary, keyed
  * by nudge. Each is present only when its policy fired; the loop applies each
- * with its own mechanism (the four in-loop nudges are distinct control-flow
+ * with its own mechanism (the in-loop nudges are distinct control-flow
  * triggers, so they are read per-hook rather than merged into one block).
  */
 interface StepBoundaryNudges {
@@ -92,6 +93,7 @@ interface StepBoundaryNudges {
   loop: string | undefined
   truncation: string | undefined
   reasoningRunaway: string | undefined
+  artifactCheckpoint: string | undefined
 }
 
 /** Pull one step-boundary hook's selected nudge text (its `injectContext`) by id. */
@@ -214,6 +216,10 @@ export interface AgentLoopOptions {
    * Injected by the host — the loop and registry never import persistence.
    */
   recordHookRun?: HookContext['recordHookRun']
+  /** Resolve settings for enabled plugin-contributed in-loop hooks. */
+  resolvePluginSetting?: HookContext['resolvePluginSetting']
+  /** True only for a primary run that owns the user's runnable deliverable. */
+  artifactCheckpointEligible?: boolean
   /**
    * Called after each reserved LLM call with the running call count. The host
    * uses it to attribute hook executions to their emitting step (decision 6);
@@ -967,6 +973,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     coerceTextToolCallArgs,
     getOpenTodos,
     recordHookRun,
+    resolvePluginSetting,
+    artifactCheckpointEligible = false,
     recordAppliedNudge: appliedNudgeSink,
     onLlmCall,
     recordStreamCut,
@@ -993,6 +1001,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   let toolOnlySteps = 0
   let loopNudgeSent = false
   let forceTextAttempted = false
+  let artifactCheckpointSent = false
   let trimEvents = 0
   // Consecutive streams cut off by the per-stream output cap while producing only
   // reasoning (no answer, no tool call). The first gets a force-answer nudge; a
@@ -1014,7 +1023,13 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   const stepBoundaryContext: HookContext = {
     ...(signal !== undefined ? { signal } : {}),
     ...(recordHookRun !== undefined ? { recordHookRun } : {}),
+    ...(resolvePluginSetting !== undefined ? { resolvePluginSetting } : {}),
   }
+  const hasArtifactCheckpointHook =
+    artifactCheckpointEligible &&
+    stepBoundaryRegistry
+      .hooksFor('stepBoundary')
+      .some((hook) => hook.id === ARTIFACT_CHECKPOINT_HOOK_ID)
   const selectStepBoundaryNudges = async (
     payload: StepBoundaryPayload,
   ): Promise<StepBoundaryNudges> => {
@@ -1024,7 +1039,19 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       loop: nudgeFrom(result, LOOP_NUDGE_HOOK_ID),
       truncation: nudgeFrom(result, TRUNCATION_CONTINUE_HOOK_ID),
       reasoningRunaway: nudgeFrom(result, REASONING_RUNAWAY_HOOK_ID),
+      artifactCheckpoint: nudgeFrom(result, ARTIFACT_CHECKPOINT_HOOK_ID),
     }
+  }
+  const applyArtifactCheckpointNudge = (text: string | undefined): boolean => {
+    if (text === undefined) return false
+    messages.push({ role: 'user', content: text })
+    recordAppliedNudge(appliedNudgeSink, {
+      step: budget.llmCalls,
+      hookId: ARTIFACT_CHECKPOINT_HOOK_ID,
+      mechanism: 'tool-enabled-message',
+      text,
+    })
+    return true
   }
   // Post-stream truncation-continue selector for the text-only finalize / forced
   // turns (`streamTextOnlyTurn`), so their length-truncation continuation runs
@@ -1036,6 +1063,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       phase: 'postStream',
       loopNudgeSent,
       forceTextAttempted,
+      artifactCheckpointSent,
+      artifactCheckpointEligible,
+      elapsedWallTimeMs: budget.deadline.elapsedWallTimeMs(),
+      remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
       streamCappedAsRunaway: false,
       ...(stopReason !== undefined ? { stopReason } : {}),
     })
@@ -1079,15 +1110,22 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       }
       const pressure = measureConversationPressure(escalationInput)
 
-      // Pre-stream nudges (E1): `stuck-finalize-nudge` then `loop-nudge`. Both
-      // are once-per-run; skip firing once both have fired (byte-identical — the
-      // hooks would abstain — and it avoids emitting every remaining step).
-      if (!forceTextAttempted || !loopNudgeSent) {
+      // Pre-stream nudges (E1): the pressure pair plus the optional delayed
+      // artifact checkpoint. Each remains once-per-run.
+      if (
+        !forceTextAttempted ||
+        !loopNudgeSent ||
+        (hasArtifactCheckpointHook && !artifactCheckpointSent)
+      ) {
         const preNudges = await selectStepBoundaryNudges({
           phase: 'preStream',
           escalation: { input: escalationInput, pressure },
           loopNudgeSent,
           forceTextAttempted,
+          artifactCheckpointSent,
+          artifactCheckpointEligible,
+          elapsedWallTimeMs: budget.deadline.elapsedWallTimeMs(),
+          remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
           streamCappedAsRunaway: false,
         })
 
@@ -1153,6 +1191,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           })
           loopNudgeSent = true
         }
+
+        artifactCheckpointSent =
+          applyArtifactCheckpointNudge(preNudges.artifactCheckpoint) || artifactCheckpointSent
       }
 
       const reserve = tools.length > 0 ? toolSchemaReserveTokens : 0
@@ -1165,6 +1206,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         trimEvents++
         onHistoryTrimmed?.()
       }
+    } else if (hasArtifactCheckpointHook && !artifactCheckpointSent) {
+      // The checkpoint is wall-clock based and does not require a context-window
+      // estimate, so hosts without one still receive the opt-in behavior.
+      const preNudges = await selectStepBoundaryNudges({
+        phase: 'preStream',
+        loopNudgeSent,
+        forceTextAttempted,
+        artifactCheckpointSent,
+        artifactCheckpointEligible,
+        elapsedWallTimeMs: budget.deadline.elapsedWallTimeMs(),
+        remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
+        streamCappedAsRunaway: false,
+      })
+      artifactCheckpointSent =
+        applyArtifactCheckpointNudge(preNudges.artifactCheckpoint) || artifactCheckpointSent
     }
 
     // Collect one full LLM response
@@ -1411,6 +1467,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       phase: 'postStream',
       loopNudgeSent,
       forceTextAttempted,
+      artifactCheckpointSent,
+      artifactCheckpointEligible,
+      elapsedWallTimeMs: budget.deadline.elapsedWallTimeMs(),
+      remainingWallTimeMs: budget.deadline.remainingWallTimeMs(),
       streamCappedAsRunaway,
       ...(stopReason !== undefined ? { stopReason } : {}),
     })
