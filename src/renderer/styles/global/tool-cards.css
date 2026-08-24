@@ -92,6 +92,10 @@
   margin-top: var(--spacing-xs);
   margin-left: var(--spacing-sm);
 }
+.tool-result-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
 .tool-name {
   font-weight: 500;
   min-width: 0;
