@@ -261,8 +261,18 @@ export const config: Options.Testrunner = {
     // for its replacement to lose the app's single-instance lock. Closing the
     // current app window first lets Electron terminate cleanly before
     // reloadSession deletes the WebDriver session and launches its successor.
+    //
+    // Only when it is the *last* window, though. Closing one of several is not
+    // a shutdown — the app keeps running — and it destroys state the reload is
+    // meant to carry across: window layout is persisted per window, so a spec
+    // that opens a second main window and reloads to prove both come back gets
+    // one window closed out of the saved set and only one restored. Guarding on
+    // the count keeps the macOS shutdown path for the single-window specs (all
+    // but one of the ~196 reloadSession call sites) and leaves multi-window
+    // state alone. The nested getWindowHandles/closeWindow calls re-enter this
+    // hook and return at the commandName check above, so there is no recursion.
     try {
-      await browser.closeWindow()
+      if ((await browser.getWindowHandles()).length === 1) await browser.closeWindow()
     } catch {
       // A session that is already gone needs no extra shutdown work.
     }
