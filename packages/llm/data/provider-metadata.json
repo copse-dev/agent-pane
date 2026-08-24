@@ -1,0 +1,275 @@
+{
+  "lastVerified": "2026-07-19",
+  "presets": [
+    {
+      "id": "together",
+      "label": "Together AI",
+      "baseUrl": "https://api.together.xyz/v1",
+      "envVar": "TOGETHER_API_KEY",
+      "keyLabel": "Together AI API key",
+      "keyPlaceholder": "Together AI API key",
+      "keyHint": "For Together AI serverless models. Confirm the organization privacy setting does not store prompts, then Fetch models to import the current catalog.",
+      "fallbackContextWindow": 128000,
+      "includeUsage": true,
+      "models": [],
+      "comment": "Privacy-forward hosted providers are first-class presets rather than being buried under the custom-provider form. Their catalogs move quickly, so users import the current tool-capable models with \"Fetch models\" instead of relying on a stale shipped shortlist."
+    },
+    {
+      "id": "groq",
+      "label": "Groq",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "envVar": "GROQ_API_KEY",
+      "keyLabel": "Groq API key",
+      "keyPlaceholder": "gsk_…",
+      "keyHint": "For Groq inference models. Groq may temporarily log inference data for up to 30 days; enable Zero Data Retention in Groq Data Controls to prevent that, then Fetch models.",
+      "keyPrefix": "gsk_",
+      "fallbackContextWindow": 128000,
+      "includeUsage": true,
+      "models": []
+    },
+    {
+      "id": "fireworks",
+      "label": "Fireworks AI",
+      "baseUrl": "https://api.fireworks.ai/inference/v1",
+      "envVar": "FIREWORKS_API_KEY",
+      "keyLabel": "Fireworks AI API key",
+      "keyPlaceholder": "Fireworks AI API key",
+      "keyHint": "For Fireworks AI serverless models. Standard open-model inference is zero-retention unless logging is explicitly enabled; Fetch models to import the current catalog.",
+      "fallbackContextWindow": 128000,
+      "includeUsage": true,
+      "models": []
+    },
+    {
+      "id": "perplexity",
+      "label": "Perplexity",
+      "baseUrl": "https://api.perplexity.ai/v1",
+      "apiStyle": "responses",
+      "envVar": "PERPLEXITY_API_KEY",
+      "keyLabel": "Perplexity API key",
+      "keyPlaceholder": "Perplexity API key",
+      "keyHint": "Uses the Agent API with Perplexity web search enabled. Fetch the current model list from its public models endpoint.",
+      "fallbackContextWindow": 128000,
+      "includeUsage": true,
+      "extraBody": { "tools": [{ "type": "web_search" }], "max_output_tokens": 8192 },
+      "models": [],
+      "comment": "extraBody: Anthropic models require max_output_tokens on Agent API; the parameter is accepted for the other live-discovered models too."
+    },
+    {
+      "id": "mistral",
+      "label": "Mistral",
+      "baseUrl": "https://api.mistral.ai/v1",
+      "envVar": "MISTRAL_API_KEY",
+      "keyLabel": "Mistral API key",
+      "keyPlaceholder": "Mistral API key",
+      "keyHint": "For Mistral models on La Plateforme's free Experiment tier. Validated via a free models request.",
+      "fallbackContextWindow": 128000,
+      "includeUsage": true,
+      "models": [
+        { "id": "mistral-small-latest", "contextWindow": 128000 },
+        { "id": "open-mistral-nemo", "contextWindow": 128000 },
+        { "id": "mistral-large-latest", "contextWindow": 128000 }
+      ],
+      "comment": "Mistral serves up to 128K context."
+    },
+    {
+      "id": "gemini",
+      "label": "Google Gemini",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "envVar": "GEMINI_API_KEY",
+      "keyLabel": "Google Gemini API key",
+      "keyPlaceholder": "AIza…",
+      "keyHint": "For Gemini Flash models on the free tier (rate-limited, no card). Get a key at aistudio.google.com.",
+      "keyPrefix": "AIza",
+      "fallbackContextWindow": 1048576,
+      "includeUsage": true,
+      "models": [
+        { "id": "gemini-2.5-flash", "contextWindow": 1048576 },
+        { "id": "gemini-2.5-flash-lite", "contextWindow": 1048576 },
+        { "id": "gemini-2.0-flash", "contextWindow": 1048576 },
+        { "id": "gemini-2.0-flash-lite", "contextWindow": 1048576 }
+      ],
+      "comment": "baseUrl is Google's OpenAI-compatibility layer (accepts an `Authorization: Bearer` key). Gemini Flash serves ~1M context."
+    },
+    {
+      "id": "deepseek",
+      "label": "DeepSeek",
+      "baseUrl": "https://api.deepseek.com",
+      "envVar": "DEEPSEEK_API_KEY",
+      "keyLabel": "DeepSeek API key",
+      "keyPlaceholder": "sk-…",
+      "keyHint": "For DeepSeek models — very cheap pay-as-you-go, with off-peak discounts. Validated via a free models request.",
+      "keyPrefix": "sk-",
+      "fallbackContextWindow": 65536,
+      "includeUsage": true,
+      "models": [{ "id": "deepseek-chat", "contextWindow": 65536 }],
+      "comment": "DeepSeek's API caps context at 64K even though the weights support more. Only `deepseek-chat` (V3) reliably supports function calling, which this agent needs; `deepseek-reasoner` is intentionally omitted."
+    },
+    {
+      "id": "huggingface",
+      "label": "Hugging Face",
+      "baseUrl": "https://router.huggingface.co/v1",
+      "envVar": "HF_TOKEN",
+      "keyLabel": "Hugging Face token",
+      "keyPlaceholder": "hf_…",
+      "keyHint": "For Hugging Face Inference Providers (serverless). Pick a model with Fetch models or type one like org/model:fastest. Get a token at huggingface.co/settings/tokens. Note: HF routes requests to third-party partners (Together, Fireworks, Novita, …) that each apply their own data-retention policy.",
+      "keyPrefix": "hf_",
+      "fallbackContextWindow": 128000,
+      "includeUsage": true,
+      "models": [],
+      "comment": "HF Inference Providers router — OpenAI-compatible, fans out to Together, Novita, Fireworks, etc. Model ids are `org/model[:routing]`, e.g. `zai-org/GLM-5.2:fastest`; the routing suffix survives our slug strip. Context varies per upstream model, so the generic 128K default stands, and the catalog is too large and fast-moving for a curated shortlist."
+    },
+    {
+      "id": "ollama",
+      "label": "Ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "keyLabel": "Ollama API key",
+      "keyPlaceholder": "usually none",
+      "keyHint": "Local Ollama server (OpenAI-compatible). No API key unless you configured one. Start it with `ollama serve`, then Fetch models.",
+      "fallbackContextWindow": 128000,
+      "includeUsage": false,
+      "models": [],
+      "comment": "Local OpenAI-compatible servers. Loopback base URLs mark them `local` (see isLocalBaseUrl): they render in Settings → Local models, accept `http:`, and work without an API key. Models are bring-your-own — use \"Fetch models\" in the Local providers panel to import what the running server exposes. IPv4 loopback (not `localhost`) — see DEFAULT_LM_STUDIO_URL / preferIpv4LoopbackUrl."
+    },
+    {
+      "id": "llamacpp",
+      "label": "llama.cpp",
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "keyLabel": "llama.cpp API key",
+      "keyPlaceholder": "usually none",
+      "keyHint": "Local llama.cpp server (`llama-server`, OpenAI-compatible). No API key unless you set --api-key. Fetch models to import what's loaded.",
+      "fallbackContextWindow": 128000,
+      "includeUsage": false,
+      "models": []
+    },
+    {
+      "id": "jan",
+      "label": "Jan",
+      "baseUrl": "http://127.0.0.1:1337/v1",
+      "keyLabel": "Jan API key",
+      "keyPlaceholder": "usually none",
+      "keyHint": "Local Jan server (OpenAI-compatible). Enable the local API server in Jan, then Fetch models.",
+      "fallbackContextWindow": 128000,
+      "includeUsage": false,
+      "models": []
+    },
+    {
+      "id": "vllm",
+      "label": "vLLM",
+      "baseUrl": "http://127.0.0.1:8000/v1",
+      "keyLabel": "vLLM API key",
+      "keyPlaceholder": "usually none",
+      "keyHint": "Self-hosted vLLM server (OpenAI-compatible). No API key unless you set --api-key. Fetch models to import the served model.",
+      "fallbackContextWindow": 128000,
+      "includeUsage": false,
+      "models": []
+    }
+  ],
+  "dataPolicies": [
+    {
+      "slugs": ["anthropic"],
+      "retainsPrompts": true,
+      "retentionDays": 30,
+      "trainsOnData": false,
+      "zdr": "contract",
+      "note": "No training on API data. Inputs/outputs deleted within ~30 days; zero-data-retention is an enterprise arrangement via sales.",
+      "policyUrl": "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention"
+    },
+    {
+      "slugs": ["openai"],
+      "retainsPrompts": true,
+      "retentionDays": 30,
+      "trainsOnData": false,
+      "zdr": "contract",
+      "note": "No training on API data. Abuse-monitoring logs kept up to 30 days; Copse sends store:false so responses are not additionally stored. ZDR requires OpenAI approval.",
+      "policyUrl": "https://platform.openai.com/docs/guides/your-data"
+    },
+    {
+      "slugs": ["openrouter"],
+      "retainsPrompts": false,
+      "trainsOnData": false,
+      "zdr": "request",
+      "note": "OpenRouter itself keeps no prompts. Copse requests ZDR routing by default (provider.zdr + data_collection:\"deny\"), so only zero-retention, non-training upstreams are used.",
+      "policyUrl": "https://openrouter.ai/docs/guides/features/zdr"
+    },
+    {
+      "slugs": ["mistral"],
+      "retainsPrompts": true,
+      "retentionDays": 30,
+      "trainsOnData": true,
+      "zdr": "contract",
+      "note": "Free/Pro plan API data may be used to improve Mistral models unless you opt out (Admin Console → Privacy). 30-day rolling retention; ZDR is Scale-plan only.",
+      "policyUrl": "https://help.mistral.ai/en/articles/455207-can-i-opt-out-of-my-input-or-output-data-being-used-for-training"
+    },
+    {
+      "slugs": ["gemini"],
+      "retainsPrompts": true,
+      "trainsOnData": true,
+      "zdr": "request",
+      "note": "On the free tier Google may use prompts/responses to improve its products (including human review). Paid-tier data is kept ~55 days for abuse detection only.",
+      "policyUrl": "https://ai.google.dev/gemini-api/terms"
+    },
+    {
+      "slugs": ["deepseek"],
+      "retainsPrompts": true,
+      "trainsOnData": true,
+      "zdr": "none",
+      "note": "Data is stored in China for as long as necessary and may be used to improve the service. Opt-out is by request (privacy@deepseek.com); no documented ZDR.",
+      "policyUrl": "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html"
+    },
+    {
+      "slugs": ["huggingface"],
+      "retainsPrompts": null,
+      "trainsOnData": null,
+      "zdr": "unknown",
+      "note": "Hugging Face does not store request/response bodies (30-day debug logs only), but requests are routed to third-party partners (Together, Fireworks, Novita, …) who each apply their OWN retention and training policy.",
+      "policyUrl": "https://huggingface.co/docs/inference-providers/security"
+    },
+    {
+      "slugs": ["perplexity"],
+      "retainsPrompts": null,
+      "trainsOnData": null,
+      "zdr": "unknown",
+      "note": "Perplexity’s API FAQ says query data is not retained or used for training, but its dedicated zero-retention page currently names Sonar API only and does not explicitly cover Agent API.",
+      "policyUrl": "https://docs.perplexity.ai/docs/resources/faq"
+    },
+    {
+      "slugs": ["together"],
+      "hosts": ["api.together.xyz"],
+      "retainsPrompts": false,
+      "trainsOnData": false,
+      "zdr": "setting",
+      "note": "Together does not store inputs/outputs by default; training use is opt-in. Confirm the org-level privacy setting answers “No” to storing prompts.",
+      "policyUrl": "https://docs.together.ai/docs/privacy-and-security"
+    },
+    {
+      "slugs": ["groq"],
+      "hosts": ["api.groq.com"],
+      "retainsPrompts": true,
+      "retentionDays": 30,
+      "trainsOnData": false,
+      "zdr": "setting",
+      "note": "Groq may temporarily log inference data for reliability and abuse prevention for up to 30 days unless Zero Data Retention is enabled in console Data Controls.",
+      "policyUrl": "https://console.groq.com/docs/your-data"
+    },
+    {
+      "slugs": ["fireworks"],
+      "hosts": ["api.fireworks.ai"],
+      "retainsPrompts": false,
+      "trainsOnData": false,
+      "zdr": "default",
+      "note": "Fireworks does not log or store prompts/generations for open models without explicit opt-in; data lives only in volatile memory for the request.",
+      "policyUrl": "https://docs.fireworks.ai/guides/security_compliance/data_handling"
+    },
+    {
+      "slugs": [],
+      "hosts": ["api.x.ai"],
+      "retainsPrompts": true,
+      "retentionDays": 30,
+      "trainsOnData": false,
+      "zdr": "setting",
+      "note": "xAI stores API requests/responses encrypted for 30 days (abuse auditing) and never trains on them; a team-level ZDR setting removes retention entirely.",
+      "policyUrl": "https://docs.x.ai/developers/faq/security",
+      "comment": "Host-only: xAI is not a Copse provider slug, so this policy is reached through a custom endpoint pointed at api.x.ai (or the `grok` model-id fallback in dataPolicyForModelPath). Giving it a slug would change which branch of that resolver wins."
+    }
+  ]
+}

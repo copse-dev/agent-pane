@@ -2,6 +2,12 @@
 // where prompts go after they leave the device (Settings badges, model-picker
 // annotations) and docs/provider-data-policies.md can stay in sync with code.
 //
+// The table itself lives in `packages/llm/data/provider-metadata.json` alongside
+// the provider presets — one file to edit when a provider is added or its policy
+// changes. This module owns only the resolution rules: slug first, then API
+// hostname, plus the OpenRouter variants that depend on Copse's own routing
+// settings rather than on a provider fact.
+//
 // Every entry is hand-verified against the provider's own documentation — the
 // primary source is recorded in `policyUrl` and the verification date in
 // LAST_VERIFIED. These describe DEFAULT behavior for the API tier Copse
@@ -9,13 +15,15 @@
 // advertise). A provider can offer stricter arrangements (enterprise ZDR
 // contracts etc.); `zdr` records how to get there.
 //
-// Keep this table in sync with BUILTIN_EXTRA_PROVIDERS (extra-providers.ts),
-// the fixed cloud providers (create-provider.ts), and the known-endpoint
-// prefills (custom-providers-section.ts). data-policies.test.ts enforces
-// coverage of the built-ins.
+// provider-metadata.test.ts fails the suite if a non-local preset has no policy,
+// and data-policies.test.ts enforces coverage of the built-ins and of the fixed
+// cloud providers (create-provider.ts) and known-endpoint prefills
+// (custom-providers-section.ts).
+
+import { PROVIDER_DATA_POLICIES, PROVIDER_METADATA_LAST_VERIFIED } from './provider-metadata.ts'
 
 /** When the entries below were last checked against the linked sources. */
-export const DATA_POLICIES_LAST_VERIFIED = '2026-07-19'
+export const DATA_POLICIES_LAST_VERIFIED = PROVIDER_METADATA_LAST_VERIFIED
 
 export interface ProviderDataPolicy {
   /**
@@ -46,113 +54,15 @@ export interface ProviderDataPolicy {
   policyUrl: string
 }
 
-const TOGETHER_POLICY: ProviderDataPolicy = {
-  retainsPrompts: false,
-  trainsOnData: false,
-  zdr: 'setting',
-  note: 'Together does not store inputs/outputs by default; training use is opt-in. Confirm the org-level privacy setting answers “No” to storing prompts.',
-  policyUrl: 'https://docs.together.ai/docs/privacy-and-security',
-}
-
-const GROQ_POLICY: ProviderDataPolicy = {
-  retainsPrompts: true,
-  retentionDays: 30,
-  trainsOnData: false,
-  zdr: 'setting',
-  note: 'Groq may temporarily log inference data for reliability and abuse prevention for up to 30 days unless Zero Data Retention is enabled in console Data Controls.',
-  policyUrl: 'https://console.groq.com/docs/your-data',
-}
-
-const FIREWORKS_POLICY: ProviderDataPolicy = {
-  retainsPrompts: false,
-  trainsOnData: false,
-  zdr: 'default',
-  note: 'Fireworks does not log or store prompts/generations for open models without explicit opt-in; data lives only in volatile memory for the request.',
-  policyUrl: 'https://docs.fireworks.ai/guides/security_compliance/data_handling',
-}
-
-// Fixed cloud providers + built-in OpenAI-compatible presets, keyed by slug.
-const POLICIES_BY_SLUG: Record<string, ProviderDataPolicy> = {
-  anthropic: {
-    retainsPrompts: true,
-    retentionDays: 30,
-    trainsOnData: false,
-    zdr: 'contract',
-    note: 'No training on API data. Inputs/outputs deleted within ~30 days; zero-data-retention is an enterprise arrangement via sales.',
-    policyUrl: 'https://platform.claude.com/docs/en/manage-claude/api-and-data-retention',
-  },
-  openai: {
-    retainsPrompts: true,
-    retentionDays: 30,
-    trainsOnData: false,
-    zdr: 'contract',
-    note: 'No training on API data. Abuse-monitoring logs kept up to 30 days; Copse sends store:false so responses are not additionally stored. ZDR requires OpenAI approval.',
-    policyUrl: 'https://platform.openai.com/docs/guides/your-data',
-  },
-  openrouter: {
-    retainsPrompts: false,
-    trainsOnData: false,
-    zdr: 'request',
-    note: 'OpenRouter itself keeps no prompts. Copse requests ZDR routing by default (provider.zdr + data_collection:"deny"), so only zero-retention, non-training upstreams are used.',
-    policyUrl: 'https://openrouter.ai/docs/guides/features/zdr',
-  },
-  mistral: {
-    retainsPrompts: true,
-    retentionDays: 30,
-    trainsOnData: true,
-    zdr: 'contract',
-    note: 'Free/Pro plan API data may be used to improve Mistral models unless you opt out (Admin Console → Privacy). 30-day rolling retention; ZDR is Scale-plan only.',
-    policyUrl:
-      'https://help.mistral.ai/en/articles/455207-can-i-opt-out-of-my-input-or-output-data-being-used-for-training',
-  },
-  gemini: {
-    retainsPrompts: true,
-    trainsOnData: true,
-    zdr: 'request',
-    note: 'On the free tier Google may use prompts/responses to improve its products (including human review). Paid-tier data is kept ~55 days for abuse detection only.',
-    policyUrl: 'https://ai.google.dev/gemini-api/terms',
-  },
-  deepseek: {
-    retainsPrompts: true,
-    trainsOnData: true,
-    zdr: 'none',
-    note: 'Data is stored in China for as long as necessary and may be used to improve the service. Opt-out is by request (privacy@deepseek.com); no documented ZDR.',
-    policyUrl: 'https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html',
-  },
-  huggingface: {
-    retainsPrompts: null,
-    trainsOnData: null,
-    zdr: 'unknown',
-    note: 'Hugging Face does not store request/response bodies (30-day debug logs only), but requests are routed to third-party partners (Together, Fireworks, Novita, …) who each apply their OWN retention and training policy.',
-    policyUrl: 'https://huggingface.co/docs/inference-providers/security',
-  },
-  perplexity: {
-    retainsPrompts: null,
-    trainsOnData: null,
-    zdr: 'unknown',
-    note: 'Perplexity’s API FAQ says query data is not retained or used for training, but its dedicated zero-retention page currently names Sonar API only and does not explicitly cover Agent API.',
-    policyUrl: 'https://docs.perplexity.ai/docs/resources/faq',
-  },
-  together: TOGETHER_POLICY,
-  groq: GROQ_POLICY,
-  fireworks: FIREWORKS_POLICY,
-}
-
-// Recognized custom endpoints, keyed by API hostname. The built-in ZDR
-// providers are repeated here so an existing custom slug for the same official
-// endpoint still receives the correct policy badge.
-const POLICIES_BY_HOST: Record<string, ProviderDataPolicy> = {
-  'api.together.xyz': TOGETHER_POLICY,
-  'api.groq.com': GROQ_POLICY,
-  'api.fireworks.ai': FIREWORKS_POLICY,
-  'api.x.ai': {
-    retainsPrompts: true,
-    retentionDays: 30,
-    trainsOnData: false,
-    zdr: 'setting',
-    note: 'xAI stores API requests/responses encrypted for 30 days (abuse auditing) and never trains on them; a team-level ZDR setting removes retention entirely.',
-    policyUrl: 'https://docs.x.ai/developers/faq/security',
-  },
+// Both lookups are built from the same catalog entries, so a policy shared by a
+// slug and its API hostname stays a single object. A slug-less entry is
+// host-only on purpose (see the `api.x.ai` note in the catalog): adding a slug
+// would change which branch of `dataPolicyForModelPath` claims a model id.
+const POLICIES_BY_SLUG: Record<string, ProviderDataPolicy> = {}
+const POLICIES_BY_HOST: Record<string, ProviderDataPolicy> = {}
+for (const { slugs, hosts, ...policy } of PROVIDER_DATA_POLICIES) {
+  for (const slug of slugs) POLICIES_BY_SLUG[slug] = policy
+  for (const host of hosts ?? []) POLICIES_BY_HOST[host] = policy
 }
 
 function hostFromBaseUrl(baseUrl: string | undefined): string | null {
