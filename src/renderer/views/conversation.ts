@@ -26,6 +26,12 @@ import {
 } from '@shared/hooks/hook-run-detail.ts'
 import type { HookRunDetail } from '@shared/types/hooks.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import {
+  artefactUriFromToolResult,
+  getArtefactPreview,
+  requestArtefactShow,
+} from '../canvas/artefact-previews.ts'
+import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { attachTableCopyButtons } from '../markdown/table-copy.ts'
@@ -263,7 +269,45 @@ function appendIfPresent(node: Node | null): Node[] {
   return node ? [node] : []
 }
 
-function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLDetailsElement {
+/**
+ * The thumbnail-and-Open card for a rendered canvas artefact, or null when this
+ * tool call did not render one (or rendered before a preview could be captured
+ * — a missing thumbnail is normal, see `CanvasArtefact.preview`).
+ *
+ * Placed after the standard sections so the args and result stay where every
+ * other card keeps them; the preview is an addition, not a replacement.
+ */
+function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement | null {
+  if (tc.status !== 'done') return null
+  const uri = artefactUriFromToolResult(tc.result)
+  if (!uri) return null
+  const title = artefactTitleFromUri(uri)
+  const preview = getArtefactPreview(threadId, title)
+  if (!preview) return null
+
+  const open = el('button', { type: 'button', class: 'ui-btn ui-btn-secondary' }, 'Open')
+  open.addEventListener('click', () => {
+    requestArtefactShow(threadId, title)
+  })
+  return el(
+    'div',
+    { class: 'canvas-preview-card' },
+    el('img', { class: 'canvas-preview-image', src: preview, alt: `Preview of ${title}` }),
+    el(
+      'div',
+      { class: 'canvas-preview-footer' },
+      el('span', { class: 'canvas-preview-title' }, title),
+      open,
+    ),
+  )
+}
+
+function createIndividualToolCard(
+  tc: ToolCall,
+  label: string,
+  api: ApiClient,
+  threadId: string,
+): HTMLDetailsElement {
   if (tc.subagent) return createSubagentToolCard(tc, label, api)
 
   const card = el('details', {
@@ -272,6 +316,10 @@ function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): 
     'data-status': tc.status,
   })
   appendStandardToolSections(card, tc, label, 'tool-card-header')
+  onToolCardBodyBuilt(card, () => {
+    const preview = createCanvasPreviewSection(tc, threadId)
+    if (preview) card.append(preview)
+  })
   return card
 }
 
@@ -730,6 +778,7 @@ function createGroupToolCard(
 function createRollupToolCard(
   item: Extract<ToolCallDisplayItem, { type: 'rollup' }>,
   api: ApiClient,
+  threadId: string,
 ): HTMLDetailsElement {
   const status = aggregateToolStatus(item.toolCalls)
   const card = el('details', {
@@ -744,16 +793,20 @@ function createRollupToolCard(
       : undefined
   const body = el('div', { class: 'tool-rollup-body' })
   for (const child of item.children) {
-    body.append(createToolCard(child, api))
+    body.append(createToolCard(child, api, threadId))
   }
   card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
   return card
 }
 
-function createToolCard(item: ToolCallDisplayItem, api: ApiClient): HTMLDetailsElement {
-  if (item.type === 'rollup') return createRollupToolCard(item, api)
+function createToolCard(
+  item: ToolCallDisplayItem,
+  api: ApiClient,
+  threadId: string,
+): HTMLDetailsElement {
+  if (item.type === 'rollup') return createRollupToolCard(item, api, threadId)
   if (item.type === 'group') return createGroupToolCard(item)
-  return createIndividualToolCard(item.toolCall, item.label, api)
+  return createIndividualToolCard(item.toolCall, item.label, api, threadId)
 }
 
 // Stable identity for a tool card across `tool_call_updated` ticks: group cards
@@ -1853,6 +1906,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       reasoningLive?: boolean
     } = {},
   ): void {
+    const threadId = store.getState().activeThreadId ?? ''
     const userExpandedRollups = new Set<string>()
     msgEl.querySelectorAll<HTMLElement>('.tool-card-rollup[open]').forEach((node) => {
       const key = node.dataset['rollupKey']
@@ -1923,7 +1977,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         // The stale node was already claimed out of `existing`, so the cleanup
         // below won't drop it — remove it here or the rebuilt card duplicates.
         card?.remove()
-        card = createToolCard(item, api)
+        card = createToolCard(item, api, threadId)
         toolCardKeys.set(card, key)
         toolCardSignatures.set(card, sig)
       }

@@ -4,9 +4,13 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapshot-format.ts'
 import { expectBoolean } from '@shared/unknown-value.ts'
+import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 const MAX_TABS = 8
+// Wide enough to read a prototype's layout in the transcript, small enough
+// that the data URL stays cheap to ship over IPC and hold in a message.
+const PREVIEW_WIDTH = 480
 const DEFAULT_WIDTH = 1280
 const DEFAULT_HEIGHT = 800
 
@@ -19,6 +23,8 @@ export interface BrowserSessionPlatform {
   createWindow(options: BrowserWindowConstructorOptions): BrowserWindow
   getAgentSession(): Session
   showUrl(url: string): void
+  /** Promote an already-rendered canvas artefact tab to the front. */
+  showArtefact(identity: CanvasArtefactIdentity): void
 }
 
 let platform: BrowserSessionPlatform | null = null
@@ -129,6 +135,10 @@ export class BrowserSessionManager {
     requirePlatform().showUrl(url)
   }
 
+  showArtefact(identity: CanvasArtefactIdentity): void {
+    requirePlatform().showArtefact(identity)
+  }
+
   async snapshot(viewId?: string): Promise<string> {
     const tab = this.resolveTab(viewId)
     const raw: unknown = await tab.window.webContents.executeJavaScript(DOM_SNAPSHOT_SCRIPT, true)
@@ -143,6 +153,29 @@ export class BrowserSessionManager {
     const path = join(dir, `${tab.id}-${String(Date.now())}.png`)
     await writeFile(path, image.toPNG())
     return { path, viewId: tab.id }
+  }
+
+  /**
+   * A downscaled PNG `data:` URL of the tab, for the canvas preview card in the
+   * transcript. Inline rather than a file path because the card renders in the
+   * renderer, which cannot read arbitrary paths off disk, and because a preview
+   * is disposable — nothing should outlive the message that showed it.
+   *
+   * Returns null instead of throwing: a missing thumbnail degrades the card,
+   * it must never fail the render that produced the artefact.
+   */
+  async capturePreview(viewId: string, maxWidth = PREVIEW_WIDTH): Promise<string | null> {
+    const tab = this.tabs.find((t) => t.id === viewId)
+    if (!tab) return null
+    try {
+      const image = await tab.window.webContents.capturePage()
+      if (image.isEmpty()) return null
+      const { width } = image.getSize()
+      const scaled = width > maxWidth ? image.resize({ width: maxWidth, quality: 'good' }) : image
+      return scaled.toDataURL()
+    } catch {
+      return null
+    }
   }
 
   async click(ref: string, viewId?: string): Promise<string> {
