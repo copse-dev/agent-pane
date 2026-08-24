@@ -300,6 +300,7 @@ import {
 import { applyAppIcon } from '../app-icon.ts'
 import {
   createMainWindow,
+  freezeMainWindowStateForQuit,
   getFocusedMainWindow,
   getMainWindow,
   syncDevtoolsShortcut,
@@ -2469,6 +2470,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:createMainWindow', (event) => {
       assertMainFrameSender(event, win)
       createMainWindow()
+    })
+    // The wdio harness closes a window before reloadSession so Electron can
+    // release its single-instance lock (wdio.conf.ts beforeCommand). Without
+    // this, that close reads as the user discarding the window (its persisted
+    // record is dropped) and the close-time state capture re-writes this
+    // process's stale records over whatever the spec just seeded on disk —
+    // which is how the multi-window restore spec broke. Quit + freeze keeps
+    // the on-disk state exactly as the spec left it.
+    ipcMain.handle('test:markQuit', (event) => {
+      assertMainFrameSender(event, win)
+      freezeMainWindowStateForQuit()
     })
     // Local macOS WebDriver sessions cannot always relaunch Electron after a
     // fixture rewrite. Let focused specs drive the same workspace-open event as

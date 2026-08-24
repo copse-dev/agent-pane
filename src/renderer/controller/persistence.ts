@@ -447,7 +447,13 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
       clearTimeout(timer)
       timer = null
     }
-    projectsDirty = true
+    // Deliberately NOT forcing `projectsDirty` here: every projects mutation
+    // sets it via `projects_changed`, so an unchanged list needs no write. One
+    // of these flushes is the `pagehide` of a window being torn down, and (as
+    // with `lastNavigation` above) an unconditional write there put the dying
+    // window's — possibly stale — project list back over state a fresh launch
+    // was about to read. Observed as the e2e teardown wiping a just-seeded
+    // config.json's projects with the outgoing window's empty list.
     return flushNow().then(() => inflightFlush)
   }
 

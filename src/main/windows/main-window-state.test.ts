@@ -129,4 +129,26 @@ describe('MainWindowStateRepository', () => {
       [second.id],
     )
   })
+
+  it('freeze() finalizes the stored snapshot while in-memory updates continue', () => {
+    const { storage, writes } = memoryStorage()
+    const repository = new MainWindowStateRepository(
+      storage,
+      () => 'window-a',
+      () => 1,
+    )
+    const [record] = repository.loadOrMigrate(defaults)
+    assert.ok(record)
+    const writesBeforeFreeze = writes.length
+
+    repository.freeze()
+    repository.update(record.id, { activeProjectId: 'project-b' })
+    repository.remove(record.id)
+
+    // Nothing reached storage after the freeze — the e2e harness relies on
+    // this so a quitting process cannot overwrite freshly-seeded state…
+    assert.equal(writes.length, writesBeforeFreeze)
+    // …but the in-memory view still tracks the closing windows.
+    assert.deepEqual(repository.list(), [])
+  })
 })

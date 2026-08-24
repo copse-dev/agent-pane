@@ -1210,6 +1210,9 @@ if (process.env['COPSE_E2E'] === '1') {
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')
     },
+    markQuit() {
+      return ipcRenderer.invoke('test:markQuit')
+    },
     openWorkspace(root: string) {
       return ipcRenderer.invoke('test:openWorkspace', root)
     },
