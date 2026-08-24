@@ -69,6 +69,7 @@ import {
   getSetting,
   setSetting,
   hasApiKey,
+  resolveApiKey,
   setApiKey,
   isApiKeyEncrypted,
 } from '../services/storage/settings.ts'
@@ -1304,7 +1305,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
-    const result = await validateApiKey(p, apiKey)
+    // Empty means "the key already in use" (see the `settings:validateKey`
+    // contract): resolve it here so the stored secret never crosses to the
+    // renderer just to be handed straight back.
+    const candidate = apiKey.trim() ? apiKey : (resolveApiKey(p) ?? '')
+    if (!candidate) return { ok: false, error: 'No key configured for this provider' }
+    const result = await validateApiKey(p, candidate)
     recordProviderKeyValidation(p, result.ok)
     return result
   })
