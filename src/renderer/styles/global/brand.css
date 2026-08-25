@@ -47,6 +47,79 @@ h3 {
   line-height: 1.6;
 }
 
+/* Centre the label by its CAP BOX, not by its line box.
+   -------------------------------------------------------------------------
+   `align-items: center` on these pills centres the *line box*, and where the
+   ink sits inside a line box is decided by the font's ascent (0.95em) against
+   its descent (0.25em). That pair is wildly asymmetric, so the visible label
+   is not centred by construction — it only looks centred wherever the platform
+   happens to round it that way. Measured on the confirm dialog's 36px Cancel
+   pill: macOS leaves 12.5px above the label and 12.5px below, Linux leaves 11px
+   and 14px. The reference screenshots are rendered on Linux and reviewed on
+   macOS, which is how the CI shots came to look subtly off.
+
+   The metrics are IDENTICAL on both platforms (ascent 13, descent 4 at 14px) —
+   this is not a font-metrics or hinting bug, and no font-rendering switch moves
+   it. What differs is the rasterised glyph box: Linux reports a cap ascent of
+   exactly 11px where macOS reports 10.304px. Line-height cannot help either;
+   it cancels out of the centring algebra entirely (verified: `line-height: 1`
+   and `line-height: normal` render byte-identically to this recipe).
+
+   Trimming to the cap box takes the ascent/descent pair out of the sum. The
+   trimmed box comes from `sCapHeight` (714/1000 = 0.714em), which both
+   platforms agree on exactly, so all that is left is the ~0.7px rasteriser
+   difference. Skew drops 3px -> 1px on Linux and the cross-platform drift
+   1.5px -> 0.5px, with macOS staying centred.
+
+   `text-box-trim` only applies to a block container's own line boxes, so the
+   button has to stop being a flex container for the trim to reach the label —
+   hence the inline-block below, plus `align-content` for the vertical centring
+   `align-items` was doing. `:not(:has(*))` keeps this to text-only buttons: add
+   an icon child and the rule stops matching, so the button falls back to the
+   flex row with its `gap` rather than stacking the icon above the label.
+
+   The feature query is load-bearing, not decoration. Copse also has a Tauri +
+   Servo shell in prototype (tauri-shell/), and Servo has neither of these
+   properties. Without the guard those engines would drop the flex row and pin
+   every label to the top of its pill; with it they skip the whole block and
+   keep the flex centring they render today. Note the query only tests the
+   newer of the two features: `text-box-trim` (Chromium 133, Safari 18.2)
+   postdates block-container `align-content` (Chromium 123, Safari 17.6) in
+   every engine that has shipped either, and a support query cannot ask whether
+   `align-content` works on a *block* container specifically. If some engine
+   ever ships the trim first, this needs revisiting. */
+@supports (text-box: trim-both cap alphabetic) {
+  :is(
+    .welcome-new-btn,
+    .welcome-open-btn,
+    .submit-btn,
+    .stop-btn,
+    .settings-buttons button,
+    .onboarding-primary,
+    .onboarding-skip,
+    .onboarding-back,
+    .ask-user-cancel,
+    .ask-user-submit,
+    .confirm-dialog-cancel,
+    .confirm-dialog-confirm,
+    .update-prompt-secondary,
+    .update-prompt-primary,
+    .ssh-prompt-cancel,
+    .ssh-prompt-submit,
+    .ui-btn
+  ):not(:has(*)),
+  #settings-dialog .settings-buttons button:not(:has(*)) {
+    /* inline-block, NOT block: only `.ui-btn` declares a display today
+       (inline-flex) and the rest inherit the UA's inline-block for <button>, so
+       every one of these is inline-level right now. Blockifying them would make
+       each one full-width in any parent that is not already a flex row. */
+    display: inline-block;
+    align-content: center;
+    text-align: center;
+    text-box: trim-both cap alphabetic;
+  }
+}
+
 :is(
   .settings-buttons button[type='button'],
   .onboarding-skip,

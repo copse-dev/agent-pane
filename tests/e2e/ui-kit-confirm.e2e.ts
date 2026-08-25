@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, writeSeedConfig } from './helpers/seed-config.ts'
@@ -92,6 +93,22 @@ describe('UI kit confirm dialog', () => {
     await expect(await dialog.$('button.ui-btn.ui-btn-danger.confirm-dialog-confirm')).toHaveText(
       'Delete',
     )
+
+    const capBoxStyle = await browser.execute(() => {
+      const button = document.querySelector<HTMLElement>('.confirm-dialog-cancel')
+      if (!button) return null
+      const style = getComputedStyle(button)
+      return {
+        trim: style.getPropertyValue('text-box-trim'),
+        edge: style.getPropertyValue('text-box-edge'),
+        alignContent: style.alignContent,
+      }
+    })
+    assert.deepEqual(capBoxStyle, {
+      trim: 'trim-both',
+      edge: 'cap alphabetic',
+      alignContent: 'center',
+    })
 
     await saveElementScreenshot('#confirm-dialog', 'ui-kit-confirm-dialog.png')
 
