@@ -132,11 +132,11 @@ describe('first-message checkout transaction', () => {
     assert.equal(getThread().gitBranch, 'main')
   })
 
-  it('bases an automatic worktree on the default branch, not the live checkout', async () => {
+  it('bases an automatic worktree on the branch selected in the blank-thread picker', async () => {
     const allocations: Array<{ baseBranch: string; seedFromDirtyProject: boolean }> = []
     const { prepare } = fixture({
-      // The user's checkout is parked on the previous thread's branch, with
-      // that thread's uncommitted work still in it.
+      // The picker changes the live checkout, so this is the branch the user
+      // sees selected when they send the first message.
       inspect: async () => ({
         isGitRepository: true,
         currentBranch: 'copse/previous-thread',
@@ -165,7 +165,9 @@ describe('first-message checkout transaction', () => {
     })
 
     assert.equal(result.checkoutMode, 'worktree')
-    assert.deepEqual(allocations, [{ baseBranch: 'main', seedFromDirtyProject: false }])
+    assert.deepEqual(allocations, [
+      { baseBranch: 'copse/previous-thread', seedFromDirtyProject: true },
+    ])
   })
 
   it('allocates exactly once under concurrent isolated preparation and reuses metadata', async () => {
@@ -259,7 +261,7 @@ describe('first-message checkout transaction', () => {
     assert.equal(patches[0]?.gitBranch, 'feat/live')
   })
 
-  it('reclaims an unpersisted dirty worktree when meta write failed earlier', async () => {
+  it('reclaims the original allocation metadata after the project branch changed', async () => {
     const recovered: ThreadWorktree = {
       path: '/worktrees/thread-1',
       branch: 'copse/task-thread1',
@@ -273,7 +275,7 @@ describe('first-message checkout transaction', () => {
     const { prepare, getThread } = fixture({
       inspect: async () => ({
         isGitRepository: true,
-        currentBranch: 'main',
+        currentBranch: 'feature/switched-after-failure',
         defaultBranch: 'main',
         isDirty: true,
         hasSubmodules: false,
@@ -300,6 +302,8 @@ describe('first-message checkout transaction', () => {
     assert.equal(retireCalls, 0)
     assert.equal(result.checkoutMode, 'worktree')
     assert.deepEqual(result.worktree, recovered)
+    assert.equal(result.worktree.baseBranch, 'main')
+    assert.equal(result.worktree.baseCommit, 'b'.repeat(40))
     assert.equal(getThread().worktreeChoice, 'worktree')
     assert.equal(getThread().gitBranch, recovered.branch)
     assert.deepEqual(getThread().worktree, recovered)

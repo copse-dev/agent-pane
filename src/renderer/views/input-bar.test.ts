@@ -55,6 +55,8 @@ function thread(branch?: string): Thread {
 
 function createApi(options: {
   currentBranch: string
+  getCurrentBranch?: () => string
+  branches?: Awaited<ReturnType<ApiClient['git']['listBranches']>>
   onAbort?: () => Promise<void>
   onRun?: () => Promise<void>
   onCheckoutBranch?: (branch: string) => Promise<void>
@@ -125,7 +127,10 @@ function createApi(options: {
       },
       git: {
         ...base['git'],
-        branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
+        branchStatus: async () => ({
+          currentBranch: options.getCurrentBranch?.() ?? options.currentBranch,
+          pr: null,
+        }),
         promptState: async () => options.promptState ?? { startingCommit: null, dirty: false },
         checkoutBranch: async (
           _projectId: string,
@@ -134,7 +139,8 @@ function createApi(options: {
         ): Promise<void> => {
           await options.onCheckoutBranch?.(branch)
         },
-        listBranches: async () => [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
+        listBranches: async () =>
+          options.branches ?? [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
         getDefaultBranch: async () => 'main',
       },
       lmStudio: {
@@ -413,6 +419,79 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepared.gitBranch, 'copse/first-message')
     assert.equal(prepared.messages[0]?.content, 'Start in isolation')
     assert.equal(composer.textContent, '')
+  })
+
+  it('waits for the blank-thread branch selection before preparing its worktree', async () => {
+    const order: string[] = []
+    let currentBranch = 'main'
+    let releaseCheckout = (): void => {
+      throw new Error('expected branch checkout to be pending')
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        getCurrentBranch: () => currentBranch,
+        branches: [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/selected', lastCommitDate: '2024-01-02' },
+        ],
+        onCheckoutBranch: (branch) =>
+          new Promise<void>((resolve) => {
+            releaseCheckout = (): void => {
+              currentBranch = branch
+              order.push(`checkout:${branch}`)
+              resolve()
+            }
+          }),
+        onPrepareCheckout: async () => {
+          order.push(`prepare:${currentBranch}`)
+          return { checkoutMode: 'shared', choice: 'automatic', branch: currentBranch }
+        },
+        onRun: async () => {
+          order.push('run')
+        },
+      }),
+    )
+    await flush()
+
+    const branchTrigger = host.querySelector<HTMLButtonElement>('.branch-picker-trigger')
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(branchTrigger)
+    assert.ok(composer)
+    assert.ok(submit)
+    branchTrigger.click()
+    await flush()
+    const selected = [...host.querySelectorAll<HTMLButtonElement>('.branch-picker-option')].find(
+      (button) => button.textContent.includes('feature/selected'),
+    )
+    assert.ok(selected)
+    selected.click()
+    branchTrigger.click()
+    await flush()
+    const branchMenu = host.querySelector<HTMLElement>('.branch-picker-menu')
+    assert.ok(branchMenu)
+    assert.equal(branchMenu.hidden, true, 'a pending checkout keeps the branch picker closed')
+    composer.textContent = 'Start from the selected feature'
+    submit.click()
+    await settle()
+
+    assert.deepEqual(order, [], 'checkout preparation must wait for the branch switch')
+    releaseCheckout()
+    await flush()
+
+    assert.deepEqual(order, ['checkout:feature/selected', 'prepare:feature/selected', 'run'])
   })
 })
 
@@ -947,7 +1026,7 @@ describe('input bar branch mismatch warning', () => {
     assert.ok(submitBtn)
     composer.textContent = 'Follow up in the worktree'
     submitBtn.click()
-    await settle()
+    await flush()
 
     assert.equal(runs, 1)
     const warning = host.querySelector<HTMLElement>('.composer-branch-warning')
