@@ -8,6 +8,7 @@ import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames
 import { registerAppWindow } from './app-window-broadcast.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
 import { attachRendererCrashRecovery } from './renderer-crash-recovery.ts'
+import { attachVisualPinchZoom } from './visual-pinch-zoom.ts'
 
 /** Any right-panel pane can be detached into its own window. */
 export type PopoutMode = RightPanelMode
@@ -79,6 +80,7 @@ export function createPanePopoutWindow(mode: PopoutMode, seed?: unknown): Browse
   popoutWindow = win
   attachWebContentsLockdown(win.webContents)
   attachRendererCrashRecovery(win.webContents)
+  attachVisualPinchZoom(win.webContents)
   win.on('unresponsive', () => {
     console.warn('[renderer] pop-out window became unresponsive')
   })

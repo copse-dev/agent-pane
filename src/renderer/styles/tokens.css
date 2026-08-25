@@ -105,7 +105,7 @@
   --font-family: 'Pliant', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'Averia Serif Libre', Georgia, serif;
   --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  /* Interface scale (Settings → Appearance, ⌘+/-, pinch). Multiplies type and
+  /* Interface scale (Settings → Appearance, ⌘+/-). Multiplies type and
      spacing tokens below so the shell reflows crisply instead of bitmap-zooming.
      Radii, layout max-widths, and the traffic-light inset stay unscaled so OS
      chrome alignment and corner geometry do not drift. */
