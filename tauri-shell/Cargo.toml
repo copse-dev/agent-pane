@@ -31,36 +31,44 @@ tauri-runtime-servo = { path = "../../tauri-runtime-servo" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# To run with the servo patch series (servo-patches/ in the runtime repo):
-# check the engine crates out beside the repos, apply the series, uncomment
-# this block, and add `features = ["patched-servo"]` to the tauri-runtime-servo
-# dependency above — cargo then builds the whole servo graph from the local
-# trees. Without all of that, the shell builds against stock libservo.
+[features]
+# On by default, because the patched engine is what the overrides below
+# resolve to and what `pnpm build:servo` assumes. Enabling this against a
+# stock libservo is a compile error rather than a silent no-op — the pref it
+# sets is a struct field stock servo does not have — so the feature and the
+# overrides cannot drift apart unnoticed. For a stock-engine build:
+# `cargo run --no-default-features`, and build the web artifacts with
+# COPSE_TAURI_STRIP_CSP=1 (stock servo cannot match CSP 'self' against
+# tauri://localhost, so an enforced policy blocks every subresource).
+default = ["patched-servo"]
+patched-servo = ["tauri-runtime-servo/patched-servo"]
+
+# The patched engine, as `tauri-runtime-patches` branches on the org's forks.
+# This is the block the runtime repo's README publishes under "Using a patched
+# Servo", with nothing changed but the indentation of this comment — that
+# recipe is built in the runtime's own CI, so keep the two in step rather than
+# improvising here.
 #
-# One block keyed on `crates-io`, where there used to be three keyed on git
-# sources: as of servo 0.5 the runtime depends on published libservo and servo
-# takes its stylo crates from the registry too, so no git source survives to
-# override. A `[patch."https://github.com/servo/servo.git"]` block against
-# this lockfile would simply go unused.
+# Pinned by rev rather than by branch: those branches are rebased whenever the
+# crate they fork publishes a release the pin has to move to, and a branch pin
+# would change what this builds on the next `cargo update`.
 #
-# The block is the one the runtime repo's README publishes under "Using a
-# patched Servo", with the paths moved out a level because the checkouts are
-# siblings of the repos rather than of the runtime. That recipe is built in
-# the runtime's own CI, so keep the two in step rather than improvising here.
-#
-# All eight stylo entries are required: overriding `stylo` alone leaves the
-# rest resolving from the registry, which puts a second copy of the selector
-# machinery in the graph and fails to compile. `stylo_derive`, `to_shmem` and
-# `to_shmem_derive` need no entries — the patched crates reach them by path.
-#
-# [patch.crates-io]
-# servo = { path = "../../servo/components/servo" }
-# content-security-policy = { git = "https://github.com/copse-dev/rust-content-security-policy", rev = "fb5fd0f1af7f0c0dc315bf938507290b2e48cdbe" }
-# selectors = { path = "../../stylo/selectors" }
-# servo_arc = { path = "../../stylo/servo_arc" }
-# stylo = { path = "../../stylo/style" }
-# stylo_atoms = { path = "../../stylo/stylo_atoms" }
-# stylo_dom = { path = "../../stylo/stylo_dom" }
-# stylo_malloc_size_of = { path = "../../stylo/malloc_size_of" }
-# stylo_static_prefs = { path = "../../stylo/stylo_static_prefs" }
-# stylo_traits = { path = "../../stylo/style_traits" }
+# For engine iteration, put a checkout at ../../servo (and ../../stylo) and run
+# `pnpm build:servo`: it writes .cargo/config.toml with path overrides, which
+# take precedence over these per crate. Delete the checkout and the next
+# build:servo removes the file, putting you back on the pins.
+[patch.crates-io]
+servo = { git = "https://github.com/copse-dev/servo", rev = "3cb6867644a222d54dd5ed7fbd991cd5811fd2f4" }
+content-security-policy = { git = "https://github.com/copse-dev/rust-content-security-policy", rev = "fb5fd0f1af7f0c0dc315bf938507290b2e48cdbe" }
+
+# All eight stylo entries are required. Overriding `stylo` alone leaves the
+# others resolving from the registry, which puts a second copy of
+# `stylo_traits` and friends in the graph and fails to compile.
+selectors = { git = "https://github.com/copse-dev/stylo", rev = "4973e76a24701bdf68ef15cc6f493b0737f07f64" }
+servo_arc = { git = "https://github.com/copse-dev/stylo", rev = "4973e76a24701bdf68ef15cc6f493b0737f07f64" }
+stylo = { git = "https://github.com/copse-dev/stylo", rev = "4973e76a24701bdf68ef15cc6f493b0737f07f64" }
+stylo_atoms = { git = "https://github.com/copse-dev/stylo", rev = "4973e76a24701bdf68ef15cc6f493b0737f07f64" }
+stylo_dom = { git = "https://github.com/copse-dev/stylo", rev = "4973e76a24701bdf68ef15cc6f493b0737f07f64" }
+stylo_malloc_size_of = { git = "https://github.com/copse-dev/stylo", rev = "4973e76a24701bdf68ef15cc6f493b0737f07f64" }
+stylo_static_prefs = { git = "https://github.com/copse-dev/stylo", rev = "4973e76a24701bdf68ef15cc6f493b0737f07f64" }
+stylo_traits = { git = "https://github.com/copse-dev/stylo", rev = "4973e76a24701bdf68ef15cc6f493b0737f07f64" }

@@ -93,11 +93,19 @@ jobs:
           done
           echo "default build is servo-free"
 
+      # COPSE_SERVO_ARTIFACTS_ONLY keeps this to the JavaScript half. Without
+      # it, build:servo would resolve an engine — and the point of this job is
+      # the bundle, which is what rots; the engine is cargo's problem and takes
+      # the better part of an hour to compile.
       - name: build servo mode
         run: npm run build:servo
+        env:
+          COPSE_SERVO_ARTIFACTS_ONLY: '1'
 
       # The bundle existing proves esbuild was happy, not that the sidecar
       # runs. This boots it, connects as the renderer would, authenticates, and
       # drives real invokes — no display and no Servo build needed.
       - name: sidecar smoke test
         run: npm run smoke:tauri-sidecar
+        env:
+          COPSE_SERVO_ARTIFACTS_ONLY: '1'
