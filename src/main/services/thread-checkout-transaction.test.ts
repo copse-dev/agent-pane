@@ -70,6 +70,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
       throw new Error('unexpected allocation')
     },
     recoverUnpersisted: async () => null,
+    branchExists: async () => true,
     validate: async ({ worktree }) => ({ branch: worktree.branch }),
     retire: async () => undefined,
     serialize: serial(),
@@ -176,6 +177,85 @@ describe('first-message checkout transaction', () => {
     assert.deepEqual(allocations, [
       { baseBranch: 'copse/previous-thread', seedFromDirtyProject: true },
     ])
+  })
+
+  it('falls back to the default branch when the reported current branch is not a ref', async () => {
+    // `currentBranch` is a reported name, not a ref. The e2e suite replaces it
+    // wholesale (COPSE_PANEL_MOCK_BRANCH=work), and allocation rejects a base
+    // that resolves to nothing — so trusting the report unverified throws
+    // 'Base branch "work" does not exist in this repository' and leaves the
+    // thread with no checkout and no transcript.
+    const allocations: string[] = []
+    const probed: string[] = []
+    const { prepare } = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: 'work',
+        defaultBranch: 'main',
+        isDirty: false,
+        hasSubmodules: false,
+      }),
+      branchExists: async (_projectRoot, branch) => {
+        probed.push(branch)
+        return branch !== 'work'
+      },
+      allocate: async ({ baseBranch }) => {
+        allocations.push(baseBranch)
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/task-thread1',
+          baseBranch,
+          baseCommit: 'f'.repeat(40),
+          createdAt: 6,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Scheduled review',
+      choice: 'worktree',
+    })
+
+    assert.equal(result.checkoutMode, 'worktree')
+    assert.deepEqual(probed, ['work'])
+    assert.deepEqual(allocations, ['main'])
+  })
+
+  it('still bases on `main` when neither the reported branch nor a default resolves', async () => {
+    const allocations: string[] = []
+    const { prepare } = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: 'work',
+        defaultBranch: null,
+        isDirty: false,
+        hasSubmodules: false,
+      }),
+      branchExists: async () => false,
+      allocate: async ({ baseBranch }) => {
+        allocations.push(baseBranch)
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/task-thread1',
+          baseBranch,
+          baseCommit: 'a'.repeat(40),
+          createdAt: 7,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+
+    await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Scheduled review',
+      choice: 'worktree',
+    })
+
+    assert.deepEqual(allocations, ['main'])
   })
 
   it('allocates exactly once under concurrent isolated preparation and reuses metadata', async () => {
