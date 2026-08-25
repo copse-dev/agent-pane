@@ -869,3 +869,90 @@ benchmark — `syspolicyd` at 86% CPU, `trustd` at 17%, plus a VM — and Gateke
 thrash pushes session creation past its timeout. Running 204 parallel workers
 under those conditions would have produced noise and starved the benchmark, so
 the suite was left alone.
+
+### e2e: the app is drivable, wdio's managed driver is not (2026-08-23)
+
+Yesterday's conclusion that machine load broke the suite was **wrong** — it
+fails identically on an idle machine. What follows is what the evidence
+actually supports.
+
+**The app is drivable over WebDriver.** A session creates in a few seconds
+against the real `electron-chromedriver`, the real Electron binary, wdio's full
+argument list, wdio's capabilities including the `browserVersion` pin, and
+wdio's own driver flags (`--allowed-ips=0.0.0.0 --allowed-origins=*`). Every
+combination tried by hand succeeds.
+
+**Pointing wdio at an already-running driver works.** With `hostname`/`port`
+set so wdio attaches instead of spawning, the session is created and the spec
+runs — it reaches `accent-color.e2e.ts`'s `before all`, which then fails
+creating a _second_ session against a profile the first still holds. That is the
+closest thing to a working configuration and the obvious place to continue.
+
+**wdio's own managed driver fails** with `session not created: from chrome not
+reachable`, and the driver log contains **no app output at all** — not one line
+of the app's stdout, no `DevTools listening`. The app never gets far enough to
+serve DevTools.
+
+**A mechanism that looked like the cause, and is not.** `app-init.ts` relocates
+Electron's `userData`, and Chromium writes `DevToolsActivePort` into the _final_
+userData — so with chromedriver using port 0 the driver watches a path the file
+never appears at, and the session dies as `DevToolsActivePort file doesn't
+exist`. That is real, reproducible, and confirmed by finding the file in
+`~/.copse/user-data/`. It is **not** what breaks wdio: wdio passes an explicit
+`--remote-debugging-port`, and a by-hand session with an explicit port and no
+profile environment succeeds. Recorded because it will bite anyone driving this
+app with a port-0 driver, not because it explains the suite.
+
+**Ruled out, with evidence:** machine load (fails when idle); the
+single-instance lock (the launched process stays alive for the full timeout);
+the argument list (full list works by hand); the capability set (works by hand);
+`browserVersion` — it is load-bearing, since without it wdio cannot map
+Electron's `v43.3.0` to a Chrome version at all; seeding
+`COPSE_PANEL_USER_DATA` at config-module load; and the userData/DevToolsActivePort
+mechanism above — all real, none of them the cause.
+
+**The cause, found:** macOS TCC denies the chromedriver-spawned Electron access
+to the external volume this worktree lives on. The first file the app reads is
+`tests/e2e/electron-shell/package.json`, the open fails with `EPERM`, and
+Electron puts up a modal — _Error launching app / Unable to parse … / EPERM:
+operation not permitted_ — which blocks the main thread. That is the 0% CPU
+park: the process is alive, has no children, has opened nothing in the profile,
+and is waiting on a dialog nobody is going to click. chromedriver polls for
+DevTools until it times out.
+
+It only bites when chromedriver is the launcher. TCC attributes filesystem
+access to the _responsible process_, and a shell-launched Electron inherits the
+terminal's granted access to `/Volumes`, while one spawned by chromedriver does
+not. That is why every by-hand reproduction succeeded and every wdio run failed
+on identical arguments.
+
+Confirmed by changing one variable — the app directory — with the same driver,
+binary and arguments:
+
+| App directory                 | Result                                              |
+| ----------------------------- | --------------------------------------------------- |
+| `/Volumes/KingstonExternal/…` | `EPERM` on `package.json`, modal, session times out |
+| `/tmp/…` (internal disk)      | **session created, app bootstrap runs**             |
+
+**Fixes**, in order of preference: run the checkout from the internal disk; or
+grant the chromedriver binary (and/or the terminal) Full Disk Access in
+System Settings → Privacy & Security. Nothing about this is specific to the
+Servo branch — the suite would fail the same way on `main` from this path.
+
+**Worth knowing generally:** each failed attempt leaves a live Electron holding
+a modal. They accumulate silently across runs, and any that reached the app's
+own startup would also hold the single-instance lock on the real profile — so a
+`pgrep -f electron-shell` before blaming the suite is cheap insurance.
+
+The attach-mode failure, by contrast, **is** understood: `accent-color`'s
+`before()` calls `resetUserData()` and then `browser.reloadSession()`, which
+relaunches Electron against the single fixed profile the attach hack pinned.
+Normal wdio hands each session a fresh `.wdio-profile-*`, which is exactly what
+makes `reloadSession()` work; pinning one profile breaks it. Per-session
+profiles are the fix.
+
+**Recommended next step:** stop letting wdio manage the driver. Start
+`electron-chromedriver` from a wrapper with the profile environment already set,
+give each session its own profile, and point wdio at it with `hostname`/`port`.
+That path is already proven to create sessions and run specs; what remains is
+per-session profile handling rather than an unexplained handshake failure.
