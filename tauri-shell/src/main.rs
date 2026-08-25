@@ -10,6 +10,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -153,10 +154,47 @@ fn handle_sidecar_message(
     }
 }
 
+/// Locate `dist/sidecar/index.js`.
+///
+/// `COPSE_SIDECAR_ENTRY` wins when set. Otherwise: the historical default is
+/// `../dist/sidecar/index.js`, which is *cwd*-relative and so only resolves
+/// when the shell is started from inside `tauri-shell/` — which `cargo run`
+/// does and a perf harness invoking the release binary by path does not. The
+/// failure is a bare Node MODULE_NOT_FOUND naming a path nobody wrote, so try
+/// the exe-relative location too and, when neither exists, say what was tried.
+fn sidecar_entry() -> std::io::Result<PathBuf> {
+    if let Ok(explicit) = std::env::var("COPSE_SIDECAR_ENTRY") {
+        return Ok(PathBuf::from(explicit));
+    }
+    let mut candidates = vec![PathBuf::from("../dist/sidecar/index.js")];
+    // target/release/copse-tauri-shell → up three to the repo root.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(root) = exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent()) {
+            candidates.push(root.join("../dist/sidecar/index.js"));
+        }
+    }
+    for candidate in &candidates {
+        if candidate.exists() {
+            return Ok(candidate.clone());
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!(
+            "no dist/sidecar/index.js (tried {}) — run `pnpm build && pnpm build:tauri`, \
+             or point COPSE_SIDECAR_ENTRY at it",
+            candidates
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    ))
+}
+
 fn spawn_sidecar(handle: AppHandle<ServoRuntime>, alive: Arc<AtomicBool>) -> std::io::Result<()> {
     let node = std::env::var("COPSE_SIDECAR_NODE").unwrap_or_else(|_| "node".to_string());
-    let entry = std::env::var("COPSE_SIDECAR_ENTRY")
-        .unwrap_or_else(|_| "../dist/sidecar/index.js".to_string());
+    let entry = sidecar_entry()?;
     let mut child = Command::new(node)
         .arg(entry)
         .env("COPSE_TAURI_SHELL", "1")

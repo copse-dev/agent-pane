@@ -293,6 +293,14 @@ export class BrowserWindow extends EventEmitter {
     query.set('winId', String(this.id))
     query.set('wsPort', String(endpoint.port))
     query.set('wsToken', endpoint.token)
+    // A Servo webview inherits no environment, so the perf tracer's two values
+    // ride the boot URL instead; ws-bridge/perf-env.ts copies them back into
+    // the bundle's stub `process.env` before the preload evaluates. Under
+    // Electron this is the renderer process inheriting main's environment.
+    if (process.env['COPSE_PERF'] === '1') {
+      query.set('copsePerf', '1')
+      query.set('copsePerfOrigin', process.env['COPSE_PERF_ORIGIN'] ?? '')
+    }
     const url = `${page}?${query.toString()}`
     this.webContents.setURLForShim(url)
     const message: CreateWindowMessage = {
