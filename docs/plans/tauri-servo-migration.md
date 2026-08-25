@@ -271,26 +271,59 @@ renders as a correct `▶` with **no app-side change at all**. An earlier
 ever fixed the one symptom and would have left the other twelve grid layouts
 silently broken.
 
-### Other implemented-but-disabled prefs (2026-08-22)
+### Pref sweep against Servo's own defaults and WPT runs (2026-08-22)
 
-Finding the grid pref prompted an audit of Servo's defaults, and a good part of
-the "genuinely missing" list in the probe verdicts above is wrong — those
-features are implemented and merely pref-gated off:
+Finding the grid pref prompted a full audit. Servo curates a list of
+"disabled by default, but intended to be enabled for experimental use" prefs —
+`EXPERIMENTAL_PREFS` in `ports/servoshell/prefs.rs`, 21 entries, what
+`--enable-experimental-web-platform-features` turns on. That list is the right
+reference for an embedder, and `layout_grid_enabled` is in it, which is
+independent confirmation that enabling grid is the intended thing to do rather
+than a hack.
 
-| Pref                               | Consequence when off                                                   |
-| ---------------------------------- | ---------------------------------------------------------------------- |
-| `layout_grid_enabled`              | all CSS Grid (fixed above)                                             |
-| `layout_variable_fonts_enabled`    | likely the "heading fonts fall back to serif" note in the run log      |
-| `layout_container_queries_enabled` | container queries                                                      |
-| `layout_columns_enabled`           | CSS multi-column                                                       |
-| `dom_offscreen_canvas_enabled`     | listed above as "genuinely missing"                                    |
-| `dom_sanitizer_enabled`            | listed above as "genuinely missing" (DOMPurify fallback in place)      |
-| `dom_web_animations_enabled`       | `element.getAnimations()` absent — which broke an animation probe here |
-| `layout_writing_mode_enabled`      | writing modes                                                          |
+The runtime currently enables 4 of the 21: `dom_exec_command_enabled`,
+`dom_async_clipboard_enabled`, `dom_intersection_observer_enabled`, and now
+`layout_grid_enabled`. Against actual usage in this app:
 
-Worth working through this list properly before treating anything as a Servo
-gap: the failure mode is silent, and a dropped declaration looks identical to an
-unimplemented feature from inside the page.
+| Pref                                        | App usage                              | Verdict                                                               |
+| ------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------- |
+| `layout_grid_enabled`                       | 13 `display:grid` + 28 grid properties | **enabled** — was the caret bug                                       |
+| `layout_variable_fonts_enabled`             | brand font is `Pliant-Variable.ttf`    | **strongly recommended** — very likely the unexplained serif fallback |
+| `dom_fontface_enabled`                      | 3 `@font-face` blocks                  | recommended alongside the above                                       |
+| `layout_columns_enabled`                    | 12 multi-column declarations           | recommended                                                           |
+| `layout_css_attr_enabled`                   | 2 `attr()` uses                        | cheap, take it                                                        |
+| `layout_container_queries_enabled`          | 1 `@container`                         | cheap, take it                                                        |
+| `dom_offscreen_canvas_enabled`              | 0 uses                                 | not needed (but listed as "genuinely missing" above — it is not)      |
+| `dom_sanitizer_enabled`                     | 0 uses (DOMPurify fallback)            | not needed (also mislabelled above)                                   |
+| `dom_indexeddb_enabled`                     | 0 uses                                 | not needed                                                            |
+| `dom_notification_enabled`                  | 2 mentions, main-process notifications | not needed in the webview                                             |
+| `dom_webgl2_enabled` / `dom_webgpu_enabled` | 0 uses                                 | not needed                                                            |
+| `layout_css_alpha_color_function_enabled`   | gates `alpha()`, not `color-mix()`     | **not** needed — the app's 88 `color-mix()` uses are unaffected       |
+
+The last row is worth keeping: the name suggests it covers modern colour
+syntax generally, and it does not — `stylo/style/color/parsing.rs` gates only
+the `alpha` keyword on it. Guessing from pref names is how the audit could have
+gone wrong in the other direction.
+
+**Prefs Servo enables for its own WPT runs but which are _not_ in
+`EXPERIMENTAL_PREFS`** (`tests/wpt/meta/**/__dir__.ini`, plus
+`resources/wpt-prefs.json`): `dom_adoptedstylesheet_enabled`,
+`dom_visual_viewport_enabled`, `viewport_meta_enabled`,
+`dom_web_animations_enabled`, `dom_credential_management_enabled`,
+`dom_geolocation_enabled`, `dom_serviceworker_enabled`, `accessibility_enabled`.
+Of these only `dom_web_animations_enabled` is interesting here — it restores
+`element.getAnimations()`, whose absence broke an animation probe during this
+investigation. It does **not** fix SVG animation; the cause there is
+architectural (see [`servo-svg-layout.md`](./servo-svg-layout.md)). The app uses
+no `adoptedStyleSheets` and no `visualViewport`.
+
+**Caveat on grid maturity.** Servo's WPT metadata records 8813 `expected: FAIL`
+lines across 1482 files under `css/css-grid`, against 1694 across 319 files for
+`css-flexbox` — grid is markedly less complete than flexbox, which is presumably
+why it ships off. Weighed against that: it is on Servo's own experimental list,
+and with it enabled this app's UI renders correctly, including the caret, with no
+app-side workaround. Enabling it is clearly better than the alternative, which
+was every grid container silently not being a grid.
 
 ### White flash on startup, and the anti-flash claim that was not true (2026-08-22)
 
