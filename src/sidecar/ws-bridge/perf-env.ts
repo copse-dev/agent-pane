@@ -34,6 +34,7 @@ if (params.get('copsePerf') === '1') {
   // Absent origin is survivable: perf-bridge falls back to `Date.now()`, which
   // costs a shared axis with main but still yields usable durations.
   if (origin !== null && origin !== '') process.env['COPSE_PERF_ORIGIN'] = origin
+  if (params.get('copseAutopilot') === '1') process.env['COPSE_PERF_AUTOPILOT'] = '1'
 }
 
 export {}

@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
+use tauri::utils::config::Color;
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 type ServoRuntime = tauri_runtime_servo::Servo<tauri::EventLoopMessage>;
@@ -37,12 +38,31 @@ enum SidecarMessage {
         min_height: Option<f64>,
         title: Option<String>,
         show: Option<bool>,
+        background_color: Option<String>,
     },
     #[serde(rename = "window", rename_all = "camelCase")]
     Window { win_id: u64, action: String },
 }
 
 type SharedStdin = Arc<Mutex<std::process::ChildStdin>>;
+
+/// `#rrggbb` / `#rgb` as the sidecar sends it, to a Tauri colour. Returns None
+/// for anything unparseable so a malformed value simply leaves the default.
+fn parse_hex_color(value: &str) -> Option<Color> {
+    let hex = value.strip_prefix('#')?;
+    let (r, g, b) = match hex.len() {
+        3 => {
+            let digit = |i: usize| u8::from_str_radix(&hex[i..i + 1].repeat(2), 16).ok();
+            (digit(0)?, digit(1)?, digit(2)?)
+        }
+        6 => {
+            let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+            (byte(0)?, byte(2)?, byte(4)?)
+        }
+        _ => return None,
+    };
+    Some(Color(r, g, b, 255))
+}
 
 fn window_label(win_id: u64) -> String {
     format!("copse-{win_id}")
@@ -68,6 +88,7 @@ fn create_window(
     min_height: Option<f64>,
     title: Option<String>,
     show: Option<bool>,
+    background_color: Option<String>,
 ) {
     let mut builder =
         WebviewWindowBuilder::new(handle, window_label(win_id), WebviewUrl::App(url.into()))
@@ -75,11 +96,23 @@ fn create_window(
             .inner_size(width.unwrap_or(1200.0), height.unwrap_or(800.0))
             // The sidecar mirrors Electron's hidden-then-show pattern, but an
             // unmapped GTK window has no X11 handle yet and Servo needs one to
-            // create its surface — so the window is born visible. theme-boot.js
-            // paints the themed background before app.js runs, which is the same
-            // anti-flash contract the hidden window existed for.
+            // create its surface — so the window is born visible.
             .visible(true);
     let _ = show;
+    // Paint the native window in the app's boot theme before the webview has
+    // rendered anything.
+    //
+    // theme-boot.js is NOT sufficient on its own, though a previous comment
+    // here claimed it was. It covers the gap between first paint and app.js,
+    // but not the gap before the webview's first paint at all — and in that
+    // window the native surface shows its own default, which is white. Electron
+    // never flashes because `backgroundColor` is set on the BrowserWindow; the
+    // sidecar has always sent that value in `create-window` and this shell used
+    // to drop it on the floor, since the field was not even in the struct for
+    // serde to see.
+    if let Some(color) = background_color.as_deref().and_then(parse_hex_color) {
+        builder = builder.background_color(color);
+    }
     if let (Some(w), Some(h)) = (min_width, min_height) {
         builder = builder.min_inner_size(w, h);
     }
@@ -118,13 +151,24 @@ fn handle_sidecar_message(
             min_height,
             title,
             show,
+            background_color,
         } => {
             let handle = handle.clone();
             let stdin = stdin.clone();
             // Window creation must happen on the main thread on macOS/Windows.
             let _ = handle.clone().run_on_main_thread(move || {
                 create_window(
-                    &handle, &stdin, win_id, url, width, height, min_width, min_height, title, show,
+                    &handle,
+                    &stdin,
+                    win_id,
+                    url,
+                    width,
+                    height,
+                    min_width,
+                    min_height,
+                    title,
+                    show,
+                    background_color,
                 );
             });
         }

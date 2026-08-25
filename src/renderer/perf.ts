@@ -16,6 +16,8 @@ type Detail = Record<string, string | number | boolean | undefined>
 
 interface PerfBridge {
   enabled: boolean
+  /** Whether this launch should drive its own scripted chat turn. */
+  autopilot: boolean
   mark(name: string, detail?: Detail): void
   span(name: string, ms: number, detail?: Detail): void
 }
@@ -29,6 +31,7 @@ function readBridge(): PerfBridge | null {
   if (typeof mark !== 'function' || typeof span !== 'function') return null
   return {
     enabled: true,
+    autopilot: Reflect.get(candidate, 'autopilot') === true,
     mark: (name: string, detail?: Detail): void => {
       Reflect.apply(mark, candidate, [name, detail])
     },
@@ -41,6 +44,9 @@ function readBridge(): PerfBridge | null {
 const bridge = readBridge()
 
 export const perfOn = bridge !== null
+
+/** True only under `COPSE_PERF=1` *and* `COPSE_PERF_AUTOPILOT=1`. */
+export const autopilotOn = bridge?.autopilot === true
 
 export function mark(name: string, detail?: Detail): void {
   bridge?.mark(name, detail)
