@@ -716,7 +716,7 @@ const GH_WRITE_FLAGS: ReadonlySet<string> = new Set([
  * which live in the user's own `~/.config/gh/` — user-controlled configuration,
  * not repository-controlled, and so outside this classifier's threat model.
  */
-function classifyGhSegment(argv: readonly string[]): AutoApprovalTier | null {
+export function classifyGhSegment(argv: readonly string[]): AutoApprovalTier | null {
   const words = argv.slice(1).filter((token) => !isFlag(token))
   const pair = `${words[0] ?? ''} ${words[1] ?? ''}`.trim()
   if (GH_READ_SUBCOMMANDS.has(pair)) return 'read'

@@ -64,6 +64,28 @@ The in-memory grant disappears on restart. The decision record does not: an answ
 `decision` spine event at `scope: external-read`, including the paths and whether the grant was
 remembered. Each later allowed command records a verdict sourced to `read-outside-grant`.
 
+## Guarded YOLO
+
+Guarded YOLO is a session-only, thread-scoped mode armed from the composer footer. It becomes
+active at the next run start and stays active until disabled or the app restarts. It does not
+disable the OS sandbox.
+
+While active:
+
+- Routine shell commands skip ordinary scope prompts, subject to the host-owned harm gate in
+  `shell-harm.ts` (`allow` / one-time `prompt` / hard `deny`).
+- The thread is treated as holding the outside-project read grant above. Eligible plain reads of
+  non-credential paths auto-run; on macOS/Linux they stay contained with a widened `allowRead`
+  seatbelt rather than a full sandbox escape. Credential targets and paths as broad as `~` or `/`
+  remain hard-denied by the harm gate.
+- Writing or opaque GitHub CLI forms (`gh pr create`, `gh api`, …) prompt via the harm gate.
+  Dedicated mutating GitHub tools (`GITHUB_WRITE_TOOLS`) still always prompt. Read-only `gh`
+  carve-outs keep the normal sandboxed path.
+- Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
+  allows them.
+
+Update this document and the Guarded YOLO / harm / read-outside tests with any intentional change.
+
 ## Implementation map
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
