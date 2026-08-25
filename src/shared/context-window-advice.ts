@@ -28,7 +28,7 @@ export const VRAM_CALCULATOR_URL = 'https://apxml.com/tools/vram-calculator'
  * Points at the doc on the default branch so the link is stable once merged.
  */
 export const LM_STUDIO_CONTEXT_GUIDE_URL =
-  'https://github.com/jonathanKingston/agent-pane/blob/main/docs/lm-studio-context-persistence.md'
+  'https://github.com/copse-dev/agent-pane/blob/main/docs/lm-studio-context-persistence.md'
 
 /** True when a known context window is below the recommended minimum. */
 export function isContextWindowLow(

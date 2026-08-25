@@ -22,7 +22,7 @@ import { projectStoreNamespaceDir } from './project-namespace.ts'
  * git-friendly, portable, and searchable by the file tools.
  *
  * This is the editable, authored companion to the read-only chat store in
- * https://github.com/jonathanKingston/agent-pane/issues/644: both converge on OKF
+ * https://github.com/copse-dev/agent-pane/issues/644: both converge on OKF
  * files under `~/.copse`, but this store is *mutated in place* (statuses change,
  * notes get edited) where the chat store is an immutable transcript.
  *
