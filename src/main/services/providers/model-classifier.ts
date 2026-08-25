@@ -9,7 +9,7 @@ import { getAgentRole, type AgentRoleId } from '@copse/llm/agent-roles.ts'
 
 /**
  * Experimental, opt-in "model classifier" feature (tracked in
- * https://github.com/jonathanKingston/agent-pane/issues/557).
+ * https://github.com/copse-dev/agent-pane/issues/557).
  *
  * Given a task description and a few signals, recommend where the task sits on
  * the shared model intellect scale (`model-intellect.ts`) — and a
