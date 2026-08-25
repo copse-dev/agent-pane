@@ -46,12 +46,7 @@ import {
   DEFAULT_ACCENT_COLOR,
 } from './views/settings-dialog.ts'
 import { resolveTheme, applyThemeToDocument, watchSystemTheme } from './dom/theme.ts'
-import {
-  restoreUiScale,
-  bumpUiScale,
-  resetUiScale,
-  attachUiScalePinchGestures,
-} from './dom/ui-scale.ts'
+import { restoreUiScale, bumpUiScale, resetUiScale } from './dom/ui-scale.ts'
 import {
   mountOnboardingDialog,
   openOnboardingDialog,
@@ -415,7 +410,6 @@ async function boot(): Promise<void> {
   api.menu.onUiScaleReset(() => {
     void resetUiScale(store, api)
   })
-  attachUiScalePinchGestures(store, api)
 
   // MCP-UI canvas: an artefact from a (bundled or external) MCP server opens in
   // the Browser pane, rendered fully sandboxed.

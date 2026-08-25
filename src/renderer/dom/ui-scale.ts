@@ -45,37 +45,3 @@ export function restoreUiScale(saved: unknown): number {
   applyUiScale(uiScale)
   return uiScale
 }
-
-/**
- * Trackpad pinch arrives as ctrl+wheel in Chromium. Map it to uiScale steps.
- * Skip surfaces that already own local zoom (mermaid expand, image lightbox).
- */
-export function attachUiScalePinchGestures(
-  store: AppStore,
-  api: Pick<ApiClient, 'settings'>,
-): () => void {
-  let accum = 0
-
-  const onWheel = (event: WheelEvent): void => {
-    if (!event.ctrlKey) return
-    const target = event.target
-    if (
-      target instanceof Element &&
-      target.closest('.mermaid-expand-dialog, .attachment-preview-dialog')
-    ) {
-      return
-    }
-    event.preventDefault()
-    accum += event.deltaY
-    // Require a small gesture before stepping so tiny flickers don't spam writes.
-    if (Math.abs(accum) < 40) return
-    const direction: 1 | -1 = accum < 0 ? 1 : -1
-    accum = 0
-    void bumpUiScale(store, api, direction)
-  }
-
-  window.addEventListener('wheel', onWheel, { passive: false })
-  return () => {
-    window.removeEventListener('wheel', onWheel)
-  }
-}
