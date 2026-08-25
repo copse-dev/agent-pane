@@ -95,9 +95,10 @@ async function expectedSha(asset: string): Promise<string> {
  * Info.plist wins. The wrapper is ours, the executable inside it is the
  * generic one — which is the whole arrangement in miniature.
  *
- * The identifier is deliberately not the Electron app's. macOS keys permission
- * grants and window state off it, and the prototype should neither inherit the
- * real app's nor overwrite them.
+ * The identifier is reverse-DNS under copse.dev, a domain we own, and is
+ * deliberately not the Electron app's: macOS keys permission grants and window
+ * state off it, so the prototype should neither inherit the real app's nor
+ * overwrite them.
  */
 async function macAppBundle(binary: string, cacheDir: string): Promise<string> {
   const app = join(cacheDir, 'Copse.app')
@@ -112,7 +113,7 @@ async function macAppBundle(binary: string, cacheDir: string): Promise<string> {
   <key>CFBundleName</key><string>Copse</string>
   <key>CFBundleDisplayName</key><string>Copse</string>
   <key>CFBundleExecutable</key><string>tauri-shell</string>
-  <key>CFBundleIdentifier</key><string>dev.copse-panel.servo</string>
+  <key>CFBundleIdentifier</key><string>dev.copse.servo</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${SHELL_RELEASE.replace(/^v/, '')}</string>
   <key>NSHighResolutionCapable</key><true/>
