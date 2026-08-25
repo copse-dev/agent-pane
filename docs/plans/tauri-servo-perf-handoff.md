@@ -26,37 +26,22 @@ differences, not app differences.
 
 ## 2. Setup
 
-### 2.1 Checkouts (side by side, exact revs matter)
+### 2.1 Checkouts (two, and neither is the engine)
 
 ```bash
-git clone -b claude/tauri-servo-prototype-8ugtq4 https://github.com/copse-dev/agent-pane
+git clone https://github.com/copse-dev/agent-pane
 git clone https://github.com/copse-dev/tauri-runtime-servo
-
-# Servo at the rev behind the published release the runtime resolves, plus the
-# validated patch series (see servo-patches/README.md in the runtime repo)
-git clone https://github.com/copse-dev/servo
-git -C servo checkout -b tauri-runtime-patches 77fccacc1f1fdce10498d50173aafaa09d02879e
-git -C servo am ../tauri-runtime-servo/servo-patches/0*.patch
-
-# Stylo at the rev behind the release that servo resolves, with its own series.
-# Plain diffs behind a prose preamble, so `git am` rejects them.
-git clone https://github.com/copse-dev/stylo
-git -C stylo checkout -b tauri-runtime-patches 67faaab3ff7aa66780ec1d0f51ca47e177b812d3
-for p in tauri-runtime-servo/servo-patches/stylo-*.patch; do
-  git -C stylo apply --3way "../$p"
-done
 ```
 
-The engine clones are the org's own forks: the revisions are the ones behind
-the published `servo` and `stylo` releases either way, and a fork we control
-cannot have them force-pushed or garbage-collected out from under this
-recipe. The CSP crate needs no clone at all — its two patches live as commits
-on `copse-dev/rust-content-security-policy`, which the override names by rev.
+That is the whole setup. The engine is not a checkout any more: the patched
+Servo, stylo and CSP crates live as `tauri-runtime-patches` branches on the
+org's forks, `agent-pane/tauri-shell/Cargo.toml` pins each by rev, and cargo
+fetches them. Nothing to apply, no block to uncomment, and `patched-servo` is
+on by default — a build that used to depend on getting four manual steps right
+now depends on getting none.
 
-Then uncomment the single `[patch.crates-io]` block at the bottom of
-`agent-pane/tauri-shell/Cargo.toml` — servo, the CSP fork, and all eight stylo
-entries; uncomment every line of it — and add `features = ["patched-servo"]`
-to the `tauri-runtime-servo` dependency in the same file.
+The two repositories do have to be siblings: the shell consumes the runtime
+through `../../tauri-runtime-servo`.
 
 ### 2.2 System deps and build
 
