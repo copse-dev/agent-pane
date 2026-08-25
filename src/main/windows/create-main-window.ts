@@ -18,6 +18,7 @@ import { MainWindowStateRepository } from './main-window-state.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
 import { registerAppWindow } from './app-window-broadcast.ts'
 import { attachRendererCrashRecovery } from './renderer-crash-recovery.ts'
+import { attachVisualPinchZoom } from './visual-pinch-zoom.ts'
 
 const mainWindowRegistry = new MainWindowRegistry<BrowserWindow>()
 const mainWindowState = new MainWindowStateRepository({
@@ -259,6 +260,7 @@ export function createMainWindow(restoredRecord?: MainWindowRecord): BrowserWind
 
   attachWebContentsLockdown(win.webContents)
   attachRendererCrashRecovery(win.webContents)
+  attachVisualPinchZoom(win.webContents)
   win.on('unresponsive', () => {
     console.warn('[renderer] main window became unresponsive')
   })

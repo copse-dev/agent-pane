@@ -7,7 +7,7 @@ export const UI_SCALE_MIN = 0.75
 /** Largest allowed interface scale (150%). */
 export const UI_SCALE_MAX = 1.5
 
-/** Step used by ⌘+/- / pinch / menu Zoom In·Out. */
+/** Step used by ⌘+/- and the menu's Zoom In·Out actions. */
 export const UI_SCALE_STEP = 0.1
 
 /**
