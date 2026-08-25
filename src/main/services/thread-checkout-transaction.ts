@@ -28,6 +28,7 @@ import {
   getDefaultBranch,
   getGitStatus,
   isInsideGitWorkTree,
+  localBranchExists,
   repositoryHasSubmodules,
 } from './github/git-service.ts'
 
@@ -55,12 +56,28 @@ interface CheckoutInspection {
 
 /**
  * The blank-thread branch picker speaks for the live local checkout, so its
- * selected branch is the worktree base. A remote default is the next useful
- * choice when there is no local selection, with `main` as the conventional
- * final fallback.
+ * selected branch is the worktree base — but only once the repository is known
+ * to hold it. A remote default is the next useful choice, with `main` as the
+ * conventional final fallback.
+ *
+ * The existence check is load-bearing rather than defensive. `currentBranch`
+ * is a *reported* name, and a report is not a ref: the e2e suite replaces it
+ * wholesale via `COPSE_PANEL_MOCK_BRANCH` so the branch chip stays stable, and
+ * allocation rejects a base that resolves to nothing. Handing that name
+ * straight to the allocator turns every isolated checkout into "Base branch
+ * … does not exist in this repository" and strands the thread with no
+ * transcript — which is exactly how the automation specs fail. In a real
+ * checkout the name always resolves, so this costs one `show-ref` and changes
+ * nothing.
  */
-function checkoutBaseBranch(inspection: CheckoutInspection): string {
-  return inspection.currentBranch ?? inspection.defaultBranch ?? DEFAULT_GIT_BRANCH
+async function checkoutBaseBranch(
+  branchExists: (branch: string) => Promise<boolean>,
+  inspection: CheckoutInspection,
+): Promise<string> {
+  if (inspection.currentBranch && (await branchExists(inspection.currentBranch))) {
+    return inspection.currentBranch
+  }
+  return inspection.defaultBranch ?? DEFAULT_GIT_BRANCH
 }
 
 export interface ThreadCheckoutTransactionDependencies {
@@ -91,6 +108,8 @@ export interface ThreadCheckoutTransactionDependencies {
     projectRoot: string
     baseBranch: string
   }) => Promise<ThreadWorktree | null>
+  /** Whether the repository holds this branch, checked against its refs. */
+  branchExists: (projectRoot: string, branch: string) => Promise<boolean>
   validate: (input: {
     projectId: string
     threadId: string
@@ -193,6 +212,7 @@ const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   inspect: inspectProject,
   allocate: allocateThreadWorktree,
   recoverUnpersisted: recoverUnpersistedWorktree,
+  branchExists: localBranchExists,
   validate: validateThreadWorktree,
   retire: retireThreadWorktree,
   serialize: runSerialized,
@@ -294,7 +314,10 @@ export function createThreadCheckoutTransaction(
       // current selection is authoritative. Allocation separately recognizes
       // when this is the repository default and then fetches/uses the latest
       // upstream tip instead of a stale local commit.
-      const baseBranch = checkoutBaseBranch(inspection)
+      const baseBranch = await checkoutBaseBranch(
+        (branch) => dependencies.branchExists(project.path, branch),
+        inspection,
+      )
       // A prior allocate may have succeeded while meta persistence failed. Prefer
       // reclaiming that registration over a second allocate that would throw
       // "already registered" and strand the thread.
