@@ -229,6 +229,16 @@ class WebContentsShim extends EventEmitter {
   getZoomFactor(): number {
     return 1
   }
+  /**
+   * Chromium's transient pinch-zoom limits, which Servo has no equivalent for.
+   * A no-op resolved promise rather than an omission: `visual-pinch-zoom.ts`
+   * calls this unconditionally during window setup, so its absence threw
+   * during the WS hello and every renderer was refused the connection — the
+   * whole app, not just zoom.
+   */
+  setVisualZoomLevelLimits(_minimumLevel: number, _maximumLevel: number): Promise<void> {
+    return Promise.resolve()
+  }
 }
 
 const allWebContents = new Set<WebContentsShim>()
