@@ -1967,6 +1967,13 @@ dialog.settings-overlay::backdrop {
   gap: var(--spacing-sm);
   flex: none;
 }
+.plugin-toggle-control .plugin-toggle {
+  /* This label is a switch handle, not a stacked settings field. Without the
+     reset it inherits the field label's bottom margin, so flex centres Off/On
+     against the switch's taller outer box while the visible track stays at its
+     top edge. */
+  margin-bottom: 0;
+}
 .plugin-toggle-state {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
