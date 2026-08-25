@@ -18,6 +18,7 @@ import {
   parkThreadWorktree,
   parseWorktreePorcelain,
   pruneSafeOrphans,
+  readThreadWorktreeRecoveryMetadata,
   restoreRetiredThreadWorktree,
   retireThreadWorktree,
   ThreadWorktreeDetachedError,
@@ -348,6 +349,31 @@ describe('worktree manager', () => {
     assert.equal(worktree.seededFromDirtyProject, false)
     await assert.rejects(readFile(join(worktree.path, 'unstaged.txt'), 'utf-8'))
     assert.equal(git(repo, ['status', '--porcelain=v1', '-z']), beforeStatus)
+  })
+
+  it('retains the original base metadata after the thread branch advances', async () => {
+    const { repo } = await setup()
+    git(repo, ['branch', 'selected.base'])
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-recovery-metadata',
+      projectRoot: repo,
+      prompt: 'Retain allocation metadata',
+      baseBranch: 'selected.base',
+    })
+    await writeFile(join(worktree.path, 'later.txt'), 'committed after allocation\n')
+    git(worktree.path, ['add', '.'])
+    git(worktree.path, ['commit', '-q', '-m', 'advance thread branch'])
+
+    const recovered = await readThreadWorktreeRecoveryMetadata(repo, worktree.branch)
+    assert.deepEqual(recovered, {
+      baseBranch: worktree.baseBranch,
+      baseCommit: worktree.baseCommit,
+      createdAt: worktree.createdAt,
+      seededFromDirtyProject: worktree.seededFromDirtyProject,
+    })
+    assert.notEqual(git(worktree.path, ['rev-parse', 'HEAD']).trim(), recovered.baseCommit)
   })
 
   it('refuses to seed dirty content onto a base that moved off the project HEAD', async () => {

@@ -39,6 +39,8 @@ import {
 } from './windows/create-main-window.ts'
 import { setShellOutputSink } from './services/exec/shell-output-context.ts'
 import { setSecretCipher } from './services/storage/secret-cipher.ts'
+import { createKeyringCipher, createMigratingCipher } from './services/storage/keyring-cipher.ts'
+import { createOsKeyringStore } from './services/storage/os-keyring.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
@@ -195,11 +197,19 @@ import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
 // everything under it loadable without Electron (#1313). Installed at module
 // scope, before anything can read a key: this only stores the reference, and
 // `safeStorage` is not called until a key is actually read or written.
-setSecretCipher({
-  isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-  encryptString: (plainText) => safeStorage.encryptString(plainText),
-  decryptString: (encrypted) => safeStorage.decryptString(encrypted),
-})
+//
+// The installed cipher writes with the shell-neutral keyring cipher (a data key
+// in the OS keyring + AES-GCM, no Chromium involved) and still reads
+// `safeStorage` blobs, rewriting each one on first read. After a few releases
+// every active profile holds only keyring-cipher blobs, and a Copse shell that
+// is not Electron can open them without ever touching `safeStorage`.
+setSecretCipher(
+  createMigratingCipher(createKeyringCipher(createOsKeyringStore()), {
+    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+    encryptString: (plainText) => safeStorage.encryptString(plainText),
+    decryptString: (encrypted) => safeStorage.decryptString(encrypted),
+  }),
+)
 const taskSupervisor = getTaskSupervisor()
 
 // Own stdout/stderr's `error` events before anything can provoke one. A closed

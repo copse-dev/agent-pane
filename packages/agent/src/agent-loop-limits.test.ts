@@ -115,6 +115,16 @@ describe('agent-loop-limits', () => {
     assert.equal(deadline.isIdleExpired(start + 201), true)
   })
 
+  it('reports hard wall-clock elapsed and remaining time even while paused', () => {
+    let now = 1_000
+    const deadline = new AgentRunDeadline(100, 10_000, now, () => now)
+    deadline.pause()
+    now += 4_000
+    assert.equal(deadline.elapsedWallTimeMs(), 4_000)
+    assert.equal(deadline.remainingWallTimeMs(), 6_000)
+    assert.equal(deadline.isIdleExpired(), false)
+  })
+
   it('composes nested pauses (ref-counted) so an inner resume never un-pauses the outer region', () => {
     // H4 (decision 13): a blocking hook that pauses the idle deadline while it
     // already sits inside a paused tool-execution region must not re-arm the
