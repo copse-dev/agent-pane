@@ -10,7 +10,7 @@ import { detectLanguage } from '../services/language.ts'
 export const writeFileTool = defineTool({
   name: 'write_file',
   description:
-    'Write a complete file. Applies directly when the git worktree is clean or only contains Copse-applied edits from this session; otherwise stages a proposed diff for user approval.',
+    'Write a complete file. Creating a new file always applies directly. Overwriting an existing one applies directly when the git worktree is clean or only contains Copse-applied edits from this session; otherwise it stages a proposed diff for user approval.',
   parameters: z.object({
     path: z.string().describe('File path relative to workspace root'),
     content: z.string().describe('Complete new file content'),

@@ -11,6 +11,7 @@ import type {
 import {
   MODEL_FOLLOW_UP_PRESETS,
   buildChangesSuggestion,
+  buildContinuePlanSuggestion,
   buildDebugCiSuggestion,
   buildFixMergeConflictsSuggestion,
 } from '@shared/follow-ups/presets.ts'
@@ -139,10 +140,21 @@ export function buildPluginFollowUps(
   return out
 }
 
-function buildDeterministicFollowUps(
+/** Deterministic bubbles: open-plan first, then git/PR facts. Exported for tests. */
+export function buildDeterministicFollowUps(
   ctx: Awaited<ReturnType<typeof getPrWorkspaceContext>>,
+  context: FollowUpContext,
 ): FollowUpSuggestion[] {
   const out: FollowUpSuggestion[] = []
+
+  // A plan the turn left unfinished is a fact about the run itself, so it
+  // outranks even git/PR state — the user's most likely next move is resuming
+  // that item, and the pre-review continuation gate has already had its chance
+  // to reconcile by the time bubbles render.
+  if (context.openTodos && context.openTodos.length > 0) {
+    const plan = buildContinuePlanSuggestion(context.openTodos)
+    out.push({ id: plan.id, label: plan.label, prompt: plan.prompt })
+  }
 
   if (ctx.changeStats) {
     const changes = buildChangesSuggestion(ctx.changeStats)
@@ -184,6 +196,7 @@ function buildDeterministicFollowUps(
 export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
   const changes = buildChangesSuggestion({ additions: 1, deletions: 1 })
   const ci = buildDebugCiSuggestion()
+  const plan = buildContinuePlanSuggestion(['Run the test suite'])
   return [
     {
       id: changes.id,
@@ -196,6 +209,9 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
     },
     { id: ci.id, label: ci.label, prompt: ci.prompt },
     { id: MODEL_COMPARISON_FOLLOW_UP_ID, label: 'Compare models', action: 'model-compare' },
+    // Present so the continue-plan bubble kind is drivable headlessly; the real
+    // gate needs a thread whose persisted plan has open items.
+    { id: plan.id, label: plan.label, prompt: plan.prompt },
   ]
 }
 
@@ -211,7 +227,7 @@ export async function suggestFollowUps(
     return mockFollowUpSuggestions()
   }
   const workspaceCtx = await getPrWorkspaceContext(root)
-  const deterministic = buildDeterministicFollowUps(workspaceCtx)
+  const deterministic = buildDeterministicFollowUps(workspaceCtx, context)
   const modelPicks = await pickModelFollowUps(context)
 
   // Order: deterministic git/PR signals, then plugin offers, then the small

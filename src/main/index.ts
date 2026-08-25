@@ -31,12 +31,16 @@ import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import {
   assertPrimaryMainWindow,
+  beginMainWindowQuit,
   createMainWindow,
   getFocusedMainWindow,
   getMainWindow,
+  getRestorableMainWindowRecords,
 } from './windows/create-main-window.ts'
 import { setShellOutputSink } from './services/exec/shell-output-context.ts'
 import { setSecretCipher } from './services/storage/secret-cipher.ts'
+import { createKeyringCipher, createMigratingCipher } from './services/storage/keyring-cipher.ts'
+import { createOsKeyringStore } from './services/storage/os-keyring.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
@@ -74,6 +78,7 @@ import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-wat
 import {
   reapOversizedGortexDaemon,
   reclaimBloatedGortexStore,
+  repairCorruptGortexConfig,
   stopGortexDaemon,
 } from './services/search/semantic-index.ts'
 import { initTerminal } from './ipc/terminal.ts'
@@ -110,6 +115,7 @@ import {
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
+import { suggestNextStep } from './services/next-step-service.ts'
 import { clearAgentHistory } from './services/thread-store.ts'
 import { AgentDispatcher } from './services/agent-dispatcher.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
@@ -142,6 +148,8 @@ import {
   stopEventLoopWatchdog,
 } from './services/diagnostics/event-loop-watchdog.ts'
 import { installProcessFaultHandlers } from './services/diagnostics/process-faults.ts'
+import { installStdioGuard, isLogSinkAlive } from './services/diagnostics/stdio-guard.ts'
+import { runWithDeadline } from './services/diagnostics/shutdown-deadline.ts'
 import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { getSetting } from './services/storage/settings.ts'
@@ -172,7 +180,14 @@ import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
 import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
 import { installCiWatchConsumer } from './services/github/ci-watch-service.ts'
-import { CANVAS_ARTEFACT_CHANNEL, setCanvasArtefactSink } from './services/canvas-dispatch.ts'
+import {
+  CANVAS_ARTEFACT_CHANNEL,
+  CANVAS_ARTEFACT_SHOW_CHANNEL,
+  setCanvasArtefactMirror,
+  setCanvasArtefactSink,
+} from './services/canvas-dispatch.ts'
+import { mirrorArtefactToAgent } from './services/canvas-agent-mirror.ts'
+import { getBrowserSession } from './services/browser/session-manager.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
 import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
@@ -182,17 +197,43 @@ import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
 // everything under it loadable without Electron (#1313). Installed at module
 // scope, before anything can read a key: this only stores the reference, and
 // `safeStorage` is not called until a key is actually read or written.
-setSecretCipher({
-  isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-  encryptString: (plainText) => safeStorage.encryptString(plainText),
-  decryptString: (encrypted) => safeStorage.decryptString(encrypted),
-})
+//
+// The installed cipher writes with the shell-neutral keyring cipher (a data key
+// in the OS keyring + AES-GCM, no Chromium involved) and still reads
+// `safeStorage` blobs, rewriting each one on first read. After a few releases
+// every active profile holds only keyring-cipher blobs, and a Copse shell that
+// is not Electron can open them without ever touching `safeStorage`.
+setSecretCipher(
+  createMigratingCipher(createKeyringCipher(createOsKeyringStore()), {
+    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+    encryptString: (plainText) => safeStorage.encryptString(plainText),
+    decryptString: (encrypted) => safeStorage.decryptString(encrypted),
+  }),
+)
 const taskSupervisor = getTaskSupervisor()
+
+// Own stdout/stderr's `error` events before anything can provoke one. A closed
+// terminal makes every later write fail with EIO; unowned, that failure becomes
+// an uncaught exception, which the handler below logs, which writes again —
+// 100% CPU until SIGKILL (issue #1911). Must precede the fault handlers: it is
+// what stops a fault report from manufacturing the next fault.
+//
+// Losing stdio still ends the run, it just ends it deliberately now. That is
+// load-bearing for headless ACP mode, which speaks its protocol over stdout: a
+// broken pipe there means the client is gone, and used to exit the process via
+// the crash this guard now prevents.
+installStdioGuard({
+  onSinkLost: () => {
+    approveClose()
+    app.quit()
+  },
+})
 
 // Record escaped faults and quit through the normal cleanup path so an
 // uncaught watcher/`error` event drains the write queue instead of dying
 // mid-write. Watcher sites also bind their own listeners; this is the backstop.
 installProcessFaultHandlers({
+  isLogSinkAlive,
   onUncaughtException: () => {
     approveClose()
     app.quit()
@@ -207,6 +248,11 @@ setBrowserSessionPlatform({
     if (!win || win.isDestroyed()) return
     win.webContents.send('browser:show-tab', url)
   },
+  showArtefact: (identity) => {
+    const win = getMainWindow()
+    if (!win || win.isDestroyed()) return
+    win.webContents.send(CANVAS_ARTEFACT_SHOW_CHANNEL, identity)
+  },
 })
 
 setVideoDecoderPlatform({
@@ -220,6 +266,10 @@ setCanvasArtefactSink((artefact) => {
   if (!win || win.isDestroyed()) return
   win.webContents.send(CANVAS_ARTEFACT_CHANNEL, artefact)
 })
+
+// Load every artefact into the headless agent session as well, so the model can
+// snapshot and screenshot the canvas it just rendered instead of working blind.
+setCanvasArtefactMirror((artefact) => mirrorArtefactToAgent(artefact, getBrowserSession()))
 
 setContextEstimateRefreshSink(() => {
   const win = getMainWindow()
@@ -278,6 +328,11 @@ if (!gotSingleInstanceLock) {
 app
   .whenReady()
   .then(async () => {
+    // Ahead of the mode branches below: every mode, headless included, should
+    // stop when its terminal does. See `installSignalHandlers` for why this
+    // cannot be done at module scope.
+    installSignalHandlers()
+
     if (acpMode) {
       // Headless ACP agent over stdio: bootstrap tools/provider, no window.
       const { runAcpAgentMode } = await import('./services/acp/acp-app-entry.ts')
@@ -318,13 +373,18 @@ app
     // stops it before unlinking (otherwise the space stays held by the open
     // inode). The index is derived data and rebuilds on the next workspace open.
     await reclaimBloatedGortexStore()
+    // Heal a torn gortex config.yaml (concurrent exclude/track writers) before
+    // anything starts the daemon — a single garbage line makes gortex ignore
+    // the whole file, so the daemon boots with no repos and indexing fails.
+    await repairCorruptGortexConfig()
 
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
 
     recordStartupPhase('window-create')
     perfMark('main:window-create')
-    const win = createMainWindow()
+    const windows = getRestorableMainWindowRecords().map((record) => createMainWindow(record))
+    const win = windows[0] ?? createMainWindow()
     // The shell tool streams child output through a sink rather than reaching
     // for the window itself, so `createRegistry()` stays importable without
     // Electron (#1313). Read the window per chunk rather than capturing `win`,
@@ -332,7 +392,7 @@ app
     setShellOutputSink((chunk, taskId) => {
       getMainWindow()?.webContents.send('agent:shell_output', chunk, taskId)
     })
-    applyAppIcon([win])
+    applyAppIcon(windows.length > 0 ? windows : [win])
     const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, false)
     buildAppMenu(
       {
@@ -745,6 +805,21 @@ app
       },
     )
 
+    ipcMain.handle('agent:suggestNextStep', (event, contextJson: string) => {
+      assertMainFrameSender(event, win)
+      let rawContext: unknown
+      try {
+        rawContext = JSON.parse(contextJson)
+      } catch {
+        throw new Error('agent:suggestNextStep: context is not valid JSON')
+      }
+      const parsed = followUpContextSchema.safeParse(rawContext)
+      if (!parsed.success) {
+        throw new Error('agent:suggestNextStep: context failed validation')
+      }
+      return suggestNextStep(parsed.data)
+    })
+
     // Every channel the renderer can invoke is registered by here, so it is now
     // safe to block on the probe. Both syncs read `isGhAvailable()`, which only
     // answers truthfully once this resolves — `createRegistry()` ran while the
@@ -805,6 +880,23 @@ app
 
 let quitCleanupStarted = false
 let quitCleanupFinished = false
+
+/**
+ * Ceiling on quit cleanup, past which the app exits hard.
+ *
+ * Deliberately generous, because the hard exit is not free: `cleanupBeforeQuit`
+ * awaits `drainWriteQueue` partway through, so exiting early can drop writes a
+ * thread has not yet persisted. The steps that can realistically hang are the
+ * ones that talk to other processes (ACP sessions, the task supervisor, the VNC
+ * and preview servers, then MCP/sandbox/gortex), and 30s is well past their
+ * honest worst case while still being an amount of time a person will wait.
+ *
+ * The trade this makes: data loss becomes possible in a case where it was not
+ * before, in exchange for a wedged process becoming impossible. That is the
+ * right way round — the old behaviour hung forever holding the same unwritten
+ * data, and did so silently.
+ */
+const QUIT_CLEANUP_DEADLINE_MS = 30_000
 let disposeTerminal: (() => void) | undefined
 let disposeVnc: (() => Promise<void>) | undefined
 let disposeLongTaskWake: (() => void) | undefined
@@ -854,6 +946,7 @@ app.on('before-quit', (event) => {
   // kills the in-flight turns the user is being warned about, so a prompt after
   // it would come too late to save them. Re-issues the quit once confirmed.
   if (deferQuitForCloseConfirmation(event)) return
+  beginMainWindowQuit()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
   // The hidden video-decoder window is not the main window, so nothing else
@@ -862,23 +955,53 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   if (quitCleanupStarted) return
   quitCleanupStarted = true
-  void cleanupBeforeQuit()
-    .catch((err: unknown) => {
+  void runWithDeadline(cleanupBeforeQuit, QUIT_CLEANUP_DEADLINE_MS, {
+    onError: (err) => {
       console.error('[shutdown] Cleanup failed:', err)
-    })
-    .finally(() => {
-      quitCleanupFinished = true
-      app.quit()
-    })
+    },
+    onTimeout: () => {
+      console.error(
+        `[shutdown] Cleanup exceeded ${String(QUIT_CLEANUP_DEADLINE_MS)}ms; exiting anyway`,
+      )
+    },
+  }).then((outcome) => {
+    quitCleanupFinished = true
+    // A cleanup that blew its deadline is still pending, so `app.quit()` would
+    // hand control back to a teardown that has already proved it will not
+    // finish. `app.exit` skips the lifecycle events entirely.
+    if (outcome === 'timed-out') app.exit(0)
+    else app.quit()
+  })
 })
 
 function quitFromSignal(signal: NodeJS.Signals): void {
   console.log(`[shutdown] Received ${signal}; quitting`)
   // A signal is not a user at the keyboard — there is nobody to answer the
-  // running-thread prompt, and blocking here would hang the shutdown.
+  // running-thread prompt, and blocking here would hang the shutdown. This is
+  // load-bearing for SIGHUP in particular: the same hangup that delivers the
+  // signal also kills the renderer, so the prompt would go to a window that can
+  // never answer and the quit would stall for the full confirmation timeout.
   approveClose()
   app.quit()
 }
 
-process.on('SIGINT', quitFromSignal)
-process.on('SIGTERM', quitFromSignal)
+/**
+ * Registering these is deferred to `whenReady` on purpose.
+ *
+ * Chromium installs its own handlers for INT/TERM/HUP during startup and
+ * replaces libuv's, so a `process.on('SIG…')` bound at module scope is silently
+ * discarded — measured on Electron 43: a top-level listener never runs, the
+ * same listener bound after `whenReady` always does. The previous top-level
+ * registration meant `quitFromSignal` had not run for any signal, and with it
+ * the `approveClose()` above (issue #1911).
+ *
+ * SIGHUP is the one that matters for `make run`: closing the terminal hangs up
+ * the pty and the kernel sends it to the whole foreground process group, so it
+ * arrives here directly — nothing needs to forward it through make, pnpm or the
+ * Electron CLI wrapper.
+ */
+function installSignalHandlers(): void {
+  for (const signal of ['SIGHUP', 'SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, quitFromSignal)
+  }
+}

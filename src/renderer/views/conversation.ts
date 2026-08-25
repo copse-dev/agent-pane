@@ -8,6 +8,7 @@ import {
   warningIcon,
   zapIcon,
 } from '../dom/icons.ts'
+import { fillUserPromptFold, splitUserPromptForFold } from './user-prompt-fold.ts'
 import {
   getHookCardStatusLabel,
   getHookCardTitle,
@@ -25,6 +26,12 @@ import {
 } from '@shared/hooks/hook-run-detail.ts'
 import type { HookRunDetail } from '@shared/types/hooks.ts'
 import type { AppStore } from '@shared/store/store.ts'
+import {
+  artefactUriFromToolResult,
+  getArtefactPreview,
+  requestArtefactShow,
+} from '../canvas/artefact-previews.ts'
+import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { attachTableCopyButtons } from '../markdown/table-copy.ts'
@@ -36,6 +43,7 @@ import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
+import { splitCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import type {
   Message,
   SubagentSession,
@@ -47,6 +55,7 @@ import {
   formatPrimaryChatModelLabel,
   shouldShowPrimaryChatModelLabels,
 } from '@shared/threads/message-model.ts'
+import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
@@ -62,6 +71,7 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { navigateToChange } from '../controller/panels.ts'
+import { hydrationFailed, needsHydration } from '../controller/thread-hydration.ts'
 import { createPluginPanelEl } from './plugin-panel.ts'
 import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/plugin-panel.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
@@ -110,8 +120,16 @@ function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
   )
 }
 
-function createToolResultSection(result: string | null, format?: 'markdown'): HTMLElement {
-  if (!result) return el('div', { class: 'tool-result' })
+function createToolResultSection(
+  result: string | null,
+  format?: 'markdown',
+  showEmptyState = false,
+): HTMLElement {
+  if (!result) {
+    return showEmptyState
+      ? el('div', { class: 'tool-result tool-result-empty' }, 'No tool details were provided.')
+      : el('div', { class: 'tool-result' })
+  }
   // ACP tool output is agent-authored Markdown — render it through the same
   // pipeline as assistant messages so fenced code, lists and prose display
   // instead of literal backticks. Built-in results stay in a plain `<pre>`.
@@ -235,9 +253,14 @@ function appendStandardToolSections(
   )
   card.append(header)
   const buildBody = (): void => {
+    const argsSection = createToolArgsSection(tc.args)
     card.append(
-      ...appendIfPresent(createToolArgsSection(tc.args)),
-      createToolResultSection(tc.result, tc.resultFormat),
+      ...appendIfPresent(argsSection),
+      createToolResultSection(
+        tc.result,
+        tc.resultFormat,
+        argsSection === null && tc.status !== 'running',
+      ),
     )
   }
   if (card.open) {
@@ -259,7 +282,45 @@ function appendIfPresent(node: Node | null): Node[] {
   return node ? [node] : []
 }
 
-function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLDetailsElement {
+/**
+ * The thumbnail-and-Open card for a rendered canvas artefact, or null when this
+ * tool call did not render one (or rendered before a preview could be captured
+ * — a missing thumbnail is normal, see `CanvasArtefact.preview`).
+ *
+ * Placed after the standard sections so the args and result stay where every
+ * other card keeps them; the preview is an addition, not a replacement.
+ */
+function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement | null {
+  if (tc.status !== 'done') return null
+  const uri = artefactUriFromToolResult(tc.result)
+  if (!uri) return null
+  const title = artefactTitleFromUri(uri)
+  const preview = getArtefactPreview(threadId, title)
+  if (!preview) return null
+
+  const open = el('button', { type: 'button', class: 'ui-btn ui-btn-secondary' }, 'Open')
+  open.addEventListener('click', () => {
+    requestArtefactShow(threadId, title)
+  })
+  return el(
+    'div',
+    { class: 'canvas-preview-card' },
+    el('img', { class: 'canvas-preview-image', src: preview, alt: `Preview of ${title}` }),
+    el(
+      'div',
+      { class: 'canvas-preview-footer' },
+      el('span', { class: 'canvas-preview-title' }, title),
+      open,
+    ),
+  )
+}
+
+function createIndividualToolCard(
+  tc: ToolCall,
+  label: string,
+  api: ApiClient,
+  threadId: string,
+): HTMLDetailsElement {
   if (tc.subagent) return createSubagentToolCard(tc, label, api)
 
   const card = el('details', {
@@ -268,11 +329,20 @@ function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): 
     'data-status': tc.status,
   })
   appendStandardToolSections(card, tc, label, 'tool-card-header')
+  onToolCardBodyBuilt(card, () => {
+    const preview = createCanvasPreviewSection(tc, threadId)
+    if (preview) card.append(preview)
+  })
   return card
 }
 
-function assistantDisplayText(content: string): string {
-  return stripTextToolCallBlocks(content)
+function assistantDisplayParts(content: string): {
+  body: string
+  transportNoise: string | null
+} {
+  const stripped = stripTextToolCallBlocks(content)
+  const { body, noise } = splitCursorAcpTransportNoise(stripped)
+  return { body, transportNoise: noise }
 }
 
 function summaryPreview(text: string, max = 200): string {
@@ -301,13 +371,60 @@ function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
 // instead of rebuilding the whole message innerHTML each token (O(n²)).
 const streamingRenderers = new WeakMap<HTMLElement, StreamingMarkdownRenderer>()
 
+/**
+ * Cursor ACP may append a trailing `Error: RetriableError: …` transport line
+ * after useful output. Keep it out of the primary markdown for everyone. In
+ * developer mode (same gate as Hooks), demote the stripped lines into a
+ * collapsed disclosure; otherwise hide them entirely.
+ *
+ * The disclosure is a sibling of `.message-text`, not a child — the streaming
+ * markdown renderer owns that element's children. When the text node is not yet
+ * mounted, stash the noise and flush on the next sync once a parent exists.
+ */
+let showAcpTransportNoiseDisclosure: () => boolean = (): boolean => false
+
+function syncAcpTransportNoiseDisclosure(messageTextEl: HTMLElement, noise: string | null): void {
+  const visibleNoise = showAcpTransportNoiseDisclosure() ? noise : null
+  const host = messageTextEl.parentElement
+  if (!host) {
+    if (visibleNoise) messageTextEl.dataset['pendingAcpTransportNoise'] = visibleNoise
+    else delete messageTextEl.dataset['pendingAcpTransportNoise']
+    return
+  }
+  delete messageTextEl.dataset['pendingAcpTransportNoise']
+  let details = host.querySelector<HTMLDetailsElement>(':scope > .acp-transport-noise')
+  if (!visibleNoise) {
+    details?.remove()
+    return
+  }
+  if (!details) {
+    details = el('details', { class: 'acp-transport-noise' })
+    details.append(
+      el('summary', { class: 'acp-transport-noise-summary' }, 'Agent transport note'),
+      el('pre', { class: 'acp-transport-noise-body' }),
+    )
+    messageTextEl.after(details)
+  } else if (details.previousElementSibling !== messageTextEl) {
+    messageTextEl.after(details)
+  }
+  const body = details.querySelector('.acp-transport-noise-body')
+  if (body) body.textContent = visibleNoise
+}
+
+/** Flush a disclosure that was computed before `.message-text` had a parent. */
+function flushPendingAcpTransportNoise(messageTextEl: HTMLElement): void {
+  const pending = messageTextEl.dataset['pendingAcpTransportNoise']
+  if (pending === undefined) return
+  syncAcpTransportNoiseDisclosure(messageTextEl, pending)
+}
+
 function setAssistantMarkdown(
   el: HTMLElement,
   content: string,
   streaming: boolean,
   api: ApiClient,
 ): void {
-  const display = assistantDisplayText(content)
+  const { body: display, transportNoise } = assistantDisplayParts(content)
   if (streaming) {
     el.classList.add('is-streaming')
     let renderer = streamingRenderers.get(el)
@@ -317,6 +434,8 @@ function setAssistantMarkdown(
     }
     renderer.update(display)
     attachCodeBlockCopyButtons(el)
+    // Demote as soon as the trailing line is complete; keep collapsed while live.
+    syncAcpTransportNoiseDisclosure(el, transportNoise)
     return
   }
   // Final render: replace the incremental scaffold with the finished markdown.
@@ -330,6 +449,7 @@ function setAssistantMarkdown(
   void annotateFileReferences(el, api)
   hydrateRemoteArtifactImages(el, api)
   void renderMermaidIn(el)
+  syncAcpTransportNoiseDisclosure(el, transportNoise)
 }
 
 /** Turn composer single newlines into CommonMark hard breaks; skip fenced code. */
@@ -351,8 +471,8 @@ function hardBreakSingleNewlines(text: string): string {
   return text.replace(/(?<!\n)\n(?!\n)/g, '  \n')
 }
 
-/** Render a settled user prompt: markdown like assistant replies, without post-processing hooks. */
-function setUserMarkdown(el: HTMLElement, content: string): void {
+/** Render markdown into a user-prompt sink (full bubble or one fold region). */
+function paintUserMarkdown(el: HTMLElement, content: string): void {
   if (!content) {
     el.replaceChildren()
     return
@@ -362,6 +482,19 @@ function setUserMarkdown(el: HTMLElement, content: string): void {
   // elements and the command vanishes from the transcript.
   el.innerHTML = renderMarkdown(userPromptMarkdown(content), { htmlPolicy: 'escape-all' })
   attachCodeBlockCopyButtons(el)
+}
+
+/**
+ * Settled user prompt: markdown like assistant replies. Long prompts (>10 lines)
+ * get a mid-fold accordion — opening + closing stay visible; middle collapses.
+ */
+function setUserMarkdown(el: HTMLElement, content: string): void {
+  const parts = splitUserPromptForFold(content)
+  if (!parts) {
+    paintUserMarkdown(el, content)
+    return
+  }
+  fillUserPromptFold(el, parts, paintUserMarkdown)
 }
 
 function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {
@@ -411,9 +544,8 @@ function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['s
 // without it, and so is the silent cloud fallback when LM Studio is unreachable.
 function subagentModelBadge(session: SubagentSession): HTMLElement | null {
   if (!session.model) return null
-  const isLocal = session.model.startsWith('lmstudio:')
   const badge = el('div', { class: 'subagent-model' })
-  badge.textContent = isLocal ? `${session.model.slice('lmstudio:'.length)} · local` : session.model
+  badge.textContent = displayModelLabel(session.model)
   if (session.localFallback) {
     badge.textContent += ' — local model unavailable, ran on cloud'
     badge.classList.add('subagent-model-fallback')
@@ -519,6 +651,7 @@ function syncSubagentTimeline(
     const node = desired[i]
     if (!node) continue
     if (timeline.children[i] !== node) timeline.insertBefore(node, timeline.children[i] ?? null)
+    flushPendingAcpTransportNoise(node)
   }
 }
 
@@ -593,8 +726,8 @@ function populateSubagentCard(
     const previewEl = el('div', {
       class: 'subagent-summary-preview message-text streaming-markdown',
     })
-    setAssistantMarkdown(previewEl, summaryPreview(preview), false, api)
     card.append(previewEl)
+    setAssistantMarkdown(previewEl, summaryPreview(preview), false, api)
   }
 
   const argsSection = createToolArgsSection(tc.args)
@@ -608,8 +741,8 @@ function populateSubagentCard(
       class:
         'subagent-parent-result subagent-message subagent-message-assistant message-text streaming-markdown',
     })
-    setAssistantMarkdown(resultEl, parentResult, false, api)
     card.append(resultEl)
+    setAssistantMarkdown(resultEl, parentResult, false, api)
   }
 
   subagentCardChromeSig.set(card, chromeSig)
@@ -658,6 +791,7 @@ function createGroupToolCard(
 function createRollupToolCard(
   item: Extract<ToolCallDisplayItem, { type: 'rollup' }>,
   api: ApiClient,
+  threadId: string,
 ): HTMLDetailsElement {
   const status = aggregateToolStatus(item.toolCalls)
   const card = el('details', {
@@ -672,16 +806,20 @@ function createRollupToolCard(
       : undefined
   const body = el('div', { class: 'tool-rollup-body' })
   for (const child of item.children) {
-    body.append(createToolCard(child, api))
+    body.append(createToolCard(child, api, threadId))
   }
   card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
   return card
 }
 
-function createToolCard(item: ToolCallDisplayItem, api: ApiClient): HTMLDetailsElement {
-  if (item.type === 'rollup') return createRollupToolCard(item, api)
+function createToolCard(
+  item: ToolCallDisplayItem,
+  api: ApiClient,
+  threadId: string,
+): HTMLDetailsElement {
+  if (item.type === 'rollup') return createRollupToolCard(item, api, threadId)
   if (item.type === 'group') return createGroupToolCard(item)
-  return createIndividualToolCard(item.toolCall, item.label, api)
+  return createIndividualToolCard(item.toolCall, item.label, api, threadId)
 }
 
 // Stable identity for a tool card across `tool_call_updated` ticks: group cards
@@ -1001,6 +1139,9 @@ function appendMessageContent(
     body.append(buildReasoningEl(msg.reasoning, !msg.content.trim(), false))
   }
   const textEl = el('div', { class: 'message-text streaming-markdown' })
+  // Attach before markdown so ACP transport-noise disclosure can find a parent
+  // and insert itself as a sibling of `.message-text`.
+  body.append(textEl)
   if (msg.role === 'assistant' && msg.content) {
     setAssistantMarkdown(textEl, msg.content, false, api)
   } else if (msg.role === 'user' && msg.attachments?.length) {
@@ -1010,7 +1151,6 @@ function appendMessageContent(
   } else {
     textEl.textContent = msg.content
   }
-  body.append(textEl)
 }
 
 /** True when reasoning should fold into the tool rollup for this message. */
@@ -1204,6 +1344,44 @@ function syncNestedRollupReasoning(
   })
 }
 
+/**
+ * Placeholder shown in place of a transcript that has not been read off disk
+ * yet (see attachThreadHydration). When the thread has a live run, say so —
+ * the user switching into it deserves "the agent is working" rather than a
+ * pane that looks idle until the next stream event lands.
+ */
+function hydrationNoticeEl(running: boolean): HTMLElement {
+  const notice = el(
+    'div',
+    {
+      class: `conversation-hydrating${running ? ' conversation-hydrating-running' : ''}`,
+      role: 'status',
+      'aria-live': 'polite',
+    },
+    reasoningActivityIcon('reasoning-activity-icon'),
+    el(
+      'span',
+      { class: 'conversation-hydrating-label' },
+      running ? 'Agent is working — loading the conversation…' : 'Loading the conversation…',
+    ),
+  )
+  return notice
+}
+
+/**
+ * Shown instead of {@link hydrationNoticeEl} when the transcript read failed
+ * (see `fetchInto`'s catch in thread-hydration.ts): an honest line, without a
+ * spinner, rather than a "Loading…" that will never finish. `messagesLoaded`
+ * stays false, so selecting the thread again retries.
+ */
+function hydrationFailureEl(): HTMLElement {
+  return el(
+    'div',
+    { class: 'conversation-hydrating conversation-hydrating-failed', role: 'status' },
+    el('span', { class: 'conversation-hydrating-label' }, 'Couldn’t load the conversation.'),
+  )
+}
+
 const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
@@ -1216,6 +1394,7 @@ const INITIAL_RENDER_WINDOW = 40
 const BACKFILL_CHUNK_SIZE = 30
 
 export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
+  showAcpTransportNoiseDisclosure = (): boolean => store.getState().developerMode
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
@@ -1591,6 +1770,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       return
     }
     const thread = getThreadById(store, tid)
+    // While the transcript is still loading, the hydration notice already says
+    // the agent is working — a second live "Reasoning…" row under it would be
+    // noise. The post-hydration threads_changed re-syncs and shows it then. A
+    // FAILED hydration is exempt: its notice makes no working claim, and the
+    // agent may still be running (see hydrationFailureEl).
+    if (thread && needsHydration(thread) && !hydrationFailed(thread.id)) {
+      setActivity(null)
+      return
+    }
     // Writing state lives in the agent controller; agent_activity events carry the label.
     setActivity(agentActivityLabel(thread, false))
   }
@@ -1731,6 +1919,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       reasoningLive?: boolean
     } = {},
   ): void {
+    const threadId = store.getState().activeThreadId ?? ''
     const userExpandedRollups = new Set<string>()
     msgEl.querySelectorAll<HTMLElement>('.tool-card-rollup[open]').forEach((node) => {
       const key = node.dataset['rollupKey']
@@ -1801,7 +1990,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         // The stale node was already claimed out of `existing`, so the cleanup
         // below won't drop it — remove it here or the rebuilt card duplicates.
         card?.remove()
-        card = createToolCard(item, api)
+        card = createToolCard(item, api, threadId)
         toolCardKeys.set(card, key)
         toolCardSignatures.set(card, sig)
       }
@@ -1908,7 +2097,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     renderMessageHookCards(threadId, msgId)
   }
 
-  function appendMessageEl(threadId: string, msgId: string): void {
+  /**
+   * Insert a message at the transcript tail.
+   *
+   * `batched` skips the three per-message passes at the end. Each of them is
+   * either O(thread length) or forces a synchronous layout, so running them once
+   * per message turns rendering a window of N messages into O(N × thread length)
+   * DOM work plus N reflows — which is what made switching into a long thread
+   * stall. `rebuildForThread` runs them once for the whole window instead, the
+   * same way `backfillOlderMessages` already does for its chunks.
+   */
+  function appendMessageEl(threadId: string, msgId: string, batched = false): void {
     if (threadId !== store.getState().activeThreadId) return
     const thread = getThreadById(store, threadId)
     const msg = thread?.messages.find((m) => m.id === msgId)
@@ -1935,6 +2134,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       list.insertBefore(msgEl, activityBar.isConnected ? activityBar : trailingCard)
     } else list.insertBefore(msgEl, activityBar.isConnected ? activityBar : null)
     finalizeMessageEl(threadId, msgId)
+    if (batched) return
     // Model labels appear only once the primary chat has used more than one
     // model, and only at model-segment boundaries (first assistant turn of
     // each contiguous model run). Syncing after each append also backfills
@@ -2061,10 +2261,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
     // A segment starts where the model *or* the parameters change, so dialling
     // effort up mid-thread marks the turn it took effect on.
+    // Only a window of the thread is in the DOM (see rebuildForThread), so scan
+    // the rendered elements once and look ids up here rather than issuing a
+    // `querySelector` per assistant message: this pass runs on every rebuild and
+    // every backfill chunk, and a `querySelector` for a message that isn't
+    // rendered still walks the whole list.
+    const rendered = new Map<string, Element>()
+    list.querySelectorAll('[data-message-id]').forEach((node) => {
+      const id = node.getAttribute('data-message-id')
+      // First match wins, matching the document-order result `querySelector` gave.
+      if (id !== null && !rendered.has(id)) rendered.set(id, node)
+    })
     let prevLabel: string | undefined
     for (const msg of thread.messages) {
       if (msg.role !== 'assistant') continue
-      const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`)
+      const msgEl = rendered.get(msg.id)
       if (!msgEl) continue
       const existing = msgEl.querySelector<HTMLElement>('.message-model')
       const model = msg.model
@@ -2243,6 +2454,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       finishThreadChrome(null)
       return
     }
+    // A freshly selected thread arrives as metadata only (`messages: []`,
+    // `messagesLoaded: false`) and its transcript loads asynchronously — see
+    // attachThreadHydration. Rendering nothing during that window made a
+    // switch look like a dead pane, worst when the agent was still running in
+    // it (#1684). Hold the space with a notice; the hydration completing emits
+    // `threads_changed`, which rebuilds over it with the real messages.
+    if (needsHydration(thread)) {
+      list.append(
+        // A read that failed must not keep claiming "Loading…" — render the
+        // honest failure line instead (reselecting the thread retries).
+        hydrationFailed(thread.id)
+          ? hydrationFailureEl()
+          : hydrationNoticeEl(thread.status === 'running'),
+      )
+    }
     // Newest-first: render the tail the user actually lands on right away, then
     // fill the rest of the history backwards in the background (see
     // backfillOlderMessages) instead of blocking a thread switch on rendering
@@ -2252,8 +2478,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const initialStart = Math.max(0, total - INITIAL_RENDER_WINDOW)
     for (let i = initialStart; i < total; i++) {
       const m = thread.messages[i]
-      if (m) appendMessageEl(thread.id, m.id)
+      if (m) appendMessageEl(thread.id, m.id, true)
     }
+    // Batched tail work for the whole window, in the order the per-message path
+    // would have left things in: labels and actions reflect the final DOM, and
+    // the view lands at the bottom before the chrome is inserted around it.
+    syncModelLabels()
+    syncUserActions()
+    scrollToBottom(true)
     finishThreadChrome(thread)
     if (initialStart > 0) {
       const generation = backfillGeneration
@@ -2381,12 +2613,33 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       syncComparisonPanel()
       scrollToBottom()
     }),
+    store.on('settings_changed', () => {
+      // Developer mode gates the collapsed transport-note disclosure; resync
+      // without rebuilding markdown so streaming renderers stay intact.
+      const thread = getActiveThread(store)
+      if (!thread) return
+      for (const msg of thread.messages) {
+        if (msg.role !== 'assistant' || !msg.content) continue
+        const textEl = list.querySelector<HTMLElement>(
+          `[data-message-id="${msg.id}"] .message-text`,
+        )
+        if (!textEl) continue
+        syncAcpTransportNoiseDisclosure(textEl, assistantDisplayParts(msg.content).transportNoise)
+      }
+    }),
     store.on('thread_status_changed', (tid, status) => {
       if (tid !== store.getState().activeThreadId) return
       if (status !== 'running') setActivity(null)
     }),
     store.on('agent_activity', (tid, label) => {
       if (tid !== store.getState().activeThreadId) return
+      // The first streamed chunk can land while the transcript is still being
+      // read off disk. Unhiding the live row here would stack it under the
+      // hydration notice — exactly the duplication syncFromStore's guard
+      // exists to prevent — so hold the suppression until hydration completes
+      // (threads_changed re-syncs and shows it then) or fails.
+      const thread = getThreadById(store, tid)
+      if (thread && needsHydration(thread) && !hydrationFailed(thread.id)) return
       setActivity(label)
     }),
   ]
@@ -2400,6 +2653,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Invalidate any backfillOlderMessages step still queued via
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
     backfillGeneration++
+    showAcpTransportNoiseDisclosure = (): boolean => false
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()

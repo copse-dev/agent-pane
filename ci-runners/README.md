@@ -328,16 +328,24 @@ A spare machine with Docker + passwordless sudo works too:
 
 ## Do we need new PAT tokens?
 
-There are **three distinct token roles**. You do **not** need three separate
-tokens — one org-scoped fine-grained (or classic) PAT can cover all three — but
+There are **two distinct token roles**. You do **not** need two separate
+tokens — one org-scoped fine-grained (or classic) PAT can cover both — but
 they are separate _permissions_, and one of them (the build-time clone) is
 genuinely new versus today.
 
-| Role                                        | Used when                                                                                                                   | Needs                                                                                                                                                                           | New?                                                                             |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| **Registration** (`ACCESS_TOKEN`)           | container start, to register the runner                                                                                     | **Org:** classic `admin:org` or fine-grained org **Self-hosted runners: Read & write**. (Repo-level: repository Administration R/W — repos have no separate runner permission.) | Existing token, but scope **widens repo→org** if you go org-level                |
-| **Build-time clone** (`BUILD_GH_TOKEN`)     | `docker build`, to clone `TARGET_REPO` and let its `pnpm install` fetch the **private** `@copse/streaming-markdown` git dep | **Contents: Read** on **both** `agent-pane` **and** `streaming-markdown` (classic `repo`, or a fine-grained token scoped to both)                                               | **NEW** — the old images had the repo in the build context, so they never cloned |
-| **`pick-runner` detection** (`RUNNERS_PAT`) | in CI, to list online runners for auto-routing                                                                              | **Org:** classic `admin:org` / fine-grained org **Self-hosted runners: Read**                                                                                                   | Existing token, but must query the **org** endpoint (scope widens repo→org)      |
+| Role                                    | Used when                                                                                                                   | Needs                                                                                                                                                                           | New?                                                                             |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **Registration** (`ACCESS_TOKEN`)       | container start, to register the runner                                                                                     | **Org:** classic `admin:org` or fine-grained org **Self-hosted runners: Read & write**. (Repo-level: repository Administration R/W — repos have no separate runner permission.) | Existing token, but scope **widens repo→org** if you go org-level                |
+| **Build-time clone** (`BUILD_GH_TOKEN`) | `docker build`, to clone `TARGET_REPO` and let its `pnpm install` fetch the **private** `@copse/streaming-markdown` git dep | **Contents: Read** on **both** `agent-pane` **and** `streaming-markdown` (classic `repo`, or a fine-grained token scoped to both)                                               | **NEW** — the old images had the repo in the build context, so they never cloned |
+
+**Runner routing needs no token.** The old `pick-runner` probe job — which used
+a `RUNNERS_PAT` secret (org **Self-hosted runners: Read**) to enumerate online
+runners on every run — was removed in #740. Check-tier jobs now read the
+`CHECKS_RUNNER` Actions **variable** directly
+(`runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}`): set it to
+`copse-checks` when the fleet is up, clear it (or leave it empty) to fall back
+to GitHub-hosted. Do **not** re-create a `RUNNERS_PAT` — no workflow reads it,
+and the org runner-read scope it carried is not needed for routing.
 
 **Why the clone token is unavoidable:** baking `agent-pane` runs `pnpm install`, which
 pulls `@copse/streaming-markdown` — a **private** git dependency. So even the
@@ -345,7 +353,7 @@ build needs read access to _both_ repos. That's the same cross-repo access the
 `setup` action's `github-pat` input already handles at job time; here it moves
 to build time. (This is also an argument _for_ one org-scoped token: a single
 fine-grained PAT with **Contents: Read on all repos** + org **Self-hosted
-runners: Read & write** covers registration, detection, and baking in one
+runners: Read & write** covers both registration and baking in one
 credential.)
 
 The clone token is passed as a **BuildKit secret** (`--secret`), mounted on
@@ -385,13 +393,13 @@ runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
 
 - Removed the two old runner dirs; repointed the `Makefile` (`make runners*`) at
   this unified fleet.
-- `agent-pane` `pick-runner` now queries the **org** endpoint
-  (`/orgs/{owner}/actions/runners`) instead of the repo endpoint. The e2e job is
-  unchanged — it already targets `["self-hosted","copse-e2e"]`, which these
-  runners carry.
-- `streaming-markdown/.github/workflows/ci.yml` gained a `pick-runner` route so
-  its check job lands on the shared `copse-checks` pool when available (fork PRs
-  stay on hosted).
+- `agent-pane` check jobs route via the `CHECKS_RUNNER` Actions variable
+  (`runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}`); the old
+  `pick-runner` probe job was removed in #740. The e2e job is unchanged — it
+  already targets `["self-hosted","copse-e2e"]`, which these runners carry.
+- `streaming-markdown/.github/workflows/ci.yml` routes its check job the same
+  way, so it lands on the shared `copse-checks` pool when the variable is set
+  (fork PRs stay on hosted).
 
 **Remaining (infra — do before/at merge):**
 
@@ -400,9 +408,13 @@ runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
    org default group grants all repos). Build + register with
    `make runners` — or `make runners-reprovision` to **replace the containers
    built from the now-deleted dirs**.
-2. **Add `RUNNERS_PAT`** (org or repo secret, org **Self-hosted runners: Read**)
-   to both repos so `pick-runner` can enumerate the org fleet. Without it,
-   routing fails open to hosted — CI still works, it just never uses self-hosted.
+2. **Set the `CHECKS_RUNNER` variable** so check jobs route to the fleet:
+   `gh variable set CHECKS_RUNNER --org copse-dev --body copse-checks --visibility all`
+   (or Settings → Secrets and variables → Actions → Variables; a repo-level
+   variable overrides the org one). Unset or empty means hosted — CI still
+   works, it just never uses self-hosted. Nothing auto-detects an offline
+   fleet, so clear the variable when taking the fleet down or routed jobs
+   will queue. No PAT is involved.
 3. **Confirm one green run** lands on the pool (an e2e job and a check job in
    agent-pane, a check job in streaming-markdown), then **merge**.
 

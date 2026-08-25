@@ -1,4 +1,6 @@
 node_modules/
+.pnpm-store/
+.pr-validation/
 dist/
 dist-test/
 dist-types/
@@ -33,6 +35,7 @@ tests/fixtures/git-changes-repo/committed.ts
 .wdio-eval-profile-*/
 .wdio-eval-userdata-*/
 .wdio-eval-chrome-*/
+tests/e2e/electron-shell/.e2e-env.json
 tests/e2e/electron-shell/.eval-env.json
 tests/e2e/artifacts/
 e2e-failure-artifacts/

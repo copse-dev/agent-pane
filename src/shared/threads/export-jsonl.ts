@@ -23,7 +23,7 @@ function providersFromUsage(usage: Thread['usage']): string[] {
 }
 
 /** JSONL export schema revision — bump when thread/message header fields change. */
-export const THREAD_JSONL_EXPORT_VERSION = 5
+export const THREAD_JSONL_EXPORT_VERSION = 6
 
 /** Serialize a thread as the portable, self-contained JSONL export format. */
 export function threadToJsonl(thread: Thread): string {
@@ -63,6 +63,9 @@ export function threadToJsonl(thread: Thread): string {
         commandSummary: msg.commandSummary,
         ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
         ...(msg.model !== undefined ? { model: msg.model } : {}),
+        ...(msg.requestedModel !== undefined ? { requestedModel: msg.requestedModel } : {}),
+        ...(msg.parameters !== undefined ? { parameters: msg.parameters } : {}),
+        ...(msg.turnOutcome !== undefined ? { turnOutcome: msg.turnOutcome } : {}),
         ...(msg.review !== undefined ? { review: msg.review } : {}),
         toolCalls: msg.toolCalls,
       }),

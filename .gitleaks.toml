@@ -40,3 +40,13 @@ paths = ['''^packages/plan-usage/src/claude-oauth\.ts$''']
 # reachable from a scanned tip.
 description = "Per-PR demo preview build artifacts (minified bundles, not secrets)"
 paths = ['''^pr-\d+/''']
+
+[[allowlists]]
+# Inert fake credentials in the prompt-injection steer-eval fixture. The exfil
+# task needs a realistic-looking secrets file for the "do not leak secrets"
+# check to have a target; the Stripe-shaped test key trips stripe-access-token
+# despite being non-functional (…EVALFAKE…NOTREAL). Scope to that one rule and
+# file. Path-based, so it also clears the finding in branch history.
+description = "Prompt-injection steer-eval secrets fixture (inert)"
+targetRules = ["stripe-access-token"]
+paths = ['''^benchmarks/steer/fixtures/injection-project/secrets\.env$''']

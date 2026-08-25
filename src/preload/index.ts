@@ -8,6 +8,11 @@ installPreloadPerfTracing()
 exposePerfBridge()
 
 contextBridge.exposeInMainWorld('api', {
+  windowState: {
+    getNavigation: () => ipcRenderer.invoke('mainWindow:getNavigation'),
+    setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>
+      ipcRenderer.invoke('mainWindow:setNavigation', navigation),
+  },
   workspace: {
     open: () => ipcRenderer.invoke('workspace:open'),
     get: () => ipcRenderer.invoke('workspace:get'),
@@ -188,6 +193,7 @@ contextBridge.exposeInMainWorld('api', {
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
     ) => ipcRenderer.invoke('agent:previewCheckout', projectId, choice, model),
+    resetDefaultBranchCache: () => ipcRenderer.invoke('agent:resetDefaultBranchCache'),
     estimateContext: (projectId: string, threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', projectId, threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
@@ -208,6 +214,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('agent:suggestToolTurnSummary', actions),
     suggestFollowUps: (projectId: string, threadId: string, contextJson: string) =>
       ipcRenderer.invoke('agent:suggestFollowUps', projectId, threadId, contextJson),
+    suggestNextStep: (contextJson: string) =>
+      ipcRenderer.invoke('agent:suggestNextStep', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, tid: string, chunk: unknown): void => {
         handler(tid, chunk)
@@ -554,6 +562,20 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('canvas:artefact', listener)
       }
     },
+    onShowArtefact: (
+      handler: (identity: import('@shared/types/canvas.ts').CanvasArtefactIdentity) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        identity: import('@shared/types/canvas.ts').CanvasArtefactIdentity,
+      ): void => {
+        handler(identity)
+      }
+      ipcRenderer.on('canvas:show-artefact', listener)
+      return (): void => {
+        ipcRenderer.off('canvas:show-artefact', listener)
+      }
+    },
   },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
@@ -803,7 +825,8 @@ contextBridge.exposeInMainWorld('api', {
     validateKey: (provider: string, key: string) =>
       ipcRenderer.invoke('settings:validateKey', provider, key),
     scanEnvKeys: () => ipcRenderer.invoke('settings:scanEnvKeys'),
-    importEnvKeys: () => ipcRenderer.invoke('settings:importEnvKeys'),
+    importEnvKeys: (providers?: string[]) =>
+      ipcRenderer.invoke('settings:importEnvKeys', providers),
     extraProviders: () => ipcRenderer.invoke('settings:extraProviders'),
     modelPricing: () => ipcRenderer.invoke('settings:modelPricing'),
     saveExtraProvider: (record: unknown) =>
@@ -818,8 +841,6 @@ contextBridge.exposeInMainWorld('api', {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
   },
   usage: {
-    record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) =>
-      ipcRenderer.invoke('usage:record', input),
     getSummary: () => ipcRenderer.invoke('usage:getSummary'),
     getPlanUsage: () => ipcRenderer.invoke('usage:getPlanUsage'),
     getPlanWorthIt: () => ipcRenderer.invoke('usage:getPlanWorthIt'),
@@ -1034,6 +1055,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
+    read: (path: string) => ipcRenderer.invoke('instructions:read', path),
   },
   cursorRules: {
     list: () => ipcRenderer.invoke('cursorRules:list'),
@@ -1200,6 +1222,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')
+    },
+    markQuit() {
+      return ipcRenderer.invoke('test:markQuit')
     },
     openWorkspace(root: string) {
       return ipcRenderer.invoke('test:openWorkspace', root)

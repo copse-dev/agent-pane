@@ -24,6 +24,16 @@ export interface IpcInvokeMap {
   'workspace:get': { args: []; result: string | null }
   'workspace:set': { args: [root: string, sshHost?: string]; result: string }
 
+  // Full main-window state (sender-derived; pane popouts cannot mutate it)
+  'mainWindow:getNavigation': {
+    args: []
+    result: import('./main-window.ts').MainWindowNavigation
+  }
+  'mainWindow:setNavigation': {
+    args: [navigation: import('./main-window.ts').MainWindowNavigation]
+    result: undefined
+  }
+
   // File system
   'fs:readFile': { args: [projectId: string, threadId: string, path: string]; result: string }
   'fs:writeFile': {
@@ -78,6 +88,10 @@ export interface IpcInvokeMap {
     args: [projectId: string, threadId: string, contextJson: string]
     result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
   }
+  // The composer's Tab-completable next step (experimental, off by default).
+  // Same context shape as suggestFollowUps; null means "no obvious next step",
+  // which is the expected answer for most turns.
+  'agent:suggestNextStep': { args: [contextJson: string]; result: string | null }
 
   // Explicit high-risk, session-only shell mode (issue #1249).
   'security:getGuardedYolo': {
@@ -184,6 +198,13 @@ export interface IpcInvokeMap {
     result: AvailableProviders
   }
   'settings:validateKey': {
+    /**
+     * An empty `key` means "test the key this provider would actually use" —
+     * the stored one, or its env-var fallback. Settings needs that because the
+     * key input is write-only: a saved key is never read back into the field,
+     * so with no empty-key form the Test button could only ever check a key
+     * being typed, never the one in use. The secret stays in the main process.
+     */
     args: [provider: CloudProvider, key: string]
     result: { ok: boolean; error?: string; formatOk?: boolean }
   }
@@ -200,7 +221,7 @@ export interface IpcInvokeMap {
     }[]
   }
   'settings:importEnvKeys': {
-    args: []
+    args: [providers?: string[]]
     result: {
       imported: { provider: string; source: string }[]
       skipped: { provider: string; reason: string }[]
@@ -211,10 +232,6 @@ export interface IpcInvokeMap {
   'app-icon:apply': { args: []; result: undefined }
 
   // Usage ledger
-  'usage:record': {
-    args: [input: import('@shared/usage/usage-event.ts').UsageRecordInput]
-    result: undefined
-  }
   'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
   'usage:getPlanUsage': {
     args: []

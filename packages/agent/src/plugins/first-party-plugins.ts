@@ -63,7 +63,9 @@
 //    the `mcp-ui-canvas` **capability** — the canvas gates in `mcp-registry.ts`
 //    read `isCapabilityActive('mcp-ui-canvas')` instead of the retired
 //    `mcpUiArtefactsEnabled` setting, so the plugin toggle atomically turns canvas
-//    rendering (and the bundled canvas server) on/off. Default DISABLED.
+//    rendering (and the bundled canvas server) on/off — plus one conditional
+//    turn-start hook that steers a prototype request onto the bundled
+//    `render_html_artefact` tool when that tool is offered. Default DISABLED.
 //  - `devtoolsShortcutPlugin` — the first-party plugin for the experimental DevTools
 //    shortcut. Contributes no tool: it declares the `devtools-shortcut`
 //    **capability** — `create-main-window.ts` reads
@@ -81,6 +83,9 @@
 //  - `parallelSearchPlugin` — direct, credential-gated access to Parallel's
 //    hosted Search API. It declares the native `parallel_search` tool, search
 //    mode setting, and first-party credential detail. Default DISABLED.
+//  - `artifactCheckpointPlugin` — experimental delayed artifact-preservation
+//    steering. Contributes one `stepBoundary` hook and a scoped delay setting;
+//    default DISABLED.
 //  - `siteBuildingPlugin` — stable, default-on website creative-engineering
 //    steering. Contributes one conditional turn-start hook shared by the local
 //    loop and ACP; no customer- or demo-specific art direction is embedded.
@@ -103,6 +108,7 @@ import { automationsPlugin } from './automations-plugin.ts'
 import { parallelSearchPlugin } from './parallel-search-plugin.ts'
 import { darkFactoryPlugin } from './dark-factory-plugin.ts'
 import { siteBuildingPlugin } from './site-building-plugin.ts'
+import { artifactCheckpointPlugin } from './artifact-checkpoint-plugin.ts'
 
 /**
  * Every plugin Copse ships. Order is preserved as the Settings plugin-list
@@ -113,7 +119,7 @@ import { siteBuildingPlugin } from './site-building-plugin.ts'
  * capability-only plugins (MCP-UI canvas + DevTools shortcut), then the
  * background-tasks plugin (which declares a permission / sandbox relaxation,
  * issue #1190), then the automations prototype, Parallel Search, dark factory,
- * and the stable site-building steering plugin.
+ * the artifact-checkpoint experiment, and the stable site-building steering plugin.
  */
 export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
   todosPlugin,
@@ -132,6 +138,7 @@ export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
   automationsPlugin,
   parallelSearchPlugin,
   darkFactoryPlugin,
+  artifactCheckpointPlugin,
   siteBuildingPlugin,
 ]
 

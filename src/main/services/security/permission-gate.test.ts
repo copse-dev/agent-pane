@@ -46,6 +46,7 @@ import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-re
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
+import { storageSet } from '../storage/storage.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -433,6 +434,9 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
     const restore = setWorkspaceRootForTest(root)
     setWorkspaceTrusted(root, true)
     setSetting(AUTO_APPROVAL_LEVEL_SETTING, level)
+    // This suite asserts the deterministic auto-approval assessor, not the
+    // optional LM Studio scope classifier (which only adds connect timeouts here).
+    await setSetting('safetyClassifierEnabled', false)
     let prompted = false
     setApprovalHandler(() => {
       prompted = true
@@ -448,6 +452,7 @@ describe('ensureShellCommandPermitted — auto-approval classifier', () => {
     } finally {
       setApprovalHandler(null)
       setSetting(AUTO_APPROVAL_LEVEL_SETTING, 'off')
+      await setSetting('safetyClassifierEnabled', false)
       setWorkspaceTrusted(root, false)
       restore()
       clearGitRemotesCache()
@@ -662,6 +667,7 @@ describe('run_background permission', () => {
     // same command.
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/bg-start-project')
+    await setSetting('safetyClassifierEnabled', false)
     const command = 'npm run build -- --watch'
     let prompts = 0
     setApprovalHandler(async () => {
@@ -681,6 +687,7 @@ describe('run_background permission', () => {
     } finally {
       setApprovalHandler(null)
       restore()
+      await setSetting('safetyClassifierEnabled', false)
     }
   })
 
@@ -690,6 +697,7 @@ describe('run_background permission', () => {
     // start proceed.
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/bg-start-approved')
+    await setSetting('safetyClassifierEnabled', false)
     let prompts = 0
     setApprovalHandler(async () => {
       prompts++
@@ -702,12 +710,14 @@ describe('run_background permission', () => {
     } finally {
       setApprovalHandler(null)
       restore()
+      await setSetting('safetyClassifierEnabled', false)
     }
   })
 
   it('blocks a start command when the shell gate is declined', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/bg-start-denied')
+    await setSetting('safetyClassifierEnabled', false)
     setApprovalHandler(async () => ({ approved: false, remember: false }))
     try {
       assert.equal(
@@ -720,12 +730,14 @@ describe('run_background permission', () => {
     } finally {
       setApprovalHandler(null)
       restore()
+      await setSetting('safetyClassifierEnabled', false)
     }
   })
 
   it('prompts a port-binding start, then remembers the grant per workspace', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/port-binding-project')
+    await setSetting('safetyClassifierEnabled', false)
     // The start command itself may also prompt through the shell gate depending
     // on the platform's sandbox posture, so count only port-binding prompts.
     let portPrompts = 0
@@ -745,12 +757,14 @@ describe('run_background permission', () => {
     } finally {
       setApprovalHandler(null)
       restore()
+      await setSetting('safetyClassifierEnabled', false)
     }
   })
 
   it('returns false when the user declines a port-binding start', async () => {
     setPermissionGateForTests(null)
     const restore = setWorkspaceRootForTest('/tmp/port-binding-denied')
+    await setSetting('safetyClassifierEnabled', false)
     setApprovalHandler(async () => ({ approved: false, remember: false }))
     try {
       assert.equal(
@@ -763,6 +777,7 @@ describe('run_background permission', () => {
     } finally {
       setApprovalHandler(null)
       restore()
+      await setSetting('safetyClassifierEnabled', false)
     }
   })
 
@@ -1705,13 +1720,14 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     const store = mkdtempSync(join(tmpdir(), 'copse-read-outside-store-'))
     const previousStore = process.env['COPSE_WORKSPACE_DIR']
     process.env['COPSE_WORKSPACE_DIR'] = store
+    storageSet('activeProjectId', 'proj-read-outside')
     // These cases are about the gate's own decision; the optional LM Studio
     // classifier only adds a per-command connection timeout here.
     await setSetting('safetyClassifierEnabled', false)
     try {
       return await fn(root)
     } finally {
-      await setSetting('safetyClassifierEnabled', true)
+      await setSetting('safetyClassifierEnabled', false)
       restore()
       clearReadOutsideProjectGrants()
       if (previousStore === undefined) delete process.env['COPSE_WORKSPACE_DIR']
@@ -1721,9 +1737,9 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     }
   }
 
-  /** Decisions recorded with no active project land in the `_global` bucket. */
-  async function recordedDecisions(): Promise<DecisionEvent[]> {
-    return (await readDecisionLog('_global')).filter((e) => e.scope === 'external-read')
+  /** Decisions recorded for the active project (external-read scope only). */
+  async function recordedDecisions(projectId = 'proj-read-outside'): Promise<DecisionEvent[]> {
+    return (await readDecisionLog(projectId)).filter((e) => e.scope === 'external-read')
   }
 
   it('asks the read-access question, with the command behind the details toggle', async () => {

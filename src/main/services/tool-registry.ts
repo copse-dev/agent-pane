@@ -1,6 +1,8 @@
 import { z } from 'zod'
-import type { ToolDefinition, LLMTool, ToolExecuteResult } from '@shared/types'
+import type { ToolDefinition, LLMTool, ToolExecuteResult, ToolProvenance } from '@shared/types'
 import { normalizeToolExecuteResult, type ToolResultImage } from '@shared/types'
+import { wrapExternalContent } from '@copse/agent/external-content.ts'
+import { markTurnExternalIngestion } from './security/turn-taint.ts'
 import {
   getReadonlyToolBlockReason,
   isToolAllowedInReadonlyMode,
@@ -29,6 +31,7 @@ interface RegisteredTool {
   rawParameters?: Record<string, unknown>
   parse: (rawArgs: unknown) => unknown
   execute: (args: unknown, signal: AbortSignal) => ToolExecuteResult | Promise<ToolExecuteResult>
+  provenance: ToolProvenance
 }
 
 let permissionGateOverride: PermissionGateFn | null = null
@@ -58,6 +61,12 @@ function appendInjectedContext(result: ToolExecuteResult, block: string): ToolEx
   return { ...result, result: `${result.result}\n\n${block}` }
 }
 
+/** Wrap a result's textual part in the external-content envelope, keeping structured fields. */
+function wrapProvenance(name: string, result: ToolExecuteResult): ToolExecuteResult {
+  if (typeof result === 'string') return wrapExternalContent(name, result)
+  return { ...result, result: wrapExternalContent(name, result.result) }
+}
+
 export class ToolRegistry {
   private tools = new Map<string, RegisteredTool>()
 
@@ -69,6 +78,7 @@ export class ToolRegistry {
       ...(tool.rawParameters ? { rawParameters: tool.rawParameters } : {}),
       parse: (rawArgs) => tool.parameters.parse(rawArgs),
       execute: (args, signal) => tool.execute(tool.parameters.parse(args), signal),
+      provenance: tool.provenance ?? 'workspace',
     })
   }
 
@@ -166,6 +176,17 @@ export class ToolRegistry {
       ) {
         setCachedToolResult(identity, name, parsed, result)
       }
+    }
+    // Provenance envelope (docs/plans/context-provenance.md): results whose
+    // bytes come from beyond the workspace boundary are wrapped so the model
+    // can tell them apart from workspace- and Copse-authored text. Applied
+    // after caching (the cache holds the bare result) and before hook-injected
+    // context, which is Copse-authored and must stay outside the envelope.
+    if (tool.provenance === 'external') {
+      // Phase 4: the turn now carries untrusted bytes — remembered memories
+      // record that provenance so recall can surface it in later threads.
+      markTurnExternalIngestion()
+      result = wrapProvenance(tool.name, result)
     }
     // H2: a `toolGate` hook injected context into the current turn. Append the
     // pre-built system-reminder block (10k-capped) to this call's textual

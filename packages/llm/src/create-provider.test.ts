@@ -8,6 +8,7 @@ import { SERVICE_TIERS } from './service-tier.ts'
 import type { LLMProvider } from './wire-types.ts'
 import {
   createExtraCloudProvider,
+  createLMStudioProvider,
   createLocalOpenAIProvider,
   createOpenRouterProvider,
   createProvider,
@@ -16,6 +17,7 @@ import { BUILTIN_EXTRA_PROVIDERS } from './extra-providers.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import { ResponsesProvider } from './responses-provider.ts'
+import { LMStudioProvider } from './lm-studio-provider.ts'
 
 describe('anthropicMaxOutputTokens', () => {
   it('uses per-model catalog metadata', () => {
@@ -97,6 +99,7 @@ interface CapturedRequestBody {
   temperature?: number
   top_p?: number
   max_tokens?: number
+  maxOutputTokens?: number
 }
 
 function expectOpenAIProvider(provider: LLMProvider): OpenAIProvider {
@@ -357,6 +360,34 @@ describe('createLocalOpenAIProvider', () => {
   })
 })
 
+describe('createLMStudioProvider', () => {
+  it('uses the native SDK transport when bearer authentication is disabled', () => {
+    const provider = createLMStudioProvider('http://localhost:1234/v1', 'qwen/qwen3.6-35b-a3b')
+    assert.ok(provider instanceof LMStudioProvider)
+  })
+
+  it('preserves the OpenAI-compatible transport for bearer-authenticated servers', () => {
+    const provider = createLMStudioProvider(
+      'http://localhost:1234/v1',
+      'qwen/qwen3.6-35b-a3b',
+      'configured-token',
+    )
+    assert.ok(provider instanceof OpenAIProvider)
+  })
+
+  it('preserves tuned model parameters through the OpenAI-compatible transport', async () => {
+    const provider = createLMStudioProvider(
+      'http://localhost:1234/v1',
+      'qwen/qwen3.6-35b-a3b',
+      'lm-studio',
+      { temperature: 0.4 },
+    )
+    assert.ok(provider instanceof OpenAIProvider)
+    const request = await captureRequest(provider)
+    assert.equal(request.temperature, 0.4)
+  })
+})
+
 describe('createExtraCloudProvider host allowlist', () => {
   const custom: ExtraProvider = {
     id: 'acme',
@@ -520,6 +551,18 @@ describe('createExtraCloudProvider Responses transport', () => {
 })
 
 describe('tuned model parameters reach the provider', () => {
+  it('sends an explicit OpenRouter output cap without leaking it as a sampling field', async () => {
+    const provider = expectOpenAIProvider(
+      createOpenRouterProvider('stealth/ox-alpha', 'sk-or-test', undefined, {
+        params: { reasoning: 'medium', maxOutputTokens: 8_192 },
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.deepEqual(request.reasoning, { effort: 'medium' })
+    assert.equal(request.max_tokens, 8_192)
+    assert.equal(request.maxOutputTokens, undefined)
+  })
+
   it('sends OpenRouter reasoning on its unified field, not the alias', async () => {
     const provider = expectOpenAIProvider(
       createOpenRouterProvider('deepseek/deepseek-v4-flash', 'sk-or-test', undefined, {

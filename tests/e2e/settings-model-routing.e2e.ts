@@ -128,7 +128,7 @@ describe('settings model routing placement', function () {
       { timeout: 2_000, timeoutMsg: 'settings model picker did not filter after typing' },
     )
     await expect(chatModelPicker.$('.model-picker-option')).toHaveText(
-      expect.stringContaining('qwen/qwen3.6-35b-a3b'),
+      expect.stringContaining('Qwen3 35B A3B'),
     )
     await saveElementScreenshot('#settings-models-section', 'settings-model-picker-search.png')
     await chatModelPicker.$('.model-picker-trigger').click()

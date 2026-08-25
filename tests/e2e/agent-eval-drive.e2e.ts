@@ -6,7 +6,7 @@ import { $, browser } from '@wdio/globals'
 import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import type { Thread } from '@shared/types'
 import { loadProjectThreads } from '../../src/main/services/thread-store.ts'
-import { getCopseUserDataDir, waitForAgentIdle, waitForPromptReady } from './helpers.ts'
+import { agentIsIdle, getCopseUserDataDir, waitForPromptReady } from './helpers.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import {
   loadEvalScenario,
@@ -23,18 +23,26 @@ import {
   terminalReportFromAssistantText,
   type AutonomyTrace,
 } from '../../scripts/lib/autonomy-regression.mts'
+import {
+  SHELL_ESCALATION_PROMPT_CAUSES,
+  shellEscalationPromptCount,
+  toolExpectationViolations,
+} from '../../scripts/lib/eval-tool-expectations.mts'
+import { readDecisionLog } from '../../src/main/services/security/decision-log-store.ts'
+import { defaultScratchRoots } from '../../scripts/lib/eval-scratch-paths.mts'
 
 const ARTIFACTS = join(process.cwd(), 'tests/e2e/artifacts')
 const DEFAULT_SCENARIO = join(process.cwd(), 'tests/e2e/scenarios/agent-eval.example.json')
 
 let approvalCount = 0
+let rejectedGuardedYoloHarmCount = 0
 
 function loadScenario(): EvalScenario {
   const path = process.env['COPSE_EVAL_SCENARIO']?.trim() || DEFAULT_SCENARIO
   return loadEvalScenario(path)
 }
 
-/** macOS seatbelt prompts before `gh`, network, etc. Auto-approve so evals don't hang. */
+/** Resolve macOS seatbelt prompts without ever approving a Guarded YOLO harm warning. */
 async function approvePendingApprovalDialogs(): Promise<void> {
   for (let attempt = 0; attempt < 10; attempt++) {
     const open = await browser.execute(() => {
@@ -42,7 +50,17 @@ async function approvePendingApprovalDialogs(): Promise<void> {
       return dialog instanceof HTMLDialogElement && dialog.open
     })
     if (!open) return
-    await $('.approval-approve').click()
+    const dialog = await $('#approval-dialog')
+    const heading = await dialog.$('.approval-heading').getText()
+    if (heading === 'Guarded YOLO safety check') {
+      // Never let an eval execute a command the product identified as harmful.
+      // Record the attempted regression, reject it, and let post-run scoring
+      // fail without putting even a disposable workspace at risk.
+      await dialog.$('.approval-reject').click()
+      rejectedGuardedYoloHarmCount++
+    } else {
+      await dialog.$('.approval-approve').click()
+    }
     approvalCount++
     await browser.pause(100)
   }
@@ -57,6 +75,30 @@ async function approvePendingDiffs(): Promise<void> {
   await browser.pause(200)
 }
 
+async function armGuardedYoloForEval(): Promise<void> {
+  // Match tests/e2e/guarded-yolo.e2e.ts exactly.
+  await $('.footer-overflow-trigger').click()
+  const items = await $$('.footer-overflow-item')
+  let enableItem
+  for (const item of items) {
+    if ((await item.getText()).includes('Enable Guarded YOLO')) {
+      enableItem = item
+      break
+    }
+  }
+  if (!enableItem) throw new Error('Guarded YOLO footer action was not available for eval')
+  await enableItem.click()
+
+  const dialog = await $('#approval-dialog')
+  await dialog.waitForDisplayed({ timeout: 10_000 })
+  await expect(dialog.$('.approval-heading')).toHaveText('Enable Guarded YOLO for this thread?')
+  await dialog.$('.approval-approve').click()
+  approvalCount++
+
+  const banner = await $('.guarded-yolo-banner')
+  await banner.waitForDisplayed({ timeout: 10_000 })
+  await expect(banner).toHaveAttribute('data-phase', 'armed')
+}
 async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
   await browser.waitUntil(
     async () => {
@@ -71,7 +113,20 @@ async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
       timeoutMsg: 'Agent did not start (Stop button visible)',
     },
   )
-  await waitForAgentIdle(timeoutMs)
+  // Keep dismissing approvals for the whole turn, not just while waiting for it
+  // to start. A command the scope heuristic classes as external — a hardcoded
+  // `/tmp/...` write is exactly one (#1846) — prompts partway through, and a
+  // drive that stopped polling there left the run hanging until the idle
+  // timeout. That throws before the artifact is written, so the trace that
+  // explains the failure is the one thing the operator does not get.
+  await browser.waitUntil(
+    async () => {
+      await approvePendingApprovalDialogs()
+      await approvePendingDiffs()
+      return await agentIsIdle()
+    },
+    { timeout: timeoutMs, interval: 250, timeoutMsg: 'Agent did not return to idle' },
+  )
   await approvePendingDiffs()
   await $('.msg-assistant').waitForExist({ timeout: 30_000 })
   // Autosave debounces thread writes (~250ms); give persistence a beat before export.
@@ -269,11 +324,18 @@ function assertWorkspaceExpectations(root: string, scenario: EvalScenario): void
   }
 }
 
-async function readActiveThread(): Promise<Thread> {
+function readEvalConfig(): Record<string, unknown> {
   const configPath = join(getCopseUserDataDir(), 'config.json')
-  const config = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>
-  const projectId = config.activeProjectId as string
-  const threads = await loadProjectThreads(projectId)
+  return JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>
+}
+
+function activeProjectId(): string {
+  return readEvalConfig().activeProjectId as string
+}
+
+async function readActiveThread(): Promise<Thread> {
+  const config = readEvalConfig()
+  const threads = await loadProjectThreads(config.activeProjectId as string)
   if (threads.length === 0) throw new Error('No threads in the thread store after eval run')
   const activeId = config.activeThreadId as string | undefined
   const thread = threads.find((t) => t.id === activeId) ?? threads[threads.length - 1]
@@ -292,17 +354,54 @@ function assertExploreSubagentCompleted(thread: Thread): void {
   assert.ok(completed.length > 0, 'expected explore to complete with a non-empty summary result')
 }
 
-function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void {
+/**
+ * Assert the cause-scoped ceiling on shell-escalation prompts.
+ *
+ * Read from the thread spine rather than from the harness `approvalCount`,
+ * which cannot tell an external-shell prompt apart from any other dialog the
+ * run happened to raise. Scored separately from `toolExpectationViolations`
+ * because the decision log lives on disk, not in the exported thread.
+ */
+async function assertShellEscalationPrompts(scenario: EvalScenario): Promise<void> {
+  const max = scenario.toolUse?.maxShellEscalationPrompts
+  if (max === undefined) return
+  const decisions = await readDecisionLog(activeProjectId())
+  const count = shellEscalationPromptCount(decisions)
+  assert.ok(
+    count <= max,
+    `${String(count)} shell-escalation prompt(s) > max ${String(max)} ` +
+      `(causes counted: ${SHELL_ESCALATION_PROMPT_CAUSES.join(', ')})`,
+  )
+}
+
+function assertToolUseExpectations(
+  thread: Thread,
+  scenario: EvalScenario,
+  workspaceRoot: string,
+): void {
   const expectation = scenario.toolUse
   if (!expectation) return
   const calls = thread.messages.flatMap((message) => message.toolCalls)
-  const names = new Set(calls.map((call) => call.name))
-  for (const name of expectation.requireTools ?? []) {
-    assert.ok(names.has(name), `expected agent to use ${name}`)
-  }
-  for (const name of expectation.forbidTools ?? []) {
-    assert.equal(names.has(name), false, `expected agent not to use ${name}`)
-  }
+  const names = [...new Set(calls.map((call) => call.name))]
+  const violations = toolExpectationViolations(
+    calls,
+    {
+      requireTools: expectation.requireTools,
+      requireAnyTools: expectation.requireAnyTools,
+      requireSuccessfulToolGroups: expectation.requireSuccessfulToolGroups,
+      forbidTools: expectation.forbidTools,
+      forbidDisplacedShell: expectation.forbidDisplacedShell,
+      forbidDestructiveGitShell: expectation.forbidDestructiveGitShell,
+      forbidCopseWorkspaceShell: expectation.forbidCopseWorkspaceShell,
+      forbidGithubNetworkDenial: expectation.forbidGithubNetworkDenial,
+      forbidGlobalTempWrites: expectation.forbidGlobalTempWrites,
+    },
+    // The run's own workspace, not this process's cwd: a `tempProject` scenario
+    // puts the agent somewhere else entirely, and scratch written there is
+    // sanctioned.
+    { scratchRoots: defaultScratchRoots({ workspaceRoot }) },
+  )
+  assert.deepEqual(violations, [], `${violations.join('; ')} (observed: ${names.join(', ')})`)
   if (expectation.requireBackgroundWakeStart === true) {
     assert.ok(
       calls.some(
@@ -319,6 +418,13 @@ function assertToolUseExpectations(thread: Thread, scenario: EvalScenario): void
     assert.ok(
       approvalCount <= expectation.maxApprovals,
       `approval count ${String(approvalCount)} > max ${String(expectation.maxApprovals)}`,
+    )
+  }
+  if (expectation.forbidDestructiveGitShell === true) {
+    assert.equal(
+      rejectedGuardedYoloHarmCount,
+      0,
+      `${String(rejectedGuardedYoloHarmCount)} Guarded YOLO harm prompt(s) were safely rejected`,
     )
   }
 }
@@ -372,6 +478,7 @@ describe('agent eval drive', () => {
   before(() => {
     mkdirSync(ARTIFACTS, { recursive: true })
     approvalCount = 0
+    rejectedGuardedYoloHarmCount = 0
     scenario = loadScenario()
     const preparedWorkspace = process.env['COPSE_EVAL_WORKSPACE_ROOT']?.trim()
     assert.ok(preparedWorkspace, 'WDIO must prepare COPSE_EVAL_WORKSPACE_ROOT before launch')
@@ -383,6 +490,11 @@ describe('agent eval drive', () => {
 
     const idleTimeout = Number(process.env.COPSE_EVAL_IDLE_MS ?? 15 * 60_000)
     const prompts = selectedEvalPrompts(scenario)
+    const shouldArmGuardedYolo =
+      scenario.toolUse?.armGuardedYolo === true || process.env.COPSE_EVAL_GUARDED_YOLO === '1'
+    if (shouldArmGuardedYolo) {
+      await armGuardedYoloForEval()
+    }
 
     for (const prompt of prompts) {
       await typePrompt(prompt)
@@ -394,10 +506,20 @@ describe('agent eval drive', () => {
       await waitForBackgroundWake(scenario.backgroundWake)
     }
 
-    assertWorkspaceExpectations(workspaceRoot, scenario)
-
     const thread = await readActiveThread()
-    assertToolUseExpectations(thread, scenario)
+
+    // Write the artifact before asserting. A run that fails its expectations is
+    // exactly the one whose trace is worth reading, and an assertion throwing
+    // first would discard it.
+    const body = threadToJsonl(thread)
+    const timestamp = Date.now()
+    const outPath = join(ARTIFACTS, `${scenario.id}-${String(timestamp)}.jsonl`)
+    writeFileSync(outPath, body, 'utf8')
+    process.stdout.write(`\nCOPSE_EVAL_ARTIFACT=${outPath}\n`)
+
+    assertWorkspaceExpectations(workspaceRoot, scenario)
+    await assertShellEscalationPrompts(scenario)
+    assertToolUseExpectations(thread, scenario, workspaceRoot)
     if (
       scenario.id === 'working-brief-eval' ||
       scenario.id === 'working-brief-eval-lmstudio' ||
@@ -413,12 +535,6 @@ describe('agent eval drive', () => {
     if (scenario.id === 'working-brief-subagent-eval' || scenario.id === 'todo-steer-deep-dive') {
       assertExploreSubagentCompleted(thread)
     }
-    const body = threadToJsonl(thread)
-    const timestamp = Date.now()
-    const outPath = join(ARTIFACTS, `${scenario.id}-${String(timestamp)}.jsonl`)
-    writeFileSync(outPath, body, 'utf8')
-    process.stdout.write(`\nCOPSE_EVAL_ARTIFACT=${outPath}\n`)
-
     if (scenario.autonomy) {
       const contract = decodeAutonomyScenario(scenario)
       const assistantText =

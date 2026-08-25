@@ -13,6 +13,7 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import type { UsageEvent } from '../../../src/shared/usage/usage-event.ts'
 import {
   supervisedTaskMetaSchema,
   type SupervisedTaskMeta,
@@ -25,7 +26,7 @@ import {
   serializeSpineLine,
   type SpineHookRunLine,
 } from '../../../src/shared/threads/spine-schema.ts'
-import { copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
+import { copseDataRoot, copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -38,6 +39,7 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
  */
 const DEFAULT_DISABLED_PLUGIN_IDS = [
   'copse.advisor-strategy',
+  'copse.artifact-checkpoint',
   'copse.automations',
   'copse.ci-investigator',
   'copse.devtools-shortcut',
@@ -162,7 +164,16 @@ function normalizeToolCall(tc: Record<string, unknown>): Record<string, unknown>
  * written — the store rebuilds it from the thread dirs on first read.
  */
 function seedThreadDir(projectId: string, thread: Record<string, unknown>): void {
-  const { messages, ...meta } = thread
+  const { messages, ...rest } = thread
+  // `usage` is REQUIRED by the thread store's meta decoder: `parseUsage`
+  // (shared/threads/thread-boundary.ts) returns null when it is missing, which
+  // nulls the whole `ThreadMeta`, so `readMeta` drops the thread from the
+  // project's catalog. A fixture that omits it therefore seeds a thread the app
+  // silently never lists — the spec opens a blank "New Thread" and times out on
+  // an element that was never going to render, with nothing naming the cause.
+  // Most fixtures pass `usage` by hand; defaulting it here means the ones that
+  // forget cannot reintroduce that trap. An explicit `usage` still wins.
+  const meta = { usage: { inputTokens: 0, outputTokens: 0 }, ...rest }
   const normalized = (Array.isArray(messages) ? messages : []).map((m) =>
     normalizeMessage(m as Record<string, unknown>),
   )
@@ -280,9 +291,18 @@ export function restoreUserCursorHooks(): void {
 }
 
 /** Fresh profile that triggers the first-run onboarding wizard. */
-export function seedOnboardingFixture(): void {
+export function seedOnboardingFixture(extra: Record<string, unknown> = {}): void {
   resetUserData()
-  writeSettings({ onboardingCompleted: false })
+  writeSettings({ onboardingCompleted: false, ...extra })
+}
+
+/**
+ * The settings.json currently on disk, for asserting what a flow persisted
+ * (read after the app wrote — the file is the source of truth the next launch
+ * will see).
+ */
+export function readSeededSettings(): Record<string, unknown> {
+  return JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')) as Record<string, unknown>
 }
 
 function writeSettings(settings: Record<string, unknown>): void {
@@ -416,6 +436,7 @@ export function seedEmptyProject(
   options?: {
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
+    nextStepSuggestionEnabled?: boolean
     model?: string
     advisorModel?: string
     localServerUrl?: string
@@ -430,6 +451,10 @@ export function seedEmptyProject(
     localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
+    theme?: 'system' | 'light' | 'dark'
+    uiAccentColor?: string
+    uiTintColor?: string
+    uiTintStrength?: 'off' | 'subtle' | 'medium' | 'strong'
     /**
      * Opt into the `copse.okf-memories` pack (its `remember`/`recall` tools, the
      * memory prompt block, and the Memories pane). The pack ships off, so a test
@@ -443,6 +468,12 @@ export function seedEmptyProject(
      * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
+    /**
+     * Opt into the `copse.mcp-ui-canvas` pack (the bundled canvas MCP server's
+     * `render_html_artefact` tool, artefact rendering in the Browser pane, and
+     * the prototype steering hook). Ships off, like the other experimental packs.
+     */
+    mcpUiCanvasEnabled?: boolean
     developerMode?: boolean
     /** Opt into the read-only Remote Desktop pane. */
     vncEnabled?: boolean
@@ -467,6 +498,8 @@ export function seedEmptyProject(
     parallelApiKey?: string
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
+    /** Seed rolling usage-ledger events before the app launches. */
+    usageEvents?: readonly UsageEvent[]
     /**
      * The exact `pluginDisabled` list to write, replacing the host defaults. Use
      * this to opt out of a pack that ships enabled (e.g. drop
@@ -508,12 +541,16 @@ export function seedEmptyProject(
   if (options?.modelComparisonEnabled) enabledPlugins.push('copse.model-comparison')
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
+  if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
   seedConfig.pluginDisabled =
     options?.pluginDisabled !== undefined
       ? [...options.pluginDisabled]
       : pluginDisabledSeed(enabledPlugins)
   if (options?.pluginSources) {
     seedConfig.pluginSources = [...options.pluginSources]
+  }
+  if (options?.usageEvents) {
+    seedConfig.usageEvents = [...options.usageEvents]
   }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
@@ -522,6 +559,9 @@ export function seedEmptyProject(
   }
   if (options?.mockFollowUps) {
     settings.mockFollowUps = true
+  }
+  if (options?.nextStepSuggestionEnabled !== undefined) {
+    settings.nextStepSuggestionEnabled = options.nextStepSuggestionEnabled
   }
   if (options?.model) {
     settings.model = options.model
@@ -562,6 +602,10 @@ export function seedEmptyProject(
   if (options?.rightPanelPosition !== undefined) {
     settings.rightPanelPosition = options.rightPanelPosition
   }
+  if (options?.theme !== undefined) settings.theme = options.theme
+  if (options?.uiAccentColor !== undefined) settings.uiAccentColor = options.uiAccentColor
+  if (options?.uiTintColor !== undefined) settings.uiTintColor = options.uiTintColor
+  if (options?.uiTintStrength !== undefined) settings.uiTintStrength = options.uiTintStrength
   if (options?.developerMode !== undefined) {
     settings.developerMode = options.developerMode
   }
@@ -594,6 +638,65 @@ export function seedEmptyProject(
 }
 
 /**
+ * Two canvas threads sharing an artefact title: the active thread can render a
+ * live preview while the historical thread proves that preview never leaks
+ * across the thread boundary.
+ */
+export function seedCanvasArtefactThreadFixture(
+  workspaceRoot: string,
+  projectId: string,
+  activeThreadId: string,
+  historyThreadId: string,
+): void {
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId,
+    pluginDisabled: pluginDisabledSeed(['copse.mcp-ui-canvas']),
+    [`threads:${projectId}`]: [
+      {
+        id: activeThreadId,
+        title: 'Current canvas work',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: historyThreadId,
+        title: 'Historical canvas work',
+        status: 'idle',
+        messages: [
+          {
+            id: 'historical-canvas-answer',
+            role: 'assistant',
+            content: 'Here is the earlier dashboard render.',
+            toolCalls: [
+              {
+                id: 'historical-canvas-tool',
+                name: 'mcp__copse-canvas__render_html_artefact',
+                args: { title: 'Sales Dashboard', html: '<h1>historical</h1>' },
+                status: 'done',
+                result:
+                  '[ui resource: ui://canvas/sales-dashboard (text/html, 0.1 KB) — rendered in the canvas]',
+              },
+            ],
+            createdAt: now - 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 1,
+        updatedAt: now - 1,
+      },
+    ],
+  })
+  writeSettings({ subagentsEnabled: false, model: 'claude-sonnet-4-6' })
+}
+
+/**
  * Seed OKF roadmap notes for a project, mirroring the knowledge store's
  * on-disk layout (`~/.copse/knowledge/<projectId>/roadmap/<id>.md`,
  * `src/main/services/storage/knowledge-store.ts`). No `index.jsonl` is written —
@@ -612,7 +715,7 @@ export function seedRoadmapNotes(
     complexity?: string
   }[],
 ): string {
-  const knowledgeDir = join(homedir(), '.copse', 'knowledge', projectId)
+  const knowledgeDir = join(copseDataRoot(), 'knowledge', projectId)
   const roadmapDir = join(knowledgeDir, 'roadmap')
   rmSync(knowledgeDir, { recursive: true, force: true })
   mkdirSync(roadmapDir, { recursive: true })
@@ -639,10 +742,53 @@ export function seedRoadmapNotes(
   return knowledgeDir
 }
 
+/**
+ * Seed OKF memory notes for a project, including provenance fields that can only
+ * be produced by an agent turn. The files use the product's real knowledge-store
+ * format; no test-only renderer or IPC state is introduced.
+ */
+export function seedMemoryNotes(
+  projectId: string,
+  notes: {
+    id: string
+    title: string
+    body: string
+    tags?: string[]
+    externalContext?: boolean
+  }[],
+): string {
+  const knowledgeDir = join(copseDataRoot(), 'knowledge', projectId)
+  const memoryDir = join(knowledgeDir, 'memory')
+  rmSync(knowledgeDir, { recursive: true, force: true })
+  mkdirSync(memoryDir, { recursive: true })
+  const iso = new Date().toISOString()
+  for (const note of notes) {
+    const contents = [
+      '---',
+      'type: Memory',
+      `id: ${note.id}`,
+      `title: "${note.title}"`,
+      `tags: [${(note.tags ?? []).join(', ')}]`,
+      `createdAt: ${iso}`,
+      `updatedAt: ${iso}`,
+      ...(note.externalContext ? ['externalContext: "true"'] : []),
+      '---',
+      '',
+      note.body,
+      '',
+    ].join('\n')
+    writeFileSync(join(memoryDir, `${note.id}.md`), contents, 'utf8')
+  }
+  return knowledgeDir
+}
+
 /** Two projects on the same workspace root for project-switch e2e (#502). */
 export function seedProjectSwitchFixture(
   workspaceRoot: string,
-  options?: { activeProjectId?: 'project-a' | 'project-b' },
+  options?: {
+    activeProjectId?: 'project-a' | 'project-b'
+    windowBounds?: { width: number; height: number }
+  },
 ): { projectAId: string; projectBId: string } {
   const projectAId = 'e2e-project-switch-a'
   const projectBId = 'e2e-project-switch-b'
@@ -654,11 +800,46 @@ export function seedProjectSwitchFixture(
       { id: projectBId, path: workspaceRoot, name: 'Project B' },
     ],
     activeProjectId,
+    ...(options?.windowBounds ? { windowBounds: options.windowBounds } : {}),
     [`threads:${projectAId}`]: [],
     [`threads:${projectBId}`]: [],
   })
   writeSettings({})
   return { projectAId, projectBId }
+}
+
+/**
+ * Three named projects — plus, optionally, a group holding the third — for the
+ * sidebar drag-and-drop specs (issue #1685). Three is the smallest count where
+ * a reorder is unambiguous: with two, "moved up" and "moved down" produce the
+ * same list and a screenshot could not tell a working drag from a broken one.
+ */
+export function seedProjectGroupsFixture(
+  workspaceRoot: string,
+  options?: { withGroup?: boolean },
+): { projectIds: string[]; groupId: string } {
+  const projectIds = ['e2e-drag-alpha', 'e2e-drag-beta', 'e2e-drag-gamma']
+  const groupId = 'e2e-drag-group'
+  const names = ['Alpha', 'Beta', 'Gamma']
+  mkdirSync(USER_DATA, { recursive: true })
+  const projects = projectIds.map((id, index) => ({
+    id,
+    path: workspaceRoot,
+    name: names[index] ?? id,
+    // Only Gamma starts grouped, so the same fixture offers both a project to
+    // drag into the group and a group with something already in it.
+    ...(options?.withGroup === true && index === 2 ? { groupId } : {}),
+  }))
+  writeSeedConfig({
+    projects,
+    activeProjectId: projectIds[0],
+    ...(options?.withGroup === true
+      ? { projectGroups: [{ id: groupId, name: 'Client work' }] }
+      : {}),
+    ...Object.fromEntries(projectIds.map((id) => [`threads:${id}`, []])),
+  })
+  writeSettings({})
+  return { projectIds, groupId }
 }
 
 /**
@@ -1244,6 +1425,62 @@ export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
   })
 }
 
+/** Long sticky user prompt (>10 lines) for mid-fold accordion visual eval. */
+export function seedUserPromptFoldFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-user-prompt-fold-project'
+  const threadId = 'e2e-user-prompt-fold-thread'
+  const now = Date.now()
+  const longPrompt = [
+    'Session notes: this session persists across turns, and background agents keep running.',
+    'The session is reaped after idle timeout; keep background work bounded.',
+    '',
+    'Environment note: sandbox writes only in the workspace and TMPDIR.',
+    'Prefer targeted searches over broad directory dumps.',
+    'Use copse MCP tools for shell, git, and GitHub when available.',
+    'Archive under review includes meta.json, events.jsonl, and messages.',
+    'Distinguish observed findings from inferences; cite evidence first.',
+    'Do not invent paths that were not in the archive listing.',
+    'Keep the sticky prompt short enough that the answer stays readable.',
+    '',
+    'What I saw: Lots of prompts — can you explore why?',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'User prompt fold',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-fold',
+            role: 'user',
+            content: longPrompt,
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-fold',
+            role: 'assistant',
+            content:
+              'The sticky prompt should stay compact while folded so this reply remains visible underneath.',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        todos: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+}
+
 /** A representative completed coding turn for conversation hierarchy visual evaluation. */
 export function seedConversationVisualHierarchyFixture(workspaceRoot: string): void {
   const projectId = 'e2e-conversation-hierarchy-project'
@@ -1342,6 +1579,53 @@ export function seedConversationVisualHierarchyFixture(workspaceRoot: string): v
       },
     ],
   })
+}
+
+/**
+ * Assistant answer trailed by a Cursor ACP transport RetriableError.
+ * Seeds developer mode so the collapsed transport-note disclosure is visible.
+ */
+export function seedAcpTransportNoiseFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-transport-noise-project'
+  const threadId = 'e2e-acp-transport-noise-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP transport noise',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-noise',
+            role: 'user',
+            content: 'make a pr',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-noise',
+            role: 'assistant',
+            content: [
+              'https://github.com/copse-dev/agent-pane/pull/1818',
+              '',
+              'Error: RetriableError: WritableIterable is closed',
+            ].join('\n'),
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+  writeSettings({ developerMode: true })
 }
 
 /** Two user turns followed by enough output to exercise the latest-prompt sticky anchor. */
@@ -1958,6 +2242,79 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
+/** ACP turn that exhausted its one recovery attempt without producing final prose. */
+export function seedAcpUnfinishedTurnFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-acp-unfinished-project'
+  const threadId = 'e2e-acp-unfinished-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'ACP unfinished turn recovery',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-acp-unfinished',
+            role: 'user',
+            content: 'Update the Selenium ADR with the spec findings.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-acp-tools',
+            role: 'assistant',
+            content:
+              'Confirmed the key spec facts. Let me check the upstream issue before I write.',
+            toolCalls: [
+              {
+                id: 'tc-acp-upstream-search',
+                name: 'run_shell',
+                args: { command: 'rg "WebDriver BiDi" docs/' },
+                status: 'done',
+                result: 'docs/adr/selenium.md:WebDriver BiDi migration notes',
+                kind: 'search',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-acp-fallback',
+            role: 'assistant',
+            content:
+              'The external agent stopped after using its tools without providing a final result. Send “continue” to resume.',
+            turnOutcome: {
+              status: 'failed',
+              stopReason: 'error',
+              rawStopReason: 'end_turn',
+              source: 'host',
+              executor: 'acp',
+              provider: 'claude-agent-acp',
+              model: 'acp:claude-agent-acp#opus[1m]',
+              lastEvent: 'text',
+              recovery: {
+                reason: 'ended_after_tools',
+                attempted: true,
+                recovered: false,
+              },
+              endedAt: now + 2,
+            },
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+        ],
+        usage: { inputTokens: 800, outputTokens: 120 },
+        createdAt: now,
+        updatedAt: now + 2,
       },
     ],
   })
@@ -2922,6 +3279,62 @@ export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
         updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
+/** Completed MCP calls whose provider supplied neither arguments nor result text. */
+export function seedEmptyMcpToolFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-empty-mcp-tool-project'
+  const threadId = 'e2e-empty-mcp-tool-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Empty MCP tool details',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-empty-mcp',
+            role: 'user',
+            content: 'Run the two provider checks.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-empty-mcp',
+            role: 'assistant',
+            content: 'Both provider checks completed without returning details.',
+            toolCalls: [
+              {
+                id: 'tc-empty-mcp-ping',
+                name: 'MCP: tool',
+                args: {},
+                status: 'done',
+                result: '',
+                resultFormat: 'markdown',
+              },
+              {
+                id: 'tc-empty-mcp-refresh',
+                name: 'MCP: tool',
+                args: {},
+                status: 'done',
+                result: '',
+                resultFormat: 'markdown',
+              },
+            ],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 1,
       },
     ],
   })

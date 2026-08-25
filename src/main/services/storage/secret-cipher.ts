@@ -1,5 +1,6 @@
-// API keys are encrypted at rest with Electron's `safeStorage`, which is the
-// only reason `settings.ts` imported `electron` at all. That single import put
+// API keys are encrypted at rest by whichever cipher the shell installs —
+// historically Electron's `safeStorage`, which is the only reason `settings.ts`
+// imported `electron` at all. That single import put
 // Electron on the path of all 36 of its importers — including
 // `registry-bootstrap.ts` — so nothing downstream could be loaded outside the
 // app (#1313).
@@ -14,11 +15,27 @@
 // already handles: reads of an encrypted key return null, and writes require
 // explicit plaintext consent.
 
-/** The slice of Electron's `safeStorage` that settings actually uses. */
+/**
+ * The slice of Electron's `safeStorage` that settings actually uses, plus one
+ * hook for format migration (see `keyring-cipher.ts`).
+ */
 export interface SecretCipher {
   isEncryptionAvailable(): boolean
   encryptString(plainText: string): Buffer
   decryptString(encrypted: Buffer): string
+  /**
+   * Whether a blob this cipher just opened should be written back through
+   * `encryptString` — true when it is in a format the cipher reads but no
+   * longer writes. Callers migrate lazily on read; a cipher with a single
+   * format leaves this undefined.
+   */
+  shouldReencrypt?(encrypted: Buffer): boolean
+  /**
+   * Encrypt through the preferred format without using an availability
+   * fallback. Migration callers leave the readable legacy blob untouched if
+   * this throws, rather than rewriting it into the same legacy format.
+   */
+  encryptStringForMigration?(plainText: string): Buffer
 }
 
 let cipher: SecretCipher | null = null

@@ -1,5 +1,7 @@
 import { el, clear } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
+import { setInlineStatus } from '../dom/inline-status.ts'
+import { paneLoadingRow } from '../dom/pane-loading.ts'
 import { paneMaximizeButton } from './pane-maximize-button.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
@@ -172,15 +174,19 @@ export function mountGitChangesPane(
 
   const conflictBanner = el('div', { class: 'diff-conflict-banner' })
   conflictBanner.hidden = true
-  const diffWrap = el('div', { class: 'git-diff-editor-wrap git-diff-editor-wrap-proposed' })
+  const diffWrap = el('div', { class: 'git-diff-editor-wrap' })
   const acceptBtn = el('button', { type: 'button', class: 'diff-accept-btn' }, 'Accept')
   const rejectBtn = el('button', { type: 'button', class: 'diff-reject-btn' }, 'Reject')
   acceptBtn.hidden = true
   rejectBtn.hidden = true
-  diffWrap.append(acceptBtn, rejectBtn)
+  // A bar below the editor, not an overlay: floating buttons sat on top of the
+  // last visible lines (and the editor's right-edge chrome) in narrow panes (#1702).
+  const approvalBar = el('div', { class: 'diff-approval-bar' })
+  approvalBar.hidden = true
+  approvalBar.append(rejectBtn, acceptBtn)
   const imageWrap = el('div', { class: 'git-image-diff-wrap' })
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a changed file')
-  viewerRoot.append(conflictBanner, diffWrap, imageWrap, emptyState)
+  viewerRoot.append(conflictBanner, diffWrap, approvalBar, imageWrap, emptyState)
 
   let diffEditor: GitDiffEditor | null = null
   let pendingSelect: ChangeSelection | null = null
@@ -189,16 +195,37 @@ export function mountGitChangesPane(
   let status: GitStatusResult | null = null
   let committed: GitCommittedChanges | null = null
   let gitAvailable = false
+  // False until the first refresh for the current owner has settled (and reset
+  // whenever a workspace/thread switch invalidates what we know). The empty
+  // states below — "Not a git repository", "No changes" — are answers about the
+  // repo, and rendering them before the probe returns states them about a repo
+  // we have not looked at yet. They look identical to the real thing, so that
+  // guess is what the user believes; on a cold start it is also the first thing
+  // they see, because this pane mounts behind the Monaco bundle.
+  let loaded = false
   let sessionBackup: SessionBackup | null = null
   let restoreInFlight = false
   let selection: ChangeSelection | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let refreshRequestId = 0
+  let gitFailureLogged = false
   const proposedDiffCachesByOwner = new Map<string, Map<string, ActiveDiff>>()
   let pendingNavigate: string | null = null
   // Path of a freshly proposed diff the pane should jump to on the next sync,
   // even if an earlier (still-valid) selection would otherwise be preserved.
   let pendingProposedNavigate: string | null = null
+
+  /**
+   * A failed git IPC read leaves the pane with nothing trustworthy to render,
+   * but the failure itself is not user-actionable: it is usually a thread whose
+   * worktree is mid-validation or not persisted yet (#1880). Log once per burst
+   * and render the same empty state instead of stacking inspector warnings.
+   */
+  function markGitUnavailable(scope: string, error: unknown): void {
+    if (gitFailureLogged) return
+    gitFailureLogged = true
+    console.warn(`[git-changes-pane] ${scope} failed:`, error)
+  }
   // A pop-out is seeded with the parent window's selection before its own diff
   // queue has hydrated, so an early `refresh()` would see an empty queue, judge
   // the selection dead, and fall through to an unrelated git file (#1704). Hold
@@ -380,6 +407,13 @@ export function mountGitChangesPane(
 
     renderProposedSection(queue)
 
+    if (!loaded) {
+      // Proposed diffs come from the store and are already accurate; only the
+      // git-derived part of the list is unknown this early.
+      if (queue.length === 0) listBody.append(paneLoadingRow('Loading changes…'))
+      return
+    }
+
     if (!gitAvailable) {
       if (queue.length === 0) {
         listBody.append(el('div', { class: 'git-changes-empty' }, 'Not a git repository'))
@@ -458,6 +492,7 @@ export function mountGitChangesPane(
   restoreBtn.addEventListener('click', () => void restorePreSessionChanges())
 
   function hideApprovalButtons(): void {
+    approvalBar.hidden = true
     acceptBtn.hidden = true
     rejectBtn.hidden = true
   }
@@ -465,6 +500,7 @@ export function mountGitChangesPane(
   async function showProposedDiff(view: ActiveDiff): Promise<void> {
     const requestId = ++selectRequestId
     pendingSelect = { kind: 'proposed', path: view.path }
+    approvalBar.hidden = false
     acceptBtn.hidden = false
     rejectBtn.hidden = false
     acceptBtn.onclick = (): void => {
@@ -568,7 +604,12 @@ export function mountGitChangesPane(
     renderList()
     const owner = activeOwner()
     if (!owner) return
-    const diff = await api.git.fileDiff(owner.projectId, owner.threadId, path, staged)
+    let diff: GitFileDiff | null = null
+    try {
+      diff = await api.git.fileDiff(owner.projectId, owner.threadId, path, staged)
+    } catch (error) {
+      markGitUnavailable(`diff read for ${path}`, error)
+    }
     if (
       requestId !== selectRequestId ||
       activeOwner()?.projectId !== owner.projectId ||
@@ -629,7 +670,12 @@ export function mountGitChangesPane(
     renderList()
     const owner = activeOwner()
     if (!owner) return
-    const diff = await api.git.committedFileDiff(owner.projectId, owner.threadId, path)
+    let diff: GitFileDiff | null = null
+    try {
+      diff = await api.git.committedFileDiff(owner.projectId, owner.threadId, path)
+    } catch (error) {
+      markGitUnavailable(`committed diff read for ${path}`, error)
+    }
     if (
       requestId !== selectRequestId ||
       activeOwner()?.projectId !== owner.projectId ||
@@ -679,7 +725,8 @@ export function mountGitChangesPane(
     pendingSelect = null
     hideApprovalButtons()
     emptyState.hidden = false
-    emptyState.textContent = 'Select a changed file'
+    if (loaded) emptyState.textContent = 'Select a changed file'
+    else setInlineStatus(emptyState, 'pending', 'Loading changes…')
     diffWrap.hidden = true
     imageWrap.hidden = true
     clear(imageWrap)
@@ -791,10 +838,22 @@ export function mountGitChangesPane(
     const requestId = ++refreshRequestId
     const owner = activeOwner()
     if (!owner) {
+      // No thread yet — the usual cause is the launch window before threads
+      // hydrate, so this is "not known yet", not "no repo". Stay in the loading
+      // state; the `threads_changed` that selects a thread refreshes again.
       gitAvailable = false
+      loaded = false
+      renderList()
       return
     }
-    const available = await api.git.isAvailable(owner.projectId, owner.threadId)
+    let available = false
+    let availabilityFailed = false
+    try {
+      available = await api.git.isAvailable(owner.projectId, owner.threadId)
+    } catch (error) {
+      availabilityFailed = true
+      markGitUnavailable('git availability check', error)
+    }
     const currentOwner = activeOwner()
     if (
       requestId !== refreshRequestId ||
@@ -804,6 +863,8 @@ export function mountGitChangesPane(
       return
     gitAvailable = available
     if (!gitAvailable) {
+      if (!availabilityFailed) gitFailureLogged = false
+      loaded = true
       status = null
       committed = null
       sessionBackup = null
@@ -812,12 +873,35 @@ export function mountGitChangesPane(
       await syncSelection()
       return
     }
-    const nextStatus = await api.git.status(owner.projectId, owner.threadId)
-    if (requestId !== refreshRequestId) return
-    const nextCommitted = await api.git.committedChanges(owner.projectId, owner.threadId)
-    if (requestId !== refreshRequestId) return
-    const nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
-    if (requestId !== refreshRequestId) return
+    let nextStatus
+    let nextCommitted
+    let nextBackup
+    try {
+      nextStatus = await api.git.status(owner.projectId, owner.threadId)
+      if (requestId !== refreshRequestId) return
+      nextCommitted = await api.git.committedChanges(owner.projectId, owner.threadId)
+      if (requestId !== refreshRequestId) return
+      nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
+      if (requestId !== refreshRequestId) return
+    } catch (error) {
+      markGitUnavailable('git status read', error)
+      if (requestId !== refreshRequestId) return
+      status = null
+      committed = null
+      sessionBackup = null
+      gitAvailable = false
+      loaded = true
+      renderRestoreBanner()
+      renderList()
+      clearViewer()
+      return
+    }
+    gitFailureLogged = false
+    // Only now: `gitAvailable` alone still leaves `status`/`committed` null for
+    // three more awaits, and any event that repaints the list in that window
+    // (an approve, a pop-out sync) would render "No changes" over a repo that
+    // has them.
+    loaded = true
     status = nextStatus
     committed = nextCommitted
     sessionBackup = nextBackup
@@ -870,6 +954,9 @@ export function mountGitChangesPane(
       if (changesModeActive(store)) void refresh()
     }),
     store.on('workspace_changed', () => {
+      // The new workspace's git state is unknown until the refresh below lands;
+      // holding `loaded` true would show the previous repo's answer as this one's.
+      loaded = false
       status = null
       committed = null
       sessionBackup = null
@@ -884,6 +971,7 @@ export function mountGitChangesPane(
     store.on('threads_changed', () => {
       refreshRequestId++
       selectRequestId++
+      loaded = false
       status = null
       committed = null
       sessionBackup = null

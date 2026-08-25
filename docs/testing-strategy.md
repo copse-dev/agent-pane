@@ -283,6 +283,36 @@ loops driven by an actual local model rather than the mock:
   per-rule, and token deltas under `bench-results/doctrine/`. CI runs its mock
   smoke arm in the normal bench job; the real model matrix runs nightly or with
   the `bench-doctrine` label when `LM_EVAL_RUNNER` is configured.
+- The `eval-tool-preference` job scores whether a real model answers a read-only
+  "what landed on main / is CI green?" question through the first-class
+  git/gh/CI tools or drives `gh` and network `git` through `run_shell`, charging
+  the user an external-shell approval each time (#1845). Scenario
+  `tests/e2e/scenarios/git-ci-first-class-tools.json`; nightly or with the
+  `eval-tool-preference` label, matrixed over the prompt class's wordings plus
+  one ACP path. The _scoring_ is not model-gated — the shape table and the
+  scenario's discrimination are unit-tested on every PR
+  (`scripts/lib/eval-tool-expectations.test.ts`,
+  `scripts/lib/eval-scenario-git-ci-tools.test.ts`), so only the measurement
+  waits for a runner.
+- `tests/e2e/scenarios/tmpdir-scratch-eval.json` is the scratch-path GA bar
+  (#1846): does a sandboxed agent asked to stage intermediate output somewhere
+  temporary use the `$TMPDIR` the sandbox hands it, or hardcode `/tmp/...` and
+  charge the user a "Run outside sandbox?" approval for a file that had a
+  sanctioned home? Scoring reads the shell command's **arguments**, not the tool
+  name, because the failing run calls exactly the right tool
+  (`scripts/lib/eval-scratch-paths.mts`). Nightly or with the `bench-agent-eval`
+  label; both arms run every prompt variant, and the failure names the offending
+  command string. Run one arm by hand with:
+
+  ```bash
+  COPSE_EVAL_SCENARIO=tests/e2e/scenarios/tmpdir-scratch-eval.json npm run test:e2e:agent-eval
+  ```
+
+  Add `COPSE_EVAL_MODEL=acp:codex-acp` for the ACP arm and
+  `COPSE_EVAL_PROMPT_VARIANT=1` to pick a different phrasing. The scenario files
+  themselves are schema- and fixture-checked per PR in
+  `scripts/lib/eval-scenarios.test.ts`, so a typo does not wait for the nightly
+  to surface.
 
 These are deliberately **out of the per-PR critical path** (they need a model
 host and are slow/non-deterministic), but they remain a supported avenue: a
@@ -338,17 +368,35 @@ and take CI's render (`scripts/filter-screenshots.mts` implements the policy).
 receives promotion PRs from `main`, so it stays in a state a release can be
 cut from.
 
-| Event                                     | Tier                                          |
-| ----------------------------------------- | --------------------------------------------- |
-| PR into `main` (the normal case)          | light — precheck, check, build (no e2e/bench) |
-| Push to `main` (a merge landed)           | light                                         |
-| PR from `main` into `release` (promotion) | **full** — adds e2e (8 shards) and bench      |
-| Push to `release` (a promotion landed)    | **full**                                      |
-| Nightly `schedule`, release tags          | **full**, on GitHub-hosted runners            |
+| Event                                     | Tier                                           |
+| ----------------------------------------- | ---------------------------------------------- |
+| PR into `main`, oracle thinned it         | light **plus the e2e subset the oracle chose** |
+| PR into `main`, oracle says `full`        | light — precheck, check, build (no e2e/bench)  |
+| Push to `main` (a merge landed)           | light                                          |
+| PR from `main` into `release` (promotion) | **full** — adds e2e (8 shards) and bench       |
+| Push to `release` (a promotion landed)    | **full**                                       |
+| Nightly `schedule`, release tags          | **full**, on GitHub-hosted runners             |
 
-The point is that e2e and bench are paid once per _promotion_ rather than once
-per PR. At ~20 merges a day that is the difference between ~20 heavy runs and a
-handful.
+The point is that bench, and the _whole_ e2e suite, are paid once per
+_promotion_ rather than once per PR. At ~20 merges a day that is the difference
+between ~20 heavy runs and a handful.
+
+A PR the oracle can thin is the exception, and a deliberately cheap one. `subset`
+is only emitted when the change is not broad, confidence is not `low`, and the
+selection is **at most half the suite** (`computePlan` in `scripts/test-oracle.mts`)
+— so those PRs get their own specs back without anyone paying for a full run, and
+the shard matrix is already sized to the plan. Everything the oracle refuses to
+thin still comes back as `full` and still waits for the promotion, the nightly, or
+a label.
+
+Two consequences of running e2e on those PRs, both intended:
+
+- a failing subset turns `CI Passed` red on an ordinary `main` PR, where before
+  e2e could not fail one at all; and
+- `commit-screenshots` now runs there too, so reference shots touched by the
+  specs that ran are refreshed automatically. It only copies shots the shards
+  actually produced and still reverts sub-threshold noise and contested
+  baselines, so a subset run cannot prune or overwrite shots it never rendered.
 
 Two escape hatches on a `main`-targeted PR, both labels:
 

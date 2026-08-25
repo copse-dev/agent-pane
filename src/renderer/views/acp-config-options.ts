@@ -1,3 +1,4 @@
+import { canonicalAcpAgentId } from '@shared/acp-known-agents.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   acpConfigCategoryLabel,
@@ -94,7 +95,8 @@ export async function loadAcpOptionGroups(
 ): Promise<{ agentId: string; groups: AcpOptionGroup[] } | null> {
   const selection = parseAcpModelSelection(model)
   if (!selection) return null
-  const agent = (await readAgents(api)).find((candidate) => candidate.id === selection.id)
+  const selectedId = canonicalAcpAgentId(selection.id)
+  const agent = (await readAgents(api)).find((candidate) => candidate.id === selectedId)
   if (!agent?.enabled) return null
   const groups = acpOptionGroupsFor(agent)
   return groups.length > 0 ? { agentId: agent.id, groups } : null

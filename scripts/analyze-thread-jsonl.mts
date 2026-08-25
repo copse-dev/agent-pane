@@ -10,7 +10,14 @@ import {
 } from '@shared/agent/doctrine-compliance.ts'
 import { shouldSteerGithubLinks } from '@shared/git/github-link-steering.ts'
 import { shouldSteerTodos } from '@shared/todos/todo-logic.ts'
-import { expectString } from '../src/shared/unknown-value.mts'
+import { expectString, isRecord } from '../src/shared/unknown-value.mts'
+import {
+  shellCommandDisplacements,
+  toolExpectationViolations,
+  usedTool,
+  type ObservedToolCall,
+} from './lib/eval-tool-expectations.mts'
+import { defaultScratchRoots } from './lib/eval-scratch-paths.mts'
 import { z } from 'zod'
 
 interface ScenarioExpect {
@@ -20,7 +27,20 @@ interface ScenarioExpect {
   maxExplore?: number | undefined
   minExplore?: number | undefined
   requireTools?: string[] | undefined
+  /** Passes when the run used at least one of these; `requireTools` is a conjunction. */
+  requireAnyTools?: string[] | undefined
+  requireSuccessfulToolGroups?: string[][] | undefined
   forbidTools?: string[] | undefined
+  /** Fail when `run_shell` ran a command a first-class tool already covers. */
+  forbidDisplacedShell?: boolean | undefined
+  /** Fail when `run_shell` ran destructive VCS recovery (`reset --hard` / `clean -fd`). */
+  forbidDestructiveGitShell?: boolean | undefined
+  /** Fail when `run_shell` touched `~/.copse/workspace` (use read_archive / file tools). */
+  forbidCopseWorkspaceShell?: boolean | undefined
+  /** Fail when a `sandbox_network_audit` card names a GitHub host. */
+  forbidGithubNetworkDenial?: boolean | undefined
+  /** Fail when a shell call writes scratch under a global temp root (#1846). */
+  forbidGlobalTempWrites?: boolean | undefined
   maxInputTokens?: number | undefined
   requireUpdateTodos?: boolean | undefined
   forbidParallelExploreTurn1?: boolean | undefined
@@ -122,7 +142,14 @@ const scenarioSchema: z.ZodType<Scenario> = z.object({
       maxExplore: z.number().optional(),
       minExplore: z.number().optional(),
       requireTools: z.array(z.string()).optional(),
+      requireAnyTools: z.array(z.string()).optional(),
+      requireSuccessfulToolGroups: z.array(z.array(z.string().min(1)).min(1)).optional(),
       forbidTools: z.array(z.string()).optional(),
+      forbidDisplacedShell: z.boolean().optional(),
+      forbidDestructiveGitShell: z.boolean().optional(),
+      forbidCopseWorkspaceShell: z.boolean().optional(),
+      forbidGithubNetworkDenial: z.boolean().optional(),
+      forbidGlobalTempWrites: z.boolean().optional(),
       maxInputTokens: z.number().optional(),
       requireUpdateTodos: z.boolean().optional(),
       forbidParallelExploreTurn1: z.boolean().optional(),
@@ -177,6 +204,27 @@ function subagentUsages(records: JsonlRecord[]): Array<{
   return out
 }
 
+/**
+ * Shell shapes a first-class tool already covers, counted per shape.
+ *
+ * Reported whether or not the scenario fails on them: measuring how often a
+ * model reaches for external shell is the baseline #1845 asks for, and that has
+ * to be readable from a run that passes.
+ */
+function displacedShellHistogram(observed: readonly ObservedToolCall[]): Record<string, number> {
+  const histogram: Record<string, number> = {}
+  for (const call of observed) {
+    if (!usedTool([call.name], 'run_shell')) continue
+    if (!isRecord(call.args)) continue
+    const command = call.args['command']
+    if (typeof command !== 'string') continue
+    for (const shape of shellCommandDisplacements(command)) {
+      histogram[shape.id] = (histogram[shape.id] ?? 0) + 1
+    }
+  }
+  return histogram
+}
+
 function loadJsonl(path: string): JsonlRecord[] {
   return readFileSync(path, 'utf8')
     .trim()
@@ -204,6 +252,16 @@ function subagentReads(records: JsonlRecord[]): { path: string; exploreId: strin
   return out
 }
 
+/**
+ * The workspace the eval harness prepared for the run being analysed, if this
+ * analysis follows one. Absent when an operator points the script at a saved
+ * JSONL by hand, which only widens what counts as a global-temp write.
+ */
+function evalWorkspaceRoot(): string | undefined {
+  const root = process.env['COPSE_EVAL_WORKSPACE_ROOT']?.trim()
+  return root && root.length > 0 ? root : undefined
+}
+
 function analyze(path: string, scenario?: Scenario): void {
   const records = loadJsonl(path)
   const thread = records[0]
@@ -211,6 +269,7 @@ function analyze(path: string, scenario?: Scenario): void {
   const userText = typeof user?.content === 'string' ? user.content : JSON.stringify('')
 
   const toolHist: Record<string, number> = {}
+  const observedCalls: ObservedToolCall[] = []
   const doctrineToolCalls: DoctrineToolCall[] = []
   let exploreCount = 0
   let updateTodos = 0
@@ -226,6 +285,11 @@ function analyze(path: string, scenario?: Scenario): void {
     }
     for (const tc of tcs) {
       toolHist[tc.name] = (toolHist[tc.name] ?? 0) + 1
+      observedCalls.push({
+        name: tc.name,
+        ...(tc.args ? { args: tc.args } : {}),
+        ...(tc.status ? { status: tc.status } : {}),
+      })
       if (tc.name === 'explore') exploreCount++
       if (tc.name === 'update_todos') updateTodos++
       const doctrineCall: DoctrineToolCall = { name: tc.name }
@@ -285,12 +349,27 @@ function analyze(path: string, scenario?: Scenario): void {
   if (exp?.minExplore !== undefined && exploreCount < exp.minExplore) {
     violations.push(`explore count ${String(exploreCount)} < min ${String(exp.minExplore)}`)
   }
-  for (const t of exp?.requireTools ?? []) {
-    if ((toolHist[t] ?? 0) <= 0) violations.push(`missing required tool: ${t}`)
-  }
-  for (const t of exp?.forbidTools ?? []) {
-    if ((toolHist[t] ?? 0) > 0) violations.push(`forbidden tool used: ${t}`)
-  }
+  violations.push(
+    ...toolExpectationViolations(
+      observedCalls,
+      {
+        requireTools: exp?.requireTools,
+        requireAnyTools: exp?.requireAnyTools,
+        requireSuccessfulToolGroups: exp?.requireSuccessfulToolGroups,
+        forbidTools: exp?.forbidTools,
+        forbidDisplacedShell: exp?.forbidDisplacedShell,
+        forbidDestructiveGitShell: exp?.forbidDestructiveGitShell,
+        forbidCopseWorkspaceShell: exp?.forbidCopseWorkspaceShell,
+        forbidGithubNetworkDenial: exp?.forbidGithubNetworkDenial,
+        forbidGlobalTempWrites: exp?.forbidGlobalTempWrites,
+      },
+      // A `tempProject` scenario's workspace is itself a `mkdtemp` under the OS
+      // temp dir, so without naming it here every legitimate write into the
+      // workspace would read as a global-temp scratch write. The eval harness
+      // exports the root it prepared.
+      { scratchRoots: defaultScratchRoots({ workspaceRoot: evalWorkspaceRoot() }) },
+    ),
+  )
   if (exp?.maxInputTokens !== undefined && (usage.inputTokens ?? 0) > exp.maxInputTokens) {
     violations.push(`input tokens ${String(usage.inputTokens)} > max ${String(exp.maxInputTokens)}`)
   }
@@ -325,6 +404,7 @@ function analyze(path: string, scenario?: Scenario): void {
     cache: cacheBreakdown(usage),
     subagents: subagentUsages(records),
     toolHistogram: toolHist,
+    displacedShellHistogram: displacedShellHistogram(observedCalls),
     exploreCount,
     updateTodosCount: updateTodos,
     assistantTurns: assistants.length,

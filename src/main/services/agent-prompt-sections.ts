@@ -57,13 +57,16 @@ export function buildPromptSections(v: PromptSectionVars): PromptSections {
 ${v.tools}
 ${v.toolTail}
 {SKILLS_TOOLS_LINE}`,
-    workspace: 'Working directory: {WORKSPACE_ROOT}',
+    // {REPO_CONTEXT} resolves to the authoritative Git-repository-root statement
+    // (or to nothing outside a turn / outside a checkout) — see
+    // `buildRepositoryContext` in agent-system-prompt.ts (#1724).
+    workspace: 'Working directory: {WORKSPACE_ROOT}{REPO_CONTEXT}',
     openEnded: `When the user asks an open-ended question (review, explain, validate, summarize):
 1. ${v.gather}
 2. ${v.avoidRepeat}`,
     modifyingFiles: `When modifying files:
 1. ${v.understand}
-2. Use str_replace for partial edits or write_file for full rewrites. If git is clean, edits apply directly to disk. If git already has user/unowned changes or there are pending proposed diffs, edits are staged for user approval instead.
+2. Use str_replace for partial edits or write_file for full rewrites. Creating a file that does not exist yet always applies directly — there is nothing to overwrite. For an existing file, edits apply directly to disk when git is clean, and are staged for user approval when git already has user/unowned changes or there are pending proposed diffs.
 3. Do not assume file content; always ${v.inspectVerb} before writing
 4. Generated code must be runnable: include the imports, dependencies, and wiring it needs to run
 5. When you make an edit, use str_replace or write_file rather than pasting the file's new contents into the chat

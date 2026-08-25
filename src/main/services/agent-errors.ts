@@ -1,9 +1,11 @@
 import { RequestError } from '@agentclientprotocol/sdk'
-import { acpReauthCommand, KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
+import { acpReauthCommand, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
+import { isContextOverflowMessage } from '@shared/context-window-advice.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 import { IMAGE_INPUT_UNSUPPORTED_MESSAGE } from '@shared/image-input-support.ts'
 import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
+import type { TurnErrorDetail } from '@shared/types/turn-outcome.ts'
 
 /** Optional context so ACP failures can name the agent and its auth steps. */
 export interface ClassifyAgentErrorContext {
@@ -125,6 +127,58 @@ function formatErrorData(data: unknown): string | null {
   return null
 }
 
+const TURN_ERROR_FIELD_LIMIT = 4_000
+
+function boundedDiagnostic(value: string): string {
+  return value.length <= TURN_ERROR_FIELD_LIMIT
+    ? value
+    : `${value.slice(0, TURN_ERROR_FIELD_LIMIT)}…`
+}
+
+/**
+ * Preserve the provider/transport facts that user-facing classification may
+ * intentionally simplify. The result is bounded and stack-free so it is safe
+ * to persist in the thread spine and portable JSONL export.
+ */
+export function turnErrorDetail(err: unknown): TurnErrorDetail {
+  const rpc = findJsonRpcError(err)
+  const provider = parseProviderError(err)
+  const message = boundedDiagnostic(errorMessage(err))
+  const detailCandidates: string[] = []
+  if (rpc?.data != null) {
+    try {
+      const serialized = JSON.stringify(rpc.data)
+      if (serialized && serialized !== message) detailCandidates.push(serialized)
+    } catch {
+      // Fall through to the safe scalar/record formatter below.
+    }
+  }
+  const dataDetail = rpc ? formatErrorData(rpc.data) : null
+  if (dataDetail && dataDetail !== message && !detailCandidates.includes(dataDetail)) {
+    detailCandidates.push(dataDetail)
+  }
+
+  let current: unknown = err instanceof Error ? err.cause : null
+  for (let depth = 0; depth < 8 && current != null; depth++) {
+    const causeMessage = errorMessage(current).trim()
+    if (causeMessage && causeMessage !== message && !detailCandidates.includes(causeMessage)) {
+      detailCandidates.push(causeMessage)
+    }
+    current = current instanceof Error ? current.cause : null
+  }
+
+  const code = rpc?.code ?? provider.code ?? provider.status
+  const name = err instanceof Error && err.name ? err.name : undefined
+  const details =
+    detailCandidates.length > 0 ? boundedDiagnostic(detailCandidates.join('\n')) : null
+  return {
+    message,
+    ...(name !== undefined ? { name } : {}),
+    ...(code !== undefined ? { code } : {}),
+    ...(details !== null ? { details } : {}),
+  }
+}
+
 /**
  * Why an ACP turn could not authenticate. `required` is "this agent has never
  * been signed in / its key was refused"; `expired` is "it *was* signed in and
@@ -186,7 +240,7 @@ export function classifyAcpAuthFailure(
 
 /** What to call the agent in prose, falling back through id to a generic noun. */
 function acpAgentDisplayName(agentId?: string): string {
-  const known = agentId ? KNOWN_ACP_AGENTS.find((agent) => agent.id === agentId) : undefined
+  const known = agentId ? findAcpCatalogEntry(agentId) : undefined
   return known?.title ?? agentId ?? 'The external agent'
 }
 
@@ -289,7 +343,7 @@ function formatAcpAuthError(
   kind: AcpAuthFailureKind,
   agentId?: string,
 ): string {
-  const known = agentId ? KNOWN_ACP_AGENTS.find((agent) => agent.id === agentId) : undefined
+  const known = agentId ? findAcpCatalogEntry(agentId) : undefined
   const agentName = acpAgentDisplayName(agentId)
 
   // An expired credential is a *different* message: the agent is configured and
@@ -414,11 +468,9 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   if (status === 529 || type === 'overloaded_error' || /\boverloaded\b/i.test(detail))
     return 'The model provider is temporarily overloaded. This is transient — wait a moment and try again.'
 
-  if (
-    detail.includes('context_length') ||
-    detail.includes('context window') ||
-    detail.includes('tokens to keep from the initial prompt')
-  )
+  // `detail` is the provider's own message where one parsed out; LM Studio buries
+  // the engine's wording in a JSON body that only survives in `raw`.
+  if (isContextOverflowMessage(detail) || isContextOverflowMessage(raw))
     return 'Conversation too long for the loaded model context. Reload the model in LM Studio with a larger context, start a new thread, or use smaller reads.'
 
   if (detail.includes('No user query found in messages') || detail.includes('jinja template'))

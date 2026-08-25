@@ -305,7 +305,7 @@ export function createAcpAgentsSection(
     const isEdit = Boolean(options.initial)
     const idInput = el('input', {
       type: 'text',
-      placeholder: 'gemini-cli',
+      placeholder: 'gemini',
       autocomplete: 'off',
       ...(isEdit ? { readonly: true } : {}),
     })
@@ -318,7 +318,7 @@ export function createAcpAgentsSection(
     const argsArea = el('textarea', {
       rows: '2',
       spellcheck: false,
-      placeholder: 'one argument per line, e.g. --experimental-acp',
+      placeholder: 'one argument per line, e.g. --acp',
     })
     const envArea = el('textarea', {
       rows: '2',

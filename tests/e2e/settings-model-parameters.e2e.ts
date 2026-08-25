@@ -3,8 +3,14 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
+/**
+ * The per-chat effort override that used to live here as a second `describe`
+ * now has its own file, model-picker-reasoning-effort.e2e.ts. It inherited this
+ * spec's `lmstudio:` selection across `reloadSession()` and was offered that
+ * model's ladder instead of its own; that file's header has the evidence.
+ */
 const LOCAL_MODEL = 'lmstudio:qwen3-coder-30b'
-const RECIPE_MODEL = 'openrouter:deepseek/deepseek-v4-flash-0731'
+const RECIPE_MODEL = 'openrouter:stealth/ox-alpha'
 
 describe('per-model generation parameters', () => {
   before(async function () {
@@ -52,7 +58,7 @@ describe('per-model generation parameters', () => {
     await saveElementScreenshot('[data-testid="model-parameters"]', 'settings-model-parameters.png')
   })
 
-  it('offers the published recipe for a model that has one', async function () {
+  it('offers the experimental Ox Alpha balanced profile', async function () {
     this.timeout(60_000)
     // Switching the picker is the cheapest way to reach a second model's state
     // without a second app launch.
@@ -72,12 +78,22 @@ describe('per-model generation parameters', () => {
     await offer.waitForDisplayed({ timeout: 10_000 })
     await offer.click()
 
-    await expect(await section.$('[data-testid="model-parameter-reasoning"]')).toHaveValue('max')
-    await expect(await section.$('[data-testid="model-parameter-temperature"]')).toHaveValue('1')
-    await expect(await section.$('[data-testid="model-parameter-top-p"]')).toHaveValue('0.95')
+    await expect(await section.$('[data-testid="model-parameter-reasoning"]')).toHaveValue('medium')
+    await expect(await section.$('[data-testid="model-parameter-max-output-tokens"]')).toHaveValue(
+      '16384',
+    )
+    await expect(await section.$('.model-parameter-recommend-note')).toHaveText(
+      expect.stringContaining('paired Terminal-Bench record'),
+    )
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="model-parameters"]')
+        ?.scrollIntoView({ block: 'start' })
+    })
+    await browser.pause(200)
     await saveElementScreenshot(
       '[data-testid="model-parameters"]',
-      'settings-model-parameters-recommended.png',
+      'settings-model-parameters-ox-alpha.png',
     )
 
     // Put the picker back so the next test sees the seeded selection.
@@ -101,46 +117,5 @@ describe('per-model generation parameters', () => {
     await expect(await section.$('.model-parameter-note')).toHaveText(
       expect.stringContaining('up to the model behind it'),
     )
-  })
-})
-
-describe('per-chat reasoning effort', () => {
-  before(async function () {
-    this.timeout(90_000)
-    resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-reasoning-effort', {
-      windowBounds: { width: 1280, height: 800 },
-      model: 'claude-opus-5',
-    })
-    await browser.reloadSession()
-    await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  })
-
-  after(() => {
-    resetUserData()
-  })
-
-  it('sits in the model picker and overrides only this chat', async function () {
-    this.timeout(60_000)
-    await $('.model-picker-trigger').click()
-    const row = await $('.model-picker-group-row')
-    await row.waitForDisplayed({ timeout: 15_000 })
-    await expect(row.$('.model-picker-group-row-label')).toHaveText('Effort')
-    // Unset by default — the model's own saved level applies.
-    await expect(row.$('.model-picker-group-row-value')).toHaveText('Default')
-
-    await row.click()
-    const choices = await $$('.model-picker-menu .model-picker-option')
-    // The default, plus the six-level ladder Opus 5 accepts.
-    await expect(choices.length).toBe(7)
-    await saveElementScreenshot('.model-picker-menu', 'footer-reasoning-effort.png')
-    await choices[choices.length - 1].click()
-    await expect($('.model-picker-menu')).not.toBeDisplayed()
-
-    // The pick lands on the thread, so it survives a reopen.
-    await $('.model-picker-trigger').click()
-    await expect($('.model-picker-group-row .model-picker-group-row-value')).toHaveText('Max', {
-      wait: 10_000,
-    })
   })
 })

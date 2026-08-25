@@ -38,13 +38,23 @@ jobs:
         continue-on-error: true
         run: npm run check
 
+      # copse-release-bot installation token, scoped to this repository and to
+      # the two permissions create-pull-request needs. See
+      # sync-model-catalog.yml for why the permissions are pinned explicitly.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Open PR if intellect scores changed
         uses: peter-evans/create-pull-request@v8
         with:
-          # The existing sync PAT/App token can create PRs under org policy and
-          # ensures the new PR triggers the normal CI workflow. It needs
-          # Contents + Pull requests: write on this repository.
-          token: ${{ secrets.SYNC_PR_TOKEN }}
+          # The App can create PRs under org policy and ensures the new PR
+          # triggers the normal CI workflow.
+          token: ${{ steps.app-token.outputs.token }}
           branch: chore/sync-intellect
           delete-branch: true
           commit-message: 'chore(models): sync intellect scores from Artificial Analysis'

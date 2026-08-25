@@ -30,6 +30,7 @@ function makeMonacoStub(counters: Counters): GitDiffMonaco {
     getModel: (): null => null,
     getSelection: (): null => null,
     revealLineInCenterIfOutsideViewport: (): void => {},
+    updateOptions: (): void => {},
   }
   return {
     Uri: { parse: (value: string) => ({ toString: () => value }) },

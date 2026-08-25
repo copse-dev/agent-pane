@@ -1,19 +1,24 @@
-import { randomUUID } from 'node:crypto'
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   decisionLogManifest,
   makeDecisionEvent,
-  parseDecisionLog,
-  serializeDecisionLine,
   serializeDecisionLog,
   type DecisionEvent,
   type DecisionInput,
 } from '@shared/threads/decision-log.ts'
+import {
+  decisionDetailBlobRef,
+  parseSpineEntries,
+  type SpineDecisionLine,
+  type SpinePermissionDecisionLine,
+} from '@shared/threads/spine-schema.ts'
 import { projectStoreDir } from '../storage/copse-paths.ts'
 import { runSerialized } from '../storage/write-queue.ts'
 import { getActiveProjectId } from '../workspace.ts'
 import { getActiveRunThread } from '../thread-models.ts'
+import { appendSpineDecision } from '../thread-store.ts'
 
 function safeRead(path: string): string | null {
   try {
@@ -23,32 +28,37 @@ function safeRead(path: string): string | null {
   }
 }
 
-/**
- * Durable control-plane decision log (issue #656). Sits alongside the #644
- * thread spine under the same store root:
- *
- *   ~/.copse/workspace/<projectId>/decisions.jsonl
- *
- * append-only, one {@link DecisionEvent} per line. Decisions that fire with no
- * active project (headless / pre-open paths) are bucketed under `_global` so
- * they are never silently dropped. Writes go through the per-project write queue
- * (shared with the thread store) so concurrent gates can't interleave a line.
- *
- * Recording is best-effort: {@link recordDecision} never throws and never blocks
- * the decision it describes — an audit-log failure must not break the agent
- * loop. The `id`/`at` fields are stamped here (the pure schema module stays
- * Node-free); the writer applies secret redaction via {@link makeDecisionEvent}.
- */
-
-const DECISIONS_FILE = 'decisions.jsonl'
-const NO_PROJECT_BUCKET = '_global'
-
-function decisionsPath(projectId: string): string {
-  return join(projectStoreDir(projectId), DECISIONS_FILE)
+function sha256(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex')
 }
 
+/**
+ * Durable control-plane decision log (issue #656). Appended as `decision` lines
+ * on each thread's `events.jsonl` (with optional `blobs/decision-*.detail.json`
+ * for argv / YOLO extras). The legacy project-level `decisions.jsonl` is no
+ * longer written; readers ignore/delete it.
+ *
+ * Recording is best-effort: {@link recordDecision} never throws and never blocks
+ * the decision it describes. Without an active project+thread the event is
+ * dropped (there is no `_global` file anymore).
+ */
+
+const LEGACY_DECISIONS_FILE = 'decisions.jsonl'
+
 function queueKey(projectId: string): string {
-  return `decision-log:${projectId}`
+  return `thread-store:${projectId}`
+}
+
+function legacyDecisionsPath(projectId: string): string {
+  return join(projectStoreDir(projectId), LEGACY_DECISIONS_FILE)
+}
+
+function deleteLegacyDecisionLog(projectId: string): void {
+  try {
+    unlinkSync(legacyDecisionsPath(projectId))
+  } catch {
+    // absent or unreadable — fine
+  }
 }
 
 /** Fields the writer resolves from ambient state when a caller omits them. */
@@ -57,47 +67,112 @@ export type RecordDecisionInput = Omit<DecisionInput, 'threadId'> & {
   threadId?: string
   /** Overrides the active project; omit to attribute to the current project. */
   projectId?: string
+  /** Optional turn correlation (hook recording context). */
+  turnId?: string
+  step?: number
+  /**
+   * Structured detail stored in a thread blob (shell argv, YOLO harm fields).
+   * Not redacted beyond JSON serialization — treat as thread-sensitive like tool
+   * args.
+   */
+  detail?: Record<string, unknown>
 }
 
 /**
- * Record one decision. Best-effort and fire-and-forget: resolves the active
- * project/thread when not supplied, redacts and stamps the event, and appends it
- * to the project's `decisions.jsonl`. Swallows every error so a broken audit
- * write can never surface to — or stall — the caller.
+ * Record one decision onto the active thread spine. Best-effort and
+ * fire-and-forget.
  */
 export function recordDecision(input: RecordDecisionInput): void {
   try {
-    const projectId = input.projectId ?? getActiveProjectId() ?? NO_PROJECT_BUCKET
-    const threadId = input.threadId ?? getActiveRunThread() ?? undefined
-    const { projectId: _p, threadId: _t, ...rest } = input
-    const event = makeDecisionEvent(
-      { ...rest, ...(threadId ? { threadId } : {}) },
-      randomUUID(),
-      Date.now(),
-    )
-    // Chain on the same per-project queue as the thread store so an append can't
-    // interleave with another line. The op itself is a single atomic appendFile.
-    // Swallow an async write failure too (the outer try only catches the enqueue)
-    // so a disk error can never surface as an unhandled rejection.
-    void runSerialized(queueKey(projectId), () => {
-      appendDecision(projectId, event)
-    }).catch(() => undefined)
+    const projectId = input.projectId ?? getActiveProjectId()
+    const threadId = input.threadId ?? getActiveRunThread()
+    if (!projectId || !threadId) return
+
+    const { projectId: _p, threadId: _t, detail, turnId, step, ...rest } = input
+    const id = randomUUID()
+    const at = Date.now()
+    const event = makeDecisionEvent({ ...rest, threadId }, id, at)
+
+    let detailContents: string | undefined
+    let line: SpineDecisionLine = {
+      ...event,
+      ...(turnId !== undefined ? { turnId } : {}),
+      ...(step !== undefined ? { step } : {}),
+    }
+    if (detail !== undefined) {
+      detailContents = JSON.stringify(detail)
+      line = {
+        ...line,
+        detail: { ref: decisionDetailBlobRef(id), sha256: sha256(detailContents) },
+      }
+    }
+
+    void appendSpineDecision(projectId, threadId, line, detailContents).catch(() => undefined)
   } catch {
     // Never let an audit-log failure escape into the decision path.
   }
 }
 
-function appendDecision(projectId: string, event: DecisionEvent): void {
-  const path = decisionsPath(projectId)
-  mkdirSync(dirname(path), { recursive: true })
-  appendFileSync(path, `${serializeDecisionLine(event)}\n`)
+function legacyPermissionToEvent(
+  line: SpinePermissionDecisionLine,
+  threadId: string,
+): DecisionEvent {
+  const verdict =
+    line.userResponse === 'approved'
+      ? 'approved'
+      : line.userResponse === 'declined'
+        ? 'denied'
+        : 'allowed'
+  return {
+    v: 1,
+    type: 'decision',
+    id: line.id,
+    at: line.decidedAt,
+    kind: 'shell',
+    actor: line.userResponse === 'not-required' ? 'system' : 'user',
+    verdict,
+    subject: 'shell command (arguments omitted)',
+    scope: line.sandboxState === 'unsandboxed' ? 'external' : 'sandbox',
+    reasons: line.reasons,
+    threadId,
+    cause: 'shell-guarded-yolo-harm',
+  }
 }
 
-/** Read a project's decision log, newest-last (append order). Empty when absent. */
+function collectThreadDecisionEvents(projectId: string): DecisionEvent[] {
+  const root = projectStoreDir(projectId)
+  let entries: string[]
+  try {
+    entries = readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+  } catch {
+    return []
+  }
+
+  const out: DecisionEvent[] = []
+  for (const threadId of entries) {
+    const raw = safeRead(join(root, threadId, 'events.jsonl'))
+    if (raw === null) continue
+    for (const entry of parseSpineEntries(raw)) {
+      if (entry.line?.type === 'decision') {
+        const { detail: _d, turnId: _t, step: _s, ...event } = entry.line
+        out.push(event)
+      } else if (entry.line?.type === 'permission_decision') {
+        out.push(legacyPermissionToEvent(entry.line, threadId))
+      }
+    }
+  }
+  out.sort((a, b) => a.at - b.at)
+  return out
+}
+
+/** Read a project's decisions from every thread spine, newest-last. */
 export function readDecisionLog(projectId: string): Promise<DecisionEvent[]> {
-  return runSerialized(queueKey(projectId), () =>
-    parseDecisionLog(safeRead(decisionsPath(projectId)) ?? ''),
-  )
+  return runSerialized(queueKey(projectId), () => {
+    deleteLegacyDecisionLog(projectId)
+    return collectThreadDecisionEvents(projectId)
+  })
 }
 
 export interface DecisionLogExport {
@@ -108,15 +183,13 @@ export interface DecisionLogExport {
 }
 
 /**
- * Export a project's decision log as a self-describing JSONL bundle: a
- * {@link decisionLogManifest} header line (media type + schema version +
- * conformance target) followed by the redacted decision events. Written under
- * `<project>/exports/`. Events are already redacted at record time; the export
- * re-affirms that by round-tripping through the same shape.
+ * Export a project's decision log as a self-describing JSONL bundle (redacted
+ * spine fields only — detail blobs are not inlined).
  */
 export function exportDecisionLog(projectId: string): Promise<DecisionLogExport> {
   return runSerialized(queueKey(projectId), () => {
-    const events = parseDecisionLog(safeRead(decisionsPath(projectId)) ?? '')
+    deleteLegacyDecisionLog(projectId)
+    const events = collectThreadDecisionEvents(projectId)
     const exportsDir = join(projectStoreDir(projectId), 'exports')
     mkdirSync(exportsDir, { recursive: true })
     const stamp = new Date(Date.now()).toISOString().replace(/[:.]/g, '-')

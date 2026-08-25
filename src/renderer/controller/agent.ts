@@ -16,6 +16,7 @@ import {
   updateContextSnapshot,
   setThreadTodos,
   setMessageReview,
+  setMessageTurnOutcome,
   setThreadComparison,
   addHookCard,
   getThreadById,
@@ -33,12 +34,12 @@ import {
   finishSubagent,
 } from '@shared/store/subagent-helpers.ts'
 import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
-import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
+import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY, promptProgressLabel } from '../agent-activity.ts'
 import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
 import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread } from './thread-naming.ts'
 import { takeQuietRun } from './quiet-runs.ts'
-import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
+import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 
@@ -75,21 +76,6 @@ function addAssistantMessage(store: AppStore, threadId: string): string {
     ...(held?.model !== undefined ? { model: held.model } : {}),
     ...(held?.parameters !== undefined ? { parameters: held.parameters } : {}),
   })
-}
-
-function recordUsageToLedger(
-  api: ApiClient,
-  store: AppStore,
-  threadId: string,
-  delta: UsageDelta,
-): void {
-  if (!delta.inputTokens && !delta.outputTokens) return
-  const { activeProjectId } = store.getState()
-  void api.usage
-    .record(usageRecordFromAgentDelta(threadId, delta, activeProjectId))
-    .catch((err: unknown) => {
-      console.error('[usage] failed to record usage event:', err)
-    })
 }
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
@@ -287,10 +273,12 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           ...(chunk.cacheCreationTokens !== undefined
             ? { cacheCreationTokens: chunk.cacheCreationTokens }
             : {}),
-          ...(chunk.usageSource !== undefined ? { usageSource: chunk.usageSource } : {}),
         }
-        recordUsageToLedger(api, store, threadId, delta)
         addUsageDelta(store, threadId, delta)
+        break
+      }
+      case 'prompt_progress': {
+        store.emit('agent_activity', threadId, promptProgressLabel(chunk.fraction))
         break
       }
       case 'context_pressure': {
@@ -432,6 +420,14 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         foldBackContinuationUsed(store, threadId, chunk.turnTreeId, chunk.used)
         break
       }
+      case 'turn_outcome': {
+        // Terminal diagnostics belong to the assistant bubble that concluded
+        // the turn. A provider can fail before its first token, so create an
+        // otherwise-empty bubble rather than dropping the only durable record.
+        st.msgId ??= addAssistantMessage(store, threadId)
+        setMessageTurnOutcome(store, threadId, st.msgId, chunk.outcome)
+        break
+      }
       case 'done': {
         if (st.msgId) store.emit('message_done', st.msgId)
         state.delete(threadId)
@@ -446,7 +442,35 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         if (threadId === store.getState().activeThreadId) {
           void syncThreadGitBranchAfterShell(store, api, threadId)
         }
-        drainMessageQueue(store, api, threadId)
+        const backgroundProjectId = backgroundProjectOf(store, threadId)
+        const backgroundProjectWasRemoved =
+          backgroundProjectId !== undefined &&
+          !store.getState().projects.some((project) => project.id === backgroundProjectId)
+        if (backgroundProjectId) {
+          // Autosave's reconcile only covers the active project, so a carried
+          // run's final metadata (idle status, usage, todos) would otherwise
+          // stay `running` on disk until the project is revisited — or forever,
+          // if the app quits first (#1841). Write it directly. The queue is
+          // deliberately not drained here: draining resolves checkout and
+          // workspace state from the active project, so a carried thread's
+          // queue waits for `resumePendingQueues` when its project reactivates.
+          const finished = getThreadById(store, threadId)
+          if (finished) {
+            void api.threads
+              .updateMeta(backgroundProjectId, threadId, {
+                status: finished.status,
+                usage: finished.usage,
+                updatedAt: finished.updatedAt,
+                title: finished.title,
+                ...(finished.todos !== undefined ? { todos: finished.todos } : {}),
+              })
+              .catch((err: unknown) => {
+                console.error('[threads] could not persist a background run finish', err)
+              })
+          }
+        } else {
+          drainMessageQueue(store, api, threadId)
+        }
         // A queued user or machine continuation immediately flips the thread
         // back to running. Only alert when the queue drain leaves it genuinely
         // finished, rather than chiming between consecutive turns — and never
@@ -463,6 +487,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
               })
           }
         }
+        // Removing an inactive project from the sidebar must not detach its
+        // live run. `removeProject` keeps the carried entry until this final
+        // message/meta handling is complete, after which nothing else needs
+        // the in-memory copy.
+        if (backgroundProjectWasRemoved) dropBackgroundThread(store, threadId)
         break
       }
     }

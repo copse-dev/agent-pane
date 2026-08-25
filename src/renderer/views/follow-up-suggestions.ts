@@ -1,9 +1,10 @@
 import { el, clear } from '../dom/helpers.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { FollowUpSuggestion, FollowUpContext } from '@shared/follow-ups/types.ts'
+import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import { reconcileChangesSuggestion } from '@shared/follow-ups/changes-stat.ts'
-import { switchThread, getThreadById } from '@shared/store/thread-helpers.ts'
+import { switchThread } from '@shared/store/thread-helpers.ts'
+import { lastExchange } from './last-exchange.ts'
 import { openComparisonModelDialog } from './comparison-model-dialog.ts'
 import { comparisonModelsPayload, startComparison } from '../controller/retry-review-comparison.ts'
 import { showErrorToast } from './toast.ts'
@@ -151,30 +152,8 @@ export function mountFollowUpSuggestions(
     displayedThreadId = threadId
   }
 
-  function lastExchange(threadId: string): { turnKey: string; context: FollowUpContext } | null {
-    const thread = getThreadById(store, threadId)
-    if (!thread) return null
-
-    const userMessages = thread.messages.filter((m) => m.role === 'user')
-    const assistantMessages = thread.messages.filter((m) => m.role === 'assistant')
-    const lastUser = userMessages.at(-1)
-    const lastAssistant = assistantMessages.at(-1)
-    if (!lastUser?.content.trim() || !lastAssistant) return null
-
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    const toolNames = (lastAssistant.toolCalls ?? []).map((tc) => tc.name)
-    return {
-      turnKey: `${threadId}:${lastUser.id}:${lastAssistant.id}`,
-      context: {
-        userMessage: lastUser.content,
-        assistantMessage: lastAssistant.content,
-        toolNames,
-      },
-    }
-  }
-
   async function maybeFetchSuggestions(threadId: string): Promise<void> {
-    const exchange = lastExchange(threadId)
+    const exchange = lastExchange(store, threadId)
     if (!exchange) {
       suggestionsByThread.delete(threadId)
       if (store.getState().activeThreadId === threadId) clearSuggestions()
@@ -252,7 +231,7 @@ export function mountFollowUpSuggestions(
     }
     if (displayedThreadId === activeId) return
 
-    const exchange = lastExchange(activeId)
+    const exchange = lastExchange(store, activeId)
     if (!exchange) {
       clearSuggestions()
       return

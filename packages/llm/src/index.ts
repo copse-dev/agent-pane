@@ -14,6 +14,7 @@ export * from './wire-types.ts'
 export * from './app-attribution.ts'
 export * from './create-provider.ts'
 export * from './responses-provider.ts'
+export * from './lm-studio-provider.ts'
 
 // Model catalog, cost estimation, and usage-adjacent helpers.
 export * from './model-catalog.ts'

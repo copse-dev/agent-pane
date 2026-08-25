@@ -15,6 +15,7 @@ export interface GitDiffModel {
 
 export interface GitDiffCodeEditor extends MonacoShortcutSource {
   revealLineInCenterIfOutsideViewport(line: number): void
+  updateOptions(options: Monaco.editor.IEditorOptions): void
 }
 
 export interface GitDiffViewModel {
@@ -32,6 +33,13 @@ export interface GitDiffEditor {
     modifiedStartLineNumber: number
     modifiedEndLineNumber: number
   }> | null
+  /**
+   * Present on Monaco's diff editor widget but absent from the published
+   * `monaco.d.ts`, hence optional. It is the only place `quitEarly` is
+   * observable: a compute that hit `maxComputationTime` still reports
+   * non-null line changes (one degenerate whole-file hunk).
+   */
+  getDiffComputationResult?(): { quitEarly: boolean } | null
   getModel(): { original: GitDiffModel; modified: GitDiffModel } | null
   getModifiedEditor(): GitDiffCodeEditor
   getOriginalEditor(): GitDiffCodeEditor
@@ -127,11 +135,40 @@ export function createGitChangesDiffEditor(
   fontSize: number,
   theme: 'vs' | 'vs-dark',
 ): GitDiffEditor {
-  return monaco.editor.createDiffEditor(container, {
+  const diffEditor = monaco.editor.createDiffEditor(container, {
     ...GIT_CHANGES_DIFF_EDITOR_OPTIONS,
     fontSize,
     theme,
   })
+  keepSingleGutterInInlineView(container, diffEditor)
+  return diffEditor
+}
+
+/**
+ * Show one line-number gutter when the diff collapses to the inline view.
+ *
+ * With `useInlineViewWhenSpaceIsLimited`, a narrow host makes Monaco lay the
+ * original editor out as a margin-only strip beside the modified gutter, so
+ * every row reads as its line number printed twice (#1702). Monaco's only
+ * switch for that strip is `compactMode`, which also removes the expand
+ * controls from the first and last collapsed unchanged regions — a loss the
+ * Changes pane can't take. Instead, track the `side-by-side` class Monaco
+ * keeps on its root element and drop the original editor's line numbers only
+ * while the inline view is active.
+ */
+function keepSingleGutterInInlineView(container: HTMLElement, diffEditor: GitDiffEditor): void {
+  // Absent with test doubles that don't build Monaco's DOM.
+  const root = container.querySelector('.monaco-diff-editor')
+  if (!root) return
+  const sync = (): void => {
+    diffEditor.getOriginalEditor().updateOptions({
+      lineNumbers: root.classList.contains('side-by-side') ? 'on' : 'off',
+    })
+  }
+  // The observer lives as long as the root it watches; these editors are
+  // created once per pane and kept for the window's lifetime.
+  new MutationObserver(sync).observe(root, { attributes: true, attributeFilter: ['class'] })
+  sync()
 }
 
 /**
@@ -144,16 +181,80 @@ export function createGitChangesDiffEditor(
  */
 const attachedViewModels = new WeakMap<GitDiffEditor, GitDiffViewModel>()
 
+/**
+ * Whether each editor's current attach has presented a *computed* diff —
+ * collapse and first-change reveal ran after the worker produced line changes.
+ * False when the attach outran the compute (waitForViewModelDiff timed out on a
+ * large diff): the viewer then shows plain unhighlighted text from line 1, with
+ * unchanged regions expanded — the "no diff colouring" Changes pane of #1753.
+ * 'quit-early' when the compute itself gave up (`maxComputationTime`): the
+ * result *looks* presentable (non-null line changes) but is one degenerate
+ * whole-file hunk, and Monaco will not recompute for the same models — only a
+ * model rebuild can heal it.
+ */
+const presentedDiffs = new WeakMap<GitDiffEditor, boolean | 'quit-early'>()
+
+/** One-shot late-compute listener armed for each editor's current attach. */
+const pendingPresentations = new WeakMap<GitDiffEditor, { dispose(): void }>()
+
+function dropPendingPresentation(diffEditor: GitDiffEditor): void {
+  pendingPresentations.get(diffEditor)?.dispose()
+  pendingPresentations.delete(diffEditor)
+}
+
 export function disposeDiffModels(diffEditor: GitDiffEditor): void {
   const oldModels = diffEditor.getModel()
   const oldViewModel = attachedViewModels.get(diffEditor)
   attachedViewModels.delete(diffEditor)
   attachedDiffIds.delete(diffEditor)
+  presentedDiffs.delete(diffEditor)
+  dropPendingPresentation(diffEditor)
   if (!oldModels && !oldViewModel) return
   diffEditor.setModel(null)
   oldViewModel?.dispose()
   oldModels?.original.dispose()
   oldModels?.modified.dispose()
+}
+
+/**
+ * Collapse unchanged regions and scroll to the first change, then record
+ * whether that presentation ran against a computed diff. When the compute is
+ * still in flight (`getLineChanges()` null), arm a one-shot re-present on the
+ * editor's next diff update: without it a large diff that outruns the attach
+ * budget is shown as plain uncollapsed text from line 1 and — because the
+ * identical-content skip below never rebuilds it — stays that way through every
+ * later refresh while a freshly-mounted window (e.g. a pop-out) of the same
+ * file presents fine (#1753).
+ */
+async function presentAttachedDiff(
+  diffEditor: GitDiffEditor,
+  isCurrent: () => boolean,
+): Promise<void> {
+  dropPendingPresentation(diffEditor)
+  await refreshGitChangesDiffCollapse(diffEditor)
+  diffEditor.layout()
+  if (isCurrent()) revealFirstDiffChange(diffEditor)
+  const presented = diffEditor.getLineChanges() !== null
+  // A compute that hit maxComputationTime reports non-null line changes too —
+  // one degenerate whole-file hunk. Recording that as presented would let the
+  // identical-content skip pin the hunk-less view until the file's bytes
+  // change; record it distinctly so the next entry rebuilds instead.
+  const quitEarly = presented && diffEditor.getDiffComputationResult?.()?.quitEarly === true
+  presentedDiffs.set(diffEditor, quitEarly ? 'quit-early' : presented)
+  if (presented || !isCurrent()) return
+  const subscription = diffEditor.onDidUpdateDiff(() => {
+    // The collapse dance above also emits diff updates; only a finished compute
+    // (non-null line changes) is worth a re-present, so keep listening past
+    // interim events rather than looping on our own refresh.
+    if (!isCurrent()) {
+      dropPendingPresentation(diffEditor)
+      return
+    }
+    if (diffEditor.getLineChanges() === null) return
+    dropPendingPresentation(diffEditor)
+    void presentAttachedDiff(diffEditor, isCurrent)
+  })
+  pendingPresentations.set(diffEditor, subscription)
 }
 
 /**
@@ -174,9 +275,10 @@ export function disposeDiffModels(diffEditor: GitDiffEditor): void {
  * with nothing put back, stranding the Changes pane on an empty editor it had
  * already unhidden: the blank Changes page of #459/#1343.
  *
- * Identical before/after content is a no-op: main-window status/fs refresh can
- * re-enter here continuously while a pop-out Changes window (no fs:changed IPC)
- * stays put. Rebuilding would only replay the hideUnchangedRegions flash.
+ * Identical before/after content is a no-op: status/fs refresh broadcasts
+ * (main window and pop-outs alike, via registerAppWindow) can re-enter here
+ * continuously with unchanged content. Rebuilding would only replay the
+ * hideUnchangedRegions flash.
  */
 /**
  * Identity of the diff each editor currently displays. The models themselves
@@ -209,9 +311,38 @@ export async function setGitFileDiffModel(
   // Main-window Changes re-enters this path on every fs:changed / status refresh
   // even when the selected file is unchanged. Rebuilding models then toggles
   // hideUnchangedRegions off→on (refreshGitChangesDiffCollapse), which is the
-  // expand/collapse flash. Pop-out windows do not receive those IPC events, so
-  // they stay stable — skip the no-op remount here so the docked pane matches.
-  if (isSameAttachedDiff(diffEditor, diff)) return true
+  // expand/collapse flash — skip the no-op remount so the docked pane stays as
+  // stable as a pop-out showing the same file. The one exception: an attach
+  // whose diff compute never finished has no presentation worth preserving
+  // (plain uncoloured text, nothing collapsed, #1753) — re-present it instead
+  // of pinning the broken view until the file itself changes.
+  if (isSameAttachedDiff(diffEditor, diff)) {
+    const presentation = presentedDiffs.get(diffEditor)
+    // A quit-early presentation is the one same-diff case that must NOT
+    // short-circuit: re-presenting cannot help (Monaco will not recompute for
+    // the same models), so fall through to a full model rebuild for a fresh
+    // compute. One rebuild per entry cannot tight-loop — this path only runs
+    // on an explicit re-selection or debounced refresh, each user/event-driven.
+    if (presentation !== 'quit-early') {
+      // Gated on a *finished* compute: re-running the collapse dance
+      // mid-compute could restart it on every debounced refresh; the
+      // pending-presentation listener armed at attach time handles the
+      // in-flight case.
+      if (presentation === false && diffEditor.getLineChanges() !== null) {
+        await presentAttachedDiff(diffEditor, isCurrent)
+      }
+      return true
+    }
+  }
+
+  // A previous attach may still have its one-shot late-compute listener armed
+  // (context-panel calls in without isCurrent, so it never self-cancels). The
+  // setModel below emits onDidUpdateDiff, which would fire that stale listener
+  // into a duplicate presentAttachedDiff racing this attach's own — interleaved
+  // hideUnchangedRegions toggles and a duplicate reveal scroll. Drop it before
+  // any model work; the same-diff short-circuit above must NOT drop it, because
+  // an in-flight compute's heal depends on that armed listener.
+  dropPendingPresentation(diffEditor)
 
   const version = diffModelVersion++
   const safePath = diff.path.replace(/[^a-zA-Z0-9._/-]/g, '_')
@@ -242,9 +373,7 @@ export async function setGitFileDiffModel(
   previousModels?.original.dispose()
   previousModels?.modified.dispose()
 
-  await refreshGitChangesDiffCollapse(diffEditor)
-  diffEditor.layout()
-  if (isCurrent()) revealFirstDiffChange(diffEditor)
+  await presentAttachedDiff(diffEditor, isCurrent)
   return true
 }
 

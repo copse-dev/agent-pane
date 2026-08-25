@@ -8,6 +8,55 @@ every published entry.
 
 ## Unreleased
 
+- Stored API keys are now encrypted with a cipher Copse owns rather than
+  Electron's `safeStorage`: a random data key kept as one item in the OS
+  keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+  and AES-256-GCM over the key itself. Existing keys keep working and are
+  rewritten in the new format the first time one is read — the first rewrite
+  sweeps every other stored secret with it, so a profile finishes migrating in
+  one go rather than leaving keys nobody happens to read in the old format.
+  Nothing needs re-entering. This removes the last dependency on Chromium
+  internals for reading secrets, which is what lets a future non-Electron Copse
+  shell open the same profile.
+- Settings → Providers: **Test key** now tests the key you already have saved
+  when the field is empty, instead of answering "Enter a key first" over a key
+  that is set. The field is write-only — a saved key is never read back into it
+  — so previously the button could only ever check a key mid-typing, never the
+  one actually in use. The stored secret stays in the main process; the
+  renderer only asks for it to be tested.
+
+- Clicking an image or video chip in the empty-thread (centered) composer now
+  opens the same attachment preview modal used after send. Text chips already
+  did; media chips only expanded from the transcript or roadmap, so a new
+  thread — where the composer is the only place the attachment exists — had no
+  way to inspect what was attached before sending.
+
+- Experimental: next-step tab complete. When a turn ends and one next step is
+  clearly what the user would send next ("Run the tests to verify the fix"),
+  a separate small-tasks model call names it and the composer offers it as
+  placeholder text with a Tab keycap — Tab inserts it, typing ignores it, and
+  most turns deliberately offer nothing. Off by default; enable it under
+  Settings > Experimental > "Next-step tab complete".
+- Asking Copse to prototype something now gets you a prototype you can look at.
+  The MCP-UI canvas has always been able to render a self-contained HTML
+  document as a live sandboxed artefact, but nothing pointed the model at it, so
+  "mock up a pricing page" was answered in prose or with a file you had to open
+  yourself. Three changes close that gap, all inside the `copse.mcp-ui-canvas`
+  plugin's single flag. A conditional turn-start hook recognises a prototype
+  request — an action verb and a prototype noun together, with review and
+  explain questions vetoed — and, only when that turn actually offers the
+  bundled `render_html_artefact` tool, tells the model to write the document to
+  a real workspace file and render it. Writing that file no longer stops at the
+  approval panel: creating a path that does not exist yet overwrites nothing, so
+  it applies directly, the same reasoning that already exempted `mkdir`. An
+  existing file is untouched by this — it still stages when the worktree holds
+  work Copse did not do, when the file changed under it, or when diffs are
+  already waiting for review, and a new file never jumps that queue either. And
+  re-rendering an artefact whose tab is already open now refreshes that tab in
+  place instead of stacking a near-identical one beside it, so iterating on a
+  prototype updates the canvas you are looking at rather than leaving you to
+  close the previous six.
+
 - Semantic search no longer reports "Indexing failed" on a large repository
   that is merely slow to index, and no longer starts indexing one it was
   supposed to refuse. Two faults compounded. The guard that declines to
@@ -109,6 +158,19 @@ every published entry.
   what a profile does and does not isolate — keys are separated by file, not by
   encryption key — and what to expect from the one-time move of the old Electron
   directory.
+- Projects can be dragged into the order you want, and gathered into groups.
+  Drag a project row and an insertion line shows where it will land; drop it and
+  the new order is yours and stays put across relaunches. Groups are the second
+  half: **+ ▸ New group** makes one, or right-click a project and pick
+  **New group…** to wrap it in a fresh group on the spot. Dropping a project on
+  the middle of a group header files it under that group — the header highlights
+  as a container rather than showing an insertion line, so the two drops never
+  look alike — and dropping it on the header's top or bottom edge, or on the
+  empty space below the list, takes it back out. A group header can be dragged
+  too, carrying its projects with it, and it folds away with a click so a
+  sidebar full of repositories collapses to the handful you are working in
+  today. Ungrouping a group never removes a project: they return to the top
+  level where they were.
 - A thread working in its own isolated worktree no longer asks you to approve
   every delete, rename, and new folder. Writes have applied straight to disk
   since the session backup landed, but the three non-content ops still staged
@@ -547,6 +609,42 @@ every published entry.
   open too: their chip was being rebuilt from its label alone, dropping the
   snapshot the message already carried, so the most common text attachment was
   the one kind that stayed stubbornly shut.
+- An external agent that runs out of file descriptors is now replaced instead
+  of being handed more turns. Copse keeps one agent process per thread alive
+  across turns, so an adapter that leaks handles eventually hits its
+  open-file limit — Claude Code's `EMFILE: too many open files` settings-watcher
+  errors are the usual first sign. The process does not exit when this happens:
+  it keeps answering while quietly failing to open anything else, so settings
+  reloads, file reads and MCP servers stop working with nothing to show for it
+  but a line in the log. Such a process is now torn down at the next turn
+  boundary and replaced, resuming the same agent session where the agent
+  supports it, so the descriptors come back without the thread losing the
+  agent's memory of it. The same applies to an agent running over SSH, whose
+  remote login often has the tighter limit of the two. A known-exhausted process
+  is never simply handed the next prompt — the first fault always buys a fresh
+  one. Only when that replacement runs out just as fast does Copse stop
+  respawning: nothing it can spawn will clear a limit that low, and the
+  alternative to reusing the process is refusing to run at all. That case is an
+  error in `/checkup`, naming the limit the agent was launched under (macOS
+  gives an app 256 by default) and how to raise it, so it can be found by
+  someone who never sees the console.
+- A roadmap item's resolution check now fits the model judging it, and says so
+  in words when it cannot. The deep check hands that model the item's prompt,
+  its pinned issue and every commit since the item was created — around 19,000
+  characters, which does not fit a local model loaded with LM Studio's default
+  4K of context. The engine did not answer short; it rejected the request
+  outright, and the pane pasted the raw 500 it came back with — JSON braces,
+  `server_error` and all — into the status line, lowercased, where the item's
+  verdict belongs. Each piece of that evidence is now sized to the context
+  window the reviewing model reports, with the commit history giving up
+  characters first and the item's own prompt last. A rejection is retried once
+  at the size local models are usually loaded with, because LM Studio's model
+  list reports a model's catalogue maximum rather than the length it was loaded
+  at. When the check still does not fit, the box names the model, its context
+  window and the two ways out — raise the context length in LM Studio, or pick
+  a larger model for small tasks — and keeps that explanation on screen instead
+  of losing it to the next background refresh. Chat recognises the same engine
+  wording too, where it previously came through as an unexplained error.
 
 ## Release-note process
 

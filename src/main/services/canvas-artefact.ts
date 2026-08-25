@@ -4,15 +4,9 @@
  */
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { McpUiResource } from './mcp/mcp-schema.ts'
+import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 
-/** Derive a friendly tab title from a `ui://server/<name>` resource URI. */
-export function artefactTitleFromUri(uri: string): string {
-  // Drop the scheme (e.g. `ui://`) so the title comes from the path segments.
-  const path = uri.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
-  const tail = path.split('/').filter(Boolean).pop()
-  if (!tail) return 'Artefact'
-  return tail.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-}
+export { artefactTitleFromUri }
 
 export function toCanvasArtefact(resource: McpUiResource): CanvasArtefact {
   return {

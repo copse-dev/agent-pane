@@ -3,7 +3,11 @@ import { firstNonEmptyString, matchesFallbackType } from '@shared/unknown-value.
 import { getSettingSchema } from './settings-schema.ts'
 import { getExplicitSettingsProfile } from './settings-context.ts'
 
-const settings = new Map<string, unknown>()
+const settings = new Map<string, unknown>([
+  // Unit tests must not wait on an optional LM Studio scope classifier. Suites
+  // that specifically exercise it can `setSetting('safetyClassifierEnabled', true)`.
+  ['safetyClassifierEnabled', false],
+])
 const apiKeys = new Map<string, string>()
 
 function schemaAccepts<T>(
@@ -44,11 +48,18 @@ export function hasApiKey(provider: KeyProvider): boolean {
   return apiKeys.has(provider)
 }
 
-export function setApiKey(provider: KeyProvider, key: string): void {
+// Mirrors the real module's SetApiKeyResult shape (the shim's in-memory store
+// never needs the plaintext-consent branch, so it always succeeds).
+export function setApiKey(
+  provider: KeyProvider,
+  key: string,
+  _opts: { allowPlaintext?: boolean } = {},
+): { ok: true } {
   if (getExplicitSettingsProfile()) {
     throw new Error('Cannot mutate API keys inside an explicit settings profile.')
   }
   apiKeys.set(provider, key.trim())
+  return { ok: true }
 }
 
 export function deleteApiKey(provider: KeyProvider): void {

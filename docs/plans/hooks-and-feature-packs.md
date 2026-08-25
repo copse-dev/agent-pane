@@ -71,7 +71,7 @@ revisiting this document, not silently diverging in an implementation PR.
    descending from one human-originated submission). The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
    follow-ups, bounded background-task completion wakes, durable CI status-change wakes,
-   post-turn remediation cycles,
+   ACP unfinished-turn recovery, post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. **In-loop nudges do not count**
    (truncation-continue, finalize, loop, and
    reasoning-runaway nudges are mid-turn message pushes inside one `runAgentLoop`
@@ -222,7 +222,8 @@ revisiting this document, not silently diverging in an implementation PR.
     command is assessed by the host-owned Guarded YOLO harm gate after the rewrite.
     Hook allow results, ACP callers, remembered trust, classifier output, and model
     routing hints cannot downgrade a host `prompt` or `deny`. Both the original and
-    effective command are retained in the durable `permission_decision` spine line.
+    effective command are retained on the unified spine `decision` line (command
+    text in `blobs/decision-*.detail.json`).
 19. **Pack stability is manifest data, not inferred UI copy.** Every first-party
     pack declares `stable` or `experimental`; a user pack that omits the field is
     treated as experimental. Settings shows that status before enablement.
@@ -278,6 +279,20 @@ revisiting this document, not silently diverging in an implementation PR.
     history. Leading-system fallback deliberately trades away prefix-cache stability
     when steering changes in exchange for validity and system authority on strict
     templates.
+23. **Delayed artifact preservation is an opt-in `stepBoundary` policy, not a
+    continuation.** `copse.artifact-checkpoint` is an experimental, default-off
+    first-party plugin contributing one blocking `stepBoundary` hook. The canonical
+    payload carries hard wall-clock elapsed and remaining milliseconds, primary-run
+    eligibility, plus a harness-owned once-per-run flag. Nested review/subagent loops
+    are ineligible. At the configured delay (eight minutes by
+    default), the hook selects a tool-enabled message asking the model to preserve
+    its best runnable artifact before further exploration. The harness applies and
+    records that message through the existing applied-nudge/spine path; it does not
+    create another turn or consume a `ContinuationGrant` (decision 5). Abort and hard
+    expiry abstain. Disabling the plugin removes the hook for new runs in one atomic
+    flip, while its scoped delay setting persists (decisions 15 and 17). Existing
+    profiles receive a one-time disabled seed so an upgrade cannot silently activate
+    benchmark-derived steering.
 
 ## Target architecture
 
@@ -379,10 +394,11 @@ listed phase to wire without widening the name union. **F2 added `postTurnReview
 the Copse-native observation event fired after a post-turn review verdict (E3's
 `runPostTurnReviewCycle` seam), taking the catalogue from 15 to 16 (decision-log edit
 per execution-guidance rule 1). **E1 added `stepBoundary`** — the
-one new canonical event beyond A1's original 14 (then 15) — because the four in-loop
+one new canonical event beyond A1's original 14 (then 15) — because the original four in-loop
 nudges fire at step boundaries under pressure, a point M0's two assembly events do not
 cover. It is `blocking, assembly` like the other two in-loop context events, carries the
-pressure/escalation + stop-reason signals its nudge hooks read, and fires **without ever
+pressure/escalation + stop-reason signals its nudge hooks read, plus hard wall-clock
+elapsed/remaining time for the opt-in artifact checkpoint (decision 23), and fires **without ever
 consuming a `ContinuationGrant`** (decision 5: in-loop nudges are not continuations). The "Kind" column maps to
 `HookEventSpec.dispatch` (the **default**) + `HookEventSpec.role`; the two dual-dispatch
 rows are encoded as `dispatch: 'blocking'` (the mutating default — formatters, diff

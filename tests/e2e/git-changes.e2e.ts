@@ -60,8 +60,6 @@ describe('git changes viewer', function () {
       timeout: 30_000,
       timeoutMsg: 'expected at least 3 changed-file rows',
     })
-    const rows = await $$('.git-change-row')
-
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-list.png'))
 
     // Section titles reflect staged vs unstaged counts. CSS uppercases the text,
@@ -104,13 +102,33 @@ describe('git changes viewer', function () {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-external-refresh.png'))
 
     // Opening the panel auto-selects the first changed file (staged.ts).
-    const stagedRow = await rows.find(
-      async (r) => (await r.$('.git-change-path').getText()) === 'staged.ts',
-    )
+    // Re-query after the external refresh: it replaces the row DOM, so handles
+    // captured before the filesystem event are stale by design.
+    const stagedRow = await $('.git-change-row*=staged.ts')
     await expect(stagedRow).toHaveElementClass('is-selected')
 
     const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor')
     await diffViewer.waitForDisplayed({ timeout: 30_000 })
+
+    // The docked pane renders neither the overview-ruler "mini file" strip nor
+    // a second line-number gutter once the narrow host collapses to the inline
+    // view (#1702). The original editor keeps its numbers only side-by-side.
+    await expect($('#git-diff-viewer-host .diffOverview')).not.toBeExisting()
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const root = document.querySelector('#git-diff-viewer-host .monaco-diff-editor')
+          if (!root || root.classList.contains('side-by-side')) return false
+          const originalLineNumbers = root.querySelectorAll(
+            '.original-in-monaco-diff-editor .line-numbers',
+          )
+          return originalLineNumbers.length === 0
+        }),
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected the inline view to render a single line-number gutter',
+      },
+    )
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff.png'))
 

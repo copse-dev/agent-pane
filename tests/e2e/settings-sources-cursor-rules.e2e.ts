@@ -8,7 +8,8 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-settings-sources-cursor-rules'
 
-describe('settings sources cursor rules (#636)', () => {
+describe('settings sources cursor rules (#636)', function () {
+  this.timeout(60_000)
   let workspaceRoot = ''
 
   before(async () => {
@@ -16,6 +17,11 @@ describe('settings sources cursor rules (#636)', () => {
     resetUserData()
 
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-cursor-rules-'))
+    writeFileSync(
+      join(workspaceRoot, 'AGENTS.md'),
+      'Use the project-specific release checklist before shipping.\n',
+      'utf8',
+    )
     mkdirSync(join(workspaceRoot, '.cursor', 'rules'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, '.cursor', 'rules', 'always.mdc'),
@@ -57,7 +63,32 @@ describe('settings sources cursor rules (#636)', () => {
 
     const sources = dialog.$('.settings-section[data-section="customise"]')
     await expect(sources).toBeDisplayed()
-    await expect(sources.$('legend=Cursor rules')).toBeDisplayed()
+    await expect(sources.$('legend=Instruction files')).toBeDisplayed()
+
+    const instructionsList = sources.$('#sources-instructions-list')
+    await browser.waitUntil(async () => (await instructionsList.getText()).includes('AGENTS.md'), {
+      timeout: 15_000,
+      timeoutMsg: 'expected the project instructions in Sources',
+    })
+    const instructionRow = instructionsList.$('.sources-row*=AGENTS.md')
+    const trustBadge = instructionRow.$('.sources-badge-untrusted')
+    // getText() reports the badge's rendered (CSS-uppercased) label.
+    await expect(trustBadge).toHaveText('not loaded', { ignoreCase: true })
+    await expect(instructionRow.$('.sources-row-detail')).toHaveText(
+      expect.stringContaining('inert until you trust this workspace'),
+    )
+
+    await browser.execute(() => {
+      document
+        .querySelector('#sources-instructions-list')
+        ?.closest('fieldset')
+        ?.scrollIntoView({ block: 'start' })
+    })
+    await browser.pause(100)
+    await saveElementScreenshot(
+      'fieldset:has(#sources-instructions-list)',
+      'settings-sources-untrusted-instructions.png',
+    )
 
     const rulesList = sources.$('#sources-cursor-rules-list')
     await browser.waitUntil(
@@ -72,6 +103,9 @@ describe('settings sources cursor rules (#636)', () => {
       },
       { timeout: 15_000, timeoutMsg: 'expected all four Cursor rule kinds in Sources' },
     )
+    // The block is hidden until the workspace has rules, so it can only be
+    // asserted visible once the list above has arrived.
+    await expect(sources.$('legend=Cursor rules')).toBeDisplayed()
 
     const text = await rulesList.getText()
     assert.match(text, /always/i)

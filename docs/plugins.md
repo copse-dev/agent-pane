@@ -166,10 +166,12 @@ groups every plugin's contributions by plugin id and owns the lifecycle:
   enabled declaration with the live `ToolRegistry`, so disabling the plugin or
   removing its credential-gated tool revokes ACP exposure immediately.
 - **Capabilities** — a plugin may declare named **capability** flags: pure
-  cross-cutting behaviour with no tool/hook/prompt/panel (e.g. the MCP-UI canvas,
-  the DevTools shortcut). Any subsystem reads one through the single
-  `isCapabilityActive(name)` seam instead of a scattered `getSetting` check; a
-  capability is active iff some enabled plugin declares it.
+  cross-cutting behaviour with no tool/hook/prompt/panel (e.g. the DevTools
+  shortcut, or the MCP-UI canvas's rendering gate — that plugin pairs its
+  capability with one conditional steering hook). Any subsystem reads one
+  through the single `isCapabilityActive(name)` seam instead of a scattered
+  `getSetting` check; a capability is active iff some enabled plugin declares
+  it.
 - **Permissions** — a plugin may declare the **authority it opens**: a sandbox
   relaxation it may request, such as `copse.background-tasks` declaring
   `loopback-bind` for a task that binds a localhost port. The permission-gate

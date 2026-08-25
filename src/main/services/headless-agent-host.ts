@@ -62,7 +62,12 @@ export interface HeadlessAgentProfile {
   /** Host interaction channels; omitted channels resolve deterministically without ambient UI. */
   readonly interaction?: HeadlessInteractionProfile
   /** Optional product-loop tighteners used by benchmark profiles. */
-  readonly limits?: { readonly maxSteps?: number; readonly maxLlmCalls?: number }
+  readonly limits?: {
+    readonly maxSteps?: number
+    readonly maxLlmCalls?: number
+    /** False for benchmark/eval profiles whose limits are part of the result contract. */
+    readonly adaptiveExtensions?: boolean
+  }
 }
 
 export interface HeadlessAgentRun {
@@ -244,6 +249,9 @@ export async function runHeadlessAgent(
                                   : {}),
                                 ...(profile.limits?.maxLlmCalls !== undefined
                                   ? { maxLlmCalls: profile.limits.maxLlmCalls }
+                                  : {}),
+                                ...(profile.limits?.adaptiveExtensions !== undefined
+                                  ? { adaptiveExtensions: profile.limits.adaptiveExtensions }
                                   : {}),
                               },
                             )

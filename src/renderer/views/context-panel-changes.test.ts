@@ -43,6 +43,7 @@ function makeCodeEditorStub(): ContextPanelEditor {
     },
     revealLineInCenter(): void {},
     revealLineInCenterIfOutsideViewport(): void {},
+    updateOptions(): void {},
     setPosition(): void {},
     layout(): void {},
     hasTextFocus: () => false,

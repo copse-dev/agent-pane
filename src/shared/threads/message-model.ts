@@ -4,10 +4,7 @@ import {
   type ModelParameters,
   type SamplingField,
 } from '@copse/llm/model-parameters.ts'
-import { cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
-import { isOpenRouterModel, openRouterDisplayLabel } from '@copse/llm/openrouter.ts'
-import { isExtraProviderModel, extraProviderDisplayLabel } from '@copse/llm/extra-providers.ts'
-import { BEST_VALUE_CHAT_MODEL_LABEL, isBestValueChatModel } from '@shared/lm-studio-defaults.ts'
+import { displayModelLabel } from '@shared/model-display.ts'
 
 /**
  * Distinct primary-chat models stamped on assistant messages in this thread.
@@ -91,9 +88,5 @@ export function formatPrimaryChatModelLabel(model: string, parameters?: ModelPar
 }
 
 function modelLabel(model: string): string {
-  if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL
-  if (model.startsWith('lmstudio:')) return `${model.slice('lmstudio:'.length)} · local`
-  if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
-  if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
-  return cloudModelDisplayLabel(model)
+  return displayModelLabel(model)
 }

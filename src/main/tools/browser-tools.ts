@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { getActiveRunThread } from '../services/thread-models.ts'
 import { defineTool } from '@shared/types'
 import { getBrowserSession } from '../services/browser/session-manager.ts'
 import {
@@ -10,6 +11,7 @@ import type { ToolRegistry } from '../services/tool-registry.ts'
 
 export const browserNavigateTool = defineTool({
   name: 'browser_navigate',
+  provenance: 'external',
   description:
     'Open a URL in the built-in headless browser. Loopback (localhost) targets run automatically; other origins prompt for approval. Returns the resolved title and URL.',
   parameters: z.object({
@@ -47,6 +49,7 @@ export const browserPreviewTool = defineTool({
 
 export const browserSnapshotTool = defineTool({
   name: 'browser_snapshot',
+  provenance: 'external',
   description:
     'Capture an accessibility snapshot of the current page as an indented outline. Interactive elements carry [ref=…] handles for browser_click / browser_type. Prefer this over a screenshot for reading or interacting with a page.',
   parameters: z.object({
@@ -72,6 +75,7 @@ export const browserScreenshotTool = defineTool({
 
 export const browserClickTool = defineTool({
   name: 'browser_click',
+  provenance: 'external',
   description:
     'Click an element by its snapshot ref (e.g. e7). Run browser_snapshot first to obtain refs.',
   parameters: z.object({
@@ -85,6 +89,7 @@ export const browserClickTool = defineTool({
 
 export const browserTypeTool = defineTool({
   name: 'browser_type',
+  provenance: 'external',
   description: 'Type text into an input/textarea identified by its snapshot ref.',
   parameters: z.object({
     ref: z.string().describe('Element ref from a snapshot, e.g. e5'),
@@ -98,6 +103,7 @@ export const browserTypeTool = defineTool({
 
 export const browserTabsTool = defineTool({
   name: 'browser_tabs',
+  provenance: 'external',
   description: 'List open browser tabs, or close one with action "close" and a viewId.',
   parameters: z.object({
     action: z.enum(['list', 'close']).optional().default('list'),
@@ -117,6 +123,44 @@ export const browserTabsTool = defineTool({
   },
 })
 
+export const browserShowTool = defineTool({
+  name: 'browser_show',
+  description:
+    "Bring something you have already rendered into the user's visible Browser panel: a canvas " +
+    'artefact by `title`, or a page by `url`. Rendering an artefact you are still iterating on ' +
+    'leaves it in the background — check it with browser_snapshot / browser_screenshot first, ' +
+    'and call this once it is worth the user looking at. No approval is needed.',
+  parameters: z.object({
+    title: z
+      .string()
+      .optional()
+      .describe('Title of a canvas artefact already rendered with render_html_artefact.'),
+    url: z.url().optional().describe('A URL already open in the agent browser.'),
+  }),
+  execute({ title, url }) {
+    if (title && url) throw new Error('Pass either title or url, not both')
+    if (title) {
+      const threadId = getActiveRunThread()
+      getBrowserSession().showArtefact({ title, ...(threadId ? { threadId } : {}) })
+      return `Brought the "${title}" artefact to the front of the Browser panel.`
+    }
+    if (!url) throw new Error('Pass a title (canvas artefact) or a url')
+    // Only promote a page this session already has open. `showUrl` puts a URL
+    // straight into the user's visible pane, and the origin policy that gates
+    // browser_navigate does not run here — so accepting an arbitrary URL would
+    // turn this into an unprompted way to navigate the user's browser anywhere.
+    // Requiring an open tab keeps it to "show me what you were just looking at".
+    const session = getBrowserSession()
+    if (!session.listTabs().some((tab) => tab.url === url)) {
+      throw new Error(
+        `${url} is not open in the agent browser — navigate to it with browser_navigate first`,
+      )
+    }
+    session.showUrl(url)
+    return `Opened ${url} in the visible Browser panel.`
+  },
+})
+
 // Single source of truth for registration. ToolDefinition<TArgs> is invariant
 // in TArgs, so a heterogeneous list can't be typed as ToolDefinition[] without
 // erasing here; the registry validates each tool's args at runtime.
@@ -128,6 +172,7 @@ export const browserTools = [
   browserClickTool,
   browserTypeTool,
   browserTabsTool,
+  browserShowTool,
 ]
 
 export function registerBrowserTools(registry: ToolRegistry): void {
@@ -138,4 +183,5 @@ export function registerBrowserTools(registry: ToolRegistry): void {
   registry.register(browserClickTool)
   registry.register(browserTypeTool)
   registry.register(browserTabsTool)
+  registry.register(browserShowTool)
 }

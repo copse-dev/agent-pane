@@ -67,6 +67,11 @@ STAMP_DIR   := .tmp
 DEPS_STAMP  := $(STAMP_DIR)/deps.stamp
 BUILD_STAMP := $(STAMP_DIR)/build.stamp
 
+# Prefix for the superseded dependency trees that `deps` renames out of the way
+# (see the deps rule). Each run appends its own PID, and every run sweeps any
+# leftovers first.
+NM_TRASH := $(STAMP_DIR)/node_modules-old
+
 # A stamp left by an interrupted or previously misdetected install must not
 # hide a broken dependency tree. esbuild is a direct dev dependency required by
 # both build and test entry points, so its package metadata is a cheap install
@@ -277,9 +282,27 @@ check-node:
 # on for this install, matching `.github/actions/setup/action.yml`.
 #
 # On macOS, stale-tree pruning can fail with ENOTEMPTY/EBUSY/EPERM. This target
-# only runs when dependencies need reinstalling, so remove the old tree first
-# and give pnpm an empty destination instead of retrying after a half-pruned
-# node_modules.
+# only runs when dependencies need reinstalling, so clear the old tree first and
+# give pnpm an empty destination instead of retrying after a half-pruned
+# node_modules — but clear it by *renaming*, not by deleting in place.
+#
+# `rm -rf` unlinks a directory's entries and then rmdir's it, and macOS
+# recreates a `.DS_Store` inside the directory in the gap between those two
+# steps. The rmdir then fails on a directory rm has just emptied, and the
+# install dies before it starts:
+#
+#   rm: node_modules/.pnpm: Directory not empty
+#   rm: node_modules: Directory not empty
+#
+# (no per-file error — the entries did get deleted; the folders were
+# repopulated underneath.) A second `make run` usually gets through, which is
+# exactly the "just run it again" flakiness this target exists to avoid.
+#
+# A rename within the repo is a single rename(2) that cannot lose that race,
+# whatever is writing inside the tree. Deleting the renamed copy is then pure
+# housekeeping — pnpm already has its empty destination — so a delete that
+# loses the same race prints a note and leaves the leftovers for the next run
+# (or `make clean`) to sweep, instead of failing the build.
 PNPM_I := npm_config_ignore_scripts=false pnpm install --frozen-lockfile
 
 .PHONY: deps
@@ -287,9 +310,20 @@ deps: $(DEPS_STAMP)
 
 $(DEPS_STAMP): pnpm-lock.yaml package.json | $(STAMP_DIR) check-node
 	@echo "==> Dependencies out of date — running 'pnpm install --frozen-lockfile'…"
-	rm -rf node_modules
+	@rm -rf $(NM_TRASH).* 2>/dev/null || true; \
+	if [ -e node_modules ] || [ -L node_modules ]; then \
+	  echo "==> Clearing the previous node_modules…"; \
+	  trash="$(NM_TRASH).$$$$"; \
+	  if mv node_modules "$$trash" 2>/dev/null; then \
+	    if ! rm -rf "$$trash" 2>/dev/null && ! rm -rf "$$trash" 2>/dev/null; then \
+	      echo "==> Note: some of $$trash survived deletion; sweeping it next run."; \
+	    fi; \
+	  else \
+	    echo "==> Note: could not move node_modules aside; letting pnpm prune it."; \
+	  fi; \
+	fi
 	@$(USE_NVM); corepack enable; $(PNPM_I)
-	touch $(DEPS_STAMP)
+	@touch $(DEPS_STAMP)
 
 # --- build ------------------------------------------------------------------
 # Rebuild dist/ only when source changed since the last build. A stale dist/ is
@@ -314,4 +348,4 @@ run: build
 .PHONY: clean
 clean:
 	@echo "==> Removing dist/ and build/deps stamps…"
-	rm -rf dist $(DEPS_STAMP) $(BUILD_STAMP) $(SRC_LIST_STAMP)
+	@rm -rf dist $(DEPS_STAMP) $(BUILD_STAMP) $(SRC_LIST_STAMP) $(NM_TRASH).*

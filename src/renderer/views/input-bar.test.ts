@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
+import { addMessage, setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
@@ -55,6 +55,8 @@ function thread(branch?: string): Thread {
 
 function createApi(options: {
   currentBranch: string
+  getCurrentBranch?: () => string
+  branches?: Awaited<ReturnType<ApiClient['git']['listBranches']>>
   onAbort?: () => Promise<void>
   onRun?: () => Promise<void>
   onCheckoutBranch?: (branch: string) => Promise<void>
@@ -125,7 +127,10 @@ function createApi(options: {
       },
       git: {
         ...base['git'],
-        branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
+        branchStatus: async () => ({
+          currentBranch: options.getCurrentBranch?.() ?? options.currentBranch,
+          pr: null,
+        }),
         promptState: async () => options.promptState ?? { startingCommit: null, dirty: false },
         checkoutBranch: async (
           _projectId: string,
@@ -134,7 +139,8 @@ function createApi(options: {
         ): Promise<void> => {
           await options.onCheckoutBranch?.(branch)
         },
-        listBranches: async () => [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
+        listBranches: async () =>
+          options.branches ?? [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
         getDefaultBranch: async () => 'main',
       },
       lmStudio: {
@@ -413,6 +419,79 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepared.gitBranch, 'copse/first-message')
     assert.equal(prepared.messages[0]?.content, 'Start in isolation')
     assert.equal(composer.textContent, '')
+  })
+
+  it('waits for the blank-thread branch selection before preparing its worktree', async () => {
+    const order: string[] = []
+    let currentBranch = 'main'
+    let releaseCheckout = (): void => {
+      throw new Error('expected branch checkout to be pending')
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        getCurrentBranch: () => currentBranch,
+        branches: [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/selected', lastCommitDate: '2024-01-02' },
+        ],
+        onCheckoutBranch: (branch) =>
+          new Promise<void>((resolve) => {
+            releaseCheckout = (): void => {
+              currentBranch = branch
+              order.push(`checkout:${branch}`)
+              resolve()
+            }
+          }),
+        onPrepareCheckout: async () => {
+          order.push(`prepare:${currentBranch}`)
+          return { checkoutMode: 'shared', choice: 'automatic', branch: currentBranch }
+        },
+        onRun: async () => {
+          order.push('run')
+        },
+      }),
+    )
+    await flush()
+
+    const branchTrigger = host.querySelector<HTMLButtonElement>('.branch-picker-trigger')
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(branchTrigger)
+    assert.ok(composer)
+    assert.ok(submit)
+    branchTrigger.click()
+    await flush()
+    const selected = [...host.querySelectorAll<HTMLButtonElement>('.branch-picker-option')].find(
+      (button) => button.textContent.includes('feature/selected'),
+    )
+    assert.ok(selected)
+    selected.click()
+    branchTrigger.click()
+    await flush()
+    const branchMenu = host.querySelector<HTMLElement>('.branch-picker-menu')
+    assert.ok(branchMenu)
+    assert.equal(branchMenu.hidden, true, 'a pending checkout keeps the branch picker closed')
+    composer.textContent = 'Start from the selected feature'
+    submit.click()
+    await settle()
+
+    assert.deepEqual(order, [], 'checkout preparation must wait for the branch switch')
+    releaseCheckout()
+    await flush()
+
+    assert.deepEqual(order, ['checkout:feature/selected', 'prepare:feature/selected', 'run'])
   })
 })
 
@@ -947,7 +1026,7 @@ describe('input bar branch mismatch warning', () => {
     assert.ok(submitBtn)
     composer.textContent = 'Follow up in the worktree'
     submitBtn.click()
-    await settle()
+    await flush()
 
     assert.equal(runs, 1)
     const warning = host.querySelector<HTMLElement>('.composer-branch-warning')
@@ -1246,6 +1325,103 @@ describe('input bar attachment previews', () => {
     } finally {
       unregister()
     }
+  })
+
+  const PNG =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
+
+  /**
+   * New-thread view is an empty composer — there is no transcript yet — so the
+   * only place to inspect an attached image is the chip itself. It must open the
+   * same shared lightbox as a sent message thumb.
+   */
+  it('opens an attached image in the preview modal from the composer', async () => {
+    const store = createStore({
+      workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers, 'composer registered its attachment handlers')
+    handlers.attachImage(PNG, 'image/png')
+    await flush()
+
+    const thumb = host.querySelector<HTMLImageElement>('.image-chip img.image-expandable')
+    assert.ok(thumb, 'the image chip renders an expandable thumbnail')
+    assert.equal(thumb.getAttribute('role'), 'button')
+    assert.equal(thumb.getAttribute('aria-label'), 'Expand Attached image')
+    thumb.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog)
+    assert.equal(dialog.open, true)
+    assert.equal(dialog.dataset['previewKind'], 'image')
+    const expanded = dialog.querySelector<HTMLImageElement>('.image-expand-image')
+    assert.ok(expanded)
+    assert.equal(expanded.src, PNG)
+    dialog.close()
+  })
+
+  it('opens an attached video in the preview modal from the composer', async () => {
+    const store = createStore({
+      workspaceRoot: null,
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const api = createApi({ currentBranch: 'main' })
+    const videoBytes = new Uint8Array([0, 0, 0, 1, 0x66, 0x74, 0x79, 0x70])
+    api.video = {
+      ...api.video,
+      attach: async (): ReturnType<ApiClient['video']['attach']> => ({
+        path: '/store/thread-1/blobs/media/clip.webm',
+        name: 'clip.webm',
+        mimeType: 'video/webm',
+        sizeBytes: videoBytes.byteLength,
+      }),
+      read: async (): ReturnType<ApiClient['video']['read']> => ({
+        bytes: videoBytes,
+        mimeType: 'video/webm',
+      }),
+    }
+    mountInputBar(host, store, api)
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers, 'composer registered its attachment handlers')
+    await handlers.attachVideo({
+      name: 'clip.webm',
+      mimeType: 'video/webm',
+      bytes: videoBytes.buffer.slice(
+        videoBytes.byteOffset,
+        videoBytes.byteOffset + videoBytes.byteLength,
+      ),
+    })
+    await flush()
+
+    const label = host.querySelector<HTMLElement>('.video-chip .attachment-chip-label')
+    assert.ok(label, 'the video chip renders its label')
+    assert.equal(label.getAttribute('role'), 'button')
+    assert.equal(label.getAttribute('aria-label'), 'Play clip.webm')
+    label.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+    await flush()
+
+    const dialog = document.querySelector<HTMLDialogElement>('.attachment-preview-dialog')
+    assert.ok(dialog)
+    assert.equal(dialog.open, true)
+    assert.equal(dialog.dataset['previewKind'], 'video')
+    assert.ok(dialog.querySelector('video.video-expand-video'))
+    dialog.close()
   })
 })
 
@@ -1778,7 +1954,7 @@ describe('input bar context fit warning', () => {
     const warning = host.querySelector<HTMLElement>('.composer-context-warning')
     assert.ok(warning)
     assert.equal(warning.hidden, false)
-    assert.match(warning.textContent, /qwen3-4b/)
+    assert.match(warning.textContent, /“Qwen3 4B · local”/)
     assert.match(warning.textContent, /“Context Length” in LM Studio/)
   })
 
@@ -1786,5 +1962,110 @@ describe('input bar context fit warning', () => {
     const host = await mountWithEstimate('gpt-4o-mini', 12_000, 128_000)
 
     assert.equal(host.querySelector<HTMLElement>('.composer-context-warning')?.hidden, true)
+  })
+})
+
+describe('next-step tab complete in the composer', () => {
+  function mountWithHint(hint: string | null): {
+    host: HTMLElement
+    store: ReturnType<typeof createStore>
+  } {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const base = createApi({ currentBranch: 'main' })
+    const api: ApiClient = {
+      ...base,
+      settings: {
+        ...base['settings'],
+        get: (key: string) =>
+          Promise.resolve(key === 'nextStepSuggestionEnabled' ? true : undefined),
+      },
+      agent: {
+        ...base['agent'],
+        suggestNextStep: () => Promise.resolve(hint),
+      },
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, api)
+    return { host, store }
+  }
+
+  function finishTurn(store: ReturnType<typeof createStore>): void {
+    addMessage(store, 'thread-1', 'user', 'fix the parser bug')
+    addMessage(store, 'thread-1', 'assistant', 'Fixed it in parser.ts.')
+    store.emit('thread_status_changed', 'thread-1', 'idle')
+  }
+
+  it('shows the hint as the placeholder with the Tab marker after a turn', async () => {
+    const { host, store } = mountWithHint('Run the tests to verify the fix')
+    await settle()
+    finishTurn(store)
+    await flush()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    assert.equal(composer.getAttribute('data-placeholder'), 'Run the tests to verify the fix')
+    assert.equal(composer.hasAttribute('data-next-step'), true)
+    assert.equal(
+      composer.getAttribute('aria-description'),
+      'Press Tab to insert: Run the tests to verify the fix',
+    )
+  })
+
+  it('Tab inserts the hint into the empty composer and spends the offer', async () => {
+    const { host, store } = mountWithHint('Run the tests to verify the fix')
+    await settle()
+    finishTurn(store)
+    await flush()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }),
+    )
+    await flush()
+
+    assert.equal(composer.textContent, 'Run the tests to verify the fix')
+    assert.equal(composer.getAttribute('data-placeholder'), 'Message…')
+    assert.equal(composer.hasAttribute('data-next-step'), false)
+  })
+
+  it('Tab in a composer with typed text keeps its default behavior', async () => {
+    const { host, store } = mountWithHint('Run the tests to verify the fix')
+    await settle()
+    finishTurn(store)
+    await flush()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'my own plan'
+    const event = new window.KeyboardEvent('keydown', {
+      key: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    })
+    composer.dispatchEvent(event)
+    await flush()
+
+    assert.equal(event.defaultPrevented, false)
+    assert.equal(composer.textContent, 'my own plan')
+  })
+
+  it('keeps the plain placeholder when the model offers nothing', async () => {
+    const { host, store } = mountWithHint(null)
+    await settle()
+    finishTurn(store)
+    await flush()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    assert.equal(composer.getAttribute('data-placeholder'), 'Message…')
+    assert.equal(composer.hasAttribute('data-next-step'), false)
   })
 })

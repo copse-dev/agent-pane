@@ -1,6 +1,7 @@
 import { AnthropicProvider } from './anthropic-provider.ts'
 import { OPENROUTER_ATTRIBUTION_HEADERS } from './app-attribution.ts'
 import { OpenAIProvider } from './openai-provider.ts'
+import { LMStudioProvider } from './lm-studio-provider.ts'
 import { ResponsesProvider } from './responses-provider.ts'
 import { MockLLMProvider } from './mock-provider.ts'
 import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
@@ -8,8 +9,9 @@ import { OPENROUTER_BASE_URL } from './openrouter.ts'
 import { assertProviderHostAllowed } from './provider-host-policy.ts'
 import { validateCredentialBaseUrl } from './credential-url.ts'
 import {
+  isEmptyModelParameters,
   openRouterReasoningBody,
-  recommendedOutputCeiling,
+  resolvedOutputCeiling,
   type ModelParameters,
 } from './model-parameters.ts'
 import { usesResponsesApi } from './openai-responses-models.ts'
@@ -121,7 +123,7 @@ export function createProvider(
   // it is resolved per branch once the id is settled (the fallback branches only
   // learn theirs from an env var).
   const tunedOpts = (id: string): { params: ModelParameters; maxOutputTokens?: number } => {
-    const ceiling = recommendedOutputCeiling(id, params)
+    const ceiling = resolvedOutputCeiling(id, params)
     return { params, ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }) }
   }
   const anthropicApiKey = keys.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY']
@@ -187,7 +189,7 @@ export function createLocalOpenAIProvider(
   // LM Studio and other OpenAI-compatible local servers need stream_options.include_usage
   // or they never report prompt/completion tokens — without that, usage chunks (and the
   // Settings usage ledger) stay empty for local models such as qwen.
-  const ceiling = recommendedOutputCeiling(model, params)
+  const ceiling = resolvedOutputCeiling(model, params)
   return new OpenAIProvider(model, {
     baseURL,
     apiKey: apiKey || 'lm-studio',
@@ -197,7 +199,21 @@ export function createLocalOpenAIProvider(
   })
 }
 
-export const createLMStudioProvider = createLocalOpenAIProvider
+export function createLMStudioProvider(
+  baseURL: string,
+  model: string,
+  apiKey = 'lm-studio',
+  params: ModelParameters = {},
+): LLMProvider {
+  // LM Studio's SDK transport exposes prompt-processing progress, but its
+  // WebSocket authentication is a separate client handshake and cannot carry
+  // the HTTP bearer token configured for the OpenAI-compatible API. Preserve
+  // authenticated server setups by retaining the compatible endpoint there.
+  if ((apiKey && apiKey !== 'lm-studio') || !isEmptyModelParameters(params)) {
+    return createLocalOpenAIProvider(baseURL, model, apiKey, params)
+  }
+  return new LMStudioProvider(model, { baseURL })
+}
 
 // OpenRouter is an OpenAI-compatible cloud aggregator, so it reuses OpenAIProvider
 // with OpenRouter's base URL. Unlike a local server it is billed and reports usage,
@@ -237,10 +253,14 @@ export function createOpenRouterProvider(
   // `reasoning_effort` alias, so it normalises across upstream vendors and can
   // express "off". Sampling stays on the standard OpenAI-shaped fields, so the
   // reasoning level is dropped from `params` to avoid sending both spellings.
-  const { reasoning: _reasoning, ...sampling } = opts.params ?? {}
+  const {
+    reasoning: _reasoning,
+    maxOutputTokens: _maxOutputTokens,
+    ...sampling
+  } = opts.params ?? {}
   // Read from `opts.params` rather than from `sampling`: the ceiling keys off
   // the reasoning level, which the destructure above just removed.
-  const ceiling = recommendedOutputCeiling(model, opts.params ?? {})
+  const ceiling = resolvedOutputCeiling(model, opts.params ?? {})
   return new OpenAIProvider(model, {
     params: sampling,
     ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
@@ -293,7 +313,7 @@ export function createExtraCloudProvider(
       ...(Object.keys(extraBody).length ? { extraBody } : {}),
     })
   }
-  const ceiling = recommendedOutputCeiling(model, params)
+  const ceiling = resolvedOutputCeiling(model, params)
   return new OpenAIProvider(model, {
     baseURL: provider.baseUrl,
     // Local servers usually run without auth but still want a non-empty key

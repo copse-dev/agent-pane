@@ -32,6 +32,69 @@ export const AGENT_RUN_IDLE_TIMEOUT_MS = 15 * 60 * 1000
 /** Absolute wall-clock cap on a single agent run regardless of activity. */
 export const AGENT_RUN_HARD_MAX_MS = 60 * 60 * 1000
 
+/**
+ * Adaptive budget extension: LLM calls granted each time a healthy-but-long run
+ * exhausts its budget, up to {@link MAX_EXTENSION_GRANTS} times. Extensions are
+ * the variadic alternative to a flat higher cap — runs that are making distinct
+ * progress get room to finish; runs that are thrashing end exactly as before.
+ */
+export const EXTENSION_GRANT_LLM_CALLS = 12
+
+/** Maximum adaptive extensions per run (so the worst case stays bounded). */
+export const MAX_EXTENSION_GRANTS = 2
+
+/**
+ * Recent tool-call window inspected when deciding an extension: a run whose
+ * last N tool calls were all repeats is stuck, whatever its other signals say.
+ */
+export const EXTENSION_HEALTH_WINDOW = 8
+
+/** Distinct tool calls required in the health window before a grant fires. */
+const MIN_DISTINCT_TOOL_CALLS_FOR_EXTENSION = 2
+
+/**
+ * Signals summarising how the most recent part of a run went, fed to
+ * {@link shouldExtendRunBudget}. Populated by the agent loop from state it
+ * already tracks (recent tool-call fingerprints, nudge flags).
+ */
+export interface ExtensionHealthSignals {
+  /** Distinct (non-duplicate) tool-call fingerprints in the recent window. */
+  readonly distinctRecentToolCalls: number
+  /** Consecutive reasoning-only streams cut and re-nudged without progress. */
+  readonly reasoningRunawayStreak: number
+  /** Whether a loop or forced-finalize nudge fired during the run. */
+  readonly nudged: boolean
+}
+
+/**
+ * Whether an exhausted call budget extends for one more grant. A run earns the
+ * room by showing distinct recent tool activity and none of the stuck-signals;
+ * anything else ends the run exactly as an unextended budget would. Pure so the
+ * policy is testable without spinning the loop.
+ */
+export function shouldExtendRunBudget(
+  signals: ExtensionHealthSignals,
+  grantsUsed: number,
+  maxGrants: number = MAX_EXTENSION_GRANTS,
+): boolean {
+  if (grantsUsed >= maxGrants) return false
+  if (signals.reasoningRunawayStreak > 0 || signals.nudged) return false
+  return signals.distinctRecentToolCalls >= MIN_DISTINCT_TOOL_CALLS_FOR_EXTENSION
+}
+
+/** Host-declared loop bounds for a run; absent keys use product defaults. */
+export interface AgentLoopRunProfile {
+  /** Max provider.stream calls for the main loop. */
+  readonly maxLlmCalls?: number
+  /** Max loop steps for the main loop. */
+  readonly maxSteps?: number
+  /**
+   * Whether the loop may extend its own budget when the run is healthy but long
+   * (defaults to true).
+   */
+  readonly adaptiveExtensions?: boolean
+}
+
 /** AbortSignal.reason set when the run idle/hard deadline fires. */
 export const AGENT_RUN_ABORT_REASON_TIMEOUT = 'copse:agent-run-timeout'
 
@@ -59,34 +122,37 @@ export class AgentRunDeadline {
   private pauseDepth = 0
   private readonly idleTimeoutMs: number
   private readonly hardMaxMs: number
+  private readonly clock: () => number
 
   constructor(
     idleTimeoutMs = AGENT_RUN_IDLE_TIMEOUT_MS,
     hardMaxMs = AGENT_RUN_HARD_MAX_MS,
     now = Date.now(),
+    clock: () => number = Date.now,
   ) {
     this.idleTimeoutMs = idleTimeoutMs
     this.hardMaxMs = hardMaxMs
     this.runStartedAt = now
     this.lastActivityAt = now
+    this.clock = clock
   }
 
   /** Monotonic clock with active and accumulated pause time subtracted. */
-  private effectiveNow(now = Date.now()): number {
+  private effectiveNow(now = this.clock()): number {
     const activePause = this.pauseStartedAt !== null ? now - this.pauseStartedAt : 0
     return now - this.accumulatedPauseMs - activePause
   }
 
-  recordActivity(now = Date.now()): void {
+  recordActivity(now = this.clock()): void {
     this.lastActivityAt = this.effectiveNow(now)
   }
 
-  pause(now = Date.now()): void {
+  pause(now = this.clock()): void {
     if (this.pauseDepth === 0 && this.pauseStartedAt === null) this.pauseStartedAt = now
     this.pauseDepth += 1
   }
 
-  resume(now = Date.now()): void {
+  resume(now = this.clock()): void {
     if (this.pauseDepth === 0) return
     this.pauseDepth -= 1
     // Only the outermost resume records the elapsed pause and re-arms the clock.
@@ -96,22 +162,32 @@ export class AgentRunDeadline {
     }
   }
 
-  isHardExpired(now = Date.now()): boolean {
+  isHardExpired(now = this.clock()): boolean {
     return now - this.runStartedAt >= this.hardMaxMs
   }
 
-  isIdleExpired(now = Date.now()): boolean {
+  isIdleExpired(now = this.clock()): boolean {
     return this.effectiveNow(now) - this.lastActivityAt >= this.idleTimeoutMs
   }
 
-  isExpired(now = Date.now()): boolean {
+  isExpired(now = this.clock()): boolean {
     return this.isHardExpired(now) || this.isIdleExpired(now)
   }
 
-  msUntilExpiry(now = Date.now()): number {
+  msUntilExpiry(now = this.clock()): number {
     const untilHard = this.hardMaxMs - (now - this.runStartedAt)
     const untilIdle = this.idleTimeoutMs - (this.effectiveNow(now) - this.lastActivityAt)
     return Math.max(0, Math.min(untilHard, untilIdle))
+  }
+
+  /** Hard wall-clock time since construction; pauses deliberately still count. */
+  elapsedWallTimeMs(now = this.clock()): number {
+    return Math.max(0, now - this.runStartedAt)
+  }
+
+  /** Time left before the hard product cap, independent of the sliding idle window. */
+  remainingWallTimeMs(now = this.clock()): number {
+    return Math.max(0, this.hardMaxMs - this.elapsedWallTimeMs(now))
   }
 }
 

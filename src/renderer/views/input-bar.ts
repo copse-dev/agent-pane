@@ -3,7 +3,9 @@ import { outlineIcon } from '../dom/outline-icon.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
+import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
+import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { IMAGE_DETAILS, type ImageDetail } from '@copse/llm/wire-types.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -85,6 +87,7 @@ import {
 } from '@shared/lm-studio-defaults.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
+import { mountNextStepHint } from './next-step-hint.ts'
 import {
   threadGitBranchMismatch,
   threadGitBranchMismatchMessage,
@@ -102,6 +105,7 @@ import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
 import { fetchModelOptions, modelDisplayLabel, type ModelOption } from './model-options.ts'
+import { LOCAL_MODEL_SUFFIX } from '@shared/model-display.ts'
 import { contextFitAdvice } from '@shared/context-window-advice.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
@@ -582,6 +586,30 @@ export function mountInputBar(
   const defaultPlaceholder = 'Message…'
   const followUpPlaceholder = 'Send follow-up'
 
+  const nextStepHint = mountNextStepHint(store, api, () => {
+    updateComposerPlaceholder()
+  })
+
+  // The one writer for the composer placeholder: a Tab-completable next step
+  // wins (it is this turn's content, not a generic nudge), then the follow-up
+  // bubbles' nudge, then the default. `data-next-step` drives the CSS "Tab"
+  // keycap beside the placeholder text.
+  // The placeholder only shows in an empty composer (CSS `:empty`), so the
+  // hint naturally hides while the user types and returns if they clear the
+  // draft — Tab stays available either way.
+  function updateComposerPlaceholder(): void {
+    const hint = nextStepHint.current()
+    if (hint !== null) {
+      composer.setPlaceholder(hint)
+      composer.el.setAttribute('data-next-step', '')
+      composer.el.setAttribute('aria-description', `Press Tab to insert: ${hint}`)
+      return
+    }
+    composer.el.removeAttribute('data-next-step')
+    composer.el.removeAttribute('aria-description')
+    composer.setPlaceholder(followUps.root.hidden ? defaultPlaceholder : followUpPlaceholder)
+  }
+
   let attachedFiles: { path: string; content: string }[] = []
   let attachedImages: AttachedImage[] = []
   // Attached videos (screen recordings). Stored on disk and referenced by path —
@@ -603,8 +631,14 @@ export function mountInputBar(
   let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
   let automaticCheckoutPreviewSeq = 0
 
+  // The picker's label carries the route as well as the name (`Title — Model`
+  // for an agent, `… · local` for LM Studio). These sentences name the model
+  // only — and the ones that care about local already say so in words — so the
+  // route half is dropped rather than read out as "Describe locally with
+  // qwen/… · local".
   function shortModelLabel(option: ModelOption): string {
-    return option.label.split(' — ')[0] ?? option.label
+    const name = option.label.split(' — ')[0] ?? option.label
+    return name.endsWith(LOCAL_MODEL_SUFFIX) ? name.slice(0, -LOCAL_MODEL_SUFFIX.length) : name
   }
 
   function appendImageDescription(text: string, modelLabel: string, description: string): string {
@@ -1333,6 +1367,23 @@ export function mountInputBar(
 
   composer.el.addEventListener('keydown', (e) => {
     if (e.isComposing) return
+    // Tab accepts the offered next step into an empty composer. Plain Tab only
+    // — modified Tabs keep their meanings (Ctrl+Tab switches threads) — and a
+    // visible mention/skill picker keeps its own Tab-to-accept.
+    if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const hint = nextStepHint.current()
+      if (hint !== null && !composer.value.trim() && !isAutocompletePickerOpen()) {
+        e.preventDefault()
+        composer.value = hint
+        nextStepHint.clear()
+        updateComposerPlaceholder()
+        composer.focus()
+        // The value setter is silent; drafts and the context estimate listen
+        // for input, and an accepted hint is exactly a typed message.
+        composer.el.dispatchEvent(new Event('input', { bubbles: true }))
+        return
+      }
+    }
     if (e.key !== 'Enter' || e.shiftKey) return
     if (isAutocompletePickerOpen()) return
     e.preventDefault()
@@ -1358,7 +1409,8 @@ export function mountInputBar(
 
   async function performSubmit(): Promise<void> {
     followUps.clearSuggestions()
-    composer.setPlaceholder(defaultPlaceholder)
+    nextStepHint.clear()
+    updateComposerPlaceholder()
     // Visible text keeps chips as single placeholder chars (for the transcript
     // display); the expanded text inlines each chip's fenced block in place and
     // is what actually gets sent.
@@ -1385,6 +1437,16 @@ export function mountInputBar(
         await refreshImageCompatibilityWarning()
         return
       }
+    }
+    // A blank-thread branch selection checks out through IPC. If the user hits
+    // Send before that promise settles, reading HEAD here can otherwise race
+    // and base the new worktree on the branch that was selected previously.
+    try {
+      await branchControl.waitForPendingCheckout()
+    } catch {
+      // The branch control already surfaced the checkout failure. Keep the
+      // prompt in place rather than silently sending it from the old branch.
+      return
     }
     const [branchStatus, promptState] = await Promise.all([
       api.git.branchStatus(projectId, id),
@@ -1498,6 +1560,9 @@ export function mountInputBar(
         // decision remains durable, but their prompt must stay with its composer.
         if (getActiveThreadId() !== id) return
       } catch (error) {
+        // The failure may be a stale cached default branch (fixed git config,
+        // renamed branch); drop the cache so Retry re-reads it.
+        await api.agent.resetDefaultBranchCache().catch(() => undefined)
         checkoutErrorText.textContent = checkoutErrorMessage(error)
         checkoutError.hidden = false
         return
@@ -1704,6 +1769,8 @@ export function mountInputBar(
     meta.className = 'attachment-chip-meta'
     meta.textContent = formatByteSize(ref.sizeBytes)
     chip.title = `${ref.name} — read as stills by the agent, not sent as video`
+    // Label, not the pill: the pill already holds the close button.
+    attachVideoExpand(label, api, ref.path, ref.name)
     chip.append(attachmentIcon('video', 'video-chip-icon'), label, meta)
     const remove = document.createElement('button')
     remove.append(closeIcon('ui-icon ui-icon-sm'))
@@ -1769,6 +1836,8 @@ export function mountInputBar(
     thumb.src = dataUrl
     thumb.width = 40
     thumb.height = 40
+    // Same shared lightbox as transcript/roadmap thumbs — openable before send.
+    attachImageExpand(thumb, 'Attached image')
     const remove = document.createElement('button')
     remove.append(closeIcon('ui-icon ui-icon-sm'))
     remove.addEventListener('click', () => {
@@ -2012,8 +2081,7 @@ export function mountInputBar(
   ]
 
   const observer = new MutationObserver(() => {
-    const hasSuggestions = !followUps.root.hidden
-    composer.setPlaceholder(hasSuggestions ? followUpPlaceholder : defaultPlaceholder)
+    updateComposerPlaceholder()
   })
   observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
 
@@ -2041,6 +2109,7 @@ export function mountInputBar(
       document.removeEventListener('click', closeCheckoutMenu)
       observer.disconnect()
       followUps.destroy()
+      nextStepHint.destroy()
       unbindDrop()
       unregisterAttachments()
       modelPicker.destroy()

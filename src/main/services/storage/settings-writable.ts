@@ -135,6 +135,7 @@ export const registeredAcpAgentsSchema = z.array(acpAgentConfigSchema).max(64)
  */
 export const modelParametersSchema = z.object({
   reasoning: z.enum(REASONING_LEVELS).optional(),
+  maxOutputTokens: z.number().int().min(256).max(1_000_000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   topP: z.number().min(0).max(1).optional(),
   topK: z.number().int().min(0).max(500).optional(),
@@ -187,6 +188,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // the renderer (off = no tint). See tokens.css --tint-hue / --tint-amount.
   uiTintColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   uiTintStrength: z.enum(['off', 'subtle', 'medium', 'strong']),
+  // One-time renderer startup migration marker for the legacy Appearance
+  // default tuple. It must be registered because settings:get uses a null
+  // fallback and otherwise can never read back the value written here.
+  appearanceDefaultsMigrationVersion: z.literal(1),
   appIconVariant: z.enum(APP_ICON_VARIANTS),
   layout: z.object({
     projectsPaneWidth: z.number().int().min(180).max(400),
@@ -331,6 +336,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // first-party plugin's `mcp-ui-canvas` capability (Settings > Plugins), so the
   // former `mcpUiArtefactsEnabled` top-level boolean is retired.
   modelClassifierEnabled: z.boolean(),
+  // Experimental next-step tab complete: after a turn, a small-tasks model may
+  // offer one obvious next step as composer placeholder text the user accepts
+  // with Tab. See next-step-service.ts.
+  nextStepSuggestionEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
   // cheaper worker model implements delegated steps. See orchestration-strategy.ts.
