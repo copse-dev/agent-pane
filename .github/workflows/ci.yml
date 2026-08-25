@@ -1418,6 +1418,29 @@ jobs:
             echo "::endgroup::"
           }
 
+          # A failing spec reports what it could not see; the renderer console
+          # reports why. `afterTest` already captures it — one `.console.log` per
+          # failing test — but only into the uploaded artifact, which a triager
+          # reading the job log never opens. That gap cost three days on #1925:
+          # `automation-trigger` said "the scheduled run's prompt never rendered"
+          # while the console said `Base branch "work" does not exist in this
+          # repository`, and only the second sentence names a fix.
+          #
+          # SEVERE only, and capped hard on both axes — this rides inside the
+          # digest, whose whole value is being small enough to survive the log
+          # tail. The artifact stays the complete record.
+          summarise_renderer_console() {
+            local artefacts='e2e-failure-artifacts' severe
+            [ -d "$artefacts" ] || return 0
+            severe="$(grep -h '"level":"SEVERE"' "$artefacts"/*.console.log 2>/dev/null | tail -n 15 || true)"
+            [ -n "$severe" ] || return 0
+            echo
+            echo "renderer console (SEVERE, last 15):"
+            # Long lines are usually a stack trace after the message; the first
+            # 300 characters carry the error itself.
+            printf '%s\n' "$severe" | cut -c1-300
+          }
+
           # The last thing the job prints, and deliberately not inside a group.
           #
           # Everything above competes for the job-log API's ~5000-line tail; this
@@ -1456,6 +1479,7 @@ jobs:
               printf '%s\n' "$failing" | grep -F -f - "$run_log" | grep -F '» ' | sort -u || true
               echo
               printf '%s\n' "$failing" | grep -F -f - "$run_log" | tail -n 120 || true
+              summarise_renderer_console
             else
               # No worker reported a failure, so the shard died some other way —
               # a timeout, or a session that never came up. The raw tail is all
