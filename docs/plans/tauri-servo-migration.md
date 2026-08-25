@@ -203,7 +203,7 @@ Findings folded back into this branch:
   cross-origin scripts blocked with violation events, `location.origin` =
   `tauri://localhost`, localStorage works on the now-stable origin) and with
   a full app boot under the policy, zero violations. Building for an
-  unpatched engine: `COPSE_TAURI_STRIP_CSP=1 pnpm build:tauri` restores the
+  unpatched engine: `COPSE_TAURI_STRIP_CSP=1 pnpm build:servo` restores the
   old stripped-meta tauri.html.
 - A full chat ran end to end (mock provider): project created, agent
   dispatched, 68 chunks streamed over the bridge, conversation persisted to
