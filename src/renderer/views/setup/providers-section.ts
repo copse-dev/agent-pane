@@ -77,6 +77,13 @@ export function createProvidersPanel(
     cloudAgents?: readonly CloudAgentPanel[]
     /** Options that apply to whichever cloud agent runs, shown with them. */
     cloudAgentOptions?: HTMLElement
+    /**
+     * Whether picking a provider may run ACP auto-setup (which can install
+     * adapter packages). Defaults to true (Settings). Onboarding mounts with
+     * false so first-run stays side-effect-free: badges still refresh via the
+     * cheap PATH scan, installs wait for first use.
+     */
+    deviceAutoSetup?: boolean
   } = {},
 ): ProvidersPanel {
   const cloudAgents = opts.cloudAgents ?? []
@@ -144,8 +151,10 @@ export function createProvidersPanel(
   let providerPicked = false
   let autoSetupRun = false
 
+  const deviceAutoSetup = opts.deviceAutoSetup ?? true
+
   function loadDeviceInfoOnce(): void {
-    if (providerPicked && !autoSetupRun) {
+    if (deviceAutoSetup && providerPicked && !autoSetupRun) {
       autoSetupRun = true
       deviceScanned = true
       void agentsPanel.refresh()

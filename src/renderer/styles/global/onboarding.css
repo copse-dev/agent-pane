@@ -35,26 +35,6 @@
   background: var(--bg-base);
   flex-shrink: 0;
 }
-.onboarding-steps {
-  display: flex;
-  gap: var(--spacing-xs);
-  padding: 0 var(--spacing-lg);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  background: var(--bg-base);
-}
-.onboarding-step-btn {
-  padding: 10px 12px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
-  border-bottom: 2px solid transparent;
-}
-.onboarding-step-btn.active {
-  color: var(--text-primary);
-  border-bottom-color: var(--accent);
-}
 .onboarding-body {
   flex: 1;
   min-height: 0;
@@ -63,22 +43,38 @@
   overflow-y: auto;
   display: block;
 }
-.onboarding-body > .onboarding-panel.active > :first-child {
+.onboarding-body > section > :first-child {
   margin-top: 0;
-}
-.onboarding-body > .onboarding-panel {
-  display: none;
-}
-.onboarding-body > .onboarding-panel.active {
-  display: block;
 }
 .onboarding-body h3 {
   font-size: 18px;
   font-weight: 600;
   margin: 0 0 var(--spacing-xs);
 }
-.onboarding-panel .settings-section-desc {
+.onboarding-body .settings-section-desc {
   margin-bottom: var(--spacing-md);
+}
+/* Scan results: grouped, checkbox-led rows sharing the env-key row layout. */
+.onboarding-scan-group {
+  margin: var(--spacing-md) 0 var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.onboarding-scan-results .detected-item-row {
+  padding: var(--spacing-xs) 0;
+}
+.detected-item-check {
+  align-self: center;
+}
+.onboarding-scan-status.ok {
+  color: var(--success);
+}
+.onboarding-scan-status.warn {
+  color: var(--warning, #c9a227);
+}
+.onboarding-scan-status.err {
+  color: var(--error);
 }
 .onboarding-body fieldset,
 .onboarding-body .setup-lm-studio fieldset {
@@ -102,14 +98,6 @@
 .onboarding-body .key-status {
   margin-top: 2px;
 }
-.onboarding-benefits {
-  margin: var(--spacing-md) 0;
-  padding-left: 1.25rem;
-  color: var(--text-secondary);
-}
-.onboarding-benefits li + li {
-  margin-top: var(--spacing-sm);
-}
 .onboarding-footer {
   display: flex;
   align-items: center;
@@ -119,23 +107,19 @@
   flex-shrink: 0;
   background: var(--bg-elevated);
 }
-.onboarding-nav-buttons {
-  display: flex;
-  gap: var(--spacing-sm);
-}
 .onboarding-primary {
   background: var(--accent);
   color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: 8px 16px;
 }
+.onboarding-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .onboarding-skip {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
-}
-.onboarding-back:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .setup-install-guide {
   margin-bottom: var(--spacing-md);

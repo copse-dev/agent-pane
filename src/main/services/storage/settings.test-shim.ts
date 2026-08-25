@@ -48,11 +48,18 @@ export function hasApiKey(provider: KeyProvider): boolean {
   return apiKeys.has(provider)
 }
 
-export function setApiKey(provider: KeyProvider, key: string): void {
+// Mirrors the real module's SetApiKeyResult shape (the shim's in-memory store
+// never needs the plaintext-consent branch, so it always succeeds).
+export function setApiKey(
+  provider: KeyProvider,
+  key: string,
+  _opts: { allowPlaintext?: boolean } = {},
+): { ok: true } {
   if (getExplicitSettingsProfile()) {
     throw new Error('Cannot mutate API keys inside an explicit settings profile.')
   }
   apiKeys.set(provider, key.trim())
+  return { ok: true }
 }
 
 export function deleteApiKey(provider: KeyProvider): void {

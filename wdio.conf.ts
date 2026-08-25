@@ -262,6 +262,15 @@ export const config: Options.Testrunner = {
     // current app window first lets Electron terminate cleanly before
     // reloadSession deletes the WebDriver session and launches its successor.
     try {
+      // Mark the shutdown as a quit first: a bare window close reads as the
+      // user discarding that window, and multi-window persistence would drop
+      // its record — breaking any spec that relaunches expecting the full
+      // window set to restore (multiple-main-windows.e2e.ts).
+      await browser.execute(() =>
+        (
+          window as unknown as { __copseE2e?: { markQuit?: () => Promise<void> } }
+        ).__copseE2e?.markQuit?.(),
+      )
       await browser.closeWindow()
     } catch {
       // A session that is already gone needs no extra shutdown work.

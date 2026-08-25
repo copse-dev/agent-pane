@@ -75,7 +75,7 @@ describe('model parameters section', () => {
     assert.match(section.root.textContent, /does not accept sampling parameters/)
   })
 
-  it('offers all three controls for an OpenAI-compatible model', async () => {
+  it('offers reasoning, sampling, and an output cap for an OpenRouter model', async () => {
     const { api } = stubSettings()
     const section = createModelParametersSection(api)
     await section.refresh('openrouter:deepseek/deepseek-v4-flash')
@@ -83,6 +83,7 @@ describe('model parameters section', () => {
     assert.ok(control(section.root, 'model-parameter-reasoning'))
     assert.ok(control(section.root, 'model-parameter-temperature'))
     assert.ok(control(section.root, 'model-parameter-top-p'))
+    assert.ok(control(section.root, 'model-parameter-max-output-tokens'))
     assert.match(section.root.textContent, /up to the model behind it/)
   })
 
@@ -200,6 +201,22 @@ describe('model parameters section', () => {
         temperature: 1,
         topP: 0.95,
       },
+    })
+  })
+
+  it('fills and saves the experimental Ox Alpha balanced profile', async () => {
+    const { api, store } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('openrouter:stealth/ox-alpha')
+
+    buttonControl(section.root, 'model-parameter-recommend').click()
+    assert.equal(selectControl(section.root, 'model-parameter-reasoning').value, 'medium')
+    assert.equal(inputControl(section.root, 'model-parameter-max-output-tokens').value, '16384')
+    assert.match(section.root.textContent, /paired Terminal-Bench record/)
+
+    await section.save()
+    assert.deepEqual(store.saved['modelParameters'], {
+      'openrouter:stealth/ox-alpha': { reasoning: 'medium', maxOutputTokens: 16_384 },
     })
   })
 
