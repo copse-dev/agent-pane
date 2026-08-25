@@ -232,6 +232,52 @@ describe('automation attention grouping', function () {
             .join(' | '),
         }
       }, startedThreadId)
+      // Everything above reads the DOM, and the DOM cannot say *why* the run
+      // never started: an automation row carries only `is-automation` and
+      // `selected` (projects-pane.ts), so a thread that failed its checkout and
+      // a thread the controller never picked up render identically.
+      //
+      // The thread's own record separates them. `startThread`
+      // (renderer/controller/automations.ts) clears `draftPrompt` only *after*
+      // `prepareCheckout` resolves, and dispatch then moves the thread to
+      // `running`, so:
+      //   - draft kept, still `idle` → it never got past the checkout, either by
+      //     throwing (the catch logs `[automations] Failed to start scheduled
+      //     task:`, now printed in the shard digest) or by `isPendingAutomation`
+      //     rejecting the thread — and the fields below say which term.
+      //   - draft cleared, `running` → it dispatched and died later, which is a
+      //     different bug in a different place.
+      // Read over IPC rather than from the store: the renderer does not expose
+      // the store, and `loadProject` is the same call the controller makes.
+      // Message counts are deliberately absent — `loadProject` returns metadata
+      // only, so a count read here is always 0 and would read as "no user
+      // message was ever added" even on a run that dispatched normally.
+      const threadRecord = await browser.execute(
+        async ([projectId, threadId]) => {
+          const host = window as unknown as {
+            api?: { threads?: { loadProject?: (project: string) => Promise<unknown> } }
+          }
+          if (!host.api?.threads?.loadProject) return 'threads.loadProject unavailable'
+          if (threadId === '') return 'runNow returned no thread id'
+          const loaded = (await host.api.threads.loadProject(projectId)) as {
+            id?: string
+            status?: string
+            draftPrompt?: string
+            automation?: unknown
+          }[]
+          const thread = loaded.find((candidate) => candidate.id === threadId)
+          if (!thread)
+            return `started thread absent from loadProject (${String(loaded.length)} thread(s))`
+          return JSON.stringify({
+            status: thread.status ?? '<unset>',
+            // The three `isPendingAutomation` terms, so a silent early return
+            // names the term that rejected it.
+            hasAutomation: thread.automation !== undefined,
+            draftPromptKept: Boolean(thread.draftPrompt?.trim()),
+          })
+        },
+        [PROJECT_ID, startedThreadId],
+      )
       throw new Error(
         'attention did not reveal the Automations group — ' +
           `runNow returned ${JSON.stringify(runNowResult)}, ` +
@@ -240,7 +286,8 @@ describe('automation attention grouping', function () {
           `${String(groupCount)} schedule group(s), ${String(rowCount)} sidebar row(s), ` +
           `${String(bellCount)} attention bell(s), titles: ${titles || '<none>'}, ` +
           `sidebar: ${JSON.stringify(sidebarState)}, ` +
-          `after forcing the group open (revealed=${String(revealed)}): ${JSON.stringify(forced)}`,
+          `after forcing the group open (revealed=${String(revealed)}): ${JSON.stringify(forced)}, ` +
+          `started thread record: ${String(threadRecord)}`,
       )
     }
     assert.equal((await automationToggle.$$('.chat-attention-bell')).length, 0)
