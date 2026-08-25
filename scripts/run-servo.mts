@@ -36,6 +36,11 @@ const child = spawn(shell, [], {
     // origin-scoped storage is keyed by — worth owning, and worth keeping
     // stable, since changing it later would orphan anything stored under it.
     TAURI_SHELL_SCHEME: 'copse',
+    // Tauri's own default menu and Linux desktop integration. It does *not*
+    // reach the macOS application menu — that comes from CFBundleName in the
+    // .app wrapper ensureTauriShell() builds, because AppKit reads the plist
+    // before any of our code runs.
+    TAURI_SHELL_APP_NAME: 'Copse',
   },
 })
 child.on('exit', (code, signal) => {

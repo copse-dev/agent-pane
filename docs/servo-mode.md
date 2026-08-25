@@ -26,6 +26,15 @@ downloaded here.
 checksum committed in `scripts/tauri-shell-checksums.json`, and caches it under
 `~/.copse/cache/tauri-shell/` so worktrees share one copy.
 
+On macOS it also wraps the binary in a `Copse.app` bundle, which is not
+cosmetic. `tauri_build` embeds an Info.plist in the executable carrying the
+shell's own `productName`, and AppKit draws the application menu — top left,
+beside the Apple logo — from that, so a bare binary calls itself "Tauri Shell"
+however its windows are titled. Launched from inside a bundle, that bundle's
+Info.plist wins. The wrapper is ours; the executable inside it stays generic.
+Its identifier is deliberately _not_ the Electron app's, so the prototype
+neither inherits the real app's permission grants nor overwrites them.
+
 ## The contract
 
 The shell owns OS windows and nothing else. It speaks three messages over the

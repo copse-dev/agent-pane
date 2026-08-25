@@ -11,7 +11,17 @@
  */
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -70,6 +80,50 @@ async function expectedSha(asset: string): Promise<string> {
   return sha
 }
 
+/**
+ * Wrap the binary in a `Copse.app` bundle, on macOS only.
+ *
+ * Not cosmetics. `tauri_build` embeds an Info.plist in the executable's
+ * `__TEXT,__info_plist` section with `CFBundleName` taken from the shell's own
+ * `productName`, and AppKit draws the application menu — the top-left one,
+ * beside the Apple logo — from that. So a bare shell binary calls itself
+ * "Tauri Shell" no matter what the windows underneath are titled, and no
+ * runtime setting reaches it: `package_info_mut()` changes a different menu,
+ * and renaming the file loses to the embedded section.
+ *
+ * Launched from inside a bundle, `NSBundle.mainBundle` is the bundle and its
+ * Info.plist wins. The wrapper is ours, the executable inside it is the
+ * generic one — which is the whole arrangement in miniature.
+ *
+ * The identifier is deliberately not the Electron app's. macOS keys permission
+ * grants and window state off it, and the prototype should neither inherit the
+ * real app's nor overwrite them.
+ */
+async function macAppBundle(binary: string, cacheDir: string): Promise<string> {
+  const app = join(cacheDir, 'Copse.app')
+  const executable = join(app, 'Contents', 'MacOS', 'tauri-shell')
+  if (await exists(executable)) return executable
+  await mkdir(dirname(executable), { recursive: true })
+  await writeFile(
+    join(app, 'Contents', 'Info.plist'),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Copse</string>
+  <key>CFBundleDisplayName</key><string>Copse</string>
+  <key>CFBundleExecutable</key><string>tauri-shell</string>
+  <key>CFBundleIdentifier</key><string>dev.copse-panel.servo</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>${SHELL_RELEASE.replace(/^v/, '')}</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict></plist>
+`,
+  )
+  await copyFile(binary, executable)
+  await chmod(executable, 0o755)
+  return executable
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await stat(path)
@@ -93,7 +147,9 @@ export async function ensureTauriShell(): Promise<string> {
   const asset = assetFor()
   const cacheDir = join(homedir(), '.copse', 'cache', 'tauri-shell', SHELL_RELEASE)
   const binary = join(cacheDir, 'tauri-shell')
-  if (await exists(binary)) return binary
+  if (await exists(binary)) {
+    return process.platform === 'darwin' ? await macAppBundle(binary, cacheDir) : binary
+  }
 
   const sha = await expectedSha(asset)
   const url = `https://github.com/${REPO}/releases/download/${SHELL_RELEASE}/${asset}`
@@ -118,7 +174,7 @@ export async function ensureTauriShell(): Promise<string> {
     await mkdir(cacheDir, { recursive: true })
     // Rename last: a half-extracted directory must never look like a cache hit.
     await rename(extracted, binary)
-    return binary
+    return process.platform === 'darwin' ? await macAppBundle(binary, cacheDir) : binary
   } finally {
     await rm(staging, { recursive: true, force: true })
   }
