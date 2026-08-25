@@ -32,35 +32,35 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # To run with the servo patch series (servo-patches/ in the runtime repo):
-# check servo out beside the repos, `git am` the series, uncomment this block,
-# and add `features = ["patched-servo"]` to the tauri-runtime-servo dependency
-# above — cargo then builds the whole servo graph from the local tree. Without
-# all of that, the shell builds against the stock pinned servo.
-# [patch."https://github.com/servo/servo.git"]
-# servo = { path = "../../servo/components/servo" }
-
-# CSP 'self' on tauri:// needs servo patch 0008 plus csp-0001 (both in the
-# runtime repo's servo-patches/): 0008 gives registered custom schemes tuple
-# origins; csp-0001 teaches the CSP crate to match 'self' against them. Check
-# rust-content-security-policy out beside the repos at the published 0.8.1
-# rev (6a523bab), `git am` csp-0001, and uncomment.
+# check the engine crates out beside the repos, apply the series, uncomment
+# this block, and add `features = ["patched-servo"]` to the tauri-runtime-servo
+# dependency above — cargo then builds the whole servo graph from the local
+# trees. Without all of that, the shell builds against stock libservo.
+#
+# One block keyed on `crates-io`, where there used to be three keyed on git
+# sources: as of servo 0.5 the runtime depends on published libservo and servo
+# takes its stylo crates from the registry too, so no git source survives to
+# override. A `[patch."https://github.com/servo/servo.git"]` block against
+# this lockfile would simply go unused.
+#
+# The block is the one the runtime repo's README publishes under "Using a
+# patched Servo", with the paths moved out a level because the checkouts are
+# siblings of the repos rather than of the runtime. That recipe is built in
+# the runtime's own CI, so keep the two in step rather than improvising here.
+#
+# All eight stylo entries are required: overriding `stylo` alone leaves the
+# rest resolving from the registry, which puts a second copy of the selector
+# machinery in the graph and fails to compile. `stylo_derive`, `to_shmem` and
+# `to_shmem_derive` need no entries — the patched crates reach them by path.
+#
 # [patch.crates-io]
-# content-security-policy = { path = "../../rust-content-security-policy" }
-
-# :has() — used by 26 rules in the core chat stylesheets — needs one flipped
-# boolean in the STYLO repo (servo-patches/stylo-0001-… in the tauri fork):
-# check stylo out beside the repos at the rev pinned in servo's Cargo.lock,
-# apply the patch, and uncomment. All eleven stylo-repo crates must redirect
-# together or the build gets two copies of the selector machinery.
-# [patch."https://github.com/servo/stylo"]
-# stylo = { path = "../../stylo/style" }
+# servo = { path = "../../servo/components/servo" }
+# content-security-policy = { git = "https://github.com/copse-dev/rust-content-security-policy", rev = "fb5fd0f1af7f0c0dc315bf938507290b2e48cdbe" }
 # selectors = { path = "../../stylo/selectors" }
 # servo_arc = { path = "../../stylo/servo_arc" }
+# stylo = { path = "../../stylo/style" }
 # stylo_atoms = { path = "../../stylo/stylo_atoms" }
-# stylo_derive = { path = "../../stylo/style_derive" }
 # stylo_dom = { path = "../../stylo/stylo_dom" }
 # stylo_malloc_size_of = { path = "../../stylo/malloc_size_of" }
 # stylo_static_prefs = { path = "../../stylo/stylo_static_prefs" }
 # stylo_traits = { path = "../../stylo/style_traits" }
-# to_shmem = { path = "../../stylo/to_shmem" }
-# to_shmem_derive = { path = "../../stylo/to_shmem_derive" }
