@@ -89,6 +89,7 @@ export interface ThreadCheckoutTransactionDependencies {
     projectId: string
     threadId: string
     projectRoot: string
+    baseBranch: string
   }) => Promise<ThreadWorktree | null>
   validate: (input: {
     projectId: string
@@ -149,10 +150,11 @@ async function inspectProject(project: Project, isLocal: boolean): Promise<Check
   }
 }
 
-async function recoverUnpersistedWorktree(input: {
+export async function recoverUnpersistedWorktree(input: {
   projectId: string
   threadId: string
   projectRoot: string
+  baseBranch: string
 }): Promise<ThreadWorktree | null> {
   const target = expectedThreadWorktreePath(input.projectId, input.threadId)
   const records = await listProjectWorktrees(input.projectRoot)
@@ -160,12 +162,27 @@ async function recoverUnpersistedWorktree(input: {
   if (!existing?.branch || !existing.head) return null
   const canonicalPath = await realpath(existing.path).catch(() => null)
   if (!canonicalPath) return null
+  // The recovery marker sharpens the reclaim — it carries the original base and
+  // whether the checkout was dirty-seeded — but it cannot gate it. Git has
+  // already registered this linked checkout, so returning null here does not
+  // fall back to a clean allocation: it falls through to `allocate`, which
+  // throws "already registered" and strands the thread. Any checkout cut before
+  // the marker existed, or by a path that failed between `worktree add` and the
+  // config write, has no marker and must still be reclaimable.
+  //
+  // Without it, reconstruct the conservative shape the reclaim used before the
+  // marker: the caller's base, the branch's current head, and dirty-seeded so
+  // retirement keeps refusing to discard state this process never observed.
   const metadata = await readThreadWorktreeRecoveryMetadata(input.projectRoot, existing.branch)
-  if (!metadata) return null
   return {
     path: canonicalPath,
     branch: existing.branch,
-    ...metadata,
+    ...(metadata ?? {
+      baseBranch: input.baseBranch,
+      baseCommit: existing.head,
+      createdAt: Date.now(),
+      seededFromDirtyProject: true,
+    }),
   }
 }
 
@@ -285,6 +302,7 @@ export function createThreadCheckoutTransaction(
         projectId: input.projectId,
         threadId: input.threadId,
         projectRoot: project.path,
+        baseBranch,
       })
       const worktree =
         recovered ??

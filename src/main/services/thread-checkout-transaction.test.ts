@@ -1,10 +1,18 @@
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { Project, Thread } from '@shared/types'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
+import { setGitAvailableForTest } from './tool-availability.ts'
+import { clearAllowedWorkspaceRootsForTest } from './workspace.ts'
+import { allocateThreadWorktree, readThreadWorktreeRecoveryMetadata } from './worktree-manager.ts'
 import {
   createThreadCheckoutPreview,
   createThreadCheckoutTransaction,
+  recoverUnpersistedWorktree,
   type ThreadCheckoutTransactionDependencies,
 } from './thread-checkout-transaction.ts'
 
@@ -375,5 +383,113 @@ describe('first-message checkout transaction', () => {
     )
     assert.equal(inspected, false)
     assert.equal(patches.length, 0)
+  })
+})
+
+describe('reclaiming a linked checkout with no recovery marker', () => {
+  const cleanups: string[] = []
+  let previousRoot: string | undefined
+
+  function git(cwd: string, args: string[]): string {
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Copse Test',
+        GIT_AUTHOR_EMAIL: 'copse@example.invalid',
+        GIT_COMMITTER_NAME: 'Copse Test',
+        GIT_COMMITTER_EMAIL: 'copse@example.invalid',
+      },
+    })
+  }
+
+  afterEach(async () => {
+    if (previousRoot === undefined) delete process.env['COPSE_WORKTREES_DIR']
+    else process.env['COPSE_WORKTREES_DIR'] = previousRoot
+    previousRoot = undefined
+    setGitAvailableForTest(null)
+    clearAllowedWorkspaceRootsForTest()
+    for (const path of cleanups.splice(0).reverse()) {
+      await rm(path, { recursive: true, force: true })
+    }
+  })
+
+  it('reclaims a checkout whose marker is missing instead of stranding the thread', async () => {
+    // A worktree cut before the marker existed — or by a run that died between
+    // `worktree add` and the config write — is still registered with Git. If the
+    // reclaim refuses it, the caller allocates again, that allocation throws
+    // "already registered", and the thread never starts. Automation runs hit
+    // this first because their fixtures outlive a single run.
+    previousRoot = process.env['COPSE_WORKTREES_DIR']
+    const temp = await mkdtemp(join(tmpdir(), 'copse-reclaim-'))
+    cleanups.push(temp)
+    process.env['COPSE_WORKTREES_DIR'] = join(temp, 'worktrees')
+    setGitAvailableForTest(true)
+
+    const repo = join(temp, 'repo')
+    await mkdir(repo, { recursive: true })
+    git(repo, ['init', '-q', '-b', 'main'])
+    await writeFile(join(repo, 'README.md'), 'base\n')
+    git(repo, ['add', '.'])
+    git(repo, ['commit', '-q', '-m', 'initial'])
+
+    const allocated = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      prompt: 'Scheduled review',
+      baseBranch: 'main',
+      seedFromDirtyProject: false,
+    })
+    // Strip the marker to reproduce a checkout that predates it.
+    git(repo, [
+      'config',
+      '--local',
+      '--unset',
+      `branch.${allocated.branch}.copse-worktree-recovery`,
+    ])
+    assert.equal(await readThreadWorktreeRecoveryMetadata(repo, allocated.branch), null)
+
+    const recovered = await recoverUnpersistedWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      baseBranch: 'main',
+    })
+
+    assert.ok(recovered, 'a registered checkout must still be reclaimable without its marker')
+    assert.equal(recovered.path, allocated.path)
+    assert.equal(recovered.branch, allocated.branch)
+    assert.equal(recovered.baseBranch, 'main')
+    assert.equal(recovered.baseCommit, git(repo, ['rev-parse', 'HEAD']).trim())
+    // Conservative: this process never saw the checkout created, so retirement
+    // must keep refusing to discard whatever it holds.
+    assert.equal(recovered.seededFromDirtyProject, true)
+  })
+
+  it('still declines when no checkout is registered for the thread', async () => {
+    previousRoot = process.env['COPSE_WORKTREES_DIR']
+    const temp = await mkdtemp(join(tmpdir(), 'copse-reclaim-'))
+    cleanups.push(temp)
+    process.env['COPSE_WORKTREES_DIR'] = join(temp, 'worktrees')
+    setGitAvailableForTest(true)
+
+    const repo = join(temp, 'repo')
+    await mkdir(repo, { recursive: true })
+    git(repo, ['init', '-q', '-b', 'main'])
+    await writeFile(join(repo, 'README.md'), 'base\n')
+    git(repo, ['add', '.'])
+    git(repo, ['commit', '-q', '-m', 'initial'])
+
+    assert.equal(
+      await recoverUnpersistedWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        projectRoot: repo,
+        baseBranch: 'main',
+      }),
+      null,
+    )
   })
 })
