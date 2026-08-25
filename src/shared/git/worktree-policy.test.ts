@@ -34,11 +34,7 @@ describe('decideThreadWorktreePolicy', () => {
         reason: 'project-always',
       },
       { patch: { isGitRepository: false }, mode: 'shared', reason: 'not-git' },
-      {
-        patch: { defaultBranch: null },
-        mode: 'shared',
-        reason: 'default-branch-unresolved',
-      },
+      { patch: { defaultBranch: null }, mode: 'worktree', reason: 'project-always' },
       { patch: { currentBranch: null }, mode: 'shared', reason: 'detached-head' },
       { patch: { hasSubmodules: true }, mode: 'shared', reason: 'submodules-unsupported' },
       { patch: { isLocal: false }, mode: 'shared', reason: 'not-local' },
@@ -74,19 +70,18 @@ describe('decideThreadWorktreePolicy', () => {
     )
   })
 
-  it('only seeds dirty project work when the checkout shares the worktree base', () => {
+  it('seeds dirty project work from the selected local branch', () => {
     const onDefault = decideThreadWorktreePolicy({ ...supported, isDirty: true })
     assert.equal(onDefault.seededFromDirtyProject, true)
 
-    // The edits belong to `feature`, but the worktree is cut from `main`.
-    // Restoring them over it would mix two unrelated trees.
+    // The picker-selected feature branch is also the worktree base.
     const offDefault = decideThreadWorktreePolicy({
       ...supported,
       isDirty: true,
       currentBranch: 'feature',
     })
     assert.equal(offDefault.checkoutMode, 'worktree')
-    assert.equal(offDefault.seededFromDirtyProject, false)
+    assert.equal(offDefault.seededFromDirtyProject, true)
   })
 
   it('blocks an explicit worktree choice in unsupported repositories', () => {
