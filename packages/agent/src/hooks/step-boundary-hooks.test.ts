@@ -71,6 +71,10 @@ function preStream(over: Partial<StepBoundaryPayload> = {}): StepBoundaryPayload
     phase: 'preStream',
     loopNudgeSent: false,
     forceTextAttempted: false,
+    artifactCheckpointSent: false,
+    artifactCheckpointEligible: false,
+    elapsedWallTimeMs: 0,
+    remainingWallTimeMs: 30 * 60_000,
     streamCappedAsRunaway: false,
     ...over,
   }
@@ -81,6 +85,10 @@ function postStream(over: Partial<StepBoundaryPayload> = {}): StepBoundaryPayloa
     phase: 'postStream',
     loopNudgeSent: false,
     forceTextAttempted: false,
+    artifactCheckpointSent: false,
+    artifactCheckpointEligible: false,
+    elapsedWallTimeMs: 0,
+    remainingWallTimeMs: 30 * 60_000,
     streamCappedAsRunaway: false,
     ...over,
   }
