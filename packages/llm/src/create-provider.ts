@@ -11,7 +11,7 @@ import { validateCredentialBaseUrl } from './credential-url.ts'
 import {
   isEmptyModelParameters,
   openRouterReasoningBody,
-  recommendedOutputCeiling,
+  resolvedOutputCeiling,
   type ModelParameters,
 } from './model-parameters.ts'
 import { usesResponsesApi } from './openai-responses-models.ts'
@@ -123,7 +123,7 @@ export function createProvider(
   // it is resolved per branch once the id is settled (the fallback branches only
   // learn theirs from an env var).
   const tunedOpts = (id: string): { params: ModelParameters; maxOutputTokens?: number } => {
-    const ceiling = recommendedOutputCeiling(id, params)
+    const ceiling = resolvedOutputCeiling(id, params)
     return { params, ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }) }
   }
   const anthropicApiKey = keys.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY']
@@ -189,7 +189,7 @@ export function createLocalOpenAIProvider(
   // LM Studio and other OpenAI-compatible local servers need stream_options.include_usage
   // or they never report prompt/completion tokens — without that, usage chunks (and the
   // Settings usage ledger) stay empty for local models such as qwen.
-  const ceiling = recommendedOutputCeiling(model, params)
+  const ceiling = resolvedOutputCeiling(model, params)
   return new OpenAIProvider(model, {
     baseURL,
     apiKey: apiKey || 'lm-studio',
@@ -253,10 +253,14 @@ export function createOpenRouterProvider(
   // `reasoning_effort` alias, so it normalises across upstream vendors and can
   // express "off". Sampling stays on the standard OpenAI-shaped fields, so the
   // reasoning level is dropped from `params` to avoid sending both spellings.
-  const { reasoning: _reasoning, ...sampling } = opts.params ?? {}
+  const {
+    reasoning: _reasoning,
+    maxOutputTokens: _maxOutputTokens,
+    ...sampling
+  } = opts.params ?? {}
   // Read from `opts.params` rather than from `sampling`: the ceiling keys off
   // the reasoning level, which the destructure above just removed.
-  const ceiling = recommendedOutputCeiling(model, opts.params ?? {})
+  const ceiling = resolvedOutputCeiling(model, opts.params ?? {})
   return new OpenAIProvider(model, {
     params: sampling,
     ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
@@ -309,7 +313,7 @@ export function createExtraCloudProvider(
       ...(Object.keys(extraBody).length ? { extraBody } : {}),
     })
   }
-  const ceiling = recommendedOutputCeiling(model, params)
+  const ceiling = resolvedOutputCeiling(model, params)
   return new OpenAIProvider(model, {
     baseURL: provider.baseUrl,
     // Local servers usually run without auth but still want a non-empty key

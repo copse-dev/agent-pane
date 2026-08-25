@@ -17,8 +17,7 @@ async function waitForWorkspace(): Promise<void> {
 }
 
 async function openChangesPanel(): Promise<void> {
-  const changesBtn = await $('.titlebar-btn[aria-label="Open changes"]')
-  await changesBtn.waitForExist({ timeout: 30_000 })
+  await $('.titlebar-btn[aria-label="Open changes"]').waitForExist({ timeout: 30_000 })
   // The titlebar button no-ops until the seeded workspace has loaded (it routes
   // to add-project when workspaceRoot isn't set yet), and that load is slower on
   // some runners — so a single click can land before the workspace is ready and
@@ -26,6 +25,9 @@ async function openChangesPanel(): Promise<void> {
   // (only when it isn't already, so we never toggle an open panel shut).
   await browser.waitUntil(
     async () => {
+      // Opening the panel can rebuild the titlebar. Reacquire the button on
+      // every retry so WebDriver never reuses an element from the old frame.
+      const changesBtn = await $('.titlebar-btn[aria-label="Open changes"]')
       if (((await changesBtn.getAttribute('class')) ?? '').includes('active')) return true
       await changesBtn.click()
       return false

@@ -48,10 +48,11 @@ backing up separately.
 ## What profiles do not isolate: API keys
 
 **Stored API keys are not cryptographically separated by profile.** Copse
-encrypts them with Electron's `safeStorage`, which seals data with a key held by
-the operating system — the login Keychain on macOS, DPAPI on Windows, and the
-GNOME/KWallet secret service on Linux. That key belongs to the **OS user
-account**, not to the Copse profile directory.
+encrypts them under a data key it keeps in the operating system's keyring — the
+login Keychain on macOS, Credential Manager on Windows, and the GNOME/KWallet
+secret service on Linux (one item, `Copse` / `secret-data-key`; keys stored by
+earlier versions through Electron's `safeStorage` are migrated on first use).
+That key belongs to the **OS user account**, not to the Copse profile directory.
 
 Two consequences:
 
@@ -71,7 +72,7 @@ reported as an error against the provider it belongs to. Re-enter it in
 variable, which bypasses stored keys entirely and is the better option for a
 profile you intend to move between machines.
 
-On a Linux box with no unlocked keyring, `safeStorage` is unavailable and Copse
+On a Linux box with no unlocked keyring, encryption is unavailable and Copse
 will not silently write a key to disk in the clear: saving one requires explicit
 consent, and `/checkup` warns for as long as a plaintext key is stored.
 

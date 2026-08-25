@@ -122,34 +122,37 @@ export class AgentRunDeadline {
   private pauseDepth = 0
   private readonly idleTimeoutMs: number
   private readonly hardMaxMs: number
+  private readonly clock: () => number
 
   constructor(
     idleTimeoutMs = AGENT_RUN_IDLE_TIMEOUT_MS,
     hardMaxMs = AGENT_RUN_HARD_MAX_MS,
     now = Date.now(),
+    clock: () => number = Date.now,
   ) {
     this.idleTimeoutMs = idleTimeoutMs
     this.hardMaxMs = hardMaxMs
     this.runStartedAt = now
     this.lastActivityAt = now
+    this.clock = clock
   }
 
   /** Monotonic clock with active and accumulated pause time subtracted. */
-  private effectiveNow(now = Date.now()): number {
+  private effectiveNow(now = this.clock()): number {
     const activePause = this.pauseStartedAt !== null ? now - this.pauseStartedAt : 0
     return now - this.accumulatedPauseMs - activePause
   }
 
-  recordActivity(now = Date.now()): void {
+  recordActivity(now = this.clock()): void {
     this.lastActivityAt = this.effectiveNow(now)
   }
 
-  pause(now = Date.now()): void {
+  pause(now = this.clock()): void {
     if (this.pauseDepth === 0 && this.pauseStartedAt === null) this.pauseStartedAt = now
     this.pauseDepth += 1
   }
 
-  resume(now = Date.now()): void {
+  resume(now = this.clock()): void {
     if (this.pauseDepth === 0) return
     this.pauseDepth -= 1
     // Only the outermost resume records the elapsed pause and re-arms the clock.
@@ -159,22 +162,32 @@ export class AgentRunDeadline {
     }
   }
 
-  isHardExpired(now = Date.now()): boolean {
+  isHardExpired(now = this.clock()): boolean {
     return now - this.runStartedAt >= this.hardMaxMs
   }
 
-  isIdleExpired(now = Date.now()): boolean {
+  isIdleExpired(now = this.clock()): boolean {
     return this.effectiveNow(now) - this.lastActivityAt >= this.idleTimeoutMs
   }
 
-  isExpired(now = Date.now()): boolean {
+  isExpired(now = this.clock()): boolean {
     return this.isHardExpired(now) || this.isIdleExpired(now)
   }
 
-  msUntilExpiry(now = Date.now()): number {
+  msUntilExpiry(now = this.clock()): number {
     const untilHard = this.hardMaxMs - (now - this.runStartedAt)
     const untilIdle = this.idleTimeoutMs - (this.effectiveNow(now) - this.lastActivityAt)
     return Math.max(0, Math.min(untilHard, untilIdle))
+  }
+
+  /** Hard wall-clock time since construction; pauses deliberately still count. */
+  elapsedWallTimeMs(now = this.clock()): number {
+    return Math.max(0, now - this.runStartedAt)
+  }
+
+  /** Time left before the hard product cap, independent of the sliding idle window. */
+  remainingWallTimeMs(now = this.clock()): number {
+    return Math.max(0, this.hardMaxMs - this.elapsedWallTimeMs(now))
   }
 }
 

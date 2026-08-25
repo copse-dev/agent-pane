@@ -1,23 +1,6 @@
 import type { ApiClient, DetectedEnvKey } from '../../../preload/api.d.ts'
 import { el, clear } from '../../dom/helpers.ts'
-
-// Friendly labels for the provider slugs the scan can surface. Falls back to the
-// raw slug for anything not listed.
-const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  cursor: 'Cursor',
-  openrouter: 'OpenRouter',
-  mistral: 'Mistral',
-  gemini: 'Google Gemini',
-  deepseek: 'DeepSeek',
-  huggingface: 'Hugging Face',
-  lmstudio: 'LM Studio',
-}
-
-function providerLabel(slug: string): string {
-  return PROVIDER_LABELS[slug] ?? slug
-}
+import { createDetectedItemRow, providerLabel } from './detected-item-row.ts'
 
 export interface EnvKeyDetectSection {
   root: HTMLFieldSetElement
@@ -92,19 +75,15 @@ export function createEnvKeyDetectSection(
       return
     }
     for (const d of detected) {
-      const row = el(
-        'div',
-        { class: 'env-key-row' },
-        el('span', { class: 'env-key-provider' }, providerLabel(d.provider)),
-        el('span', { class: 'env-key-source' }, `${d.envVar} · ${d.source}`),
-        el('span', { class: 'env-key-masked' }, d.masked),
-        el(
-          'span',
-          { class: d.alreadyConfigured ? 'key-status' : 'key-status ok' },
-          d.alreadyConfigured ? 'already set' : 'will import',
-        ),
-      )
-      results.append(row)
+      const row = createDetectedItemRow({
+        kind: 'env-key',
+        id: d.provider,
+        label: providerLabel(d.provider),
+        detail: `${d.envVar} · ${d.source}`,
+        masked: d.masked,
+        status: d.alreadyConfigured ? { text: 'already set' } : { text: 'will import', ok: true },
+      })
+      results.append(row.root)
     }
     importBtn.hidden = importable.length === 0
     importBtn.textContent =

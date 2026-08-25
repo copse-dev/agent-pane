@@ -1048,9 +1048,10 @@ const defaultBranchCache = new Map<string, { branch: string | null; checkedAt: n
 export const DEFAULT_BRANCH_TTL_MS = 5 * 60 * 1000
 
 /**
- * A `null` result means no remote and no `init.defaultBranch` — the state a
- * freshly `git init`ed project sits in until the user adds a remote, which they
- * usually do within minutes. Re-check that case far sooner than a resolved name.
+ * A `null` result means no remote and no resolvable local default — a freshly
+ * `git init`ed project before its first commit, or a configured default naming
+ * a branch the repository never created. Users add a remote or a commit within
+ * minutes, so re-check that case far sooner than a resolved name.
  */
 export const DEFAULT_BRANCH_MISS_TTL_MS = 30 * 1000
 
@@ -1076,6 +1077,11 @@ export async function getDefaultBranch(
   return branch
 }
 
+async function localBranchExists(root: string, branch: string): Promise<boolean> {
+  const { code } = await runGit(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], root)
+  return code === 0
+}
+
 async function resolveDefaultBranch(root: string): Promise<string | null> {
   const { stdout: originHeadStdout, code: originHeadCode } = await runGit(
     ['symbolic-ref', 'refs/remotes/origin/HEAD'],
@@ -1096,11 +1102,23 @@ async function resolveDefaultBranch(root: string): Promise<string | null> {
     if (remoteDefault && !remoteDefault.startsWith('(')) return remoteDefault
   }
 
+  // Without a remote, `init.defaultBranch` answers — but a global value follows
+  // the machine, not this repository, so the name can be a branch this repo
+  // never had (`git branch -M main` renames the branch without touching it).
+  // Verify the candidate against the repository's own refs. The checked-out
+  // branch is deliberately not a fallback: this function also defines trunk
+  // semantics for merge status and the Changes UI, so a feature checkout must
+  // not silently become the repository default.
   const { stdout: configStdout, code: configCode } = await runGit(
     ['config', '--get', 'init.defaultBranch'],
     root,
   )
-  if (configCode === 0 && configStdout.trim()) return configStdout.trim()
+  if (configCode === 0 && configStdout.trim()) {
+    const configured = configStdout.trim()
+    if (await localBranchExists(root, configured)) return configured
+  }
+
+  if (await localBranchExists(root, DEFAULT_GIT_BRANCH)) return DEFAULT_GIT_BRANCH
 
   return null
 }
