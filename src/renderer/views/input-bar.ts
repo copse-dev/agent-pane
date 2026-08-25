@@ -1438,6 +1438,16 @@ export function mountInputBar(
         return
       }
     }
+    // A blank-thread branch selection checks out through IPC. If the user hits
+    // Send before that promise settles, reading HEAD here can otherwise race
+    // and base the new worktree on the branch that was selected previously.
+    try {
+      await branchControl.waitForPendingCheckout()
+    } catch {
+      // The branch control already surfaced the checkout failure. Keep the
+      // prompt in place rather than silently sending it from the old branch.
+      return
+    }
     const [branchStatus, promptState] = await Promise.all([
       api.git.branchStatus(projectId, id),
       api.git.promptState(projectId, id),
@@ -1550,6 +1560,9 @@ export function mountInputBar(
         // decision remains durable, but their prompt must stay with its composer.
         if (getActiveThreadId() !== id) return
       } catch (error) {
+        // The failure may be a stale cached default branch (fixed git config,
+        // renamed branch); drop the cache so Retry re-reads it.
+        await api.agent.resetDefaultBranchCache().catch(() => undefined)
         checkoutErrorText.textContent = checkoutErrorMessage(error)
         checkoutError.hidden = false
         return

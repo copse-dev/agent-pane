@@ -185,6 +185,24 @@ describe('settings plugins (about:addons)', function () {
     await expect(automationsRow).toBeDisplayed()
     assert.equal(await automationsRow.getAttribute('data-enabled'), 'false')
 
+    // The benchmark-derived delayed checkpoint is an explicit experiment. Its
+    // once-per-run delay is plugin-scoped and it stays off until the user opts in.
+    const checkpointRow = plugins.$('.plugin-row[data-plugin-id="copse.artifact-checkpoint"]')
+    await expect(checkpointRow).toBeDisplayed()
+    await expect(checkpointRow.$('.plugin-badge-experimental')).toHaveText('Experimental')
+    assert.equal(await checkpointRow.getAttribute('data-enabled'), 'false')
+    await checkpointRow.$('.plugin-settings-summary').click()
+    const checkpointDelay = checkpointRow.$(
+      'input.plugin-setting-number[data-setting-key="delayMinutes"]',
+    )
+    await expect(checkpointDelay).toBeDisplayed()
+    assert.equal(await checkpointDelay.getValue(), '8')
+    await checkpointRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.plugin-row[data-plugin-id="copse.artifact-checkpoint"]',
+      'settings-artifact-checkpoint-plugin.png',
+    )
+
     // A selected directory remains an ordinary user plugin. Its declared tool
     // behavior is visible even when this platform cannot start the macOS-only
     // isolated worker and therefore leaves the plugin disabled.

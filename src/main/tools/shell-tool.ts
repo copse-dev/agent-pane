@@ -284,7 +284,7 @@ function formatShellFailure(result: ShellRunResult): Error {
 export const runShellTool = defineTool({
   name: 'run_shell',
   description:
-    'Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). ' +
+    'Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). Prefer dedicated tools over shell for GitHub/CI (`gh_pr_*`, `gh_run_*`, `get_ci_status`, `get_ci_failure_logs`) and for git status/diff/log/show/commit (`git_*`). Never drive `gh` or network `git fetch`/`push`/`pull` through run_shell when those tools exist. Do not use `git reset --hard` or `git clean -fd` for routine branch setup. ' +
     'Output is streamed to the conversation. ' +
     'Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. ' +
     'If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. ' +

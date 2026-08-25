@@ -202,6 +202,24 @@ describe('providers panel', () => {
     assert.equal(state.autoSetupCalls, 1)
   })
 
+  it('with deviceAutoSetup: false, picking an agent provider scans but never auto-sets-up', async () => {
+    const panel = createProvidersPanel(stubApi(state), { deviceAutoSetup: false })
+    document.body.append(panel.root)
+    await panel.refresh()
+    await flush()
+
+    // Onboarding mounts the panel this way: the installed badge may refresh via
+    // the cheap PATH scan, but adapter installs must wait for first use.
+    clickChip(panel.root, 'anthropic')
+    await flush()
+    assert.equal(state.autoSetupCalls, 0)
+    assert.ok(state.detectCalls > 0, 'the badge scan should still run')
+
+    clickChip(panel.root, 'openai')
+    await flush()
+    assert.equal(state.autoSetupCalls, 0)
+  })
+
   it('offers one Add flow that routes to the right kind of provider', async () => {
     const panel = createProvidersPanel(stubApi(state), {})
     document.body.append(panel.root)

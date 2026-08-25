@@ -69,11 +69,17 @@ import {
   getSetting,
   setSetting,
   hasApiKey,
+  resolveApiKey,
   setApiKey,
   isApiKeyEncrypted,
 } from '../services/storage/settings.ts'
 import { createElectronUserAlertSender } from '../services/user-alerts-electron.ts'
 import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
+import {
+  assertEnvKeyDetectionConsent,
+  importDetectedEnvKeys,
+  EnvKeyImportConsentError,
+} from '../services/providers/env-key-import.ts'
 import {
   isRendererWritableSettingKey,
   isSecretSettingKey,
@@ -236,6 +242,7 @@ import {
   getGitWorkingFileDiff,
   getGithubRepoSlug,
   isInsideGitWorkTree,
+  resetDefaultBranchCache,
 } from '../services/github/git-service.ts'
 import { parseIssueRef, issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
@@ -295,6 +302,7 @@ import {
 import { applyAppIcon } from '../app-icon.ts'
 import {
   createMainWindow,
+  freezeMainWindowStateForQuit,
   getFocusedMainWindow,
   getMainWindow,
   syncDevtoolsShortcut,
@@ -307,8 +315,7 @@ import {
   isProviderKeyUsable,
   recordProviderKeyValidation,
 } from '../services/providers/provider-key-status.ts'
-import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
-import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
+import { getUsageSummary } from '../services/storage/usage-ledger.ts'
 import {
   getPlanWorthItPayload,
   loadPlanUsageSnapshotAndSample,
@@ -1305,17 +1312,28 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
-    const result = await validateApiKey(p, apiKey)
+    // Empty means "the key already in use" (see the `settings:validateKey`
+    // contract): resolve it here so the stored secret never crosses to the
+    // renderer just to be handed straight back.
+    const candidate = apiKey.trim() ? apiKey : (resolveApiKey(p) ?? '')
+    if (!candidate) return { ok: false, error: 'No key configured for this provider' }
+    const result = await validateApiKey(p, candidate)
     recordProviderKeyValidation(p, result.ok)
     return result
   })
   // Opt-in environment scan: look for provider API keys the user already has
   // exported (process.env + well-known shell files) and offer to import them.
   // Raw secrets stay in the main process — the renderer only sees the masked
-  // preview. Both handlers re-scan on each call; the import handler is gated on
-  // the persisted consent flag set when the user approves the scan.
+  // preview. Both handlers re-scan on each call and both are gated on the
+  // persisted consent flag set when the user approves the scan.
   ipcMain.handle('settings:scanEnvKeys', (event) => {
     assertMainFrameSender(event, win)
+    try {
+      assertEnvKeyDetectionConsent()
+    } catch (err) {
+      if (err instanceof EnvKeyImportConsentError) throw new IpcValidationError(err.message)
+      throw err
+    }
     return scanEnvForKeys().map((d) => ({
       provider: d.provider,
       envVar: d.envVar,
@@ -1324,31 +1342,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       alreadyConfigured: hasApiKey(d.provider),
     }))
   })
-  ipcMain.handle('settings:importEnvKeys', (event) => {
+  ipcMain.handle('settings:importEnvKeys', (event, rawProviders?: unknown) => {
     assertMainFrameSender(event, win)
-    if (!getSetting<boolean>('envKeyAutoDetectEnabled', false)) {
-      throw new IpcValidationError('Environment key detection has not been enabled')
+    const providers = parseIpcArgs(z.array(z.string().max(64)).max(32).optional(), [rawProviders])
+    try {
+      return importDetectedEnvKeys(providers ? { providers } : {})
+    } catch (err) {
+      if (err instanceof EnvKeyImportConsentError) throw new IpcValidationError(err.message)
+      throw err
     }
-    const imported: { provider: string; source: string }[] = []
-    const skipped: { provider: string; reason: string }[] = []
-    for (const d of scanEnvForKeys()) {
-      // Never overwrite a key the user has already configured.
-      if (hasApiKey(d.provider)) {
-        skipped.push({ provider: d.provider, reason: 'already-configured' })
-        continue
-      }
-      // Honour the plaintext gate here too: a bulk env import must not write keys
-      // unencrypted without consent. Skipped rather than silently stored in clear.
-      // The user can add the key manually via the Settings UI where the per-save
-      // confirm dialog lets them approve plaintext storage explicitly.
-      const result = setApiKey(d.provider, d.value)
-      if (!result.ok) {
-        skipped.push({ provider: d.provider, reason: 'plaintext-storage-refused' })
-        continue
-      }
-      imported.push({ provider: d.provider, source: d.source })
-    }
-    return { imported, skipped }
   })
   ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
   // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
@@ -1408,10 +1410,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('app-icon:apply', () => {
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
-  })
-  ipcMain.handle('usage:record', (event, input: unknown) => {
-    assertMainFrameSender(event, win)
-    recordUsageEvent(parseUsageRecordInput(input))
   })
   ipcMain.handle('usage:getSummary', () => getUsageSummary())
   ipcMain.handle('usage:getPlanUsage', async () => loadPlanUsageSnapshotAndSample())
@@ -2132,6 +2130,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getBranches(await resolveWatchedGitRoot(projectId, threadId))
   })
+  ipcMain.handle('agent:resetDefaultBranchCache', (event) => {
+    assertMainFrameSender(event, win)
+    resetDefaultBranchCache()
+  })
   ipcMain.handle('git:getDefaultBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
@@ -2476,6 +2478,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:createMainWindow', (event) => {
       assertMainFrameSender(event, win)
       createMainWindow()
+    })
+    // The wdio harness closes a window before reloadSession so Electron can
+    // release its single-instance lock (wdio.conf.ts beforeCommand). Without
+    // this, that close reads as the user discarding the window (its persisted
+    // record is dropped) and the close-time state capture re-writes this
+    // process's stale records over whatever the spec just seeded on disk —
+    // which is how the multi-window restore spec broke. Quit + freeze keeps
+    // the on-disk state exactly as the spec left it.
+    ipcMain.handle('test:markQuit', (event) => {
+      assertMainFrameSender(event, win)
+      freezeMainWindowStateForQuit()
     })
     // Local macOS WebDriver sessions cannot always relaunch Electron after a
     // fixture rewrite. Let focused specs drive the same workspace-open event as

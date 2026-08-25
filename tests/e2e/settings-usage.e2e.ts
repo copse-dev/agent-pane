@@ -15,7 +15,29 @@ describe('settings usage panel', function () {
 
   before(async () => {
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-usage-panel')
+    const now = Date.now()
+    seedEmptyProject(process.cwd(), 'e2e-usage-panel', {
+      usageEvents: [
+        {
+          at: now,
+          model: 'claude-sonnet-4-6',
+          source: 'agent',
+          inputTokens: 500,
+          outputTokens: 50,
+          threadId: 'thread-1',
+          projectId: 'e2e-usage-panel',
+        },
+        {
+          at: now,
+          model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+          source: 'agent',
+          inputTokens: 1200,
+          outputTokens: 300,
+          threadId: 'thread-1',
+          projectId: 'e2e-usage-panel',
+        },
+      ],
+    })
     await browser.reloadSession()
   })
 
@@ -24,25 +46,6 @@ describe('settings usage panel', function () {
   })
 
   it('shows plan limits and ledger usage without blocking on plan fetch', async () => {
-    await browser.execute(async () => {
-      await window.api.usage.record({
-        model: 'claude-sonnet-4-6',
-        source: 'agent',
-        inputTokens: 500,
-        outputTokens: 50,
-        threadId: 'thread-1',
-        projectId: 'e2e-usage-panel',
-      })
-      await window.api.usage.record({
-        model: 'lmstudio:qwen/qwen3.6-35b-a3b',
-        source: 'agent',
-        inputTokens: 1200,
-        outputTokens: 300,
-        threadId: 'thread-1',
-        projectId: 'e2e-usage-panel',
-      })
-    })
-
     const summary = (await browser.execute(() => window.api.usage.getSummary())) as {
       ledgerEventCount: number
       day: {

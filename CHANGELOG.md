@@ -8,6 +8,23 @@ every published entry.
 
 ## Unreleased
 
+- Stored API keys are now encrypted with a cipher Copse owns rather than
+  Electron's `safeStorage`: a random data key kept as one item in the OS
+  keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+  and AES-256-GCM over the key itself. Existing keys keep working and are
+  rewritten in the new format the first time one is read — the first rewrite
+  sweeps every other stored secret with it, so a profile finishes migrating in
+  one go rather than leaving keys nobody happens to read in the old format.
+  Nothing needs re-entering. This removes the last dependency on Chromium
+  internals for reading secrets, which is what lets a future non-Electron Copse
+  shell open the same profile.
+- Settings → Providers: **Test key** now tests the key you already have saved
+  when the field is empty, instead of answering "Enter a key first" over a key
+  that is set. The field is write-only — a saved key is never read back into it
+  — so previously the button could only ever check a key mid-typing, never the
+  one actually in use. The stored secret stays in the main process; the
+  renderer only asks for it to be tested.
+
 - Clicking an image or video chip in the empty-thread (centered) composer now
   opens the same attachment preview modal used after send. Text chips already
   did; media chips only expanded from the transcript or roadmap, so a new

@@ -1781,6 +1781,8 @@ export async function runAgent(
               coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
               getOpenTodos: () => getAgentRunTodos(),
               continuationBudget,
+              resolvePluginSetting,
+              artifactCheckpointEligible: true,
               recordHookRun: recordFunctionHookRun,
               onLlmCall: (count) => {
                 setHookRunStep(count)

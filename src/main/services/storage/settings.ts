@@ -1,5 +1,6 @@
-import { getSecretCipher, isSecretEncryptionAvailable } from './secret-cipher.ts'
+import { getSecretCipher, isSecretEncryptionAvailable, type SecretCipher } from './secret-cipher.ts'
 import { clearKeyReadability, resolveKeyReadability } from './api-key-readability.ts'
+import { registerSecretSweep, requestSecretSweep } from './secret-migration.ts'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { openPersistentStore } from './persistent-store.ts'
@@ -97,11 +98,68 @@ export function getApiKey(provider: KeyProvider): string | null {
     const buf = Buffer.from(raw.enc, 'base64')
     if (raw.plain) return buf.toString('utf8')
     // No cipher installed: an encrypted key cannot be read here.
-    return getSecretCipher()?.decryptString(buf) ?? null
+    const cipher = getSecretCipher()
+    if (!cipher) return null
+    const value = cipher.decryptString(buf)
+    migrateStoredKey(provider, cipher, buf, value)
+    return value
   } catch {
     return null
   }
 }
+
+/**
+ * Lazy format migration: a key sealed by a cipher format that is still
+ * readable but no longer written (Electron `safeStorage` blobs, once the
+ * keyring cipher is installed) is rewritten in the current format the first
+ * time it is read. A failed rewrite is logged and the key stays readable in
+ * its old format — the next read tries again.
+ */
+function migrateStoredKey(
+  provider: KeyProvider,
+  cipher: SecretCipher,
+  encrypted: Buffer,
+  value: string,
+): void {
+  if (!cipher.shouldReencrypt?.(encrypted)) return
+  try {
+    const record: StoredKey = {
+      v: 1,
+      enc: (cipher.encryptStringForMigration?.(value) ?? cipher.encryptString(value)).toString(
+        'base64',
+      ),
+      plain: false,
+    }
+    cached.set(`apiKey.${provider}`, record)
+    clearKeyReadability(provider)
+    console.warn(`[copse-panel] migrated the ${provider} API key to the keyring cipher`)
+    // This rewrite just proved the keyring takes writes, so finish the job on
+    // every other stored secret rather than waiting for someone to read them.
+    requestSecretSweep()
+  } catch (error) {
+    console.warn(
+      `[copse-panel] could not migrate the ${provider} API key to the keyring cipher:`,
+      error instanceof Error ? error.message : error,
+    )
+  }
+}
+
+/**
+ * Rewrite every stored API key still in a legacy format. Reading *is* the
+ * migration, so this only has to enumerate the providers and read each one:
+ * `getApiKey` rewrites what it opens and swallows a per-provider failure, so
+ * one unreadable key cannot stop the others.
+ *
+ * Providers are enumerated from the parent `apiKey` record because the backing
+ * store lists top-level keys only — `apiKey.<provider>` is one nested object on
+ * disk, not a flat key.
+ */
+registerSecretSweep(function sweepStoredApiKeys(): void {
+  if (getExplicitSettingsProfile()) return
+  const stored = cached.get('apiKey')
+  if (!isRecord(stored)) return
+  for (const provider of Object.keys(stored)) getApiKey(provider)
+})
 
 /**
  * Whether a stored key can actually be decrypted on this machine.

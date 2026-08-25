@@ -84,7 +84,7 @@ const FIXED_PROVIDERS: readonly FixedProvider[] = [
 ]
 // Order of the leading cloud chips, per design. Remaining customs follow, then
 // "Other". Local-server presets are ordered separately (LOCAL_CHIP_ORDER).
-const CHIP_ORDER: readonly string[] = [
+export const CHIP_ORDER: readonly string[] = [
   'openai',
   'perplexity',
   'groq',
@@ -99,7 +99,7 @@ const CHIP_ORDER: readonly string[] = [
 ]
 
 // Built-in local-server preset slugs, in chip order (see BUILTIN_EXTRA_PROVIDERS).
-const LOCAL_CHIP_ORDER: readonly string[] = ['ollama', 'llamacpp', 'jan', 'vllm']
+export const LOCAL_CHIP_ORDER: readonly string[] = ['ollama', 'llamacpp', 'jan', 'vllm']
 
 interface KnownEndpoint {
   label: string
@@ -440,13 +440,13 @@ export function createCustomProvidersSection(
     const test = el('button', { type: 'button', class: 'ui-btn ui-btn-secondary' }, 'Test key')
     test.addEventListener('click', () => {
       void (async (): Promise<void> => {
+        // The field is write-only — a saved or environment key is never read
+        // back into it. Delegate an empty box to the main process, which can
+        // resolve either source without exposing the secret to the renderer.
+        // This also avoids making the renderer's stored-key snapshot the
+        // authority for whether an environment key exists.
         const key = input.value.trim()
-        if (!key) {
-          setInlineStatus(status, 'error', 'Enter a key first')
-          status.className = 'key-status err'
-          return
-        }
-        setInlineStatus(status, 'pending', 'Testing…')
+        setInlineStatus(status, 'pending', key ? 'Testing…' : 'Testing configured key…')
         status.className = 'key-status'
         try {
           const res = await api.settings.validateKey(slug, key)
