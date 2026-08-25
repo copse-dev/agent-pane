@@ -4,11 +4,10 @@
   z-index: 200;
   background: var(--bg-base);
 }
-/* The settings panel is a native <dialog> opened with showModal(). Neutralise
-   the UA dialog box defaults (centered, fit-content, bordered, CanvasText) so it
-   fills the window like the previous div overlay did. Scoped to the dialog so
-   the onboarding overlay, which reuses .settings-overlay as a plain div, is
-   unaffected. */
+/* Settings and onboarding are native <dialog>s opened with showModal()
+   (dialog-shell.ts). Neutralise the UA dialog box defaults (centered,
+   fit-content, bordered, CanvasText) so they fill the window like the previous
+   div overlays did. */
 dialog.settings-overlay {
   width: 100%;
   height: 100%;
@@ -484,14 +483,14 @@ dialog.settings-overlay::backdrop {
 .model-parameter-fields input[type='number'] {
   max-width: 10rem;
 }
-/* The vendor-recipe offer sits after the fields it fills, reading as a shortcut
-   to them rather than a fourth control. */
+/* The recipe offer introduces the fields it fills, so the action, provenance,
+   and resulting reasoning/output budget remain together near the top. */
 .model-parameter-recommend {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--spacing-sm);
-  margin-top: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
 }
 .model-parameter-recommend-note {
   margin: 0;

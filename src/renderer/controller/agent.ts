@@ -40,7 +40,6 @@ import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread } from './thread-naming.ts'
 import { takeQuietRun } from './quiet-runs.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
-import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 
@@ -77,23 +76,6 @@ function addAssistantMessage(store: AppStore, threadId: string): string {
     ...(held?.model !== undefined ? { model: held.model } : {}),
     ...(held?.parameters !== undefined ? { parameters: held.parameters } : {}),
   })
-}
-
-function recordUsageToLedger(
-  api: ApiClient,
-  store: AppStore,
-  threadId: string,
-  delta: UsageDelta,
-): void {
-  if (!delta.inputTokens && !delta.outputTokens) return
-  // A carried background run bills its own project, not whichever project the
-  // user happens to be looking at when the chunk lands (#1841).
-  const projectId = backgroundProjectOf(store, threadId) ?? store.getState().activeProjectId
-  void api.usage
-    .record(usageRecordFromAgentDelta(threadId, delta, projectId))
-    .catch((err: unknown) => {
-      console.error('[usage] failed to record usage event:', err)
-    })
 }
 
 export function startAgentController(store: AppStore, api: ApiClient): () => void {
@@ -291,9 +273,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           ...(chunk.cacheCreationTokens !== undefined
             ? { cacheCreationTokens: chunk.cacheCreationTokens }
             : {}),
-          ...(chunk.usageSource !== undefined ? { usageSource: chunk.usageSource } : {}),
         }
-        recordUsageToLedger(api, store, threadId, delta)
         addUsageDelta(store, threadId, delta)
         break
       }

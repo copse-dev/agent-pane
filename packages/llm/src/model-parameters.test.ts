@@ -10,6 +10,7 @@ import {
   modelParameterSupport,
   recommendedModelParameters,
   recommendedOutputCeiling,
+  resolvedOutputCeiling,
   openAiParameterFields,
   SAMPLING_FIELDS,
   openRouterReasoningBody,
@@ -91,6 +92,7 @@ describe('modelParameterSupport', () => {
     assert.equal(support.reasoningWire, 'openrouter')
     assert.deepEqual([...support.sampling], [...SAMPLING_FIELDS])
     assert.equal(support.upstreamDecides, true)
+    assert.equal(support.outputCap, true)
     assert.ok(support.reasoning.includes('max'))
   })
 
@@ -119,6 +121,17 @@ describe('modelParameterSupport', () => {
 })
 
 describe('sanitizeModelParameters', () => {
+  it('keeps and clamps an output cap only on routes that expose it', () => {
+    assert.deepEqual(
+      sanitizeModelParameters({ maxOutputTokens: 8_192.4 }, 'openrouter:stealth/ox-alpha'),
+      { maxOutputTokens: 8_192 },
+    )
+    assert.deepEqual(sanitizeModelParameters({ maxOutputTokens: 128 }, 'lmstudio:qwen'), {
+      maxOutputTokens: 256,
+    })
+    assert.deepEqual(sanitizeModelParameters({ maxOutputTokens: 8_192 }, 'claude-opus-5'), {})
+  })
+
   it('drops sampling for a model that rejects it', () => {
     const sanitized = sanitizeModelParameters(
       { reasoning: 'high', temperature: 0.7, topP: 0.95 },
@@ -407,6 +420,13 @@ describe('clampReasoning', () => {
 })
 
 describe('recommendedModelParameters', () => {
+  it('offers the evidence-backed experimental Ox Alpha profile', () => {
+    const recommendation = recommendedModelParameters('openrouter:stealth/ox-alpha')
+    assert.ok(recommendation)
+    assert.deepEqual(recommendation.params, { reasoning: 'medium', maxOutputTokens: 16_384 })
+    assert.equal(recommendation.sourceLabel, 'paired Terminal-Bench record')
+  })
+
   it('returns the published recipe for a model we hold one for', () => {
     const recommendation = recommendedModelParameters('openrouter:deepseek/deepseek-v4-flash-0731')
     assert.ok(recommendation)
@@ -507,5 +527,17 @@ describe('recommendedOutputCeiling', () => {
     assert.equal(recommendedOutputCeiling(model, {}), 81_920)
     assert.equal(recommendedOutputCeiling(model, { reasoning: 'low' }), 81_920)
     assert.equal(recommendedOutputCeiling(model, { reasoning: 'max' }), 81_920)
+  })
+})
+
+describe('resolvedOutputCeiling', () => {
+  it('prefers an explicit user cap over a published permission ceiling', () => {
+    assert.equal(
+      resolvedOutputCeiling('openrouter:deepseek/deepseek-v4-flash-0731', {
+        reasoning: 'max',
+        maxOutputTokens: 8_192,
+      }),
+      8_192,
+    )
   })
 })

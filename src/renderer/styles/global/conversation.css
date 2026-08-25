@@ -394,7 +394,7 @@
   box-shadow: var(--shadow-sm);
 }
 /* Mid-fold accordion for long user prompts: head + tail stay visible; middle
-   collapses behind a dashed "N lines hidden" / "collapse" control. */
+   collapses behind a dashed "expand" / "collapse" control. */
 .msg-user-fold-head,
 .msg-user-fold-middle,
 .msg-user-fold-tail {

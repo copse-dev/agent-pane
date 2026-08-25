@@ -15,6 +15,7 @@ export const RESERVED_PROVIDER_SLUGS: readonly string[] = [
   'openrouter',
   'lmstudio',
   'mistral',
+  'perplexity',
   'gemini',
   'deepseek',
   'huggingface',

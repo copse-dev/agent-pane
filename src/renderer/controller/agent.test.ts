@@ -125,7 +125,6 @@ function setup(
       },
       usage: {
         ...base['usage'],
-        record: async (): Promise<void> => {},
         getSummary: async () => ({
           day: {
             totalCostUsd: 0,

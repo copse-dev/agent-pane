@@ -28,6 +28,11 @@ export interface WorktreeRecord {
   prunable: string | null
 }
 
+export type ThreadWorktreeRecoveryMetadata = Pick<
+  ThreadWorktree,
+  'baseBranch' | 'baseCommit' | 'createdAt' | 'seededFromDirtyProject'
+>
+
 export interface AllocateWorktreeInput {
   projectId: string
   threadId: string
@@ -100,6 +105,83 @@ export class WorktreeAllocationError extends Error {
     this.name = 'WorktreeAllocationError'
     this.recovery = recovery
   }
+}
+
+const WORKTREE_RECOVERY_CONFIG = 'copse-worktree-recovery'
+
+function recoveryConfigKey(branch: string): string {
+  return `branch.${branch}.${WORKTREE_RECOVERY_CONFIG}`
+}
+
+function encodeRecoveryMetadata(metadata: ThreadWorktreeRecoveryMetadata): string {
+  return [
+    metadata.baseBranch,
+    metadata.baseCommit,
+    String(metadata.createdAt),
+    metadata.seededFromDirtyProject ? '1' : '0',
+  ].join('\t')
+}
+
+function decodeRecoveryMetadata(raw: string): ThreadWorktreeRecoveryMetadata | null {
+  const [baseBranch, baseCommit, createdAtRaw, dirtyRaw, extra] = raw.trim().split('\t')
+  if (
+    !baseBranch ||
+    !baseCommit ||
+    !createdAtRaw ||
+    (dirtyRaw !== '0' && dirtyRaw !== '1') ||
+    extra !== undefined ||
+    !/^[0-9a-f]{40,64}$/i.test(baseCommit)
+  ) {
+    return null
+  }
+  const createdAt = Number(createdAtRaw)
+  if (!Number.isSafeInteger(createdAt) || createdAt <= 0) return null
+  return {
+    baseBranch,
+    baseCommit,
+    createdAt,
+    seededFromDirtyProject: dirtyRaw === '1',
+  }
+}
+
+async function writeThreadWorktreeRecoveryMetadata(
+  projectRoot: string,
+  branch: string,
+  metadata: ThreadWorktreeRecoveryMetadata,
+): Promise<void> {
+  const result = await git(projectRoot, [
+    'config',
+    '--local',
+    recoveryConfigKey(branch),
+    encodeRecoveryMetadata(metadata),
+  ])
+  if (result.code !== 0)
+    throw commandFailure('Cannot retain thread worktree recovery metadata', result)
+}
+
+/**
+ * Read the allocation facts retained next to the thread branch. Thread metadata
+ * persistence can fail after Git has already registered the linked checkout;
+ * this repository-local marker lets a retry recover the original base even if
+ * the project checkout switched branches or the thread branch advanced.
+ */
+export async function readThreadWorktreeRecoveryMetadata(
+  projectRoot: string,
+  branch: string,
+): Promise<ThreadWorktreeRecoveryMetadata | null> {
+  const location = await repositoryLocation(projectRoot)
+  await assertBranchName(location.repositoryRoot, branch, 'Thread branch')
+  const result = await git(location.repositoryRoot, [
+    'config',
+    '--local',
+    '--get',
+    recoveryConfigKey(branch),
+  ])
+  if (result.code !== 0) return null
+  const metadata = decodeRecoveryMetadata(result.stdout)
+  if (!metadata) return null
+  await assertBranchName(location.repositoryRoot, metadata.baseBranch, 'Base branch')
+  return metadata
 }
 
 export class ThreadWorktreeDetachedError extends Error {
@@ -425,6 +507,9 @@ export async function allocateThreadWorktree(
     const remoteRef = `refs/remotes/origin/${input.baseBranch}`
     const useRemoteRef = isDefaultBranch && (await refExists(projectRoot, remoteRef))
     const baseRef = useRemoteRef ? remoteRef : branchRef(input.baseBranch)
+    if (!(await refExists(projectRoot, baseRef))) {
+      throw new Error(`Base branch "${input.baseBranch}" does not exist in this repository`)
+    }
     const baseCommit = await requireGitValue(
       projectRoot,
       ['rev-parse', '--verify', `${baseRef}^{commit}`],
@@ -465,16 +550,27 @@ export async function allocateThreadWorktree(
       throw commandFailure('Cannot create linked worktree', add)
     }
 
+    const recoveryMetadata: ThreadWorktreeRecoveryMetadata = {
+      baseBranch: input.baseBranch,
+      baseCommit,
+      createdAt: Date.now(),
+      seededFromDirtyProject: snapshotRef !== null,
+    }
+    try {
+      await writeThreadWorktreeRecoveryMetadata(projectRoot, branch, recoveryMetadata)
+    } catch (error) {
+      await git(projectRoot, ['worktree', 'remove', target]).catch(() => undefined)
+      if (snapshotRef) await deleteRef(projectRoot, snapshotRef).catch(() => undefined)
+      throw error
+    }
+
     const canonicalPath = await realpath(target)
     const executionRoot = resolve(canonicalPath, location.projectRelativePath)
     await mkdir(executionRoot, { recursive: true })
     const worktree: ThreadWorktree = {
       path: canonicalPath,
       branch,
-      baseBranch: input.baseBranch,
-      baseCommit,
-      createdAt: Date.now(),
-      seededFromDirtyProject: snapshotRef !== null,
+      ...recoveryMetadata,
     }
 
     try {

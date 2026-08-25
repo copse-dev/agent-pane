@@ -350,6 +350,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       prepareCheckout: (_projectId: string, _threadId: string, _prompt: string, choice) =>
         resolved({ checkoutMode: 'shared' as const, choice, branch: currentBranch }),
       previewCheckout: () => resolved({ checkoutMode: 'shared' as const }),
+      resetDefaultBranchCache: () => resolvedVoid(),
       estimateContext: (_projectId: string, _threadId: string, payload: string) =>
         resolved({
           segments: [
@@ -620,7 +621,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         resolved({ mock: true, ...(scenarioProvider ? { [scenarioProvider]: true } : {}) }),
       validateKey: () => resolved({ ok: false, error: 'Unavailable in demo' }),
       scanEnvKeys: emptyArray,
-      importEnvKeys: () => resolved({ imported: [], skipped: [] }),
+      importEnvKeys: (_providers?: string[]) => resolved({ imported: [], skipped: [] }),
       extraProviders: emptyArray,
       // The demo's scenario models are all in the static cloud catalog, so the
       // footer prices them without any fetched rates.
@@ -633,7 +634,6 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     appIcon: { apply: resolvedVoid },
     usage: {
-      record: resolvedVoid,
       getSummary: () => {
         const emptyPeriod = {
           totalCostUsd: 0,
