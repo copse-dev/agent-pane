@@ -1661,6 +1661,58 @@ src/renderer/views/projects-pane.ts
     assert.ok(chunks.some((c) => c.type === 'text' && c.text === 'finished'))
   })
 
+  it('applies the delayed artifact checkpoint once after the fake clock crosses its threshold', async () => {
+    let now = 0
+    const deadline = new AgentRunDeadline(30 * 60_000, 30 * 60_000, now, () => now)
+    const messages: LLMMessage[] = [{ role: 'user', content: 'build it' }]
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream(currentMessages): AsyncGenerator<ProviderStreamChunk> {
+        calls++
+        const checkpointCount = currentMessages.filter(
+          (message) =>
+            message.role === 'user' &&
+            typeof message.content === 'string' &&
+            message.content.includes('Preserve the best runnable artifact now'),
+        ).length
+        if (calls <= 2) {
+          if (calls === 1) assert.equal(checkpointCount, 0, 'short-run boundary must abstain')
+          if (calls === 2) assert.equal(checkpointCount, 1, 'threshold boundary must inject once')
+          yield {
+            type: 'tool_call',
+            toolCall: { id: `tool-${String(calls)}`, name: 'write_file', args: {} },
+          }
+          yield { type: 'done' }
+          return
+        }
+        assert.equal(checkpointCount, 1, 'later boundaries must not inject it again')
+        yield { type: 'text', text: 'done' }
+        yield { type: 'done' }
+      },
+    }
+
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [{ name: 'write_file', description: 'write', parameters: {} }],
+      runDeadline: deadline,
+      resolvePluginSetting: () => 8,
+      artifactCheckpointEligible: true,
+      recordAppliedNudge: (record) => applied.push(record),
+      onChunk: () => {},
+      executeTool: async () => {
+        now = calls === 1 ? 8 * 60_000 : 9 * 60_000
+        return 'ok'
+      },
+    })
+
+    assert.equal(applied.length, 1)
+    assert.ok(applied[0])
+    assert.equal(applied[0].hookId, 'artifact-checkpoint')
+    assert.equal(applied[0].mechanism, 'tool-enabled-message')
+  })
+
   it('prefers per-stream usage chunks over the shared lastUsage field (#112)', async () => {
     const provider = {
       lastUsage: { inputTokens: 99999, outputTokens: 88888 },

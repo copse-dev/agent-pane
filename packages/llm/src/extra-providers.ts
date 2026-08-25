@@ -14,8 +14,19 @@
 // fallback; the user may still edit their key, model shortlist, and overrides.
 // User-added providers store everything. The effective provider list is the
 // presets merged with the stored overrides/customs via `resolveExtraProviders`.
+//
+// The preset catalog is data, not code: it lives in
+// `packages/llm/data/provider-metadata.json` and reaches this module through
+// provider-metadata.ts, which validates it at load. Adding a provider is a JSON
+// edit; only a dialect that needs new wire handling in create-provider.ts
+// touches TypeScript.
 
 import { isSafeCredentialBaseUrl } from './credential-url.ts'
+import {
+  PROVIDER_PRESETS,
+  type ProviderPreset,
+  type ProviderPresetModel,
+} from './provider-metadata.ts'
 import { isProviderSlug, parseModelSelection } from './model-selection.ts'
 import { blendedRate } from './pareto-frontier.ts'
 import type { ModelPricing, ModelPricingMap } from './model-pricing.ts'
@@ -54,17 +65,13 @@ export function isLocalBaseUrl(baseUrl: string): boolean {
   }
 }
 
-export interface ExtraProviderModel {
-  /** Upstream model id sent to the provider. */
-  id: string
-  /** Context window (tokens) used for history trimming; falls back per provider. */
-  contextWindow?: number
-  /** USD per million input tokens, when the provider reports a rate (e.g. HF router). */
-  inputPricePerMTok?: number
-  /** USD per million output tokens, when the provider reports a rate. */
-  outputPricePerMTok?: number
+/**
+ * A preset/custom model entry: the schema-derived catalog shape (see
+ * provider-metadata.ts for per-field docs) plus the one computed field.
+ */
+export interface ExtraProviderModel extends ProviderPresetModel {
   /** 80/20 blended price (0.8 * input + 0.2 * output), pre-calculated for comparison. */
-  blendedCostPerMTok?: number
+  blendedCostPerMTok?: number | undefined
 }
 
 /**
@@ -88,17 +95,13 @@ export function extraProviderDisplayLabel(
   return extraProviderModelId(model)
 }
 
-export interface ExtraProvider {
-  /** Stable slug: model-selection prefix source and API-key lookup id. */
-  id: string
-  /** Human label / picker optgroup heading. */
-  label: string
+/**
+ * An effective provider: the schema-derived preset shape (see
+ * provider-metadata.ts for per-field docs) plus the fields derived here.
+ */
+export interface ExtraProvider extends Omit<ProviderPreset, 'models' | 'fallbackContextWindow'> {
   /** Model-selection prefix, always `${id}:`. */
   prefix: string
-  /** OpenAI-compatible base URL the SDK talks to. */
-  baseUrl: string
-  /** Wire protocol used by the provider. Defaults to Chat Completions. */
-  apiStyle?: 'chat-completions' | 'responses'
   /** True for a shipped preset (locked label/base URL, env-var fallback). */
   builtin: boolean
   /**
@@ -107,20 +110,8 @@ export interface ExtraProvider {
    * without an API key. Derived from the base URL via `isLocalBaseUrl`.
    */
   local: boolean
-  /** Env var that can also supply the key (presets only). */
-  envVar?: string
-  /** Settings → API Keys field copy. */
-  keyLabel: string
-  keyPlaceholder: string
-  keyHint: string
-  /** Optional key-format prefix, checked before any network call. */
-  keyPrefix?: string
-  /** Context window used when a selected model has no known size of its own. */
+  /** Always resolved: the catalog value or DEFAULT_EXTRA_PROVIDER_CONTEXT. */
   fallbackContextWindow: number
-  /** OpenAI `stream_options.include_usage`. Defaults on for cloud, off for localhost. */
-  includeUsage?: boolean
-  /** Extra fields merged into every request body (e.g. OpenRouter routing hints). */
-  extraBody?: Record<string, unknown>
   /** Curated/known model shortlist for the picker (may be empty for a fresh custom). */
   models: readonly ExtraProviderModel[]
 }
@@ -139,259 +130,23 @@ export interface StoredExtraProvider {
   extraBody?: Record<string, unknown>
 }
 
-// Mistral and DeepSeek serve up to 128K context; Gemini Flash serves ~1M.
-const MISTRAL_CONTEXT = 128_000
-const GEMINI_CONTEXT = 1_048_576
-// DeepSeek's API caps context at 64K even though the weights support more.
-const DEEPSEEK_CONTEXT = 65_536
-
-export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
-  // Privacy-forward hosted providers are first-class presets rather than
-  // being buried under the custom-provider form. Their catalogs move quickly,
-  // so users import the current tool-capable models with "Fetch models"
-  // instead of relying on a stale shipped shortlist.
-  {
-    id: 'together',
-    label: 'Together AI',
-    prefix: 'together:',
-    baseUrl: 'https://api.together.xyz/v1',
-    builtin: true,
-    local: false,
-    envVar: 'TOGETHER_API_KEY',
-    keyLabel: 'Together AI API key',
-    keyPlaceholder: 'Together AI API key',
-    keyHint:
-      'For Together AI serverless models. Confirm the organization privacy setting does not store prompts, then Fetch models to import the current catalog.',
-    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-    includeUsage: true,
-    models: [],
-  },
-  {
-    id: 'groq',
-    label: 'Groq',
-    prefix: 'groq:',
-    baseUrl: 'https://api.groq.com/openai/v1',
-    builtin: true,
-    local: false,
-    envVar: 'GROQ_API_KEY',
-    keyLabel: 'Groq API key',
-    keyPlaceholder: 'gsk_…',
-    keyHint:
-      'For Groq inference models. Groq may temporarily log inference data for up to 30 days; enable Zero Data Retention in Groq Data Controls to prevent that, then Fetch models.',
-    keyPrefix: 'gsk_',
-    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-    includeUsage: true,
-    models: [],
-  },
-  {
-    id: 'fireworks',
-    label: 'Fireworks AI',
-    prefix: 'fireworks:',
-    baseUrl: 'https://api.fireworks.ai/inference/v1',
-    builtin: true,
-    local: false,
-    envVar: 'FIREWORKS_API_KEY',
-    keyLabel: 'Fireworks AI API key',
-    keyPlaceholder: 'Fireworks AI API key',
-    keyHint:
-      'For Fireworks AI serverless models. Standard open-model inference is zero-retention unless logging is explicitly enabled; Fetch models to import the current catalog.',
-    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-    includeUsage: true,
-    models: [],
-  },
-  {
-    id: 'perplexity',
-    label: 'Perplexity',
-    prefix: 'perplexity:',
-    baseUrl: 'https://api.perplexity.ai/v1',
-    apiStyle: 'responses',
-    builtin: true,
-    local: false,
-    envVar: 'PERPLEXITY_API_KEY',
-    keyLabel: 'Perplexity API key',
-    keyPlaceholder: 'Perplexity API key',
-    keyHint:
-      'Uses the Agent API with Perplexity web search enabled. Fetch the current model list from its public models endpoint.',
-    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-    includeUsage: true,
-    // Anthropic models require max_output_tokens on Agent API; the parameter
-    // is accepted for the other live-discovered models too.
-    extraBody: { tools: [{ type: 'web_search' }], max_output_tokens: 8192 },
-    models: [],
-  },
-  {
-    id: 'mistral',
-    label: 'Mistral',
-    prefix: 'mistral:',
-    baseUrl: 'https://api.mistral.ai/v1',
-    builtin: true,
-    local: false,
-    envVar: 'MISTRAL_API_KEY',
-    keyLabel: 'Mistral API key',
-    keyPlaceholder: 'Mistral API key',
-    keyHint:
-      "For Mistral models on La Plateforme's free Experiment tier. Validated via a free models request.",
-    fallbackContextWindow: MISTRAL_CONTEXT,
-    includeUsage: true,
-    models: [
-      {
-        id: 'mistral-small-latest',
-        contextWindow: MISTRAL_CONTEXT,
-      },
-      {
-        id: 'open-mistral-nemo',
-        contextWindow: MISTRAL_CONTEXT,
-      },
-      { id: 'mistral-large-latest', contextWindow: MISTRAL_CONTEXT },
-    ],
-  },
-  {
-    id: 'gemini',
-    label: 'Google Gemini',
-    prefix: 'gemini:',
-    // Google's OpenAI-compatibility layer (accepts an `Authorization: Bearer` key).
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    builtin: true,
-    local: false,
-    envVar: 'GEMINI_API_KEY',
-    keyLabel: 'Google Gemini API key',
-    keyPlaceholder: 'AIza…',
-    keyHint:
-      'For Gemini Flash models on the free tier (rate-limited, no card). Get a key at aistudio.google.com.',
-    keyPrefix: 'AIza',
-    fallbackContextWindow: GEMINI_CONTEXT,
-    includeUsage: true,
-    models: [
-      {
-        id: 'gemini-2.5-flash',
-        contextWindow: GEMINI_CONTEXT,
-      },
-      {
-        id: 'gemini-2.5-flash-lite',
-        contextWindow: GEMINI_CONTEXT,
-      },
-      {
-        id: 'gemini-2.0-flash',
-        contextWindow: GEMINI_CONTEXT,
-      },
-      {
-        id: 'gemini-2.0-flash-lite',
-        contextWindow: GEMINI_CONTEXT,
-      },
-    ],
-  },
-  {
-    id: 'deepseek',
-    label: 'DeepSeek',
-    prefix: 'deepseek:',
-    baseUrl: 'https://api.deepseek.com',
-    builtin: true,
-    local: false,
-    envVar: 'DEEPSEEK_API_KEY',
-    keyLabel: 'DeepSeek API key',
-    keyPlaceholder: 'sk-…',
-    keyHint:
-      'For DeepSeek models — very cheap pay-as-you-go, with off-peak discounts. Validated via a free models request.',
-    keyPrefix: 'sk-',
-    fallbackContextWindow: DEEPSEEK_CONTEXT,
-    includeUsage: true,
-    // Only `deepseek-chat` (V3) reliably supports function calling, which this
-    // agent needs; `deepseek-reasoner` is intentionally omitted.
-    models: [
-      {
-        id: 'deepseek-chat',
-        contextWindow: DEEPSEEK_CONTEXT,
-      },
-    ],
-  },
-  {
-    id: 'huggingface',
-    label: 'Hugging Face',
-    prefix: 'huggingface:',
-    // HF Inference Providers router — OpenAI-compatible, fans out to Together,
-    // Novita, Fireworks, etc. Model ids are `org/model[:routing]`, e.g.
-    // `zai-org/GLM-5.2:fastest`; the routing suffix survives our slug strip.
-    baseUrl: 'https://router.huggingface.co/v1',
-    builtin: true,
-    local: false,
-    envVar: 'HF_TOKEN',
-    keyLabel: 'Hugging Face token',
-    keyPlaceholder: 'hf_…',
-    keyHint:
-      'For Hugging Face Inference Providers (serverless). Pick a model with Fetch models or type one like org/model:fastest. Get a token at huggingface.co/settings/tokens. Note: HF routes requests to third-party partners (Together, Fireworks, Novita, …) that each apply their own data-retention policy.',
-    keyPrefix: 'hf_',
-    // Context varies per upstream model; keep the generic 128K default.
-    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-    includeUsage: true,
-    // Bring-your-own model id (huge, fast-moving catalog): no curated shortlist.
-    models: [],
-  },
-  // Local OpenAI-compatible servers. Loopback base URLs mark them `local` (see
-  // isLocalBaseUrl): they render in Settings → Local models, accept `http:`, and
-  // work without an API key. Models are bring-your-own — use "Fetch models" in
-  // the Local providers panel to import what the running server exposes.
-  {
-    id: 'ollama',
-    label: 'Ollama',
-    prefix: 'ollama:',
-    // IPv4 loopback (not `localhost`) — see DEFAULT_LM_STUDIO_URL / preferIpv4LoopbackUrl.
-    baseUrl: 'http://127.0.0.1:11434/v1',
-    builtin: true,
-    local: true,
-    keyLabel: 'Ollama API key',
-    keyPlaceholder: 'usually none',
-    keyHint:
-      'Local Ollama server (OpenAI-compatible). No API key unless you configured one. Start it with `ollama serve`, then Fetch models.',
-    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-    includeUsage: false,
-    models: [],
-  },
-  {
-    id: 'llamacpp',
-    label: 'llama.cpp',
-    prefix: 'llamacpp:',
-    baseUrl: 'http://127.0.0.1:8080/v1',
-    builtin: true,
-    local: true,
-    keyLabel: 'llama.cpp API key',
-    keyPlaceholder: 'usually none',
-    keyHint:
-      "Local llama.cpp server (`llama-server`, OpenAI-compatible). No API key unless you set --api-key. Fetch models to import what's loaded.",
-    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-    includeUsage: false,
-    models: [],
-  },
-  {
-    id: 'jan',
-    label: 'Jan',
-    prefix: 'jan:',
-    baseUrl: 'http://127.0.0.1:1337/v1',
-    builtin: true,
-    local: true,
-    keyLabel: 'Jan API key',
-    keyPlaceholder: 'usually none',
-    keyHint:
-      'Local Jan server (OpenAI-compatible). Enable the local API server in Jan, then Fetch models.',
-    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-    includeUsage: false,
-    models: [],
-  },
-  {
-    id: 'vllm',
-    label: 'vLLM',
-    prefix: 'vllm:',
-    baseUrl: 'http://127.0.0.1:8000/v1',
-    builtin: true,
-    local: true,
-    keyLabel: 'vLLM API key',
-    keyPlaceholder: 'usually none',
-    keyHint:
-      'Self-hosted vLLM server (OpenAI-compatible). No API key unless you set --api-key. Fetch models to import the served model.',
-    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-    includeUsage: false,
-    models: [],
-  },
-]
+/**
+ * The shipped presets, in picker order. The catalog itself lives in
+ * `packages/llm/data/provider-metadata.json` (see provider-metadata.ts);
+ * only the three derived fields are applied here. `local` in particular is
+ * computed from the base URL rather than read from data, so no catalog edit can
+ * declare a remote endpoint local and skip the "data leaves this machine"
+ * treatment in Settings.
+ */
+export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = PROVIDER_PRESETS.map((preset) => ({
+  ...preset,
+  prefix: `${preset.id}:`,
+  builtin: true,
+  local: isLocalBaseUrl(preset.baseUrl),
+  // One default for presets and user customs alike — the catalog only records
+  // a fallback when it genuinely differs (see provider-metadata.ts).
+  fallbackContextWindow: preset.fallbackContextWindow ?? DEFAULT_EXTRA_PROVIDER_CONTEXT,
+}))
 
 export const BUILTIN_EXTRA_PROVIDER_SLUGS: readonly string[] = BUILTIN_EXTRA_PROVIDERS.map(
   (p) => p.id,

@@ -116,6 +116,14 @@ export interface StepBoundaryPayload {
   loopNudgeSent: boolean
   /** Whether the forced text answer was already attempted this run (its once gate). */
   forceTextAttempted: boolean
+  /** Whether the delayed artifact checkpoint already fired during this run. */
+  artifactCheckpointSent: boolean
+  /** Whether this host run owns a user deliverable (false for nested/review loops). */
+  artifactCheckpointEligible: boolean
+  /** Hard wall-clock time since this run began, including streams and tool calls. */
+  elapsedWallTimeMs: number
+  /** Hard wall-clock time left before the product run cap. */
+  remainingWallTimeMs: number
   /** Provider stop reason of the just-finished stream (`postStream` nudges). */
   stopReason?: string
   /**

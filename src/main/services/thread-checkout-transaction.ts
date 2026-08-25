@@ -2,6 +2,7 @@ import { realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { Project } from '@shared/types/state.ts'
 import type { Thread } from '@shared/types/thread.ts'
+import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
 import type {
   PreparedThreadCheckout,
   ThreadCheckoutPreview,
@@ -18,6 +19,7 @@ import {
   allocateThreadWorktree,
   expectedThreadWorktreePath,
   listProjectWorktrees,
+  readThreadWorktreeRecoveryMetadata,
   retireThreadWorktree,
   validateThreadWorktree,
 } from './worktree-manager.ts'
@@ -51,6 +53,16 @@ interface CheckoutInspection {
   hasSubmodules: boolean
 }
 
+/**
+ * The blank-thread branch picker speaks for the live local checkout, so its
+ * selected branch is the worktree base. A remote default is the next useful
+ * choice when there is no local selection, with `main` as the conventional
+ * final fallback.
+ */
+function checkoutBaseBranch(inspection: CheckoutInspection): string {
+  return inspection.currentBranch ?? inspection.defaultBranch ?? DEFAULT_GIT_BRANCH
+}
+
 export interface ThreadCheckoutTransactionDependencies {
   getProject: (projectId: string) => Project | null
   getThread: (projectId: string, threadId: string) => Promise<Thread | null>
@@ -77,7 +89,6 @@ export interface ThreadCheckoutTransactionDependencies {
     projectId: string
     threadId: string
     projectRoot: string
-    baseBranch: string
   }) => Promise<ThreadWorktree | null>
   validate: (input: {
     projectId: string
@@ -142,7 +153,6 @@ async function recoverUnpersistedWorktree(input: {
   projectId: string
   threadId: string
   projectRoot: string
-  baseBranch: string
 }): Promise<ThreadWorktree | null> {
   const target = expectedThreadWorktreePath(input.projectId, input.threadId)
   const records = await listProjectWorktrees(input.projectRoot)
@@ -150,15 +160,12 @@ async function recoverUnpersistedWorktree(input: {
   if (!existing?.branch || !existing.head) return null
   const canonicalPath = await realpath(existing.path).catch(() => null)
   if (!canonicalPath) return null
+  const metadata = await readThreadWorktreeRecoveryMetadata(input.projectRoot, existing.branch)
+  if (!metadata) return null
   return {
     path: canonicalPath,
     branch: existing.branch,
-    baseBranch: input.baseBranch,
-    baseCommit: existing.head,
-    createdAt: Date.now(),
-    // Conservative: a reclaim path is only needed when retirement was refused
-    // (dirty seed / dirty worktree). Marking true preserves that retention.
-    seededFromDirtyProject: true,
+    ...metadata,
   }
 }
 
@@ -266,15 +273,11 @@ export function createThreadCheckoutTransaction(
         return persistedResult(input.choice, inspection.currentBranch ?? undefined)
       }
 
-      // The base is the repository's default branch, never the branch the
-      // project checkout happens to be sitting on. Cutting from live HEAD meant
-      // a thread started on top of whatever the previous thread had left
-      // checked out, which is precisely the isolation the worktree promises.
-      // `unsupportedReason` already routed an unresolved default branch to
-      // shared (or blocked an explicit choice), so this is a type guard.
-      if (!inspection.defaultBranch)
-        throw new Error('Cannot create a worktree without a resolved default branch')
-      const baseBranch = inspection.defaultBranch
+      // The footer picker changes the local checkout before first send, so its
+      // current selection is authoritative. Allocation separately recognizes
+      // when this is the repository default and then fetches/uses the latest
+      // upstream tip instead of a stale local commit.
+      const baseBranch = checkoutBaseBranch(inspection)
       // A prior allocate may have succeeded while meta persistence failed. Prefer
       // reclaiming that registration over a second allocate that would throw
       // "already registered" and strand the thread.
@@ -282,7 +285,6 @@ export function createThreadCheckoutTransaction(
         projectId: input.projectId,
         threadId: input.threadId,
         projectRoot: project.path,
-        baseBranch,
       })
       const worktree =
         recovered ??

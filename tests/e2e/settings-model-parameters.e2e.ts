@@ -10,7 +10,7 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
  * model's ladder instead of its own; that file's header has the evidence.
  */
 const LOCAL_MODEL = 'lmstudio:qwen3-coder-30b'
-const RECIPE_MODEL = 'openrouter:deepseek/deepseek-v4-flash-0731'
+const RECIPE_MODEL = 'openrouter:stealth/ox-alpha'
 
 describe('per-model generation parameters', () => {
   before(async function () {
@@ -58,7 +58,7 @@ describe('per-model generation parameters', () => {
     await saveElementScreenshot('[data-testid="model-parameters"]', 'settings-model-parameters.png')
   })
 
-  it('offers the published recipe for a model that has one', async function () {
+  it('offers the experimental Ox Alpha balanced profile', async function () {
     this.timeout(60_000)
     // Switching the picker is the cheapest way to reach a second model's state
     // without a second app launch.
@@ -78,12 +78,22 @@ describe('per-model generation parameters', () => {
     await offer.waitForDisplayed({ timeout: 10_000 })
     await offer.click()
 
-    await expect(await section.$('[data-testid="model-parameter-reasoning"]')).toHaveValue('max')
-    await expect(await section.$('[data-testid="model-parameter-temperature"]')).toHaveValue('1')
-    await expect(await section.$('[data-testid="model-parameter-top-p"]')).toHaveValue('0.95')
+    await expect(await section.$('[data-testid="model-parameter-reasoning"]')).toHaveValue('medium')
+    await expect(await section.$('[data-testid="model-parameter-max-output-tokens"]')).toHaveValue(
+      '16384',
+    )
+    await expect(await section.$('.model-parameter-recommend-note')).toHaveText(
+      expect.stringContaining('paired Terminal-Bench record'),
+    )
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="model-parameters"]')
+        ?.scrollIntoView({ block: 'start' })
+    })
+    await browser.pause(200)
     await saveElementScreenshot(
       '[data-testid="model-parameters"]',
-      'settings-model-parameters-recommended.png',
+      'settings-model-parameters-ox-alpha.png',
     )
 
     // Put the picker back so the next test sees the seeded selection.

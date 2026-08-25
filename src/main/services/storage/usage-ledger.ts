@@ -13,6 +13,7 @@ import {
   type UsageRecordInput,
   type UsageEvent,
 } from '@shared/usage/usage-event.ts'
+import { getThreadExecutionContext } from '../thread-execution-context.ts'
 
 function toUsageEvent(input: UsageRecordInput): UsageEvent {
   const { model, source, projectId, threadId, at, estimated, ...usage } = input
@@ -35,27 +36,11 @@ function toUsageEvent(input: UsageRecordInput): UsageEvent {
   }
 }
 
-function isDuplicateEvent(existing: UsageEvent[], event: UsageEvent): boolean {
-  const last = existing.at(-1)
-  if (!last) return false
-  return (
-    last.source === event.source &&
-    last.threadId === event.threadId &&
-    last.model === event.model &&
-    last.inputTokens === event.inputTokens &&
-    last.outputTokens === event.outputTokens &&
-    (last.cacheReadTokens ?? 0) === (event.cacheReadTokens ?? 0) &&
-    (last.cacheCreationTokens ?? 0) === (event.cacheCreationTokens ?? 0) &&
-    Math.abs(event.at - last.at) < 250
-  )
-}
-
-/** Append one usage event synchronously (safe for concurrent IPC handlers on the same key). */
+/** Append one usage event synchronously (safe for concurrent main-process recorders). */
 export function recordUsageEvent(input: UsageRecordInput): void {
   if (!input.inputTokens && !input.outputTokens) return
   const event = toUsageEvent(input)
   const existing = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
-  if (isDuplicateEvent(existing, event)) return
   storageSet(USAGE_EVENTS_STORAGE_KEY, pruneUsageEvents([...existing, event]))
 }
 
@@ -65,7 +50,11 @@ export function recordAgentUsageChunk(
   chunk: Extract<StreamChunk, { type: 'usage' }>,
 ): void {
   if (!chunk.inputTokens && !chunk.outputTokens) return
-  const projectId = storageGet('activeProjectId')
+  const executionContext = getThreadExecutionContext()
+  const projectId =
+    executionContext?.threadId === threadId
+      ? executionContext.projectId
+      : storageGet('activeProjectId')
   recordUsageEvent({
     model: chunk.model,
     source: chunk.usageSource === 'advisor' ? 'advisor' : 'agent',
