@@ -243,6 +243,11 @@ describe('settings styling', function () {
       const nameRect = name.getBoundingClientRect()
       const eyebrowRect = eyebrow.getBoundingClientRect()
       const toggleRect = toggleControl.getBoundingClientRect()
+      const trackRect = toggleControl
+        .querySelector<HTMLElement>('.toggle-switch-track')
+        ?.getBoundingClientRect()
+      const onRect = onLabel.getBoundingClientRect()
+      const offRect = offLabel.getBoundingClientRect()
       const checked =
         toggleControl.querySelector<HTMLInputElement>('.plugin-toggle-input')?.checked ?? false
       const liveLabel = checked ? onLabel : offLabel
@@ -258,6 +263,12 @@ describe('settings styling', function () {
         nameSize: Number.parseFloat(getComputedStyle(name).fontSize),
         descSize: desc ? Number.parseFloat(getComputedStyle(desc).fontSize) : 0,
         toggleOnTheRight: toggleRect.right > rowRect.left + rowRect.width / 2,
+        toggleCenterOffsets: trackRect
+          ? [onRect, offRect].map(
+              (labelRect) =>
+                labelRect.top + labelRect.height / 2 - (trackRect.top + trackRect.height / 2),
+            )
+          : [],
         liveLabelWeight: Number.parseInt(getComputedStyle(liveLabel).fontWeight, 10),
         idleLabelWeight: Number.parseInt(getComputedStyle(idleLabel).fontWeight, 10),
         // A first-party plugin wears the Copse mark itself; a user-installed one
@@ -304,6 +315,11 @@ describe('settings styling', function () {
     assert.ok(plugins.nameSize > plugins.descSize, 'the plugin name leads its description')
     assert.equal(plugins.toggleOnTheRight, true, 'the toggle sits opposite the title')
     // Off/On flank the switch and the live side is the emphasised one.
+    assert.equal(plugins.toggleCenterOffsets.length, 2, 'the toggle track must render')
+    assert.ok(
+      plugins.toggleCenterOffsets.every((offset) => Math.abs(offset) <= 1),
+      `toggle labels must be vertically centred on the track, offsets ${plugins.toggleCenterOffsets.join(', ')}`,
+    )
     assert.ok(
       plugins.liveLabelWeight > plugins.idleLabelWeight,
       `live toggle label (${String(plugins.liveLabelWeight)}) must outweigh the idle one (${String(plugins.idleLabelWeight)})`,
@@ -326,6 +342,9 @@ describe('settings styling', function () {
     assert.equal(plugins.experimental.transform, 'capitalize')
     assert.ok(plugins.experimental.radius >= 12, 'the stability badge is a pill')
 
+    await browser.execute(() => {
+      document.querySelector<HTMLElement>('.plugin-row')?.scrollIntoView({ block: 'center' })
+    })
     await saveElementScreenshot('#settings-dialog', 'settings-styling-plugins.png')
   })
 
