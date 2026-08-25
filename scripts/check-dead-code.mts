@@ -54,6 +54,14 @@ const roots = [
   ...STANDALONE_MAIN_BUNDLES.map((bundle) => bundle.entry),
   'src/preload/index.ts',
   'src/preload/video-decoder.ts',
+  // Tauri sidecar bundle entries — keep in sync with scripts/build-tauri.mts.
+  'src/sidecar/index.ts',
+  'src/sidecar/ws-bridge/entry.ts',
+  // Substituted for the `electron` module by esbuild alias rather than
+  // imported, so only this list links them (see scripts/build-tauri.mts).
+  'src/sidecar/electron-shim/index.ts',
+  'src/sidecar/electron-shim/electron-updater.ts',
+  'src/sidecar/ws-bridge/electron.ts',
   'src/renderer/main.ts',
   'src/renderer/demo/main.ts',
   // Standalone bundle injected lazily at runtime (not imported by product code).

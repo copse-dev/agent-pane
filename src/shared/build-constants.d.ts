@@ -15,3 +15,13 @@ declare const __COPSE_BUILD_COMMIT__: string
 
 /** Whether working-tree changes were present when the desktop bundle was built. */
 declare const __COPSE_BUILD_DIRTY__: boolean | null
+
+/**
+ * Sidecar-only (scripts/build-tauri.mts): the `ipcRenderer.invoke` / `.send`
+ * channels extracted from the preload sources at bundle time. The WS server
+ * enforces them as its inbound allowlist, so the Tauri transport exposes
+ * exactly the channel surface the Electron preload does — undefined outside
+ * the sidecar bundle, where the server fails closed to an empty allowlist.
+ */
+declare const __COPSE_WS_INVOKE_CHANNELS__: string[]
+declare const __COPSE_WS_SEND_CHANNELS__: string[]

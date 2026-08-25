@@ -35,5 +35,11 @@
     "noUncheckedSideEffectImports": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "tests/setup-dom.ts"]
+  "include": [
+    "src/renderer/**/*",
+    "src/shared/**/*",
+    "tests/setup-dom.ts",
+    "src/sidecar/ws-bridge/electron.ts",
+    "src/sidecar/ws-bridge/servo-polyfills.ts"
+  ]
 }
