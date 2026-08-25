@@ -34,7 +34,7 @@ import { expectRecord } from '../src/shared/unknown-value.mts'
  * src/sidecar/shell-link.ts, so a bump and a protocol change belong in the
  * same pull request.
  */
-export const SHELL_RELEASE = 'v0.1.1'
+export const SHELL_RELEASE = 'v0.1.3'
 const REPO = 'copse-dev/tauri-shell'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
