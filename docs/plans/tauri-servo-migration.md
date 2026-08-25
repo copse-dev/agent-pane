@@ -690,8 +690,8 @@ short-circuits to `MockLLMProvider`, which sleeps 10 ms per character — a fixe
 floor identical on both stacks that would swamp everything above. Eval mode
 deliberately does not set it. The credential is decrypted once from the
 developer's own profile and handed to both stacks in the environment, because
-`safeStorage` is stubbed in the sidecar and the Servo stack cannot read a stored
-key at all (`scripts/decrypt-provider-key.cjs`).
+the sidecar installs no secret cipher at all and the Servo stack cannot read a
+stored key (`scripts/decrypt-provider-key.mts`).
 
 Raw data: `docs/plans/perf-data-eval/`.
 
