@@ -51,6 +51,8 @@ export function isReasoningLevel(value: unknown): value is ReasoningLevel {
  */
 export interface ModelParameters {
   reasoning?: ReasoningLevel
+  /** User-selected per-response ceiling for OpenAI-compatible transports. */
+  maxOutputTokens?: number
   temperature?: number
   topP?: number
   topK?: number
@@ -82,7 +84,9 @@ export type SamplingField = (typeof SAMPLING_FIELDS)[number]
 /** True when no knob is set, i.e. the request goes out exactly as before. */
 export function isEmptyModelParameters(params: ModelParameters): boolean {
   return (
-    params.reasoning === undefined && SAMPLING_FIELDS.every((field) => params[field] === undefined)
+    params.reasoning === undefined &&
+    params.maxOutputTokens === undefined &&
+    SAMPLING_FIELDS.every((field) => params[field] === undefined)
   )
 }
 
@@ -109,6 +113,8 @@ export interface ModelParameterSupport {
   reasoningWire: ReasoningWire
   /** Sampling knobs this selection accepts; empty when it takes none. */
   sampling: readonly SamplingField[]
+  /** Whether this route accepts a user-selected output-token ceiling. */
+  outputCap: boolean
   /** Upper bound for `temperature` (Anthropic caps at 1, OpenAI-shaped at 2). */
   temperatureMax: number
   /**
@@ -128,6 +134,7 @@ const NO_PARAMETERS: ModelParameterSupport = {
   reasoning: [],
   reasoningWire: 'none',
   sampling: [],
+  outputCap: false,
   temperatureMax: 1,
 }
 
@@ -226,6 +233,7 @@ function claudeSupport(modelId: string): ModelParameterSupport {
       reasoning: withoutOff(FULL_EFFORT_LADDER),
       reasoningWire: 'anthropic-effort',
       sampling: [],
+      outputCap: false,
       temperatureMax: 1,
     }
   }
@@ -234,6 +242,7 @@ function claudeSupport(modelId: string): ModelParameterSupport {
       reasoning: CAPPED_EFFORT_LADDER,
       reasoningWire: 'anthropic-effort',
       sampling: ANTHROPIC_SAMPLING,
+      outputCap: false,
       temperatureMax: 1,
     }
   }
@@ -243,6 +252,7 @@ function claudeSupport(modelId: string): ModelParameterSupport {
     reasoning: BUDGET_LADDER,
     reasoningWire: 'anthropic-budget',
     sampling: ANTHROPIC_SAMPLING,
+    outputCap: false,
     temperatureMax: 1,
   }
 }
@@ -253,10 +263,17 @@ function openAiSupport(modelId: string): ModelParameterSupport {
       reasoning: OPENAI_LADDER,
       reasoningWire: 'openai-effort',
       sampling: [],
+      outputCap: false,
       temperatureMax: 2,
     }
   }
-  return { reasoning: [], reasoningWire: 'none', sampling: OPENAI_SAMPLING, temperatureMax: 2 }
+  return {
+    reasoning: [],
+    reasoningWire: 'none',
+    sampling: OPENAI_SAMPLING,
+    outputCap: false,
+    temperatureMax: 2,
+  }
 }
 
 /**
@@ -287,7 +304,13 @@ export function modelParameterSupport(model: string): ModelParameterSupport {
     if (selection.modelId.startsWith('gpt')) return openAiSupport(selection.modelId)
     // An unrecognised bare id is routed by whichever key is configured, so we
     // cannot say what it takes. Offer sampling only — the safe intersection.
-    return { reasoning: [], reasoningWire: 'none', sampling: UNIVERSAL_SAMPLING, temperatureMax: 2 }
+    return {
+      reasoning: [],
+      reasoningWire: 'none',
+      sampling: UNIVERSAL_SAMPLING,
+      outputCap: false,
+      temperatureMax: 2,
+    }
   }
   // OpenAI-compatible transports (OpenRouter, LM Studio, extra providers). The
   // request shape is fixed; which levels the upstream model honours is not.
@@ -295,6 +318,7 @@ export function modelParameterSupport(model: string): ModelParameterSupport {
     reasoning: OPENAI_COMPATIBLE_LADDER,
     reasoningWire: selection.namespace === 'openrouter' ? 'openrouter' : 'openai-effort',
     sampling: OPENAI_COMPATIBLE_SAMPLING,
+    outputCap: selection.namespace === 'openrouter' || selection.namespace === 'lmstudio',
     temperatureMax: 2,
     upstreamDecides: true,
   }
@@ -370,6 +394,13 @@ export function sanitizeModelParameters(
   if (params.reasoning !== undefined && support.reasoning.includes(params.reasoning)) {
     sanitized.reasoning = params.reasoning
   }
+  if (
+    support.outputCap &&
+    typeof params.maxOutputTokens === 'number' &&
+    Number.isFinite(params.maxOutputTokens)
+  ) {
+    sanitized.maxOutputTokens = Math.round(clamp(params.maxOutputTokens, 256, 1_000_000))
+  }
   for (const field of support.sampling) {
     const value = sanitizeSampling(field, params[field], support.temperatureMax)
     if (value !== undefined) sanitized[field] = value
@@ -396,7 +427,7 @@ export function clampReasoning(
 // ── Sourced recommendations ──────────────────────────────────────────────────
 
 /**
- * A vendor's published parameter recipe for a model.
+ * A sourced parameter recipe for a model.
  *
  * Deliberately *offered*, never applied: recipes are scenario-specific (DeepSeek
  * publishes one `top_p` for agentic use and another for everything else), an
@@ -410,6 +441,8 @@ export interface ModelParameterRecommendation {
   label: string
   /** Where it comes from, so a user can check it rather than trust us. */
   source: string
+  /** Human-readable source name; defaults to "model card". */
+  sourceLabel?: string
   params: ModelParameters
   /**
    * An output ceiling the card publishes for a model that reasons before it
@@ -440,14 +473,23 @@ export interface RecommendedOutputCeiling {
 }
 
 /**
- * Published recipes, matched by model-id prefix.
+ * Sourced parameter recipes, matched by model-id prefix.
  *
  * This table is hand-maintained and dates: an entry is only as good as the
- * version it was read against, so each carries its source. Add a row when a
- * vendor publishes one — never infer a recipe from a benchmark table or from
- * another model in the same family.
+ * version it was read against, so each carries its source. Vendor recipes need
+ * a vendor source. Copse experimental recipes need a checked-in evidence record
+ * and an explicit experimental label; never silently promote a benchmark result
+ * or infer a recipe from another model in the same family.
  */
 const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: string }> = [
+  {
+    match: 'ox-alpha',
+    label: 'Copse’s experimental balanced agent profile',
+    source:
+      'https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/ox-alpha-terminal-bench-profile.md',
+    sourceLabel: 'paired Terminal-Bench record',
+    params: { reasoning: 'medium', maxOutputTokens: 16_384 },
+  },
   {
     match: 'deepseek-v4-flash',
     label: 'DeepSeek’s agentic recipe',
@@ -538,8 +580,13 @@ export function recommendedOutputCeiling(
   return level >= REASONING_LEVELS.indexOf(ceiling.fromReasoning) ? ceiling.tokens : undefined
 }
 
+/** User-selected ceiling wins; otherwise use a model-card ceiling when one applies. */
+export function resolvedOutputCeiling(model: string, params: ModelParameters): number | undefined {
+  return params.maxOutputTokens ?? recommendedOutputCeiling(model, params)
+}
+
 /**
- * The published recipe for `model`, sanitized against what it accepts, or
+ * The sourced recipe for `model`, sanitized against what it accepts, or
  * `null` when we hold none. Sanitizing here means a recipe never offers a value
  * the selected route would reject — an aggregator that cannot take one of the
  * three simply offers the rest.
@@ -552,6 +599,7 @@ export function recommendedModelParameters(model: string): ModelParameterRecomme
   return {
     label: match.label,
     source: match.source,
+    ...(match.sourceLabel ? { sourceLabel: match.sourceLabel } : {}),
     params,
     ...(match.outputCeiling ? { outputCeiling: match.outputCeiling } : {}),
   }
@@ -735,6 +783,8 @@ export function decodeModelParameters(value: unknown): ModelParameters {
   const record: Record<string, unknown> = { ...value }
   const params: ModelParameters = {}
   if (isReasoningLevel(record['reasoning'])) params.reasoning = record['reasoning']
+  const maxOutputTokens = decodeNumber(record['maxOutputTokens'])
+  if (maxOutputTokens !== undefined) params.maxOutputTokens = maxOutputTokens
   for (const field of SAMPLING_FIELDS) {
     const value = decodeNumber(record[field])
     if (value !== undefined) params[field] = value

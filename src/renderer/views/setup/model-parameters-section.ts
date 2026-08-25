@@ -139,13 +139,28 @@ export function createModelParametersSection(
     { class: 'model-parameter-section', 'data-testid': 'model-parameters' },
     el('h4', { class: 'model-role-heading' }, 'Model parameters'),
     note,
-    fields,
     recommendRow,
+    fields,
   )
 
   const reasoningSelect = el('select', {
     name: 'modelReasoning',
     'data-testid': 'model-parameter-reasoning',
+  })
+  const maxOutputTokensInput = el('input', {
+    type: 'number',
+    name: 'modelMaxOutputTokens',
+    min: '256',
+    max: '1000000',
+    step: '1',
+    placeholder: 'Provider default',
+    'data-testid': 'model-parameter-max-output-tokens',
+  })
+  maxOutputTokensInput.addEventListener('change', () => {
+    const { maxOutputTokens: _dropped, ...rest } = selected()
+    const value = readNumberInput(maxOutputTokensInput)
+    commit(value === undefined ? rest : { ...rest, maxOutputTokens: value })
+    maxOutputTokensInput.value = formatNumber(selected().maxOutputTokens)
   })
   const samplingInputs = new Map<SamplingField, HTMLInputElement>(
     SAMPLING_FIELDS.map((field) => {
@@ -206,12 +221,12 @@ export function createModelParametersSection(
     const link = el(
       'a',
       { href: recommendation.source, target: '_blank', rel: 'noopener noreferrer' },
-      'model card',
+      recommendation.sourceLabel ?? 'model card',
     )
     // Name the source rather than asserting the numbers are right: the recipe
     // is only as current as the version it was read against.
     recommendNote.replaceChildren(
-      document.createTextNode(`${recommendation.label} — fills the fields above from its `),
+      document.createTextNode(`${recommendation.label} — fills the fields below from its `),
       link,
       document.createTextNode('. Change or clear them afterwards like any other value.'),
     )
@@ -284,6 +299,17 @@ export function createModelParametersSection(
           ]
             .filter(Boolean)
             .join(' '),
+        }),
+      )
+    }
+
+    if (support.outputCap) {
+      maxOutputTokensInput.value = formatNumber(params.maxOutputTokens)
+      fields.append(
+        uiField({
+          label: 'Maximum output tokens',
+          control: maxOutputTokensInput,
+          hint: 'Per response, including hidden reasoning. Blank uses the provider default; a low cap can truncate a tool call.',
         }),
       )
     }

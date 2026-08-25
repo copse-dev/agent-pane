@@ -135,6 +135,7 @@ export const registeredAcpAgentsSchema = z.array(acpAgentConfigSchema).max(64)
  */
 export const modelParametersSchema = z.object({
   reasoning: z.enum(REASONING_LEVELS).optional(),
+  maxOutputTokens: z.number().int().min(256).max(1_000_000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   topP: z.number().min(0).max(1).optional(),
   topK: z.number().int().min(0).max(500).optional(),
