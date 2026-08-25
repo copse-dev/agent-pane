@@ -1,7 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedMarkdownTableWrapFixture } from './helpers/seed-config.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { saveChatPaneScreenshot } from './helpers/screenshot.ts'
+import { saveChatPaneScreenshot, savePreparedElementScreenshot } from './helpers/screenshot.ts'
 
 describe('markdown table wrapping', () => {
   before(async () => {
@@ -54,6 +54,8 @@ describe('markdown table wrapping', () => {
         messageWidth: messageBox?.width ?? 0,
         tableScrollWidth: table.scrollWidth,
         tableClientWidth: table.clientWidth,
+        tableOverflowX: tableStyle.overflowX,
+        tableOverflowY: tableStyle.overflowY,
         statusHeaderRight: statusHeader?.right ?? 0,
         paneRight: paneBox?.right ?? 0,
       }
@@ -63,6 +65,8 @@ describe('markdown table wrapping', () => {
     expect(metrics.rowMetrics).toHaveLength(3)
     expect(metrics.tableWidth).toBeLessThanOrEqual(metrics.messageWidth + 1)
     expect(metrics.tableScrollWidth).toBeLessThanOrEqual(metrics.tableClientWidth + 1)
+    expect(metrics.tableOverflowX).toBe('hidden')
+    expect(metrics.tableOverflowY).toBe('hidden')
     expect(metrics.statusHeaderRight).toBeLessThanOrEqual(metrics.paneRight + 1)
 
     for (const row of metrics.rowMetrics) {
@@ -88,7 +92,10 @@ describe('markdown table wrapping', () => {
     expect(narrowWrap.branchLineCount).toBeGreaterThan(1)
 
     await saveChatPaneScreenshot('markdown-table-wrap.png')
-    await saveChatPaneScreenshot('markdown-table-wrap-message.png')
+    await savePreparedElementScreenshot(
+      '.message-text .table-copy-shell',
+      'markdown-table-wrap-message.png',
+    )
 
     const shotMetrics = await browser.execute(() => {
       const table = document.querySelector('.message-text table')
