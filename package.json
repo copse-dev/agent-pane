@@ -97,7 +97,7 @@
     "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm run check:e2e-syntax && pnpm test"
   },
   "build": {
-    "appId": "app.copse-panel",
+    "appId": "dev.copse.app",
     "productName": "Copse",
     "asar": true,
     "directories": {
