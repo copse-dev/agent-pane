@@ -1,0 +1,42 @@
+name: Feature request
+description: A product change you want Copse to make.
+title: '[feature] '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues and [docs/plans/](https://github.com/copse-dev/agent-pane/tree/main/docs/plans)
+        first. A plan that already covers the idea should be linked, not restated.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The job you cannot do today, not the implementation you prefer.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should Copse do instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Approvals / sandbox / permissions
+        - Agent loop / models / providers
+        - Editor / diffs / git
+        - Terminal / SSH
+        - Browser / MCP / ACP / packs
+        - Docs / site / release
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: existing
+    attributes:
+      label: Related issues or plans
+      description: Links only. Leave blank if you found none.

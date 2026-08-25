@@ -27,7 +27,7 @@ Copse has no hosted backend of its own. Connect your preferred cloud provider di
 - **Everything in one workspace.** Chat with an agent beside a Monaco editor, terminal, file explorer, git changes, and an in-app browser.
 - **Bring the models you want.** Use Anthropic, OpenAI, OpenRouter, and other hosted providers, or connect local models through LM Studio, Ollama, llama.cpp, Jan, vLLM, and OpenAI-compatible endpoints.
 - **See the work, not just the answer.** Tool activity, diffs, commands, subagents, and failures stay visible in the conversation.
-- **Keep meaningful control.** Review proposed file edits and approve actions that need access beyond the project sandbox. Copse sends requests directly to the provider you select and does not add its own cloud service in the middle.
+- **Keep meaningful control.** Inspect every file edit in the Changes pane; edits that cannot be applied safely wait for your approval. Actions that need access beyond the project sandbox ask first. Copse sends requests directly to the provider you select and does not add its own cloud service in the middle.
 - **Extend the agent.** Add reusable skills, MCP servers, custom tools, hooks, and compatible ACP coding agents. Copse can also reuse supported skills and MCP servers from your existing Cursor setup.
 - **Work your way.** Attach files, editor selections, or screen recordings; search code by meaning; fork conversations; queue follow-up messages; and hand exploration to subagents.
 
@@ -77,9 +77,14 @@ API keys entered in Copse are encrypted with the operating system's secure stora
 | Extensions | Skills, Cursor-compatible hooks and plugin sources, MCP, and JavaScript custom tools |
 | Control    | Edit review, permission prompts, macOS project sandboxing, and per-tool approvals    |
 
+## User guide
+
+Install, first run, approvals, and the project sandbox:
+**[docs/user/](docs/user/README.md)**.
+
 ## Contributing
 
-No model key is required to explore the development build: when no provider is configured, Copse uses a small built-in mock agent.
+See [CONTRIBUTING.md](CONTRIBUTING.md). No paid model key is required to explore the development build: connect a local model, or launch with `COPSE_PANEL_MOCK_LLM=1 pnpm run dev` to opt into the built-in mock agent.
 
 Before submitting a change, run:
 
@@ -110,7 +115,16 @@ Changes to the Electron UI should also be built and covered by a focused end-to-
 <details>
 <summary><strong>Install troubleshooting</strong></summary>
 
-Copse's postinstall prepares native Electron dependencies and downloads the bundled semantic-search engine. Project [`.npmrc`](.npmrc) sets `ignore-scripts=false`. An inherited `npm_config_ignore_scripts=true` still wins over `.npmrc` — `make deps` forces scripts on for that reason. To install without scripts and finish natives manually:
+Copse's postinstall prepares native Electron dependencies and downloads the bundled semantic-search engine. Project [`.npmrc`](.npmrc) sets `ignore-scripts=false`. An inherited `npm_config_ignore_scripts=true` still wins over `.npmrc` — `make deps` forces scripts on for that reason.
+
+If `electron-rebuild` fails because a Homebrew Python cannot import
+`distutils`, use the Python supplied with Xcode's command-line tools:
+
+```bash
+PYTHON=/usr/bin/python3 pnpm install
+```
+
+To install without scripts and finish natives manually:
 
 ```bash
 pnpm install --config.ignore-scripts=true
@@ -137,8 +151,10 @@ If `make run` returns straight away without opening a window, another Copse inst
 
 ## Learn more
 
+- [User guide](docs/user/README.md)
 - [Support and known issues](SUPPORT.md)
 - [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
 - [Privacy and data flow](docs/privacy-data-flow.md)
 - [Provider retention and training policies](docs/provider-data-policies.md)
 - [Profiles, multiple profiles, and API-key portability](docs/profiles.md)
