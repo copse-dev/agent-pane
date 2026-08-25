@@ -28,6 +28,7 @@ import {
   getDefaultBranch,
   getGitStatus,
   isInsideGitWorkTree,
+  localBranchExists,
   repositoryHasSubmodules,
 } from './github/git-service.ts'
 
@@ -55,12 +56,28 @@ interface CheckoutInspection {
 
 /**
  * The blank-thread branch picker speaks for the live local checkout, so its
- * selected branch is the worktree base. A remote default is the next useful
- * choice when there is no local selection, with `main` as the conventional
- * final fallback.
+ * selected branch is the worktree base — but only once the repository is known
+ * to hold it. A remote default is the next useful choice, with `main` as the
+ * conventional final fallback.
+ *
+ * The existence check is load-bearing rather than defensive. `currentBranch`
+ * is a *reported* name, and a report is not a ref: the e2e suite replaces it
+ * wholesale via `COPSE_PANEL_MOCK_BRANCH` so the branch chip stays stable, and
+ * allocation rejects a base that resolves to nothing. Handing that name
+ * straight to the allocator turns every isolated checkout into "Base branch
+ * … does not exist in this repository" and strands the thread with no
+ * transcript — which is exactly how the automation specs fail. In a real
+ * checkout the name always resolves, so this costs one `show-ref` and changes
+ * nothing.
  */
-function checkoutBaseBranch(inspection: CheckoutInspection): string {
-  return inspection.currentBranch ?? inspection.defaultBranch ?? DEFAULT_GIT_BRANCH
+async function checkoutBaseBranch(
+  branchExists: (branch: string) => Promise<boolean>,
+  inspection: CheckoutInspection,
+): Promise<string> {
+  if (inspection.currentBranch && (await branchExists(inspection.currentBranch))) {
+    return inspection.currentBranch
+  }
+  return inspection.defaultBranch ?? DEFAULT_GIT_BRANCH
 }
 
 export interface ThreadCheckoutTransactionDependencies {
@@ -89,7 +106,10 @@ export interface ThreadCheckoutTransactionDependencies {
     projectId: string
     threadId: string
     projectRoot: string
+    baseBranch: string
   }) => Promise<ThreadWorktree | null>
+  /** Whether the repository holds this branch, checked against its refs. */
+  branchExists: (projectRoot: string, branch: string) => Promise<boolean>
   validate: (input: {
     projectId: string
     threadId: string
@@ -149,10 +169,11 @@ async function inspectProject(project: Project, isLocal: boolean): Promise<Check
   }
 }
 
-async function recoverUnpersistedWorktree(input: {
+export async function recoverUnpersistedWorktree(input: {
   projectId: string
   threadId: string
   projectRoot: string
+  baseBranch: string
 }): Promise<ThreadWorktree | null> {
   const target = expectedThreadWorktreePath(input.projectId, input.threadId)
   const records = await listProjectWorktrees(input.projectRoot)
@@ -160,12 +181,27 @@ async function recoverUnpersistedWorktree(input: {
   if (!existing?.branch || !existing.head) return null
   const canonicalPath = await realpath(existing.path).catch(() => null)
   if (!canonicalPath) return null
+  // The recovery marker sharpens the reclaim — it carries the original base and
+  // whether the checkout was dirty-seeded — but it cannot gate it. Git has
+  // already registered this linked checkout, so returning null here does not
+  // fall back to a clean allocation: it falls through to `allocate`, which
+  // throws "already registered" and strands the thread. Any checkout cut before
+  // the marker existed, or by a path that failed between `worktree add` and the
+  // config write, has no marker and must still be reclaimable.
+  //
+  // Without it, reconstruct the conservative shape the reclaim used before the
+  // marker: the caller's base, the branch's current head, and dirty-seeded so
+  // retirement keeps refusing to discard state this process never observed.
   const metadata = await readThreadWorktreeRecoveryMetadata(input.projectRoot, existing.branch)
-  if (!metadata) return null
   return {
     path: canonicalPath,
     branch: existing.branch,
-    ...metadata,
+    ...(metadata ?? {
+      baseBranch: input.baseBranch,
+      baseCommit: existing.head,
+      createdAt: Date.now(),
+      seededFromDirtyProject: true,
+    }),
   }
 }
 
@@ -176,6 +212,7 @@ const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   inspect: inspectProject,
   allocate: allocateThreadWorktree,
   recoverUnpersisted: recoverUnpersistedWorktree,
+  branchExists: localBranchExists,
   validate: validateThreadWorktree,
   retire: retireThreadWorktree,
   serialize: runSerialized,
@@ -277,7 +314,10 @@ export function createThreadCheckoutTransaction(
       // current selection is authoritative. Allocation separately recognizes
       // when this is the repository default and then fetches/uses the latest
       // upstream tip instead of a stale local commit.
-      const baseBranch = checkoutBaseBranch(inspection)
+      const baseBranch = await checkoutBaseBranch(
+        (branch) => dependencies.branchExists(project.path, branch),
+        inspection,
+      )
       // A prior allocate may have succeeded while meta persistence failed. Prefer
       // reclaiming that registration over a second allocate that would throw
       // "already registered" and strand the thread.
@@ -285,6 +325,7 @@ export function createThreadCheckoutTransaction(
         projectId: input.projectId,
         threadId: input.threadId,
         projectRoot: project.path,
+        baseBranch,
       })
       const worktree =
         recovered ??
