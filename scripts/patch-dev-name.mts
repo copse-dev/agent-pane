@@ -218,12 +218,15 @@ for (const key of ['CFBundleName', 'CFBundleDisplayName']) {
     )
   }
 }
+// Deliberately not the shipped id (dev.copse.app): the dev bundle keeps its own
+// TCC grants, keychain ACL and Launch Services registration, so a `pnpm start`
+// run can't answer a permission prompt on behalf of the installed Copse.app.
 try {
   execFileSync('plutil', [
     '-replace',
     'CFBundleIdentifier',
     '-string',
-    'dev.copse-panel',
+    'dev.copse.app-dev',
     targetPlist,
   ])
 } catch (err) {
