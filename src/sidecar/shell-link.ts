@@ -1,7 +1,8 @@
 /**
  * Line protocol between the Node sidecar and the Tauri shell that spawned it.
  *
- * The shell (tauri-shell/src/main.rs) owns the real OS windows; the sidecar
+ * The shell (copse-dev/tauri-shell, consumed as a release binary) owns the
+ * real OS windows; the sidecar
  * owns everything else. When the electron-shim's `BrowserWindow` needs a
  * window created, shown, or closed, it sends a one-line JSON message on
  * stdout prefixed with `@tauri-shell `; the shell answers window lifecycle
