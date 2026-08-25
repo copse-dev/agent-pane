@@ -268,6 +268,116 @@ function probeBorderTriangle(): {
   return measured
 }
 
+/**
+ * Popover support, which the migration plan calls the top engine risk: the app
+ * has ~164 references across menus, tooltips and pickers.
+ *
+ * Two separate questions, and the second matters more than the first. Whether
+ * `showPopover()` exists is easy to feature-detect and easy to fall back from.
+ * Whether un-upgraded `[popover]` content is hidden by the UA stylesheet is the
+ * dangerous one: if it is not, every popover in the app renders inline, and
+ * hidden menu content leaks into the layout rather than simply failing to open.
+ */
+function probePopover(): Record<string, string | boolean | number> {
+  const el = document.createElement('div')
+  el.setAttribute('popover', 'auto')
+  el.textContent = 'popover probe content'
+  const host = document.createElement('div')
+  host.style.cssText = 'position:absolute;top:-9999px;left:0;width:200px'
+  host.append(el)
+  document.body.append(host)
+
+  const displayBefore = getComputedStyle(el).display
+  const leakedHeight = Math.round(el.getBoundingClientRect().height)
+
+  let showResult = 'not attempted'
+  let displayAfter = 'n/a'
+  const show = Reflect.get(el, 'showPopover')
+  if (typeof show === 'function') {
+    try {
+      Reflect.apply(show, el, [])
+      showResult = 'ok'
+      displayAfter = getComputedStyle(el).display
+    } catch (error) {
+      showResult = String(error)
+    }
+  }
+  const result = {
+    showPopover: typeof show,
+    togglePopover: typeof Reflect.get(el, 'togglePopover'),
+    // 'none' is correct: the UA stylesheet hides un-opened popovers.
+    displayBefore,
+    // Non-zero here means hidden content is occupying layout — the bad case.
+    leakedHeight,
+    showResult,
+    displayAfter,
+    supportsSelector: CSS.supports('selector(:popover-open)'),
+  }
+  host.remove()
+  return result
+}
+
+/**
+ * Behavioural check of the remaining risk-register entries.
+ *
+ * Deliberately does not trust `CSS.supports`: it reports `true` for
+ * `selector(:popover-open)` under Servo while the Popover API is absent, so a
+ * support string proves nothing. Each entry here either calls the API and
+ * observes the result, or applies a rule and reads back a computed value.
+ */
+function probeCapabilities(): Record<string, string | boolean | number> {
+  const out: Record<string, string | boolean | number> = {}
+
+  // <dialog>.showModal — 14 real calls in the app.
+  const dialog = document.createElement('dialog')
+  dialog.textContent = 'probe'
+  document.body.append(dialog)
+  const showModal = Reflect.get(dialog, 'showModal')
+  out['showModal'] = typeof showModal
+  if (typeof showModal === 'function') {
+    try {
+      Reflect.apply(showModal, dialog, [])
+      out['dialogOpens'] = dialog.hasAttribute('open')
+      out['dialogDisplay'] = getComputedStyle(dialog).display
+    } catch (error) {
+      out['dialogOpens'] = `threw: ${String(error)}`
+    }
+  }
+  dialog.remove()
+
+  // :has() — 26 stylesheet rules. Behavioural: does the parent restyle?
+  const sheet = document.createElement('style')
+  sheet.textContent =
+    '.probe-has{color:rgb(1,2,3)}.probe-has:has(.probe-child){color:rgb(9,8,7)}' +
+    '.probe-anchor{anchor-name:--probe}'
+  const hasParent = document.createElement('div')
+  hasParent.className = 'probe-has'
+  const hasChild = document.createElement('span')
+  hasChild.className = 'probe-child'
+  hasParent.append(hasChild)
+  const holder = document.createElement('div')
+  holder.style.cssText = 'position:absolute;top:-9999px'
+  holder.append(sheet, hasParent)
+  document.body.append(holder)
+  out['hasSelectorWorks'] = getComputedStyle(hasParent).color === 'rgb(9, 8, 7)'
+
+  // CSS anchor positioning — 20 declarations, with a documented JS fallback.
+  const anchorEl = document.createElement('div')
+  anchorEl.className = 'probe-anchor'
+  holder.append(anchorEl)
+  out['anchorNameApplied'] = getComputedStyle(anchorEl).getPropertyValue('anchor-name') || 'unset'
+  holder.remove()
+
+  // CSS.highlights — 7 uses, find-in-chat.
+  out['cssHighlights'] = typeof Reflect.get(CSS, 'highlights')
+  out['HighlightCtor'] = typeof Reflect.get(globalThis, 'Highlight')
+
+  // WebCodecs — video pane and VNC H.264.
+  out['VideoDecoder'] = typeof Reflect.get(globalThis, 'VideoDecoder')
+
+  return out
+}
+
 /** Write into the real contenteditable and let the composer's own listeners see it. */
 function typeInto(input: HTMLElement, text: string): void {
   input.focus()
@@ -277,9 +387,88 @@ function typeInto(input: HTMLElement, text: string): void {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+/**
+ * Surface sweep: park the UI on each major panel in turn so an external
+ * screenshot can compare engines.
+ *
+ * Driven through the store rather than by clicking, because the point is to
+ * compare *rendering* across two engines, and a selector that misses under one
+ * of them would silently turn a rendering comparison into a navigation bug.
+ * Setting state and emitting the event the panels already listen for is the
+ * same path the real UI takes, minus the fragility.
+ *
+ * Each surface is held for a fixed dwell so the harness can screenshot on a
+ * schedule; the marks record what was on screen when, so a misaligned capture
+ * is detectable afterwards rather than silently mislabelled.
+ */
+const SWEEP_SURFACES = [
+  'explorer',
+  'changes',
+  'terminal',
+  'browser',
+  'roadmap',
+  'memories',
+] as const
+const SWEEP_DWELL_MS = 6000
+
+async function runSurfaceSweep(store: AppStore): Promise<void> {
+  mark('autopilot:sweep-start', { dwellMs: SWEEP_DWELL_MS, count: SWEEP_SURFACES.length })
+  for (const surface of SWEEP_SURFACES) {
+    store.setState({ rightPanelMode: surface, filesPaneOpen: true })
+    store.emit('right_panel_mode_changed')
+    store.emit('files_pane_changed')
+    await afterNextFrame()
+    mark('autopilot:surface', { surface })
+    await sleep(SWEEP_DWELL_MS)
+  }
+  // Settings last: it is a dialog over everything else, so opening it earlier
+  // would contaminate every surface after it.
+  const settings = document.querySelector<HTMLElement>('.projects-settings-btn')
+  if (settings) {
+    settings.click()
+    await afterNextFrame()
+    mark('autopilot:surface', { surface: 'settings' })
+    await sleep(SWEEP_DWELL_MS)
+  } else {
+    mark('autopilot:surface', { surface: 'settings', missing: true })
+  }
+  // The settings panel is the only surface that differs materially between
+  // engines. Measure the text rather than infer from pixels: if a heading
+  // resolves to a different family, weight or width, that is the cause, and a
+  // pixel diff can only ever suggest it.
+  const specimens: Record<string, string | number> = {}
+  const heads = [...document.querySelectorAll('h1, h2, h3')].slice(0, 3)
+  heads.forEach((el, i) => {
+    const cs = getComputedStyle(el)
+    const rect = el.getBoundingClientRect()
+    specimens[`h${String(i)}`] =
+      `${el.textContent.slice(0, 18)}|${String(cs.fontFamily.split(',')[0])}` +
+      `|w=${cs.fontWeight}|sz=${cs.fontSize}|lh=${cs.lineHeight}` +
+      `|rect=${String(Math.round(rect.width))}x${String(Math.round(rect.height))}` +
+      `|top=${String(Math.round(rect.top))}`
+  })
+  const body = getComputedStyle(document.body)
+  specimens['body'] = `${String(body.fontFamily.split(',')[0])}|${body.fontSize}|${body.lineHeight}`
+  specimens['headCount'] = heads.length
+  mark('autopilot:fonts', specimens)
+
+  mark('autopilot:sweep-done')
+}
+
 export function startPerfAutopilot(store: AppStore): void {
   if (!autopilotOn) return
+  // COPSE_PERF_SWEEP=1 selects the surface sweep instead of the chat turn.
+  if (sweepRequested()) {
+    void runSurfaceSweep(store)
+    return
+  }
   void run(store)
+}
+
+/** The sweep flag rides the same channel as the autopilot flag. */
+function sweepRequested(): boolean {
+  const bridge: unknown = Reflect.get(globalThis, '__copsePerf')
+  return typeof bridge === 'object' && bridge !== null && Reflect.get(bridge, 'sweep') === true
 }
 
 async function run(store: AppStore): Promise<void> {
@@ -346,6 +535,9 @@ async function run(store: AppStore): Promise<void> {
     resolveDone('done')
   })
 
+  mark('autopilot:popover', probePopover())
+  mark('autopilot:capabilities', probeCapabilities())
+
   const triangle = probeBorderTriangle()
   mark('autopilot:border-triangle', {
     grid: triangle.grid,
@@ -410,6 +602,29 @@ async function run(store: AppStore): Promise<void> {
       count: running.length,
       // Bounded: a pathological page should not write an unbounded trace line.
       names: running.slice(0, 6).join(' | ') || 'none',
+    })
+  })
+
+  // Split the remaining space on the frozen reasoning indicator: does its
+  // animated property advance in style, or does style advance while paint
+  // stays put? Sampling the same element twice is the only thing that
+  // distinguishes "the animation never runs" from "it runs and never repaints".
+  void sleep(3500).then(async () => {
+    const path = document.querySelector<SVGElement>('.reasoning-activity-path')
+    if (!path) {
+      mark('autopilot:dashoffset', { found: false })
+      return
+    }
+    const read = (): string => getComputedStyle(path).strokeDashoffset
+    const first = read()
+    await sleep(400)
+    const second = read()
+    mark('autopilot:dashoffset', {
+      found: true,
+      first,
+      second,
+      advanced: first !== second,
+      opacity: getComputedStyle(path).opacity,
     })
   })
 

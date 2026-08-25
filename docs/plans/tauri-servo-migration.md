@@ -271,6 +271,91 @@ renders as a correct `▶` with **no app-side change at all**. An earlier
 ever fixed the one symptom and would have left the other twelve grid layouts
 silently broken.
 
+### Risk register re-audited behaviourally (2026-08-23)
+
+The register above was built by counting identifier occurrences. Popover showed
+that does not survive contact with what the code calls, so every remaining entry
+was re-checked twice: is the feature _actually used_, and does Servo _actually_
+support it — tested by calling the API or applying a rule and reading back a
+computed value, never by `CSS.supports`, which reports `true` for
+`selector(:popover-open)` while the API is absent.
+
+| Entry                    |  Claimed | Real usage         | Servo (measured)                     | Verdict                                     |
+| ------------------------ | -------: | ------------------ | ------------------------------------ | ------------------------------------------- |
+| `contenteditable`        | composer | composer           | works (patch 0002)                   | resolved                                    |
+| **Popover API**          |      181 | **0**              | absent                               | **false alarm — unused**                    |
+| `<dialog>.showModal`     |       56 | 14 calls, 26 nodes | `function`; opens; `display: block`  | **works**                                   |
+| CSS `:has()`             |       30 | 26 rules           | parent restyles correctly            | **works** (stylo patch)                     |
+| CSS anchor positioning   |        8 | 20 declarations    | `anchor-name` computes to unset      | absent — **fallback shipped** (`5768b2af1`) |
+| `CSS.highlights`         |        6 | 7 uses             | `undefined`; `Highlight` `undefined` | absent — **guarded, degrades**              |
+| WebCodecs `VideoDecoder` |  2+noVNC | 33 references      | `undefined`                          | **absent — genuinely open**                 |
+| Monaco / `Sanitizer`     |        — | Sanitizer **0**    | Monaco works; Sanitizer pref-gated   | resolved                                    |
+
+**Seven of eight are resolved, mitigated or non-issues.** Two were simply wrong
+about usage (Popover, Sanitizer). Two now work because of patches this project
+already carries (`contenteditable`, `:has()`). One works and was only ever
+listed as unverified (`<dialog>`). Two are absent but already handled — anchor
+positioning has a shipped CSS fallback, and `CSS.highlights` is properly
+feature-detected:
+
+```js
+const highlightsSupported =
+  typeof CSS !== 'undefined' && 'highlights' in CSS && typeof globalThis.Highlight === 'function'
+```
+
+with every call site behind it, so find-in-chat still finds, it just does not
+paint highlights. That is also the correct detection idiom — `in`/`typeof` on
+the actual objects rather than a support string.
+
+**The single genuinely open item is WebCodecs**, and it is contained: the video
+pane and VNC H.264 decoding. Both already degrade by design in the prototype.
+
+The practical consequence is that engine capability is no longer the main risk
+in this migration. The open questions are breadth of untested UI surfaces,
+the deliberately stubbed subsystems (`safeStorage` above all — API keys cannot
+be stored encrypted), the 30-patch fork burden, and the 2x memory figure.
+
+### Popover: the top-listed risk is a false alarm (2026-08-23)
+
+The risk table above ranks the Popover API first, at "181 uses" across
+"menus/tooltips/pickers", and the probe verdicts call it "genuinely absent".
+Absent it is. Used it is not.
+
+**The app does not use the Popover API at all.** Searched for every real form:
+no `popover` attribute set anywhere, no `popovertarget`, and no `.showPopover()`
+/ `.togglePopover()` / `.hidePopover()` called on any DOM node. What the count
+found was the _word_. The 185 hits are naming conventions — CSS classes like
+`popover-row`, `popover-header`, `popover-value`, and local identifiers like
+`popoverActive`. `context-wheel.ts` defines its own `showPopover()`/
+`hidePopover()` as plain local functions that toggle `element.hidden` on a
+CSS-positioned div.
+
+So the app's menus, tooltips and pickers are built from ordinary elements,
+CSS and `hidden`, all of which work under Servo today. The `[popover] { display:
+none }` guard the probe verdicts recommend shipping is unnecessary here, though
+harmless.
+
+**The engine gap is real, it just does not touch us.** Measured in-page:
+
+|                                           | Servo       | Electron   |
+| ----------------------------------------- | ----------- | ---------- |
+| `showPopover`                             | `undefined` | `function` |
+| `[popover]` `display` before opening      | **`block`** | `none`     |
+| Layout height leaked by hidden content    | **17 px**   | 0          |
+| `CSS.supports('selector(:popover-open)')` | **`true`**  | `true`     |
+
+Two things worth carrying forward. The un-upgraded content really does render
+inline and occupy layout, so any _future_ use of the API in this app would leak
+hidden menu content into the page rather than merely failing to open. And
+**`CSS.supports('selector(:popover-open)')` returns `true` under Servo while the
+API is absent** — so the obvious feature detection reports support that is not
+there. Detect with `typeof el.showPopover === 'function'` instead.
+
+The lesson generalises beyond popover: the risk table was built by counting
+identifier occurrences, and at least its top entry does not survive contact with
+what the code actually calls. The other entries deserve the same check before
+they are treated as blockers.
+
 ### Pref sweep against Servo's own defaults and WPT runs (2026-08-22)
 
 Finding the grid pref prompted a full audit. Servo curates a list of
@@ -609,3 +694,178 @@ developer's own profile and handed to both stacks in the environment, because
 key at all (`scripts/decrypt-provider-key.cjs`).
 
 Raw data: `docs/plans/perf-data-eval/`.
+
+### Is the 2× memory explainable? (2026-08-23)
+
+Partly, and the shape of it is now measured rather than guessed.
+
+**Per-process `phys_footprint`, same workload, HOME isolated:**
+
+| Electron          |            | Tauri + Servo       |            |
+| ----------------- | ---------: | ------------------- | ---------: |
+| Electron main     |     109 MB | `copse-tauri-shell` |     525 MB |
+| Helper (Renderer) |     115 MB | node sidecar        |     192 MB |
+| Helper (GPU)      |     104 MB | node worker         |      12 MB |
+| Helper (utility)  |       8 MB |                     |            |
+| Electron (2nd)    |      14 MB |                     |            |
+| node worker       |      12 MB |                     |            |
+| **total**         | **362 MB** | **total**           | **729 MB** |
+
+Two like-for-like comparisons fall out:
+
+- **Engine:** Servo's shell (525 MB) against Chromium's renderer + GPU + utility
+  (227 MB) — about **2.3×**, and roughly 300 MB of the ~370 MB gap. This is the
+  dominant term.
+- **Main process:** the node sidecar (192 MB) against Electron's main (~123 MB)
+  — about **1.6×**, for _identical JavaScript_. Most likely V8 heap-sizing
+  differences between Node 25 and the Node bundled in Electron 43, which is at
+  least a tunable in principle (`--max-old-space-size`).
+
+**What it is not.** Three hypotheses tested and eliminated:
+
+- **Not a leak, and not content-proportional.** Sampling the shell every few
+  seconds: 635 MB at t=2 s, settling to 520–528 MB by t=6 s and flat through
+  t=40 s. The baseline is established almost immediately and does not grow.
+- **Not the native SVG work.** Same run with `layout_svg_native_enabled` off
+  plateaus at 514–522 MB against 520–528 MB with it on — about 6 MB, ~1%.
+- **Not the JS heap.** Servo runs SpiderMonkey with `js_mem_max: -1`, which
+  falls through to `JSGC_MAX_BYTES = u32::MAX`, i.e. uncapped, and with
+  `js_mem_gc_incremental_enabled: false`. Capping it at 128 MB did **not**
+  reduce the footprint — it rose slightly, to 578 MB, presumably from extra GC
+  churn. The app still booted and did not OOM. So the JS heap is not the
+  dominant term and this pref is not the lever.
+
+**What is still unattributed** is the ~300 MB inside the Servo shell that is not
+JS heap. The remaining candidates — WebRender and GPU resource caches, font
+caches, allocator arenas — cannot be separated from outside the process.
+
+Servo does have the machinery to answer this: `components/profile/mem.rs` and
+`system_reporter.rs` implement per-category reporters (`system-heap-allocated`,
+`resident`, `pss`, per-segment breakdowns). They are not wired to a CLI flag or
+pref in this build, so getting a category breakdown means plumbing the reporter
+to an embedder-triggerable dump. That is a small, well-bounded piece of work and
+it is the difference between "explainable in shape" and "attributed" — worth
+doing before anyone tries to optimise, since three plausible-sounding
+hypotheses have already been wrong.
+
+### Memory, attributed (2026-08-23)
+
+Servo's own reporters answer what process-level `phys_footprint` cannot. They
+were unreachable from an embedder only because `Servo::create_memory_report` is
+public while the `GenericCallback` it takes was not re-exported from the `servo`
+crate — a one-line upstream fix (`pub use servo_base::generic_channel::GenericCallback`).
+With that, `tauri-runtime-servo` dumps a report on
+`COPSE_SERVO_MEM_REPORT_SECS=<n>`.
+
+Shell at 604 MB `phys_footprint`, Servo's own `resident` 485 MB:
+
+| Category                          |        Size | Note                                                 |
+| --------------------------------- | ----------: | ---------------------------------------------------- |
+| `js/malloc-heap` (main page)      | **99.0 MB** | the single largest attributable item                 |
+| `system-heap-reserved`            |    171.9 MB | of which allocated 112.5 MB — ~60 MB allocator slack |
+| `system-heap-allocated`           |    112.5 MB |                                                      |
+| `js/gc-heap/used` (main page)     |     28.6 MB |                                                      |
+| `image-cache` (main page)         |     27.8 MB | icon-heavy UI                                        |
+| `webrender/images`                |     19.3 MB |                                                      |
+| `js/gc-heap/unused` (main page)   |     10.1 MB |                                                      |
+| Monaco worker JS heaps (×2)       |      ~14 MB | see below                                            |
+| `hsts-preload-list`               |      2.0 MB | fixed cost                                           |
+| layout (stylist, box tree, fonts) |     ~2.0 MB | genuinely small                                      |
+| `webrender/fonts`                 |      0.6 MB |                                                      |
+
+**JS is the dominant term: ~154 MB** across the main page (99 malloc + 28.6 GC
+used + 10.1 GC unused + ~2 admin/non-heap) plus ~14 MB of Monaco workers.
+
+**This explains the earlier failed experiment.** Capping `js_mem_max` at 128 MB
+did not reduce the footprint, which seemed to rule out JS. It does not:
+`js_mem_max` sets `JSGC_MAX_BYTES`, which caps the **GC heap** — 28.6 MB here —
+while the **malloc heap** at 99 MB is 3.5× larger and entirely outside that cap.
+The pref was aimed at the wrong 20% of the JS total. That is worth knowing
+before anyone retries it.
+
+**Two other things fall out of the report:**
+
+- **Monaco is instantiated at startup.** Two `monaco/esm-worker-host.js` worker
+  JS heaps are live in a session that never opened an editor. That is app
+  behaviour, not an engine cost, and it is paid under Electron too — but it is
+  ~14 MB and a candidate for lazy loading.
+- **~185 MB is unattributed** even by Servo's own reporters (485 MB resident
+  against roughly 300 MB of explicit categories). Thread stacks, mmap'd regions
+  and GPU driver allocations live there. Some of that is irreducible.
+
+**Layout and fonts are not the problem** — about 2.6 MB combined. Any instinct
+that Servo's layout is memory-hungry is wrong; the cost is JS heap, allocator
+slack and images.
+
+The practical read: the gap is not one pathology but three ordinary ones — a
+large JS malloc heap, ~60 MB of allocator slack, and ~47 MB of image caching in
+an icon-heavy UI. None is obviously a bug, and none has a single pref that fixes
+it.
+
+### Surface sweep: Servo vs Electron across the app (2026-08-23)
+
+`COPSE_PERF_SWEEP=1` parks the UI on each right-panel surface in turn, driven
+through the store rather than by clicking, so a selector that misses under one
+engine cannot masquerade as a rendering difference. Each surface is captured on
+both stacks and diffed over the app-window interior (`x[800..3600] y[260..1560]`
+— full-screen captures otherwise diff the desktop behind differently-sized
+windows, which is how the first pass produced a spurious 17% hotspot that turned
+out to be Activity Monitor showing through).
+
+| Surface      |        >8 |       >24 |       >48 |
+| ------------ | --------: | --------: | --------: |
+| explorer     |     3.64% |     2.23% |     1.15% |
+| changes      |     3.62% |     2.22% |     1.13% |
+| terminal     |     5.00% |     3.37% |     1.54% |
+| browser      |     4.40% |     2.87% |     1.08% |
+| roadmap      |     4.01% |     2.54% |     1.36% |
+| memories     |     3.71% |     2.31% |     1.20% |
+| **settings** | **8.77%** | **7.26%** | **5.05%** |
+
+Six of seven surfaces sit in a tight 3.6–5.0% band at tolerance 8 and ~1.1–1.5%
+at 48 — the same signature as the Mermaid comparison, i.e. thin-stroke and
+glyph rasterization differences rather than layout. **Nothing is missing or
+misplaced on any of them.**
+
+**Settings is the one real outlier** at 5.05% versus ~1.2%. Localised: the
+difference is spread across the text column, and inspecting it shows Servo's
+serif headings rendering lighter than Chromium's, with content sitting roughly
+one line lower — consistent with a weight difference producing cumulative
+vertical drift down a long document.
+
+Two hypotheses tested and both **rejected**:
+
+- **Not the serif fallback the plan flagged.** Electron renders those headings
+  in the same serif (`Averia Serif Libre`); it is the intended design, not a
+  Servo font-stack failure. That note in the first-run log was a misreading.
+- **Not variable fonts.** Enabling `layout_variable_fonts_enabled` and
+  `dom_fontface_enabled` moved settings from 8.77%/5.05% to 8.75%/5.01% — no
+  effect. My earlier recommendation to enable them for this reason was wrong;
+  they remain harmless but they do not fix this.
+
+In-page measurement under Servo gives `Averia Serif Libre`, weight 400,
+28px/33.6px line-height for the `General` heading. The matching Electron
+measurement was not captured before the environment incident below, so the
+cause of the settings difference is **still open** — it is a weight or metrics
+difference in one serif face, affecting one panel, and it is cosmetic.
+
+### The e2e suite could not be run, and why
+
+205 specs, and the suite is more portable than expected: **no spec uses
+`browser.electron.*`**, 143 use plain `browser.execute`, and the 13 using
+`__copseE2e` go through the preload the ws-bridge also bundles. So it should
+run against any W3C WebDriver endpoint — and Servo ships a full WebDriver
+server (`components/webdriver_server`, exposed by servoshell as
+`--webdriver-port`). Wiring it into `tauri-runtime-servo` would need
+`webdriver_server` as a direct dependency plus a command pump; that is the
+single highest-value next step for this migration, because it would let the
+real suite arbitrate instead of screenshot diffs.
+
+It could not be run tonight. Every spec failed at `Failed to create a session:
+timeout POST /session`. The app itself launches fine standalone, and the
+Electron process stays alive for the full 120 s timeout, so it is not the
+single-instance lock. The machine was busy with an unrelated overnight
+benchmark — `syspolicyd` at 86% CPU, `trustd` at 17%, plus a VM — and Gatekeeper
+thrash pushes session creation past its timeout. Running 204 parallel workers
+under those conditions would have produced noise and starved the benchmark, so
+the suite was left alone.
