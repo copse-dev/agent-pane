@@ -112,8 +112,13 @@ channel at a time behind the same `ApiClient` interface.
 
 ## Servo engine risk register
 
-`tauri-runtime-servo` pins Servo rev `f4dde27`. Known gaps that hit this UI,
-worst first (counts from `src/renderer`):
+The risk register below was compiled against Servo rev `f4dde27`, which is
+what `tauri-runtime-servo` pinned at the time. It now depends on published
+libservo, and the shell builds against the `tauri-runtime-patches` fork
+branches by default — so most of the mitigations here have since been
+superseded by a patch. Kept as the record of what the surface looked like
+before them. Known gaps that hit this UI, worst first (counts from
+`src/renderer`):
 
 | Feature                         | Uses                            | Impact                  | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------------------------- | ------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

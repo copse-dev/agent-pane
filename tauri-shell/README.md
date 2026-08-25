@@ -33,47 +33,53 @@ Environment knobs: `COPSE_SIDECAR_NODE` (node binary, default `node`),
 `COPSE_SIDECAR_ENTRY` (default `../dist/sidecar/index.js`, relative to this
 directory when launched via `cargo run`).
 
-## Engine patches (recommended)
+## The engine
 
-The stock published Servo renders the UI but misses pieces Copse leans on; the
-runtime repo carries a validated patch series that fixes them
-(`servo-patches/README.md` in that repo — secure-context APIs, composer
-typing, the themed icon set, module-worker TLA, rasterized SVG text, native
-SVG layout). To run with them:
+The shell builds against a **patched Servo by default, with nothing to check
+out.** `tauri-shell/Cargo.toml` pins the `tauri-runtime-patches` branches of
+the org's engine forks by rev — `copse-dev/servo` and `copse-dev/stylo`, plus
+`copse-dev/rust-content-security-policy` — and cargo fetches them like any
+other git dependency. The `patched-servo` feature is on by default to match.
+
+That block is the one the runtime repo publishes under "Using a patched
+Servo"; its CI builds that recipe on every change, so keep the two in step
+rather than editing this copy in isolation.
+
+What the patches buy, roughly: secure-context APIs on `tauri://localhost`,
+`contenteditable` typing in the composer, the CSS `:has()` selector (26 rules
+in the core chat stylesheets), the themed outline icon set, module-worker
+top-level await, and native SVG layout. `servo-patches/README.md` in the
+runtime repo describes every commit.
+
+### Working on the engine itself
+
+Put a checkout beside the repos and `pnpm build:servo` redirects the build at
+it — `scripts/servo-engine.mts` writes `tauri-shell/.cargo/config.toml` with
+path overrides, which take precedence over the pins per crate:
 
 ```bash
-# the servo series (see servo-patches/README.md in the runtime repo)
-git clone https://github.com/copse-dev/servo ../../servo
-git -C ../../servo checkout -b tauri-runtime-patches 77fccacc1f1fdce10498d50173aafaa09d02879e
-git -C ../../servo am ../../tauri-runtime-servo/servo-patches/0*.patch
-
-# the stylo series — :has() parsing plus the ungated SVG properties the
-# native-SVG patches rely on. Plain diffs behind a prose preamble, so `git am`
-# rejects them; apply with `git apply`.
-git clone https://github.com/copse-dev/stylo ../../stylo
-git -C ../../stylo checkout -b tauri-runtime-patches 67faaab3ff7aa66780ec1d0f51ca47e177b812d3
-for p in ../../tauri-runtime-servo/servo-patches/stylo-*.patch; do
-  git -C ../../stylo apply --3way "$p"
-done
+git clone -b tauri-runtime-patches https://github.com/copse-dev/servo ../../servo
+git clone -b tauri-runtime-patches https://github.com/copse-dev/stylo ../../stylo
+pnpm build:servo   # reports: servo engine: checkout (../servo and ../stylo ...)
 ```
 
-Both clones are the org's own forks rather than `servo/servo` and
-`servo/stylo` directly. The revisions are the ones behind the published
-`servo` and `stylo` releases the runtime resolves, and a fork we control
-cannot have them force-pushed or garbage-collected out from under this
-recipe.
+Either checkout on its own works; the pins keep covering whatever is missing.
+Delete a checkout and the next `build:servo` removes the generated config,
+putting you back on the pins — it says which of the two it did, every run.
 
-The CSP crate needs no checkout. Its two patches — csp-0001 pairs with servo
-0008 to make CSP `'self'` match `tauri://localhost`, which is what lets
-`tauri.html` ship with its policy enforced — live as commits on
-`copse-dev/rust-content-security-policy`, and the override below names that
-commit directly.
+### Building against stock Servo
 
-Then uncomment the `[patch.crates-io]` block at the bottom of `Cargo.toml`, add
-`features = ["patched-servo"]` to the `tauri-runtime-servo` dependency (the
-native-SVG preference only exists on the patched tree), and rebuild. Without the engine patches, build with `COPSE_TAURI_STRIP_CSP=1
-pnpm build:servo` — stock published Servo cannot match CSP `'self'` against
-`tauri://localhost`, so an enforced policy blocks every subresource.
+```bash
+COPSE_TAURI_STRIP_CSP=1 pnpm build:servo
+cd tauri-shell && cargo run --no-default-features
+```
+
+Both halves are needed and they are easy to get half-right. Stock Servo gives
+`tauri://localhost` an opaque origin that CSP `'self'` can never match, so the
+enforced policy `build:servo` writes by default blocks every subresource and
+the window comes up blank; `--no-default-features` drops `patched-servo`,
+which would otherwise fail to compile against stock libservo, because the pref
+it sets is a struct field only the patched tree has.
 
 ## Headless sidecar smoke test (no Servo build needed)
 
