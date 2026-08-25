@@ -1,3 +1,6 @@
 {
-  "v0.1.1": {}
+  "v0.1.1": {
+    "tauri-shell-linux-x86_64.tar.gz": "086f7d55dfbd0cf893fa3f397de7f46c81e83e7d9fdd03e4e268d65950b580a0",
+    "tauri-shell-macos-aarch64.tar.gz": "d195590bc95d96b347e13bce07674c3e973c955fb56ca5300748cac3bd5d11cf"
+  }
 }
