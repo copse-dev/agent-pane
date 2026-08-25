@@ -147,15 +147,21 @@ function electronRuntimeApp(): string {
  * Decrypt the provider key out of the developer's real profile, once per
  * invocation, and keep it in memory only.
  *
- * It cannot simply be read: `safeStorage` binds the ciphertext to a macOS
- * Keychain item derived from the app name, so only Electron presenting itself
- * as "Copse" can decrypt it — and the Tauri sidecar stubs `safeStorage` out
- * entirely, so the Servo stack could never read a stored key. Handing both
- * stacks the plaintext in the environment is what makes the two columns
- * comparable at all; `resolveApiKey` falls back to `<PROVIDER>_API_KEY`
- * identically on both sides.
+ * It cannot simply be read: keys are encrypted at rest, and the Tauri sidecar
+ * installs no secret cipher at all — `src/sidecar/electron-shim` stubs
+ * `safeStorage` out and nothing puts the keyring cipher in its place — so the
+ * Servo stack cannot read a stored key. Handing both stacks the plaintext in
+ * the environment is what makes the two columns comparable at all;
+ * `resolveApiKey` falls back to `<PROVIDER>_API_KEY` identically on both sides.
  *
- * An already-exported env var wins, so nobody is forced through the Keychain.
+ * The helper is invoked with this process's own Node and arranges Electron for
+ * itself. It has to: a stored key is in one of two at-rest formats (AES-GCM
+ * under an OS-keyring data key since #1898, `safeStorage` before it), and the
+ * only way to open both without a second implementation of either is to run
+ * the app's own cipher stack — TypeScript under `src/main/`, half of it bound
+ * to Electron.
+ *
+ * An already-exported env var wins, so nobody is forced through the keyring.
  */
 function providerKey(): string {
   const envVar = `${EVAL_PROVIDER.toUpperCase()}_API_KEY`
@@ -167,8 +173,8 @@ function providerKey(): string {
   }
   // stdio is piped, so the key never reaches a terminal or a log.
   const key = execFileSync(
-    ELECTRON_BIN,
-    [resolve('scripts/decrypt-provider-key.cjs'), EVAL_PROVIDER, settings],
+    process.execPath,
+    [resolve('scripts/decrypt-provider-key.mts'), EVAL_PROVIDER, settings],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
   ).trim()
   if (!key) throw new Error(`decrypting the ${EVAL_PROVIDER} key produced nothing`)
