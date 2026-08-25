@@ -6,6 +6,12 @@ The prototype shell replacing Electron: OS windows rendered by
 the entire existing main process running unchanged as a Node sidecar. Plan and
 architecture: [`docs/plans/tauri-servo-migration.md`](../docs/plans/tauri-servo-migration.md).
 
+None of this is built by default. `pnpm build` emits the Electron artifacts it
+always has; the `--servo` flag — `pnpm build:servo` — is what adds the sidecar
+bundle and the bridge preload this shell loads, and no CI job passes it. The
+shell is its own cargo workspace, so a `cargo` invocation at the repo root
+never walks into it either.
+
 ## Running it
 
 ```bash
@@ -19,7 +25,7 @@ sudo apt-get install -y libdbus-1-dev libegl1-mesa-dev libfontconfig1-dev \
 export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
 
 # 3. Build the web + sidecar artifacts, then the shell
-pnpm install && pnpm build && pnpm build:tauri
+pnpm install && pnpm build:servo
 cd tauri-shell && cargo run   # first build compiles Servo — it is large
 ```
 
@@ -29,37 +35,44 @@ directory when launched via `cargo run`).
 
 ## Engine patches (recommended)
 
-The stock pinned Servo renders the UI but misses pieces Copse leans on; the
+The stock published Servo renders the UI but misses pieces Copse leans on; the
 runtime repo carries a validated patch series that fixes them
-(`servo-patches/README.md` in that repo — secure-context APIs,
-composer typing, the themed icon set, module-worker TLA, rasterized SVG
-text). To run with them:
+(`servo-patches/README.md` in that repo — secure-context APIs, composer
+typing, the themed icon set, module-worker TLA, rasterized SVG text, native
+SVG layout). To run with them:
 
 ```bash
 # the servo series (see servo-patches/README.md in the runtime repo)
-git clone https://github.com/servo/servo ../../servo
-git -C ../../servo checkout -b tauri-runtime-patches f4dde2701bacd4972e6cfa319a3f0cbc9be21f64
-git -C ../../servo am ../../tauri-runtime-servo/servo-patches/00*.patch
+git clone https://github.com/copse-dev/servo ../../servo
+git -C ../../servo checkout -b tauri-runtime-patches 77fccacc1f1fdce10498d50173aafaa09d02879e
+git -C ../../servo am ../../tauri-runtime-servo/servo-patches/0*.patch
 
 # the stylo series — :has() parsing plus the ungated SVG properties the
-# native-SVG patches rely on (rev = the stylo rev in ../../servo/Cargo.lock)
-git clone https://github.com/servo/stylo ../../stylo
-git -C ../../stylo checkout <stylo rev from servo Cargo.lock>
+# native-SVG patches rely on. Plain diffs behind a prose preamble, so `git am`
+# rejects them; apply with `git apply`.
+git clone https://github.com/copse-dev/stylo ../../stylo
+git -C ../../stylo checkout -b tauri-runtime-patches 67faaab3ff7aa66780ec1d0f51ca47e177b812d3
 for p in ../../tauri-runtime-servo/servo-patches/stylo-*.patch; do
-  git -C ../../stylo apply "$p"
+  git -C ../../stylo apply --3way "$p"
 done
-
-# csp-0001 pairs with servo 0008 to make CSP 'self' match tauri://localhost,
-# which is what lets tauri.html ship with its CSP enforced
-git clone https://github.com/rust-ammonia/rust-content-security-policy ../../rust-content-security-policy
-git -C ../../rust-content-security-policy checkout 6a523bab5e6a1c484857f99dc28b7ce417012d33
-git -C ../../rust-content-security-policy am ../../tauri-runtime-servo/servo-patches/csp-0001-match-self-for-custom-scheme-origins.patch
 ```
 
-Then uncomment the three `[patch]` blocks at the bottom of `Cargo.toml`, add
+Both clones are the org's own forks rather than `servo/servo` and
+`servo/stylo` directly. The revisions are the ones behind the published
+`servo` and `stylo` releases the runtime resolves, and a fork we control
+cannot have them force-pushed or garbage-collected out from under this
+recipe.
+
+The CSP crate needs no checkout. Its two patches — csp-0001 pairs with servo
+0008 to make CSP `'self'` match `tauri://localhost`, which is what lets
+`tauri.html` ship with its policy enforced — live as commits on
+`copse-dev/rust-content-security-policy`, and the override below names that
+commit directly.
+
+Then uncomment the `[patch.crates-io]` block at the bottom of `Cargo.toml`, add
 `features = ["patched-servo"]` to the `tauri-runtime-servo` dependency (the
 native-SVG preference only exists on the patched tree), and rebuild. Without the engine patches, build with `COPSE_TAURI_STRIP_CSP=1
-pnpm build:tauri` — stock pinned Servo cannot match CSP `'self'` against
+pnpm build:servo` — stock published Servo cannot match CSP `'self'` against
 `tauri://localhost`, so an enforced policy blocks every subresource.
 
 ## Headless sidecar smoke test (no Servo build needed)
@@ -68,7 +81,7 @@ The sidecar is a plain Node process, so the IPC surface can be exercised
 without any shell or display:
 
 ```bash
-pnpm build && pnpm build:tauri
+pnpm build:servo
 node scripts/smoke-sidecar.mts
 ```
 
