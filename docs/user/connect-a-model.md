@@ -12,12 +12,12 @@ real repository to a hosted model.
 
 ## Three ways in
 
-1. **Type a key in Settings → Providers.** Copse encrypts it with the OS key
-   store (macOS Keychain, Windows DPAPI, or a Linux keyring) when that store is
-   available.
-2. **Scan the environment.** Settings offers an explicit scan of `process.env`
-   and a fixed list of shell startup files. You see masked previews only; nothing
-   is stored until you import a key.
+1. **Type a key in Settings → Providers.** Copse encrypts it with AES-256-GCM
+   under a data key it keeps in the operating system's keyring — the macOS
+   Keychain, Windows Credential Manager, or a Linux Secret Service keyring.
+2. **Scan the environment.** First-run setup and Settings both offer an explicit
+   scan of `process.env` and a fixed list of shell startup files. You see masked
+   previews only; nothing is stored until you import a key.
 3. **Connect a local server.** Point an OpenAI-compatible endpoint at LM Studio,
    Ollama, llama.cpp, Jan, vLLM, or similar. That traffic stays on the machine
    only when the URL you configured is local.
@@ -25,7 +25,7 @@ real repository to a hosted model.
 **You should see** the model picker list at least one model, and a first prompt
 should stream a reply (or a clear provider error).
 
-## If the key store is unavailable
+## If no keyring is available
 
 Copse refuses to persist the key until you explicitly approve **base64
 plaintext** storage. Base64 is recoverable by anyone who can read

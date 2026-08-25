@@ -33,7 +33,7 @@ does not import Claude/Cursor files.
 
 ## D2 — Accept L1 (plaintext API-key fallback)
 
-**Finding.** When OS secure storage is unavailable, Copse may persist a key as
+**Finding.** When no OS keyring is available, Copse may persist a key as
 recoverable base64 after explicit consent.
 
 **Proposed acceptance.** Keep the fallback. Removing it strands Linux/headless
@@ -106,7 +106,7 @@ logging (#656). It is a non-goal for a _hosted_ control plane.
 
 | Item                                                   | Why it is not a D-question                                                                                                                    |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| N1 / #1248                                             | Fix, do not waive. Implemented in #1763.                                                                                                      |
+| N1 / #1248                                             | Fixed, not waived. #1763 merged; #1248 is closed.                                                                                             |
 | Human security review + ledger SHA refresh             | Release-engineering bucket C.                                                                                                                 |
 | Make the repository public (#802)                      | Needs a working download URL.                                                                                                                 |
 | Flip `coming-soon` on copse.dev                        | Same gate as #802.                                                                                                                            |

@@ -41,7 +41,7 @@
             Your workspace stays yours. Here’s exactly where Copse keeps data and when it leaves
             your machine.
           </p>
-          <p class="date">Last updated: 16 August 2026</p>
+          <p class="date">Last updated: 25 August 2026</p>
         </header>
 
         <article class="privacy-content content-surface">
@@ -154,10 +154,14 @@
           <p>
             Keys entered in Settings are written to
             <code>~/.copse/user-data/settings.json</code> (or the profile
-            <code>COPSE_DIR</code> selects). Electron secure storage encrypts them with the OS
-            account's key store when available. If it is unavailable, Copse refuses to persist the
-            key until you explicitly approve base64 plaintext storage. Base64 is recoverable by
-            anyone who can read the file.
+            <code>COPSE_DIR</code> selects). They are encrypted with AES-256-GCM under a random data
+            key that Copse keeps as a single item in the operating system's keyring — the macOS
+            Keychain, Windows Credential Manager, or a Linux Secret Service keyring. That key
+            belongs to the OS user account, not to the Copse profile. Keys sealed by earlier
+            versions with Electron secure storage are still read, and are rewritten in the new
+            format the first time they are used. If no keyring is available, Copse refuses to
+            persist the key until you explicitly approve base64 plaintext storage. Base64 is
+            recoverable by anyone who can read the file.
           </p>
           <p>
             Environment-only keys are not written to settings. The environment-key scan runs only

@@ -11,9 +11,9 @@ description: Fix empty model pickers, unexpected prompts, and a profile that wil
 one from the environment scan, or set a local server URL. Then pick a model in
 the thread header.
 
-**The key will not save.** The OS key store may be unavailable. Copse will ask
+**The key will not save.** The OS keyring may be unavailable. Copse will ask
 before writing a recoverable base64 copy. On Linux, install and unlock a
-supported keyring rather than accepting plaintext if you can.
+Secret Service keyring rather than accepting plaintext if you can.
 
 **A hosted request fails immediately.** Check the provider dashboard, the
 endpoint URL, and that the key has not been rotated. Copse talks to the
