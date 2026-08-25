@@ -1,7 +1,7 @@
 # Decision-log on-disk format (v1)
 
 Durable, append-only audit trail of **control-plane decisions** introduced in
-[#656](https://github.com/jonathanKingston/agent-pane/issues/656). Where the
+[#656](https://github.com/copse-dev/agent-pane/issues/656). Where the
 [thread store](./thread-store-format.md) records _what the agent did_ (tool calls
 and their results), this records the permission layer _around_ those calls —
 tool approvals/denials, the "remember" (sticky-grant) checkbox, sandbox-vs-

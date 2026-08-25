@@ -50,7 +50,7 @@ turndown.remove([
   'picture',
 ])
 
-const FETCH_USER_AGENT = 'Copse/0.1 (+https://github.com/jonathankingston/agent-pane)'
+const FETCH_USER_AGENT = 'Copse/0.1 (+https://github.com/copse-dev/agent-pane)'
 
 export function htmlToMarkdown(html: string): string {
   let content = html
