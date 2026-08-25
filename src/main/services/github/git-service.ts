@@ -1077,7 +1077,13 @@ export async function getDefaultBranch(
   return branch
 }
 
-async function localBranchExists(root: string, branch: string): Promise<boolean> {
+/**
+ * Whether the repository actually holds this branch. Deliberately reads refs
+ * rather than any reported branch name: `getCurrentBranchName` can answer with
+ * a name the repository does not have — the e2e suite mocks it wholesale — so
+ * callers that turn a branch name into real Git work need the ref checked.
+ */
+export async function localBranchExists(root: string, branch: string): Promise<boolean> {
   const { code } = await runGit(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], root)
   return code === 0
 }
