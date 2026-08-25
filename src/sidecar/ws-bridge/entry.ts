@@ -5,5 +5,8 @@
  * the app.js module, so `window.api` is installed first — the same ordering
  * Electron guarantees for its preload.
  */
+// perf-env must precede the preload: it populates the inert `process.env`
+// that perf-bridge reads in a module-scope const.
+import './perf-env.ts'
 import './servo-polyfills.ts'
 import '../../preload/index.ts'
