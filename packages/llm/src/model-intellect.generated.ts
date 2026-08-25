@@ -3,7 +3,7 @@
 // cross-version equating maps. Source of truth: scripts/data/intellect-scores.json.
 // Absent models mean "no sourced measurement yet", not zero.
 // Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)
-// Last synced: 2026-08-18
+// Last synced: 2026-08-25
 
 import type { EquatingMap } from './intellect-equating.ts'
 
@@ -672,11 +672,11 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
   ],
   'deepseek-v3-1-terminus-reasoning': [
     {
-      value: 31.1,
+      value: 31.4,
       indexVersion: 'v4.1',
       source:
-        "Artificial Analysis API (index v4.1), model 'deepseek-v3-1-terminus-reasoning', fetched 2026-08-13",
-      asOf: '2026-08-13',
+        "Artificial Analysis API (index v4.1), model 'deepseek-v3-1-terminus-reasoning', fetched 2026-08-25",
+      asOf: '2026-08-25',
     },
   ],
   'deepseek-v3-2': [
@@ -930,10 +930,10 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
   ],
   'g9v3-39a5b': [
     {
-      value: 31.6,
+      value: 34,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'g9v3-39a5b', fetched 2026-08-13",
-      asOf: '2026-08-13',
+      source: "Artificial Analysis API (index v4.1), model 'g9v3-39a5b', fetched 2026-08-25",
+      asOf: '2026-08-25',
     },
   ],
   'g9v3-3b': [
@@ -1566,6 +1566,14 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source:
         "Artificial Analysis API (index v4.1), model 'glm-5-2-non-reasoning', fetched 2026-08-13",
       asOf: '2026-08-13',
+    },
+  ],
+  'glm-5-3': [
+    {
+      value: 59.5,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'glm-5-3', fetched 2026-08-25",
+      asOf: '2026-08-25',
     },
   ],
   'glm-5-non-reasoning': [
@@ -2468,6 +2476,30 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-08-13',
     },
   ],
+  'grok-4-6-low': [
+    {
+      value: 51.7,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-6-low', fetched 2026-08-25",
+      asOf: '2026-08-25',
+    },
+  ],
+  'grok-4-6-medium': [
+    {
+      value: 59,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-6-medium', fetched 2026-08-25",
+      asOf: '2026-08-25',
+    },
+  ],
+  'grok-4-6-xhigh': [
+    {
+      value: 60,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-6-xhigh', fetched 2026-08-25",
+      asOf: '2026-08-25',
+    },
+  ],
   'grok-4-fast': [
     {
       value: 16.6,
@@ -2906,6 +2938,14 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source:
         "Artificial Analysis API (index v4.1), model 'lfm2-5-1-2b-thinking', fetched 2026-08-13",
       asOf: '2026-08-13',
+    },
+  ],
+  'lfm2-5-2-6b': [
+    {
+      value: 11,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'lfm2-5-2-6b', fetched 2026-08-25",
+      asOf: '2026-08-25',
     },
   ],
   'lfm2-5-8b-a1b': [
@@ -3575,8 +3615,8 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
     {
       value: 6.7,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-08-18",
-      asOf: '2026-08-18',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-08-25",
+      asOf: '2026-08-25',
     },
   ],
   'mixtral-8x7b-instruct': [
@@ -4603,6 +4643,31 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       indexVersion: 'v4.1',
       source: "Artificial Analysis API (index v4.1), model 'qwen3-8-2-4t-a95b', fetched 2026-08-18",
       asOf: '2026-08-18',
+    },
+  ],
+  'qwen3-8-27b': [
+    {
+      value: 52,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-8-27b', fetched 2026-08-25",
+      asOf: '2026-08-25',
+    },
+  ],
+  'qwen3-8-27b-low': [
+    {
+      value: 42.9,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-8-27b-low', fetched 2026-08-25",
+      asOf: '2026-08-25',
+    },
+  ],
+  'qwen3-8-27b-medium': [
+    {
+      value: 44.5,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis API (index v4.1), model 'qwen3-8-27b-medium', fetched 2026-08-25",
+      asOf: '2026-08-25',
     },
   ],
   'qwen3-8-max': [
