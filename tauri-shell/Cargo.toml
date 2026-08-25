@@ -1,0 +1,66 @@
+# The Tauri/Servo shell for the Copse prototype — its own workspace,
+# deliberately outside any parent workspace resolution.
+#
+# `tauri-runtime-servo` is consumed from a sibling checkout of its standalone
+# repository:
+#
+#   git clone https://github.com/copse-dev/tauri-runtime-servo ../../tauri-runtime-servo
+#
+# The path dependency keeps local engine iteration cheap; swap it for
+#   tauri-runtime-servo = { git = "https://github.com/copse-dev/tauri-runtime-servo" }
+# once the crate is pinned rather than co-developed.
+[workspace]
+
+[package]
+name = "copse-tauri-shell"
+version = "0.1.0"
+description = "Copse desktop shell on Tauri + Servo (prototype)"
+edition = "2021"
+rust-version = "1.90"
+license = "Apache-2.0"
+publish = false
+
+[build-dependencies]
+tauri-build = "2"
+
+[dependencies]
+tauri = { version = "2.11", default-features = false, features = [
+  "common-controls-v6",
+] }
+tauri-runtime-servo = { path = "../../tauri-runtime-servo" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# To run with the servo patch series (servo-patches/ in the runtime repo):
+# check the engine crates out beside the repos, apply the series, uncomment
+# this block, and add `features = ["patched-servo"]` to the tauri-runtime-servo
+# dependency above — cargo then builds the whole servo graph from the local
+# trees. Without all of that, the shell builds against stock libservo.
+#
+# One block keyed on `crates-io`, where there used to be three keyed on git
+# sources: as of servo 0.5 the runtime depends on published libservo and servo
+# takes its stylo crates from the registry too, so no git source survives to
+# override. A `[patch."https://github.com/servo/servo.git"]` block against
+# this lockfile would simply go unused.
+#
+# The block is the one the runtime repo's README publishes under "Using a
+# patched Servo", with the paths moved out a level because the checkouts are
+# siblings of the repos rather than of the runtime. That recipe is built in
+# the runtime's own CI, so keep the two in step rather than improvising here.
+#
+# All eight stylo entries are required: overriding `stylo` alone leaves the
+# rest resolving from the registry, which puts a second copy of the selector
+# machinery in the graph and fails to compile. `stylo_derive`, `to_shmem` and
+# `to_shmem_derive` need no entries — the patched crates reach them by path.
+#
+# [patch.crates-io]
+# servo = { path = "../../servo/components/servo" }
+# content-security-policy = { git = "https://github.com/copse-dev/rust-content-security-policy", rev = "fb5fd0f1af7f0c0dc315bf938507290b2e48cdbe" }
+# selectors = { path = "../../stylo/selectors" }
+# servo_arc = { path = "../../stylo/servo_arc" }
+# stylo = { path = "../../stylo/style" }
+# stylo_atoms = { path = "../../stylo/stylo_atoms" }
+# stylo_dom = { path = "../../stylo/stylo_dom" }
+# stylo_malloc_size_of = { path = "../../stylo/malloc_size_of" }
+# stylo_static_prefs = { path = "../../stylo/stylo_static_prefs" }
+# stylo_traits = { path = "../../stylo/style_traits" }
