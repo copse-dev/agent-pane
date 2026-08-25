@@ -8,7 +8,7 @@ import { displayModelLabel } from '@shared/model-display.ts'
 
 /**
  * Experimental, opt-in "advisor strategy" feature (tracked in
- * https://github.com/jonathanKingston/agent-pane/issues/566).
+ * https://github.com/copse-dev/agent-pane/issues/566).
  *
  * Lets the user nominate a larger, higher-intelligence model as an *advisor*
  * that gives strategic guidance mid-task, while the everyday loop (the
