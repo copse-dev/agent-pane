@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { GuardedYoloRegistry } from './guarded-yolo.ts'
+import {
+  GuardedYoloRegistry,
+  activateGuardedYoloForRun,
+  armGuardedYolo,
+  disableGuardedYolo,
+} from './guarded-yolo.ts'
+import {
+  clearReadOutsideProjectGrants,
+  grantReadOutsideProject,
+  hasReadOutsideProjectGrant,
+} from './read-outside-grant.ts'
 
 describe('GuardedYoloRegistry', () => {
   it('is off by default and never restores from persisted settings', () => {
@@ -41,5 +51,33 @@ describe('GuardedYoloRegistry', () => {
     registry.arm('thread-1')
     assert.equal(registry.state('thread-1', true).containment, 'project-sandbox')
     assert.equal(registry.state('thread-1', false).containment, 'unsandboxed')
+  })
+})
+
+describe('Guarded YOLO implied outside-read grant', () => {
+  it('counts an active YOLO thread as holding the read grant until disabled', () => {
+    clearReadOutsideProjectGrants()
+    disableGuardedYolo('thread-read')
+    assert.equal(hasReadOutsideProjectGrant('thread-read'), false)
+
+    armGuardedYolo('thread-read')
+    assert.equal(hasReadOutsideProjectGrant('thread-read'), false, 'armed is not yet active')
+
+    assert.equal(activateGuardedYoloForRun('thread-read'), true)
+    assert.equal(hasReadOutsideProjectGrant('thread-read'), true)
+
+    disableGuardedYolo('thread-read')
+    assert.equal(hasReadOutsideProjectGrant('thread-read'), false)
+  })
+
+  it('keeps an explicit approval grant after YOLO is disabled', () => {
+    clearReadOutsideProjectGrants()
+    disableGuardedYolo('thread-keep')
+    grantReadOutsideProject('thread-keep')
+    armGuardedYolo('thread-keep')
+    activateGuardedYoloForRun('thread-keep')
+    disableGuardedYolo('thread-keep')
+    assert.equal(hasReadOutsideProjectGrant('thread-keep'), true)
+    clearReadOutsideProjectGrants()
   })
 })

@@ -1,3 +1,5 @@
+import { isGuardedYoloActive } from './guarded-yolo.ts'
+
 /**
  * Session-only, thread-scoped "may read outside the project" ledger.
  *
@@ -5,6 +7,11 @@
  * prompt's primary button, rather than its "Approve this command" one. Nothing
  * is read from or written to settings: a grant dies with the process, so a
  * restart can never resurrect one, and it is never shared between threads.
+ *
+ * An active Guarded YOLO thread also counts as holding the grant: that mode
+ * pre-arms the same outside-read authority (credential / `~` / `/` refusals
+ * still apply on every later command). Disabling YOLO drops this implied grant;
+ * an explicit approval grant is independent and survives.
  *
  * The grant authorises no command by itself. Every later command is re-analysed
  * by `read-outside-project.ts` and must independently prove it is a plain read
@@ -24,7 +31,7 @@ export function grantReadOutsideProject(threadId: string): void {
 }
 
 export function hasReadOutsideProjectGrant(threadId: string | null): boolean {
-  return threadId !== null && grantedThreads.has(threadId)
+  return threadId !== null && (grantedThreads.has(threadId) || isGuardedYoloActive(threadId))
 }
 
 /** Drop every grant. For tests and teardown; not wired to any user action. */

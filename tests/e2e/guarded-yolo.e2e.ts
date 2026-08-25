@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
@@ -5,6 +8,7 @@ import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { describeSkipInCi } from './helpers/ci-gate.ts'
 
 const PROJECT_ID = 'e2e-guarded-yolo-project'
+let workspaceRoot = ''
 
 async function waitForAgentIdle(timeoutMs = 60_000): Promise<void> {
   await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
@@ -28,6 +32,7 @@ async function enableGuardedYolo(captureWarning = false): Promise<void> {
   await expect(dialog.$('.approval-heading')).toHaveText('Enable Guarded YOLO for this thread?')
   const body = await dialog.$('.approval-body').getText()
   expect(body).toContain('will run without approval in this thread')
+  expect(body).toContain('GitHub CLI writes')
   expect(body).toContain('deterministic host-owned checker')
   expect(body).toContain('stays enabled for this thread until you disable it or restart the app')
   if (captureWarning) {
@@ -53,8 +58,9 @@ async function enableGuardedYolo(captureWarning = false): Promise<void> {
 describeSkipInCi('Guarded YOLO shell mode', function () {
   this.timeout(120_000)
   before(async () => {
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-guarded-yolo-'))
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, {
+    seedEmptyProject(workspaceRoot, PROJECT_ID, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
@@ -64,6 +70,7 @@ describeSkipInCi('Guarded YOLO shell mode', function () {
 
   after(() => {
     resetUserData()
+    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
   it('requires explicit opt-in and stays active for the thread across turns', async () => {
@@ -77,6 +84,7 @@ describeSkipInCi('Guarded YOLO shell mode', function () {
     const bannerText = await banner.getText()
     expect(bannerText).toContain('active for this thread')
     expect(bannerText).toMatch(/Project sandbox|No OS sandbox/)
+    expect(bannerText).toMatch(/GitHub writes still ask/)
     await saveElementScreenshot('.guarded-yolo-banner', 'guarded-yolo-active.png')
 
     await waitForAgentIdle()

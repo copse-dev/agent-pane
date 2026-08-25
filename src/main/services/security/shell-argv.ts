@@ -118,6 +118,7 @@ export const PASS_THROUGH_WRAPPERS: ReadonlyMap<string, WrapperSpec> = new Map([
   ['ionice', { valueFlags: new Set(['-c', '--class', '-n', '--classdata', '-p', '--pid']) }],
   ['command', {}],
   ['builtin', {}],
+  ['exec', {}],
   ['nohup', {}],
   [
     'sudo',
