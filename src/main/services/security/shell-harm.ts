@@ -9,6 +9,9 @@ import {
   shellSegments,
   unwrapWrappers,
 } from './shell-argv.ts'
+import { classifyGhSegment } from './auto-approval.ts'
+import { splitSegments } from './command-routing.ts'
+import { analyzeReadOutsideProject } from './read-outside-project.ts'
 import {
   REASON_FIND_DELETE,
   REASON_RECURSIVE_DELETE,
@@ -1058,6 +1061,74 @@ function inspectDestructiveVcs(normalized: string, out: MutableDecision): void {
   }
 }
 
+/**
+ * Writing / opaque `gh` forms stay behind a confirmation under Guarded YOLO.
+ * Known read-only pairs (`gh pr view`, `gh pr diff`, …) stay routine — same
+ * allow-list the auto-approval classifier uses.
+ */
+function inspectGithubCliWrites(command: string, out: MutableDecision): void {
+  for (const rawArgv of shellSegments(command)) {
+    const argv = unwrapWrappers(rawArgv)
+    if (commandName(argv[0]) !== 'gh') continue
+    if (classifyGhSegment(argv) === 'read') continue
+    addUnique(out.prompt, 'GitHub CLI write or mutating call requires confirmation')
+    return
+  }
+}
+
+function isRefusedOutsideReadBlocker(blocker: string): boolean {
+  return (
+    blocker.startsWith('reads a credential') ||
+    blocker.startsWith('reads the whole') ||
+    blocker.startsWith('reads a parent of the home')
+  )
+}
+
+/**
+ * True when analysis says the head is not a plain read (write/move/wrapper).
+ * Scope noise like `needs more than…` (e.g. `.ssh` matching an ssh/scp regex)
+ * must NOT suppress the credential/breadth hard-deny.
+ */
+function isNonReadCommandShapeBlocker(blocker: string): boolean {
+  return (
+    blocker.startsWith('runs `') ||
+    blocker.includes('asked to write or execute') ||
+    blocker.includes('which is not a plain read') ||
+    blocker.includes('changes how the command runs')
+  )
+}
+
+/**
+ * Guarded YOLO auto-runs eligible outside-project reads, but credential targets
+ * and whole-home / filesystem-root breadth stay hard-refused — the same shapes
+ * `read-outside-project.ts` never grants.
+ *
+ * Only plain-read heads get this hard deny. Writes/moves that merely *name*
+ * a credential path still use the existing prompt path (`cp` into `~/.ssh`,
+ * `mv ~/.ssh …`); `analyzeReadOutsideProject` tags those paths as "reads a
+ * credential…" even when the head is not a read.
+ */
+function inspectRefusedOutsideReads(
+  command: string,
+  context: ShellHarmContext,
+  out: MutableDecision,
+): void {
+  if (!context.workspaceRoot) return
+  // Judge each top-level command independently. A non-read sibling must not
+  // launder a credential read (`cat ~/.ssh/id && touch marker`) by contributing
+  // a whole-line "not a plain read" blocker that suppresses the refusal.
+  const segments = splitSegments(command)
+  for (const segment of segments.length > 0 ? segments : [command]) {
+    const analysis = analyzeReadOutsideProject(segment, context.workspaceRoot, {
+      homeDir: context.homeDir,
+    })
+    const refused = analysis.blockers.filter(isRefusedOutsideReadBlocker)
+    if (refused.length === 0) continue
+    if (analysis.blockers.some(isNonReadCommandShapeBlocker)) continue
+    for (const blocker of refused) addUnique(out.deny, blocker)
+  }
+}
+
 function mergeDecision(out: MutableDecision, decision: ShellHarmDecision): void {
   const target =
     decision.action === 'deny' ? out.deny : decision.action === 'prompt' ? out.prompt : null
@@ -1147,6 +1218,8 @@ function assess(
   inspectDestructiveVcs(normalized, out)
 
   if (language === 'shell') {
+    inspectGithubCliWrites(inspectableCommand, out)
+    inspectRefusedOutsideReads(inspectableCommand, context, out)
     inspectCommandLine(inspectableCommand, context, out, depth, seenScripts)
   }
 
