@@ -11,13 +11,16 @@
  *   4. `dist/renderer/tauri.html` — index.html with the bridge script injected
  *                                  and the CSP widened for the loopback WS.
  *
- * Run `pnpm build` first (this script checks); then `pnpm build:tauri`; then
- * `cd tauri-shell && cargo run`. See docs/plans/tauri-servo-migration.md.
+ * Not an entry point: `scripts/build.mts` imports this at the end of a
+ * `--servo` build, so the artifacts above are assembled from the ones it has
+ * just emitted. Run `pnpm build:servo`, then `cd tauri-shell && cargo run`.
+ * See docs/plans/tauri-servo-migration.md.
  */
 import * as esbuild from 'esbuild'
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, basename } from 'node:path'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
+import { MAIN_EXTERNALS } from './main-externals.mts'
 
 const sharedAlias = {
   '@shared': resolve('./src/shared'),
@@ -27,7 +30,7 @@ const sharedAlias = {
 }
 
 if (!existsSync('dist/renderer/index.html')) {
-  console.error('dist/renderer is missing — run `pnpm build` before `pnpm build:tauri`.')
+  console.error('dist/renderer is missing — build the app with `pnpm build:servo`.')
   process.exit(1)
 }
 
@@ -91,17 +94,9 @@ const nodeOpts = {
   bundle: true,
   platform: 'node' as const,
   format: 'cjs' as const,
-  external: [
-    // Same externals as build.mts minus `electron`, which the sidecar aliases
-    // to its shim instead of leaving external.
-    '@anthropic-ai/sandbox-runtime',
-    'shell-quote',
-    'node-pty',
-    'jsdom',
-    '@mozilla/readability',
-    'turndown',
-    'electron-updater',
-  ],
+  // The main process's externals minus `electron`, which the sidecar aliases
+  // to its shim instead of leaving external.
+  external: MAIN_EXTERNALS.filter((name) => name !== 'electron'),
   sourcemap: true,
   target: 'node22',
   define,

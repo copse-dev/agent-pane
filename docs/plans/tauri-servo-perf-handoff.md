@@ -63,7 +63,7 @@ sudo apt-get install -y libdbus-1-dev libegl1-mesa-dev libfontconfig1-dev \
 export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
 
 cd agent-pane
-pnpm install && pnpm build && pnpm build:tauri   # web + sidecar artifacts
+pnpm install && pnpm build:servo                 # web + sidecar artifacts
 cd tauri-shell
 cargo build --release        # compiles all of Servo: ~20 GB target/, 30–60 min
 ```
@@ -106,13 +106,13 @@ faster — measure, don't assume.
 
 - `dist/renderer` is **embedded into the Rust binary at compile time**
   (`tauri::generate_context!`). Any change to renderer artifacts (including
-  `pnpm build:tauri` regenerating `tauri.html`) requires a `cargo build` for
+  `pnpm build:servo` regenerating `tauri.html`) requires a `cargo build` for
   the shell to see it.
 - Never judge a cargo build via `... 2>&1 | tail` alone — the pipe swallows
   the exit code. Use `; exit ${PIPESTATUS[0]}` or check `echo $?`.
 - Shell windows are born visible on Linux (an unmapped GTK window has no X11
   handle for Servo's surface); don't add `show: false` flows.
-- `COPSE_TAURI_STRIP_CSP=1` on `pnpm build:tauri` reproduces the old
+- `COPSE_TAURI_STRIP_CSP=1` on `pnpm build:servo` reproduces the old
   no-CSP tauri.html for _unpatched_-engine runs; with the patch series applied
   leave it unset so both stacks run with a real CSP.
 

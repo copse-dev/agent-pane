@@ -15,7 +15,7 @@
     "filter:screenshots": "node scripts/filter-screenshots.mts",
     "build": "node scripts/build.mts",
     "build:demo": "node scripts/build.mts --demo",
-    "build:tauri": "node scripts/build-tauri.mts",
+    "build:servo": "node scripts/build.mts --servo",
     "smoke:tauri-sidecar": "node scripts/smoke-sidecar.mts",
     "build:release": "COPSE_RELEASE=1 node scripts/build.mts",
     "generate:icon": "node scripts/generate-icon.mts",
