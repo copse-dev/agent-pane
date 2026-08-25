@@ -30,29 +30,31 @@ differences, not app differences.
 git clone -b claude/tauri-servo-prototype-8ugtq4 https://github.com/copse-dev/agent-pane
 git clone https://github.com/copse-dev/tauri-runtime-servo
 
-# Servo at the pinned rev + the validated patch series (see its README)
-git clone https://github.com/servo/servo
-git -C servo checkout -b tauri-runtime-patches f4dde2701bacd4972e6cfa319a3f0cbc9be21f64
-git -C servo am ../tauri-runtime-servo/servo-patches/00*.patch
+# Servo at the rev behind the published release the runtime resolves, plus the
+# validated patch series (see servo-patches/README.md in the runtime repo)
+git clone https://github.com/copse-dev/servo
+git -C servo checkout -b tauri-runtime-patches 77fccacc1f1fdce10498d50173aafaa09d02879e
+git -C servo am ../tauri-runtime-servo/servo-patches/0*.patch
 
-# Stylo at the rev pinned in servo/Cargo.lock, with the stylo patch series
-git clone https://github.com/servo/stylo
-git -C stylo checkout 2d289c14fdf46952d52cabce63b1f0dc55b2ccde
+# Stylo at the rev behind the release that servo resolves, with its own series.
+# Plain diffs behind a prose preamble, so `git am` rejects them.
+git clone https://github.com/copse-dev/stylo
+git -C stylo checkout -b tauri-runtime-patches 67faaab3ff7aa66780ec1d0f51ca47e177b812d3
 for p in tauri-runtime-servo/servo-patches/stylo-*.patch; do
-  git -C stylo apply "../$p"
+  git -C stylo apply --3way "../$p"
 done
-
-# CSP crate at the published 0.8.1 rev, with 'self'-on-custom-schemes
-git clone https://github.com/rust-ammonia/rust-content-security-policy
-git -C rust-content-security-policy checkout 6a523bab5e6a1c484857f99dc28b7ce417012d33
-git -C rust-content-security-policy apply ../tauri-runtime-servo/servo-patches/csp-0001-match-self-for-custom-scheme-origins.patch
 ```
 
-Then uncomment **all three** `[patch]` blocks at the bottom of
-`agent-pane/tauri-shell/Cargo.toml` (servo, crates-io/content-security-policy,
-stylo — the stylo block redirects eleven crates; uncomment every line of it)
-and add `features = ["patched-servo"]` to the `tauri-runtime-servo`
-dependency in the same file.
+The engine clones are the org's own forks: the revisions are the ones behind
+the published `servo` and `stylo` releases either way, and a fork we control
+cannot have them force-pushed or garbage-collected out from under this
+recipe. The CSP crate needs no clone at all — its two patches live as commits
+on `copse-dev/rust-content-security-policy`, which the override names by rev.
+
+Then uncomment the single `[patch.crates-io]` block at the bottom of
+`agent-pane/tauri-shell/Cargo.toml` — servo, the CSP fork, and all eight stylo
+entries; uncomment every line of it — and add `features = ["patched-servo"]`
+to the `tauri-runtime-servo` dependency in the same file.
 
 ### 2.2 System deps and build
 
