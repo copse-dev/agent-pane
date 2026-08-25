@@ -252,6 +252,23 @@ describe('automation attention grouping', function () {
       // Message counts are deliberately absent — `loadProject` returns metadata
       // only, so a count read here is always 0 and would read as "no user
       // message was ever added" even on a run that dispatched normally.
+      //
+      // `activeProjectSelected` covers the remaining silent exit. Four separate
+      // guards abandon the start with no log and no state change when the
+      // renderer's `activeProjectId` is not this project — `receiveTrigger`
+      // before it ever calls `startThread`, and `startThread` itself on entry
+      // and twice more across its awaits. Those look identical to
+      // `isPendingAutomation` rejecting the thread, so read the one thing the
+      // DOM does expose: a `.chat-row` is given `selected` only when
+      // `project.id === activeProjectId && thread.id === activeThreadId`
+      // (projects-pane.ts), and the seed pins `activeThreadId` to
+      // `regular-chat`. So a selected `regular-chat` row proves the renderer
+      // agrees on the active project, and its absence indicts those guards.
+      //
+      // Caveat worth keeping in mind when reading the result: this record comes
+      // from disk, while the guards above read the in-memory store, so a lag
+      // between the two would show as a kept draft on a thread the store had
+      // already advanced.
       const threadRecord = await browser.execute(
         async ([projectId, threadId]) => {
           const host = window as unknown as {
@@ -269,6 +286,8 @@ describe('automation attention grouping', function () {
           if (!thread)
             return `started thread absent from loadProject (${String(loaded.length)} thread(s))`
           return JSON.stringify({
+            activeProjectSelected:
+              document.querySelector('.chat-row.selected[data-thread-id="regular-chat"]') !== null,
             status: thread.status ?? '<unset>',
             // The three `isPendingAutomation` terms, so a silent early return
             // names the term that rejected it.
