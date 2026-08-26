@@ -30,7 +30,9 @@
   border-top: none;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: var(--spacing-md);
-  background: var(--bg-base);
+  /* Transparent over #input-bar's frosted ::before — an opaque fill here would
+     recreate the black bounding box the shell frost exists to avoid. */
+  background: transparent;
   font-family: inherit;
   font-size: inherit;
   outline: none;
@@ -500,7 +502,8 @@
   padding: var(--spacing-xs) var(--spacing-md);
   font-size: 11px;
   color: var(--text-muted);
-  background: var(--bg-elevated);
+  /* See .prompt-input — keep the frosted shell visible through the footer. */
+  background: transparent;
   border-top: 1px solid var(--border);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
