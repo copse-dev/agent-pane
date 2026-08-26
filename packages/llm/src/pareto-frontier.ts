@@ -54,6 +54,17 @@ export interface FrontierCandidate {
   /** Covered by a subscription (e.g. "Claude Max"): ~$0 marginal, fixed fee. */
   plan?: string
   /**
+   * A route that can consume a first-party subscription plan rather than API
+   * credit. Kept distinct from `plan`: this names the billing path even when
+   * live usage is unavailable or its governing window is exhausted. The host
+   * resolves it against the current plan snapshot before setting `plan`.
+   */
+  planAccess?: {
+    provider: 'claude' | 'codex'
+    /** Canonical model id used to select provider-specific usage windows. */
+    modelId: string
+  }
+  /**
    * Plan-coverage detail for the hover when `plan` is set: how much of the
    * governing window is used, its reset, and the price you'd pay off-plan (the
    * blended rate this candidate would otherwise plot at). The renderer sets
@@ -195,7 +206,10 @@ export function groupByModelIdentity(
   const out: FrontierCandidate[] = []
   for (const list of groups.values()) {
     const sorted = [...list].sort(
-      (a, b) => a.costPerMTok - b.costPerMTok || a.id.localeCompare(b.id),
+      (a, b) =>
+        a.costPerMTok - b.costPerMTok ||
+        Number(b.planAccess !== undefined) - Number(a.planAccess !== undefined) ||
+        a.id.localeCompare(b.id),
     )
     const best = sorted[0]
     if (!best) continue
