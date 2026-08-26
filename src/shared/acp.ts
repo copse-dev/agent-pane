@@ -242,9 +242,28 @@ const CLAUDE_ACP_COMMANDS: ReadonlySet<string> = new Set(
     .map((agent) => agent.command),
 )
 
+const CODEX_ACP_COMMANDS: ReadonlySet<string> = new Set(
+  [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS]
+    .filter((agent) => canonicalAcpAgentId(agent.id) === 'codex-acp')
+    .map((agent) => agent.command),
+)
+
+export type AcpPlanProvider = 'claude' | 'codex'
+
 /** Whether a configured ACP agent wraps Claude, matched by its spawn command. */
 export function isClaudeAcpAgent(agent: Pick<AcpAgentConfig, 'command'>): boolean {
   return CLAUDE_ACP_COMMANDS.has(agent.command)
+}
+
+/**
+ * Subscription provider used by a known ACP agent, or `null` for agents whose
+ * billing path Copse cannot identify. Match commands rather than persisted ids:
+ * custom labels and legacy ids can still launch the same plan-backed adapter.
+ */
+export function acpPlanProvider(agent: Pick<AcpAgentConfig, 'command'>): AcpPlanProvider | null {
+  if (isClaudeAcpAgent(agent)) return 'claude'
+  if (CODEX_ACP_COMMANDS.has(agent.command)) return 'codex'
+  return null
 }
 
 /**

@@ -135,6 +135,27 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('frosts the docked composer instead of an opaque black slab', () => {
+    const titlebar = read('titlebar.css')
+    const inputBar = read('input-bar.css')
+    assert.ok(
+      declares(titlebar, '#input-bar', /background:\s*transparent/),
+      '#input-bar must clear its solid fill so it does not read as a black bounding box',
+    )
+    assert.ok(
+      declares(titlebar, '#input-bar::before', /backdrop-filter:\s*blur\(/),
+      '#input-bar must frost transcript behind it via backdrop-filter on ::before',
+    )
+    assert.ok(
+      declares(inputBar, '.prompt-input', /background:\s*transparent/),
+      '.prompt-input must stay transparent over the frosted shell',
+    )
+    assert.ok(
+      declares(inputBar, '.input-footer', /background:\s*transparent/),
+      '.input-footer must stay transparent over the frosted shell',
+    )
+  })
+
   it('auto-sizes the composer to its content', () => {
     const css = read('input-bar.css')
     // The composer is a contenteditable (composer-editor.ts), which grows with
