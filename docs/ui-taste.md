@@ -498,6 +498,13 @@ real CSS `border: 1px solid var(--border)`; the centered variant must **clear th
 just `border-top` leaves left/right/bottom borders stacked under that ring — a thicker, uneven
 outline. Specs: `modern-css.test.ts`, `tests/demo/chat-layout-styling.demo.ts`.
 
+The docked (and centered) composer must stay **frosted, not opaque**. A solid `--bg-base` fill on
+`#input-bar` / `.prompt-input` / `.input-footer` reads as a black bounding box clipping the chat
+gradient and any transcript that passes behind the floating card. Clear those fills, paint a
+semi-transparent wash plus `backdrop-filter` on `#input-bar::before`, and lift direct children so
+typed text stays sharp — same pattern as `.settings-buttons`. Spec:
+[`tests/e2e/user-prompt-sticky.e2e.ts`](../tests/e2e/user-prompt-sticky.e2e.ts).
+
 ## Browser Tabs header and URL toolbar share one chrome band
 
 In browser mode the left `.browser-tabs-list-header` ("Tabs") and the right `.browser-toolbar`

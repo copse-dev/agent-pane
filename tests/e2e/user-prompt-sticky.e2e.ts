@@ -31,13 +31,19 @@ describe('latest user prompt anchor', () => {
       const first = document.querySelector('[data-message-id="msg-user-sticky-first"]')
       const latest = document.querySelector('[data-message-id="msg-user-sticky-latest"]')
       const answer = document.querySelector('[data-message-id="msg-assistant-sticky-result"]')
-      if (!list || !first || !latest || !answer) return { error: 'missing sticky fixture element' }
+      const composer = document.getElementById('input-bar')
+      const prompt = document.querySelector('.prompt-input')
+      const footer = document.querySelector('.input-footer')
+      if (!list || !first || !latest || !answer || !composer || !prompt || !footer) {
+        return { error: 'missing sticky fixture element' }
+      }
 
       const listRect = list.getBoundingClientRect()
       const firstRect = first.getBoundingClientRect()
       const latestRect = latest.getBoundingClientRect()
       const answerRect = answer.getBoundingClientRect()
       const userMessages = [...list.querySelectorAll('.msg-user')]
+      const before = getComputedStyle(composer, '::before')
       return {
         listTop: listRect.top,
         listBottom: listRect.bottom,
@@ -51,6 +57,11 @@ describe('latest user prompt anchor', () => {
           (message) => getComputedStyle(message).position === 'sticky',
         ).length,
         scrollable: list.scrollHeight > list.clientHeight,
+        composerBackground: getComputedStyle(composer).backgroundColor,
+        composerBeforeContent: before.content,
+        composerBeforeBackdrop: before.backdropFilter || before.webkitBackdropFilter,
+        promptBackground: getComputedStyle(prompt).backgroundColor,
+        footerBackground: getComputedStyle(footer).backgroundColor,
       }
     })
 
@@ -58,6 +69,11 @@ describe('latest user prompt anchor', () => {
     expect(layout.scrollable).toBe(true)
     expect(layout.latestPosition).toBe('sticky')
     expect(layout.stickyUserCount).toBe(1)
+    expect(layout.composerBackground).toBe('rgba(0, 0, 0, 0)')
+    expect(layout.promptBackground).toBe('rgba(0, 0, 0, 0)')
+    expect(layout.footerBackground).toBe('rgba(0, 0, 0, 0)')
+    expect(layout.composerBeforeContent).not.toBe('none')
+    expect(layout.composerBeforeBackdrop).toMatch(/blur\(/)
     expect(
       Math.abs(layout.latestTop - (layout.listTop + layout.listPaddingTop - 16)),
     ).toBeLessThanOrEqual(1)

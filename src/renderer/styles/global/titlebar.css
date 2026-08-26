@@ -16,12 +16,31 @@
   transform: translateX(-50%);
   z-index: 30;
   flex-shrink: 0;
-  background: var(--bg-base);
+  /* Frosted, not opaque: a solid --bg-base slab over the chat reads as a black
+     bounding box clipping transcript that scrolls behind the floating card.
+     Same rule as `.settings-buttons` — cover without hiding. Wash + blur live
+     on ::before so .prompt-input / footer children stay sharp. */
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   /* Cast the docked composer's shadow up onto the chat gradient so it reads
      as floating above the conversation, matching the centered variant. */
   box-shadow: var(--shadow-composer);
+}
+#input-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  background: color-mix(in srgb, var(--bg-base) 78%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+#input-bar > * {
+  position: relative;
+  z-index: 1;
 }
 .titlebar {
   -webkit-app-region: drag;
