@@ -1466,6 +1466,14 @@ describe('formatGuardedYoloHarmPromptAdvice', () => {
     assert.ok(advice.includes('script contents could not be inspected safely: foo.sh'))
     assert.ok(advice.includes('Guarded YOLO cannot skip this confirmation'))
   })
+
+  it('caps enormous operands and total advice length', () => {
+    const hugeOperand = `script contents could not be inspected safely: ${'a/'.repeat(500)}z`
+    const advice = formatGuardedYoloHarmPromptAdvice([hugeOperand, hugeOperand, hugeOperand])
+    assert.ok(advice.length <= 1300)
+    assert.ok(advice.includes('…'))
+    assert.ok(advice.endsWith('Approve this bounded destructive action once?'))
+  })
 })
 
 describe('formatEphemeralRunnerPromptParts', () => {
