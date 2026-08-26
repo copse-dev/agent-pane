@@ -259,7 +259,7 @@
   word-break: break-word;
   font-size: var(--font-size-sm);
   color: var(--text-muted);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
 }
 .message-reasoning-text p {
   margin: 0;
@@ -507,7 +507,7 @@
   > .message-body
   > .message-text {
   font-size: var(--font-size-md);
-  line-height: 1.6;
+  line-height: var(--line-height-base);
 }
 .msg-error {
   background: rgba(244, 135, 113, 0.1);

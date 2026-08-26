@@ -8,7 +8,7 @@
 .confirm-dialog-detail {
   margin: 0 0 var(--spacing-lg);
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
   white-space: pre-wrap;
 }
 /* Button look lives on `.ui-btn*` (ui.css); this host only keeps the legacy hook. */

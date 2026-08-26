@@ -232,7 +232,7 @@ dialog.settings-overlay::backdrop {
   /* Averia ships a single 400 weight; asking for 600 only invites Chromium's
      synthetic bold, which smears the serifs at this size. */
   font-weight: 400;
-  line-height: 1.2;
+  line-height: var(--line-height-base);
   margin-bottom: var(--spacing-md);
 }
 .settings-section-desc,
@@ -240,7 +240,7 @@ dialog.settings-overlay::backdrop {
   color: var(--text-secondary);
   font-size: var(--font-size-base);
   margin-bottom: var(--spacing-lg);
-  line-height: 1.55;
+  line-height: var(--line-height-base);
 }
 /* The section blurb answers "what is this page", so it sits a step above the
    per-group blurbs and takes a full group-sized gap to the first heading. */
@@ -267,7 +267,7 @@ dialog.settings-overlay::backdrop {
 .field-hint {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
 }
 /* Live advisor-pair assessment under the advisor model picker: colour tracks
    how much lift the model annotations expect from the pairing. */
@@ -444,7 +444,7 @@ dialog.settings-overlay::backdrop {
   font-family: var(--font-display);
   font-size: calc(20px * var(--ui-scale));
   font-weight: 400;
-  line-height: 1.25;
+  line-height: var(--line-height-base);
   margin-bottom: var(--spacing-md);
 }
 /* A field and its own controls stay tight; the gap belongs *between* fields. */
@@ -908,7 +908,7 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-base);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
-  line-height: 1.3;
+  line-height: var(--line-height-base);
 }
 .provider-save:hover:not(:disabled),
 .provider-secondary:hover:not(:disabled),
@@ -2044,7 +2044,7 @@ dialog.settings-overlay::backdrop {
 .plugin-row-desc {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
   word-break: break-word;
 }
 .plugin-chips {
