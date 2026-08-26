@@ -29,7 +29,7 @@ import {
   getGitStatus,
   isInsideGitWorkTree,
   localBranchExists,
-  repositoryHasSubmodules,
+  findSubmoduleDeclaration,
 } from './github/git-service.ts'
 
 export interface PrepareThreadCheckoutInput {
@@ -52,6 +52,8 @@ interface CheckoutInspection {
   defaultBranch: string | null
   isDirty: boolean
   hasSubmodules: boolean
+  /** The `.gitmodules` behind `hasSubmodules`, surfaced when a checkout is refused. */
+  submoduleDeclaration?: string | null
 }
 
 /**
@@ -154,18 +156,19 @@ async function inspectProject(project: Project, isLocal: boolean): Promise<Check
       hasSubmodules: false,
     }
   }
-  const [currentBranch, defaultBranch, status, hasSubmodules] = await Promise.all([
+  const [currentBranch, defaultBranch, status, submoduleDeclaration] = await Promise.all([
     getCurrentBranchName(project.path),
     getDefaultBranch(project.path),
     getGitStatus(project.path),
-    repositoryHasSubmodules(project.path),
+    findSubmoduleDeclaration(project.path),
   ])
   return {
     isGitRepository: true,
     currentBranch,
     defaultBranch,
     isDirty: Boolean(status && (status.staged.length > 0 || status.unstaged.length > 0)),
-    hasSubmodules,
+    hasSubmodules: submoduleDeclaration !== null,
+    submoduleDeclaration,
   }
 }
 
@@ -300,7 +303,16 @@ export function createThreadCheckoutTransaction(
       })
 
       if (decision.checkoutMode === 'blocked') {
-        throw new Error(`Isolated worktree is unavailable: ${decision.reason.replaceAll('-', ' ')}`)
+        // Name the evidence. `submodules unsupported` alone cannot be checked
+        // against the filesystem afterwards, and an automation swallows this
+        // error into a thread that simply never starts.
+        const detail =
+          decision.reason === 'submodules-unsupported' && inspection.submoduleDeclaration
+            ? ` (${inspection.submoduleDeclaration}, for project ${project.path})`
+            : ''
+        throw new Error(
+          `Isolated worktree is unavailable: ${decision.reason.replaceAll('-', ' ')}${detail}`,
+        )
       }
       if (decision.checkoutMode === 'shared') {
         await dependencies.updateMeta(input.projectId, input.threadId, {
