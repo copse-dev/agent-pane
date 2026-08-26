@@ -17,6 +17,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 const ENABLED = process.env['COPSE_PERF'] === '1'
+/**
+ * Drive a scripted chat turn once the app is up (`COPSE_PERF_AUTOPILOT=1`).
+ * Exposed through the same bridge as the tracer because it is the same kind of
+ * thing — a debug-branch hook that must reach the renderer identically under
+ * Electron and under Servo, where there is no other way in.
+ */
+const AUTOPILOT = process.env['COPSE_PERF_AUTOPILOT'] === '1'
+/** Surface sweep instead of a chat turn (`COPSE_PERF_SWEEP=1`). */
+const SWEEP = process.env['COPSE_PERF_SWEEP'] === '1'
 const ORIGIN = Number(process.env['COPSE_PERF_ORIGIN'] ?? Date.now())
 
 type Detail = Record<string, string | number | boolean | undefined>
@@ -91,6 +100,8 @@ export function exposePerfBridge(): void {
   if (!ENABLED) return
   contextBridge.exposeInMainWorld('__copsePerf', {
     enabled: true,
+    autopilot: AUTOPILOT,
+    sweep: SWEEP,
     mark(name: string, detail?: Detail) {
       send({ t: since(), kind: 'mark', src: 'renderer', name, ...(detail ? { detail } : {}) })
     },

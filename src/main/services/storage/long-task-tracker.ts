@@ -8,7 +8,7 @@ import { projectStoreNamespaceDir } from './project-namespace.ts'
 
 /**
  * Experimental, opt-in "long-horizon tasks" feature (tracked in
- * https://github.com/jonathanKingston/agent-pane/issues/558).
+ * https://github.com/copse-dev/agent-pane/issues/558).
  *
  * Some work within a single PR is a grind, not a one-shot: clearing a large
  * lint/type-safety backlog (cf. #508), or a deep research/investigation pass.

@@ -1,10 +1,18 @@
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { Project, Thread } from '@shared/types'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
+import { setGitAvailableForTest } from './tool-availability.ts'
+import { clearAllowedWorkspaceRootsForTest } from './workspace.ts'
+import { allocateThreadWorktree, readThreadWorktreeRecoveryMetadata } from './worktree-manager.ts'
 import {
   createThreadCheckoutPreview,
   createThreadCheckoutTransaction,
+  recoverUnpersistedWorktree,
   type ThreadCheckoutTransactionDependencies,
 } from './thread-checkout-transaction.ts'
 
@@ -62,6 +70,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
       throw new Error('unexpected allocation')
     },
     recoverUnpersisted: async () => null,
+    branchExists: async () => true,
     validate: async ({ worktree }) => ({ branch: worktree.branch }),
     retire: async () => undefined,
     serialize: serial(),
@@ -132,11 +141,11 @@ describe('first-message checkout transaction', () => {
     assert.equal(getThread().gitBranch, 'main')
   })
 
-  it('bases an automatic worktree on the default branch, not the live checkout', async () => {
+  it('bases an automatic worktree on the branch selected in the blank-thread picker', async () => {
     const allocations: Array<{ baseBranch: string; seedFromDirtyProject: boolean }> = []
     const { prepare } = fixture({
-      // The user's checkout is parked on the previous thread's branch, with
-      // that thread's uncommitted work still in it.
+      // The picker changes the live checkout, so this is the branch the user
+      // sees selected when they send the first message.
       inspect: async () => ({
         isGitRepository: true,
         currentBranch: 'copse/previous-thread',
@@ -165,7 +174,88 @@ describe('first-message checkout transaction', () => {
     })
 
     assert.equal(result.checkoutMode, 'worktree')
-    assert.deepEqual(allocations, [{ baseBranch: 'main', seedFromDirtyProject: false }])
+    assert.deepEqual(allocations, [
+      { baseBranch: 'copse/previous-thread', seedFromDirtyProject: true },
+    ])
+  })
+
+  it('falls back to the default branch when the reported current branch is not a ref', async () => {
+    // `currentBranch` is a reported name, not a ref. The e2e suite replaces it
+    // wholesale (COPSE_PANEL_MOCK_BRANCH=work), and allocation rejects a base
+    // that resolves to nothing — so trusting the report unverified throws
+    // 'Base branch "work" does not exist in this repository' and leaves the
+    // thread with no checkout and no transcript.
+    const allocations: string[] = []
+    const probed: string[] = []
+    const { prepare } = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: 'work',
+        defaultBranch: 'main',
+        isDirty: false,
+        hasSubmodules: false,
+      }),
+      branchExists: async (_projectRoot, branch) => {
+        probed.push(branch)
+        return branch !== 'work'
+      },
+      allocate: async ({ baseBranch }) => {
+        allocations.push(baseBranch)
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/task-thread1',
+          baseBranch,
+          baseCommit: 'f'.repeat(40),
+          createdAt: 6,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Scheduled review',
+      choice: 'worktree',
+    })
+
+    assert.equal(result.checkoutMode, 'worktree')
+    assert.deepEqual(probed, ['work'])
+    assert.deepEqual(allocations, ['main'])
+  })
+
+  it('still bases on `main` when neither the reported branch nor a default resolves', async () => {
+    const allocations: string[] = []
+    const { prepare } = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: 'work',
+        defaultBranch: null,
+        isDirty: false,
+        hasSubmodules: false,
+      }),
+      branchExists: async () => false,
+      allocate: async ({ baseBranch }) => {
+        allocations.push(baseBranch)
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/task-thread1',
+          baseBranch,
+          baseCommit: 'a'.repeat(40),
+          createdAt: 7,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+
+    await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Scheduled review',
+      choice: 'worktree',
+    })
+
+    assert.deepEqual(allocations, ['main'])
   })
 
   it('allocates exactly once under concurrent isolated preparation and reuses metadata', async () => {
@@ -259,7 +349,7 @@ describe('first-message checkout transaction', () => {
     assert.equal(patches[0]?.gitBranch, 'feat/live')
   })
 
-  it('reclaims an unpersisted dirty worktree when meta write failed earlier', async () => {
+  it('reclaims the original allocation metadata after the project branch changed', async () => {
     const recovered: ThreadWorktree = {
       path: '/worktrees/thread-1',
       branch: 'copse/task-thread1',
@@ -273,7 +363,7 @@ describe('first-message checkout transaction', () => {
     const { prepare, getThread } = fixture({
       inspect: async () => ({
         isGitRepository: true,
-        currentBranch: 'main',
+        currentBranch: 'feature/switched-after-failure',
         defaultBranch: 'main',
         isDirty: true,
         hasSubmodules: false,
@@ -300,6 +390,8 @@ describe('first-message checkout transaction', () => {
     assert.equal(retireCalls, 0)
     assert.equal(result.checkoutMode, 'worktree')
     assert.deepEqual(result.worktree, recovered)
+    assert.equal(result.worktree.baseBranch, 'main')
+    assert.equal(result.worktree.baseCommit, 'b'.repeat(40))
     assert.equal(getThread().worktreeChoice, 'worktree')
     assert.equal(getThread().gitBranch, recovered.branch)
     assert.deepEqual(getThread().worktree, recovered)
@@ -371,5 +463,113 @@ describe('first-message checkout transaction', () => {
     )
     assert.equal(inspected, false)
     assert.equal(patches.length, 0)
+  })
+})
+
+describe('reclaiming a linked checkout with no recovery marker', () => {
+  const cleanups: string[] = []
+  let previousRoot: string | undefined
+
+  function git(cwd: string, args: string[]): string {
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Copse Test',
+        GIT_AUTHOR_EMAIL: 'copse@example.invalid',
+        GIT_COMMITTER_NAME: 'Copse Test',
+        GIT_COMMITTER_EMAIL: 'copse@example.invalid',
+      },
+    })
+  }
+
+  afterEach(async () => {
+    if (previousRoot === undefined) delete process.env['COPSE_WORKTREES_DIR']
+    else process.env['COPSE_WORKTREES_DIR'] = previousRoot
+    previousRoot = undefined
+    setGitAvailableForTest(null)
+    clearAllowedWorkspaceRootsForTest()
+    for (const path of cleanups.splice(0).reverse()) {
+      await rm(path, { recursive: true, force: true })
+    }
+  })
+
+  it('reclaims a checkout whose marker is missing instead of stranding the thread', async () => {
+    // A worktree cut before the marker existed — or by a run that died between
+    // `worktree add` and the config write — is still registered with Git. If the
+    // reclaim refuses it, the caller allocates again, that allocation throws
+    // "already registered", and the thread never starts. Automation runs hit
+    // this first because their fixtures outlive a single run.
+    previousRoot = process.env['COPSE_WORKTREES_DIR']
+    const temp = await mkdtemp(join(tmpdir(), 'copse-reclaim-'))
+    cleanups.push(temp)
+    process.env['COPSE_WORKTREES_DIR'] = join(temp, 'worktrees')
+    setGitAvailableForTest(true)
+
+    const repo = join(temp, 'repo')
+    await mkdir(repo, { recursive: true })
+    git(repo, ['init', '-q', '-b', 'main'])
+    await writeFile(join(repo, 'README.md'), 'base\n')
+    git(repo, ['add', '.'])
+    git(repo, ['commit', '-q', '-m', 'initial'])
+
+    const allocated = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      prompt: 'Scheduled review',
+      baseBranch: 'main',
+      seedFromDirtyProject: false,
+    })
+    // Strip the marker to reproduce a checkout that predates it.
+    git(repo, [
+      'config',
+      '--local',
+      '--unset',
+      `branch.${allocated.branch}.copse-worktree-recovery`,
+    ])
+    assert.equal(await readThreadWorktreeRecoveryMetadata(repo, allocated.branch), null)
+
+    const recovered = await recoverUnpersistedWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      baseBranch: 'main',
+    })
+
+    assert.ok(recovered, 'a registered checkout must still be reclaimable without its marker')
+    assert.equal(recovered.path, allocated.path)
+    assert.equal(recovered.branch, allocated.branch)
+    assert.equal(recovered.baseBranch, 'main')
+    assert.equal(recovered.baseCommit, git(repo, ['rev-parse', 'HEAD']).trim())
+    // Conservative: this process never saw the checkout created, so retirement
+    // must keep refusing to discard whatever it holds.
+    assert.equal(recovered.seededFromDirtyProject, true)
+  })
+
+  it('still declines when no checkout is registered for the thread', async () => {
+    previousRoot = process.env['COPSE_WORKTREES_DIR']
+    const temp = await mkdtemp(join(tmpdir(), 'copse-reclaim-'))
+    cleanups.push(temp)
+    process.env['COPSE_WORKTREES_DIR'] = join(temp, 'worktrees')
+    setGitAvailableForTest(true)
+
+    const repo = join(temp, 'repo')
+    await mkdir(repo, { recursive: true })
+    git(repo, ['init', '-q', '-b', 'main'])
+    await writeFile(join(repo, 'README.md'), 'base\n')
+    git(repo, ['add', '.'])
+    git(repo, ['commit', '-q', '-m', 'initial'])
+
+    assert.equal(
+      await recoverUnpersistedWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        projectRoot: repo,
+        baseBranch: 'main',
+      }),
+      null,
+    )
   })
 })

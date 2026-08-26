@@ -1171,8 +1171,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="number" name="uiScale" min="0.75" max="1.5" step="0.05" />
               </label>
               <p class="field-hint">
-                Scales UI type and spacing (0.75–1.5). Also adjustable with ⌘+/- (Ctrl+/-), ⌘0, or a
-                trackpad pinch.
+                Scales UI type and spacing (0.75–1.5). Use ⌘+/- (Ctrl+/-) or ⌘0. Pinch zoom is
+                temporary.
               </p>
               <label>
                 Editor &amp; terminal font size

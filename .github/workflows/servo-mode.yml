@@ -1,0 +1,106 @@
+# Builds servo mode — the one configuration nothing else in CI touches.
+#
+# That it is untouched is deliberate. `pnpm build` emits the Electron
+# artifacts and nothing else, no job in ci.yml passes `--servo`, and the Rust
+# shell is its own cargo workspace. The price of keeping the prototype off the
+# critical path is that it rots without anyone finding out, and it did:
+# `@napi-rs/keyring` arrived in the main process with the secret-storage
+# change, the sidecar bundle's hand-copied esbuild externals did not follow,
+# and `build:servo` had been dying on a `.node` file for as long as nobody
+# ran it.
+#
+# So this runs, but narrowly: on the paths that can invalidate the bundle, and
+# weekly for the drift a path filter cannot see — a change under src/main that
+# needs a new shim, a dependency that arrives through the lockfile. src/main
+# is deliberately NOT in the filter; it is touched by most pull requests, and
+# a job that runs on most pull requests is the thing this is trying not to be.
+#
+# The Rust shell is not built here either. That compiles Servo and takes the
+# better part of an hour; what this covers is the JavaScript half — the
+# sidecar bundle, the WS-bridge preload, the channel allowlist extracted from
+# the preload contract — which is the half that moves week to week.
+#
+# The two path lists are duplicated because the Actions parser has no YAML
+# anchors; keep them in step.
+
+name: servo mode
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/servo-mode.yml
+      - package.json
+      - pnpm-lock.yaml
+      - scripts/build-tauri.mts
+      - scripts/build.mts
+      - scripts/main-bundles.mts
+      - scripts/main-externals.mts
+      - scripts/smoke-sidecar.mts
+      - src/preload/**
+      - src/shared/tauri/**
+      - src/sidecar/**
+  pull_request:
+    paths:
+      - .github/workflows/servo-mode.yml
+      - package.json
+      - pnpm-lock.yaml
+      - scripts/build-tauri.mts
+      - scripts/build.mts
+      - scripts/main-bundles.mts
+      - scripts/main-externals.mts
+      - scripts/smoke-sidecar.mts
+      - src/preload/**
+      - src/shared/tauri/**
+      - src/sidecar/**
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: servo-mode-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+# Nothing here writes anything back; the weekly run in particular has no
+# business holding a token that could.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build the sidecar and bridge
+    # Fork pull requests stay on hosted runners, same rule as ci.yml: they
+    # carry only the default read token and must never reach the fleet.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+
+      # The default build first, and asserted to be servo-free: the claim that
+      # the prototype costs the shipping app nothing is the one this workflow
+      # is best placed to check, and it is cheap to check here.
+      - name: a default build emits no servo artifacts
+        run: |
+          set -euo pipefail
+          npm run build
+          for artefact in dist/sidecar dist/renderer/ws-bridge.js dist/renderer/tauri.html; do
+            if [ -e "$artefact" ]; then
+              echo "plain \`npm run build\` emitted $artefact — servo mode has leaked into the default build" >&2
+              exit 1
+            fi
+          done
+          echo "default build is servo-free"
+
+      # No engine step: the shell is a prebuilt binary from copse-dev/tauri-shell
+      # and this job never launches it, so all there is to build is the
+      # JavaScript half — which is the half that rots.
+      - name: build servo mode
+        run: npm run build:servo
+
+      # The bundle existing proves esbuild was happy, not that the sidecar
+      # runs. This boots it, connects as the renderer would, authenticates, and
+      # drives real invokes — no display and no Servo build needed.
+      - name: sidecar smoke test
+        run: npm run smoke:tauri-sidecar

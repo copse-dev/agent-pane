@@ -614,6 +614,9 @@
 }
 .message-text .table-copy-scroll > table {
   margin: 0;
+  /* The wrapper owns horizontal scrolling. Keep the table itself as a pure
+     clip so Chromium paints its rounded top corners without overflow horns. */
+  overflow: hidden;
 }
 .table-copy {
   position: absolute;

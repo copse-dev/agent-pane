@@ -14,6 +14,16 @@ export function outlineIcon(label: string, paths: string[], className: string): 
   svg.setAttribute('aria-hidden', 'true')
   svg.setAttribute('focusable', 'false')
   svg.setAttribute('data-icon', label)
+  // Presentation-attribute fallbacks mirroring the callers' CSS. CSS always
+  // wins over presentation attributes, so these are inert under Chromium —
+  // but engines that rasterize inline SVG from a serialized copy (Servo)
+  // lose stylesheet context, and without these the icons render as solid
+  // fill-black shapes. See docs/plans/tauri-servo-migration.md.
+  svg.setAttribute('fill', 'none')
+  svg.setAttribute('stroke', 'currentColor')
+  svg.setAttribute('stroke-width', '1.75')
+  svg.setAttribute('stroke-linecap', 'round')
+  svg.setAttribute('stroke-linejoin', 'round')
 
   for (const d of paths) {
     const path = document.createElementNS(SVG_NS, 'path')

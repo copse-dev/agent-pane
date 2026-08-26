@@ -38,6 +38,10 @@ export default ts.config(
       'wdio.ci.conf.ts',
       'wdio.eval.conf.ts',
       'wdio.demo.conf.ts',
+      // One-line side-effect import of the preload for the Tauri ws-bridge
+      // bundle; in no tsconfig project (the preload typechecks under
+      // tsconfig.node.json, this entry is browser-side). See scripts/build-tauri.mts.
+      'src/sidecar/ws-bridge/entry.ts',
       'tests/e2e/**',
       'tests/demo/**',
       'tests/fixtures/git-changes-repo/**',
@@ -242,12 +246,16 @@ export default ts.config(
         exports: 'writable',
         __dirname: 'readonly',
         __filename: 'readonly',
+        Buffer: 'readonly',
       },
     },
     rules: {
       // .cjs files are executed directly by node and can't carry TypeScript
       // return-type annotations, so this rule can't be satisfied here.
       '@typescript-eslint/explicit-function-return-type': 'off',
+      // `require` is the only module syntax a .cjs file has; the ban exists to
+      // keep it out of the TypeScript sources, which this block already excludes.
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
   {

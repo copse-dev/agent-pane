@@ -15,9 +15,23 @@ import { pathToFileURL } from 'node:url'
 import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
 import { markTreeNoindex } from './lib/noindex.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
+import { MAIN_EXTERNALS } from './main-externals.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
+// Servo mode is a prototype (src/sidecar/, plus a prebuilt shell from
+// copse-dev/tauri-shell) and stays off the default path: no job in
+// .github/workflows builds it, and nothing below
+// emits a byte of it unless this flag is passed. `pnpm build:servo` is the
+// flag with a name; plain `pnpm build` produces exactly the Electron
+// artifacts it always has.
+const isServo = process.argv.includes('--servo')
+if (isServo && isDemo) {
+  // The demo build sends the renderer to dist/demo and has no main process;
+  // the servo artifacts are assembled from dist/renderer and the real
+  // preload, so there is nothing coherent to build from the pair.
+  throw new Error('--servo and --demo cannot be combined')
+}
 
 const sharedAlias = {
   '@shared': resolve('./src/shared'),
@@ -150,23 +164,7 @@ const nodeOpts = {
   bundle: true,
   platform: 'node' as const,
   format: 'cjs' as const,
-  external: [
-    'electron',
-    '@anthropic-ai/sandbox-runtime',
-    'shell-quote',
-    'node-pty',
-    // Native keyring binding (prebuilt .node per platform); resolved from the
-    // packaged node_modules at runtime like node-pty.
-    '@napi-rs/keyring',
-    'jsdom',
-    '@mozilla/readability',
-    'turndown',
-    // electron-updater lazy-requires its provider backends (GitHub/S3/generic)
-    // and js-yaml at runtime; bundling breaks those dynamic requires. It ships as
-    // a production dependency, so electron-builder packs it into the app's
-    // node_modules where the asar-aware require resolves it at runtime.
-    'electron-updater',
-  ],
+  external: [...MAIN_EXTERNALS],
   sourcemap: true,
   target: 'node22',
   alias: sharedAlias,
@@ -346,4 +344,13 @@ if (isRelease) {
         'The __COPSE_TEST_DIRECTIVES__ guard should have stripped them.',
     )
   }
+}
+
+// Servo mode (`--servo`), last: it builds on the artifacts above rather than
+// beside them — the sidecar bundle, the WS-bridge preload, and the tauri.html
+// the shell loads are all assembled from what this script has just emitted.
+// The import is dynamic so the module — and the esbuild passes it runs at
+// import time — is never reached on a default build.
+if (isServo) {
+  await import('./build-tauri.mts')
 }

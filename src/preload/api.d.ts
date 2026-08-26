@@ -167,6 +167,8 @@ export interface ApiClient {
       choice: ThreadWorktreeChoice,
       model?: string,
     ) => Promise<ThreadCheckoutPreview>
+    /** Drop cached default-branch resolutions so a retry re-reads git config. */
+    resetDefaultBranchCache: () => Promise<void>
     estimateContext: (
       projectId: string,
       threadId: string,

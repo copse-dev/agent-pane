@@ -13,7 +13,6 @@ export type WorktreePolicyReason =
   | 'project-disabled'
   | 'not-local'
   | 'not-git'
-  | 'default-branch-unresolved'
   | 'detached-head'
   | 'submodules-unsupported'
 
@@ -41,12 +40,7 @@ export type WorktreePolicyDecision =
     }
   | {
       checkoutMode: 'blocked'
-      reason:
-        | 'not-local'
-        | 'not-git'
-        | 'default-branch-unresolved'
-        | 'detached-head'
-        | 'submodules-unsupported'
+      reason: 'not-local' | 'not-git' | 'detached-head' | 'submodules-unsupported'
       seededFromDirtyProject: false
     }
 
@@ -57,7 +51,6 @@ function unsupportedReason(
   if (!input.isGitRepository) return 'not-git'
   if (input.hasSubmodules) return 'submodules-unsupported'
   if (!input.currentBranch) return 'detached-head'
-  if (!input.defaultBranch) return 'default-branch-unresolved'
   return null
 }
 
@@ -92,16 +85,13 @@ export function settledCheckoutMode(
 /**
  * Whether the project's uncommitted work can be carried into the new worktree.
  *
- * Seeding restores a snapshot of the project checkout over the worktree
- * wholesale, so it only describes the same state when both start from the same
- * branch. A worktree is always cut from the default branch; when the project
- * checkout is on some other branch, those edits were made against a different
- * tree and restoring them would silently merge two unrelated states. In that
- * case the thread starts clean and the user's own checkout is left untouched.
+ * Seeding restores a snapshot of the selected local checkout over the new
+ * worktree. The allocator performs the final commit check: when a selected
+ * default branch has moved upstream, it starts clean rather than applying the
+ * snapshot to that newer tree.
  */
 function canSeedFromDirtyProject(input: WorktreePolicyInput): boolean {
-  if (!input.isDirty) return false
-  return input.currentBranch !== null && input.currentBranch === input.defaultBranch
+  return input.isDirty && input.currentBranch !== null
 }
 
 /** Decide the first-message checkout without inspecting mutable process state. */
@@ -131,10 +121,6 @@ export function decideThreadWorktreePolicy(input: WorktreePolicyInput): Worktree
   if (projectMode === 'never') {
     return { checkoutMode: 'shared', reason: 'project-disabled', seededFromDirtyProject: false }
   }
-  // The project checkout's own branch no longer steers this. A worktree is cut
-  // from the default branch either way, so isolating only while the user
-  // happened to be on that branch just meant the second thread of a session
-  // inherited the first thread's branch and working tree.
   return {
     checkoutMode: 'worktree',
     reason: 'project-always',

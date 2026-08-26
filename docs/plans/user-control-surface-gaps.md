@@ -257,7 +257,8 @@ leads Phase 2 on a dependency.
   tracks Linux and Windows GA readiness beyond packaging, and #659 proposes off-desktop
   hand-off. The ACP registry route above is the other option, and the one that does not
   require porting Electron. Three open issues and no document connecting them is why this
-  reads as drift rather than a choice.
+  reads as drift rather than a choice. **Proposed owner paragraph:**
+  [public-readiness-decisions.md](../public-readiness-decisions.md) D5.
 
 ### Phase 2 — Observability and model configuration
 
@@ -281,7 +282,8 @@ leads Phase 2 on a dependency.
   export, compliance attestation. The likely answer is that we do not build them — they
   presume a hosted backend and account model we reject. But "we decided not to" and
   "nobody considered it" look identical from outside, and only one survives a procurement
-  conversation.
+  conversation. **Proposed owner paragraph:**
+  [public-readiness-decisions.md](../public-readiness-decisions.md) D6.
 
 ### Phase 3 — Remaining surface
 

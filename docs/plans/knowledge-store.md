@@ -20,7 +20,7 @@ frontmatter plus a markdown body — under `~/.copse/knowledge/<workspace>/`, so
 human-readable, git-friendly, portable, and searchable by the existing file tools.
 
 It is the editable, authored companion to the read-only chat store in
-[#644](https://github.com/jonathanKingston/agent-pane/issues/644): both converge on OKF
+[#644](https://github.com/copse-dev/agent-pane/issues/644): both converge on OKF
 files under `~/.copse`, but this store is **mutated in place** (statuses change, notes are
 edited) whereas the chat store is an **immutable transcript** the agent only reads.
 

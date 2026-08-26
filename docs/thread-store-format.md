@@ -1,6 +1,6 @@
 # Thread store on-disk format (v1)
 
-Filesystem-native chat store introduced in [#644](https://github.com/jonathanKingston/agent-pane/issues/644).
+Filesystem-native chat store introduced in [#644](https://github.com/copse-dev/agent-pane/issues/644).
 Each thread is a self-contained directory, so a past conversation can be
 explored with the ordinary read tools (`read_file`, `list_dir`, `search_code`,
 `explore`). This format is a **stable-ish contract**: the `@`-thread steering
