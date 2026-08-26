@@ -1,8 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { claudeAcpFrontierCandidates, resolveBestValueFromFrontier } from './best-value-model.ts'
+import { planAcpFrontierCandidates, resolveBestValueFromFrontier } from './best-value-model.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import { getIntellectScore } from '@copse/llm/model-intellect.ts'
+import { frontierForKnownModels } from '@copse/llm/pareto-frontier.ts'
+import { pickDynamicModel } from '@copse/llm/dynamic-model-pick.ts'
+import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
 
 describe('resolveBestValueFromFrontier', () => {
   it('routes a local winner with the lmstudio: prefix', () => {
@@ -104,7 +107,12 @@ describe('resolveBestValueFromFrontier', () => {
     const picked = resolveBestValueFromFrontier(
       [
         { id: 'openrouter:anthropic/claude-opus-5', intellect: 61, costPerMTok: 9 },
-        { id: 'acp:claude-agent-acp#claude-opus-5', intellect: 61, costPerMTok: 9, plan: 'Claude' },
+        {
+          id: 'acp:claude-agent-acp#claude-opus-5',
+          intellect: 61,
+          costPerMTok: 9,
+          planAccess: { provider: 'claude', modelId: 'claude-opus-5' },
+        },
       ],
       snapshot,
       (c) => c.id.startsWith('openrouter:') || c.id.startsWith('acp:'),
@@ -113,11 +121,13 @@ describe('resolveBestValueFromFrontier', () => {
   })
 })
 
-describe('claudeAcpFrontierCandidates', () => {
-  it('scores the described model but routes with the value the agent advertised', () => {
+describe('planAcpFrontierCandidates', () => {
+  it('scores every described Claude model but routes with the values the agent advertised', () => {
     const opus5Score = getIntellectScore('claude-opus-5')
+    const sonnet5Score = getIntellectScore('claude-sonnet-5')
     assert.ok(opus5Score)
-    const candidates = claudeAcpFrontierCandidates([
+    assert.ok(sonnet5Score)
+    const candidates = planAcpFrontierCandidates([
       {
         id: 'claude-agent-acp',
         title: 'Claude',
@@ -139,13 +149,74 @@ describe('claudeAcpFrontierCandidates', () => {
       },
     ])
 
-    assert.deepEqual(candidates, [
+    assert.deepEqual(
+      candidates.map((candidate) => ({
+        id: candidate.id,
+        intellect: candidate.intellect,
+        planAccess: candidate.planAccess,
+      })),
+      [
+        {
+          id: 'acp:claude-agent-acp#default',
+          intellect: opus5Score.value,
+          planAccess: { provider: 'claude', modelId: 'claude-opus-5' },
+        },
+        {
+          id: 'acp:claude-agent-acp#sonnet',
+          intellect: sonnet5Score.value,
+          planAccess: { provider: 'claude', modelId: 'claude-sonnet-5' },
+        },
+      ],
+    )
+  })
+
+  it('makes balanced choose Codex ACP over the exact GPT-5.6 Sol OpenRouter route', () => {
+    const solScore = getIntellectScore('gpt-5.6-sol')
+    assert.ok(solScore)
+    const planCandidates = planAcpFrontierCandidates([
       {
-        id: 'acp:claude-agent-acp#default',
-        intellect: opus5Score.value,
-        costPerMTok: 9,
-        plan: 'Claude',
+        id: 'codex-acp',
+        title: 'Codex',
+        command: 'codex-acp',
+        enabled: true,
+        model: 'gpt-5.6-sol',
+        availableModels: [{ value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' }],
       },
     ])
+    const snapshot: PlanUsageSnapshot = {
+      checkedAt: '2026-08-26T00:00:00Z',
+      providers: [
+        {
+          provider: 'codex',
+          status: 'ok',
+          usage: {
+            provider: 'codex',
+            plan: 'plus',
+            checkedAt: '2026-08-26T00:00:00Z',
+            windows: [
+              { id: 'primary', label: '5-hour', usedPercent: 15, resetsAt: null },
+              { id: 'secondary', label: 'Weekly', usedPercent: 5, resetsAt: null },
+            ],
+          },
+        },
+      ],
+    }
+    const points = frontierForKnownModels(
+      [
+        {
+          id: 'openrouter:openai/gpt-5.6-sol',
+          intellect: solScore.value,
+          costPerMTok: 10,
+        },
+        ...planCandidates,
+      ],
+      (candidate) => applyPlanCoverage(candidate, snapshot),
+      (candidate) => candidate.id.startsWith('openrouter:') || candidate.id.startsWith('acp:'),
+    )
+
+    const picked = pickDynamicModel({ kind: 'balanced' }, points)
+    assert.equal(picked?.id, 'acp:codex-acp#gpt-5.6-sol')
+    assert.equal(picked.plan, '5-hour')
+    assert.equal(picked.costPerMTok, 0)
   })
 })
