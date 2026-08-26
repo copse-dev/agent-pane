@@ -11,6 +11,13 @@
  * The socket connects asynchronously but `window.api` must exist before
  * app.js evaluates (same guarantee Electron's preload gives), so `invoke` and
  * `send` buffer until the `hello-ok` handshake lands.
+ *
+ * Connection side effects live in `startBridge()` (called from `entry.ts`
+ * *after* the preload runs). Importing this module must be side-effect free
+ * beyond reading the boot URL: Servo can throw from `history.replaceState` or
+ * `WebSocket` on the custom scheme, and a throw during module evaluation would
+ * abort before `exposeInMainWorld('api', …)`, leaving app.js with
+ * `window.api === undefined` (`can't access property "settings", api…`).
  */
 import {
   decodeServerFrame,
@@ -27,26 +34,13 @@ const winId = Number(params.get('winId') ?? '0')
 const wsPort = params.get('wsPort')
 const wsToken = params.get('wsToken') ?? ''
 
-// The token authenticates this window to the sidecar. Once captured, remove
-// it from page-visible location state: this module runs before app.js, and
-// nothing after this line — app code or anything injected into the page —
-// should be able to recover the credential from `location.search`.
-if (params.has('wsToken')) {
-  params.delete('wsToken')
-  const query = params.toString()
-  history.replaceState(
-    history.state,
-    '',
-    `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
-  )
-}
-
 let ready = false
 let socket: WebSocket | null = null
 const sendQueue: ClientFrame[] = []
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
 const listeners = new Map<string, Set<Listener>>()
 let nextInvokeId = 1
+let started = false
 
 function push(frame: ClientFrame): void {
   if (ready && socket && socket.readyState === WebSocket.OPEN) {
@@ -76,26 +70,63 @@ function handleFrame(frame: ServerFrame): void {
   for (const listener of [...set]) listener({}, ...frame.args)
 }
 
-if (wsPort === null) {
-  console.error('[ws-bridge] no wsPort in boot URL; window.api will reject every call')
-} else {
+function scrubBootToken(): void {
+  // The token authenticates this window to the sidecar. Once captured, remove
+  // it from page-visible location state: this runs before app.js, and nothing
+  // after — app code or anything injected into the page — should be able to
+  // recover the credential from `location.search`.
+  // Servo can reject history.replaceState on custom schemes; scrub failure
+  // must not take down the bridge script.
+  if (wsToken === '') return
+  const scrubbed = new URLSearchParams(window.location.search)
+  scrubbed.delete('wsToken')
+  const query = scrubbed.toString()
+  try {
+    const next = new URL(window.location.href)
+    next.search = query
+    history.replaceState(history.state, '', next.href)
+  } catch (err) {
+    console.error('[ws-bridge] could not scrub wsToken from the URL', err)
+  }
+}
+
+function openSocket(): void {
+  if (wsPort === null) {
+    console.error('[ws-bridge] no wsPort in boot URL; window.api will reject every call')
+    return
+  }
   // The token subprotocol authenticates the HTTP upgrade itself — the server
   // refuses the handshake without it, before buffering any frame.
-  const ws = new WebSocket(`ws://127.0.0.1:${wsPort}/`, `${WS_AUTH_PROTOCOL_PREFIX}${wsToken}`)
-  socket = ws
-  ws.addEventListener('open', () => {
-    ws.send(encodeFrame({ t: 'hello', winId, token: wsToken }))
-  })
-  ws.addEventListener('message', (event: MessageEvent) => {
-    if (typeof event.data !== 'string') return
-    handleFrame(decodeServerFrame(event.data))
-  })
-  ws.addEventListener('close', () => {
-    ready = false
-    const error = new Error('sidecar connection closed')
-    for (const entry of pending.values()) entry.reject(error)
-    pending.clear()
-  })
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${wsPort}/`, `${WS_AUTH_PROTOCOL_PREFIX}${wsToken}`)
+    socket = ws
+    ws.addEventListener('open', () => {
+      ws.send(encodeFrame({ t: 'hello', winId, token: wsToken }))
+    })
+    ws.addEventListener('message', (event: MessageEvent) => {
+      if (typeof event.data !== 'string') return
+      handleFrame(decodeServerFrame(event.data))
+    })
+    ws.addEventListener('close', () => {
+      ready = false
+      const error = new Error('sidecar connection closed')
+      for (const entry of pending.values()) entry.reject(error)
+      pending.clear()
+    })
+  } catch (err) {
+    console.error('[ws-bridge] failed to open WebSocket to the sidecar', err)
+  }
+}
+
+/**
+ * Open the sidecar socket and scrub the boot token from the URL.
+ * Must run after the preload has installed `window.api`.
+ */
+export function startBridge(): void {
+  if (started) return
+  started = true
+  scrubBootToken()
+  openSocket()
 }
 
 interface IpcRendererLike {
