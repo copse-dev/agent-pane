@@ -163,9 +163,13 @@ export function applyPlanCoverage(
 ): FrontierCandidate {
   const mode = options.mode ?? 'plan'
   if (mode === 'inference' || !snapshot) return candidate
-  const provider = planProviderForModel(candidate.id)
+  const provider = candidate.planAccess?.provider ?? planProviderForModel(candidate.id)
   if (!provider) return candidate
-  const inclusion = resolvePlanInclusion(provider, candidate.id, snapshot)
+  const inclusion = resolvePlanInclusion(
+    provider,
+    candidate.planAccess?.modelId ?? candidate.id,
+    snapshot,
+  )
   if (!inclusion) return candidate
 
   const exhaustion = options.windowExhaustion?.get(inclusion.windowId)

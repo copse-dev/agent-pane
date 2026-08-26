@@ -161,6 +161,30 @@ describe('applyPlanCoverage', () => {
     assert.equal(out.planLimitReached, undefined)
   })
 
+  it('uses explicit Codex ACP plan access without treating every GPT route as included', () => {
+    const snap = snapshot('codex', [
+      { id: 'primary', label: '5-hour', usedPercent: 25 },
+      { id: 'secondary', label: 'Weekly', usedPercent: 10 },
+    ])
+    const codexAcp: FrontierCandidate = {
+      id: 'acp:codex-acp#gpt-5.6-sol',
+      intellect: 59,
+      costPerMTok: 10,
+      planAccess: { provider: 'codex', modelId: 'gpt-5.6-sol' },
+    }
+    const paidOpenRouter: FrontierCandidate = {
+      id: 'openrouter:openai/gpt-5.6-sol',
+      intellect: 59,
+      costPerMTok: 10,
+    }
+
+    const included = applyPlanCoverage(codexAcp, snap)
+    assert.equal(included.costPerMTok, 0)
+    assert.equal(included.plan, '5-hour')
+    assert.equal(included.planDetail?.apiPricePerMTok, 10)
+    assert.equal(applyPlanCoverage(paidOpenRouter, snap), paidOpenRouter)
+  })
+
   it('keeps the real price and notes limit-reached when the window is spent', () => {
     const snap = snapshot('claude', [
       {

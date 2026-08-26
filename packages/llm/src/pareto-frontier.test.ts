@@ -178,6 +178,32 @@ describe('frontierForKnownModels', () => {
     assert.equal(points.length, 1)
     assert.equal(points[0]?.id, 'openrouter:openai/gpt-4o')
   })
+
+  it('prefers a subscription-capable route when identical weights cost the same', () => {
+    const score = getIntellectScore('gpt-5.6-sol')
+    assert.ok(score)
+    const points = frontierForKnownModels(
+      [
+        {
+          id: 'openrouter:openai/gpt-5.6-sol',
+          intellect: score.value,
+          costPerMTok: 10,
+        },
+        {
+          id: 'acp:zz-codex#gpt-5.6-sol',
+          intellect: score.value,
+          costPerMTok: 10,
+          planAccess: { provider: 'codex', modelId: 'gpt-5.6-sol' },
+        },
+      ],
+      undefined,
+      (candidate) => candidate.id.startsWith('openrouter:') || candidate.id.startsWith('acp:'),
+    )
+
+    assert.equal(points.length, 1)
+    assert.equal(points[0]?.id, 'acp:zz-codex#gpt-5.6-sol')
+    assert.deepEqual(points[0].prices, [{ id: 'openrouter:openai/gpt-5.6-sol', costPerMTok: 10 }])
+  })
 })
 
 describe('pickBestValueFrontierModel', () => {

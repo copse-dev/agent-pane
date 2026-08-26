@@ -6,6 +6,7 @@ import {
   acpModelDisplayLabel,
   acpModelValue,
   acpModelVersionName,
+  acpPlanProvider,
   enabledClaudeAcpAgent,
   isAcpModel,
   isClaudeAcpAgent,
@@ -166,6 +167,20 @@ describe('Claude ACP agent preference', () => {
     assert.equal(enabledClaudeAcpAgent([disabled, gemini]), undefined)
     // An enabled Claude agent is returned.
     assert.equal(enabledClaudeAcpAgent([gemini, enabled]), enabled)
+  })
+})
+
+describe('ACP plan provider', () => {
+  it('recognizes the Claude and Codex subscription-backed adapters by command', () => {
+    assert.equal(acpPlanProvider({ command: 'claude-agent-acp' }), 'claude')
+    assert.equal(acpPlanProvider({ command: 'claude-code-acp' }), 'claude')
+    assert.equal(acpPlanProvider({ command: 'codex-acp' }), 'codex')
+  })
+
+  it('does not infer subscription billing for unrelated or custom agents', () => {
+    assert.equal(acpPlanProvider({ command: 'gemini' }), null)
+    assert.equal(acpPlanProvider({ command: 'cursor-agent' }), null)
+    assert.equal(acpPlanProvider({ command: 'my-agent' }), null)
   })
 })
 

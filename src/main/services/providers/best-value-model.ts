@@ -22,7 +22,7 @@ import { getIntellectScore, resolveIntellectModelId } from '@copse/llm/model-int
 import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
 import { FALLBACK_APP_CHAT_MODEL, resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
-import { acpModelValue, acpModelVersionName, enabledClaudeAcpAgent } from '@shared/acp.ts'
+import { acpModelValue, acpModelVersionName, acpPlanProvider } from '@shared/acp.ts'
 import type { AcpAgentConfig, AcpModelChoice } from '@shared/types/acp.ts'
 import { listEnabledAcpAgents } from '../acp/acp-agent-registry.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
@@ -100,52 +100,49 @@ export function toRoutableModelId(candidate: FrontierCandidate): string {
 }
 
 /**
- * The enabled Claude ACP agent as a plan-covered candidate, so an automatic
- * selector (best-value / balanced) can prefer it over an OpenRouter route for
- * the same model. The agent authenticates against the user's own `claude`
- * login and bills against the Claude subscription, not API credit.
+ * Models advertised by known subscription-backed ACP agents. Each resolvable
+ * model is included, rather than only the agent's strongest one, so identity
+ * grouping can replace every paid duplicate (for example OpenRouter GPT-5.6
+ * Sol) with the exact Claude/Codex plan route.
+ *
+ * `planAccess` describes the possible billing path without claiming it is
+ * currently free. `applyPlanCoverage` checks the live usage snapshot and only
+ * sets `plan` while the relevant window has headroom.
  */
-export function claudeAcpFrontierCandidates(
-  agents: readonly AcpAgentConfig[],
-): FrontierCandidate[] {
-  const agent = enabledClaudeAcpAgent(agents)
-  if (!agent) return []
-  const advertised = agent.availableModels ?? []
-  const selected = agent.model
-  const selectedChoice = selected
-    ? advertised.find((choice) => choice.value === selected)
-    : undefined
-  const choices: AcpModelChoice[] = [
-    ...(selected ? [selectedChoice ?? { value: selected, label: selected }] : []),
-    ...advertised.filter((choice) => choice.value !== selected),
-  ]
-  let best: { routeValue: string; intellect: number } | null = null
-  let bestPrice = 0
-  for (const choice of choices) {
-    const described = acpModelVersionName(choice.description)
-    const resolved =
-      resolveIntellectModelId(choice.value) ??
-      (described ? resolveIntellectModelId(described) : null) ??
-      resolveIntellectModelId(choice.label)
-    if (!resolved) continue
-    const score = getIntellectScore(resolved)
-    const info = getModelInfo(resolved)
-    if (!score || !info) continue
-    const price = blendedPricePerMTok(info)
-    if (!best || score.value > best.intellect) {
-      best = { routeValue: choice.value, intellect: score.value }
-      bestPrice = price
+export function planAcpFrontierCandidates(agents: readonly AcpAgentConfig[]): FrontierCandidate[] {
+  const candidates: FrontierCandidate[] = []
+  for (const agent of agents) {
+    if (!agent.enabled) continue
+    const provider = acpPlanProvider(agent)
+    if (!provider) continue
+    const advertised = agent.availableModels ?? []
+    const selected = agent.model
+    const selectedChoice = selected
+      ? advertised.find((choice) => choice.value === selected)
+      : undefined
+    const choices = new Map<string, AcpModelChoice>()
+    if (selected) choices.set(selected, selectedChoice ?? { value: selected, label: selected })
+    for (const choice of advertised) choices.set(choice.value, choice)
+
+    for (const choice of choices.values()) {
+      const described = acpModelVersionName(choice.description)
+      const resolved =
+        resolveIntellectModelId(choice.value) ??
+        (described ? resolveIntellectModelId(described) : null) ??
+        resolveIntellectModelId(choice.label)
+      if (!resolved) continue
+      const score = getIntellectScore(resolved)
+      const info = getModelInfo(resolved)
+      if (!score || !info) continue
+      candidates.push({
+        id: acpModelValue(agent.id, choice.value),
+        intellect: score.value,
+        costPerMTok: blendedPricePerMTok(info),
+        planAccess: { provider, modelId: resolved },
+      })
     }
   }
-  if (!best) return []
-  return [
-    {
-      id: acpModelValue(agent.id, best.routeValue),
-      intellect: best.intellect,
-      costPerMTok: bestPrice,
-      plan: 'Claude',
-    },
-  ]
+  return candidates
 }
 
 /**
@@ -173,7 +170,7 @@ export async function routableFrontierPoints(): Promise<FrontierPoint[]> {
     ...localFrontierCandidates(localIds),
     ...extraProviderFrontierCandidates(extraProviders),
     ...openRouterFrontierCandidates(openRouterModels),
-    ...claudeAcpFrontierCandidates(listEnabledAcpAgents()),
+    ...planAcpFrontierCandidates(listEnabledAcpAgents()),
   ]
 
   const openRouterZdrOnly = getSetting<boolean>('openRouterZdrOnly', true)
