@@ -89,7 +89,7 @@ interface Stack {
 }
 
 const ELECTRON_BIN = resolve('node_modules/.bin/electron')
-const TAURI_BIN = resolve('tauri-shell/target/release/copse-tauri-shell')
+const TAURI_BIN = process.env['COPSE_TAURI_SHELL_BIN']?.trim() ?? ''
 
 const STACKS: Stack[] = [
   {
@@ -119,10 +119,10 @@ const STACKS: Stack[] = [
     args: [],
     // The sidecar only speaks the stdout line protocol when it knows a shell is
     // listening; without this it logs window ops to stderr and opens nothing.
-    env: { COPSE_TAURI_SHELL: '1' },
+    env: { TAURI_SHELL: '1' },
     unavailable: () =>
       !existsSync(TAURI_BIN)
-        ? `${TAURI_BIN} missing — build it with \`cargo build --release\` in tauri-shell/ (see docs/plans/tauri-servo-perf-handoff.md §2)`
+        ? 'no shell binary — run `pnpm servo` once to fetch it, then point COPSE_TAURI_SHELL_BIN at it (see docs/plans/tauri-servo-perf-handoff.md §2)'
         : !existsSync(resolve('dist/sidecar/index.js'))
           ? 'dist/sidecar/index.js missing — run pnpm build:tauri'
           : null,

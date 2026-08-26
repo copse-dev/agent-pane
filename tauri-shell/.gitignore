@@ -1,4 +1,0 @@
-/target
-/gen
-# Written by `pnpm build:servo` when a sibling engine checkout exists.
-/.cargo
