@@ -1,20 +1,21 @@
 /**
  * Line protocol between the Node sidecar and the Tauri shell that spawned it.
  *
- * The shell (tauri-shell/src/main.rs) owns the real OS windows; the sidecar
+ * The shell (copse-dev/tauri-shell, consumed as a release binary) owns the
+ * real OS windows; the sidecar
  * owns everything else. When the electron-shim's `BrowserWindow` needs a
  * window created, shown, or closed, it sends a one-line JSON message on
- * stdout prefixed with `@copse-tauri `; the shell answers window lifecycle
+ * stdout prefixed with `@tauri-shell `; the shell answers window lifecycle
  * events as one-line JSON on the sidecar's stdin.
  *
- * When no shell is attached (`COPSE_TAURI_SHELL` unset — e.g. the headless
+ * When no shell is attached (`TAURI_SHELL` unset — e.g. the headless
  * smoke test), outbound messages are logged to stderr and no windows exist
  * anywhere, which is fine: the WS server still runs and a test client can
  * still drive the IPC surface.
  */
 import { createInterface } from 'node:readline'
 
-const PREFIX = '@copse-tauri '
+const PREFIX = '@tauri-shell '
 
 export interface CreateWindowMessage {
   op: 'create-window'
@@ -47,7 +48,7 @@ export interface WindowEventMessage {
 export type ShellInMessage = WindowEventMessage
 
 export function isShellAttached(): boolean {
-  return process.env['COPSE_TAURI_SHELL'] === '1'
+  return process.env['TAURI_SHELL'] === '1'
 }
 
 export function shellSend(message: ShellOutMessage): void {

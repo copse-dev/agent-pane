@@ -19,8 +19,9 @@ import { MAIN_EXTERNALS } from './main-externals.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
-// Servo mode is a prototype (tauri-shell/, src/sidecar/) and stays off the
-// default path: no job in .github/workflows builds it, and nothing below
+// Servo mode is a prototype (src/sidecar/, plus a prebuilt shell from
+// copse-dev/tauri-shell) and stays off the default path: no job in
+// .github/workflows builds it, and nothing below
 // emits a byte of it unless this flag is passed. `pnpm build:servo` is the
 // flag with a name; plain `pnpm build` produces exactly the Electron
 // artifacts it always has.

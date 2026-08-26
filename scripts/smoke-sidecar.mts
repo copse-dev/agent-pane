@@ -1,5 +1,5 @@
 /**
- * Headless smoke test for the Tauri sidecar (see tauri-shell/README.md).
+ * Headless smoke test for the Tauri sidecar (see docs/servo-mode.md).
  *
  * Boots dist/sidecar/index.js as a plain Node process — no Tauri shell, no
  * display — connects to its loopback WebSocket exactly as the Servo webview's
