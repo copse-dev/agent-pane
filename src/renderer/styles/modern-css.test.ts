@@ -76,7 +76,7 @@ describe('modern CSS adoptions', () => {
             value !== 'var(--line-height-base)' &&
             !allowedCompactValues.has(value)
           ) {
-            nonUniform.push(`${file}:${index + 1}: ${value}`)
+            nonUniform.push(`${file}:${String(index + 1)}: ${value}`)
           }
         })
     }
