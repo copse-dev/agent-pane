@@ -116,6 +116,36 @@ describe('first-message checkout transaction', () => {
     })
   })
 
+  it('names the declaration when it refuses a worktree for submodules', async () => {
+    // The refusal is otherwise unfalsifiable: an automation swallows it into a
+    // thread that never starts, and "submodules unsupported" on its own cannot
+    // be checked against the filesystem afterwards.
+    const blocked = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: 'main',
+        defaultBranch: 'main',
+        isDirty: false,
+        hasSubmodules: true,
+        submoduleDeclaration: '/repo/.gitmodules',
+      }),
+    })
+    await assert.rejects(
+      blocked.prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'go',
+        choice: 'worktree',
+      }),
+      (error: Error) => {
+        assert.match(error.message, /submodules unsupported/)
+        assert.match(error.message, /\/repo\/\.gitmodules/)
+        assert.match(error.message, /for project \/repo/)
+        return true
+      },
+    )
+  })
+
   it('persists the shared decision of an opted-out project before returning', async () => {
     const optedOut: Project = {
       id: 'project-1',
