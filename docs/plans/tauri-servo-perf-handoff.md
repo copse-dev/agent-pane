@@ -93,7 +93,7 @@ root, exactly as written above — died with a bare Node `MODULE_NOT_FOUND` for 
 path nobody wrote. It only ever worked under `cargo run` from inside
 `tauri-shell/`. `sidecar_entry()` in `tauri-shell/src/main.rs` now also tries
 the location relative to the executable and, when both miss, says what it
-tried; `COPSE_SIDECAR_ENTRY` still overrides.
+tried; `TAURI_SHELL_SIDECAR_ENTRY` still overrides.
 
 Both boot into the same onboarding/workspace UI. Under the dev-profile Servo
 build the full app boot took ~30 s in a container; expect release to be much

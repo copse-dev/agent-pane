@@ -13,7 +13,7 @@
  *
  * Not an entry point: `scripts/build.mts` imports this at the end of a
  * `--servo` build, so the artifacts above are assembled from the ones it has
- * just emitted. Run `pnpm build:servo`, then `cd tauri-shell && cargo run`.
+ * just emitted. Run `pnpm build:servo`, then `pnpm servo`.
  * See docs/plans/tauri-servo-migration.md.
  */
 import * as esbuild from 'esbuild'
@@ -21,7 +21,6 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, basename } from 'node:path'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 import { MAIN_EXTERNALS } from './main-externals.mts'
-import { prepareServoEngine } from './servo-engine.mts'
 
 const sharedAlias = {
   '@shared': resolve('./src/shared'),
@@ -34,14 +33,6 @@ if (!existsSync('dist/renderer/index.html')) {
   console.error('dist/renderer is missing — build the app with `pnpm build:servo`.')
   process.exit(1)
 }
-
-// Which engine `cargo run` will resolve against. Done here rather than left to
-// the reader because the answer changes what tauri.html may contain: an
-// enforced CSP needs the patched engine, and the two used to default
-// independently — the build wrote an enforced policy while cargo built stock
-// servo, so the window came up blank with every subresource blocked.
-const engine = prepareServoEngine()
-console.log(`servo engine: ${engine.mode} (${engine.detail})`)
 
 const define = {
   __COPSE_TEST_DIRECTIVES__: 'true',
@@ -171,14 +162,11 @@ await esbuild.build({
 // tauri:// origin. The policy is the Electron one plus a connect-src for the
 // loopback WebSocket the renderer uses to reach the sidecar.
 //
-// Enforced by default, which is only correct because the engine is patched by
-// default: servo 0008 gives a registered custom scheme a tuple origin and
-// csp-0001 matches 'self' against it, both carried by the fork branches
-// tauri-shell/Cargo.toml pins. Against a stock libservo, tauri://localhost has
-// an opaque origin that 'self' can never match, so the policy blocks every
-// same-origin subresource and the window comes up blank. If you are
-// deliberately on stock — `cargo run --no-default-features` — set
-// COPSE_TAURI_STRIP_CSP=1 here to match.
+// Enforced by default, which is correct because the released shell embeds the
+// patched engine: servo 0008 gives a registered custom scheme a tuple origin
+// and csp-0001 matches 'self' against it, so the page keeps its policy on the
+// scheme the shell serves it under. Only a stock-engine shell needs
+// COPSE_TAURI_STRIP_CSP=1, and you would have had to build one deliberately.
 const TAURI_CSP =
   "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; connect-src 'self' ws://127.0.0.1:*;"
 const indexHtml = readFileSync('dist/renderer/index.html', 'utf8')
