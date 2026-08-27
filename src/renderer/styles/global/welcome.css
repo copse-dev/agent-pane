@@ -45,7 +45,7 @@
   border-radius: var(--action-radius);
   font-size: var(--font-size-base);
   font-weight: 600;
-  line-height: 1.6;
+  line-height: var(--line-height-base);
 }
 .welcome-new-btn {
   background: var(--accent-fill);
