@@ -97,8 +97,7 @@ describe('settings plaintext secret storage', () => {
       'the per-save plaintext consent prompt must not appear while the env gate is off',
     )
 
-    const keyFieldSelector =
-      '.provider-field-group:has([data-provider-key-status="openrouter"])'
+    const keyFieldSelector = '.provider-field-group:has([data-provider-key-status="openrouter"])'
     await browser.execute((selector) => {
       document.querySelector(selector)?.scrollIntoView({ block: 'center', inline: 'nearest' })
     }, keyFieldSelector)
