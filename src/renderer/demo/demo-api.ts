@@ -450,6 +450,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       listHosts: emptyArray,
       listConfigAliases: emptyArray,
       getStates: emptyArray,
+      listCredentialHostIds: emptyArray,
+      forgetCredentials: resolvedVoid,
       connect: emptyArray,
       disconnect: emptyArray,
       reconnect: emptyArray,

@@ -5,6 +5,7 @@ interface SshPromptRequest {
   id: string
   prompt: string
   kind: 'confirm' | 'secret'
+  canRememberOnDevice: boolean
 }
 
 /** The only slice of the preload API this dialog touches. */
@@ -28,7 +29,7 @@ export function mountSshPromptDialog(api: SshPromptApi): void {
     'label',
     { class: 'ssh-prompt-remember' },
     rememberInput,
-    'Remember for this session',
+    el('span', { class: 'ssh-prompt-remember-label' }),
   )
   const form = el('form', { id: 'ssh-prompt-form', method: 'dialog' })
   const dialog = el('dialog', { id: 'ssh-prompt-dialog' }, form)
@@ -68,6 +69,12 @@ export function mountSshPromptDialog(api: SshPromptApi): void {
     secretInput.value = ''
     // Default on: typing a host password once per app session is the point.
     rememberInput.checked = true
+    const rememberLabel = rememberField.querySelector('.ssh-prompt-remember-label')
+    if (rememberLabel) {
+      rememberLabel.textContent = active.canRememberOnDevice
+        ? 'Remember securely on this device'
+        : 'Remember for this session'
+    }
     showKind(active.kind)
     dialog.showModal()
     if (active.kind === 'secret') secretInput.focus()

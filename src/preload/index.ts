@@ -436,11 +436,21 @@ contextBridge.exposeInMainWorld('api', {
     respond: (id: string, value: string, remember = false) =>
       ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),
     onRequest: (
-      handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
+      handler: (req: {
+        id: string
+        prompt: string
+        kind: 'confirm' | 'secret'
+        canRememberOnDevice: boolean
+      }) => void,
     ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
-        req: { id: string; prompt: string; kind: 'confirm' | 'secret' },
+        req: {
+          id: string
+          prompt: string
+          kind: 'confirm' | 'secret'
+          canRememberOnDevice: boolean
+        },
       ): void => {
         handler(req)
       }
@@ -508,6 +518,9 @@ contextBridge.exposeInMainWorld('api', {
     listHosts: () => ipcRenderer.invoke('ssh-workspace:listHosts'),
     listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:listConfigAliases'),
     getStates: () => ipcRenderer.invoke('ssh-workspace:getStates'),
+    listCredentialHostIds: () => ipcRenderer.invoke('ssh-workspace:listCredentialHostIds'),
+    forgetCredentials: (hostId: string) =>
+      ipcRenderer.invoke('ssh-workspace:forgetCredentials', hostId),
     connect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:connect', hostId),
     disconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:disconnect', hostId),
     reconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:reconnect', hostId),

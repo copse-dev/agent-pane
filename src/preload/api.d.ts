@@ -284,7 +284,12 @@ export interface ApiClient {
   sshPrompt: {
     respond: (id: string, value: string, remember?: boolean) => Promise<void>
     onRequest: (
-      handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
+      handler: (req: {
+        id: string
+        prompt: string
+        kind: 'confirm' | 'secret'
+        canRememberOnDevice: boolean
+      }) => void,
     ) => () => void
   }
   updatePrompt: {
@@ -309,6 +314,8 @@ export interface ApiClient {
     listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
     listConfigAliases: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
     getStates: () => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    listCredentialHostIds: () => Promise<string[]>
+    forgetCredentials: (hostId: string) => Promise<void>
     connect: (
       hostId: string,
     ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>

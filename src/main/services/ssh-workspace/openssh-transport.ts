@@ -88,12 +88,13 @@ function baseSshArgs(host: SshWorkspaceHost, controlPath: string): string[] {
 }
 
 async function runLocalSsh(
+  hostId: string,
   args: string[],
   options: SshExecOptions = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   // Inherit process.env so ProxyCommand (e.g. Boundary) keeps PATH/HOME/SSH_AUTH_SOCK.
   // Passing `{}` replaces the child env entirely and yields "UNKNOWN port 65535".
-  const askpass = leaseSshAskpassEnv(process.env)
+  const askpass = leaseSshAskpassEnv(process.env, hostId)
   const maxBytes = options.maxBytes ?? COMMAND_OUTPUT_MAX_BYTES
   const timeoutMs = options.timeoutMs ?? COMMAND_RUNNER_DEFAULT_TIMEOUT_MS
 
@@ -194,7 +195,7 @@ export class OpenSshTransport implements SshTransport {
 
   async connect(): Promise<void> {
     const target = resolveTarget(this.host)
-    const askpass = leaseSshAskpassEnv(process.env)
+    const askpass = leaseSshAskpassEnv(process.env, this.host.id)
     try {
       if (supportsControlMaster()) {
         const check = spawnSync('ssh', ['-O', 'check', '-S', this.controlPath, target], {
@@ -249,7 +250,7 @@ export class OpenSshTransport implements SshTransport {
       return
     }
     const target = resolveTarget(this.host)
-    const askpass = leaseSshAskpassEnv(process.env)
+    const askpass = leaseSshAskpassEnv(process.env, this.host.id)
     try {
       for (const spec of [...this.forwards.values()]) {
         this.runForwardControl('cancel', spec, askpass.env)
@@ -270,7 +271,7 @@ export class OpenSshTransport implements SshTransport {
     if (!this.connected) throw new Error('SSH transport is not connected')
     const localPort = await allocateLoopbackPort()
     const spec = { localPort, remotePort }
-    const askpass = leaseSshAskpassEnv(process.env)
+    const askpass = leaseSshAskpassEnv(process.env, this.host.id)
     try {
       this.runForwardControl('forward', spec, askpass.env)
       this.forwards.set(localPort, spec)
@@ -283,7 +284,7 @@ export class OpenSshTransport implements SshTransport {
   async closeForward(localPort: number): Promise<void> {
     const spec = this.forwards.get(localPort)
     if (!spec) return
-    const askpass = leaseSshAskpassEnv(process.env)
+    const askpass = leaseSshAskpassEnv(process.env, this.host.id)
     try {
       this.runForwardControl('cancel', spec, askpass.env)
     } finally {
@@ -308,12 +309,12 @@ export class OpenSshTransport implements SshTransport {
   async execArgv(argv: string[], options: SshExecOptions = {}): Promise<SshExecResult> {
     const remote = buildRemoteArgvCommand(argv, options.cwd, options.env)
     const args = [...baseSshArgs(this.host, this.controlPath), '--', remote]
-    return runLocalSsh(args, options)
+    return runLocalSsh(this.host.id, args, options)
   }
 
   async execShell(command: string, options: SshExecOptions = {}): Promise<SshExecResult> {
     const remote = buildRemoteShellCommand(command, options.cwd, options.env)
     const args = [...baseSshArgs(this.host, this.controlPath), '--', remote]
-    return runLocalSsh(args, options)
+    return runLocalSsh(this.host.id, args, options)
   }
 }
