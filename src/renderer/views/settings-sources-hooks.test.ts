@@ -117,6 +117,8 @@ describe('settings sources → hooks list', () => {
     // trusted first.
     assert.match(fieldset.textContent, /while the agent works/)
     assert.match(fieldset.textContent, /trust the project/)
+    assert.match(fieldset.textContent, /failed blocking hook stops/i)
+    assert.match(fieldset.textContent, /turn hooks off here/i)
   })
 
   it('hides the Hooks fieldset by default outside Developer mode', async () => {

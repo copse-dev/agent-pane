@@ -219,8 +219,8 @@ describe('copse-adapter (F1)', () => {
         { workspaceRoot: null, projectTrusted: false },
       )
       assert.equal(closed.find((h) => h.command === './closed.sh')?.onFailure, 'closed')
-      // Invalid onFailure defaults to open, with a warning.
-      assert.equal(closed.find((h) => h.command === './bad.sh')?.onFailure, 'open')
+      // Invalid onFailure defaults to closed, with a warning.
+      assert.equal(closed.find((h) => h.command === './bad.sh')?.onFailure, 'closed')
       const { warnings } = await listCopseHooksForSources({
         workspaceRoot: null,
         projectTrusted: false,
@@ -351,22 +351,22 @@ describe('copse-adapter (F1)', () => {
       assert.equal((await gate('mcp__x__y', {})).permission, 'deny')
     })
 
-    it('fails OPEN by default when a hook crashes', async () => {
+    it('fails CLOSED by default when a hook crashes', async () => {
       const script = await writeHookScript('boom.sh', '')
       // Overwrite with a script that exits non-zero.
       await writeFile(script, '#!/bin/sh\ncat > /dev/null\nexit 3\n', 'utf-8')
       await chmod(script, 0o755)
       await writeUserHooks({ hooks: { toolGate: [{ command: script }] } })
-      assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'allow')
+      assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'deny')
     })
 
-    it('fails CLOSED (blocks) when onFailure:closed and the hook crashes (decision 9)', async () => {
+    it('honours explicit onFailure:open when a hook crashes (decision 9)', async () => {
       const script = join(tempHome, 'crash.sh')
       await writeFile(script, '#!/bin/sh\ncat > /dev/null\nexit 3\n', 'utf-8')
       await chmod(script, 0o755)
-      await writeUserHooks({ hooks: { toolGate: [{ command: script, onFailure: 'closed' }] } })
+      await writeUserHooks({ hooks: { toolGate: [{ command: script, onFailure: 'open' }] } })
       const decision = await gate('run_shell', { command: 'ls' })
-      assert.equal(decision.permission, 'deny')
+      assert.equal(decision.permission, 'allow')
     })
 
     it('honours a per-hook matcher against the tool name', async () => {
@@ -455,6 +455,7 @@ describe('copse-adapter (F1)', () => {
       const hookProperties = expectRecord(hook['properties'])
       const onFailure = expectRecord(hookProperties['onFailure'])
       assert.deepEqual(onFailure['enum'], ['open', 'closed'])
+      assert.equal(onFailure['default'], 'closed')
     })
   })
 })

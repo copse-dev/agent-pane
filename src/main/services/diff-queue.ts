@@ -667,10 +667,9 @@ async function fireAfterFileEdit(
  * Fire the `beforeDiffApply` hooks for a diff about to land (F2, Copse-native).
  * Blocking — the apply path awaits this so a hook can deny/halt before the edit
  * lands. Gated behind `cursorHooksEnabled` (default off), the same flag every
- * other fire site uses, so disabled behavior is byte-identical. Any unexpected
- * orchestration error fails **open** (the apply proceeds): a broken hook must
- * never wedge the diff queue, and the per-dialect `onFailure` (decision 9) is the
- * knob a security-conscious hook uses to fail closed instead.
+ * other fire site uses, so disabled behavior is byte-identical. Unexpected
+ * orchestration errors fail closed while hooks are enabled; the same Settings
+ * toggle is the user escape hatch (decision 9).
  */
 async function fireBeforeDiffApply(
   path: string,
@@ -691,7 +690,11 @@ async function fireBeforeDiffApply(
     return { blocked: true, reason: `Blocked by a beforeDiffApply hook: ${detail}` }
   } catch (err) {
     console.warn(`[hooks] beforeDiffApply hook error for ${path}:`, errorMessage(err))
-    return { blocked: false, reason: '' }
+    return {
+      blocked: true,
+      reason:
+        'Blocked because a beforeDiffApply hook could not be evaluated. Disable external hooks in Settings → Sources to proceed.',
+    }
   }
 }
 

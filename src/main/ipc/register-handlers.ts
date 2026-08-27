@@ -1276,8 +1276,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     const options = parseIpcArgs(setKeyOptionsSchema, [opts])
     const result = setApiKey(p, apiKey, options)
-    // Encryption unavailable and no plaintext consent: nothing was stored. Report
-    // back so the renderer can prompt for explicit consent and retry.
+    // Encryption unavailable: nothing was stored. The result distinguishes the
+    // default-off plaintext policy from the per-save consent step so the
+    // renderer never offers a retry the process is not allowed to perform.
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
     if (p === 'cursor') invalidateCursorCloudModelsCache()
