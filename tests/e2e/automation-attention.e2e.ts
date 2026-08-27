@@ -8,6 +8,18 @@ import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed
 
 const PROJECT_ID = 'e2e-automation-attention'
 const SCHEDULE_ID = 'schedule-ci-review-attention'
+/**
+ * Set in `before`, read on the failure path so the diagnostics can walk the
+ * fixture's ancestry. `prepareCheckout` refuses an isolated worktree with
+ * "submodules unsupported" when `repositoryHasSubmodules` finds a `.gitmodules`
+ * beside the nearest ancestor holding a `.git` (git-service.ts), and on the
+ * fleet it does exactly that for this fixture while the byte-identical
+ * `automation-trigger` fixture is accepted in the same job. Neither the DOM nor
+ * the renderer console can say which directory it stopped at; only the test
+ * process can, because it alone sees the filesystem.
+ */
+let fixtureRoot = ''
+
 const ASK_PROMPT =
   '[[mcp:ask_user {"questions":[{"question":"Which CI failure should I investigate?","options":["Latest failure","All failures"]}]}]]'
 
@@ -20,6 +32,7 @@ describe('automation attention grouping', function () {
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
     const projectRoot = join(dirname(worktreesRoot), 'automation-attention-project')
+    fixtureRoot = projectRoot
     mkdirSync(projectRoot, { recursive: true })
     const git = (...args: string[]): void => {
       execFileSync('git', args, { cwd: projectRoot, stdio: 'pipe' })
@@ -232,6 +245,89 @@ describe('automation attention grouping', function () {
             .join(' | '),
         }
       }, startedThreadId)
+      // Everything above reads the DOM, and the DOM cannot say *why* the run
+      // never started: an automation row carries only `is-automation` and
+      // `selected` (projects-pane.ts), so a thread that failed its checkout and
+      // a thread the controller never picked up render identically.
+      //
+      // The thread's own record separates them. `startThread`
+      // (renderer/controller/automations.ts) clears `draftPrompt` only *after*
+      // `prepareCheckout` resolves, and dispatch then moves the thread to
+      // `running`, so:
+      //   - draft kept, still `idle` → it never got past the checkout, either by
+      //     throwing (the catch logs `[automations] Failed to start scheduled
+      //     task:`, now printed in the shard digest) or by `isPendingAutomation`
+      //     rejecting the thread — and the fields below say which term.
+      //   - draft cleared, `running` → it dispatched and died later, which is a
+      //     different bug in a different place.
+      // Read over IPC rather than from the store: the renderer does not expose
+      // the store, and `loadProject` is the same call the controller makes.
+      // Message counts are deliberately absent — `loadProject` returns metadata
+      // only, so a count read here is always 0 and would read as "no user
+      // message was ever added" even on a run that dispatched normally.
+      //
+      // `activeProjectSelected` covers the remaining silent exit. Four separate
+      // guards abandon the start with no log and no state change when the
+      // renderer's `activeProjectId` is not this project — `receiveTrigger`
+      // before it ever calls `startThread`, and `startThread` itself on entry
+      // and twice more across its awaits. Those look identical to
+      // `isPendingAutomation` rejecting the thread, so read the one thing the
+      // DOM does expose: a `.chat-row` is given `selected` only when
+      // `project.id === activeProjectId && thread.id === activeThreadId`
+      // (projects-pane.ts), and the seed pins `activeThreadId` to
+      // `regular-chat`. So a selected `regular-chat` row proves the renderer
+      // agrees on the active project, and its absence indicts those guards.
+      //
+      // Caveat worth keeping in mind when reading the result: this record comes
+      // from disk, while the guards above read the in-memory store, so a lag
+      // between the two would show as a kept draft on a thread the store had
+      // already advanced.
+      const threadRecord = await browser.execute(
+        async ([projectId, threadId]) => {
+          const host = window as unknown as {
+            api?: { threads?: { loadProject?: (project: string) => Promise<unknown> } }
+          }
+          if (!host.api?.threads?.loadProject) return 'threads.loadProject unavailable'
+          if (threadId === '') return 'runNow returned no thread id'
+          const loaded = (await host.api.threads.loadProject(projectId)) as {
+            id?: string
+            status?: string
+            draftPrompt?: string
+            automation?: unknown
+          }[]
+          const thread = loaded.find((candidate) => candidate.id === threadId)
+          if (!thread)
+            return `started thread absent from loadProject (${String(loaded.length)} thread(s))`
+          return JSON.stringify({
+            activeProjectSelected:
+              document.querySelector('.chat-row.selected[data-thread-id="regular-chat"]') !== null,
+            status: thread.status ?? '<unset>',
+            // The three `isPendingAutomation` terms, so a silent early return
+            // names the term that rejected it.
+            hasAutomation: thread.automation !== undefined,
+            draftPromptKept: Boolean(thread.draftPrompt?.trim()),
+          })
+        },
+        [PROJECT_ID, startedThreadId],
+      )
+      // Walk from the fixture to the filesystem root, recording which ancestors
+      // hold `.git` and which hold `.gitmodules`. `repositoryHasSubmodules`
+      // stops at the first ancestor with a `.git` (a file counts — the source
+      // checkout is itself a linked worktree) and then answers on whether a
+      // `.gitmodules` sits beside it, so this names the directory that decided
+      // it. The fixture's own `.git` should be the first hit and should have no
+      // sibling `.gitmodules`; anything else is the bug.
+      const ancestry: string[] = []
+      for (let dir = fixtureRoot; dir !== '' && ancestry.length < 12;) {
+        const marks = [
+          existsSync(join(dir, '.git')) ? 'git' : '',
+          existsSync(join(dir, '.gitmodules')) ? 'GITMODULES' : '',
+        ].filter(Boolean)
+        if (marks.length > 0) ancestry.push(`${dir}[${marks.join('+')}]`)
+        const parent = dirname(dir)
+        if (parent === dir) break
+        dir = parent
+      }
       throw new Error(
         'attention did not reveal the Automations group — ' +
           `runNow returned ${JSON.stringify(runNowResult)}, ` +
@@ -240,7 +336,9 @@ describe('automation attention grouping', function () {
           `${String(groupCount)} schedule group(s), ${String(rowCount)} sidebar row(s), ` +
           `${String(bellCount)} attention bell(s), titles: ${titles || '<none>'}, ` +
           `sidebar: ${JSON.stringify(sidebarState)}, ` +
-          `after forcing the group open (revealed=${String(revealed)}): ${JSON.stringify(forced)}`,
+          `after forcing the group open (revealed=${String(revealed)}): ${JSON.stringify(forced)}, ` +
+          `started thread record: ${String(threadRecord)}, ` +
+          `fixture ancestry: ${ancestry.join(' <- ') || '<none>'}`,
       )
     }
     assert.equal((await automationToggle.$$('.chat-attention-bell')).length, 0)
