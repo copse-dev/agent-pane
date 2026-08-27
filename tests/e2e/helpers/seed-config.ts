@@ -3040,6 +3040,61 @@ export function seedQueuedMessageFixture(workspaceRoot: string): {
   return { threadId, queuedMessageId, queuedText }
 }
 
+/** Historical machine turn plus an idle composer for the live queue-attribution visual eval. */
+export function seedMachineTurnAttributionFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-machine-turn-attribution-project'
+  const threadId = 'e2e-machine-turn-attribution-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Background continuation',
+        status: 'idle',
+        model: 'claude-sonnet-4-6',
+        messages: [
+          {
+            id: 'msg-user-background-task',
+            role: 'user',
+            content: 'Run the focused checks in the background.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-background-task',
+            role: 'assistant',
+            content: 'The focused checks completed successfully.',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-machine-continuation',
+            role: 'user',
+            content: 'Review the completed checks and continue with any remaining work.',
+            toolCalls: [],
+            origin: { kind: 'machine', operationId: 'background-checks-17' },
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-continuation',
+            role: 'assistant',
+            content: 'Everything passed. The remaining work is ready for review.',
+            toolCalls: [],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 1200, outputTokens: 180 },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
 /**
  * Multi-segment tool-display fixture: a user bug report followed by several
  * assistant bubbles (text-after-tools splits), each with Reasoning + a rolled-up

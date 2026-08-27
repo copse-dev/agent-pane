@@ -73,6 +73,7 @@ function createApi(options: {
   promptState?: { startingCommit: string | null; dirty: boolean }
   onExportArchive?: (projectId: string, threadId: string) => void
   onAttachArchive?: (projectId: string, threadId: string, name: string, bytes?: Uint8Array) => void
+  onRecordModelSelection?: ApiClient['threads']['recordModelSelection']
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -189,6 +190,8 @@ function createApi(options: {
       },
       threads: {
         ...base['threads'],
+        recordModelSelection:
+          options.onRecordModelSelection ?? base['threads'].recordModelSelection,
         listOrphans: async () => [],
         // A zip magic number is enough: nothing here unpacks it, and the bytes
         // are only ever asserted on as the payload handed to `archive:attach`.
@@ -242,6 +245,34 @@ async function flush(): Promise<void> {
 
 afterEach(() => {
   document.body.replaceChildren()
+})
+
+describe('input bar running attribution', () => {
+  it('makes the queueing behavior explicit while a turn is running', async () => {
+    const running = thread()
+    running.status = 'running'
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: running.id,
+      threads: [running],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const status = host.querySelector<HTMLElement>('.footer-running')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(status)
+    assert.equal(status.hidden, false)
+    assert.equal(status.textContent, 'Agent running · messages queue')
+    assert.ok(submit)
+    assert.equal(submit.textContent, 'Queue')
+    assert.equal(submit.getAttribute('aria-label'), 'Queue message')
+  })
 })
 
 describe('input bar first-message checkout', () => {
@@ -796,6 +827,65 @@ describe('input bar model recents', () => {
       (option) => option.textContent.split(' — ')[0],
     )
     assert.deepEqual(recentLabels, ['GPT-5.6 Sol', 'Claude Opus 4.8', 'Claude Haiku 4.5'])
+  })
+
+  it('records a user-attributed event when the footer picker commits a model', async () => {
+    const active: Thread = {
+      ...thread(),
+      id: 'thread-active',
+      model: 'gpt-5.6-sol',
+      updatedAt: 1,
+    }
+    const recent: Thread = {
+      ...thread(),
+      id: 'thread-recent',
+      model: 'claude-haiku-4-5',
+      updatedAt: 2,
+    }
+    const calls: unknown[][] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: active.id,
+      threads: [active, recent],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRecordModelSelection: async (...args) => {
+          calls.push(args)
+          return {
+            id: 'selection-1',
+            recordedAt: 10,
+            by: 'user',
+            from: 'gpt-5.6-sol',
+            to: 'claude-haiku-4-5',
+          }
+        },
+      }),
+    )
+    await flush()
+
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    const option = host.querySelector<HTMLButtonElement>(
+      '.model-picker-option[data-value="claude-haiku-4-5"]',
+    )
+    assert.ok(option)
+    option.click()
+    await settle()
+
+    assert.deepEqual(calls, [
+      ['project-1', 'thread-active', 'user', 'gpt-5.6-sol', 'claude-haiku-4-5'],
+    ])
+    assert.equal(
+      store.getState().threads.find((candidate) => candidate.id === active.id)?.model,
+      'claude-haiku-4-5',
+    )
   })
 })
 

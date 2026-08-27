@@ -644,6 +644,13 @@ export interface RunAgentOptions {
   onHistoryCheckpoint?: (messages: LLMMessage[]) => void
 }
 
+export interface RunAgentResult {
+  usage: { inputTokens: number; outputTokens: number }
+  messages: LLMMessage[]
+  /** The terminal outcome emitted for this turn, when the run reached a terminal chunk. */
+  turnOutcome?: TurnOutcome
+}
+
 export async function runAgent(
   threadId: string,
   userPrompt: UserContent,
@@ -651,7 +658,7 @@ export async function runAgent(
   host: AgentHost<StreamChunk>,
   registry: ToolRegistry,
   options?: RunAgentOptions,
-): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
+): Promise<RunAgentResult> {
   // A new turn: drop last turn's restore point so the next dirty-worktree edit
   // snapshots the user's current uncommitted work before applying over it.
   resetSessionBackup()
@@ -688,6 +695,7 @@ export async function runAgent(
   let lastTurnEvent: TurnOutcome['lastEvent']
   let pendingTurnOutcome: Omit<TurnOutcome, 'endedAt' | 'lastEvent'> | null = null
   let terminalOutcomeSent = false
+  let terminalOutcome: TurnOutcome | undefined
 
   const sendChunk = (chunk: StreamChunk): void => {
     if (chunk.type === 'text' && chunk.text.trim()) lastTurnEvent = 'text'
@@ -718,10 +726,16 @@ export async function runAgent(
             endedAt: Date.now(),
           }
       emitChunk({ type: 'turn_outcome', outcome })
+      terminalOutcome = outcome
       terminalOutcomeSent = true
     }
     emitChunk(chunk)
   }
+
+  const resultWithOutcome = (result: Omit<RunAgentResult, 'turnOutcome'>): RunAgentResult => ({
+    ...result,
+    ...(terminalOutcome !== undefined ? { turnOutcome: terminalOutcome } : {}),
+  })
 
   const recordTurnFailure = (
     err: unknown,
@@ -766,7 +780,10 @@ export async function runAgent(
       source: 'hook',
     }
     sendChunk({ type: 'done' })
-    return { usage: { inputTokens: 0, outputTokens: 0 }, messages: priorMessages }
+    return resultWithOutcome({
+      usage: { inputTokens: 0, outputTokens: 0 },
+      messages: priorMessages,
+    })
   }
   // H2: a `beforeSubmitPrompt` hook may inject current-turn context (Cursor
   // `additionalContext`). It is routed through the local model's operator
@@ -847,14 +864,14 @@ export async function runAgent(
       )
       sendChunk({ type: 'text', text: result.text })
       sendChunk({ type: 'done' })
-      return {
+      return resultWithOutcome({
         usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
         messages: [
           ...priorMessages,
           { role: 'user', content: outboundPrompt },
           { role: 'assistant', content: result.text },
         ],
-      }
+      })
     } catch (err) {
       sendChunk({ type: 'text', text: errorMessage(err) })
       recordTurnFailure(err, {
@@ -862,10 +879,10 @@ export async function runAgent(
         ...(controller.signal.aborted ? { stopReason: 'cancelled' } : {}),
       })
       sendChunk({ type: 'done' })
-      return {
+      return resultWithOutcome({
         usage: { inputTokens: 0, outputTokens: 0 },
         messages: [...priorMessages, { role: 'user', content: outboundPrompt }],
-      }
+      })
     } finally {
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
       endHookRunRecording(threadId)
@@ -883,7 +900,7 @@ export async function runAgent(
     acpRunAgentId: string,
     acpRunModel: string | undefined,
     executorModel: string,
-  ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> => {
+  ): Promise<RunAgentResult> => {
     terminalContext = { executor: 'acp', provider: acpRunAgentId, model: executorModel }
     const controller = new AbortController()
     abortMap.set(threadId, controller)
@@ -1031,7 +1048,7 @@ export async function runAgent(
       }
       sendChunk(continuationBudgetChunk(budgetLedger.used(turnTreeId), turnTreeId))
       sendChunk({ type: 'done', stopReason: result.stopReason })
-      return { usage, messages }
+      return resultWithOutcome({ usage, messages })
     } catch (err) {
       // Keep what the failed turn streamed: the partial assistant text stays in
       // history (so the next turn's preamble knows what already happened) and
@@ -1090,14 +1107,14 @@ export async function runAgent(
       ]
         .filter((part): part is string => Boolean(part))
         .join('\n\n')
-      return {
+      return resultWithOutcome({
         usage: partial?.usage ?? { inputTokens: 0, outputTokens: 0 },
         messages: [
           ...priorMessages,
           { role: 'user' as const, content: outboundPrompt },
           { role: 'assistant' as const, content },
         ],
-      }
+      })
     } finally {
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
@@ -1213,7 +1230,7 @@ export async function runAgent(
       }
     })()
 
-    if (outcome.kind === 'done') return outcome.result
+    if (outcome.kind === 'done') return resultWithOutcome(outcome.result)
 
     const choice = await offerAcpClaudeFallback({
       provider: remoteSelection.provider,
@@ -1230,7 +1247,7 @@ export async function runAgent(
         error: outcome.error,
       }
       sendChunk({ type: 'done' })
-      return emptyTurn
+      return resultWithOutcome(emptyTurn)
     }
 
     const switched = parseAcpModelSelection(choice.modelValue)
@@ -1474,10 +1491,10 @@ export async function runAgent(
         text: oversizedTurnMessage(contextWindow, prepared.estimatedPromptTokens),
       })
       sendChunk({ type: 'done' })
-      return {
+      return resultWithOutcome({
         usage: { inputTokens: 0, outputTokens: 0 },
         messages: trimmed.filter((m) => m.role !== 'system' && m.role !== 'developer'),
-      }
+      })
     }
 
     const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
@@ -2069,7 +2086,10 @@ export async function runAgent(
     abortMap.delete(threadId)
   }
 
-  return { usage: { inputTokens, outputTokens }, messages: persistableHistory() }
+  return resultWithOutcome({
+    usage: { inputTokens, outputTokens },
+    messages: persistableHistory(),
+  })
 }
 
 export function abortAgent(threadId: string): void {
