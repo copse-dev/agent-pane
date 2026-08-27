@@ -758,12 +758,37 @@ Spec: [`tests/e2e/roadmap-list-rows.e2e.ts`](../tests/e2e/roadmap-list-rows.e2e.
 Complexity / fit / review chips stay when present (they are rare); tuck those
 further only if the list gets noisy again.
 
+## Accent rails never curve
+
+A rail — a slim bar marking one inline edge of a row, whether drawn as `border-left` or as an inset
+shadow (`box-shadow: inset 2px 0 0`) — is clipped to the element's `border-radius`. Put one on a
+rounded box and the bar bows around the corners it meets, and the row stops reading as a marked list
+item and starts reading as a generic tinted callout. Keep the corners a rail touches square.
+
+Three ways out, in order of preference:
+
+- **Square the whole box** (`border-radius: 0`) when the row belongs to a continuous list — the
+  sidebar chat rows, Settings nav, `.review-panel` and `.comparison-panel` in the transcript.
+- **Square only the rail's side** (`border-radius: 0 var(--radius) var(--radius) 0`) to keep a
+  rounded card and a straight rail. This is what `@copse/streaming-markdown` does for blockquotes,
+  and its GitHub alerts go further and square all four.
+- **Drop the rail for an even ring** (`box-shadow: inset 0 0 0 1px var(--accent)`) when the element
+  is genuinely a card rather than a list row — a ring has no direction, so it follows a radius
+  cleanly on all four sides. `.provider-chip.active` and `.vnc-discovered-port.selected` use this.
+
+The rule is per-edge, so a rounded far side is fine; only the corners the bar actually reaches have
+to be square. `accent-rails.test.ts` parses every renderer stylesheet, joins each rail against any
+rule that could round the same element, and fails with both source locations. happy-dom has no
+layout and a screenshot diff only catches this after it ships, so the stylesheet is where it is
+pinned.
+
 ## Sidebar selections
 
 Chat rows use flat, square, full-bleed selection and hover fills with a slim inset accent rail on
 the **trailing (right) edge**. Avoid rounded row highlights here: they read like detached pills
-instead of a selection within a continuous sidebar list. Don't reintroduce horizontal
-`margin-inline` on `.chat-row` — the selection wash should span the sidebar edge-to-edge.
+instead of a selection within a continuous sidebar list — see "Accent rails never curve" above. Don't
+reintroduce horizontal `margin-inline` on `.chat-row` — the selection wash should span the sidebar
+edge-to-edge.
 
 Thread rows and the paginated **Show more** control share the same horizontal inset
 (`margin-inline: var(--spacing-xs)` plus `padding-left: 28px`). Don't give Show more `width: 100%`

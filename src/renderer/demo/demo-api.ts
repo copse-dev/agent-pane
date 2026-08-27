@@ -725,7 +725,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     vnc: {
       open: unsupported,
       list: emptyArray,
-      discover: emptyArray,
+      discover: () => resolved([...(scenario.vncDiscoveredPorts ?? [])]),
       discoverNearby: emptyArray,
       resolveSshHosts: emptyArray,
       getUsername: () => resolved(null),
