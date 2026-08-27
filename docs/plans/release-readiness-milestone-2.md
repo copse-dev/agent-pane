@@ -1,13 +1,25 @@
 # Release-readiness milestone 2
 
-**Status:** Proposed portfolio; audited against `main` and GitHub on 2026-07-21.
+**Status:** Active portfolio; original plan audited on 2026-07-21, tracker consolidated on
+2026-08-26 and owner-triaged on 2026-08-27.
 
 **Tracking:** [Milestone 2 — Release readiness](https://github.com/copse-dev/agent-pane/milestone/2)
 
-This plan covers every open item in milestone 2. It is intentionally one planning document, but it
-is not a proposal for one implementation branch. The work ranges from issue closure to security
-boundaries and persistent-data migration. Each independently releasable phase below should be its
-own pull request, with the issue number in the title and acceptance evidence in the description.
+This plan covers the milestone's original release-readiness portfolio. The milestone is the
+canonical GA view. After owner triage on 2026-08-27, the live `ga-blocker` set is #507 (signed,
+notarized prerelease evidence), #802 (public distribution/update channel), and #1153
+(append-oriented thread-store writes and benchmark). #998 and #1728 closed with measured/observed
+performance evidence; #1154 and #1286 remain open milestone follow-ups without the blocker label;
+umbrella #1872 closed as superseded by #1153 and #994. Live issue bodies own the current acceptance
+criteria; the item plans below remain the design record for the original portfolio. The work ranges
+from issue closure to security boundaries and persistent-data migration. Each independently
+releasable phase should be its own pull request, with the issue number in the title and acceptance
+evidence in the description.
+
+The five macOS signing/notarization secret names were confirmed present in repository Actions
+settings by the release owner on 2026-08-27. Their values remain unverified until the first fresh
+`Release (macOS)` run reaches signing and notarization. The draft `0.1.0-beta.2` candidate checklist
+is [`docs/releases/0.1.0-beta.2.md`](../releases/0.1.0-beta.2.md).
 
 ## Portfolio decision
 
@@ -23,7 +35,7 @@ or permission auditing with unrelated release work.
 | [#785 longer `run_shell` timeouts](#785-long-running-run_shell-commands)          | Unimplemented                                                                | Low         | One schema/lifecycle PR                                   |
 | [#787 pipeline exit masking](#787-pipelines-mask-run_shell-failures)              | Unimplemented                                                                | Medium      | One shell-semantics PR                                    |
 | [#993 move `llm-history`](#993-move-llm-history-out-of-electron-store)            | Implemented (sidecar + migration)                                            | High        | Landed as one storage+migration PR                        |
-| [#998 catalog/lazy thread loading](#998-catalog-based-lazy-thread-loading)        | Catalog exists; renderer still folds all threads                             | High        | Main/store API PR, then renderer hydration PR             |
+| [#998 catalog/lazy thread loading](#998-catalog-based-lazy-thread-loading)        | Closed: lazy loading landed; 363-thread boot measured 7,511 ms → 491 ms      | Low         | Regression ownership moved to #994                        |
 | [#995 main-loop watchdog](#995-main-process-event-loop-lag-watchdog)              | Unimplemented                                                                | Medium      | One invisible diagnostics PR                              |
 | [#994 aged-profile startup e2e](#994-aged-profile-startup-e2e)                    | Unimplemented                                                                | Medium      | Dedicated fixture/config/CI PR after #993 and #998        |
 | [#806 artifact-size budget](#806-artifact-size-budget-and-packaged-footprint)     | Unimplemented                                                                | Medium–high | Reporting/budget first; each footprint reduction separate |
@@ -36,8 +48,8 @@ or permission auditing with unrelated release work.
 
 1. **Close already-shipped work:** validate #607 and #830 against real adapters; do not reopen
    their architecture while preparing the release.
-2. **Remove startup amplification:** land #993, #998, and #995, then use #994 as the integrated
-   aged-profile gate.
+2. **Remove startup amplification:** #993 and #998 landed; use #994 as the integrated aged-profile
+   regression gate and keep #995 as diagnostics follow-up.
 3. **Harden shell ergonomics:** land #785 and #787 as independent changes.
 4. **Make packaging measurable:** land #806 reporting and budgets before choosing reductions.
 5. **Finish ACP evidence:** complete #832 before committing to the high-risk #623 terminal design.
@@ -539,6 +551,8 @@ and support can export a bounded record without raw user content.
 
 Milestone 2 is fully planned when each open item links this document and names its next PR or closure
 evidence. It is delivered only when:
+
+- every live `ga-blocker` issue is closed with linked evidence or has an explicit bounded GA waiver;
 
 - #607 and #830 are closed with real-adapter evidence or explicitly respecified;
 - the #993 → #998 → #994 startup chain passes an aged profile on CI;

@@ -123,22 +123,24 @@ describe('before-submit-prompt (beforeSubmitPrompt compose path — B1)', () => 
     assert.equal(decision.blocked, false)
   })
 
-  it('fails open when a hook crashes (default) — the submit proceeds', async () => {
+  it('fails open when a hook explicitly sets failClosed:false', async () => {
     const path = join(tempHome, 'crash.sh')
     await writeFile(path, '#!/bin/sh\ncat > /dev/null\nexit 2\n', 'utf-8')
     await chmod(path, 0o755)
-    await writeUserHooks({ hooks: { beforeSubmitPrompt: [{ command: path }] } })
+    await writeUserHooks({
+      hooks: { beforeSubmitPrompt: [{ command: path, failClosed: false }] },
+    })
 
     const decision = await submit('proceed')
     assert.equal(decision.blocked, false)
   })
 
-  it('failClosed blocks the submit when a hook crashes', async () => {
+  it('fails closed by default when a hook crashes', async () => {
     const path = join(tempHome, 'crash-closed.sh')
     await writeFile(path, '#!/bin/sh\ncat > /dev/null\nexit 2\n', 'utf-8')
     await chmod(path, 0o755)
     await writeUserHooks({
-      hooks: { beforeSubmitPrompt: [{ command: path, failClosed: true }] },
+      hooks: { beforeSubmitPrompt: [{ command: path }] },
     })
 
     const decision = await submit('proceed')

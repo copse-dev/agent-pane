@@ -27,13 +27,16 @@ should stream a reply (or a clear provider error).
 
 ## If no keyring is available
 
-Copse refuses to persist the key until you explicitly approve **base64
-plaintext** storage. Base64 is recoverable by anyone who can read
-`~/.copse/user-data/settings.json`. That consent is the L1 residual: it exists
-so a Linux or headless session without a keyring is not stranded. Prefer fixing
-the keyring.
+Copse refuses to persist the key. Prefer installing and unlocking a system
+keyring or supply the provider key through its environment variable.
 
-Environment-only keys are never written to settings.
+For an exceptional Linux/headless setup, start Copse with
+`COPSE_ALLOW_PLAINTEXT_SECRETS=1`. Copse will then ask for separate consent on
+each save before writing **base64 plaintext**. Base64 is recoverable by anyone
+who can read `~/.copse/user-data/settings.json`; the environment variable does
+not bypass the confirmation.
+
+Environment-only provider keys are never written to settings.
 
 ## Attribution Copse always sends
 

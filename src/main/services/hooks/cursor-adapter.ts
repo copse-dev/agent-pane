@@ -7,11 +7,10 @@
 // Foreign-file discipline: only Cursor's own event names are honoured; unknown
 // events are warned about, never silently skipped.
 //
-// Cursor hooks fail **open by default** — a crash, timeout, or invalid JSON is
-// treated as `allow` so a broken hook never wedges the agent. But Cursor's
-// per-hook `failClosed: true` is part of the vendor contract: with it set, those
-// same failures **block** (decision 9 acceptance criterion). The adapter reports
-// `failed` + the hook's `onFailure`; the shared runner turns that into deny/allow.
+// Copse applies a fail-closed host policy to imported Cursor hooks: a missing
+// `failClosed` field, crash, timeout, or invalid JSON blocks a gated action.
+// Authors who need Cursor's vendor default can opt out per hook with
+// `failClosed: false`; users can disable external hooks globally in Settings.
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
@@ -63,7 +62,7 @@ interface DiscoveredCursorHook {
   cwd: string
   source: string
   scope: CursorHookScope
-  /** Cursor `failClosed: true` — crash / timeout / invalid JSON blocks instead of allowing. */
+  /** Resolved host policy: only explicit Cursor `failClosed: false` fails open. */
   failClosed: boolean
   /**
    * Per-hook `timeout` override in **milliseconds** (decision 13; H4). Parsed
@@ -217,7 +216,9 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
         warn(`"${event}" entry ${String(index + 1)} has a missing or empty "command" — skipped`)
         return
       }
-      const failClosed = entry['failClosed'] === true
+      // Public-release hardening deliberately tightens Cursor's vendor default:
+      // omitted/invalid values fail closed; only an explicit false opts out.
+      const failClosed = entry['failClosed'] !== false
       const glob = normalizeGlobField(entry['glob'])
       const matcherRaw = entry['matcher']
       const matcher =

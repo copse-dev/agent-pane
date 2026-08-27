@@ -131,16 +131,16 @@ describe('subagent hooks (D1 fire sites)', () => {
 
   // --- failClosed on the blocking gate ---
 
-  it('failClosed blocks a crashing subagentStart hook; fail-open lets it through', async () => {
+  it('defaults closed for a crashing subagentStart hook; explicit false lets it through', async () => {
     const crash = join(tempHome, 'crash.sh')
     await writeFile(crash, '#!/bin/sh\ncat > /dev/null\nexit 2\n', 'utf-8')
     await chmod(crash, 0o755)
 
-    await writeUserHooks({ hooks: { subagentStart: [{ command: crash, failClosed: true }] } })
+    await writeUserHooks({ hooks: { subagentStart: [{ command: crash }] } })
     const closed = await runSubagentStartHooks('explore', discover)
     assert.equal(closed.denied, true)
 
-    await writeUserHooks({ hooks: { subagentStart: [{ command: crash }] } })
+    await writeUserHooks({ hooks: { subagentStart: [{ command: crash, failClosed: false }] } })
     const open = await runSubagentStartHooks('explore', discover)
     assert.equal(open.denied, false)
   })

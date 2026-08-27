@@ -1057,13 +1057,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="cursorHooksEnabled" />
-                Run Cursor hooks
+                Run external hooks
               </label>
               <p class="field-hint">
                 Off by default. Turning this on runs your own scripts while the agent works: every
                 tool call it makes can start a matching hook command, with the same rights you
                 have on this machine. Project hooks also need you to trust the project, the same
-                bar as running its build scripts. A hook that fails never blocks the agent.
+                bar as running its build scripts. A failed blocking hook stops the affected
+                action. If a hook breaks, turn hooks off here; notification hooks cannot block
+                work that already completed.
               </p>
               <div id="sources-hooks-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -4108,10 +4110,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void (async (): Promise<void> => {
       const data = new FormData(settingsForm)
 
-      if (cursorKeysDirty) await cursorKeySection.saveKeys()
-      if (claudeAgentKeysDirty) await claudeAgentKeySection.saveKeys()
-      if (aaKeysDirty) await aaKeySection.saveKeys()
-      if (providersDirty) await providersPanel.saveKeys()
+      if (cursorKeysDirty && !(await cursorKeySection.saveKeys())) return
+      if (claudeAgentKeysDirty && !(await claudeAgentKeySection.saveKeys())) return
+      if (aaKeysDirty && !(await aaKeySection.saveKeys())) return
+      if (providersDirty && !(await providersPanel.saveKeys())) return
       await modelParametersSection.save()
       if (lmStudioDirty) await lmStudioSection.saveApiKey()
       const routingValues = modelRoutingSection.readValues()

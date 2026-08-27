@@ -11,9 +11,11 @@ description: Fix empty model pickers, unexpected prompts, and a profile that wil
 one from the environment scan, or set a local server URL. Then pick a model in
 the thread header.
 
-**The key will not save.** The OS keyring may be unavailable. Copse will ask
-before writing a recoverable base64 copy. On Linux, install and unlock a
-Secret Service keyring rather than accepting plaintext if you can.
+**The key will not save.** The OS keyring may be unavailable. On Linux, install
+and unlock a Secret Service keyring or use an environment-only provider key.
+Plaintext persistence is off by default; the emergency compatibility path is to
+start Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1`, then approve the separate
+per-save warning. The resulting base64 copy is not encrypted.
 
 **A hosted request fails immediately.** Check the provider dashboard, the
 endpoint URL, and that the key has not been rotated. Copse talks to the

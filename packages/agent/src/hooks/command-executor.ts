@@ -2,9 +2,9 @@
 //
 // Decision 1: "two executor kinds (function / command)". First-party hooks are
 // in-process functions (fail-hard, decision 9); user/project hooks are spawned
-// commands whose failure semantics are *per-dialect* (decision 9 again: Cursor
-// fails open by default but honours `failClosed`, Claude denies on exit 2, the
-// Copse dialect uses `onFailure: open|closed`).
+// commands whose failure semantics are resolved by host policy plus explicit
+// dialect compatibility controls (decision 9: Cursor supports `failClosed`,
+// Claude denies on exit 2, and Copse supports `onFailure: open|closed`).
 //
 // This module defines only the *contract* a command hook and its runner satisfy.
 // The concrete spawn — process, sandbox, stdin/stdout marshalling, per-event

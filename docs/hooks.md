@@ -33,8 +33,8 @@ share one registry, one event vocabulary, and one Sources UI:
   behaviors (todo steering, closeout nudges, in-loop nudges — [the MVP milestone](./plans/hooks-and-feature-packs.md#milestone-0--mvp-todos-out-of-the-core-files)/[the first-party migration phase](./plans/hooks-and-feature-packs.md#phase-e--first-party-migration-payback-phase--not-optional)).
 - **Command hooks** — user/project scripts spawned as processes, owned by a **dialect
   adapter**. They receive a JSON payload on **stdin**, may print a JSON response on
-  **stdout**, and their failure semantics are the vendor's (fail-open by default, per-hook
-  fail-closed honoured — the [vendor failure semantics decision](./plans/hooks-and-feature-packs.md#decisions-log)).
+  **stdout**. Copse applies a fail-closed host default, with explicit per-hook
+  compatibility escapes where a dialect supports them (the [hook failure policy](./plans/hooks-and-feature-packs.md#decisions-log)).
 
 The **harness never knows dialects or executors exist**: it fires canonical events; the
 registry dispatches to whatever is registered.
@@ -286,6 +286,12 @@ readable by a hook. Enabling hooks + trusting a workspace grants that repo's hoo
 arbitrary local code execution on the agent's hot path; this is the same trust boundary as
 [`docs/supply-chain-security.md`](./supply-chain-security.md). See each dialect doc's
 Security section for the full model.
+
+Blocking command hooks fail closed when they crash, time out, cannot spawn, or return an
+invalid response. Cursor hooks can explicitly set `failClosed: false`, and Copse hooks can
+set `onFailure: "open"`, when compatibility requires fail-open. Claude has no per-hook
+escape; turn external hooks off in Settings → Sources if one is incompatible. Observation
+hooks cannot retroactively block work that already completed.
 
 ## Hook UI: cards, Sources, and the dry-run tester
 
