@@ -59,6 +59,13 @@ export interface DemoScenario {
    * "Loading…" notice that never finishes.
    */
   failThreadHydration?: boolean
+  /**
+   * Answer `vnc:discover` with these ports instead of scanning a host the browser
+   * demo does not have. The discovered-port list only renders when a machine
+   * exposes more than one port, and the first is selected on arrival — which is
+   * the only way to reach `.vnc-discovered-port.selected` deterministically.
+   */
+  vncDiscoveredPorts?: readonly number[]
   /** Seed one host approval so browser geometry specs can inspect the real dialog. */
   approvalRequest?: {
     id: string
@@ -565,6 +572,29 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       bodyFooter: 'Allow running it once outside the sandbox?',
       type: 'shell',
     },
+  },
+  {
+    id: 'vnc-discovered-ports',
+    label: 'Remote desktop discovered-port list with one selected',
+    project: project('demo-vnc-discovered-ports-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      vncEnabled: true,
+    },
+    threads: [
+      {
+        id: 'demo-vnc-discovered-ports-thread',
+        title: 'Remote desktop',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    vncDiscoveredPorts: [5900, 5901, 5902],
   },
   {
     id: 'settings-footer',
