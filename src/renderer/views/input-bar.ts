@@ -109,6 +109,7 @@ import { LOCAL_MODEL_SUFFIX } from '@shared/model-display.ts'
 import { contextFitAdvice } from '@shared/context-window-advice.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
+import { commitThreadModelSelection } from '../controller/model-selection.ts'
 
 interface MountInputBarOptions {
   /**
@@ -306,11 +307,23 @@ export function mountInputBar(
   })
   const usagePopover = createFooterUsagePopover()
   const usageGroup = el('div', { class: 'footer-usage-group' })
+  const runningIndicator = el('span', {
+    class: 'footer-running',
+    hidden: '',
+    role: 'status',
+    'aria-live': 'polite',
+  })
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
-  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
+  usageGroup.append(
+    contextWheel.root,
+    runningIndicator,
+    queueIndicator,
+    usageBtn,
+    usagePopover.root,
+  )
   footer.append(modelHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -413,10 +426,8 @@ export function mountInputBar(
     // Best-value is Settings-only; the footer list never offers it. If a stale
     // value somehow arrives, ignore it — blank-thread resolution owns that mode.
     if (isBestValueChatModel(model)) return
-    const threads = store
-      .getState()
-      .threads.map((t) => (t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() }))
-    store.setState({ threads })
+    const from = thread.model ?? store.getState().settings?.model
+    commitThreadModelSelection(store, api, thread.id, 'user', from, model)
     // The picker reloads its selectors on refresh, so the effort row follows
     // the new model's ladder — or disappears when it has none.
     modelPicker.refresh()
@@ -1101,6 +1112,10 @@ export function mountInputBar(
   function updateState(): void {
     const running = isRunning()
     stopBtn.hidden = !running
+    runningIndicator.hidden = !running
+    runningIndicator.textContent = running ? 'Agent running · messages queue' : ''
+    submitBtn.textContent = running ? 'Queue' : 'Send'
+    submitBtn.setAttribute('aria-label', running ? 'Queue message' : 'Send message')
     submitBtn.classList.toggle('with-stop', running)
     composer.el.classList.toggle('with-stop', running)
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending()

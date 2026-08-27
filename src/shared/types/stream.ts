@@ -1,4 +1,4 @@
-import type { ModelComparison } from './thread.ts'
+import type { MachineMessageOrigin, ModelComparison } from './thread.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
 import type { TodoItem } from './todo.ts'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
@@ -8,6 +8,7 @@ import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 // the app-level orchestration events below.
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
+import type { UserContent } from '@copse/llm/wire-types.ts'
 
 // `AgentStreamChunk` (what the agent loop emits), `ProviderStreamChunk` (the
 // narrow provider contract), and `ToolCallChunk` live in their owning packages;
@@ -26,6 +27,8 @@ export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.t
  */
 export type StreamChunk =
   | AgentStreamChunk
+  /** A host-native continuation began without a human submit. */
+  | { type: 'machine_turn_start'; content: UserContent; origin: MachineMessageOrigin }
   /**
    * Patch an existing external ACP tool call. ACP agents may send the title and
    * raw input on the initial `tool_call`, then replace input/output/status in

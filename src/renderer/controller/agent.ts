@@ -42,6 +42,7 @@ import { takeQuietRun } from './quiet-runs.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
+import { userContentToText } from '@shared/remote-agent-stream.ts'
 
 /**
  * Resolved generation parameters, resolved model, and requested model for the
@@ -128,6 +129,21 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
   const unsub = api.agent.onChunk((threadId, chunk) => {
     const st = get(threadId)
     switch (chunk.type) {
+      case 'machine_turn_start': {
+        setThreadStatus(store, threadId, 'running')
+        addMessage(
+          store,
+          threadId,
+          'user',
+          userContentToText(chunk.content),
+          undefined,
+          undefined,
+          {
+            origin: chunk.origin,
+          },
+        )
+        break
+      }
       case 'text': {
         const { plan, state: nextState } = planAgentTextChunk(
           { msgId: st.msgId, toolSinceText: st.toolSinceText, currentText: st.currentText },

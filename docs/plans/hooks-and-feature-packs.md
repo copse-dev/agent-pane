@@ -293,6 +293,14 @@ revisiting this document, not silently diverging in an implementation PR.
     flip, while its scoped delay setting persists (decisions 15 and 17). Existing
     profiles receive a one-time disabled seed so an upgrade cannot silently activate
     benchmark-derived steering.
+24. **Model selection is actor-attributed at the commit point.** A committed thread-model
+    change records `modelSelected` with `{ by: 'user' | 'auto', from?, to }`; opening a
+    picker, resolving a route for one provider call, or re-selecting the current value
+    records nothing. The renderer's picker and automatic blank-thread resolver share one
+    commit seam, and main appends the durable `model_selected` spine line before returning
+    the compact event. Thread metadata mirrors the ordered selection history for sidebar
+    loads and portable export. This is an observation event: it cannot rewrite routing or
+    block the user-selected model.
 
 ## Target architecture
 
@@ -386,6 +394,7 @@ the phase listed. Names are final — changing one is a decisions-log edit, not 
 | `permissionDecision`                 | async, observation     | After `decideShellPermission` verdict (feeds #840's audit trail)                                   | F2    |
 | `beforeDiffApply` / `afterDiffApply` | blocking / async       | Diff-queue approval flow (Copse-native)                                                            | F2    |
 | `postTurnReview`                     | async, observation     | After a post-turn review cycle verdict (E3 `runPostTurnReviewCycle`; Copse-native)                 | F2    |
+| `modelSelected`                      | async, observation     | Thread model commit: footer picker or automatic blank-thread best-value resolution                 | F2    |
 
 **A1 landed** the whole table as typed, registered canonical events (`HOOK_EVENT_NAMES`
 / `HOOK_EVENT_SPECS` / `HookEventPayloads` in `packages/agent/src/hooks/canonical-events.ts`);
@@ -393,7 +402,10 @@ only `turnStart`/`beforeFinalize` have fire sites (M0), the rest are typed for t
 listed phase to wire without widening the name union. **F2 added `postTurnReview`** —
 the Copse-native observation event fired after a post-turn review verdict (E3's
 `runPostTurnReviewCycle` seam), taking the catalogue from 15 to 16 (decision-log edit
-per execution-guidance rule 1). **E1 added `stepBoundary`** — the
+per execution-guidance rule 1). **Issue #1877 added `modelSelected`**, the actor-attributed
+observation at the thread-model commit seam, taking the catalogue to 17 (decision 24).
+Its durable `model_selected` line and compact metadata history are included in portable
+thread exports. **E1 added `stepBoundary`** — the
 one new canonical event beyond A1's original 14 (then 15) — because the original four in-loop
 nudges fire at step boundaries under pressure, a point M0's two assembly events do not
 cover. It is `blocking, assembly` like the other two in-loop context events, carries the

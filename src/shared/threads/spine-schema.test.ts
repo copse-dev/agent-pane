@@ -15,6 +15,7 @@ import {
   type SpineDecisionLine,
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
+  type SpineModelSelectedLine,
   type SpineMessageLine,
   type SpinePermissionDecisionLine,
 } from './spine-schema.ts'
@@ -101,6 +102,27 @@ function machineContinuationLine(id: string): SpineMachineContinuationLine {
     budgetUsed: 2,
     phase: 'finished',
     result: 'completed',
+    turnOutcome: {
+      status: 'completed',
+      stopReason: 'end_turn',
+      source: 'provider',
+      executor: 'local',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      endedAt: 130,
+    },
+  }
+}
+
+function modelSelectedLine(id: string): SpineModelSelectedLine {
+  return {
+    v: SPINE_SCHEMA_VERSION,
+    type: 'model_selected',
+    id,
+    recordedAt: 140,
+    by: 'user',
+    from: 'auto:best-value',
+    to: 'claude-sonnet-4-6',
   }
 }
 
@@ -169,6 +191,12 @@ describe('spine-schema hook_run union (decision 6)', () => {
       ),
       null,
     )
+  })
+
+  it('round-trips actor-attributed model selections without exposing them as messages', () => {
+    const line = modelSelectedLine('model-1')
+    assert.deepEqual(parseSpineLine(serializeSpineLine(line)), line)
+    assert.deepEqual(parseSpine(serializeSpine([messageLine('m1'), line])), [messageLine('m1')])
   })
 
   it('parseSpineEntries preserves unknown line types verbatim', () => {

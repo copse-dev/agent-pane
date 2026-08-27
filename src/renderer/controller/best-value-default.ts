@@ -10,9 +10,13 @@ import {
   hasUnsubmittedPrompt,
 } from '@shared/store/thread-helpers.ts'
 import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
+import { commitThreadModelSelection } from './model-selection.ts'
 
 /** The only `ApiClient` slice this module calls. */
-type BestValueApi = { models: Pick<ApiClient['models'], 'bestValueDefault' | 'resolveDynamic'> }
+type BestValueApi = {
+  models: Pick<ApiClient['models'], 'bestValueDefault' | 'resolveDynamic'>
+  threads: Pick<ApiClient['threads'], 'recordModelSelection'>
+}
 
 /**
  * If the active blank thread still carries the best-value sentinel (or inherits
@@ -48,12 +52,7 @@ export async function resolveBestValueForActiveBlankThread(
   const latestModel = latest.model ?? store.getState().settings?.model
   if (typeof latestModel !== 'string' || !isDynamicModel(latestModel)) return
 
-  store.setState({
-    threads: store
-      .getState()
-      .threads.map((t) => (t.id === thread.id ? { ...t, model: resolved } : t)),
-  })
-  store.emit('threads_changed')
+  commitThreadModelSelection(store, api, thread.id, 'auto', latestModel, resolved)
 }
 
 /**

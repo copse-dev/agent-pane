@@ -5,6 +5,7 @@ import type { AppStore } from './store.ts'
 import { at } from '@shared/array-utils.ts'
 import type {
   Message,
+  MessageOrigin,
   ModelUsage,
   ToolCall,
   ThreadUsage,
@@ -377,6 +378,7 @@ export function addMessage(
     model?: string
     requestedModel?: string
     parameters?: ModelParameters
+    origin?: MessageOrigin
     startingCommit?: string
     dirty?: boolean
   },
@@ -391,6 +393,7 @@ export function addMessage(
     ...(opts?.model !== undefined ? { model: opts.model } : {}),
     ...(opts?.requestedModel !== undefined ? { requestedModel: opts.requestedModel } : {}),
     ...(opts?.parameters !== undefined ? { parameters: opts.parameters } : {}),
+    ...(opts?.origin !== undefined ? { origin: opts.origin } : {}),
     ...(opts?.startingCommit !== undefined ? { startingCommit: opts.startingCommit } : {}),
     ...(opts?.dirty !== undefined ? { dirty: opts.dirty } : {}),
     toolCalls: [],
