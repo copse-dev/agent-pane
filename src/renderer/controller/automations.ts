@@ -17,6 +17,18 @@ export interface AutomationControllerApi {
   threads: Pick<ApiClient['threads'], 'loadProject'>
 }
 
+/**
+ * Electron prefixes anything thrown inside `ipcMain.handle` with
+ * "Error invoking remote method 'x:y': Error: ", which is noise in a
+ * transcript. Local copy: `views/automation-plugin-settings.ts` and
+ * `views/roadmap-pane.ts` each carry their own, and a controller should not
+ * import from a view — worth folding into one shared helper separately.
+ */
+function startFailureDetail(error: unknown): string {
+  if (!(error instanceof Error)) return 'the checkout could not be prepared'
+  return error.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
+}
+
 function isPendingAutomation(thread: Thread): boolean {
   return (
     thread.automation !== undefined &&
@@ -44,6 +56,10 @@ export function attachAutomationController(
     const prompt = initial.draftPrompt?.trim()
     if (!prompt) return
     starting.add(threadId)
+    // Whether the transcript is loaded. Appending to an unhydrated thread
+    // would persist a truncated history, so the failure note below is written
+    // only once this is true.
+    let hydrated = false
     try {
       // Threads arrive as metadata only, so an automation can be the first thing
       // to touch a transcript that was never read — on a trigger, or on restart
@@ -51,6 +67,7 @@ export function attachAutomationController(
       // it, or the thread renders as a conversation that began mid-sentence.
       // (The agent's own context is unaffected: main reads it from disk.)
       await ensureThreadMessages(projectId, threadId)
+      hydrated = true
       if (store.getState().activeProjectId !== projectId) return
       if (!initial.worktreeChoice) {
         const prepared = await api.agent.prepareCheckout(
@@ -75,6 +92,22 @@ export function attachAutomationController(
       // prompt as a draft rather than losing scheduled work. Agent-run failures
       // after dispatch follow the normal controller/error-chunk path.
       console.error('[automations] Failed to start scheduled task:', error)
+      // Say so in the thread as well. Without this the run is indistinguishable
+      // from one that never fired: the thread sits idle holding its draft, with
+      // no bell, no toast and nothing in the UI at all — a failure mode that
+      // cost days to see from the outside. A schedule can fire while nobody is
+      // watching, so the record has to outlive the moment, which a toast does
+      // not.
+      if (hydrated) {
+        addMessage(
+          store,
+          threadId,
+          'error',
+          `This scheduled run could not start: ${startFailureDetail(error)}\n\n` +
+            'Its prompt is kept as a draft, so nothing is lost — send it once the ' +
+            'cause is resolved, or leave it for the next run.',
+        )
+      }
     } finally {
       starting.delete(threadId)
     }

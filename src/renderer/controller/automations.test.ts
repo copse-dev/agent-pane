@@ -196,8 +196,55 @@ test('a checkout failure preserves the scheduled prompt as a draft', async (cont
   assert.ok(thread)
   assert.equal(thread.status, 'idle')
   assert.equal(thread.draftPrompt, 'Review CI and report any failures.')
-  assert.equal(thread.messages.length, 0)
   assert.equal(runs, 0)
+
+  // The draft survives, and the thread says why it did not run. Before this
+  // the failure was console-only: an idle thread holding a draft, with no
+  // bell, no toast and nothing on screen to distinguish it from a run that
+  // never fired.
+  assert.equal(thread.messages.length, 1)
+  const note = thread.messages[0]
+  assert.ok(note)
+  assert.equal(note.role, 'error')
+  assert.match(note.content, /could not start/)
+  assert.match(note.content, /checkout unavailable/)
+  assert.match(note.content, /kept as a draft/)
+  // No user bubble — the prompt was never submitted.
+  assert.equal(thread.messages.filter((message) => message.role === 'user').length, 0)
+
+  detach()
+})
+
+test('the IPC wrapper is stripped from the failure note', async (context) => {
+  context.mock.method(console, 'error', () => {})
+  const store = createStore({
+    activeProjectId: 'project-a',
+    workspaceRoot: '/repo',
+    threads: [automationThread()],
+  })
+  const api: AutomationControllerApi = {
+    agent: {
+      prepareCheckout: () =>
+        Promise.reject(
+          new Error(
+            "Error invoking remote method 'agent:prepareCheckout': Error: " +
+              'Isolated worktree is unavailable: submodules unsupported (/repo/.gitmodules, for project /repo)',
+          ),
+        ),
+      run: () => Promise.resolve(),
+    },
+    automations: { onTriggered: () => () => {} },
+    threads: { loadProject: () => Promise.resolve([]) },
+  }
+  const detach = attachAutomationController(store, api)
+
+  await tick()
+
+  const note = store.getState().threads[0]?.messages[0]
+  assert.ok(note)
+  // The Electron prefix is noise in a transcript; the cause is not.
+  assert.doesNotMatch(note.content, /invoking remote method/)
+  assert.match(note.content, /submodules unsupported \(\/repo\/\.gitmodules, for project \/repo\)/)
 
   detach()
 })
