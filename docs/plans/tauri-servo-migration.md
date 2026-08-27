@@ -612,7 +612,7 @@ run.
 
 The boot table above measures an empty profile, which lands on the welcome
 screen. This dataset seeds a workspace, dismisses onboarding, points the app at
-a real model (`openrouter:stealth/ox-alpha`, a reasoning model, via the
+a real model (`openrouter:z-ai/glm-5.3-flash`, a reasoning model, via the
 developer's own OpenRouter key) and has the renderer drive one scripted chat
 turn end to end: `pnpm perf:compare --eval --runs 5 --idle-seconds 20`.
 

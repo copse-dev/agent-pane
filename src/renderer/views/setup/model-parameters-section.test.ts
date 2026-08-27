@@ -204,19 +204,28 @@ describe('model parameters section', () => {
     })
   })
 
-  it('fills and saves the experimental Ox Alpha balanced profile', async () => {
+  it('fills and saves the experimental GLM-5.3-Flash balanced profile', async () => {
     const { api, store } = stubSettings()
     const section = createModelParametersSection(api)
-    await section.refresh('openrouter:stealth/ox-alpha')
+    await section.refresh('openrouter:z-ai/glm-5.3-flash')
 
     buttonControl(section.root, 'model-parameter-recommend').click()
     assert.equal(selectControl(section.root, 'model-parameter-reasoning').value, 'medium')
     assert.equal(inputControl(section.root, 'model-parameter-max-output-tokens').value, '16384')
+    // The vendor half of the row: Z.ai's published sampling lands in the visible
+    // fields alongside Copse's reasoning and cap.
+    assert.equal(inputControl(section.root, 'model-parameter-temperature').value, '1')
+    assert.equal(inputControl(section.root, 'model-parameter-top-p').value, '0.95')
     assert.match(section.root.textContent, /paired Terminal-Bench record/)
 
     await section.save()
     assert.deepEqual(store.saved['modelParameters'], {
-      'openrouter:stealth/ox-alpha': { reasoning: 'medium', maxOutputTokens: 16_384 },
+      'openrouter:z-ai/glm-5.3-flash': {
+        reasoning: 'medium',
+        maxOutputTokens: 16_384,
+        temperature: 1,
+        topP: 0.95,
+      },
     })
   })
 
