@@ -395,11 +395,6 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
-.footer-running {
-  font-size: 11px;
-  color: var(--accent);
-  white-space: nowrap;
-}
 .footer-indexing {
   font-size: 11px;
   color: var(--text-muted);

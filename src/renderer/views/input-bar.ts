@@ -307,23 +307,11 @@ export function mountInputBar(
   })
   const usagePopover = createFooterUsagePopover()
   const usageGroup = el('div', { class: 'footer-usage-group' })
-  const runningIndicator = el('span', {
-    class: 'footer-running',
-    hidden: '',
-    role: 'status',
-    'aria-live': 'polite',
-  })
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
-  usageGroup.append(
-    contextWheel.root,
-    runningIndicator,
-    queueIndicator,
-    usageBtn,
-    usagePopover.root,
-  )
+  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
   footer.append(modelHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -1112,8 +1100,6 @@ export function mountInputBar(
   function updateState(): void {
     const running = isRunning()
     stopBtn.hidden = !running
-    runningIndicator.hidden = !running
-    runningIndicator.textContent = running ? 'Agent running · messages queue' : ''
     submitBtn.textContent = running ? 'Queue' : 'Send'
     submitBtn.setAttribute('aria-label', running ? 'Queue message' : 'Send message')
     submitBtn.classList.toggle('with-stop', running)
