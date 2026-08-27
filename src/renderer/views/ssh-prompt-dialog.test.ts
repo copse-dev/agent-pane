@@ -15,6 +15,7 @@ interface SshPromptRequest {
   id: string
   prompt: string
   kind: 'confirm' | 'secret'
+  canRememberOnDevice: boolean
 }
 
 interface Response {
@@ -109,6 +110,7 @@ const PASSWORD_PROMPT: SshPromptRequest = {
   id: 'req-1',
   prompt: '(me@dev.example) Password:',
   kind: 'secret',
+  canRememberOnDevice: true,
 }
 
 describe('ssh prompt dialog (component)', () => {
@@ -116,7 +118,7 @@ describe('ssh prompt dialog (component)', () => {
     document.body.innerHTML = ''
   })
 
-  it('remembers the secret by default so one dialog covers the session', () => {
+  it('remembers the secret on this device by default when the OS keychain is available', () => {
     const { api, harness } = stubApi()
     mount(api)
     harness.emit(PASSWORD_PROMPT)
@@ -124,6 +126,10 @@ describe('ssh prompt dialog (component)', () => {
     const field = element('.ssh-prompt-remember')
     assert.equal(field.hidden, false)
     assert.equal(rememberBox().checked, true)
+    assert.equal(
+      element('.ssh-prompt-remember-label').textContent,
+      'Remember securely on this device',
+    )
 
     input('.ssh-prompt-input').value = 'hunter2'
     submitForm()
@@ -147,7 +153,12 @@ describe('ssh prompt dialog (component)', () => {
     const { api, harness } = stubApi()
     mount(api)
     harness.emit(PASSWORD_PROMPT)
-    harness.emit({ id: 'req-2', prompt: "Enter passphrase for key '/k':", kind: 'secret' })
+    harness.emit({
+      id: 'req-2',
+      prompt: "Enter passphrase for key '/k':",
+      kind: 'secret',
+      canRememberOnDevice: false,
+    })
 
     rememberBox().checked = false
     input('.ssh-prompt-input').value = 'first'
@@ -155,6 +166,7 @@ describe('ssh prompt dialog (component)', () => {
 
     assert.equal(rememberBox().checked, true)
     assert.equal(element('.ssh-prompt-body').textContent, "Enter passphrase for key '/k':")
+    assert.equal(element('.ssh-prompt-remember-label').textContent, 'Remember for this session')
   })
 
   it('hides the option for host-key confirmations', () => {
@@ -164,6 +176,7 @@ describe('ssh prompt dialog (component)', () => {
       id: 'req-3',
       prompt: 'Are you sure you want to continue connecting (yes/no)?',
       kind: 'confirm',
+      canRememberOnDevice: false,
     })
 
     assert.equal(element('.ssh-prompt-remember').hidden, true)

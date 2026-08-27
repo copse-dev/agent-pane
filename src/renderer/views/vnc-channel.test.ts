@@ -24,7 +24,13 @@ function apiHarness(): {
         discoverNearby: (): Promise<never[]> => Promise.resolve([]),
         resolveSshHosts: (): Promise<never[]> => Promise.resolve([]),
         getUsername: (): Promise<null> => Promise.resolve(null),
+        getPassword: (): Promise<null> => Promise.resolve(null),
+        hasPassword: (): Promise<boolean> => Promise.resolve(false),
+        canStoreCredentials: (): Promise<boolean> => Promise.resolve(false),
         rememberUsername: (): Promise<boolean> => Promise.resolve(false),
+        rememberPassword: (): Promise<boolean> => Promise.resolve(false),
+        forgetPassword: (): Promise<void> => Promise.resolve(),
+        forgetCredentials: (): Promise<void> => Promise.resolve(),
         start: (id): void => {
           starts.push(id)
         },

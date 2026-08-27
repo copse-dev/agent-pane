@@ -1,5 +1,5 @@
 /**
- * Session-scoped cache for SSH secret answers (host password, key passphrase).
+ * In-memory front-end for SSH secret answers (host password, key passphrase).
  *
  * Password-authenticated hosts prompt far more often than the single dialog a
  * user expects. Every `ssh` invocation that starts before the ControlMaster
@@ -8,10 +8,11 @@
  * again. Caching the answer for the app session turns that back into "type it
  * once".
  *
- * Secrets stay in main-process memory — never written to disk, never sent back
- * to the renderer — and die with the app. A cached secret is dropped the moment
- * the client it was handed to asks a second time, which is how OpenSSH reports
- * a rejected password: it re-execs `SSH_ASKPASS` for each attempt.
+ * Remembered answers for a configured host are also encrypted through the OS
+ * keyring-backed credential store. Secrets never reach the renderer after the
+ * initial answer. A cached and persisted secret is dropped the moment the
+ * client it was handed to asks a second time, which is how OpenSSH reports a
+ * rejected password: it re-execs `SSH_ASKPASS` for each attempt.
  *
  * Generations keep that invalidation correct under concurrency. Each served
  * answer records the generation it came from, and a re-ask only retires the
@@ -19,6 +20,13 @@
  * holding the same bad password therefore raise one fresh prompt between them,
  * not two.
  */
+
+import {
+  deleteStoredSshCredential,
+  deleteStoredSshCredentials,
+  getStoredSshCredential,
+  setStoredSshCredential,
+} from './ssh-credential-store.ts'
 
 export interface SshSecretAnswer {
   value: string
@@ -42,9 +50,9 @@ const pending = new Map<string, PendingAsk>()
 /** Per-spawn askpass nonce → prompt key → generation that nonce was served. */
 const servedByNonce = new Map<string, Map<string, number>>()
 
-/** Prompt text is stable per host/user (`(me@host) Password:`), so it is the key. */
-function cacheKey(prompt: string): string {
-  return prompt.trim()
+/** A host scope also separates identity-file prompts shared across connections. */
+function cacheKey(hostId: string | undefined, prompt: string): string {
+  return `${hostId ?? 'session'}\0${prompt.trim()}`
 }
 
 function markServed(nonce: string, key: string, generation: number): void {
@@ -65,8 +73,9 @@ export async function resolveSshSecret(
   nonce: string,
   prompt: string,
   ask: () => Promise<SshSecretAnswer>,
+  hostId?: string,
 ): Promise<string> {
-  const key = cacheKey(prompt)
+  const key = cacheKey(hostId, prompt)
   let generation = generations.get(key) ?? 0
 
   if (servedByNonce.get(nonce)?.get(key) === generation) {
@@ -76,12 +85,20 @@ export async function resolveSshSecret(
     generations.set(key, generation)
     cache.delete(key)
     pending.delete(key)
+    if (hostId) deleteStoredSshCredential(hostId, prompt)
   }
 
   const cached = cache.get(key)
   if (cached) {
     markServed(nonce, key, cached.generation)
     return cached.value
+  }
+
+  const stored = hostId ? getStoredSshCredential(hostId, prompt) : null
+  if (stored) {
+    cache.set(key, { value: stored, generation })
+    markServed(nonce, key, generation)
+    return stored
   }
 
   const inFlight = pending.get(key)
@@ -91,7 +108,10 @@ export async function resolveSshSecret(
   }
 
   const promise = ask().then((answer) => {
-    if (answer.remember && answer.value) cache.set(key, { value: answer.value, generation })
+    if (answer.remember && answer.value && (generations.get(key) ?? 0) === generation) {
+      cache.set(key, { value: answer.value, generation })
+      if (hostId) setStoredSshCredential(hostId, prompt, answer.value)
+    }
     return answer.value
   })
   const entry: PendingAsk = { promise, generation }
@@ -107,6 +127,19 @@ export async function resolveSshSecret(
 /** Forget which secrets a finished spawn was served. Call when its lease ends. */
 export function releaseSshCredentialNonce(nonce: string): void {
   servedByNonce.delete(nonce)
+}
+
+/** Forget both cached and OS-keyring-encrypted answers for one connection. */
+export function forgetSshCredentials(hostId: string): void {
+  const prefix = `${hostId}\0`
+  for (const key of new Set([...cache.keys(), ...generations.keys(), ...pending.keys()])) {
+    if (!key.startsWith(prefix)) continue
+    cache.delete(key)
+    pending.delete(key)
+    generations.set(key, (generations.get(key) ?? 0) + 1)
+    for (const served of servedByNonce.values()) served.delete(key)
+  }
+  deleteStoredSshCredentials(hostId)
 }
 
 /** Drop every remembered secret (app teardown, explicit "forget", tests). */

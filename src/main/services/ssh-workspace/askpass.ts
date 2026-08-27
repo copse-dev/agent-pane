@@ -22,6 +22,7 @@ export interface SshAskpassLease {
 
 interface AskpassSession {
   nonce: string
+  hostId?: string
   timer: NodeJS.Timeout
   release: () => void
 }
@@ -150,10 +151,19 @@ async function respondToAskpass(socket: Socket, line: string): Promise<void> {
     return
   }
 
-  const value = await resolveSshSecret(message.nonce, message.prompt, async () => {
-    const answer = await requestSshPrompt({ prompt: message.prompt, kind })
-    return { value: answer.value, remember: answer.remember ?? false }
-  })
+  const value = await resolveSshSecret(
+    message.nonce,
+    message.prompt,
+    async () => {
+      const answer = await requestSshPrompt({
+        prompt: message.prompt,
+        kind,
+        canRememberOnDevice: session.hostId !== undefined,
+      })
+      return { value: answer.value, remember: answer.remember ?? false }
+    },
+    session.hostId,
+  )
   socket.end(JSON.stringify({ response: value || null }) + '\n')
 }
 
@@ -185,7 +195,7 @@ export function initSshAskpassServer(userDataDirectory?: string): void {
  * `{}` — Node replaces the child env entirely, which strips PATH/HOME/
  * SSH_AUTH_SOCK and breaks ProxyCommand hosts.
  */
-export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv): SshAskpassLease {
+export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv, hostId?: string): SshAskpassLease {
   if (!isAskpassAvailable() && !userDataDirOverride) {
     return { env: baseEnv, release: (): void => {} }
   }
@@ -203,7 +213,12 @@ export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv): SshAskpassLease 
 
   const timer = setTimeout(release, ASKPASS_SESSION_TIMEOUT_MS)
   if (typeof timer.unref === 'function') timer.unref()
-  sessionsByNonce.set(nonce, { nonce, timer, release })
+  sessionsByNonce.set(nonce, {
+    nonce,
+    ...(hostId === undefined ? {} : { hostId }),
+    timer,
+    release,
+  })
 
   const askpass = ensureAskpassWrapper()
   return {
