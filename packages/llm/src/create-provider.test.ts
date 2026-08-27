@@ -553,7 +553,7 @@ describe('createExtraCloudProvider Responses transport', () => {
 describe('tuned model parameters reach the provider', () => {
   it('sends an explicit OpenRouter output cap without leaking it as a sampling field', async () => {
     const provider = expectOpenAIProvider(
-      createOpenRouterProvider('stealth/ox-alpha', 'sk-or-test', undefined, {
+      createOpenRouterProvider('z-ai/glm-5.3-flash', 'sk-or-test', undefined, {
         params: { reasoning: 'medium', maxOutputTokens: 8_192 },
       }),
     )

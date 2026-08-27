@@ -123,7 +123,7 @@ describe('modelParameterSupport', () => {
 describe('sanitizeModelParameters', () => {
   it('keeps and clamps an output cap only on routes that expose it', () => {
     assert.deepEqual(
-      sanitizeModelParameters({ maxOutputTokens: 8_192.4 }, 'openrouter:stealth/ox-alpha'),
+      sanitizeModelParameters({ maxOutputTokens: 8_192.4 }, 'openrouter:z-ai/glm-5.3-flash'),
       { maxOutputTokens: 8_192 },
     )
     assert.deepEqual(sanitizeModelParameters({ maxOutputTokens: 128 }, 'lmstudio:qwen'), {
@@ -420,10 +420,15 @@ describe('clampReasoning', () => {
 })
 
 describe('recommendedModelParameters', () => {
-  it('offers the evidence-backed experimental Ox Alpha profile', () => {
-    const recommendation = recommendedModelParameters('openrouter:stealth/ox-alpha')
+  it('offers the evidence-backed experimental GLM-5.3-Flash profile', () => {
+    const recommendation = recommendedModelParameters('openrouter:z-ai/glm-5.3-flash')
     assert.ok(recommendation)
-    assert.deepEqual(recommendation.params, { reasoning: 'medium', maxOutputTokens: 16_384 })
+    assert.deepEqual(recommendation.params, {
+      reasoning: 'medium',
+      maxOutputTokens: 16_384,
+      temperature: 1,
+      topP: 0.95,
+    })
     assert.equal(recommendation.sourceLabel, 'paired Terminal-Bench record')
   })
 
@@ -438,6 +443,17 @@ describe('recommendedModelParameters', () => {
   it('matches the same model through a different route', () => {
     assert.ok(recommendedModelParameters('lmstudio:deepseek-v4-flash-0731'))
     assert.ok(recommendedModelParameters('deepseek:deepseek-v4-flash'))
+    // The open weights carry the vendor's capitalisation on Hugging Face and a
+    // lowercased id everywhere else, and the profile applies to the model rather
+    // than to the route that reached it.
+    assert.ok(recommendedModelParameters('huggingface:zai-org/GLM-5.3-Flash:together'))
+    assert.ok(recommendedModelParameters('lmstudio:glm-5.3-flash'))
+  })
+
+  it('does not lend the Flash profile to its larger sibling', () => {
+    // The record is a GLM-5.3-Flash record. GLM-5.3 is a different model, and a
+    // substring match is the one way this table can quietly overreach.
+    assert.equal(recommendedModelParameters('openrouter:z-ai/glm-5.3'), null)
   })
 
   it('returns nothing for a model with no published recipe', () => {
