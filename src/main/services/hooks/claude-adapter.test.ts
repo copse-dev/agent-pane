@@ -283,13 +283,13 @@ describe('claude-adapter', () => {
       assert.equal((await gate('mcp__x__y', { q: 1 })).permission, 'deny')
     })
 
-    it('fails open on non-JSON stdout', async () => {
+    it('fails closed on non-JSON stdout', async () => {
       const script = await writeJsonHookScript('bad.sh', 'not-json')
       await writeUserSettings({
         hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: script }] }] },
       })
 
-      assert.equal((await gate('read_file', { path: 'a.ts' })).permission, 'allow')
+      assert.equal((await gate('read_file', { path: 'a.ts' })).permission, 'deny')
     })
   })
 
@@ -317,6 +317,7 @@ describe('claude-adapter', () => {
       const [hook] = hooks
       assert.ok(hook)
       assert.equal(hook.event, 'sessionStart')
+      assert.equal(hook.onFailure, 'closed')
       assert.equal(hook.timeoutMs, CLAUDE_DEFAULT_HOOK_TIMEOUT_MS)
     })
 
@@ -494,7 +495,7 @@ describe('claude-adapter', () => {
         assert.equal(interp.outcome?.injectContext, 'branch is main')
       })
 
-      it('fails open on a crash (Claude has no failClosed)', () => {
+      it('marks a crash failed for the host fail-closed policy', () => {
         const interpret = claudeAdapter.interpretBeforeSubmitPrompt?.bind(claudeAdapter)
         assert.ok(interpret)
         const interp = interpret(spawn({ exitCode: 1 }), { prompt: 'hi' })

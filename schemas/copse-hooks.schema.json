@@ -47,10 +47,10 @@
           "minLength": 1
         },
         "onFailure": {
-          "description": "How a failure (crash / timeout / invalid JSON) resolves (decision 9). 'open' (default) treats the failure as no-opinion so a broken hook never wedges the agent; 'closed' blocks the gated action.",
+          "description": "How a failure (crash / timeout / invalid JSON) resolves (decision 9). 'closed' (default) blocks a gated action; explicit 'open' treats the failure as no-opinion for compatibility.",
           "type": "string",
           "enum": ["open", "closed"],
-          "default": "open"
+          "default": "closed"
         },
         "sandbox": {
           "description": "Whether the hook runs inside the project sandbox (decision 7). Sandboxed by default (true); 'sandbox: false' is the escape, surfaced in the trust prompt. Enforcement is macOS-only and lands in a later phase (F3) — this is a default, not a guarantee.",

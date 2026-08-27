@@ -1,7 +1,6 @@
-// Decision 9 (docs/plans/hooks-and-feature-packs.md): Cursor hooks fail **open by
-// default**, but a per-hook `failClosed: true` must make crash / timeout /
-// invalid JSON **block** the gated action. A2 pinned this for `beforeShellExecution`;
-// B4 extends the coverage to **every wired permission event** —
+// Decision 9 (docs/plans/hooks-and-feature-packs.md): Copse tightens Cursor hooks
+// to fail closed by default. An explicit `failClosed: false` restores fail-open
+// for a compatible hook. Coverage spans every wired permission event —
 // `beforeShellExecution`, `beforeMCPExecution`, and `beforeReadFile` — both modes
 // × all three failure modes. House style of `permission-platform.test.ts` (a test
 // file named for the decision it pins).
@@ -48,11 +47,11 @@ describe('Cursor failClosed — both modes, every permission event (decision 9 /
     await rm(tempHome, { recursive: true, force: true })
   })
 
-  /** Write a hook script that reproduces `mode`, declared for `event` (optionally failClosed). */
+  /** Write a hook script that reproduces `mode`, with failClosed optional. */
   async function writeFailingHook(
     event: string,
     mode: FailureMode,
-    failClosed: boolean,
+    failClosed: boolean | undefined,
   ): Promise<void> {
     const path = join(tempHome, `${event}-${mode}.sh`)
     const body =
@@ -67,7 +66,9 @@ describe('Cursor failClosed — both modes, every permission event (decision 9 /
     await writeFile(
       userHooksConfigPath(),
       JSON.stringify({
-        hooks: { [event]: [{ command: path, ...(failClosed ? { failClosed: true } : {}) }] },
+        hooks: {
+          [event]: [{ command: path, ...(failClosed !== undefined ? { failClosed } : {}) }],
+        },
       }),
       'utf-8',
     )
@@ -77,7 +78,7 @@ describe('Cursor failClosed — both modes, every permission event (decision 9 /
 
   for (const { event, check } of PERMISSION_EVENTS) {
     describe(event, () => {
-      describe('default (fail-open): a broken hook never blocks the action', () => {
+      describe('explicit failClosed:false: a broken hook does not block the action', () => {
         for (const mode of modes) {
           it(`${mode} → allow`, async () => {
             await writeFailingHook(event, mode, false)
@@ -90,10 +91,10 @@ describe('Cursor failClosed — both modes, every permission event (decision 9 /
         }
       })
 
-      describe('failClosed: true: a broken hook blocks the action', () => {
+      describe('default: a broken hook blocks the action', () => {
         for (const mode of modes) {
           it(`${mode} → deny`, async () => {
-            await writeFailingHook(event, mode, true)
+            await writeFailingHook(event, mode, undefined)
             const decision = await runToolGateHooks(check, {
               workspaceRoot: null,
               projectTrusted: false,

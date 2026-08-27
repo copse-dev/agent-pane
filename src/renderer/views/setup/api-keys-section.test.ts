@@ -10,7 +10,12 @@ import {
 } from '../../views/confirm-dialog.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 
-type SetKeyResult = { ok: true } | { ok: false; reason: 'plaintext-consent-required' }
+type SetKeyResult =
+  | { ok: true }
+  | {
+      ok: false
+      reason: 'plaintext-storage-disabled' | 'plaintext-consent-required'
+    }
 
 interface StubState {
   savedKeys: Record<string, string>
@@ -18,6 +23,7 @@ interface StubState {
   // When false, the (main-process) storage refuses to persist without explicit
   // plaintext consent — mirrors safeStorage.isEncryptionAvailable() === false.
   encryptionAvailable?: boolean
+  plaintextEnabled?: boolean
   setKeyCalls?: { provider: string; allowPlaintext: boolean }[]
 }
 
@@ -41,6 +47,9 @@ function stubApi(state: StubState): ApiClient {
         ): Promise<SetKeyResult> => {
           state.setKeyCalls?.push({ provider, allowPlaintext: opts?.allowPlaintext === true })
           const available = state.encryptionAvailable !== false
+          if (!available && state.plaintextEnabled !== true) {
+            return { ok: false, reason: 'plaintext-storage-disabled' }
+          }
           if (!available && opts?.allowPlaintext !== true) {
             return { ok: false, reason: 'plaintext-consent-required' }
           }
@@ -125,6 +134,7 @@ describe('api-keys-section', () => {
       savedKeys: {},
       encrypted: {},
       encryptionAvailable: false,
+      plaintextEnabled: true,
       setKeyCalls: [],
     }
     const section = createApiKeysSection(stubApi(state), {
@@ -157,6 +167,7 @@ describe('api-keys-section', () => {
       savedKeys: {},
       encrypted: {},
       encryptionAvailable: false,
+      plaintextEnabled: true,
       setKeyCalls: [],
     }
     const section = createApiKeysSection(stubApi(state), {
@@ -171,7 +182,7 @@ describe('api-keys-section', () => {
     const savePromise = section.saveKeys()
     await Promise.resolve()
     clickActiveConfirmDialogCancel()
-    await savePromise
+    assert.equal(await savePromise, false)
 
     // Only the initial consent-less attempt was made; no plaintext retry.
     assert.deepEqual(state.setKeyCalls, [{ provider: 'anthropic', allowPlaintext: false }])
@@ -180,5 +191,32 @@ describe('api-keys-section', () => {
     assert.equal(input.value, 'sk-test')
     const status = section.root.querySelector<HTMLElement>('[data-key="anthropic"]')
     assert.match(status?.textContent ?? '', /not saved/i)
+  })
+
+  it('does not offer plaintext consent while the environment escape hatch is off', async () => {
+    const state: StubState = {
+      savedKeys: {},
+      encrypted: {},
+      encryptionAvailable: false,
+      plaintextEnabled: false,
+      setKeyCalls: [],
+    }
+    const section = createApiKeysSection(stubApi(state), {
+      providers: ['anthropic'],
+      validateOnInput: false,
+    })
+    document.body.append(section.root)
+    const input = section.root.querySelector<HTMLInputElement>('input[name="anthropicKey"]')
+    assert.ok(input)
+    input.value = 'sk-test'
+
+    assert.equal(await section.saveKeys(), false)
+
+    assert.deepEqual(state.setKeyCalls, [{ provider: 'anthropic', allowPlaintext: false }])
+    assert.equal(document.querySelector<HTMLDialogElement>('#confirm-dialog')?.open, false)
+    assert.equal(state.savedKeys['anthropic'], undefined)
+    assert.equal(input.value, 'sk-test')
+    const status = section.root.querySelector<HTMLElement>('[data-key="anthropic"]')
+    assert.match(status?.textContent ?? '', /plaintext is disabled/i)
   })
 })

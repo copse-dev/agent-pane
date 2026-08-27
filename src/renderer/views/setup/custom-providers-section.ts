@@ -25,7 +25,7 @@ export interface ProvidersSection {
   root: HTMLElement
   refresh: () => Promise<void>
   /** Persist any keys typed into the per-provider key fields (called on dialog save). */
-  saveKeys: () => Promise<void>
+  saveKeys: () => Promise<boolean>
   /** Ids this panel can render a form for, excluding the add-a-provider form. */
   providerIds: () => string[]
   /** Display name for an id this panel owns, or null when it owns no such id. */
@@ -426,7 +426,7 @@ export function createCustomProvidersSection(
       autocomplete: 'off',
     })
     input.value = pendingKeys.get(slug) ?? ''
-    const status = el('span', { class: 'key-status' })
+    const status = el('span', { class: 'key-status', 'data-provider-key-status': slug })
     setInlineStatus(
       status,
       configured.has(slug) ? 'filled' : 'idle',
@@ -865,11 +865,15 @@ export function createCustomProvidersSection(
           // empty on a re-add. Without this the key does not survive a restart
           // because the dialog-level save flushes only `pendingKeys`, and a
           // fresh add never put the value there.
+          let keyFailure: string | null = null
           if (key) {
             const saved = await persistProviderKey(slug, key, label || (savedRecord?.label ?? slug))
-            if (!saved) {
-              setInlineStatus(status, 'error', 'Provider saved, but the key was not stored')
-              status.className = 'key-status err'
+            if (!saved.ok) {
+              // The provider record is already durable. Keep the secret staged
+              // in the write-only field so the user can retry after enabling
+              // the explicit plaintext opt-in; refresh below must not drop it.
+              pendingKeys.set(slug, key)
+              keyFailure = saved.message
             }
           } else {
             // No key typed: still stage a future value under the resolved slug
@@ -878,6 +882,19 @@ export function createCustomProvidersSection(
           }
           if (savedRecord) selected = savedRecord.id
           await refresh()
+          if (keyFailure) {
+            const keyStatus = [
+              ...root.querySelectorAll<HTMLElement>('[data-provider-key-status]'),
+            ].find((candidate) => candidate.dataset['providerKeyStatus'] === slug)
+            if (keyStatus) {
+              setInlineStatus(
+                keyStatus,
+                'error',
+                `Provider saved, but the key was not stored: ${keyFailure}`,
+              )
+              keyStatus.className = 'key-status err'
+            }
+          }
         } catch (err) {
           setInlineStatus(
             status,
@@ -1023,24 +1040,51 @@ export function createCustomProvidersSection(
 
   // Persist one key, honouring the plaintext gate the same way the fixed
   // cloud-provider section does (api-keys-section.ts): an OS-secure-storage
-  // refusal returns `plaintext-consent-required`, so prompt for explicit
-  // consent and retry with `allowPlaintext` before giving up. Without this the
-  // key would be dropped silently and "forgotten" next launch.
-  async function persistProviderKey(slug: string, key: string, label: string): Promise<boolean> {
+  // refusal returns either the process-level default-off policy or
+  // `plaintext-consent-required`. Only the latter may prompt and retry with
+  // `allowPlaintext`; neither path may silently drop the key.
+  async function persistProviderKey(
+    slug: string,
+    key: string,
+    label: string,
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
     const trimmed = key.trim()
-    if (!trimmed) return true
+    if (!trimmed) return { ok: true }
     let result = await api.settings.setKey(slug, trimmed)
-    if (!result.ok && (await confirmPlaintextStorage(label))) {
+    if (
+      !result.ok &&
+      result.reason === 'plaintext-consent-required' &&
+      (await confirmPlaintextStorage(label))
+    ) {
       result = await api.settings.setKey(slug, trimmed, { allowPlaintext: true })
     }
-    return result.ok
+    if (result.ok) return result
+    return {
+      ok: false,
+      message:
+        result.reason === 'plaintext-storage-disabled'
+          ? 'Secure storage is unavailable and plaintext secret storage is disabled. Start Copse with COPSE_ALLOW_PLAINTEXT_SECRETS=1 to opt in.'
+          : `Unencrypted storage for ${label} was declined.`,
+    }
   }
 
-  async function saveKeys(): Promise<void> {
-    for (const [slug, key] of pendingKeys) {
-      await persistProviderKey(slug, key, providerLabelFor(slug))
+  async function saveKeys(): Promise<boolean> {
+    const failures: string[] = []
+    for (const [slug, key] of [...pendingKeys]) {
+      const result = await persistProviderKey(slug, key, providerLabelFor(slug))
+      if (result.ok) {
+        pendingKeys.delete(slug)
+        continue
+      }
+      failures.push(result.message)
+      const status = [...root.querySelectorAll<HTMLElement>('[data-provider-key-status]')].find(
+        (candidate) => candidate.dataset['providerKeyStatus'] === slug,
+      )
+      if (status) {
+        setInlineStatus(status, 'error', `Not saved: ${result.message}`)
+        status.className = 'key-status err'
+      }
     }
-    pendingKeys.clear()
     // Persist the OpenRouter custom model id only if it was touched, so leaving
     // the field alone never clobbers a previously saved value.
     if (pendingOpenRouterModel !== null) {
@@ -1065,6 +1109,7 @@ export function createCustomProvidersSection(
       openRouterFreeModeValue = pendingOpenRouterFreeMode
       pendingOpenRouterFreeMode = null
     }
+    return failures.length === 0
   }
 
   function providerIds(): string[] {

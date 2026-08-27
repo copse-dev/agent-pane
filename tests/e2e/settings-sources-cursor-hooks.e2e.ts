@@ -68,6 +68,8 @@ describe('settings sources hooks', () => {
     const fieldsetText = await dialog.$('fieldset:has(#sources-hooks-list)').getText()
     assert.match(fieldsetText, /while the agent works/i)
     assert.match(fieldsetText, /trust the project/i)
+    assert.match(fieldsetText, /failed blocking hook stops/i)
+    assert.match(fieldsetText, /turn hooks off here/i)
 
     // Collect each row's title + badges + row classes.
     const rows = await browser.execute(() => {

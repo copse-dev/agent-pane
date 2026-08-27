@@ -1,6 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { readSeededSettings, resetUserData, seedOnboardingFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 // First-run with nothing detected: the automatic scan only checks local model
 // servers and agents, so shell keys cannot make this host-dependent. A developer
@@ -9,11 +10,15 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 // environment-key choice and checklist path with deterministic detections.
 describe('onboarding: nothing detected → providers fallback', () => {
   before(async () => {
+    // This spec exercises the explicitly enabled compatibility fallback on
+    // keyring-less Linux CI. The default-off behavior has its own focused spec.
+    writeE2eEnv({ COPSE_ALLOW_PLAINTEXT_SECRETS: '1' })
     seedOnboardingFixture()
     await browser.reloadSession()
   })
 
   after(() => {
+    writeE2eEnv({ COPSE_ALLOW_PLAINTEXT_SECRETS: undefined })
     resetUserData()
   })
 

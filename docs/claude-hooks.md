@@ -69,9 +69,10 @@ being dropped or pretended into a control-flow decision it cannot honour.
 `UserPromptSubmit` is the exception — it is blocking, and a `block` decision genuinely
 stops the prompt from being submitted, exactly as in Claude Code.
 
-Claude has no `failClosed` flag, so every hook fails **open**: a crash, timeout, or
-unparseable response never blocks the agent. Exit 2 is a _decision_, not a failure, and is
-honoured on its own path.
+Claude has no `failClosed` flag. Copse therefore fails **closed** when a command crashes,
+times out, cannot spawn, or returns invalid output. Exit 2 remains an explicit deny under
+Claude's contract. If an imported hook is incompatible with this host policy, turn
+external hooks off in Settings → Sources.
 
 ### Enablement
 
