@@ -447,6 +447,14 @@ describe('VNC viewer', function () {
     // the authentication handshake on either platform.
     if (!rememberedUsername) await usernameInput.setValue('remembered-user')
     assert.equal(await $('.vnc-password-field').isDisplayed(), true)
+    const secureCredentialStorage = await browser.execute(() =>
+      window.api.vnc.canStoreCredentials(),
+    )
+    assert.equal(await $('.vnc-remember-password').isDisplayed(), secureCredentialStorage)
+    if (secureCredentialStorage) {
+      assert.match(await $('.vnc-remember-password').getText(), /remember password securely/i)
+      assert.equal(await $('.vnc-remember-password-input').isSelected(), true)
+    }
     assert.equal(await $('.vnc-disconnect-btn').getText(), 'Cancel')
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-required.png')
 
@@ -466,12 +474,42 @@ describe('VNC viewer', function () {
     assert.match(await $('.vnc-status-detail').getText(), /password was rejected/i)
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-failed.png')
 
+    if (secureCredentialStorage) {
+      const target = { kind: 'loopback', port: authenticationPort } as const
+      assert.equal(
+        await browser.execute(
+          (savedTarget) => window.api.vnc.rememberPassword(savedTarget, 'rejected-saved-password'),
+          target,
+        ),
+        true,
+      )
+      await $('.vnc-connect-btn').click()
+      await browser.waitUntil(
+        async () => (await $('.vnc-status-title').getText()) === 'Authentication failed',
+        { timeout: 20_000, timeoutMsg: 'expected the rejected saved VNC password to be removed' },
+      )
+      assert.equal(await authPanel.isDisplayed(), false)
+      assert.equal(
+        await browser.execute((savedTarget) => window.api.vnc.hasPassword(savedTarget), target),
+        false,
+      )
+    }
+
     await advancedSummary.click()
     await portInput.waitForDisplayed()
     await portInput.setValue(String(port))
     assert.equal(await portInput.getValue(), String(port))
     await advancedSummary.click()
     await browser.waitUntil(async () => !(await portInput.isDisplayed()))
+    if (secureCredentialStorage) {
+      assert.equal(
+        await browser.execute(
+          (savedTarget) => window.api.vnc.rememberPassword(savedTarget, 'saved-password'),
+          { kind: 'loopback', port } as const,
+        ),
+        true,
+      )
+    }
     await $('.vnc-connect-btn').click()
 
     await browser.waitUntil(async () => (await $('.vnc-status').getText()).includes('Connected'), {
@@ -497,6 +535,20 @@ describe('VNC viewer', function () {
     assert.equal(await controlButton.getAttribute('aria-pressed'), 'false')
     assert.equal(await $('.vnc-controls-host .git-changes-title').isDisplayed(), true)
     assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'This machine')
+
+    if (secureCredentialStorage) {
+      const target = { kind: 'loopback', port } as const
+      const forgetLogin = $('.vnc-forget-login')
+      await forgetLogin.waitForDisplayed()
+      await saveElementScreenshot('#pane-files', 'vnc-viewer-saved-login.png')
+      await forgetLogin.click()
+      assert.equal(
+        await browser.execute((savedTarget) => window.api.vnc.hasPassword(savedTarget), target),
+        false,
+      )
+      await $('.toast').waitForDisplayed()
+      assert.match(await $('.toast').getText(), /forgot the saved desktop login/i)
+    }
 
     const sampled = await browser.execute(() => {
       const painted = document.querySelector<HTMLCanvasElement>('.vnc-screen canvas')

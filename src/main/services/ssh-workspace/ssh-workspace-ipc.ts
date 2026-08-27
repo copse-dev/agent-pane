@@ -13,6 +13,8 @@ import { hostFromSshConfigAlias, listConfiguredSshHosts } from './hosts.ts'
 import { getSshConnectionManager } from './connection-manager.ts'
 import { listRemoteDirectory, registerRemoteWorkspaceRoot } from './remote-directory.ts'
 import { z } from 'zod'
+import { forgetSshCredentials } from './ssh-credential-cache.ts'
+import { listStoredSshCredentialHostIds } from './ssh-credential-store.ts'
 
 const sshBrowseSchema = z.tuple([zSshHostId, zPathString])
 
@@ -38,6 +40,27 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
   ipcMain.handle('ssh-workspace:getStates', (event) => {
     assertMainFrameSender(event, win)
     return manager.listStates()
+  })
+
+  ipcMain.handle('ssh-workspace:listCredentialHostIds', (event) => {
+    assertMainFrameSender(event, win)
+    return listStoredSshCredentialHostIds()
+  })
+
+  ipcMain.handle('ssh-workspace:forgetCredentials', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const hostId = parseIpcArgs(zSshHostId, rawArgs)
+    // End the live ControlMaster too: otherwise OpenSSH would keep using an
+    // already-authenticated connection after the user explicitly forgot it.
+    try {
+      await manager.disconnect(hostId)
+    } catch (error) {
+      console.warn(
+        `[copse-panel] could not disconnect SSH host ${hostId} while forgetting authentication:`,
+        error instanceof Error ? error.message : error,
+      )
+    }
+    forgetSshCredentials(hostId)
   })
 
   ipcMain.handle('ssh-workspace:connect', async (event, ...rawArgs) => {

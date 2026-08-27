@@ -526,6 +526,7 @@ export interface IpcEventMap {
       id: string
       prompt: string
       kind: 'confirm' | 'secret'
+      canRememberOnDevice: boolean
     },
   ]
   'update:prompt_request': [
