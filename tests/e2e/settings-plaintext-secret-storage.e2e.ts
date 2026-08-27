@@ -6,21 +6,28 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 /**
- * Visual proof for the default-off plaintext secret policy. Linux e2e runs
- * without an OS keyring by design; macOS has Keychain and cannot reach this
- * supported state without a test-only product backdoor, so it skips here.
+ * Visual proof for the default-off plaintext secret policy. A headless Linux
+ * host may still provide Secret Service, so this session points its real OS
+ * keyring adapter at an absent D-Bus socket. Electron safeStorage is already
+ * unavailable in the Linux E2E configuration.
  */
 describe('settings plaintext secret storage', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    writeE2eEnv({ COPSE_ALLOW_PLAINTEXT_SECRETS: undefined })
+    writeE2eEnv({
+      COPSE_ALLOW_PLAINTEXT_SECRETS: undefined,
+      DBUS_SESSION_BUS_ADDRESS: 'unix:path=/tmp/copse-e2e-no-secret-service.sock',
+    })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-plaintext-storage-disabled')
     await browser.reloadSession()
   })
 
   after(() => {
-    writeE2eEnv({ COPSE_ALLOW_PLAINTEXT_SECRETS: undefined })
+    writeE2eEnv({
+      COPSE_ALLOW_PLAINTEXT_SECRETS: undefined,
+      DBUS_SESSION_BUS_ADDRESS: undefined,
+    })
     resetUserData()
   })
 
