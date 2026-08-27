@@ -47,7 +47,12 @@ export function parseSavedLayout(raw: unknown): LayoutState {
 export function applyLayout(body: HTMLElement, layout: LayoutState): void {
   body.style.setProperty('--projects-width', `${String(layout.projectsPaneWidth)}px`)
   body.style.setProperty('--files-width', `${String(layout.filesPaneWidth)}px`)
-  body.style.setProperty('--files-height', `${String(layout.filesPaneHeight)}px`)
+  const filesHeight =
+    layout.filesPaneHeight === DEFAULT_LAYOUT.filesPaneHeight &&
+    body.classList.contains(PORTRAIT_RIGHT_PANEL_CLASS)
+      ? defaultStackedFilesHeight(body)
+      : layout.filesPaneHeight
+  body.style.setProperty('--files-height', `${String(filesHeight)}px`)
   body.style.setProperty('--tree-width', `${String(layout.fileTreeWidth)}px`)
 }
 
@@ -59,6 +64,15 @@ function maxFilesWidth(body: HTMLElement, projectsPaneWidth: number): number {
 
 function maxStackedFilesHeight(body: HTMLElement): number {
   return Math.floor(body.clientHeight * LAYOUT_LIMITS.filesStacked.maxRatio)
+}
+
+// Until the user drags the resizer, the stacked panel opens at a fraction of
+// the window's height rather than a fixed pixel size, so it scales with the
+// window instead of eating most of a small one or looking tiny on a large one.
+function defaultStackedFilesHeight(body: HTMLElement): number {
+  if (body.clientHeight <= 0) return DEFAULT_LAYOUT.filesPaneHeight
+  const target = Math.round(body.clientHeight * LAYOUT_LIMITS.filesStacked.defaultRatio)
+  return clamp(target, LAYOUT_LIMITS.filesStacked.min, maxStackedFilesHeight(body))
 }
 
 function mountResizeHandle(
@@ -144,10 +158,24 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
     if (state.layout.filesPaneWidth <= maxWidth) return
     setLayout({ filesPaneWidth: maxWidth })
   }
+  // Until the user drags a concrete height in, the stacked panel's height
+  // tracks a third of the window rather than staying pinned to the pixel
+  // default, so it keeps up when the window is resized or the layout
+  // switches into the stacked mode.
+  const refreshStackedDefaultHeight = (): void => {
+    const state = store.getState()
+    if (!state.filesPaneOpen || !filesPanelStacked()) return
+    if (state.layout.filesPaneHeight !== DEFAULT_LAYOUT.filesPaneHeight) return
+    applyLayout(body, state.layout)
+  }
+  const refreshLayoutForViewport = (): void => {
+    fitSidePanelToChat()
+    refreshStackedDefaultHeight()
+  }
 
   // A saved width may have been valid in a larger window. Reconcile it before
   // the next paint whenever the available side-by-side space changes.
-  fitSidePanelToChat()
+  refreshLayoutForViewport()
 
   mountResizeHandle(projectsResizer, {
     startSize: () => store.getState().layout.projectsPaneWidth,
@@ -194,15 +222,17 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
 
   const syncFilesResizer = (): void => {
     filesResizer.hidden = !store.getState().filesPaneOpen
-    fitSidePanelToChat()
+    refreshLayoutForViewport()
   }
 
   syncFilesResizer()
-  const unsub = store.on('files_pane_changed', syncFilesResizer)
-  window.addEventListener('resize', fitSidePanelToChat, { passive: true })
+  const unsubFilesPane = store.on('files_pane_changed', syncFilesResizer)
+  const unsubSettings = store.on('settings_changed', refreshLayoutForViewport)
+  window.addEventListener('resize', refreshLayoutForViewport, { passive: true })
 
   return () => {
-    unsub()
-    window.removeEventListener('resize', fitSidePanelToChat)
+    unsubFilesPane()
+    unsubSettings()
+    window.removeEventListener('resize', refreshLayoutForViewport)
   }
 }
