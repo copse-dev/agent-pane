@@ -60,7 +60,9 @@ gates (`toolGate`), lifecycle (`beforeSubmitPrompt`, `afterFileEdit`, `stop`,
 `afterToolUse`), subagents (`subagentStart` / `subagentStop`), assembly points
 (`turnStart`, `beforeFinalize`, `stepBoundary`), session env (`sessionStart`), and the
 Copse-native events (`beforeDiffApply` / `afterDiffApply` / `permissionDecision` /
-`postTurnReview`).
+`postTurnReview` / `modelSelected`). `modelSelected` is an observation at the committed
+thread-model boundary and carries the actor plus previous and selected model ids; it is
+also recorded durably as `model_selected` for transcript export and audit.
 
 ### Canonical decision vocabulary
 

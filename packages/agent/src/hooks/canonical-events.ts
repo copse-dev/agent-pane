@@ -304,6 +304,13 @@ export interface PostTurnReviewPayload {
   summary: string
 }
 
+/** Payload for a committed thread-model selection. */
+export interface ModelSelectedPayload {
+  by: 'user' | 'auto'
+  from?: string
+  to: string
+}
+
 /**
  * Payload each canonical event delivers to its hooks, keyed by event name. The
  * key set is the source of truth: {@link HOOK_EVENT_NAMES} and
@@ -327,6 +334,7 @@ export interface HookEventPayloads {
   beforeDiffApply: BeforeDiffApplyPayload
   afterDiffApply: AfterDiffApplyPayload
   postTurnReview: PostTurnReviewPayload
+  modelSelected: ModelSelectedPayload
 }
 
 /**
@@ -351,6 +359,7 @@ export const HOOK_EVENT_NAMES = [
   'beforeDiffApply',
   'afterDiffApply',
   'postTurnReview',
+  'modelSelected',
 ] as const
 
 export type HookEventName = (typeof HOOK_EVENT_NAMES)[number]
@@ -404,6 +413,7 @@ export const HOOK_EVENT_SPECS: Record<HookEventName, HookEventSpec> = {
   beforeDiffApply: { name: 'beforeDiffApply', dispatch: 'blocking', role: 'decision' },
   afterDiffApply: { name: 'afterDiffApply', dispatch: 'async', role: 'observation' },
   postTurnReview: { name: 'postTurnReview', dispatch: 'async', role: 'observation' },
+  modelSelected: { name: 'modelSelected', dispatch: 'async', role: 'observation' },
 }
 
 /**

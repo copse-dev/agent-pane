@@ -612,6 +612,13 @@ contextBridge.exposeInMainWorld('api', {
       threadId: string,
       patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
     ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
+    recordModelSelection: (
+      projectId: string,
+      threadId: string,
+      by: 'user' | 'auto',
+      from: string | undefined,
+      to: string,
+    ) => ipcRenderer.invoke('threads:recordModelSelection', projectId, threadId, by, from, to),
     delete: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:delete', projectId, threadId),
     exportArchive: (projectId: string, threadId: string) =>

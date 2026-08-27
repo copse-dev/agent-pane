@@ -231,6 +231,7 @@ export function synthesizeCanonicalPayload(plan: DryRunPlan): Record<string, unk
     case 'beforeFinalize':
     case 'stepBoundary':
     case 'compaction':
+    case 'modelSelected':
       return null
   }
 }
@@ -354,6 +355,7 @@ function marshalDryRun(
     case 'beforeFinalize':
     case 'stepBoundary':
     case 'compaction':
+    case 'modelSelected':
       return null
   }
 }

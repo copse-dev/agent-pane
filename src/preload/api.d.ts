@@ -371,6 +371,13 @@ export interface ApiClient {
       threadId: string,
       patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
     ) => Promise<void>
+    recordModelSelection: (
+      projectId: string,
+      threadId: string,
+      by: 'user' | 'auto',
+      from: string | undefined,
+      to: string,
+    ) => Promise<import('@shared/types').ModelSelectionEvent>
     delete: (projectId: string, threadId: string) => Promise<void>
     /**
      * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,

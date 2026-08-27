@@ -30,6 +30,15 @@ export type {
 
 export type ThreadStatus = 'idle' | 'running' | 'error'
 
+/** Durable attribution for one committed thread-model selection. */
+export interface ModelSelectionEvent {
+  id: string
+  recordedAt: number
+  by: 'user' | 'auto'
+  from?: string
+  to: string
+}
+
 /**
  * Provenance of a queued message (decision 10). A queued message can be authored
  * by a human (origin absent) or produced by an async hook's `queueMessage`
@@ -44,6 +53,16 @@ export interface QueuedMessageOrigin {
   /** Canonical event the hook fired on (e.g. `stop`, `afterToolUse`). */
   event: string
 }
+
+/** Provenance for a host-native continuation that started without a human submit. */
+export interface MachineMessageOrigin {
+  kind: 'machine'
+  /** Durable background/supervisor operation that requested the continuation. */
+  operationId: string
+}
+
+/** Authorship marker persisted on transcript messages. */
+export type MessageOrigin = QueuedMessageOrigin | MachineMessageOrigin
 
 /** User message waiting for the current agent run to finish. */
 export interface QueuedUserMessage {
@@ -216,6 +235,8 @@ export interface Thread {
   unreadAt?: number
   /** Per-thread model override; absent means "use the global default". */
   model?: string
+  /** Ordered picker/automatic model changes, mirrored in the thread spine. */
+  modelSelections?: ModelSelectionEvent[]
   /**
    * The concrete model a turn's `model` selector expanded to (e.g.
    * `auto:…` → `gpt-5.6-terra`). Recorded at resolution time so it survives a
@@ -382,14 +403,14 @@ export interface Message {
    */
   review?: ThreadReview
   /**
-   * Provenance when this turn was started by a hook follow-up (decision 10). The
+   * Provenance when this turn was started without a human submit. The
    * message role stays `user` for the LLM; `origin` lives purely in the data
    * model so the transcript can mark a hook-originated turn (a hook send-now /
    * `stop`-follow-up that dispatched). Carried through the spine so the marker
    * survives a reload (history stays honest about authorship). `editedByUser`
    * flips `true` once a human edits a hook-queued message before it dispatches.
    */
-  origin?: QueuedMessageOrigin
+  origin?: MessageOrigin
   editedByUser?: boolean
   /**
    * Repository state this prompt started from (user messages only), captured at

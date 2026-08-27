@@ -17,6 +17,7 @@ import {
   loadProjectCatalog,
   createThread,
   appendMachineContinuation,
+  recordModelSelection,
   appendMessage,
   updateMeta,
   getThreadMeta,
@@ -45,6 +46,7 @@ import {
   SPINE_SCHEMA_VERSION,
   parseSpineEntries,
   type SpineMachineContinuationLine,
+  type SpineModelSelectedLine,
 } from '@shared/threads/spine-schema.ts'
 
 /** Build PR refs from URL strings, matching what the link store feeds attach. */
@@ -513,6 +515,37 @@ describe('thread-store', () => {
         (entry) => entry.line?.type === 'machine_continuation',
       )
       assert.deepEqual(continuation?.line, line)
+    })
+
+    it('records model selection actor and history in the spine and metadata', async () => {
+      await createThread('proj-1', thread('t1', { model: 'auto:best-value' }))
+      const line: SpineModelSelectedLine = {
+        v: SPINE_SCHEMA_VERSION,
+        type: 'model_selected',
+        id: 'selection-1',
+        recordedAt: 150,
+        by: 'user',
+        from: 'auto:best-value',
+        to: 'claude-sonnet-4-6',
+      }
+
+      await recordModelSelection('proj-1', 't1', line)
+
+      const raw = readFileSync(join(root, 'proj-1', 't1', 'events.jsonl'), 'utf8')
+      const recorded = parseSpineEntries(raw).find((entry) => entry.line?.type === 'model_selected')
+      assert.deepEqual(recorded?.line, line)
+      const meta = await getThreadMeta('proj-1', 't1')
+      assert.ok(meta)
+      assert.equal(meta.model, 'claude-sonnet-4-6')
+      assert.deepEqual(meta.modelSelections, [
+        {
+          id: 'selection-1',
+          recordedAt: 150,
+          by: 'user',
+          from: 'auto:best-value',
+          to: 'claude-sonnet-4-6',
+        },
+      ])
     })
 
     it('appendMessage replaces the spine line for a re-finalized message id without reordering', async () => {
