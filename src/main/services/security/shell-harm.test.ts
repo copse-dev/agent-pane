@@ -495,6 +495,34 @@ describe('Guarded YOLO shell harm gate', () => {
     assert.equal(action('./bin/clean', { readScript }), 'deny')
   })
 
+  it('does not deep-read a non-script asset as a shell script', () => {
+    // Guarded YOLO put a screenshot path at a segment head (continuation line /
+    // nested content), read the PNG as UTF-8, lexed the mojibake as shell, and
+    // flooded Potential harm with invented operands. A .png is not a script.
+    let reads = 0
+    const readScript = (): string | null => {
+      reads += 1
+      return '\0PNG binary decoy that must not be lexed'
+    }
+    const command = 'tests/e2e/screenshots/follow-up-suggestions-git-changes.png'
+
+    assert.equal(action(command, { readScript }), 'allow')
+    assert.deepEqual(uninspectableReasons(command, { readScript }), [])
+    assert.equal(reads, 0)
+  })
+
+  it('treats binary script contents as uninspectable instead of lexing them', () => {
+    // Defence when an interpreter names a file whose bytes are not text — one
+    // clean reason, not a wall of IDAT tokens.
+    const readScript = (path: string): string | null =>
+      path === '/work/project/payload.sh' ? `\0${'x'.repeat(200)}` : null
+
+    assert.equal(action('bash payload.sh', { readScript }), 'prompt')
+    assert.deepEqual(uninspectableReasons('bash payload.sh', { readScript }), [
+      'script contents could not be inspected safely: payload.sh',
+    ])
+  })
+
   it('does not mistake a URL, package id, glob, or directory for a script', () => {
     // A wrapped shell line puts whatever follows the backslash at the head of a
     // segment, so each of these was read as a relative executable and cost the

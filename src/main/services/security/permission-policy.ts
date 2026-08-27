@@ -362,10 +362,27 @@ export function formatExpectedSandboxBlockPromptParts(
   }
 }
 
+/** Per-reason cap so one mojibake operand cannot dominate the dialog. */
+const MAX_GUARDED_YOLO_HARM_REASON_CHARS = 160
+/** Total advice budget before the confirmation footer (keeps the command visible). */
+const MAX_GUARDED_YOLO_HARM_ADVICE_CHARS = 1200
+
+function truncateGuardedYoloHarmReason(reason: string): string {
+  if (reason.length <= MAX_GUARDED_YOLO_HARM_REASON_CHARS) return reason
+  return `${reason.slice(0, MAX_GUARDED_YOLO_HARM_REASON_CHARS - 1)}…`
+}
+
 /** Advice shown outside the monospaced command block for Guarded YOLO harm prompts. */
 export function formatGuardedYoloHarmPromptAdvice(reasons: string[]): string {
-  const harm = reasons.length ? `Potential harm: ${reasons.join('; ')}` : 'Potential harm: unknown'
-  return `${harm}\n\nGuarded YOLO cannot skip this confirmation. Approve this bounded destructive action once?`
+  const footer =
+    '\n\nGuarded YOLO cannot skip this confirmation. Approve this bounded destructive action once?'
+  const listed = reasons.map(truncateGuardedYoloHarmReason)
+  let harm = listed.length ? `Potential harm: ${listed.join('; ')}` : 'Potential harm: unknown'
+  const maxHarmChars = Math.max(24, MAX_GUARDED_YOLO_HARM_ADVICE_CHARS - footer.length)
+  if (harm.length > maxHarmChars) {
+    harm = `${harm.slice(0, maxHarmChars - 1)}…`
+  }
+  return `${harm}${footer}`
 }
 
 /**
