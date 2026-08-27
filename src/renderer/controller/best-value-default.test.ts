@@ -10,6 +10,7 @@ import {
 
 function mockApi(resolved = 'claude-sonnet-4-6'): {
   models: Pick<ApiClient['models'], 'bestValueDefault' | 'resolveDynamic'>
+  threads: Pick<ApiClient['threads'], 'recordModelSelection'>
 } {
   return {
     models: {
@@ -18,6 +19,15 @@ function mockApi(resolved = 'claude-sonnet-4-6'): {
         if (value === 'auto:balanced') return 'claude-sonnet-5'
         return resolved
       },
+    },
+    threads: {
+      recordModelSelection: async (_projectId, _threadId, by, from, to) => ({
+        id: 'selection-1',
+        recordedAt: 1,
+        by,
+        ...(from !== undefined ? { from } : {}),
+        to,
+      }),
     },
   }
 }

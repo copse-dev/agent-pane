@@ -378,6 +378,13 @@ export interface ApiClient {
       threadId: string,
       patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
     ) => Promise<void>
+    recordModelSelection: (
+      projectId: string,
+      threadId: string,
+      by: 'user' | 'auto',
+      from: string | undefined,
+      to: string,
+    ) => Promise<import('@shared/types').ModelSelectionEvent>
     delete: (projectId: string, threadId: string) => Promise<void>
     /**
      * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,
@@ -613,7 +620,13 @@ export interface ApiClient {
       provider: string,
       key: string,
       opts?: { allowPlaintext?: boolean },
-    ) => Promise<{ ok: true } | { ok: false; reason: 'plaintext-consent-required' }>
+    ) => Promise<
+      | { ok: true }
+      | {
+          ok: false
+          reason: 'plaintext-storage-disabled' | 'plaintext-consent-required'
+        }
+    >
     /** Availability keyed by provider slug: fixed cloud providers + every resolved extra provider. */
     availableProviders: () => Promise<Record<string, boolean>>
     validateKey: (

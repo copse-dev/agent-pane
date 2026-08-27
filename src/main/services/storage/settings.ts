@@ -13,6 +13,7 @@ import {
   matchesFallbackType,
 } from '@shared/unknown-value.ts'
 import { getExplicitSettingsProfile } from './settings-context.ts'
+import { ALLOW_PLAINTEXT_SECRETS_ENV, resolveSecretWritePolicy } from './secret-write-policy.ts'
 
 // Cache reads in memory so electron-store does not re-read and re-parse the
 // whole settings.json file on every getSetting/hasApiKey/getApiKey call. All
@@ -189,12 +190,17 @@ function envVarFor(provider: KeyProvider): string | null {
 }
 
 /**
- * Outcome of {@link setApiKey}. `plaintext-consent-required` means OS secure
- * storage is unavailable and the caller has not explicitly approved storing this
- * key unencrypted, so nothing was written — the caller must obtain consent and
- * retry with `{ allowPlaintext: true }`.
+ * Outcome of {@link setApiKey}. Plaintext persistence is disabled unless the
+ * process was explicitly started with `COPSE_ALLOW_PLAINTEXT_SECRETS=1`; even
+ * then the caller must obtain per-save consent and retry with
+ * `{ allowPlaintext: true }`.
  */
-export type SetApiKeyResult = { ok: true } | { ok: false; reason: 'plaintext-consent-required' }
+export type SetApiKeyResult =
+  | { ok: true }
+  | {
+      ok: false
+      reason: 'plaintext-storage-disabled' | 'plaintext-consent-required'
+    }
 
 export function setApiKey(
   provider: KeyProvider,
@@ -213,11 +219,11 @@ export function setApiKey(
   }
 
   const available = isSecretEncryptionAvailable()
-  // Encryption unavailable and no explicit per-key consent to store plaintext:
-  // refuse to persist rather than silently writing the key to disk in the clear.
-  // The caller (IPC → renderer) surfaces a confirmation and retries with
-  // `allowPlaintext: true` once the user approves storing this key unencrypted.
-  if (!available && opts.allowPlaintext !== true) {
+  const writePolicy = resolveSecretWritePolicy(available, opts.allowPlaintext === true)
+  if (writePolicy === 'plaintext-disabled') {
+    return { ok: false, reason: 'plaintext-storage-disabled' }
+  }
+  if (writePolicy === 'plaintext-consent-required') {
     return { ok: false, reason: 'plaintext-consent-required' }
   }
 
@@ -230,7 +236,7 @@ export function setApiKey(
 
   if (!available) {
     console.warn(
-      `[copse-panel] OS secure storage is unavailable; the ${provider} API key will be stored as base64 plaintext in settings.json (with explicit consent). Install and unlock a system keyring to encrypt it at rest.`,
+      `[copse-panel] OS secure storage is unavailable; ${ALLOW_PLAINTEXT_SECRETS_ENV}=1 and explicit per-save consent allow the ${provider} API key to be stored as base64 plaintext in settings.json. Install and unlock a system keyring to encrypt it at rest.`,
     )
   }
   const bytes = available

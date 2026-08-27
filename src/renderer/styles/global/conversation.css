@@ -509,10 +509,6 @@
   font-size: var(--font-size-md);
   line-height: var(--line-height-base);
 }
-.msg-error {
-  background: rgba(244, 135, 113, 0.1);
-  border-left: 3px solid var(--error);
-}
 /* Markdown content styling lives in @copse/streaming-markdown's default.css,
    scoped under `.streaming-markdown` (added to every render sink). Map the
    package's `--sm-*` knobs onto agent-pane's theme tokens so rendered markdown

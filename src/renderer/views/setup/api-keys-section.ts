@@ -12,7 +12,7 @@ export type ApiKeyProvider =
 export interface ApiKeysSection {
   root: HTMLFieldSetElement
   refreshKeyStatus: () => Promise<void>
-  saveKeys: () => Promise<void>
+  saveKeys: () => Promise<boolean>
 }
 
 interface ApiKeyProviderConfig {
@@ -212,8 +212,9 @@ export function createApiKeysSection(
     })
   }
 
-  async function saveKeys(): Promise<void> {
+  async function saveKeys(): Promise<boolean> {
     let savedAny = false
+    const failures: string[] = []
     for (const field of fields) {
       const key = field.input.value.trim()
       if (!key) {
@@ -221,23 +222,32 @@ export function createApiKeysSection(
         continue
       }
       let result = await api.settings.setKey(field.provider, key)
-      // Not ok means `plaintext-consent-required`: OS secure storage is unavailable
-      // and no consent was given yet. Ask before writing the key to disk in the
-      // clear, and retry with explicit consent on approval.
-      if (!result.ok && (await confirmPlaintextStorage(field.provider))) {
+      // The process-level plaintext escape hatch must be enabled before Copse
+      // offers the narrower per-save consent prompt.
+      if (
+        !result.ok &&
+        result.reason === 'plaintext-consent-required' &&
+        (await confirmPlaintextStorage(field.provider))
+      ) {
         result = await api.settings.setKey(field.provider, key, { allowPlaintext: true })
       }
       if (result.ok) {
         field.input.value = ''
         savedAny = true
       } else {
-        // Declined (or still refused): leave the entered value in place and flag
-        // that it was not saved so the user can retry or set up a keyring first.
-        setInlineStatus(field.status, 'error', 'Not saved: unencrypted storage declined')
+        const message =
+          result.reason === 'plaintext-storage-disabled'
+            ? 'Not saved: secure storage unavailable; plaintext is disabled (set COPSE_ALLOW_PLAINTEXT_SECRETS=1 to opt in)'
+            : 'Not saved: unencrypted storage declined'
+        failures.push(message)
+        // Leave the entered value in place and keep Settings open so the user
+        // can retry after fixing the keyring or explicitly enabling the escape.
+        setInlineStatus(field.status, 'error', message)
         field.status.className = keyStatusClass(false)
       }
     }
     if (savedAny) await refreshKeyStatus()
+    return failures.length === 0
   }
 
   return { root: fieldset, refreshKeyStatus, saveKeys }

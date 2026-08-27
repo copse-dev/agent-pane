@@ -222,6 +222,34 @@ describe('hook cards (component, decision 10)', () => {
     assert.match(text, /edited/, 'editedByUser is surfaced')
   })
 
+  it('marks a host-native continuation as machine-originated', () => {
+    const store = createStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    seedThread(store, [
+      {
+        id: 'u-machine',
+        role: 'user',
+        content: 'Follow up on the completed background task',
+        toolCalls: [],
+        origin: { kind: 'machine', operationId: 'background-17' },
+        createdAt: 1,
+      },
+    ])
+
+    const msgEl = document.querySelector<HTMLElement>('[data-message-id="u-machine"]')
+    assert.ok(msgEl)
+    assert.ok(msgEl.classList.contains('msg-machine-origin'))
+    assert.equal(msgEl.dataset['operationId'], 'background-17')
+    assert.match(msgEl.querySelector('.msg-machine-origin-marker')?.textContent ?? '', /Machine/)
+    assert.match(
+      msgEl.querySelector('.msg-machine-origin-marker')?.textContent ?? '',
+      /automatic continuation/,
+    )
+  })
+
   it('renders a halt card with its stop reason detail', () => {
     const store = createStore()
     const host = document.createElement('div')

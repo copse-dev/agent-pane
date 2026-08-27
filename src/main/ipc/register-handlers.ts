@@ -1,8 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
+import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
@@ -44,6 +46,7 @@ import {
   parseIpcArgs,
   parsePortKillArgs,
   zMcpServerName,
+  zModelId,
   zHookRunId,
   zHookTestRequest,
   zNonEmptyString,
@@ -110,6 +113,7 @@ import {
   createThread,
   appendMessage,
   updateMeta,
+  recordModelSelection,
   deleteProjectThread,
   loadProjectCatalog,
   listOrphanProjectStores,
@@ -1276,8 +1280,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     const options = parseIpcArgs(setKeyOptionsSchema, [opts])
     const result = setApiKey(p, apiKey, options)
-    // Encryption unavailable and no plaintext consent: nothing was stored. Report
-    // back so the renderer can prompt for explicit consent and retry.
+    // Encryption unavailable: nothing was stored. The result distinguishes the
+    // default-off plaintext policy from the per-save consent step so the
+    // renderer never offers a retry the process is not allowed to perform.
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
     if (p === 'cursor') invalidateCursorCloudModelsCache()
@@ -1553,6 +1558,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [projectId, threadId, patch],
       )
       return updateMeta(pid, tid, payload)
+    },
+  )
+  ipcMain.handle(
+    'threads:recordModelSelection',
+    (event, projectId: unknown, threadId: unknown, by: unknown, from: unknown, to: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, actor, previous, selected] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.enum(['user', 'auto']), zModelId.optional(), zModelId]),
+        [projectId, threadId, by, from, to],
+      )
+      const selection = {
+        id: randomUUID(),
+        recordedAt: Date.now(),
+        by: actor,
+        ...(previous !== undefined ? { from: previous } : {}),
+        to: selected,
+      }
+      const line = {
+        v: SPINE_SCHEMA_VERSION,
+        type: 'model_selected' as const,
+        ...selection,
+      }
+      return recordModelSelection(pid, tid, line).then(() => selection)
     },
   )
   ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {

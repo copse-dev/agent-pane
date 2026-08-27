@@ -1,7 +1,7 @@
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type {
   ModelUsage,
-  QueuedMessageOrigin,
+  MessageOrigin,
   SubagentSession,
   Thread,
   ThreadReview,
@@ -128,7 +128,7 @@ export interface SpineMessageLine {
    * reload; `editedByUser` records that a human edited the hook's text before it
    * dispatched (authorship stays honest). Absent = human-authored.
    */
-  origin?: QueuedMessageOrigin
+  origin?: MessageOrigin
   editedByUser?: boolean
   /**
    * Repository state this prompt started from (user messages only), captured at
@@ -354,8 +354,20 @@ export type SpineMachineContinuationLine = {
   recordedAt: number
   budgetUsed?: number
 } & (
-  { phase: 'started'; result?: never } | { phase: 'finished'; result: MachineContinuationResult }
+  | { phase: 'started'; result?: never; turnOutcome?: never }
+  | { phase: 'finished'; result: MachineContinuationResult; turnOutcome?: TurnOutcome }
 )
+
+/** A committed thread-model selection, attributed to its initiating actor. */
+export interface SpineModelSelectedLine {
+  v: number
+  type: 'model_selected'
+  id: string
+  recordedAt: number
+  by: 'user' | 'auto'
+  from?: string
+  to: string
+}
 
 /** Discriminated union of every line type this schema version can write. */
 export type SpineLine =
@@ -365,6 +377,7 @@ export type SpineLine =
   | SpinePermissionDecisionLine
   | SpineDecisionLine
   | SpineMachineContinuationLine
+  | SpineModelSelectedLine
 
 /** Thread-relative ref of the content-addressed toolset fingerprint blob. */
 export function toolsetBlobRef(hash: string): string {
@@ -485,10 +498,30 @@ function isMachineContinuationResult(value: unknown): value is MachineContinuati
   )
 }
 
+function isTurnOutcome(value: unknown): value is TurnOutcome {
+  if (!isRecord(value)) return false
+  const status = value['status']
+  const source = value['source']
+  const executor = value['executor']
+  return (
+    (status === 'completed' || status === 'failed' || status === 'cancelled') &&
+    typeof value['stopReason'] === 'string' &&
+    (source === 'provider' || source === 'host' || source === 'user' || source === 'hook') &&
+    (executor === 'local' ||
+      executor === 'acp' ||
+      executor === 'remote' ||
+      executor === 'plugin') &&
+    typeof value['provider'] === 'string' &&
+    typeof value['model'] === 'string' &&
+    typeof value['endedAt'] === 'number'
+  )
+}
+
 function isSpineMachineContinuationLine(value: unknown): value is SpineMachineContinuationLine {
   if (!isRecord(value)) return false
   const phase = value['phase']
   const result = value['result']
+  const turnOutcome = value['turnOutcome']
   return (
     value['type'] === 'machine_continuation' &&
     typeof value['v'] === 'number' &&
@@ -500,8 +533,23 @@ function isSpineMachineContinuationLine(value: unknown): value is SpineMachineCo
       (typeof value['budgetUsed'] === 'number' &&
         Number.isInteger(value['budgetUsed']) &&
         value['budgetUsed'] >= 0)) &&
-    ((phase === 'started' && result === undefined) ||
-      (phase === 'finished' && isMachineContinuationResult(result)))
+    ((phase === 'started' && result === undefined && turnOutcome === undefined) ||
+      (phase === 'finished' &&
+        isMachineContinuationResult(result) &&
+        (turnOutcome === undefined || isTurnOutcome(turnOutcome))))
+  )
+}
+
+function isSpineModelSelectedLine(value: unknown): value is SpineModelSelectedLine {
+  if (!isRecord(value)) return false
+  return (
+    value['type'] === 'model_selected' &&
+    typeof value['v'] === 'number' &&
+    typeof value['id'] === 'string' &&
+    typeof value['recordedAt'] === 'number' &&
+    (value['by'] === 'user' || value['by'] === 'auto') &&
+    (value['from'] === undefined || typeof value['from'] === 'string') &&
+    typeof value['to'] === 'string'
   )
 }
 
@@ -554,6 +602,7 @@ export function parseSpineLine(raw: string): SpineLine | null {
   if (type === 'decision' && isSpineDecisionLine(parsed)) return parsed
   if (type === 'permission_decision' && isSpinePermissionDecisionLine(parsed)) return parsed
   if (type === 'machine_continuation' && isSpineMachineContinuationLine(parsed)) return parsed
+  if (type === 'model_selected' && isSpineModelSelectedLine(parsed)) return parsed
 
   return null
 }

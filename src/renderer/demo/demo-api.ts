@@ -518,6 +518,21 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         if (thread) Object.assign(thread, patch)
         return resolvedVoid()
       },
+      recordModelSelection: (_projectId, threadId, by, from, to) => {
+        const selection = {
+          id: `demo-model-selection-${String(Date.now())}`,
+          recordedAt: Date.now(),
+          by,
+          ...(from !== undefined ? { from } : {}),
+          to,
+        }
+        const thread = threads.find((candidate) => candidate.id === threadId)
+        if (thread) {
+          thread.model = to
+          thread.modelSelections = [...(thread.modelSelections ?? []), selection]
+        }
+        return resolved(selection)
+      },
       delete: (_projectId: string, threadId: string) => {
         threads = threads.filter((candidate) => candidate.id !== threadId)
         return resolvedVoid()
@@ -712,7 +727,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     vnc: {
       open: unsupported,
       list: emptyArray,
-      discover: emptyArray,
+      discover: () => resolved([...(scenario.vncDiscoveredPorts ?? [])]),
       discoverNearby: emptyArray,
       resolveSshHosts: emptyArray,
       getUsername: () => resolved(null),

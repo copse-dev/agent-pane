@@ -112,6 +112,16 @@ describe('export thread', () => {
     t.todos = [{ id: 'todo-1', content: 'do thing', status: 'pending' }]
     t.workingBrief = 'fix the bug'
     t.gitBranch = 'feature/x'
+    t.model = 'auto:balanced'
+    t.modelSelections = [
+      {
+        id: 'selection-1',
+        recordedAt: 2,
+        by: 'user',
+        from: 'gpt-5.4',
+        to: 'auto:balanced',
+      },
+    ]
     t.contextSnapshot = {
       contextWindow: 200000,
       conversationBudget: 150000,
@@ -123,11 +133,13 @@ describe('export thread', () => {
     t.draftPrompt = 'unsent'
 
     const header = expectRecord(parseJsonUnknown(at(threadToJsonl(t).trimEnd().split('\n'), 0)))
-    assert.equal(header['exportVersion'], 6)
+    assert.equal(header['exportVersion'], 7)
     assert.equal(header['status'], 'error')
     assert.deepEqual(header['todos'], t.todos)
     assert.equal(header['workingBrief'], 'fix the bug')
     assert.equal(header['gitBranch'], 'feature/x')
+    assert.equal(header['model'], 'auto:balanced')
+    assert.deepEqual(header['modelSelections'], t.modelSelections)
     assert.deepEqual(header['contextSnapshot'], t.contextSnapshot)
     assert.equal(header['queuePaused'], true)
     assert.equal(header['draftPrompt'], 'unsent')

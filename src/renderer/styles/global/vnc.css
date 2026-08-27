@@ -321,10 +321,14 @@
   background: var(--bg-hover);
 }
 
+/* Selected discovered port. This row is a rounded card, so the accent reads as a
+   ring on all four sides — an inset shadow is clipped to the border-radius, so a
+   leading rail (`inset 2px 0 0`) would bow around the top-left and bottom-left
+   corners. Same accent wash as `.provider-chip.active`. */
 .vnc-discovered-port.selected {
   color: var(--text-primary);
   border-color: var(--accent);
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .vnc-status {

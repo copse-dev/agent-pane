@@ -42,6 +42,7 @@ import {
   type ContentRef,
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
+  type SpineModelSelectedLine,
   type SpineDecisionLine,
   type SpinePermissionDecisionLine,
   type ThreadMeta,
@@ -52,6 +53,7 @@ import {
   type RemoteAgentPrIndexEntry,
 } from '@shared/remote-agent-link.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import type { ModelSelectionEvent } from '@shared/types'
 import { isRemoteAgentProvider } from '@shared/remote-agent.ts'
 import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
@@ -1398,6 +1400,36 @@ export function appendMachineContinuation(
     const prefix =
       existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
     writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+  })
+}
+
+/** Append a model-selection event and mirror its compact history into thread metadata. */
+export function recordModelSelection(
+  projectId: string,
+  threadId: string,
+  line: SpineModelSelectedLine,
+): Promise<void> {
+  return runStoreWrite(projectId, () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
+    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+    const prefix =
+      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
+    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+
+    const current = readMeta(dir)
+    if (current === null) return
+    const selection: ModelSelectionEvent = {
+      id: line.id,
+      recordedAt: line.recordedAt,
+      by: line.by,
+      ...(line.from !== undefined ? { from: line.from } : {}),
+      to: line.to,
+    }
+    const modelSelections = [...(current.modelSelections ?? []), selection]
+    const next: ThreadMeta = { ...current, model: line.to, modelSelections, id: threadId }
+    writeFileSync(join(dir, META_FILE), `${JSON.stringify(next)}\n`)
+    refreshCatalogLine(projectId, threadId)
   })
 }
 

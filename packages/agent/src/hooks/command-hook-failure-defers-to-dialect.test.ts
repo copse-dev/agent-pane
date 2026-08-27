@@ -6,8 +6,8 @@
 //     as a HookExecutionError, never downgraded to an allow.
 //   - Command (spawned) hooks **defer failure to their dialect** — the runner
 //     resolves crash / timeout / invalid JSON per the hook's `onFailure`
-//     (Cursor fails open by default but honours `failClosed`; Claude denies on
-//     exit 2; Copse uses `onFailure: open|closed`) BEFORE returning, so a
+//     (Copse defaults failures closed; explicit dialect controls may open;
+//     Claude denies on exit 2; Copse uses `onFailure: open|closed`) BEFORE returning, so a
 //     command failure is a normalized outcome (or none), never a thrown emit.
 //     Even a runner that itself throws is caught and resolved the same way, so
 //     one buggy command hook can never fail-hard the harness.

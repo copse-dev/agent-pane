@@ -563,6 +563,27 @@ test('turn_outcome is attached before done and survives a provider failure befor
   assert.deepEqual(at(messages(), 0).turnOutcome, outcome)
 })
 
+test('machine turn start adds an attributed prompt and marks the thread running', () => {
+  const idle = thread('t1')
+  idle.status = 'idle'
+  const { send, store, messages } = setup([idle])
+
+  send({
+    type: 'machine_turn_start',
+    content: 'Continue after the background task',
+    origin: { kind: 'machine', operationId: 'background-17' },
+  })
+
+  assert.equal(requireThread(store, 't1').status, 'running')
+  assert.equal(messages().length, 1)
+  assert.equal(at(messages(), 0).role, 'user')
+  assert.equal(at(messages(), 0).content, 'Continue after the background task')
+  assert.deepEqual(at(messages(), 0).origin, {
+    kind: 'machine',
+    operationId: 'background-17',
+  })
+})
+
 test('done does not alert between queued turns', () => {
   const queued = thread('t1')
   queued.pendingMessages = [

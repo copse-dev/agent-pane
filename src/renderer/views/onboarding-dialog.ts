@@ -376,7 +376,11 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
         importErrors.push(...result.errors)
       } else if (fallback) {
         try {
-          await fallback.panel.saveKeys()
+          if (!(await fallback.panel.saveKeys())) {
+            importErrors.push(
+              'A provider key was not saved. Configure a keyring or use an environment key.',
+            )
+          }
         } catch (err) {
           importErrors.push(err instanceof Error ? err.message : 'Could not save keys')
         }
