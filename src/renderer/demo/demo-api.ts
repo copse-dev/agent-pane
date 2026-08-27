@@ -392,8 +392,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }
       },
       onApprovalRequest: (handler) => {
-        if (scenario.approvalRequest) {
-          const request = structuredClone(scenario.approvalRequest)
+        for (const approvalRequest of scenario.approvalRequests ?? []) {
+          const request = structuredClone(approvalRequest)
           setTimeout(() => {
             handler(request)
           }, 0)
