@@ -15,7 +15,7 @@
   margin: var(--spacing-md) 0 0;
   color: var(--text-muted);
   font-size: var(--font-size-sm);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
 }
 .comparison-model-dialog-actions {
   display: flex;

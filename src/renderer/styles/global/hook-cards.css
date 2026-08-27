@@ -248,7 +248,7 @@
   background: var(--bg-base);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  line-height: 1.45;
+  line-height: var(--line-height-base);
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;

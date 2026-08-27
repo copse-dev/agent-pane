@@ -107,7 +107,7 @@
 .guarded-yolo-text {
   min-width: 0;
   flex: 1;
-  line-height: 1.35;
+  line-height: var(--line-height-base);
 }
 .guarded-yolo-disable {
   flex: 0 0 auto;
@@ -152,7 +152,7 @@
 .composer-image-warning-text {
   min-width: 0;
   flex: 1;
-  line-height: 1.35;
+  line-height: var(--line-height-base);
 }
 .composer-image-model-btn,
 .composer-image-describe-btn,
@@ -220,7 +220,7 @@
 .composer-context-warning-text {
   min-width: 0;
   flex: 1;
-  line-height: 1.35;
+  line-height: var(--line-height-base);
 }
 .composer-context-model-btn {
   flex: 0 0 auto;
@@ -488,7 +488,7 @@
   color: var(--text-primary);
   font-family: inherit;
   font-size: inherit;
-  line-height: 1.55;
+  line-height: var(--line-height-base);
 }
 .message-edit-input:focus {
   outline: none;

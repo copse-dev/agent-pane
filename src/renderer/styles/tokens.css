@@ -113,6 +113,9 @@
   --font-size-xs: calc(11px * var(--ui-scale));
   --font-size-sm: calc(12px * var(--ui-scale));
   --font-size-base: calc(14px * var(--ui-scale));
+  /* Shared text rhythm. Components inherit this fixed line box so sidebar rows,
+     transcript prose, composer text, and detail panes align at one density. */
+  --line-height-base: calc(22px * var(--ui-scale));
   --font-size-md: calc(15px * var(--ui-scale));
   --font-size-lg: calc(16px * var(--ui-scale));
   --radius-sm: 4px;
