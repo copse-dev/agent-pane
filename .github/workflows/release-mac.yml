@@ -1,8 +1,11 @@
 name: Release (macOS)
 
-# Publish a stable or beta tag only after the full CI aggregate passes at the
-# exact tagged commit. Packaging and promotion are deliberately separate jobs:
-# the publisher downloads signed, notarized, smoke-tested files and never rebuilds.
+# Build a stable or beta tag only after the full CI aggregate passes at the
+# exact tagged commit. This workflow deliberately stops after uploading the
+# signed, notarized, smoke-tested files. `Publish release artifacts` is a
+# separate manual workflow so the owner can review the immutable Actions
+# artifact, make the repository public, and publish those exact bytes without
+# racing an automatic publisher.
 on:
   workflow_dispatch:
     inputs:
@@ -300,40 +303,3 @@ jobs:
             release/RELEASE_NOTES.md
           if-no-files-found: error
           retention-days: 30
-
-  publish:
-    needs: [preflight, build-test]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: copse-macos-${{ needs.preflight.outputs.release_sha }}
-          path: release
-      - name: Promote the exact tested artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TYPE: ${{ needs.preflight.outputs.release_type }}
-          TAG: ${{ needs.preflight.outputs.tag }}
-          TARGET: ${{ needs.preflight.outputs.release_sha }}
-        run: |
-          set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "A release already exists for $TAG; refusing to replace it"
-            exit 1
-          fi
-          release_flags=()
-          if [ "$RELEASE_TYPE" = 'prerelease' ]; then
-            release_flags+=(--prerelease)
-          else
-            release_flags+=(--latest)
-          fi
-          # `gh release create` has no TTY here: without a body it refuses to
-          # run. The notes were generated from CHANGELOG.md alongside the
-          # artifacts they describe; `--verify-tag` keeps gh from inventing a
-          # tag if that ever stops being true.
-          test -s release/RELEASE_NOTES.md
-          gh release create "$TAG" release/*.dmg release/*.zip release/*.blockmap release/*-mac.yml release/SHA256SUMS \
-            --target "$TARGET" --title "$TAG" --notes-file release/RELEASE_NOTES.md --verify-tag \
-            "${release_flags[@]}"
