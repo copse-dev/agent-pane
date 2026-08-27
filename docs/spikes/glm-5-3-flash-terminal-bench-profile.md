@@ -1,17 +1,45 @@
-# Ox Alpha Terminal-Bench profile
+# GLM-5.3-Flash Terminal-Bench profile
 
 Status: **evidence-backed experimental product recommendation**. The recommendation is opt-in; it is not a
-claim about Ox Alpha's published model limits and is not yet suitable as the automatic default.
+claim about the model's published limits and is not yet suitable as the automatic default.
+
+Every run recorded below was collected against the stealth route `openrouter:stealth/ox-alpha`, before
+Zhipu revealed it on 26 August 2026 as GLM-5.3-Flash (`zai-org/GLM-5.3-Flash`, MIT, 320B total / 18B
+active). The weights are the same model, so the observations carry, but they were gathered against the
+pre-release endpoint and have not been re-run against the released one. A repeat on
+`openrouter:z-ai/glm-5.3-flash` is the first thing to do before this profile is argued up to a default,
+because serving configuration — not just weights — decides where a response ceiling bites.
 
 ## Profile
 
-- route: `openrouter:stealth/ox-alpha`
+- route: `openrouter:z-ai/glm-5.3-flash` (formerly the stealth route `openrouter:stealth/ox-alpha`)
 - reasoning effort: `medium`
 - maximum output per provider response: 16,384 tokens, including hidden reasoning
+- sampling: `temperature` 1, `top_p` 0.95 — Z.ai's published recommendation, not a Copse finding
 - agent instruction used by the external screen: generic artifact/contract-first guidance
 
-Copse exposes the route, reasoning level, and output cap in Settings. The instruction remains
+Copse exposes the route, reasoning level, sampling, and output cap in Settings. The instruction remains
 benchmark-only until its mechanisms are isolated from the parameter change.
+
+## Vendor recipe, and where this profile departs from it
+
+Z.ai's [developer documentation](https://docs.z.ai/guides/llm/glm-5.3-flash) publishes a Recommended
+Settings block: `temperature: 1`, `top_p: 0.95`, and `reasoning_effort: max`. The profile takes the
+sampling pair verbatim — no run below varied sampling, so there is no Copse evidence that disagrees
+with the vendor, and pinning the pair keeps an aggregator's own default from drifting underneath us.
+
+It deliberately does not take `reasoning_effort: max`. The counterbalanced screen below scored
+`medium` plus a response cap at 4/6 against 2/6 for a max-effort, uncapped baseline on the shell-agent
+loop Copse actually runs. The vendor recommends a general-purpose depth for the model; this row
+recommends a depth for one scenario, on evidence of that scenario, and says so on the affordance.
+
+The [model card](https://huggingface.co/zai-org/GLM-5.3-Flash) publishes no usage recipe of its own —
+only per-benchmark evaluation settings, which disagree with each other (`top_p` 0.95 for HLE, 1.0 for
+NL2Repo and Terminal-Bench 2.1; `temperature` 0.95 for DeepSWE). Those are eval configuration, not a
+recommendation, and nothing here is inferred from them. One is worth recording as context rather than
+as a source: Zhipu's own Terminal-Bench 2.1 evaluation ran `max_new_tokens=65536`, four times the cap
+this profile recommends, which is a reminder that the 16,384 figure is a Copse execution budget for an
+interactive agent loop and not a claim about the model's capability ceiling.
 
 ## Evidence and limitations
 

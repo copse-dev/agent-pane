@@ -483,12 +483,27 @@ export interface RecommendedOutputCeiling {
  */
 const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: string }> = [
   {
-    match: 'ox-alpha',
+    match: 'glm-5.3-flash',
     label: 'Copse’s experimental balanced agent profile',
     source:
-      'https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/ox-alpha-terminal-bench-profile.md',
+      'https://github.com/copse-dev/agent-pane/blob/main/docs/spikes/glm-5-3-flash-terminal-bench-profile.md',
     sourceLabel: 'paired Terminal-Bench record',
-    params: { reasoning: 'medium', maxOutputTokens: 16_384 },
+    // Two provenances, and they disagree, so the row states which half is whose.
+    //
+    // Sampling is Z.ai's published recipe verbatim — its Recommended Settings
+    // say temperature 1 and top_p 0.95 (https://docs.z.ai/guides/llm/glm-5.3-flash).
+    // Copse's paired runs never varied sampling, so nothing in our record argues
+    // with the vendor here, and sending the pair pins it against an aggregator's
+    // own default drifting underneath us.
+    //
+    // Reasoning and the cap are ours, and `medium` is a deliberate departure from
+    // the same page's `reasoning_effort: max`. The counterbalanced Terminal-Bench
+    // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
+    // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
+    // for the model in general; we keep `medium` for this scenario on our own
+    // evidence, and the row stays opt-in and experimental because that evidence is
+    // one benchmark on one host.
+    params: { reasoning: 'medium', maxOutputTokens: 16_384, temperature: 1, topP: 0.95 },
   },
   {
     match: 'deepseek-v4-flash',

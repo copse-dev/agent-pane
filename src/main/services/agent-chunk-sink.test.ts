@@ -80,7 +80,7 @@ describe('createAgentChunkSink', () => {
       () => {
         sink({
           type: 'usage',
-          model: 'openrouter:stealth/ox-alpha',
+          model: 'openrouter:z-ai/glm-5.3-flash',
           inputTokens: 1000,
           outputTokens: 100,
         })
@@ -99,7 +99,7 @@ describe('createAgentChunkSink', () => {
     const sink = createAgentChunkSink('thread-1', host)
     const usage: StreamChunk = {
       type: 'usage',
-      model: 'openrouter:stealth/ox-alpha',
+      model: 'openrouter:z-ai/glm-5.3-flash',
       inputTokens: 1000,
       outputTokens: 100,
     }
