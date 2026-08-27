@@ -16,6 +16,7 @@ import { setComposerValue } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-archive-attachment-project'
 const COMPOSER_SCREENSHOT = 'archive-attachment-chip.png'
+const RESTORED_DRAFT_SCREENSHOT = 'archive-attachment-restored-draft.png'
 const TRANSCRIPT_SCREENSHOT = 'archive-attachment-transcript.png'
 
 const ARCHIVE_NAME = 'bundle.zip'
@@ -92,6 +93,21 @@ describe('Attaching an archive to the chat', () => {
     await expect(await $('.attachment-chips .file-chip').isExisting()).toBe(false)
 
     await saveAppScreenshot(COMPOSER_SCREENSHOT)
+  })
+
+  it('keeps the unsent archive with its draft while switching threads', async () => {
+    const originalThreadId = await $('.chat-row.selected').getAttribute('data-thread-id')
+    await $('.project-new-thread-btn').click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
+    await expect($('.attachment-chips .archive-chip')).not.toBeExisting()
+
+    await $(`.chat-row[data-thread-id="${originalThreadId}"]`).click()
+    const restored = await $('.attachment-chips .archive-chip')
+    await restored.waitForDisplayed({ timeout: 10_000 })
+    await expect(await restored.$('.attachment-chip-label').getText()).toBe(ARCHIVE_NAME)
+    await expect(await $('.prompt-input').getText()).toContain('what is in this bundle?')
+
+    await saveAppScreenshot(RESTORED_DRAFT_SCREENSHOT)
   })
 
   it('sends the archive as a path reference and renders a transcript chip', async () => {
