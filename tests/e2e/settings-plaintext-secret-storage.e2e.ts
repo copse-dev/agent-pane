@@ -97,6 +97,11 @@ describe('settings plaintext secret storage', () => {
       'the per-save plaintext consent prompt must not appear while the env gate is off',
     )
 
-    await saveElementScreenshot('.provider-form', 'settings-plaintext-storage-disabled.png')
+    const keyFieldSelector =
+      '.provider-field-group:has([data-provider-key-status="openrouter"])'
+    await browser.execute((selector) => {
+      document.querySelector(selector)?.scrollIntoView({ block: 'center', inline: 'nearest' })
+    }, keyFieldSelector)
+    await saveElementScreenshot(keyFieldSelector, 'settings-plaintext-storage-disabled.png')
   })
 })
