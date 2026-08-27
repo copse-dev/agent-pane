@@ -6,17 +6,16 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 /**
- * Visual proof for the default-off plaintext secret policy. A headless Linux
- * host may still provide Secret Service, so this session points its real OS
- * keyring adapter at an absent D-Bus socket. Electron safeStorage is already
- * unavailable in the Linux E2E configuration.
+ * Visual proof for the default-off plaintext secret policy. The e2e shell
+ * injects unavailable storage at the native keyring and Electron safeStorage
+ * boundaries so the state is independent of the runner host.
  */
 describe('settings plaintext secret storage', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     writeE2eEnv({
       COPSE_ALLOW_PLAINTEXT_SECRETS: undefined,
-      DBUS_SESSION_BUS_ADDRESS: 'unix:path=/tmp/copse-e2e-no-secret-service.sock',
+      COPSE_E2E_SECRET_STORAGE: 'unavailable',
     })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-plaintext-storage-disabled')
@@ -26,7 +25,7 @@ describe('settings plaintext secret storage', () => {
   after(() => {
     writeE2eEnv({
       COPSE_ALLOW_PLAINTEXT_SECRETS: undefined,
-      DBUS_SESSION_BUS_ADDRESS: undefined,
+      COPSE_E2E_SECRET_STORAGE: undefined,
     })
     resetUserData()
   })
@@ -58,7 +57,18 @@ describe('settings plaintext secret storage', () => {
     const form = dialog.$('.provider-form')
     const keyInput = form.$('input[type="password"]')
     await keyInput.waitForDisplayed({ timeout: 10_000 })
-    await keyInput.setValue('sk-or-v1-e2e-plaintext-policy')
+    const key = 'sk-or-v1-e2e-plaintext-policy'
+    const staged = await browser.execute((value) => {
+      const selectedProvider = document.querySelector<HTMLButtonElement>('.provider-chip.active')
+      const input = document.querySelector<HTMLInputElement>(
+        '#settings-providers-host .provider-form input[type="password"]',
+      )
+      if (selectedProvider?.dataset.provider !== 'openrouter' || !input) return null
+      input.value = value
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      return input.value
+    }, key)
+    assert.equal(staged, key, 'expected the provider key to be staged and marked dirty')
     // This spec covers save policy, not sticky-footer pointer geometry. Submit
     // the real Settings form so a scrolled provider action cannot intercept the
     // WebDriver click while still exercising the production submit handler.
