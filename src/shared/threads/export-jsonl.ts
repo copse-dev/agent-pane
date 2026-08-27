@@ -23,7 +23,7 @@ function providersFromUsage(usage: Thread['usage']): string[] {
 }
 
 /** JSONL export schema revision — bump when thread/message header fields change. */
-export const THREAD_JSONL_EXPORT_VERSION = 6
+export const THREAD_JSONL_EXPORT_VERSION = 7
 
 /** Serialize a thread as the portable, self-contained JSONL export format. */
 export function threadToJsonl(thread: Thread): string {
@@ -43,6 +43,8 @@ export function threadToJsonl(thread: Thread): string {
       todos: thread.todos,
       workingBrief: thread.workingBrief,
       gitBranch: thread.gitBranch,
+      model: thread.model,
+      modelSelections: thread.modelSelections,
       pendingMessages: thread.pendingMessages,
       queuePaused: thread.queuePaused,
       draftPrompt: thread.draftPrompt,
@@ -67,6 +69,8 @@ export function threadToJsonl(thread: Thread): string {
         ...(msg.parameters !== undefined ? { parameters: msg.parameters } : {}),
         ...(msg.turnOutcome !== undefined ? { turnOutcome: msg.turnOutcome } : {}),
         ...(msg.review !== undefined ? { review: msg.review } : {}),
+        ...(msg.origin !== undefined ? { origin: msg.origin } : {}),
+        ...(msg.editedByUser !== undefined ? { editedByUser: msg.editedByUser } : {}),
         toolCalls: msg.toolCalls,
       }),
     )

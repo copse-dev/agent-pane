@@ -46,6 +46,7 @@ import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
 import { splitCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import type {
   Message,
+  MessageOrigin,
   SubagentSession,
   Thread,
   ToolCall,
@@ -1026,24 +1027,36 @@ function createHookCard(card: HookCard, load: HookRunDetailLoader): HTMLElement 
 }
 
 /**
- * Attribution marker on a hook-originated turn (decision 10): the message role
- * stays `user`, but this shows the hook + event that started the follow-up so it
- * never reads as something the human typed. `editedByUser` notes a human touched
- * the text before it dispatched — authorship stays honest.
+ * Attribution marker on a turn started without a human submit. Hook follow-ups
+ * name the hook and event; host-native continuations use a stable machine label.
  */
-function buildHookOriginMarker(
-  origin: { hookId: string; event: string },
-  editedByUser: boolean,
-): HTMLElement {
-  const label = `Hook · ${origin.hookId} (${hookEventLabel(origin.event)})`
+function buildMessageOriginMarker(origin: MessageOrigin, editedByUser: boolean): HTMLElement {
+  const fromHook = origin.kind === 'hook'
+  const label = fromHook
+    ? `Hook · ${origin.hookId} (${hookEventLabel(origin.event)})`
+    : 'Machine · automatic continuation'
   const marker = el(
     'div',
-    { class: 'msg-hook-origin-marker' },
+    {
+      class: `msg-origin-marker ${fromHook ? 'msg-hook-origin-marker' : 'msg-machine-origin-marker'}`,
+    },
     zapIcon('ui-icon ui-icon-sm hook-card-icon'),
-    el('span', { class: 'msg-hook-origin-label' }, label),
+    el(
+      'span',
+      {
+        class: `msg-origin-label ${fromHook ? 'msg-hook-origin-label' : 'msg-machine-origin-label'}`,
+      },
+      label,
+    ),
   )
   if (editedByUser) {
-    marker.append(el('span', { class: 'msg-hook-origin-edited' }, 'edited'))
+    marker.append(
+      el(
+        'span',
+        { class: `msg-origin-edited ${fromHook ? 'msg-hook-origin-edited' : ''}`.trim() },
+        'edited',
+      ),
+    )
   }
   return marker
 }
@@ -2048,14 +2061,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     // A hook-originated turn (decision 10): the message role stays `user`, but a
     // marker attributes it to the hook follow-up that started it.
-    const hookOrigin = msg.origin?.kind === 'hook' ? msg.origin : null
+    const origin = msg.role === 'user' ? msg.origin : undefined
     const imageInputUnsupported =
       msg.role === 'assistant' && isImageInputUnsupportedMessage(msg.content)
-    const msgClass = `msg msg-${msg.role}${hookOrigin ? ' msg-hook-origin' : ''}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
+    const originClass =
+      origin?.kind === 'hook'
+        ? ' msg-hook-origin'
+        : origin?.kind === 'machine'
+          ? ' msg-machine-origin'
+          : ''
+    const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
-    if (hookOrigin) msgEl.setAttribute('data-hook-id', hookOrigin.hookId)
+    if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
+    if (origin?.kind === 'machine') msgEl.setAttribute('data-operation-id', origin.operationId)
     const body = el('div', { class: 'message-body' })
-    if (hookOrigin) body.append(buildHookOriginMarker(hookOrigin, msg.editedByUser === true))
+    if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true))
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     const nestReasoning = shouldNestReasoningInTools(msg.toolCalls ?? [])
     appendMessageContent(body, msg, api, {

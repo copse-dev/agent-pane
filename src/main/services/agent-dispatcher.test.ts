@@ -407,6 +407,16 @@ describe('AgentDispatcher', () => {
 
   it('records compact continuation starts and terminal decisions without prompt content', async () => {
     const audit: SpineMachineContinuationLine[] = []
+    const turnOutcome = {
+      status: 'failed' as const,
+      stopReason: 'error' as const,
+      source: 'provider' as const,
+      executor: 'local' as const,
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      error: { message: 'upstream 502' },
+      endedAt: 100,
+    }
     let nextId = 0
     const dispatcher = new AgentDispatcher(
       host,
@@ -416,6 +426,11 @@ describe('AgentDispatcher', () => {
           audit.push(line)
         },
         createId: () => `audit-${String(++nextId)}`,
+        run: async (_threadId, userContent, priorMessages) => ({
+          usage: { inputTokens: 0, outputTokens: 0 },
+          messages: [...priorMessages, { role: 'user', content: userContent }],
+          turnOutcome,
+        }),
       }),
     )
     await dispatcher.dispatch(
@@ -447,13 +462,14 @@ describe('AgentDispatcher', () => {
     )
 
     assert.deepEqual(
-      audit.map(({ phase, operationId, turnTreeId, budgetUsed, ...line }) => ({
+      audit.map(({ phase, operationId, turnTreeId, budgetUsed, turnOutcome, ...line }) => ({
         id: line.id,
         phase,
         operationId,
         turnTreeId,
         ...(budgetUsed !== undefined ? { budgetUsed } : {}),
         ...('result' in line ? { result: line.result } : {}),
+        ...(turnOutcome !== undefined ? { turnOutcome } : {}),
       })),
       [
         {
@@ -470,6 +486,7 @@ describe('AgentDispatcher', () => {
           turnTreeId: 'tree-current',
           budgetUsed: 1,
           result: 'completed',
+          turnOutcome,
         },
         {
           id: 'audit-3',

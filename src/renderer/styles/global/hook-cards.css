@@ -254,9 +254,9 @@
   overflow-wrap: anywhere;
 }
 
-/* Origin marker on a hook-originated user turn: a small accent label above the
-   message body so the turn never reads as human-typed (decision 10). */
-.msg-hook-origin-marker {
+/* Origin marker on a machine-started user turn: a small accent label above the
+   message body so the turn never reads as human-typed. */
+.msg-origin-marker {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
@@ -264,13 +264,13 @@
   font-size: var(--font-size-xs);
   color: var(--accent);
 }
-.msg-hook-origin-label {
+.msg-origin-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.msg-hook-origin-edited {
+.msg-origin-edited {
   color: var(--text-muted);
   font-style: italic;
 }

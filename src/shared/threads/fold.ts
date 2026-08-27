@@ -1,8 +1,8 @@
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import type {
   Message,
+  MessageOrigin,
   ModelUsage,
-  QueuedMessageOrigin,
   SubagentMessage,
   SubagentSession,
   Thread,
@@ -58,7 +58,7 @@ interface MessageLike {
   parameters?: ModelParameters
   turnOutcome?: TurnOutcome
   review?: ThreadReview
-  origin?: QueuedMessageOrigin
+  origin?: MessageOrigin
   editedByUser?: boolean
   startingCommit?: string
   dirty?: boolean
