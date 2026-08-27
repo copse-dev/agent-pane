@@ -64,9 +64,10 @@ describe('ACP authentication error presentation', () => {
     const warning = await message.$('.markdown-alert-warning')
     await expect(warning.$('strong')).toHaveText('Cursor sign-in expired')
     await expect(message.$('ol code')).toHaveText('cursor-agent login')
-    // List items also contain paragraphs, so `p code` resolves to the login
-    // command above. Scope this to the top-level prose paragraph instead.
-    await expect(message.$(':scope > p code')).toHaveText('CURSOR_SESSION_TOKEN')
+    // List items also contain paragraphs, so the first `p code` is the login
+    // command above. Check the complete prose token set for the recovery hint.
+    const paragraphCodeText = await message.$$('p code').map((code) => code.getText())
+    expect(paragraphCodeText).toContain('CURSOR_SESSION_TOKEN')
     await expect(message.$('pre code')).toHaveText(
       expect.stringContaining('expired WorkosCursorSessionToken'),
     )
