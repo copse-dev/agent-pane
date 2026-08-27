@@ -37,20 +37,33 @@ describe('settings plaintext secret storage', () => {
 
     const selected = await browser.execute(() => {
       const chip = [...document.querySelectorAll<HTMLButtonElement>('.provider-chip')].find(
-        (candidate) => candidate.textContent?.trim() === 'OpenAI',
+        // OpenAI also owns the Codex device agent. On a fresh Linux runner,
+        // selecting it can legitimately open the ACP adapter-install approval
+        // over Settings; OpenRouter exercises the same key policy without that
+        // unrelated setup flow.
+        (candidate) => candidate.textContent?.trim() === 'OpenRouter',
       )
       chip?.click()
       return Boolean(chip)
     })
-    assert.equal(selected, true, 'expected an OpenAI provider chip')
+    assert.equal(selected, true, 'expected an OpenRouter provider chip')
 
     const form = dialog.$('.provider-form')
     const keyInput = form.$('input[type="password"]')
     await keyInput.waitForDisplayed({ timeout: 10_000 })
-    await keyInput.setValue('sk-e2e-plaintext-policy')
-    await dialog.$('button[type="submit"]').click()
+    await keyInput.setValue('sk-or-v1-e2e-plaintext-policy')
+    // This spec covers save policy, not sticky-footer pointer geometry. Submit
+    // the real Settings form so a scrolled provider action cannot intercept the
+    // WebDriver click while still exercising the production submit handler.
+    const submitted = await browser.execute(() => {
+      const settings = document.querySelector<HTMLFormElement>('#settings-dialog form')
+      if (!settings) return false
+      settings.requestSubmit()
+      return true
+    })
+    assert.equal(submitted, true, 'expected the Settings form')
 
-    const status = form.$('[data-provider-key-status="openai"]')
+    const status = form.$('[data-provider-key-status="openrouter"]')
     await browser.waitUntil(
       async () => /COPSE_ALLOW_PLAINTEXT_SECRETS=1/.test(await status.getText()),
       { timeout: 10_000, timeoutMsg: 'plaintext-disabled guidance never appeared' },
