@@ -22,7 +22,7 @@ export interface TodoWorkerCommit {
 
 export function todoWorkerBranchName(todoId: string, collision = 0): string {
   const compact = todoId.toLowerCase().replace(/[^a-z0-9]/g, '')
-  const base = `copse/todo-worker/${compact || 'item'}`
+  const base = `copse/todo-worker/${compact === '' ? 'item' : compact}`
   return collision > 0 ? `${base}-${String(collision + 1)}` : base
 }
 
@@ -45,7 +45,10 @@ export async function resolveTodoWorkerBranch(
       '--quiet',
       `refs/heads/${branch}`,
     ])
-    if (check.code !== 0) return branch
+    if (check.code === 1) return branch
+    if (check.code !== 0) {
+      throw new Error(`Cannot inspect todo worker branch ${branch}: ${check.stderr.trim()}`)
+    }
   }
   throw new Error(`Cannot find a free branch for todo worker ${todoId}`)
 }
@@ -61,18 +64,19 @@ export async function commitTodoWorkerOutput(input: {
   try {
     const add = await runWorktreeGit(worktreePath, ['add', '-A'])
     if (add.code !== 0) throw new Error(`git add failed: ${(add.stderr || add.stdout).trim()}`)
-    // Include ignored entries in the emptiness probe so build output the worker
-    // produced counts as work; `git add -A` never stages ignored files, so a
-    // worker that only produced ignored content commits nothing and is
-    // reported as such rather than silently dropped.
-    const status = await runWorktreeGit(worktreePath, [
-      'status',
-      '--porcelain=v1',
-      '-z',
-      '--ignored=matching',
+    // Probe the index after staging. Ignored-only build output is intentionally
+    // not a commit: `git add -A` cannot stage it, and attempting the commit
+    // would turn the normal no-source-change outcome into a failure.
+    const staged = await runWorktreeGit(worktreePath, [
+      'diff',
+      '--cached',
+      '--quiet',
+      '--exit-code',
     ])
-    const dirty = status.code === 0 && status.stdout.length > 0
-    if (!dirty) return { branch: input.branch, sha: null, committed: false }
+    if (staged.code === 0) return { branch: input.branch, sha: null, committed: false }
+    if (staged.code !== 1) {
+      throw new Error(`git diff --cached failed: ${(staged.stderr || staged.stdout).trim()}`)
+    }
 
     const commit = await runWorktreeGit(
       worktreePath,
@@ -94,7 +98,9 @@ export async function commitTodoWorkerOutput(input: {
     if (commit.code !== 0) {
       throw new Error(`git commit failed: ${(commit.stderr || commit.stdout).trim()}`)
     }
-    const sha = (await runWorktreeGit(worktreePath, ['rev-parse', 'HEAD'])).stdout.trim() || null
+    const head = await runWorktreeGit(worktreePath, ['rev-parse', 'HEAD'])
+    const sha = head.stdout.trim()
+    if (head.code !== 0 || sha === '') throw new Error('git rev-parse HEAD failed after commit')
     return { branch: input.branch, sha, committed: true }
   } catch (error) {
     // A commit failure must not lose the worker's files: they are still on disk
