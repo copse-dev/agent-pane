@@ -9,7 +9,7 @@
 // behaviour back.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const STYLES = resolve(process.cwd(), 'src/renderer/styles/global')
@@ -31,6 +31,62 @@ function declares(css: string, selector: string, prop: RegExp): boolean {
 }
 
 describe('modern CSS adoptions', () => {
+  it('uses one inherited line height throughout the renderer', () => {
+    const tokens = readFileSync(resolve(process.cwd(), 'src/renderer/styles/tokens.css'), 'utf8')
+    const base = read('base.css')
+    assert.match(
+      tokens,
+      /--line-height-base:\s*calc\(22px\s*\*\s*var\(--ui-scale\)\)/,
+      'the typography scale must expose the shared 22px line-height token',
+    )
+    assert.ok(
+      declares(base, 'body', /line-height:\s*var\(--line-height-base\)/),
+      'body must establish the shared line height for every renderer surface',
+    )
+    for (const [file, selector] of [
+      ['forms.css', 'button'],
+      ['conversation.css', '.message-reasoning-text'],
+      ['input-bar.css', '.guarded-yolo-text'],
+      ['brand.css', '#settings-dialog .settings-buttons button'],
+    ] as const) {
+      assert.ok(
+        declares(read(file), selector, /line-height:\s*(?:inherit|var\(--line-height-base\))/),
+        `${selector} must use the shared line height`,
+      )
+    }
+
+    const allowedCompactValues = new Set([
+      '1',
+      '1.2',
+      '1.25',
+      '1.3',
+      '1.4',
+      '14px',
+      'var(--titlebar-height)',
+    ])
+    const nonUniform: string[] = []
+    for (const file of readdirSync(STYLES).filter((name) => name.endsWith('.css'))) {
+      read(file)
+        .split('\n')
+        .forEach((line, index) => {
+          const value = line.match(/line-height:\s*([^;]+);/)?.[1]?.trim()
+          if (
+            value &&
+            value !== 'inherit' &&
+            value !== 'var(--line-height-base)' &&
+            !allowedCompactValues.has(value)
+          ) {
+            nonUniform.push(`${file}:${String(index + 1)}: ${value}`)
+          }
+        })
+    }
+    assert.deepEqual(
+      nonUniform,
+      [],
+      `text line-height overrides must use --line-height-base; only compact chrome may opt out:\n${nonUniform.join('\n')}`,
+    )
+  })
+
   it('opts overlays out of the window drag regions', () => {
     // Modals mount on <body>, so they float above `#welcome` — one full-bleed
     // `-webkit-app-region: drag` region that opts out only its own

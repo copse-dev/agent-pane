@@ -32,7 +32,7 @@ h3 {
   border-radius: var(--action-radius);
   font-size: var(--font-size-base);
   font-weight: 600;
-  line-height: 1.6;
+  line-height: var(--line-height-base);
 }
 
 /* The historical Settings selectors include an attribute selector and outrank
@@ -44,7 +44,7 @@ h3 {
   border-radius: var(--action-radius);
   font-size: var(--font-size-base);
   font-weight: 600;
-  line-height: 1.6;
+  line-height: var(--line-height-base);
 }
 
 /* Centre the label by its CAP BOX, not by its line box.

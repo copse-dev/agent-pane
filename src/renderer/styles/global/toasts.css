@@ -18,7 +18,7 @@
   color: var(--text-primary);
   border: 1px solid var(--border);
   font-size: 13px;
-  line-height: 1.4;
+  line-height: var(--line-height-base);
   box-shadow: var(--shadow-md);
   cursor: pointer;
   word-break: break-word;
