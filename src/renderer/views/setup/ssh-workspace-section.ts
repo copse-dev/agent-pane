@@ -112,7 +112,12 @@ export function createSshWorkspaceSection(
 
   async function renderHosts(): Promise<void> {
     clear(hostList)
-    const list = parseSshWorkspaceHosts(await api.settings.get('sshWorkspaceHosts'))
+    const [rawHosts, credentialHostIds] = await Promise.all([
+      api.settings.get('sshWorkspaceHosts'),
+      api.sshWorkspace.listCredentialHostIds(),
+    ])
+    const list = parseSshWorkspaceHosts(rawHosts)
+    const credentialHosts = new Set(credentialHostIds)
     if (list.length === 0) {
       hostList.append(el('p', { class: 'field-hint' }, 'No SSH hosts configured yet.'))
       return
@@ -120,20 +125,49 @@ export function createSshWorkspaceSection(
     for (const host of list) {
       const row = el('div', { class: 'ssh-host-row' })
       const target = host.user ? `${host.user}@${host.host}` : host.host
-      row.append(
-        el('div', { class: 'ssh-host-summary' }, el('strong', {}, host.label), `: ${target}`),
+      const hasSavedAuthentication = credentialHosts.has(host.id)
+      const summary = el(
+        'div',
+        { class: 'ssh-host-summary' },
+        el('div', {}, el('strong', {}, host.label), `: ${target}`),
         el(
           'div',
-          { class: 'ssh-host-row-actions' },
-          el('button', { type: 'button', class: 'ssh-host-edit' }, 'Edit'),
-          el('button', { type: 'button', class: 'ssh-host-delete' }, 'Remove'),
+          {
+            class: hasSavedAuthentication ? 'ssh-host-auth ssh-host-auth-saved' : 'ssh-host-auth',
+          },
+          hasSavedAuthentication
+            ? 'Authentication encrypted by OS keychain'
+            : 'Authentication will be requested when you connect',
         ),
       )
+      const actions = el(
+        'div',
+        { class: 'ssh-host-row-actions' },
+        el('button', { type: 'button', class: 'ssh-host-edit' }, 'Edit'),
+      )
+      if (hasSavedAuthentication) {
+        const forget = el(
+          'button',
+          { type: 'button', class: 'ssh-host-forget-auth' },
+          'Forget authentication',
+        )
+        forget.addEventListener('click', () => {
+          void api.sshWorkspace.forgetCredentials(host.id).then(() => {
+            setInlineStatus(status, 'ok', `Forgot authentication for “${host.label}”.`)
+            return renderHosts()
+          })
+        })
+        actions.append(forget)
+      }
+      actions.append(el('button', { type: 'button', class: 'ssh-host-delete' }, 'Remove'))
+      row.append(summary, actions)
       row.querySelector('.ssh-host-edit')?.addEventListener('click', () => {
         fillDraft(host)
       })
       row.querySelector('.ssh-host-delete')?.addEventListener('click', () => {
-        void persistHosts(removeHost(list, host.id))
+        void api.sshWorkspace
+          .forgetCredentials(host.id)
+          .then(() => persistHosts(removeHost(list, host.id)))
       })
       hostList.append(row)
     }
@@ -241,6 +275,7 @@ export function createSshWorkspaceSection(
       'Run shell, git, search, and file tools on a remote Linux host over SSH. Enable the feature below, add hosts here or in the ',
       el('strong', {}, 'Open remote folder'),
       ' dialog, then open a remote project from the projects panel.',
+      ' Passwords and key passphrases can be encrypted with the OS keychain and managed per host.',
     ),
     el('label', { class: 'checkbox-label' }, enabledInput, ' Enable SSH workspaces (experimental)'),
     el('label', {}, 'Host key policy ', strictSelect),

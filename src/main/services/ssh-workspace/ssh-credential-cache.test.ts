@@ -2,15 +2,19 @@
 // prompt for the whole app session, one dialog (not N) when a burst of `ssh`
 // invocations races the ControlMaster socket, and an automatic re-prompt when
 // OpenSSH signals a rejected secret by asking the same client twice.
-import { describe, it, beforeEach } from 'node:test'
+import { afterEach, describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   clearSshCredentialCache,
+  forgetSshCredentials,
   releaseSshCredentialNonce,
   resolveSshSecret,
 } from './ssh-credential-cache.ts'
+import { createKeyringCipher } from '../storage/keyring-cipher.ts'
+import { setSecretCipher } from '../storage/secret-cipher.ts'
 
 const PROMPT = '(me@dev.example) Password:'
+const PERSISTENT_HOSTS = ['persistent-cache-test', 'rejected-cache-test']
 
 /** An `ask` that records how many times the modal would have been raised. */
 function asker(
@@ -31,6 +35,11 @@ function asker(
 describe('resolveSshSecret', () => {
   beforeEach(() => {
     clearSshCredentialCache()
+  })
+
+  afterEach(() => {
+    for (const hostId of PERSISTENT_HOSTS) forgetSshCredentials(hostId)
+    setSecretCipher(null)
   })
 
   it('prompts once and replays the answer to later spawns', async () => {
@@ -127,6 +136,47 @@ describe('resolveSshSecret', () => {
     await resolveSshSecret('nonce-a', PROMPT, ask)
     clearSshCredentialCache()
     await resolveSshSecret('nonce-b', PROMPT, ask)
+    assert.equal(calls(), 2)
+  })
+
+  it('replays an OS-keyring-encrypted answer after the session cache is cleared', async () => {
+    let dataKey: string | null = null
+    setSecretCipher(
+      createKeyringCipher({
+        read: () => dataKey,
+        write: (value) => {
+          dataKey = value
+        },
+      }),
+    )
+    const hostId = 'persistent-cache-test'
+    forgetSshCredentials(hostId)
+    const { ask, calls } = asker(['hunter2'])
+
+    assert.equal(await resolveSshSecret('nonce-a', PROMPT, ask, hostId), 'hunter2')
+    clearSshCredentialCache()
+    assert.equal(await resolveSshSecret('nonce-b', PROMPT, ask, hostId), 'hunter2')
+    assert.equal(calls(), 1)
+  })
+
+  it('deletes rejected persisted authentication before asking again', async () => {
+    let dataKey: string | null = null
+    setSecretCipher(
+      createKeyringCipher({
+        read: () => dataKey,
+        write: (value) => {
+          dataKey = value
+        },
+      }),
+    )
+    const hostId = 'rejected-cache-test'
+    forgetSshCredentials(hostId)
+    const { ask, calls } = asker(['wrong', 'right'])
+
+    assert.equal(await resolveSshSecret('nonce-a', PROMPT, ask, hostId), 'wrong')
+    clearSshCredentialCache()
+    assert.equal(await resolveSshSecret('nonce-b', PROMPT, ask, hostId), 'wrong')
+    assert.equal(await resolveSshSecret('nonce-b', PROMPT, ask, hostId), 'right')
     assert.equal(calls(), 2)
   })
 })

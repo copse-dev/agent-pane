@@ -150,7 +150,7 @@ export async function spawnRemoteAcpTransport(
   await assertRemoteAgentInstalled(input.command, target.hostId)
 
   const wrapped = buildRemoteAcpCommand(input, target.remoteRoot)
-  const askpass = leaseSshAskpassEnv(process.env)
+  const askpass = leaseSshAskpassEnv(process.env, target.hostId)
   const child = spawn('ssh', sshExecArgs(host, wrapped), {
     env: askpass.env,
     stdio: ['pipe', 'pipe', 'pipe'],

@@ -193,6 +193,14 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+.ssh-host-auth {
+  margin-top: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.ssh-host-auth-saved {
+  color: var(--success);
+}
 .ssh-host-row-actions {
   display: flex;
   align-items: center;

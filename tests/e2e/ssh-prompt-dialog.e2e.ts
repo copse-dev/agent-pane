@@ -60,6 +60,9 @@ describe('SSH prompt dialog', () => {
     // Session caching is opt-out, so the box is offered and pre-selected.
     await expect(await dialog.$('.ssh-prompt-remember')).toBeDisplayed()
     await expect(await dialog.$('.ssh-prompt-remember-input')).toBeSelected()
+    await expect(await dialog.$('.ssh-prompt-remember-label')).toHaveText(
+      'Remember for this session',
+    )
     await saveElementScreenshot('#ssh-prompt-dialog', 'ssh-prompt-secret.png')
 
     await browser.keys(['Escape'])

@@ -161,6 +161,20 @@ describe('ssh askpass bridge', () => {
     lease.release()
   })
 
+  it('marks configured-host prompts as eligible for device persistence', async () => {
+    setSshPromptHandler(async (req) => {
+      assert.equal(req.kind, 'secret')
+      assert.equal(req.canRememberOnDevice, true)
+      return { value: 's3cret', remember: true }
+    })
+
+    const lease = leaseSshAskpassEnv({}, 'dev')
+    const response = await askOverSocket(lease, '(me@dev.example) Password:')
+    lease.release()
+
+    assert.deepEqual(JSON.parse(response), { response: 's3cret' })
+  })
+
   it('reuses a remembered secret for a later spawn without re-prompting', async () => {
     let prompts = 0
     setSshPromptHandler(async (req) => {

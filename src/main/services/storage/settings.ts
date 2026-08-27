@@ -340,3 +340,13 @@ export function setSetting(key: string, value: unknown): Promise<void> {
     cached.set(key, toStore)
   })
 }
+
+/** Remove a persisted setting through the same per-key serialization as writes. */
+export function deleteSetting(key: string): Promise<void> {
+  if (getExplicitSettingsProfile()) {
+    return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
+  }
+  return runSerialized(queueKey(key), () => {
+    cached.delete(key)
+  })
+}

@@ -7,21 +7,24 @@ import {
   parseIpcArgs,
   sshPromptRespondSchema,
 } from '../../ipc/ipc-guards.ts'
+import { canStoreSshCredentials } from './ssh-credential-store.ts'
 
 export type SshPromptKind = 'confirm' | 'secret'
 
 export interface SshPromptRequest {
   prompt: string
   kind: SshPromptKind
+  /** Whether a checked remember control can persist through the OS keyring. */
+  canRememberOnDevice?: boolean
 }
 
 export interface SshPromptResponse {
   /** Empty when the user cancelled or the prompt timed out. */
   value: string
   /**
-   * Whether to keep this secret in memory for the rest of the app session
-   * (see ssh-credential-cache.ts). Absent for confirm prompts, cancellations,
-   * and timeouts.
+   * Whether to remember this secret. Configured-host prompts persist through
+   * the OS-keyring-backed store; other prompts remain session-only. Absent for
+   * confirm prompts, cancellations, and timeouts.
    */
   remember?: boolean
 }
@@ -85,6 +88,8 @@ export function initSshPrompt(win: BrowserWindow, ipcMain: IpcMain): void {
           id,
           prompt: req.prompt,
           kind: req.kind,
+          canRememberOnDevice:
+            req.kind === 'secret' && req.canRememberOnDevice === true && canStoreSshCredentials(),
         })
         const timer = setTimeout(() => {
           settle(id, { value: '' })
