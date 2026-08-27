@@ -8,6 +8,17 @@ every published entry.
 
 ## Unreleased
 
+- External command hooks now fail closed when a blocking hook crashes, times
+  out, cannot start, or returns an invalid response. External hooks remain off
+  by default, and Settings → Sources explains both the blocking behavior and
+  the global switch that disables an incompatible hook set. Imported Cursor
+  hooks may explicitly set `failClosed: false`, and Copse-native hooks may set
+  `onFailure: "open"`, when compatibility requires the older fail-open behavior.
+- Copse no longer offers to save an API key as unencrypted base64 merely because
+  the operating-system keyring is unavailable. Plaintext secret persistence is
+  now off by default; exceptional Linux or headless environments must start
+  Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1` and still approve each plaintext
+  save individually. Environment-only provider keys remain unwritten.
 - Stored API keys are now encrypted with a cipher Copse owns rather than
   Electron's `safeStorage`: a random data key kept as one item in the OS
   keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)

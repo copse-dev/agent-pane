@@ -11,10 +11,9 @@
 // the wire shapes here are a thin envelope around the canonical payload /
 // {@link BlockingHookOutcome}.
 //
-// Copse hooks fail **open by default** (`onFailure: open`) — a crash, timeout,
-// or invalid JSON is treated as no-opinion so a broken hook never wedges the
-// agent — with a per-hook `onFailure: closed` escape that **blocks** those same
-// failures (decision 9, the same knob as Cursor `failClosed: true`). The adapter
+// Copse hooks fail **closed by default** (`onFailure: closed`) — a crash, timeout,
+// or invalid JSON blocks a gated action. A per-hook `onFailure: open` escape and
+// the global Settings toggle remain available (decision 9). The adapter
 // reports `failed` + the hook's `onFailure`; the shared runner turns that into
 // deny/allow.
 //
@@ -110,7 +109,7 @@ interface DiscoveredCopseHook {
   cwd: string
   source: string
   scope: HookScope
-  /** `onFailure` (decision 9): `closed` blocks on failure, `open` (default) abstains. */
+  /** `onFailure` (decision 9): `closed` (default) blocks; explicit `open` abstains. */
   onFailure: CommandHookFailureMode
   /**
    * Sandbox-by-default escape (decision 7). `true` (default) = sandboxed; `false`
@@ -274,12 +273,12 @@ function parseCopseEntry(
     return null
   }
 
-  // onFailure — default open (fail-open), `closed` blocks on failure (decision 9).
+  // onFailure — default closed; explicit `open` opts a hook into fail-open (decision 9).
   const onFailureRaw = entry['onFailure']
-  let onFailure: CommandHookFailureMode = 'open'
+  let onFailure: CommandHookFailureMode = 'closed'
   if (onFailureRaw === 'closed' || onFailureRaw === 'open') onFailure = onFailureRaw
   else if (onFailureRaw !== undefined)
-    warn(`${position} "onFailure" must be "open" or "closed" — defaulting to "open"`, event)
+    warn(`${position} "onFailure" must be "open" or "closed" — defaulting to "closed"`, event)
 
   // sandbox — default true (sandbox-by-default, decision 7); `false` is the escape.
   const sandboxRaw = entry['sandbox']

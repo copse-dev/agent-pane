@@ -15,6 +15,12 @@ interface StubState {
   agents: AcpAgentConfig[]
   detectCalls: number
   autoSetupCalls: number
+  setKeyResult?:
+    | { ok: true }
+    | {
+        ok: false
+        reason: 'plaintext-storage-disabled' | 'plaintext-consent-required'
+      }
 }
 
 function stubApi(state: StubState): ApiClient {
@@ -29,6 +35,20 @@ function stubApi(state: StubState): ApiClient {
         state.settings[key] = value
       },
       getKey: async (slug: string): Promise<boolean> => Boolean(state.keys[slug]),
+      setKey: async (
+        slug: string,
+        key: string,
+      ): Promise<
+        | { ok: true }
+        | {
+            ok: false
+            reason: 'plaintext-storage-disabled' | 'plaintext-consent-required'
+          }
+      > => {
+        if (state.setKeyResult) return state.setKeyResult
+        state.keys[slug] = key
+        return { ok: true }
+      },
       extraProviders: async (): Promise<ExtraProvider[]> => state.extraProviders,
     },
     acp: {
@@ -146,6 +166,26 @@ describe('providers panel', () => {
     const openai = panel.root.querySelector('.provider-chip[data-provider="openai"]')
     assert.ok(anthropic?.querySelector('.provider-chip-dot'))
     assert.equal(openai?.querySelector('.provider-chip-dot'), null)
+  })
+
+  it('keeps a key pending and explains the default-off plaintext policy', async () => {
+    state.setKeyResult = { ok: false, reason: 'plaintext-storage-disabled' }
+    const panel = createProvidersPanel(stubApi(state), {})
+    document.body.append(panel.root)
+    await panel.refresh()
+    clickChip(panel.root, 'openai')
+
+    const input = panel.root.querySelector<HTMLInputElement>(
+      '.provider-form input[type="password"]',
+    )
+    assert.ok(input)
+    input.value = 'sk-test'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+
+    assert.equal(await panel.saveKeys(), false)
+    assert.equal(state.keys['openai'], undefined)
+    const status = panel.root.querySelector<HTMLElement>('[data-provider-key-status="openai"]')
+    assert.match(status?.textContent ?? '', /COPSE_ALLOW_PLAINTEXT_SECRETS=1/)
   })
 
   it('keeps the cloud-agent run options in the form, hidden until one is selected', async () => {

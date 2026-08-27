@@ -66,7 +66,8 @@ export interface ProvidersPanel {
   root: HTMLFieldSetElement
   refresh: () => Promise<void>
   /** Persist keys typed into any provider form (called on dialog save). */
-  saveKeys: () => Promise<void>
+  /** False leaves the host dialog open with an inline key-storage error. */
+  saveKeys: () => Promise<boolean>
 }
 
 export function createProvidersPanel(
@@ -376,9 +377,9 @@ export function createProvidersPanel(
     rebuild()
   }
 
-  async function saveKeys(): Promise<void> {
-    await apiPanel.saveKeys()
-    await localPanel.saveKeys()
+  async function saveKeys(): Promise<boolean> {
+    const [apiSaved, localSaved] = await Promise.all([apiPanel.saveKeys(), localPanel.saveKeys()])
+    return apiSaved && localSaved
   }
 
   return { root: fieldset, refresh, saveKeys }

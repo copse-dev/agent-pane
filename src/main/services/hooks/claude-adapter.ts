@@ -5,11 +5,11 @@
 // the nested `hooks.PreToolUse` matcher groups; the tool-name matcher; wire
 // marshalling in both directions (a Claude hook sees Claude's stdin shape and
 // tool names — `Bash`, `Read`, `mcp__…`); and the exit-code table (decision 9):
-// **exit 2 denies** (stderr → agent message), everything else fails open.
+// **exit 2 denies** (stderr → agent message).
 //
-// Claude has no `failClosed` flag, so every hook's `onFailure` is `open`; exit-2
-// is a *decision*, not a failure, so it is honoured directly rather than routed
-// through the runner's failure resolution.
+// Claude has no `failClosed` flag, so Copse applies its fail-closed host policy
+// to execution failures. Exit 2 is a *decision*, not a failure, so it is honoured
+// directly rather than routed through the runner's failure resolution.
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -319,7 +319,7 @@ function auditProjectHook(hook: DiscoveredClaudeHook): void {
 /**
  * Build the registry `CommandHook` for a discovered Claude hook on `event`.
  * Every Claude discovery function resolves the same way — Claude has no
- * `failClosed`, so `onFailure` is always `open` (decision 9); a project-scoped
+ * `failClosed`, so `onFailure` is `closed` under Copse's host policy (decision 9); a project-scoped
  * hook runs in the thread checkout and is audit-logged once per command; the
  * per-hook `timeout` wins over the dialect default (decision 13 / H4).
  */
@@ -336,7 +336,7 @@ function toCommandHook<E extends HookEventName>(
     dialect: 'claude' as const,
     wireEvent: hook.event,
     command: hook.command,
-    onFailure: 'open' as const,
+    onFailure: 'closed' as const,
     cwd: hook.scope === 'project' ? (opts.executionRoot ?? hook.cwd) : hook.cwd,
     ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
     timeoutMs: hook.timeoutMs ?? CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
@@ -370,7 +370,7 @@ export function claudeToolForTool(
  * Discover the Claude PreToolUse command hooks that match `payload.toolName`, as
  * registry `CommandHook`s. Matching uses the Claude tool name (`Bash` / `Read` /
  * `mcp__…`) so a hook sees the vendor's tool vocabulary (decision 8). Claude has
- * no `failClosed`, so `onFailure` is always `open`.
+ * no `failClosed`, so Copse's host policy makes `onFailure` closed.
  */
 export async function claudeToolGateHooks(
   payload: HookEventPayloads['toolGate'],
@@ -465,7 +465,7 @@ export async function claudeSubagentStopHooks(
  * a new conversation, which maps to Claude's `startup` source, so a hook whose
  * matcher does not include `startup` (and is not the match-all `*` / omitted)
  * is skipped. Fired **detached** (fire-and-forget) by `session-start.ts`;
- * Claude has no `failClosed`, so `onFailure` is always `open`.
+ * Claude has no `failClosed`, so Copse's host policy makes `onFailure` closed.
  */
 export async function claudeSessionStartHooks(
   _payload: HookEventPayloads['sessionStart'],
@@ -719,14 +719,20 @@ export const claudeAdapter: DialectAdapter = {
       }
     }
 
-    // Everything else that isn't a clean exit fails **open** (Claude has no
-    // failClosed): crash, timeout, spawn error, or any other non-zero exit.
+    // Everything else that isn't a clean exit is a failure resolved by Copse's
+    // host fail-closed policy: crash, timeout, spawn error, or another non-zero exit.
     if (spawn.spawnError || spawn.timedOut || spawn.exitCode !== 0) {
       return { outcome: null, failed: true, parseOk: false, spineEvent, spineDecision: {} }
     }
 
     const { outcome, parseOk } = outcomeFromExitZero(spawn.stdout)
-    return { outcome, failed: false, parseOk, spineEvent, spineDecision: spineDecisionFor(outcome) }
+    return {
+      outcome,
+      failed: !parseOk,
+      parseOk,
+      spineEvent,
+      spineDecision: spineDecisionFor(outcome),
+    }
   },
 
   marshalAfterToolUseRequest(hook, payload, session) {
@@ -758,7 +764,8 @@ export const claudeAdapter: DialectAdapter = {
     // prompt, which is exactly decision 12's `haltRun`. Exit 2 blocks with stderr
     // as the reason; on exit 0, `decision: "block"` (or `continue: false`) blocks
     // with its reason, and `additionalContext` is prepended to a prompt that
-    // proceeds. Any other non-zero exit fails **open** (Claude has no failClosed).
+    // proceeds. Any other non-zero exit is a failure resolved by the host's
+    // fail-closed policy (Claude has no per-hook failClosed field).
     const spineEvent = 'UserPromptSubmit'
     const emptyDecision: SpineHookRunDecision = {}
     const base = { outcome: null, spineEvent, spineDecision: emptyDecision }

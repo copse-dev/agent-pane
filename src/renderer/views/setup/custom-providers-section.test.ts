@@ -111,3 +111,70 @@ describe('custom providers: Test key', () => {
     assert.match(status(), /Key rejected by OpenAI/)
   })
 })
+
+describe('custom providers: plaintext storage policy', () => {
+  it('keeps a new provider key staged when plaintext storage is disabled', async () => {
+    const base = createFakeApi()
+    const custom: ExtraProvider = {
+      id: 'example',
+      label: 'Example',
+      baseUrl: 'https://api.example.com/v1',
+      keyLabel: 'API key',
+      keyPlaceholder: 'API key',
+      keyHint: 'Stored locally.',
+      prefix: 'example:',
+      builtin: false,
+      local: false,
+      fallbackContextWindow: 128_000,
+      models: [],
+    }
+    let providers: ExtraProvider[] = []
+    let keyWrites = 0
+    const api: ApiClient = {
+      ...base,
+      settings: {
+        ...base.settings,
+        get: async (): Promise<unknown> => null,
+        getKey: async (): Promise<boolean> => false,
+        extraProviders: async (): Promise<ExtraProvider[]> => providers,
+        saveExtraProvider: async (): Promise<ExtraProvider[]> => {
+          providers = [custom]
+          return providers
+        },
+        setKey: async () => {
+          keyWrites += 1
+          return { ok: false, reason: 'plaintext-storage-disabled' }
+        },
+      },
+    }
+
+    const section = createCustomProvidersSection(api, { embedded: true })
+    await section.refresh()
+    section.select('other')
+
+    const valueFor = (placeholder: string): HTMLInputElement => {
+      const input = section.root.querySelector<HTMLInputElement>(
+        `input[placeholder="${placeholder}"]`,
+      )
+      assert.ok(input)
+      return input
+    }
+    valueFor('Display name').value = 'Example'
+    valueFor('https://api.example.com/v1').value = custom.baseUrl
+    valueFor('slug (auto)').value = custom.id
+    valueFor('API key (optional)').value = 'sk-still-pending'
+    const add = [...section.root.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'Add provider',
+    )
+    assert.ok(add)
+
+    await click(add)
+
+    const staged = section.root.querySelector<HTMLInputElement>('input[type="password"]')
+    assert.equal(staged?.value, 'sk-still-pending')
+    assert.match(section.root.textContent, /COPSE_ALLOW_PLAINTEXT_SECRETS=1/)
+    assert.equal(keyWrites, 1)
+    assert.equal(await section.saveKeys(), false)
+    assert.equal(keyWrites, 2)
+  })
+})
