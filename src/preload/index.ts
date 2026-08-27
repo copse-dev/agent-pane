@@ -893,8 +893,19 @@ contextBridge.exposeInMainWorld('api', {
     resolveSshHosts: () => ipcRenderer.invoke('vnc:resolve-ssh-hosts'),
     getUsername: (target: import('@shared/types/vnc.ts').VncTarget) =>
       ipcRenderer.invoke('vnc:get-username', target),
+    getPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
+      ipcRenderer.invoke('vnc:get-password', target),
+    hasPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
+      ipcRenderer.invoke('vnc:has-password', target),
+    canStoreCredentials: () => ipcRenderer.invoke('vnc:can-store-credentials'),
     rememberUsername: (target: import('@shared/types/vnc.ts').VncTarget, username: string) =>
       ipcRenderer.invoke('vnc:remember-username', target, username),
+    rememberPassword: (target: import('@shared/types/vnc.ts').VncTarget, password: string) =>
+      ipcRenderer.invoke('vnc:remember-password', target, password),
+    forgetPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
+      ipcRenderer.invoke('vnc:forget-password', target),
+    forgetCredentials: (target: import('@shared/types/vnc.ts').VncTarget) =>
+      ipcRenderer.invoke('vnc:forget-credentials', target),
     start: (connectionId: string): void => {
       ipcRenderer.send('vnc:start', connectionId)
     },

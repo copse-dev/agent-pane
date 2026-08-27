@@ -77,12 +77,14 @@ On a Linux box with no unlocked keyring, encryption is unavailable and Copse
 will not silently write a key to disk in the clear: saving one requires explicit
 consent, and `/checkup` warns for as long as a plaintext key is stored.
 
-API keys and remembered SSH passwords/key passphrases are the secrets Copse
-itself encrypts. SSH authentication is scoped to a configured host and can be
-forgotten from **Settings → SSH**; removing a host forgets its authentication
-too. Everything else in the profile is plain JSON or plain files — but "not
-encrypted" is not the same as "portable", because several stores record
-**absolute paths**.
+API keys, remembered SSH passwords/key passphrases, and remembered VNC logins
+are the secrets Copse itself encrypts. SSH authentication is scoped to a
+configured host and can be forgotten from **Settings → SSH**; removing a host
+forgets its authentication too. VNC logins are scoped to the selected machine,
+are stored only after successful authentication, and can be removed with
+**Forget saved login** in the Desktop pane. Everything else in the profile is
+plain JSON or plain files — but "not encrypted" is not the same as "portable",
+because several stores record **absolute paths**.
 
 ## Moving a profile to another machine
 

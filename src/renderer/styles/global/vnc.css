@@ -233,6 +233,25 @@
   -webkit-text-security: disc;
 }
 
+.vnc-remember-password {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-base);
+}
+
+.vnc-remember-password[hidden] {
+  display: none;
+}
+
+.vnc-forget-login {
+  align-self: flex-start;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
 .vnc-authenticate-btn {
   justify-content: center;
   width: 100%;

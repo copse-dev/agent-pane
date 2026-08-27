@@ -705,7 +705,13 @@ export interface ApiClient {
     discoverNearby: () => Promise<VncNearbyServer[]>
     resolveSshHosts: () => Promise<VncSshHostResolution[]>
     getUsername: (target: VncTarget) => Promise<string | null>
+    getPassword: (target: VncTarget) => Promise<string | null>
+    hasPassword: (target: VncTarget) => Promise<boolean>
+    canStoreCredentials: () => Promise<boolean>
     rememberUsername: (target: VncTarget, username: string) => Promise<boolean>
+    rememberPassword: (target: VncTarget, password: string) => Promise<boolean>
+    forgetPassword: (target: VncTarget) => Promise<void>
+    forgetCredentials: (target: VncTarget) => Promise<void>
     start: (connectionId: string) => void
     send: (connectionId: string, bytes: Uint8Array) => void
     close: (connectionId: string) => Promise<void>

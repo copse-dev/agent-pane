@@ -122,3 +122,11 @@ export function setSetting(key: string, value: unknown): Promise<void> {
   settings.set(key, value)
   return Promise.resolve()
 }
+
+export function deleteSetting(key: string): Promise<void> {
+  if (getExplicitSettingsProfile()) {
+    return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
+  }
+  settings.delete(key)
+  return Promise.resolve()
+}
