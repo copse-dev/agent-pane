@@ -1040,6 +1040,9 @@ contextBridge.exposeInMainWorld('api', {
     remove: (projectId: string, path: string, force: boolean) =>
       ipcRenderer.invoke('worktrees:remove', projectId, path, force),
   },
+  agents: {
+    list: () => ipcRenderer.invoke('agents:list'),
+  },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },

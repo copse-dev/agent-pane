@@ -63,6 +63,18 @@
 .skill-item-name {
   font-weight: 600;
 }
+/* Marks a subagent row in the shared `/` picker, so it reads differently from
+   a skill without needing a second trigger character. */
+.skill-item-kind {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--border-subtle, var(--text-muted));
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  vertical-align: baseline;
+}
 .skill-item-desc {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
