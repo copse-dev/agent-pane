@@ -24,6 +24,19 @@ function untrusted(): ProjectInstructionSummary {
     scope: 'project',
     bytes: 7129,
     active: false,
+    trusted: false,
+  }
+}
+
+function nested(name: string, scopePath: string, active: boolean): ProjectInstructionSummary {
+  return {
+    path: `/workspace/${name}`,
+    name,
+    scope: 'project',
+    bytes: 256,
+    active,
+    trusted: true,
+    scopePath,
   }
 }
 
@@ -60,7 +73,7 @@ function stubApi(initial: ProjectInstructionSummary[]): Harness {
       unsandboxedProjectHooks: () => Promise.resolve([]),
       setTrusted: (trusted: boolean) => {
         trustCalls.push(trusted)
-        files = files.map((file) => ({ ...file, active: trusted }))
+        files = files.map((file) => ({ ...file, active: trusted, trusted }))
         return Promise.resolve([])
       },
     },
@@ -107,6 +120,27 @@ describe('settings sources → instructions', () => {
     const detail = list.querySelector('.sources-row-detail')?.textContent ?? ''
     assert.match(detail, /7\.0 KB/)
     assert.doesNotMatch(detail, /7129 B/)
+  })
+
+  it('shows the latest turn activation separately from a nested file scope', async () => {
+    const list = await openInstructions(
+      stubApi([
+        nested('packages/api/AGENTS.md', 'packages/api', true),
+        nested('packages/web/AGENTS.md', 'packages/web', false),
+      ]).api,
+    )
+    const rows = [...list.querySelectorAll<HTMLElement>('.sources-row')]
+    const api = rows.find((row) => row.textContent.includes('packages/api/AGENTS.md'))
+    const web = rows.find((row) => row.textContent.includes('packages/web/AGENTS.md'))
+    assert.ok(api)
+    assert.ok(web)
+    assert.equal(api.querySelector('.sources-badge')?.textContent, 'active')
+    assert.match(api.querySelector('.sources-row-detail')?.textContent ?? '', /active this turn/)
+    assert.equal(web.querySelector('.sources-badge')?.textContent, 'scoped')
+    assert.match(
+      web.querySelector('.sources-row-detail')?.textContent ?? '',
+      /activates when a path under this directory enters context/,
+    )
   })
 
   it('points at the badge as the way to trust an inert file', async () => {
