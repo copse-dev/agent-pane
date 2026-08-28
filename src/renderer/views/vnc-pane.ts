@@ -355,12 +355,7 @@ function mountVncSession(
     statusTitle,
     statusDetail,
   )
-  const nearbyFeedback = el(
-    'div',
-    { class: 'vnc-nearby-feedback' },
-    nearbyStatus,
-    nearbyButton,
-  )
+  const nearbyFeedback = el('div', { class: 'vnc-nearby-feedback' }, nearbyStatus, nearbyButton)
   const setupFields = el(
     'div',
     { class: 'vnc-setup-fields' },
@@ -1084,7 +1079,9 @@ function mountVncSession(
       const enteredPassword = setupPasswordInput.value
       setupPasswordInput.value = ''
       authenticationUsername =
-        rememberedUsername?.trim() || enteredUsername || preferredVncUsername(target, sshHosts, null)
+        rememberedUsername?.trim() ||
+        enteredUsername ||
+        preferredVncUsername(target, sshHosts, null)
       authenticationPassword = rememberedPassword ?? enteredPassword
       authenticationPasswordWasRemembered = rememberedPassword !== null
       submittedUsername = rememberedUsername === null && enteredUsername ? enteredUsername : null
