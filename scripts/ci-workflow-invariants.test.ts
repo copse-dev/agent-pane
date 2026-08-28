@@ -473,6 +473,14 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /^\s+gh release create /m)
   })
 
+  it('writes a checksum manifest portable outside the runner release directory', () => {
+    assert.match(
+      workflow,
+      /cd release\n {12}shasum -a 256 \*\.dmg \*\.zip \*\.blockmap \*-mac\.yml > SHA256SUMS/,
+    )
+    assert.doesNotMatch(workflow, /shasum -a 256 release\/\*\.dmg/)
+  })
+
   it('skips provenance on a private repository instead of failing the release', () => {
     // Artifact attestations need a public repository or GitHub Enterprise Cloud;
     // on Team + private the action fails the job outright.
@@ -518,7 +526,7 @@ describe('release-publish.yml workflow invariants', () => {
 
   it('downloads, verifies, attests, and publishes without rebuilding', () => {
     assert.match(workflow, /run-id: \$\{\{ inputs\.release_run_id \}\}/)
-    assert.match(workflow, /shasum -a 256 --check release\/SHA256SUMS/)
+    assert.match(workflow, /cd release\n {12}shasum -a 256 --check SHA256SUMS/)
     assert.match(workflow, /uses: actions\/attest@/)
     assert.match(workflow, /--notes-file release\/RELEASE_NOTES\.md/)
     assert.match(workflow, /gh release create/)
