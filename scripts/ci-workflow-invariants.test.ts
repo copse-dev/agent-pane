@@ -487,6 +487,15 @@ describe('release-mac.yml workflow invariants', () => {
     assert.match(workflow, /^ {4}runs-on: macos-26$/m)
     assert.doesNotMatch(workflow, /runs-on: macos-14/)
   })
+
+  it('bounds the signed package verification step', () => {
+    assert.match(workflow, /^ {4}timeout-minutes: 60$/m)
+    assert.match(
+      workflow,
+      /- name: Verify signatures, notarization, metadata, and packaged runtime\n {8}timeout-minutes: 15/,
+    )
+    assert.match(workflow, /COPSE_DIR: \$\{\{ runner\.temp \}\}\/copse-release-smoke-profile/)
+  })
 })
 
 describe('release-publish.yml workflow invariants', () => {
