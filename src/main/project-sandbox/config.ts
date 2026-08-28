@@ -269,6 +269,18 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
   return [...allow]
 }
 
+/** ASRT native helpers that must remain executable inside a denied home tree. */
+export function sandboxRuntimeHelperAllowReadPaths(
+  seccompPath: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
+): string[] {
+  if (!seccompPath) return []
+  const helper = resolve(seccompPath)
+  const helperDir = dirname(helper)
+  // Re-allow only this architecture directory. The rest of sandbox-runtime
+  // and node_modules stay hidden by the broad home deny.
+  return [helper, helperDir, `${helperDir}/**`]
+}
+
 /** Paths bundled workers and ASRT itself must read from inside a denied home tree. */
 export function electronRuntimeAllowReadPaths(
   execPath: string = process.execPath,
@@ -311,11 +323,7 @@ export function electronRuntimeAllowReadPaths(
   // denyRead on $HOME hides pnpm's sandbox-runtime package unless this native
   // helper is rebound alongside the worker. Re-allow only its architecture
   // directory; the rest of node_modules remains hidden.
-  if (seccompPath) {
-    const helper = resolve(seccompPath)
-    const helperDir = dirname(helper)
-    paths.push(helper, helperDir, `${helperDir}/**`)
-  }
+  paths.push(...sandboxRuntimeHelperAllowReadPaths(seccompPath))
   return [...new Set(paths)]
 }
 
@@ -608,6 +616,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const internalRoot = getInternalWorkspaceRootRegistration(root)
   const toolchainRead = resolveNodeToolchainAllowRead()
+  const sandboxRuntimeRead = sandboxRuntimeHelperAllowReadPaths()
   // A workspace-owned scratch dir so commands writing to $TMPDIR stay on the
   // allow-list instead of hitting the system /tmp deny (issue #481). Created
   // here (best-effort) so the path the seatbelt allows actually exists; spawn
@@ -708,6 +717,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         tmpDir,
         `${tmpDir}/**`,
         ...toolchainRead,
+        ...sandboxRuntimeRead,
         ...gitConfigReadPaths(),
         ...chatStoreRead,
         ...worktreeDiscoveryRead,

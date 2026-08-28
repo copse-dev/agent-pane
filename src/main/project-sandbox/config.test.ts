@@ -24,6 +24,7 @@ import {
   readAllowedSandboxOverlay,
   readOnlyWorkspaceSandboxOverlay,
   resolveNodeToolchainAllowRead,
+  sandboxRuntimeHelperAllowReadPaths,
   sandboxNetworkConfig,
   uncoveredSiblingDenyPaths,
   workspaceMandatoryWriteDenyPaths,
@@ -170,6 +171,21 @@ describe('electronRuntimeAllowReadPaths', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('sandboxRuntimeHelperAllowReadPaths', () => {
+  it('re-allows only the native helper architecture directory', () => {
+    const packageRoot = '/home/runner/work/repo/node_modules/.pnpm/sandbox-runtime'
+    const helper = join(packageRoot, 'vendor', 'seccomp', 'x64', 'apply-seccomp')
+
+    assert.deepEqual(sandboxRuntimeHelperAllowReadPaths(helper), [
+      helper,
+      dirname(helper),
+      `${dirname(helper)}/**`,
+    ])
+    assert.ok(!sandboxRuntimeHelperAllowReadPaths(helper).includes(packageRoot))
+    assert.deepEqual(sandboxRuntimeHelperAllowReadPaths(null), [])
   })
 })
 
