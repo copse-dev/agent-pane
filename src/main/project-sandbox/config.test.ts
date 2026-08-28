@@ -141,7 +141,7 @@ describe('resolveNodeToolchainAllowRead', () => {
 })
 
 describe('electronRuntimeAllowReadPaths', () => {
-  it('retains both a symlinked invocation path and its canonical runtime tree', () => {
+  it('retains the invoked and canonical runtimes plus ASRT native helpers', () => {
     const root = mkdtempSync(join(realpathSync.native(tmpdir()), 'copse-electron-runtime-'))
     try {
       const runtime = join(root, 'store', 'electron')
@@ -153,7 +153,8 @@ describe('electronRuntimeAllowReadPaths', () => {
       symlinkSync(runtime, linkedRuntime, 'dir')
       const invoked = join(linkedRuntime, 'electron')
       const canonical = join(runtime, 'electron')
-      const allow = electronRuntimeAllowReadPaths(invoked)
+      const seccomp = join(root, 'sandbox-runtime', 'vendor', 'seccomp', 'x64', 'apply-seccomp')
+      const allow = electronRuntimeAllowReadPaths(invoked, seccomp)
 
       assert.ok(allow.includes(invoked))
       assert.ok(allow.includes(dirname(invoked)))
@@ -161,6 +162,11 @@ describe('electronRuntimeAllowReadPaths', () => {
       assert.ok(allow.includes(canonical))
       assert.ok(allow.includes(dirname(canonical)))
       assert.ok(allow.includes(`${dirname(canonical)}/**`))
+      assert.ok(allow.includes(seccomp))
+      assert.ok(allow.includes(dirname(seccomp)))
+      assert.ok(allow.includes(`${dirname(seccomp)}/**`))
+      assert.ok(!allow.includes(join(root, 'sandbox-runtime')))
+      assert.ok(!allow.includes(`${join(root, 'sandbox-runtime')}/**`))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

@@ -2,6 +2,7 @@ import { accessSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 import { getSetting } from '../services/storage/settings.ts'
 import { copseWorkspaceTmpDir } from '../services/storage/copse-paths.ts'
 import {
@@ -268,8 +269,11 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
   return [...allow]
 }
 
-/** Paths bundled workers must read to exec under ASRT (outside the workspace). */
-export function electronRuntimeAllowReadPaths(execPath: string = process.execPath): string[] {
+/** Paths bundled workers and ASRT itself must read from inside a denied home tree. */
+export function electronRuntimeAllowReadPaths(
+  execPath: string = process.execPath,
+  seccompPath: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
+): string[] {
   const invokedExec = resolve(execPath)
   let canonicalExec = invokedExec
   try {
@@ -301,6 +305,16 @@ export function electronRuntimeAllowReadPaths(execPath: string = process.execPat
         paths.push(resolve(appRoot), `${resolve(appRoot)}/**`)
       }
     }
+  }
+  // ASRT resolves apply-seccomp before constructing the bubblewrap command,
+  // then invokes that absolute path *inside* the mount namespace. A broad
+  // denyRead on $HOME hides pnpm's sandbox-runtime package unless this native
+  // helper is rebound alongside the worker. Re-allow only its architecture
+  // directory; the rest of node_modules remains hidden.
+  if (seccompPath) {
+    const helper = resolve(seccompPath)
+    const helperDir = dirname(helper)
+    paths.push(helper, helperDir, `${helperDir}/**`)
   }
   return [...new Set(paths)]
 }
