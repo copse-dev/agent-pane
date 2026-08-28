@@ -8,6 +8,10 @@ every published entry.
 
 ## Unreleased
 
+- macOS release packaging now installs and verifies the native keyring module
+  for both Apple Silicon and Intel bundles. This fixes the Intel build opening
+  a startup-error dialog before the release smoke test could run, and the
+  release verifier now has an explicit timeout instead of waiting indefinitely.
 - External command hooks now fail closed when a blocking hook crashes, times
   out, cannot start, or returns an invalid response. External hooks remain off
   by default, and Settings → Sources explains both the blocking behavior and
