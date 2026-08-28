@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 // A raw `require` (rather than `import * as`) so this is the exact module and
 // promises object thread-store.ts's own `require("node:fs")` resolves to.
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
@@ -17,6 +17,8 @@ import {
   loadProjectCatalog,
   createThread,
   appendMachineContinuation,
+  appendHookRun,
+  appendStreamStat,
   recordModelSelection,
   appendMessage,
   updateMeta,
@@ -45,6 +47,7 @@ import { parseGithubPrUrl, type GithubPrRef } from '@shared/git/github-pr-url.ts
 import {
   SPINE_SCHEMA_VERSION,
   parseSpineEntries,
+  type SpineHookRunLine,
   type SpineMachineContinuationLine,
   type SpineModelSelectedLine,
 } from '@shared/threads/spine-schema.ts'
@@ -515,6 +518,72 @@ describe('thread-store', () => {
         (entry) => entry.line?.type === 'machine_continuation',
       )
       assert.deepEqual(continuation?.line, line)
+    })
+
+    it('appends hook runs without reading or rewriting a large existing spine', async () => {
+      const messages = Array.from({ length: 200 }, (_, i) =>
+        userMsg(`u${String(i)}`, `message ${String(i)}`),
+      )
+      await saveProjectThread('proj-1', thread('t1', { messages }))
+      const eventsPath = join(root, 'proj-1', 't1', 'events.jsonl')
+      const existing = readFileSync(eventsPath, 'utf8').replace(/\n$/, '')
+      writeFileSync(eventsPath, existing)
+      const line: SpineHookRunLine = {
+        v: SPINE_SCHEMA_VERSION,
+        type: 'hook_run',
+        id: 'hook-1',
+        event: 'beforeShellExecution',
+        hookId: './audit.sh',
+        executor: 'command',
+        turnId: 'turn-1',
+        step: 1,
+        startedAt: 100,
+        durationMs: 2,
+        exitCode: 0,
+        parseOk: true,
+        decision: { permission: 'allow' },
+      }
+      const readSpy = mock.method(fsModule.promises, 'readFile')
+      const writeSpy = mock.method(fsModule.promises, 'writeFile')
+      await appendHookRun('proj-1', 't1', line)
+      mock.restoreAll()
+
+      const stored = readFileSync(eventsPath, 'utf8')
+      assert.ok(stored.startsWith(`${existing}\n`), 'a legacy final line gains one separator')
+      assert.ok(stored.length - existing.length < 500, 'only the separator and hook line are added')
+      assert.equal(
+        readSpy.mock.calls.some((call) => call.arguments[0] === eventsPath),
+        false,
+        'the append must not read the whole spine',
+      )
+      assert.equal(
+        writeSpy.mock.calls.some((call) => call.arguments[0] === eventsPath),
+        false,
+        'the append must not rewrite the spine',
+      )
+      assert.equal(parseSpineEntries(stored).at(-1)?.line?.id, line.id)
+    })
+
+    it('appends stream stats without reading or rewriting prior records', async () => {
+      const statsPath = join(root, 'proj-1', 'stream-stats.jsonl')
+      const existing = Array.from({ length: 500 }, (_, i) => JSON.stringify({ i })).join('\n')
+      mkdirSync(join(root, 'proj-1'), { recursive: true })
+      writeFileSync(statsPath, existing)
+      const readSpy = mock.method(fsModule.promises, 'readFile')
+      const writeSpy = mock.method(fsModule.promises, 'writeFile')
+      await appendStreamStat('proj-1', { i: 500 })
+      mock.restoreAll()
+
+      const stored = readFileSync(statsPath, 'utf8')
+      assert.equal(stored, `${existing}\n{"i":500}\n`)
+      assert.equal(
+        readSpy.mock.calls.some((call) => call.arguments[0] === statsPath),
+        false,
+      )
+      assert.equal(
+        writeSpy.mock.calls.some((call) => call.arguments[0] === statsPath),
+        false,
+      )
     })
 
     it('records model selection actor and history in the spine and metadata', async () => {

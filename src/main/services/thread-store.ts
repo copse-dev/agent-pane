@@ -149,6 +149,28 @@ async function writeFileEnsuringDirAsync(fullPath: string, contents: string): Pr
   await fsPromises.writeFile(fullPath, contents)
 }
 
+/**
+ * Append one JSONL record without reading or rewriting the existing file.
+ * App-written files already end in a newline; the one-byte read only repairs a
+ * legacy/truncated final line before the new record is appended.
+ */
+async function appendJsonlLine(path: string, line: string): Promise<void> {
+  await fsPromises.mkdir(dirname(path), { recursive: true })
+  const handle = await fsPromises.open(path, 'a+')
+  try {
+    const { size } = await handle.stat()
+    let prefix = ''
+    if (size > 0) {
+      const lastByte = Buffer.allocUnsafe(1)
+      const { bytesRead } = await handle.read(lastByte, 0, 1, size - 1)
+      if (bytesRead === 1 && lastByte[0] !== 0x0a) prefix = '\n'
+    }
+    await handle.appendFile(`${prefix}${line}\n`, 'utf8')
+  } finally {
+    await handle.close()
+  }
+}
+
 /** Atomic replace so a crash never leaves a half-written sidecar. */
 function atomicWriteFile(path: string, data: string, mode?: number): void {
   const tmp = `${path}.copse-${String(process.pid)}.tmp`
@@ -1339,17 +1361,18 @@ export function appendHookRun(
   line: SpineHookRunLine,
   blobs: FileToWrite[] = [],
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
-    mkdirSync(dir, { recursive: true })
+    await fsPromises.mkdir(dir, { recursive: true })
     for (const blob of blobs) {
       const full = join(dir, blob.ref)
-      if (!existsSync(full)) writeFileEnsuringDir(full, blob.contents)
+      try {
+        await fsPromises.access(full)
+      } catch {
+        await writeFileEnsuringDirAsync(full, blob.contents)
+      }
     }
-    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+    await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
   })
 }
 
@@ -1419,18 +1442,13 @@ export function appendSpineDecision(
   line: SpineDecisionLine | SpinePermissionDecisionLine,
   detailContents?: string,
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
-    mkdirSync(dir, { recursive: true })
+    await fsPromises.mkdir(dir, { recursive: true })
     if (detailContents !== undefined && line.type === 'decision' && line.detail) {
-      const full = join(dir, line.detail.ref)
-      mkdirSync(dirname(full), { recursive: true })
-      writeFileSync(full, detailContents)
+      await writeFileEnsuringDirAsync(join(dir, line.detail.ref), detailContents)
     }
-    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+    await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
   })
 }
 
@@ -1440,13 +1458,9 @@ export function appendMachineContinuation(
   threadId: string,
   line: SpineMachineContinuationLine,
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
-    mkdirSync(dir, { recursive: true })
-    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+    await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
   })
 }
 
@@ -1456,13 +1470,9 @@ export function recordModelSelection(
   threadId: string,
   line: SpineModelSelectedLine,
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
-    mkdirSync(dir, { recursive: true })
-    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+    await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
 
     const current = readMeta(dir)
     if (current === null) return
@@ -1482,26 +1492,16 @@ export function recordModelSelection(
 
 /** Append one stream-cut observability record (project-level eval source). */
 export function appendStreamStat(projectId: string, line: unknown): Promise<void> {
-  return runStoreWrite(projectId, () => {
-    const path = streamStatsPath(projectId)
-    mkdirSync(dirname(path), { recursive: true })
-    const existingRaw = safeRead(path) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(path, `${prefix}${JSON.stringify(line)}\n`)
-  })
+  return runStoreWrite(projectId, () =>
+    appendJsonlLine(streamStatsPath(projectId), JSON.stringify(line)),
+  )
 }
 
 /** Append one reasoning-checkpoint decision (project-level eval source). */
 export function appendReasoningCheckpoint(projectId: string, line: unknown): Promise<void> {
-  return runStoreWrite(projectId, () => {
-    const path = reasoningCheckpointsPath(projectId)
-    mkdirSync(dirname(path), { recursive: true })
-    const existingRaw = safeRead(path) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(path, `${prefix}${JSON.stringify(line)}\n`)
-  })
+  return runStoreWrite(projectId, () =>
+    appendJsonlLine(reasoningCheckpointsPath(projectId), JSON.stringify(line)),
+  )
 }
 
 /** Patch a thread's mutable metadata in place and refresh its catalog line. */
