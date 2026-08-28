@@ -54,6 +54,8 @@ const DANGEROUS_CONFIG_DIR_NAMES = [
   '.idea',
   '.claude/commands',
   '.claude/agents',
+  '.cursor/agents',
+  '.copse/agents',
 ] as const
 
 export function workspaceMandatoryWriteDenyPaths(workspaceRoot: string): string[] {

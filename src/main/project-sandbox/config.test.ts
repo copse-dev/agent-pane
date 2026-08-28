@@ -193,6 +193,10 @@ describe('workspaceSandboxOverlay', () => {
     const denyWrite = overlay.filesystem?.denyWrite ?? []
     assert.ok(denyWrite.includes('/Users/me/project/.git/hooks'))
     assert.ok(denyWrite.some((p) => p === '**/.git/hooks/**'))
+    for (const container of ['.claude', '.cursor', '.copse']) {
+      assert.ok(denyWrite.includes(`/Users/me/project/${container}/agents`))
+      assert.ok(denyWrite.includes(`**/${container}/agents/**`))
+    }
   })
 
   it('canonicalizes the workspace root through symlinks (macOS /var vs /private/var)', () => {
