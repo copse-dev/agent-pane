@@ -271,7 +271,14 @@ jobs:
               grep -Fq "$(basename "$zip")" "$metadata"
             done
           done
-          shasum -a 256 release/*.dmg release/*.zip release/*.blockmap "${update_metadata[@]}" > release/SHA256SUMS
+          # Write paths relative to the artifact root. actions/upload-artifact
+          # strips the common `release/` directory, and GitHub Release users
+          # download these assets side by side; embedding `release/` here makes
+          # the shipped checksum manifest fail unless they recreate CI's layout.
+          (
+            cd release
+            shasum -a 256 *.dmg *.zip *.blockmap *-mac.yml > SHA256SUMS
+          )
       # Publish the reviewed notes with the artifacts they describe. Generating
       # them here rather than in `publish` keeps that job artifact-only.
       - name: Generate the release notes from CHANGELOG.md
