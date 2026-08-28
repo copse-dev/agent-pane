@@ -93,6 +93,7 @@ Decision owner/date: Jonathan Kingston, 2026-08-27.
 
 ## Human review assignment
 
-Jonathan Kingston is the human security reviewer and release owner. Final sign-off remains
-pending until D1/D2 are merged and re-reviewed on the release candidate, and a signed,
-notarized prerelease has been produced and installed successfully.
+Jonathan Kingston is the human security reviewer and release owner. D1/D2 are merged and were
+re-reviewed on the 2026-08-28 product-code candidate. Jonathan authorized cutting and validating
+beta releases on 2026-08-28. Stable-GA sign-off remains pending until a signed, notarized
+prerelease has been produced and installed successfully and the public/update gates are evidenced.
