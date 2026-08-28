@@ -28,10 +28,6 @@ export interface CodeContentSearchOptions {
 
 let activeBackend: IndexedGrepBackend = 'rg'
 
-export function getIndexedGrepBackend(): IndexedGrepBackend {
-  return activeBackend
-}
-
 export async function probeIndexedGrepBackends(): Promise<IndexedGrepBackend> {
   const candidates: Array<{ cmd: string; backend: IndexedGrepBackend; args: string[] }> = [
     { cmd: 'ig', backend: 'ig', args: ['--version'] },
