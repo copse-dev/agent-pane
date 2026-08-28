@@ -2,6 +2,7 @@ import { accessSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 import { getSetting } from '../services/storage/settings.ts'
 import { copseWorkspaceTmpDir } from '../services/storage/copse-paths.ts'
 import {
@@ -54,6 +55,8 @@ const DANGEROUS_CONFIG_DIR_NAMES = [
   '.idea',
   '.claude/commands',
   '.claude/agents',
+  '.cursor/agents',
+  '.copse/agents',
 ] as const
 
 export function workspaceMandatoryWriteDenyPaths(workspaceRoot: string): string[] {
@@ -266,29 +269,61 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
   return [...allow]
 }
 
-/** Paths the bundled sandbox-fs worker must read to exec under ASRT (outside the workspace). */
-export function electronRuntimeAllowReadPaths(): string[] {
-  let exec = resolve(process.execPath)
+/** ASRT native helpers that must remain executable inside a denied home tree. */
+export function sandboxRuntimeHelperAllowReadPaths(
+  seccompPath: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
+): string[] {
+  if (!seccompPath) return []
+  const helper = resolve(seccompPath)
+  const helperDir = dirname(helper)
+  // Re-allow only this architecture directory. The rest of sandbox-runtime
+  // and node_modules stay hidden by the broad home deny.
+  return [helper, helperDir, `${helperDir}/**`]
+}
+
+/** Paths bundled workers and ASRT itself must read from inside a denied home tree. */
+export function electronRuntimeAllowReadPaths(
+  execPath: string = process.execPath,
+  seccompPath: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
+): string[] {
+  const invokedExec = resolve(execPath)
+  let canonicalExec = invokedExec
   try {
-    exec = realpathSync.native(exec)
+    canonicalExec = realpathSync.native(invokedExec)
   } catch {
     // Keep resolve() result when the binary is not stat-able yet.
   }
-  const paths = [exec, dirname(exec), `${dirname(exec)}/**`]
-  if (process.platform === 'darwin' && exec.includes('.app/')) {
-    const [appPrefix] = exec.split('.app/')
-    const appRoot = `${appPrefix ?? exec}.app`
-    try {
-      const realAppRoot = realpathSync.native(resolve(appRoot))
-      paths.push(realAppRoot, `${realAppRoot}/**`)
-      const macOsDir = join(realAppRoot, 'Contents', 'MacOS')
-      if (statSync(macOsDir).isDirectory()) {
-        paths.push(macOsDir, `${macOsDir}/**`)
+
+  // Linux bubblewrap hides broad denyRead roots with tmpfs mounts and then
+  // re-binds allowRead paths. Preserve the path used to invoke Electron as
+  // well as its realpath: pnpm installs expose Electron through a symlink, and
+  // re-binding only the target leaves the symlink spelling absent inside the
+  // mount namespace. macOS resolves filesystem policy against canonical paths,
+  // but retaining both spellings is harmless and keeps the contract uniform.
+  const paths: string[] = []
+  for (const exec of new Set([invokedExec, canonicalExec])) {
+    paths.push(exec, dirname(exec), `${dirname(exec)}/**`)
+    if (process.platform === 'darwin' && exec.includes('.app/')) {
+      const [appPrefix] = exec.split('.app/')
+      const appRoot = `${appPrefix ?? exec}.app`
+      try {
+        const realAppRoot = realpathSync.native(resolve(appRoot))
+        paths.push(appRoot, `${appRoot}/**`, realAppRoot, `${realAppRoot}/**`)
+        const macOsDir = join(realAppRoot, 'Contents', 'MacOS')
+        if (statSync(macOsDir).isDirectory()) {
+          paths.push(macOsDir, `${macOsDir}/**`)
+        }
+      } catch {
+        paths.push(resolve(appRoot), `${resolve(appRoot)}/**`)
       }
-    } catch {
-      paths.push(resolve(appRoot), `${resolve(appRoot)}/**`)
     }
   }
+  // ASRT resolves apply-seccomp before constructing the bubblewrap command,
+  // then invokes that absolute path *inside* the mount namespace. A broad
+  // denyRead on $HOME hides pnpm's sandbox-runtime package unless this native
+  // helper is rebound alongside the worker. Re-allow only its architecture
+  // directory; the rest of node_modules remains hidden.
+  paths.push(...sandboxRuntimeHelperAllowReadPaths(seccompPath))
   return [...new Set(paths)]
 }
 
@@ -581,6 +616,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const internalRoot = getInternalWorkspaceRootRegistration(root)
   const toolchainRead = resolveNodeToolchainAllowRead()
+  const sandboxRuntimeRead = sandboxRuntimeHelperAllowReadPaths()
   // A workspace-owned scratch dir so commands writing to $TMPDIR stay on the
   // allow-list instead of hitting the system /tmp deny (issue #481). Created
   // here (best-effort) so the path the seatbelt allows actually exists; spawn
@@ -681,6 +717,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         tmpDir,
         `${tmpDir}/**`,
         ...toolchainRead,
+        ...sandboxRuntimeRead,
         ...gitConfigReadPaths(),
         ...chatStoreRead,
         ...worktreeDiscoveryRead,

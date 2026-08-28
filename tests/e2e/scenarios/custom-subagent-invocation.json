@@ -1,0 +1,28 @@
+{
+  "id": "custom-subagent-invocation",
+  "description": "Explicit `/name` invocation of a user-authored subagent (docs/plans/custom-subagents.md P2). Requires a definition seeded at ~/.claude/agents/copse-eval-reviewer.md — see the plan's validation section. Proves the agent the user named is the one that runs: the turn pre-invokes it deterministically, so this fails if pre-invocation stops firing, fires the wrong definition, or the agent dies.",
+  "workspace": {
+    "type": "tempProject",
+    "prefix": "custom-subagent-eval",
+    "initializeGit": true,
+    "seedFiles": [
+      {
+        "path": "src/greet.ts",
+        "content": "export function greet(names: string[]): string {\n  // Bug: off-by-one — the last name is never greeted.\n  let out = ''\n  for (let i = 0; i < names.length - 1; i++) {\n    out += `Hello, ${names[i]}!\\n`\n  }\n  return out\n}\n"
+      }
+    ]
+  },
+  "prompts": ["/copse-eval-reviewer review src/greet.ts and tell me what is wrong with it"],
+  "toolUse": {
+    "requireTools": ["task"]
+  },
+  "assertSubagents": {
+    "require": [
+      {
+        "kind": "custom",
+        "agentName": "copse-eval-reviewer",
+        "status": "done"
+      }
+    ]
+  }
+}

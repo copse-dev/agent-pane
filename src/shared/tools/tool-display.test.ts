@@ -312,6 +312,41 @@ describe('tool-display', () => {
     assert.equal(getToolDisplayName('investigate_ci'), 'Investigated CI')
   })
 
+  it('labels a custom agent card with the agent name, not a generic verb', () => {
+    const running = getToolCallLabel({
+      ...tc('1', 'task', 'running'),
+      args: { subagent_type: 'reviewer', prompt: 'check auth' },
+    })
+    assert.equal(running, 'Running reviewer')
+
+    const done = getToolCallLabel({
+      ...tc('1', 'task'),
+      args: { subagent_type: 'reviewer', prompt: 'check auth' },
+    })
+    assert.equal(done, 'Ran reviewer')
+  })
+
+  it('prefers the persisted session name, so a reopened thread still names the agent', () => {
+    const label = getToolCallLabel({
+      // A reloaded thread has the session but not necessarily readable args.
+      ...tc('1', 'task'),
+      subagent: {
+        id: 's1',
+        kind: 'custom',
+        status: 'done',
+        prompt: 'check auth',
+        summary: null,
+        messages: [],
+        agentName: 'reviewer',
+      },
+    })
+    assert.equal(label, 'Ran reviewer')
+  })
+
+  it('falls back to a generic label when no agent name is recoverable', () => {
+    assert.equal(getToolCallLabel(tc('1', 'task')), 'Ran agent')
+  })
+
   it('maps delegate_step to a human-readable name and keeps it ungrouped', () => {
     assert.equal(getToolDisplayName('delegate_step'), 'Delegated step')
     assert.equal(getToolGroupKey('delegate_step'), null)

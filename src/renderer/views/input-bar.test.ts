@@ -1116,6 +1116,9 @@ describe('input bar branch mismatch warning', () => {
     assert.ok(submitBtn)
     composer.textContent = 'Follow up in the worktree'
     submitBtn.click()
+    // `flush`, not `settle`: submit resolves the skill *and* agent catalogs
+    // before dispatching, so the run is a macrotask away rather than a fixed
+    // number of microtask ticks.
     await flush()
 
     assert.equal(runs, 1)

@@ -155,6 +155,8 @@ function explodeToolCall(
       ...(tc.subagent.localFallback !== undefined
         ? { localFallback: tc.subagent.localFallback }
         : {}),
+      ...(tc.subagent.agentName !== undefined ? { agentName: tc.subagent.agentName } : {}),
+      ...(tc.subagent.agentColor !== undefined ? { agentColor: tc.subagent.agentColor } : {}),
     }
   }
 
@@ -372,6 +374,8 @@ function foldSubagent(
     ...(usage !== undefined ? { usage } : {}),
     ...(ref.model !== undefined ? { model: ref.model } : {}),
     ...(ref.localFallback !== undefined ? { localFallback: ref.localFallback } : {}),
+    ...(ref.agentName !== undefined ? { agentName: ref.agentName } : {}),
+    ...(ref.agentColor !== undefined ? { agentColor: ref.agentColor } : {}),
   }
 }
 
