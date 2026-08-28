@@ -163,7 +163,10 @@ describe('runCommand timeout', () => {
     const { stdout, code } = await runCommand(
       process.execPath,
       ['-e', "process.stdout.write('ok')"],
-      { unsandboxed: true, timeout_ms: 5_000 },
+      // Full-tier CI runs this alongside the Electron shards and can take more
+      // than five seconds merely to schedule a trivial child. Keep a real
+      // ceiling without turning runner contention into a timeout-policy failure.
+      { unsandboxed: true, timeout_ms: 30_000 },
     )
     assert.equal(code, 0)
     assert.equal(stdout, 'ok')
