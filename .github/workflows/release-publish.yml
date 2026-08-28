@@ -1,8 +1,9 @@
 name: Publish release artifacts
 
 # Publication is deliberately separate from signing. `Release (macOS)` creates
-# one immutable Actions artifact containing the exact signed, notarized, and
-# smoke-tested files. The owner reviews that artifact, makes the repository
+# immutable architecture-specific Actions artifacts containing the exact
+# signed, notarized, and smoke-tested files, plus a small metadata artifact.
+# The owner reviews those artifacts, makes the repository
 # public, then supplies the successful source run here. This workflow refuses
 # any other run, commit, tag, or private-repository publication.
 on:
@@ -92,22 +93,26 @@ jobs:
           fi
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "release_type=$release_type" >> "$GITHUB_OUTPUT"
-      - name: Download the exact tested artifact
+      - name: Download the exact tested architecture and metadata artifacts
         uses: actions/download-artifact@v8
         with:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ inputs.release_run_id }}
-          name: copse-macos-${{ steps.release.outputs.release_sha }}
+          pattern: copse-macos-${{ steps.release.outputs.release_sha }}-*
+          merge-multiple: true
           path: release
       - name: Verify checksums and artifact completeness
         run: |
           set -euo pipefail
           test -s release/RELEASE_NOTES.md
           test -s release/SHA256SUMS
-          test -n "$(find release -maxdepth 1 -name '*.dmg' -print -quit)"
-          test -n "$(find release -maxdepth 1 -name '*.zip' -print -quit)"
-          test -n "$(find release -maxdepth 1 -name '*.blockmap' -print -quit)"
+          for arch in arm64 x64; do
+            test -n "$(find release -maxdepth 1 -name "*-$arch.dmg" -print -quit)"
+            test -n "$(find release -maxdepth 1 -name "*-$arch.zip" -print -quit)"
+            test -n "$(find release -maxdepth 1 -name "*-$arch.dmg.blockmap" -print -quit)"
+            test -n "$(find release -maxdepth 1 -name "*-$arch.zip.blockmap" -print -quit)"
+          done
           test -n "$(find release -maxdepth 1 -name '*-mac.yml' -print -quit)"
           (
             cd release

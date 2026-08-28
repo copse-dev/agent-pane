@@ -34,7 +34,8 @@ Release in a private repository is not public distribution.
 ## What the build produces
 
 `electron-builder` emits the following files into `release/` for each
-architecture:
+architecture. Release CI builds the architectures in separate jobs, so neither
+package contains the other architecture's application or native helper:
 
 | Artifact                                 | Purpose                                      |
 | ---------------------------------------- | -------------------------------------------- |
@@ -46,6 +47,12 @@ architecture:
 A stable build also mirrors its tested latest metadata into the beta feed so an
 installed beta can advance to that stable version. The workflow publishes every
 finalized macOS metadata file with the exact zip files it references.
+
+CI fails an architecture job if either client-downloadable DMG/ZIP exceeds 230
+MiB or the installed app exceeds 750 MiB. The two architecture artifacts remain
+separate in Actions; a small third artifact carries the combined update feed,
+portable checksums, and release notes. GitHub Releases expose the individual
+files, so a client downloads only the DMG or ZIP matching its own architecture.
 
 The app embeds `LSMinimumSystemVersion=26.0`, uses the hardened runtime, and
 applies the entitlements in
@@ -102,9 +109,11 @@ The version in `package.json` is the trigger. Bumping it is the only manual step
    `release`, and the tagged commit's exact `CI Passed` check — it will not
    accept a branch-tip, merge-ref, or unrelated successful run. It then builds,
    signs, notarizes, staples, verifies, and smoke-tests the package, then uploads
-   one immutable Actions artifact containing those exact files and notes
-   generated from `CHANGELOG.md`. It does not create a GitHub Release.
-6. Review and install-test that Actions artifact. When it is accepted, make the
+   two immutable architecture-specific Actions artifacts plus a small metadata
+   artifact containing the combined feeds, checksums, and notes generated from
+   `CHANGELOG.md`. It does not create a GitHub Release.
+6. Review and install-test the artifact for each architecture. When they are
+   accepted, make the
    repository public and manually dispatch `Publish release artifacts` with the
    tag and successful `Release (macOS)` run ID. The publisher verifies the
    source workflow, successful conclusion, exact tagged SHA, checksums, and
