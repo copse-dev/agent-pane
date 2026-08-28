@@ -32,7 +32,7 @@ Two motivations, one architecture:
 
 | Piece                      | Where                                                                                                                                                                                                                                                                                                                                  | Status                                                                                                                                                                                                       |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Cursor permission hooks    | `src/main/services/hooks/cursor-adapter.ts`, `tool-gate.ts`, `permission-gate.ts`                                                                                                                                                                                                                                                      | Wired via `toolGate` (A2): shell / MCP / read-path. Fail-open + `failClosed`, tighten-only, 5s timeout                                                                                                       |
+| Cursor permission hooks    | `src/main/services/hooks/cursor-adapter.ts`, `tool-gate.ts`, `permission-gate.ts`                                                                                                                                                                                                                                                      | Wired via `toolGate` (A2): shell / MCP / read-path. Host-default fail-closed; explicit `failClosed: false` opts out                                                                                          |
 | Cursor lifecycle events    | `CURSOR_HOOK_EVENTS` in `src/shared/types/cursor-hooks.ts`                                                                                                                                                                                                                                                                             | `beforeSubmitPrompt` (B1, compose path) + `afterFileEdit` (B2, diff-queue/write site) + `stop` (B3, turn end / abort, detached) wired                                                                        |
 | Cursor generic tool events | `postToolUse` / `postToolUseFailure` in `src/main/services/hooks/cursor-adapter.ts`                                                                                                                                                                                                                                                    | Both map onto canonical `afterToolUse`; success/failure select the wire event, generic matchers use Cursor tool-type tokens, and `additional_context` follows decision 11 through the queued-message channel |
 | Claude `PreToolUse` hooks  | `src/main/services/hooks/claude-adapter.ts` (shared `HookSummary`/`HookFamily`)                                                                                                                                                                                                                                                        | Wired via `toolGate` (A2); same gate, `.claude/settings.json` discovery                                                                                                                                      |
@@ -133,15 +133,17 @@ revisiting this document, not silently diverging in an implementation PR.
    has no per-hook path matcher (the vendor pattern is in-script `file_path` filtering).
    It is additive (absent ⇒ fires for all edits) and full Cursor matcher semantics remain
    deferred to D3, but it is a deliberate, minor divergence from strict vendor parity.
-9. **Foreign dialects keep vendor failure semantics — including Cursor `failClosed`.**
-   Cursor hooks fail open **by default**, but Cursor's per-hook `failClosed: true`
-   (crash / timeout / invalid JSON blocks the action instead of allowing it) is part of
-   the vendor contract and **must be honoured by the Cursor adapter** — ignoring it
-   would silently weaken imported security hooks. Claude exit-code-2 denies; each
-   adapter owns its dialect's per-event exit-code table. The Copse dialect's
-   `onFailure: open|closed` is the same knob under our naming. First-party (function)
-   hooks fail **hard** — a throw is a bug, loud in dev, log-with-telemetry in prod,
-   never silently swallowed.
+9. **Blocking command hooks fail closed by host policy.** Copse deliberately tightens
+   foreign defaults for public-release safety: a crash, timeout, spawn failure, or invalid
+   response denies a gated action. Cursor's `failClosed: true` remains honoured;
+   `failClosed: false` is the explicit per-hook compatibility opt-out, while an omitted or
+   invalid value resolves closed. Claude has no equivalent field, so its command failures
+   resolve closed and users disable an incompatible hook set with the global, off-by-default
+   Settings → Sources toggle. Claude exit-code-2 remains an explicit deny under its vendor
+   contract. The Copse dialect defaults `onFailure` to `closed` and allows an explicit
+   `onFailure: open`. Observation hooks cannot retroactively block completed work.
+   First-party (function) hooks fail **hard** — a throw is a bug, loud in dev,
+   log-with-telemetry in prod, never silently swallowed.
 10. **Hook UI is tool-call-style cards, right-aligned, same blue.** Hook executions,
     deny/ask decisions, and queued hook messages render as a distinct card family — not
     as user messages. Provenance (`origin: { kind: 'hook', hookId, event }`) lives in the
@@ -293,6 +295,14 @@ revisiting this document, not silently diverging in an implementation PR.
     flip, while its scoped delay setting persists (decisions 15 and 17). Existing
     profiles receive a one-time disabled seed so an upgrade cannot silently activate
     benchmark-derived steering.
+24. **Model selection is actor-attributed at the commit point.** A committed thread-model
+    change records `modelSelected` with `{ by: 'user' | 'auto', from?, to }`; opening a
+    picker, resolving a route for one provider call, or re-selecting the current value
+    records nothing. The renderer's picker and automatic blank-thread resolver share one
+    commit seam, and main appends the durable `model_selected` spine line before returning
+    the compact event. Thread metadata mirrors the ordered selection history for sidebar
+    loads and portable export. This is an observation event: it cannot rewrite routing or
+    block the user-selected model.
 
 ## Target architecture
 
@@ -386,6 +396,7 @@ the phase listed. Names are final — changing one is a decisions-log edit, not 
 | `permissionDecision`                 | async, observation     | After `decideShellPermission` verdict (feeds #840's audit trail)                                   | F2    |
 | `beforeDiffApply` / `afterDiffApply` | blocking / async       | Diff-queue approval flow (Copse-native)                                                            | F2    |
 | `postTurnReview`                     | async, observation     | After a post-turn review cycle verdict (E3 `runPostTurnReviewCycle`; Copse-native)                 | F2    |
+| `modelSelected`                      | async, observation     | Thread model commit: footer picker or automatic blank-thread best-value resolution                 | F2    |
 
 **A1 landed** the whole table as typed, registered canonical events (`HOOK_EVENT_NAMES`
 / `HOOK_EVENT_SPECS` / `HookEventPayloads` in `packages/agent/src/hooks/canonical-events.ts`);
@@ -393,7 +404,10 @@ only `turnStart`/`beforeFinalize` have fire sites (M0), the rest are typed for t
 listed phase to wire without widening the name union. **F2 added `postTurnReview`** —
 the Copse-native observation event fired after a post-turn review verdict (E3's
 `runPostTurnReviewCycle` seam), taking the catalogue from 15 to 16 (decision-log edit
-per execution-guidance rule 1). **E1 added `stepBoundary`** — the
+per execution-guidance rule 1). **Issue #1877 added `modelSelected`**, the actor-attributed
+observation at the thread-model commit seam, taking the catalogue to 17 (decision 24).
+Its durable `model_selected` line and compact metadata history are included in portable
+thread exports. **E1 added `stepBoundary`** — the
 one new canonical event beyond A1's original 14 (then 15) — because the original four in-loop
 nudges fire at step boundaries under pressure, a point M0's two assembly events do not
 cover. It is `blocking, assembly` like the other two in-loop context events, carries the
@@ -559,6 +573,10 @@ name) and todo compaction pinning. Scope discipline matters more than completene
 | A2 ✅ | Restructure cursor-/claude-hooks into adapters | Source-path → dialect; adapters own discovery, parse, matchers, wire marshalling both directions, per-event exit-code tables, unsupported-capability reporting. Acceptance: Cursor `failClosed: true` honoured (crash/timeout/invalid JSON blocks) with tests for both failure modes (decision 9). **Landed:** dialect adapters under `src/main/services/hooks/` (`cursor-adapter.ts`, `claude-adapter.ts`) own discovery / parse / matchers / wire marshalling (both directions) / exit-code tables / unsupported reporting; shared process spawn in `hook-spawn.ts`; the real host runner in `command-hook-runner.ts` spawns via `getDialectAdapter`, applies each hook's `onFailure`, and records the spine; `tool-gate.ts` (`runToolGateHooks`) maps the permission gate's tool check onto the canonical `toolGate` event and fires it through the registry → runner → adapter seam; `permission-gate.ts` now calls that (Cursor beforeShell/MCP/ReadFile + Claude `PreToolUse` all register as `toolGate` command hooks). Cursor `failClosed: true` blocks on crash / timeout / invalid JSON (default still fail-open), pinned by `failClosed-both-modes.test.ts` (both modes × all three failure modes). `CommandHook` gained dialect-agnostic `cwd` / `timeoutMs` spawn attributes. Copse dialect (F1), `updatedInput` (H1), async / queue (C) stay in their phases. |
 | A3    | Spine recording of hook executions             | `hook_run` events per decision 6; capture stderr (currently `'ignore'`); raw streams to blobs; always-on. Includes the spine schema change: widen `SpineMessageLine` to a discriminated `SpineLine` union, update parse/serialize, fold/export paths, `docs/thread-store-format.md`, and tests (old readers skip non-`message` lines, so forward-tolerant). **Full-save preservation required**: `writeThread` rewrites `events.jsonl` from `thread.messages` alone (`explodeThread` → `serializeSpine`), so independently-appended non-message lines would be dropped on the next full save — they must round-trip through rewrites (carried in memory or read-merge-write), with a regression test: append `hook_run` → full save → line survives. **Toolset fingerprints** (decision 6): content-addressed toolset blob (sorted names + schema hashes), referenced by hash from assistant lines + `hook_run` records, per LLM call                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | A4    | Settings toggle + Sources hooks panel          | Expose `cursorHooksEnabled`; per-entry validation warnings; unsupported badges; per-hook error state deduped once per session. The advanced panel is revealed by Developer mode, but remains visible whenever hooks are enabled so the execution gate is never hidden.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+The A2 row above records its original landing contract. The public-release amendment to
+decision 9 supersedes its “default still fail-open” sentence: omitted/invalid values now
+fail closed, while explicit Cursor `failClosed: false` pins the compatibility mode.
 
 ### Phase B — complete the Cursor-declared surface
 
@@ -727,8 +745,9 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   reaching that path, or a late hook kills an unrelated turn.
 - **`writeThread` regenerates `events.jsonl` from `thread.messages` alone.** Appending a
   spine line without full-save round-tripping means it vanishes on the next save.
-- **Cursor `failClosed` exists.** "Cursor hooks fail open" is only the default; the
-  adapter must honour the per-hook flag or imported security hooks silently weaken.
+- **Cursor `failClosed` is tri-state at the host boundary.** Copse intentionally
+  defaults an omitted/invalid value to closed; preserve explicit `false` or imported
+  compatibility hooks silently become blocking.
 - **The OS sandbox is macOS-only.** `isProjectSandboxEnabled()` is hard-false elsewhere;
   every "sandboxed by default" statement is a _default_, not a guarantee — write code
   and docs accordingly.

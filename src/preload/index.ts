@@ -436,11 +436,21 @@ contextBridge.exposeInMainWorld('api', {
     respond: (id: string, value: string, remember = false) =>
       ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),
     onRequest: (
-      handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
+      handler: (req: {
+        id: string
+        prompt: string
+        kind: 'confirm' | 'secret'
+        canRememberOnDevice: boolean
+      }) => void,
     ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
-        req: { id: string; prompt: string; kind: 'confirm' | 'secret' },
+        req: {
+          id: string
+          prompt: string
+          kind: 'confirm' | 'secret'
+          canRememberOnDevice: boolean
+        },
       ): void => {
         handler(req)
       }
@@ -508,6 +518,9 @@ contextBridge.exposeInMainWorld('api', {
     listHosts: () => ipcRenderer.invoke('ssh-workspace:listHosts'),
     listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:listConfigAliases'),
     getStates: () => ipcRenderer.invoke('ssh-workspace:getStates'),
+    listCredentialHostIds: () => ipcRenderer.invoke('ssh-workspace:listCredentialHostIds'),
+    forgetCredentials: (hostId: string) =>
+      ipcRenderer.invoke('ssh-workspace:forgetCredentials', hostId),
     connect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:connect', hostId),
     disconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:disconnect', hostId),
     reconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:reconnect', hostId),
@@ -612,6 +625,13 @@ contextBridge.exposeInMainWorld('api', {
       threadId: string,
       patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
     ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
+    recordModelSelection: (
+      projectId: string,
+      threadId: string,
+      by: 'user' | 'auto',
+      from: string | undefined,
+      to: string,
+    ) => ipcRenderer.invoke('threads:recordModelSelection', projectId, threadId, by, from, to),
     delete: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:delete', projectId, threadId),
     exportArchive: (projectId: string, threadId: string) =>
@@ -880,8 +900,19 @@ contextBridge.exposeInMainWorld('api', {
     resolveSshHosts: () => ipcRenderer.invoke('vnc:resolve-ssh-hosts'),
     getUsername: (target: import('@shared/types/vnc.ts').VncTarget) =>
       ipcRenderer.invoke('vnc:get-username', target),
+    getPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
+      ipcRenderer.invoke('vnc:get-password', target),
+    hasPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
+      ipcRenderer.invoke('vnc:has-password', target),
+    canStoreCredentials: () => ipcRenderer.invoke('vnc:can-store-credentials'),
     rememberUsername: (target: import('@shared/types/vnc.ts').VncTarget, username: string) =>
       ipcRenderer.invoke('vnc:remember-username', target, username),
+    rememberPassword: (target: import('@shared/types/vnc.ts').VncTarget, password: string) =>
+      ipcRenderer.invoke('vnc:remember-password', target, password),
+    forgetPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
+      ipcRenderer.invoke('vnc:forget-password', target),
+    forgetCredentials: (target: import('@shared/types/vnc.ts').VncTarget) =>
+      ipcRenderer.invoke('vnc:forget-credentials', target),
     start: (connectionId: string): void => {
       ipcRenderer.send('vnc:start', connectionId)
     },
@@ -1008,6 +1039,9 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('worktrees:openTerminal', projectId, path),
     remove: (projectId: string, path: string, force: boolean) =>
       ipcRenderer.invoke('worktrees:remove', projectId, path, force),
+  },
+  agents: {
+    list: () => ipcRenderer.invoke('agents:list'),
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),

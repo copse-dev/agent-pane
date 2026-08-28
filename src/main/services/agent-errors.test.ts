@@ -82,6 +82,19 @@ describe('classifyAgentError', () => {
     assert.doesNotMatch(out, /claude setup-token/)
   })
 
+  it("turns Cursor's rejected session into actionable sign-in guidance", () => {
+    const err = new RequestError(
+      -32603,
+      'Internal error: Cursor session was rejected (expired WorkosCursorSessionToken). Re-sign in to Cursor or refresh CURSOR_SESSION_TOKEN from cursor.com cookies.',
+    )
+    const out = classifyAgentError(err, { acpAgentId: 'cursor' })
+    assert.match(out, /Cursor sign-in expired/)
+    assert.match(out, /cursor-agent login/)
+    assert.match(out, /CURSOR_SESSION_TOKEN/)
+    assert.match(out, /Technical details[\s\S]*expired WorkosCursorSessionToken/)
+    assert.doesNotMatch(out, /^An error occurred:/)
+  })
+
   it('keeps first-run guidance for an agent that was never signed in', () => {
     const out = classifyAgentError(RequestError.authRequired(), { acpAgentId: 'claude-agent-acp' })
     assert.match(out, /needs authentication/)
@@ -223,9 +236,46 @@ describe('classifyAcpAuthFailure', () => {
     )
   })
 
+  // Cursor words a lapsed WorkosCursorSessionToken this way: "session was
+  // rejected" (not expired/revoked) and "expired WorkosCursorSessionToken" (a
+  // compound noun, not a bare token/session). Both are a dead saved credential,
+  // so both must read as an expiry whose fix is `cursor-agent login`.
+  it('reads a Cursor rejected-session message as an expired sign-in', () => {
+    const cursor = { acpAgentId: 'cursor' }
+    assert.equal(
+      classifyAcpAuthFailure(
+        new RequestError(
+          -32603,
+          'Internal error: Cursor session was rejected (expired WorkosCursorSessionToken). Re-sign in to Cursor or refresh CURSOR_SESSION_TOKEN from cursor.com cookies.',
+        ),
+        cursor,
+      ),
+      'expired',
+    )
+    assert.equal(
+      classifyAcpAuthFailure(
+        new Error('Cursor session was rejected (expired WorkosCursorSessionToken).'),
+        cursor,
+      ),
+      'expired',
+    )
+    assert.equal(
+      classifyAcpAuthFailure(new Error('Session token was rejected by the server'), cursor),
+      'expired',
+    )
+  })
+
   it('leaves non-credentials failures alone', () => {
     assert.equal(classifyAcpAuthFailure(new Error('Overloaded'), claude), null)
     assert.equal(classifyAcpAuthFailure(new Error('socket hang up'), claude), null)
+    assert.equal(
+      classifyAcpAuthFailure(new Error('Tool call was rejected by the user'), claude),
+      null,
+    )
+    assert.equal(
+      classifyAcpAuthFailure(new Error('Request has been rejected by workspace policy'), claude),
+      null,
+    )
     assert.equal(
       classifyAcpAuthFailure(new RequestError(-32002, 'Resource not found'), claude),
       null,

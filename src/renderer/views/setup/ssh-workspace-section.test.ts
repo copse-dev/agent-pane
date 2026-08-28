@@ -5,9 +5,15 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import { createSshWorkspaceSection } from './ssh-workspace-section.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 
-function mockApi(initial: { enabled?: boolean; hosts?: unknown[]; strict?: string }): {
+function mockApi(initial: {
+  enabled?: boolean
+  hosts?: unknown[]
+  strict?: string
+  credentialHostIds?: string[]
+}): {
   api: ApiClient
   sets: Array<{ key: string; value: unknown }>
+  forgotten: string[]
 } {
   const store = new Map<string, unknown>([
     ['sshWorkspaceEnabled', initial.enabled === true],
@@ -15,6 +21,8 @@ function mockApi(initial: { enabled?: boolean; hosts?: unknown[]; strict?: strin
     ['sshStrictHostKeys', initial.strict ?? 'accept-new'],
   ])
   const sets: Array<{ key: string; value: unknown }> = []
+  const credentialHostIds = new Set(initial.credentialHostIds ?? [])
+  const forgotten: string[] = []
   const api = ((): ApiClient => {
     const base = createFakeApi()
     return {
@@ -30,10 +38,15 @@ function mockApi(initial: { enabled?: boolean; hosts?: unknown[]; strict?: strin
       sshWorkspace: {
         ...base['sshWorkspace'],
         listConfigAliases: async () => [],
+        listCredentialHostIds: async () => [...credentialHostIds],
+        forgetCredentials: async (hostId: string): Promise<void> => {
+          forgotten.push(hostId)
+          credentialHostIds.delete(hostId)
+        },
       },
     } satisfies ApiClient
   })()
-  return { api, sets }
+  return { api, sets, forgotten }
 }
 
 describe('createSshWorkspaceSection', () => {
@@ -104,5 +117,40 @@ describe('createSshWorkspaceSection', () => {
       key: 'sshWorkspaceHosts',
       value: [{ id: 'studio-mac', label: 'Studio Mac', host: 'studio.local' }],
     })
+  })
+
+  it('shows and deletes OS-keychain authentication without removing the host', async () => {
+    const host = { id: 'dev', label: 'Dev Server', host: 'dev.example' }
+    const { api, forgotten, sets } = mockApi({ hosts: [host], credentialHostIds: ['dev'] })
+    const section = createSshWorkspaceSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+
+    const auth = section.root.querySelector<HTMLElement>('.ssh-host-auth')
+    const forget = section.root.querySelector<HTMLButtonElement>('.ssh-host-forget-auth')
+    assert.equal(auth?.textContent, 'Authentication encrypted by OS keychain')
+    assert.ok(forget)
+
+    forget.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.deepEqual(forgotten, ['dev'])
+    assert.equal(sets.length, 0)
+    assert.equal(section.root.querySelector('.ssh-host-forget-auth'), null)
+    assert.match(section.root.querySelector('.ssh-host-auth')?.textContent ?? '', /requested/)
+  })
+
+  it('forgets authentication before removing a configured host', async () => {
+    const host = { id: 'dev', label: 'Dev Server', host: 'dev.example' }
+    const { api, forgotten, sets } = mockApi({ hosts: [host], credentialHostIds: ['dev'] })
+    const section = createSshWorkspaceSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+
+    section.root.querySelector<HTMLButtonElement>('.ssh-host-delete')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.deepEqual(forgotten, ['dev'])
+    assert.deepEqual(sets.at(-1), { key: 'sshWorkspaceHosts', value: [] })
   })
 })

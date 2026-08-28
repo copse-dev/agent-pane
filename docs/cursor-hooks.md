@@ -228,13 +228,10 @@ hook can never auto-approve something Copse would otherwise ask about.
 
 ### Reliability and trust
 
-- **Fail open by default, `failClosed` honoured.** A missing config, crash, timeout (5s),
-  or unparseable response is treated as `allow`, so a broken hook never silently wedges
-  the agent. But Cursor's per-hook `failClosed: true` (`{ "command": …, "failClosed": true }`)
-  reverses that for **that** hook: a crash / timeout / invalid JSON **blocks** the action
-  instead — the vendor contract for imported security hooks (the [vendor failure semantics decision](plans/hooks-and-feature-packs.md#decisions-log)). The Cursor
-  adapter reports the failure + the hook's resolved `onFailure`; the runner turns it into
-  a deny (`failClosed`) or a no-op (the default).
+- **Fail closed by Copse host policy.** A hook crash, timeout, spawn error, or malformed
+  response denies a gated action. Omitted or invalid `failClosed` resolves closed;
+  `{ "command": …, "failClosed": false }` explicitly restores Cursor's fail-open
+  compatibility behavior. Users can turn all external hooks off in Settings → Sources.
 - **No LLM secrets.** Hook processes inherit `envForRendererChildProcess()` — the same
   scrubbed environment as `run_shell`, so provider _LLM_ API keys never reach hook
   scripts. Note this is **not** an empty environment: non-LLM tool tokens that the agent

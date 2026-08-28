@@ -5,8 +5,14 @@ import type { SecretCipher } from '../storage/secret-cipher.ts'
 import { registerSecretSweep, resetSecretSweeps } from '../storage/secret-migration.ts'
 import type { VncUsernameStoreDependencies } from './vnc-username-store.ts'
 import {
+  canStoreVncCredentials,
+  forgetVncCredentials,
+  forgetVncPassword,
+  getVncPassword,
   getVncUsername,
+  hasVncPassword,
   migrateStoredVncUsernames,
+  rememberVncPassword,
   rememberVncUsername,
 } from './vnc-username-store.ts'
 
@@ -72,6 +78,10 @@ function testStore(encryptionAvailable = true): {
       read: (key) => values.get(key),
       write: (key, value): Promise<void> => {
         values.set(key, value)
+        return Promise.resolve()
+      },
+      remove: (key): Promise<void> => {
+        values.delete(key)
         return Promise.resolve()
       },
     },
@@ -266,5 +276,67 @@ describe('encrypted VNC usernames', () => {
     )
     await Promise.resolve()
     assert.deepEqual(values.get(key), before, 'failed migration must leave the legacy blob intact')
+  })
+})
+
+describe('encrypted VNC passwords', () => {
+  it('round-trips an encrypted password without persisting plaintext', async () => {
+    const { dependencies, values } = testStore()
+    const target = { kind: 'ssh', hostId: 'studio', remotePort: 5900 } as const
+
+    assert.equal(await rememberVncPassword(target, 'screen-secret', dependencies), true)
+    assert.equal(getVncPassword(target, dependencies), 'screen-secret')
+    assert.equal(hasVncPassword(target, dependencies), true)
+    assert.doesNotMatch(JSON.stringify([...values.values()]), /screen-secret/)
+  })
+
+  it('keys a password to the machine rather than its current VNC port', async () => {
+    const { dependencies } = testStore()
+    await rememberVncPassword(
+      { kind: 'network', host: 'Studio.local.', port: 5900, confirmedUnencrypted: true },
+      'screen-secret',
+      dependencies,
+    )
+
+    assert.equal(
+      getVncPassword(
+        { kind: 'network', host: 'studio.local', port: 5999, confirmedUnencrypted: true },
+        dependencies,
+      ),
+      'screen-secret',
+    )
+  })
+
+  it('refuses plaintext persistence when secure storage is unavailable', async () => {
+    const { dependencies, values } = testStore(false)
+    const target = { kind: 'loopback', port: 5900 } as const
+
+    assert.equal(canStoreVncCredentials(dependencies), false)
+    assert.equal(await rememberVncPassword(target, 'screen-secret', dependencies), false)
+    assert.equal(values.size, 0)
+  })
+
+  it('forgets a rejected password without deleting the username', async () => {
+    const { dependencies } = testStore()
+    const target = { kind: 'loopback', port: 5900 } as const
+    await rememberVncUsername(target, 'screen-user', dependencies)
+    await rememberVncPassword(target, 'screen-secret', dependencies)
+
+    await forgetVncPassword(target, dependencies)
+
+    assert.equal(getVncUsername(target, dependencies), 'screen-user')
+    assert.equal(getVncPassword(target, dependencies), null)
+  })
+
+  it('deletes every saved login field on explicit forget', async () => {
+    const { dependencies } = testStore()
+    const target = { kind: 'loopback', port: 5900 } as const
+    await rememberVncUsername(target, 'screen-user', dependencies)
+    await rememberVncPassword(target, 'screen-secret', dependencies)
+
+    await forgetVncCredentials(target, dependencies)
+
+    assert.equal(getVncUsername(target, dependencies), null)
+    assert.equal(getVncPassword(target, dependencies), null)
   })
 })

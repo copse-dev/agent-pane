@@ -1036,6 +1036,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Agents</legend>
+              <p class="settings-fieldset-desc">
+                Subagent definitions found in <code>agents/</code> folders under
+                <code>.copse</code>, <code>.cursor</code>, and <code>.claude</code> — in this
+                project and in your home directory. Hover a row to see its path. Project agents
+                are only read once you trust the project.
+              </p>
+              <div id="sources-agents-list" class="sources-group">
+                <span class="sources-empty">Loading…</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
               <legend>Skills</legend>
               <p class="settings-fieldset-desc">
                 Skills found on this machine, tagged by where they came from. Hover a row to see
@@ -1057,13 +1070,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="cursorHooksEnabled" />
-                Run Cursor hooks
+                Run external hooks
               </label>
               <p class="field-hint">
                 Off by default. Turning this on runs your own scripts while the agent works: every
                 tool call it makes can start a matching hook command, with the same rights you
                 have on this machine. Project hooks also need you to trust the project, the same
-                bar as running its build scripts. A hook that fails never blocks the agent.
+                bar as running its build scripts. A failed blocking hook stops the affected
+                action. If a hook breaks, turn hooks off here; notification hooks cannot block
+                work that already completed.
               </p>
               <div id="sources-hooks-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -1880,6 +1895,71 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     return button
   }
 
+  /**
+   * Rows for Settings → Sources → Agents: what Copse found, what it skipped, and
+   * what lost a name collision.
+   *
+   * Skipped and shadowed files get rows of their own rather than a console
+   * warning. With three containers across two scopes, a definition silently
+   * failing to appear — or quietly losing to a copy in another folder — is the
+   * failure users actually hit, and it is unanswerable from the list alone.
+   */
+  function makeAgentRows(
+    result: import('@shared/types/agents.ts').AgentsListResult,
+  ): HTMLElement[] {
+    const rows: HTMLElement[] = []
+
+    for (const agent of result.agents) {
+      const extraBadges: Array<{ text: string; className: string }> = [
+        { text: agent.container, className: 'sources-badge-auto' },
+      ]
+      if (agent.unsupportedFields.length > 0) {
+        extraBadges.push({ text: 'partly supported', className: 'sources-badge-unsupported' })
+      }
+      const detail = [
+        agent.description,
+        ...agent.unsupportedFields.map((f) => `${f.field}: ${f.reason}`),
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join(' · ')
+      rows.push(
+        makeSourceRow(agent.name, agent.source, detail || null, {
+          badgeClass: agent.source === 'project' ? 'sources-badge-project' : undefined,
+          extraBadges,
+          titleAttr: agent.agentPath,
+          hoverDetail: agent.agentPath,
+        }),
+      )
+    }
+
+    for (const shadowed of result.shadowed) {
+      rows.push(
+        makeSourceRow(shadowed.name, shadowed.source, `overridden by ${shadowed.shadowedBy}`, {
+          extraBadges: [{ text: 'overridden', className: 'sources-badge-warning' }],
+          titleAttr: shadowed.agentPath,
+          hoverDetail: shadowed.agentPath,
+        }),
+      )
+    }
+
+    for (const skipped of result.skipped) {
+      rows.push(
+        makeSourceRow(basenameOf(skipped.agentPath), skipped.source, skipped.reason, {
+          extraBadges: [{ text: 'skipped', className: 'sources-badge-error' }],
+          titleAttr: skipped.agentPath,
+          hoverDetail: skipped.agentPath,
+        }),
+      )
+    }
+
+    return rows
+  }
+
+  /** Last path segment, for rows keyed by file rather than by agent name. */
+  function basenameOf(path: string): string {
+    return path.split(/[/\\]/).pop() ?? path
+  }
+
   function makeSourceRow(
     title: string,
     badge: string | null,
@@ -2619,10 +2699,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const statusEl = qsRequired(overlay, '#sources-reload-status')
     statusEl.textContent = 'Loading…'
     try {
-      const [instructions, cursorRules, skills, hooks] = await Promise.all([
+      const [instructions, cursorRules, skills, agents, hooks] = await Promise.all([
         api.instructions.list(),
         api.cursorRules.list(),
         api.skills.list(),
+        api.agents.list(),
         api.hooks.list(),
       ])
 
@@ -2681,6 +2762,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         ),
         'No skills discovered.',
       )
+
+      fillSourceList('#sources-agents-list', makeAgentRows(agents), 'No agents discovered.')
 
       fillSourceList(
         '#sources-hooks-list',
@@ -4108,10 +4191,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void (async (): Promise<void> => {
       const data = new FormData(settingsForm)
 
-      if (cursorKeysDirty) await cursorKeySection.saveKeys()
-      if (claudeAgentKeysDirty) await claudeAgentKeySection.saveKeys()
-      if (aaKeysDirty) await aaKeySection.saveKeys()
-      if (providersDirty) await providersPanel.saveKeys()
+      if (cursorKeysDirty && !(await cursorKeySection.saveKeys())) return
+      if (claudeAgentKeysDirty && !(await claudeAgentKeySection.saveKeys())) return
+      if (aaKeysDirty && !(await aaKeySection.saveKeys())) return
+      if (providersDirty && !(await providersPanel.saveKeys())) return
       await modelParametersSection.save()
       if (lmStudioDirty) await lmStudioSection.saveApiKey()
       const routingValues = modelRoutingSection.readValues()

@@ -30,7 +30,9 @@
   border-top: none;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: var(--spacing-md);
-  background: var(--bg-base);
+  /* Transparent over #input-bar's frosted ::before — an opaque fill here would
+     recreate the black bounding box the shell frost exists to avoid. */
+  background: transparent;
   font-family: inherit;
   font-size: inherit;
   outline: none;
@@ -105,7 +107,7 @@
 .guarded-yolo-text {
   min-width: 0;
   flex: 1;
-  line-height: 1.35;
+  line-height: var(--line-height-base);
 }
 .guarded-yolo-disable {
   flex: 0 0 auto;
@@ -150,7 +152,7 @@
 .composer-image-warning-text {
   min-width: 0;
   flex: 1;
-  line-height: 1.35;
+  line-height: var(--line-height-base);
 }
 .composer-image-model-btn,
 .composer-image-describe-btn,
@@ -218,7 +220,7 @@
 .composer-context-warning-text {
   min-width: 0;
   flex: 1;
-  line-height: 1.35;
+  line-height: var(--line-height-base);
 }
 .composer-context-model-btn {
   flex: 0 0 auto;
@@ -393,6 +395,11 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
+.footer-running {
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+}
 .footer-indexing {
   font-size: 11px;
   color: var(--text-muted);
@@ -486,7 +493,7 @@
   color: var(--text-primary);
   font-family: inherit;
   font-size: inherit;
-  line-height: 1.55;
+  line-height: var(--line-height-base);
 }
 .message-edit-input:focus {
   outline: none;
@@ -500,7 +507,8 @@
   padding: var(--spacing-xs) var(--spacing-md);
   font-size: 11px;
   color: var(--text-muted);
-  background: var(--bg-elevated);
+  /* See .prompt-input — keep the frosted shell visible through the footer. */
+  background: transparent;
   border-top: 1px solid var(--border);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }

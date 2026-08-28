@@ -56,6 +56,12 @@ describe('SSH settings section', () => {
     const hostRow = await sshSection.$('.ssh-host-row')
     await expect(hostRow).toBeDisplayed()
     assert.match(await hostRow.getText(), /Dev Server/)
+    await expect(hostRow.$('.ssh-host-auth')).toHaveText(
+      'Authentication will be requested when you connect',
+    )
+    await expect(sshSection.$('.settings-fieldset-desc')).toHaveText(
+      expect.stringContaining('encrypted with the OS keychain'),
+    )
 
     const editBtn = await hostRow.$('.ssh-host-edit')
     const removeBtn = await hostRow.$('.ssh-host-delete')

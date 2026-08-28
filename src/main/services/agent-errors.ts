@@ -191,14 +191,16 @@ export type AcpAuthFailureKind = 'required' | 'expired'
  * A credential that was working and no longer is, however the agent words it.
  * Agents rarely use the ACP `auth_required` code for this — Claude's adapter
  * reports an expired OAuth token as a generic `-32603 Internal error` whose
- * *message* carries the real cause — so the text is the signal.
+ * *message* carries the real cause, and Cursor's reports its lapsed
+ * `WorkosCursorSessionToken` as "session was rejected" — so the text is the
+ * signal.
  *
  * Revocation counts as an expiry rather than a first-run failure: the agent is
  * configured and was signed in, so the fix is its login command, not the
  * install-and-set-up guidance `required` hands out.
  */
 const EXPIRED_AUTH_RE =
-  /re-?authenticat|(?:token|session|login|credentials?|subscription)\s+(?:has\s+|have\s+)?(?:expired|been\s+revoked)|(?:expired|revoked)\s+(?:oauth\s+|access\s+|refresh\s+|api\s+)?(?:token|session|credentials?)/i
+  /re-?authenticat|re-?sign[\s_-]*in|(?:token|session|login|credentials?|subscription)\s+(?:has\s+|have\s+)?(?:expired|been\s+revoked|was\s+rejected)|(?:expired|revoked|rejected)[\s:_-]*(?:oauth\s+|access\s+|refresh\s+|api\s+)?(?:workos\s+)?[\w-]*(?:token|session|credentials?)/i
 
 /** Auth failures that are not specifically an expiry (never signed in, key refused). */
 const AUTH_FAILURE_RE =

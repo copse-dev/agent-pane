@@ -68,7 +68,7 @@ const WANTED = flag('stacks', 'electron,tauri').split(',')
  */
 const EVAL = process.argv.includes('--eval')
 /** Provider-prefixed model id for eval runs. */
-const EVAL_MODEL = flag('model', 'openrouter:stealth/ox-alpha')
+const EVAL_MODEL = flag('model', 'openrouter:z-ai/glm-5.3-flash')
 const EVAL_PROVIDER = EVAL_MODEL.split(':')[0] ?? 'openrouter'
 
 // ---------------------------------------------------------------------------

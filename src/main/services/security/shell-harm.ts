@@ -943,6 +943,36 @@ function scriptLanguage(contents: string, operand: string): SourceLanguage {
   return CODE_SCRIPT_EXTENSION.test(operand) ? 'code' : 'shell'
 }
 
+/**
+ * Direct execution of `tests/e2e/screenshots/foo.png` (or any other non-script
+ * suffix) used to deep-read the file, lex the UTF-8 mojibake as shell, and flood
+ * the Guarded YOLO dialog with invented "could not be inspected" operands.
+ * Extensionless paths still deep-read — that is how `./bin/tool` shebang scripts
+ * are found. A recognised script suffix always deep-reads.
+ */
+function isNonScriptFileOperand(operand: string): boolean {
+  const ext = parsePath(operand).ext
+  return ext !== '' && !SCRIPT_EXTENSIONS.test(operand)
+}
+
+/**
+ * Bytes that are not text we can lex. A PNG (or any other binary) decoded as
+ * UTF-8 still carries NULs and control bytes; feeding that to the shell lexer
+ * invents path-shaped tokens from compressed data.
+ */
+function scriptContentsLookBinary(contents: string): boolean {
+  if (contents.includes('\0')) return true
+  const sampleLen = Math.min(contents.length, 8192)
+  if (sampleLen === 0) return false
+  let controls = 0
+  for (let i = 0; i < sampleLen; i++) {
+    const code = contents.charCodeAt(i)
+    if (code === 9 || code === 10 || code === 13) continue
+    if (code < 32 || code === 127) controls++
+  }
+  return controls / sampleLen > 0.1
+}
+
 function inspectInterpreter(
   argv: string[],
   context: ShellHarmContext,
@@ -979,11 +1009,14 @@ function inspectInterpreter(
     ? (interpreterScriptOperand(argv) ?? directExecution)
     : directExecution
   if (!operand) return
+  // Screenshots and other assets are not scripts the shell authored for us to
+  // re-lex. Skip before readScript so a 79 KiB PNG never becomes advice text.
+  if (!isInterpreter && isNonScriptFileOperand(operand)) return
   const resolved = expandPathToken(operand, context)
   if (seenScripts.has(resolved)) return
   seenScripts.add(resolved)
   const contents = context.readScript?.(resolved) ?? null
-  if (contents === null || depth >= MAX_SCRIPT_DEPTH) {
+  if (contents === null || depth >= MAX_SCRIPT_DEPTH || scriptContentsLookBinary(contents)) {
     addUnique(out.prompt, `script contents could not be inspected safely: ${operand}`)
     return
   }

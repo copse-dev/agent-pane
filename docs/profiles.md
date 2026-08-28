@@ -10,14 +10,14 @@ travel with one.
 
 ## Layout
 
-| Path                                                                                 | Contents                                                              |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `user-data/config.json`                                                              | Projects, active project, workspace root, pack settings, usage ledger |
-| `user-data/settings.json`                                                            | Settings, including API keys                                          |
-| `user-data/` (rest)                                                                  | `mcp.json`, custom tools, browser profiles, semantic-search index     |
-| `workspace/`                                                                         | Threads, tasks, decision log, deferred approvals                      |
-| `worktrees/`                                                                         | Copse-managed Git worktrees                                           |
-| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | Per-feature stores                                                    |
+| Path                                                                                 | Contents                                                                          |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `user-data/config.json`                                                              | Projects, active project, workspace root, pack settings, usage ledger             |
+| `user-data/settings.json`                                                            | Settings, including API keys                                                      |
+| `user-data/` (rest)                                                                  | `mcp.json`, encrypted SSH authentication, browser profiles, semantic-search index |
+| `workspace/`                                                                         | Threads, tasks, decision log, deferred approvals                                  |
+| `worktrees/`                                                                         | Copse-managed Git worktrees                                                       |
+| `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | Per-feature stores                                                                |
 
 Project repositories are not part of a profile. A profile records _where_ your
 projects are, not their contents.
@@ -45,13 +45,14 @@ Three narrower overrides move one directory each, and take precedence over
 If you set any of them, that directory is no longer inside `COPSE_DIR` and needs
 backing up separately.
 
-## What profiles do not isolate: API keys
+## What profiles do not isolate: encrypted credentials
 
-**Stored API keys are not cryptographically separated by profile.** Copse
-encrypts them under a data key it keeps in the operating system's keyring — the
-login Keychain on macOS, Credential Manager on Windows, and the GNOME/KWallet
-secret service on Linux (one item, `Copse` / `secret-data-key`; keys stored by
-earlier versions through Electron's `safeStorage` are migrated on first use).
+**Stored API keys and remembered SSH authentication are not cryptographically
+separated by profile.** Copse encrypts them under a data key it keeps in the
+operating system's keyring — the login Keychain on macOS, Credential Manager on
+Windows, and the GNOME/KWallet secret service on Linux (one item, `Copse` /
+`secret-data-key`; keys stored by earlier versions through Electron's
+`safeStorage` are migrated on first use).
 That key belongs to the **OS user account**, not to the Copse profile directory.
 
 Two consequences:
@@ -76,9 +77,14 @@ On a Linux box with no unlocked keyring, encryption is unavailable and Copse
 will not silently write a key to disk in the clear: saving one requires explicit
 consent, and `/checkup` warns for as long as a plaintext key is stored.
 
-API keys are the only thing Copse itself encrypts. Everything else in the
-profile is plain JSON or plain files — but "not encrypted" is not the same as
-"portable", because several stores record **absolute paths**.
+API keys, remembered SSH passwords/key passphrases, and remembered VNC logins
+are the secrets Copse itself encrypts. SSH authentication is scoped to a
+configured host and can be forgotten from **Settings → SSH**; removing a host
+forgets its authentication too. VNC logins are scoped to the selected machine,
+are stored only after successful authentication, and can be removed with
+**Forget saved login** in the Desktop pane. Everything else in the profile is
+plain JSON or plain files — but "not encrypted" is not the same as "portable",
+because several stores record **absolute paths**.
 
 ## Moving a profile to another machine
 

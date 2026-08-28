@@ -1,8 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
+import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
@@ -44,6 +46,7 @@ import {
   parseIpcArgs,
   parsePortKillArgs,
   zMcpServerName,
+  zModelId,
   zHookRunId,
   zHookTestRequest,
   zNonEmptyString,
@@ -110,6 +113,7 @@ import {
   createThread,
   appendMessage,
   updateMeta,
+  recordModelSelection,
   deleteProjectThread,
   loadProjectCatalog,
   listOrphanProjectStores,
@@ -156,6 +160,7 @@ import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
+import { listAgents, initAgentsRegistry } from '../services/agents/agents-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
@@ -454,6 +459,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // swap to the full layout; the footer indicator reports progress.
     startWorkspaceIndexing(root)
     await initSkillsRegistry()
+    await initAgentsRegistry()
     registerSkillTools(registry)
     return root
   })
@@ -590,6 +596,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .catch((err: unknown) => {
         console.warn('[skills] background init failed:', err)
       })
+    void initAgentsRegistry().catch((err: unknown) => {
+      console.warn('[agents] background init failed:', err)
+    })
     // Now a workspace is available, refresh any ACP model caches that have aged
     // past the TTL. Fire-and-forget: the picker reads settings live, so fresh
     // models (e.g. a new Opus release) appear on its next open without blocking
@@ -1276,8 +1285,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
     const options = parseIpcArgs(setKeyOptionsSchema, [opts])
     const result = setApiKey(p, apiKey, options)
-    // Encryption unavailable and no plaintext consent: nothing was stored. Report
-    // back so the renderer can prompt for explicit consent and retry.
+    // Encryption unavailable: nothing was stored. The result distinguishes the
+    // default-off plaintext policy from the per-save consent step so the
+    // renderer never offers a retry the process is not allowed to perform.
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
     if (p === 'cursor') invalidateCursorCloudModelsCache()
@@ -1555,6 +1565,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return updateMeta(pid, tid, payload)
     },
   )
+  ipcMain.handle(
+    'threads:recordModelSelection',
+    (event, projectId: unknown, threadId: unknown, by: unknown, from: unknown, to: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, actor, previous, selected] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.enum(['user', 'auto']), zModelId.optional(), zModelId]),
+        [projectId, threadId, by, from, to],
+      )
+      const selection = {
+        id: randomUUID(),
+        recordedAt: Date.now(),
+        by: actor,
+        ...(previous !== undefined ? { from: previous } : {}),
+        to: selected,
+      }
+      const line = {
+        v: SPINE_SCHEMA_VERSION,
+        type: 'model_selected' as const,
+        ...selection,
+      }
+      return recordModelSelection(pid, tid, line).then(() => selection)
+    },
+  )
   ipcMain.handle('threads:delete', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
@@ -1766,6 +1799,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   )
 
   ipcMain.handle('skills:list', () => listSkills())
+  ipcMain.handle('agents:list', () => listAgents())
   ipcMain.handle('cursorPlugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()

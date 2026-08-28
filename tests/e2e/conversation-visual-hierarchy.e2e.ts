@@ -62,7 +62,9 @@ describe('conversation visual hierarchy', () => {
       const comparisonElement = document.querySelector('[data-comparison-card]')
       const comparison = comparisonElement?.getBoundingClientRect()
       const composer = rect('#input-bar')
+      const composerInput = document.querySelector('.prompt-input')
       const closedReasoning = document.querySelector('.message-reasoning:not([open])')
+      const reasoningText = document.querySelector('.message-reasoning-text')
       const doneTool = document.querySelector('.tool-card[data-status="done"]:not([open])')
       const answerText = document.querySelector(
         '[data-message-id="msg-assistant-result"] .message-text',
@@ -83,7 +85,9 @@ describe('conversation visual hierarchy', () => {
         !comparison ||
         !comparisonElement ||
         !composer ||
+        !composerInput ||
         !closedReasoning ||
+        !reasoningText ||
         !doneTool ||
         !answerText ||
         !secondaryTitlebarButton ||
@@ -98,6 +102,7 @@ describe('conversation visual hierarchy', () => {
       const selectedStyle = getComputedStyle(selectedThread)
       const reviewStyle = getComputedStyle(reviewElement)
       const comparisonStyle = getComputedStyle(comparisonElement)
+      const baseLineHeight = getComputedStyle(document.body).lineHeight
       const messagesListRect = messagesList.getBoundingClientRect()
       const messagesListContentCenter = messagesListRect.left + messagesList.clientWidth / 2
       return {
@@ -135,6 +140,13 @@ describe('conversation visual hierarchy', () => {
         comparisonTopBorder: comparisonStyle.borderTopWidth,
         comparisonLeftBorder: comparisonStyle.borderLeftWidth,
         comparisonBackground: comparisonStyle.backgroundImage,
+        baseLineHeight,
+        answerLineHeight: answerStyle.lineHeight,
+        reasoningLineHeight: getComputedStyle(reasoningText).lineHeight,
+        composerLineHeight: getComputedStyle(composerInput).lineHeight,
+        sidebarLineHeight: selectedStyle.lineHeight,
+        reviewLineHeight: reviewStyle.lineHeight,
+        comparisonLineHeight: comparisonStyle.lineHeight,
       }
     })
 
@@ -170,6 +182,13 @@ describe('conversation visual hierarchy', () => {
     expect(layout.comparisonTopBorder).toBe('0px')
     expect(layout.comparisonLeftBorder).toBe('2px')
     expect(layout.comparisonBackground).toContain('linear-gradient')
+    expect(layout.baseLineHeight).toBe('22px')
+    expect(layout.answerLineHeight).toBe(layout.baseLineHeight)
+    expect(layout.reasoningLineHeight).toBe(layout.baseLineHeight)
+    expect(layout.composerLineHeight).toBe(layout.baseLineHeight)
+    expect(layout.sidebarLineHeight).toBe(layout.baseLineHeight)
+    expect(layout.reviewLineHeight).toBe(layout.baseLineHeight)
+    expect(layout.comparisonLineHeight).toBe(layout.baseLineHeight)
 
     await saveAppScreenshot('conversation-visual-hierarchy.png')
   })

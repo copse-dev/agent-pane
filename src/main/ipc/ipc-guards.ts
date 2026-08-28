@@ -105,6 +105,7 @@ export const lmStudioDownloadStatusSchema = z.tuple([
 export const estimateContextPayloadSchema = z.object({
   draftText: z.string().optional(),
   invokedSkills: z.array(z.string()).optional(),
+  invokedAgent: z.string().optional(),
   imageCount: z.number().optional(),
   model: z.string().optional(),
 })
@@ -220,8 +221,8 @@ export const approvalRespondSchema = z.tuple([
 // renderer can't feed an unbounded blob back into the agent's context.
 export const askRespondSchema = z.tuple([z.uuid(), z.array(z.string().max(8192)).max(10)])
 
-// Third element: keep the secret in memory for this app session. Always sent by
-// preload so the tuple stays fixed-arity.
+// Third element: remember the secret (OS-keyring-backed for a configured host,
+// session-only otherwise). Always sent by preload so the tuple stays fixed-arity.
 export const sshPromptRespondSchema = z.tuple([z.uuid(), z.string().max(8192), z.boolean()])
 
 export const updatePromptRespondSchema = z.tuple([z.uuid(), z.number().int().min(-1).max(10)])

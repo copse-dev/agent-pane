@@ -9,6 +9,7 @@ import {
 import { randomUUID } from 'node:crypto'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
+import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
 import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
 import { recoverAgentHistory } from './history-recovery.ts'
@@ -32,6 +33,8 @@ import type { ToolRegistry } from './tool-registry.ts'
 export interface AgentDispatchPayload {
   userContent: UserContent
   invokedSkills: string[]
+  /** Subagent the user invoked with `/name` this turn. */
+  invokedAgent?: string
   priorTodos: TodoItem[]
   workingBrief?: string
   model?: string
@@ -188,7 +191,7 @@ function createHistoryCheckpointWriter(
 /** Main-process authority for starting primary agent turns and committing provider history. */
 export class AgentDispatcher {
   private readonly histories = new Map<string, LLMMessage[]>()
-  private readonly active = new Map<string, Promise<void>>()
+  private readonly active = new Map<string, Promise<TurnOutcome | undefined>>()
   private readonly epochs = new Map<string, { turnTreeId: string; continuationUsed: number }>()
   private readonly epochWrites = new Map<string, Promise<void>>()
   private readonly machineOperations = new Map<string, Promise<MachineDispatchResult>>()
@@ -316,10 +319,16 @@ export class AgentDispatcher {
 
     const nextEpoch = { ...epoch, continuationUsed: epoch.continuationUsed + 1 }
     await this.recordMachineStart(request, nextEpoch.continuationUsed)
+    let turnOutcome: TurnOutcome | undefined
     try {
       await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
       this.epochs.set(key, nextEpoch)
-      await this.dispatchInternal({
+      this.host.emit(request.threadId, {
+        type: 'machine_turn_start',
+        content: request.payload.userContent,
+        origin: { kind: 'machine', operationId: request.operationId },
+      })
+      turnOutcome = await this.dispatchInternal({
         ...request,
         payload: {
           ...request.payload,
@@ -331,7 +340,7 @@ export class AgentDispatcher {
       await this.recordMachineFinish(request, 'failed', nextEpoch.continuationUsed)
       throw error
     }
-    await this.recordMachineFinish(request, 'completed', nextEpoch.continuationUsed)
+    await this.recordMachineFinish(request, 'completed', nextEpoch.continuationUsed, turnOutcome)
     return 'completed'
   }
 
@@ -355,6 +364,7 @@ export class AgentDispatcher {
     request: MachineAgentDispatchRequest,
     result: MachineContinuationResult,
     budgetUsed?: number,
+    turnOutcome?: TurnOutcome,
   ): Promise<void> {
     return this.dependencies.appendMachineContinuation(request.projectId, request.threadId, {
       v: SPINE_SCHEMA_VERSION,
@@ -366,10 +376,11 @@ export class AgentDispatcher {
       ...(budgetUsed !== undefined ? { budgetUsed } : {}),
       phase: 'finished',
       result,
+      ...(turnOutcome !== undefined ? { turnOutcome } : {}),
     })
   }
 
-  private async dispatchInternal(request: AgentDispatchRequest): Promise<void> {
+  private async dispatchInternal(request: AgentDispatchRequest): Promise<TurnOutcome | undefined> {
     const key = dispatchKey(request.projectId, request.threadId)
     const existing = this.active.get(key)
     if (existing) {
@@ -379,7 +390,7 @@ export class AgentDispatcher {
     const running = this.execute(request, key)
     this.active.set(key, running)
     try {
-      await running
+      return await running
     } finally {
       if (this.active.get(key) === running) this.active.delete(key)
     }
@@ -416,7 +427,10 @@ export class AgentDispatcher {
     this.host.emit(threadId, { type: 'text', text: contextLossNotice(transcriptMessages) })
   }
 
-  private async execute(request: AgentDispatchRequest, key: string): Promise<void> {
+  private async execute(
+    request: AgentDispatchRequest,
+    key: string,
+  ): Promise<TurnOutcome | undefined> {
     const { projectId, threadId, payload } = request
     const priorMessages = await this.history(projectId, threadId)
     const executionContext = await this.dependencies.prepareExecutionContext(
@@ -424,7 +438,7 @@ export class AgentDispatcher {
       threadId,
       this.host,
     )
-    if (!executionContext) return
+    if (!executionContext) return undefined
 
     // Reports on the pre-turn state, so it runs before the checkpoint writer
     // starts moving that state on.
@@ -442,6 +456,7 @@ export class AgentDispatcher {
     const options: RunAgentOptions = {
       invokedSkills: payload.invokedSkills,
       priorTodos: payload.priorTodos,
+      ...(payload.invokedAgent !== undefined ? { invokedAgent: payload.invokedAgent } : {}),
       onHistoryCheckpoint: checkpoints.submit,
       ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
       ...(payload.model !== undefined ? { model: payload.model } : {}),
@@ -472,5 +487,6 @@ export class AgentDispatcher {
     }
     this.histories.set(key, result.messages)
     await this.dependencies.saveHistory(projectId, threadId, result.messages)
+    return result.turnOutcome
   }
 }

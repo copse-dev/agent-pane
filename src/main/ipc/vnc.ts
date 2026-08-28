@@ -7,7 +7,16 @@ import {
   resolveVncSshHostAddresses,
   type VncConnectionOwner,
 } from '../services/vnc/vnc-service.ts'
-import { getVncUsername, rememberVncUsername } from '../services/vnc/vnc-username-store.ts'
+import {
+  canStoreVncCredentials,
+  forgetVncCredentials,
+  forgetVncPassword,
+  getVncPassword,
+  getVncUsername,
+  hasVncPassword,
+  rememberVncPassword,
+  rememberVncUsername,
+} from '../services/vnc/vnc-username-store.ts'
 import {
   assertMainFrameSender,
   parseIpcArgs,
@@ -17,6 +26,7 @@ import {
 
 const vncConnectionIdSchema = z.uuid()
 const vncUsernameSchema = z.string().trim().min(1).max(256)
+const vncPasswordSchema = z.string().min(1).max(4096)
 const MAX_VNC_CLIENT_MESSAGE_BYTES = 1024 * 1024
 
 function ownerFor(contents: WebContents): VncConnectionOwner {
@@ -107,6 +117,26 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     return getVncUsername(target)
   })
 
+  ipcMain.handle('vnc:get-password', (event, rawTarget: unknown) => {
+    assertMainFrameSender(event, win)
+    if (!getSetting<boolean>('vncEnabled', false)) {
+      throw new Error('VNC viewer is disabled in Settings')
+    }
+    const target = parseIpcArgs(vncTargetSchema, [rawTarget])
+    return getVncPassword(target)
+  })
+
+  ipcMain.handle('vnc:has-password', (event, rawTarget: unknown) => {
+    assertMainFrameSender(event, win)
+    const target = parseIpcArgs(vncTargetSchema, [rawTarget])
+    return hasVncPassword(target)
+  })
+
+  ipcMain.handle('vnc:can-store-credentials', (event) => {
+    assertMainFrameSender(event, win)
+    return canStoreVncCredentials()
+  })
+
   ipcMain.handle(
     'vnc:remember-username',
     async (event, rawTarget: unknown, rawUsername: unknown) => {
@@ -121,6 +151,33 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
       return rememberVncUsername(target, username)
     },
   )
+
+  ipcMain.handle(
+    'vnc:remember-password',
+    async (event, rawTarget: unknown, rawPassword: unknown) => {
+      assertMainFrameSender(event, win)
+      if (!getSetting<boolean>('vncEnabled', false)) {
+        throw new Error('VNC viewer is disabled in Settings')
+      }
+      const [target, password] = parseIpcArgs(z.tuple([vncTargetSchema, vncPasswordSchema]), [
+        rawTarget,
+        rawPassword,
+      ])
+      return rememberVncPassword(target, password)
+    },
+  )
+
+  ipcMain.handle('vnc:forget-password', async (event, rawTarget: unknown) => {
+    assertMainFrameSender(event, win)
+    const target = parseIpcArgs(vncTargetSchema, [rawTarget])
+    await forgetVncPassword(target)
+  })
+
+  ipcMain.handle('vnc:forget-credentials', async (event, rawTarget: unknown) => {
+    assertMainFrameSender(event, win)
+    const target = parseIpcArgs(vncTargetSchema, [rawTarget])
+    await forgetVncCredentials(target)
+  })
 
   ipcMain.handle('vnc:close', async (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
@@ -148,7 +205,13 @@ export function initVnc(win: BrowserWindow): () => Promise<void> {
     ipcMain.removeHandler('vnc:discover-nearby')
     ipcMain.removeHandler('vnc:resolve-ssh-hosts')
     ipcMain.removeHandler('vnc:get-username')
+    ipcMain.removeHandler('vnc:get-password')
+    ipcMain.removeHandler('vnc:has-password')
+    ipcMain.removeHandler('vnc:can-store-credentials')
     ipcMain.removeHandler('vnc:remember-username')
+    ipcMain.removeHandler('vnc:remember-password')
+    ipcMain.removeHandler('vnc:forget-password')
+    ipcMain.removeHandler('vnc:forget-credentials')
     ipcMain.removeHandler('vnc:close')
     ipcMain.off('vnc:start', onStart)
     ipcMain.off('vnc:send', onSend)

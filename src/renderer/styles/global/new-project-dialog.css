@@ -10,7 +10,7 @@
   margin: 0 0 var(--spacing-md);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
 }
 .new-project-field {
   display: block;

@@ -309,11 +309,11 @@ describe('cursor-adapter', () => {
       assert.equal((await gate('mcp__x__y', {})).permission, 'deny')
     })
 
-    it('fails open to allow when a hook prints no usable JSON (read)', async () => {
+    it('fails closed to deny when a hook prints no usable JSON (read)', async () => {
       const script = await writeHookScript('garbage.sh', 'not json at all')
       await writeUserHooks({ hooks: { beforeReadFile: [{ command: script }] } })
 
-      assert.equal((await gate('read_file', { path: 'secret.txt' })).permission, 'allow')
+      assert.equal((await gate('read_file', { path: 'secret.txt' })).permission, 'deny')
     })
 
     it('only fires the hook whose event matches the gated tool', async () => {
@@ -728,9 +728,10 @@ describe('cursor-adapter', () => {
       await chmod(script, 0o755)
       await writeUserHooks({ hooks: { beforeReadFile: [{ command: script }] } })
 
-      // Fail-open semantics are unchanged: the corrupted response allows.
+      // The host fail-closed policy denies the gated action. The recorded hook decision
+      // remains empty because the corrupt response expressed no dialect decision.
       const decision = await gate('read_file', { path: 'x.txt' })
-      assert.equal(decision.permission, 'allow')
+      assert.equal(decision.permission, 'deny')
 
       const runs = await readRecordedRuns()
       const [run] = runs

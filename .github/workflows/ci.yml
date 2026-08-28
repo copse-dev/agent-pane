@@ -1437,8 +1437,18 @@ jobs:
             echo
             echo "renderer console (SEVERE, last 15):"
             # Long lines are usually a stack trace after the message; the first
-            # 300 characters carry the error itself.
-            printf '%s\n' "$severe" | cut -c1-300
+            # 300 characters carry the error itself — but only once the
+            # boilerplate in front of it is gone. Every line opens with a
+            # `file:///…/dist/renderer/app.js 292986:14 ` source location, and
+            # anything thrown through `ipcMain.handle` adds an `Error invoking
+            # remote method 'x:y': ` wrapper: together ~150 characters that say
+            # nothing and push the cause off the end. On run 33031502487 this
+            # printed `submodules unsupported (/opt/runner/_work` and stopped
+            # one character before the directory it had found — the single fact
+            # the whole digest existed to report.
+            printf '%s\n' "$severe" \
+              | sed -E "s#file://[^ ]+ [0-9]+:[0-9]+ ##; s#Error invoking remote method '[^']+': ##" \
+              | cut -c1-300
           }
 
           # The last thing the job prints, and deliberately not inside a group.
@@ -1605,12 +1615,18 @@ jobs:
   # cheap: plan-e2e skips the e2e tier for a screenshot-only commit (see its
   # `mode=skip` shortcut). Falls back to github.token when the App credentials are
   # unset — commits still land, just without the CI re-trigger.
+  #
+  # The E2E_RUNNER=ubuntu-latest break-glass route validates behavior on a
+  # disposable hosted image, but that image is not the canonical screenshot
+  # renderer. Keep its PNGs as run artifacts for review; never rewrite the
+  # self-hosted fleet's committed references from that temporary environment.
   commit-screenshots:
     needs: [build, e2e]
     if: >-
       always() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      vars.E2E_RUNNER != 'ubuntu-latest'
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:

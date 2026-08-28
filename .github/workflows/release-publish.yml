@@ -1,0 +1,138 @@
+name: Publish release artifacts
+
+# Publication is deliberately separate from signing. `Release (macOS)` creates
+# one immutable Actions artifact containing the exact signed, notarized, and
+# smoke-tested files. The owner reviews that artifact, makes the repository
+# public, then supplies the successful source run here. This workflow refuses
+# any other run, commit, tag, or private-repository publication.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v<package-version> tag to publish
+        required: true
+        type: string
+      release_run_id:
+        description: Successful Release (macOS) workflow run containing the tested artifact
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  attestations: write
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-publish-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with: { node-version-file: '.nvmrc' }
+      - id: release
+        name: Validate public repository, tag, version, and source run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            v*) ;;
+            *) echo "Release tag must start with v: $TAG"; exit 1 ;;
+          esac
+          if ! git show-ref --verify --quiet "refs/tags/$TAG"; then
+            echo "Release target must be an existing tag: $TAG"
+            exit 1
+          fi
+          version="$(node -p "require('./package.json').version")"
+          if [ "${TAG#v}" != "$version" ]; then
+            echo "Tag $TAG does not match package.json version $version"
+            exit 1
+          fi
+          release_type="$(node scripts/release-channel.mts --release-type "$version")"
+          release_sha="$(git rev-parse 'HEAD^{commit}')"
+          git fetch --no-tags origin +refs/heads/release:refs/remotes/origin/release
+          if ! git merge-base --is-ancestor "$release_sha" origin/release; then
+            echo "Release tag commit is not reachable from protected branch origin/release"
+            exit 1
+          fi
+          if [ "$(gh api "/repos/$GITHUB_REPOSITORY" --jq .private)" != 'false' ]; then
+            echo 'Refusing to publish from a private repository: release assets and update metadata must be anonymously reachable'
+            exit 1
+          fi
+          source_run="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID")"
+          source_path="$(printf '%s' "$source_run" | jq -r .path)"
+          source_sha="$(printf '%s' "$source_run" | jq -r .head_sha)"
+          source_status="$(printf '%s' "$source_run" | jq -r .status)"
+          source_conclusion="$(printf '%s' "$source_run" | jq -r .conclusion)"
+          if [ "$source_path" != '.github/workflows/release-mac.yml' ]; then
+            echo "Run $RELEASE_RUN_ID belongs to $source_path, not Release (macOS)"
+            exit 1
+          fi
+          if [ "$source_sha" != "$release_sha" ]; then
+            echo "Run $RELEASE_RUN_ID tested $source_sha, not tag commit $release_sha"
+            exit 1
+          fi
+          if [ "$source_status" != 'completed' ] || [ "$source_conclusion" != 'success' ]; then
+            echo "Run $RELEASE_RUN_ID is not a successful completed release build"
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "A release already exists for $TAG; refusing to replace it"
+            exit 1
+          fi
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "release_type=$release_type" >> "$GITHUB_OUTPUT"
+      - name: Download the exact tested artifact
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.release_run_id }}
+          name: copse-macos-${{ steps.release.outputs.release_sha }}
+          path: release
+      - name: Verify checksums and artifact completeness
+        run: |
+          set -euo pipefail
+          test -s release/RELEASE_NOTES.md
+          test -s release/SHA256SUMS
+          test -n "$(find release -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$(find release -maxdepth 1 -name '*.zip' -print -quit)"
+          test -n "$(find release -maxdepth 1 -name '*.blockmap' -print -quit)"
+          test -n "$(find release -maxdepth 1 -name '*-mac.yml' -print -quit)"
+          shasum -a 256 --check release/SHA256SUMS
+      - name: Attest the tested release artifacts
+        uses: actions/attest@v4.2.2
+        with:
+          subject-path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/*-mac.yml
+            release/SHA256SUMS
+      - name: Publish the exact tested artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TYPE: ${{ steps.release.outputs.release_type }}
+          TAG: ${{ inputs.tag }}
+          TARGET: ${{ steps.release.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          release_flags=()
+          if [ "$RELEASE_TYPE" = 'prerelease' ]; then
+            release_flags+=(--prerelease)
+          else
+            release_flags+=(--latest)
+          fi
+          gh release create "$TAG" release/*.dmg release/*.zip release/*.blockmap release/*-mac.yml release/SHA256SUMS \
+            --target "$TARGET" --title "$TAG" --notes-file release/RELEASE_NOTES.md --verify-tag \
+            "${release_flags[@]}"

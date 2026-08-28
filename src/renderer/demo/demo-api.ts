@@ -450,6 +450,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       listHosts: emptyArray,
       listConfigAliases: emptyArray,
       getStates: emptyArray,
+      listCredentialHostIds: emptyArray,
+      forgetCredentials: resolvedVoid,
       connect: emptyArray,
       disconnect: emptyArray,
       reconnect: emptyArray,
@@ -515,6 +517,21 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         const thread = threads.find((candidate) => candidate.id === threadId)
         if (thread) Object.assign(thread, patch)
         return resolvedVoid()
+      },
+      recordModelSelection: (_projectId, threadId, by, from, to) => {
+        const selection = {
+          id: `demo-model-selection-${String(Date.now())}`,
+          recordedAt: Date.now(),
+          by,
+          ...(from !== undefined ? { from } : {}),
+          to,
+        }
+        const thread = threads.find((candidate) => candidate.id === threadId)
+        if (thread) {
+          thread.model = to
+          thread.modelSelections = [...(thread.modelSelections ?? []), selection]
+        }
+        return resolved(selection)
       },
       delete: (_projectId: string, threadId: string) => {
         threads = threads.filter((candidate) => candidate.id !== threadId)
@@ -710,11 +727,17 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     vnc: {
       open: unsupported,
       list: emptyArray,
-      discover: emptyArray,
+      discover: () => resolved([...(scenario.vncDiscoveredPorts ?? [])]),
       discoverNearby: emptyArray,
       resolveSshHosts: emptyArray,
       getUsername: () => resolved(null),
+      getPassword: () => resolved(null),
+      hasPassword: () => resolved(false),
+      canStoreCredentials: () => resolved(false),
       rememberUsername: () => resolved(false),
+      rememberPassword: () => resolved(false),
+      forgetPassword: resolvedVoid,
+      forgetCredentials: resolvedVoid,
       start: () => {},
       send: () => {},
       close: resolvedVoid,
@@ -777,6 +800,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       openTerminal: resolvedVoid,
       remove: unsupported,
     },
+    agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
     skills: { list: emptyArray },
     cursorPlugins: { list: emptyArray },
     hooks: {

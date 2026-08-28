@@ -10,7 +10,7 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
  * model's ladder instead of its own; that file's header has the evidence.
  */
 const LOCAL_MODEL = 'lmstudio:qwen3-coder-30b'
-const RECIPE_MODEL = 'openrouter:stealth/ox-alpha'
+const RECIPE_MODEL = 'openrouter:z-ai/glm-5.3-flash'
 
 describe('per-model generation parameters', () => {
   before(async function () {
@@ -58,7 +58,7 @@ describe('per-model generation parameters', () => {
     await saveElementScreenshot('[data-testid="model-parameters"]', 'settings-model-parameters.png')
   })
 
-  it('offers the experimental Ox Alpha balanced profile', async function () {
+  it('offers the experimental GLM-5.3-Flash balanced profile', async function () {
     this.timeout(60_000)
     // Switching the picker is the cheapest way to reach a second model's state
     // without a second app launch.
@@ -82,6 +82,8 @@ describe('per-model generation parameters', () => {
     await expect(await section.$('[data-testid="model-parameter-max-output-tokens"]')).toHaveValue(
       '16384',
     )
+    await expect(await section.$('[data-testid="model-parameter-temperature"]')).toHaveValue('1')
+    await expect(await section.$('[data-testid="model-parameter-top-p"]')).toHaveValue('0.95')
     await expect(await section.$('.model-parameter-recommend-note')).toHaveText(
       expect.stringContaining('paired Terminal-Bench record'),
     )
@@ -93,7 +95,7 @@ describe('per-model generation parameters', () => {
     await browser.pause(200)
     await saveElementScreenshot(
       '[data-testid="model-parameters"]',
-      'settings-model-parameters-ox-alpha.png',
+      'settings-model-parameters-glm-5-3-flash.png',
     )
 
     // Put the picker back so the next test sees the seeded selection.

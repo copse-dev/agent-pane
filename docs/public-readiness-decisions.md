@@ -1,120 +1,99 @@
-# Public-readiness decisions (proposed)
+# Public-readiness decisions
 
-Status: **Proposed — awaiting owner sign-off.** Nothing in this file is an
-accepted GA finding or a GA waiver. It exists so the owner can confirm or
-rewrite each paragraph in one pass.
+Status: **Owner decisions recorded 2026-08-27.**
 
-The public-readiness review split “this week” into docs anyone can land, and
-decisions only the owner can record. The docs half is in this PR. The decision
-half is below.
+Owner: **Jonathan Kingston**. Accepted security residuals below are reviewed again at
+the next release candidate, and no later than 2026-09-30. These records are not GA
+waivers and do not close a `ga-blocker` issue.
 
-Required fields for an **accepted** residual, from
-[security-review-ga.md](security-review-ga.md): owner, date, rationale, review
-date. A GA waiver is a separate record and is not requested here.
+## D1 — Blocking command hooks default fail-closed
 
-Owner to confirm: **Jonathan Kingston**. Date to stamp on accept: the day you
-reply. Suggested review date: the next release candidate.
+M3 is being remediated rather than accepted. Copse defaults blocking command-hook
+execution failures to closed: crash, timeout, spawn failure, and invalid output deny the
+gated action. Cursor `failClosed: false` and Copse `onFailure: "open"` remain explicit
+per-hook compatibility escapes. Claude has no per-hook escape. All external hooks remain
+off by default, and Settings → Sources keeps the global control available so a user can
+disable an incompatible hook set.
 
----
+Decision owner/date: Jonathan Kingston, 2026-08-27.
 
-## D1 — Accept M3 (hook `onFailure` defaults to open)
+## D2 — Plaintext secret persistence is process-opt-in
 
-**Finding.** Privileged hook execution is sandboxed on macOS/Linux. Residual:
-`onFailure` defaults to `open` (vendor Claude/Cursor semantics), so a hook that
-crashes or times out abstains; Windows hooks stay unconfined.
+L1 is being remediated rather than accepted. When no OS keyring is available, plaintext
+secret persistence is disabled by default. The exceptional compatibility path requires
+starting Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1`; after that process-level opt-in,
+the existing per-save plaintext confirmation is still required. Environment-only provider
+keys remain unwritten.
 
-**Proposed acceptance.** Keep the vendor default. Changing it would break
-imported hook files. Compensating control: the Copse `sandbox: false` escape is
-the only opt-out and is badged “outside sandbox” in Settings → Sources before
-the workspace is trusted. Re-review if we ship a Copse-native hook format that
-does not import Claude/Cursor files.
+Decision owner/date: Jonathan Kingston, 2026-08-27.
 
-**Ask.** Accept M3 as written?
+## D3 — Accept L8 (`style-src 'unsafe-inline'`)
 
-## D2 — Accept L1 (plaintext API-key fallback)
+Accepted for GA. Monaco and mermaid require inline styles, and replacing the editor/rendering
+stack is not a pre-public-release change. Compensating controls are the remaining renderer
+CSP, strict mermaid handling, and HTML sanitization. Re-review if Monaco/mermaid rendering,
+the CSP, or the privileged renderer boundary changes.
 
-**Finding.** When no OS keyring is available, Copse may persist a key as
-recoverable base64 after explicit consent.
+Acceptance owner/date: Jonathan Kingston, 2026-08-27. Review: next RC or 2026-09-30.
 
-**Proposed acceptance.** Keep the fallback. Removing it strands Linux/headless
-sessions with no keyring. Compensating control: refuse until the user consents;
-badge the risk; environment-only keys are never written. Re-review if a
-supported GA platform has no working key store in normal use (Windows/macOS
-should not hit this).
+## D4 — Accept N2 (user Shells tabs are unsandboxed)
 
-**Ask.** Accept L1 as written?
+Accepted for GA as intentional design. A terminal the user opened is a user-directed shell,
+not an agent action; agent `run_shell` and `run_background` remain permission-gated and
+contained where the project sandbox is available. Re-review when #623 ships a sandboxed ACP
+terminal backend or the product allows an agent to open/drive this surface without a fresh
+user action.
 
-## D3 — Accept L8 (renderer `style-src 'unsafe-inline'`)
+Acceptance owner/date: Jonathan Kingston, 2026-08-27. Review: next RC or 2026-09-30.
 
-**Finding.** Monaco and mermaid need inline styles, so the renderer CSP allows
-`style-src 'unsafe-inline'`.
+## D5 — GA platform boundary
 
-**Proposed acceptance.** Do not rewrite the editor stack before public. Compensating
-control: the rest of the CSP plus HTML sanitizer. Re-review if we replace Monaco
-or add a second privileged renderer surface.
+General availability is **macOS 26 or newer** on Apple Silicon (`arm64`) and Intel (`x64`)
+only. Linux and Windows remain source-development platforms, not GA targets. #802 is the
+public distribution channel for that Mac app. #1382 tracks Linux/Windows readiness after GA;
+off-desktop hand-off (#659) is separate.
 
-**Ask.** Accept L8 as written?
+Decision owner/date: Jonathan Kingston, 2026-08-27.
 
-## D4 — Accept N2 (user Shells tab is unsandboxed)
+## D6 — No enterprise control plane
 
-**Finding.** User-directed terminals spawn with `unsandboxed: true` and
-`decideTerminalPermission` does not prompt where a sandbox is active. Agent
-`run_shell` remains gated.
+Copse will not build SSO, SCIM provisioning, RBAC, a hosted audit-export appliance, or
+compliance attestation for GA. Those features presume a Copse account and hosted backend;
+Copse has neither. This does not waive local permission logging or any local security finding.
 
-**Proposed acceptance.** A terminal the user opened is a user decision, not an
-agent action. Do not reopen #662. User docs now say this plainly
-([docs/user/project-sandbox.md](user/project-sandbox.md),
-[docs/user/approvals.md](user/approvals.md)). Re-review when #623 (ACP
-client-owned terminals) ships a sandboxed terminal backend.
+Decision owner/date: Jonathan Kingston, 2026-08-27.
 
-**Ask.** Accept N2 as written?
+## D7 — Accept N3 (Guarded YOLO)
 
-## D5 — Record R-10 (GA platform)
+Accepted for GA as an explicit user-armed faster mode. In plain terms: while armed for one
+thread and app session, some low-risk commands that need outside-workspace or network access
+may run without their usual extra scope prompt. Credential/broad-path reads and destructive
+forms remain denied; writes, opaque GitHub CLI calls, and dedicated GitHub write tools still
+prompt; contained work keeps the OS sandbox. Re-review if the mode becomes persistent,
+project-wide, remotely armable, or the host-owned harm gate weakens.
 
-**Proposed decision (dated the day you confirm).** General availability is
-**macOS 26 or newer** on Apple Silicon (`arm64`) and Intel (`x64`) only.
-Linux and Windows remain source-development platforms, not GA targets.
-[#802](https://github.com/copse-dev/agent-pane/issues/802) is the public
-distribution channel for that Mac app, not a promise of other platforms.
-[#1382](https://github.com/copse-dev/agent-pane/issues/1382) tracks Linux/Windows
-readiness as post-GA work. Off-desktop hand-off (#659) is a separate product,
-not a substitute GA.
+Acceptance owner/date: Jonathan Kingston, 2026-08-27. Review: next RC or 2026-09-30.
 
-This is already how [SUPPORT.md](../SUPPORT.md) and
-[docs/releasing-macos.md](releasing-macos.md) read. The missing piece is a
-dated owner sentence connecting those files to R-10.
+## D8 — Electron-only first GA
 
-**Ask.** Record R-10 as that paragraph?
+First GA is the Electron app published by `release-mac.yml`. The opt-in Servo/Tauri prototype
+is a development surface, is not packaged by the GA workflow, and makes no GA security or
+support claim until it receives a separate renderer/sidecar/origin review.
 
-## D6 — Record R-21 (no enterprise control plane)
+Decision owner/date: Jonathan Kingston, 2026-08-27.
 
-**Proposed decision (dated the day you confirm).** Copse will **not** build
-SSO, SCIM provisioning, RBAC, a hosted audit-export appliance, or compliance
-attestation. Those features presume a Copse account and a hosted backend. We
-have neither, and [docs/privacy-data-flow.md](privacy-data-flow.md) already
-records “one person per installation” as a non-goal. Enterprise buyers who need
-that plane should not expect it from Copse.
+## D9 — Public distribution sequence
 
-This is not a waiver of [N1](security-review-ga.md) or of local permission
-logging (#656). It is a non-goal for a _hosted_ control plane.
+GitHub Releases is the canonical public download host. Before a stable GA tag, publish and
+install-test a signed and notarized public prerelease from the same release workflow. The
+repository and `copse.dev` download link do not go public until that artifact exists and has
+passed the release checklist.
 
-**Ask.** Record R-21 as that paragraph?
+Decision owner/date: Jonathan Kingston, 2026-08-27.
 
----
+## Human review assignment
 
-## Not asked here
-
-| Item                                                   | Why it is not a D-question                                                                                                                    |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| N1 / #1248                                             | Fixed, not waived. #1763 merged; #1248 is closed.                                                                                             |
-| Human security review + ledger SHA refresh             | Release-engineering bucket C.                                                                                                                 |
-| Make the repository public (#802)                      | Needs a working download URL.                                                                                                                 |
-| Flip `coming-soon` on copse.dev                        | Same gate as #802.                                                                                                                            |
-| VitePress vs `scripts/build.mts` for `copse.dev/docs/` | Open question in [docs/plans/docs-site.md](plans/docs-site.md). The seven user pages are Markdown in `docs/user/` until you pick a generator. |
-
-## After you answer
-
-Reply with accept/rewrite per D1–D6. A follow-up change will stamp owner, date,
-and review date into [security-review-ga.md](security-review-ga.md) and
-[docs/plans/user-control-surface-gaps.md](plans/user-control-surface-gaps.md)
-and will **not** mark any `ga-blocker` issue closed.
+Jonathan Kingston is the human security reviewer and release owner. D1/D2 are merged and were
+re-reviewed on the 2026-08-28 product-code candidate. Jonathan authorized cutting and validating
+beta releases on 2026-08-28. Stable-GA sign-off remains pending until a signed, notarized
+prerelease has been produced and installed successfully and the public/update gates are evidenced.

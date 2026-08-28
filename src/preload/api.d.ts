@@ -2,6 +2,7 @@ import type { StreamChunk, ContextBreakdown } from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
+import type { AgentsListResult } from '@shared/types/agents.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type {
   HooksListResult,
@@ -284,7 +285,12 @@ export interface ApiClient {
   sshPrompt: {
     respond: (id: string, value: string, remember?: boolean) => Promise<void>
     onRequest: (
-      handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
+      handler: (req: {
+        id: string
+        prompt: string
+        kind: 'confirm' | 'secret'
+        canRememberOnDevice: boolean
+      }) => void,
     ) => () => void
   }
   updatePrompt: {
@@ -309,6 +315,8 @@ export interface ApiClient {
     listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
     listConfigAliases: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
     getStates: () => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    listCredentialHostIds: () => Promise<string[]>
+    forgetCredentials: (hostId: string) => Promise<void>
     connect: (
       hostId: string,
     ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
@@ -371,6 +379,13 @@ export interface ApiClient {
       threadId: string,
       patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
     ) => Promise<void>
+    recordModelSelection: (
+      projectId: string,
+      threadId: string,
+      by: 'user' | 'auto',
+      from: string | undefined,
+      to: string,
+    ) => Promise<import('@shared/types').ModelSelectionEvent>
     delete: (projectId: string, threadId: string) => Promise<void>
     /**
      * Zip the thread's whole on-disk directory (spine, prose, blobs, plans,
@@ -606,7 +621,13 @@ export interface ApiClient {
       provider: string,
       key: string,
       opts?: { allowPlaintext?: boolean },
-    ) => Promise<{ ok: true } | { ok: false; reason: 'plaintext-consent-required' }>
+    ) => Promise<
+      | { ok: true }
+      | {
+          ok: false
+          reason: 'plaintext-storage-disabled' | 'plaintext-consent-required'
+        }
+    >
     /** Availability keyed by provider slug: fixed cloud providers + every resolved extra provider. */
     availableProviders: () => Promise<Record<string, boolean>>
     validateKey: (
@@ -698,7 +719,13 @@ export interface ApiClient {
     discoverNearby: () => Promise<VncNearbyServer[]>
     resolveSshHosts: () => Promise<VncSshHostResolution[]>
     getUsername: (target: VncTarget) => Promise<string | null>
+    getPassword: (target: VncTarget) => Promise<string | null>
+    hasPassword: (target: VncTarget) => Promise<boolean>
+    canStoreCredentials: () => Promise<boolean>
     rememberUsername: (target: VncTarget, username: string) => Promise<boolean>
+    rememberPassword: (target: VncTarget, password: string) => Promise<boolean>
+    forgetPassword: (target: VncTarget) => Promise<void>
+    forgetCredentials: (target: VncTarget) => Promise<void>
     start: (connectionId: string) => void
     send: (connectionId: string, bytes: Uint8Array) => void
     close: (connectionId: string) => Promise<void>
@@ -820,6 +847,10 @@ export interface ApiClient {
      * caller can show what would be destroyed and ask again.
      */
     remove: (projectId: string, path: string, force: boolean) => Promise<WorktreeRemovalResult>
+  }
+  /** Discovered subagent definitions, plus what was skipped or shadowed. */
+  agents: {
+    list: () => Promise<AgentsListResult>
   }
   skills: {
     list: () => Promise<SkillSummary[]>

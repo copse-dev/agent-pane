@@ -73,6 +73,7 @@ function createApi(options: {
   promptState?: { startingCommit: string | null; dirty: boolean }
   onExportArchive?: (projectId: string, threadId: string) => void
   onAttachArchive?: (projectId: string, threadId: string, name: string, bytes?: Uint8Array) => void
+  onRecordModelSelection?: ApiClient['threads']['recordModelSelection']
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -189,6 +190,8 @@ function createApi(options: {
       },
       threads: {
         ...base['threads'],
+        recordModelSelection:
+          options.onRecordModelSelection ?? base['threads'].recordModelSelection,
         listOrphans: async () => [],
         // A zip magic number is enough: nothing here unpacks it, and the bytes
         // are only ever asserted on as the payload handed to `archive:attach`.
@@ -242,6 +245,34 @@ async function flush(): Promise<void> {
 
 afterEach(() => {
   document.body.replaceChildren()
+})
+
+describe('input bar running attribution', () => {
+  it('makes the queueing behavior explicit while a turn is running', async () => {
+    const running = thread()
+    running.status = 'running'
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: running.id,
+      threads: [running],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const status = host.querySelector<HTMLElement>('.footer-running')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(status)
+    assert.equal(status.hidden, false)
+    assert.equal(status.textContent, 'Agent running · messages queue')
+    assert.ok(submit)
+    assert.equal(submit.textContent, 'Queue')
+    assert.equal(submit.getAttribute('aria-label'), 'Queue message')
+  })
 })
 
 describe('input bar first-message checkout', () => {
@@ -797,6 +828,65 @@ describe('input bar model recents', () => {
     )
     assert.deepEqual(recentLabels, ['GPT-5.6 Sol', 'Claude Opus 4.8', 'Claude Haiku 4.5'])
   })
+
+  it('records a user-attributed event when the footer picker commits a model', async () => {
+    const active: Thread = {
+      ...thread(),
+      id: 'thread-active',
+      model: 'gpt-5.6-sol',
+      updatedAt: 1,
+    }
+    const recent: Thread = {
+      ...thread(),
+      id: 'thread-recent',
+      model: 'claude-haiku-4-5',
+      updatedAt: 2,
+    }
+    const calls: unknown[][] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: active.id,
+      threads: [active, recent],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRecordModelSelection: async (...args) => {
+          calls.push(args)
+          return {
+            id: 'selection-1',
+            recordedAt: 10,
+            by: 'user',
+            from: 'gpt-5.6-sol',
+            to: 'claude-haiku-4-5',
+          }
+        },
+      }),
+    )
+    await flush()
+
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    const option = host.querySelector<HTMLButtonElement>(
+      '.model-picker-option[data-value="claude-haiku-4-5"]',
+    )
+    assert.ok(option)
+    option.click()
+    await settle()
+
+    assert.deepEqual(calls, [
+      ['project-1', 'thread-active', 'user', 'gpt-5.6-sol', 'claude-haiku-4-5'],
+    ])
+    assert.equal(
+      store.getState().threads.find((candidate) => candidate.id === active.id)?.model,
+      'claude-haiku-4-5',
+    )
+  })
 })
 
 /** A thread with one persisted message, which is what makes it exportable. */
@@ -1026,6 +1116,9 @@ describe('input bar branch mismatch warning', () => {
     assert.ok(submitBtn)
     composer.textContent = 'Follow up in the worktree'
     submitBtn.click()
+    // `flush`, not `settle`: submit resolves the skill *and* agent catalogs
+    // before dispatching, so the run is a macrotask away rather than a fixed
+    // number of microtask ticks.
     await flush()
 
     assert.equal(runs, 1)
@@ -1092,9 +1185,10 @@ describe('input bar attachments across a thread switch', () => {
    * `blobs/media/`. Carrying the chip to another thread recorded a path into a
    * directory the receiving thread does not own — observed in the wild as a
    * thread whose `meta.archives` pointed into a different thread's blobs, which
-   * dangles the moment the original thread is deleted.
+   * dangles the moment the original thread is deleted. Draft chips stay with
+   * the attaching thread and come back when the user returns.
    */
-  it('drops attachment chips when the active thread changes', async () => {
+  it('does not carry attachment chips onto a different thread', async () => {
     const first = thread()
     const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
     const store = createStore({
@@ -1128,6 +1222,132 @@ describe('input bar attachments across a thread switch', () => {
       0,
       'switching threads clears the chip rather than re-homing it',
     )
+  })
+
+  it('restores draft attachment chips when returning to the attaching thread', async () => {
+    const first = thread()
+    const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      threads: [first, second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers, 'composer registered its attachment handlers')
+    handlers.attachImage('data:image/png;base64,abc', 'image/png')
+    await handlers.attachArchive({ name: 'bundle.zip', bytes: new ArrayBuffer(8) })
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    composer.textContent = 'look at this'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+
+    store.setState({ activeThreadId: second.id })
+    store.emit('threads_changed')
+    await settle()
+    assert.equal(host.querySelectorAll('.attachment-chips .image-chip').length, 0)
+    assert.equal(host.querySelectorAll('.attachment-chips .archive-chip').length, 0)
+
+    store.setState({ activeThreadId: first.id })
+    store.emit('threads_changed')
+    await settle()
+
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .image-chip').length,
+      1,
+      'the image chip returns with the draft',
+    )
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .archive-chip').length,
+      1,
+      'the archive chip returns with the draft',
+    )
+    assert.equal(composer.textContent, 'look at this')
+  })
+
+  it('returns archives and videos that finish storing after a switch to their original thread', async () => {
+    const first = thread()
+    const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      threads: [first, second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const api = createApi({ currentBranch: 'main' })
+    let resolveArchive: ((ref: ArchiveAttachmentRef) => void) | undefined
+    let resolveVideo: ((ref: Awaited<ReturnType<ApiClient['video']['attach']>>) => void) | undefined
+    api.archive = {
+      ...api.archive,
+      attach: (): Promise<ArchiveAttachmentRef> =>
+        new Promise<ArchiveAttachmentRef>((resolve) => {
+          resolveArchive = resolve
+        }),
+    }
+    api.video = {
+      ...api.video,
+      attach: (): Promise<Awaited<ReturnType<ApiClient['video']['attach']>>> =>
+        new Promise<Awaited<ReturnType<ApiClient['video']['attach']>>>((resolve) => {
+          resolveVideo = resolve
+        }),
+    }
+    mountInputBar(host, store, api)
+    await settle()
+
+    const handlers = getPromptAttachmentHandlers()
+    assert.ok(handlers)
+    const archivePending = handlers.attachArchive({
+      name: 'late.zip',
+      bytes: new ArrayBuffer(8),
+    })
+    const videoPending = handlers.attachVideo({
+      name: 'late.webm',
+      mimeType: 'video/webm',
+      bytes: new ArrayBuffer(8),
+    })
+
+    store.setState({ activeThreadId: second.id })
+    store.emit('threads_changed')
+    await settle()
+    assert.ok(resolveArchive)
+    assert.ok(resolveVideo)
+    resolveArchive({
+      path: `/store/${first.id}/blobs/media/late.zip`,
+      name: 'late.zip',
+      sizeBytes: 8,
+    })
+    resolveVideo({
+      path: `/store/${first.id}/blobs/media/late.webm`,
+      name: 'late.webm',
+      mimeType: 'video/webm',
+      sizeBytes: 8,
+    })
+    await Promise.all([archivePending, videoPending])
+    await settle()
+
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .archive-chip, .attachment-chips .video-chip')
+        .length,
+      0,
+      'late storage does not leak either chip into the newly active thread',
+    )
+
+    store.setState({ activeThreadId: first.id })
+    store.emit('threads_changed')
+    await settle()
+
+    assert.equal(host.querySelectorAll('.attachment-chips .archive-chip').length, 1)
+    assert.equal(host.querySelectorAll('.attachment-chips .video-chip').length, 1)
   })
 
   it('binds a stored archive to the thread that was active when it was attached', async () => {

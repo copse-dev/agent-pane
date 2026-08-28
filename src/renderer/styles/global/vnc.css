@@ -197,7 +197,7 @@
 .vnc-field-hint {
   color: var(--text-muted);
   font-size: var(--font-size-xs);
-  line-height: 1.4;
+  line-height: var(--line-height-base);
 }
 
 .vnc-auth-panel {
@@ -221,7 +221,7 @@
 .vnc-auth-description {
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
-  line-height: 1.4;
+  line-height: var(--line-height-base);
 }
 
 .vnc-auth-input {
@@ -233,6 +233,25 @@
   -webkit-text-security: disc;
 }
 
+.vnc-remember-password {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-base);
+}
+
+.vnc-remember-password[hidden] {
+  display: none;
+}
+
+.vnc-forget-login {
+  align-self: flex-start;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
 .vnc-authenticate-btn {
   justify-content: center;
   width: 100%;
@@ -242,7 +261,7 @@
 .vnc-nearby-status {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
-  line-height: 1.4;
+  line-height: var(--line-height-base);
   overflow-wrap: anywhere;
 }
 
@@ -265,7 +284,7 @@
   padding: var(--spacing-sm);
   color: var(--warning);
   font-size: var(--font-size-xs);
-  line-height: 1.4;
+  line-height: var(--line-height-base);
   background: color-mix(in srgb, var(--warning) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
   border-radius: var(--radius);
@@ -302,10 +321,14 @@
   background: var(--bg-hover);
 }
 
+/* Selected discovered port. This row is a rounded card, so the accent reads as a
+   ring on all four sides — an inset shadow is clipped to the border-radius, so a
+   leading rail (`inset 2px 0 0`) would bow around the top-left and bottom-left
+   corners. Same accent wash as `.provider-chip.active`. */
 .vnc-discovered-port.selected {
   color: var(--text-primary);
   border-color: var(--accent);
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .vnc-status {
@@ -315,7 +338,7 @@
   padding-left: var(--spacing-sm);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
-  line-height: 1.4;
+  line-height: var(--line-height-base);
   border-left: 2px solid var(--border);
   overflow-wrap: anywhere;
 }
@@ -348,7 +371,7 @@
   margin: auto 0 0;
   color: var(--text-muted);
   font-size: var(--font-size-sm);
-  line-height: 1.45;
+  line-height: var(--line-height-base);
 }
 
 .vnc-viewer-host {

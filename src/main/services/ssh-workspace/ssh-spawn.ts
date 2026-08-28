@@ -68,7 +68,7 @@ export async function spawnRemoteShellCommand(
   const remoteEnv = mergeRemoteEnv(opts.env)
   const body = buildRemoteShellCommand(shellCommandLine, undefined, remoteEnv)
   const wrapped = wrapRemoteShellWithPgid(opts.remoteRoot, body)
-  const askpass = leaseSshAskpassEnv(process.env)
+  const askpass = leaseSshAskpassEnv(process.env, opts.hostId)
   const args = sshExecArgs(host, wrapped)
   const stdout = new PassThrough()
   const proc = spawn('ssh', args, {
@@ -103,7 +103,7 @@ export async function buildRemotePtyLaunch(
   // Shell assignments + builtin exec (not `env … exec`, which looks up `exec` as a binary).
   const remoteEnv = remotePtyEnv(env)
   const remoteCmd = buildRemotePtyCommand(shell, remoteRoot, remoteEnv)
-  const askpass = leaseSshAskpassEnv(process.env)
+  const askpass = leaseSshAskpassEnv(process.env, hostId)
   return {
     file: 'ssh',
     args: sshPtyArgs(host, remoteCmd),

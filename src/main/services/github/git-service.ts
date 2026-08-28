@@ -1129,11 +1129,20 @@ async function resolveDefaultBranch(root: string): Promise<string | null> {
   return null
 }
 
-/** Whether the repository declares submodules, which isolated checkout seeding cannot preserve. */
-export async function repositoryHasSubmodules(
+/**
+ * The `.gitmodules` that disables isolated checkout for `root`, or null.
+ *
+ * Returns the path rather than a boolean because the answer is otherwise
+ * unfalsifiable after the fact. Blocking a checkout for "submodules
+ * unsupported" names no file, so a wrong answer — a walk that escaped to an
+ * enclosing checkout, a declaration that appeared and vanished — is
+ * indistinguishable from a right one, and the operator is left inferring the
+ * filesystem from a symptom.
+ */
+export async function findSubmoduleDeclaration(
   root: string | null = getAgentExecutionRoot(),
-): Promise<boolean> {
-  if (!root) return false
+): Promise<string | null> {
+  if (!root) return null
   // Do not mix a sandboxed Git answer with an unsandboxed filesystem probe.
   // In particular, a project nested beneath another checkout (or mounted into
   // a sandbox) can make `rev-parse --show-toplevel` name the enclosing repo,
@@ -1147,16 +1156,27 @@ export async function repositoryHasSubmodules(
       break
     } catch {
       const parent = dirname(repositoryRoot)
-      if (parent === repositoryRoot) return false
+      if (parent === repositoryRoot) return null
       repositoryRoot = parent
     }
   }
+  const declaration = join(repositoryRoot, '.gitmodules')
   try {
-    await fsp.access(join(repositoryRoot, '.gitmodules'))
-    return true
+    // Linux sandbox setup can briefly materialize an empty deny-path sentinel
+    // at this exact location. Existence alone therefore is not evidence that
+    // the repository declares submodules. A real declaration has content; an
+    // empty file is semantically equivalent to no .gitmodules entries anyway.
+    return (await fsp.readFile(declaration, 'utf8')).trim() ? declaration : null
   } catch {
-    return false
+    return null
   }
+}
+
+/** Whether the repository declares submodules, which isolated checkout seeding cannot preserve. */
+export async function repositoryHasSubmodules(
+  root: string | null = getAgentExecutionRoot(),
+): Promise<boolean> {
+  return (await findSubmoduleDeclaration(root)) !== null
 }
 
 export async function getGitFileDiff(
