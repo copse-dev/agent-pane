@@ -1,14 +1,23 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, promises as fsPromises, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
+import { mock } from 'node:test'
 import type { Message, Thread } from '@shared/types'
-import { loadProjectThreads, saveProjectThreads } from '../src/main/services/thread-store.ts'
+import {
+  appendMessage,
+  loadProjectThreads,
+  saveProjectThread,
+  saveProjectThreads,
+} from '../src/main/services/thread-store.ts'
 
 /**
  * Benchmark entry for the filesystem-native thread store (issue #644). Bundled +
  * run by `bench-thread-store.mts`. Seeds N threads x M messages and measures the
  * stable load path (`loadProjectThreads`, cold) plus the Phase-1 bulk-save path.
+ * It also measures a steady-state finalized-message append after the per-thread
+ * ID cache is warm at small, medium, and large existing spine sizes, including
+ * observed spine read/write operations and bytes.
  *
  * Load is the number that matters: it is the tripwire for the deferred snapshot
  * cache (Phase 6). The save path is the throwaway whole-thread rewrite that
@@ -21,6 +30,7 @@ interface Args {
   messages: number
   resultBytes: number
   iters: number
+  appendSizes: number[]
 }
 
 function parseArgs(argv: string[]): Args {
@@ -33,6 +43,12 @@ function parseArgs(argv: string[]): Args {
     messages: get('messages', 100),
     resultBytes: get('result-bytes', 1500),
     iters: get('iters', 5),
+    appendSizes: (
+      argv.find((a) => a.startsWith('--append-sizes=')) ?? '--append-sizes=100,1000,10000'
+    )
+      .slice('--append-sizes='.length)
+      .split(',')
+      .map(Number),
   }
 }
 
@@ -92,6 +108,82 @@ function pct(sorted: number[], p: number): number {
   return sorted[idx] ?? 0
 }
 
+function dataBytes(value: unknown): number {
+  if (typeof value === 'string') return Buffer.byteLength(value)
+  if (ArrayBuffer.isView(value)) return value.byteLength
+  return 0
+}
+
+interface AppendMeasurement {
+  historyMessages: number
+  existingSpineBytes: number
+  latencyMs: number
+  spineReadOps: number
+  spineReadBytes: number
+  spineAppendOps: number
+  spineAppendBytes: number
+  spineRewriteOps: number
+  spineRewriteBytes: number
+  spineGrowthBytes: number
+}
+
+async function measureAppend(
+  root: string,
+  historyMessages: number,
+  resultBytes: number,
+): Promise<AppendMeasurement> {
+  const projectId = `append-${String(historyMessages)}`
+  const threadId = 'history'
+  const seededThread = makeThreads(1, historyMessages, resultBytes)[0]
+  if (!seededThread) throw new Error('append benchmark failed to create its seed thread')
+  const benchmarkThread: Thread = { ...seededThread, id: threadId }
+  await saveProjectThread(projectId, benchmarkThread)
+  // First append pays the one-time ID-cache seed. Measure the ordinary steady
+  // state after that cache is warm; a per-append full read here is the
+  // quadratic regression this benchmark exists to expose.
+  await appendMessage(projectId, threadId, {
+    id: 'warm-cache',
+    role: 'user',
+    content: 'warm message-id cache',
+    toolCalls: [],
+    createdAt: historyMessages + 1,
+  })
+  const eventsPath = join(root, projectId, threadId, 'events.jsonl')
+  const existingSpineBytes = statSync(eventsPath).size
+  const readSpy = mock.method(fsPromises, 'readFile')
+  const appendSpy = mock.method(fsPromises, 'appendFile')
+  const writeSpy = mock.method(fsPromises, 'writeFile')
+  const started = performance.now()
+  await appendMessage(projectId, threadId, {
+    id: 'measured-append',
+    role: 'user',
+    content: 'measured steady-state append',
+    toolCalls: [],
+    createdAt: historyMessages + 2,
+  })
+  const latencyMs = performance.now() - started
+  mock.restoreAll()
+  const finalSpineBytes = statSync(eventsPath).size
+  const spineReads = readSpy.mock.calls.filter((call) => call.arguments[0] === eventsPath)
+  const spineAppends = appendSpy.mock.calls.filter((call) => call.arguments[0] === eventsPath)
+  const spineRewrites = writeSpy.mock.calls.filter((call) => call.arguments[0] === eventsPath)
+  return {
+    historyMessages,
+    existingSpineBytes,
+    latencyMs: Math.round(latencyMs * 100) / 100,
+    spineReadOps: spineReads.length,
+    spineReadBytes: spineReads.length * existingSpineBytes,
+    spineAppendOps: spineAppends.length,
+    spineAppendBytes: spineAppends.reduce((total, call) => total + dataBytes(call.arguments[1]), 0),
+    spineRewriteOps: spineRewrites.length,
+    spineRewriteBytes: spineRewrites.reduce(
+      (total, call) => total + dataBytes(call.arguments[1]),
+      0,
+    ),
+    spineGrowthBytes: finalSpineBytes - existingSpineBytes,
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
   const root = mkdtempSync(join(tmpdir(), 'copse-bench-'))
@@ -118,6 +210,10 @@ async function main(): Promise<void> {
       loads.push(ms)
     }
     loads.sort((a, b) => a - b)
+    const appends: AppendMeasurement[] = []
+    for (const historyMessages of args.appendSizes) {
+      appends.push(await measureAppend(root, historyMessages, args.resultBytes))
+    }
 
     const result = {
       params: args,
@@ -129,6 +225,7 @@ async function main(): Promise<void> {
         p95: Math.round(pct(loads, 95)),
         max: Math.round(loads[loads.length - 1] ?? 0),
       },
+      appends,
     }
     console.log(
       `threads=${String(args.threads)} messages/thread=${String(args.messages)} result-bytes=${String(args.resultBytes)} (${String(totalMessages)} messages total)`,
@@ -139,6 +236,11 @@ async function main(): Promise<void> {
     console.log(
       `  cold load : p50 ${String(result.loadMs.p50)} ms | p95 ${String(result.loadMs.p95)} ms | min ${String(result.loadMs.min)} | max ${String(result.loadMs.max)} (n=${String(args.iters)})`,
     )
+    for (const append of appends) {
+      console.log(
+        `  append ${String(append.historyMessages).padStart(5)} msgs: ${String(append.latencyMs)} ms | existing ${String(append.existingSpineBytes)} B | read ${String(append.spineReadBytes)} B/${String(append.spineReadOps)} op | append ${String(append.spineAppendBytes)} B/${String(append.spineAppendOps)} op | rewrite ${String(append.spineRewriteBytes)} B/${String(append.spineRewriteOps)} op`,
+      )
+    }
     console.log(`BENCH_JSON ${JSON.stringify(result)}`)
   } finally {
     rmSync(root, { recursive: true, force: true })
