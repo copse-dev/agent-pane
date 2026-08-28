@@ -268,6 +268,7 @@ const ArchNode = z.object({
 const ArchView = z.object({
   id: z.string(),
   label: z.string(),
+  initialNodeId: z.string().optional(),
   lanes: z.array(z.object({ label: z.string() })),
   nodes: z.array(ArchNode).min(1),
   // [from, to, label] plus an optional `external` flag the diagram styles with.
