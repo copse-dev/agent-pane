@@ -371,23 +371,23 @@ cut from.
 | Event                                     | Tier                                           |
 | ----------------------------------------- | ---------------------------------------------- |
 | PR into `main`, oracle thinned it         | light **plus the e2e subset the oracle chose** |
-| PR into `main`, oracle says `full`        | light — precheck, check, build (no e2e/bench)  |
+| PR into `main`, oracle says `full`        | light **plus full e2e** (8 shards; no bench)   |
 | Push to `main` (a merge landed)           | light                                          |
 | PR from `main` into `release` (promotion) | **full** — adds e2e (8 shards) and bench       |
 | Push to `release` (a promotion landed)    | **full**                                       |
 | Nightly `schedule`, release tags          | **full**, on GitHub-hosted runners             |
 
-The point is that bench, and the _whole_ e2e suite, are paid once per
-_promotion_ rather than once per PR. At ~20 merges a day that is the difference
-between ~20 heavy runs and a handful.
+The semantic and agent benchmark tier is paid once per _promotion_ rather than
+once per PR. Full e2e is also repeated at promotion, but it first runs on any PR
+whose change cannot be bounded safely to a subset.
 
-A PR the oracle can thin is the exception, and a deliberately cheap one. `subset`
-is only emitted when the change is not broad, confidence is not `low`, and the
-selection is **at most half the suite** (`computePlan` in `scripts/test-oracle.mts`)
-— so those PRs get their own specs back without anyone paying for a full run, and
-the shard matrix is already sized to the plan. Everything the oracle refuses to
-thin still comes back as `full` and still waits for the promotion, the nightly, or
-a label.
+A PR the oracle can thin is the deliberately cheap path. `subset` is only emitted
+when the change is not broad, confidence is not `low`, and the selection is **at
+most half the suite** (`computePlan` in `scripts/test-oracle.mts`) — so those PRs
+get their own specs back without anyone paying for a full run, and the shard
+matrix is already sized to the plan. Everything the oracle refuses to thin comes
+back as `full` and runs all eight shards before merge. Uncertainty increases the
+gate; it never suppresses it.
 
 Two consequences of running e2e on those PRs, both intended:
 
@@ -400,18 +400,17 @@ Two consequences of running e2e on those PRs, both intended:
 
 Two escape hatches on a `main`-targeted PR, both labels:
 
-- `ci-full` — run the whole heavy tier now, for a change that genuinely needs
-  the signal before it merges (also forces the tier on a draft).
+- `ci-full` — override a subset plan and run the whole heavy tier (also forces
+  the tier on a draft).
 - `update-screenshots` — run e2e specifically, because the screenshot commit is
   produced by the e2e run. Without this the label would be inert on a
   `main` PR.
 
-**What this costs.** GitHub's merge queue would bisect a failing batch
-automatically; a red promotion names a batch, not a commit. Keep promotions
-frequent enough that the batch stays small, and read the failing e2e spec name
-first — it usually identifies its own owner. There is no merge queue to fall
-back on: it requires GitHub Enterprise Cloud for private repositories and this
-org is on Team.
+**What this costs.** Broad and LOW-confidence PRs pay for the complete Electron
+suite. That is intentional: those are the changes for which a selector-derived
+subset has the weakest evidence. Promotion still repeats the full suite as a
+release-branch/environment gate, but a red promotion should no longer be the
+first time an ordinary merged change meets e2e.
 
 **Hotfixes.** A commit pushed straight to `release` must be merged back into
 `main` immediately, or the branches drift and the next promotion carries a
