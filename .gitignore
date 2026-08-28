@@ -15,7 +15,6 @@ assets/icons/**/app.iconset/
 assets/icons/app.icns
 assets/icons/*/app.icns
 vendor/gortex/
-vendor/bundled-cursor-skills/
 .tmp/
 .DS_Store
 *.log
