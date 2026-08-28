@@ -160,7 +160,9 @@ A typical Electron fixture flow is:
    `npm run test:e2e -- --spec tests/e2e/tool-display-live-mock.e2e.ts`.
 5. Inspect the resulting image under `tests/e2e/screenshots/`.
 
-The test oracle defines screenshot ownership. CI writes back only images mapped to the diff (plus
-images deliberately committed on the branch). If a real visual change is not mapped, apply the
-`update-screenshots` label. The policy is implemented by `scripts/lib/screenshot-scope.mts`; fixture
-determinism and tier selection are documented in [`testing-strategy.md`](testing-strategy.md).
+The test oracle defines screenshot ownership. CI attaches changed renders as an immutable artifact;
+it never commits or merges them into the branch. Download the candidate artifact, review it locally,
+and commit the intended PNGs yourself. If a real visual change is not mapped, apply the
+`update-screenshots` label to render the complete reference set, then remove the label after using the
+artifact. Local filtering is implemented by `scripts/lib/screenshot-scope.mts`; fixture determinism
+and tier selection are documented in [`testing-strategy.md`](testing-strategy.md).

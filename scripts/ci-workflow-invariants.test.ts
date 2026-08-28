@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
@@ -226,22 +226,24 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
-  it('retires the update-screenshots label once the refresh has been committed', () => {
-    // Nothing else removes it, and left on it stops being a request and becomes
-    // a mode: the plan step forces mode=full and the label punches through the
-    // `base_ref == release` guard on e2e, so a trunk PR re-runs 8 Electron
-    // shards on every push forever (#1569).
-    const job = jobBlock('commit-screenshots')
-    assert.match(job, /name: Retire the update-screenshots label/)
-    assert.match(
-      job,
-      /-X DELETE[\s\S]*?issues\/\$\{PR_NUMBER\}\/labels\/update-screenshots/,
-      'the label must be deleted through the issues labels API',
+  it('publishes screenshot candidates without mutating the PR branch', () => {
+    const job = jobBlock('screenshot-artifacts')
+    assert.match(job, /permissions:\n {6}contents: read/)
+    assert.match(job, /name: reference-screenshot-candidates-\$\{\{ github\.run_id \}\}/)
+    assert.match(job, /retention-days: 14/)
+    assert.doesNotMatch(job, /contents: write|pull-requests: write/)
+    assert.doesNotMatch(job, /git (?:commit|merge|push)|actions\/create-github-app-token/)
+    assert.equal(
+      existsSync(resolve('.github/workflows/reconcile-screenshots.yml')),
+      false,
+      'base-branch pushes must not mutate every open PR to reconcile binary screenshots',
     )
+
+    const aggregate = jobBlock('ci-passed')
     assert.match(
-      job,
-      /pull-requests: write/,
-      'removing a label needs pull-requests: write on this job',
+      aggregate,
+      /needs: \[precheck, check, bench, build, e2e, screenshot-artifacts\]/,
+      'the aggregate must wait until immutable screenshot evidence is published',
     )
   })
 
@@ -266,10 +268,10 @@ describe('ci.yml workflow invariants', () => {
     // queued behind the fleet. If the PR merges meanwhile, auto-delete takes the
     // head branch and `checkout` with `ref: github.head_ref` dies with "branch
     // not found" — a red X on an already-merged PR, and pure noise, since there
-    // is no longer a branch to push to. `commit-screenshots` hit this first
-    // (#1001) and `autoformat` reddened 11 of 26 PRs in one night before getting
-    // the same guard. Any future job that checks out the head ref needs it too.
-    for (const name of ['autoformat', 'commit-screenshots']) {
+    // is no longer a branch to push to. `autoformat` reddened 11 of 26 PRs in one
+    // night before getting this guard. Any future job that checks out the head
+    // ref needs it too.
+    for (const name of ['autoformat']) {
       const job = jobBlock(name)
       assert.match(job, /id: head\n/, `${name} must probe the head branch before checking it out`)
       assert.match(
@@ -295,44 +297,6 @@ describe('ci.yml workflow invariants', () => {
       workflow,
       /^ {4}branches: \[release, main\]$/m,
       'push must cover main (where merges land) and release (where promotions land)',
-    )
-  })
-
-  it('reconciles screenshots against the PR base branch, never a hardcoded one', () => {
-    // This job merges the base branch into the PR head to clear binary conflicts
-    // in reference PNGs. Hardcoding a branch name here fails SILENTLY: if the
-    // named branch is already an ancestor of the PR base, `git merge` reports
-    // "Already up to date" and the reconciliation never happens. That is exactly
-    // what the pre-rename `origin/main` literal did on `develop`-based PRs, and
-    // no run ever went red over it. Drive it from `github.base_ref` so both
-    // tiers reconcile against the branch they will actually merge into.
-    const job = workflow.match(/^ {2}commit-screenshots:\n(?: {4}.*\n| *\n)+/m)?.[0]
-    assert.ok(job, 'expected a `commit-screenshots:` job in ci.yml')
-    assert.match(
-      job,
-      /BASE_REF: \$\{\{ github\.base_ref \}\}/,
-      'commit-screenshots must derive the reconciliation target from github.base_ref',
-    )
-    // Comments legitimately name `origin/main` when describing a script default;
-    // only executable lines are the contract here.
-    const executable = job
-      .split('\n')
-      .filter((line) => !/^\s*#/.test(line))
-      .join('\n')
-    assert.doesNotMatch(
-      executable,
-      /origin\/main(?![.\w])/,
-      'commit-screenshots must not hardcode origin/main — use "origin/$BASE_REF"',
-    )
-    assert.match(
-      job,
-      /git merge --no-commit --no-ff "origin\/\$BASE_REF"/,
-      'the reconcile merge must target the base branch',
-    )
-    assert.match(
-      job,
-      /SCREENSHOT_MAIN_REF: origin\/\$\{\{ github\.base_ref \}\}/,
-      'filter-screenshots.mts defaults to origin/main; it must be pointed at the PR base',
     )
   })
 
@@ -558,33 +522,6 @@ describe('release-publish.yml workflow invariants', () => {
       /if: \$\{\{ !github\.event\.repository\.private \}\}\n {8}uses: actions\/attest/,
     )
     assert.match(workflow, /if: github\.event\.repository\.private/)
-  })
-})
-
-describe('reconcile-screenshots.yml workflow invariants', () => {
-  const workflow = readFileSync(resolve('.github/workflows/reconcile-screenshots.yml'), 'utf8')
-
-  it('attempts the push before handing a workflow-file merge to a human', () => {
-    // The hand-off must be driven by a REFUSED push, never by merely noticing a
-    // .github/workflows change in the merge. Bailing pre-emptively made the
-    // hand-off unconditional: it fired even when the token had `workflow` scope,
-    // and because one base commit under .github/workflows/ lands in every stale
-    // branch's merge, a single such commit handed off every open PR at once
-    // (11 in one run, none with a real conflict).
-    const step = workflow.match(/git add tests\/e2e\/screenshots\/[\s\S]*?(?=\n {6}- name:)/)?.[0]
-    assert.ok(step, 'expected the reconcile merge step in reconcile-screenshots.yml')
-    assert.match(step, /if git push; then/, 'the push must be attempted, not assumed to fail')
-    assert.doesNotMatch(
-      step,
-      /wf="\$\([^)]*\)"\s*\n\s*if \[ -n "\$wf" \]; then\s*\n[\s\S]{0,200}?git merge --abort/,
-      'must not abort the merge on workflow-file detection alone',
-    )
-  })
-
-  it('leaves the branch untouched when the push is refused', () => {
-    // A refused push must not leave a local merge commit behind or half-apply the
-    // reconcile; the branch has to end up exactly as it was found.
-    assert.match(workflow, /git reset --hard HEAD~1/)
   })
 })
 

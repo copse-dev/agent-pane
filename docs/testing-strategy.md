@@ -354,13 +354,13 @@ When you add an e2e screenshot, ask: _if I rebuild this on a different branch,
 on a different day, on a different machine — does any pixel move?_ If yes, pin
 the source through a fixture or an e2e env override before committing the PNG.
 
-CI's `commit-screenshots` job auto-commits re-rendered shots **only when the
-write is uncontested**: the baseline is brand new or inherited untouched from
-main. A shot deliberately committed on the PR branch (by any non-bot author),
-or one main has changed since the merge-base, is never overridden — the
-branch's committed version stands, and the PR comment shows a base-vs-branch
-comparison instead. Add the `update-screenshots` label to explicitly regenerate
-and take CI's render (`scripts/filter-screenshots.mts` implements the policy).
+CI never writes rendered PNGs back to a PR branch. Successful e2e shards upload
+their changed shots, and `screenshot-artifacts` combines them into the immutable
+`reference-screenshot-candidates-<run-id>` artifact. Download that artifact,
+copy its `tests/e2e/screenshots/` contents into the checkout, review the image
+diff, and commit only the intentional updates. `pnpm run filter:screenshots` is
+available locally after copying the candidates to discard known render noise
+and shots outside the diff's ownership map; it is an aid, not an author.
 
 ## Where each tier runs: `main` and `release`
 
@@ -393,18 +393,17 @@ Two consequences of running e2e on those PRs, both intended:
 
 - a failing subset turns `CI Passed` red on an ordinary `main` PR, where before
   e2e could not fail one at all; and
-- `commit-screenshots` now runs there too, so reference shots touched by the
-  specs that ran are refreshed automatically. It only copies shots the shards
-  actually produced and still reverts sub-threshold noise and contested
-  baselines, so a subset run cannot prune or overwrite shots it never rendered.
+- `screenshot-artifacts` preserves reference shots touched by the specs that ran
+  as immutable review evidence. It only includes shots the shards actually
+  produced, and never edits the branch.
 
 Two escape hatches on a `main`-targeted PR, both labels:
 
 - `ci-full` — run the whole heavy tier now, for a change that genuinely needs
   the signal before it merges (also forces the tier on a draft).
-- `update-screenshots` — run e2e specifically, because the screenshot commit is
-  produced by the e2e run. Without this the label would be inert on a
-  `main` PR.
+- `update-screenshots` — run e2e specifically and render the complete reference
+  set into a candidate artifact. Remove the label after downloading the run you
+  intend to review.
 
 **What this costs.** GitHub's merge queue would bisect a failing batch
 automatically; a red promotion names a batch, not a commit. Keep promotions
