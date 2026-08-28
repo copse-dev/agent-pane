@@ -60,12 +60,15 @@ reaches `release`, not after.
       ([`releasing-macos.md`](releasing-macos.md#required-credentials)). The
       workflow refuses to package without them.
 - [ ] Let the `Release (macOS)` workflow perform its clean install, package,
-      sign, notarize, staple, runtime smoke test, and artifact attestation.
-      Attestation is skipped, with a warning, while the repository is private.
+      sign, notarize, staple, and runtime smoke test, then retain its immutable
+      Actions artifact. It must not create a GitHub Release directly.
 - [ ] Verify the app embeds `LSMinimumSystemVersion=26.0` and both architecture
       artifacts contain matching signed `gortex` helpers.
-- [ ] Publish the tested DMGs, zips, blockmaps, channel metadata, checksums, and
-      reviewed notes together. Do not rebuild or publish locally.
+- [ ] Review and install-test the Actions artifact, make the repository public,
+      then manually run `Publish release artifacts` with the matching tag and
+      successful source run ID. Let it verify, attest, and publish the tested
+      DMGs, zips, blockmaps, channel metadata, checksums, and notes together.
+      Do not rebuild or publish locally.
 - [ ] Confirm the published artifacts and release notes identify the same
       version, channel, minimum OS, and architectures.
 - [ ] After the GitHub Release exists, reset `Unreleased` for subsequent work in
