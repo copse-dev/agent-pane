@@ -232,31 +232,8 @@ export const closeConfirmRespondSchema = z.tuple([z.uuid(), z.boolean()])
 
 export const zSshHostId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
 
-export const providerSchema = z.enum([
-  'anthropic',
-  'openai',
-  'lmstudio',
-  'cursor',
-  'openrouter',
-  'mistral',
-  'gemini',
-  'deepseek',
-])
-
-// Cloud providers the renderer can query availability for and validate keys
-// against (everything in `providerSchema` except the local LM Studio server).
-export const cloudProviderSchema = z.enum([
-  'anthropic',
-  'openai',
-  'cursor',
-  'openrouter',
-  'mistral',
-  'gemini',
-  'deepseek',
-])
-
-// Any provider key slug: the fixed providers above plus arbitrary user-added
-// custom-provider slugs (URL-safe, derived from a base-URL hostname).
+// Any provider key slug: built-in providers plus arbitrary user-added custom
+// provider slugs (URL-safe, derived from a base-URL hostname).
 export const keyProviderSchema = z.string().regex(/^[a-z0-9-]{1,64}$/)
 
 // Model ids to resolve card links for. Bounded because the renderer batches a
