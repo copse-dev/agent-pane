@@ -156,12 +156,16 @@ async function inspectProject(project: Project, isLocal: boolean): Promise<Check
       hasSubmodules: false,
     }
   }
-  const [currentBranch, defaultBranch, status, submoduleDeclaration] = await Promise.all([
+  const [currentBranch, defaultBranch, status] = await Promise.all([
     getCurrentBranchName(project.path),
     getDefaultBranch(project.path),
     getGitStatus(project.path),
-    findSubmoduleDeclaration(project.path),
   ])
+  // The Linux sandbox used by read-only Git commands can briefly materialize
+  // deny-path sentinels such as `.gitmodules`. Do not race the raw filesystem
+  // probe against getGitStatus's sandbox lifecycle or a repository without
+  // submodules can be rejected as if that transient guard were a declaration.
+  const submoduleDeclaration = await findSubmoduleDeclaration(project.path)
   return {
     isGitRepository: true,
     currentBranch,
