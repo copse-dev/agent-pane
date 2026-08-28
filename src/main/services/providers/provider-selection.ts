@@ -103,27 +103,9 @@ export function isBillableModel(model: string): boolean {
 
 // Fetch the first model id a local OpenAI-compatible server has loaded. Routes
 // through the shared cache so repeated callers don't each pay a network round-trip.
-export async function fetchFirstLocalModel(baseURL: string): Promise<string | null> {
+async function fetchFirstLocalModel(baseURL: string): Promise<string | null> {
   const result = await fetchLmStudioModelsCached(baseURL)
   return result.models[0]?.id ?? null
-}
-
-/**
- * Resolve an LM Studio model id for a given role: the role's configured setting,
- * else the shared `localDefaultModel`, else the first model the server has loaded.
- */
-export async function resolveLocalModelId(
-  roleKey: string,
-  url: string,
-  roleDefault = '',
-): Promise<string | null> {
-  const configured = normalizeRoleModelSelection(routedModelSetting(roleKey, roleDefault))
-  if (configured.startsWith('lmstudio:')) return configured.slice('lmstudio:'.length)
-  const fallback = normalizeRoleModelSelection(
-    getSettingTrimmed('localDefaultModel', LM_STUDIO_MODEL_IDS.chat),
-  )
-  if (fallback.startsWith('lmstudio:')) return fallback.slice('lmstudio:'.length)
-  return fetchFirstLocalModel(url)
 }
 
 function defaultOnDeviceModelSelection(): string {
