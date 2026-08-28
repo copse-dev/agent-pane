@@ -8,6 +8,9 @@ every published entry.
 
 ## Unreleased
 
+- The macOS packaged-runtime smoke test now waits for its PTY helper to exit
+  before reporting success. This prevents a completed smoke test from leaving
+  the unit-test worker alive until CI's fail-closed timeout.
 - Release checksum manifests now contain paths relative to the downloaded
   artifact directory. A plain `shasum -a 256 --check SHA256SUMS` therefore
   verifies an Actions artifact or GitHub Release download without recreating
