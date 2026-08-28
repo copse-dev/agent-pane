@@ -15,7 +15,9 @@ a remote agent, or an ACP agent. Rampart combines:
   phone numbers, SSNs (structural rules), credit cards (Luhn), IPs, account /
   routing / government-ID / passport / licence numbers, and address components.
 - An optional **small ONNX token-classifier** (~15 MB, MiniLM) for contextual
-  PII the heuristics can't catch — split names, free-form address lines.
+  PII the heuristics can't catch — split names, free-form address lines. The
+  public base installer does not bundle its Transformers/ONNX runtime; packaged
+  releases currently use the dependency-free heuristic path.
 
 Each detected value is replaced with a stable, typed placeholder
 (`[GIVEN_NAME_1]`, `[EMAIL_2]`, …). The same real value always maps to the same
@@ -48,6 +50,10 @@ the agent and, on its next step, sends it to the provider.
   unchanged rather than blocking the turn — so this reduces exposure, it does not
   guarantee it. If the model can't load but heuristics can, structured PII is
   still redacted with no network.
+- **Contextual classifier is not in the base installer.** Names and other
+  free-form contextual PII that need the model are outside the packaged
+  heuristic-only coverage until an explicit on-demand model installation path
+  is provided.
 - **Latin-script only** (en, es, fr, de, it, pt, nl). Other scripts are out of
   scope.
 - **Reveal map is in-memory only.** It is intentionally never persisted, so
