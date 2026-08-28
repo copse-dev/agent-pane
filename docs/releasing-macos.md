@@ -150,6 +150,13 @@ codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Copse.app"
 xcrun stapler validate "release/mac-arm64/Copse.app"
 ```
 
+After downloading an Actions artifact or the files from a GitHub Release into
+one directory, verify every distributable byte from that directory:
+
+```bash
+shasum -a 256 --check SHA256SUMS
+```
+
 ## Install and update behavior
 
 New users download the architecture-appropriate DMG from the public GitHub

@@ -109,7 +109,10 @@ jobs:
           test -n "$(find release -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$(find release -maxdepth 1 -name '*.blockmap' -print -quit)"
           test -n "$(find release -maxdepth 1 -name '*-mac.yml' -print -quit)"
-          shasum -a 256 --check release/SHA256SUMS
+          (
+            cd release
+            shasum -a 256 --check SHA256SUMS
+          )
       - name: Attest the tested release artifacts
         uses: actions/attest@v4.2.2
         with:
