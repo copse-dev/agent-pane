@@ -125,6 +125,29 @@ describe('PR panel (mock gh)', () => {
     await expect(await $('.pr-viewer-description-fill')).not.toBeExisting()
     await saveElementScreenshot('#pane-files', 'pr-panel-viewer-file-diff.png')
 
+    // Binary images bypass Monaco and render the PR's base/head blobs side by
+    // side. This is the path that previously decoded PNG bytes as UTF-8 text.
+    await $('.pr-list-title*=Polish footer branch status').click()
+    await expect(await $('.pr-viewer-title')).toHaveText('Polish footer branch status')
+    await expect(await $('.pr-files-header')).toHaveText(
+      expect.stringMatching(/changed files \(2\)/i),
+    )
+    await $('.pr-files-header').click()
+    await expect(await $$('.pr-file-row')).toBeElementsArrayOfSize(2)
+    await browser.execute(() => {
+      const row = [...document.querySelectorAll<HTMLButtonElement>('.pr-file-row')].find(
+        (candidate) => candidate.textContent?.includes('pr-panel.png'),
+      )
+      row?.click()
+    })
+    const imageDiff = await $('#pr-viewer-host .git-image-diff')
+    await imageDiff.waitForDisplayed({ timeout: 15_000 })
+    await expect(await $$('#pr-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize(2)
+    const labels = await $$('#pr-viewer-host .git-image-diff-label').map((label) => label.getText())
+    expect(labels).toEqual(['BEFORE', 'AFTER'])
+    await expect(await $('#pr-viewer-host .monaco-diff-editor')).not.toBeDisplayed()
+    await saveElementScreenshot('#pane-files', 'pr-panel-viewer-image-diff.png')
+
     await $('[aria-label="Toggle right panel"]').click()
     await browser.pause(200)
     await (await $('[data-message-id="msg-assistant-pr-link"] .message-text a')).click()

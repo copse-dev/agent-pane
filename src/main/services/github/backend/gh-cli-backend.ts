@@ -24,6 +24,11 @@ import type {
 } from '@shared/types/git.ts'
 import type { GitHubBackend, PrRef } from './backend.ts'
 import { chooseAutoMergeStrategy, type RepoMergeConfig } from './merge-strategy.ts'
+import {
+  decodeGitHubFileContent,
+  emptyGitHubFileContent,
+  type GitHubFileContent,
+} from '../pr-file-content.ts'
 
 interface GhPrViewJson {
   state?: string | undefined
@@ -148,10 +153,6 @@ function formatGhError(stderr: string, code: number): string {
   return `gh exited with code ${String(code)}`
 }
 
-function decodeBase64Content(raw: string): string {
-  return Buffer.from(raw.replace(/\n/g, ''), 'base64').toString('utf8')
-}
-
 function mapFileStatus(raw: string | undefined): GhPrChangedFile['status'] {
   switch ((raw ?? '').toLowerCase()) {
     case 'added':
@@ -254,7 +255,11 @@ async function listPrFiles(ref: PrRef, prView?: GhPrViewJson): Promise<GhPrChang
     .filter((entry): entry is GhPrChangedFile => entry != null)
 }
 
-async function fetchRepoFileAtRef(ref: PrRef, path: string, gitRef: string): Promise<string> {
+async function fetchRepoFileAtRef(
+  ref: PrRef,
+  path: string,
+  gitRef: string,
+): Promise<GitHubFileContent> {
   const encodedPath = path
     .split('/')
     .map((segment) => encodeURIComponent(segment))
@@ -263,10 +268,10 @@ async function fetchRepoFileAtRef(ref: PrRef, path: string, gitRef: string): Pro
     'api',
     `repos/${ref.owner}/${ref.repo}/contents/${encodedPath}?ref=${encodeURIComponent(gitRef)}`,
   ])
-  if (code !== 0) return ''
+  if (code !== 0) return emptyGitHubFileContent()
   const payload = safeJsonParse(stdout.trim(), decodeWithSchema(ghApiContentSchema))
-  if (!payload?.content || payload.encoding !== 'base64') return ''
-  return decodeBase64Content(payload.content)
+  if (!payload?.content || payload.encoding !== 'base64') return emptyGitHubFileContent()
+  return decodeGitHubFileContent(path, payload.content)
 }
 
 /** Read the repo's allowed merge methods so auto-merge picks a permitted one. */
@@ -542,11 +547,23 @@ export const ghCliBackend: GitHubBackend = {
     if (!pr?.baseRefOid || !pr.headRefOid) return null
     const fileMeta = (pr.files ?? []).find((file) => file.path === path)
     const status = mapFileStatus(fileMeta?.changeType)
-    let before = ''
-    let after = ''
-    if (status !== 'added') before = await fetchRepoFileAtRef(ref, path, pr.baseRefOid)
-    if (status !== 'removed') after = await fetchRepoFileAtRef(ref, path, pr.headRefOid)
-    return { path, before, after, language: detectLanguage(path), deleted: status === 'removed' }
+    let beforeContent = emptyGitHubFileContent()
+    let afterContent = emptyGitHubFileContent()
+    if (status !== 'added') {
+      beforeContent = await fetchRepoFileAtRef(ref, path, pr.baseRefOid)
+    }
+    if (status !== 'removed') {
+      afterContent = await fetchRepoFileAtRef(ref, path, pr.headRefOid)
+    }
+    return {
+      path,
+      before: beforeContent.text,
+      after: afterContent.text,
+      language: detectLanguage(path),
+      beforeImage: beforeContent.image,
+      afterImage: afterContent.image,
+      deleted: status === 'removed',
+    }
   },
 
   async getPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
