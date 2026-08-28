@@ -1081,8 +1081,7 @@ function mountVncSession(
       const enteredPassword = setupPasswordInput.value
       setupPasswordInput.value = ''
       authenticationUsername =
-        rememberedUsername?.trim() ||
-        enteredUsername ||
+        (rememberedUsername?.trim() ?? enteredUsername) ||
         preferredVncUsername(target, sshHosts, null)
       authenticationPassword = rememberedPassword ?? enteredPassword
       authenticationPasswordWasRemembered = rememberedPassword !== null
