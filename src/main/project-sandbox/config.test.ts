@@ -1,6 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { accessSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import {
+  accessSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -129,6 +137,33 @@ describe('resolveNodeToolchainAllowRead', () => {
     const binDir = dirname(nodePath)
     assert.ok(allow.includes(binDir))
     assert.ok(allow.some((p) => p === `${binDir}/**`))
+  })
+})
+
+describe('electronRuntimeAllowReadPaths', () => {
+  it('retains both a symlinked invocation path and its canonical runtime tree', () => {
+    const root = mkdtempSync(join(realpathSync.native(tmpdir()), 'copse-electron-runtime-'))
+    try {
+      const runtime = join(root, 'store', 'electron')
+      const linkedRuntime = join(root, 'node_modules', 'electron')
+      mkdirSync(runtime, { recursive: true })
+      mkdirSync(dirname(linkedRuntime), { recursive: true })
+      const executable = join(runtime, 'electron')
+      writeFileSync(executable, '')
+      symlinkSync(runtime, linkedRuntime, 'dir')
+      const invoked = join(linkedRuntime, 'electron')
+      const canonical = join(runtime, 'electron')
+      const allow = electronRuntimeAllowReadPaths(invoked)
+
+      assert.ok(allow.includes(invoked))
+      assert.ok(allow.includes(dirname(invoked)))
+      assert.ok(allow.includes(`${dirname(invoked)}/**`))
+      assert.ok(allow.includes(canonical))
+      assert.ok(allow.includes(dirname(canonical)))
+      assert.ok(allow.includes(`${dirname(canonical)}/**`))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 

@@ -268,27 +268,38 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
   return [...allow]
 }
 
-/** Paths the bundled sandbox-fs worker must read to exec under ASRT (outside the workspace). */
-export function electronRuntimeAllowReadPaths(): string[] {
-  let exec = resolve(process.execPath)
+/** Paths bundled workers must read to exec under ASRT (outside the workspace). */
+export function electronRuntimeAllowReadPaths(execPath: string = process.execPath): string[] {
+  const invokedExec = resolve(execPath)
+  let canonicalExec = invokedExec
   try {
-    exec = realpathSync.native(exec)
+    canonicalExec = realpathSync.native(invokedExec)
   } catch {
     // Keep resolve() result when the binary is not stat-able yet.
   }
-  const paths = [exec, dirname(exec), `${dirname(exec)}/**`]
-  if (process.platform === 'darwin' && exec.includes('.app/')) {
-    const [appPrefix] = exec.split('.app/')
-    const appRoot = `${appPrefix ?? exec}.app`
-    try {
-      const realAppRoot = realpathSync.native(resolve(appRoot))
-      paths.push(realAppRoot, `${realAppRoot}/**`)
-      const macOsDir = join(realAppRoot, 'Contents', 'MacOS')
-      if (statSync(macOsDir).isDirectory()) {
-        paths.push(macOsDir, `${macOsDir}/**`)
+
+  // Linux bubblewrap hides broad denyRead roots with tmpfs mounts and then
+  // re-binds allowRead paths. Preserve the path used to invoke Electron as
+  // well as its realpath: pnpm installs expose Electron through a symlink, and
+  // re-binding only the target leaves the symlink spelling absent inside the
+  // mount namespace. macOS resolves filesystem policy against canonical paths,
+  // but retaining both spellings is harmless and keeps the contract uniform.
+  const paths: string[] = []
+  for (const exec of new Set([invokedExec, canonicalExec])) {
+    paths.push(exec, dirname(exec), `${dirname(exec)}/**`)
+    if (process.platform === 'darwin' && exec.includes('.app/')) {
+      const [appPrefix] = exec.split('.app/')
+      const appRoot = `${appPrefix ?? exec}.app`
+      try {
+        const realAppRoot = realpathSync.native(resolve(appRoot))
+        paths.push(appRoot, `${appRoot}/**`, realAppRoot, `${realAppRoot}/**`)
+        const macOsDir = join(realAppRoot, 'Contents', 'MacOS')
+        if (statSync(macOsDir).isDirectory()) {
+          paths.push(macOsDir, `${macOsDir}/**`)
+        }
+      } catch {
+        paths.push(resolve(appRoot), `${resolve(appRoot)}/**`)
       }
-    } catch {
-      paths.push(resolve(appRoot), `${resolve(appRoot)}/**`)
     }
   }
   return [...new Set(paths)]
