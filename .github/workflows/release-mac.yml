@@ -161,6 +161,7 @@ jobs:
           CI: true
   build-test:
     needs: [preflight, verify-clean-release-build]
+    timeout-minutes: 60
     # The runtime smoke test below is the only gate that actually launches the
     # packaged app, so it has to run on an OS the app supports. Keep this label
     # at or above `build.mac.minimumSystemVersion` in package.json; the
@@ -197,7 +198,9 @@ jobs:
           pnpm exec electron-builder --mac -c.mac.notarize=true -c.publish.channel="$UPDATE_CHANNEL" --publish never
           node scripts/finalize-release-metadata.mts
       - name: Verify signatures, notarization, metadata, and packaged runtime
+        timeout-minutes: 15
         env:
+          COPSE_DIR: ${{ runner.temp }}/copse-release-smoke-profile
           COPSE_WORKSPACE_DIR: ${{ runner.temp }}/copse-release-smoke-workspace
           RELEASE_TYPE: ${{ needs.preflight.outputs.release_type }}
           UPDATE_CHANNEL: ${{ needs.preflight.outputs.update_channel }}
@@ -244,6 +247,7 @@ jobs:
               echo "Expected LSMinimumSystemVersion 26.0, found $minimum_system_version"
               exit 1
             fi
+            echo "Running packaged runtime smoke for $app_arch app"
             "$app/Contents/MacOS/Copse" --release-smoke-test
           done
           test -s "release/$UPDATE_CHANNEL-mac.yml"
