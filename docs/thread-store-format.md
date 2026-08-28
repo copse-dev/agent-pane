@@ -26,6 +26,8 @@ describes it to the agent, so changing the layout means updating that preamble.
 ~/.copse/workspace/<projectId>/
   catalog.jsonl                      # 1 line/thread index (rebuildable): {id, title,
                                      #   createdAt, updatedAt, digest, path}
+  stream-stats.jsonl                 # append-only stream-cut eval records
+  reasoning-checkpoints.jsonl        # append-only reasoning checkpoint records
   tasks/<taskId>/                    # supervised background tasks (#1081); not a thread
     meta.json                        # mutable task record (state, trigger, handler input, permissions)
     audit.jsonl                      # append-only lifecycle transitions
@@ -76,6 +78,20 @@ describes it to the agent, so changing the layout means updating that preamble.
   the source of ordering and structure; prose and large/opaque content live in
   referenced files (`messages/*.md`, `blobs/*`) so a draft keystroke rewrites
   one tiny file, not the whole thread.
+  Ordinary new messages, hook runs, decisions, continuations, and model-selection
+  events are physical appends. Writers inspect at most the final byte to repair a
+  legacy file without a trailing newline; they do not read or rewrite prior
+  lines. Re-finalizing an existing message id deliberately replaces that line in
+  place, and a whole-thread save rebuilds message lines while preserving unknown
+  and non-message lines verbatim. Those bounded replacement/compaction paths are
+  the exceptions to physical append-only operation.
+- **`stream-stats.jsonl` and `reasoning-checkpoints.jsonl`** are project-level
+  physical append logs. Each new record inspects at most the previous final byte
+  for legacy newline repair and appends one JSON line; ordinary recording never
+  rewrites the existing file.
+- **`catalog.jsonl` and `meta.json`** are mutable indexes/snapshots, not append
+  logs. They may be atomically replaced after a thread metadata change and can
+  be rebuilt from thread directories where documented.
 - **`messages/*.md`** are [OKF](../src/shared/threads/okf-message.ts) files: a
   leading `---` YAML frontmatter fence (`type`, `role`, `id`, `createdAt`,
   `threadId`) then the **verbatim** content body. Only a _leading_ fence is

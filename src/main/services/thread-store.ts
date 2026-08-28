@@ -1,7 +1,6 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { perfCount, perfSpan } from './diagnostics/perf-trace.ts'
 import {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -11,7 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { promises as fsPromises } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import type {
   LLMMessage,
@@ -145,12 +144,52 @@ function writeFileEnsuringDir(fullPath: string, contents: string): void {
   writeFileSync(fullPath, contents)
 }
 
+async function writeFileEnsuringDirAsync(fullPath: string, contents: string): Promise<void> {
+  await fsPromises.mkdir(dirname(fullPath), { recursive: true })
+  await fsPromises.writeFile(fullPath, contents)
+}
+
+/**
+ * Append one JSONL record without reading or rewriting the existing file.
+ * App-written files already end in a newline; the one-byte read only repairs a
+ * legacy/truncated final line before the new record is appended.
+ */
+async function appendJsonlLine(path: string, line: string): Promise<void> {
+  await fsPromises.mkdir(dirname(path), { recursive: true })
+  const handle = await fsPromises.open(path, 'a+')
+  try {
+    const { size } = await handle.stat()
+    let prefix = ''
+    if (size > 0) {
+      const lastByte = Buffer.allocUnsafe(1)
+      const { bytesRead } = await handle.read(lastByte, 0, 1, size - 1)
+      if (bytesRead === 1 && lastByte[0] !== 0x0a) prefix = '\n'
+    }
+    await handle.appendFile(`${prefix}${line}\n`, 'utf8')
+  } finally {
+    await handle.close()
+  }
+}
+
 /** Atomic replace so a crash never leaves a half-written sidecar. */
 function atomicWriteFile(path: string, data: string, mode?: number): void {
   const tmp = `${path}.copse-${String(process.pid)}.tmp`
   if (mode === undefined) writeFileSync(tmp, data)
   else writeFileSync(tmp, data, { mode })
   renameSync(tmp, path)
+}
+
+/** Async atomic replace with an operation-unique temp path, safe across yielded writes. */
+async function atomicWriteFileAsync(path: string, data: string, mode?: number): Promise<void> {
+  const tmp = `${path}.copse-${String(process.pid)}-${randomUUID()}.tmp`
+  try {
+    if (mode === undefined) await fsPromises.writeFile(tmp, data)
+    else await fsPromises.writeFile(tmp, data, { mode })
+    await fsPromises.rename(tmp, path)
+  } catch (error) {
+    await fsPromises.rm(tmp, { force: true }).catch(() => undefined)
+    throw error
+  }
 }
 
 const acpSessionExecutionTargetSchema = z.discriminatedUnion('kind', [
@@ -247,14 +286,15 @@ function invalidateKnownMessageIds(dir: string): void {
 }
 
 /** Get (seeding from disk on first use) the known message ids for a thread. */
-function knownMessageIdsFor(dir: string): Set<string> {
+async function knownMessageIdsFor(dir: string): Promise<Set<string>> {
   const cached = knownMessageIdsByDir.get(dir)
   if (cached) return cached
-  const raw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+  const eventsPath = join(dir, EVENTS_FILE)
+  const raw = (await readOrNull(eventsPath)) ?? ''
   if (raw !== '' && !raw.endsWith('\n')) {
     // Normalize a legacy file with no trailing newline before switching to
     // true appends below, which assume one is already there.
-    writeFileSync(join(dir, EVENTS_FILE), `${raw}\n`)
+    await fsPromises.writeFile(eventsPath, `${raw}\n`)
   }
   const ids = new Set<string>()
   for (const entry of parseSpineEntries(raw)) {
@@ -358,7 +398,7 @@ async function mapConcurrent<T, R>(
 
 async function readOrNull(path: string): Promise<string | null> {
   try {
-    return await readFile(path, 'utf8')
+    return await fsPromises.readFile(path, 'utf8')
   } catch {
     return null
   }
@@ -516,7 +556,7 @@ async function readThreadMetaOnly(
   if (options.includeArchived === false && meta.archivedAt != null) return null
   let spineBytes = 0
   try {
-    spineBytes = (await stat(join(dir, EVENTS_FILE))).size
+    spineBytes = (await fsPromises.stat(join(dir, EVENTS_FILE))).size
   } catch {
     // No spine file at all — a brand-new thread with nothing written yet.
   }
@@ -533,25 +573,37 @@ async function readThreadMetaOnly(
  * transcript every time. Silent on failure — a missing chip must never fail a
  * message write.
  */
-function mergePrRefsIntoMeta(projectId: string, threadId: string, message: Message): void {
+function mergeGithubPrRefs(
+  existing: readonly GithubPrRef[],
+  found: readonly GithubPrRef[],
+): { refs: GithubPrRef[]; added: boolean } {
+  const refs = [...existing]
+  const seen = new Set(refs.map(githubPrKey))
+  let added = false
+  for (const ref of found) {
+    const key = githubPrKey(ref)
+    if (seen.has(key)) continue
+    seen.add(key)
+    refs.push(ref)
+    added = true
+  }
+  return { refs, added }
+}
+
+async function mergePrRefsIntoMeta(
+  projectId: string,
+  threadId: string,
+  message: Message,
+): Promise<void> {
   try {
     const found = extractGithubPrUrls(message.content)
     if (found.length === 0) return
     const path = join(threadDir(projectId, threadId), META_FILE)
-    const meta = parseMeta(safeRead(path))
+    const meta = parseMeta(await readOrNull(path))
     if (meta === null) return
-    const refs = [...(meta.prRefs ?? [])]
-    const seen = new Set(refs.map(githubPrKey))
-    let added = false
-    for (const ref of found) {
-      const key = githubPrKey(ref)
-      if (seen.has(key)) continue
-      seen.add(key)
-      refs.push(ref)
-      added = true
-    }
+    const { refs, added } = mergeGithubPrRefs(meta.prRefs ?? [], found)
     if (!added) return
-    atomicWriteFile(path, JSON.stringify({ ...meta, prRefs: refs }, null, 2))
+    await atomicWriteFileAsync(path, JSON.stringify({ ...meta, prRefs: refs }, null, 2))
   } catch {
     // Diagnostic metadata; never worth failing the write it rides along with.
   }
@@ -596,18 +648,28 @@ export async function backfillThreadPrRefs(
       const thread = await readThread(projectId, threadId)
       if (!thread) return
       const prRefs = collectThreadPrRefs(thread)
-      const path = join(threadDir(projectId, threadId), META_FILE)
-      const meta = parseMeta(safeRead(path))
-      // Write even an empty list: `undefined` means "never scanned", `[]` means
-      // "scanned, no PRs" — without that distinction this would re-run forever.
-      if (meta !== null) {
-        atomicWriteFile(path, JSON.stringify({ ...meta, prRefs }, null, 2))
-        // Backfill deliberately runs outside the per-project write queue so it
-        // cannot monopolise foreground thread work. It still mutates meta.json,
-        // therefore an existing or in-flight metadata snapshot must be retired.
-        invalidateProjectMetaCache(projectId)
+      // Transcript scanning stays concurrent and outside the foreground queue,
+      // but the final read-merge-write joins the same per-project chain as every
+      // other metadata mutation. Re-read at commit time so a title/status/usage
+      // update that landed during the scan cannot be overwritten.
+      const committedRefs = await runStoreWrite(projectId, async () => {
+        const path = join(threadDir(projectId, threadId), META_FILE)
+        const meta = parseMeta(await readOrNull(path))
+        if (meta === null) return null
+        const merged = mergeGithubPrRefs(meta.prRefs ?? [], prRefs)
+        // Write even an empty list: `undefined` means "never scanned", `[]`
+        // means "scanned, no PRs" — otherwise this would re-run forever.
+        if (meta.prRefs === undefined || merged.added) {
+          await atomicWriteFileAsync(
+            path,
+            JSON.stringify({ ...meta, prRefs: merged.refs }, null, 2),
+          )
+        }
+        return merged.refs
+      })
+      if (committedRefs && committedRefs.length > 0) {
+        batch.push({ threadId, prRefs: committedRefs })
       }
-      if (prRefs.length > 0) batch.push({ threadId, prRefs })
       if (batch.length >= 25) flush()
     },
     BACKFILL_CONCURRENCY,
@@ -1001,11 +1063,10 @@ const queueKey = (projectId: string): string => `thread-store:${projectId}`
 // (docs/perf-open-profiling.md). These snapshots survive project switches; the
 // per-project write queue is the invalidation hook: every entry point that
 // writes `meta.json` or the spine goes through {@link runStoreWrite}, which
-// drops the project's snapshots when the queued op settles. A version check
-// additionally discards a snapshot raced by the one deliberate unqueued writer
-// ({@link backfillThreadPrRefs}). As with the spine's known-message-id cache,
-// a `meta.json` rewritten by another *process* stays invisible until this
-// process next writes the project.
+// drops the project's snapshots when the queued op settles. The version check
+// additionally prevents any future unqueued writer from publishing an in-flight
+// stale read. As with the spine's known-message-id cache, a `meta.json` rewritten
+// by another *process* stays invisible until this process next writes the project.
 
 interface CachedMetas {
   /** {@link metaCacheVersionsByDir} value the snapshot was read at. */
@@ -1064,8 +1125,8 @@ async function readProjectThreadMetasCached(
   }
   perfCount('store:meta-cache-miss')
   const threads = await readProjectThreadMetas(projectId, options)
-  // Cache only if nothing wrote the project while the read was in flight (the
-  // unqueued PR-ref backfill can interleave); otherwise let the next read retry.
+  // Cache only if nothing wrote the project while the read was in flight;
+  // otherwise let the next read retry.
   if ((metaCacheVersionsByDir.get(dir) ?? 0) === version) {
     let entries = metaCacheByDir.get(dir)
     if (!entries) {
@@ -1252,30 +1313,38 @@ export function appendMessage(
   threadId: string,
   message: Message,
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
-    mkdirSync(dir, { recursive: true })
+    await fsPromises.mkdir(dir, { recursive: true })
     const { line, files } = explodeMessage(message, sha256)
-    for (const file of files) writeFileEnsuringDir(join(dir, file.ref), file.contents)
+    // Keep each referenced-file write inside this queued operation. Sequential
+    // awaits are deliberate: Promise.all rejects before its surviving siblings
+    // settle, which could release the project queue while a failed batch still
+    // has writes in flight.
+    for (const file of files) {
+      await writeFileEnsuringDirAsync(join(dir, file.ref), file.contents)
+    }
     const raw = serializeSpineLine(line)
     // The sidebar's PR chip is derived from links in message text, which a
     // metadata-only load never reads. Fold this message's links into the
     // thread's cached `prRefs` as it lands, so the chip is correct on the next
     // launch without the transcript being read again.
-    mergePrRefsIntoMeta(projectId, threadId, message)
-    const knownIds = knownMessageIdsFor(dir)
+    await mergePrRefsIntoMeta(projectId, threadId, message)
+    const knownIds = await knownMessageIdsFor(dir)
     if (!knownIds.has(message.id)) {
-      appendFileSync(join(dir, EVENTS_FILE), `${raw}\n`)
+      await fsPromises.appendFile(join(dir, EVENTS_FILE), `${raw}\n`)
+      // Do not teach the cache about an id until the append is durable enough
+      // for Node to resolve it. A rejected append must take this path again.
       knownIds.add(message.id)
       return
     }
-    const entries = parseSpineEntries(safeRead(join(dir, EVENTS_FILE)) ?? '')
+    const entries = parseSpineEntries((await readOrNull(join(dir, EVENTS_FILE))) ?? '')
     const existingIndex = entries.findIndex(
       (entry) => entry.line?.type === 'message' && entry.line.id === message.id,
     )
     if (existingIndex >= 0) entries[existingIndex] = { raw, line }
     else entries.push({ raw, line })
-    writeFileSync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+    await fsPromises.writeFile(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
   })
 }
 
@@ -1292,17 +1361,18 @@ export function appendHookRun(
   line: SpineHookRunLine,
   blobs: FileToWrite[] = [],
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
-    mkdirSync(dir, { recursive: true })
+    await fsPromises.mkdir(dir, { recursive: true })
     for (const blob of blobs) {
       const full = join(dir, blob.ref)
-      if (!existsSync(full)) writeFileEnsuringDir(full, blob.contents)
+      try {
+        await fsPromises.access(full)
+      } catch {
+        await writeFileEnsuringDirAsync(full, blob.contents)
+      }
     }
-    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+    await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
   })
 }
 
@@ -1372,18 +1442,13 @@ export function appendSpineDecision(
   line: SpineDecisionLine | SpinePermissionDecisionLine,
   detailContents?: string,
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
-    mkdirSync(dir, { recursive: true })
+    await fsPromises.mkdir(dir, { recursive: true })
     if (detailContents !== undefined && line.type === 'decision' && line.detail) {
-      const full = join(dir, line.detail.ref)
-      mkdirSync(dirname(full), { recursive: true })
-      writeFileSync(full, detailContents)
+      await writeFileEnsuringDirAsync(join(dir, line.detail.ref), detailContents)
     }
-    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+    await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
   })
 }
 
@@ -1393,13 +1458,9 @@ export function appendMachineContinuation(
   threadId: string,
   line: SpineMachineContinuationLine,
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
-    mkdirSync(dir, { recursive: true })
-    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+    await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
   })
 }
 
@@ -1409,13 +1470,9 @@ export function recordModelSelection(
   threadId: string,
   line: SpineModelSelectedLine,
 ): Promise<void> {
-  return runStoreWrite(projectId, () => {
+  return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
-    mkdirSync(dir, { recursive: true })
-    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+    await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
 
     const current = readMeta(dir)
     if (current === null) return
@@ -1435,26 +1492,16 @@ export function recordModelSelection(
 
 /** Append one stream-cut observability record (project-level eval source). */
 export function appendStreamStat(projectId: string, line: unknown): Promise<void> {
-  return runStoreWrite(projectId, () => {
-    const path = streamStatsPath(projectId)
-    mkdirSync(dirname(path), { recursive: true })
-    const existingRaw = safeRead(path) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(path, `${prefix}${JSON.stringify(line)}\n`)
-  })
+  return runStoreWrite(projectId, () =>
+    appendJsonlLine(streamStatsPath(projectId), JSON.stringify(line)),
+  )
 }
 
 /** Append one reasoning-checkpoint decision (project-level eval source). */
 export function appendReasoningCheckpoint(projectId: string, line: unknown): Promise<void> {
-  return runStoreWrite(projectId, () => {
-    const path = reasoningCheckpointsPath(projectId)
-    mkdirSync(dirname(path), { recursive: true })
-    const existingRaw = safeRead(path) ?? ''
-    const prefix =
-      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
-    writeFileSync(path, `${prefix}${JSON.stringify(line)}\n`)
-  })
+  return runStoreWrite(projectId, () =>
+    appendJsonlLine(reasoningCheckpointsPath(projectId), JSON.stringify(line)),
+  )
 }
 
 /** Patch a thread's mutable metadata in place and refresh its catalog line. */
@@ -1595,7 +1642,7 @@ export function readThreadDirectory(
     if (!existsSync(join(dir, META_FILE))) {
       throw new Error(`No stored thread directory for ${threadId}`)
     }
-    const dirents = await readdir(dir, { withFileTypes: true, recursive: true })
+    const dirents = await fsPromises.readdir(dir, { withFileTypes: true, recursive: true })
     // `isFile()` reflects lstat, so a symlink is skipped rather than followed
     // out of the store.
     const paths = dirents
@@ -1606,12 +1653,12 @@ export function readThreadDirectory(
     let total = 0
     for (const path of paths) {
       const full = join(dir, path)
-      const stats = await stat(full)
+      const stats = await fsPromises.stat(full)
       total += stats.size
       if (total > MAX_THREAD_DIRECTORY_BYTES) {
         throw new Error('This thread is too large to export as an archive')
       }
-      files.push({ path, data: await readFile(full), modifiedAt: stats.mtime })
+      files.push({ path, data: await fsPromises.readFile(full), modifiedAt: stats.mtime })
     }
     return files
   })
