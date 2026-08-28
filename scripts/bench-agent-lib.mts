@@ -28,7 +28,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
-import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
+import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import {
   HEADLESS_PROTOCOL_VERSION,
@@ -49,7 +49,7 @@ import {
   nonEmptyStringOr,
 } from '../src/shared/unknown-value.mts'
 import { z } from 'zod'
-import { CHARS_PER_TOKEN } from '../packages/agent/src/token-estimate.ts'
+import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 
 export interface BenchTask {
   id: string

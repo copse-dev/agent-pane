@@ -23,7 +23,7 @@ import {
   terminalWorkspaceWriteFileCommand,
 } from './terminal-bench-agent-lib.mts'
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
-import { MAX_STREAM_OUTPUT_TOKENS } from '../packages/agent/src/agent-loop-limits.ts'
+import { MAX_STREAM_OUTPUT_TOKENS } from '@copse/agent/agent-loop-limits.ts'
 
 describe('terminal benchmark bridge', () => {
   it('keeps versioned profiles isolated and content-addressed', () => {

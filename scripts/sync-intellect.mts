@@ -49,7 +49,7 @@ import {
   fitLinearEquating,
   type AnchorPair,
   type EquatingMap,
-} from '../packages/llm/src/intellect-equating.ts'
+} from '@copse/llm/intellect-equating.ts'
 import { optionalRecord } from '../src/shared/unknown-value.mts'
 
 const DATA_PATH = resolve('scripts/data/intellect-scores.json')
