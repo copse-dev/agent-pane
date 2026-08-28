@@ -1,6 +1,6 @@
 import * as esbuild from 'esbuild'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { cpSync, copyFileSync } from 'node:fs'
+import { cpSync, copyFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
@@ -8,6 +8,11 @@ import { expectString } from '../src/shared/unknown-value.mts'
 
 const require = createRequire(import.meta.url)
 const electronPath = expectString(require('electron'))
+
+// Watch mode writes a different, partial build into dist/. Invalidate the
+// one-shot build marker before touching it so `make build` cannot trust those
+// outputs if this process is interrupted.
+rmSync('dist/.copse-build-fingerprint', { force: true })
 
 // Copy static renderer assets once at start
 copyMonacoWorkers('dist/renderer')
