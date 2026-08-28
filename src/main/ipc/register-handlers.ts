@@ -2142,12 +2142,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return listUnsandboxedProjectHooks(root)
   })
   ipcMain.handle('instructions:list', async () =>
-    (await loadProjectInstructionSources()).map(({ path, name, scope, content, active }) => ({
+    (
+      await loadProjectInstructionSources({
+        useLatestNestedActivation: true,
+        refreshNestedDiscovery: true,
+      })
+    ).map(({ path, name, scope, content, active, trusted, scopePath }) => ({
       path,
       name,
       scope,
       bytes: Buffer.byteLength(content, 'utf-8'),
       active,
+      trusted,
+      ...(scopePath !== undefined ? { scopePath } : {}),
     })),
   )
   /**

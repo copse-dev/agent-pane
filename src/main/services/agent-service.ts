@@ -43,7 +43,8 @@ import {
 } from './agent-errors.ts'
 import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
-import { buildSystemPrompt } from './agent-system-prompt.ts'
+import { buildSystemPromptWithMetadata } from './agent-system-prompt.ts'
+import { activateNestedInstructionSources } from './project-instructions.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 import {
   clearActiveRunThread,
@@ -391,6 +392,29 @@ function promptTextForSubmit(userPrompt: UserContent): string {
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
+}
+
+/** Built-in file tools whose path establishes directory-scoped instruction context. */
+const INSTRUCTION_CONTEXT_PATH_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  read_file: ['path'],
+  list_dir: ['path'],
+  search_code: ['path'],
+  search_codebase: ['path'],
+  read_staged_diff: ['path'],
+  write_file: ['path'],
+  str_replace: ['path'],
+  delete_file: ['path'],
+  rename_file: ['from', 'to'],
+  make_directory: ['path'],
+}
+
+function instructionContextPathsForTool(name: string, args: unknown): string[] {
+  const fields = INSTRUCTION_CONTEXT_PATH_FIELDS[name]
+  if (!fields || !isRecord(args)) return []
+  return fields.flatMap((field) => {
+    const value = args[field]
+    return typeof value === 'string' && value.trim() ? [value] : []
+  })
 }
 
 /**
@@ -1513,13 +1537,22 @@ export async function runAgent(
         ? options.invokedAgent
         : undefined
 
-    const systemPrompt = await buildSystemPrompt({
+    const systemPromptBuild = await buildSystemPromptWithMetadata({
       subagentsEnabled,
       invokedSkills,
       threadId,
       userPrompt: outboundPrompt,
       model,
+      trackInstructionActivation: true,
     })
+    const systemPrompt = systemPromptBuild.prompt
+    const activeNestedInstructionPaths = new Set(
+      systemPromptBuild.instructionMetadata.activeNestedPaths,
+    )
+    const activeInstructionContents = new Set(
+      systemPromptBuild.instructionMetadata.activeInstructionContents,
+    )
+    let activeNestedInstructionBytes = systemPromptBuild.instructionMetadata.activeNestedBytes
 
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -1828,6 +1861,37 @@ export async function runAgent(
           signal: AbortSignal,
           toolCallId: string,
         ): Promise<ToolExecuteResult> => {
+          const instructionContextPaths = instructionContextPathsForTool(name, args)
+          if (instructionContextPaths.length > 0) {
+            const activation = await activateNestedInstructionSources(
+              instructionContextPaths,
+              activeNestedInstructionPaths,
+              activeInstructionContents,
+              activeNestedInstructionBytes,
+            )
+            for (const path of activation.activatedPaths) {
+              activeNestedInstructionPaths.add(path)
+            }
+            for (const content of activation.injectedContents) {
+              activeInstructionContents.add(content)
+              activeNestedInstructionBytes += Buffer.byteLength(content, 'utf-8')
+            }
+            if (activation.block) {
+              const leadingSystem = trimmed.find((message) => message.role === 'system')
+              if (leadingSystem?.role === 'system') {
+                leadingSystem.content += `\n\n---\n\n${activation.block}`
+              }
+              // An edit must not land before the newly applicable rules have
+              // reached the model. Reads can proceed: their result and the new
+              // leading-system block arrive together before the next step.
+              if (isEditTool(name)) {
+                return (
+                  'Edit deferred because this path activated nested AGENTS.md instructions. ' +
+                  'Review the newly loaded workspace instructions, then retry the same edit.'
+                )
+              }
+            }
+          }
           if (isEditTool(name)) turnChangedFiles = true
           if (name === 'explore' && subagentsEnabled) {
             // ALS-scoped (not a global slot): the loop runs fanned-out

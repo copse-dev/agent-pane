@@ -1,5 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { z } from 'zod'
 import * as agentService from './agent-service.ts'
 import * as providerSelection from './providers/provider-selection.ts'
 import { suggestThreadTitle } from './title-generator.ts'
@@ -17,6 +21,8 @@ import {
   type PluginToolRuntimeController,
 } from './plugins/plugin-tool-controller.ts'
 import { pluginModelValue } from '@shared/plugin-model.ts'
+import { defineTool } from '@shared/types'
+import { runWithWorkspaceTrust } from './security/workspace-trust.ts'
 
 // agent-service is now an orchestrator that re-exports the public surface from the
 // focused modules it composes. These tests pin that public surface so IPC callers
@@ -231,6 +237,108 @@ describe('runAgent AgentHost decoupling', () => {
       )
     }
     assert.deepEqual(checkpoints.at(-1), result.messages.slice(0, checkpoints.at(-1)?.length))
+  })
+
+  it('activates nested instructions on first file access and defers the first edit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-agent-nested-instructions-'))
+    await mkdir(join(root, 'packages', 'api'), { recursive: true })
+    await writeFile(join(root, 'packages', 'api', 'AGENTS.md'), 'Never edit before reading this.')
+    const writes: string[] = []
+    const registry = new ToolRegistry()
+    registry.register(
+      defineTool({
+        name: 'write_file',
+        description: 'Test edit tool',
+        parameters: z.object({ path: z.string() }),
+        execute: ({ path }) => {
+          writes.push(path)
+          return Promise.resolve('File written.')
+        },
+      }),
+    )
+
+    let calls = 0
+    const provider: LLMProvider = {
+      stream: async function* (messages) {
+        calls += 1
+        const system = messages.find((message) => message.role === 'system')
+        assert.ok(system?.role === 'system')
+        if (calls === 1) {
+          assert.doesNotMatch(system.content, /Never edit before reading this/)
+          yield {
+            type: 'tool_call' as const,
+            toolCall: {
+              id: 'first-edit',
+              name: 'write_file',
+              args: { path: 'packages/api/router.ts' },
+            },
+          }
+          return
+        }
+        assert.match(system.content, /Never edit before reading this/)
+        if (calls === 2) {
+          const deferred = messages.find(
+            (message) =>
+              message.role === 'tool' &&
+              message.toolResults.some((result) => result.toolCallId === 'first-edit'),
+          )
+          assert.ok(deferred?.role === 'tool')
+          assert.match(deferred.toolResults[0]?.result ?? '', /Edit deferred/)
+          assert.deepEqual(writes, [])
+          yield {
+            type: 'tool_call' as const,
+            toolCall: {
+              id: 'retried-edit',
+              name: 'write_file',
+              args: { path: 'packages/api/router.ts' },
+            },
+          }
+          return
+        }
+        assert.deepEqual(writes, ['packages/api/router.ts'])
+        yield { type: 'text' as const, text: 'Done.' }
+      },
+    }
+    setDefaultPluginRegistry(new PluginRegistry())
+    await setSetting('subagentsEnabled', false)
+    await setSetting('skillsEnabled', false)
+
+    try {
+      await runWithWorkspaceTrust(root, true, () =>
+        runWithThreadExecutionContext(
+          {
+            projectId: 'project-nested',
+            threadId: 'thread-nested',
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () =>
+            runWithActiveRunIdentity('thread-nested', () =>
+              agentService.runAgent(
+                'thread-nested',
+                'Make the requested change.',
+                [],
+                { emit: () => undefined },
+                registry,
+                {
+                  provider,
+                  contextWindow: 100_000,
+                  model: 'claude-sonnet-4-6',
+                  maxSteps: 6,
+                  maxLlmCalls: 6,
+                },
+              ),
+            ),
+        ),
+      )
+      assert.equal(calls, 3)
+      assert.deepEqual(writes, ['packages/api/router.ts'])
+    } finally {
+      setDefaultPluginRegistry(null)
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('emits a structured terminal record with raw provider failure details', async () => {
