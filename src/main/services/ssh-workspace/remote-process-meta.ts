@@ -14,12 +14,3 @@ export function registerRemoteProcessMeta(proc: ChildProcess, meta: RemoteProces
 export function getRemoteProcessMeta(proc: ChildProcess): RemoteProcessMeta | undefined {
   return remoteMeta.get(proc)
 }
-
-export function clearRemoteProcessMeta(proc: ChildProcess): void {
-  remoteMeta.delete(proc)
-}
-
-/** Test hook */
-export function clearAllRemoteProcessMetaForTests(): void {
-  // WeakMap cannot be cleared; tests use fresh ChildProcess objects.
-}

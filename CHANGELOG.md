@@ -8,6 +8,17 @@ every published entry.
 
 ## Unreleased
 
+- macOS downloads are now architecture-specific instead of carrying both Apple
+  Silicon and Intel payloads. The beta.6 candidate DMGs and ZIPs are about 180
+  MiB each (down from 343–353 MiB), and the installed app is about 640 MiB
+  (down from roughly 1.3 GiB). Release CI strips build-only dependencies and
+  source maps, removes opposite-architecture native modules, validates a
+  combined architecture-aware update feed, and fails if a download exceeds
+  230 MiB or an installed app exceeds 750 MiB.
+- The optional local transformer/ONNX runtime is no longer bundled into every
+  macOS installer. Copse's heuristic PII redaction remains active; contextual
+  transformer redaction will return once it has an explicit on-demand install
+  path instead of making every client carry the model runtime.
 - The macOS packaged-runtime smoke test now waits for its PTY helper to exit
   before reporting success. This prevents a completed smoke test from leaving
   the unit-test worker alive until CI's fail-closed timeout.

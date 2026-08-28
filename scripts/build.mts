@@ -165,7 +165,10 @@ const nodeOpts = {
   platform: 'node' as const,
   format: 'cjs' as const,
   external: [...MAIN_EXTERNALS],
-  sourcemap: true,
+  // Development builds keep source maps for debugging and coverage. Release
+  // installers do not ship them: maps are not consumed by the packaged app and
+  // were adding tens of megabytes to every architecture and container format.
+  sourcemap: !isRelease,
   target: 'node22',
   alias: sharedAlias,
   define,
@@ -203,7 +206,7 @@ const browserOpts = {
   // fetched by every Secret scan (`gitleaks` with `fetch-depth: 0`). Source maps
   // there trip high-entropy secret heuristics and fail unrelated PR tips — so the
   // demo build must not emit them.
-  sourcemap: !isDemo,
+  sourcemap: !isDemo && !isRelease,
   loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' } as const,
   alias: sharedAlias,
   define,
