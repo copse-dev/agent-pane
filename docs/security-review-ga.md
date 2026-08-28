@@ -14,7 +14,7 @@ described below; it is not a GA waiver.
 | Field                   | Value                                                                                                                                                                                                                                                                                                     |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Review date             | 2026-08-28                                                                                                                                                                                                                                                                                                |
-| Reviewed revision       | `7e6327d88707b9c08d6e0f8cce681d1585ba9383` (`origin/main`), the protected product-code candidate from which the beta is promoted. The later release-attestation commit changes documentation only.                                                                                                        |
+| Reviewed revision       | `61d2ffa9708a49fb0dc97f253ae354cb0c3b6e3b` (`origin/main`), the protected beta.3 product-code candidate from which the beta is promoted. The later release-attestation commit changes documentation only.                                                                                                 |
 | Current re-review       | Source plus issue/PR verification of every row against the reviewed revision; security-relevant changes since the 2026-08-27 revision were diffed separately below.                                                                                                                                       |
 | Prior review            | 2026-08-04 refresh at `823be78d24ed4fd0465fb7461f60fbc6b2f03489`, following the 2026-07-17 ledger refresh for [#805](https://github.com/copse-dev/agent-pane/issues/805), the seven-surface pre-GA review in [#385](https://github.com/copse-dev/agent-pane/issues/385), and the July two-reviewer audit. |
 | Human security reviewer | Jonathan Kingston (owner and reviewer; beta cutting/validation authorized 2026-08-28; stable-GA sign-off remains pending signed/public/update evidence)                                                                                                                                                   |
@@ -133,6 +133,11 @@ checked for changes to trust, credentials, sandboxing, persistence, and release 
   only the invoked/canonical runtime paths and helper file, keeps startup errors scrubbed and
   bounded, and passed all eight E2E shards in
   [run 33136318086](https://github.com/copse-dev/agent-pane/actions/runs/33136318086).
+- [#1983](https://github.com/copse-dev/agent-pane/pull/1983) (`61d2ffa97`) made both macOS keyring
+  native packages explicit cross-packaging dependencies and rejects an app bundle whose keyring
+  binary does not match its target architecture. It changes packaging completeness, not keyring
+  access or secret policy. The release verification timeout limits a wedged runner and does not
+  weaken any signature, notarization, metadata, or runtime check.
 
 No new open source-security finding was identified in that diff. Any product-code change after the
 reviewed revision requires another diff review; the release-attestation update itself is
@@ -156,11 +161,12 @@ For the reviewed revision:
   waive those release-engineering gates.
 
 The remaining live `ga-blocker` issues are release-engineering gates outside this ledger's
-security-finding table: #507 and #802. #507 is not closure evidence yet: the only
-`Release (macOS)` run for `v0.1.0-beta.1`
-([run 31835219566](https://github.com/copse-dev/agent-pane/actions/runs/31835219566))
-failed in the credential preflight on 2026-08-14, every build/publish job was
-skipped, no artifacts were produced, and the repository has no GitHub Release.
+security-finding table: #507 and #802. #507 is not closure evidence yet. The beta.2
+`Release (macOS)` run
+([run 33141095747](https://github.com/copse-dev/agent-pane/actions/runs/33141095747)) proved the
+credentials and completed signing/notarization, but its Intel packaged-runtime smoke stalled on
+the missing x64 keyring module. The run was cancelled before artifact upload or publication;
+beta.3 must satisfy the complete gate.
 
 ## Maintenance
 
