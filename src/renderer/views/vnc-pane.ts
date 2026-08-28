@@ -496,7 +496,9 @@ function mountVncSession(
         machineSelect.value = value
         machineSelect.dispatchEvent(new Event('change', { bubbles: true }))
         if (value === MANUAL_MACHINE) {
-          queueMicrotask(() => addressInput.focus({ preventScroll: true }))
+          queueMicrotask(() => {
+            addressInput.focus({ preventScroll: true })
+          })
         }
       })
       deviceList.append(item)
