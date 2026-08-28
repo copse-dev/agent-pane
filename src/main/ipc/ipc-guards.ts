@@ -105,6 +105,7 @@ export const lmStudioDownloadStatusSchema = z.tuple([
 export const estimateContextPayloadSchema = z.object({
   draftText: z.string().optional(),
   invokedSkills: z.array(z.string()).optional(),
+  invokedAgent: z.string().optional(),
   imageCount: z.number().optional(),
   model: z.string().optional(),
 })
