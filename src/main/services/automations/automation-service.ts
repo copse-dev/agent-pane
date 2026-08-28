@@ -374,8 +374,3 @@ export function getAutomationService(): AutomationService {
   })
   return singleton
 }
-
-export function __resetAutomationServiceForTests(): void {
-  singleton?.stop()
-  singleton = null
-}
