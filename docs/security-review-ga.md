@@ -14,7 +14,7 @@ described below; it is not a GA waiver.
 | Field                   | Value                                                                                                                                                                                                                                                                                                     |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Review date             | 2026-08-28                                                                                                                                                                                                                                                                                                |
-| Reviewed revision       | `7ab6dbd9b3964f7e9143877f4026dba8d68653ef` (`origin/main`), the protected beta.3 product-code candidate from which the beta is promoted. The later release-attestation commit changes documentation only.                                                                                                 |
+| Reviewed revision       | `a413b3de96c77609b26ee9ff7f1aa74045ba77d4` (`origin/main`), the protected beta.4 product/release candidate. The later release-attestation commit changes documentation only.                                                                                                                              |
 | Current re-review       | Source plus issue/PR verification of every row against the reviewed revision; security-relevant changes since the 2026-08-27 revision were diffed separately below.                                                                                                                                       |
 | Prior review            | 2026-08-04 refresh at `dfc132df6b94ea61bd2f6738190f7b8d26b36211`, following the 2026-07-17 ledger refresh for [#805](https://github.com/copse-dev/agent-pane/issues/805), the seven-surface pre-GA review in [#385](https://github.com/copse-dev/agent-pane/issues/385), and the July two-reviewer audit. |
 | Human security reviewer | Jonathan Kingston (owner and reviewer; beta cutting/validation authorized 2026-08-28; stable-GA sign-off remains pending signed/public/update evidence)                                                                                                                                                   |
@@ -138,6 +138,12 @@ checked for changes to trust, credentials, sandboxing, persistence, and release 
   binary does not match its target architecture. It changes packaging completeness, not keyring
   access or secret policy. The release verification timeout limits a wedged runner and does not
   weaken any signature, notarization, metadata, or runtime check.
+- [#1980](https://github.com/copse-dev/agent-pane/pull/1980) (`07a86cbbd`) removed two unused usage
+  aggregation/presentation exports. It does not change stored usage, provider access, or any trust
+  boundary.
+- [#1993](https://github.com/copse-dev/agent-pane/pull/1993) (`a413b3de9`) makes checksum filenames
+  relative to the downloaded artifact root and makes the artifact-only publisher verify from that
+  directory. It does not rebuild, replace, publish, or weaken verification of release bytes.
 
 No new open source-security finding was identified in that diff. Any product-code change after the
 reviewed revision requires another diff review; the release-attestation update itself is
@@ -156,17 +162,18 @@ For the reviewed revision:
   cutting/validation was authorized on 2026-08-28.
 - Release-owner sign-off: **beta authorized; stable GA pending** signed/public/update evidence.
 - Waivers: **none**.
-- GA decision: **source-security gate complete; stable GA/public opening remains blocked** by signed
-  build, anonymous publication, and beta-to-beta update evidence. This document does not close or
-  waive those release-engineering gates.
+- GA decision: **source-security gate complete; stable GA/public opening remains blocked** by the
+  final portable signed beta artifact, anonymous publication, and beta-to-beta update evidence.
+  This document does not close or waive those release-engineering gates.
 
 The remaining live `ga-blocker` issues are release-engineering gates outside this ledger's
-security-finding table: #507 and #802. #507 is not closure evidence yet. The beta.2
+security-finding table: #507 and #802. #507 is not closure evidence yet. The beta.3
 `Release (macOS)` run
-([run 33141095747](https://github.com/copse-dev/agent-pane/actions/runs/33141095747)) proved the
-credentials and completed signing/notarization, but its Intel packaged-runtime smoke stalled on
-the missing x64 keyring module. The run was cancelled before artifact upload or publication;
-beta.3 must satisfy the complete gate.
+([run 33154755261](https://github.com/copse-dev/agent-pane/actions/runs/33154755261)) completed
+signing, notarization, both packaged-runtime smokes, artifact upload, and independent validation on
+a supported Mac. Its downloaded `SHA256SUMS` retained the CI-only `release/` prefix, so direct
+verification failed until that prefix was normalized. #1993 fixes forward in beta.4; beta.4 must
+reproduce the complete gate before #507 closes.
 
 ## Maintenance
 
