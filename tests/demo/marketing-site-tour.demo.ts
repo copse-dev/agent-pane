@@ -43,6 +43,26 @@ describe('marketing site Tour anchor', () => {
     await expect($('.hero-badges .mode-source-private-only')).toBeDisplayed()
     await expect($('.hero-badges .mode-source-private-only')).toHaveText('Free public beta')
     await expect($('.hero-badges .mode-source-live-only')).not.toBeDisplayed()
+    const badgeLayout = await browser.execute(() => {
+      const badge = document.querySelector<HTMLElement>('.hero-badges .mode-source-private-only')
+      const icon = badge?.querySelector<SVGElement>('.badge-icon')
+      if (!badge || !icon) return null
+
+      const badgeRect = badge.getBoundingClientRect()
+      const iconRect = icon.getBoundingClientRect()
+      return {
+        display: getComputedStyle(badge).display,
+        height: badgeRect.height,
+        centerOffset: iconRect.top + iconRect.height / 2 - (badgeRect.top + badgeRect.height / 2),
+      }
+    })
+    expect(badgeLayout).not.toBeNull()
+    // An inline-flex child is blockified to `flex` when it participates as a
+    // flex item in .hero-badges. The broken publication override computed to
+    // `block` and stacked the icon above the label.
+    expect(badgeLayout?.display).toBe('flex')
+    expect(badgeLayout?.height).toBeLessThanOrEqual(32)
+    expect(Math.abs(badgeLayout?.centerOffset ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(1)
     await browser.saveScreenshot(
       join(E2E_SCREENSHOT_DIR, 'marketing-site-downloads-live-source-private-hero.png'),
     )
@@ -105,6 +125,16 @@ describe('marketing site Tour anchor', () => {
     await browser.url('/marketing/index.html')
     await $('.hero-copy').waitForDisplayed()
     await browser.waitUntil(() => browser.execute(() => document.fonts.status === 'loaded'))
+
+    const privateBetaBadge = $('.hero-badges .mode-source-private-only')
+    await expect(privateBetaBadge).toBeDisplayed()
+    await expect(privateBetaBadge).toHaveText('Free public beta')
+    expect(
+      (await privateBetaBadge.getSize('height')) ?? Number.POSITIVE_INFINITY,
+    ).toBeLessThanOrEqual(32)
+    await browser.saveScreenshot(
+      join(E2E_SCREENSHOT_DIR, 'marketing-site-mobile-private-beta-badge.png'),
+    )
 
     await expect($('.hero-visual')).not.toBeDisplayed()
     await expect($('.hero-demo')).not.toBeDisplayed()
