@@ -12,7 +12,6 @@ import {
 
 describe('settings usage panel', function () {
   this.timeout(60_000)
-
   before(async () => {
     resetUserData()
     const now = Date.now()
@@ -77,6 +76,20 @@ describe('settings usage panel', function () {
       $('.usage-plan-provider[data-provider="claude"][data-status="ok"]'),
     ).toBeDisplayed()
     await expect($('.usage-plan-provider[data-provider="codex"][data-status="ok"]')).toBeDisplayed()
+    const claudeCredits = $(
+      '.usage-plan-provider[data-provider="claude"] .usage-plan-window[data-unit="credits"]',
+    )
+    await expect(claudeCredits).toBeDisplayed()
+    await expect(claudeCredits.$('.usage-plan-window-stats')).toHaveText(
+      '10577 / 100000 credits · 11% used · reset unknown',
+    )
+    const codexCredits = $(
+      '.usage-plan-provider[data-provider="codex"] .usage-plan-window[data-unit="credits"]',
+    )
+    await expect(codexCredits).toBeDisplayed()
+    await expect(codexCredits.$('.usage-plan-window-stats')).toHaveText(
+      expect.stringContaining('972 / 15000 credits · 6% used'),
+    )
     await expect(
       $('.usage-plan-provider[data-provider="huggingface"][data-status="ok"]'),
     ).toBeDisplayed()

@@ -2,6 +2,12 @@
 
 export type PlanProviderId = 'claude' | 'codex' | 'huggingface' | 'cursor'
 
+/**
+ * Absolute-amount unit for a window when the provider reports more than a
+ * percent bar. Never invent FX between units — show what the API labeled.
+ */
+export type PlanWindowUnit = 'percent' | 'credits' | 'usd'
+
 /** One rolling (or fixed) usage window reported by a provider. */
 export interface PlanWindow {
   /** Stable id for the window (`five_hour`, `seven_day`, `primary`, …). */
@@ -18,14 +24,26 @@ export interface PlanWindow {
    */
   severity?: string | null
   /**
+   * How to render absolute used/limit when present. Omit (or `percent`) for
+   * rate-limit bars that are percent-only.
+   */
+  unit?: PlanWindowUnit
+  /**
+   * Credits already consumed when {@link unit} is `credits` (Codex
+   * `spend_control`, Claude `extra_usage`).
+   */
+  usedCredits?: number
+  /** Credit cap when {@link unit} is `credits`. */
+  limitCredits?: number
+  /**
    * API-equivalent dollars already consumed in this window, when the provider
-   * reports them (Claude legacy `used_dollars`). Powers plan-worth-it math;
-   * the UI progress bar still uses {@link usedPercent}.
+   * reports them (Claude legacy `used_dollars` / `spend` money). Powers
+   * plan-worth-it math; the UI progress bar still uses {@link usedPercent}.
    */
   usedDollars?: number
   /**
    * API-equivalent dollar cap for this window, when the provider reports it
-   * (Claude legacy `limit_dollars`).
+   * (Claude legacy `limit_dollars` / `spend` money).
    */
   limitDollars?: number
 }
