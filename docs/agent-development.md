@@ -160,9 +160,14 @@ A typical Electron fixture flow is:
    `npm run test:e2e -- --spec tests/e2e/tool-display-live-mock.e2e.ts`.
 5. Inspect the resulting image under `tests/e2e/screenshots/`.
 
-The test oracle defines screenshot ownership. CI attaches changed renders as an immutable artifact;
-it never commits or merges them into the branch. Download the candidate artifact, review it locally,
-and commit the intended PNGs yourself. If a real visual change is not mapped, apply the
-`update-screenshots` label to render the complete reference set, then remove the label after using the
-artifact. Local filtering is implemented by `scripts/lib/screenshot-scope.mts`; fixture determinism
-and tier selection are documented in [`testing-strategy.md`](testing-strategy.md).
+The test oracle defines screenshot ownership. The CI run remains read-only and attaches changed
+renders as an immutable artifact. After a successful same-repository run, a trusted follow-up puts
+those PNGs on a bot-owned branch, opens a child PR into the source branch, and posts its link on the
+parent PR. Review GitHub's image diffs there, then merge that child PR (or enable auto-merge) to apply
+the accepted references. A source-head change supersedes the child PR. Forks and promotion PRs whose
+source is an integration branch use the downloadable artifact and a manual commit because automation
+must not write to those branches. If a real visual change is not mapped, apply the
+`update-screenshots` label to render the complete reference set, then remove the label after the
+review PR is created. Local filtering is implemented by
+`scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
+[`testing-strategy.md`](testing-strategy.md).

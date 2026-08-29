@@ -1571,9 +1571,10 @@ jobs:
   # Preserve reference screenshots as immutable run evidence. Each e2e shard
   # uploads only PNGs that differ from the checked-out baseline; this job merges
   # those slices into one downloadable candidate set. It deliberately has no
-  # write permission and never checks out or pushes the PR branch. Accepting a
-  # render is an explicit human action: download the artifact, copy its
-  # tests/e2e/screenshots/ contents into the checkout, review, and commit.
+  # write permission and never checks out or pushes the PR branch. The trusted
+  # publish-screenshot-candidates workflow consumes the finished artifact, opens
+  # a bot-owned child PR into the source branch, and links it from the parent for
+  # explicit image-diff review. Forks retain the artifact-only/manual path.
   screenshot-artifacts:
     needs: [build, e2e]
     if: >-
@@ -1605,9 +1606,9 @@ jobs:
             else
               echo "${#files[@]} changed reference screenshot(s) are attached as an immutable artifact."
               echo
-              echo "Download **reference-screenshot-candidates-${{ github.run_id }}**, copy"
-              echo '`tests/e2e/screenshots/` into your checkout, review the PNGs, and commit'
-              echo "only the updates this PR intentionally owns."
+              echo "A trusted follow-up workflow will put these PNGs on a bot-owned branch,"
+              echo "open a child PR into the source branch, and link it from the parent for review."
+              echo "The artifact remains the immutable record and the manual fallback for forks."
               echo
               printf -- '- `%s`\n' "${files[@]#candidates/}"
             fi

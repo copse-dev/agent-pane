@@ -395,15 +395,20 @@ Two consequences of running e2e on those PRs, both intended:
   e2e could not fail one at all; and
 - `screenshot-artifacts` preserves reference shots touched by the specs that ran
   as immutable review evidence. It only includes shots the shards actually
-  produced, and never edits the branch.
+  produced, and never edits the branch. A separate trusted `workflow_run`
+  publishes same-repository candidates on a bot-owned branch, opens a child PR
+  into the source branch, and links that review PR from the parent. Merging the
+  child applies the reviewed PNGs without granting write credentials to the job
+  that executed PR code. Forks and promotion PRs sourced from an integration
+  branch keep the downloadable-artifact/manual path.
 
 Two escape hatches on a `main`-targeted PR, both labels:
 
 - `ci-full` — run the whole heavy tier now, for a change that genuinely needs
   the signal before it merges (also forces the tier on a draft).
 - `update-screenshots` — run e2e specifically and render the complete reference
-  set into a candidate artifact. Remove the label after downloading the run you
-  intend to review.
+  set into a candidate artifact and screenshot review PR. Remove the label after
+  the review PR is created.
 
 **What this costs.** GitHub's merge queue would bisect a failing batch
 automatically; a red promotion names a batch, not a commit. Keep promotions

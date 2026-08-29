@@ -327,6 +327,69 @@ describe('ci.yml workflow invariants', () => {
   })
 })
 
+describe('publish-screenshot-candidates.yml workflow invariants', () => {
+  const workflow = readFileSync(
+    resolve('.github/workflows/publish-screenshot-candidates.yml'),
+    'utf8',
+  )
+
+  it('separates the write-capable publisher from pull-request code execution', () => {
+    assert.match(workflow, /^ {2}workflow_run:\n {4}workflows: \[CI\]\n {4}types: \[completed\]$/m)
+    assert.doesNotMatch(workflow, /pull_request_target/)
+    assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/)
+    assert.match(
+      workflow,
+      /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,
+      'fork runs receive secrets on workflow_run and must be rejected before token minting',
+    )
+    assert.match(
+      workflow,
+      /^permissions:\n {2}actions: read\n {2}contents: read\n {2}pull-requests: read$/m,
+    )
+    assert.match(workflow, /permission-contents: write/)
+    assert.match(workflow, /permission-pull-requests: write/)
+  })
+
+  it('binds publication to one open parent at the exact rendered head', () => {
+    assert.match(workflow, /candidates\.length !== 1/)
+    assert.match(workflow, /parent\.state !== 'open'/)
+    assert.match(workflow, /parent\.head\.repo\?\.full_name === `\$\{owner\}\/\$\{repo\}`/)
+    assert.match(workflow, /parent\.head\.ref === 'main' \|\| parent\.head\.ref === 'release'/)
+    assert.match(workflow, /parent\.head\.sha !== runHeadSha/)
+    assert.match(workflow, /artifact\.name === artifactName && !artifact\.expired/)
+    assert.match(workflow, /ref: \$\{\{ steps\.discover\.outputs\.head-sha \}\}/)
+    assert.match(workflow, /persist-credentials: false/)
+    assert.match(
+      workflow,
+      /parent\.head\.sha !== process\.env\.EXPECTED_HEAD_SHA[\s\S]*?state: 'closed'/,
+      'a parent-head race after child creation must close the stale review PR',
+    )
+  })
+
+  it('accepts only bounded, flat, real PNG candidates', () => {
+    assert.match(workflow, /find "\$CANDIDATE_ROOT" -type l/)
+    assert.match(workflow, /tests\/e2e\/screenshots\/\*\.png\)/)
+    assert.match(workflow, /\^\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\*\\\.png\$/)
+    assert.match(workflow, /89504e470d0a1a0a/)
+    assert.match(workflow, /"\$size" -gt 16777216/)
+    assert.match(workflow, /"\$count" -gt 512/)
+    assert.match(workflow, /"\$total" -gt 268435456/)
+    assert.match(workflow, /Unexpected file in screenshot candidate artifact/)
+  })
+
+  it('opens a bot-owned child PR into the source branch and links it from the parent', () => {
+    assert.match(workflow, /uses: peter-evans\/create-pull-request@v8/)
+    assert.match(workflow, /base: \$\{\{ steps\.discover\.outputs\.head-ref \}\}/)
+    assert.match(workflow, /branch: \$\{\{ steps\.discover\.outputs\.review-branch \}\}/)
+    assert.match(workflow, /add-paths: tests\/e2e\/screenshots\//)
+    assert.doesNotMatch(workflow, /^ {10}base: main$/m)
+    assert.match(workflow, /<!-- copse-e2e-screenshot-review -->/)
+    assert.match(workflow, /REVIEW_URL: \$\{\{ steps\.review-pr\.outputs\.pull-request-url \}\}/)
+    assert.match(workflow, /Review GitHub’s image diffs in \[screenshot PR #/)
+    assert.match(workflow, /Close superseded screenshot review PRs/)
+  })
+})
+
 describe('promote-develop.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
 
