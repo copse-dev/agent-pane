@@ -12,7 +12,11 @@ import { getSshConnectionManager } from '../ssh-workspace/connection-manager.ts'
 import { sshExecArgs } from '../ssh-workspace/openssh-transport.ts'
 import { wrapRemoteShellWithPgid } from '../ssh-workspace/ssh-spawn.ts'
 import { buildRemoteEnvPrefix } from '../ssh-workspace/remote-exec.ts'
-import { remoteEnvAllowList, REMOTE_PGID_PREFIX } from '../ssh-workspace/remote-env.ts'
+import {
+  remoteEnvAllowList,
+  resolveRemoteLoginShell,
+  REMOTE_PGID_PREFIX,
+} from '../ssh-workspace/remote-env.ts'
 import { leaseSshAskpassEnv } from '../ssh-workspace/askpass.ts'
 import { registerRemoteProcessMeta } from '../ssh-workspace/remote-process-meta.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
@@ -76,14 +80,24 @@ function remoteAcpAgentEnv(): Record<string, string> {
 
 /**
  * Fail closed with actionable guidance when the agent binary is absent on the
- * remote host's PATH. Runs `command -v` through a login shell (`sh -lc`) so the
- * remote profile's PATH (nvm/asdf/etc.) is loaded, matching how the agent runs.
+ * remote host's PATH. Runs `command -v` through the resolved remote login
+ * shell (`-lc`) so a version manager (nvm/asdf/etc.) hooked into that shell's
+ * own rc file is loaded — matching how the agent is actually spawned below.
+ * Deliberately not plain POSIX `sh`: on Debian/Ubuntu that's dash, whose
+ * default `~/.profile` only chains into `~/.bashrc` (where nvm/asdf usually
+ * live) inside an `if [ -n "$BASH_VERSION" ]` guard that dash never
+ * satisfies — so a dash login shell silently never sees a version-managed
+ * install even though the user's actual login shell would.
  */
-async function assertRemoteAgentInstalled(command: string, hostId: string): Promise<void> {
+async function assertRemoteAgentInstalled(
+  command: string,
+  hostId: string,
+  loginShell: string,
+): Promise<void> {
   const conn = getSshConnectionManager().getConnection(hostId)
   if (!conn) return // connect() was called just above; if it's gone, let the spawn surface it.
   const probe = await conn
-    .execArgv(['sh', '-lc', `command -v ${posixQuote(command)}`], { timeoutMs: 15_000 })
+    .execArgv([loginShell, '-lc', `command -v ${posixQuote(command)}`], { timeoutMs: 15_000 })
     .catch(() => null)
   if (probe && probe.code === 0) return
   const known = KNOWN_ACP_AGENTS.find((agent) => agent.command === command)
@@ -122,11 +136,22 @@ function attachRemotePgid(proc: ChildProcess, hostId: string, out: PassThrough):
   proc.stdout?.on('end', () => out.end())
 }
 
-/** Build the remote command line: `exec [env …] <command> <args…>` under the PGID wrapper. */
-export function buildRemoteAcpCommand(input: RemoteAcpSpawnInput, remoteRoot: string): string {
+/**
+ * Build the remote command line: `exec [env …] <command> <args…>` run through
+ * the resolved remote login shell, under the PGID wrapper. The login-shell
+ * layer must match {@link assertRemoteAgentInstalled}'s probe exactly — a
+ * binary the preflight found via one shell's PATH but the actual spawn can't
+ * find via another's is worse than not preflighting at all.
+ */
+export function buildRemoteAcpCommand(
+  input: RemoteAcpSpawnInput,
+  remoteRoot: string,
+  loginShell: string,
+): string {
   const envPrefix = buildRemoteEnvPrefix(remoteAcpAgentEnv())
   const argv = [input.command, ...(input.args ?? [])]
-  const agentCmd = `exec ${envPrefix}${argv.map(posixQuote).join(' ')}`
+  const inner = `exec ${envPrefix}${argv.map(posixQuote).join(' ')}`
+  const agentCmd = `exec ${posixQuote(loginShell)} -lc ${posixQuote(inner)}`
   return wrapRemoteShellWithPgid(remoteRoot, agentCmd)
 }
 
@@ -147,9 +172,12 @@ export async function spawnRemoteAcpTransport(
   const manager = getSshConnectionManager()
   if (!manager.getConnection(target.hostId)) await manager.connect(target.hostId)
 
-  await assertRemoteAgentInstalled(input.command, target.hostId)
+  const loginShell = resolveRemoteLoginShell(
+    manager.getConnection(target.hostId)?.capabilities?.shell,
+  )
+  await assertRemoteAgentInstalled(input.command, target.hostId, loginShell)
 
-  const wrapped = buildRemoteAcpCommand(input, target.remoteRoot)
+  const wrapped = buildRemoteAcpCommand(input, target.remoteRoot, loginShell)
   const askpass = leaseSshAskpassEnv(process.env, target.hostId)
   const child = spawn('ssh', sshExecArgs(host, wrapped), {
     env: askpass.env,
