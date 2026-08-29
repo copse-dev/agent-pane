@@ -7,8 +7,10 @@ every release; this document covers channel policy and macOS packaging.
 The supported target is macOS 26 or newer on Apple Silicon (`arm64`) and Intel
 (`x64`). Copse cannot use the Mac App Store or TestFlight because its shell and
 PTY functionality is incompatible with the App Sandbox. Distribution is a
-Developer ID-signed, Apple-notarized direct download with updates from GitHub
-Releases.
+Developer ID-signed, Apple-notarized direct download with updates from the
+public, binary-only
+[`copse-dev/copse-releases`](https://github.com/copse-dev/copse-releases)
+repository.
 
 ## Channel contract
 
@@ -26,10 +28,10 @@ downgrade. The shared classifier in
 [`src/shared/release-channel.mts`](../src/shared/release-channel.mts) drives both
 the packaged app and the release workflow so their routing cannot drift.
 
-GitHub release assets must be anonymously reachable. Before a public beta or
-stable launch, make this repository public or move `build.publish` to a public
-download endpoint and verify the feed from a signed-out browser. A GitHub
-Release in a private repository is not public distribution.
+GitHub release assets must be anonymously reachable. `build.publish` therefore
+points at `copse-dev/copse-releases`, not this source repository. The source can
+remain private during beta testing; the binary repository and its release
+assets are public. Verify every feed and installer from a signed-out browser.
 
 ## What the build produces
 
@@ -79,9 +81,11 @@ The repository needs these Actions secrets:
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for that Apple ID.        |
 | `APPLE_TEAM_ID`               | Apple Developer Team ID.                        |
 
-`GITHUB_TOKEN` is provided automatically for publishing. The release workflow
-fails before packaging if a required signing or notarization credential is
-missing.
+`RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` mint the narrowly scoped token
+that publishes into `copse-dev/copse-releases`; the GitHub App must be installed
+there with Contents write permission. `GITHUB_TOKEN` remains scoped to the
+private source run and its Actions artifacts. The release workflow fails before
+packaging if a required signing or notarization credential is missing.
 
 ## Publishing through CI
 
@@ -119,13 +123,15 @@ The version in `package.json` is the trigger. Bumping it is the only manual step
    two immutable architecture-specific Actions artifacts plus a small metadata
    artifact containing the combined feeds, checksums, and notes generated from
    `CHANGELOG.md`. It does not create a GitHub Release.
-6. Review and install-test the artifact for each architecture. When they are
-   accepted, make the
-   repository public and manually dispatch `Publish release artifacts` with the
-   tag and successful `Release (macOS)` run ID. The publisher verifies the
-   source workflow, successful conclusion, exact tagged SHA, checksums, and
-   public repository state; attests those downloaded files; and creates a
-   prerelease for beta or a normal/latest release for stable. It never rebuilds.
+6. Review and install-test the artifact for each architecture. When accepted,
+   manually dispatch `Publish release artifacts` with the tag and successful
+   `Release (macOS)` run ID. The publisher verifies the source workflow,
+   successful conclusion, exact tagged SHA, checksums, and public target state,
+   then creates a prerelease for beta or a normal/latest release for stable in
+   `copse-dev/copse-releases`. It never rebuilds. GitHub artifact attestation is
+   added automatically once the source repository is public; until then the
+   signed build, immutable Actions artifact, and published SHA256 manifest are
+   the integrity chain available on this GitHub Team plan.
 7. Review the published GitHub Release notes and add known issues before
    announcing the release.
 8. Reset `CHANGELOG.md`'s `Unreleased` section in a follow-up PR. Its unchanged,
@@ -138,10 +144,10 @@ replace an existing release, and downgrade is not a supported rollback.
 A manual workflow dispatch accepts only an existing matching tag reachable
 from `release`; it does not provide a bypass around those gates.
 
-The private signing run cannot create provenance because private-repository
-attestation requires GitHub Enterprise Cloud and this organization is on Team.
-`Publish release artifacts` runs only after the repository is public and
-attests the exact downloaded Actions artifact before creating the release.
+Private-repository artifact attestation requires GitHub Enterprise Cloud and
+this organization is on Team. While the source remains private, both workflows
+skip attestation rather than blocking beta distribution. After the source opens,
+the publisher attests the same downloaded bytes before creating the release.
 
 ## Local validation
 

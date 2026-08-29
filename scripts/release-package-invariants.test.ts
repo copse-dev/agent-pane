@@ -41,6 +41,19 @@ describe('release package invariants', () => {
     assert.ok(files.includes('!**/*.map'))
   })
 
+  it('embeds the public binary repository as the anonymous update feed', () => {
+    const build = record(packageJson['build'], 'package.json build')
+    const publish = build['publish']
+    assert.ok(Array.isArray(publish))
+    assert.deepEqual(publish, [
+      {
+        provider: 'github',
+        owner: 'copse-dev',
+        repo: 'copse-releases',
+      },
+    ])
+  })
+
   it('uses the generated Copse icon for both the app and mounted DMG', () => {
     const build = record(packageJson['build'], 'package.json build')
     const mac = record(build['mac'], 'package.json build.mac')
