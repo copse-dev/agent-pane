@@ -13,5 +13,6 @@ export function toCanvasArtefact(resource: McpUiResource): CanvasArtefact {
     title: artefactTitleFromUri(resource.uri),
     mimeType: resource.mimeType,
     body: resource.text,
+    ...(resource.sourcePath ? { sourcePath: resource.sourcePath } : {}),
   }
 }

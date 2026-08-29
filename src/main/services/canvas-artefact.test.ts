@@ -21,4 +21,21 @@ describe('toCanvasArtefact', () => {
       { title: 'Demo', mimeType: 'text/html', body: '<h1>hi</h1>' },
     )
   })
+
+  it('carries the source file through, so the artefact can be reopened from it', () => {
+    assert.deepEqual(
+      toCanvasArtefact({
+        uri: 'ui://canvas/demo',
+        mimeType: 'text/html',
+        text: '<h1>hi</h1>',
+        sourcePath: 'demos/demo.html',
+      }),
+      {
+        title: 'Demo',
+        mimeType: 'text/html',
+        body: '<h1>hi</h1>',
+        sourcePath: 'demos/demo.html',
+      },
+    )
+  })
 })
