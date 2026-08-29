@@ -40,6 +40,13 @@ describe('marketing site Tour anchor', () => {
       document.documentElement.setAttribute('data-site-mode', 'downloads-live')
     })
 
+    await expect($('.hero-badges .mode-source-private-only')).toBeDisplayed()
+    await expect($('.hero-badges .mode-source-private-only')).toHaveText('Free public beta')
+    await expect($('.hero-badges .mode-source-live-only')).not.toBeDisplayed()
+    await browser.saveScreenshot(
+      join(E2E_SCREENSHOT_DIR, 'marketing-site-downloads-live-source-private-hero.png'),
+    )
+
     const download = $(
       '.download-panel .pill-pink[href="https://github.com/copse-dev/copse-releases/releases"]',
     )
