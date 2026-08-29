@@ -702,6 +702,45 @@ export function mountBrowserPane(
     return true
   }
 
+  /**
+   * The open tab already showing `url`, if any. Matched on {@link displayUrl} —
+   * the same "what is this tab pointed at" the address bar shows — so a tab
+   * whose navigation is still queued counts as showing it. Artefact tabs are
+   * skipped: their identity is the title, and their data: URL changes with
+   * every render.
+   */
+  function urlTabFor(url: string): BrowserTab | undefined {
+    for (const tab of tabs.values()) {
+      if (tab.artefactTitle) continue
+      if (displayUrl(tab) === url) return tab
+    }
+    return undefined
+  }
+
+  /**
+   * The agent asking for a page to come forward (`browser_preview`, or
+   * `browser_show` with a url). Unlike a cmd-clicked link — which means "open
+   * another one" and always earns its own tab — this means "look at this", and
+   * the agent re-serves the same loopback URL every time it iterates on a page.
+   * Promoting and reloading the tab already showing it makes the canvas the user
+   * is watching become the new version, instead of stacking a near-identical tab
+   * per iteration that they then have to close. Same reasoning as
+   * {@link artefactTabFor}, keyed on the URL because that is this tab's identity.
+   */
+  function showTabForUrl(rawUrl: string): void {
+    const url = normalizeBrowserUrl(rawUrl)
+    openRightPanel(store, 'browser')
+    const existing = urlTabFor(url)
+    if (!existing) {
+      addTab({ url, activate: true })
+      return
+    }
+    setActiveTab(existing.id)
+    // The URL is unchanged, so this reloads — which is the point: what the
+    // server returns for it has moved on since the tab last loaded it.
+    navigateTab(existing, url)
+  }
+
   function openArtefact(artefact: CanvasArtefact): void {
     // text/html renders inline via an opaque data: URL; a URL-list artefact
     // navigates normally (and is still subject to the browser origin policy).
@@ -1143,10 +1182,7 @@ export function mountBrowserPane(
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
     api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
-    api?.browser.onShowTab?.((url) => {
-      openRightPanel(store, 'browser')
-      addTab({ url, activate: true })
-    }),
+    api?.browser.onShowTab?.(showTabForUrl),
     api?.browser.onShareText(attachSharedText),
     api?.browser.onShareImage(attachSharedImage),
     api?.browser.onPluginTabRequest(ensurePluginBrowserTab),

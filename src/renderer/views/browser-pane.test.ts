@@ -92,6 +92,79 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('reuses the tab already showing a URL the agent asks to show again', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'browser',
+    })
+    let showTab: ((url: string) => void) | undefined
+    const api = createPendingApi({
+      'browser.onShowTab': (handler: (url: string) => void): (() => void) => {
+        showTab = handler
+        return (): void => {}
+      },
+      'fs.readFile': async (): Promise<string> => '',
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      assert.ok(showTab)
+      showTab('http://localhost:4321/demo.html')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      // Land the first load so the tab reports the URL the way a real webview
+      // does — committed on the element, with nothing left queued.
+      const webview = qsRequired<FakeWebview>(
+        viewer,
+        '.browser-tab-panel.is-active .browser-webview',
+      )
+      stubWebviewMethods(webview)
+      let reloads = 0
+      webview.getURL = (): string => webview.src || 'about:blank'
+      webview.reload = (): void => {
+        reloads += 1
+      }
+      webview.dispatchEvent(new Event('dom-ready'))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 2)
+
+      // The agent re-serves the same URL after editing the page. That is a new
+      // version of what the user is already looking at, not a second thing.
+      showTab('http://localhost:4321/demo.html')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 2)
+      assert.equal(reloads, 1)
+      const input = qsRequired<HTMLInputElement>(
+        viewer,
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      assert.equal(input.value, 'http://localhost:4321/demo.html')
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
   it('renders proposed workspace files for a localhost URL in the browser demo', async () => {
     const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
     const ResizeObserverCtor = globalThis.ResizeObserver
