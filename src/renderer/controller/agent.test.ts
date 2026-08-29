@@ -657,3 +657,24 @@ test('first tool call kicks off naming without waiting for done', async () => {
   assert.deepEqual(titleCalls, ['List the project files'])
   assert.equal(requireThread(store, 't-name-on-tool').title, 'Generated Title')
 })
+
+test('prompt progress dedupes on the label but re-emits after another activity', () => {
+  const { send, store } = setup()
+  const labels: (string | null)[] = []
+  store.on('agent_activity', (_tid, label) => labels.push(label))
+
+  send({ type: 'prompt_progress', fraction: 0.471 })
+  // Rounds to the same percent: suppressed, so the aria-live row is not
+  // re-announced with the string it is already showing.
+  send({ type: 'prompt_progress', fraction: 0.474 })
+  // Another label takes over the row. The next prefill percent must be
+  // announced again even though it repeats the last progress string.
+  send({ type: 'post_turn_review', status: 'running', summary: '' })
+  send({ type: 'prompt_progress', fraction: 0.474 })
+
+  assert.deepEqual(labels, [
+    'Processing prompt… 47%',
+    'Reviewing changes…',
+    'Processing prompt… 47%',
+  ])
+})
