@@ -1,4 +1,4 @@
-import type { SkillSummary } from '@shared/types/skills.ts'
+import type { InvocableKind } from '@shared/invocation/parse-invocation.ts'
 import type { ComposerTextInput } from './composer-editor.ts'
 import { clear } from '../dom/helpers.ts'
 
@@ -18,14 +18,24 @@ export function findSkillTriggerIndex(value: string, cursor: number): number {
   return start < cursor && value[start] === '/' ? start : -1
 }
 
+/**
+ * One `/name` row. Skills and subagents share the picker because they share the
+ * namespace — `kind` is what tells them apart on screen.
+ */
+export interface InvocableEntry {
+  name: string
+  description: string
+  kind: InvocableKind
+}
+
 export interface SkillPickerOptions {
   input: ComposerTextInput
   inputBar: HTMLElement
-  listSkills: () => Promise<SkillSummary[]>
+  listInvocables: () => Promise<InvocableEntry[]>
 }
 
 export function initSkillPicker(opts: SkillPickerOptions): () => void {
-  const { input, inputBar, listSkills } = opts
+  const { input, inputBar, listInvocables } = opts
 
   const picker = document.createElement('div')
   picker.className = 'mention-picker skill-picker'
@@ -35,15 +45,15 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
 
   let slashStart = -1
   let selectedIdx = 0
-  let currentSkills: SkillSummary[] = []
-  let allSkills: SkillSummary[] | null = null
+  let currentSkills: InvocableEntry[] = []
+  let allSkills: InvocableEntry[] | null = null
 
-  async function ensureSkills(): Promise<SkillSummary[]> {
-    allSkills ??= await listSkills()
+  async function ensureSkills(): Promise<InvocableEntry[]> {
+    allSkills ??= await listInvocables()
     return allSkills
   }
 
-  function filterSkills(query: string): SkillSummary[] {
+  function filterSkills(query: string): InvocableEntry[] {
     const skills = allSkills ?? []
     const q = query.toLowerCase()
     if (!q) return skills
@@ -78,6 +88,12 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
       const name = document.createElement('div')
       name.className = 'skill-item-name'
       name.textContent = `/${skill.name}`
+      if (skill.kind === 'agent') {
+        const badge = document.createElement('span')
+        badge.className = 'skill-item-kind'
+        badge.textContent = 'agent'
+        name.append(badge)
+      }
       const desc = document.createElement('div')
       desc.className = 'skill-item-desc'
       desc.textContent = skill.description

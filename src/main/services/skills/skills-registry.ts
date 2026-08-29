@@ -5,6 +5,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import { discoverCursorPluginRoots, resolvePluginSkillsDir } from './cursor-plugins.ts'
 import { listBundledCursorPluginRoots } from './bundled-cursor-skills.ts'
 import { getBuiltinSkillsRoot } from './builtin-skills.ts'
+import { pathExists, walkForContainerRoots, walkForFiles } from '../discovery/container-scan.ts'
 import { getSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import {
@@ -28,50 +29,6 @@ export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
 
 const SKILL_CONTAINER_DIRS = new Set(['.cursor', '.agents', '.claude'])
 
-/**
- * Directories the project skill scan never descends into.
- *
- * The scan looks for `<.cursor|.agents|.claude>/skills` anywhere under the
- * workspace, so with only `node_modules`/`.git` excluded it walked build output,
- * vendored trees and virtualenvs too — thousands of directories that cannot
- * contain a hand-authored skill. Worse, Copse's own `dist/` holds the bundled
- * Cursor skills, so a checkout of this repo re-scanned them as "project" skills
- * and logged duplicate-skill warnings against its own build artifacts.
- *
- * Everything here is either generated, vendored, or a package/tool cache. A skill
- * authored inside one would not survive a clean build anyway.
- */
-const SKIP_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'dist-test',
-  'out',
-  'build',
-  'target',
-  'vendor',
-  'coverage',
-  '.next',
-  '.nuxt',
-  '.svelte-kit',
-  '.turbo',
-  '.cache',
-  '.venv',
-  'venv',
-  '__pycache__',
-])
-
-/**
- * How deep below the workspace root the project skill scan descends.
- *
- * Skill containers live near a package root by convention — `.cursor/skills` at
- * the workspace root, or one per package in a monorepo (`packages/x/.cursor/…`).
- * Six levels covers both with room to spare, and bounds the walk on a workspace
- * whose tree is unexpectedly deep (a nested checkout, a huge data directory)
- * rather than letting boot pay for the full traversal.
- */
-const MAX_SKILL_ROOT_DEPTH = 6
-
 let cachedSkills: SkillMetadata[] = []
 let refreshPromise: Promise<void> | null = null
 const scopedSkills = new AsyncLocalStorage<readonly SkillMetadata[]>()
@@ -87,70 +44,6 @@ function skillsEnabled(): boolean {
 function userSkillRoots(): string[] {
   const home = homedir()
   return ['.cursor', '.agents', '.claude'].map((dir) => join(home, dir, 'skills'))
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await fsp.access(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function walkForSkillRoots(dir: string, out: Set<string>, depth = 0): Promise<void> {
-  if (depth >= MAX_SKILL_ROOT_DEPTH) return
-  let entries
-  try {
-    entries = await fsp.readdir(dir, { withFileTypes: true })
-  } catch {
-    return
-  }
-
-  // A nested repository — a git worktree, a submodule, a vendored clone — is a
-  // separate project that happens to live inside this one. Its skills are not
-  // this workspace's, and for a worktree they are literally the same files on
-  // another branch: scanning `.claude/worktrees/*` found every skill again and
-  // logged a duplicate warning for each. `.git` is a directory in a clone and a
-  // *file* in a worktree, so match on the name and not on its type.
-  if (depth > 0 && entries.some((entry) => entry.name === '.git')) return
-
-  for (const entry of entries) {
-    if (!entry.isDirectory() || SKIP_DIRS.has(entry.name)) continue
-    const full = join(dir, entry.name)
-    if (entry.name === 'skills') {
-      const parent = basename(dirname(full))
-      // A container's own `skills/` dir is the root itself — its subtree holds
-      // the skills, not more containers, so there is nothing below to look for.
-      if (SKILL_CONTAINER_DIRS.has(parent)) {
-        out.add(full)
-        continue
-      }
-    }
-    await walkForSkillRoots(full, out, depth + 1)
-  }
-}
-
-async function walkForSkillFiles(
-  root: string,
-  onFound: (path: string) => Promise<void>,
-): Promise<void> {
-  let entries
-  try {
-    entries = await fsp.readdir(root, { withFileTypes: true })
-  } catch {
-    return
-  }
-
-  for (const entry of entries) {
-    const full = join(root, entry.name)
-    if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue
-      await walkForSkillFiles(full, onFound)
-      continue
-    }
-    if (entry.name === 'SKILL.md') await onFound(full)
-  }
 }
 
 async function loadSkillFromFile(
@@ -215,7 +108,11 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
   const workspace = getWorkspaceRoot()
   if (workspace) {
     const projectRoots = new Set<string>()
-    await walkForSkillRoots(workspace, projectRoots)
+    await walkForContainerRoots(
+      workspace,
+      { containerDirs: SKILL_CONTAINER_DIRS, leafName: 'skills' },
+      projectRoots,
+    )
     for (const root of projectRoots) roots.push({ root, source: 'project' })
   }
 
@@ -257,9 +154,13 @@ async function discoverSkillsRegistry(): Promise<SkillMetadata[]> {
   const discoveryRoots = await collectDiscoveryRoots()
 
   for (const { root, source } of discoveryRoots) {
-    await walkForSkillFiles(root, async (skillPath) => {
-      await loadSkillFromFile(skillPath, source, skills)
-    })
+    await walkForFiles(
+      root,
+      (fileName) => fileName === 'SKILL.md',
+      async (skillPath) => {
+        await loadSkillFromFile(skillPath, source, skills)
+      },
+    )
   }
 
   return [...skills.values()].sort((a, b) => a.name.localeCompare(b.name))

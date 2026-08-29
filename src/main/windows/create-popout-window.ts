@@ -43,8 +43,8 @@ function notifyPopoutMode(win: BrowserWindow, mode: PopoutMode): void {
 /**
  * Open (or focus) a detached window that renders a single right-panel pane. The
  * window loads the same renderer as the main window with `?popout=<mode>`; the
- * renderer hides the projects sidebar, chat, and titlebar so only the pane
- * fills the window (see `styles/global/popout.css`).
+ * renderer hides the projects sidebar, chat, and app titlebar, and draws its own
+ * titlebar carrying the panel switcher (see `styles/global/popout.css`).
  */
 export function createPanePopoutWindow(mode: PopoutMode, seed?: unknown): BrowserWindow {
   stashPopoutSeed(mode, seed)
@@ -66,6 +66,12 @@ export function createPanePopoutWindow(mode: PopoutMode, seed?: unknown): Browse
     minHeight: POPOUT_MIN_HEIGHT,
     ...(icon ? { icon } : {}),
     title: TITLES[mode],
+    // Frameless with a renderer-drawn titlebar, exactly like the main window, so
+    // the panel switcher sits in chrome that matches it (see popout.css).
+    frame: false,
+    titleBarStyle: 'hidden',
+    // y centers 12px traffic lights in the titlebar ((titlebar-height − 12) / 2).
+    trafficLightPosition: { x: 12, y: 14 },
     backgroundColor: bootTheme.backgroundColor,
     show: false,
     webPreferences: {

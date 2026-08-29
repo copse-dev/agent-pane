@@ -512,11 +512,6 @@ export function getVncService(): VncService {
   return service
 }
 
-export function resetVncServiceForTests(): void {
-  service = null
-  seededNearbyServers = null
-}
-
 export function setSeededVncNearbyServersForTests(servers: VncNearbyServer[]): void {
   seededNearbyServers = servers.map((server) => ({ ...server, addresses: [...server.addresses] }))
 }

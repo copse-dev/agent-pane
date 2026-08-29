@@ -52,10 +52,11 @@ import {
 } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
 import { mountFooterIndexStatus } from './footer-index-status.ts'
-import { resolveSkillInvocation } from '@shared/skills/parse-skill-invocation.ts'
+import { mergeInvocables, resolveInvocation } from '@shared/invocation/parse-invocation.ts'
 import { buildSkillUserText } from '@shared/skills/build-skill-user-content.ts'
 import type { ContextBreakdown, TranscriptAttachment, UserContent } from '@shared/types'
 import type { AgentRunPayload, SkillSummary } from '@shared/types/skills.ts'
+import type { AgentSummary } from '@shared/types/agents.ts'
 import { mountFooterModelPicker } from './footer-model-picker.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { createContextWheel } from './context-wheel.ts'
@@ -307,23 +308,11 @@ export function mountInputBar(
   })
   const usagePopover = createFooterUsagePopover()
   const usageGroup = el('div', { class: 'footer-usage-group' })
-  const runningIndicator = el('span', {
-    class: 'footer-running',
-    hidden: '',
-    role: 'status',
-    'aria-live': 'polite',
-  })
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
-  usageGroup.append(
-    contextWheel.root,
-    runningIndicator,
-    queueIndicator,
-    usageBtn,
-    usagePopover.root,
-  )
+  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
   footer.append(modelHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -1112,8 +1101,6 @@ export function mountInputBar(
   function updateState(): void {
     const running = isRunning()
     stopBtn.hidden = !running
-    runningIndicator.hidden = !running
-    runningIndicator.textContent = running ? 'Agent running · messages queue' : ''
     submitBtn.textContent = running ? 'Queue' : 'Send'
     submitBtn.setAttribute('aria-label', running ? 'Queue message' : 'Send message')
     submitBtn.classList.toggle('with-stop', running)
@@ -1301,15 +1288,22 @@ export function mountInputBar(
     }
   }
 
+  /** Skills and agents as one `/name` namespace; skills win a collision. */
+  function currentInvocables(): ReturnType<typeof mergeInvocables> {
+    return mergeInvocables(
+      (skillsCache ?? []).map((skill) => skill.name),
+      (agentsCache ?? []).map((agent) => agent.name),
+    )
+  }
+
   function composeEstimatePayload(): string {
     // Expanded so inline paste chips weigh their full content, not one char.
     const rawText = composer.expandedValue().trim()
-    const skillNames = (skillsCache ?? []).map((skill) => skill.name)
-    const invocation = resolveSkillInvocation(rawText, skillNames)
-    const invokedSkills =
-      invocation && (skillsCache ?? []).some((skill) => skill.name === invocation.skillName)
-        ? [invocation.skillName]
-        : []
+    const invocation = resolveInvocation(rawText, currentInvocables())
+    // Only a skill adds prompt weight here: an agent's body goes to the
+    // subagent's own context, not the parent's, so it must not inflate the
+    // composer's estimate of this turn.
+    const invokedSkills = invocation?.kind === 'skill' ? [invocation.name] : []
     const draftText = buildTextWithAttachments(rawText, attachedFiles, currentShellBlocks(), {
       threadRefs: currentThreadRefs(),
       videoRefs: currentVideoRefs(),
@@ -1578,18 +1572,25 @@ export function mountInputBar(
     // `skillsCache` is still stale — including `[]` from an earlier empty/failed
     // load, which is truthy and would skip the `??` refetch. Authorizing an
     // invocation against a lagging cache surfaces a false "Unknown skill" toast.
-    const skills = await api.skills.list()
+    const [skills, agentsResult] = await Promise.all([api.skills.list(), api.agents.list()])
     skillsCache = skills
-    const skillNames = skills.map((skill) => skill.name)
-    const invocation = resolveSkillInvocation(rawText, skillNames)
-    const invokedSkills = invocation ? [invocation.skillName] : []
+    agentsCache = agentsResult.agents
+    const invocation = resolveInvocation(rawText, currentInvocables())
+    const invokedSkills = invocation?.kind === 'skill' ? [invocation.name] : []
+    // The agent the turn delegates to. Its presence is what offers the `task`
+    // tool for this turn — nothing else can make the parent delegate, because
+    // v1 never tells the model which agents exist.
+    const invokedAgent = invocation?.kind === 'agent' ? invocation.name : undefined
 
-    const invokedSkill = invocation
-      ? skills.find((skill) => skill.name === invocation.skillName)
-      : undefined
+    const invokedSkill =
+      invocation?.kind === 'skill'
+        ? skills.find((skill) => skill.name === invocation.name)
+        : undefined
 
-    if (invocation && !invokedSkill) {
-      showToast(`Unknown skill: /${invocation.skillName}`, { variant: 'error' })
+    // A leading `/name` that matches neither is a typo, not a message: sending
+    // it as prose would silently do the wrong work.
+    if (invocation && invocation.kind === null) {
+      showToast(`Unknown skill or agent: /${invocation.name}`, { variant: 'error' })
       return
     }
 
@@ -1606,16 +1607,22 @@ export function mountInputBar(
       }
     }
 
-    const text = invocation
-      ? buildSkillUserText(
-          invocation.skillName,
-          invocation.remainder,
-          attachedFiles.length > 0 ||
-            attachedImages.length > 0 ||
-            attachedVideos.length > 0 ||
-            attachedArchives.length > 0,
-        )
-      : rawText
+    const text =
+      invocation && invokedAgent
+        ? // The `/name` token is stripped; the rest of the line is the request the
+          // parent passes on to the agent. A bare `/name` still needs to say
+          // something, or the turn arrives empty.
+          invocation.remainder || `Run the ${invokedAgent} agent.`
+        : invocation
+          ? buildSkillUserText(
+              invocation.name,
+              invocation.remainder,
+              attachedFiles.length > 0 ||
+                attachedImages.length > 0 ||
+                attachedVideos.length > 0 ||
+                attachedArchives.length > 0,
+            )
+          : rawText
 
     let fullContent: UserContent
     if (attachedImages.length > 0) {
@@ -1686,6 +1693,7 @@ export function mountInputBar(
     const payload: AgentRunPayload = {
       content: fullContent,
       invokedSkills,
+      ...(invokedAgent !== undefined ? { invokedAgent } : {}),
       priorTodos,
       ...(workingBrief !== undefined ? { workingBrief } : {}),
     }
@@ -2088,6 +2096,7 @@ export function mountInputBar(
   })
 
   let skillsCache: SkillSummary[] | null = null
+  let agentsCache: AgentSummary[] | null = null
   const refreshSkillsCache = (): void => {
     void api.skills.list().then(
       (skills) => {
@@ -2099,12 +2108,21 @@ export function mountInputBar(
         skillsCache = null
       },
     )
+    void api.agents.list().then(
+      (result) => {
+        agentsCache = result.agents
+      },
+      () => {
+        agentsCache = null
+      },
+    )
   }
   refreshSkillsCache()
   // Skills are workspace-scoped; drop the stale list when the workspace changes
   // so inline /skill detection and validation use the new workspace's skills.
   const onSkillsChanged = (): void => {
     skillsCache = null
+    agentsCache = null
     refreshSkillsCache()
     scheduleContextEstimate(0)
   }
@@ -2114,11 +2132,27 @@ export function mountInputBar(
   const skillPicker = initSkillPicker({
     input: composer,
     inputBar: root,
-    // Keep the submit-time cache aligned with whatever the picker just showed.
-    listSkills: async () => {
-      const skills = await api.skills.list()
+    // Keep the submit-time caches aligned with whatever the picker just showed.
+    listInvocables: async () => {
+      const [skills, agents] = await Promise.all([api.skills.list(), api.agents.list()])
       skillsCache = skills
-      return skills
+      agentsCache = agents.agents
+      return [
+        ...skills.map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+          kind: 'skill' as const,
+        })),
+        // A name that collides with a skill is dropped by `mergeInvocables`
+        // everywhere else, so it must not be offered here either.
+        ...agents.agents
+          .filter((agent) => !skills.some((skill) => skill.name === agent.name))
+          .map((agent) => ({
+            name: agent.name,
+            description: agent.description ?? '',
+            kind: 'agent' as const,
+          })),
+      ]
     },
   })
 

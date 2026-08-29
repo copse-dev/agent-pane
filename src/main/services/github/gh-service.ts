@@ -171,10 +171,6 @@ export function decideForwardEnvToken(opts: {
  */
 let forwardEnvTokenProbe: Promise<boolean> | null = null
 
-export function resetGhEnvTokenProbeForTest(): void {
-  forwardEnvTokenProbe = null
-}
-
 async function shouldForwardEnvToken(cwd: string, signal?: AbortSignal): Promise<boolean> {
   if (!hasEnvToken()) return false
   forwardEnvTokenProbe ??= (async (): Promise<boolean> => {
