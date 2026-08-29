@@ -56,12 +56,21 @@ describe('acpSshTarget gating', () => {
 })
 
 describe('buildRemoteAcpCommand', () => {
-  it('wraps the agent in cd + setsid + exec on the remote root', () => {
-    const cmd = buildRemoteAcpCommand({ command: 'claude-code-acp', cwd: REMOTE_ROOT }, REMOTE_ROOT)
+  it('wraps the agent in cd + setsid + exec on the remote root, through the login shell', () => {
+    const cmd = buildRemoteAcpCommand(
+      { command: 'claude-code-acp', cwd: REMOTE_ROOT },
+      REMOTE_ROOT,
+      '/bin/bash',
+    )
     assert.match(cmd, /^cd '\/remote\/project' && setsid sh -c /)
-    // The agent replaces the wrapper shell (clean signals + accurate PGID). The
-    // command is posix-quoted; a locale/env prefix may sit between exec and it.
-    assert.match(cmd, /exec .*'claude-code-acp'/)
+    // The outer wrapper hands off to the resolved login shell (`-lc`) so PATH
+    // resolution matches assertRemoteAgentInstalled's preflight exactly. The
+    // shell path is nested inside the outer setsid-wrapper's own quoting, so
+    // its surrounding quotes come back escaped (`'\''`) rather than clean.
+    assert.match(cmd, /\/bin\/bash.*-lc/)
+    // The agent itself still replaces that login shell in turn (clean signals,
+    // accurate PGID) — nested quoting escapes the inner command's own quotes.
+    assert.match(cmd, /exec .*claude-code-acp/)
     // The PGID marker is printed before the agent so the remote group is killable.
     assert.match(cmd, /__COPSE_PGID__=/)
   })
@@ -70,9 +79,15 @@ describe('buildRemoteAcpCommand', () => {
     const cmd = buildRemoteAcpCommand(
       { command: 'my agent', args: ['--flag', 'a b'], cwd: REMOTE_ROOT },
       REMOTE_ROOT,
+      '/bin/bash',
     )
-    assert.ok(cmd.includes("'my agent'"), 'command with a space is quoted')
-    assert.ok(cmd.includes("'a b'"), 'argument with a space is quoted')
+    // Assert the *escaped* quotes, not bare presence. The agent command is
+    // posix-quoted, then that whole string is posix-quoted again for the
+    // login shell, so each original `'` arrives as `'\''`. Matching only the
+    // substring `my agent` would still pass with posixQuote removed entirely,
+    // which is precisely the word-splitting/injection bug this guards.
+    assert.match(cmd, /'\\''my agent'\\''/, 'command with a space stays one quoted word')
+    assert.match(cmd, /'\\''a b'\\''/, 'argument with a space stays one quoted word')
   })
 
   it('never forwards local provider secrets to the remote agent', () => {
@@ -83,6 +98,7 @@ describe('buildRemoteAcpCommand', () => {
       const cmd = buildRemoteAcpCommand(
         { command: 'claude-code-acp', cwd: REMOTE_ROOT },
         REMOTE_ROOT,
+        '/bin/bash',
       )
       assert.ok(!cmd.includes(secret), 'the remote command must not contain local API keys')
       assert.ok(!cmd.includes('ANTHROPIC_API_KEY'), 'no provider key names leak either')
