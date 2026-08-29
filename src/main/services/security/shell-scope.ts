@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { resolve, sep } from 'node:path'
+import { agentScratchMatcher } from '../../project-sandbox/agent-scratch-roots.ts'
 import { copseWorkspaceDir } from '../storage/copse-paths.ts'
 import {
   CODE_INTERPRETERS,
@@ -454,10 +455,37 @@ function isInsideRoot(absPath: string, root: string): boolean {
   return absPath === root || absPath.startsWith(root + sep)
 }
 
-function referencesOutsideWorkspace(command: string, workspaceRoot: string | null): string | null {
+/** An absolute path token, with the shell separator that introduced it. */
+const ABSOLUTE_PATH_TOKENS = /(^|[\s'"=])(\/[^\s'"|;&]+)/g
+
+/**
+ * Blank out absolute paths that land in a sanctioned agent scratch directory,
+ * before any outside-path rule reads the command.
+ *
+ * Masking rather than waiving per-reason keeps the two halves of this scan
+ * honest: `cat /tmp/claude/x /tmp/other/y` still reports the global-temp reason,
+ * because only the first token disappears. The placeholder is a bare word, so no
+ * later pattern can match it as a path. (The `~`/chat-store waiver below works on
+ * tilde tokens, which masking never touches.)
+ */
+function maskAgentScratchPaths(command: string): string {
+  const isScratch = agentScratchMatcher()
+  if (!isScratch) return command
+  return command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) =>
+    isScratch(resolve(path)) ? `${lead}agent-scratch` : match,
+  )
+}
+
+function referencesOutsideWorkspace(
+  rawCommand: string,
+  workspaceRoot: string | null,
+): string | null {
   const home = homedir()
+  const command = maskAgentScratchPaths(rawCommand)
   // Non-null only for a structurally read-only command — see chatStoreReadRoot.
-  const chatRoot = chatStoreReadRoot(command)
+  // Read against the raw text: masking only removes already-sanctioned paths,
+  // and the read-only shape of the command is unchanged by it.
+  const chatRoot = chatStoreReadRoot(rawCommand)
   const isChatStoreRead = (absPath: string): boolean =>
     chatRoot !== null && isInsideRoot(absPath, chatRoot)
 
@@ -482,8 +510,9 @@ function referencesOutsideWorkspace(command: string, workspaceRoot: string | nul
   if (!workspaceRoot) return null
 
   const root = resolve(workspaceRoot)
-  // Absolute paths in the command that aren't under the workspace root.
-  const absPaths = command.match(/(?:^|[\s'"=])(\/[^\s'"|;&]+)/g) ?? []
+  // Absolute paths in the command that aren't under the workspace root. Agent
+  // scratch paths are already masked out above, so they never reach this scan.
+  const absPaths = command.match(ABSOLUTE_PATH_TOKENS) ?? []
   for (const raw of absPaths) {
     const p = raw.trim().replace(/^[\s'"=]+/, '')
     if (p.startsWith('/dev/') || p.startsWith('/proc/')) continue

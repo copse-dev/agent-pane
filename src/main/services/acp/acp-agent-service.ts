@@ -1017,16 +1017,26 @@ export const ACP_TURN_PROMPT_NOTE =
  * of letting the agent walk into EPERMs that its own approval cannot fix. The
  * appended {@link ACP_SANDBOX_GITHUB_STEER} does the same for the network side,
  * where GitHub is the destination agents reach for unprompted.
+ *
+ * `$TMPDIR` is named rather than a literal path because an agent may export its
+ * own: Claude Code points its shell at `/tmp/claude`, which the catalog's
+ * `scratchPaths` now allow-list precisely so this instruction stays true wherever
+ * the variable ends up (`agent-scratch-roots.ts`). Saying "the system /tmp is
+ * blocked" was the older, blunter wording — it contradicted the very next
+ * sentence for any agent whose `$TMPDIR` lives there, which is how a compliant
+ * agent still ended up at a "Run outside sandbox?" dialog.
  */
 export const ACP_SANDBOX_PROMPT_NOTE =
   'Environment note: this session runs inside a filesystem sandbox. Writes are ' +
-  'allowed only inside the workspace and $TMPDIR; the system /tmp, the rest of ' +
-  'the home directory, and most network destinations are blocked. Approval ' +
+  'allowed inside the workspace and under $TMPDIR — your own scratch directory ' +
+  'is allow-listed, whatever $TMPDIR expands to. Other absolute paths, including ' +
+  'elsewhere in /tmp and the rest of the home directory, and most network ' +
+  'destinations are blocked. Approval ' +
   'cannot unsandbox your own shell. When the "copse" MCP server is available, ' +
   "use its run_shell tool for commands: it applies Copse's normal command " +
   'policy and can ask the user to run approved external work outside this ' +
   'sandbox. Do not retry blocked paths with your own shell. Put scratch files ' +
-  'in $TMPDIR or the workspace.' +
+  'in $TMPDIR or the workspace — never in a hardcoded /tmp path of your own.' +
   '\n\n' +
   ACP_SANDBOX_GITHUB_STEER
 

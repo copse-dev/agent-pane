@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { after, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import {
   externalOnlyForOutsidePath,
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
+import { setSetting } from '../storage/settings.ts'
 
 describe('analyzeShellCommand', () => {
   const root = '/Users/me/project'
@@ -692,5 +693,74 @@ describe('dangerousInSandboxReasons', () => {
   it('sees through quote-splitting obfuscation', () => {
     assert.ok(dangerousInSandboxReasons('r""m -rf .').length > 0)
     assert.ok(dangerousInSandboxReasons(`r''m -rf build`).length > 0)
+  })
+})
+
+describe('agent scratch directories', () => {
+  const root = '/Users/me/project'
+  const CLAUDE_AGENT = {
+    id: 'claude-acp',
+    title: 'Claude Code',
+    command: 'claude-code-acp',
+    enabled: true,
+  }
+
+  beforeEach(async () => {
+    await setSetting('registeredAcpAgents', [CLAUDE_AGENT])
+  })
+
+  after(async () => {
+    await setSetting('registeredAcpAgents', [])
+  })
+
+  it('contains a command whose scratch file is the agent TMPDIR', () => {
+    // Claude Code exports TMPDIR=/tmp/claude, so a model obeying "put scratch in
+    // $TMPDIR" writes here. The seatbelt allow-lists it; the classifier must agree.
+    const r = analyzeShellCommand('node /tmp/claude/probe.js', root)
+    assert.ok(!r.reasons.some((x) => /global temp path|absolute path outside workspace/.test(x)))
+  })
+
+  it('covers the /private twin and the bookkeeping glob', () => {
+    for (const command of ['cat /private/tmp/claude/out.log', 'cat /tmp/claude-9f2a-cwd']) {
+      const r = analyzeShellCommand(command, root)
+      assert.equal(r.verdict, 'sandbox', command)
+    }
+  })
+
+  it('still escalates when a non-scratch temp path rides along', () => {
+    const r = analyzeShellCommand('cp /tmp/claude/probe.js /tmp/elsewhere/probe.js', root)
+    assert.equal(r.verdict, 'external')
+    assert.ok(r.reasons.some((x) => x.includes('global temp path')))
+  })
+
+  it('keeps the opaque-executable reason for the command that reported this', () => {
+    // The dialog carried two reasons; only the path half was wrong. Executing a
+    // workspace binary the agent could have authored must still prompt.
+    const r = analyzeShellCommand(
+      'env -u ELECTRON_RUN_AS_NODE node_modules/electron/dist/Copse.app/Contents/MacOS/Electron /tmp/claude/probe.js',
+      root,
+    )
+    assert.equal(r.verdict, 'external')
+    assert.deepEqual(r.reasons, [
+      'executes an in-workspace file directly (contents opaque to analysis)',
+    ])
+  })
+
+  it('waives nothing once the user disables the agent', async () => {
+    await setSetting('registeredAcpAgents', [{ ...CLAUDE_AGENT, enabled: false }])
+    const r = analyzeShellCommand('node /tmp/claude/probe.js', root)
+    assert.equal(r.verdict, 'external')
+    assert.ok(r.reasons.some((x) => x.includes('global temp path')))
+  })
+
+  it('waives nothing when the agent opts out of its sandbox preset', async () => {
+    await setSetting('registeredAcpAgents', [{ ...CLAUDE_AGENT, sandbox: false }])
+    const r = analyzeShellCommand('node /tmp/claude/probe.js', root)
+    assert.equal(r.verdict, 'external')
+  })
+
+  it('does not waive another agent-shaped path that nothing declares', () => {
+    const r = analyzeShellCommand('cat /tmp/claudette/x', root)
+    assert.equal(r.verdict, 'external')
   })
 })
