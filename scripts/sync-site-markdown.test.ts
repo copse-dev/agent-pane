@@ -339,6 +339,11 @@ describe('the published site', () => {
     for (const { path, content } of generated) {
       assert.ok(content.trim() !== '', `${path} generated empty`)
     }
+
+    const home = generated.find(({ path }) => path.endsWith(join('site', 'index.md')))
+    assert.ok(home, 'expected the generated home-page twin')
+    assert.match(home.content, /Free public beta/)
+    assert.doesNotMatch(home.content, /open[- ]source|github\.com\/copse-dev\/agent-pane/i)
   })
 
   it('renders into a build tree without writing beside the pages', async () => {

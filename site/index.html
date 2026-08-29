@@ -1,9 +1,8 @@
 <!doctype html>
-<!-- Pre-launch mode. `data-site-mode="coming-soon"` is the switch. Change it to
-     `downloads-live` once the public binary release exists; remove it once the
-     source repository opens. The mode block at the end of styles.css owns the
-     matching visibility rules. -->
-<html class="marketing-root" lang="en" data-site-mode="coming-soon">
+<!-- Downloads-live mode. Signed public binaries are available while the source
+     repository remains private. Remove the attribute once the source opens.
+     The mode block at the end of styles.css owns the matching visibility rules. -->
+<html class="marketing-root" lang="en" data-site-mode="downloads-live">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -15,7 +14,7 @@
     <link rel="alternate" type="text/markdown" href="index.md" />
     <meta
       name="description"
-      content="Copse is a free and open-source desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support."
+      content="Copse is a free desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support."
     />
     <meta property="og:title" content="Copse — AI coding that stays on your machine" />
     <meta
@@ -37,7 +36,7 @@
         "name": "Copse",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS",
-        "description": "Copse is a free, open-source desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support.",
+        "description": "Copse is a free desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support.",
         "url": "https://copse.dev/",
         "offers": {
           "@type": "Offer",
@@ -71,11 +70,17 @@
           <div class="line-field line-field-top" aria-hidden="true"></div>
           <div class="hero-copy">
             <div class="hero-badges" aria-label="Copse highlights">
-              <span>
+              <span class="mode-source-live-only">
                 <svg class="badge-icon" viewBox="0 0 16 16" aria-hidden="true">
                   <path d="m3 8.5 3 3 7-7" />
                 </svg>
                 Free &amp; open source
+              </span>
+              <span class="mode-source-private-only" hidden>
+                <svg class="badge-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="m3 8.5 3 3 7-7" />
+                </svg>
+                Free public beta
               </span>
               <span>
                 <svg class="badge-icon badge-desktop" viewBox="0 0 16 16" aria-hidden="true">
