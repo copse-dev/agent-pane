@@ -81,8 +81,13 @@ describe('buildRemoteAcpCommand', () => {
       REMOTE_ROOT,
       '/bin/bash',
     )
-    assert.ok(cmd.includes('my agent'), 'command with a space is present')
-    assert.ok(cmd.includes('a b'), 'argument with a space is present')
+    // Assert the *escaped* quotes, not bare presence. The agent command is
+    // posix-quoted, then that whole string is posix-quoted again for the
+    // login shell, so each original `'` arrives as `'\''`. Matching only the
+    // substring `my agent` would still pass with posixQuote removed entirely,
+    // which is precisely the word-splitting/injection bug this guards.
+    assert.match(cmd, /'\\''my agent'\\''/, 'command with a space stays one quoted word')
+    assert.match(cmd, /'\\''a b'\\''/, 'argument with a space stays one quoted word')
   })
 
   it('never forwards local provider secrets to the remote agent', () => {
