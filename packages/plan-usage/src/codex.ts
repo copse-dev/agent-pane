@@ -119,26 +119,81 @@ function parseAdditionalRateLimits(raw: unknown, nowMs: number, into: PlanWindow
   }
 }
 
-/** Exported for unit tests. */
+function parseNumberish(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'string' && raw.trim()) {
+    const n = Number(raw.trim())
+    return Number.isFinite(n) ? n : null
+  }
+  return null
+}
+
+/**
+ * Workspace spend-control credits (ChatGPT Business / Enterprise). Reported as
+ * credits in the official UI — not USD — even though values look money-like.
+ */
+function parseSpendControlWindow(body: Record<string, unknown>, nowMs: number): PlanWindow | null {
+  const spendControl = body['spend_control'] ?? body['spendControl']
+  if (!isRecord(spendControl)) return null
+  const individual = spendControl['individual_limit'] ?? spendControl['individualLimit']
+  if (!isRecord(individual)) return null
+
+  const used = parseNumberish(individual['used'])
+  const limit = parseNumberish(individual['limit'])
+  if (limit === null || limit <= 0) return null
+
+  const percentRaw = individual['used_percent'] ?? individual['usedPercent']
+  const usedPercent =
+    typeof percentRaw === 'number' && Number.isFinite(percentRaw)
+      ? clampPercent(percentRaw)
+      : used !== null
+        ? clampPercent((used / limit) * 100)
+        : null
+  if (usedPercent === null) return null
+
+  const usedCredits = used !== null ? Math.round(used) : Math.round((usedPercent / 100) * limit)
+  return {
+    id: 'spend_control',
+    label: 'Monthly credits',
+    usedPercent,
+    resetsAt: toIsoTimestamp(
+      individual['reset_at'] ?? individual['resetAt'] ?? individual['resets_at'],
+      nowMs,
+    ),
+    unit: 'credits',
+    usedCredits,
+    limitCredits: Math.round(limit),
+  }
+}
+
+/**
+ * Parse a Codex/ChatGPT usage JSON body into plan windows.
+ * Missing `rate_limit` / empty windows (common on enterprise) are returned
+ * as-is — {@link fetchCodexPlanUsage} maps that to soft `unavailable`.
+ */
 export function parseCodexUsage(body: unknown, nowMs: number): ProviderPlanUsage {
   if (!isRecord(body)) throw new Error('Codex usage payload was not an object')
 
   const rate = pickRateLimitBlock(body)
-  if (!rate) throw new Error('Codex usage payload had no rate_limit block')
-
   const windows: PlanWindow[] = []
-  pushWindowsFromRateLimit(rate, '', null, nowMs, windows)
-  parseAdditionalRateLimits(
-    body['additional_rate_limits'] ?? body['additionalRateLimits'],
-    nowMs,
-    windows,
-  )
-
-  if (windows.length === 0) {
-    throw new Error('Codex usage payload had no recognizable windows')
+  if (rate) {
+    pushWindowsFromRateLimit(rate, '', null, nowMs, windows)
+    parseAdditionalRateLimits(
+      body['additional_rate_limits'] ?? body['additionalRateLimits'],
+      nowMs,
+      windows,
+    )
   }
 
-  const planRaw = body['plan_type'] ?? body['planType'] ?? rate['plan_type'] ?? rate['planType']
+  const spendControl = parseSpendControlWindow(body, nowMs)
+  if (spendControl && !windows.some((w) => w.id === spendControl.id)) {
+    windows.push(spendControl)
+  }
+
+  const planRaw =
+    body['plan_type'] ??
+    body['planType'] ??
+    (rate ? (rate['plan_type'] ?? rate['planType']) : undefined)
   const plan = typeof planRaw === 'string' && planRaw.trim() ? planRaw.trim() : null
 
   return {
@@ -195,7 +250,17 @@ export async function fetchCodexPlanUsage(
       ...(options.signal ? { signal: options.signal } : {}),
     })
     const body = await readJsonBody(response, 'Codex plan usage')
-    return { status: 'ok', provider: 'codex', usage: parseCodexUsage(body, now()) }
+    const usage = parseCodexUsage(body, now())
+    // Enterprise accounts often omit consumer rate_limit windows — soft hint
+    // like Cursor, not a red "Couldn't load" error.
+    if (usage.windows.length === 0) {
+      return {
+        status: 'unavailable',
+        provider: 'codex',
+        reason: 'Codex usage response had no rate-limit or credit data',
+      }
+    }
+    return { status: 'ok', provider: 'codex', usage }
   } catch (err) {
     const message = errorMessage(err)
     if (isAuthRejectionError(message)) {
