@@ -1,7 +1,7 @@
 import RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
-import { el, qsRequired } from '../dom/helpers.ts'
+import { el } from '../dom/helpers.ts'
 import { closeIcon, monitorIcon, plusIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -1377,7 +1377,7 @@ function mountVncSession(
   })
 
   setSessionUi(false)
-  qsRequired<HTMLInputElement>(form, '.vnc-port-input').value = '5901'
+  portInput.value = '5901'
   void loadMachines()
 
   return {
