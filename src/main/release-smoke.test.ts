@@ -17,7 +17,14 @@ async function ptySpawnAvailable(): Promise<boolean> {
       env: process.env,
       unsandboxed: true,
     })
-    child.kill()
+    // A bare kill can return before node-pty releases its helper process, which
+    // keeps the test worker alive under the full concurrent suite.
+    await new Promise<void>((resolve) => {
+      child.onExit(() => {
+        resolve()
+      })
+      child.kill()
+    })
     return true
   } catch {
     return false

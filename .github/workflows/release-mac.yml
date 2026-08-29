@@ -2,10 +2,11 @@ name: Release (macOS)
 
 # Build a stable or beta tag only after the full CI aggregate passes at the
 # exact tagged commit. This workflow deliberately stops after uploading the
-# signed, notarized, smoke-tested files. `Publish release artifacts` is a
+# signed, notarized, smoke-tested files in architecture-specific artifacts.
+# `Publish release artifacts` is a
 # separate manual workflow so the owner can review the immutable Actions
-# artifact, make the repository public, and publish those exact bytes without
-# racing an automatic publisher.
+# artifacts and publish those exact bytes to the public binary repository
+# without racing an automatic publisher.
 on:
   workflow_dispatch:
     inputs:
@@ -168,6 +169,10 @@ jobs:
     # deployment-target check in the verify step enforces that and fails the
     # release rather than letting the gate silently drift below the floor again.
     runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -179,9 +184,18 @@ jobs:
       # that out at the verify step would cost a whole sign-and-notarize cycle
       # first ("Bad CPU type in executable"). A no-op when already present.
       - name: Ensure Rosetta can run the x64 bundle
+        if: matrix.arch == 'x64'
         run: softwareupdate --install-rosetta --agree-to-license
-      - name: Build a universal bundled gortex
-        run: pnpm run prepare:gortex:mac
+      - name: Install the target-architecture gortex
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          rm -f vendor/gortex/gortex
+          GORTEX_OUT_DIR=vendor/gortex GORTEX_TARGET_ARCH="$TARGET_ARCH" node scripts/fetch-gortex.mts
+          binary_arch="$TARGET_ARCH"
+          if [ "$binary_arch" = 'x64' ]; then binary_arch=x86_64; fi
+          lipo vendor/gortex/gortex -verify_arch "$binary_arch"
       # The credentials themselves were asserted in preflight, before this
       # runner was provisioned.
       - name: Build, sign, and notarize without publishing
@@ -192,18 +206,25 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           UPDATE_CHANNEL: ${{ needs.preflight.outputs.update_channel }}
+          TARGET_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           pnpm run build:release
-          pnpm exec electron-builder --mac -c.mac.notarize=true -c.publish.channel="$UPDATE_CHANNEL" --publish never
-          node scripts/finalize-release-metadata.mts
+          # A clean checkout does not contain the generated .icns. Without this
+          # step electron-builder falls back to Electron's icon for the app and
+          # leaves the mounted DMG with Finder's generic volume icon.
+          pnpm run generate:icon
+          # The package config lists both architectures for local `dist:mac`.
+          # A bare `--x64`/`--arm64` does not override those explicit target
+          # entries, so qualify each target to keep this matrix job truly single-arch.
+          pnpm exec electron-builder --mac "dmg:$TARGET_ARCH" "zip:$TARGET_ARCH" -c.mac.notarize=true -c.publish.channel="$UPDATE_CHANNEL" --publish never
       - name: Verify signatures, notarization, metadata, and packaged runtime
         timeout-minutes: 15
         env:
           COPSE_DIR: ${{ runner.temp }}/copse-release-smoke-profile
           COPSE_WORKSPACE_DIR: ${{ runner.temp }}/copse-release-smoke-workspace
-          RELEASE_TYPE: ${{ needs.preflight.outputs.release_type }}
           UPDATE_CHANNEL: ${{ needs.preflight.outputs.update_channel }}
+          TARGET_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           # The smoke test below launches the packaged app, so this runner must be
@@ -220,8 +241,8 @@ jobs:
           echo "Runner macOS $runner_version satisfies the declared minimum $declared_minimum"
           apps=()
           while IFS= read -r app; do apps+=("$app"); done < <(find release -type d -name Copse.app -print)
-          if [ "${#apps[@]}" -ne 2 ]; then
-            echo "Expected signed arm64 and x64 app bundles, found ${#apps[@]}"
+          if [ "${#apps[@]}" -ne 1 ]; then
+            echo "Expected one signed $TARGET_ARCH app bundle, found ${#apps[@]}"
             exit 1
           fi
           for app in "${apps[@]}"; do
@@ -232,6 +253,12 @@ jobs:
             test -x "$app/Contents/Resources/app.asar.unpacked/dist/resources/gortex/gortex"
             app_arch="$(lipo "$app/Contents/MacOS/Copse" -archs)"
             gortex_arch="$(lipo "$app/Contents/Resources/app.asar.unpacked/dist/resources/gortex/gortex" -archs)"
+            expected_arch="$TARGET_ARCH"
+            if [ "$expected_arch" = 'x64' ]; then expected_arch=x86_64; fi
+            if [ "$app_arch" != "$expected_arch" ]; then
+              echo "Packaged app architecture $app_arch does not match matrix target $expected_arch"
+              exit 1
+            fi
             if [ "$gortex_arch" != "$app_arch" ]; then
               echo "Bundled gortex architecture $gortex_arch does not match app architecture $app_arch"
               exit 1
@@ -240,7 +267,7 @@ jobs:
             test -s "$app/Contents/Resources/app-update.yml"
             grep -q '^provider: github$' "$app/Contents/Resources/app-update.yml"
             grep -q '^owner: copse-dev$' "$app/Contents/Resources/app-update.yml"
-            grep -q '^repo: agent-pane$' "$app/Contents/Resources/app-update.yml"
+            grep -q '^repo: copse-releases$' "$app/Contents/Resources/app-update.yml"
             grep -q "^channel: $UPDATE_CHANNEL$" "$app/Contents/Resources/app-update.yml"
             minimum_system_version="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")"
             if [ "$minimum_system_version" != '26.0' ]; then
@@ -250,45 +277,77 @@ jobs:
             echo "Running packaged runtime smoke for $app_arch app"
             "$app/Contents/MacOS/Copse" --release-smoke-test
           done
-          test -s "release/$UPDATE_CHANNEL-mac.yml"
-          # Beta clients follow the beta feed but are allowed to advance to a
-          # newer stable version, so stable builds must update both feeds.
-          if [ "$RELEASE_TYPE" = 'release' ]; then
-            test -s release/latest-mac.yml
-            test -s release/beta-mac.yml
-          fi
-          test -n "$(find release -maxdepth 1 -name '*.dmg' -print -quit)"
-          test -n "$(find release -maxdepth 1 -name '*.zip' -print -quit)"
-          test -n "$(find release -maxdepth 1 -name '*.blockmap' -print -quit)"
-          update_metadata=()
-          while IFS= read -r metadata; do update_metadata+=("$metadata"); done < <(find release -maxdepth 1 -name '*-mac.yml' -print)
-          if [ "${#update_metadata[@]}" -eq 0 ]; then
-            echo 'No macOS update metadata was generated'
+          shopt -s nullglob
+          packages=(release/*.dmg release/*.zip)
+          blockmaps=(release/*.blockmap)
+          if [ "${#packages[@]}" -ne 2 ] || [ "${#blockmaps[@]}" -ne 2 ]; then
+            echo "Expected one $TARGET_ARCH DMG and ZIP with blockmaps"
             exit 1
           fi
-          for metadata in "${update_metadata[@]}"; do
-            for zip in release/*.zip; do
-              grep -Fq "$(basename "$zip")" "$metadata"
-            done
+          dmg="release/Copse-$(node -p "require('./package.json').version")-$TARGET_ARCH.dmg"
+          mount_point="$RUNNER_TEMP/copse-dmg-$TARGET_ARCH"
+          mkdir -p "$mount_point"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" "$dmg"
+          trap 'hdiutil detach "$mount_point"' EXIT
+          test -s "$mount_point/.VolumeIcon.icns"
+          cmp assets/icons/app.icns "$mount_point/.VolumeIcon.icns"
+          finder_info="$(xattr -px com.apple.FinderInfo "$mount_point" | tr -d '[:space:]')"
+          case "$finder_info" in
+            00000000000000000400*) ;;
+            *) echo "Mounted DMG is missing Finder's custom-volume-icon flag"; exit 1 ;;
+          esac
+          hdiutil detach "$mount_point"
+          trap - EXIT
+          metadata="release/$UPDATE_CHANNEL-mac.yml"
+          test -s "$metadata"
+          for package in "${packages[@]}"; do
+            case "$(basename "$package")" in
+              *-"$TARGET_ARCH".*) ;;
+              *) echo "Unexpected cross-architecture package: $package"; exit 1 ;;
+            esac
+            grep -Fq "$(basename "$package")" "$metadata"
           done
-          # Write paths relative to the artifact root. actions/upload-artifact
-          # strips the common `release/` directory, and GitHub Release users
-          # download these assets side by side; embedding `release/` here makes
-          # the shipped checksum manifest fail unless they recreate CI's layout.
+          mv "$metadata" "release/$UPDATE_CHANNEL-mac.$TARGET_ARCH.yml"
+      - name: Enforce the per-client size budget
+        run: node scripts/check-macos-release-size.mts release ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: copse-macos-${{ needs.preflight.outputs.release_sha }}-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/*-mac.${{ matrix.arch }}.yml
+          if-no-files-found: error
+          retention-days: 30
+
+  assemble:
+    needs: [preflight, build-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.preflight.outputs.release_sha }}
+      - uses: actions/setup-node@v7
+        with: { node-version-file: '.nvmrc' }
+      - name: Download both tested architecture artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: copse-macos-${{ needs.preflight.outputs.release_sha }}-*
+          path: staged-release
+      - name: Assemble update feeds and portable checksums
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          node scripts/assemble-macos-release.mts "$version" staged-release release
+          node scripts/release-notes.mts > release/RELEASE_NOTES.md
           (
             cd release
-            shasum -a 256 *.dmg *.zip *.blockmap *-mac.yml > SHA256SUMS
+            shasum -a 256 --check SHA256SUMS
           )
-      # Publish the reviewed notes with the artifacts they describe. Generating
-      # them here rather than in `publish` keeps that job artifact-only.
-      - name: Generate the release notes from CHANGELOG.md
-        run: node scripts/release-notes.mts > release/RELEASE_NOTES.md
       # Artifact attestations are unavailable for PRIVATE repositories outside
-      # GitHub Enterprise Cloud, and this org is on Team — the action fails the
-      # job with "Feature not available for the organization". Publishing to a
-      # private repository is a rehearsal, not distribution (#802), so skip
-      # provenance there and let it switch itself back on the moment the
-      # repository is public. SHA256SUMS ships either way.
+      # GitHub Enterprise Cloud, and this org is on Team. The public publisher
+      # attests the same bytes before creating the GitHub Release.
       - name: Note the skipped attestation
         if: github.event.repository.private
         run: echo "::warning::Private repository — artifact attestation skipped. Provenance needs a public repository or GitHub Enterprise Cloud."
@@ -302,13 +361,13 @@ jobs:
             release/*.blockmap
             release/*-mac.yml
             release/SHA256SUMS
+      # Keep the already-compressed architecture packages in their separate
+      # artifacts. This tiny third artifact contains only the exact assembled
+      # feeds, checksums, and notes the publisher will add beside them.
       - uses: actions/upload-artifact@v7
         with:
-          name: copse-macos-${{ needs.preflight.outputs.release_sha }}
+          name: copse-macos-${{ needs.preflight.outputs.release_sha }}-metadata
           path: |
-            release/*.dmg
-            release/*.zip
-            release/*.blockmap
             release/*-mac.yml
             release/SHA256SUMS
             release/RELEASE_NOTES.md

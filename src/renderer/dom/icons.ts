@@ -66,6 +66,18 @@ export function plusIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('plus', ['M5 12h14', 'M12 5v14'], className)
 }
 
+export function monitorIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'monitor',
+    [
+      'M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z',
+      'M8 21h8',
+      'M12 17v4',
+    ],
+    className,
+  )
+}
+
 export function downloadIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
     'download',

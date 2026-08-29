@@ -40,12 +40,6 @@ export function getFocusedMainWindow(): BrowserWindow | null {
   )
 }
 
-export function getMainWindowContext(
-  webContents: Electron.WebContents,
-): MainWindowContext<BrowserWindow> | undefined {
-  return mainWindowRegistry.fromWebContents(webContents)
-}
-
 export function isPrimaryMainWindow(webContents: Electron.WebContents): boolean {
   return mainWindowRegistry.isPrimary(webContents)
 }
