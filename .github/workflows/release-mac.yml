@@ -210,6 +210,10 @@ jobs:
         run: |
           set -euo pipefail
           pnpm run build:release
+          # A clean checkout does not contain the generated .icns. Without this
+          # step electron-builder falls back to Electron's icon for the app and
+          # leaves the mounted DMG with Finder's generic volume icon.
+          pnpm run generate:icon
           # The package config lists both architectures for local `dist:mac`.
           # A bare `--x64`/`--arm64` does not override those explicit target
           # entries, so qualify each target to keep this matrix job truly single-arch.
@@ -280,6 +284,20 @@ jobs:
             echo "Expected one $TARGET_ARCH DMG and ZIP with blockmaps"
             exit 1
           fi
+          dmg="release/Copse-$(node -p "require('./package.json').version")-$TARGET_ARCH.dmg"
+          mount_point="$RUNNER_TEMP/copse-dmg-$TARGET_ARCH"
+          mkdir -p "$mount_point"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" "$dmg"
+          trap 'hdiutil detach "$mount_point"' EXIT
+          test -s "$mount_point/.VolumeIcon.icns"
+          cmp assets/icons/app.icns "$mount_point/.VolumeIcon.icns"
+          finder_info="$(xattr -px com.apple.FinderInfo "$mount_point" | tr -d '[:space:]')"
+          case "$finder_info" in
+            00000000000000000400*) ;;
+            *) echo "Mounted DMG is missing Finder's custom-volume-icon flag"; exit 1 ;;
+          esac
+          hdiutil detach "$mount_point"
+          trap - EXIT
           metadata="release/$UPDATE_CHANNEL-mac.yml"
           test -s "$metadata"
           for package in "${packages[@]}"; do
