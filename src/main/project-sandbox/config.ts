@@ -3,8 +3,10 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
+import { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { copseWorkspaceTmpDir } from '../services/storage/copse-paths.ts'
+import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
 import {
   getChatStoreRootSync,
   getInternalWorkspaceRootRegistration,
@@ -421,20 +423,11 @@ export function fsServerSandboxOverlay(
  *   shell rc files, …) still applies inside the workspace.
  */
 /**
- * Expand a `scratchPaths` template to the concrete paths the seatbelt must
- * allow: `${uid}` becomes the numeric user id, and paths under the macOS
- * symlinked roots (`/tmp`, `/var`, `/etc` → `/private/...`) are emitted in
- * both spellings — the kernel enforces against the canonical path, while the
- * agent may write either.
+ * Re-exported so the seatbelt's own callers keep importing it from here; the
+ * implementation lives in a renderer- and eval-safe shared leaf, which the
+ * shell-scope classifier also reads so the two cannot drift.
  */
-export function expandScratchPath(template: string): string[] {
-  const uid = typeof process.getuid === 'function' ? process.getuid() : 0
-  const path = template.replace('${uid}', String(uid))
-  const paths = [path]
-  const symlinkedRoot = /^\/(tmp|var|etc)(\/|$)/.exec(path)
-  if (symlinkedRoot) paths.push(`/private${path}`)
-  return paths
-}
+export { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 
 export function acpAgentSandboxOverlay(
   workspaceRoot: string,
@@ -623,6 +616,11 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // points $TMPDIR at it. Falls under the home denyRead, so it must be
   // re-allowed for both read and write.
   const tmpDir = ensureWorkspaceTmpDir()
+  // Scratch dirs a configured ACP agent hardcodes (see `agent-scratch-roots.ts`).
+  // Allowed for every contained command, not only the declaring agent's own
+  // process, because `shell-scope.ts` waives the same entries when it classifies
+  // a command: a path that stops prompting must also stop EPERMing.
+  const agentScratch = sanctionedAgentScratchEntries().flatMap((entry) => [entry, `${entry}/**`])
   // Read-only mount of the chat store (#644) so seatbelt-confined read tools
   // (rg for search_code / recursive list_dir) can open past-thread files. It
   // lives under $HOME, so `denyRead: [homedir()]` would block it without this
@@ -722,8 +720,9 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         ...chatStoreRead,
         ...worktreeDiscoveryRead,
         ...gitAdminRead,
+        ...agentScratch,
       ],
-      allowWrite: [root, `${root}/**`, tmpDir, `${tmpDir}/**`, ...gitAdminWrite],
+      allowWrite: [root, `${root}/**`, tmpDir, `${tmpDir}/**`, ...gitAdminWrite, ...agentScratch],
       denyWrite: [...workspaceMandatoryWriteDenyPaths(root), ...siblingDeny, ...gitAdminDenyWrite],
       allowGitConfig: true,
     },

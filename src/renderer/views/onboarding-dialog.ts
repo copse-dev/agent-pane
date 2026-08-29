@@ -32,10 +32,6 @@ export function openOnboardingDialog(): void {
   shell.dialog.dispatchEvent(new Event('onboarding-open'))
 }
 
-export function closeOnboardingDialog(): void {
-  shell?.close()
-}
-
 export function isOnboardingDialogOpen(): boolean {
   return !!shell && shell.isOpen()
 }
