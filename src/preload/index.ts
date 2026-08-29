@@ -589,6 +589,10 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('canvas:show-artefact', listener)
       }
     },
+    listArtefacts: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('canvas:listArtefacts', projectId, threadId),
+    reopenArtefact: (projectId: string, threadId: string, title: string) =>
+      ipcRenderer.invoke('canvas:reopenArtefact', projectId, threadId, title),
   },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
