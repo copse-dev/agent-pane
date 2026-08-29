@@ -33,6 +33,8 @@ import type { ToolRegistry } from './tool-registry.ts'
 export interface AgentDispatchPayload {
   userContent: UserContent
   invokedSkills: string[]
+  /** Subagent the user invoked with `/name` this turn. */
+  invokedAgent?: string
   priorTodos: TodoItem[]
   workingBrief?: string
   model?: string
@@ -454,6 +456,7 @@ export class AgentDispatcher {
     const options: RunAgentOptions = {
       invokedSkills: payload.invokedSkills,
       priorTodos: payload.priorTodos,
+      ...(payload.invokedAgent !== undefined ? { invokedAgent: payload.invokedAgent } : {}),
       onHistoryCheckpoint: checkpoints.submit,
       ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
       ...(payload.model !== undefined ? { model: payload.model } : {}),

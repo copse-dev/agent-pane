@@ -26,9 +26,16 @@ export function runSerialized<T>(key: string, op: () => T | Promise<T>): Promise
   return next
 }
 
-/** Resolve once every currently-queued write has settled (used on shutdown). */
+/** Resolve once every currently-queued write, including writes it enqueues, has settled. */
 export async function drainWriteQueue(): Promise<void> {
-  // Snapshot to avoid racing with new submissions appended during the await.
-  const pending = [...chains.values()]
-  await Promise.allSettled(pending)
+  // A settling operation can enqueue follow-up durability work. Awaiting one
+  // snapshot would let shutdown continue while that newer tail was still in
+  // flight, so keep draining until no key points at a promise newer than the
+  // snapshot just settled.
+  for (;;) {
+    const pending = [...chains.values()]
+    if (pending.length === 0) return
+    await Promise.allSettled(pending)
+    if ([...chains.values()].every((chain) => pending.includes(chain))) return
+  }
 }

@@ -374,6 +374,48 @@ async function assertShellEscalationPrompts(scenario: EvalScenario): Promise<voi
   )
 }
 
+/**
+ * Check the subagent sessions a run produced against `assertSubagents`.
+ *
+ * Reported as one aggregated failure listing what *did* run, because the useful
+ * question when this fails is "then which agent ran instead?" — and the answer
+ * is otherwise buried in the artifact.
+ */
+function assertSubagentExpectations(thread: Thread, scenario: EvalScenario): void {
+  const required = scenario.assertSubagents?.require
+  if (!required || required.length === 0) return
+
+  const sessions = thread.messages
+    .flatMap((message) => message.toolCalls)
+    .map((call) => call.subagent)
+    .filter((session): session is NonNullable<typeof session> => session !== undefined)
+
+  const observed = sessions
+    .map(
+      (session) =>
+        `${session.kind}${session.agentName ? `:${session.agentName}` : ''}(${session.status})`,
+    )
+    .join(', ')
+
+  const unmet = required.filter(
+    (want) =>
+      !sessions.some(
+        (session) =>
+          (want.kind === undefined || session.kind === want.kind) &&
+          (want.agentName === undefined || session.agentName === want.agentName) &&
+          (want.status === undefined || session.status === want.status) &&
+          (want.summaryContains === undefined ||
+            (session.summary ?? '').toLowerCase().includes(want.summaryContains.toLowerCase())),
+      ),
+  )
+
+  assert.deepEqual(
+    unmet.map((want) => JSON.stringify(want)),
+    [],
+    `unmet subagent expectations (observed: ${observed || 'none'})`,
+  )
+}
+
 function assertToolUseExpectations(
   thread: Thread,
   scenario: EvalScenario,
@@ -520,6 +562,7 @@ describe('agent eval drive', () => {
     assertWorkspaceExpectations(workspaceRoot, scenario)
     await assertShellEscalationPrompts(scenario)
     assertToolUseExpectations(thread, scenario, workspaceRoot)
+    assertSubagentExpectations(thread, scenario)
     if (
       scenario.id === 'working-brief-eval' ||
       scenario.id === 'working-brief-eval-lmstudio' ||
