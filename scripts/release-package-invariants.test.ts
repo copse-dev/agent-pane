@@ -13,7 +13,7 @@ function dependencyNames(packageJson: Record<string, unknown>, field: string): s
   return Object.keys(record(packageJson[field], `package.json ${field}`)).sort()
 }
 
-describe('release package dependency boundary', () => {
+describe('release package invariants', () => {
   const parsed: unknown = JSON.parse(readFileSync(resolve('package.json'), 'utf8'))
   const packageJson = record(parsed, 'package.json')
 
@@ -39,6 +39,27 @@ describe('release package dependency boundary', () => {
     const files = build['files']
     assert.ok(Array.isArray(files))
     assert.ok(files.includes('!**/*.map'))
+  })
+
+  it('uses the generated Copse icon for both the app and mounted DMG', () => {
+    const build = record(packageJson['build'], 'package.json build')
+    const mac = record(build['mac'], 'package.json build.mac')
+    const dmg = record(build['dmg'], 'package.json build.dmg')
+    assert.equal(mac['icon'], 'assets/icons/app.icns')
+    assert.equal(dmg['icon'], mac['icon'])
+
+    const scripts = record(packageJson['scripts'], 'package.json scripts')
+    assert.match(String(scripts['dist:mac']), /pnpm run generate:icon/)
+    assert.match(String(scripts['release:dry']), /pnpm run generate:icon/)
+
+    const workflow = readFileSync(resolve('.github/workflows/release-mac.yml'), 'utf8')
+    assert.match(workflow, /pnpm run generate:icon/)
+    assert.match(workflow, /\.VolumeIcon\.icns/)
+    assert.match(workflow, /custom-volume-icon flag/)
+
+    const generator = readFileSync(resolve('scripts/generate-icon.mts'), 'utf8')
+    assert.match(generator, /SRGB_PNG_CHUNK/)
+    assert.doesNotMatch(generator, /iconutil failed/)
   })
 
   it('removes the unused native keyring architecture before signing', () => {
