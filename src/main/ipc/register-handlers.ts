@@ -34,6 +34,8 @@ import {
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
+import { loadCanvasArtefactSummaries, readStoredCanvasArtefact } from '../services/canvas-store.ts'
+import { CANVAS_ARTEFACT_CHANNEL } from '../services/canvas-dispatch.ts'
 import {
   assertFsWriteContent,
   isIndexQueryPattern,
@@ -1531,6 +1533,30 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return loadThreadMessages(id, thread)
   })
+  // Canvas artefacts saved by earlier sessions. The renderer holds artefacts
+  // only as live tabs and an in-memory thumbnail map, so after a restart these
+  // two are the only way back to something the agent rendered yesterday.
+  ipcMain.handle('canvas:listArtefacts', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return loadCanvasArtefactSummaries(id, thread)
+  })
+  ipcMain.handle(
+    'canvas:reopenArtefact',
+    async (event, projectId: unknown, threadId: unknown, title: unknown) => {
+      assertMainFrameSender(event, win)
+      const [id, thread, name] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.string().trim().min(1).max(200)]),
+        [projectId, threadId, title],
+      )
+      const artefact = await readStoredCanvasArtefact(id, thread, name)
+      if (!artefact) return false
+      // Delivered on the ordinary artefact channel so the Browser pane opens it
+      // through exactly the path a fresh render takes — one behaviour, not two.
+      event.sender.send(CANVAS_ARTEFACT_CHANNEL, artefact)
+      return true
+    },
+  )
   ipcMain.handle('threads:create', (event, projectId: unknown, thread: unknown) => {
     assertMainFrameSender(event, win)
     const [id, payload] = parseIpcArgs(z.tuple([zProjectId, z.record(z.string(), z.unknown())]), [

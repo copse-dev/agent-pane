@@ -745,6 +745,87 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('reopens a saved artefact when no tab survived the last session', async () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    // A window that just launched: the transcript still has the preview card,
+    // but the tab that used to render the artefact died with the last session.
+    const store = createStore({
+      activeProjectId: 'project-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
+    const asked: Array<[string, string, string]> = []
+    const api = createPendingApi({
+      'canvas.reopenArtefact': (
+        projectId: string,
+        threadId: string,
+        title: string,
+      ): Promise<boolean> => {
+        asked.push([projectId, threadId, title])
+        // Main answers on the ordinary artefact channel, which the renderer
+        // hands straight to `openCanvasArtefact` (see `main.ts`).
+        openCanvasArtefact(store, {
+          title,
+          mimeType: 'text/html',
+          body: '<!doctype html><h1>restored</h1>',
+          threadId,
+        })
+        return Promise.resolve(true)
+      },
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      const labels = (): (string | null)[] =>
+        Array.from(list.querySelectorAll('.browser-tabs-tab-label')).map((el) => el.textContent)
+      assert.ok(!labels().includes('Sales Dashboard'), 'nothing is showing the artefact yet')
+
+      // The user clicks Open on the preview card.
+      showCanvasArtefact(store, { title: 'Sales Dashboard', threadId: 'thread-a' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      assert.deepEqual(asked, [['project-1', 'thread-a', 'Sales Dashboard']])
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      const activePanel = viewer.querySelector('.browser-tab-panel.is-active')
+      assert.ok(activePanel, 'the restored artefact opens in an active tab')
+      const webview = activePanel.querySelector<FakeWebview>('.browser-webview')
+      assert.ok(webview)
+      const decoded = Buffer.from(webview.src.split('base64,')[1] ?? '', 'base64').toString('utf8')
+      assert.match(decoded, /<h1>restored<\/h1>/)
+      assert.equal(
+        list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
+        'Sales Dashboard',
+      )
+
+      // Now that a tab holds it, promoting it again is a plain tab switch.
+      asked.length = 0
+      store.setState({ rightPanelMode: 'explorer' })
+      showCanvasArtefact(store, { title: 'Sales Dashboard', threadId: 'thread-a' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual(asked, [], 'a live tab is never re-read from disk')
+      assert.equal(store.getState().rightPanelMode, 'browser')
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
+      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
+      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      unmount()
+    }
+  })
+
   it('shares page context and offers external-browser tools from the toolbar menu', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {

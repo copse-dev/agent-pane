@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Chat, LLMRespondOpts } from '@lmstudio/sdk'
+import { ToolCallRequestError, type Chat, type LLMRespondOpts } from '@lmstudio/sdk'
 import { LMStudioProvider, lmStudioWebSocketUrl } from './lm-studio-provider.ts'
 import type { LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
@@ -63,6 +63,43 @@ class FakeModel {
   }
 }
 
+/**
+ * Reports an unparseable tool call the way the SDK does — through a callback,
+ * while the prediction keeps running — and settles only once it is cancelled.
+ */
+class FakeToolFailureModel {
+  opts: LLMRespondOpts | null = null
+
+  respond(_chat: Chat, opts: LLMRespondOpts): { result: () => Promise<never> } {
+    this.opts = opts
+    return {
+      result: (): Promise<never> =>
+        new Promise<never>((_resolve, reject) => {
+          opts.onToolCallRequestFailure?.(1, new ToolCallRequestError('bad tool call', '{['))
+          opts.signal?.addEventListener(
+            'abort',
+            (): void => {
+              reject(new Error('prediction cancelled'))
+            },
+            { once: true },
+          )
+        }),
+    }
+  }
+}
+
+class FakeToolFailureClient {
+  readonly modelHandle = new FakeToolFailureModel()
+
+  model(): Promise<FakeToolFailureModel> {
+    return Promise.resolve(this.modelHandle)
+  }
+
+  prepareImageBase64(): Promise<never> {
+    return Promise.reject(new Error('unexpected image'))
+  }
+}
+
 class FakeClient {
   readonly modelHandle = new FakeModel()
 
@@ -74,6 +111,46 @@ class FakeClient {
     return Promise.reject(new Error('unexpected image'))
   }
 }
+
+describe('LMStudioProvider tuned parameters', () => {
+  it('maps sampling knobs and the published output ceiling onto the SDK config', async () => {
+    const client = new FakeClient()
+    // qwen3.6-35b-a3b's card publishes an unconditional 81,920-token ceiling
+    // (see model-parameters.ts); the OpenAI-compatible transport sent it as
+    // max_tokens, and the native transport must keep doing so or long answers
+    // get truncated by the server default.
+    const provider = new LMStudioProvider('qwen/qwen3.6-35b-a3b', {
+      client,
+      params: {
+        temperature: 1,
+        topP: 0.95,
+        topK: 20,
+        minP: 0,
+        repetitionPenalty: 1,
+      },
+    })
+    const messages: LLMMessage[] = [{ role: 'user', content: 'hello' }]
+    for await (const _ of provider.stream(messages, [])) void _
+    const opts = client.modelHandle.opts
+    assert.ok(opts)
+    assert.equal(opts['temperature'], 1)
+    assert.equal(opts['topPSampling'], 0.95)
+    assert.equal(opts['topKSampling'], 20)
+    assert.equal(opts['minPSampling'], 0)
+    assert.equal(opts['repeatPenalty'], 1)
+    assert.equal(opts['maxTokens'], 81_920)
+  })
+
+  it('sends no ceiling when the model card publishes none', async () => {
+    const client = new FakeClient()
+    const provider = new LMStudioProvider('some-uncatalogued-model', { client })
+    const messages: LLMMessage[] = [{ role: 'user', content: 'hello' }]
+    for await (const _ of provider.stream(messages, [])) void _
+    const opts = client.modelHandle.opts
+    assert.ok(opts)
+    assert.equal(opts['maxTokens'], undefined)
+  })
+})
 
 async function collect(provider: LMStudioProvider): Promise<ProviderStreamChunk[]> {
   const chunks: ProviderStreamChunk[] = []
@@ -170,6 +247,24 @@ describe('LMStudioProvider', () => {
         },
       ],
     )
+  })
+
+  it('cancels the prediction when the model emits an unparseable tool call', async () => {
+    // The SDK reports the bad tool call through a callback and keeps predicting
+    // until it is cancelled, so failing our queue alone would leave the local
+    // model generating tokens no one can read.
+    const client = new FakeToolFailureClient()
+    const provider = new LMStudioProvider('local-model', { client })
+
+    await assert.rejects(
+      async () => {
+        for await (const _ of provider.stream([{ role: 'user', content: 'hello' }], [])) void _
+      },
+      // The parse failure surfaces to the caller rather than being retried:
+      // replaying the same prompt would produce the same broken tool call.
+      /bad tool call/,
+    )
+    assert.equal(client.modelHandle.opts?.signal?.aborted, true)
   })
 
   it('converts the configured OpenAI endpoint into the SDK WebSocket origin', () => {

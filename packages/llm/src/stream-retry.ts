@@ -1,10 +1,33 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { ToolCallRequestError } from '@lmstudio/sdk'
 import OpenAI from 'openai'
 
 export const DEFAULT_STREAM_MAX_ATTEMPTS = 4
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+/**
+ * A connection-level failure from LM Studio's native SDK transport.
+ *
+ * The SDK speaks its own WebSocket protocol rather than HTTP, so its failures
+ * carry neither an SDK error class nor a numeric status — a dropped server
+ * surfaces as a plain Error whose message names the socket layer. Matched on
+ * message for that reason. Two shapes reach a prediction: the transport error
+ * itself, forwarded verbatim to every open channel ("WebSocket connection
+ * closed", "WebSocket timed out", or the raw `ECONNREFUSED`), and a bare
+ * channel closure when the channel ends without a result ("Channel closed
+ * unexpectedly."). Deliberately narrow: a false positive retries a request that
+ * could never succeed, and deterministic failures such as
+ * {@link ToolCallRequestError} (the model produced an unparseable tool call)
+ * must fall through to the no-retry default.
+ */
+export function isLmStudioTransportError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  return /websocket|channel closed|socket hang up|econnrefused|econnreset|epipe|etimedout|ehostunreach|enet(unreachable|down)/i.test(
+    err.message,
+  )
 }
 
 /** Duck-typed HTTP status on SDK / proxy errors (and plain `{ status }` test doubles). */
@@ -105,6 +128,10 @@ export function isRetryableStreamError(err: unknown): boolean {
   if (err instanceof OpenAI.APIConnectionError) return true
   if (err instanceof OpenAI.InternalServerError) return true
 
+  // The native LM Studio transport reports connection loss as a plain Error —
+  // no status code or SDK class to dispatch on (see isLmStudioTransportError).
+  if (!(err instanceof ToolCallRequestError) && isLmStudioTransportError(err)) return true
+
   const status = errorStatus(err)
   if (status === 429 || status === 529) return true
   if (status !== undefined && status >= 500 && status < 600) return true
@@ -132,6 +159,17 @@ function abortError(signal?: AbortSignal): Error {
   return new DOMException('Aborted', 'AbortError')
 }
 
+/**
+ * Whether `item` carries only ephemeral progress and no stream content. The
+ * unknown bound keeps this module decoupled from the provider chunk union;
+ * progress-shaped items are recognised structurally.
+ */
+function isProgressOnly(item: unknown): boolean {
+  return (
+    isRecord(item) && item['type'] === 'prompt_progress' && typeof item['fraction'] === 'number'
+  )
+}
+
 export function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) return Promise.reject(abortError(signal))
   return new Promise((resolve, reject) => {
@@ -154,16 +192,20 @@ export async function* yieldStreamWithRetry<T>(
 ): AsyncGenerator<T, void, unknown> {
   const maxAttempts = opts.maxAttempts ?? DEFAULT_STREAM_MAX_ATTEMPTS
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    let yielded = false
+    // Progress-only items do not commit the stream: nothing user-visible has
+    // been produced, so replaying from scratch after a retryable failure is
+    // safe and loses no output. Content (text/tool calls) still pins the
+    // attempt, because a retry would duplicate it.
+    let committed = false
     try {
       for await (const item of run()) {
-        yielded = true
+        if (!isProgressOnly(item)) committed = true
         yield item
       }
       return
     } catch (err) {
       if (opts.signal?.aborted) throw err
-      if (yielded || !isRetryableStreamError(err) || attempt >= maxAttempts - 1) throw err
+      if (committed || !isRetryableStreamError(err) || attempt >= maxAttempts - 1) throw err
       await sleepMs(streamRetryDelayMs(err, attempt), opts.signal)
     }
   }

@@ -1,9 +1,10 @@
 // Coverage ratchet: fail CI when a PR lowers line coverage below the committed
 // baseline, and make it easy to raise the bar when coverage improves.
 //
-// Why line coverage only: unit tests are bundled by esbuild into dist-test/*.js
-// before `node --test` runs them, so V8 coverage is recorded against the bundle
-// and remapped back to src via source maps (see .c8rc.json `exclude-after-remap`).
+// Why line coverage only: unit tests are emitted as split ESM entries under
+// dist-test/ before `node --test` runs them, so V8 coverage is recorded against
+// the entry/shared-chunk graph and remapped to src via source maps (see .c8rc.json
+// `exclude-after-remap`).
 // That remap is accurate per-file for lines/statements, but c8's *aggregate*
 // branch/function rollup is unreliable for bundled inputs, so we gate on the
 // line total — the trustworthy, stable number. Per-file branch data still lives

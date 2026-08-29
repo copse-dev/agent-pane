@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -308,6 +309,8 @@ async def _run_oracle(
             "digest": task["digest"],
         },
         "mode": "oracle",
+        "runId": os.environ.get("COPSE_BENCH_RUN_ID", "skillsbench-spike"),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
         "sourceCommit": _git_commit(),
         "runnerImage": os.environ.get("COPSE_SKILLSBENCH_WORKER_IMAGE", "local"),
         "networkPolicy": NETWORK_POLICY,
@@ -436,6 +439,8 @@ async def _run_trial(
             "catalogued": base_profile != "skills-none",
             "injected": base_profile == "skills-explicit",
         },
+        "runId": os.environ.get("COPSE_BENCH_RUN_ID", "skillsbench-spike"),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
         "sourceCommit": _git_commit(),
         "runnerImage": os.environ.get("COPSE_SKILLSBENCH_WORKER_IMAGE", "local"),
         "model": model,

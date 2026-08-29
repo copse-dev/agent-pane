@@ -1,11 +1,13 @@
 import * as esbuild from 'esbuild'
-import { glob, rm } from 'node:fs/promises'
+import { glob, readFile, rm } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { selectTestFiles, describeNoMatch, testOutputPath } from './lib/test-filter.mts'
 
 const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
 const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
+const repoRoot = resolve('.')
 
 const bundleOnly = process.argv.includes('--bundle-only')
 const testOnly = process.argv.includes('--test-only')
@@ -21,11 +23,6 @@ if (bundleOnly && testOnly) {
  * rules and `docs/testing-strategy.md` for when a subset is the wrong call.
  */
 const filters = process.argv.slice(2).filter((a) => !a.startsWith('-'))
-
-function isEsbuildServiceDead(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err)
-  return msg.includes('The service was stopped') || msg.includes('The service is no longer running')
-}
 
 /** Every test file the suite covers, repo-relative and sorted. */
 async function allTestFiles(): Promise<string[]> {
@@ -48,10 +45,10 @@ async function selectedTestFiles(): Promise<string[]> {
 }
 
 async function bundleTests(testFiles: string[]): Promise<void> {
-  // A full run starts clean; a filtered run leaves the rest of dist-test alone
-  // (it only ever runs the paths it bundled, and wiping would make every
-  // subset pay for the next full run).
-  if (filters.length === 0) await rm('dist-test', { recursive: true, force: true })
+  // Shared chunks are content-addressed. Always start clean so a filtered run
+  // cannot leave orphan chunks behind, and so --bundle-only produces exactly
+  // the tree the following --test-only invocation will execute.
+  await rm('dist-test', { recursive: true, force: true })
 
   const buildOptions: esbuild.BuildOptions = {
     entryPoints: testFiles,
@@ -62,7 +59,24 @@ async function bundleTests(testFiles: string[]): Promise<void> {
     outbase: '.',
     bundle: true,
     platform: 'node',
-    format: 'cjs',
+    // Keep every test file as its own Node test entry, but emit shared modules
+    // once. The old CJS build inlined the same application graph into 800+
+    // entries, producing 2.4 GB of output and forcing batching/OOM retries.
+    // esbuild supports code splitting for ESM output, and Node still isolates
+    // the resulting entries in its ordinary test-file worker processes.
+    format: 'esm',
+    splitting: true,
+    chunkNames: '_chunks/[name]-[hash]',
+    outExtension: { '.js': '.mjs' },
+    // Bundled code contains a small number of intentional CommonJS calls. Give
+    // ESM output a local require; source-relative metadata is handled per module
+    // below because shared chunks do not retain the entry file's directory.
+    banner: {
+      js: [
+        "import { createRequire as __copseCreateRequire } from 'node:module';",
+        'const require = __copseCreateRequire(import.meta.url);',
+      ].join('\n'),
+    },
     sourcemap: true,
     // Preserve the dependency's real ESM import.meta.url for vendored runtime assets.
     // Production externalizes it for the same reason.
@@ -82,10 +96,8 @@ async function bundleTests(testFiles: string[]): Promise<void> {
       // so bundling it breaks that lookup ("cannot be bundled"). Tests that build
       // a worker bundle to assert what it links against need the real package.
       'esbuild',
-      // Prettier's ESM entry builds a `createRequire(import.meta.url)`, which has
-      // no meaning once bundled to CJS ("The argument 'filename' must be ...
-      // Received undefined"). Left external, `require('prettier')` picks up the
-      // package's own CJS build. Needed by scripts/lib/generated-file.mts.
+      // Keep Prettier external so it can load its own plugins and runtime files.
+      // Needed by scripts/lib/generated-file.mts.
       'prettier',
     ],
     alias: {
@@ -97,6 +109,68 @@ async function bundleTests(testFiles: string[]): Promise<void> {
     // Unit tests cover the directive parser, so they always build with it enabled.
     define: { __COPSE_TEST_DIRECTIVES__: 'true' },
     plugins: [
+      {
+        name: 'electron-esm-interop',
+        setup(build): void {
+          // Electron's package entry is CommonJS and does not advertise named
+          // exports to Node's ESM loader. Production source uses Electron's
+          // typed named-import API, so expose those properties through a tiny
+          // statically-named ESM facade while leaving the package external.
+          build.onResolve({ filter: /^electron$/ }, (args) => {
+            if (args.namespace === 'electron-esm-interop')
+              return { path: 'electron', external: true }
+            return { path: 'electron', namespace: 'electron-esm-interop' }
+          })
+          build.onLoad({ filter: /.*/, namespace: 'electron-esm-interop' }, () => ({
+            loader: 'js',
+            contents: [
+              "import electron from 'electron';",
+              'export default electron;',
+              ...[
+                'app',
+                'BrowserWindow',
+                'clipboard',
+                'contextBridge',
+                'dialog',
+                'globalShortcut',
+                'ipcMain',
+                'ipcRenderer',
+                'Menu',
+                'nativeImage',
+                'nativeTheme',
+                'Notification',
+                'safeStorage',
+                'screen',
+                'session',
+                'shell',
+                'webContents',
+              ].map((name) => `export const ${name} = electron.${name};`),
+            ].join('\n'),
+          }))
+        },
+      },
+      {
+        name: 'module-relative-test-paths',
+        setup(build): void {
+          // Once a module moves into a shared chunk, import.meta.url identifies
+          // that chunk rather than the source file. Preserve source-relative
+          // asset/config lookups and direct-run guards at bundle time.
+          build.onLoad({ filter: /\.(?:ts|mts)$/ }, async (args) => {
+            if (!args.path.startsWith(`${repoRoot}/`)) return undefined
+            const source = await readFile(args.path, 'utf8')
+            const outputPath = resolve('dist-test', relative(repoRoot, args.path)).replace(
+              /\.(?:ts|mts)$/,
+              '.mjs',
+            )
+            const contents = source
+              .replace(/\bimport\.meta\.url\b/g, JSON.stringify(pathToFileURL(args.path).href))
+              .replace(/\bimport\.meta\.dirname\b/g, JSON.stringify(dirname(args.path)))
+              .replace(/\b__filename\b/g, JSON.stringify(outputPath))
+              .replace(/\b__dirname\b/g, JSON.stringify(dirname(outputPath)))
+            return { contents, loader: 'ts', resolveDir: dirname(args.path) }
+          })
+        },
+      },
       {
         name: 'main-services-test-shims',
         setup(build): void {
@@ -113,15 +187,10 @@ async function bundleTests(testFiles: string[]): Promise<void> {
     ],
   }
 
-  // Bundle in batches rather than handing esbuild all ~540 entry points at once.
-  // Each entry point is bundled standalone with its dependencies inlined, so a
-  // single build holds the whole ~1.7GB of output in flight and peaks around
-  // 5.7GB RSS — enough that a loaded CI runner OOM-kills the esbuild child
-  // ("The service was stopped"). Batching bounds the peak; `outbase` is pinned
-  // above, so a batched run writes exactly the same paths as a single build.
-  for (let i = 0; i < testFiles.length; i += BUNDLE_BATCH_SIZE) {
-    await buildBatch({ ...buildOptions, entryPoints: testFiles.slice(i, i + BUNDLE_BATCH_SIZE) })
-  }
+  // Code splitting needs the complete entry graph in one build so esbuild can
+  // identify common modules. Unlike the former standalone bundles, output now
+  // scales with unique code rather than test-file count.
+  await esbuild.build(buildOptions)
 
   // Warm up Electron's binary once, serially, before the parallel test run.
   // Many src/main test files `require('electron')`, and electron@42 lazily
@@ -134,47 +203,14 @@ async function bundleTests(testFiles: string[]): Promise<void> {
   // A filtered run that selected no main-process test has nothing to race, and
   // the warmup is a meaningful slice of a small subset's wall clock — skip it.
   //
-  // Must stay in `bundleTests`, after every batch: it ran once per full bundle
-  // before batching, and it has to keep running exactly once, after the last
-  // build and before `runTests` spawns the parallel workers.
+  // Must stay in `bundleTests`, after the build and before `runTests` spawns
+  // the parallel workers.
   if (testFiles.some((f) => f.startsWith('src/main/'))) {
     const electronWarmup = spawnSync('node', ['-e', 'require("electron")'], { stdio: 'inherit' })
     if (electronWarmup.status !== 0) {
       console.warn(
         `[run-tests] electron warmup exited ${String(electronWarmup.status)}; continuing to tests`,
       )
-    }
-  }
-}
-
-/** Entry points per `esbuild.build()` call — see the comment in {@link bundleTests}. */
-const BUNDLE_BATCH_SIZE = 48
-
-/**
- * Build one batch, retrying if the esbuild child dies.
- *
- * A bare retry reuses the dead JS-side service and fails instantly with "The
- * service is no longer running", so call `stop()` first to force a fresh
- * service. Retrying per batch (rather than re-running the whole bundle) means a
- * transient death costs one batch, not all ~540 entry points.
- */
-async function buildBatch(options: esbuild.BuildOptions): Promise<void> {
-  const maxAttempts = 3
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await esbuild.build(options)
-      return
-    } catch (err) {
-      if (!isEsbuildServiceDead(err) || attempt === maxAttempts) throw err
-      const msg = err instanceof Error ? err.message : String(err)
-      console.warn(
-        `[run-tests] esbuild service stopped (${msg}); stop()+retry ${String(attempt)}/${String(maxAttempts - 1)}`,
-      )
-      try {
-        await esbuild.stop()
-      } catch {
-        // stop() can throw if the service is already gone; ignore and retry.
-      }
     }
   }
 }
@@ -204,14 +240,23 @@ function reporterArgs(): string[] {
 
 /** Full TAP for the run, kept for artifact upload rather than the console. */
 const UNIT_TAP_LOG = 'unit-tests.tap'
+// Several hook/process suites deliberately spawn subprocess trees. Letting
+// Node derive file concurrency from a large developer/runner host can put dozens
+// of short-lived children in flight and turn fixed 2s safety deadlines into
+// load-dependent failures. Four keeps independent file workers parallel while
+// bounding that shared OS pressure.
+const TEST_FILE_CONCURRENCY = 4
 
 function runTests(testFiles: string[]): void {
-  // Unfiltered: hand node the glob so it picks up whatever is in dist-test.
-  // Filtered: hand it the exact bundles, so leftovers from an earlier run
-  // (dist-test is not wiped for a subset) can never sneak into the results.
+  // Unfiltered: hand node the glob so it picks up every emitted test entry.
+  // Filtered: hand it the exact entries selected above.
   const specs =
-    filters.length === 0 ? ['dist-test/**/*.test.js'] : testFiles.map((f) => testOutputPath(f))
-  const result = spawnSync('node', ['--test', ...reporterArgs(), ...specs], { stdio: 'inherit' })
+    filters.length === 0 ? ['dist-test/**/*.test.mjs'] : testFiles.map((f) => testOutputPath(f))
+  const result = spawnSync(
+    'node',
+    ['--test', `--test-concurrency=${String(TEST_FILE_CONCURRENCY)}`, ...reporterArgs(), ...specs],
+    { stdio: 'inherit' },
+  )
   process.exit(result.status ?? 1)
 }
 

@@ -167,11 +167,7 @@ export interface GhPrChangedFile {
   deletions: number
 }
 
-export interface GhPrFileDiff {
-  path: string
-  before: string
-  after: string
-  language: string
+export interface GhPrFileDiff extends GitFileDiff {
   /** The file was deleted in this PR (no `after` content). */
   deleted?: boolean
 }

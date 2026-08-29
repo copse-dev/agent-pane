@@ -468,7 +468,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       setCuratedEnabled: emptyArray,
       onStatusChanged: subscribe,
     },
-    canvas: { onArtefact: subscribe, onShowArtefact: subscribe },
+    canvas: {
+      onArtefact: subscribe,
+      onShowArtefact: subscribe,
+      // The demo has no canvas store behind it: nothing was ever saved, so
+      // nothing can be listed or reopened.
+      listArtefacts: () => resolved([]),
+      reopenArtefact: () => resolved(false),
+    },
     storage: {
       get: (key: string) => resolved(storage.get(key)),
       set: (key: string, value: unknown) => {
