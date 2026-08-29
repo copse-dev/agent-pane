@@ -5,8 +5,8 @@ name: Release (macOS)
 # signed, notarized, smoke-tested files in architecture-specific artifacts.
 # `Publish release artifacts` is a
 # separate manual workflow so the owner can review the immutable Actions
-# artifacts, make the repository public, and publish those exact bytes without
-# racing an automatic publisher.
+# artifacts and publish those exact bytes to the public binary repository
+# without racing an automatic publisher.
 on:
   workflow_dispatch:
     inputs:
@@ -267,7 +267,7 @@ jobs:
             test -s "$app/Contents/Resources/app-update.yml"
             grep -q '^provider: github$' "$app/Contents/Resources/app-update.yml"
             grep -q '^owner: copse-dev$' "$app/Contents/Resources/app-update.yml"
-            grep -q '^repo: agent-pane$' "$app/Contents/Resources/app-update.yml"
+            grep -q '^repo: copse-releases$' "$app/Contents/Resources/app-update.yml"
             grep -q "^channel: $UPDATE_CHANNEL$" "$app/Contents/Resources/app-update.yml"
             minimum_system_version="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")"
             if [ "$minimum_system_version" != '26.0' ]; then

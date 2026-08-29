@@ -121,17 +121,29 @@ describe('pageMarkdown', () => {
     assert.match(markdown, /\[CDN\]\(\/\/cdn\.example\.com\/x\)/)
   })
 
-  describe('coming-soon mode', () => {
+  describe('publication modes', () => {
     const BODY =
-      '<p class="mode-live-only">Download now</p>' +
+      '<p class="mode-download-live-only">Download now</p>' +
+      '<p class="mode-source-live-only">View source</p>' +
       '<p class="mode-coming-soon-only" hidden>Coming soon</p>' +
+      '<p class="mode-source-private-only" hidden>Email support</p>' +
       '<p hidden>Inert either way</p>'
 
     it('publishes what the stylesheet publishes', () => {
       const markdown = convert(BODY, { mode: 'coming-soon' })
       assert.match(markdown, /Coming soon/)
+      assert.match(markdown, /Email support/)
       assert.doesNotMatch(markdown, /Download now/)
+      assert.doesNotMatch(markdown, /View source/)
       assert.doesNotMatch(markdown, /Inert either way/)
+    })
+
+    it('publishes downloads without exposing private source links', () => {
+      const markdown = convert(BODY, { mode: 'downloads-live' })
+      assert.match(markdown, /Download now/)
+      assert.match(markdown, /Email support/)
+      assert.doesNotMatch(markdown, /View source/)
+      assert.doesNotMatch(markdown, /Coming soon/)
     })
 
     it('follows the page to live when the attribute goes', () => {
@@ -139,7 +151,9 @@ describe('pageMarkdown', () => {
       // with nothing else to remember.
       const markdown = convert(BODY)
       assert.match(markdown, /Download now/)
+      assert.match(markdown, /View source/)
       assert.doesNotMatch(markdown, /Coming soon/)
+      assert.doesNotMatch(markdown, /Email support/)
       assert.doesNotMatch(markdown, /Inert either way/)
     })
   })
