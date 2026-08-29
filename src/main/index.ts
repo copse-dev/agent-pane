@@ -85,6 +85,7 @@ import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
+import { initAgentsRegistry } from './services/agents/agents-registry.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
@@ -836,6 +837,7 @@ app
 
     recordStartupPhase('skills-mcp')
     await initSkillsRegistry()
+    await initAgentsRegistry()
     registerSkillTools(registry)
     await loadCustomTools(registry)
 

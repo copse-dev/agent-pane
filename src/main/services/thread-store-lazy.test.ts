@@ -15,6 +15,7 @@ import {
   saveProjectThread,
   updateMeta,
 } from './thread-store.ts'
+import { runSerialized } from './storage/write-queue.ts'
 
 /**
  * The metadata-only load path that makes opening a large project cheap, and the
@@ -292,6 +293,41 @@ describe('thread-store PR-ref cache', () => {
 
     const [after] = await loadProjectThreadMetas('p')
     assert.equal(after?.prRefs?.[0]?.number, 5)
+  })
+
+  it('queues the backfill commit behind foreground project writes', async () => {
+    await saveProjectThread(
+      'p',
+      thread('old', { messages: [userMsg('m1', 'https://github.com/acme/widget/pull/5')] }),
+    )
+    // An independent project provides a deterministic pacing yardstick while
+    // p's queue is held; this is more reliable than assuming a few event-loop
+    // ticks are enough for the backfill's asynchronous transcript read.
+    await saveProjectThread('p2', thread('other', { messages: [userMsg('m2', 'hello')] }))
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const hold = runSerialized('thread-store:p', async () => {
+      await gate
+    })
+    const backfill = backfillThreadPrRefs('p', () => undefined)
+
+    try {
+      for (let i = 0; i < 5; i++) await loadProjectThreads('p2')
+      assert.equal(
+        metaOnDisk(root, 'p', 'old')['prRefs'],
+        undefined,
+        'the metadata commit must not bypass the held project queue',
+      )
+    } finally {
+      release()
+    }
+    await hold
+    await backfill
+    const refs = metaOnDisk(root, 'p', 'old')['prRefs']
+    assert.ok(Array.isArray(refs))
+    assert.equal(refs.length, 1)
   })
 
   it('does not re-scan a thread that has already been backfilled', async () => {

@@ -35,6 +35,8 @@ const todoSchema = z.object({
 export function parseAgentRunPayload(rawPrompt: string): {
   userContent: UserContent
   invokedSkills: string[]
+  /** Subagent the user invoked with `/name` this turn, if any. */
+  invokedAgent?: string
   priorTodos: TodoItem[]
   workingBrief?: string
   model?: string
@@ -65,6 +67,9 @@ export function parseAgentRunPayload(rawPrompt: string): {
         userContent: content.data,
         invokedSkills: invokedSkills.success ? invokedSkills.data : [],
         priorTodos: normalizedTodos,
+        ...(typeof parsed['invokedAgent'] === 'string' && parsed['invokedAgent']
+          ? { invokedAgent: parsed['invokedAgent'] }
+          : {}),
         ...(typeof parsed['workingBrief'] === 'string'
           ? { workingBrief: parsed['workingBrief'] }
           : {}),

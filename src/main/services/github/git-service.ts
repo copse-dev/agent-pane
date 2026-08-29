@@ -1162,8 +1162,11 @@ export async function findSubmoduleDeclaration(
   }
   const declaration = join(repositoryRoot, '.gitmodules')
   try {
-    await fsp.access(declaration)
-    return declaration
+    // Linux sandbox setup can briefly materialize an empty deny-path sentinel
+    // at this exact location. Existence alone therefore is not evidence that
+    // the repository declares submodules. A real declaration has content; an
+    // empty file is semantically equivalent to no .gitmodules entries anyway.
+    return (await fsp.readFile(declaration, 'utf8')).trim() ? declaration : null
   } catch {
     return null
   }

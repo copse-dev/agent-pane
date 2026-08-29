@@ -29,6 +29,7 @@ function stubApi(initial: PluginsListResult, spy: StubApiSpy): ApiClient {
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
     'skills.list': () => Promise.resolve([]),
+    'agents.list': () => Promise.resolve({ agents: [], skipped: [], shadowed: [] }),
     'cursorPlugins.list': () => Promise.resolve([]),
     'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
     'plugins.list': () => Promise.resolve(current),

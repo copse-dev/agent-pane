@@ -12,6 +12,8 @@ import {
 import { parseSessionHostRequest } from './acp-session-host-worker.ts'
 
 const REPO_ROOT = process.cwd()
+const SANDBOX_RUNTIME_HELPER_MODULE =
+  '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 
 function makeBundleDir(prefix: string): string {
   const base = join(REPO_ROOT, 'dist-test', 'acp-session-host-fixtures')
@@ -30,7 +32,12 @@ function bundleWorker(outDir: string, sandboxRuntimeAlias?: string): string {
     target: 'node22',
     alias: {
       '@shared': join(REPO_ROOT, 'src/shared'),
-      ...(sandboxRuntimeAlias ? { '@anthropic-ai/sandbox-runtime': sandboxRuntimeAlias } : {}),
+      ...(sandboxRuntimeAlias
+        ? {
+            [SANDBOX_RUNTIME_HELPER_MODULE]: sandboxRuntimeAlias,
+            '@anthropic-ai/sandbox-runtime': sandboxRuntimeAlias,
+          }
+        : {}),
     },
     external: [
       'electron',
@@ -59,6 +66,7 @@ export const SandboxManager = {
   async wrapWithSandboxArgv(command, shell) { return { argv: [shell, '-c', command] } },
   async reset() { config = null },
 }
+export function getApplySeccompBinaryPath() { return null }
 `
 
 function spawnWorker(workerPath: string, cwd: string): ChildProcess {
