@@ -10,8 +10,9 @@ import { join, resolve } from 'node:path'
  * unit-test runner uses, so it needs no Electron) and runs it under Node.
  *
  * Usage: `node scripts/bench-thread-store.mts [--threads=200] [--messages=100]
- * [--result-bytes=1500] [--iters=5]`. Sandbox/CI fs timing is noisy — run a few
- * times and prefer the p50. Authoritative numbers come from a real machine.
+ * [--result-bytes=1500] [--iters=5] [--append-sizes=100,1000,10000]`.
+ * Sandbox/CI fs timing is noisy — run a few times and prefer the p50.
+ * Authoritative numbers come from a real machine.
  */
 
 const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')

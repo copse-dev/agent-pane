@@ -462,15 +462,29 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /--is-ancestor "\$release_sha" origin\/main/)
   })
 
-  it('uploads release notes with the tested artifact and does not publish', () => {
+  it('uploads release notes with immutable metadata and does not publish', () => {
     assert.match(workflow, /release-notes\.mts > release\/RELEASE_NOTES\.md/)
     assert.match(
       workflow,
-      /release\/RELEASE_NOTES\.md\n {10}if-no-files-found: error/,
-      'the notes must travel in the immutable tested artifact',
+      /name: copse-macos-\$\{\{ needs\.preflight\.outputs\.release_sha \}\}-metadata[\s\S]*release\/RELEASE_NOTES\.md/,
+      'the notes must travel in the immutable tested metadata artifact',
     )
     assert.doesNotMatch(workflow, /^ {2}publish:$/m)
     assert.doesNotMatch(workflow, /^\s+gh release create /m)
+  })
+
+  it('builds and uploads each architecture separately', () => {
+    assert.match(workflow, /arch: \[arm64, x64\]/)
+    assert.match(workflow, /"dmg:\$TARGET_ARCH" "zip:\$TARGET_ARCH"/)
+    assert.match(workflow, /name: copse-macos-.*-\$\{\{ matrix\.arch \}\}/)
+    assert.match(workflow, /check-macos-release-size\.mts release \$\{\{ matrix\.arch \}\}/)
+    assert.doesNotMatch(workflow, /prepare:gortex:mac/)
+  })
+
+  it('assembles portable checksums without recompressing the packages', () => {
+    assert.match(workflow, /assemble-macos-release\.mts/)
+    assert.match(workflow, /shasum -a 256 --check SHA256SUMS/)
+    assert.match(workflow, /release\/SHA256SUMS/)
   })
 
   it('skips provenance on a private repository instead of failing the release', () => {
@@ -487,16 +501,35 @@ describe('release-mac.yml workflow invariants', () => {
     assert.match(workflow, /^ {4}runs-on: macos-26$/m)
     assert.doesNotMatch(workflow, /runs-on: macos-14/)
   })
+
+  it('bounds the signed package verification step', () => {
+    assert.match(workflow, /^ {4}timeout-minutes: 60$/m)
+    assert.match(
+      workflow,
+      /- name: Verify signatures, notarization, metadata, and packaged runtime\n {8}timeout-minutes: 15/,
+    )
+    assert.match(workflow, /COPSE_DIR: \$\{\{ runner\.temp \}\}\/copse-release-smoke-profile/)
+  })
 })
 
 describe('release-publish.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/release-publish.yml'), 'utf8')
 
-  it('is manual and refuses private-repository publication', () => {
+  it('is manual and publishes only to the public binary repository', () => {
     assert.match(workflow, /^ {2}workflow_dispatch:$/m)
     assert.doesNotMatch(workflow, /^ {2}push:/m)
-    assert.match(workflow, /--jq \.private/)
-    assert.match(workflow, /Refusing to publish from a private repository/)
+    assert.match(workflow, /RELEASE_REPOSITORY: copse-dev\/copse-releases/)
+    assert.match(workflow, /\/repos\/\$RELEASE_REPOSITORY.*--jq \.private/)
+    assert.match(workflow, /Refusing to publish to private repository/)
+    assert.doesNotMatch(workflow, /Refusing to publish from a private repository/)
+  })
+
+  it('uses the release App only for the cross-repository publication', () => {
+    assert.match(workflow, /uses: actions\/create-github-app-token@v3/)
+    assert.match(workflow, /repositories: copse-releases/)
+    assert.match(workflow, /permission-contents: write/)
+    assert.match(workflow, /SOURCE_GH_TOKEN: \$\{\{ github\.token \}\}/)
+    assert.match(workflow, /RELEASE_GH_TOKEN: \$\{\{ steps\.release-token\.outputs\.token \}\}/)
   })
 
   it('accepts only a successful release-mac run for the exact tagged commit', () => {
@@ -507,13 +540,24 @@ describe('release-publish.yml workflow invariants', () => {
     assert.match(workflow, /--is-ancestor "\$release_sha" origin\/release/)
   })
 
-  it('downloads, verifies, attests, and publishes without rebuilding', () => {
+  it('downloads, verifies, and publishes without rebuilding', () => {
     assert.match(workflow, /run-id: \$\{\{ inputs\.release_run_id \}\}/)
-    assert.match(workflow, /shasum -a 256 --check release\/SHA256SUMS/)
+    assert.match(workflow, /pattern: copse-macos-.*-\*/)
+    assert.match(workflow, /merge-multiple: true/)
+    assert.match(workflow, /cd release\n {12}shasum -a 256 --check SHA256SUMS/)
     assert.match(workflow, /uses: actions\/attest@/)
-    assert.match(workflow, /--notes-file release\/RELEASE_NOTES\.md/)
+    assert.match(workflow, /--notes-file "\$notes"/)
     assert.match(workflow, /gh release create/)
+    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target main/)
     assert.doesNotMatch(workflow, /electron-builder|build:release|pnpm install/)
+  })
+
+  it('skips unavailable provenance only while the source repository is private', () => {
+    assert.match(
+      workflow,
+      /if: \$\{\{ !github\.event\.repository\.private \}\}\n {8}uses: actions\/attest/,
+    )
+    assert.match(workflow, /if: github\.event\.repository\.private/)
   })
 })
 

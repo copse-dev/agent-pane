@@ -97,4 +97,30 @@ describe('browser_show', () => {
     assert.ok(typeof out === 'string')
     assert.match(out, /Sales Dashboard/)
   })
+
+  it('reports the request rather than an outcome it cannot observe', () => {
+    // The artefact tabs live in the renderer and `showArtefact` is a one-way
+    // send, so main never learns whether a tab matched. The pane promotes
+    // nothing when no tab carries this title for this thread — reachable since
+    // artefacts became thread-scoped — and this string is the model's only
+    // signal, so it must not read as a completed promotion.
+    setBrowserSessionPlatform({
+      createWindow: () => {
+        throw new Error('not used')
+      },
+      getAgentSession: () => {
+        throw new Error('not used')
+      },
+      showUrl: () => {
+        throw new Error('not used')
+      },
+      showArtefact: () => {},
+    })
+
+    const out = browserShowTool.execute({ title: 'Sales Dashboard', url: undefined }, signal)
+
+    assert.ok(typeof out === 'string')
+    assert.doesNotMatch(out, /^Brought /)
+    assert.match(out, /changes nothing if this thread never rendered that title/i)
+  })
 })

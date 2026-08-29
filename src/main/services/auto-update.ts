@@ -5,10 +5,11 @@ import { notifyUpdateDevOnly, requestUpdatePrompt } from './update-prompt.ts'
 
 // Auto-update for the direct-download (Developer ID + notarized) macOS build.
 //
-// electron-builder embeds an `app-update.yml` pointing at this repo's GitHub
-// Releases (see package.json `build.publish`) and publishes channel-specific
-// update metadata next to each release zip. electron-updater reads that feed,
-// downloads a newer *signed* build, and swaps it in on relaunch (Squirrel.Mac).
+// electron-builder embeds an `app-update.yml` pointing at the public,
+// binary-only copse-dev/copse-releases repository (see package.json
+// `build.publish`) and publishes channel-specific update metadata next to each
+// release zip. Keeping the feed outside the source repository makes signed beta
+// updates anonymously reachable while the source remains private.
 //
 // Updates are never silent: a coding tool shouldn't replace its own binary
 // mid-session without consent, so the user confirms the download, then again

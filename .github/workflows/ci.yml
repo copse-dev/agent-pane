@@ -1615,12 +1615,18 @@ jobs:
   # cheap: plan-e2e skips the e2e tier for a screenshot-only commit (see its
   # `mode=skip` shortcut). Falls back to github.token when the App credentials are
   # unset — commits still land, just without the CI re-trigger.
+  #
+  # The E2E_RUNNER=ubuntu-latest break-glass route validates behavior on a
+  # disposable hosted image, but that image is not the canonical screenshot
+  # renderer. Keep its PNGs as run artifacts for review; never rewrite the
+  # self-hosted fleet's committed references from that temporary environment.
   commit-screenshots:
     needs: [build, e2e]
     if: >-
       always() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      vars.E2E_RUNNER != 'ubuntu-latest'
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:

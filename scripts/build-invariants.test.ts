@@ -93,6 +93,12 @@ describe('build.mts bundle invariants', () => {
     assert.match(rendererMain, /\nexport \{\}\s*$/)
     assert.match(build, /assertModuleParses\(`\$\{rendererOutDir\}\/app\.js`\)/)
   })
+
+  it('keeps source maps in development but strips them from release bundles', () => {
+    assert.match(nodeOpts ?? '', /sourcemap: !isRelease/)
+    assert.match(build, /sourcemap: !isDemo && !isRelease/)
+    assert.match(dev, /sourcemap: true/)
+  })
 })
 
 /**

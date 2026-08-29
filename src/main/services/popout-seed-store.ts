@@ -17,7 +17,3 @@ export function takePopoutSeed(mode: PopoutMode): unknown {
   seeds.delete(mode)
   return seed ?? null
 }
-
-export function clearPopoutSeeds(): void {
-  seeds.clear()
-}

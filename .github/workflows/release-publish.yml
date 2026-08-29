@@ -1,10 +1,12 @@
 name: Publish release artifacts
 
 # Publication is deliberately separate from signing. `Release (macOS)` creates
-# one immutable Actions artifact containing the exact signed, notarized, and
-# smoke-tested files. The owner reviews that artifact, makes the repository
-# public, then supplies the successful source run here. This workflow refuses
-# any other run, commit, tag, or private-repository publication.
+# immutable architecture-specific Actions artifacts containing the exact
+# signed, notarized, and smoke-tested files, plus a small metadata artifact.
+# The owner reviews those artifacts, then supplies the successful source run
+# here. This workflow publishes them to the public, binary-only
+# copse-dev/copse-releases repository, so beta distribution does not expose the
+# source repository. It refuses any other run, commit, tag, or private target.
 on:
   workflow_dispatch:
     inputs:
@@ -30,6 +32,8 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_REPOSITORY: copse-dev/copse-releases
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -37,10 +41,20 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with: { node-version-file: '.nvmrc' }
+      - name: Mint a token scoped to the public release repository
+        uses: actions/create-github-app-token@v3
+        id: release-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: copse-dev
+          repositories: copse-releases
+          permission-contents: write
       - id: release
-        name: Validate public repository, tag, version, and source run
+        name: Validate public target, tag, version, and source run
         env:
-          GH_TOKEN: ${{ github.token }}
+          SOURCE_GH_TOKEN: ${{ github.token }}
+          RELEASE_GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_RUN_ID: ${{ inputs.release_run_id }}
           TAG: ${{ inputs.tag }}
         run: |
@@ -65,11 +79,11 @@ jobs:
             echo "Release tag commit is not reachable from protected branch origin/release"
             exit 1
           fi
-          if [ "$(gh api "/repos/$GITHUB_REPOSITORY" --jq .private)" != 'false' ]; then
-            echo 'Refusing to publish from a private repository: release assets and update metadata must be anonymously reachable'
+          if [ "$(GH_TOKEN="$RELEASE_GH_TOKEN" gh api "/repos/$RELEASE_REPOSITORY" --jq .private)" != 'false' ]; then
+            echo "Refusing to publish to private repository $RELEASE_REPOSITORY: release assets and update metadata must be anonymously reachable"
             exit 1
           fi
-          source_run="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID")"
+          source_run="$(GH_TOKEN="$SOURCE_GH_TOKEN" gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID")"
           source_path="$(printf '%s' "$source_run" | jq -r .path)"
           source_sha="$(printf '%s' "$source_run" | jq -r .head_sha)"
           source_status="$(printf '%s' "$source_run" | jq -r .status)"
@@ -86,31 +100,50 @@ jobs:
             echo "Run $RELEASE_RUN_ID is not a successful completed release build"
             exit 1
           fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "A release already exists for $TAG; refusing to replace it"
+          if GH_TOKEN="$RELEASE_GH_TOKEN" gh release view "$TAG" --repo "$RELEASE_REPOSITORY" >/dev/null 2>&1; then
+            echo "A release already exists for $TAG in $RELEASE_REPOSITORY; refusing to replace it"
+            exit 1
+          fi
+          if GH_TOKEN="$RELEASE_GH_TOKEN" gh api "/repos/$RELEASE_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "A tag already exists for $TAG in $RELEASE_REPOSITORY; refusing to retarget it"
             exit 1
           fi
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "release_type=$release_type" >> "$GITHUB_OUTPUT"
-      - name: Download the exact tested artifact
+      - name: Download the exact tested architecture and metadata artifacts
         uses: actions/download-artifact@v8
         with:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ inputs.release_run_id }}
-          name: copse-macos-${{ steps.release.outputs.release_sha }}
+          pattern: copse-macos-${{ steps.release.outputs.release_sha }}-*
+          merge-multiple: true
           path: release
       - name: Verify checksums and artifact completeness
         run: |
           set -euo pipefail
           test -s release/RELEASE_NOTES.md
           test -s release/SHA256SUMS
-          test -n "$(find release -maxdepth 1 -name '*.dmg' -print -quit)"
-          test -n "$(find release -maxdepth 1 -name '*.zip' -print -quit)"
-          test -n "$(find release -maxdepth 1 -name '*.blockmap' -print -quit)"
+          for arch in arm64 x64; do
+            test -n "$(find release -maxdepth 1 -name "*-$arch.dmg" -print -quit)"
+            test -n "$(find release -maxdepth 1 -name "*-$arch.zip" -print -quit)"
+            test -n "$(find release -maxdepth 1 -name "*-$arch.dmg.blockmap" -print -quit)"
+            test -n "$(find release -maxdepth 1 -name "*-$arch.zip.blockmap" -print -quit)"
+          done
           test -n "$(find release -maxdepth 1 -name '*-mac.yml' -print -quit)"
-          shasum -a 256 --check release/SHA256SUMS
+          (
+            cd release
+            shasum -a 256 --check SHA256SUMS
+          )
+      # GitHub artifact attestations are unavailable for this Team plan while
+      # the workflow repository is private. The signing workflow and checksum
+      # manifest still bind the exact bytes; this step activates automatically
+      # when the source repository opens.
+      - name: Note the skipped attestation
+        if: github.event.repository.private
+        run: echo "::warning::Private source repository — artifact attestation skipped until the source opens."
       - name: Attest the tested release artifacts
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest@v4.2.2
         with:
           subject-path: |
@@ -121,10 +154,10 @@ jobs:
             release/SHA256SUMS
       - name: Publish the exact tested artifact
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TYPE: ${{ steps.release.outputs.release_type }}
           TAG: ${{ inputs.tag }}
-          TARGET: ${{ steps.release.outputs.release_sha }}
+          SOURCE_SHA: ${{ steps.release.outputs.release_sha }}
         run: |
           set -euo pipefail
           release_flags=()
@@ -133,6 +166,12 @@ jobs:
           else
             release_flags+=(--latest)
           fi
+          notes="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "Built from copse-dev/agent-pane@$SOURCE_SHA (tag $TAG)."
+            echo
+            cat release/RELEASE_NOTES.md
+          } > "$notes"
           gh release create "$TAG" release/*.dmg release/*.zip release/*.blockmap release/*-mac.yml release/SHA256SUMS \
-            --target "$TARGET" --title "$TAG" --notes-file release/RELEASE_NOTES.md --verify-tag \
+            --repo "$RELEASE_REPOSITORY" --target main --title "$TAG" --notes-file "$notes" \
             "${release_flags[@]}"

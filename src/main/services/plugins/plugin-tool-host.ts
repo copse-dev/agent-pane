@@ -42,6 +42,7 @@ import { parseJsonUnknown } from '@shared/unknown-value.ts'
 const INITIALIZE_TIMEOUT_MS = 15_000
 const INVOCATION_TIMEOUT_MS = 5 * 60_000
 const MAX_BUFFER_BYTES = PLUGIN_TOOL_PROTOCOL_MAX_LINE_BYTES * 2
+const MAX_STARTUP_STDERR_BYTES = 4_096
 
 export class PluginToolHostUnavailable extends Error {
   constructor(message: string) {
@@ -123,8 +124,10 @@ export class PluginToolHost {
   private readonly browserService: PluginBrowserService | null
   private readonly allowedBrowserOrigins: readonly string[]
   private buffer = ''
+  private startupStderr = ''
   private nextId = 1
   private alive = true
+  private initialized = false
 
   private constructor(
     proc: ChildProcess,
@@ -196,6 +199,8 @@ export class PluginToolHost {
         INITIALIZE_TIMEOUT_MS,
       )
       host.registrations = zPluginToolRegistrations.parse(result)
+      host.initialized = true
+      host.startupStderr = ''
       return host
     } catch (err) {
       host.fail(new PluginToolHostUnavailable(errorMessage(err)))
@@ -212,7 +217,26 @@ export class PluginToolHost {
     stdout.on('data', (chunk: string) => {
       this.onData(chunk)
     })
-    this.proc.on('exit', () => {
+    const stderr = this.proc.stderr
+    if (stderr) {
+      stderr.setEncoding('utf-8')
+      stderr.on('data', (chunk: string) => {
+        if (this.initialized) return
+        const combined = Buffer.from(`${this.startupStderr}${chunk}`, 'utf-8')
+        this.startupStderr = combined.subarray(-MAX_STARTUP_STDERR_BYTES).toString('utf-8')
+      })
+    }
+    this.proc.on('exit', (code, signal) => {
+      if (this.alive && !this.initialized) {
+        const status = code !== null ? `code ${String(code)}` : `signal ${signal ?? 'unknown'}`
+        const diagnostic = this.startupStderr
+          .replace(/[\u0000-\u001f\u007f]+/gu, ' ')
+          .replace(/\s+/gu, ' ')
+          .trim()
+        console.warn(
+          `[packs] plugin ${JSON.stringify(this.pluginId)} worker exited during startup (${status})${diagnostic ? `: ${diagnostic}` : ''}`,
+        )
+      }
       this.fail(new PluginToolHostUnavailable('Plugin tool worker exited.'))
     })
     this.proc.on('error', (err) => {
