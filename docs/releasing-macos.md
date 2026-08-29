@@ -44,6 +44,13 @@ package contains the other architecture's application or native helper:
 | `latest-mac.yml` or `beta-mac.yml`       | Channel feed consumed by `electron-updater`. |
 | `SHA256SUMS`                             | Checksums for every promoted artifact.       |
 
+GitHub Actions always downloads each named CI artifact as an outer ZIP. During
+pre-publication review, opening the architecture artifact therefore reveals the
+DMG plus a second ZIP and its blockmap: the outer ZIP is only Actions' transport
+wrapper, while the inner ZIP is the architecture-specific automatic-update
+payload. A published GitHub Release lists the DMG and updater files separately;
+a person installing Copse downloads only the matching DMG.
+
 A stable build also mirrors its tested latest metadata into the beta feed so an
 installed beta can advance to that stable version. The workflow publishes every
 finalized macOS metadata file with the exact zip files it references.
