@@ -80,6 +80,9 @@ export interface SpineSubagentRef {
   usage?: ModelUsage
   model?: string
   localFallback?: boolean
+  /** Name of the user-authored definition, for `kind: 'custom'`. */
+  agentName?: string
+  agentColor?: string
 }
 
 /** One line of `events.jsonl`: a single finalized message. */

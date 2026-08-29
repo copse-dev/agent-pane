@@ -59,4 +59,30 @@ describe('write-queue', () => {
     await drainWriteQueue()
     assert.equal(done, true)
   })
+
+  it('drains follow-up writes enqueued while the first snapshot settles', async () => {
+    let releaseLate!: () => void
+    const lateGate = new Promise<void>((resolve) => {
+      releaseLate = resolve
+    })
+    let lateDone = false
+    const first = runSerialized('drain-first', () => {
+      void runSerialized('drain-late', async () => {
+        await lateGate
+        lateDone = true
+      })
+    })
+
+    let drained = false
+    const drain = drainWriteQueue().then(() => {
+      drained = true
+    })
+    await first
+    await tick()
+    assert.equal(drained, false, 'a newer queue tail must keep the drain pending')
+
+    releaseLate()
+    await drain
+    assert.equal(lateDone, true)
+  })
 })

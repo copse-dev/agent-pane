@@ -239,6 +239,7 @@ describe('Cursor rules block visibility', () => {
         'instructions.list': () => Promise.resolve([]),
         'cursorRules.list': () => Promise.resolve(rules),
         'skills.list': () => Promise.resolve([]),
+        'agents.list': () => Promise.resolve({ agents: [], skipped: [], shadowed: [] }),
         'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
       }),
     )

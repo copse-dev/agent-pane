@@ -13,6 +13,16 @@ allowBuilds:
   protobufjs: true
   sharp: true
 
+# Release packaging cross-builds Intel and Apple Silicon apps on one macOS
+# runner. Keep both native keyring packages installed so electron-builder can
+# place the matching binary in each target instead of inheriting the host CPU.
+supportedArchitectures:
+  os:
+    - current
+  cpu:
+    - arm64
+    - x64
+
 overrides:
   '@hono/node-server': 2.0.11
   adm-zip: ^0.6.0
