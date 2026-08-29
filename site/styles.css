@@ -1940,6 +1940,13 @@ footer a:hover {
   --color-white: rgba(255, 253, 247, 0.92);
 }
 
+/* Long-form pages scroll beneath the masthead. Keeping the translucent
+   landing-page nav fixed would leave its light wordmark floating over copy,
+   diagrams, and other pale content. */
+.marketing-site.content-site .site-header {
+  position: absolute;
+}
+
 .marketing-site.content-site .nav-links [aria-current='page'],
 .marketing-site.content-site .site-footer [aria-current='page'] {
   color: var(--green);
