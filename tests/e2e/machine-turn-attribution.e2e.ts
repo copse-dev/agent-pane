@@ -25,7 +25,7 @@ describe('machine turn attribution', function () {
     rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
-  it('labels a machine prompt and explains that sends queue during a running turn', async () => {
+  it('labels a machine prompt and makes the submit action queue during a running turn', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     const machineTurn = await $('.msg-machine-origin[data-operation-id="background-checks-17"]')
@@ -37,11 +37,9 @@ describe('machine turn attribution', function () {
     await setComposerValue('Check the final diff. [[mock:delay_ms 15000]]')
     await $('.submit-btn').click()
 
-    const running = await $('.footer-running')
-    await running.waitForDisplayed({ timeout: 15_000 })
-    await expect(running).toHaveText('Agent running · messages queue')
     await expect($('.submit-btn')).toHaveText('Queue')
     await expect($('.submit-btn')).toHaveAttribute('aria-label', 'Queue message')
+    await expect($('.footer-running')).not.toBeExisting()
 
     await setComposerValue('Then prepare the handoff summary.')
     await $('.submit-btn').click()

@@ -13,10 +13,6 @@ export function setCurrentShellTaskId(id: string | null): void {
   currentShellTaskId = id
 }
 
-export function getCurrentShellTaskId(): string | null {
-  return currentShellTaskId
-}
-
 /**
  * Where a chunk of shell output goes. The shell tool used to reach for
  * `getMainWindow()` directly, which put the whole window module — and through it

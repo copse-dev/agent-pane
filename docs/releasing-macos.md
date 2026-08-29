@@ -7,8 +7,10 @@ every release; this document covers channel policy and macOS packaging.
 The supported target is macOS 26 or newer on Apple Silicon (`arm64`) and Intel
 (`x64`). Copse cannot use the Mac App Store or TestFlight because its shell and
 PTY functionality is incompatible with the App Sandbox. Distribution is a
-Developer ID-signed, Apple-notarized direct download with updates from GitHub
-Releases.
+Developer ID-signed, Apple-notarized direct download with updates from the
+public, binary-only
+[`copse-dev/copse-releases`](https://github.com/copse-dev/copse-releases)
+repository.
 
 ## Channel contract
 
@@ -26,15 +28,16 @@ downgrade. The shared classifier in
 [`src/shared/release-channel.mts`](../src/shared/release-channel.mts) drives both
 the packaged app and the release workflow so their routing cannot drift.
 
-GitHub release assets must be anonymously reachable. Before a public beta or
-stable launch, make this repository public or move `build.publish` to a public
-download endpoint and verify the feed from a signed-out browser. A GitHub
-Release in a private repository is not public distribution.
+GitHub release assets must be anonymously reachable. `build.publish` therefore
+points at `copse-dev/copse-releases`, not this source repository. The source can
+remain private during beta testing; the binary repository and its release
+assets are public. Verify every feed and installer from a signed-out browser.
 
 ## What the build produces
 
 `electron-builder` emits the following files into `release/` for each
-architecture:
+architecture. Release CI builds the architectures in separate jobs, so neither
+package contains the other architecture's application or native helper:
 
 | Artifact                                 | Purpose                                      |
 | ---------------------------------------- | -------------------------------------------- |
@@ -43,9 +46,22 @@ architecture:
 | `latest-mac.yml` or `beta-mac.yml`       | Channel feed consumed by `electron-updater`. |
 | `SHA256SUMS`                             | Checksums for every promoted artifact.       |
 
+GitHub Actions always downloads each named CI artifact as an outer ZIP. During
+pre-publication review, opening the architecture artifact therefore reveals the
+DMG plus a second ZIP and its blockmap: the outer ZIP is only Actions' transport
+wrapper, while the inner ZIP is the architecture-specific automatic-update
+payload. A published GitHub Release lists the DMG and updater files separately;
+a person installing Copse downloads only the matching DMG.
+
 A stable build also mirrors its tested latest metadata into the beta feed so an
 installed beta can advance to that stable version. The workflow publishes every
 finalized macOS metadata file with the exact zip files it references.
+
+CI fails an architecture job if either client-downloadable DMG/ZIP exceeds 230
+MiB or the installed app exceeds 750 MiB. The two architecture artifacts remain
+separate in Actions; a small third artifact carries the combined update feed,
+portable checksums, and release notes. GitHub Releases expose the individual
+files, so a client downloads only the DMG or ZIP matching its own architecture.
 
 The app embeds `LSMinimumSystemVersion=26.0`, uses the hardened runtime, and
 applies the entitlements in
@@ -65,15 +81,19 @@ The repository needs these Actions secrets:
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for that Apple ID.        |
 | `APPLE_TEAM_ID`               | Apple Developer Team ID.                        |
 
-`GITHUB_TOKEN` is provided automatically for publishing. The release workflow
-fails before packaging if a required signing or notarization credential is
-missing.
+`RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` mint the narrowly scoped token
+that publishes into `copse-dev/copse-releases`; the GitHub App must be installed
+there with Contents write permission. `GITHUB_TOKEN` remains scoped to the
+private source run and its Actions artifacts. The release workflow fails before
+packaging if a required signing or notarization credential is missing.
 
 ## Publishing through CI
 
 Only [the `Release (macOS)` workflow](../.github/workflows/release-mac.yml)
-publishes releases. Local commands are deliberately non-publishing so the
-signed, notarized, smoke-tested artifacts cannot be replaced by a separate
+creates distributable artifacts, and only
+[`Publish release artifacts`](../.github/workflows/release-publish.yml) creates
+GitHub Releases from them. Local commands are deliberately non-publishing so
+the signed, notarized, smoke-tested artifacts cannot be replaced by a separate
 local build.
 
 Releases are cut from `release`, not from trunk. `main` absorbs the day's
@@ -99,13 +119,22 @@ The version in `package.json` is the trigger. Bumping it is the only manual step
 5. `Release (macOS)` re-checks the tag, the version match, reachability from
    `release`, and the tagged commit's exact `CI Passed` check — it will not
    accept a branch-tip, merge-ref, or unrelated successful run. It then builds,
-   signs, notarizes, staples, verifies, smoke-tests, and (on a public
-   repository) attests the package. A separate publisher job promotes those
-   exact files as a prerelease for beta or a normal/latest release for stable,
-   with notes generated from `CHANGELOG.md`.
-6. Review the published GitHub Release notes and add known issues before
+   signs, notarizes, staples, verifies, and smoke-tests the package, then uploads
+   two immutable architecture-specific Actions artifacts plus a small metadata
+   artifact containing the combined feeds, checksums, and notes generated from
+   `CHANGELOG.md`. It does not create a GitHub Release.
+6. Review and install-test the artifact for each architecture. When accepted,
+   manually dispatch `Publish release artifacts` with the tag and successful
+   `Release (macOS)` run ID. The publisher verifies the source workflow,
+   successful conclusion, exact tagged SHA, checksums, and public target state,
+   then creates a prerelease for beta or a normal/latest release for stable in
+   `copse-dev/copse-releases`. It never rebuilds. GitHub artifact attestation is
+   added automatically once the source repository is public; until then the
+   signed build, immutable Actions artifact, and published SHA256 manifest are
+   the integrity chain available on this GitHub Team plan.
+7. Review the published GitHub Release notes and add known issues before
    announcing the release.
-7. Reset `CHANGELOG.md`'s `Unreleased` section in a follow-up PR. Its unchanged,
+8. Reset `CHANGELOG.md`'s `Unreleased` section in a follow-up PR. Its unchanged,
    already-tagged package version makes the next promotion a release-cut no-op.
 
 A version is cut exactly once. If its release run fails, fix forward and bump to
@@ -115,11 +144,10 @@ replace an existing release, and downgrade is not a supported rollback.
 A manual workflow dispatch accepts only an existing matching tag reachable
 from `release`; it does not provide a bypass around those gates.
 
-Artifact attestation is skipped, with a warning, while this repository is
-private: provenance requires a public repository or GitHub Enterprise Cloud, and
-this organization is on Team. `SHA256SUMS` is published either way. Making the
-repository public — which [public distribution requires anyway](#channel-contract)
-— turns attestation back on with no workflow change.
+Private-repository artifact attestation requires GitHub Enterprise Cloud and
+this organization is on Team. While the source remains private, both workflows
+skip attestation rather than blocking beta distribution. After the source opens,
+the publisher attests the same downloaded bytes before creating the release.
 
 ## Local validation
 
@@ -142,6 +170,13 @@ Validate a signed app bundle rather than the enclosing DMG:
 spctl -a -vvv -t install "release/mac-arm64/Copse.app"
 codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Copse.app"
 xcrun stapler validate "release/mac-arm64/Copse.app"
+```
+
+After downloading an Actions artifact or the files from a GitHub Release into
+one directory, verify every distributable byte from that directory:
+
+```bash
+shasum -a 256 --check SHA256SUMS
 ```
 
 ## Install and update behavior

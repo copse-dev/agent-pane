@@ -3,8 +3,8 @@
  *
  * The e2e gate re-renders every shot its selected specs produce, and a *broad*
  * selection (a lockfile bump, an e2e helper change, a low-confidence map) selects
- * everything. `commit-screenshots` then committed whatever differed on disk, so a
- * PR that cannot have moved a pixel still rewrote reference PNGs it never touched:
+ * everything. The former CI writer then committed whatever differed on disk, so a
+ * PR that could not have moved a pixel still rewrote reference PNGs it never touched:
  * a release-smoke fix landed 17 refreshed shots, a Terminal-Bench benchmark PR
  * refreshed Settings → Sources. Worse, the reconcile step resolves screenshot
  * conflicts with `--ours`, so those unrelated renders also *win* against main —
@@ -16,8 +16,8 @@
  * diff to the shots its specs legitimately (re)render, and deliberately ignores
  * root infra that "cannot change a pixel" — but only `check-screenshots.mts
  * --plan` consumed it, as an advisory annotation. This module makes that set
- * authoritative for *writes*: a shot outside it is held, not committed, and loses
- * a merge conflict against main instead of winning it.
+ * authoritative for local candidate filtering: a shot outside it is held instead
+ * of being offered as an intentional update.
  *
  * A shot is OWNED by the branch when either:
  *   • the oracle maps this diff to a spec that renders it (`affected`), or

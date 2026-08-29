@@ -215,14 +215,30 @@ describe('plugin tool host', () => {
 
   it('rejects startup when the worker exits before initialization', async () => {
     const candidate = await fixture()
-    await assert.rejects(
-      PluginToolHost.start(candidate, {
-        ...fakeDependencies,
-        spawn: () =>
-          Promise.resolve(spawn(process.execPath, ['-e', 'process.exit(2)'], { stdio: 'pipe' })),
-      }),
-      /worker exited/i,
-    )
+    const warnings: string[] = []
+    const warn = console.warn
+    console.warn = (...values: unknown[]): void => {
+      warnings.push(values.map(String).join(' '))
+    }
+    try {
+      await assert.rejects(
+        PluginToolHost.start(candidate, {
+          ...fakeDependencies,
+          spawn: () =>
+            Promise.resolve(
+              spawn(
+                process.execPath,
+                ['-e', "process.stderr.write('fatal startup detail\\n'); process.exit(2)"],
+                { stdio: 'pipe' },
+              ),
+            ),
+        }),
+        /worker exited/i,
+      )
+    } finally {
+      console.warn = warn
+    }
+    assert.ok(warnings.some((line) => /code 2.*fatal startup detail/i.test(line)))
   })
 
   it('stops before spawn when source bytes change during startup', async () => {

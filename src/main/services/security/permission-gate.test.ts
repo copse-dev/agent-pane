@@ -47,6 +47,7 @@ import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-task
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
 import { storageSet } from '../storage/storage.ts'
+import { drainWriteQueue } from '../storage/write-queue.ts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1735,6 +1736,10 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     try {
       return await fn(root)
     } finally {
+      // Decision recording is deliberately fire-and-forget. Drain it while the
+      // throwaway store is still selected so an async physical append cannot
+      // follow the next test's COPSE_WORKSPACE_DIR and contaminate its log.
+      await drainWriteQueue()
       await setSetting('safetyClassifierEnabled', false)
       restore()
       clearReadOutsideProjectGrants()
