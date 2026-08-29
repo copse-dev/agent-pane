@@ -309,7 +309,11 @@ export default ts.config(
   {
     // Static-site scripts: plain browser JS served as-is, with no TS project to
     // type-check against. Demo sites are copied next to the browser build.
-    files: ['site/**/*.js', 'src/shared/demo-sites/**/*.js'],
+    files: [
+      'site/**/*.js',
+      'src/shared/demo-sites/**/*.js',
+      'benchmarks/benchmark-explorer/**/*.js',
+    ],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
       sourceType: 'script',
@@ -317,6 +321,12 @@ export default ts.config(
         window: 'readonly',
         document: 'readonly',
         FormData: 'readonly',
+        Blob: 'readonly',
+        Intl: 'readonly',
+        Map: 'readonly',
+        Set: 'readonly',
+        URL: 'readonly',
+        fetch: 'readonly',
       },
     },
     rules: {
