@@ -2286,3 +2286,69 @@ describe('next-step tab complete in the composer', () => {
     assert.equal(composer.hasAttribute('data-next-step'), false)
   })
 })
+
+describe('input bar stacking order', () => {
+  async function mountBar(): Promise<HTMLElement> {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    host.id = 'input-bar'
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+    return host
+  }
+
+  it('leads with the advisory strips and puts attachments under the draft', async () => {
+    const host = await mountBar()
+    // The card itself, up to the footer. Trailing children (the portrait panel
+    // bar, the mention pickers) are overlays parked on the same host.
+    const order = Array.from(host.children)
+      .map((child) => child.className.split(' ')[0])
+      .slice(0, 9)
+
+    assert.deepEqual(order, [
+      'guarded-yolo-banner',
+      'composer-branch-warning',
+      'composer-checkout-error',
+      'composer-image-warning',
+      'composer-context-warning',
+      'follow-up-suggestions',
+      'attachment-chips',
+      'input-row',
+      'input-footer',
+    ])
+  })
+
+  it('moves the rounded top edge to whichever strip is actually showing', async () => {
+    const host = await mountBar()
+    const banner = host.querySelector<HTMLElement>('.guarded-yolo-banner')
+    const branchWarning = host.querySelector<HTMLElement>('.composer-branch-warning')
+    assert.ok(banner)
+    assert.ok(branchWarning)
+
+    // Every strip down, so nothing claims the edge — the draft box rounds itself.
+    assert.equal(host.querySelectorAll('.is-composer-top').length, 0)
+
+    // The branch guard alone: it is DOM-second but visually first.
+    branchWarning.hidden = false
+    await settle()
+    assert.equal(banner.classList.contains('is-composer-top'), false)
+    assert.equal(branchWarning.classList.contains('is-composer-top'), true)
+
+    // Guarded YOLO joins it and takes the edge back, being above it.
+    banner.hidden = false
+    await settle()
+    assert.equal(banner.classList.contains('is-composer-top'), true)
+    assert.equal(branchWarning.classList.contains('is-composer-top'), false)
+
+    banner.hidden = true
+    await settle()
+    assert.equal(branchWarning.classList.contains('is-composer-top'), true)
+  })
+})
