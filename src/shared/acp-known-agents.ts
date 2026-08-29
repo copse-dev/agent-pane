@@ -171,11 +171,18 @@ export const RETIRED_ACP_AGENTS: readonly RetiredAcpAgent[] = [
       // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
       // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
       // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
-      // BOTH forms are required: the literal dir gets recursive subpath
+      // ALL THREE forms are required: the literal dirs get recursive subpath
       // coverage (ASRT strips trailing /** from write globs, so a glob can
       // never grant a subtree), while the single-segment glob covers the
       // sibling -cwd files.
-      scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*'],
+      //
+      // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
+      // exports to its own shell, overriding the workspace-owned one Copse
+      // passes at spawn. Everything downstream inherits it, so an agent
+      // following the "put scratch in $TMPDIR" steer lands there, as does
+      // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
+      // `-*` glob does not reach it: that hyphen is load-bearing.
+      scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*', '/tmp/claude'],
     },
     sandboxedPermissionMode: 'acceptEdits',
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
@@ -254,11 +261,18 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
       // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
       // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
-      // BOTH forms are required: the literal dir gets recursive subpath
+      // ALL THREE forms are required: the literal dirs get recursive subpath
       // coverage (ASRT strips trailing /** from write globs, so a glob can
       // never grant a subtree), while the single-segment glob covers the
       // sibling -cwd files.
-      scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*'],
+      //
+      // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
+      // exports to its own shell, overriding the workspace-owned one Copse
+      // passes at spawn. Everything downstream inherits it, so an agent
+      // following the "put scratch in $TMPDIR" steer lands there, as does
+      // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
+      // `-*` glob does not reach it: that hyphen is load-bearing.
+      scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*', '/tmp/claude'],
     },
     sandboxedPermissionMode: 'acceptEdits',
     setup: 'claude setup-token',
