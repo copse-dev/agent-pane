@@ -10,6 +10,14 @@ export const MOCK_GH_PR_OWNER = 'copse-dev'
 export const MOCK_GH_PR_REPO = 'copse-panel'
 export const MOCK_GH_PR_NUMBER = 42
 export const MOCK_GH_PR_URL = `https://github.com/${MOCK_GH_PR_OWNER}/${MOCK_GH_PR_REPO}/pull/${String(MOCK_GH_PR_NUMBER)}`
+export const MOCK_GH_OTHER_PR_NUMBER = 17
+
+// Deterministic image pair for the PR-panel visual fixture: red 64×40 before,
+// teal checker after. Both are real PNGs so Chromium exercises image decoding.
+const MOCK_BEFORE_IMAGE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAoCAYAAABOzvzpAAAAV0lEQVR4AeXBAQEAIAyAME4za5jdLj4I27xzP2ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESt0CXAsZv0GNtAAAAAElFTkSuQmCC'
+const MOCK_AFTER_IMAGE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAoCAYAAABOzvzpAAAA0ElEQVR4AeXBQVUFUAxDwUvO14GISniqKqELRKCkEmoJHMRAZr6+f37/MPYG51Xj7A3Oq8bZG5xXjbM3OCKcCCfCiXAinAgnwn32BudV4+wNzqvG2RucV42zNzivGkeEE+FEOBFOhBPhRLjPq8bZG5xXjbM3OK8aZ29wXjXO3uCIcCKcCCfCiXAinAj32RucV42zNzivGmdvcF41zt7gvGocEU6EE+FEOBFOhBPhPq8aZ29wXjXO3uC8apy9wXnVOHuDI8KJcCKcCCfCiXAi3D+9RD21GVAxSwAAAABJRU5ErkJggg=='
 
 const MOCK_LINKED_PR: GhPrSummary = {
   owner: MOCK_GH_PR_OWNER,
@@ -25,7 +33,7 @@ const MOCK_LINKED_PR: GhPrSummary = {
 const MOCK_OTHER_PR: GhPrSummary = {
   owner: MOCK_GH_PR_OWNER,
   repo: MOCK_GH_PR_REPO,
-  number: 17,
+  number: MOCK_GH_OTHER_PR_NUMBER,
   title: 'Polish footer branch status',
   url: `https://github.com/${MOCK_GH_PR_OWNER}/${MOCK_GH_PR_REPO}/pull/17`,
   state: 'OPEN',
@@ -196,13 +204,19 @@ export function mockGetGhPrDetails(ref: {
       baseRefName: 'main',
       additions: 4,
       deletions: 1,
-      changedFiles: 1,
+      changedFiles: 2,
       files: [
         {
           path: 'src/renderer/views/footer-branch-status.ts',
           status: 'modified',
           additions: 4,
           deletions: 1,
+        },
+        {
+          path: 'tests/e2e/screenshots/pr-panel.png',
+          status: 'modified',
+          additions: 0,
+          deletions: 0,
         },
       ],
     }
@@ -260,6 +274,16 @@ export function mockGetGhPrFileDiff(
 ): GhPrFileDiff | null {
   if (ref.owner !== MOCK_GH_PR_OWNER || ref.repo !== MOCK_GH_PR_REPO) return null
   if (ref.number !== MOCK_GH_PR_NUMBER) {
+    if (ref.number === MOCK_OTHER_PR.number && path === 'tests/e2e/screenshots/pr-panel.png') {
+      return {
+        path,
+        before: '',
+        after: '',
+        language: 'plaintext',
+        beforeImage: MOCK_BEFORE_IMAGE,
+        afterImage: MOCK_AFTER_IMAGE,
+      }
+    }
     if (
       ref.number === MOCK_OTHER_PR.number &&
       path === 'src/renderer/views/footer-branch-status.ts'

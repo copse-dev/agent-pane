@@ -43,6 +43,11 @@ import {
   nonEmptyStringOr,
   recordArrayOrEmpty,
 } from '@shared/unknown-value.ts'
+import {
+  decodeGitHubFileContent,
+  emptyGitHubFileContent,
+  type GitHubFileContent,
+} from '../pr-file-content.ts'
 
 /** REST + GraphQL base URLs, honoring GH_HOST for GitHub Enterprise. */
 function apiRoots(host = process.env['GH_HOST']?.trim()): { rest: string; graphql: string } {
@@ -291,7 +296,7 @@ async function listPullFiles(ref: PrRef): Promise<GhPrChangedFile[]> {
     .filter((entry): entry is GhPrChangedFile => entry != null)
 }
 
-async function fileAtRef(ref: PrRef, path: string, gitRef: string): Promise<string> {
+async function fileAtRef(ref: PrRef, path: string, gitRef: string): Promise<GitHubFileContent> {
   const encoded = path
     .split('/')
     .map((segment) => encodeURIComponent(segment))
@@ -300,11 +305,13 @@ async function fileAtRef(ref: PrRef, path: string, gitRef: string): Promise<stri
     `/repos/${ref.owner}/${ref.repo}/contents/${encoded}?ref=${encodeURIComponent(gitRef)}`,
     { immutable: isGitCommitSha(gitRef) },
   )
-  if (!result.ok) return ''
-  if (!isRecord(result.json)) return ''
+  if (!result.ok) return emptyGitHubFileContent()
+  if (!isRecord(result.json)) return emptyGitHubFileContent()
   const content = result.json['content']
-  if (typeof content !== 'string' || !content || result.json['encoding'] !== 'base64') return ''
-  return Buffer.from(content.replace(/\n/g, ''), 'base64').toString('utf8')
+  if (typeof content !== 'string' || !content || result.json['encoding'] !== 'base64') {
+    return emptyGitHubFileContent()
+  }
+  return decodeGitHubFileContent(path, content)
 }
 
 function restError(response: RestResponse): PrActionResult {
@@ -513,9 +520,19 @@ export const githubApiBackend: GitHubBackend = {
     if (!baseSha || !headSha) return null
     const files = await listPullFiles(ref)
     const status = files.find((file) => file.path === path)?.status ?? 'modified'
-    const before = status === 'added' ? '' : await fileAtRef(ref, path, baseSha)
-    const after = status === 'removed' ? '' : await fileAtRef(ref, path, headSha)
-    return { path, before, after, language: detectLanguage(path), deleted: status === 'removed' }
+    const beforeContent =
+      status === 'added' ? emptyGitHubFileContent() : await fileAtRef(ref, path, baseSha)
+    const afterContent =
+      status === 'removed' ? emptyGitHubFileContent() : await fileAtRef(ref, path, headSha)
+    return {
+      path,
+      before: beforeContent.text,
+      after: afterContent.text,
+      language: detectLanguage(path),
+      beforeImage: beforeContent.image,
+      afterImage: afterContent.image,
+      deleted: status === 'removed',
+    }
   },
 
   async getPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
