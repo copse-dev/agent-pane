@@ -80,12 +80,36 @@ const UI_RESOURCE_MIME_TYPES = new Set(['text/html', 'text/uri-list'])
 // announced to the model but their body is dropped from the side-channel.
 const MAX_UI_RESOURCE_BYTES = 512 * 1024
 
+/**
+ * `_meta` key the bundled canvas server uses to name the workspace file an
+ * artefact was rendered from, so the host can reopen the live file later rather
+ * than only its stored snapshot.
+ *
+ * Namespaced per the MCP `_meta` convention: an external server that happens to
+ * set `_meta` cannot collide with it, and one that does not simply produces
+ * artefacts without provenance.
+ */
+export const UI_RESOURCE_SOURCE_PATH_META = 'copse.dev/sourcePath'
+
+/** Longest `sourcePath` we accept from a server (untrusted, like everything here). */
+const MAX_SOURCE_PATH_LENGTH = 1024
+
 export interface McpUiResource {
   /** Resource URI (e.g. `ui://component/dashboard`), or '' when absent. */
   uri: string
   mimeType: string
   /** Inline payload: an HTML document, or a URL list for `text/uri-list`. */
   text: string
+  /** See {@link UI_RESOURCE_SOURCE_PATH_META}; absent unless the server set it. */
+  sourcePath?: string
+}
+
+function uiResourceSourcePath(resource: Record<string, unknown>): string | undefined {
+  const meta = resource['_meta']
+  if (!isRecord(meta)) return undefined
+  const value = meta[UI_RESOURCE_SOURCE_PATH_META]
+  if (typeof value !== 'string' || !value || value.length > MAX_SOURCE_PATH_LENGTH) return undefined
+  return value
 }
 
 function uiResourceMimeType(resource: unknown): string | null {
@@ -114,10 +138,12 @@ export function extractUiResources(content: unknown): McpUiResource[] {
     if (!isRecord(resource)) continue
     const text = typeof resource['text'] === 'string' ? resource['text'] : ''
     if (!text || Buffer.byteLength(text, 'utf8') > MAX_UI_RESOURCE_BYTES) continue
+    const sourcePath = uiResourceSourcePath(resource)
     out.push({
       uri: typeof resource['uri'] === 'string' ? resource['uri'] : '',
       mimeType: mime,
       text,
+      ...(sourcePath ? { sourcePath } : {}),
     })
   }
   return out
