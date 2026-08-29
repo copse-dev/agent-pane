@@ -130,7 +130,7 @@ import {
 } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
-import { mountPopoutPanelBar } from './popout/popout-panel-bar.ts'
+import { mountPopoutTitlebar } from './popout/popout-titlebar.ts'
 import { applyPopoutSeed } from './popout/pane-popout-seed.ts'
 import {
   isRightPanelPosition,
@@ -221,7 +221,7 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 let layoutMounted = false
-let unmountPopoutPanelBar: (() => void) | null = null
+let unmountPopoutTitlebar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 
 async function boot(): Promise<void> {
@@ -514,9 +514,9 @@ function ensureLayout(): void {
   registerKeyboardShortcuts()
   registerPanelKeyboardShortcuts(store, api)
   if (popoutMode) {
-    const paneFiles = document.getElementById('pane-files')
-    if (paneFiles && !unmountPopoutPanelBar) {
-      unmountPopoutPanelBar = mountPopoutPanelBar(paneFiles, store, api)
+    const app = document.getElementById('app')
+    if (app && !unmountPopoutTitlebar) {
+      unmountPopoutTitlebar = mountPopoutTitlebar(app, store, api)
     }
   }
 }
