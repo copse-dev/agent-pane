@@ -216,6 +216,44 @@ describe('githubApiBackend', () => {
     assert.equal(details.state, 'MERGED')
   })
 
+  it('returns before and after image data URLs for PR image diffs', async () => {
+    const before = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01]).toString('base64')
+    const after = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x02]).toString('base64')
+    router = (_m: string, url: string): RouteResult => {
+      if (url.endsWith('/pulls/7')) {
+        return { body: { base: { sha: 'a'.repeat(40) }, head: { sha: 'b'.repeat(40) } } }
+      }
+      if (url.endsWith('/files?per_page=100')) {
+        return {
+          body: [
+            {
+              filename: 'screenshots/result.png',
+              status: 'modified',
+              additions: 0,
+              deletions: 0,
+            },
+          ],
+        }
+      }
+      if (url.includes('/contents/screenshots/result.png?ref=')) {
+        return {
+          body: {
+            content: url.includes(`ref=${'a'.repeat(40)}`) ? before : after,
+            encoding: 'base64',
+          },
+        }
+      }
+      return { body: {} }
+    }
+
+    const diff = await githubApiBackend.getPrFileDiff(REF, 'screenshots/result.png')
+    assert.ok(diff)
+    assert.equal(diff.before, '')
+    assert.equal(diff.after, '')
+    assert.equal(diff.beforeImage, `data:image/png;base64,${before}`)
+    assert.equal(diff.afterImage, `data:image/png;base64,${after}`)
+  })
+
   it('getPrChecksState returns no_checks instead of throwing on a network error', async () => {
     globalThis.fetch = (): Promise<Response> => Promise.reject(new Error('network down'))
     const state = await githubApiBackend.getPrChecksState(REF)
