@@ -32,6 +32,7 @@ import {
   unwrapWrappers,
 } from '../../src/main/services/security/shell-argv.ts'
 import { copseWorkspaceTmpDir } from '../../src/main/services/storage/copse-paths.ts'
+import { catalogScratchEntries, matchesScratchEntry } from '../../src/shared/acp-scratch-paths.ts'
 import { isRecord } from '../../src/shared/unknown-value.mts'
 
 /**
@@ -122,6 +123,17 @@ export interface ScratchRoots {
    */
   allowed: readonly string[]
   /**
+   * Scratch entries an ACP agent declares and the seatbelt allow-lists, which
+   * `shell-scope.ts` therefore does not treat as an outside path. Kept separate
+   * from {@link allowed} because an entry may carry a trailing glob
+   * (`/tmp/claude-*`), so it is matched by rule rather than by containment.
+   *
+   * Claude Code exports `TMPDIR=/tmp/claude`, so without these a run that put
+   * its scratch exactly where the steer says — `$TMPDIR` — scores as a global
+   * temp write.
+   */
+  agentScratch?: readonly string[]
+  /**
    * Roots that count as global/system temp. macOS `/var/folders/...` is on this
    * list, which is why {@link allowed} is checked first: on an unsandboxed host
    * that same path *is* the active `$TMPDIR`, and failing it there would fail
@@ -148,6 +160,9 @@ export function defaultScratchRoots(opts?: {
   const allowed = [sanctionedTmp, ...(opts?.workspaceRoot ? [opts.workspaceRoot] : [])]
   return {
     allowed: allowed.flatMap((root) => canonicalTwins(resolve(root))),
+    // Already expanded (`${uid}` substituted, `/private` twins emitted) by the
+    // same helper the seatbelt overlay uses, so the eval cannot drift from it.
+    agentScratch: catalogScratchEntries(),
     global: ['/tmp', '/var/tmp', tmpdir()].flatMap((root) => canonicalTwins(resolve(root))),
   }
 }
@@ -187,6 +202,7 @@ export function isGlobalTempWriteTarget(target: string, roots: ScratchRoots): bo
   if (!isAbsolute(trimmed)) return false
   const resolved = resolve(trimmed)
   if (roots.allowed.some((root) => isUnder(root, resolved))) return false
+  if ((roots.agentScratch ?? []).some((entry) => matchesScratchEntry(entry, resolved))) return false
   return roots.global.some((root) => isUnder(root, resolved))
 }
 

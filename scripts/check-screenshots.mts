@@ -4,10 +4,9 @@
  * A UI change that the oracle (scripts/test-oracle.mts) maps to a
  * screenshot-producing e2e spec keeps its committed reference PNG(s) in sync
  * one of two ways: the diff refreshes them itself, or the CI `e2e` job re-renders
- * them (the specs write the PNGs as a side effect of the gate run) and the
- * `commit-screenshots` job auto-commits the diff. Reference shots are pixel-
- * rendered on the CI runner, so a contributor can't reliably regenerate them
- * locally — letting CI render and commit them is the sanctioned path.
+ * them into an immutable candidate artifact. Reference shots are pixel-rendered
+ * on the CI runner, so the sanctioned path is to download, review, and explicitly
+ * commit the artifact's intended PNGs.
  *
  * Two modes (both pure static analysis over the diff — no build, no Electron, no
  * extra rerun of the e2e tier):
@@ -15,7 +14,7 @@
  *   --plan   Advisory planner. Emits `needs-regen=<true|false>` to GITHUB_OUTPUT
  *            (and prints which shots will be refreshed) but NEVER fails. ci.yml
  *            runs it to annotate the run. Stale shots don't block the PR — the
- *            e2e gate run re-renders them and commit-screenshots auto-commits them.
+ *            e2e gate run preserves them as candidate artifacts for review.
  *
  *   (default) Hard gate for local/manual use: exits non-zero when shots look
  *            stale and the `update-screenshots` label is absent.
@@ -81,7 +80,7 @@ function main(): void {
       const shots = gate.missing.length ? gate.missing : gate.affected
       console.log(
         `screenshot plan: ${String(shots.length)} reference shot(s) will be regenerated and ` +
-          'auto-committed on a hosted runner ' +
+          'attached as an immutable CI artifact ' +
           (gate.labeled ? '(update-screenshots label present):' : '(stale shots detected):'),
       )
       for (const p of shots) console.log(`      tests/e2e/screenshots/${p}`)
@@ -115,9 +114,9 @@ function main(): void {
   )
   for (const p of gate.missing) console.error(`      tests/e2e/screenshots/${p}`)
   console.error(
-    '\n  On CI this auto-resolves: the e2e gate run re-renders these shots and the\n' +
-      '  commit-screenshots job commits them. To refresh them yourself, add the\n' +
-      '  `update-screenshots` label to the PR, or commit the rendered PNGs in the diff.\n',
+    '\n  On CI the e2e gate re-renders these shots into an immutable candidate\n' +
+      '  artifact. Download and review it, then commit the intended PNGs. Add the\n' +
+      '  `update-screenshots` label when you need the complete reference set rendered.\n',
   )
   process.exit(1)
 }
