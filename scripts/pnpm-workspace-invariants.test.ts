@@ -10,6 +10,7 @@ import { resolve } from 'node:path'
  */
 describe('pnpm-workspace.yaml invariants', () => {
   const workspace = readFileSync(resolve('pnpm-workspace.yaml'), 'utf8')
+  const packageJson = readFileSync(resolve('package.json'), 'utf8')
 
   /** Top-level block body: the indented lines following `<key>:`. */
   function block(key: string): string {
@@ -63,5 +64,13 @@ describe('pnpm-workspace.yaml invariants', () => {
       [],
       `minimumReleaseAgeExclude entries with no override: ${stale.join(', ')}`,
     )
+  })
+
+  it('installs both macOS keyring architectures for cross-packaging', () => {
+    const architectures = block('supportedArchitectures')
+    assert.match(architectures, /^ {2}os:\n {4}- current$/m)
+    assert.match(architectures, /^ {2}cpu:\n {4}- arm64\n {4}- x64$/m)
+    assert.match(packageJson, /"@napi-rs\/keyring-darwin-arm64": "1\.3\.0"/)
+    assert.match(packageJson, /"@napi-rs\/keyring-darwin-x64": "1\.3\.0"/)
   })
 })

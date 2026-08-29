@@ -248,6 +248,19 @@ describe('repositoryHasSubmodules', { skip: !gitOk && 'git not installed' }, () 
     }
   })
 
+  it('ignores an empty sandbox sentinel that declares no submodules', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'copse-git-empty-submodules-'))
+    try {
+      spawnSync('git', ['init', '-q'], { cwd: repo })
+      await writeFile(join(repo, '.gitmodules'), '')
+
+      assert.equal(await findSubmoduleDeclaration(repo), null)
+      assert.equal(await repositoryHasSubmodules(repo), false)
+    } finally {
+      await rm(repo, { recursive: true, force: true })
+    }
+  })
+
   it('stops at the nearest repository instead of inheriting parent metadata', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'copse-git-parent-submodules-'))
     try {

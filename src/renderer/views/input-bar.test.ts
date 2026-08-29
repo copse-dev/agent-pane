@@ -248,7 +248,7 @@ afterEach(() => {
 })
 
 describe('input bar running attribution', () => {
-  it('makes the queueing behavior explicit while a turn is running', async () => {
+  it('uses the submit action alone to show queueing while a turn is running', async () => {
     const running = thread()
     running.status = 'running'
     const store = createStore({
@@ -264,11 +264,8 @@ describe('input bar running attribution', () => {
     mountInputBar(host, store, createApi({ currentBranch: 'main' }))
     await settle()
 
-    const status = host.querySelector<HTMLElement>('.footer-running')
     const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
-    assert.ok(status)
-    assert.equal(status.hidden, false)
-    assert.equal(status.textContent, 'Agent running · messages queue')
+    assert.equal(host.querySelector('.footer-running'), null)
     assert.ok(submit)
     assert.equal(submit.textContent, 'Queue')
     assert.equal(submit.getAttribute('aria-label'), 'Queue message')
@@ -1116,6 +1113,9 @@ describe('input bar branch mismatch warning', () => {
     assert.ok(submitBtn)
     composer.textContent = 'Follow up in the worktree'
     submitBtn.click()
+    // `flush`, not `settle`: submit resolves the skill *and* agent catalogs
+    // before dispatching, so the run is a macrotask away rather than a fixed
+    // number of microtask ticks.
     await flush()
 
     assert.equal(runs, 1)

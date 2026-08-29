@@ -8,6 +8,35 @@ every published entry.
 
 ## Unreleased
 
+- This beta advances the permanent public update channel from beta.7 to beta.8
+  so the signed, architecture-specific updater can be validated end to end
+  before the source repository opens.
+- macOS release images now use Copse's generated icon for both the application
+  bundle and the mounted DMG volume. Release CI generates the `.icns` on its
+  clean runner, fails if macOS cannot compile it, then mounts the finished DMG
+  and verifies the icon bytes and Finder custom-icon flag before publishing.
+- macOS downloads are now architecture-specific instead of carrying both Apple
+  Silicon and Intel payloads. The beta.6 candidate DMGs and ZIPs are about 180
+  MiB each (down from 343–353 MiB), and the installed app is about 640 MiB
+  (down from roughly 1.3 GiB). Release CI strips build-only dependencies and
+  source maps, removes opposite-architecture native modules, validates a
+  combined architecture-aware update feed, and fails if a download exceeds
+  230 MiB or an installed app exceeds 750 MiB.
+- The optional local transformer/ONNX runtime is no longer bundled into every
+  macOS installer. Copse's heuristic PII redaction remains active; contextual
+  transformer redaction will return once it has an explicit on-demand install
+  path instead of making every client carry the model runtime.
+- The macOS packaged-runtime smoke test now waits for its PTY helper to exit
+  before reporting success. This prevents a completed smoke test from leaving
+  the unit-test worker alive until CI's fail-closed timeout.
+- Release checksum manifests now contain paths relative to the downloaded
+  artifact directory. A plain `shasum -a 256 --check SHA256SUMS` therefore
+  verifies an Actions artifact or GitHub Release download without recreating
+  the CI runner's internal `release/` directory first.
+- macOS release packaging now installs and verifies the native keyring module
+  for both Apple Silicon and Intel bundles. This fixes the Intel build opening
+  a startup-error dialog before the release smoke test could run, and the
+  release verifier now has an explicit timeout instead of waiting indefinitely.
 - External command hooks now fail closed when a blocking hook crashes, times
   out, cannot start, or returns an invalid response. External hooks remain off
   by default, and Settings → Sources explains both the blocking behavior and

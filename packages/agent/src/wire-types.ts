@@ -53,6 +53,8 @@ export interface TodoUpdateInput {
 export interface AgentRunPayload {
   content: UserContent
   invokedSkills?: string[]
+  /** Subagent the user invoked with `/name` this turn. */
+  invokedAgent?: string
   priorTodos?: TodoItem[]
   /** Thread working brief captured in renderer store before the run. */
   workingBrief?: string
@@ -159,7 +161,7 @@ export interface SubagentMessage {
 
 export interface SubagentSession {
   id: string
-  kind: 'explore' | 'investigate_ci' | 'delegate'
+  kind: 'explore' | 'investigate_ci' | 'delegate' | 'custom'
   status: 'running' | 'done' | 'error'
   prompt: string
   summary: string | null
@@ -178,6 +180,14 @@ export interface SubagentSession {
    * indistinguishable from intentional cloud routing.
    */
   localFallback?: boolean
+  /**
+   * Name of the user-authored definition this run came from (`kind: 'custom'`).
+   * The card is labelled from this — every other kind has a fixed label, but a
+   * custom agent's identity is the whole point of showing it.
+   */
+  agentName?: string
+  /** `color` from the definition's frontmatter, for the card's accent. */
+  agentColor?: string
 }
 
 /** Which part of the assembled prompt a breakdown segment represents. */

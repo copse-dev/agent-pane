@@ -137,6 +137,20 @@ function dockSvg(scheme: AppIconScheme): string {
 }
 
 const sizes = [16, 32, 64, 128, 256, 512, 1024] as const
+// PNG sRGB chunk: one-byte perceptual rendering intent plus its fixed CRC.
+// iconutil on macOS 26 rejects profile-free PNGs even though Finder and sips
+// can display them. Resvg does not emit colour-profile metadata, so add the
+// standard chunk to the temporary iconset copies that iconutil consumes.
+const SRGB_PNG_CHUNK = Buffer.from('000000017352474200aece1ce9', 'hex')
+const PNG_IHDR_END_OFFSET = 33
+
+function withSrgbProfile(png: Buffer): Buffer {
+  return Buffer.concat([
+    png.subarray(0, PNG_IHDR_END_OFFSET),
+    SRGB_PNG_CHUNK,
+    png.subarray(PNG_IHDR_END_OFFSET),
+  ])
+}
 
 function renderPng(svg: string, size: number): Buffer {
   const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: size } })
@@ -178,20 +192,18 @@ function generateVariant(variant: AppIconVariant): void {
   ]
 
   for (const [name, size] of iconsetMap) {
-    cpSync(join(outDir, `icon-${String(size)}.png`), join(iconsetDir, name))
+    const iconsetPng = join(iconsetDir, name)
+    cpSync(join(outDir, `icon-${String(size)}.png`), iconsetPng)
+    writeFileSync(iconsetPng, withSrgbProfile(readFileSync(iconsetPng)))
   }
 
   const icnsPath = join(outDir, 'app.icns')
   if (process.platform === 'darwin') {
-    try {
-      execFileSync('iconutil', ['-c', 'icns', iconsetDir, '-o', icnsPath])
-      console.log(`Wrote ${icnsPath}`)
-    } catch (err) {
-      console.warn(
-        `[generate-icon] iconutil failed for ${variant}:`,
-        err instanceof Error ? err.message : String(err),
-      )
-    }
+    // A missing .icns makes electron-builder silently fall back to Electron's
+    // generic app icon and Finder's generic mounted-volume icon. Let iconutil
+    // failure abort packaging instead of logging a successful-looking build.
+    execFileSync('iconutil', ['--convert', 'icns', '--output', icnsPath, iconsetDir])
+    console.log(`Wrote ${icnsPath}`)
   } else if (variant === RELEASE_ICON_VARIANT) {
     console.log(
       'Skipping app.icns (iconutil is macOS-only); run generate:icon on macOS before release.',
