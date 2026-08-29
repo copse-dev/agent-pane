@@ -534,11 +534,17 @@ jobs:
       # emit one fails safe.
       - name: Unit tests
         env:
-          # c8 retains V8 coverage until the suite exits, then remaps every
-          # standalone test bundle. 3072 MB OOMs on a fully green run once a PR
-          # adds another large renderer entry point. Workers have already exited
-          # before that merge, so the parent can use 4 GB of the 6 GB cgroup.
-          NODE_OPTIONS: --max-old-space-size=4096
+          # c8 retains V8 coverage until the suite exits. Test entries share
+          # split ESM chunks, so remapping scales with unique application code
+          # instead of hundreds of dependency-inlined standalone bundles.
+          #
+          # The peak is c8's post-run remap in a single process, after every
+          # test worker has already exited -- not the workers themselves, so
+          # TEST_FILE_CONCURRENCY does not bound it. 3072 aborted there with
+          # "Ineffective mark-compacts near heap limit" once the whole suite had
+          # passed; 6144 completes the remap and the ratchet. ubuntu-latest has
+          # 16 GB, and only this one process is live at that point.
+          NODE_OPTIONS: --max-old-space-size=6144
           UNIT_MODE: ${{ needs.precheck.outputs.unit_mode }}
           UNIT_SPECS: ${{ needs.precheck.outputs.unit_specs }}
           # True only for a PR stacked on another PR's branch. `push`, tags and

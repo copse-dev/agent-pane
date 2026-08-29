@@ -45,8 +45,8 @@ that call—checking only `src/` can hide a test-only field rather than validate
 
 ## Run the smallest set of tests
 
-Steering for _how much to run, and when_. A full `npm test` is ~3 minutes over
-530 files; the tests that can actually fail on a given change are usually a
+Steering for _how much to run, and when_. A full `npm test` is a few minutes over
+800+ files; the tests that can actually fail on a given change are usually a
 handful. Running the whole suite after every edit is the slow way to be wrong
 about the same three assertions.
 
@@ -99,6 +99,11 @@ npm test -- 'src/main/services/hooks/**'  # glob
 A filter that matches nothing is an **error**, not an empty pass — otherwise a
 typo reads as "0 tests, all green". The runner prints what it selected and
 suggests near misses.
+
+Each selected file remains an independent Node test entry/process. esbuild emits
+their common application graph once as split ESM chunks rather than inlining it
+into every entry, and the runner caps file concurrency at four so subprocess-heavy
+suites do not miss fixed safety deadlines under host load.
 
 ### Before believing it works: the oracle
 
