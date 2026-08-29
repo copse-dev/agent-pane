@@ -27,7 +27,7 @@
  *   `aria-hidden="true"`         decorative; already marked so screen readers skip it
  *   `alt=""` / `alt="…"`         decorative image vs. one whose text is content
  *   `hidden`                     inert; already marked so the a11y tree skips it
- *   `data-site-mode`             the one switch the coming-soon CSS block reads
+ *   `data-site-mode`             the publication-stage switch the CSS reads
  *   headings, lists, tables      structure the page states outright
  *
  * That is the whole contract. Write a section accessibly — which the site is
@@ -95,18 +95,22 @@ export function markdownName(file: string): string {
 }
 
 /**
- * Apply the coming-soon switch exactly as the stylesheet does, then drop
- * whatever is left inert. Two rules in `styles.css` carry the whole mode
- * (`.mode-live-only` off, `.mode-coming-soon-only[hidden]` back on), so this
- * mirrors those two and nothing else — going live by deleting the attribute
- * flips this the same way it flips the page.
+ * Apply the publication-stage switch exactly as the stylesheet does, then drop
+ * whatever is left inert. A binary release may be public before the source, so
+ * downloads and source links have independent visibility levels.
  */
 function applySiteMode(document: Document, root: Element): void {
-  if (document.documentElement.getAttribute('data-site-mode') === 'coming-soon') {
-    for (const el of root.querySelectorAll('.mode-live-only')) el.remove()
+  const mode = document.documentElement.getAttribute('data-site-mode')
+  if (mode === 'coming-soon') {
+    for (const el of root.querySelectorAll('.mode-download-live-only, .mode-source-live-only'))
+      el.remove()
     for (const el of root.querySelectorAll(
-      '.mode-coming-soon-only[hidden], .hero-coming-soon[hidden]',
+      '.mode-coming-soon-only[hidden], .mode-source-private-only[hidden], .hero-coming-soon[hidden]',
     ))
+      el.removeAttribute('hidden')
+  } else if (mode === 'downloads-live') {
+    for (const el of root.querySelectorAll('.mode-source-live-only')) el.remove()
+    for (const el of root.querySelectorAll('.mode-source-private-only[hidden]'))
       el.removeAttribute('hidden')
   }
   // Anything still `hidden` is inert on the published page, in either mode.
@@ -268,6 +272,7 @@ const ArchNode = z.object({
 const ArchView = z.object({
   id: z.string(),
   label: z.string(),
+  initialNodeId: z.string().optional(),
   lanes: z.array(z.object({ label: z.string() })),
   nodes: z.array(ArchNode).min(1),
   // [from, to, label] plus an optional `external` flag the diagram styles with.
