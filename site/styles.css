@@ -2264,6 +2264,12 @@ footer a:hover {
   display: block;
 }
 
+/* Keep the hero badge's icon and label on one line. The publication-mode rule
+   above otherwise overrides its component-level inline-flex display. */
+[data-site-mode='downloads-live'] .marketing-site .hero-badges > .mode-source-private-only[hidden] {
+  display: inline-flex !important;
+}
+
 /* Stands where the hero button row was, so the hero keeps its closing beat. */
 [data-site-mode='coming-soon'] .marketing-site .hero-coming-soon[hidden] {
   display: inline-flex;
