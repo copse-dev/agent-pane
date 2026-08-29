@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync, readFileSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import {
@@ -250,6 +251,20 @@ describe('architectureMarkdown', () => {
   it('refuses to publish a diagram page it cannot read', () => {
     const renamed = ARCH.replace('const views = ', 'const diagrams = ')
     assert.throws(() => pageMarkdown(renamed, 'architecture.html'), /no inline script declares/)
+  })
+
+  it('keeps every source citation in the published architecture views live', () => {
+    const file = join(process.cwd(), 'site', 'architecture.html')
+    const markdown = architectureMarkdown(readFileSync(file, 'utf8'), 'architecture.html')
+    const sources = [...markdown.matchAll(/^Source: (.+)$/gm)].flatMap(([, sourceList]) =>
+      [...(sourceList ?? '').matchAll(/`([^`]+)`/g)].map(([, source]) => source ?? ''),
+    )
+
+    assert.equal(sources.length > 200, true, 'expected the complete architecture inventory')
+    assert.match(markdown, /^## Recent changes$/m)
+    for (const source of sources) {
+      assert.equal(existsSync(join(process.cwd(), source)), true, `missing source: ${source}`)
+    }
   })
 })
 
