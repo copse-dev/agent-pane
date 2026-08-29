@@ -1,8 +1,7 @@
 /**
- * electron-builder cross-packs both macOS architectures from one dist tree.
- * The release build therefore starts with a universal gortex, then this hook
- * thins each app before signing so Intel and Apple Silicon packages contain the
- * correct executable without paying the size cost of both slices.
+ * Keep each macOS package architecture-pure before signing. Local builds may
+ * still cross-pack both architectures from a universal gortex, while release
+ * CI supplies one target-specific gortex to each matrix job.
  */
 module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return
@@ -22,21 +21,52 @@ module.exports = async function afterPack(context) {
     context.arch === Arch.arm64 ? 'arm64' : context.arch === Arch.x64 ? 'x86_64' : null
   if (!targetArch) return
 
-  const binary = join(
+  const resources = join(
     context.appOutDir,
     'Copse.app',
     'Contents',
     'Resources',
     'app.asar.unpacked',
-    'dist',
-    'resources',
-    'gortex',
-    'gortex',
   )
+  const binary = join(resources, 'dist', 'resources', 'gortex', 'gortex')
   const archs = execFileSync('lipo', [binary, '-archs'], { encoding: 'utf8' }).trim().split(/\s+/)
   if (!archs.includes(targetArch)) {
     throw new Error(`Bundled gortex lacks required ${targetArch} slice (${archs.join(', ')})`)
   }
+
+  const keyringPackageArch = targetArch === 'x86_64' ? 'x64' : targetArch
+  const keyring = join(
+    resources,
+    'node_modules',
+    '@napi-rs',
+    `keyring-darwin-${keyringPackageArch}`,
+    `keyring.darwin-${keyringPackageArch}.node`,
+  )
+  let keyringArchs
+  try {
+    keyringArchs = execFileSync('lipo', [keyring, '-archs'], { encoding: 'utf8' })
+      .trim()
+      .split(/\s+/)
+  } catch (error) {
+    throw new Error(`Packaged ${keyringPackageArch} app lacks its native keyring binary`, {
+      cause: error,
+    })
+  }
+  if (!keyringArchs.includes(targetArch)) {
+    throw new Error(
+      `Bundled keyring lacks required ${targetArch} slice (${keyringArchs.join(', ')})`,
+    )
+  }
+
+  // pnpm installs both optional keyring packages on macOS so either architecture
+  // can be cross-packed. Only one can load in this app, so do not make every
+  // customer carry the other native binary.
+  const unusedKeyringPackageArch = keyringPackageArch === 'x64' ? 'arm64' : 'x64'
+  rmSync(
+    join(resources, 'node_modules', '@napi-rs', `keyring-darwin-${unusedKeyringPackageArch}`),
+    { recursive: true, force: true },
+  )
+
   if (archs.length === 1) return
 
   const thinned = `${binary}.thin`

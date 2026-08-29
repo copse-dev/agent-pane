@@ -49,14 +49,3 @@ export interface DemoTrace {
   steps: DemoTraceStep[]
   source?: DemoTraceSource
 }
-
-/** Total characters of streamed prose in a trace — the player's pacing budget. */
-export function traceTextLength(trace: DemoTrace): number {
-  let total = 0
-  for (const step of trace.steps) {
-    if (step.chunk.type === 'text' || step.chunk.type === 'reasoning') {
-      total += step.chunk.text.length
-    }
-  }
-  return total
-}

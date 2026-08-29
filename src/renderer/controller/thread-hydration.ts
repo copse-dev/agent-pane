@@ -1,7 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Thread } from '@shared/types'
-import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 import { begin as perfBegin } from '../perf.ts'
 
 /**
@@ -240,21 +239,4 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
     inFlight.clear()
     failedThreadIds.clear()
   }
-}
-
-/**
- * PR refs for a freshly hydrated thread, for persisting back into its metadata.
- *
- * The sidebar chip is derived from PR links in message text, which is precisely
- * what a metadata-only load does not have. Recording the scrape's result on the
- * thread's metadata means the chip survives the next launch without the
- * transcript being read again. Returns null when there is nothing new to store,
- * so the caller can skip a pointless write.
- */
-export function prRefsToPersist(thread: Thread): ReturnType<typeof collectThreadPrRefs> | null {
-  if (!thread.messagesLoaded) return null
-  const refs = collectThreadPrRefs(thread)
-  const current = thread.prRefs ?? []
-  if (refs.length === current.length && refs.every((r, i) => current[i]?.url === r.url)) return null
-  return refs
 }

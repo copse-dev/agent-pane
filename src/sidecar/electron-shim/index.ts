@@ -29,7 +29,6 @@ import {
   shellSend,
   onShellMessage,
   startShellLink,
-  isShellAttached,
   type CreateWindowMessage,
 } from '../shell-link.ts'
 
@@ -772,6 +771,3 @@ export default {
   webContents,
   clipboard,
 }
-
-// Referenced by isShellAttached-aware logging paths and useful for smoke tests.
-export const shimInfo = { isShellAttached }

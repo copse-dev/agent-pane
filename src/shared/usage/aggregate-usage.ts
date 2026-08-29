@@ -153,13 +153,6 @@ function summarizeByModel(
   return { totalCostUsd, cloudModels, localModels, totalInputTokens, totalOutputTokens }
 }
 
-export function summarizeUsageByModel(
-  byModel: Record<string, ModelUsage>,
-  pricing?: ModelPricingMap,
-): UsagePeriodSummary {
-  return summarizeByModel(byModel, pricing)
-}
-
 export function buildUsageSummary(
   events: UsageEvent[],
   threads: Thread[],

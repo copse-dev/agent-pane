@@ -45,6 +45,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   gh_run_view: { running: 'Viewing CI run logs', done: 'Viewed CI run logs' },
   investigate_ci: { running: 'Investigating CI', done: 'Investigated CI' },
   delegate_step: { running: 'Delegating step', done: 'Delegated step' },
+  task: { running: 'Running agent', done: 'Ran agent' },
   get_ci_status: { running: 'Checking CI status', done: 'Checked CI status' },
   wait_for_ci_checks: { running: 'Waiting for CI', done: 'Waited for CI' },
   get_ci_failure_logs: { running: 'Fetching CI failure logs', done: 'Fetched CI failure logs' },
@@ -266,6 +267,16 @@ export function getToolCallLabel(tc: ToolCall): string {
     const path = fileEditPath(tc.args)
     if (path) {
       return tense === 'running' ? `Creating directory ${path}` : `Created directory ${path}`
+    }
+  }
+  // A custom agent's identity is the point of its card, so the label carries the
+  // agent's name rather than a generic "Ran agent". The session is authoritative
+  // (it survives a reload); `subagent_type` is the fallback while the call is
+  // still being streamed and no session has been attached yet.
+  if (tc.name === 'task') {
+    const agentName = tc.subagent?.agentName ?? stringArg(tc.args, 'subagent_type')
+    if (agentName) {
+      return tense === 'running' ? `Running ${agentName}` : `Ran ${agentName}`
     }
   }
   if (tc.name === 'run_shell' || tc.kind === 'execute') {
