@@ -2230,34 +2230,44 @@ footer a:hover {
 }
 
 /* ==========================================================================
-   Coming-soon mode
+   Publication modes
    --------------------------------------------------------------------------
-   Pre-launch state for copse.dev. The app has no public release and the repo
-   is still private, so every download / source / releases link would 404. This
-   block hides them rather than deleting the markup.
+   Copse can publish signed binaries before opening its source repository. The
+   page therefore has two independent visibility levels rather than one broad
+   "live" switch.
 
-   Two classes carry it, and nothing else in the sheet knows about the mode:
-     .mode-live-only        — real once we ship; hidden until then.
-     .mode-coming-soon-only — stand-in copy. Ships with the `hidden` attribute
-                              so it stays inert on its own; only these rules
-                              bring it back.
+     .mode-download-live-only — public binaries exist.
+     .mode-source-live-only   — the source repository is public.
+     .mode-coming-soon-only   — no public binary exists yet.
+     .mode-source-private-only — contact fallback while source stays private.
 
-   To go live, delete this block and the data-site-mode attribute from
-   index.html, privacy.html, and architecture.html. Either half alone is enough
-   to restore the launch site — dropping the block leaves the stand-ins hidden,
-   dropping the attribute stops the selectors matching — so a partial revert
-   can't strand the page in a half-launched state.
+   Start with data-site-mode="coming-soon", switch all three HTML roots to
+   "downloads-live" after the first public release, then remove the attribute
+   when the source opens. Hidden fallbacks remain inert in the full-live state.
 
-   !important is deliberate: .mode-live-only has to beat the responsive rules
-   above without this block having to restate each one at each breakpoint.
+   !important is deliberate: mode rules have to beat responsive display rules
+   above without restating each one at every breakpoint.
    ========================================================================== */
 
-[data-site-mode='coming-soon'] .mode-live-only {
+[data-site-mode='coming-soon'] .mode-download-live-only,
+[data-site-mode='coming-soon'] .mode-source-live-only,
+[data-site-mode='downloads-live'] .mode-source-live-only {
   display: none !important;
 }
 
 [data-site-mode='coming-soon'] .mode-coming-soon-only[hidden] {
   display: block;
+}
+
+[data-site-mode='coming-soon'] .mode-source-private-only[hidden],
+[data-site-mode='downloads-live'] .mode-source-private-only[hidden] {
+  display: block;
+}
+
+/* Keep the hero badge's icon and label on one line. The publication-mode rule
+   above otherwise overrides its component-level inline-flex display. */
+[data-site-mode='downloads-live'] .marketing-site .hero-badges > .mode-source-private-only[hidden] {
+  display: inline-flex !important;
 }
 
 /* Stands where the hero button row was, so the hero keeps its closing beat. */

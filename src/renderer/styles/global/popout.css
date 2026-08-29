@@ -16,8 +16,11 @@ html.is-popout #welcome {
   display: none !important;
 }
 
+/* The pop-out titlebar is a sibling above #body, so the pane fills what's left
+   of the window rather than a full 100% that would push it off the bottom. */
 html.is-popout #body {
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* `.pane-files` is flex-shrink:0 with a fixed --files-width in the docked
@@ -44,59 +47,42 @@ html.is-popout .roadmap-thread-indicator {
   display: none;
 }
 
-/* Pop-out windows keep a labeled panel switcher docked to the bottom-left corner
-   (the titlebar and composer portrait row are hidden). */
-html.is-popout #pane-files {
+/* The detached window is frameless like the main one, so it draws its own
+   titlebar: same `.titlebar` chrome (height, --bg-elevated, drag region,
+   traffic-light clearance) with the labeled panel switcher on the right, where
+   the main window keeps it. */
+.popout-titlebar {
+  flex-shrink: 0;
   position: relative;
+  z-index: 60;
 }
 
-html.is-popout .popout-panel-bar-host {
-  position: absolute;
-  left: var(--spacing-md);
-  bottom: var(--spacing-md);
-  z-index: 40;
-  pointer-events: none;
+.popout-titlebar-title {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-html.is-popout .popout-panel-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-wrap: nowrap;
-  overflow: visible;
-  box-sizing: border-box;
-  padding: 0 var(--spacing-sm);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--bg-base) 40%, transparent);
-  pointer-events: auto;
+.popout-titlebar .popout-panel-bar {
+  margin-left: auto;
 }
 
-html.is-popout .popout-panel-bar .titlebar-text-btn,
-html.is-popout .popout-panel-bar .portrait-panel-btn {
-  display: inline-flex;
-  align-items: center;
+.popout-titlebar .popout-panel-bar .titlebar-text-btn,
+.popout-titlebar .popout-panel-bar .portrait-panel-btn {
   flex: 0 0 auto;
-  box-sizing: border-box;
-  height: calc(var(--chrome-action-band-height) - 2 * var(--spacing-xs));
-  padding: 0 var(--spacing-sm);
-  gap: 4px;
   white-space: nowrap;
 }
 
-html.is-popout .popout-panel-bar .titlebar-text-btn:hover,
-html.is-popout .popout-panel-bar .portrait-panel-btn:hover {
-  background: var(--bg-hover);
-}
-
-html.is-popout .popout-panel-bar .titlebar-text-btn.active,
-html.is-popout .popout-panel-bar .portrait-panel-btn.active {
-  background: color-mix(in srgb, var(--accent) 16%, var(--bg-hover));
-  color: var(--accent);
-}
-
-html.is-popout .popout-panel-bar .titlebar-text-btn[data-portrait-overflow],
-html.is-popout .popout-panel-bar .portrait-panel-btn[data-portrait-overflow] {
+.popout-titlebar .popout-panel-bar .titlebar-text-btn[data-portrait-overflow],
+.popout-titlebar .popout-panel-bar .portrait-panel-btn[data-portrait-overflow] {
   display: none;
+}
+
+/* The overflow menu is authored for the bottom portrait bar and opens upward;
+   from a titlebar it has to drop down instead. */
+.popout-titlebar .portrait-panel-overflow-menu {
+  top: calc(100% + 4px);
+  bottom: auto;
 }
