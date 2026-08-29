@@ -140,24 +140,6 @@ export function perfRecord(record: PerfRecord): void {
   emit(record)
 }
 
-/** Time a synchronous function. Returns its value; re-throws after recording. */
-export function perfSpanSync<T>(name: string, fn: () => T, detail?: PerfDetail): T {
-  if (!ENABLED) return fn()
-  const start = nowMs()
-  try {
-    return fn()
-  } finally {
-    emit({
-      t: start,
-      kind: 'span',
-      src: 'main',
-      name,
-      ms: nowMs() - start,
-      ...(detail ? { detail } : {}),
-    })
-  }
-}
-
 /**
  * Time an async function. `detail` may be a thunk so the caller can report
  * facts only known once the work finished (rows read, bytes parsed).
