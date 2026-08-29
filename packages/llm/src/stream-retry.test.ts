@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { ToolCallRequestError } from '@lmstudio/sdk'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   isImageUnsupportedError,
@@ -62,6 +63,37 @@ describe('isRetryableStreamError', () => {
 
   it('retries an overloaded_error body type', () => {
     assert.equal(isRetryableStreamError({ error: { type: 'overloaded_error' } }), true)
+  })
+
+  it('retries an LM Studio WebSocket connection loss', () => {
+    // The exact strings the SDK's WebSocket transport raises and forwards to
+    // every open channel.
+    assert.equal(isRetryableStreamError(new Error('WebSocket connection closed')), true)
+    assert.equal(isRetryableStreamError(new Error('WebSocket timed out')), true)
+    assert.equal(isRetryableStreamError(new Error('WebSocket connection failed')), true)
+    assert.equal(isRetryableStreamError(new Error('Socket hang up')), true)
+    assert.equal(isRetryableStreamError(new Error('connect ECONNREFUSED 127.0.0.1:1234')), true)
+  })
+
+  it('retries an LM Studio channel that closed without a result', () => {
+    // A channel can end without the transport itself erroring; the prediction
+    // then rejects with a bare closure rather than a socket-level message.
+    assert.equal(isRetryableStreamError(new Error('Channel closed unexpectedly.')), true)
+    assert.equal(
+      isRetryableStreamError(new Error('Channel closed before receiving a result.')),
+      true,
+    )
+  })
+
+  it('does not retry an LM Studio tool-call parse failure', () => {
+    // ToolCallRequestError means the model produced an unparseable tool call —
+    // deterministic, so a replay would fail the same way.
+    const err = new ToolCallRequestError('tool call arguments were not valid JSON', undefined)
+    assert.equal(isRetryableStreamError(err), false)
+  })
+
+  it('does not retry an unknown LM Studio protocol error', () => {
+    assert.equal(isRetryableStreamError(new Error('LM Studio: model failed to load')), false)
   })
 
   it('does not retry a deterministic OpenRouter routing-policy failure, even as a 5xx', () => {
@@ -170,6 +202,30 @@ describe('yieldStreamWithRetry', () => {
     })
     assert.deepEqual(out, ['partial'])
     assert.equal(attempts, 1)
+  })
+
+  it('retries after only progress-shaped items were yielded (no content lost)', async () => {
+    let attempts = 0
+    async function* run(): AsyncGenerator<{ type: string; fraction?: number; text?: string }> {
+      attempts++
+      if (attempts === 1) {
+        yield { type: 'prompt_progress', fraction: 0.4 }
+        throw httpError(503)
+      }
+      yield { type: 'prompt_progress', fraction: 0.9 }
+      yield { type: 'text', text: 'ok' }
+    }
+    const out: Array<{ type: string; fraction?: number; text?: string }> = []
+    for await (const v of yieldStreamWithRetry(run, { maxAttempts: 3 })) out.push(v)
+    // Progress-only yields do not pin the attempt, so the stream recovers
+    // instead of failing. Already-delivered progress cannot be unsent — it is
+    // ephemeral display state, and the replay simply supersedes it.
+    assert.deepEqual(out, [
+      { type: 'prompt_progress', fraction: 0.4 },
+      { type: 'prompt_progress', fraction: 0.9 },
+      { type: 'text', text: 'ok' },
+    ])
+    assert.equal(attempts, 2)
   })
 
   it('does not retry a non-retryable error', async () => {

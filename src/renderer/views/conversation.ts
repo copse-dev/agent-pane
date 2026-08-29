@@ -1755,7 +1755,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       activityBar.hidden = true
       return
     }
-    activityLabel.textContent = label
+    // Assigning textContent replaces the text node even when the string is
+    // identical, and the row is aria-live, so an unconditional write re-announces
+    // the same label. Emitters outside the agent controller (message queue,
+    // retry/review) do not share its dedupe key, so guard here too.
+    if (activityLabel.textContent !== label) activityLabel.textContent = label
     // Once reasoning tokens exist, the disclosure title is the activity row.
     // Keep the standalone row for the initial wait before the first token, but
     // never show two live "Reasoning…" labels in the transcript.
