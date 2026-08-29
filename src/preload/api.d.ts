@@ -40,7 +40,11 @@ import type {
   DeclaredMcpServer,
 } from '@shared/types/mcp.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
-import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
+import type {
+  CanvasArtefact,
+  CanvasArtefactIdentity,
+  CanvasArtefactSummary,
+} from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import type {
   ExtraProvider,
@@ -348,6 +352,13 @@ export interface ApiClient {
   canvas: {
     onArtefact: (handler: (artefact: CanvasArtefact) => void) => () => void
     onShowArtefact: (handler: (identity: CanvasArtefactIdentity) => void) => () => void
+    /** Artefacts this thread saved in any session, newest last. */
+    listArtefacts: (projectId: string, threadId: string) => Promise<CanvasArtefactSummary[]>
+    /**
+     * Render a saved artefact again; it arrives on {@link onArtefact} like a
+     * fresh one. False when nothing is stored under that title any more.
+     */
+    reopenArtefact: (projectId: string, threadId: string, title: string) => Promise<boolean>
   }
   storage: {
     get: (key: string) => Promise<unknown>

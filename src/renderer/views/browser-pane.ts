@@ -702,6 +702,18 @@ export function mountBrowserPane(
     return true
   }
 
+  /**
+   * Render a saved artefact again after its tab is gone — the app was quit, or
+   * the tab closed. The artefact returns through `canvas_artefact_requested`,
+   * so `openArtefact` below is still the only code that opens a canvas tab.
+   */
+  async function reopenStoredArtefact(title: string, threadId: string | undefined): Promise<void> {
+    const projectId = store.getState().activeProjectId
+    if (!api || !threadId || !projectId) return
+    const reopened = await api.canvas.reopenArtefact(projectId, threadId, title).catch(() => false)
+    if (!reopened) showToast(`"${title}" is no longer available`)
+  }
+
   function openArtefact(artefact: CanvasArtefact): void {
     // text/html renders inline via an opaque data: URL; a URL-list artefact
     // navigates normally (and is still subject to the browser origin policy).
@@ -1138,7 +1150,11 @@ export function mountBrowserPane(
     store.on('browser_url_bar_focus_requested', focusUrlBar),
     store.on('canvas_artefact_requested', openArtefact),
     store.on('canvas_artefact_show_requested', (identity) => {
-      showArtefact(identity.title, identity.threadId)
+      if (showArtefact(identity.title, identity.threadId)) return
+      // Nothing is showing it, so this is a card whose tab died with a previous
+      // window. Ask main for the saved copy; it comes back on the ordinary
+      // artefact channel and opens a tab exactly like a fresh render.
+      void reopenStoredArtefact(identity.title, identity.threadId)
     }),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
