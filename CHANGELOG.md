@@ -8,6 +8,9 @@ every published entry.
 
 ## Unreleased
 
+- This beta advances the permanent public update channel from beta.7 to beta.8
+  so the signed, architecture-specific updater can be validated end to end
+  before the source repository opens.
 - macOS release images now use Copse's generated icon for both the application
   bundle and the mounted DMG volume. Release CI generates the `.icns` on its
   clean runner, fails if macOS cannot compile it, then mounts the finished DMG
