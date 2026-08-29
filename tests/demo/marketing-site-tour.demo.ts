@@ -30,6 +30,41 @@ async function measureTour(): Promise<TourGeometry | null> {
 }
 
 describe('marketing site Tour anchor', () => {
+  it('shows public downloads without exposing the private source repository', async () => {
+    await browser.setWindowSize(1280, 800)
+    await browser.url('/marketing/index.html')
+    await $('.hero-copy').waitForDisplayed()
+    await browser.waitUntil(() => browser.execute(() => document.fonts.status === 'loaded'))
+
+    await browser.execute(() => {
+      document.documentElement.setAttribute('data-site-mode', 'downloads-live')
+    })
+
+    const download = $(
+      '.download-panel .pill-pink[href="https://github.com/copse-dev/copse-releases/releases"]',
+    )
+    await expect(download).toBeDisplayed()
+    await expect(download).toHaveText('Download for macOS')
+    await expect($('.download-panel')).toHaveText(expect.stringContaining('Apple Silicon or Intel'))
+    await expect($('.download-panel .mode-source-live-only')).not.toBeDisplayed()
+    await expect($('.download-pending')).not.toBeDisplayed()
+    await expect($('footer a[href="https://github.com/copse-dev/agent-pane"]')).not.toBeDisplayed()
+
+    const panel = $('.download-panel')
+    await panel.scrollIntoView({ block: 'center' })
+    await browser.waitUntil(async () => {
+      const position = await browser.execute(() => {
+        const rect = document.getElementById('download')?.getBoundingClientRect()
+        return rect ? { bottom: rect.bottom, top: rect.top } : null
+      })
+      return position !== null && position.top >= 0 && position.bottom <= 800
+    })
+
+    await browser.saveScreenshot(
+      join(E2E_SCREENSHOT_DIR, 'marketing-site-downloads-live-source-private.png'),
+    )
+  })
+
   it('places the floating nav just above the demo with the hero copy out of view', async () => {
     await browser.setWindowSize(1450, 940)
     await browser.url('/marketing/index.html')
