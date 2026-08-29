@@ -8,6 +8,10 @@ every published entry.
 
 ## Unreleased
 
+- macOS release images now use Copse's generated icon for both the application
+  bundle and the mounted DMG volume. Release CI generates the `.icns` on its
+  clean runner, fails if macOS cannot compile it, then mounts the finished DMG
+  and verifies the icon bytes and Finder custom-icon flag before publishing.
 - macOS downloads are now architecture-specific instead of carrying both Apple
   Silicon and Intel payloads. The beta.6 candidate DMGs and ZIPs are about 180
   MiB each (down from 343–353 MiB), and the installed app is about 640 MiB
