@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
@@ -226,22 +226,24 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
-  it('retires the update-screenshots label once the refresh has been committed', () => {
-    // Nothing else removes it, and left on it stops being a request and becomes
-    // a mode: the plan step forces mode=full and the label punches through the
-    // `base_ref == release` guard on e2e, so a trunk PR re-runs 8 Electron
-    // shards on every push forever (#1569).
-    const job = jobBlock('commit-screenshots')
-    assert.match(job, /name: Retire the update-screenshots label/)
-    assert.match(
-      job,
-      /-X DELETE[\s\S]*?issues\/\$\{PR_NUMBER\}\/labels\/update-screenshots/,
-      'the label must be deleted through the issues labels API',
+  it('publishes screenshot candidates without mutating the PR branch', () => {
+    const job = jobBlock('screenshot-artifacts')
+    assert.match(job, /permissions:\n {6}contents: read/)
+    assert.match(job, /name: reference-screenshot-candidates-\$\{\{ github\.run_id \}\}/)
+    assert.match(job, /retention-days: 14/)
+    assert.doesNotMatch(job, /contents: write|pull-requests: write/)
+    assert.doesNotMatch(job, /git (?:commit|merge|push)|actions\/create-github-app-token/)
+    assert.equal(
+      existsSync(resolve('.github/workflows/reconcile-screenshots.yml')),
+      false,
+      'base-branch pushes must not mutate every open PR to reconcile binary screenshots',
     )
+
+    const aggregate = jobBlock('ci-passed')
     assert.match(
-      job,
-      /pull-requests: write/,
-      'removing a label needs pull-requests: write on this job',
+      aggregate,
+      /needs: \[precheck, check, bench, build, e2e, screenshot-artifacts\]/,
+      'the aggregate must wait until immutable screenshot evidence is published',
     )
   })
 
@@ -266,10 +268,10 @@ describe('ci.yml workflow invariants', () => {
     // queued behind the fleet. If the PR merges meanwhile, auto-delete takes the
     // head branch and `checkout` with `ref: github.head_ref` dies with "branch
     // not found" — a red X on an already-merged PR, and pure noise, since there
-    // is no longer a branch to push to. `commit-screenshots` hit this first
-    // (#1001) and `autoformat` reddened 11 of 26 PRs in one night before getting
-    // the same guard. Any future job that checks out the head ref needs it too.
-    for (const name of ['autoformat', 'commit-screenshots']) {
+    // is no longer a branch to push to. `autoformat` reddened 11 of 26 PRs in one
+    // night before getting this guard. Any future job that checks out the head
+    // ref needs it too.
+    for (const name of ['autoformat']) {
       const job = jobBlock(name)
       assert.match(job, /id: head\n/, `${name} must probe the head branch before checking it out`)
       assert.match(
@@ -298,44 +300,6 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
-  it('reconciles screenshots against the PR base branch, never a hardcoded one', () => {
-    // This job merges the base branch into the PR head to clear binary conflicts
-    // in reference PNGs. Hardcoding a branch name here fails SILENTLY: if the
-    // named branch is already an ancestor of the PR base, `git merge` reports
-    // "Already up to date" and the reconciliation never happens. That is exactly
-    // what the pre-rename `origin/main` literal did on `develop`-based PRs, and
-    // no run ever went red over it. Drive it from `github.base_ref` so both
-    // tiers reconcile against the branch they will actually merge into.
-    const job = workflow.match(/^ {2}commit-screenshots:\n(?: {4}.*\n| *\n)+/m)?.[0]
-    assert.ok(job, 'expected a `commit-screenshots:` job in ci.yml')
-    assert.match(
-      job,
-      /BASE_REF: \$\{\{ github\.base_ref \}\}/,
-      'commit-screenshots must derive the reconciliation target from github.base_ref',
-    )
-    // Comments legitimately name `origin/main` when describing a script default;
-    // only executable lines are the contract here.
-    const executable = job
-      .split('\n')
-      .filter((line) => !/^\s*#/.test(line))
-      .join('\n')
-    assert.doesNotMatch(
-      executable,
-      /origin\/main(?![.\w])/,
-      'commit-screenshots must not hardcode origin/main — use "origin/$BASE_REF"',
-    )
-    assert.match(
-      job,
-      /git merge --no-commit --no-ff "origin\/\$BASE_REF"/,
-      'the reconcile merge must target the base branch',
-    )
-    assert.match(
-      job,
-      /SCREENSHOT_MAIN_REF: origin\/\$\{\{ github\.base_ref \}\}/,
-      'filter-screenshots.mts defaults to origin/main; it must be pointed at the PR base',
-    )
-  })
-
   it('caps every job, so one wedged run cannot park an ephemeral runner for six hours', () => {
     // GitHub's default `timeout-minutes` is 360. The runners here are ephemeral
     // and serve both tiers, so an uncapped job holds a whole runner — a real
@@ -360,6 +324,69 @@ describe('ci.yml workflow invariants', () => {
       [],
       `every ci.yml job needs timeout-minutes; missing on: ${uncapped.join(', ')}`,
     )
+  })
+})
+
+describe('publish-screenshot-candidates.yml workflow invariants', () => {
+  const workflow = readFileSync(
+    resolve('.github/workflows/publish-screenshot-candidates.yml'),
+    'utf8',
+  )
+
+  it('separates the write-capable publisher from pull-request code execution', () => {
+    assert.match(workflow, /^ {2}workflow_run:\n {4}workflows: \[CI\]\n {4}types: \[completed\]$/m)
+    assert.doesNotMatch(workflow, /pull_request_target/)
+    assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/)
+    assert.match(
+      workflow,
+      /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,
+      'fork runs receive secrets on workflow_run and must be rejected before token minting',
+    )
+    assert.match(
+      workflow,
+      /^permissions:\n {2}actions: read\n {2}contents: read\n {2}pull-requests: read$/m,
+    )
+    assert.match(workflow, /permission-contents: write/)
+    assert.match(workflow, /permission-pull-requests: write/)
+  })
+
+  it('binds publication to one open parent at the exact rendered head', () => {
+    assert.match(workflow, /candidates\.length !== 1/)
+    assert.match(workflow, /parent\.state !== 'open'/)
+    assert.match(workflow, /parent\.head\.repo\?\.full_name === `\$\{owner\}\/\$\{repo\}`/)
+    assert.match(workflow, /parent\.head\.ref === 'main' \|\| parent\.head\.ref === 'release'/)
+    assert.match(workflow, /parent\.head\.sha !== runHeadSha/)
+    assert.match(workflow, /artifact\.name === artifactName && !artifact\.expired/)
+    assert.match(workflow, /ref: \$\{\{ steps\.discover\.outputs\.head-sha \}\}/)
+    assert.match(workflow, /persist-credentials: false/)
+    assert.match(
+      workflow,
+      /parent\.head\.sha !== process\.env\.EXPECTED_HEAD_SHA[\s\S]*?state: 'closed'/,
+      'a parent-head race after child creation must close the stale review PR',
+    )
+  })
+
+  it('accepts only bounded, flat, real PNG candidates', () => {
+    assert.match(workflow, /find "\$CANDIDATE_ROOT" -type l/)
+    assert.match(workflow, /tests\/e2e\/screenshots\/\*\.png\)/)
+    assert.match(workflow, /\^\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\*\\\.png\$/)
+    assert.match(workflow, /89504e470d0a1a0a/)
+    assert.match(workflow, /"\$size" -gt 16777216/)
+    assert.match(workflow, /"\$count" -gt 512/)
+    assert.match(workflow, /"\$total" -gt 268435456/)
+    assert.match(workflow, /Unexpected file in screenshot candidate artifact/)
+  })
+
+  it('opens a bot-owned child PR into the source branch and links it from the parent', () => {
+    assert.match(workflow, /uses: peter-evans\/create-pull-request@v8/)
+    assert.match(workflow, /base: \$\{\{ steps\.discover\.outputs\.head-ref \}\}/)
+    assert.match(workflow, /branch: \$\{\{ steps\.discover\.outputs\.review-branch \}\}/)
+    assert.match(workflow, /add-paths: tests\/e2e\/screenshots\//)
+    assert.doesNotMatch(workflow, /^ {10}base: main$/m)
+    assert.match(workflow, /<!-- copse-e2e-screenshot-review -->/)
+    assert.match(workflow, /REVIEW_URL: \$\{\{ steps\.review-pr\.outputs\.pull-request-url \}\}/)
+    assert.match(workflow, /Review GitHub’s image diffs in \[screenshot PR #/)
+    assert.match(workflow, /Close superseded screenshot review PRs/)
   })
 })
 
@@ -462,15 +489,29 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /--is-ancestor "\$release_sha" origin\/main/)
   })
 
-  it('uploads release notes with the tested artifact and does not publish', () => {
+  it('uploads release notes with immutable metadata and does not publish', () => {
     assert.match(workflow, /release-notes\.mts > release\/RELEASE_NOTES\.md/)
     assert.match(
       workflow,
-      /release\/RELEASE_NOTES\.md\n {10}if-no-files-found: error/,
-      'the notes must travel in the immutable tested artifact',
+      /name: copse-macos-\$\{\{ needs\.preflight\.outputs\.release_sha \}\}-metadata[\s\S]*release\/RELEASE_NOTES\.md/,
+      'the notes must travel in the immutable tested metadata artifact',
     )
     assert.doesNotMatch(workflow, /^ {2}publish:$/m)
     assert.doesNotMatch(workflow, /^\s+gh release create /m)
+  })
+
+  it('builds and uploads each architecture separately', () => {
+    assert.match(workflow, /arch: \[arm64, x64\]/)
+    assert.match(workflow, /"dmg:\$TARGET_ARCH" "zip:\$TARGET_ARCH"/)
+    assert.match(workflow, /name: copse-macos-.*-\$\{\{ matrix\.arch \}\}/)
+    assert.match(workflow, /check-macos-release-size\.mts release \$\{\{ matrix\.arch \}\}/)
+    assert.doesNotMatch(workflow, /prepare:gortex:mac/)
+  })
+
+  it('assembles portable checksums without recompressing the packages', () => {
+    assert.match(workflow, /assemble-macos-release\.mts/)
+    assert.match(workflow, /shasum -a 256 --check SHA256SUMS/)
+    assert.match(workflow, /release\/SHA256SUMS/)
   })
 
   it('skips provenance on a private repository instead of failing the release', () => {
@@ -487,16 +528,35 @@ describe('release-mac.yml workflow invariants', () => {
     assert.match(workflow, /^ {4}runs-on: macos-26$/m)
     assert.doesNotMatch(workflow, /runs-on: macos-14/)
   })
+
+  it('bounds the signed package verification step', () => {
+    assert.match(workflow, /^ {4}timeout-minutes: 60$/m)
+    assert.match(
+      workflow,
+      /- name: Verify signatures, notarization, metadata, and packaged runtime\n {8}timeout-minutes: 15/,
+    )
+    assert.match(workflow, /COPSE_DIR: \$\{\{ runner\.temp \}\}\/copse-release-smoke-profile/)
+  })
 })
 
 describe('release-publish.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/release-publish.yml'), 'utf8')
 
-  it('is manual and refuses private-repository publication', () => {
+  it('is manual and publishes only to the public binary repository', () => {
     assert.match(workflow, /^ {2}workflow_dispatch:$/m)
     assert.doesNotMatch(workflow, /^ {2}push:/m)
-    assert.match(workflow, /--jq \.private/)
-    assert.match(workflow, /Refusing to publish from a private repository/)
+    assert.match(workflow, /RELEASE_REPOSITORY: copse-dev\/copse-releases/)
+    assert.match(workflow, /\/repos\/\$RELEASE_REPOSITORY.*--jq \.private/)
+    assert.match(workflow, /Refusing to publish to private repository/)
+    assert.doesNotMatch(workflow, /Refusing to publish from a private repository/)
+  })
+
+  it('uses the release App only for the cross-repository publication', () => {
+    assert.match(workflow, /uses: actions\/create-github-app-token@v3/)
+    assert.match(workflow, /repositories: copse-releases/)
+    assert.match(workflow, /permission-contents: write/)
+    assert.match(workflow, /SOURCE_GH_TOKEN: \$\{\{ github\.token \}\}/)
+    assert.match(workflow, /RELEASE_GH_TOKEN: \$\{\{ steps\.release-token\.outputs\.token \}\}/)
   })
 
   it('accepts only a successful release-mac run for the exact tagged commit', () => {
@@ -507,40 +567,24 @@ describe('release-publish.yml workflow invariants', () => {
     assert.match(workflow, /--is-ancestor "\$release_sha" origin\/release/)
   })
 
-  it('downloads, verifies, attests, and publishes without rebuilding', () => {
+  it('downloads, verifies, and publishes without rebuilding', () => {
     assert.match(workflow, /run-id: \$\{\{ inputs\.release_run_id \}\}/)
-    assert.match(workflow, /shasum -a 256 --check release\/SHA256SUMS/)
+    assert.match(workflow, /pattern: copse-macos-.*-\*/)
+    assert.match(workflow, /merge-multiple: true/)
+    assert.match(workflow, /cd release\n {12}shasum -a 256 --check SHA256SUMS/)
     assert.match(workflow, /uses: actions\/attest@/)
-    assert.match(workflow, /--notes-file release\/RELEASE_NOTES\.md/)
+    assert.match(workflow, /--notes-file "\$notes"/)
     assert.match(workflow, /gh release create/)
+    assert.match(workflow, /--repo "\$RELEASE_REPOSITORY" --target main/)
     assert.doesNotMatch(workflow, /electron-builder|build:release|pnpm install/)
   })
-})
 
-describe('reconcile-screenshots.yml workflow invariants', () => {
-  const workflow = readFileSync(resolve('.github/workflows/reconcile-screenshots.yml'), 'utf8')
-
-  it('attempts the push before handing a workflow-file merge to a human', () => {
-    // The hand-off must be driven by a REFUSED push, never by merely noticing a
-    // .github/workflows change in the merge. Bailing pre-emptively made the
-    // hand-off unconditional: it fired even when the token had `workflow` scope,
-    // and because one base commit under .github/workflows/ lands in every stale
-    // branch's merge, a single such commit handed off every open PR at once
-    // (11 in one run, none with a real conflict).
-    const step = workflow.match(/git add tests\/e2e\/screenshots\/[\s\S]*?(?=\n {6}- name:)/)?.[0]
-    assert.ok(step, 'expected the reconcile merge step in reconcile-screenshots.yml')
-    assert.match(step, /if git push; then/, 'the push must be attempted, not assumed to fail')
-    assert.doesNotMatch(
-      step,
-      /wf="\$\([^)]*\)"\s*\n\s*if \[ -n "\$wf" \]; then\s*\n[\s\S]{0,200}?git merge --abort/,
-      'must not abort the merge on workflow-file detection alone',
+  it('skips unavailable provenance only while the source repository is private', () => {
+    assert.match(
+      workflow,
+      /if: \$\{\{ !github\.event\.repository\.private \}\}\n {8}uses: actions\/attest/,
     )
-  })
-
-  it('leaves the branch untouched when the push is refused', () => {
-    // A refused push must not leave a local merge commit behind or half-apply the
-    // reconcile; the branch has to end up exactly as it was found.
-    assert.match(workflow, /git reset --hard HEAD~1/)
+    assert.match(workflow, /if: github\.event\.repository\.private/)
   })
 })
 

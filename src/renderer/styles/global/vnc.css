@@ -131,6 +131,162 @@
   display: none;
 }
 
+.vnc-devices-heading {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.vnc-nearby-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.vnc-nearby-feedback[hidden] {
+  display: none;
+}
+
+.vnc-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vnc-device {
+  overflow: hidden;
+  border-radius: calc(var(--radius) + 2px);
+}
+
+.vnc-device.is-selected {
+  background: var(--bg-selected);
+}
+
+.vnc-device-header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: var(--spacing-sm);
+  align-items: center;
+  width: 100%;
+  padding: var(--spacing-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius) + 2px);
+}
+
+.vnc-device-header:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.vnc-device.is-selected .vnc-device-header:hover:not(:disabled) {
+  background: transparent;
+}
+
+.vnc-device-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.vnc-device-icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  border-radius: var(--radius);
+}
+
+.vnc-device.is-selected .vnc-device-icon {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.vnc-device-copy,
+.vnc-device-name,
+.vnc-device-meta {
+  display: block;
+  min-width: 0;
+}
+
+.vnc-device-name {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vnc-device-meta {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vnc-device-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-sm) var(--spacing-sm) calc(34px + var(--spacing-md));
+}
+
+.vnc-setup-credentials {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.vnc-setup-credentials[hidden],
+.vnc-saved-login[hidden] {
+  display: none;
+}
+
+.vnc-credential-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-base);
+}
+
+.vnc-saved-login {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.vnc-saved-login-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vnc-setup-forget-login {
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  background: transparent;
+  border: 0;
+}
+
+.vnc-setup-forget-login:hover {
+  color: var(--text-primary);
+}
+
 .vnc-field-label {
   display: flex;
   flex-direction: column;
@@ -228,7 +384,8 @@
   -webkit-text-security: none;
 }
 
-.vnc-password-input {
+.vnc-password-input,
+.vnc-setup-password-input {
   font-family: system-ui, sans-serif;
   -webkit-text-security: disc;
 }

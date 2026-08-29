@@ -64,11 +64,13 @@ reaches `release`, not after.
       Actions artifact. It must not create a GitHub Release directly.
 - [ ] Verify the app embeds `LSMinimumSystemVersion=26.0` and both architecture
       artifacts contain matching signed `gortex` helpers.
-- [ ] Review and install-test the Actions artifact, make the repository public,
-      then manually run `Publish release artifacts` with the matching tag and
-      successful source run ID. Let it verify, attest, and publish the tested
-      DMGs, zips, blockmaps, channel metadata, checksums, and notes together.
-      Do not rebuild or publish locally.
+- [ ] Review and install-test the Actions artifact, then manually run
+      `Publish release artifacts` with the matching tag and successful source
+      run ID. Let it verify and publish the tested DMGs, zips, blockmaps,
+      channel metadata, checksums, and notes together to the public
+      `copse-dev/copse-releases` repository. On the current GitHub Team plan,
+      provenance attestation joins this path once the source repository is
+      public. Do not rebuild or publish locally.
 - [ ] Confirm the published artifacts and release notes identify the same
       version, channel, minimum OS, and architectures.
 - [ ] After the GitHub Release exists, reset `Unreleased` for subsequent work in
