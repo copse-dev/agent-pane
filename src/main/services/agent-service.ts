@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
@@ -103,6 +104,9 @@ import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
+import { runCustomAgent } from './agents/custom-agent-runner.ts'
+import { getAgent } from './agents/agents-registry.ts'
+import { buildAgentReportBlock, customAgentInvocationTask } from './agents/custom-agent-strategy.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
@@ -610,6 +614,8 @@ function fireAfterToolUseHook(args: {
 
 export interface RunAgentOptions {
   invokedSkills?: string[]
+  /** Subagent explicitly invoked by the user's leading `/name`. */
+  invokedAgent?: string
   priorTodos?: TodoItem[]
   workingBrief?: string
   model?: string
@@ -1384,6 +1390,13 @@ export async function runAgent(
     // inline below, not because a chunk is withheld.
     let loopStopReason: string | undefined
 
+    // A definition can disappear between composing and sending. Do not expose a
+    // task tool that could only fail when that happens.
+    const invokedAgent =
+      options?.invokedAgent !== undefined && getAgent(options.invokedAgent) !== null
+        ? options.invokedAgent
+        : undefined
+
     const systemPrompt = await buildSystemPrompt({
       subagentsEnabled,
       invokedSkills,
@@ -1461,6 +1474,69 @@ export async function runAgent(
       [turnStartInjected, submitInjectContext],
       operatorInstructionPlacement(model),
     )
+
+    // Deterministic pre-invocation (docs/plans/custom-subagents.md, decision 2).
+    // The user named an agent, so it runs — before the parent's first LLM call,
+    // not because the parent chose to call a tool. Three evals against a real
+    // model showed a turn directive is not enough: asked to delegate, the model
+    // answered directly instead. Running it here makes `/name` mean what it says
+    // whatever model the thread is on.
+    //
+    // The card is synthesized rather than model-issued: a `task` tool call the
+    // subagent stream attaches to, so the timeline renders exactly as it would
+    // for any other subagent, with the agent's own steps inside it.
+    if (invokedAgent !== undefined) {
+      const agent = getAgent(invokedAgent)
+      if (agent) {
+        const agentToolCallId = randomUUID()
+        // Use the provider-bound, redacted form. `userTextForSteering` is raw by
+        // design for local hooks and must never become a second outbound path.
+        const agentTask = customAgentInvocationTask(outboundPrompt)
+        sendChunk({
+          type: 'tool_call',
+          toolCall: {
+            id: agentToolCallId,
+            name: 'task',
+            args: { subagent_type: invokedAgent, prompt: agentTask },
+          },
+        })
+        let report: string
+        let reportIsError = false
+        try {
+          report = await runCustomAgent(
+            {
+              parentToolCallId: agentToolCallId,
+              parentGoal,
+              provider,
+              parentModel: model,
+              registry,
+              contextWindow,
+              toolSchemaReserve,
+              onChunk: sendChunk,
+            },
+            agent,
+            agentTask,
+            controller.signal,
+          )
+        } catch (err) {
+          // The parent still answers: it is told the agent failed rather than
+          // being left to describe a report that never arrived.
+          report = `The "${invokedAgent}" agent did not finish: ${errorMessage(err)}`
+          reportIsError = true
+        }
+        sendChunk({
+          type: 'tool_result',
+          toolCallId: agentToolCallId,
+          result: report,
+          isError: reportIsError,
+        })
+        appendOperatorInstruction(
+          messages,
+          [buildAgentReportBlock(invokedAgent, report)],
+          operatorInstructionPlacement(model),
+        )
+      }
+    }
 
     const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
     trimmed = prepared.trimmed

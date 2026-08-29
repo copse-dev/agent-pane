@@ -622,9 +622,8 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
   [`src/renderer/views/hook-cards.test.ts`](../src/renderer/views/hook-cards.test.ts).
 - **Host-native continuations use the same attribution grammar.** A machine-dispatched prompt gets
   `.msg-machine-origin-marker` with `Machine · automatic continuation`; it must never look like a
-  human-authored blue bubble. While any turn is running, the composer footer says
-  `Agent running · messages queue` and the submit action says `Queue`, so typing during a machine
-  turn has an explicit destination rather than silently entering the pending queue.
+  human-authored blue bubble. While any turn is running, the submit action says `Queue`, so typing
+  during a machine turn has an explicit destination rather than silently entering the pending queue.
 
 ## Footer popovers: one boundary, distinct trigger anchors
 

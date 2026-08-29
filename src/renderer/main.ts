@@ -130,7 +130,7 @@ import {
 } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
-import { mountPopoutPanelBar } from './popout/popout-panel-bar.ts'
+import { mountPopoutTitlebar } from './popout/popout-titlebar.ts'
 import { applyPopoutSeed } from './popout/pane-popout-seed.ts'
 import {
   isRightPanelPosition,
@@ -221,7 +221,7 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 let layoutMounted = false
-let unmountPopoutPanelBar: (() => void) | null = null
+let unmountPopoutTitlebar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 
 async function boot(): Promise<void> {
@@ -418,8 +418,18 @@ async function boot(): Promise<void> {
     ensureLayout()
     // Record the thumbnail before the pane reacts, so a card rendered for this
     // turn's tool result already has one to show.
-    const threadId = artefact.threadId ?? store.getState().activeThreadId
-    if (threadId) setArtefactPreview(threadId, artefact.title, artefact.preview)
+    //
+    // Keyed strictly on the artefact's OWN thread — never the thread the user
+    // happens to be viewing. `getActiveRunThread()` reads from AsyncLocalStorage
+    // and `threadId` is optional for that reason, so falling back to
+    // `activeThreadId` would file an unattributed artefact under whichever
+    // thread is on screen, which is the cross-thread mixing the scoping exists
+    // to prevent. An unattributed artefact simply gets no thumbnail: every other
+    // unattributed path here fails closed the same way (the mirror keys under
+    // `''`, tabs under `null`).
+    if (artefact.threadId) {
+      setArtefactPreview(artefact.threadId, artefact.title, artefact.preview)
+    }
     openCanvasArtefact(store, artefact)
   })
   setArtefactShowHandler((threadId, title) => {
@@ -504,9 +514,9 @@ function ensureLayout(): void {
   registerKeyboardShortcuts()
   registerPanelKeyboardShortcuts(store, api)
   if (popoutMode) {
-    const paneFiles = document.getElementById('pane-files')
-    if (paneFiles && !unmountPopoutPanelBar) {
-      unmountPopoutPanelBar = mountPopoutPanelBar(paneFiles, store, api)
+    const app = document.getElementById('app')
+    if (app && !unmountPopoutTitlebar) {
+      unmountPopoutTitlebar = mountPopoutTitlebar(app, store, api)
     }
   }
 }

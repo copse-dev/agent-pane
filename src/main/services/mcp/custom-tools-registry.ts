@@ -6,16 +6,12 @@ import { pathToFileURL } from 'node:url'
 import type { ToolRegistry } from '../tool-registry.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
-import {
-  CUSTOM_TOOL_PREFIX,
-  customToolLabel,
-  normalizeCustomTool,
-  type RawCustomTool,
-} from './custom-tools-config.ts'
+import { customToolLabel, normalizeCustomTool, type RawCustomTool } from './custom-tools-config.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
-export { CUSTOM_TOOL_PREFIX, customToolLabel } from './custom-tools-config.ts'
+export { CUSTOM_TOOL_PREFIX } from './custom-tools-config.ts'
+export { customToolLabel }
 
 const GRANTS_STORAGE_KEY = 'custom-remembered-grants'
 const LOADABLE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs'])
@@ -122,13 +118,6 @@ async function readDirEntries(dir: string): Promise<Dirent[] | null> {
   }
 }
 
-function unregisterAll(registry: ToolRegistry): void {
-  for (const name of registry.names()) {
-    if (name.startsWith(CUSTOM_TOOL_PREFIX)) registry.unregister(name)
-  }
-  alwaysApproveTools.clear()
-}
-
 /**
  * Load every `.js`/`.mjs`/`.cjs` module in `dir`, normalize its exported custom
  * tool(s), and register them. Per-file failures are isolated and reported via
@@ -188,11 +177,4 @@ export async function loadCustomTools(registry: ToolRegistry): Promise<void> {
     return
   }
   customToolStatuses = await loadCustomToolsFromDir(registry, getCustomToolsDir())
-}
-
-/** Drop all registered custom tools and reload from the trusted directory. */
-export async function reloadCustomTools(registry: ToolRegistry): Promise<CustomToolStatus[]> {
-  unregisterAll(registry)
-  await loadCustomTools(registry)
-  return getCustomToolStatuses()
 }

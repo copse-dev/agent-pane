@@ -160,6 +160,7 @@ import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
+import { listAgents, initAgentsRegistry } from '../services/agents/agents-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
@@ -458,6 +459,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // swap to the full layout; the footer indicator reports progress.
     startWorkspaceIndexing(root)
     await initSkillsRegistry()
+    await initAgentsRegistry()
     registerSkillTools(registry)
     return root
   })
@@ -594,6 +596,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .catch((err: unknown) => {
         console.warn('[skills] background init failed:', err)
       })
+    void initAgentsRegistry().catch((err: unknown) => {
+      console.warn('[agents] background init failed:', err)
+    })
     // Now a workspace is available, refresh any ACP model caches that have aged
     // past the TTL. Fire-and-forget: the picker reads settings live, so fresh
     // models (e.g. a new Opus release) appear on its next open without blocking
@@ -1794,6 +1799,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   )
 
   ipcMain.handle('skills:list', () => listSkills())
+  ipcMain.handle('agents:list', () => listAgents())
   ipcMain.handle('cursorPlugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()

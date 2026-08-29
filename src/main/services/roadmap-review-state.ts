@@ -91,9 +91,3 @@ export function acknowledgeBulkRun(runId: string): boolean {
   })
   return true
 }
-
-/** @internal tests — direct timestamp write for legacy scenarios. */
-export function setRoadmapLastReviewAt(iso: string): void {
-  const state = readState()
-  writeState({ ...state, lastReviewAt: iso })
-}

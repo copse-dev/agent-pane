@@ -2,6 +2,7 @@ import type { StreamChunk, ContextBreakdown } from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
+import type { AgentsListResult } from '@shared/types/agents.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type {
   HooksListResult,
@@ -846,6 +847,10 @@ export interface ApiClient {
      * caller can show what would be destroyed and ask again.
      */
     remove: (projectId: string, path: string, force: boolean) => Promise<WorktreeRemovalResult>
+  }
+  /** Discovered subagent definitions, plus what was skipped or shadowed. */
+  agents: {
+    list: () => Promise<AgentsListResult>
   }
   skills: {
     list: () => Promise<SkillSummary[]>
