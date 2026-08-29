@@ -565,8 +565,11 @@ export function mountInputBar(
     checkoutErrorText,
     checkoutRetryBtn,
   )
+  // The advisory strips own the top of the card, so whichever one is showing
+  // reads as a banner over the whole composer. Attachments sit under the draft
+  // they belong to instead — see `root.insertBefore(chips, inputRow)` below,
+  // which has to wait for the follow-up row to be mounted first.
   root.append(
-    chips,
     guardedYolo.element,
     branchWarning,
     checkoutError,
@@ -583,6 +586,9 @@ export function mountInputBar(
     void submit()
   })
   root.insertBefore(followUps.root, inputRow)
+  // Directly above the draft, below the suggestions: attachments are part of
+  // the message being composed, not chrome for the whole composer.
+  root.insertBefore(chips, inputRow)
   const defaultPlaceholder = 'Message…'
   const followUpPlaceholder = 'Send follow-up'
 
@@ -2240,6 +2246,37 @@ export function mountInputBar(
   })
   observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
 
+  // The advisory strips lead the card, so the first one showing is the first
+  // thing on screen. They are the only children that need the rounded top edge:
+  // everything below them paints on the frosted shell rather than a fill of its
+  // own, and the draft box already rounds itself.
+  const advisoryStrips = [
+    guardedYolo.element,
+    branchWarning,
+    checkoutError,
+    imageCompatibilityWarning,
+    contextFitWarning,
+  ]
+  /**
+   * Tag the topmost visible strip for CSS. `:first-child` cannot express this —
+   * a strip is shown by clearing `hidden`, so the DOM-first one is usually
+   * `display: none` and the radius would land on nothing, leaving the visible
+   * banner's square corners poking through the card's hairline ring.
+   */
+  function markTopEdge(): void {
+    const top = advisoryStrips.find((strip) => !strip.hidden)
+    for (const strip of advisoryStrips) {
+      strip.classList.toggle('is-composer-top', strip === top)
+    }
+  }
+  // Five separate features raise and lower these strips, so watch the attribute
+  // rather than trying to call markTopEdge from every one of them.
+  const topEdgeObserver = new MutationObserver(markTopEdge)
+  for (const strip of advisoryStrips) {
+    topEdgeObserver.observe(strip, { attributes: true, attributeFilter: ['hidden'] })
+  }
+  markTopEdge()
+
   updateFooter()
   void refreshAutomaticCheckoutPreview()
   refreshModelPricing()
@@ -2263,6 +2300,7 @@ export function mountInputBar(
       document.removeEventListener('paste', onPaste)
       document.removeEventListener('click', closeCheckoutMenu)
       observer.disconnect()
+      topEdgeObserver.disconnect()
       followUps.destroy()
       nextStepHint.destroy()
       unbindDrop()
