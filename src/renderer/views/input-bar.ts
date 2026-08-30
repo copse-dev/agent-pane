@@ -188,6 +188,10 @@ export function mountInputBar(
       'attach-btn-icon',
     ),
   )
+  // Stop and Send/Queue sit together in a flex row so the Send/Queue button's
+  // width (it grows for "Queue") pushes Stop along with it instead of the two
+  // overlapping at a hardcoded offset.
+  const submitRow = el('div', { class: 'submit-row' }, stopBtn, submitBtn)
   // The Send button is positioned relative to this row (not the whole input
   // bar), so it sits inside the textarea box and never overlaps the footer.
   const inputRow = el(
@@ -196,8 +200,7 @@ export function mountInputBar(
     composer.el,
     attachBtn,
     fileInput,
-    stopBtn,
-    submitBtn,
+    submitRow,
   )
   const branchWarningText = el('span', { class: 'composer-branch-warning-text' })
   const checkoutBranchBtn = el(
@@ -1109,7 +1112,6 @@ export function mountInputBar(
     stopBtn.hidden = !running
     submitBtn.textContent = running ? 'Queue' : 'Send'
     submitBtn.setAttribute('aria-label', running ? 'Queue message' : 'Send message')
-    submitBtn.classList.toggle('with-stop', running)
     composer.el.classList.toggle('with-stop', running)
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending()
   }
