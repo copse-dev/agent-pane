@@ -22185,10 +22185,12 @@ async function revealFinalPreview(doc, options2 = {}) {
   if (!expanded) return false;
   await sleep(POLL_MS);
   doc.querySelector(".scroll-to-bottom")?.click();
-  const assistantMessages = doc.querySelectorAll(".msg-assistant");
-  const finalAssistantMessage = [...assistantMessages].at(-1);
-  if (typeof finalAssistantMessage?.scrollIntoView === "function") {
-    finalAssistantMessage.scrollIntoView({ block: "center" });
+  const transcript = doc.querySelector(".messages-list");
+  const finalAssistantMessage = [...doc.querySelectorAll(".msg-assistant")].at(-1);
+  if (transcript && finalAssistantMessage) {
+    const box = transcript.getBoundingClientRect();
+    const message2 = finalAssistantMessage.getBoundingClientRect();
+    transcript.scrollTop += message2.top + message2.height / 2 - (box.top + box.height / 2);
   }
   if (doc.activeElement instanceof HTMLElement) doc.activeElement.blur();
   return true;
@@ -273317,6 +273319,12 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       }
     });
   }
+  function revealActiveTab(tab) {
+    requestAnimationFrame(() => {
+      syncWebviewSize(tab);
+      tab.urlInput.focus({ preventScroll: true });
+    });
+  }
   function setActiveTab(tabId) {
     if (activeTabId === tabId) return;
     activeTabId = tabId;
@@ -273335,10 +273343,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
         navigateWebview(tab, url2);
       }
       syncAddressBar(tab);
-      requestAnimationFrame(() => {
-        syncWebviewSize(tab);
-        tab.urlInput.focus();
-      });
+      revealActiveTab(tab);
     }
   }
   function isIdleBrowserTab(tab) {
@@ -273685,10 +273690,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
         }
         syncAddressBar(tab);
         ensureBrowserResizeObserver();
-        requestAnimationFrame(() => {
-          syncWebviewSize(tab);
-          tab.urlInput.focus();
-        });
+        revealActiveTab(tab);
       }
     } else {
       stopBrowserResizeObserver();
