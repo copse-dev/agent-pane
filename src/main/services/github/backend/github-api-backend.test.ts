@@ -64,6 +64,82 @@ describe('githubApiBackend', () => {
     assert.match(calls[0]?.url ?? '', /\/user$/)
   })
 
+  it('createPr POSTs the branches and returns the new PR coordinates', async () => {
+    router = (): RouteResult => ({
+      status: 201,
+      body: { number: 12, html_url: 'https://github.com/octo/demo/pull/12' },
+    })
+    const result = await githubApiBackend.createPr({
+      owner: 'octo',
+      repo: 'demo',
+      head: 'copse/fix',
+      base: 'main',
+      title: 'Fix it',
+      body: 'Because.',
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.number, 12)
+    assert.equal(result.url, 'https://github.com/octo/demo/pull/12')
+    const call = calls.at(-1)
+    assert.ok(call)
+    assert.equal(call.method, 'POST')
+    assert.match(call.url, /\/repos\/octo\/demo\/pulls$/)
+    assert.deepEqual(call.body, {
+      title: 'Fix it',
+      body: 'Because.',
+      head: 'copse/fix',
+      base: 'main',
+      draft: false,
+    })
+  })
+
+  it('createPr reports a failed create rather than a bare URL-less success', async () => {
+    router = (): RouteResult => ({
+      status: 422,
+      body: { message: 'No commits between main and x' },
+    })
+    const result = await githubApiBackend.createPr({
+      owner: 'octo',
+      repo: 'demo',
+      head: 'x',
+      base: 'main',
+      title: 'T',
+      body: '',
+    })
+    assert.equal(result.ok, false)
+    assert.equal(result.url, undefined)
+  })
+
+  it('createPr recovers the existing PR when GitHub says one already exists', async () => {
+    router = (method: string): RouteResult => {
+      if (method === 'POST') {
+        return {
+          status: 422,
+          body: {
+            message: 'Validation Failed',
+            errors: [{ message: 'A pull request already exists for octo:copse/fix.' }],
+          },
+        }
+      }
+      return { body: [{ number: 7, html_url: 'https://github.com/octo/demo/pull/7' }] }
+    }
+    const result = await githubApiBackend.createPr({
+      owner: 'octo',
+      repo: 'demo',
+      head: 'copse/fix',
+      base: 'main',
+      title: 'T',
+      body: '',
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.noop, true)
+    assert.equal(result.number, 7)
+    assert.equal(result.url, 'https://github.com/octo/demo/pull/7')
+    const lookup = calls.at(-1)
+    assert.ok(lookup)
+    assert.match(lookup.url, /\/pulls\?state=open&head=octo%3Acopse%2Ffix$/)
+  })
+
   it('approvePr POSTs an APPROVE review', async () => {
     router = (): RouteResult => ({ status: 200, body: {} })
     const result = await githubApiBackend.approvePr(REF)
@@ -214,6 +290,44 @@ describe('githubApiBackend', () => {
     const details = await githubApiBackend.getPrDetails(REF)
     assert.ok(details)
     assert.equal(details.state, 'MERGED')
+  })
+
+  it('returns before and after image data URLs for PR image diffs', async () => {
+    const before = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01]).toString('base64')
+    const after = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x02]).toString('base64')
+    router = (_m: string, url: string): RouteResult => {
+      if (url.endsWith('/pulls/7')) {
+        return { body: { base: { sha: 'a'.repeat(40) }, head: { sha: 'b'.repeat(40) } } }
+      }
+      if (url.endsWith('/files?per_page=100')) {
+        return {
+          body: [
+            {
+              filename: 'screenshots/result.png',
+              status: 'modified',
+              additions: 0,
+              deletions: 0,
+            },
+          ],
+        }
+      }
+      if (url.includes('/contents/screenshots/result.png?ref=')) {
+        return {
+          body: {
+            content: url.includes(`ref=${'a'.repeat(40)}`) ? before : after,
+            encoding: 'base64',
+          },
+        }
+      }
+      return { body: {} }
+    }
+
+    const diff = await githubApiBackend.getPrFileDiff(REF, 'screenshots/result.png')
+    assert.ok(diff)
+    assert.equal(diff.before, '')
+    assert.equal(diff.after, '')
+    assert.equal(diff.beforeImage, `data:image/png;base64,${before}`)
+    assert.equal(diff.afterImage, `data:image/png;base64,${after}`)
   })
 
   it('getPrChecksState returns no_checks instead of throwing on a network error', async () => {

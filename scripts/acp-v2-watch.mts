@@ -223,8 +223,13 @@ export async function fetchLatestManifest(fetchImpl: typeof fetch = fetch): Prom
 export function readPinnedRange(manifestPath = resolve('package.json')): string {
   const manifest: unknown = parseJson(readFileSync(manifestPath, 'utf8'))
   const dependencies = isRecord(manifest) ? stringRecordOrEmpty(manifest['dependencies']) : {}
-  const range = dependencies[SDK_PACKAGE]
-  if (range === undefined) throw new Error(`${SDK_PACKAGE} is not a dependency of ${manifestPath}`)
+  const devDependencies = isRecord(manifest) ? stringRecordOrEmpty(manifest['devDependencies']) : {}
+  const range = dependencies[SDK_PACKAGE] ?? devDependencies[SDK_PACKAGE]
+  if (range === undefined) {
+    throw new Error(
+      `${SDK_PACKAGE} is not listed in dependencies or devDependencies of ${manifestPath}`,
+    )
+  }
   return range
 }
 

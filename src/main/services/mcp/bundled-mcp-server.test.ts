@@ -45,6 +45,8 @@ describe('bundled MCP servers', () => {
     assert.equal(resource.mimeType, 'text/html')
     assert.match(resource.uri, /^ui:\/\/canvas\//)
     assert.match(resource.text, /<h1>Sales<\/h1>/)
+    // Inline HTML has no file behind it, so there is nothing to point back at.
+    assert.equal(resource.sourcePath, undefined)
   })
 
   it('renders an HTML file from the workspace by path, titled from the filename', async () => {
@@ -65,6 +67,10 @@ describe('bundled MCP servers', () => {
       assert.ok(resource, 'expected one UI resource')
       assert.match(resource.text, /<h1>From File<\/h1>/)
       assert.equal(resource.uri, 'ui://canvas/merge-export-demo')
+      // Provenance survives the round trip through the MCP transport, which is
+      // what lets the canvas store reopen the living file rather than its
+      // snapshot after a restart.
+      assert.equal(resource.sourcePath, 'merge-export-demo.html')
     } finally {
       restore()
       await rm(root, { recursive: true, force: true })

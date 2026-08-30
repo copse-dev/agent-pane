@@ -6,8 +6,9 @@ import type {
   GhPrFileDiff,
   GhPrSummary,
   PrActionResult,
+  PrCreateResult,
 } from '@shared/types/git.ts'
-import type { GitHubBackend, PrRef } from './backend.ts'
+import type { GitHubBackend, PrCreateInput, PrRef } from './backend.ts'
 import {
   MOCK_GH_PR_NUMBER,
   MOCK_GH_WORKSPACE_PR_NUMBER,
@@ -113,9 +114,21 @@ function ensureState(ref: PrRef): MockPrState {
   return state
 }
 
+// Numbers for PRs opened during a mock run, starting far above every fixture
+// constant (42/17/88/99 today) so a created PR can never collide with one —
+// including fixtures added later, short of a four-digit fixture.
+const MOCK_CREATED_PR_BASE = 1000
+let nextMockPr = MOCK_CREATED_PR_BASE
+
+function nextMockPrNumber(): number {
+  nextMockPr += 1
+  return nextMockPr
+}
+
 /** Drop all mutated state; call between unit tests. */
 export function resetMockBackendStateForTest(): void {
   prState.clear()
+  nextMockPr = MOCK_CREATED_PR_BASE
 }
 
 /** In-memory backend used under `COPSE_PANEL_MOCK_GH=1` (e2e + unit tests). */
@@ -189,6 +202,18 @@ export const mockGitHubBackend: GitHubBackend = {
 
   getPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
     return Promise.resolve(mockGetGhPrChecksState(ref))
+  },
+
+  createPr(input: PrCreateInput): Promise<PrCreateResult> {
+    const number = nextMockPrNumber()
+    const url = `https://github.com/${input.owner}/${input.repo}/pull/${String(number)}`
+    return Promise.resolve({
+      ok: true,
+      backend: 'mock',
+      url,
+      number,
+      message: `Opened PR #${String(number)}: ${url}`,
+    })
   },
 
   rerunFailedRuns(ref: PrRef): Promise<PrActionResult> {

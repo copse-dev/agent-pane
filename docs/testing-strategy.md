@@ -45,8 +45,8 @@ that call—checking only `src/` can hide a test-only field rather than validate
 
 ## Run the smallest set of tests
 
-Steering for _how much to run, and when_. A full `npm test` is ~3 minutes over
-530 files; the tests that can actually fail on a given change are usually a
+Steering for _how much to run, and when_. A full `npm test` is a few minutes over
+800+ files; the tests that can actually fail on a given change are usually a
 handful. Running the whole suite after every edit is the slow way to be wrong
 about the same three assertions.
 
@@ -99,6 +99,11 @@ npm test -- 'src/main/services/hooks/**'  # glob
 A filter that matches nothing is an **error**, not an empty pass — otherwise a
 typo reads as "0 tests, all green". The runner prints what it selected and
 suggests near misses.
+
+Each selected file remains an independent Node test entry/process. esbuild emits
+their common application graph once as split ESM chunks rather than inlining it
+into every entry, and the runner caps file concurrency at four so subprocess-heavy
+suites do not miss fixed safety deadlines under host load.
 
 ### Before believing it works: the oracle
 
@@ -354,13 +359,13 @@ When you add an e2e screenshot, ask: _if I rebuild this on a different branch,
 on a different day, on a different machine — does any pixel move?_ If yes, pin
 the source through a fixture or an e2e env override before committing the PNG.
 
-CI's `commit-screenshots` job auto-commits re-rendered shots **only when the
-write is uncontested**: the baseline is brand new or inherited untouched from
-main. A shot deliberately committed on the PR branch (by any non-bot author),
-or one main has changed since the merge-base, is never overridden — the
-branch's committed version stands, and the PR comment shows a base-vs-branch
-comparison instead. Add the `update-screenshots` label to explicitly regenerate
-and take CI's render (`scripts/filter-screenshots.mts` implements the policy).
+CI never writes rendered PNGs back to a PR branch. Successful e2e shards upload
+their changed shots, and `screenshot-artifacts` combines them into the immutable
+`reference-screenshot-candidates-<run-id>` artifact. Download that artifact,
+copy its `tests/e2e/screenshots/` contents into the checkout, review the image
+diff, and commit only the intentional updates. `pnpm run filter:screenshots` is
+available locally after copying the candidates to discard known render noise
+and shots outside the diff's ownership map; it is an aid, not an author.
 
 ## Where each tier runs: `main` and `release`
 
@@ -393,18 +398,23 @@ Two consequences of running e2e on those PRs, both intended:
 
 - a failing subset turns `CI Passed` red on an ordinary `main` PR, where before
   e2e could not fail one at all; and
-- `commit-screenshots` now runs there too, so reference shots touched by the
-  specs that ran are refreshed automatically. It only copies shots the shards
-  actually produced and still reverts sub-threshold noise and contested
-  baselines, so a subset run cannot prune or overwrite shots it never rendered.
+- `screenshot-artifacts` preserves reference shots touched by the specs that ran
+  as immutable review evidence. It only includes shots the shards actually
+  produced, and never edits the branch. A separate trusted `workflow_run`
+  publishes same-repository candidates on a bot-owned branch, opens a child PR
+  into the source branch, and links that review PR from the parent. Merging the
+  child applies the reviewed PNGs without granting write credentials to the job
+  that executed PR code. Forks and promotion PRs sourced from an integration
+  branch keep the downloadable-artifact/manual path.
 
 Two escape hatches on a `main`-targeted PR, both labels:
 
-- `ci-full` — override a subset plan and run the whole heavy tier (also forces
-  the tier on a draft).
-- `update-screenshots` — run e2e specifically, because the screenshot commit is
-  produced by the e2e run. Without this the label would be inert on a
-  `main` PR.
+- `ci-full` — override a subset plan and run the whole heavy tier now, for a
+  change that genuinely needs the signal before it merges (also forces the tier
+  on a draft).
+- `update-screenshots` — run e2e specifically and render the complete reference
+  set into a candidate artifact and screenshot review PR. Remove the label after
+  the review PR is created.
 
 **What this costs.** Broad and LOW-confidence PRs pay for the complete Electron
 suite. That is intentional: those are the changes for which a selector-derived

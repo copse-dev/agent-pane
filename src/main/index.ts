@@ -166,6 +166,7 @@ import {
 } from './services/exec/background-completion-wake.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
+  getThreadExecutionContext,
   prepareThreadExecutionContext,
   resolveThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -188,9 +189,12 @@ import {
   setCanvasArtefactSink,
 } from './services/canvas-dispatch.ts'
 import { mirrorArtefactToAgent } from './services/canvas-agent-mirror.ts'
+import { rememberCanvasArtefact } from './services/canvas-store.ts'
+import { getActiveProjectId } from './services/workspace.ts'
 import { getBrowserSession } from './services/browser/session-manager.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
+import { setPreviewStaleSink } from './services/browser/static-preview-server.ts'
 import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
 
 // Settings encrypts API keys through whichever cipher is installed rather than
@@ -264,8 +268,16 @@ setVideoDecoderPlatform({
 
 setCanvasArtefactSink((artefact) => {
   const win = getMainWindow()
-  if (!win || win.isDestroyed()) return
-  win.webContents.send(CANVAS_ARTEFACT_CHANNEL, artefact)
+  if (win && !win.isDestroyed()) win.webContents.send(CANVAS_ARTEFACT_CHANNEL, artefact)
+  // Save a copy so the artefact outlives this window. Unconditionally, not only
+  // when a window took delivery: an artefact rendered while the UI was gone is
+  // exactly the one the user will come back looking for. Failures are swallowed
+  // — losing the ability to restore an artefact must not break rendering it.
+  const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+  if (!projectId || !artefact.threadId) return
+  void rememberCanvasArtefact(projectId, artefact.threadId, artefact).catch((err: unknown) => {
+    console.warn('[canvas] could not save artefact:', err)
+  })
 })
 
 // Load every artefact into the headless agent session as well, so the model can
@@ -280,6 +292,12 @@ setContextEstimateRefreshSink(() => {
 
 setWorkspaceChangeSink((root) => {
   broadcastToAppWindows('git:working_tree_changed', root)
+})
+
+// A preview whose files changed on disk repaints itself. Scoped to files the
+// server actually served, so an ordinary source edit never disturbs a page.
+setPreviewStaleSink((origin) => {
+  broadcastToAppWindows('browser:preview-stale', origin)
 })
 
 // Prevent multiple instances stacking invisible windows at the same position.

@@ -121,6 +121,15 @@ describe('parsePorcelainV1', () => {
     assert.equal(result.staged.length, 0)
   })
 
+  it('marks a collapsed untracked directory and strips its trailing slash', () => {
+    const raw = '?? node_modules/\0?? new-file.ts\0'
+    const result = parsePorcelainV1(raw)
+    assert.deepEqual(result.unstaged, [
+      { path: 'node_modules', status: 'untracked', isDirectory: true },
+      { path: 'new-file.ts', status: 'untracked' },
+    ])
+  })
+
   it('parses staged deletion', () => {
     const raw = 'D  old.ts\0'
     const result = parsePorcelainV1(raw)

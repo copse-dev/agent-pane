@@ -165,6 +165,11 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
   },
 ]
 
+/** Display name for a panel mode — the pop-out titlebar names its detached pane. */
+export function panelModeLabel(mode: RightPanelMode): string {
+  return PANEL_CONTROL_DEFS.find((def) => def.mode === mode)?.label ?? 'Panel'
+}
+
 export interface MountPanelModeControlsOptions {
   /** Container class (defaults to titlebar-panel-controls). */
   className?: string

@@ -83,6 +83,36 @@ test('a remote agent link is folded into the refs a compacted entry keeps', () =
   )
 })
 
+test('cached refs union with the live scrape, so a tool-recorded PR shows on a hydrated thread', () => {
+  // `gh_pr_create` records the PR it opened onto thread metadata without the
+  // transcript ever mentioning the URL. The scrape alone would miss it.
+  const live = thread({
+    messages: [message('m1', 'opened https://github.com/copse-dev/agent-pane/pull/12')],
+  })
+  const withCache: SidebarThread = {
+    ...live,
+    prRefs: [
+      {
+        url: 'https://github.com/copse-dev/agent-pane/pull/12',
+        owner: 'copse-dev',
+        repo: 'agent-pane',
+        number: 12,
+      },
+      {
+        url: 'https://github.com/copse-dev/agent-pane/pull/44',
+        owner: 'copse-dev',
+        repo: 'agent-pane',
+        number: 44,
+      },
+    ],
+  }
+
+  assert.deepEqual(
+    sidebarPrRefs(withCache).map((ref) => ref.number),
+    [12, 44],
+  )
+})
+
 test('a live thread re-reads its messages, so a link streamed in mid-turn is found', () => {
   // `appendToken` mutates message content in place, so caching refs against a
   // live thread would miss a PR link the agent posts during its turn.

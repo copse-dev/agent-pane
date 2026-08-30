@@ -129,6 +129,32 @@ describe('Pane pop-out (mock gh)', () => {
       await expect(await $('#pane-chat')).not.toBeDisplayed()
       await expect(await $('.pane-popout-btn')).not.toBeDisplayed()
       await expect(await $('.popout-panel-bar')).toBeDisplayed()
+
+      // The switcher rides in a renderer-drawn titlebar pinned to the top of the
+      // window, painted in the same chrome as the app titlebar it replaces.
+      const chrome = await browser.execute(() => {
+        const popoutBar = document.querySelector('.popout-titlebar')
+        const appBar = document.getElementById('titlebar')
+        const bodyEl = document.getElementById('body')
+        if (!popoutBar || !appBar || !bodyEl) return null
+        const rect = popoutBar.getBoundingClientRect()
+        return {
+          top: Math.round(rect.top),
+          height: Math.round(rect.height),
+          appBarHeight: Math.round(Number.parseFloat(getComputedStyle(appBar).height)),
+          background: getComputedStyle(popoutBar).backgroundColor,
+          appBarBackground: getComputedStyle(appBar).backgroundColor,
+          holdsSwitcher: popoutBar.contains(document.querySelector('.popout-panel-bar')),
+          abovePane: rect.bottom <= bodyEl.getBoundingClientRect().top + 1,
+        }
+      })
+      expect(chrome).not.toBeNull()
+      expect(chrome?.top).toBe(0)
+      expect(chrome?.holdsSwitcher).toBe(true)
+      expect(chrome?.abovePane).toBe(true)
+      expect(chrome?.background).toBe(chrome?.appBarBackground)
+      expect(chrome?.height).toBe(chrome?.appBarHeight)
+
       const portraitChrome = await browser.execute(
         () => document.getElementById('app')?.classList.contains('is-portrait-chrome') === true,
       )

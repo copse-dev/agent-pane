@@ -675,9 +675,9 @@ export type ScreenshotGate = {
  * if a diff touches UI that a committed reference screenshot covers (the oracle
  * maps it to a screenshot-producing spec) but the PNG wasn't refreshed in the
  * same diff, the shot is presumed stale. Reference shots are pixel-rendered on
- * the CI runner, so the sanctioned refresh path is letting CI render and commit
- * them: the e2e gate run re-renders the affected shots and the commit-screenshots
- * job commits the diff. The `update-screenshots` label forces a full refresh — a
+ * the CI runner, so the sanctioned refresh path is letting CI render them into an
+ * immutable artifact, reviewing it, and explicitly committing the intended
+ * PNGs. The `update-screenshots` label forces a full refresh — a
  * labeled PR always passes. This static gate never reruns the e2e tier itself.
  *
  * Only files that can influence rendered output drive the gate: shipped source

@@ -84,8 +84,16 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 4px var(--spacing-md);
+  /* Sits between the suggestions (or an advisory strip) and the draft, so it
+     needs headroom above and only a hair below, where the composer's own
+     padding takes over. */
+  padding: var(--spacing-sm) var(--spacing-md) 4px;
   min-height: 0;
+}
+/* With no attachments this row would still charge its padding — 8px of dead
+   space wedged into the middle of the card. */
+.attachment-chips:empty {
+  display: none;
 }
 .attachment-chip {
   display: inline-flex;
@@ -185,7 +193,9 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 0 var(--spacing-md) 6px;
+  /* Top padding earns its keep now that an advisory strip can sit immediately
+     above: the bubbles need to clear its hairline rather than butt against it. */
+  padding: var(--spacing-sm) var(--spacing-md) 6px;
 }
 .follow-up-suggestions[hidden] {
   display: none;

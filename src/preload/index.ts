@@ -59,6 +59,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('browser:show-tab', listener)
       }
     },
+    onPreviewStale: (handler: (origin: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, origin: string): void => {
+        handler(origin)
+      }
+      ipcRenderer.on('browser:preview-stale', listener)
+      return (): void => {
+        ipcRenderer.off('browser:preview-stale', listener)
+      }
+    },
     onShareText: (
       handler: (share: import('@shared/types/browser-share.ts').BrowserTextShare) => void,
     ) => {
@@ -589,6 +598,10 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('canvas:show-artefact', listener)
       }
     },
+    listArtefacts: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('canvas:listArtefacts', projectId, threadId),
+    reopenArtefact: (projectId: string, threadId: string, title: string) =>
+      ipcRenderer.invoke('canvas:reopenArtefact', projectId, threadId, title),
   },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
