@@ -273295,6 +273295,13 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     setActiveTab(existing.id);
     navigateTab(existing, url2);
   }
+  function refreshStalePreviews(origin) {
+    for (const tab of tabs.values()) {
+      if (tab.artefactTitle) continue;
+      if (!displayUrl(tab).startsWith(origin)) continue;
+      if (tab.webview && tab.webviewReady) tab.webview.reload();
+    }
+  }
   function openArtefact(artefact) {
     const target = artefactUrl(artefact);
     const existing = artefactTabFor(artefact.title, artefact.threadId);
@@ -273683,6 +273690,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     // background tab (main blocks the popup window and forwards the URL here).
     api3?.browser.onOpenTab((url2) => addTab({ url: url2, activate: false })),
     api3?.browser.onShowTab?.(showTabForUrl),
+    api3?.browser.onPreviewStale?.(refreshStalePreviews),
     api3?.browser.onShareText(attachSharedText),
     api3?.browser.onShareImage(attachSharedImage),
     api3?.browser.onPluginTabRequest(ensurePluginBrowserTab),
