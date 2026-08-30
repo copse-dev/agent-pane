@@ -51954,7 +51954,7 @@ function fillUserPromptFold(host, parts, renderPart) {
   host.classList.remove("is-expanded");
   host.replaceChildren();
   const head2 = el("div", { class: "msg-user-fold-head" });
-  renderPart(head2, parts.head);
+  renderPart(head2, parts.head, "head");
   const label = el("span", { class: "msg-user-fold-label" }, foldLabel(false));
   const toggle = el(
     "button",
@@ -51967,9 +51967,9 @@ function fillUserPromptFold(host, parts, renderPart) {
     label
   );
   const middle = el("div", { class: "msg-user-fold-middle" });
-  renderPart(middle, parts.middle);
+  renderPart(middle, parts.middle, "middle");
   const tail = el("div", { class: "msg-user-fold-tail" });
-  renderPart(tail, parts.tail);
+  renderPart(tail, parts.tail, "tail");
   toggle.addEventListener("click", () => {
     const open2 = !host.classList.contains("is-expanded");
     host.classList.toggle("is-expanded", open2);
@@ -241181,18 +241181,39 @@ function transcriptChip(attachment, api3) {
 function renderUserTranscript(host, content, attachments, api3) {
   const pastes = attachments.filter((a3) => a3.kind === "paste");
   const trailing = attachments.filter((a3) => a3.kind !== "paste");
-  const parts = content.split(CHIP_CHAR);
-  parts.forEach((part, i5) => {
-    if (part) host.append(document.createTextNode(part));
-    if (i5 < parts.length - 1) {
-      host.append(transcriptChip(pastes[i5] ?? { kind: "paste", label: "Pasted text" }, api3));
-    }
-  });
+  const paintRegion = (sink, text4, firstChip) => {
+    const parts = text4.split(CHIP_CHAR);
+    parts.forEach((part, i5) => {
+      if (part) sink.append(document.createTextNode(part));
+      if (i5 < parts.length - 1) {
+        sink.append(
+          transcriptChip(pastes[firstChip + i5] ?? { kind: "paste", label: "Pasted text" }, api3)
+        );
+      }
+    });
+  };
+  const fold = splitUserPromptForFold(content);
+  if (fold) {
+    const headChips = countChipPlaceholders(fold.head);
+    const firstChip = {
+      head: 0,
+      middle: headChips,
+      tail: headChips + countChipPlaceholders(fold.middle)
+    };
+    fillUserPromptFold(host, fold, (sink, text4, region) => {
+      paintRegion(sink, text4, firstChip[region]);
+    });
+  } else {
+    paintRegion(host, content, 0);
+  }
   if (trailing.length) {
     const row2 = el("div", { class: "transcript-attachment-row" });
     for (const a3 of trailing) row2.append(transcriptChip(a3, api3));
     host.append(row2);
   }
+}
+function countChipPlaceholders(text4) {
+  return text4.split(CHIP_CHAR).length - 1;
 }
 function buildReasoningEl(reasoning, open2, live) {
   const details = el("details", {
