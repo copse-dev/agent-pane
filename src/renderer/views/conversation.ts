@@ -8,7 +8,11 @@ import {
   warningIcon,
   zapIcon,
 } from '../dom/icons.ts'
-import { fillUserPromptFold, splitUserPromptForFold } from './user-prompt-fold.ts'
+import {
+  fillUserPromptFold,
+  splitUserPromptForFold,
+  type UserPromptFoldRegion,
+} from './user-prompt-fold.ts'
 import {
   getHookCardStatusLabel,
   getHookCardTitle,
@@ -1229,22 +1233,55 @@ function renderUserTranscript(
   const pastes = attachments.filter((a) => a.kind === 'paste')
   const trailing = attachments.filter((a) => a.kind !== 'paste')
 
-  const parts = content.split(CHIP_CHAR)
-  parts.forEach((part, i) => {
-    if (part) host.append(document.createTextNode(part))
-    if (i < parts.length - 1) {
-      // Pass the whole attachment, not just its label: the snapshot behind a
-      // paste is what makes its chip openable in the preview modal. A
-      // placeholder with no attachment left to match stays display-only.
-      host.append(transcriptChip(pastes[i] ?? { kind: 'paste', label: 'Pasted text' }, api))
-    }
-  })
+  // Text with its inline paste chips restored at each placeholder. `firstChip`
+  // is where this run of placeholders starts in the message's paste list, so a
+  // region painted on its own — one bookend of a fold — still binds its chips to
+  // the right snapshots instead of restarting from the first paste.
+  const paintRegion = (sink: HTMLElement, text: string, firstChip: number): void => {
+    const parts = text.split(CHIP_CHAR)
+    parts.forEach((part, i) => {
+      if (part) sink.append(document.createTextNode(part))
+      if (i < parts.length - 1) {
+        // Pass the whole attachment, not just its label: the snapshot behind a
+        // paste is what makes its chip openable in the preview modal. A
+        // placeholder with no attachment left to match stays display-only.
+        sink.append(
+          transcriptChip(pastes[firstChip + i] ?? { kind: 'paste', label: 'Pasted text' }, api),
+        )
+      }
+    })
+  }
 
+  // A prompt carrying attachments is still a prompt: fold its middle when it is
+  // long, exactly as the plain-text path does. The head/middle/tail are
+  // contiguous slices of `content`, so counting placeholders in the earlier
+  // regions gives each one its offset into `pastes`.
+  const fold = splitUserPromptForFold(content)
+  if (fold) {
+    const headChips = countChipPlaceholders(fold.head)
+    const firstChip: Record<UserPromptFoldRegion, number> = {
+      head: 0,
+      middle: headChips,
+      tail: headChips + countChipPlaceholders(fold.middle),
+    }
+    fillUserPromptFold(host, fold, (sink, text, region) => {
+      paintRegion(sink, text, firstChip[region])
+    })
+  } else {
+    paintRegion(host, content, 0)
+  }
+
+  // Outside the fold: file/thread chips stay visible while the middle is
+  // collapsed, so a folded prompt still shows what was attached to it.
   if (trailing.length) {
     const row = el('div', { class: 'transcript-attachment-row' })
     for (const a of trailing) row.append(transcriptChip(a, api))
     host.append(row)
   }
+}
+
+function countChipPlaceholders(text: string): number {
+  return text.split(CHIP_CHAR).length - 1
 }
 
 /**
