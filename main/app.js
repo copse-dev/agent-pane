@@ -268722,7 +268722,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
         "button",
         {
           type: "button",
-          class: `git-change-row git-change-row-proposed${isSelected ? " is-selected" : ""}`
+          class: `git-change-row git-change-row-proposed${isSelected ? " is-selected" : ""}`,
+          "data-tooltip": entry.path
         },
         el("span", { class: "git-change-status git-change-status-proposed" }, "P"),
         el("span", { class: "git-change-path" }, entry.path)
@@ -268744,7 +268745,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
         "button",
         {
           type: "button",
-          class: `git-change-row${isSelected ? " is-selected" : ""}`
+          class: `git-change-row${isSelected ? " is-selected" : ""}`,
+          "data-tooltip": change2.path
         },
         el(
           "span",
@@ -268777,7 +268779,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
         "button",
         {
           type: "button",
-          class: `git-change-row git-change-row-committed${isSelected ? " is-selected" : ""}`
+          class: `git-change-row git-change-row-committed${isSelected ? " is-selected" : ""}`,
+          "data-tooltip": change2.path
         },
         el(
           "span",
