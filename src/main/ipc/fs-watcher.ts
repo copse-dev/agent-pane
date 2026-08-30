@@ -16,10 +16,10 @@ import {
   resolveSshExecutionTargetForCwd,
 } from '../services/ssh-workspace/execution-target.ts'
 import {
-  stopRemoteFilePolling,
-  unwatchRemotePath,
-  watchRemotePath,
-} from '../services/ssh-workspace/remote-file-poller.ts'
+  stopAllRemoteWatchers,
+  unwatchRemoteFile,
+  watchRemoteFile,
+} from '../services/ssh-workspace/remote-watch.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { z } from 'zod'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
@@ -44,7 +44,7 @@ export function initFsWatcher(win: BrowserWindow): void {
     if (isActiveSshWorkspace()) {
       const target = resolveSshExecutionTargetForCwd(root)
       if (target?.kind !== 'ssh') return
-      watchRemotePath(
+      watchRemoteFile(
         key,
         { hostId: target.hostId, remoteRoot: root, absPath: abs },
         (_k, size) => {
@@ -84,7 +84,7 @@ export function initFsWatcher(win: BrowserWindow): void {
     const [projectId, threadId, rel] = parseIpcArgs(watcherArgs, rawArgs)
     const key = watcherKey(projectId, threadId, rel)
     if (isActiveSshWorkspace()) {
-      unwatchRemotePath(key)
+      unwatchRemoteFile(key)
       return
     }
     watchers.get(key)?.close()
@@ -153,5 +153,5 @@ export function closeAllWatchers(): void {
     w.close()
   })
   watchers.clear()
-  stopRemoteFilePolling()
+  stopAllRemoteWatchers()
 }

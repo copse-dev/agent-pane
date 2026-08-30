@@ -16,6 +16,8 @@ assets/icons/app.icns
 assets/icons/*/app.icns
 vendor/gortex/
 vendor/bundled-cursor-skills/
+vendor/remote-watcher/
+native/remote-watcher/target/
 .tmp/
 .DS_Store
 *.log

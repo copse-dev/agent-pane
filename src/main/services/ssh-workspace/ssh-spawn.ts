@@ -24,8 +24,23 @@ export interface RemoteSpawnOptions {
 
 /** Wrap a shell command to run under setsid and print its PGID on the first line. */
 export function wrapRemoteShellWithPgid(remoteRoot: string, shellCommand: string): string {
-  const inner = `printf '${REMOTE_PGID_PREFIX}%s\\n' "$(ps -o pgid= -p $$ | tr -d ' \\n')"; ${shellCommand}`
+  const inner = `printf '${REMOTE_PGID_PREFIX}%s\\n' "$(ps -o pgid= -p $ | tr -d ' \\n')"; ${shellCommand}`
   return `cd ${posixQuote(remoteRoot)} && setsid sh -c ${posixQuote(inner)}`
+}
+
+/**
+ * {@link wrapRemoteShellWithPgid} without the `setsid`, for remote processes
+ * that live on stdin (the remote watcher; ACP agents solve this the same way
+ * in buildRemoteAcpCommand). sshd already runs each exec as a session leader,
+ * so under it `setsid` FORKS: the parent chain exits, sshd sees its command
+ * finish and closes the stdin pipe, and the orphaned child reads EOF and
+ * exits. Shell commands tolerate that because they ignore stdin; a
+ * stdin-reading process dies at startup. `$` is already the PGID of exactly
+ * this command's tree, so the kill path loses nothing.
+ */
+export function wrapRemoteStdioWithPgid(remoteRoot: string, shellCommand: string): string {
+  const inner = `printf '${REMOTE_PGID_PREFIX}%s\\n' "$(ps -o pgid= -p $ | tr -d ' \\n')"; ${shellCommand}`
+  return `cd ${posixQuote(remoteRoot)} && sh -c ${posixQuote(inner)}`
 }
 
 async function ensureHostConnected(hostId: string): Promise<void> {
@@ -61,13 +76,34 @@ export async function spawnRemoteShellCommand(
   shellCommandLine: string,
   opts: RemoteSpawnOptions,
 ): Promise<ChildProcess> {
+  return spawnRemoteWrapped(shellCommandLine, opts, wrapRemoteShellWithPgid)
+}
+
+/**
+ * Spawn a long-lived remote process that speaks a protocol on stdio. Same
+ * connection, askpass, and PGID plumbing as {@link spawnRemoteShellCommand},
+ * but wrapped without `setsid` (see {@link wrapRemoteStdioWithPgid}) so the
+ * child keeps its stdin pipe.
+ */
+export async function spawnRemoteStdioCommand(
+  shellCommandLine: string,
+  opts: RemoteSpawnOptions,
+): Promise<ChildProcess> {
+  return spawnRemoteWrapped(shellCommandLine, opts, wrapRemoteStdioWithPgid)
+}
+
+async function spawnRemoteWrapped(
+  shellCommandLine: string,
+  opts: RemoteSpawnOptions,
+  wrap: (remoteRoot: string, shellCommand: string) => string,
+): Promise<ChildProcess> {
   await ensureHostConnected(opts.hostId)
   const host = findConfiguredSshHost(opts.hostId)
   if (!host) throw new Error(`Unknown SSH host: ${opts.hostId}`)
 
   const remoteEnv = mergeRemoteEnv(opts.env)
   const body = buildRemoteShellCommand(shellCommandLine, undefined, remoteEnv)
-  const wrapped = wrapRemoteShellWithPgid(opts.remoteRoot, body)
+  const wrapped = wrap(opts.remoteRoot, body)
   const askpass = leaseSshAskpassEnv(process.env, opts.hostId)
   const args = sshExecArgs(host, wrapped)
   const stdout = new PassThrough()

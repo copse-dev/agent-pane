@@ -82,6 +82,8 @@ export const PROMPT_CAUSES = [
   'acp-package-setup',
   /** Forwarding an ACP agent's configured env (provider keys) to a remote SSH host. */
   'acp-remote-env',
+  /** Uploading and running Copse's bundled file watcher on an SSH workspace host. */
+  'ssh-watcher-install',
   /**
    * Arming a mode the user themselves just asked for. Not an interruption —
    * counted so the log stays complete, and labelled so a reader discounts it.
@@ -157,6 +159,9 @@ const CONTAINMENT: Readonly<Record<PromptCause, PromptCauseContainment>> = {
   // Secrets crossing to a user-chosen remote host need consent regardless of
   // where the local work runs; a container changes nothing about that.
   'acp-remote-env': 'kept',
+  // Runs a binary on a user-chosen remote host; a local container changes
+  // nothing about that, same as acp-remote-env.
+  'ssh-watcher-install': 'kept',
   'mode-arming': 'kept',
 }
 
@@ -191,6 +196,7 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
   'acp-permission': 'ACP agent permission request',
   'acp-package-setup': 'ACP agent package setup',
   'acp-remote-env': 'Forwarding ACP agent env to a remote host',
+  'ssh-watcher-install': 'Installing the file watcher on an SSH host',
   'mode-arming': 'Arming a mode (user-initiated, not an interruption)',
 }
 

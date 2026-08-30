@@ -65,7 +65,7 @@ import {
 } from './services/mcp/mcp-registry.ts'
 import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
-import { initApproval } from './services/approval.ts'
+import { initApproval, requestApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'
 import { createElectronUserAlertSender } from './services/user-alerts-electron.ts'
 import { setTerminalCommandLauncher } from './services/exec/terminal-launch.ts'
@@ -74,6 +74,7 @@ import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
 import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
+import { setRemoteWatcherInstallApprover } from './services/ssh-workspace/remote-watcher-install-approval.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
 import {
   reapOversizedGortexDaemon,
@@ -478,6 +479,20 @@ app
     initSshWorkspaceIpc(win)
     initDiffQueue(win, ipcMain)
     initFsWatcher(win)
+    // Remote watcher install prompts route through the real approval dialog.
+    // Injected (rather than imported by the ssh-workspace module) for the same
+    // worker-bundle reason as setRemoteAcpInstallApprover; fails closed to the
+    // polling fallback when never wired.
+    setRemoteWatcherInstallApprover(async ({ title, body }) => {
+      const { approved } = await requestApproval({
+        title,
+        body,
+        type: 'shell',
+        cause: 'ssh-watcher-install',
+        allowRemember: false,
+      })
+      return approved
+    })
     const disposeTerminalHandlers = initTerminal(win)
     const disposeVncHandlers = initVnc(win)
     recordStartupPhase('register-handlers')

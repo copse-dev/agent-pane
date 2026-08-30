@@ -1,0 +1,107 @@
+name: Remote watcher binaries
+
+# Cross-compiles the static `copse-remote-watcher` binary that the app uploads
+# to SSH workspace hosts (see native/remote-watcher/README.md). Produces one
+# artifact per target plus a combined artifact with a SHA256SUMS manifest;
+# `scripts/fetch-remote-watcher.mts` stages a downloaded set into
+# `vendor/remote-watcher/` for packaging.
+#
+# musl rather than glibc for the Linux targets: the binary must run on
+# whatever distro/glibc vintage a user's server happens to be, so it links
+# fully static.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'native/remote-watcher/**'
+      - '.github/workflows/remote-watcher-build.yml'
+  pull_request:
+    paths:
+      - 'native/remote-watcher/**'
+      - '.github/workflows/remote-watcher-build.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remote-watcher-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: native/remote-watcher
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install cross
+        # `cross` builds inside per-target Docker images, which is the only
+        # dependable way to get an aarch64-musl linker on a hosted runner.
+        run: cargo install cross --locked
+      - name: Build
+        run: cross build --release --target ${{ matrix.target }}
+      - name: Stage
+        run: |
+          mkdir -p out/${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/copse-remote-watcher out/${{ matrix.target }}/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: remote-watcher-${{ matrix.target }}
+          path: native/remote-watcher/out
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Stage
+        run: |
+          mkdir -p out/${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/copse-remote-watcher out/${{ matrix.target }}/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: remote-watcher-${{ matrix.target }}
+          path: native/remote-watcher/out
+          if-no-files-found: error
+
+  checksums:
+    needs: [linux, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Collect
+        uses: actions/download-artifact@v8
+        with:
+          pattern: remote-watcher-*
+          merge-multiple: true
+          path: remote-watcher
+      - name: Manifest
+        working-directory: remote-watcher
+        run: |
+          find . -type f -name copse-remote-watcher | sort | xargs sha256sum > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: remote-watcher-all
+          path: remote-watcher
+          if-no-files-found: error

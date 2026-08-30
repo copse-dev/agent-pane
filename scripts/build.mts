@@ -334,6 +334,19 @@ try {
   // Optional — fetch-bundled-cursor-skills.mts may be skipped offline.
 }
 
+try {
+  accessSync(resolve('vendor/remote-watcher'))
+  // Static per-target binaries uploaded to SSH workspace hosts (see
+  // native/remote-watcher). Dereference for the same worktree-symlink reason
+  // as gortex above.
+  cpSync('vendor/remote-watcher', 'dist/resources/remote-watcher', {
+    recursive: true,
+    dereference: true,
+  })
+} catch {
+  // Optional — without it SSH workspaces fall back to remote file polling.
+}
+
 // Fail fast if a release build ever ships the MockLLMProvider test directives:
 // the `__COPSE_TEST_DIRECTIVES__` guard + minifySyntax must have eliminated them.
 // `mock:delay_ms` / `mcp:([` are fragments of the directive regexes and never
