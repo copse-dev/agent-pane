@@ -231,7 +231,18 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
     const pathPart = entry.slice(3)
 
     if (x === '?' && y === '?') {
-      unstaged.push({ path: pathPart, status: 'untracked' })
+      // Default `--untracked-files=normal` collapses a wholly-untracked
+      // directory into a single `?? dir/` record. Mark it so consumers can
+      // render a directory instead of treating the path as an unreadable file.
+      if (pathPart.endsWith('/')) {
+        unstaged.push({
+          path: pathPart.replace(/\/+$/, ''),
+          status: 'untracked',
+          isDirectory: true,
+        })
+      } else {
+        unstaged.push({ path: pathPart, status: 'untracked' })
+      }
       i++
       continue
     }
@@ -322,6 +333,30 @@ async function readGitBlob(
 ): Promise<GitBlobResult> {
   const { stdout, code } = await runGit(['show', await gitObjectSpec(ref, path, root)], root)
   return classifyGitBlob(stdout, code)
+}
+
+/** Cap on directory file listings sent to the viewer (IPC payload size). */
+export const UNTRACKED_DIR_LIST_CAP = 500
+/**
+ * Directories with more untracked files than this are treated as generated or
+ * vendored (node_modules, dist) and excluded from line-count stats rather than
+ * half-counted: the stats run on every filesystem change, and reading
+ * thousands of files each time is not affordable there.
+ */
+const UNTRACKED_DIR_STATS_CAP = 200
+
+/**
+ * Untracked files inside an untracked directory, relative to `root`.
+ * `git status` collapses the directory to one `?? dir/` record; this expands
+ * it on demand.
+ */
+async function listUntrackedFiles(dirPath: string, root: string): Promise<string[]> {
+  const { stdout, code } = await runGitRead(
+    ['ls-files', '--others', '--exclude-standard', '-z', '--', `${dirPath}/`],
+    root,
+  )
+  if (code !== 0) return []
+  return stdout.split('\0').filter(Boolean)
 }
 
 async function readWorkingTree(path: string, root: string): Promise<string> {
@@ -864,10 +899,20 @@ async function sumUntrackedAdditions(root: string): Promise<number> {
   let additions = 0
   for (const change of status?.unstaged ?? []) {
     if (change.status !== 'untracked') continue
-    if (imageMimeType(change.path)) continue
-    const text = await readWorkingTree(change.path, root)
-    if (text.includes('\0')) continue
-    additions += computeLineDiffStats('', text).additions
+    // An untracked directory is one status record hiding many files; expand it
+    // so its contents count, but skip huge (generated/vendored) directories
+    // entirely — see UNTRACKED_DIR_STATS_CAP.
+    let files = [change.path]
+    if (change.isDirectory) {
+      files = await listUntrackedFiles(change.path, root)
+      if (files.length > UNTRACKED_DIR_STATS_CAP) continue
+    }
+    for (const file of files) {
+      if (imageMimeType(file)) continue
+      const text = await readWorkingTree(file, root)
+      if (text.includes('\0')) continue
+      additions += computeLineDiffStats('', text).additions
+    }
   }
   return additions
 }
@@ -1225,6 +1270,20 @@ export async function getGitFileDiff(
   } else {
     const status = await getGitStatus(root)
     const change = status?.unstaged.find((c) => c.path === path)
+    if (change?.status === 'untracked' && change.isDirectory) {
+      // No text diff exists for a collapsed `?? dir/` record; reading it used
+      // to EISDIR into an empty-vs-empty diff (a blank editor). Return the
+      // contained files so the viewer can list them instead.
+      const files = await listUntrackedFiles(path, root)
+      return {
+        path,
+        before: '',
+        after: '',
+        language: 'plaintext',
+        directoryFiles: files.slice(0, UNTRACKED_DIR_LIST_CAP),
+        directoryFileCount: files.length,
+      }
+    }
     if (change?.status === 'untracked') {
       after = await readWorkingTree(path, root)
     } else if (change?.status === 'deleted') {

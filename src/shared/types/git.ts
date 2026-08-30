@@ -3,6 +3,12 @@ export type GitChangeStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'un
 export interface GitChange {
   path: string
   status: GitChangeStatus
+  /**
+   * A wholly-untracked directory that `git status` collapsed into a single
+   * `?? dir/` record instead of listing its files. `path` carries no trailing
+   * slash.
+   */
+  isDirectory?: boolean
 }
 
 export interface GitStatusResult {
@@ -32,6 +38,14 @@ export interface GitFileDiff {
   beforeImage?: string | null
   /** Data URL for the post-change image, when the file is an image. */
   afterImage?: string | null
+  /**
+   * Present when `path` is an untracked directory: the untracked files inside
+   * it, capped for IPC (a fresh node_modules holds tens of thousands). The
+   * viewer renders these as a file list instead of a text diff.
+   */
+  directoryFiles?: string[]
+  /** Total untracked files in the directory; may exceed `directoryFiles.length`. */
+  directoryFileCount?: number
 }
 
 /**
