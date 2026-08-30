@@ -273130,6 +273130,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   function navigateWebview(tab, url2) {
     tab.loadError = null;
     tab.urlInput.classList.remove("has-error");
+    if (!tab.webviewReady && tab.pendingUrl === url2) return;
     whenWebviewReady(tab, (webview) => {
       const current = webview.getURL();
       tab.pendingUrl = null;
