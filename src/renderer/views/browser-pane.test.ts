@@ -92,6 +92,56 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('loads a fresh tab once instead of reloading the page it just committed', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    const api = createPendingApi({
+      'fs.readFile': async (): Promise<string> => '',
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      // Count reloads from before the first `dom-ready`: two handlers wait on
+      // that event, and the bug was the second one reloading what the first had
+      // just committed — a double load of every freshly opened page.
+      const webview = qsRequired<FakeWebview>(viewer, '.browser-webview')
+      let reloads = 0
+      webview.reload = (): void => {
+        reloads += 1
+      }
+
+      openBrowserUrl(store, 'https://example.com/docs')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      assert.equal(reloads, 0)
+      assert.equal(webview.getAttribute('src'), 'https://example.com/docs')
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
   it('reuses the tab already showing a URL the agent asks to show again', async () => {
     const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
     const ResizeObserverCtor = globalThis.ResizeObserver

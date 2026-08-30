@@ -532,6 +532,14 @@ export function mountBrowserPane(
   function navigateWebview(tab: BrowserTab, url: string): void {
     tab.loadError = null
     tab.urlInput.classList.remove('has-error')
+    // `ensureWebview` installs its own `dom-ready` listener that flushes
+    // `pendingUrl`, so for a tab whose navigation is already queued there are two
+    // handlers waiting on the same event. Both would navigate: the flush runs
+    // first and commits the URL, then this one wakes, reads `current === url`
+    // and *reloads* the page that just loaded. Leave it to the flush whenever
+    // the flush is going to happen; a caller with nothing queued (an artefact,
+    // whose data: URL never becomes `pendingUrl`) still defers here as before.
+    if (!tab.webviewReady && tab.pendingUrl === url) return
     whenWebviewReady(tab, (webview) => {
       const current = webview.getURL()
       tab.pendingUrl = null
