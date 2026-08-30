@@ -8,6 +8,7 @@ import {
 } from './acp-client.ts'
 import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { acpTurnUsage, permissionResponseFor } from './acp-agent-service.ts'
+import { gateRemoteAcpEnvForward } from './acp-remote-env-gate.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 
 /**
@@ -98,5 +99,8 @@ export async function runAcpAdvisorPrompt(options: {
     ...(agent.env ? { env: agent.env } : {}),
     ...(sandbox ? { sandbox } : {}),
   }
+  // Same consent rule as a session turn: configured provider keys reach a
+  // remote SSH host only if the user approves the forward (no-op locally).
+  await gateRemoteAcpEnvForward(agent.id, config)
   return runAcpAdvisorSession(config, options.model ?? agent.model, options.prompt, options.signal)
 }
