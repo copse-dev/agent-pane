@@ -116,6 +116,7 @@ describe('ensureToolPermitted', () => {
     setPermissionGateForTests(null)
     const writeTools = [
       'gh_pr_approve',
+      'gh_pr_create',
       'gh_pr_enable_auto_merge',
       'gh_pr_mark_ready',
       'gh_pr_rerun_failed_ci',
@@ -1394,6 +1395,21 @@ describe('formatGithubWritePrompt', () => {
     const prompt = formatGithubWritePrompt('gh_pr_rerun_failed_ci', { weird: true })
     assert.equal(prompt.title, 'Re-run failed CI?')
     assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
+  })
+
+  it('shows the PR title (and explicit target repo) for gh_pr_create', () => {
+    assert.deepEqual(formatGithubWritePrompt('gh_pr_create', { title: 'Fix the parser' }), {
+      title: 'Open pull request on GitHub?',
+      body: '“Fix the parser”',
+    })
+    assert.equal(
+      formatGithubWritePrompt('gh_pr_create', {
+        title: 'Fix the parser',
+        owner: 'acme',
+        repo: 'widgets',
+      }).body,
+      'acme/widgets: “Fix the parser”',
+    )
   })
 })
 
