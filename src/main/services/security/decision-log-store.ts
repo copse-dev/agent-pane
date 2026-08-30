@@ -86,7 +86,13 @@ export function recordDecision(input: RecordDecisionInput): void {
   try {
     const projectId = input.projectId ?? getActiveProjectId()
     const threadId = input.threadId ?? getActiveRunThread()
-    if (!projectId || !threadId) return
+    if (!projectId || !threadId) {
+      console.warn(
+        '[decision-log] dropping decision — no active project/thread',
+        { kind: input.kind, cause: input.cause, source: input.source },
+      )
+      return
+    }
 
     const { projectId: _p, threadId: _t, detail, turnId, step, ...rest } = input
     const id = randomUUID()
