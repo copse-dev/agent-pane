@@ -45,7 +45,6 @@ describe('SshConnectionManager', () => {
             { when: /printf %s "\$SHELL"/, stdout: '/bin/bash' },
             { when: /command -v git$/, stdout: '/usr/bin/git\n' },
             { when: /command -v rg$/, stdout: '', code: 1 },
-            { when: /command -v inotifywait$/, stdout: '', code: 1 },
           ]),
       )
 
@@ -55,7 +54,6 @@ describe('SshConnectionManager', () => {
       assert.ok(conn.capabilities)
       assert.equal(conn.capabilities.git, true)
       assert.equal(conn.capabilities.rg, false)
-      assert.equal(conn.capabilities.inotifywait, false)
       // Missing tools are flags only — warnings is for probe/infrastructure failures.
       assert.equal(conn.capabilities.warnings.length, 0)
 
@@ -122,7 +120,6 @@ describe('SshConnectionManager', () => {
               { when: /printf %s "\$SHELL"/, stdout: '/bin/bash' },
               { when: /command -v git$/, stdout: '/usr/bin/git\n' },
               { when: /command -v rg$/, stdout: '/usr/bin/rg\n' },
-              { when: /command -v inotifywait$/, stdout: '/usr/bin/inotifywait\n' },
             ],
             {
               onConnect: (): void => {
