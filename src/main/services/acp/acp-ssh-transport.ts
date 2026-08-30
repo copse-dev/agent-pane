@@ -255,6 +255,15 @@ export function formatRemoteAcpInstallApproval(input: {
  * user instead of being turned into a "go run npm yourself" error. Only catalog
  * presets qualify, so the package name is never remote- or user-supplied.
  *
+ * One deliberate divergence from the local plan: it does NOT gate on
+ * `requiresClient`. Locally that gate keeps auto-setup quiet at settings-open
+ * time, when nobody asked for this agent. Here the user has explicitly started
+ * a turn on it, and a missing client is recoverable rather than fatal — the
+ * adapter still spawns and serves ACP, and the first sign-in failure hands off
+ * to the re-auth terminal, which reports the missing client itself (see
+ * {@link buildRemoteAcpLoginScript}). Applying the gate would trade that guided
+ * path for a dead-end "not found" error.
+ *
  * Returns whether the install succeeded; the caller re-runs detection.
  */
 async function installRemoteAcpAgent(

@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { acpReauthCommand, KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
@@ -250,6 +251,75 @@ describe('remote re-auth login terminal command', () => {
       rmSync(home, { recursive: true, force: true })
     }
   })
+})
+
+describe('every catalog agent, not just Claude', () => {
+  // The SSH path is parameterised by the agent's `command` and its catalog
+  // entry; nothing here may hardcode Claude. These drive the real catalog so a
+  // newly added agent is covered the day it lands rather than the day someone
+  // remembers to extend this file.
+  const REMOTE_AGENTS = KNOWN_ACP_AGENTS.filter(
+    (known) => known.preset === true || known.install !== undefined,
+  )
+
+  it('covers more than one agent (guards against the catalog collapsing)', () => {
+    assert.ok(
+      REMOTE_AGENTS.length >= 3,
+      `expected several agents, got ${String(REMOTE_AGENTS.length)}`,
+    )
+    assert.ok(REMOTE_AGENTS.some((known) => known.requiresClient !== 'claude'))
+  })
+
+  for (const known of REMOTE_AGENTS) {
+    it(`${known.id}: spawns with its own command and args, quoted`, () => {
+      const cmd = buildRemoteAcpCommand(
+        { command: known.command, args: [...known.args], cwd: REMOTE_ROOT },
+        REMOTE_ROOT,
+        '/bin/bash',
+      )
+      assert.ok(cmd.includes(known.command), 'the agent command reaches the spawn')
+      for (const arg of known.args) assert.ok(cmd.includes(arg), `arg ${arg} reaches the spawn`)
+      // The setsid regression is agent-independent: any agent that reads stdin
+      // dies the same way.
+      assert.ok(!/\bsetsid\b/.test(cmd), 'never setsid: it orphans the agent stdin pipe')
+    })
+
+    it(`${known.id}: re-auth uses its own login command, guarded by its own client`, () => {
+      const login = acpReauthCommand(known)
+      if (!login) {
+        // An agent with no sign-in step (API-key only) must offer nothing
+        // rather than fall back to another agent's command.
+        assert.ok(!known.reauth && !known.setup)
+        return
+      }
+      const script = buildRemoteAcpLoginScript(login)
+      const client = login.split(/\s+/)[0] ?? ''
+      assert.ok(script.includes(login), 'the catalog login command is what runs')
+      assert.ok(script.includes(`command -v ${client}`), 'the guard names this agent’s own client')
+      assert.ok(!/\bssh\b/.test(script), 'no ssh nesting: the tab is already on the host')
+    })
+
+    it(`${known.id}: auto-install is opt-in and never invents a package`, () => {
+      if (known.autoInstall) {
+        // Opted in, so the remote installer will run npm for it — the package
+        // must come from the catalog, never from the agent's command name.
+        assert.ok(known.installPackage, 'autoInstall requires an explicit installPackage')
+        const script = remoteNpmInstallScript(known.installPackage, '/opt/node/bin')
+        assert.ok(script.includes(known.installPackage))
+        assert.ok(script.includes('--ignore-scripts'), 'lifecycle scripts stay disabled')
+        // Never `fnm use`/`nvm use`: the host's default Node is not ours to change.
+        assert.ok(!/\b(fnm|nvm|asdf|volta)\b/.test(script), 'no version-manager mutation')
+      } else {
+        // Not opted in (Gemini has no installPackage; Cursor is `curl | bash`,
+        // which Socket Firewall cannot wrap) — the user gets the catalog's own
+        // install line in the error, not a Claude-flavoured one.
+        assert.ok(
+          !known.install || !known.install.includes('claude'),
+          'a non-Claude agent must not be told to install Claude',
+        )
+      }
+    })
+  }
 })
 
 describe('approved env forwarding (stdin preamble)', () => {
