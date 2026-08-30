@@ -35,6 +35,7 @@ import {
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
+import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
 
 const STATUS_LABEL: Record<GitChangeStatus, string> = {
   modified: 'M',
@@ -143,8 +144,12 @@ export function mountGitChangesPane(
   approvalBar.hidden = true
   approvalBar.append(rejectBtn, acceptBtn)
   const imageWrap = el('div', { class: 'git-image-diff-wrap' })
+  // File listing shown when the selected change is an untracked directory
+  // (`git status` collapses those to one record, so there is no diff to show).
+  const dirWrap = el('div', { class: 'git-dir-view' })
+  dirWrap.hidden = true
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a changed file')
-  viewerRoot.append(conflictBanner, diffWrap, approvalBar, imageWrap, emptyState)
+  viewerRoot.append(conflictBanner, diffWrap, approvalBar, imageWrap, dirWrap, emptyState)
 
   let diffEditor: GitDiffEditor | null = null
   let pendingSelect: ChangeSelection | null = null
@@ -306,15 +311,27 @@ export function mountGitChangesPane(
         {
           type: 'button',
           class: `git-change-row${isSelected ? ' is-selected' : ''}`,
-          'data-tooltip': change.path,
+          'data-tooltip': change.isDirectory ? `${change.path} — Untracked directory` : change.path,
         },
         el(
           'span',
           { class: `git-change-status git-change-status-${change.status}` },
           STATUS_LABEL[change.status],
         ),
-        el('span', { class: 'git-change-path' }, change.path),
       )
+      if (change.isDirectory) {
+        row.append(
+          el('img', {
+            class: 'git-change-dir-icon',
+            src: materialFolderIconUrl(change.path, false),
+            alt: '',
+            width: '16',
+            height: '16',
+            decoding: 'async',
+          }),
+        )
+      }
+      row.append(el('span', { class: 'git-change-path' }, change.path))
       row.addEventListener('click', () => void selectGitChange(change.path, staged))
       section.append(row)
     }
@@ -478,6 +495,7 @@ export function mountGitChangesPane(
     // first change off-screen after lazy Monaco load.
     emptyState.hidden = true
     imageWrap.hidden = true
+    dirWrap.hidden = true
     diffWrap.hidden = false
 
     const proposed: GitFileDiff = {
@@ -584,7 +602,17 @@ export function mountGitChangesPane(
       emptyState.hidden = false
       diffWrap.hidden = true
       imageWrap.hidden = true
+      dirWrap.hidden = true
       emptyState.textContent = 'Could not load diff'
+      return
+    }
+    if (diff.directoryFiles) {
+      renderDirectoryView(diff)
+      emptyState.hidden = true
+      diffWrap.hidden = true
+      imageWrap.hidden = true
+      dirWrap.hidden = false
+      if (diffEditor) disposeDiffModels(diffEditor)
       return
     }
     diffLoadQueue = diffLoadQueue
@@ -599,6 +627,7 @@ export function mountGitChangesPane(
           return
         }
         emptyState.hidden = true
+        dirWrap.hidden = true
         if (isImageDiff(diff)) {
           diffWrap.hidden = true
           imageWrap.hidden = false
@@ -649,6 +678,7 @@ export function mountGitChangesPane(
       emptyState.hidden = false
       diffWrap.hidden = true
       imageWrap.hidden = true
+      dirWrap.hidden = true
       emptyState.textContent = 'Could not load diff'
       return
     }
@@ -661,6 +691,7 @@ export function mountGitChangesPane(
           pendingSelect.path === path
         if (!isCurrent()) return
         emptyState.hidden = true
+        dirWrap.hidden = true
         if (isImageDiff(diff)) {
           diffWrap.hidden = true
           imageWrap.hidden = false
@@ -681,6 +712,54 @@ export function mountGitChangesPane(
     await diffLoadQueue
   }
 
+  /**
+   * Viewer for an untracked directory: `git status` collapses a wholly-new
+   * directory into one record, so there is no per-file diff to show. List the
+   * contained files instead of a blank editor; each opens its own new-file diff.
+   */
+  function renderDirectoryView(diff: GitFileDiff): void {
+    clear(dirWrap)
+    const files = diff.directoryFiles ?? []
+    const total = diff.directoryFileCount ?? files.length
+    dirWrap.append(
+      el(
+        'div',
+        { class: 'git-dir-view-header' },
+        el('img', {
+          class: 'git-change-dir-icon',
+          src: materialFolderIconUrl(diff.path, true),
+          alt: '',
+          width: '16',
+          height: '16',
+          decoding: 'async',
+        }),
+        el('span', { class: 'git-dir-view-title' }, diff.path),
+        el(
+          'span',
+          { class: 'git-dir-view-count' },
+          `Untracked directory · ${String(total)} ${total === 1 ? 'file' : 'files'}`,
+        ),
+      ),
+    )
+    if (total > files.length) {
+      dirWrap.append(
+        el('div', { class: 'git-dir-view-note' }, `Showing the first ${String(files.length)}.`),
+      )
+    }
+    const list = el('div', { class: 'git-dir-view-list' })
+    for (const file of files) {
+      const row = el(
+        'button',
+        { type: 'button', class: 'git-change-row' },
+        el('span', { class: 'git-change-status git-change-status-untracked' }, '?'),
+        el('span', { class: 'git-change-path' }, file),
+      )
+      row.addEventListener('click', () => void selectGitChange(file, false))
+      list.append(row)
+    }
+    dirWrap.append(list)
+  }
+
   function clearViewer(): void {
     selectRequestId++
     pendingSelect = null
@@ -690,7 +769,9 @@ export function mountGitChangesPane(
     else setInlineStatus(emptyState, 'pending', 'Loading changes…')
     diffWrap.hidden = true
     imageWrap.hidden = true
+    dirWrap.hidden = true
     clear(imageWrap)
+    clear(dirWrap)
     if (diffEditor) disposeDiffModels(diffEditor)
   }
 
@@ -750,9 +831,15 @@ export function mountGitChangesPane(
     }
     if (current?.kind === 'git') {
       const gitSel = current
+      // A file opened from the untracked-directory view is not its own status
+      // record (git collapsed the directory), so it survives via its parent.
       const stillExists = gitSel.staged
         ? status?.staged.some((c) => c.path === gitSel.path)
-        : status?.unstaged.some((c) => c.path === gitSel.path)
+        : status?.unstaged.some(
+            (c) =>
+              c.path === gitSel.path ||
+              (c.isDirectory === true && gitSel.path.startsWith(`${c.path}/`)),
+          )
       if (!stillExists) current = null
     }
     if (current?.kind === 'committed') {
