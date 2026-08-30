@@ -273229,6 +273229,12 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   function openRequestedBrowserUrl(rawUrl) {
     const url2 = normalizeBrowserUrl(rawUrl);
+    const existing = urlTabFor(url2);
+    if (existing) {
+      setActiveTab(existing.id);
+      navigateTab(existing, url2);
+      return;
+    }
     let tab = activeTabId ? tabs.get(activeTabId) : void 0;
     if (!tab || !isIdleBrowserTab(tab)) {
       addTab({ activate: true });
