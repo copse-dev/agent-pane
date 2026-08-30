@@ -1810,6 +1810,34 @@ copse-ui-field input[type=password],
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.git-change-dir-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+.git-dir-view {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--spacing-sm) 0;
+}
+.git-dir-view-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+.git-dir-view-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.git-dir-view-count,
+.git-dir-view-note {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.git-dir-view-note {
+  padding: 0 var(--spacing-sm) var(--spacing-xs);
+}
 .git-change-path:not(.pr-list-title) {
   direction: rtl;
   text-align: left;

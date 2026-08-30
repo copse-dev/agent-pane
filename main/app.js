@@ -268639,8 +268639,10 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
   approvalBar.hidden = true;
   approvalBar.append(rejectBtn, acceptBtn);
   const imageWrap = el("div", { class: "git-image-diff-wrap" });
+  const dirWrap = el("div", { class: "git-dir-view" });
+  dirWrap.hidden = true;
   const emptyState = el("div", { class: "panel-empty" }, "Select a changed file");
-  viewerRoot.append(conflictBanner, diffWrap, approvalBar, imageWrap, emptyState);
+  viewerRoot.append(conflictBanner, diffWrap, approvalBar, imageWrap, dirWrap, emptyState);
   let diffEditor = null;
   let pendingSelect = null;
   let selectRequestId = 0;
@@ -268766,15 +268768,27 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
         {
           type: "button",
           class: `git-change-row${isSelected ? " is-selected" : ""}`,
-          "data-tooltip": change2.path
+          "data-tooltip": change2.isDirectory ? `${change2.path} \u2014 Untracked directory` : change2.path
         },
         el(
           "span",
           { class: `git-change-status git-change-status-${change2.status}` },
           STATUS_LABEL[change2.status]
-        ),
-        el("span", { class: "git-change-path" }, change2.path)
+        )
       );
+      if (change2.isDirectory) {
+        row2.append(
+          el("img", {
+            class: "git-change-dir-icon",
+            src: materialFolderIconUrl(change2.path, false),
+            alt: "",
+            width: "16",
+            height: "16",
+            decoding: "async"
+          })
+        );
+      }
+      row2.append(el("span", { class: "git-change-path" }, change2.path));
       row2.addEventListener("click", () => void selectGitChange(change2.path, staged));
       section.append(row2);
     }
@@ -268904,6 +268918,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
     };
     emptyState.hidden = true;
     imageWrap.hidden = true;
+    dirWrap.hidden = true;
     diffWrap.hidden = false;
     const proposed = {
       path: view.path,
@@ -268976,7 +268991,17 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
       emptyState.hidden = false;
       diffWrap.hidden = true;
       imageWrap.hidden = true;
+      dirWrap.hidden = true;
       emptyState.textContent = "Could not load diff";
+      return;
+    }
+    if (diff2.directoryFiles) {
+      renderDirectoryView(diff2);
+      emptyState.hidden = true;
+      diffWrap.hidden = true;
+      imageWrap.hidden = true;
+      dirWrap.hidden = false;
+      if (diffEditor) disposeDiffModels(diffEditor);
       return;
     }
     diffLoadQueue = diffLoadQueue.catch(() => void 0).then(async () => {
@@ -268984,6 +269009,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
         return;
       }
       emptyState.hidden = true;
+      dirWrap.hidden = true;
       if (isImageDiff(diff2)) {
         diffWrap.hidden = true;
         imageWrap.hidden = false;
@@ -269024,6 +269050,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
       emptyState.hidden = false;
       diffWrap.hidden = true;
       imageWrap.hidden = true;
+      dirWrap.hidden = true;
       emptyState.textContent = "Could not load diff";
       return;
     }
@@ -269031,6 +269058,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
       const isCurrent = () => requestId === selectRequestId && pendingSelect?.kind === "committed" && pendingSelect.path === path4;
       if (!isCurrent()) return;
       emptyState.hidden = true;
+      dirWrap.hidden = true;
       if (isImageDiff(diff2)) {
         diffWrap.hidden = true;
         imageWrap.hidden = false;
@@ -269050,6 +269078,48 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
     });
     await diffLoadQueue;
   }
+  function renderDirectoryView(diff2) {
+    clear(dirWrap);
+    const files = diff2.directoryFiles ?? [];
+    const total = diff2.directoryFileCount ?? files.length;
+    dirWrap.append(
+      el(
+        "div",
+        { class: "git-dir-view-header" },
+        el("img", {
+          class: "git-change-dir-icon",
+          src: materialFolderIconUrl(diff2.path, true),
+          alt: "",
+          width: "16",
+          height: "16",
+          decoding: "async"
+        }),
+        el("span", { class: "git-dir-view-title" }, diff2.path),
+        el(
+          "span",
+          { class: "git-dir-view-count" },
+          `Untracked directory \xB7 ${String(total)} ${total === 1 ? "file" : "files"}`
+        )
+      )
+    );
+    if (total > files.length) {
+      dirWrap.append(
+        el("div", { class: "git-dir-view-note" }, `Showing the first ${String(files.length)}.`)
+      );
+    }
+    const list = el("div", { class: "git-dir-view-list" });
+    for (const file2 of files) {
+      const row2 = el(
+        "button",
+        { type: "button", class: "git-change-row" },
+        el("span", { class: "git-change-status git-change-status-untracked" }, "?"),
+        el("span", { class: "git-change-path" }, file2)
+      );
+      row2.addEventListener("click", () => void selectGitChange(file2, false));
+      list.append(row2);
+    }
+    dirWrap.append(list);
+  }
   function clearViewer() {
     selectRequestId++;
     pendingSelect = null;
@@ -269059,7 +269129,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
     else setInlineStatus(emptyState, "pending", "Loading changes\u2026");
     diffWrap.hidden = true;
     imageWrap.hidden = true;
+    dirWrap.hidden = true;
     clear(imageWrap);
+    clear(dirWrap);
     if (diffEditor) disposeDiffModels(diffEditor);
   }
   function clearSelection() {
@@ -269102,7 +269174,9 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
     }
     if (current?.kind === "git") {
       const gitSel = current;
-      const stillExists = gitSel.staged ? status?.staged.some((c4) => c4.path === gitSel.path) : status?.unstaged.some((c4) => c4.path === gitSel.path);
+      const stillExists = gitSel.staged ? status?.staged.some((c4) => c4.path === gitSel.path) : status?.unstaged.some(
+        (c4) => c4.path === gitSel.path || c4.isDirectory === true && gitSel.path.startsWith(`${c4.path}/`)
+      );
       if (!stillExists) current = null;
     }
     if (current?.kind === "committed") {
@@ -269330,6 +269404,7 @@ var init_git_changes_pane = __esm({
     init_selection_to_chat();
     init_ui_scale();
     init_git_image_diff();
+    init_material_file_icons();
     STATUS_LABEL = {
       modified: "M",
       added: "A",
