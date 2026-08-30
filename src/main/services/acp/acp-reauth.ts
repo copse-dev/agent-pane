@@ -2,6 +2,8 @@ import { acpReauthCommand, findAcpCatalogEntry } from '@shared/acp-known-agents.
 import type { AcpAuthFailureKind } from '../agent-errors.ts'
 import { requestUserAnswers } from '../ask-user.ts'
 import { canRunTerminalCommand, requestTerminalCommand } from '../exec/terminal-launch.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
+import { acpSshTarget, buildRemoteAcpLoginCommand } from './acp-ssh-transport.ts'
 
 /**
  * Offer to re-authenticate an external ACP agent whose turn just failed on
@@ -27,13 +29,22 @@ export interface AcpReauthOffer {
  */
 const ACCEPT = /^\s*(?:y|yes|ok|okay|sure|sign in\b.*|log ?in\b.*|run\b.*)\s*$/i
 
-function offerQuestion(agentName: string, kind: AcpAuthFailureKind, command: string): string {
+function offerQuestion(
+  agentName: string,
+  kind: AcpAuthFailureKind,
+  command: string,
+  hostId?: string,
+): string {
   const cause =
     kind === 'expired'
       ? `${agentName}’s saved sign-in has expired, so this turn could not run.`
       : `${agentName} is not signed in, so this turn could not run.`
+  const open = hostId
+    ? `The agent runs on the SSH host ${hostId} and its credentials live there, ` +
+      `so open a terminal connected to ${hostId} running \`${command}\` to sign in?`
+    : `Open a terminal and run \`${command}\` to sign in again?`
   return (
-    `${cause} Open a terminal and run \`${command}\` to sign in again? ` +
+    `${cause} ${open} ` +
     `Copse can’t complete the sign-in for you — finish it in that terminal, then re-send your message.`
   )
 }
@@ -52,11 +63,22 @@ export async function offerAcpReauth(offer: AcpReauthOffer): Promise<string | nu
   // error text's written instructions are already the whole answer.
   if (!canRunTerminalCommand()) return null
 
-  const accept = `Run \`${command}\``
+  // An agent that ran on an SSH host keeps its credential store there, so the
+  // sign-in must happen there too. On an SSH workspace the Shells pane's tab is
+  // itself a pty on the host, so the login command is typed into a shell that
+  // is already remote — no ssh wrapper (nesting ssh on the host with this
+  // machine's identity/socket paths is exactly how it breaks). A host that
+  // vanished from settings mid-offer launches nothing.
+  const target = acpSshTarget(getAgentExecutionRoot() ?? '')
+  const launch = target ? buildRemoteAcpLoginCommand(command, target) : command
+  if (!launch) return null
+  const display = target ? `${command} (on ${target.hostId})` : command
+
+  const accept = `Run \`${display}\``
   const { answers } = await requestUserAnswers({
     questions: [
       {
-        question: offerQuestion(known?.title ?? offer.agentId, offer.kind, command),
+        question: offerQuestion(known?.title ?? offer.agentId, offer.kind, command, target?.hostId),
         options: [accept, 'Not now'],
       },
     ],
@@ -64,5 +86,5 @@ export async function offerAcpReauth(offer: AcpReauthOffer): Promise<string | nu
 
   const answer = answers[0] ?? ''
   if (answer.trim() !== accept && !ACCEPT.test(answer)) return null
-  return requestTerminalCommand(command) ? command : null
+  return requestTerminalCommand(launch) ? display : null
 }
