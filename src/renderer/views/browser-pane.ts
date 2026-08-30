@@ -643,6 +643,17 @@ export function mountBrowserPane(
 
   function openRequestedBrowserUrl(rawUrl: string): void {
     const url = normalizeBrowserUrl(rawUrl)
+    // Everything routed here is "show me this": a workspace file opened from the
+    // Files pane, a link in a transcript, a forwarded port, a PR. Re-opening one
+    // means the thing behind it has moved on — the file was just edited, the
+    // server restarted — so promote the tab already showing it and reload,
+    // rather than leaving a stale copy behind a fresh duplicate.
+    const existing = urlTabFor(url)
+    if (existing) {
+      setActiveTab(existing.id)
+      navigateTab(existing, url)
+      return
+    }
     let tab = activeTabId ? tabs.get(activeTabId) : undefined
     if (!tab || !isIdleBrowserTab(tab)) {
       addTab({ activate: true })

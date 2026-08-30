@@ -483,6 +483,69 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('reuses the tab already showing a re-opened URL instead of stacking one', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    const api = createPendingApi({
+      'fs.readFile': async (): Promise<string> => '',
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      // A workspace file opened from the Files pane arrives on this channel, as
+      // do transcript links, forwarded ports and PR links.
+      const fileUrl = 'http://127.0.0.1:4321/scratch/demo.html'
+      openBrowserUrl(store, fileUrl)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const webview = qsRequired<FakeWebview>(
+        viewer,
+        '.browser-tab-panel.is-active .browser-webview',
+      )
+      stubWebviewMethods(webview)
+      let reloads = 0
+      webview.getURL = (): string => webview.src || 'about:blank'
+      webview.reload = (): void => {
+        reloads += 1
+      }
+      webview.dispatchEvent(new Event('dom-ready'))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 1)
+
+      // Re-opening the same file after editing it must refresh what the user is
+      // already looking at, not leave it stale behind a duplicate.
+      openBrowserUrl(store, fileUrl)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 1)
+      assert.equal(reloads, 1)
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
   it('focuses and selects the address bar on a url-bar focus request', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
