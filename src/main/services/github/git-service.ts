@@ -642,14 +642,31 @@ export async function pruneWorktreeBackups(
   }
 }
 
+/**
+ * Working-tree status, normalized to workspace-relative paths.
+ *
+ * `untrackedFiles` chooses how untracked paths are reported. Git's default
+ * (`normal`) collapses an untracked directory into a single `dir/` entry — the
+ * right shape for the Changes pane, which shows one row for a new folder rather
+ * than a row per file inside it. `all` lists every untracked file individually,
+ * which is what ownership bookkeeping needs: Copse keys its own edits by file
+ * path, so a collapsed `dir/` matches nothing it recorded, and the two halves of
+ * that mismatch compound — the prototype Copse just created reads as the user's
+ * uncommitted work, and once `dir/` is itself marked owned, every file the user
+ * later drops into that directory reads as Copse's. It costs a full walk of
+ * untracked directories, which is the price of telling those two apart.
+ */
 export async function getGitStatus(
   root: string | null = getAgentExecutionRoot(),
+  opts: { untrackedFiles?: 'normal' | 'all' } = {},
 ): Promise<GitStatusResult | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await confirmInsideWorkTree(root, true)))
     return null
   const prefix = await workTreePrefix(root)
   if (prefix === null) return null
-  const { stdout, code } = await runGitRead(['status', '--porcelain=v1', '-z'], root)
+  const args = ['status', '--porcelain=v1', '-z']
+  if (opts.untrackedFiles === 'all') args.push('-uall')
+  const { stdout, code } = await runGitRead(args, root)
   if (code !== 0) return null
   return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix)
 }
