@@ -273174,6 +273174,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   function navigateWebview(tab, url2) {
     tab.loadError = null;
     tab.urlInput.classList.remove("has-error");
+    if (!tab.webviewReady && tab.pendingUrl === url2) return;
     whenWebviewReady(tab, (webview) => {
       const current = webview.getURL();
       tab.pendingUrl = null;
@@ -273273,6 +273274,12 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   function openRequestedBrowserUrl(rawUrl) {
     const url2 = normalizeBrowserUrl(rawUrl);
+    const existing = urlTabFor(url2);
+    if (existing) {
+      setActiveTab(existing.id);
+      navigateTab(existing, url2);
+      return;
+    }
     let tab = activeTabId ? tabs.get(activeTabId) : void 0;
     if (!tab || !isIdleBrowserTab(tab)) {
       addTab({ activate: true });
@@ -273314,6 +273321,31 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     if (!api3 || !threadId || !projectId) return;
     const reopened = await api3.canvas.reopenArtefact(projectId, threadId, title2).catch(() => false);
     if (!reopened) showToast(`"${title2}" is no longer available`);
+  }
+  function urlTabFor(url2) {
+    for (const tab of tabs.values()) {
+      if (tab.artefactTitle) continue;
+      if (displayUrl(tab) === url2) return tab;
+    }
+    return void 0;
+  }
+  function showTabForUrl(rawUrl) {
+    const url2 = normalizeBrowserUrl(rawUrl);
+    openRightPanel(store3, "browser");
+    const existing = urlTabFor(url2);
+    if (!existing) {
+      addTab({ url: url2, activate: true });
+      return;
+    }
+    setActiveTab(existing.id);
+    navigateTab(existing, url2);
+  }
+  function refreshStalePreviews(origin) {
+    for (const tab of tabs.values()) {
+      if (tab.artefactTitle) continue;
+      if (!displayUrl(tab).startsWith(origin)) continue;
+      if (tab.webview && tab.webviewReady) tab.webview.reload();
+    }
   }
   function openArtefact(artefact) {
     const target = artefactUrl(artefact);
@@ -273702,10 +273734,8 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
     api3?.browser.onOpenTab((url2) => addTab({ url: url2, activate: false })),
-    api3?.browser.onShowTab?.((url2) => {
-      openRightPanel(store3, "browser");
-      addTab({ url: url2, activate: true });
-    }),
+    api3?.browser.onShowTab?.(showTabForUrl),
+    api3?.browser.onPreviewStale?.(refreshStalePreviews),
     api3?.browser.onShareText(attachSharedText),
     api3?.browser.onShareImage(attachSharedImage),
     api3?.browser.onPluginTabRequest(ensurePluginBrowserTab),
