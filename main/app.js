@@ -255836,15 +255836,8 @@ function mountInputBar(root4, store3, api3, opts = {}) {
       "attach-btn-icon"
     )
   );
-  const inputRow = el(
-    "div",
-    { class: "input-row" },
-    composer.el,
-    attachBtn,
-    fileInput,
-    stopBtn,
-    submitBtn
-  );
+  const submitRow = el("div", { class: "submit-row" }, stopBtn, submitBtn);
+  const inputRow = el("div", { class: "input-row" }, composer.el, attachBtn, fileInput, submitRow);
   const branchWarningText = el("span", { class: "composer-branch-warning-text" });
   const checkoutBranchBtn = el(
     "button",

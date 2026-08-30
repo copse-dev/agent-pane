@@ -4427,7 +4427,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   gap: var(--spacing-xs);
   margin-top: calc(-1 * var(--spacing-sm));
 }
-.messages-list > :first-child + .hook-card-host {
+.msg-user + .hook-card-host {
   margin-top: var(--spacing-sm);
 }
 .hook-card,
@@ -4996,10 +4996,15 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.stop-btn {
+.submit-row {
   position: absolute;
-  right: 84px;
+  right: var(--spacing-md);
   bottom: var(--spacing-md);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stop-btn {
   border-radius: var(--radius);
   padding: 6px 12px;
   color: var(--text-secondary);
@@ -5014,16 +5019,10 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   outline: 1px solid var(--danger);
 }
 .submit-btn {
-  position: absolute;
-  right: var(--spacing-md);
-  bottom: var(--spacing-md);
   background: var(--accent);
   color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: 6px 16px;
-}
-.submit-btn.with-stop {
-  right: var(--spacing-md);
 }
 .footer-queue {
   font-size: 11px;
