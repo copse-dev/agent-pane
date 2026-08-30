@@ -47,6 +47,7 @@ export const GITHUB_NONMUTATING_CI_TOOLS = new Set([
  * granularity is still open, so for now every call prompts.)
  */
 export const GITHUB_WRITE_TOOLS = new Set([
+  'gh_pr_create',
   'gh_pr_rerun_failed_ci',
   'gh_pr_approve',
   'gh_pr_mark_ready',
@@ -55,6 +56,7 @@ export const GITHUB_WRITE_TOOLS = new Set([
 
 /** User-facing question for each mutating GitHub PR tool. Keep snake_case ids out of the modal. */
 const GITHUB_WRITE_PROMPT_TITLES: Record<string, string> = {
+  gh_pr_create: 'Open pull request on GitHub?',
   gh_pr_rerun_failed_ci: 'Re-run failed CI?',
   gh_pr_approve: 'Approve pull request on GitHub?',
   gh_pr_mark_ready: 'Mark pull request ready for review?',
@@ -74,17 +76,32 @@ export interface GithubWritePrompt {
  */
 export function formatGithubWritePrompt(toolName: string, args: unknown): GithubWritePrompt {
   const title = GITHUB_WRITE_PROMPT_TITLES[toolName] ?? `GitHub action: ${toolName}`
-  return { title, body: formatGithubWritePromptBody(args) }
+  return { title, body: formatGithubWritePromptBody(toolName, args) }
 }
 
-function formatGithubWritePromptBody(args: unknown): string {
+function nonEmptyStringArg(args: Record<string, unknown>, key: string): string | null {
+  const value = args[key]
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function formatGithubWritePromptBody(toolName: string, args: unknown): string {
   if (!isRecord(args)) return JSON.stringify(args, null, 2)
+  // gh_pr_create has no PR number yet — show the title, and the target repo
+  // when one was passed explicitly, so a retargeted create is visible in the
+  // modal before it is approved.
+  if (toolName === 'gh_pr_create') {
+    const title = nonEmptyStringArg(args, 'title')
+    if (!title) return JSON.stringify(args, null, 2)
+    const owner = nonEmptyStringArg(args, 'owner')
+    const repo = nonEmptyStringArg(args, 'repo')
+    return owner && repo ? `${owner}/${repo}: “${title}”` : `“${title}”`
+  }
   const number = args['number']
   if (typeof number !== 'number' || !Number.isInteger(number) || number <= 0) {
     return JSON.stringify(args, null, 2)
   }
-  const owner = typeof args['owner'] === 'string' && args['owner'].length > 0 ? args['owner'] : null
-  const repo = typeof args['repo'] === 'string' && args['repo'].length > 0 ? args['repo'] : null
+  const owner = nonEmptyStringArg(args, 'owner')
+  const repo = nonEmptyStringArg(args, 'repo')
   if (owner && repo) return `${owner}/${repo}#${String(number)}`
   return `PR #${String(number)}`
 }

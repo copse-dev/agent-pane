@@ -12,6 +12,7 @@ import {
   loadProjectThreadMetas,
   loadProjectThreads,
   loadThreadMessages,
+  recordThreadPrRefs,
   saveProjectThread,
   updateMeta,
 } from './thread-store.ts'
@@ -247,6 +248,33 @@ describe('thread-store PR-ref cache', () => {
     const first: unknown = refs[0]
     assert.ok(typeof first === 'object' && first !== null)
     assert.equal(Reflect.get(first, 'number'), 42)
+  })
+
+  it('records a PR ref handed to it directly, with no message text to scrape', async () => {
+    await saveProjectThread('p', thread('t1'))
+
+    const refs = await recordThreadPrRefs('p', 't1', [
+      { url: 'https://github.com/acme/widget/pull/99', owner: 'acme', repo: 'widget', number: 99 },
+    ])
+
+    assert.equal(refs?.[0]?.number, 99)
+    const stored = metaOnDisk(root, 'p', 't1')['prRefs']
+    assert.ok(Array.isArray(stored))
+    assert.equal(stored.length, 1)
+  })
+
+  it('reports nothing to push when the ref is already cached', async () => {
+    await saveProjectThread('p', thread('t1'))
+    const ref = {
+      url: 'https://github.com/acme/widget/pull/99',
+      owner: 'acme',
+      repo: 'widget',
+      number: 99,
+    }
+
+    await recordThreadPrRefs('p', 't1', [ref])
+
+    assert.equal(await recordThreadPrRefs('p', 't1', [ref]), null)
   })
 
   it('surfaces the cached refs through the metadata-only load', async () => {

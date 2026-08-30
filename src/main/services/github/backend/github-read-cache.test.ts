@@ -53,6 +53,7 @@ function emptyBackend(calls: { status: number; details: number; approve: number 
     listWorkspaceOpenIssues: async () => ({ issues: [], hasMore: false }),
     getIssue: async (): Promise<GhIssueSummary | null> => null,
     searchWorkspaceIssues: async () => [],
+    createPr: async () => ok,
     rerunFailedRuns: async () => ok,
     approvePr: async (): Promise<PrActionResult> => {
       calls.approve++

@@ -7,6 +7,7 @@ import type {
   GhPrSummary,
   GitHubBackendPreference,
   PrActionResult,
+  PrCreateResult,
 } from '@shared/types/git.ts'
 import { getSetting } from '../../storage/settings.ts'
 import { isGhAvailable } from '../../tool-availability.ts'
@@ -29,6 +30,25 @@ export interface GhIssuePage {
   issues: GhIssueSummary[]
   /** True when another bounded page may be available. */
   hasMore: boolean
+}
+
+/**
+ * Everything needed to open a pull request. `head` and `base` are resolved by
+ * the caller rather than left to backend inference: the API backend has no
+ * working copy to guess a branch from, so both must be explicit for the two
+ * backends to behave identically.
+ */
+export interface PrCreateInput {
+  owner: string
+  repo: string
+  /** Branch the changes live on. */
+  head: string
+  /** Branch to merge into. */
+  base: string
+  title: string
+  /** Body markdown, attribution trailer already appended by the caller. */
+  body: string
+  draft?: boolean
 }
 
 /**
@@ -58,6 +78,8 @@ export interface GitHubBackend {
   searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]>
 
   // Writes — Wave 1 PR lifecycle actions.
+  /** Open a PR and report its coordinates, so the caller can link it to a thread. */
+  createPr(input: PrCreateInput): Promise<PrCreateResult>
   rerunFailedRuns(ref: PrRef): Promise<PrActionResult>
   approvePr(ref: PrRef): Promise<PrActionResult>
   markPrReady(ref: PrRef): Promise<PrActionResult>
