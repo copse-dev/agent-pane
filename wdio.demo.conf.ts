@@ -5,6 +5,7 @@ import { extname, join, resolve, sep } from 'node:path'
 import type { Options } from '@wdio/types'
 import { browser } from '@wdio/globals'
 import { installDeleteSessionSafety, withTimeout } from './tests/e2e/helpers/after-test-safety.ts'
+import { prepareBenchmarkExplorerFixture } from './tests/demo/helpers/benchmark-explorer-fixture.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Chrome session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
@@ -26,7 +27,8 @@ const contentTypes: Readonly<Record<string, string>> = {
   '.ttf': 'font/ttf',
 }
 
-function startDemoServer(): Promise<void> {
+async function startDemoServer(): Promise<void> {
+  await prepareBenchmarkExplorerFixture()
   server = createServer((request, response) => {
     const requestUrl = new URL(request.url ?? '/', `http://127.0.0.1:${String(DEMO_PORT)}`)
     const pathname = decodeURIComponent(requestUrl.pathname)

@@ -13,6 +13,8 @@
  * trade than this seam.
  */
 
+import type { ApiClient } from '../../preload/api.d.ts'
+
 /** Thread + artefact title -> PNG `data:` URL captured from the agent browser session. */
 const previews = new Map<string, string>()
 
@@ -37,6 +39,31 @@ export function setArtefactPreview(
 
 export function getArtefactPreview(threadId: string, title: string): string | undefined {
   return previews.get(previewKey(threadId, title))
+}
+
+/**
+ * Fill the registry from the artefacts this thread saved on disk, so cards for
+ * renders from an earlier session draw with their thumbnail instead of being
+ * skipped — `createCanvasPreviewSection` shows nothing without one, which is
+ * why closing the app used to take the whole card with it.
+ *
+ * Resolves to true when it added anything, so the caller knows whether a
+ * repaint is worth scheduling. Best-effort: a thread that never rendered an
+ * artefact, or a store that cannot be read, simply leaves the registry alone.
+ */
+export async function hydrateArtefactPreviews(
+  api: ApiClient,
+  projectId: string,
+  threadId: string,
+): Promise<boolean> {
+  const saved = await api.canvas.listArtefacts(projectId, threadId).catch(() => [])
+  let added = false
+  for (const artefact of saved) {
+    if (!artefact.preview) continue
+    setArtefactPreview(threadId, artefact.title, artefact.preview)
+    added = true
+  }
+  return added
 }
 
 /** Wire the Open button to the Browser pane (see `showCanvasArtefact`). */

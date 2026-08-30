@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Thread } from '@shared/types'
 import { begin as perfBegin } from '../perf.ts'
+import { hydrateArtefactPreviews } from '../canvas/artefact-previews.ts'
 
 /**
  * On-demand transcripts.
@@ -151,6 +152,12 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
         touch(threadId)
         evict()
         store.emit('threads_changed')
+        // Canvas thumbnails alongside the transcript, not before it: a slow or
+        // unreadable canvas store must never hold up the messages. The cards
+        // that need one repaint on the second emit.
+        void hydrateArtefactPreviews(api, projectId, threadId).then((added) => {
+          if (added) store.emit('threads_changed')
+        })
       })
       .catch((err: unknown) => {
         // Leaving `messagesLoaded` false means selecting the thread again

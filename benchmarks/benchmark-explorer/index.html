@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex,nofollow" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'"
+    />
+    <title>Copse Benchmarks</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="masthead">
+        <a class="brand" href="#" aria-label="Copse Benchmarks home">
+          <img class="brand-mark" src="./assets/brand-mark.svg" alt="" aria-hidden="true" />
+          <span>
+            <span class="brand-title">Copse</span>
+            <span class="brand-context">Benchmarks</span>
+          </span>
+        </a>
+        <div class="masthead-status" id="catalog-status" aria-live="polite">Loading catalog…</div>
+      </header>
+      <main id="main-content" tabindex="-1"></main>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -68,11 +68,37 @@
 .input-row {
   position: relative;
 }
+/* The topmost visible advisory strip gets the card's rounded top edge, so its
+   fill (the danger wash behind the Guarded YOLO banner especially) runs into the
+   border instead of poking square corners through the hairline ring. The class
+   is maintained in input-bar.ts — `:first-child` would pick the DOM-first
+   element, which is usually a `hidden` strip contributing no top edge at all.
+   Rounding the element rather than clipping the card is deliberate: the footer
+   model/branch/overflow menus are positioned outside `#input-bar`, so an
+   `overflow: hidden` here would shear them off. No clipping is needed anyway —
+   a border-radius already clips the element's own background, and every strip
+   keeps its content inside padding far clear of an 8px corner. */
+#input-bar > .is-composer-top {
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+}
+/* The docked composer keeps a real 1px border (the centered one draws its ring
+   with a shadow), so its first strip nests one pixel inside it. */
+.pane-chat:not(.composer-centered) #input-bar > .is-composer-top {
+  border-top-left-radius: calc(var(--radius-lg) - 1px);
+  border-top-right-radius: calc(var(--radius-lg) - 1px);
+}
+/* The advisory strips stack at the top of the composer, so each one carries its
+   separator on the *bottom* edge. A border-top would draw a line against the
+   card's own rounded ring whenever the strip is the first thing showing; with
+   the line underneath, a strip separates itself from whatever follows — the
+   next strip, the suggestions, the attachments or the draft — and the first one
+   runs cleanly into the card border. */
 .composer-branch-warning {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
@@ -83,7 +109,7 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-top: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
   padding: var(--spacing-sm) var(--spacing-md);
   background: color-mix(in srgb, var(--danger) 14%, var(--bg-base));
   color: var(--text-primary);
@@ -128,7 +154,7 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
@@ -190,7 +216,7 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
@@ -246,7 +272,7 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
   color: var(--text-primary);
@@ -393,11 +419,6 @@
 .footer-queue {
   font-size: 11px;
   color: var(--text-muted);
-  white-space: nowrap;
-}
-.footer-running {
-  font-size: 11px;
-  color: var(--accent);
   white-space: nowrap;
 }
 .footer-indexing {

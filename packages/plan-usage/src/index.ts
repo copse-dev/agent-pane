@@ -5,6 +5,7 @@ export type {
   PlanUsageFetchOptions,
   PlanUsageSnapshot,
   PlanWindow,
+  PlanWindowUnit,
   ProviderPlanResult,
   ProviderPlanUsage,
 } from './types.ts'

@@ -43,7 +43,14 @@ export function agentActivityLabel(thread: Thread | undefined, writing: boolean)
   return todoLabel ? `Reasoning… (${todoLabel})` : 'Reasoning…'
 }
 
-export function syncAgentActivity(store: AppStore, threadId: string, writing: boolean): void {
+/** Emits the thread's current activity label, and returns what it emitted. */
+export function syncAgentActivity(
+  store: AppStore,
+  threadId: string,
+  writing: boolean,
+): string | null {
   const thread = getThreadById(store, threadId)
-  store.emit('agent_activity', threadId, agentActivityLabel(thread, writing))
+  const label = agentActivityLabel(thread, writing)
+  store.emit('agent_activity', threadId, label)
+  return label
 }

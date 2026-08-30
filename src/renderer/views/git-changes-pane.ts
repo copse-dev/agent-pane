@@ -34,49 +34,7 @@ import {
 } from '../monaco/git-diff-viewer.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
-
-function isImageDiff(diff: GitFileDiff): boolean {
-  return diff.beforeImage != null || diff.afterImage != null
-}
-
-function renderImageDiff(container: HTMLElement, diff: GitFileDiff): void {
-  clear(container)
-  const grid = el('div', { class: 'git-image-diff' })
-
-  if (diff.beforeImage) {
-    const pane = el('div', { class: 'git-image-diff-pane' })
-    pane.append(
-      el('div', { class: 'git-image-diff-label' }, 'Before'),
-      el('img', {
-        class: 'git-image-diff-img',
-        src: diff.beforeImage,
-        alt: `${diff.path} (before)`,
-        loading: 'lazy',
-      }),
-    )
-    grid.append(pane)
-  }
-
-  if (diff.afterImage) {
-    const pane = el('div', { class: 'git-image-diff-pane' })
-    pane.append(
-      el('div', { class: 'git-image-diff-label' }, 'After'),
-      el('img', {
-        class: 'git-image-diff-img',
-        src: diff.afterImage,
-        alt: `${diff.path} (after)`,
-        loading: 'lazy',
-      }),
-    )
-    grid.append(pane)
-  }
-
-  if (!diff.beforeImage && !diff.afterImage) {
-    grid.append(el('div', { class: 'panel-empty' }, 'Could not load image'))
-  }
-
-  container.append(grid)
-}
+import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 
 const STATUS_LABEL: Record<GitChangeStatus, string> = {
   modified: 'M',
@@ -323,6 +281,7 @@ export function mountGitChangesPane(
         {
           type: 'button',
           class: `git-change-row git-change-row-proposed${isSelected ? ' is-selected' : ''}`,
+          'data-tooltip': entry.path,
         },
         el('span', { class: 'git-change-status git-change-status-proposed' }, 'P'),
         el('span', { class: 'git-change-path' }, entry.path),
@@ -347,6 +306,7 @@ export function mountGitChangesPane(
         {
           type: 'button',
           class: `git-change-row${isSelected ? ' is-selected' : ''}`,
+          'data-tooltip': change.path,
         },
         el(
           'span',
@@ -386,6 +346,7 @@ export function mountGitChangesPane(
         {
           type: 'button',
           class: `git-change-row git-change-row-committed${isSelected ? ' is-selected' : ''}`,
+          'data-tooltip': change.path,
         },
         el(
           'span',

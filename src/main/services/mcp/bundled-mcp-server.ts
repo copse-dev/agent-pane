@@ -19,6 +19,7 @@ import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { z } from 'zod'
 import { resolveWorkspacePath } from '../workspace.ts'
+import { UI_RESOURCE_SOURCE_PATH_META } from './mcp-schema.ts'
 
 const MAX_ARTEFACT_BYTES = 512 * 1024
 
@@ -32,7 +33,7 @@ async function resolveArtefactHtml(input: {
   html?: string | undefined
   path?: string | undefined
   title?: string | undefined
-}): Promise<{ html: string; title: string }> {
+}): Promise<{ html: string; title: string; sourcePath?: string }> {
   if (input.path) {
     const abs = await resolveWorkspacePath(input.path) // throws if outside the workspace
     let raw: string
@@ -46,7 +47,10 @@ async function resolveArtefactHtml(input: {
       throw new Error(`Artefact file is too large (max 512 KB): ${input.path}`)
     }
     const fallbackTitle = basename(input.path).replace(/\.[^.]+$/, '')
-    return { html: raw, title: input.title ?? fallbackTitle }
+    // The path travels with the artefact so the canvas store can reopen the
+    // living file after a restart instead of the snapshot it took at render
+    // time — the point of preferring `path` over inline `html`.
+    return { html: raw, title: input.title ?? fallbackTitle, sourcePath: input.path }
   }
   if (input.html) {
     return { html: input.html, title: input.title ?? 'artefact' }
@@ -98,7 +102,7 @@ function buildCanvasServer(): { name: string; server: McpServer } {
       annotations: { readOnlyHint: true },
     },
     async ({ title, html, path }) => {
-      let resolved: { html: string; title: string }
+      let resolved: { html: string; title: string; sourcePath?: string }
       try {
         resolved = await resolveArtefactHtml({ html, path, title })
       } catch (err) {
@@ -120,6 +124,9 @@ function buildCanvasServer(): { name: string; server: McpServer } {
               uri: `ui://canvas/${slug}`,
               mimeType: 'text/html',
               text: resolved.html,
+              ...(resolved.sourcePath
+                ? { _meta: { [UI_RESOURCE_SOURCE_PATH_META]: resolved.sourcePath } }
+                : {}),
             },
           },
           {

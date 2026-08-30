@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Composer layout prototype — new thread</title>
+    <!--
+      Layout prototype for the new-thread composer card (#input-bar in
+      .pane-chat.composer-centered). It links the REAL stylesheets, so what you
+      see is the production cascade plus the small override block below. Every
+      override is scoped to a `data-*` mode on <html>, so a mode you pick here
+      maps 1:1 onto a rule you would move into input-bar.css / layout.css.
+
+      Serve the repo root and open it — a static server rather than file://,
+      because the stylesheets reach it through @import and the font @font-face
+      URLs climb out to assets/, which browsers restrict over file://:
+        python3 -m http.server 8931
+        open http://localhost:8931/docs/spikes/composer-layouts.html
+
+      `?preset=shipped|requested|topless|unified|loud` opens one directly.
+    -->
+    <link rel="stylesheet" href="../../src/renderer/styles/tokens.css" />
+    <link rel="stylesheet" href="../../src/renderer/styles/themes.css" />
+    <link rel="stylesheet" href="../../src/renderer/styles/global.css" />
+    <style>
+      /* ------------------------------------------------------------------
+         Prototype chrome (control panel + stage). Not part of the proposal.
+         ------------------------------------------------------------------ */
+      body {
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+      }
+      .proto-controls {
+        flex: 0 0 260px;
+        overflow-y: auto;
+        padding: var(--spacing-lg);
+        background: var(--bg-elevated);
+        border-right: 1px solid var(--border);
+        font-size: var(--font-size-sm);
+      }
+      .proto-controls h1 {
+        font-size: var(--font-size-base);
+        margin-bottom: var(--spacing-md);
+      }
+      .proto-group {
+        margin-bottom: var(--spacing-lg);
+      }
+      .proto-group > legend,
+      .proto-group > h2 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        margin-bottom: var(--spacing-xs);
+      }
+      .proto-group label {
+        display: block;
+        padding: 3px 0;
+        color: var(--text-secondary);
+        cursor: pointer;
+      }
+      .proto-group label:hover {
+        color: var(--text-primary);
+      }
+      .proto-group input {
+        margin-right: var(--spacing-sm);
+      }
+      .proto-note {
+        color: var(--text-muted);
+        font-size: 11px;
+        line-height: 1.5;
+        border-top: 1px solid var(--border-subtle);
+        padding-top: var(--spacing-md);
+      }
+      .proto-preset {
+        display: block;
+        width: 100%;
+        text-align: left;
+        margin-bottom: 4px;
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-base);
+        color: var(--text-primary);
+        font: inherit;
+        cursor: pointer;
+      }
+      .proto-preset:hover {
+        border-color: var(--accent);
+      }
+      .proto-stage {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      /* The composer positions itself against .pane-chat, so the stage hosts a
+         real one. #app's 100vh from base.css would overflow inside the flex
+         row, so the stage owns the height instead. */
+      .proto-stage #app {
+        height: 100%;
+        min-height: 0;
+      }
+      .proto-stage .three-pane {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+      /* Ruler overlay: a hairline on the card's own top edge, so "is the red
+         actually touching the border?" is answerable by eye. */
+      .proto-ruler #input-bar::after {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        outline: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+        outline-offset: 2px;
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      /* ==================================================================
+         MODE: attachments — where the chips row sits.
+         The row itself is moved in the DOM by applyModes(); these rules are
+         only the per-position styling.
+         ================================================================== */
+
+      /* `under-banner`: the shipped treatment — no border, no band, just the
+         chips row — but sequenced after the banner so the alert keeps the top
+         edge. Only a little more headroom, to clear the banner's hairline. */
+      [data-attachments='under-banner'] .attachment-chips:not(:empty) {
+        padding-top: var(--spacing-sm);
+      }
+      /* `below`: its own band under the message, hairline-separated, so a long
+         attachment list reads as a list rather than as part of the draft. */
+      [data-attachments='below'] .attachment-chips:not(:empty) {
+        border-top: 1px solid var(--border-subtle);
+        padding: var(--spacing-sm) var(--spacing-md);
+      }
+      /* `inline`: no separator — the chips hang off the bottom of the message
+         box, sharing its padding, so draft + attachments read as one unit. */
+      [data-attachments='inline'] .attachment-chips:not(:empty) {
+        padding: 0 var(--spacing-md) var(--spacing-sm);
+      }
+      /* An empty chips row still charges 4px top + 4px bottom of padding — that
+         is the dead gap above the banner in the shipped layout. */
+      [data-empty-chips='collapse'] .attachment-chips:empty {
+        display: none;
+      }
+
+      /* ==================================================================
+         MODE: suggestions — the follow-up bubble row.
+         Shipped padding is `0 md 6px`: bottom-only, because the row is glued
+         to the top of the message box. Any other slot has to re-balance it.
+         ================================================================== */
+      [data-suggestions='under-banner'] .follow-up-suggestions {
+        padding: var(--spacing-sm) var(--spacing-md) 6px;
+      }
+      [data-suggestions='below-message'] .follow-up-suggestions {
+        padding: 6px var(--spacing-md) var(--spacing-sm);
+      }
+      /* `footer-band`: pinned under everything as its own band, so the bubbles
+         stay put instead of shifting the draft down as they arrive. */
+      [data-suggestions='footer-band'] .follow-up-suggestions {
+        border-top: 1px solid var(--border-subtle);
+        padding: var(--spacing-sm) var(--spacing-md);
+      }
+
+      /* ==================================================================
+         MODE: attach button — the paperclip.
+         `row` parks it at the head of the chips row (moved in applyModes),
+         which also frees the 44px left gutter the overlay button reserves
+         inside .prompt-input.
+         ================================================================== */
+      [data-attach-btn='row'] .attachment-chips {
+        display: flex;
+        align-items: center;
+        /* Keep the row's height stable whether or not it holds chips. */
+        min-height: 36px;
+        padding-left: 8px;
+      }
+      [data-attach-btn='row'] .attachment-chips .attach-btn {
+        position: static;
+        flex: 0 0 auto;
+      }
+      [data-attach-btn='row'] .prompt-input {
+        padding-left: var(--spacing-md);
+      }
+
+      /* ==================================================================
+         MODE: edge — how the top of the card meets the banner.
+         ================================================================== */
+
+      /* `flush` and `stripe`: the banner's own hairline moves from its top to
+         its bottom, so the only line above the message is the one separating
+         banner from draft, and the red fill runs all the way into the card's
+         border. The top corners are rounded on the element rather than clipped
+         with overflow:hidden — the footer's model/branch/overflow menus escape
+         the card and would be sheared off by a clip.
+
+         Keyed on `.is-first-visible` (maintained by markFirstVisible()) rather
+         than `:first-child`: every strip in this stack is shown by clearing
+         `hidden`, so the DOM-first child is routinely a display:none banner and
+         a positional selector would put the rounded corners on nothing. */
+      [data-edge='flush'] #input-bar > .is-first-visible,
+      [data-edge='stripe'] #input-bar > .is-first-visible {
+        border-top: none;
+        border-top-left-radius: var(--radius-lg);
+        border-top-right-radius: var(--radius-lg);
+        overflow: hidden;
+      }
+      [data-edge='flush'] .guarded-yolo-banner,
+      [data-edge='stripe'] .guarded-yolo-banner {
+        border-bottom: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+      }
+      /* An empty chips row above the banner would otherwise re-open the gap and
+         steal the rounded corners, so flush implies the collapse. */
+      [data-edge='flush'] .attachment-chips:empty,
+      [data-edge='stripe'] .attachment-chips:empty {
+        display: none;
+      }
+      /* `stripe`: same as flush, plus a solid danger bar on the very top edge —
+         the alarm reads at a glance without enlarging the banner. */
+      [data-edge='stripe'] .guarded-yolo-banner {
+        box-shadow: inset 0 3px 0 0 var(--danger);
+        padding-top: calc(var(--spacing-sm) + 3px);
+      }
+
+      /* Docked (follow-up) composer keeps a real 1px border rather than the
+         centered card's shadow ring; the same first-child radius applies. */
+      [data-edge='flush'] .pane-chat:not(.composer-centered) #input-bar > .is-first-visible,
+      [data-edge='stripe'] .pane-chat:not(.composer-centered) #input-bar > .is-first-visible {
+        border-top-left-radius: calc(var(--radius-lg) - 1px);
+        border-top-right-radius: calc(var(--radius-lg) - 1px);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="proto-controls">
+      <h1>New-thread composer</h1>
+
+      <div class="proto-group">
+        <h2>Presets</h2>
+        <button class="proto-preset" data-preset="shipped">Shipped today</button>
+        <button class="proto-preset" data-preset="requested">Requested</button>
+        <button class="proto-preset" data-preset="topless">Chips under banner</button>
+        <button class="proto-preset" data-preset="unified">Unified box</button>
+        <button class="proto-preset" data-preset="loud">Loud banner</button>
+      </div>
+
+      <fieldset class="proto-group">
+        <legend>Attachments row</legend>
+        <label><input type="radio" name="attachments" value="above" />Above banner (shipped)</label>
+        <label
+          ><input type="radio" name="attachments" value="under-banner" />Under banner, above
+          message</label
+        >
+        <label
+          ><input type="radio" name="attachments" value="below" />Below message, own band</label
+        >
+        <label
+          ><input type="radio" name="attachments" value="inline" />Below message, no
+          separator</label
+        >
+      </fieldset>
+
+      <fieldset class="proto-group">
+        <legend>Suggestions row</legend>
+        <label
+          ><input type="radio" name="suggestions" value="above-message" />Above message
+          (shipped)</label
+        >
+        <label
+          ><input type="radio" name="suggestions" value="under-banner" />Under banner, above
+          attachments</label
+        >
+        <label><input type="radio" name="suggestions" value="below-message" />Below message</label>
+        <label
+          ><input type="radio" name="suggestions" value="footer-band" />Own band above footer</label
+        >
+      </fieldset>
+
+      <fieldset class="proto-group">
+        <legend>Top edge &amp; banner</legend>
+        <label><input type="radio" name="edge" value="current" />Gap at top (shipped)</label>
+        <label><input type="radio" name="edge" value="flush" />Flush, line at bottom</label>
+        <label><input type="radio" name="edge" value="stripe" />Flush + danger stripe</label>
+      </fieldset>
+
+      <fieldset class="proto-group">
+        <legend>Paperclip</legend>
+        <label
+          ><input type="radio" name="attachBtn" value="overlay" />Inside message (shipped)</label
+        >
+        <label><input type="radio" name="attachBtn" value="row" />Head of attachments row</label>
+      </fieldset>
+
+      <fieldset class="proto-group">
+        <legend>Empty attachments row</legend>
+        <label><input type="radio" name="emptyChips" value="keep" />Keeps its padding</label>
+        <label><input type="radio" name="emptyChips" value="collapse" />Collapses</label>
+      </fieldset>
+
+      <fieldset class="proto-group">
+        <legend>State</legend>
+        <label><input type="checkbox" id="toggle-banner" checked />Guarded YOLO banner</label>
+        <label><input type="checkbox" id="toggle-chips" checked />Has attachments</label>
+        <label><input type="checkbox" id="toggle-suggestions" checked />Has suggestions</label>
+        <label><input type="checkbox" id="toggle-centered" checked />New thread (centered)</label>
+        <label><input type="checkbox" id="toggle-light" />Light theme</label>
+        <label><input type="checkbox" id="toggle-ruler" />Show card edge</label>
+      </fieldset>
+
+      <p class="proto-note" id="proto-summary"></p>
+    </div>
+
+    <div class="proto-stage">
+      <div id="app">
+        <div id="body" class="three-pane">
+          <div id="pane-chat" class="pane-chat composer-centered">
+            <div id="conversation" class="conversation"></div>
+            <div id="input-bar">
+              <div class="attachment-chips">
+                <button
+                  class="attach-btn attach-btn-row"
+                  type="button"
+                  aria-label="Attach files"
+                  hidden
+                >
+                  <svg class="attach-btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                    />
+                  </svg>
+                </button>
+                <span class="attachment-chip"
+                  ><span class="attachment-chip-label">screenshot-2026-08-29.png</span></span
+                >
+                <span class="attachment-chip"
+                  ><span class="attachment-chip-label">input-bar.ts</span></span
+                >
+              </div>
+
+              <div class="guarded-yolo-banner" role="alert" data-phase="active">
+                <span class="guarded-yolo-icon" aria-hidden="true">!</span>
+                <span class="guarded-yolo-text"
+                  >Guarded YOLO active for this thread. Project sandbox where possible; outside
+                  reads of non-credential paths auto-run; GitHub writes still ask.</span
+                >
+                <button class="guarded-yolo-disable" type="button">Disable</button>
+              </div>
+
+              <div class="follow-up-suggestions">
+                <button class="follow-up-bubble" type="button">
+                  <span class="follow-up-label">Run the tests</span>
+                </button>
+                <button class="follow-up-bubble" type="button">
+                  <span class="follow-up-label">Explain the failure</span>
+                </button>
+                <button class="follow-up-bubble follow-up-bubble-changes" type="button">
+                  <span class="follow-up-label">Review changes</span>
+                  <span class="follow-up-stat follow-up-stat-add">+142</span>
+                  <span class="follow-up-stat follow-up-stat-del">−37</span>
+                </button>
+              </div>
+
+              <div class="input-row">
+                <div
+                  class="prompt-input with-stop"
+                  contenteditable="true"
+                  data-placeholder="Message…"
+                ></div>
+                <button
+                  class="attach-btn attach-btn-overlay"
+                  type="button"
+                  aria-label="Attach files"
+                >
+                  <svg class="attach-btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                    />
+                  </svg>
+                </button>
+                <button class="stop-btn" type="button">Stop</button>
+                <button class="submit-btn with-stop" type="button">Queue</button>
+              </div>
+
+              <div class="input-footer">
+                <div class="footer-model-host">
+                  <div class="model-picker model-picker-footer">
+                    <button class="model-picker-trigger" type="button" aria-haspopup="listbox">
+                      <span class="model-picker-label">Claude Opus 5 (1M context)</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="footer-branch-host">
+                  <div class="branch-picker">
+                    <button
+                      class="branch-picker-trigger footer-branch-status"
+                      type="button"
+                      aria-haspopup="menu"
+                    >
+                      copse/i-thought-we-d-go…
+                    </button>
+                  </div>
+                </div>
+                <div class="footer-overflow">
+                  <button class="footer-overflow-trigger" type="button" aria-haspopup="menu">
+                    …
+                  </button>
+                </div>
+                <div class="footer-usage-group">
+                  <div class="context-wheel">
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                      <circle
+                        class="context-wheel-track"
+                        cx="8"
+                        cy="8"
+                        r="6"
+                        fill="none"
+                        stroke-width="2"
+                      />
+                      <circle
+                        class="context-wheel-fill"
+                        cx="8"
+                        cy="8"
+                        r="6"
+                        fill="none"
+                        stroke-width="2"
+                        stroke-dasharray="1.5 37.7"
+                        transform="rotate(-90 8 8)"
+                      />
+                    </svg>
+                    <span class="context-wheel-label">4%</span>
+                  </div>
+                  <span class="footer-running">Agent running</span>
+                  <span class="footer-queue">· messages queue</span>
+                  <span class="footer-usage">~37.5k tokens</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const html = document.documentElement
+      const bar = document.getElementById('input-bar')
+      const chips = bar.querySelector('.attachment-chips')
+      const banner = bar.querySelector('.guarded-yolo-banner')
+      const suggestionsRow = bar.querySelector('.follow-up-suggestions')
+      const inputRow = bar.querySelector('.input-row')
+      const footer = bar.querySelector('.input-footer')
+      const clipOverlay = bar.querySelector('.attach-btn-overlay')
+      const clipRow = bar.querySelector('.attach-btn-row')
+      const pane = document.getElementById('pane-chat')
+      const summary = document.getElementById('proto-summary')
+
+      const PRESETS = {
+        shipped: {
+          attachments: 'above',
+          suggestions: 'above-message',
+          edge: 'current',
+          attachBtn: 'overlay',
+          emptyChips: 'keep',
+        },
+        requested: {
+          attachments: 'below',
+          suggestions: 'above-message',
+          edge: 'flush',
+          attachBtn: 'overlay',
+          emptyChips: 'collapse',
+        },
+        topless: {
+          attachments: 'under-banner',
+          suggestions: 'above-message',
+          edge: 'flush',
+          attachBtn: 'overlay',
+          emptyChips: 'collapse',
+        },
+        unified: {
+          attachments: 'inline',
+          suggestions: 'below-message',
+          edge: 'flush',
+          attachBtn: 'row',
+          emptyChips: 'collapse',
+        },
+        loud: {
+          attachments: 'below',
+          suggestions: 'footer-band',
+          edge: 'stripe',
+          attachBtn: 'row',
+          emptyChips: 'collapse',
+        },
+      }
+
+      // `?preset=shipped` opens straight into a named preset, so a particular
+      // comparison can be linked to rather than described.
+      const requested = new URLSearchParams(location.search).get('preset')
+      const modes = { ...(PRESETS[requested] ?? PRESETS.requested) }
+
+      /**
+       * The chips row and the paperclip actually move in the DOM rather than
+       * being repositioned with `order`, so `:first-child` (which the flush
+       * edge rules key off) stays honest — and so each mode maps onto a
+       * one-line change to the `root.append(...)` order in input-bar.ts.
+       */
+      /**
+       * The rounded/borderless top edge belongs to whichever strip is actually
+       * on screen. Every strip in this stack toggles `hidden`, so `:first-child`
+       * would keep pointing at a display:none banner — production would need
+       * this same bookkeeping, not a positional selector.
+       */
+      function markFirstVisible() {
+        let seen = false
+        for (const child of bar.children) {
+          // Computed display, not `.hidden` — an empty chips row disappears
+          // through `:empty { display: none }` and would otherwise claim the
+          // top edge while occupying none of it.
+          const isFirst = !seen && getComputedStyle(child).display !== 'none'
+          child.classList.toggle('is-first-visible', isFirst)
+          if (isFirst) seen = true
+        }
+      }
+
+      function applyModes() {
+        html.dataset.attachments = modes.attachments
+        html.dataset.suggestions = modes.suggestions
+        html.dataset.edge = modes.edge
+        html.dataset.attachBtn = modes.attachBtn
+        html.dataset.emptyChips = modes.emptyChips
+
+        // One explicit sequence rather than incremental moves: two rows compete
+        // for the same slots, so the order has to be stated somewhere — and this
+        // list is exactly the `root.append(...)` call in input-bar.ts it maps to.
+        const order = []
+        if (modes.attachments === 'above') order.push(chips)
+        order.push(banner)
+        if (modes.suggestions === 'under-banner') order.push(suggestionsRow)
+        if (modes.attachments === 'under-banner') order.push(chips)
+        if (modes.suggestions === 'above-message') order.push(suggestionsRow)
+        order.push(inputRow)
+        if (modes.suggestions === 'below-message') order.push(suggestionsRow)
+        if (modes.attachments === 'below' || modes.attachments === 'inline') order.push(chips)
+        if (modes.suggestions === 'footer-band') order.push(suggestionsRow)
+        order.push(footer)
+        bar.replaceChildren(...order)
+
+        if (modes.attachBtn === 'row') {
+          chips.insertBefore(clipRow, chips.firstChild)
+          clipRow.hidden = false
+          clipOverlay.hidden = true
+        } else {
+          clipRow.hidden = true
+          clipOverlay.hidden = false
+        }
+
+        markFirstVisible()
+
+        for (const input of document.querySelectorAll('input[type=radio]')) {
+          input.checked = modes[input.name] === input.value
+        }
+
+        const preset =
+          Object.entries(PRESETS).find(([, p]) =>
+            Object.keys(p).every((k) => p[k] === modes[k]),
+          )?.[0] ?? 'custom'
+        summary.textContent =
+          `Preset: ${preset}. ` +
+          (modes.edge === 'current'
+            ? 'The banner keeps its border-top and the empty .attachment-chips row above it contributes 8px of padding — that is the gap.'
+            : 'Whichever strip is visually first owns the top edge: no border-top, rounded top corners, hairline moved to its bottom, fill running into the card border.')
+      }
+
+      for (const input of document.querySelectorAll('input[type=radio]')) {
+        input.addEventListener('change', () => {
+          modes[input.name] = input.value
+          applyModes()
+        })
+      }
+      for (const button of document.querySelectorAll('.proto-preset')) {
+        button.addEventListener('click', () => {
+          Object.assign(modes, PRESETS[button.dataset.preset])
+          applyModes()
+        })
+      }
+
+      document.getElementById('toggle-banner').addEventListener('change', (event) => {
+        banner.hidden = !event.target.checked
+        markFirstVisible()
+      })
+      // Production hides the whole row rather than emptying it, so match that:
+      // `.follow-up-suggestions[hidden]` is the shipped off-switch.
+      document.getElementById('toggle-suggestions').addEventListener('change', (event) => {
+        suggestionsRow.hidden = !event.target.checked
+        markFirstVisible()
+      })
+      // `:empty` counts child nodes, not visibility, so the "no attachments"
+      // state has to detach the chips the way removing a real attachment does.
+      const chipNodes = [...chips.querySelectorAll('.attachment-chip')]
+      document.getElementById('toggle-chips').addEventListener('change', (event) => {
+        if (event.target.checked) chips.append(...chipNodes)
+        else for (const chip of chipNodes) chip.remove()
+        markFirstVisible()
+      })
+      document.getElementById('toggle-centered').addEventListener('change', (event) => {
+        pane.classList.toggle('composer-centered', event.target.checked)
+      })
+      document.getElementById('toggle-light').addEventListener('change', (event) => {
+        html.dataset.theme = event.target.checked ? 'light' : 'dark'
+      })
+      document.getElementById('toggle-ruler').addEventListener('change', (event) => {
+        document.querySelector('.proto-stage').classList.toggle('proto-ruler', event.target.checked)
+      })
+
+      applyModes()
+    </script>
+  </body>
+</html>

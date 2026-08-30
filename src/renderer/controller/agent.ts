@@ -99,6 +99,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     // Same guard for the whole-turn tool rollup polish (`toolSummary`).
     toolSummaryMsgId: string | null
     toolSummaryCount: number
+    // Last activity label this thread emitted, so progress chunks that round
+    // to the same percent do not re-announce through the aria-live region.
+    // Every emit below records it: a key that only tracked progress would go
+    // stale behind an intervening label and suppress the emit that restores it.
+    lastActivityLabel: string | null
   }
   const state = new Map<string, ThreadStreamState>()
   const get = (tid: string): ThreadStreamState => {
@@ -113,13 +118,19 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         summaryCount: 0,
         toolSummaryMsgId: null,
         toolSummaryCount: 0,
+        lastActivityLabel: null,
       }
       state.set(tid, st)
     }
     return st
   }
+  const emitActivity = (tid: string, label: string | null): void => {
+    get(tid).lastActivityLabel = label
+    store.emit('agent_activity', tid, label)
+  }
   const activity = (tid: string): void => {
-    syncAgentActivity(store, tid, get(tid).writing)
+    const st = get(tid)
+    st.lastActivityLabel = syncAgentActivity(store, tid, st.writing)
   }
 
   // Diff IPC → store. Shared with pop-out windows, which run this wiring alone
@@ -265,7 +276,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           conversationTokens: chunk.estimatedTokens,
           fillRatio: chunk.estimatedTokens / chunk.historyBudget,
         })
-        store.emit('agent_activity', threadId, CONTEXT_TRIM_ACTIVITY)
+        emitActivity(threadId, CONTEXT_TRIM_ACTIVITY)
         break
       }
       case 'turn_parameters': {
@@ -294,7 +305,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'prompt_progress': {
-        store.emit('agent_activity', threadId, promptProgressLabel(chunk.fraction))
+        // Progress callbacks can arrive far more often than the label's whole
+        // percent changes; skip the emit when rounding collapses them, so the
+        // aria-live region is not re-announced with an unchanged string.
+        const label = promptProgressLabel(chunk.fraction)
+        if (label !== st.lastActivityLabel) emitActivity(threadId, label)
         break
       }
       case 'context_pressure': {
@@ -408,13 +423,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             ...(chunk.issuesFound !== undefined ? { issuesFound: chunk.issuesFound } : {}),
           })
         }
-        if (chunk.status === 'running') store.emit('agent_activity', threadId, 'Reviewing changes…')
+        if (chunk.status === 'running') emitActivity(threadId, 'Reviewing changes…')
         break
       }
       case 'model_comparison': {
         setThreadComparison(store, threadId, chunk.comparison)
         if (chunk.comparison.status === 'running') {
-          store.emit('agent_activity', threadId, 'Comparing models…')
+          emitActivity(threadId, 'Comparing models…')
         }
         break
       }
@@ -450,6 +465,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         // The turn is over; the next one resolves its own parameters (or none).
         pendingTurn.delete(threadId)
         setThreadStatus(store, threadId, 'idle')
+        // Not emitActivity: the state entry is gone, and recording the label on
+        // a fresh one would leak an entry per finished turn. The next turn
+        // starts from a null key anyway.
         store.emit('agent_activity', threadId, null)
         // The turn may have ended on a different branch than it started.
         // External ACP agents run their own tools, so the mid-turn `run_shell`
