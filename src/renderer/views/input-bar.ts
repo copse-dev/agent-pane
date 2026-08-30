@@ -1105,6 +1105,9 @@ export function mountInputBar(
     stopBtn.hidden = !running
     submitBtn.textContent = running ? 'Queue' : 'Send'
     submitBtn.setAttribute('aria-label', running ? 'Queue message' : 'Send message')
+    // Not styling — the demo autoplay driver and the e2e specs read this class
+    // off `.submit-btn` to tell a run in flight from a finished one.
+    submitBtn.classList.toggle('with-stop', running)
     composer.el.classList.toggle('with-stop', running)
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending()
   }
