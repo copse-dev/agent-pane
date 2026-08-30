@@ -69,12 +69,10 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
-  it('keeps the heavy tier off trunk so day-to-day PRs stay cheap', () => {
-    // The trunk model only pays for itself if e2e/bench run once per PROMOTION
-    // rather than once per PR. Both guards are easy to lose when someone edits an
-    // unrelated clause in the same `if:`, and losing them is silent — CI simply
-    // gets expensive again. Pin both halves: no heavy tier on a trunk (`main`)
-    // push, and on a PR only when it targets `release` (or is force-labelled).
+  it('keeps expensive post-merge repetitions off trunk pushes', () => {
+    // Main pushes repeat the exact commit already gated as a PR. Keep the
+    // expensive post-merge repeat off trunk; promotion and nightly remain the
+    // environment/release-branch repetitions.
     for (const name of ['bench', 'e2e']) {
       const job = workflow.match(new RegExp(`^ {2}${name}:\\n(?: {4}.*\\n)+`, 'm'))?.[0]
       assert.ok(job, `expected a \`${name}:\` job in ci.yml`)
@@ -83,12 +81,18 @@ describe('ci.yml workflow invariants', () => {
         /github\.event_name != 'push' \|\| github\.ref != 'refs\/heads\/main'/,
         `${name} must not run on pushes to trunk`,
       )
-      assert.match(
-        job,
-        /github\.base_ref == 'release'/,
-        `${name} must only run on PRs that target release (promotion PRs)`,
-      )
     }
+  })
+
+  it('runs full e2e on merge-eligible PRs the oracle cannot safely thin', () => {
+    const e2e = jobBlock('e2e')
+    assert.match(e2e, /needs\.precheck\.outputs\.mode == 'full'/)
+    assert.match(e2e, /needs\.precheck\.outputs\.mode == 'subset'/)
+    assert.match(
+      e2e,
+      /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+      'fork PRs must remain off the self-hosted e2e fleet',
+    )
   })
 
   it('forces promotion PRs through full e2e before consulting the oracle', () => {
@@ -135,17 +139,17 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.match(
       aggregate,
-      /PROMOTION_PR=\$\{\{ github\.event_name == 'pull_request' && github\.base_ref == 'release'/,
-      'the aggregate must identify same-repository promotion PRs',
+      /E2E_REQUIRED=\$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+      'the aggregate must identify same-repository PRs whose e2e job dispatched',
     )
     assert.match(
       aggregate,
-      /\$PROMOTION_PR && \[ "\$\{\{ needs\.precheck\.outputs\.e2e_shard_total \}\}" != "0" \] && \[ "\$\{\{ needs\.e2e\.result \}\}" != "success" \]/,
-      'promotion PRs must fail closed unless e2e succeeds',
+      /\$E2E_REQUIRED && \[ "\$\{\{ needs\.precheck\.outputs\.e2e_shard_total \}\}" != "0" \] && \[ "\$\{\{ needs\.e2e\.result \}\}" != "success" \]/,
+      'merge-eligible same-repository PRs must fail closed unless required e2e succeeds',
     )
   })
 
-  it('only demands promotion e2e in the cases the e2e job actually dispatches', () => {
+  it('only demands PR e2e in the cases the e2e job actually dispatches', () => {
     // The gate demanding a job that skipped itself is a deadlock, not a
     // fail-closed: `CI Passed` can never go green, and because `pull_request`
     // has no `edited` trigger, retargeting away from `main` does not re-run CI,
@@ -155,8 +159,8 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
     assert.match(
       aggregate,
-      /PROMOTION_PR=[^\n]*github\.event\.pull_request\.draft == false \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci-full'\)/,
-      'a main-based draft skips e2e, so the gate must not demand it',
+      /E2E_REQUIRED=[^\n]*github\.event\.pull_request\.draft == false \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci-full'\)/,
+      'a draft skips e2e, so the gate must not demand it',
     )
     assert.match(
       aggregate,
