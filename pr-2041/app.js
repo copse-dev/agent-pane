@@ -256494,6 +256494,7 @@ ${description}
     stopBtn.hidden = !running;
     submitBtn.textContent = running ? "Queue" : "Send";
     submitBtn.setAttribute("aria-label", running ? "Queue message" : "Send message");
+    submitBtn.classList.toggle("with-stop", running);
     composer.el.classList.toggle("with-stop", running);
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending();
   }
