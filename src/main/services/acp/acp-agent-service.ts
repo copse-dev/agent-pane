@@ -21,7 +21,8 @@ import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
-import { isAcpOverSshEnabled } from './acp-ssh-transport.ts'
+import { acpSshTarget, isAcpOverSshEnabled } from './acp-ssh-transport.ts'
+import { gateRemoteAcpEnvForward, remoteAcpAuthRequiredHint } from './acp-remote-env-gate.ts'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   sleepMs,
@@ -55,6 +56,7 @@ import {
   pendingApprovalCountForThread,
   cancelApprovalsForAcpToolCall,
 } from '../approval.ts'
+import { setRemoteAcpInstallApprover } from './acp-remote-install-approval.ts'
 import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
@@ -103,6 +105,24 @@ import { getThreadExecutionContext } from '../thread-execution-context.ts'
  * (issue #830); history is replayed only into a genuinely fresh session —
  * first turn, config change, or a failed/unavailable resume.
  */
+
+/**
+ * Wire the remote ACP adapter install prompt to the real approval dialog. Done
+ * here because this module is main-process-only, while the transport that asks
+ * is also bundled into the ACP workers and so must not import `approval.ts`
+ * (it would pull Electron/node-pty into those bundles). See
+ * acp-remote-install-approval.ts.
+ */
+setRemoteAcpInstallApprover(async ({ title, body }) => {
+  const { approved } = await requestApproval({
+    title,
+    body,
+    type: 'shell',
+    cause: 'acp-package-setup',
+    allowRemember: false,
+  })
+  return approved
+})
 
 export interface RunAcpAgentOptions {
   threadId: string
@@ -399,6 +419,10 @@ export async function runAcpAgentFromSettings(
     ...(permissionMode ? { permissionMode } : {}),
     ...(configOptions ? { configOptions } : {}),
   }
+  // Provider keys configured for this agent cross to a remote SSH host only
+  // with the user's consent; on denial the agent runs with whatever
+  // credentials already live on that host. No-op for local workspaces.
+  await gateRemoteAcpEnvForward(agent.id, spawnConfig)
 
   // Accumulate streamed assistant text so the turn contributes to thread history
   // (the external agent owns the model loop, so this is the only transcript we
@@ -555,7 +579,9 @@ export async function runAcpAgentFromSettings(
     // and a network denial is often WHY it died, so name the blocked hosts.
     emitNetworkDenialAudit(denialMark, options.onChunk)
     await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
-    throw new AcpTurnFailure(err, {
+    // An agent on a remote host answering "Authentication required" needs
+    // remote-side remedies; replace the dead-end message with ones that work.
+    throw new AcpTurnFailure(remoteAcpAuthRequiredHint(err, cwd, options.agentId) ?? err, {
       assistantText,
       usage: turn
         ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
@@ -615,11 +641,16 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
     throw new Error('Open a folder before detecting an ACP agent’s models.')
   }
   const sandbox = resolveAcpSandbox(agent)
+  // A probe only runs `initialize` to enumerate models/modes — it needs no
+  // provider credentials, so the agent's configured env never crosses to a
+  // remote host for a probe (and a settings-triggered consent dialog would be
+  // noise). Local probes keep it: same-machine, nothing crosses a wire.
+  const forwardEnv = agent.env && !acpSshTarget(cwd) ? agent.env : undefined
   return probeAcpAgentIsolated({
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),
-    ...(agent.env ? { env: agent.env } : {}),
+    ...(forwardEnv ? { env: forwardEnv } : {}),
     ...(sandbox ? { sandbox } : {}),
   })
 }
