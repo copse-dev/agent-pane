@@ -208,16 +208,28 @@ export async function revealFinalPreview(
   if (!expanded) return false
 
   // Expansion makes chat narrower, which reflows the long prompt and changes
-  // its scroll height. Let that layout settle, then use the transcript's own
-  // control to keep the model's finished result in view: it moves the message
-  // list's own scrollTop and nothing else. Do not reach for `scrollIntoView`
-  // here — the marketing hero embeds this document in a same-origin iframe,
-  // and that walks every scrollable ancestor including the embedding page, so
-  // a finished run would yank a reader partway down copse.dev back up to the
-  // hero. The URL field focuses on navigation; a passive hero should finish
-  // without a stray focus ring.
+  // its scroll height. Let that layout settle, then bring the finished answer
+  // into view. It runs a little taller than the narrowed chat viewport, so
+  // centre it: bottom-aligning pushes its opening line off the top edge.
+  //
+  // Centre by moving the transcript's own scroll box, never with
+  // `scrollIntoView`. The marketing hero embeds this document in a same-origin
+  // iframe, and `scrollIntoView` walks every scrollable ancestor including the
+  // embedding page — so a finished run would yank a reader partway down
+  // copse.dev back up to the hero. `demo/main.ts` parks the composer's focus
+  // for the same reason. The URL field focuses on navigation; a passive hero
+  // should finish without a stray focus ring.
   await sleep(POLL_MS)
   doc.querySelector<HTMLButtonElement>('.scroll-to-bottom')?.click()
+  const transcript = doc.querySelector<HTMLElement>('.messages-list')
+  const finalAssistantMessage = [...doc.querySelectorAll<HTMLElement>('.msg-assistant')].at(-1)
+  if (transcript && finalAssistantMessage) {
+    const box = transcript.getBoundingClientRect()
+    const message = finalAssistantMessage.getBoundingClientRect()
+    // What `block: 'center'` resolves to for this one scroll box. The browser
+    // clamps the assignment, so an answer shorter than the box stays put.
+    transcript.scrollTop += message.top + message.height / 2 - (box.top + box.height / 2)
+  }
   if (doc.activeElement instanceof HTMLElement) doc.activeElement.blur()
   return true
 }
