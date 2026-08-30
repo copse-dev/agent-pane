@@ -174,6 +174,69 @@ describe('user transcript attachment chips', () => {
     assert.equal(textEl.querySelector('placeholder'), null)
   })
 
+  /**
+   * The mid-fold accordion was only wired to the plain-text user branch, so any
+   * prompt carrying an attachment — a dropped file, or even a pasted-text chip —
+   * rendered at full height no matter how long it was.
+   */
+  it('folds a long prompt that carries attachments, keeping the chips visible', () => {
+    const lines = Array.from({ length: 14 }, (_, i) => `line ${String(i + 1)}`).join('\n')
+    mountWithUserMessage(`${lines}\nWhat should we do next?`, [
+      { kind: 'file', label: 'trace.zip', content: 'archive' },
+    ])
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl, 'user message text is rendered')
+    assert.ok(textEl.classList.contains('msg-user-fold'), 'the prompt folds')
+    assert.equal(textEl.classList.contains('is-expanded'), false)
+    assert.match(textEl.querySelector('.msg-user-fold-head')?.textContent ?? '', /line 1/)
+    assert.match(
+      textEl.querySelector('.msg-user-fold-tail')?.textContent ?? '',
+      /What should we do next/,
+    )
+
+    // The attachment row sits outside the fold, so it stays readable collapsed.
+    const row = textEl.querySelector('.transcript-attachment-row')
+    assert.ok(row, 'trailing attachment row renders')
+    assert.equal(row.closest('.msg-user-fold-middle'), null, 'the row is not hidden by the fold')
+    assert.equal(row.querySelector('.transcript-attachment-label')?.textContent, 'trace.zip')
+
+    const toggle = textEl.querySelector<HTMLButtonElement>('.msg-user-fold-toggle')
+    assert.ok(toggle)
+    toggle.click()
+    assert.ok(textEl.classList.contains('is-expanded'))
+  })
+
+  /**
+   * Head/middle/tail are contiguous slices, so a placeholder in the tail must
+   * still resolve to the tail's paste — not restart at the message's first one.
+   */
+  it('binds inline paste chips to the right snapshot on both sides of the fold', () => {
+    const filler = Array.from({ length: 14 }, (_, i) => `line ${String(i + 1)}`).join('\n')
+    mountWithUserMessage(`opening ${CHIP_CHAR} note\n${filler}\nclosing ${CHIP_CHAR} ask`, [
+      { kind: 'paste', label: 'First paste', content: 'one' },
+      { kind: 'paste', label: 'Second paste', content: 'two' },
+    ])
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl, 'user message text is rendered')
+    assert.ok(textEl.classList.contains('msg-user-fold'), 'the prompt folds')
+
+    const head = textEl.querySelector('.msg-user-fold-head')
+    const tail = textEl.querySelector('.msg-user-fold-tail')
+    assert.equal(
+      head?.querySelector('.transcript-attachment-label')?.textContent,
+      'First paste',
+      'the head chip keeps the first snapshot',
+    )
+    assert.equal(
+      tail?.querySelector('.transcript-attachment-label')?.textContent,
+      'Second paste',
+      'the tail chip resolves to the second snapshot, not the first',
+    )
+    assert.doesNotMatch(textEl.textContent, new RegExp(CHIP_CHAR))
+  })
+
   it('shows a text-only resend recovery for an image prompt rejected by its model', () => {
     const store = createStore()
     const threadId = createThread(store)
