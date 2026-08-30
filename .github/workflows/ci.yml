@@ -28,9 +28,10 @@ on:
     # `github.base_ref`, not here, so a PR retargeted from `main` to `release`
     # picks up the full tier on its next sync without touching this file.
   # Nightly full e2e on GitHub-hosted runners — the comprehensive safety net.
-  # PR/push runs are oracle-thinned on self-hosted (see the e2e job), so the
-  # full suite is no longer guaranteed on every main push; this catches anything
-  # a partial map missed, within a day. Off-:00 minute to avoid the cron stampede.
+  # Merge-eligible PRs run either the oracle-selected subset or, when the oracle
+  # cannot safely thin, the full suite. Main pushes remain cheap because their
+  # exact commit was already gated as a PR; the nightly catches direct-push and
+  # environment drift. Off-:00 minute to avoid the cron stampede.
   schedule:
     - cron: '17 6 * * *'
   # NOTE: there is deliberately no `merge_group` trigger. GitHub's merge queue
@@ -981,26 +982,14 @@ jobs:
 
   e2e:
     needs: [build, precheck]
-    # `mode == 'subset'` is what makes a PR run its own e2e specs automatically.
-    # `precheck` already asks the oracle what this diff can reach and sizes the
-    # shard matrix to the answer; before this clause that plan was computed,
-    # printed to the step summary, and then discarded on every PR into `main`.
-    #
-    # The cost ceiling holds *by construction* rather than by promise: `subset`
-    # is only ever emitted when the oracle managed to thin the suite, so the
-    # matrix is already small. Everything the oracle refuses to thin — a broad
-    # change, a `LOW` confidence verdict, an empty selection — comes back as
-    # `full`, which still needs `ci-full` or a `release` base exactly as before.
-    # So this widens what runs automatically without widening what it can cost.
-    #
-    # Deliberately not "e2e on every PR". The e2e mapping is selector-vocabulary
-    # heuristics, not the exact import graph the unit tier gets, so a subset is a
-    # filter and never the gate — see docs/testing-strategy.md, which keeps the
-    # tier "small enough to stay green" and leaves the real net to the nightly
-    # schedule and the promotion PR into `release`. Both still run `full`.
+    # The oracle decides the cost, not whether uncertain changes receive a gate:
+    # `subset` runs only the specs it can map confidently; `full` means the map is
+    # broad or LOW-confidence, so every shard runs. Treating `full` as a reason to
+    # skip e2e inverted the risk policy — the least-understood changes could merge
+    # with less integration coverage than confidently mapped UI changes.
     #
     # Draft PRs are unaffected: the `draft == false` clause below still applies,
-    # so a subset does not start dispatching shards on work in progress.
+    # so neither a subset nor a full plan dispatches shards on work in progress.
     if: >-
       needs.precheck.outputs.e2e_shard_total != '0' &&
       (github.event_name != 'push' || github.ref != 'refs/heads/main') &&
@@ -1008,6 +997,7 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
        github.base_ref == 'release' ||
+       needs.precheck.outputs.mode == 'full' ||
        needs.precheck.outputs.mode == 'subset' ||
        contains(github.event.pull_request.labels.*.name, 'ci-full') ||
        contains(github.event.pull_request.labels.*.name, 'update-screenshots')) &&
@@ -1017,13 +1007,15 @@ jobs:
     # Zero-shard plans (oracle mode=skip / empty subset) skip this job via
     # `e2e_shard_total != 0` — an empty matrix is a GHA **failure**, not a skip
     # (see the precheck shards step).
-    # HEAVY TIER, same rule as `bench` above: promotion PRs (base `release`),
-    # pushes to `release`, the nightly schedule and release tags. PRs into
-    # `main` skip 8 Electron shards apiece, which is where most of the
-    # runner starvation came from. Two escape hatches on a trunk-targeted PR:
-    # `ci-full` for the whole heavy tier, and `update-screenshots` for this job
-    # specifically — without the latter that label would be inert on trunk
-    # PRs, since screenshot candidates are produced by the e2e run.
+    # Full mode is intentionally expensive: it is the fail-safe result for a
+    # change the selector map cannot bound. Confident subsets keep ordinary UI
+    # changes cheap; docs-only changes produce zero shards and skip this job.
+    # `ci-full` remains the explicit override for a draft or a change whose
+    # author wants exhaustive coverage despite a subset plan.
+    #
+    # `update-screenshots` also runs this job on a trunk PR: screenshot
+    # candidates are produced by the e2e run, so without it the label would be
+    # inert on a plan that plans no shards.
     # Draft PRs skip e2e for the same reason as `build` above; `build` is also
     # gated, so on a draft this job's `needs` are unsatisfied and it would skip
     # regardless — the explicit clause keeps the intent readable at this job.
@@ -1770,16 +1762,12 @@ jobs:
             echo "All CI jobs passed (heavy jobs intentionally skipped: mode=skip)."
             exit 0
           fi
-          # Demand e2e only when the `e2e` job was actually dispatched. Its own
-          # `if:` skips drafts (no `ci-full`) and zero-shard plans, so mirroring
-          # those two guards here is what keeps the demand and the dispatch in
-          # step. Without the draft guard a main-based DRAFT deadlocked: e2e
-          # skipped because it was a draft, and this gate failed because e2e had
-          # not succeeded, so `CI Passed` could never go green — and since a base
-          # retarget does not re-run CI, the red outlived the move to `develop`.
-          PROMOTION_PR=${{ github.event_name == 'pull_request' && github.base_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
-          if $PROMOTION_PR && [ "${{ needs.precheck.outputs.e2e_shard_total }}" != "0" ] && [ "${{ needs.e2e.result }}" != "success" ]; then
-            echo "Promotion PR e2e did not complete successfully (result=${{ needs.e2e.result }})."
+          # Demand e2e whenever the job's own dispatch contract says a
+          # merge-eligible same-repository PR must run it. Mirroring the draft
+          # and zero-shard guards avoids demanding a deliberately skipped job.
+          E2E_REQUIRED=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.draft == false || contains(github.event.pull_request.labels.*.name, 'ci-full')) }}
+          if $E2E_REQUIRED && [ "${{ needs.precheck.outputs.e2e_shard_total }}" != "0" ] && [ "${{ needs.e2e.result }}" != "success" ]; then
+            echo "Required PR e2e did not complete successfully (result=${{ needs.e2e.result }})."
             echo '${{ toJSON(needs) }}'
             exit 1
           fi
