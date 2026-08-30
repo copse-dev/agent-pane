@@ -165,6 +165,82 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('reloads a stale preview in place without pulling its tab forward', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    let previewStale: ((origin: string) => void) | undefined
+    const api = createPendingApi({
+      'browser.onPreviewStale': (handler: (origin: string) => void): (() => void) => {
+        previewStale = handler
+        return (): void => {}
+      },
+      'fs.readFile': async (): Promise<string> => '',
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      openBrowserUrl(store, 'http://localhost:4321/scratch/demo.html')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const preview = qsRequired<FakeWebview>(
+        viewer,
+        '.browser-tab-panel.is-active .browser-webview',
+      )
+      stubWebviewMethods(preview)
+      let reloads = 0
+      preview.getURL = (): string => preview.src || 'about:blank'
+      preview.reload = (): void => {
+        reloads += 1
+      }
+      preview.dispatchEvent(new Event('dom-ready'))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      // Move to a second tab, so the preview is now in the background.
+      const newTabBtn = qsRequired(list, '.browser-tabs-new-btn')
+      newTabBtn.click()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      const activeBefore = list.querySelector('.browser-tabs-tab.is-active')
+
+      assert.ok(previewStale)
+      previewStale('http://localhost:4321/')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      // The background tab silently holds the new bytes; the agent editing the
+      // workspace is not a request to be looked at, so focus must not move.
+      assert.equal(reloads, 1)
+      assert.equal(list.querySelector('.browser-tabs-tab.is-active'), activeBefore)
+
+      // A different origin's edit leaves it alone.
+      previewStale('http://localhost:9999/')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      assert.equal(reloads, 1)
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
   it('renders proposed workspace files for a localhost URL in the browser demo', async () => {
     const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
     const ResizeObserverCtor = globalThis.ResizeObserver

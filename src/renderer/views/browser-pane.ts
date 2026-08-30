@@ -764,6 +764,25 @@ export function mountBrowserPane(
     navigateTab(existing, url)
   }
 
+  /**
+   * A preview server served a file that just changed on disk, so every tab
+   * showing a page from it is now stale. Refresh them where they are: this is
+   * the agent (or the user) editing the workspace, not a request to be looked
+   * at, so a background tab must silently become current rather than seize the
+   * pane — the same rule `openArtefact` follows for a re-render.
+   *
+   * A tab with no live webview needs nothing: it has a `pendingUrl` and will
+   * fetch the new bytes when it is next shown. `Cache-Control: no-store` on
+   * every preview response is what makes the reload return them.
+   */
+  function refreshStalePreviews(origin: string): void {
+    for (const tab of tabs.values()) {
+      if (tab.artefactTitle) continue
+      if (!displayUrl(tab).startsWith(origin)) continue
+      if (tab.webview && tab.webviewReady) tab.webview.reload()
+    }
+  }
+
   function openArtefact(artefact: CanvasArtefact): void {
     // text/html renders inline via an opaque data: URL; a URL-list artefact
     // navigates normally (and is still subject to the browser origin policy).
@@ -1210,6 +1229,7 @@ export function mountBrowserPane(
     // background tab (main blocks the popup window and forwards the URL here).
     api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
     api?.browser.onShowTab?.(showTabForUrl),
+    api?.browser.onPreviewStale?.(refreshStalePreviews),
     api?.browser.onShareText(attachSharedText),
     api?.browser.onShareImage(attachSharedImage),
     api?.browser.onPluginTabRequest(ensurePluginBrowserTab),
