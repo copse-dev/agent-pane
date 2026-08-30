@@ -4701,11 +4701,19 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .input-row {
   position: relative;
 }
+#input-bar > .is-composer-top {
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+}
+.pane-chat:not(.composer-centered) #input-bar > .is-composer-top {
+  border-top-left-radius: calc(var(--radius-lg) - 1px);
+  border-top-right-radius: calc(var(--radius-lg) - 1px);
+}
 .composer-branch-warning {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
@@ -4716,7 +4724,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-top: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
   padding: var(--spacing-sm) var(--spacing-md);
   background: color-mix(in srgb, var(--danger) 14%, var(--bg-base));
   color: var(--text-primary);
@@ -4761,7 +4769,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
@@ -4819,7 +4827,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
@@ -4875,7 +4883,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
   color: var(--text-primary);
@@ -5020,11 +5028,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .footer-queue {
   font-size: 11px;
   color: var(--text-muted);
-  white-space: nowrap;
-}
-.footer-running {
-  font-size: 11px;
-  color: var(--accent);
   white-space: nowrap;
 }
 .footer-indexing {
@@ -8921,8 +8924,11 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 4px var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md) 4px;
   min-height: 0;
+}
+.attachment-chips:empty {
+  display: none;
 }
 .attachment-chip {
   display: inline-flex;
@@ -9011,7 +9017,7 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 0 var(--spacing-md) 6px;
+  padding: var(--spacing-sm) var(--spacing-md) 6px;
 }
 .follow-up-suggestions[hidden] {
   display: none;

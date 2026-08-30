@@ -17529,7 +17529,9 @@ function agentActivityLabel(thread, writing) {
 }
 function syncAgentActivity(store3, threadId, writing) {
   const thread = getThreadById(store3, threadId);
-  store3.emit("agent_activity", threadId, agentActivityLabel(thread, writing));
+  const label = agentActivityLabel(thread, writing);
+  store3.emit("agent_activity", threadId, label);
+  return label;
 }
 var CONTEXT_TRIM_ACTIVITY;
 var init_agent_activity = __esm({
@@ -17585,6 +17587,45 @@ var init_perf = __esm({
   "src/renderer/perf.ts"() {
     bridge = readBridge();
     autopilotOn = bridge?.autopilot === true;
+  }
+});
+
+// src/renderer/canvas/artefact-previews.ts
+function previewKey(threadId, title2) {
+  return JSON.stringify([threadId, title2]);
+}
+function setArtefactPreview(threadId, title2, preview) {
+  if (preview) previews.set(previewKey(threadId, title2), preview);
+}
+function getArtefactPreview(threadId, title2) {
+  return previews.get(previewKey(threadId, title2));
+}
+async function hydrateArtefactPreviews(api3, projectId, threadId) {
+  const saved = await api3.canvas.listArtefacts(projectId, threadId).catch(() => []);
+  let added = false;
+  for (const artefact of saved) {
+    if (!artefact.preview) continue;
+    setArtefactPreview(threadId, artefact.title, artefact.preview);
+    added = true;
+  }
+  return added;
+}
+function setArtefactShowHandler(handler) {
+  showHandler = handler;
+}
+function requestArtefactShow(threadId, title2) {
+  showHandler?.(threadId, title2);
+}
+function artefactUriFromToolResult(result) {
+  if (!result) return null;
+  const match3 = /\bui:\/\/[^\s)\]]+/.exec(result);
+  return match3 ? match3[0] : null;
+}
+var previews, showHandler;
+var init_artefact_previews = __esm({
+  "src/renderer/canvas/artefact-previews.ts"() {
+    previews = /* @__PURE__ */ new Map();
+    showHandler = null;
   }
 });
 
@@ -17648,6 +17689,9 @@ function attachThreadHydration(store3, api3) {
       touch(threadId);
       evict();
       store3.emit("threads_changed");
+      void hydrateArtefactPreviews(api3, projectId, threadId).then((added) => {
+        if (added) store3.emit("threads_changed");
+      });
     }).catch((err2) => {
       console.error("[threads] could not load transcript", err2);
       failedThreadIds.add(threadId);
@@ -17715,6 +17759,7 @@ var HYDRATED_THREAD_BUDGET, activeHydrator, failedThreadIds;
 var init_thread_hydration = __esm({
   "src/renderer/controller/thread-hydration.ts"() {
     init_perf();
+    init_artefact_previews();
     HYDRATED_THREAD_BUDGET = 8;
     activeHydrator = null;
     failedThreadIds = /* @__PURE__ */ new Set();
@@ -21472,7 +21517,14 @@ This response is streamed through the real renderer event path.`
       setCuratedEnabled: emptyArray,
       onStatusChanged: subscribe
     },
-    canvas: { onArtefact: subscribe, onShowArtefact: subscribe },
+    canvas: {
+      onArtefact: subscribe,
+      onShowArtefact: subscribe,
+      // The demo has no canvas store behind it: nothing was ever saved, so
+      // nothing can be listed or reopened.
+      listArtefacts: () => resolved([]),
+      reopenArtefact: () => resolved(false)
+    },
     storage: {
       get: (key) => resolved(storage.get(key)),
       set: (key, value2) => {
@@ -24259,11 +24311,18 @@ var init_acp_known_agents = __esm({
           // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
           // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
           // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
-          // BOTH forms are required: the literal dir gets recursive subpath
+          // ALL THREE forms are required: the literal dirs get recursive subpath
           // coverage (ASRT strips trailing /** from write globs, so a glob can
           // never grant a subtree), while the single-segment glob covers the
           // sibling -cwd files.
-          scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*"]
+          //
+          // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
+          // exports to its own shell, overriding the workspace-owned one Copse
+          // passes at spawn. Everything downstream inherits it, so an agent
+          // following the "put scratch in $TMPDIR" steer lands there, as does
+          // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
+          // `-*` glob does not reach it: that hyphen is load-bearing.
+          scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
         docsUrl: "https://www.npmjs.com/package/@zed-industries/claude-code-acp",
@@ -24329,11 +24388,18 @@ var init_acp_known_agents = __esm({
           // Claude Code hardcodes shell/task bookkeeping in system /tmp, ignoring
           // $TMPDIR: a /tmp/claude-<uid>/ tree (every Bash call fails at mkdir
           // without it) and per-command /tmp/claude-<hex>-cwd tracking files.
-          // BOTH forms are required: the literal dir gets recursive subpath
+          // ALL THREE forms are required: the literal dirs get recursive subpath
           // coverage (ASRT strips trailing /** from write globs, so a glob can
           // never grant a subtree), while the single-segment glob covers the
           // sibling -cwd files.
-          scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*"]
+          //
+          // `/tmp/claude` is not bookkeeping — it is the `TMPDIR` Claude Code
+          // exports to its own shell, overriding the workspace-owned one Copse
+          // passes at spawn. Everything downstream inherits it, so an agent
+          // following the "put scratch in $TMPDIR" steer lands there, as does
+          // every `mkdtemp`/`tsx`/`electron-download` call in a test it runs. The
+          // `-*` glob does not reach it: that hyphen is load-bearing.
+          scratchPaths: ["/tmp/claude-${uid}", "/tmp/claude-*", "/tmp/claude"]
         },
         sandboxedPermissionMode: "acceptEdits",
         setup: "claude setup-token",
@@ -45614,7 +45680,29 @@ function formatReset2(resetsAt) {
   return `resets in ${String(days)}d`;
 }
 function formatCreditCents(cents) {
-  return `$${(cents / 100).toFixed(2)}`;
+  return "$" + (cents / 100).toFixed(2);
+}
+function formatCreditAmount(n2) {
+  return Number.isInteger(n2) ? String(n2) : n2.toFixed(1);
+}
+function formatUsdAmount(n2) {
+  return "$" + (Number.isInteger(n2) ? String(n2) : n2.toFixed(2));
+}
+function formatPlanWindowStats(window3) {
+  const used = Math.round(window3.usedPercent);
+  const severity = typeof window3.severity === "string" && window3.severity.trim() ? window3.severity.trim().toLowerCase() : null;
+  const parts = [];
+  if (window3.unit === "credits" && typeof window3.usedCredits === "number" && typeof window3.limitCredits === "number") {
+    parts.push(
+      `${formatCreditAmount(window3.usedCredits)} / ${formatCreditAmount(window3.limitCredits)} credits`
+    );
+  } else if (window3.unit === "usd" && typeof window3.usedDollars === "number" && typeof window3.limitDollars === "number") {
+    parts.push(`${formatUsdAmount(window3.usedDollars)} / ${formatUsdAmount(window3.limitDollars)}`);
+  }
+  parts.push(`${String(used)}% used`);
+  parts.push(formatReset2(window3.resetsAt));
+  if (severity && severity !== "normal") parts.push(severity);
+  return parts.join(" \xB7 ");
 }
 function renderPlanProvider(host, result, onClaudeSignIn) {
   const card2 = document.createElement("div");
@@ -45680,14 +45768,15 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
     row2.className = "usage-plan-window";
     const used = Math.round(window3.usedPercent);
     const severity = typeof window3.severity === "string" && window3.severity.trim() ? window3.severity.trim().toLowerCase() : null;
-    const severitySuffix = severity && severity !== "normal" ? ` \xB7 ${severity}` : "";
     if (severity) row2.dataset["severity"] = severity;
+    if (window3.unit) row2.dataset["unit"] = window3.unit;
+    const stats = formatPlanWindowStats(window3);
     row2.innerHTML = `
       <div class="usage-plan-window-meta">
         <span class="usage-plan-window-label">${escapeHtml(window3.label)}</span>
-        <span class="usage-plan-window-stats">${String(used)}% used \xB7 ${formatReset2(window3.resetsAt)}${escapeHtml(severitySuffix)}</span>
+        <span class="usage-plan-window-stats">${escapeHtml(stats)}</span>
       </div>
-      <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(used)}" aria-label="${escapeHtml(window3.label)} ${String(used)} percent used">
+      <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(used)}" aria-label="${escapeHtml(window3.label)} ${escapeHtml(stats)}">
         <div class="usage-plan-bar-fill" style="width: ${String(Math.min(100, used))}%"></div>
       </div>
     `;
@@ -52051,35 +52140,6 @@ var init_hook_run_detail = __esm({
       agentMessage: external_exports.string().optional(),
       userMessage: external_exports.string().optional()
     });
-  }
-});
-
-// src/renderer/canvas/artefact-previews.ts
-function previewKey(threadId, title2) {
-  return JSON.stringify([threadId, title2]);
-}
-function setArtefactPreview(threadId, title2, preview) {
-  if (preview) previews.set(previewKey(threadId, title2), preview);
-}
-function getArtefactPreview(threadId, title2) {
-  return previews.get(previewKey(threadId, title2));
-}
-function setArtefactShowHandler(handler) {
-  showHandler = handler;
-}
-function requestArtefactShow(threadId, title2) {
-  showHandler?.(threadId, title2);
-}
-function artefactUriFromToolResult(result) {
-  if (!result) return null;
-  const match3 = /\bui:\/\/[^\s)\]]+/.exec(result);
-  return match3 ? match3[0] : null;
-}
-var previews, showHandler;
-var init_artefact_previews = __esm({
-  "src/renderer/canvas/artefact-previews.ts"() {
-    previews = /* @__PURE__ */ new Map();
-    showHandler = null;
   }
 });
 
@@ -241527,7 +241587,7 @@ function mountConversation(root4, store3, api3) {
       activityBar.hidden = true;
       return;
     }
-    activityLabel.textContent = label;
+    if (activityLabel.textContent !== label) activityLabel.textContent = label;
     if (label.startsWith("Reasoning\u2026") && list.querySelector(".message-reasoning.message-reasoning-live")) {
       activityBar.hidden = true;
       scrollToBottom();
@@ -255860,22 +255920,10 @@ function mountInputBar(root4, store3, api3, opts = {}) {
   });
   const usagePopover = createFooterUsagePopover();
   const usageGroup = el("div", { class: "footer-usage-group" });
-  const runningIndicator = el("span", {
-    class: "footer-running",
-    hidden: "",
-    role: "status",
-    "aria-live": "polite"
-  });
   const queueIndicator = el("span", { class: "footer-queue", hidden: "", "aria-live": "polite" });
   const contextWheel = createContextWheel();
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api3);
-  usageGroup.append(
-    contextWheel.root,
-    runningIndicator,
-    queueIndicator,
-    usageBtn,
-    usagePopover.root
-  );
+  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root);
   footer.append(modelHost, checkoutHost, branchHost);
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -256058,7 +256106,6 @@ function mountInputBar(root4, store3, api3, opts = {}) {
     checkoutRetryBtn
   );
   root4.append(
-    chips,
     guardedYolo.element,
     branchWarning,
     checkoutError,
@@ -256074,6 +256121,7 @@ function mountInputBar(root4, store3, api3, opts = {}) {
     void submit();
   });
   root4.insertBefore(followUps.root, inputRow);
+  root4.insertBefore(chips, inputRow);
   const defaultPlaceholder = "Message\u2026";
   const followUpPlaceholder = "Send follow-up";
   const nextStepHint = mountNextStepHint(store3, api3, () => {
@@ -256451,8 +256499,6 @@ ${description}
   function updateState() {
     const running = isRunning();
     stopBtn.hidden = !running;
-    runningIndicator.hidden = !running;
-    runningIndicator.textContent = running ? "Agent running \xB7 messages queue" : "";
     submitBtn.textContent = running ? "Queue" : "Send";
     submitBtn.setAttribute("aria-label", running ? "Queue message" : "Send message");
     submitBtn.classList.toggle("with-stop", running);
@@ -257352,6 +257398,24 @@ ${description}
     updateComposerPlaceholder();
   });
   observer.observe(followUps.root, { attributes: true, attributeFilter: ["hidden"] });
+  const advisoryStrips = [
+    guardedYolo.element,
+    branchWarning,
+    checkoutError,
+    imageCompatibilityWarning,
+    contextFitWarning
+  ];
+  function markTopEdge() {
+    const top2 = advisoryStrips.find((strip) => !strip.hidden);
+    for (const strip of advisoryStrips) {
+      strip.classList.toggle("is-composer-top", strip === top2);
+    }
+  }
+  const topEdgeObserver = new MutationObserver(markTopEdge);
+  for (const strip of advisoryStrips) {
+    topEdgeObserver.observe(strip, { attributes: true, attributeFilter: ["hidden"] });
+  }
+  markTopEdge();
   updateFooter();
   void refreshAutomaticCheckoutPreview();
   refreshModelPricing();
@@ -257375,6 +257439,7 @@ ${description}
       document.removeEventListener("paste", onPaste);
       document.removeEventListener("click", closeCheckoutMenu);
       observer.disconnect();
+      topEdgeObserver.disconnect();
       followUps.destroy();
       nextStepHint.destroy();
       unbindDrop();
@@ -268439,7 +268504,7 @@ var init_staged_diff_ui = __esm({
   }
 });
 
-// src/renderer/views/git-changes-pane.ts
+// src/renderer/views/git-image-diff.ts
 function isImageDiff(diff2) {
   return diff2.beforeImage != null || diff2.afterImage != null;
 }
@@ -268477,6 +268542,13 @@ function renderImageDiff(container2, diff2) {
   }
   container2.append(grid);
 }
+var init_git_image_diff = __esm({
+  "src/renderer/views/git-image-diff.ts"() {
+    init_helpers();
+  }
+});
+
+// src/renderer/views/git-changes-pane.ts
 function isChangeSelection(seed) {
   if (!seed || typeof seed !== "object") return false;
   if (!("kind" in seed) || !("path" in seed) || typeof seed.path !== "string") return false;
@@ -268650,7 +268722,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
         "button",
         {
           type: "button",
-          class: `git-change-row git-change-row-proposed${isSelected ? " is-selected" : ""}`
+          class: `git-change-row git-change-row-proposed${isSelected ? " is-selected" : ""}`,
+          "data-tooltip": entry.path
         },
         el("span", { class: "git-change-status git-change-status-proposed" }, "P"),
         el("span", { class: "git-change-path" }, entry.path)
@@ -268672,7 +268745,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
         "button",
         {
           type: "button",
-          class: `git-change-row${isSelected ? " is-selected" : ""}`
+          class: `git-change-row${isSelected ? " is-selected" : ""}`,
+          "data-tooltip": change2.path
         },
         el(
           "span",
@@ -268705,7 +268779,8 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
         "button",
         {
           type: "button",
-          class: `git-change-row git-change-row-committed${isSelected ? " is-selected" : ""}`
+          class: `git-change-row git-change-row-committed${isSelected ? " is-selected" : ""}`,
+          "data-tooltip": change2.path
         },
         el(
           "span",
@@ -269234,6 +269309,7 @@ var init_git_changes_pane = __esm({
     init_git_diff_viewer();
     init_selection_to_chat();
     init_ui_scale();
+    init_git_image_diff();
     STATUS_LABEL = {
       modified: "M",
       added: "A",
@@ -269382,8 +269458,10 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
   });
   const filesHost = el("div", { class: "pr-viewer-files" });
   const diffWrap = el("div", { class: "git-diff-editor-wrap" });
+  const imageWrap = el("div", { class: "git-image-diff-wrap" });
+  imageWrap.hidden = true;
   const emptyState = el("div", { class: "panel-empty" }, "Select a pull request");
-  viewerRoot.append(metaHost, descriptionHost, filesHost, diffWrap, emptyState);
+  viewerRoot.append(metaHost, descriptionHost, filesHost, diffWrap, imageWrap, emptyState);
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
   let agentLinksGen = 0;
@@ -269459,6 +269537,8 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     descriptionHost.classList.remove("pr-viewer-description-fill");
     clear(filesHost);
     diffWrap.hidden = true;
+    imageWrap.hidden = true;
+    clear(imageWrap);
     emptyState.hidden = false;
     setInlineStatus(emptyState, "pending", "Loading pull requests\u2026");
   }
@@ -269471,6 +269551,8 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     descriptionHost.classList.remove("pr-viewer-description-fill");
     clear(filesHost);
     diffWrap.hidden = true;
+    imageWrap.hidden = true;
+    clear(imageWrap);
     emptyState.hidden = false;
     emptyState.textContent = ghStatus?.installed ? "GitHub CLI is not authenticated" : "GitHub CLI is not available";
   }
@@ -269866,6 +269948,8 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
     selectRequestId++;
     selectedFile = null;
     diffWrap.hidden = true;
+    imageWrap.hidden = true;
+    clear(imageWrap);
     const descriptionFills = Boolean(prDetails?.body.trim());
     descriptionHost.classList.toggle("pr-viewer-description-fill", descriptionFills);
     emptyState.hidden = descriptionFills;
@@ -269888,11 +269972,21 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
       emptyState.hidden = false;
       emptyState.textContent = "Could not load diff";
       diffWrap.hidden = true;
+      imageWrap.hidden = true;
       return;
     }
     diffLoadQueue = diffLoadQueue.catch(() => void 0).then(async () => {
       if (requestId !== selectRequestId || selectedFile !== path4) return;
       emptyState.hidden = true;
+      if (isImageDiff(diff2)) {
+        diffWrap.hidden = true;
+        imageWrap.hidden = false;
+        if (diffEditor) disposeDiffModels(diffEditor);
+        renderImageDiff(imageWrap, diff2);
+        return;
+      }
+      imageWrap.hidden = true;
+      clear(imageWrap);
       diffWrap.hidden = false;
       if (diff2.deleted) {
         clearDiff();
@@ -270167,6 +270261,7 @@ var init_pr_pane = __esm({
     init_workspace_links();
     init_git_diff_viewer();
     init_ui_scale();
+    init_git_image_diff();
     STATUS_LABEL2 = {
       added: "A",
       modified: "M",
@@ -273192,6 +273287,12 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     setActiveTab(tab.id);
     return true;
   }
+  async function reopenStoredArtefact(title2, threadId) {
+    const projectId = store3.getState().activeProjectId;
+    if (!api3 || !threadId || !projectId) return;
+    const reopened = await api3.canvas.reopenArtefact(projectId, threadId, title2).catch(() => false);
+    if (!reopened) showToast(`"${title2}" is no longer available`);
+  }
   function openArtefact(artefact) {
     const target = artefactUrl(artefact);
     const existing = artefactTabFor(artefact.title, artefact.threadId);
@@ -273573,7 +273674,8 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     store3.on("browser_url_bar_focus_requested", focusUrlBar),
     store3.on("canvas_artefact_requested", openArtefact),
     store3.on("canvas_artefact_show_requested", (identity8) => {
-      showArtefact(identity8.title, identity8.threadId);
+      if (showArtefact(identity8.title, identity8.threadId)) return;
+      void reopenStoredArtefact(identity8.title, identity8.threadId);
     }),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
@@ -292117,14 +292219,20 @@ function startAgentController(store3, api3) {
         summaryMsgId: null,
         summaryCount: 0,
         toolSummaryMsgId: null,
-        toolSummaryCount: 0
+        toolSummaryCount: 0,
+        lastActivityLabel: null
       };
       state4.set(tid, st3);
     }
     return st3;
   };
+  const emitActivity = (tid, label) => {
+    get6(tid).lastActivityLabel = label;
+    store3.emit("agent_activity", tid, label);
+  };
   const activity = (tid) => {
-    syncAgentActivity(store3, tid, get6(tid).writing);
+    const st3 = get6(tid);
+    st3.lastActivityLabel = syncAgentActivity(store3, tid, st3.writing);
   };
   const detachDiffState = attachDiffState(store3, api3, { revealOnShowDiff: true });
   const unsub = api3.agent.onChunk((threadId, chunk) => {
@@ -292248,7 +292356,7 @@ function startAgentController(store3, api3) {
           conversationTokens: chunk.estimatedTokens,
           fillRatio: chunk.estimatedTokens / chunk.historyBudget
         });
-        store3.emit("agent_activity", threadId, CONTEXT_TRIM_ACTIVITY);
+        emitActivity(threadId, CONTEXT_TRIM_ACTIVITY);
         break;
       }
       case "turn_parameters": {
@@ -292271,7 +292379,8 @@ function startAgentController(store3, api3) {
         break;
       }
       case "prompt_progress": {
-        store3.emit("agent_activity", threadId, promptProgressLabel(chunk.fraction));
+        const label = promptProgressLabel(chunk.fraction);
+        if (label !== st3.lastActivityLabel) emitActivity(threadId, label);
         break;
       }
       case "context_pressure": {
@@ -292376,13 +292485,13 @@ function startAgentController(store3, api3) {
             ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {}
           });
         }
-        if (chunk.status === "running") store3.emit("agent_activity", threadId, "Reviewing changes\u2026");
+        if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
         break;
       }
       case "model_comparison": {
         setThreadComparison(store3, threadId, chunk.comparison);
         if (chunk.comparison.status === "running") {
-          store3.emit("agent_activity", threadId, "Comparing models\u2026");
+          emitActivity(threadId, "Comparing models\u2026");
         }
         break;
       }
