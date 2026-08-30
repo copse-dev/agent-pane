@@ -611,6 +611,23 @@ export function mountBrowserPane(
     })
   }
 
+  /**
+   * Reveal the pane's active tab: size the webview, then park the caret in its
+   * address bar. That focus must not scroll. The marketing hero embeds this app
+   * in a same-origin iframe, and focusing a control inside one makes Chromium
+   * scroll the *embedding* page to bring the frame into view — so opening the
+   * Browser pane at the end of a hero run would yank a reader partway down
+   * copse.dev back up to the hero (see `demo/main.ts`, which parks the demo's
+   * composer focus for the same reason). Nothing outside the pane scrolls in
+   * the app itself, so this costs the real product nothing.
+   */
+  function revealActiveTab(tab: BrowserTab): void {
+    requestAnimationFrame(() => {
+      syncWebviewSize(tab)
+      tab.urlInput.focus({ preventScroll: true })
+    })
+  }
+
   function setActiveTab(tabId: string): void {
     if (activeTabId === tabId) return
     activeTabId = tabId
@@ -629,10 +646,7 @@ export function mountBrowserPane(
         navigateWebview(tab, url)
       }
       syncAddressBar(tab)
-      requestAnimationFrame(() => {
-        syncWebviewSize(tab)
-        tab.urlInput.focus()
-      })
+      revealActiveTab(tab)
     }
   }
 
@@ -1015,10 +1029,7 @@ export function mountBrowserPane(
         }
         syncAddressBar(tab)
         ensureBrowserResizeObserver()
-        requestAnimationFrame(() => {
-          syncWebviewSize(tab)
-          tab.urlInput.focus()
-        })
+        revealActiveTab(tab)
       }
     } else {
       stopBrowserResizeObserver()

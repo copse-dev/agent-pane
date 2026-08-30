@@ -118,11 +118,35 @@ describe('revealFinalPreview', () => {
       scrollClicked = true
     })
 
-    assert.equal(await revealFinalPreview(document, { timeoutMs: 100 }), true)
-    assert.equal(linkClicked, true)
-    assert.equal(expandClicked, true)
-    assert.equal(scrollClicked, true)
-    assert.notEqual(document.activeElement?.className, 'browser-url-input')
+    // The marketing hero embeds this document in a same-origin iframe, where
+    // `scrollIntoView` walks past the iframe and scrolls copse.dev itself. A
+    // finished run must settle the transcript through its own scroll control
+    // and leave the embedding page where the reader left it.
+    let scrolledIntoView = 0
+    const scrollDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'scrollIntoView',
+    )
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value(): void {
+        scrolledIntoView++
+      },
+    })
+    try {
+      assert.equal(await revealFinalPreview(document, { timeoutMs: 100 }), true)
+      assert.equal(linkClicked, true)
+      assert.equal(expandClicked, true)
+      assert.equal(scrollClicked, true)
+      assert.equal(scrolledIntoView, 0)
+      assert.notEqual(document.activeElement?.className, 'browser-url-input')
+    } finally {
+      if (scrollDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollDescriptor)
+      } else {
+        delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView
+      }
+    }
   })
 
   it('does not expand before a preview is ready', async () => {

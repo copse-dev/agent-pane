@@ -209,18 +209,15 @@ export async function revealFinalPreview(
 
   // Expansion makes chat narrower, which reflows the long prompt and changes
   // its scroll height. Let that layout settle, then use the transcript's own
-  // control to keep the model's finished result in view. The URL field focuses
-  // on navigation; a passive hero should finish without a stray focus ring.
+  // control to keep the model's finished result in view: it moves the message
+  // list's own scrollTop and nothing else. Do not reach for `scrollIntoView`
+  // here — the marketing hero embeds this document in a same-origin iframe,
+  // and that walks every scrollable ancestor including the embedding page, so
+  // a finished run would yank a reader partway down copse.dev back up to the
+  // hero. The URL field focuses on navigation; a passive hero should finish
+  // without a stray focus ring.
   await sleep(POLL_MS)
   doc.querySelector<HTMLButtonElement>('.scroll-to-bottom')?.click()
-  const assistantMessages = doc.querySelectorAll<HTMLElement>('.msg-assistant')
-  const finalAssistantMessage = [...assistantMessages].at(-1)
-  if (typeof finalAssistantMessage?.scrollIntoView === 'function') {
-    // The composer floats over the bottom of the transcript. Centering keeps
-    // the final answer in the genuinely visible region instead of merely
-    // placing it inside the scroll box behind that overlay.
-    finalAssistantMessage.scrollIntoView({ block: 'center' })
-  }
   if (doc.activeElement instanceof HTMLElement) doc.activeElement.blur()
   return true
 }
