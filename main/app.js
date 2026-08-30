@@ -17740,7 +17740,7 @@ function attachThreadHydration(store3, api3) {
     store3.setState({
       threads: state4.threads.map((t4) => {
         const prRefs = byThread.get(t4.id);
-        return prRefs && needsHydration(t4) ? { ...t4, prRefs } : t4;
+        return prRefs ? { ...t4, prRefs } : t4;
       })
     });
     store3.emit("threads_changed");
@@ -18333,10 +18333,13 @@ var init_thread_pr_status = __esm({
 // src/renderer/controller/sidebar-thread.ts
 function sidebarPrRefs(thread) {
   if (thread.messages && thread.messagesLoaded !== false) {
-    return collectThreadPrRefs({
+    const scraped = collectThreadPrRefs({
       messages: thread.messages,
       ...thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}
     });
+    const seen = new Set(scraped.map(githubPrKey));
+    const cachedOnly = (thread.prRefs ?? []).filter((ref) => !seen.has(githubPrKey(ref)));
+    return [...scraped, ...cachedOnly];
   }
   return thread.prRefs ?? [];
 }
@@ -18354,6 +18357,7 @@ function compactSidebarThread(thread) {
 }
 var init_sidebar_thread = __esm({
   "src/renderer/controller/sidebar-thread.ts"() {
+    init_github_pr_url();
     init_thread_pr_status();
   }
 });
