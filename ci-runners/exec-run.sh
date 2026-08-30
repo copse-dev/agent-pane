@@ -112,37 +112,37 @@ if ! git checkout --quiet --detach "${SHA}"; then
   finish 1
 fi
 
-# Seed dependencies from the image's baked layer when the lockfile still
-# matches (same contract as .github/actions/setup). On drift, fall back to
-# pnpm install — which needs network and, for private deps, a token this
-# container may not have. Rebake instead:
+# Copy package inputs from the image's baked content store when the lockfile
+# matches (same contract as .github/actions/setup). The run still performs a
+# clean install and lifecycle scripts. On drift, the install needs network and,
+# for private deps, a token this container may not have. Rebake instead:
 #   pnpm run e2e:remote -- rebake
-seeded=false
-if [[ -n "${COPSE_BAKED_DEPS:-}" && -f "${COPSE_BAKED_DEPS}/.ready" ]]; then
+corepack enable
+corepack prepare --activate
+store="${TREE}/.pnpm-store"
+mkdir -p "${store}"
+offline=()
+if [[ -n "${COPSE_BAKED_STORE:-}" && -f "${COPSE_BAKED_STORE}/.ready" ]]; then
   want="$(sha256sum pnpm-lock.yaml 2>/dev/null | awk '{ print $1 }' || echo want)"
-  have="$(cat "${COPSE_BAKED_DEPS}/.lockhash" 2>/dev/null || echo have)"
+  have="$(cat "${COPSE_BAKED_STORE}/.lockhash" 2>/dev/null || echo have)"
   if [[ "${want}" == "${have}" ]]; then
-    if cp -a "${COPSE_BAKED_DEPS}/node_modules" node_modules \
-       && { [[ ! -d "${COPSE_BAKED_DEPS}/vendor/gortex" ]] \
-            || { mkdir -p vendor && cp -a "${COPSE_BAKED_DEPS}/vendor/gortex" vendor/gortex; }; }; then
-      seeded=true
-      echo "==> seeded node_modules from baked deps"
+    if cp -a "${COPSE_BAKED_STORE}/store/." "${store}/"; then
+      offline+=(--offline)
+      echo "==> copied baked pnpm package inputs"
     else
-      rm -rf node_modules
+      rm -rf "${store}"
+      mkdir -p "${store}"
     fi
   else
-    echo "WARNING: pnpm-lock.yaml differs from the baked layer — falling back to pnpm install." >&2
+    echo "WARNING: pnpm-lock.yaml differs from the baked store — falling back to the network." >&2
     echo "         This is slow and fails for private deps without a token;" >&2
     echo "         rebake the host image instead: pnpm run e2e:remote -- rebake" >&2
   fi
 fi
-if [[ "${seeded}" != "true" ]]; then
-  corepack enable
-  corepack prepare --activate
-  if ! CI=true pnpm install --frozen-lockfile; then
-    echo "ERROR: pnpm install fallback failed (lockfile drift + no clone token in this container)" >&2
-    finish 1
-  fi
+rm -rf node_modules
+if ! CI=true npm_config_store_dir="${store}" pnpm install --frozen-lockfile "${offline[@]}"; then
+  echo "ERROR: clean pnpm install failed (lockfile drift + no clone token in this container?)" >&2
+  finish 1
 fi
 
 echo "==> building dist/"

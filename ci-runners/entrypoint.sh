@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Registers this container as a GitHub Actions self-hosted runner, runs jobs,
-# and (when ephemeral) deregisters cleanly on exit. Identical registration flow
-# to agent-pane's .github/runner*/entrypoint.sh — the ONLY change is the default
-# label set, which now advertises BOTH tiers (copse-e2e + copse-checks) so a
-# single unified fleet serves e2e and check jobs alike.
+# Registers this container as a GitHub Actions self-hosted runner and runs one
+# job. Docker's restart policy restarts the same writable container, so merely
+# passing --ephemeral does not provide a pristine filesystem. Before every
+# registration, restore the agent from the root-owned image template and erase
+# every location the runner user can persist job state.
 #
 # Repo OR org scope: GITHUB_URL may be a repo URL
 # (https://github.com/<owner>/<repo>) or an org URL (https://github.com/<owner>).
@@ -31,10 +31,23 @@ set -euo pipefail
 #   RUNNER_NAME    default: docker-<container-hostname>-<pid>
 #   RUNNER_LABELS  default: self-hosted,linux,docker,copse-e2e,copse-checks
 #   RUNNER_GROUP   default: default
-#   EPHEMERAL      "true" (default): take one job, then exit so the orchestrator
-#                  restarts a pristine container. "false": long-lived runner.
+#   EPHEMERAL      must be "true" (default). Multi-job containers defeat the
+#                  reset boundary and are rejected.
 
 : "${GITHUB_URL:?set GITHUB_URL to the repo or org URL}"
+
+readonly RUNNER_TEMPLATE=/opt/runner-template
+readonly RUNNER_RUNTIME=/opt/runner
+
+# Do not trust the previous runtime's run.sh/config.sh: a job executes as this
+# same Unix user and can modify them. The ENTRYPOINT itself lives in the
+# root-owned template, so it can safely discard and reconstruct the runtime on
+# every restart. Home and temp are cleared for the same cross-job boundary.
+find "$RUNNER_RUNTIME" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+find /home/runner -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+find /tmp /var/tmp -mindepth 1 -maxdepth 1 -user "$(id -u)" -exec rm -rf -- {} + 2>/dev/null || true
+cp -R "$RUNNER_TEMPLATE/." "$RUNNER_RUNTIME/"
+cd "$RUNNER_RUNTIME"
 
 RUNNER_NAME="${RUNNER_NAME:-docker-$(hostname)-$$}"
 # Both labels by default: this unified image can serve either tier. CI targets
@@ -44,6 +57,10 @@ RUNNER_NAME="${RUNNER_NAME:-docker-$(hostname)-$$}"
 RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,linux,docker,copse-e2e,copse-checks}"
 RUNNER_GROUP="${RUNNER_GROUP:-default}"
 EPHEMERAL="${EPHEMERAL:-true}"
+if [[ "${EPHEMERAL}" != "true" ]]; then
+  echo "ERROR: EPHEMERAL must be true; persistent self-hosted runners leak state between jobs." >&2
+  exit 1
+fi
 
 # REST endpoint for a registration token differs for repo vs org URLs.
 registration_token_url() {
@@ -82,11 +99,8 @@ cleanup() {
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
-# A container's filesystem survives a `docker restart` / restart-policy bounce
-# (the same container is re-run, not recreated), so a prior run's registration
-# files can still be here — and config.sh refuses to reconfigure when they are.
-# Clear any prior local config first; `--replace` below reclaims the same-named
-# server registration.
+# The pristine restore above should remove registration files. Keep this
+# fail-closed cleanup for an interrupted restore or future layout change.
 if [[ -f .runner ]]; then
   echo "Existing runner config found — removing before reconfigure…"
   ./config.sh remove --token "${RUNNER_TOKEN}" 2>/dev/null \
@@ -103,7 +117,7 @@ CONFIG_ARGS=(
   --unattended
   --replace
 )
-[[ "${EPHEMERAL}" == "true" ]] && CONFIG_ARGS+=(--ephemeral)
+CONFIG_ARGS+=(--ephemeral)
 
 ./config.sh "${CONFIG_ARGS[@]}"
 

@@ -6,9 +6,8 @@
 #      GitHub Actions runner fleet (`make runners`). One unified image
 #      (ci-runners/) serves both the e2e and check tiers; verifies the required
 #      tooling is installed, that the `.env` is present and filled in, and scales
-#      to however many runners you ask for. The runner image bakes the dependency
-#      tree at build time, so freshly (re)provisioned runners start warm instead
-#      of downloading ~525 MB of node_modules on their first job.
+#      to however many runners you ask for. The image can prefetch lockfile-pinned
+#      package inputs, but every job builds a fresh node_modules tree.
 #
 #   2. App dev loop — keep dependencies and the `dist/` build in sync, then run
 #      the app (`make run`). Dependencies are only reinstalled when
@@ -222,7 +221,7 @@ runners-build: check-tools
 	$(COMPOSE_IN_DIR) build --pull
 
 # Clean reprovision: tear the fleet down, rebuild the image from scratch (no
-# layer cache, fresh base) so a new baked dependency layer is picked up, then
+# layer cache, fresh base) so new prefetched package inputs are picked up, then
 # bring it back up. This is the "I just repulled / my runners are stale" button.
 .PHONY: runners-reprovision
 runners-reprovision: check-tools runner-env
