@@ -341,7 +341,10 @@ async function canApplyDirectly(
   }
 
   const root = executionRootFor(state)
-  const status = await getGitStatus(root)
+  // Untracked files individually, not collapsed into their parent directory:
+  // ownership below is keyed by file, so a bare `dir/` would match nothing Copse
+  // recorded and turn its own new prototype into "the user's uncommitted work".
+  const status = await getGitStatus(root, { untrackedFiles: 'all' })
   if (!status) {
     return { ok: false, reason: 'git is unavailable or the workspace is not a git worktree' }
   }
@@ -459,7 +462,7 @@ async function canApplyFileOpDirectly(
 export async function captureWorktreeBaseline(): Promise<Map<string, string>> {
   const state = stateFor()
   const baseline = new Map<string, string>()
-  const status = await getGitStatus(executionRootFor(state))
+  const status = await getGitStatus(executionRootFor(state), { untrackedFiles: 'all' })
   if (!status) return baseline
   const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
   const root = executionRootFor(state)
@@ -490,7 +493,7 @@ async function worktreeChangesSince(
 ): Promise<{ path: string; after: string }[]> {
   const state = stateFor()
   const root = executionRootFor(state)
-  const status = await getGitStatus(executionRootFor(state))
+  const status = await getGitStatus(executionRootFor(state), { untrackedFiles: 'all' })
   if (!status) return []
   const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
   const changes: { path: string; after: string }[] = []

@@ -367,6 +367,51 @@ describe('applyOrStageDiff direct-apply policy', () => {
     assert.equal(getStagedDiffEntry('a.txt')?.before, 'current\n')
     assert.equal(getStagedDiffEntry('a.txt')?.after, 'next\n')
   })
+
+  ownedIt('keeps iterating on a prototype it created without calling it user work', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+
+    const first = await applyOrStageDiff('scratch/demo.html', '', 'v1\n', 'html')
+    assert.match(first, /did not exist, so this created it/)
+
+    // `git status` collapses the brand-new directory into a single `scratch/`
+    // entry, which matches no per-file ownership record — so the second edit
+    // used to read Copse's own prototype as the user's uncommitted work and mint
+    // a full-worktree backup to protect it from itself.
+    const second = await applyOrStageDiff('scratch/demo.html', 'v1\n', 'v2\n', 'html')
+    assert.match(second, /Git was clean except for Copse-applied edits/)
+    assert.equal(await readFile(join(workspaceRoot, 'scratch/demo.html'), 'utf-8'), 'v2\n')
+  })
+
+  ownedIt('backs up a user file dropped into a directory it created', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+    await applyOrStageDiff('scratch/demo.html', '', 'v1\n', 'html')
+    await applyOrStageDiff('scratch/demo.html', 'v1\n', 'v2\n', 'html')
+
+    // The user adds their own untracked file to that directory. While `scratch/`
+    // was the only path git reported, marking it owned adopted everything the
+    // user later put inside it, and this write applied over the top citing a
+    // snapshot taken before the file existed.
+    await writeFile(join(workspaceRoot, 'scratch/notes.md'), "the user's notes\n", 'utf-8')
+    const result = await applyOrStageDiff(
+      'scratch/notes.md',
+      "the user's notes\n",
+      'rewritten\n',
+      'markdown',
+    )
+
+    const ref = /backed up to (\S+) first/.exec(result)?.[1]
+    assert.ok(ref, `expected a backup ref in: ${result}`)
+    const snapshot = execFileSync('git', ['ls-tree', '-r', '--name-only', ref], {
+      cwd: tempRoot,
+    }).toString()
+    // The restore point must contain the work it claims to protect.
+    assert.match(snapshot, /packages\/app\/scratch\/notes\.md/)
+  })
 })
 
 describe('applyOrStageFileOp (worktree auto-approve)', () => {

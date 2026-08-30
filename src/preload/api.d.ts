@@ -120,6 +120,8 @@ export interface ApiClient {
     workspaceFileUrl: (projectId: string, threadId: string, path: string) => Promise<string>
     onOpenTab: (handler: (url: string) => void) => () => void
     onShowTab?: (handler: (url: string) => void) => () => void
+    /** A preview server served a file that just changed on disk. */
+    onPreviewStale?: (handler: (origin: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
     shareScreenshot: (webContentsId: number) => Promise<void>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void

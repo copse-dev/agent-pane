@@ -194,6 +194,7 @@ import { getActiveProjectId } from './services/workspace.ts'
 import { getBrowserSession } from './services/browser/session-manager.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
+import { setPreviewStaleSink } from './services/browser/static-preview-server.ts'
 import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
 
 // Settings encrypts API keys through whichever cipher is installed rather than
@@ -291,6 +292,12 @@ setContextEstimateRefreshSink(() => {
 
 setWorkspaceChangeSink((root) => {
   broadcastToAppWindows('git:working_tree_changed', root)
+})
+
+// A preview whose files changed on disk repaints itself. Scoped to files the
+// server actually served, so an ordinary source edit never disturbs a page.
+setPreviewStaleSink((origin) => {
+  broadcastToAppWindows('browser:preview-stale', origin)
 })
 
 // Prevent multiple instances stacking invisible windows at the same position.
