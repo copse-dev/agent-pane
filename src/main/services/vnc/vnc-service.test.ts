@@ -344,7 +344,6 @@ describe('VncService', () => {
           shell: '/bin/zsh',
           git: true,
           rg: true,
-          inotifywait: false,
           warnings: [],
         },
         execArgv: (argv) => transport.execArgv(argv),

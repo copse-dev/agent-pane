@@ -46,7 +46,6 @@ describe('buildRemotePtyLaunch', () => {
             { when: /printf %s "\$SHELL"/, stdout: '/bin/bash' },
             { when: /command -v git$/, stdout: '/usr/bin/git\n' },
             { when: /command -v rg$/, stdout: '/usr/bin/rg\n' },
-            { when: /command -v inotifywait$/, stdout: '', code: 1 },
           ]),
       )
 
@@ -83,7 +82,6 @@ describe('buildRemotePtyLaunch', () => {
             { when: /printf %s "\$SHELL"/, stdout: '', code: 1 },
             { when: /command -v git$/, stdout: '/usr/bin/git\n' },
             { when: /command -v rg$/, stdout: '/usr/bin/rg\n' },
-            { when: /command -v inotifywait$/, stdout: '/usr/bin/inotifywait\n' },
           ]),
       )
 

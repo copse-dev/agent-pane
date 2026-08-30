@@ -21,7 +21,6 @@ export async function probeSshCapabilities(transport: SshTransport): Promise<Ssh
 
   const git = await hasTool(transport, 'git')
   const rg = await hasTool(transport, 'rg')
-  const inotifywait = await hasTool(transport, 'inotifywait')
 
   // Tool presence is carried by the boolean flags; the status banner turns those
   // into user-facing copy. Keep `warnings` for probe/infrastructure failures only
@@ -37,7 +36,6 @@ export async function probeSshCapabilities(transport: SshTransport): Promise<Ssh
     shell: shellResult.stdout.trim() || null,
     git,
     rg,
-    inotifywait,
     warnings,
   }
 }
