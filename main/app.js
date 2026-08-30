@@ -18235,7 +18235,7 @@ function extractGithubPrUrls(text4) {
   const seen = /* @__PURE__ */ new Set();
   const refs = [];
   for (const match3 of text4.matchAll(GITHUB_PR_URL_RE)) {
-    const raw = match3[0].replace(/[.,;:)\]>]+$/, "");
+    const raw = match3[0].replace(URL_TRAILING_PUNCTUATION_RE, "");
     const parsed2 = parseGithubPrUrl(raw);
     if (!parsed2) continue;
     const key = `${parsed2.owner}/${parsed2.repo}#${String(parsed2.number)}`;
@@ -18248,11 +18248,12 @@ function extractGithubPrUrls(text4) {
 function githubPrKey(ref) {
   return `${ref.owner}/${ref.repo}#${String(ref.number)}`;
 }
-var GITHUB_PR_PATH_RE, GITHUB_PR_URL_RE;
+var GITHUB_PR_PATH_RE, GITHUB_PR_URL_RE, URL_TRAILING_PUNCTUATION_RE;
 var init_github_pr_url = __esm({
   "src/shared/git/github-pr-url.ts"() {
     GITHUB_PR_PATH_RE = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/[^?#]*)?$/i;
     GITHUB_PR_URL_RE = /https?:\/\/(?:www\.)?github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+(?:[^\s)\]>]*)/gi;
+    URL_TRAILING_PUNCTUATION_RE = /[.,;:)\]>*_~`'"]+$/;
   }
 });
 
