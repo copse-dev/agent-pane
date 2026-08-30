@@ -80,6 +80,8 @@ export const PROMPT_CAUSES = [
   'acp-permission',
   /** Installing or updating an ACP agent's packages. */
   'acp-package-setup',
+  /** Forwarding an ACP agent's configured env (provider keys) to a remote SSH host. */
+  'acp-remote-env',
   /**
    * Arming a mode the user themselves just asked for. Not an interruption —
    * counted so the log stays complete, and labelled so a reader discounts it.
@@ -152,6 +154,9 @@ const CONTAINMENT: Readonly<Record<PromptCause, PromptCauseContainment>> = {
   // decide what that agent asks for.
   'acp-permission': 'kept',
   'acp-package-setup': 'removed',
+  // Secrets crossing to a user-chosen remote host need consent regardless of
+  // where the local work runs; a container changes nothing about that.
+  'acp-remote-env': 'kept',
   'mode-arming': 'kept',
 }
 
@@ -185,6 +190,7 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
   'terminal-output-share': 'Sharing terminal output with the model',
   'acp-permission': 'ACP agent permission request',
   'acp-package-setup': 'ACP agent package setup',
+  'acp-remote-env': 'Forwarding ACP agent env to a remote host',
   'mode-arming': 'Arming a mode (user-initiated, not an interruption)',
 }
 
