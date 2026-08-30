@@ -174,6 +174,17 @@ export interface PrActionResult {
   rerunCount?: number
 }
 
+/**
+ * Result of opening a pull request. Carries the created PR's coordinates on
+ * success so callers never have to scrape them back out of `message` — that
+ * URL is what links the PR to the thread that opened it.
+ */
+export interface PrCreateResult extends PrActionResult {
+  /** Full `https://github.com/owner/repo/pull/N` URL of the new PR. */
+  url?: string
+  number?: number
+}
+
 export interface GhPrChangedFile {
   path: string
   status: 'added' | 'modified' | 'removed' | 'renamed'

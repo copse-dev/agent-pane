@@ -590,20 +590,55 @@ function mergeGithubPrRefs(
   return { refs, added }
 }
 
+/**
+ * The shared read-merge-write for `prRefs`, with no queueing of its own. Callers
+ * must either hold the project's write queue already ({@link mergePrRefsIntoMeta}
+ * runs inside `appendMessage`'s queued op, where re-entering `runStoreWrite`
+ * would deadlock) or wrap it themselves ({@link recordThreadPrRefs}).
+ */
+async function mergePrRefsIntoMetaUnqueued(
+  projectId: string,
+  threadId: string,
+  found: readonly GithubPrRef[],
+): Promise<GithubPrRef[] | null> {
+  if (found.length === 0) return null
+  const path = join(threadDir(projectId, threadId), META_FILE)
+  const meta = parseMeta(await readOrNull(path))
+  if (meta === null) return null
+  const { refs, added } = mergeGithubPrRefs(meta.prRefs ?? [], found)
+  if (!added) return null
+  await atomicWriteFileAsync(path, JSON.stringify({ ...meta, prRefs: refs }, null, 2))
+  return refs
+}
+
+/**
+ * Union known PR refs into a thread's cached `prRefs` and report the result.
+ *
+ * This is the deterministic counterpart to {@link mergePrRefsIntoMeta}: a
+ * caller that already holds the PR's coordinates — `gh_pr_create`, which just
+ * opened it — records them directly instead of hoping the agent repeats the
+ * URL in prose the scraper can parse. Returns the merged set when something
+ * was added, so the caller can push the sidebar update, and null otherwise.
+ * Queued via `runStoreWrite` like every other exported meta writer, so it
+ * cannot interleave with a concurrent title/status/usage update and the
+ * project's meta cache is invalidated when it lands.
+ */
+export function recordThreadPrRefs(
+  projectId: string,
+  threadId: string,
+  found: readonly GithubPrRef[],
+): Promise<GithubPrRef[] | null> {
+  if (found.length === 0) return Promise.resolve(null)
+  return runStoreWrite(projectId, () => mergePrRefsIntoMetaUnqueued(projectId, threadId, found))
+}
+
 async function mergePrRefsIntoMeta(
   projectId: string,
   threadId: string,
   message: Message,
 ): Promise<void> {
   try {
-    const found = extractGithubPrUrls(message.content)
-    if (found.length === 0) return
-    const path = join(threadDir(projectId, threadId), META_FILE)
-    const meta = parseMeta(await readOrNull(path))
-    if (meta === null) return
-    const { refs, added } = mergeGithubPrRefs(meta.prRefs ?? [], found)
-    if (!added) return
-    await atomicWriteFileAsync(path, JSON.stringify({ ...meta, prRefs: refs }, null, 2))
+    await mergePrRefsIntoMetaUnqueued(projectId, threadId, extractGithubPrUrls(message.content))
   } catch {
     // Diagnostic metadata; never worth failing the write it rides along with.
   }

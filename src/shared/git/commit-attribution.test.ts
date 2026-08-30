@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   COPSE_COAUTHOR,
   appendCommitAttribution,
+  appendPrBodyAttribution,
   buildCommitAttribution,
 } from './commit-attribution.ts'
 
@@ -44,5 +45,26 @@ describe('appendCommitAttribution', () => {
   it('is idempotent when the co-author trailer is already present', () => {
     const once = appendCommitAttribution('Subject', ['gpt-4o'])
     assert.equal(appendCommitAttribution(once, ['gpt-4o', 'claude-opus-4-8']), once)
+  })
+})
+
+describe('appendPrBodyAttribution', () => {
+  it('appends the same block a commit gets, after a blank line', () => {
+    assert.equal(
+      appendPrBodyAttribution('Why this change.', ['claude-opus-4-8']),
+      `Why this change.\n\n${COPSE_COAUTHOR}\nCopse-Models: claude-opus-4-8\n`,
+    )
+  })
+
+  it('emits the trailer alone for an empty body, with no leading blank line', () => {
+    assert.equal(
+      appendPrBodyAttribution('', ['gpt-4o']),
+      `${COPSE_COAUTHOR}\nCopse-Models: gpt-4o\n`,
+    )
+  })
+
+  it('is idempotent so a retried create cannot stack trailers', () => {
+    const once = appendPrBodyAttribution('Body', ['gpt-4o'])
+    assert.equal(appendPrBodyAttribution(once, ['gpt-4o']), once)
   })
 })
