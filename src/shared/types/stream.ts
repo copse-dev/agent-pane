@@ -24,8 +24,12 @@ export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.t
  * trimming, post-turn review, and the two-model diff comparison. The loop only
  * ever emits the `AgentStreamChunk` subset, so a loop stream is always
  * assignable to a `StreamChunk` sink.
+ *
+ * `host: true` marks a chunk the host injected (audit cards, fallback banners).
+ * Optional, so an `AgentStreamChunk` remains assignable. Recovery and the
+ * persisted `turnOutcome.lastEvent` ignore these — they are not agent output.
  */
-export type StreamChunk =
+export type StreamChunk = (
   | AgentStreamChunk
   /** A host-native continuation began without a human submit. */
   | { type: 'machine_turn_start'; content: UserContent; origin: MachineMessageOrigin }
@@ -97,3 +101,4 @@ export type StreamChunk =
    * role caps it). Emitted only when the turn actually sent parameters.
    */
   | { type: 'turn_parameters'; model: string; parameters: ModelParameters; requestedModel?: string }
+) & { host?: true }

@@ -908,6 +908,7 @@ async function emitBypassedWriteAudit(
   onChunk({
     type: 'tool_call',
     toolCall: { id, name: 'workspace_edit_audit', args: { files: bypassed } },
+    host: true,
   })
   // Warn, don't revert: the change may be legitimate (the agent's own shell, a
   // formatter it ran) or external (another editor mid-turn) — the audit can't
@@ -922,6 +923,7 @@ async function emitBypassedWriteAudit(
       bypassed.map((p) => `- ${p}`).join('\n') +
       '\nReview them (e.g. git diff) before relying on the workspace state.',
     isError: false,
+    host: true,
   })
 }
 
@@ -948,12 +950,14 @@ function emitNetworkDenialAudit(marker: number, onChunk: (chunk: StreamChunk) =>
       name: SANDBOX_NETWORK_AUDIT_TOOL,
       args: { [SANDBOX_NETWORK_AUDIT_BLOCKED_ARG]: denialHostLabels(denied) },
     },
+    host: true,
   })
   onChunk({
     type: 'tool_result',
     toolCallId: id,
     result: formatSandboxNetworkDenialAudit(denied),
     isError: false,
+    host: true,
   })
 }
 

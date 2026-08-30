@@ -189,6 +189,7 @@ import {
   ACP_UNFINISHED_TURN_FALLBACK,
   ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
   acpTurnHasFinalResponse,
+  isAcpHostAuthoredChunk,
   nextAcpMeaningfulEvent,
   shouldRecoverAcpTurn,
   type AcpLastMeaningfulEvent,
@@ -704,14 +705,8 @@ export async function runAgent(
   let terminalOutcome: TurnOutcome | undefined
 
   const sendChunk = (chunk: StreamChunk): void => {
-    if (chunk.type === 'text' && chunk.text.trim()) lastTurnEvent = 'text'
-    else if (chunk.type === 'reasoning' && chunk.text.trim()) lastTurnEvent = 'reasoning'
-    else if (
-      chunk.type === 'tool_call' ||
-      chunk.type === 'tool_result' ||
-      chunk.type === 'tool_call_update'
-    )
-      lastTurnEvent = 'tool'
+    const tracked = nextAcpMeaningfulEvent(lastTurnEvent ?? null, chunk)
+    if (tracked !== null) lastTurnEvent = tracked
 
     if (chunk.type === 'done' && !terminalOutcomeSent) {
       const normalized = normalizeStopReason(chunk.stopReason?.toLowerCase())
@@ -940,7 +935,7 @@ export async function runAgent(
     const acpChunkSink = (chunk: StreamChunk): void => {
       runAbort.deadline.recordActivity()
       runAbort.schedule()
-      if (chunk.type === 'text') acpAssistantText += chunk.text
+      if (chunk.type === 'text' && !isAcpHostAuthoredChunk(chunk)) acpAssistantText += chunk.text
       acpProgress.lastEvent = nextAcpMeaningfulEvent(acpProgress.lastEvent, chunk)
       sendChunk(chunk)
     }
@@ -995,7 +990,11 @@ export async function runAgent(
         { role: 'user' as const, content: outboundPrompt },
         ...result.messages,
       ]
-      const endedAfterTools = shouldRecoverAcpTurn(result.stopReason, acpProgress.lastEvent)
+      const endedAfterTools = shouldRecoverAcpTurn(
+        result.stopReason,
+        acpProgress.lastEvent,
+        acpAssistantText,
+      )
       let recoveryAttempted = false
       let recoverySucceeded = false
 
@@ -1027,11 +1026,16 @@ export async function runAgent(
         recoverySucceeded = acpTurnHasFinalResponse(
           recoveryResult.stopReason,
           acpProgress.lastEvent,
+          acpAssistantText,
         )
       }
 
       if (endedAfterTools && !recoverySucceeded) {
-        sendChunk({ type: 'text', text: `\n\n${ACP_UNFINISHED_TURN_FALLBACK}` })
+        sendChunk({
+          type: 'text',
+          text: `\n\n${ACP_UNFINISHED_TURN_FALLBACK}`,
+          host: true,
+        })
         messages.push({ role: 'assistant', content: ACP_UNFINISHED_TURN_FALLBACK })
       }
 
