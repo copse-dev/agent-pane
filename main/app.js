@@ -290800,7 +290800,9 @@ function capabilityWarnings(state4) {
   const warnings3 = [];
   if (!caps.git) warnings3.push("git not found \u2014 git pane and backups will not work remotely");
   if (!caps.rg) warnings3.push("ripgrep (rg) not found \u2014 search will use grep fallback");
-  if (!caps.inotifywait) warnings3.push("inotifywait not found \u2014 file watching is disabled");
+  warnings3.push(
+    "external file edits may not appear immediately \u2014 remote file watching is not yet supported"
+  );
   warnings3.push(...caps.warnings);
   return warnings3;
 }
