@@ -7,9 +7,10 @@ useful only when that workflow needs them.
 ## Runtime and standard scripts
 
 Copse is an Electron desktop app with no backend service. `make run` is the normal entry point: it
-runs `check-node`, reinstalls dependencies only when `pnpm-lock.yaml` changes, rebuilds `dist/` only
-when source changes, and then starts the app — so it is safe to repeat and does the minimum work
-each time. `make build` stops after the rebuild, and `make clean` drops `dist/` and the stamps.
+runs `check-node`, content-addresses dependency and build inputs, verifies the complete `dist/` tree,
+and then starts the app. It is safe to repeat and does the minimum work needed even after branch
+switches or edits with preserved mtimes. `make build` stops after syncing the build, and `make clean`
+drops `dist/` and the dev-sync fingerprints.
 
 The standard scripts live in `package.json`; use `dev`, `build`, `start`, `typecheck`, `lint`,
 `format:check`, `test`, `test:e2e`, and `check` rather than recreating their behavior. Reach for
