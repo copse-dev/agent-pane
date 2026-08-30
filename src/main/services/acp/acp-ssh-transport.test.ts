@@ -490,7 +490,16 @@ describe('remote PATH canonicalization', () => {
       mkdirSync(stable, { recursive: true })
       const ephemeral = join(dir, '1341661_1788086692301')
       symlinkSync(join(dir, 'stable-install'), ephemeral)
-      const input = `${join(ephemeral, 'bin')}:/usr/bin:/bin`
+      // Control entries must be real directories that are themselves not
+      // symlinks, so create them here. System dirs don't qualify: on usr-merge
+      // Linux (Ubuntu CI runners) `/bin` IS a symlink to `/usr/bin`, and the
+      // script correctly rewrites it — asserting `/bin` survives fails there
+      // while passing on macOS, which has a real `/bin`.
+      const plainA = join(dir, 'plain-a')
+      const plainB = join(dir, 'plain-b')
+      mkdirSync(plainA)
+      mkdirSync(plainB)
+      const input = `${join(ephemeral, 'bin')}:${plainA}:${plainB}`
       const stdout = execFileSync('sh', ['-c', canonicalizeRemotePathScript(), 'sh', input], {
         encoding: 'utf8',
       })
@@ -502,7 +511,16 @@ describe('remote PATH canonicalization', () => {
         `symlinked entry must resolve to its target, got ${entries[0] ?? '<empty>'}`,
       )
       assert.ok(!canon.includes('1341661_'), 'the ephemeral symlink must not survive')
-      assert.ok(entries.includes('/usr/bin') && entries.includes('/bin'))
+      const realA = execFileSync('sh', ['-c', 'readlink -f "$1"', 'sh', plainA], {
+        encoding: 'utf8',
+      }).trim()
+      const realB = execFileSync('sh', ['-c', 'readlink -f "$1"', 'sh', plainB], {
+        encoding: 'utf8',
+      }).trim()
+      assert.ok(
+        entries.includes(realA) && entries.includes(realB),
+        `non-symlink entries must pass through (order preserved), got ${canon}`,
+      )
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
