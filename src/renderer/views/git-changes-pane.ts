@@ -281,6 +281,7 @@ export function mountGitChangesPane(
         {
           type: 'button',
           class: `git-change-row git-change-row-proposed${isSelected ? ' is-selected' : ''}`,
+          'data-tooltip': entry.path,
         },
         el('span', { class: 'git-change-status git-change-status-proposed' }, 'P'),
         el('span', { class: 'git-change-path' }, entry.path),
@@ -305,6 +306,7 @@ export function mountGitChangesPane(
         {
           type: 'button',
           class: `git-change-row${isSelected ? ' is-selected' : ''}`,
+          'data-tooltip': change.path,
         },
         el(
           'span',
@@ -344,6 +346,7 @@ export function mountGitChangesPane(
         {
           type: 'button',
           class: `git-change-row git-change-row-committed${isSelected ? ' is-selected' : ''}`,
+          'data-tooltip': change.path,
         },
         el(
           'span',
