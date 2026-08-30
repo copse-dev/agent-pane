@@ -4,8 +4,8 @@
 
 `copse-panel` (branded **Copse**) is one product: an Electron desktop AI coding assistant. There is
 no backend service; the main process talks directly to LLM providers. Launch it with `make run`,
-which verifies Node, reinstalls dependencies only when `pnpm-lock.yaml` changes, rebuilds `dist/`
-only when source changes, and then starts the app. For everything else prefer the scripts in
+which verifies Node, content-addresses dependency and build inputs, validates the complete `dist/`
+outputs, and then starts the app. For everything else prefer the scripts in
 `package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`, `test:e2e`,
 `check`) rather than inventing parallel commands.
 
