@@ -673,6 +673,51 @@ describe('shared Monaco publishing invariants', () => {
   })
 })
 
+// Every branch publishes into the one demo-previews branch, and an update to
+// main fans this workflow out into a dozen runs at once, so most of them lose
+// the race and restack onto the winner. The retry policy decides whether that
+// is invisible or surfaces as a red X on a PR whose contents were never wrong —
+// and a check that fails for reasons unrelated to the PR is one people learn to
+// ignore. Each property below is one "simplification" away from coming back.
+describe('demo preview publish race invariants', () => {
+  const demoPreview = readFileSync(resolve('.github/workflows/demo-preview.yml'), 'utf8')
+
+  it('jitters the backoff, so a herd does not retry in lockstep', () => {
+    const sleep = demoPreview.match(/^ *sleep \$\(\(.*\)\)$/m)?.[0]
+    assert.ok(sleep, 'expected the restack backoff sleep')
+    assert.match(
+      sleep,
+      /RANDOM/,
+      'a fixed backoff retries every racing run at the same instant, so they collide again',
+    )
+  })
+
+  it('allows more attempts than the herd is deep, and reports the real ceiling', () => {
+    const attempts = Number(demoPreview.match(/^ *attempts=(\d+)$/m)?.[1])
+    assert.ok(
+      attempts >= 10,
+      `one main update fans out into ~13 runs that drain one per round; ${String(attempts)} is short`,
+    )
+    assert.match(
+      demoPreview,
+      /Could not publish \$\{LABEL\} to demo-previews after \$\{attempts\} attempts/,
+      'the failure message has to track the ceiling, not a number an edit left behind',
+    )
+  })
+
+  it('re-applies the built tree on a retry rather than rebuilding it', () => {
+    // A retry changes which tip the target sits on, never what it publishes.
+    // Rebuilding widens the gap between fetching that tip and pushing, which is
+    // precisely the window the run has to win.
+    assert.equal(
+      demoPreview.match(/cp -R dist\/demo\/\./g)?.length,
+      1,
+      'the demo copy belongs to the build-once branch, not to every attempt',
+    )
+    assert.match(demoPreview, /git -C previews-branch checkout "\$restack_from" -- "\$path"/)
+  })
+})
+
 // Previews and demos are published under the production domain, so search
 // engines must be told to skip them — and told *only* about them. Both halves
 // are one-line changes away from silently inverting: a marker dropped from a
