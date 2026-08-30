@@ -87,10 +87,11 @@ export function recordDecision(input: RecordDecisionInput): void {
     const projectId = input.projectId ?? getActiveProjectId()
     const threadId = input.threadId ?? getActiveRunThread()
     if (!projectId || !threadId) {
-      console.warn(
-        '[decision-log] dropping decision — no active project/thread',
-        { kind: input.kind, cause: input.cause, source: input.source },
-      )
+      console.warn('[decision-log] dropping decision — no active project/thread', {
+        kind: input.kind,
+        cause: input.cause,
+        source: input.source,
+      })
       return
     }
 
