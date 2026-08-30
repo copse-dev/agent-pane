@@ -9101,9 +9101,15 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
 }
+.attachment-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
 .attachment-preview-title {
   max-width: min(80ch, 80vw);
-  margin-bottom: var(--spacing-sm);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
   font-weight: 600;
@@ -9148,15 +9154,16 @@ dialog.settings-overlay::backdrop {
   overflow-wrap: anywhere;
 }
 .attachment-preview-close {
-  margin-top: var(--spacing-sm);
-  width: 100%;
-  min-width: min(280px, 80vw);
-  padding: var(--spacing-sm);
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
   border-radius: var(--radius);
   background: var(--bg-base);
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: 1.25rem;
+  line-height: 1;
   cursor: pointer;
 }
 .attachment-preview-close:hover {
