@@ -1,5 +1,5 @@
 import type { Message, Thread } from '@shared/types'
-import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 
 /**
@@ -37,19 +37,24 @@ export interface SidebarThread {
 /**
  * PR refs for the status chip.
  *
- * A transcript that is actually in memory wins over any cache, and must:
+ * A transcript that is actually in memory must still be re-scraped:
  * `appendToken` mutates message content in place while the agent streams, so a
- * PR link posted mid-turn is only found by re-reading. The cached `prRefs` is
- * for the two cases with no transcript to read — an entry compacted on switching
- * away, and a thread whose transcript has not been loaded (`messagesLoaded:
- * false`), where an empty `messages` would otherwise read as "no PRs".
+ * PR link posted mid-turn is only found by re-reading. But the scrape is
+ * unioned with the cached `prRefs`, not preferred over them — the cache also
+ * carries refs recorded without any prose to scrape (a PR opened by
+ * `gh_pr_create` is linked from the tool result itself). With no transcript to
+ * read — an entry compacted on switching away, or a thread never loaded off
+ * disk (`messagesLoaded: false`) — the cache stands alone.
  */
 export function sidebarPrRefs(thread: SidebarThread): GithubPrRef[] {
   if (thread.messages && thread.messagesLoaded !== false) {
-    return collectThreadPrRefs({
+    const scraped = collectThreadPrRefs({
       messages: thread.messages,
       ...(thread.remoteAgentLink ? { remoteAgentLink: thread.remoteAgentLink } : {}),
     })
+    const seen = new Set(scraped.map(githubPrKey))
+    const cachedOnly = (thread.prRefs ?? []).filter((ref) => !seen.has(githubPrKey(ref)))
+    return [...scraped, ...cachedOnly]
   }
   return thread.prRefs ?? []
 }

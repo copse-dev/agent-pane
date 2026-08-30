@@ -170,6 +170,19 @@ export function cachingGitHubBackend(inner: GitHubBackend): GitHubBackend {
         .slot(`${query}:${String(limit)}`)
         .get(() => inner.searchWorkspaceIssues(query, limit)),
 
+    async createPr(input) {
+      const result = await inner.createPr(input)
+      // A brand-new PR has no cached entry to drop, but it does belong in the
+      // open-PR lists the panel renders — so those have to be re-read. A failed
+      // create changed nothing; keep the lists so a retry loop cannot burn
+      // rate budget on refetches.
+      if (result.ok) {
+        workspacePrs.clear()
+        myPrs.clear()
+      }
+      return result
+    },
+
     async rerunFailedRuns(ref) {
       const result = await inner.rerunFailedRuns(ref)
       invalidatePr(ref)

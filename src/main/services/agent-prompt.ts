@@ -46,6 +46,7 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_log: Show recent commit history
 - git_show: Show a file's contents at a commit/ref, or view a commit (message + diff)
 - git_commit: Create a commit with a Co-Authored-By: Copse trailer and the models used (local only; does not push)
+- gh_pr_create: Open a pull request for the current branch, adding the Copse attribution trailer and linking the PR to this thread (prefer over run_shell + gh pr create, which does neither)
 - gh_pr_list: List pull requests (read-only GitHub CLI; prefer over run_shell + gh)
 - gh_pr_view: Show pull request details incl. CI check status (read-only GitHub CLI; prefer over run_shell + gh)
 - gh_run_list: List recent CI workflow runs for a branch (read-only GitHub CLI)

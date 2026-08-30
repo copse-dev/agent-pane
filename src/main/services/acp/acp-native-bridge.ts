@@ -87,6 +87,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'get_ci_status',
   'wait_for_ci_checks',
   'get_ci_failure_logs',
+  'gh_pr_create',
   'gh_pr_rerun_failed_ci',
   'gh_pr_approve',
   'gh_pr_mark_ready',
