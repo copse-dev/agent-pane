@@ -10,7 +10,7 @@
  *   2. The snapshot is pushed over SSH to a bare repo on the host
  *      (/srv/remote-e2e/repo.git, refs/runs/<run-id>).
  *   3. Each shard starts a fresh one-shot container from the copse-ci-runner
- *      image (ci-runners/exec-run.sh): checkout → seed baked deps → build →
+ *      image (ci-runners/exec-run.sh): checkout → install from package inputs → build →
  *      wdio under Xvfb → collect artifacts.
  *   4. Results come back as files: .tmp/remote-e2e/runs/<run-id>/ holds the
  *      log and artifacts (changed reference screenshots, run info).
@@ -679,7 +679,7 @@ async function bakeImageOnHost(ssh: SshConfig, host: CloudHost, options: Options
     'cat > ~/ci-runners/.env && chmod 600 ~/ci-runners/.env',
     bakeEnv(options),
   )
-  console.log('==> Building the runner image (bakes the dependency tree — takes a while)')
+  console.log('==> Building the runner image (prefetches package inputs — takes a while)')
   // Compose build secrets read the process env, and `sudo` drops it — source
   // .env as root, like the burst provisioning flow. `~` resolves in the OUTER
   // (non-root) shell and is handed in via `env DIR=` because under sudo `~`
