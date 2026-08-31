@@ -135,10 +135,17 @@ describe('browser-hosted settings footer geometry', () => {
       Math.abs(geometry.gap) <= 1,
       `sticky footer must reach scrollport bottom, gap=${String(geometry.gap)}px`,
     )
+    // The bar still *reaches* the scrollport bottom — that is the `gap` check
+    // above, and it is the visual claim this spec exists to pin. What it must
+    // not do is own the bottom edge for hit testing: the frosted depth is
+    // chrome, not an invisible click shield over controls still visible
+    // through it (`pointer-events: none` on the bar, `auto` on its buttons).
+    // A control scrolled under the fade stays clickable; only Save and Cancel
+    // are hit targets in this band.
     assert.equal(
       geometry.footerOwnsBottomEdge,
-      true,
-      `footer must cover the scrollport bottom edge (found <${String(geometry.bottomEdgeTag)}>)`,
+      false,
+      `footer must not capture clicks at the scrollport bottom edge (found <${String(geometry.bottomEdgeTag)}>)`,
     )
     await saveElementScreenshot('#settings-dialog', 'settings-footer-no-overlap.png')
   })
