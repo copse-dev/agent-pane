@@ -635,8 +635,15 @@ function formatBytes(bytes: number | undefined): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function escapeInlineCode(value: string): string {
-  return value.replace(/`/g, '\\`')
+function inlineCode(value: string): string {
+  const backtickRuns = value.match(/`+/g) ?? []
+  const fenceLength = backtickRuns.reduce((longest, run) => Math.max(longest, run.length + 1), 1)
+  const fence = '`'.repeat(fenceLength)
+  // CommonMark code spans do not interpret backslash escapes. A delimiter
+  // longer than every run in the filename keeps backticks inside the span;
+  // padding is stripped by the parser and preserves leading/trailing spaces.
+  const content = backtickRuns.length > 0 || /^\s|\s$/.test(value) ? ` ${value} ` : value
+  return `${fence}${content}${fence}`
 }
 
 export function formatRemoteArtifactsSummary(input: {
@@ -649,7 +656,7 @@ export function formatRemoteArtifactsSummary(input: {
     const size = formatBytes(artifact.sizeBytes)
     const meta = size ? ` (${size})` : ''
     const url = remoteArtifactDownloadEndpoint(input.baseUrl, input.agentId, artifact.path)
-    return `- \`${escapeInlineCode(artifact.path)}\`${meta} — [Open](${url})`
+    return `- ${inlineCode(artifact.path)}${meta} — [Open](${url})`
   })
   return `\n\n---\n_Remote agent artifacts:_\n${lines.join('\n')}`
 }
