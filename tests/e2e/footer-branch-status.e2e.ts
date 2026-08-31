@@ -141,7 +141,19 @@ describe('footer branch status for a detached thread worktree', () => {
             createdAt: now,
             seededFromDirtyProject: false,
           },
-          messages: [],
+          // A real worktree thread cannot still be an unused blank: checkout
+          // allocation happens on its first prompt. Keep the seeded target
+          // non-blank so startup normalization does not prune it before this
+          // test can exercise the detached-worktree recovery path.
+          messages: [
+            {
+              id: 'e2e-footer-detached-message',
+              role: 'user',
+              content: 'Inspect this detached worktree.',
+              toolCalls: [],
+              createdAt: now - 1,
+            },
+          ],
           usage: { inputTokens: 0, outputTokens: 0 },
           createdAt: now - 1,
           updatedAt: now - 1,
