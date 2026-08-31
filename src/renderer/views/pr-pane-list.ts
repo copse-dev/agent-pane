@@ -45,9 +45,7 @@ export function mergePrLists(linked: PrRef[], pools: GhPrSummary[][]): GhPrSumma
     const key = githubPrKey(ref)
     if (seen.has(key)) continue
     seen.add(key)
-    const fromPools = known.find(
-      (pr) => pr.owner === ref.owner && pr.repo === ref.repo && pr.number === ref.number,
-    )
+    const fromPools = known.find((pr) => githubPrKey(pr) === key)
     merged.push(
       fromPools ?? {
         ...ref,
