@@ -17,6 +17,34 @@ import { turnIngestedExternalContent } from './security/turn-taint.ts'
 import { z } from 'zod'
 
 describe('ToolRegistry', () => {
+  it('passes the run abort signal to the permission gate', async () => {
+    const controller = new AbortController()
+    let gateSignal: AbortSignal | undefined
+    let executed = false
+    setPermissionGateForTests(async (_check, signal) => {
+      gateSignal = signal
+      return false
+    })
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'echo',
+      description: 'echo args',
+      parameters: z.object({ msg: z.string() }),
+      execute: async ({ msg }) => {
+        executed = true
+        return msg
+      },
+    })
+
+    try {
+      await reg.execute('echo', { msg: 'hello' }, controller.signal)
+      assert.equal(gateSignal, controller.signal)
+      assert.equal(executed, false)
+    } finally {
+      setPermissionGateForTests(null)
+    }
+  })
+
   it('registers and executes a tool', async () => {
     setPermissionGateForTests(async () => true)
     const reg = new ToolRegistry()

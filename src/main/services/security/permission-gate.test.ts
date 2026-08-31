@@ -141,6 +141,51 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('settles a pending tool approval when the run signal aborts', async () => {
+    setPermissionGateForTests(null)
+    const controller = new AbortController()
+    let handlerStarted = (): void => undefined
+    const started = new Promise<void>((resolve) => {
+      handlerStarted = resolve
+    })
+    let releaseHandler = (): void => undefined
+    setApprovalHandler(
+      (_req, signal): Promise<{ approved: boolean; remember: boolean }> =>
+        new Promise((resolve) => {
+          releaseHandler = (): void => {
+            resolve({ approved: false, remember: false })
+          }
+          signal?.addEventListener('abort', releaseHandler, { once: true })
+          handlerStarted()
+        }),
+    )
+
+    try {
+      const pending = ensureToolPermitted(
+        { toolName: 'gh_pr_approve', args: { number: 1 } },
+        controller.signal,
+      )
+      await started
+      controller.abort()
+      const result = await Promise.race([
+        pending.then((approved) => ({ state: 'settled' as const, approved })),
+        new Promise<{ state: 'waiting' }>((resolve) => {
+          setImmediate(() => {
+            resolve({ state: 'waiting' })
+          })
+        }),
+      ])
+      if (result.state === 'waiting') {
+        releaseHandler()
+        await pending
+      }
+      assert.deepEqual(result, { state: 'settled', approved: false })
+    } finally {
+      releaseHandler()
+      setApprovalHandler(null)
+    }
+  })
+
   it('surfaces human GitHub write prompt copy instead of snake_case + JSON', async () => {
     setPermissionGateForTests(null)
     let title = ''
