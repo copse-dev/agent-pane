@@ -142,4 +142,63 @@ describe('browser-hosted settings footer geometry', () => {
     )
     await saveElementScreenshot('#settings-dialog', 'settings-footer-no-overlap.png')
   })
+
+  // The bar covering its scrollport edge (above) is the feature; a control
+  // *parked* under it is the bug. `scroll-padding-bottom` is what separates the
+  // two: it takes the bar's depth out of the landing space, so a scrolled-to
+  // target stops above the bar instead of under frosted glass it cannot be
+  // clicked through. Keyboard focus, `scrollIntoView` and accessibility scrolls
+  // all route through the same reserve.
+  it('reserves the action bar depth so a scrolled-to control lands above it', async () => {
+    const geometry = await browser.execute(() => {
+      const content = document.querySelector<HTMLElement>('.settings-content')
+      const footer = document.querySelector<HTMLElement>('.settings-buttons')
+      const section = document.querySelector<HTMLElement>('.settings-section.active')
+      if (!content || !footer || !section) return null
+
+      // The last interactive control in the section is the one most likely to
+      // end up under the bar, so it is the honest subject for this assertion.
+      const controls = section.querySelectorAll<HTMLElement>(
+        'input, select, button, summary, textarea',
+      )
+      const target = controls[controls.length - 1]
+      if (!target) return null
+
+      // Park it under the bar first, the way a stale scroll position or a
+      // late-rendering row does, then ask the browser to scroll it into view.
+      content.scrollTop = content.scrollHeight
+      target.scrollIntoView({ block: 'end' })
+
+      const targetRect = target.getBoundingClientRect()
+      const footerRect = footer.getBoundingClientRect()
+      const centreX = targetRect.left + targetRect.width / 2
+      const centreY = targetRect.top + targetRect.height / 2
+      const atCentre = document.elementFromPoint(centreX, centreY)
+      return {
+        reserved: Number.parseFloat(getComputedStyle(content).scrollPaddingBottom),
+        footerHeight: footerRect.height,
+        clearsBar: targetRect.bottom <= footerRect.top + 1,
+        controlOwnsItsCentre: atCentre === target || (atCentre ? target.contains(atCentre) : false),
+        centreHitTag: atCentre?.className ?? null,
+        overshoot: targetRect.bottom - footerRect.top,
+      }
+    })
+
+    assert.ok(geometry, 'settings content, footer, and a focusable control must exist')
+    assert.ok(
+      geometry.reserved >= geometry.footerHeight,
+      `scroll reserve must cover the bar (reserved=${String(geometry.reserved)}px, bar=${String(geometry.footerHeight)}px)`,
+    )
+    assert.equal(
+      geometry.clearsBar,
+      true,
+      `scrolled control must stop above the bar (overshoot=${String(geometry.overshoot)}px)`,
+    )
+    assert.equal(
+      geometry.controlOwnsItsCentre,
+      true,
+      `the bar intercepted the scrolled control (hit .${String(geometry.centreHitTag)})`,
+    )
+    await saveElementScreenshot('#settings-dialog', 'settings-footer-scroll-reserve.png')
+  })
 })
