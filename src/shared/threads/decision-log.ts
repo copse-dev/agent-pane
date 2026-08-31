@@ -124,7 +124,15 @@ export const SHELL_DECISION_SUBJECT = 'shell command (arguments omitted)'
 export function redactSecrets(input: string): string {
   let out = input
   // url userinfo:  scheme://user:pass@host  ->  scheme://<redacted>@host
-  out = out.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s@]+@/gi, '$1<redacted>@')
+  //
+  // The scheme run is length-capped because it is unanchored and global: on text
+  // with no `://` the greedy run swallowed the rest of the line and backtracked
+  // through every length, at every start position, so redaction was quadratic in
+  // the field's size. 64 kB of hex took 3.1s. Capping the run makes each start
+  // constant work; it loses no match, because the engine can start further into
+  // an over-long run and the untouched prefix is re-emitted either way. The
+  // longest registered URI scheme is comfortably inside the cap.
+  out = out.replace(/([a-z][a-z0-9+.-]{0,30}:\/\/)[^/\s:@]+:[^/\s@]+@/gi, '$1<redacted>@')
   // Authorization / Bearer header values.
   out = out.replace(/\b(Bearer|Basic|token)\s+[A-Za-z0-9._~+/=-]{8,}/gi, '$1 <redacted>')
   out = out.replace(/\b(Authorization\s*[:=]\s*)\S+/gi, '$1<redacted>')

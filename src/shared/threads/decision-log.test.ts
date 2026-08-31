@@ -182,6 +182,26 @@ describe('redactSecrets', () => {
     assert.equal(redactSecrets(cmd), cmd)
   })
 
+  it('still redacts userinfo behind an unusually long scheme', () => {
+    // The scheme run is length-capped for speed; the cap must not cost a match.
+    const scheme = `x${'a'.repeat(60)}`
+    const out = redactSecrets(`${scheme}://user:s3cr3t@example.com/x`)
+    assert.equal(out.includes('s3cr3t'), false)
+    assert.equal(out.includes('example.com/x'), true)
+  })
+
+  it('stays fast on a long unbroken token', () => {
+    // The userinfo pattern is unanchored and global, so a greedy scheme run over
+    // text with no `://` backtracked at every start position — quadratic in the
+    // field's length. `makeDecisionEvent` redacts before it clamps, so this ran
+    // over the whole input: 64 kB of hex took 3.1s on the process recording the
+    // decision.
+    const haystack = 'deadbeef'.repeat(8_000)
+    const started = Date.now()
+    assert.equal(redactSecrets(haystack), haystack)
+    assert.ok(Date.now() - started < 500, 'redaction must not be quadratic in field length')
+  })
+
   it('applies redaction through makeDecisionEvent', () => {
     const e = makeDecisionEvent(
       { ...baseInput, subject: 'export API_KEY=sk-verysecretvalue123 && run' },
