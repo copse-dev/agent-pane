@@ -156,12 +156,20 @@ describe('browser-hosted settings footer geometry', () => {
       const section = document.querySelector<HTMLElement>('.settings-section.active')
       if (!content || !footer || !section) return null
 
-      // The last interactive control in the section is the one most likely to
+      // The lowest interactive control in the section is the one most likely to
       // end up under the bar, so it is the honest subject for this assertion.
-      const controls = section.querySelectorAll<HTMLElement>(
-        'input, select, button, summary, textarea',
-      )
-      const target = controls[controls.length - 1]
+      // It has to be a control a person could actually click: a section carries
+      // hidden inputs and controls folded inside a closed `<details>`, and those
+      // own no point on screen — hit testing there returns the dialog behind
+      // them and would fail this test for a reason that has nothing to do with
+      // the bar. Scan upward for the last one that really renders.
+      const candidates = [
+        ...section.querySelectorAll<HTMLElement>('input, select, button, summary, textarea'),
+      ]
+      const target = candidates.reverse().find((control) => {
+        const rect = control.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0 && control.checkVisibility()
+      })
       if (!target) return null
 
       // Park it under the bar first, the way a stale scroll position or a
