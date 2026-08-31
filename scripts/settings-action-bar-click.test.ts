@@ -7,6 +7,7 @@ import {
   scrollClearOfSettingsActionBar,
   type ActionBarClickSession,
 } from '../tests/e2e/helpers/settings-action-bar-click.ts'
+import * as helperModule from '../tests/e2e/helpers/settings-action-bar-click.ts'
 
 /** happy-dom has no layout engine, so every rect this logic reads is stubbed. */
 function stubRect(el: Element, rect: { top: number; bottom: number; height?: number }): void {
@@ -58,21 +59,30 @@ describe('scrollClearOfSettingsActionBar', () => {
     assert.equal(scroller.scrollTop, 797 - 700 + ACTION_BAR_CLEARANCE_PX)
   })
 
-  it('survives being shipped to the page as source, with no module scope', () => {
+  it('reaches the page carrying no module scope with it', () => {
     // WDIO hands `browser.execute` a function by stringifying it, so the body is
-    // re-parsed in the page with nothing around it. A reference to any
-    // module-scope binding is a ReferenceError there and nowhere else — it once
-    // silently reduced this whole helper to a no-op in CI while every
-    // module-scoped unit test still passed. Re-parse it the same way.
-    const { scroller, control } = buildSettings()
-    stubRect(control, { top: 773, bottom: 797 })
-    const shipped = new Function(`return (${scrollClearOfSettingsActionBar.toString()})`)() as (
-      element: Element,
-      clearancePx: number,
-    ) => boolean
+    // re-parsed in the page with nothing around it. A reference to any binding
+    // declared outside it is a ReferenceError there and nowhere else — that is
+    // exactly how this helper once became a silent no-op in CI while every unit
+    // test here, running it under its own module, still passed.
+    //
+    // Asserted on the source rather than by re-evaluating it: building a
+    // function from a string is banned by the type-aware lint rules, and
+    // `docs/type-safety.md` rules out silencing those. This covers what broke —
+    // the module's own exported names leaking into the body.
+    const source = scrollClearOfSettingsActionBar.toString()
+    const siblings = Object.keys(helperModule).filter(
+      (name) => name !== 'scrollClearOfSettingsActionBar',
+    )
 
-    assert.equal(shipped(control, ACTION_BAR_CLEARANCE_PX), true)
-    assert.equal(scroller.scrollTop, 797 - 700 + ACTION_BAR_CLEARANCE_PX)
+    assert.ok(siblings.includes('ACTION_BAR_CLEARANCE_PX'), 'the clearance must still be exported')
+    for (const name of siblings) {
+      assert.doesNotMatch(
+        source,
+        new RegExp(`\\b${name}\\b`),
+        `${name} is module scope; the page never sees it — pass it as an argument instead`,
+      )
+    }
   })
 
   it('leaves a control alone when its click point is already clear', () => {
