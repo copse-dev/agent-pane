@@ -57,11 +57,13 @@ function errorHeaders(err: unknown): Headers | undefined {
 /**
  * OpenRouter's routing-policy failure: no endpoint satisfies the request's
  * provider constraints (e.g. ZDR-only routing via `provider.zdr`, or
- * `data_collection: "deny"`). Deterministic — the same request always fails —
- * so retrying only adds latency. Served as a 503 ("There is no available model
- * provider that meets your routing requirements"); older responses used a 404
- * "No endpoints found matching your data policy" form. Matched on message
- * because it would otherwise fall into the retryable-5xx bucket below.
+ * `data_collection: "deny"`). Endpoint availability can change between two
+ * identical requests, so the stream wrapper permits one delayed replay — but
+ * caps this error more tightly than ordinary transient failures. Served as a
+ * 503 ("There is no available model provider that meets your routing
+ * requirements"); older responses used a 404 "No endpoints found matching
+ * your data policy" form. Matched on message because the legacy 404 would not
+ * otherwise enter the retry path.
  */
 export function isRoutingPolicyError(err: unknown): boolean {
   if (!(err instanceof Error)) return false
@@ -118,7 +120,7 @@ export function isRetryableStreamError(err: unknown): boolean {
   if (err instanceof DOMException && err.name === 'AbortError') return false
   if (err instanceof Error && err.name === 'AbortError') return false
 
-  if (isRoutingPolicyError(err)) return false
+  if (isRoutingPolicyError(err)) return true
 
   if (err instanceof Anthropic.RateLimitError) return true
   if (err instanceof Anthropic.APIConnectionError) return true
@@ -191,6 +193,7 @@ export async function* yieldStreamWithRetry<T>(
   opts: { signal?: AbortSignal; maxAttempts?: number } = {},
 ): AsyncGenerator<T, void, unknown> {
   const maxAttempts = opts.maxAttempts ?? DEFAULT_STREAM_MAX_ATTEMPTS
+  let routingPolicyRetryUsed = false
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     // Progress-only items do not commit the stream: nothing user-visible has
     // been produced, so replaying from scratch after a retryable failure is
@@ -205,7 +208,16 @@ export async function* yieldStreamWithRetry<T>(
       return
     } catch (err) {
       if (opts.signal?.aborted) throw err
-      if (committed || !isRetryableStreamError(err) || attempt >= maxAttempts - 1) throw err
+      const routingPolicyFailure = isRoutingPolicyError(err)
+      if (
+        committed ||
+        !isRetryableStreamError(err) ||
+        attempt >= maxAttempts - 1 ||
+        (routingPolicyFailure && routingPolicyRetryUsed)
+      ) {
+        throw err
+      }
+      if (routingPolicyFailure) routingPolicyRetryUsed = true
       await sleepMs(streamRetryDelayMs(err, attempt), opts.signal)
     }
   }

@@ -16,6 +16,13 @@ function httpError(status: number): Error {
   return Object.assign(new Error(`HTTP ${String(status)}`), { status })
 }
 
+function routingPolicyError(status = 404): Error {
+  return Object.assign(
+    new Error('No endpoints found matching your data policy (Zero data retention: true)'),
+    { status },
+  )
+}
+
 /**
  * Builds a stream factory whose iterator runs `onPull` (expected to throw) on
  * the first pull — i.e. a stream that fails before yielding anything. Modeled
@@ -96,21 +103,21 @@ describe('isRetryableStreamError', () => {
     assert.equal(isRetryableStreamError(new Error('LM Studio: model failed to load')), false)
   })
 
-  it('does not retry a deterministic OpenRouter routing-policy failure, even as a 5xx', () => {
+  it('treats OpenRouter routing-policy failures as retry candidates', () => {
     const current = Object.assign(
       new Error(
         '503 {"error":{"message":"There is no available model provider that meets your routing requirements.","code":503}}',
       ),
       { status: 503 },
     )
-    assert.equal(isRetryableStreamError(current), false)
+    assert.equal(isRetryableStreamError(current), true)
     const legacy = Object.assign(
       new Error(
         '404 {"error":{"message":"No endpoints found matching your data policy (Zero data retention: true)","code":404}}',
       ),
       { status: 404 },
     )
-    assert.equal(isRetryableStreamError(legacy), false)
+    assert.equal(isRetryableStreamError(legacy), true)
   })
 
   it('does not retry an unknown plain error', () => {
@@ -186,6 +193,31 @@ describe('yieldStreamWithRetry', () => {
     const out: string[] = []
     for await (const v of yieldStreamWithRetry(run, { maxAttempts: 3 })) out.push(v)
     assert.deepEqual(out, ['ok'])
+    assert.equal(attempts, 2)
+  })
+
+  it('retries a routing-policy failure once and recovers', async () => {
+    let attempts = 0
+    async function* run(): AsyncGenerator<string> {
+      attempts++
+      if (attempts === 1) throw routingPolicyError()
+      yield 'ok'
+    }
+    const out: string[] = []
+    for await (const v of yieldStreamWithRetry(run, { maxAttempts: 4 })) out.push(v)
+    assert.deepEqual(out, ['ok'])
+    assert.equal(attempts, 2)
+  })
+
+  it('retries a routing-policy failure at most once', async () => {
+    let attempts = 0
+    const run = failingStream(() => {
+      attempts++
+      throw routingPolicyError(503)
+    })
+    await assert.rejects(async () => {
+      for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 4 })) void _
+    })
     assert.equal(attempts, 2)
   })
 
