@@ -102,7 +102,7 @@ importers:
         version: 8.18.1
       '@wdio/cli':
         specifier: ^9.31.2
-        version: 9.31.2(@types/node@26.2.0)(expect-webdriverio@5.7.0)
+        version: 9.31.2(@types/node@26.2.0)(expect-webdriverio@6.0.7)
       '@wdio/local-runner':
         specifier: ^9.31.2
         version: 9.31.2(@wdio/globals@9.31.1)(webdriverio@9.31.2)
@@ -152,8 +152,8 @@ importers:
         specifier: ^10.1.5
         version: 10.1.8(eslint@10.8.1(jiti@2.7.0))
       expect-webdriverio:
-        specifier: ^5.7.0
-        version: 5.7.0(@wdio/globals@9.31.1)(@wdio/logger@9.29.1)(webdriverio@9.31.2)
+        specifier: ^6.0.7
+        version: 6.0.7(@wdio/globals@9.31.1)(@wdio/logger@9.29.1)(webdriverio@9.31.2)
       extract-zip:
         specifier: file:packages/extract-zip
         version: file:packages/extract-zip
@@ -1549,23 +1549,14 @@ packages:
   '@vitest/pretty-format@2.1.9':
     resolution: {integrity: sha512-KhRIdGV2U9HOUzxfiHmY8IFHTdqtOhIzCpd8WRdJiE7D/HUcZVD0EgQCVjm+Q9gkUXWgBvMmTtZgIG48wq7sOQ==}
 
-  '@vitest/pretty-format@4.1.10':
-    resolution: {integrity: sha512-W1HsjSH4MXQ9YfmmhLAoIYf1HRfekQCGngeIgcei6MP5QQGWUe0gkopdZQaVCFO+JDJMrAJGwa5pRpNpvy4P8Q==}
-
   '@vitest/pretty-format@4.1.11':
     resolution: {integrity: sha512-yiZzPbGTS9Sr/JpFl8zHrcIkAofNbFV6k21vIgQN/cY/oxZeXhJv5sc/MBJ5jFKWmWs+oJHw0UXLZjmf931+Vw==}
 
   '@vitest/snapshot@2.1.9':
     resolution: {integrity: sha512-oBO82rEjsxLNJincVhLhaxxZdEtV0EFHMK5Kmx5sJ6H9L183dHECjiefOAdnqpIgT5eZwT04PoggUnW88vOBNQ==}
 
-  '@vitest/snapshot@4.1.10':
-    resolution: {integrity: sha512-xRkfOT1qpTAi/Ti4Y1LtfRc3kEuqxGw59eN2jN9pRWMtS/XDevekhcFSqvQqjUNGksfjMJu3Y+oJ+4Ypn2OaJw==}
-
   '@vitest/snapshot@4.1.11':
     resolution: {integrity: sha512-pN7ikn1ON7h8ee4gIAp4AzyK+zBtJPzVbqOgu5LCEh4VaJVbPQcgYQYJIMGQPXVeJJq1fnfazis7a5pFNPahog==}
-
-  '@vitest/utils@4.1.10':
-    resolution: {integrity: sha512-fy9am/HWxbaGt/Sawrp90vt6Y6jQwf1RX77cz3uwoJwJVMli/e1IEwRPnMNJ7vKfPTwo0diXifkpPvwH9v7nGA==}
 
   '@vitest/utils@4.1.11':
     resolution: {integrity: sha512-zTCVGpyFsGWBhllOyKlTw/vnr6D9qxsfSDyfbyZmTyjHw5N/VuvzHpHoQjm2ZJzn4RJgx5w4r7V0er69CmLgPQ==}
@@ -2650,14 +2641,6 @@ packages:
   exit-hook@4.0.0:
     resolution: {integrity: sha512-Fqs7ChZm72y40wKjOFXBKg7nJZvQJmewP5/7LtePDdnah/+FH9Hp5sgMujSCMPXlxOAW2//1jrW9pnsY7o20vQ==}
     engines: {node: '>=18'}
-
-  expect-webdriverio@5.7.0:
-    resolution: {integrity: sha512-jLOTrJoPBC3Wtd83ryHMbRcEajMGtAnn6OWtSnoJoDLt16nHvxVdjcI4Bc0n+1KAOr8DvQtlJ55f0M48kJtEpw==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      '@wdio/globals': ^9.0.0
-      '@wdio/logger': ^9.0.0
-      webdriverio: ^9.0.0
 
   expect-webdriverio@6.0.7:
     resolution: {integrity: sha512-b7weQ/rylHHVDXIz0K/v1xhfbHsmFTKETrhyIh7nCE/IsSxZXXpMXRnLVmqrGkpQO/xbIko65/4bijjEBdQCwA==}
@@ -5876,10 +5859,6 @@ snapshots:
     dependencies:
       tinyrainbow: 1.2.0
 
-  '@vitest/pretty-format@4.1.10':
-    dependencies:
-      tinyrainbow: 3.1.1
-
   '@vitest/pretty-format@4.1.11':
     dependencies:
       tinyrainbow: 3.1.1
@@ -5890,13 +5869,6 @@ snapshots:
       magic-string: 0.30.21
       pathe: 1.1.2
 
-  '@vitest/snapshot@4.1.10':
-    dependencies:
-      '@vitest/pretty-format': 4.1.10
-      '@vitest/utils': 4.1.10
-      magic-string: 0.30.21
-      pathe: 2.0.3
-
   '@vitest/snapshot@4.1.11':
     dependencies:
       '@vitest/pretty-format': 4.1.11
@@ -5904,23 +5876,17 @@ snapshots:
       magic-string: 0.30.21
       pathe: 2.0.3
 
-  '@vitest/utils@4.1.10':
-    dependencies:
-      '@vitest/pretty-format': 4.1.10
-      convert-source-map: 2.0.0
-      tinyrainbow: 3.1.1
-
   '@vitest/utils@4.1.11':
     dependencies:
       '@vitest/pretty-format': 4.1.11
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.1
 
-  '@wdio/cli@9.31.2(@types/node@26.2.0)(expect-webdriverio@5.7.0)':
+  '@wdio/cli@9.31.2(@types/node@26.2.0)(expect-webdriverio@6.0.7)':
     dependencies:
       '@vitest/snapshot': 2.1.9
       '@wdio/config': 9.31.2
-      '@wdio/globals': 9.31.1(expect-webdriverio@5.7.0)(webdriverio@9.31.2)
+      '@wdio/globals': 9.31.1(expect-webdriverio@6.0.7)(webdriverio@9.31.2)
       '@wdio/logger': 9.29.1
       '@wdio/protocols': 9.31.1
       '@wdio/types': 9.31.2
@@ -5970,12 +5936,7 @@ snapshots:
       '@wdio/types': 9.31.2
       chalk: 5.6.2
 
-  '@wdio/globals@9.31.1(expect-webdriverio@5.7.0)(webdriverio@9.31.2)':
-    dependencies:
-      expect-webdriverio: 5.7.0(@wdio/globals@9.31.1)(@wdio/logger@9.29.1)(webdriverio@9.31.2)
-      webdriverio: 9.31.2
-
-  '@wdio/globals@9.31.1(expect-webdriverio@6.0.7(@wdio/globals@9.31.1)(@wdio/logger@9.29.1)(webdriverio@9.31.2))(webdriverio@9.31.2)':
+  '@wdio/globals@9.31.1(expect-webdriverio@6.0.7)(webdriverio@9.31.2)':
     dependencies:
       expect-webdriverio: 6.0.7(@wdio/globals@9.31.1)(@wdio/logger@9.29.1)(webdriverio@9.31.2)
       webdriverio: 9.31.2
@@ -5985,7 +5946,7 @@ snapshots:
       '@types/node': 20.19.43
       '@wdio/logger': 9.29.1
       '@wdio/repl': 9.16.2
-      '@wdio/runner': 9.31.2(expect-webdriverio@6.0.7(@wdio/globals@9.31.1)(@wdio/logger@9.29.1)(webdriverio@9.31.2))(webdriverio@9.31.2)
+      '@wdio/runner': 9.31.2(expect-webdriverio@6.0.7)(webdriverio@9.31.2)
       '@wdio/types': 9.31.2
       '@wdio/xvfb': 9.31.2
       exit-hook: 4.0.0
@@ -6038,12 +5999,12 @@ snapshots:
       diff: 8.0.4
       object-inspect: 1.13.4
 
-  '@wdio/runner@9.31.2(expect-webdriverio@6.0.7(@wdio/globals@9.31.1)(@wdio/logger@9.29.1)(webdriverio@9.31.2))(webdriverio@9.31.2)':
+  '@wdio/runner@9.31.2(expect-webdriverio@6.0.7)(webdriverio@9.31.2)':
     dependencies:
       '@types/node': 20.19.43
       '@wdio/config': 9.31.2
       '@wdio/dot-reporter': 9.31.2
-      '@wdio/globals': 9.31.1(expect-webdriverio@6.0.7(@wdio/globals@9.31.1)(@wdio/logger@9.29.1)(webdriverio@9.31.2))(webdriverio@9.31.2)
+      '@wdio/globals': 9.31.1(expect-webdriverio@6.0.7)(webdriverio@9.31.2)
       '@wdio/logger': 9.29.1
       '@wdio/types': 9.31.2
       '@wdio/utils': 9.31.2
@@ -7290,20 +7251,10 @@ snapshots:
 
   exit-hook@4.0.0: {}
 
-  expect-webdriverio@5.7.0(@wdio/globals@9.31.1)(@wdio/logger@9.29.1)(webdriverio@9.31.2):
-    dependencies:
-      '@vitest/snapshot': 4.1.10
-      '@wdio/globals': 9.31.1(expect-webdriverio@5.7.0)(webdriverio@9.31.2)
-      '@wdio/logger': 9.29.1
-      deep-eql: 5.0.2
-      expect: 30.4.1
-      jest-matcher-utils: 30.4.1
-      webdriverio: 9.31.2
-
   expect-webdriverio@6.0.7(@wdio/globals@9.31.1)(@wdio/logger@9.29.1)(webdriverio@9.31.2):
     dependencies:
       '@vitest/snapshot': 4.1.11
-      '@wdio/globals': 9.31.1(expect-webdriverio@5.7.0)(webdriverio@9.31.2)
+      '@wdio/globals': 9.31.1(expect-webdriverio@6.0.7)(webdriverio@9.31.2)
       '@wdio/logger': 9.29.1
       deep-eql: 5.0.2
       expect: 30.4.1

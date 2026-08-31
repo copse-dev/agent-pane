@@ -210,7 +210,7 @@
     "esbuild": "^0.28.1",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.5",
-    "expect-webdriverio": "^5.7.0",
+    "expect-webdriverio": "^6.0.7",
     "extract-zip": "file:packages/extract-zip",
     "fast-check": "^4.9.0",
     "happy-dom": "^20.11.6",
