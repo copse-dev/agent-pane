@@ -1267,6 +1267,9 @@ if (process.env['COPSE_E2E'] === '1') {
     requestCloseConfirm() {
       return ipcRenderer.invoke('test:requestCloseConfirm')
     },
+    rememberTrustedCommands(commands: string[]) {
+      return ipcRenderer.invoke('test:rememberTrustedCommands', commands)
+    },
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')
     },
