@@ -18,13 +18,17 @@
  * `scrollIntoView({ block: 'center' })` on the *row*, which centres the row and
  * leaves a control near its bottom edge still under the bar; and rows grow
  * after the scroll as plugin chips and folds render, pushing the target down
- * again. So correct it at the moment of truth instead: immediately before the
- * click, once layout has settled.
+ * again.
  *
- * Deliberately narrow. It moves the scrollport only when the element really is
- * a Settings control whose click point the bar really does cover, and it never
- * touches the bar's own buttons. Every other interception still fails the way
- * it should — this is not a blanket "retry the click somewhere else".
+ * So catch the interception instead of anticipating it: let the click run, and
+ * only when WebDriver reports *this* bar covering the target, scroll clear and
+ * retry once. Clicks that were going to succeed are untouched.
+ *
+ * Deliberately narrow, in three ways. The error must name both the interception
+ * and `settings-buttons`; the scroll moves the port only when the bar really
+ * does cover the click point and never for the bar's own Save/Cancel; and there
+ * is exactly one retry. Every other covered-element failure fails as it should —
+ * this is not a blanket "retry the click somewhere else".
  */
 
 /** Margin above the bar so sub-pixel rounding cannot put the target back under it. */
@@ -94,9 +98,27 @@ export type ActionBarClickSession = {
 const clickPatched = new WeakSet<object>()
 
 /**
+ * Is this the one failure this helper exists for? Matched narrowly on both
+ * halves of WebDriver's message — the interception *and* the bar that caused
+ * it — so no other covered-element failure is ever quietly retried.
+ */
+export function isSettingsActionBarInterception(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('element click intercepted') && message.includes('settings-buttons')
+}
+
+/**
  * Wrap the element-scoped `click` so a control parked under Settings' sticky
- * action bar is scrolled clear first. Installed once per session from
+ * action bar is scrolled clear and the click retried once. Installed from
  * `wdio.conf.ts`'s `before()`.
+ *
+ * Deliberately reactive, not pre-emptive. An earlier version measured before
+ * *every* click in the suite; that put a `browser.execute` round-trip in front
+ * of several thousand clicks that never needed one, and the timing shift was
+ * enough to flip `git-changes.e2e.ts` from green to red (shard 3 passed on the
+ * same branch while this helper was inert, and failed once it worked). Paying
+ * the cost only on the failure keeps every passing click byte-for-byte as it
+ * was, so the helper cannot perturb a spec it has no business touching.
  */
 export function installSettingsActionBarClickSafety(session: ActionBarClickSession): void {
   if (typeof session.overwriteCommand !== 'function') return
@@ -111,18 +133,25 @@ export function installSettingsActionBarClickSafety(session: ActionBarClickSessi
       ...args: unknown[]
     ) {
       try {
-        await session.execute(scrollClearOfSettingsActionBar, this, ACTION_BAR_CLEARANCE_PX)
+        return await origClick.apply(this, args)
       } catch (error) {
-        // Measuring is best effort: a stale element, a closed dialog, or a page
-        // without Settings must not turn into a click failure of its own. Let
-        // the real click run and report the real problem.
-        //
-        // Say so out loud, though. A silent catch here once hid a
-        // `ReferenceError` from module scope leaking into the shipped function,
-        // which looked exactly like "the correction simply did not apply".
-        console.warn('[settings-action-bar-click] could not measure the click point:', error)
+        if (!isSettingsActionBarInterception(error)) throw error
+        try {
+          await session.execute(scrollClearOfSettingsActionBar, this, ACTION_BAR_CLEARANCE_PX)
+        } catch (measureError) {
+          // Best effort. Say so out loud rather than swallowing: a silent catch
+          // here once hid a `ReferenceError` from module scope leaking into the
+          // shipped function, which looked exactly like "the scroll did nothing".
+          console.warn(
+            '[settings-action-bar-click] could not measure the click point:',
+            measureError,
+          )
+          throw error
+        }
+        // One retry only. If the bar still covers it, the scrollport had nothing
+        // left to give and the original interception is the honest answer.
+        return await origClick.apply(this, args)
       }
-      return await origClick.apply(this, args)
     },
     true,
   )

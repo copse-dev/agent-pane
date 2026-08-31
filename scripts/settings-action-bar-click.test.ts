@@ -4,6 +4,7 @@ import { describe, it, beforeEach } from 'node:test'
 import {
   ACTION_BAR_CLEARANCE_PX,
   installSettingsActionBarClickSafety,
+  isSettingsActionBarInterception,
   scrollClearOfSettingsActionBar,
   type ActionBarClickSession,
 } from '../tests/e2e/helpers/settings-action-bar-click.ts'
@@ -128,11 +129,16 @@ describe('scrollClearOfSettingsActionBar', () => {
 })
 
 describe('installSettingsActionBarClickSafety', () => {
+  const INTERCEPTED =
+    'element click intercepted: Element <summary class="plugin-settings-summary">...</summary> is ' +
+    'not clickable at point (712, 785). Other element would receive the click: ' +
+    '<div class="settings-buttons">...</div>'
+
   function fakeSession(): {
     session: ActionBarClickSession
     registered: { name: string; attachToElement?: boolean }[]
     order: string[]
-    invokeClick: () => Promise<unknown>
+    invokeClick: (throwOn: (n: number) => Error | null) => Promise<unknown>
   } {
     const registered: { name: string; attachToElement?: boolean }[] = []
     const order: string[] = []
@@ -152,15 +158,36 @@ describe('installSettingsActionBarClickSafety', () => {
       session,
       registered,
       order,
-      invokeClick: async (): Promise<unknown> => {
+      invokeClick: async (throwOn): Promise<unknown> => {
         assert.ok(patched, 'click was never overwritten')
+        let n = 0
         return await patched.call({}, (): string => {
+          n += 1
           order.push('click')
+          const boom = throwOn(n)
+          if (boom) throw boom
           return 'clicked'
         })
       },
     }
   }
+
+  it("recognises only the action bar's own interception", () => {
+    assert.equal(isSettingsActionBarInterception(new Error(INTERCEPTED)), true)
+    // Right failure, wrong culprit.
+    assert.equal(
+      isSettingsActionBarInterception(
+        new Error('element click intercepted: ... would receive the click: <div class="modal">'),
+      ),
+      false,
+    )
+    // Right culprit named, but not an interception at all.
+    assert.equal(
+      isSettingsActionBarInterception(new Error('settings-buttons is not displayed')),
+      false,
+    )
+    assert.equal(isSettingsActionBarInterception('not an error'), false)
+  })
 
   it('overwrites click on the element scope', () => {
     const { session, registered } = fakeSession()
@@ -168,20 +195,50 @@ describe('installSettingsActionBarClickSafety', () => {
     assert.deepEqual(registered, [{ name: 'click', attachToElement: true }])
   })
 
-  it('scrolls before delegating to the real click', async () => {
+  it('does not touch a click that succeeds', async () => {
     const { session, order, invokeClick } = fakeSession()
     installSettingsActionBarClickSafety(session)
-    assert.equal(await invokeClick(), 'clicked')
-    assert.deepEqual(order, ['execute', 'click'])
+    assert.equal(await invokeClick(() => null), 'clicked')
+    // No execute at all: a passing click must be byte-for-byte what it was.
+    assert.deepEqual(order, ['click'])
   })
 
-  it('still clicks when measuring throws', async () => {
+  it('scrolls clear and retries once when the bar intercepts', async () => {
+    const { session, order, invokeClick } = fakeSession()
+    installSettingsActionBarClickSafety(session)
+    assert.equal(await invokeClick((n) => (n === 1 ? new Error(INTERCEPTED) : null)), 'clicked')
+    assert.deepEqual(order, ['click', 'execute', 'click'])
+  })
+
+  it('rethrows an interception the scroll could not clear, without a second retry', async () => {
+    const { session, order, invokeClick } = fakeSession()
+    installSettingsActionBarClickSafety(session)
+    await assert.rejects(
+      () => invokeClick(() => new Error(INTERCEPTED)),
+      /element click intercepted/,
+    )
+    assert.deepEqual(order, ['click', 'execute', 'click'])
+  })
+
+  it('never retries an interception from anything but the action bar', async () => {
+    const { session, order, invokeClick } = fakeSession()
+    installSettingsActionBarClickSafety(session)
+    const other =
+      'element click intercepted: Other element would receive the click: <div class="modal-backdrop">'
+    await assert.rejects(() => invokeClick(() => new Error(other)), /modal-backdrop/)
+    assert.deepEqual(order, ['click'])
+  })
+
+  it('rethrows the original interception when measuring throws', async () => {
     const { session, order, invokeClick } = fakeSession()
     session.execute = async (): Promise<unknown> => {
       throw new Error('stale element reference')
     }
     installSettingsActionBarClickSafety(session)
-    assert.equal(await invokeClick(), 'clicked')
+    await assert.rejects(
+      () => invokeClick(() => new Error(INTERCEPTED)),
+      /element click intercepted/,
+    )
     assert.deepEqual(order, ['click'])
   })
 
