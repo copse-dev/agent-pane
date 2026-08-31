@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
@@ -11,15 +14,22 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 // rendering is covered by the component test
 // (src/renderer/views/setup/env-key-detect-section.test.ts).
 describe('environment API-key detection (Settings → General)', () => {
+  const originalHome = process.env['HOME']
+  let cleanHome = ''
+
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
+    cleanHome = mkdtempSync(join(tmpdir(), 'copse-e2e-env-key-home-'))
+    writeE2eEnv({ HOME: cleanHome })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-env-key-detect')
     await browser.reloadSession()
   })
 
   after(() => {
+    writeE2eEnv({ HOME: originalHome })
     resetUserData()
+    rmSync(cleanHome, { recursive: true, force: true })
   })
 
   it('renders the scan control and reports no keys in a clean environment', async () => {
