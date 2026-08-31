@@ -65,6 +65,7 @@ export function parseGithubOwnerRepo(repository: string): { owner: string; repo:
   }
   try {
     const url = new URL(trimmed)
+    if (url.hostname.replace(/^www\./i, '').toLowerCase() !== 'github.com') return null
     const parts = url.pathname.replace(/^\/+/, '').split('/')
     if (parts.length >= 2 && parts[0] && parts[1]) {
       return { owner: parts[0], repo: parts[1].replace(/\.git$/, '') }
