@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
@@ -18,7 +18,7 @@ describe('settings sources skills origin hover', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
 
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-sources-skills-'))
+    workspaceRoot = realpathSync(mkdtempSync(join(tmpdir(), 'copse-e2e-sources-skills-')))
     const skillDir = join(workspaceRoot, '.cursor', 'skills', SKILL_NAME)
     mkdirSync(skillDir, { recursive: true })
     skillPath = join(skillDir, 'SKILL.md')
