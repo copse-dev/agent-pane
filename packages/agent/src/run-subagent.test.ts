@@ -1,7 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from './internal-utils.ts'
-import { runSubagent, CI_INVESTIGATOR_SYSTEM_PROMPT } from './run-subagent.ts'
+import {
+  runSubagent,
+  CI_INVESTIGATOR_SYSTEM_PROMPT,
+  SUBAGENT_ALLOWED_TOOL_NAMES,
+} from './run-subagent.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import type { AgentStreamChunk } from './wire-types.ts'
 
@@ -15,6 +19,12 @@ function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
 }
 
 describe('runSubagent', () => {
+  it('never grants recursive or CI-only tools to an explore subagent', () => {
+    const allowed = new Set<string>(SUBAGENT_ALLOWED_TOOL_NAMES)
+    assert.equal(allowed.has('explore'), false)
+    assert.equal(allowed.has('investigate_ci'), false)
+  })
+
   it('cuts a reasoning circle at the product checkpoint and recovers', async () => {
     let streamCalls = 0
     const provider: LLMProvider = {

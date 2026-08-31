@@ -325,9 +325,9 @@ argument is free text, seven rewordings of one question are seven fingerprints. 
 necessary but not sufficient — with it alone, this run's 15 calls still produce 15 distinct
 fingerprints and the guard still never fires.
 
-**Change.** Normalise free-text args inside `normalizeExploreArgs`
-(`agent-loop-guards.ts:25`), which already exists as the per-tool hook for exactly this and
-currently only handles `list_dir`. For `explore`:
+**Change.** Normalise free-text args only in the fingerprint path. Do not rewrite the
+actual `explore` arguments: `normalizeExploreArgs` also feeds tool execution, so stripping
+query words there would weaken the subagent's prompt. For `explore` fingerprints:
 
 - lowercase, strip punctuation, drop a small stopword list (including the words this
   failure mode generates: `exact`, `exactly`, `precise`, `whitespace`, `indentation`,
@@ -336,7 +336,9 @@ currently only handles `list_dir`. For `explore`:
 
 Exact-match on the normalised form catches the middle of this run. For the tail, where
 queries drift further, add a similarity check: same `paths` and Jaccard ≥ ~0.6 on the token
-sets counts as a repeat. Keep it in a pure exported function
+sets counts as a repeat. A containment backstop may also match when at least three terms
+cover two thirds of the smaller query; the minimum intersection keeps two shared words
+such as “toolbar handler” from suppressing distinct questions. Keep it in a pure exported function
 (`isNearDuplicateQuery(a, b): boolean`) so it is unit-testable without a loop harness.
 
 Also revisit `RECENT_FINGERPRINT_WINDOW = 16` (`run-agent-loop.ts:61`). At 15 repeats this

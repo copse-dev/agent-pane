@@ -23,7 +23,7 @@ function hasLastUsage(p: unknown): p is ProviderWithUsage {
   return typeof p === 'object' && p !== null && 'lastUsage' in p
 }
 
-export const EXPLORE_TOOL_NAMES = [
+export const SUBAGENT_ALLOWED_TOOL_NAMES = [
   'read_file',
   'list_dir',
   'search_code',

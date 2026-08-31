@@ -13,10 +13,6 @@ export * from './wire-types.ts'
 // The loop itself, its host seam, and the subagent runner.
 export * from './run-agent-loop.ts'
 export * from './run-subagent.ts'
-// Both run-subagent (subagent tool allowlist) and agent-loop-guards (duplicate
-// explore-call detection) export an EXPLORE_TOOL_NAMES; the subagent allowlist
-// is the one app code imports, so it wins the barrel slot.
-export { EXPLORE_TOOL_NAMES } from './run-subagent.ts'
 export * from './agent-host.ts'
 
 // Loop machinery: guards, escalation, limits, and history compaction.

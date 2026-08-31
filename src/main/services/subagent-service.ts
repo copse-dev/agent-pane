@@ -1,4 +1,4 @@
-import { runSubagent, EXPLORE_TOOL_NAMES } from '@copse/agent/run-subagent.ts'
+import { runSubagent, SUBAGENT_ALLOWED_TOOL_NAMES } from '@copse/agent/run-subagent.ts'
 import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
 import type {
@@ -38,7 +38,7 @@ export interface ExploreSubagentResult {
 }
 
 function filterExploreTools(registry: ToolRegistry): LLMTool[] {
-  const names = new Set<string>(EXPLORE_TOOL_NAMES)
+  const names = new Set<string>(SUBAGENT_ALLOWED_TOOL_NAMES)
   return registry.toLLMTools().filter((t) => names.has(t.name))
 }
 
@@ -48,7 +48,7 @@ async function executeExploreTool(
   args: unknown,
   signal: AbortSignal,
 ): Promise<ToolExecuteResult> {
-  if (!EXPLORE_TOOL_NAMES.some((allowedName) => allowedName === name)) {
+  if (!SUBAGENT_ALLOWED_TOOL_NAMES.some((allowedName) => allowedName === name)) {
     throw new Error(`Tool not allowed in explore subagent: ${name}`)
   }
   return registry.execute(name, args, signal)

@@ -2,15 +2,21 @@ import type { TodoItem } from './wire-types.ts'
 import { isRecord } from './internal-utils.ts'
 
 /** Tools that only gather context — repeating them often indicates a stuck loop. */
-export const EXPLORE_TOOL_NAMES = new Set([
+export const DUPLICATE_GUARDED_TOOL_NAMES = new Set([
+  'explore',
   'list_dir',
   'read_file',
   'find_files',
   'search_code',
   'search_codebase',
+  'semantic_search',
 ])
 
 export function toolCallFingerprint(name: string, args: unknown): string {
+  if (name === 'explore') {
+    const parts = exploreFingerprintParts(args)
+    if (parts) return `explore:${parts.scope}\0${parts.query}`
+  }
   return `${name}:${stableJson(args)}`
 }
 
@@ -28,14 +34,119 @@ export function normalizeExploreArgs(name: string, args: unknown): unknown {
   return { ...args, path }
 }
 
+const EXPLORE_QUERY_NOISE = new Set([
+  'a',
+  'an',
+  'and',
+  'code',
+  'detail',
+  'details',
+  'exact',
+  'exactly',
+  'find',
+  'for',
+  'implementation',
+  'in',
+  'including',
+  'indentation',
+  'line',
+  'lines',
+  'locate',
+  'of',
+  'on',
+  'please',
+  'precise',
+  'show',
+  'spaces',
+  'the',
+  'to',
+  'whitespace',
+  'with',
+])
+
+function words(value: string): string[] {
+  const separated = value.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
+  return separated.match(/[a-z0-9]+/g) ?? []
+}
+
+function normalizedQuery(value: string, paths: readonly string[] = []): string {
+  const pathWords = new Set(paths.flatMap(words))
+  return [
+    ...new Set(
+      words(value).filter(
+        (word) =>
+          !EXPLORE_QUERY_NOISE.has(word) && !pathWords.has(word) && !/^\d+(?:-\d+)?$/.test(word),
+      ),
+    ),
+  ]
+    .sort()
+    .join(' ')
+}
+
+/** True when two normalized exploration queries carry substantially the same terms. */
+export function isNearDuplicateQuery(left: string, right: string): boolean {
+  const leftWords = new Set(words(left))
+  const rightWords = new Set(words(right))
+  if (leftWords.size === 0 || rightWords.size === 0) return false
+  let intersection = 0
+  for (const word of leftWords) {
+    if (rightWords.has(word)) intersection++
+  }
+  const union = leftWords.size + rightWords.size - intersection
+  const smaller = Math.min(leftWords.size, rightWords.size)
+  return intersection / union >= 0.6 || (intersection >= 3 && intersection / smaller >= 2 / 3)
+}
+
+interface ExploreFingerprintParts {
+  query: string
+  scope: string
+}
+
+function exploreFingerprintParts(args: unknown): ExploreFingerprintParts | null {
+  if (!isRecord(args) || typeof args['query'] !== 'string') return null
+  const paths = Array.isArray(args['paths'])
+    ? args['paths']
+        .filter((path): path is string => typeof path === 'string')
+        .map((path) => path.trim().replaceAll('\\', '/'))
+        .sort()
+    : []
+  const scope: Record<string, unknown> = { paths }
+  for (const [key, value] of Object.entries(args)) {
+    if (key !== 'query' && key !== 'paths') scope[key] = value
+  }
+  return { query: normalizedQuery(args['query'], paths), scope: stableJson(scope) }
+}
+
+function parseExploreFingerprint(fingerprint: string): ExploreFingerprintParts | null {
+  const prefix = 'explore:'
+  if (!fingerprint.startsWith(prefix)) return null
+  const separator = fingerprint.indexOf('\0', prefix.length)
+  if (separator < 0) return null
+  return {
+    scope: fingerprint.slice(prefix.length, separator),
+    query: fingerprint.slice(separator + 1),
+  }
+}
+
 export function isDuplicateExploreCall(
   name: string,
   args: unknown,
   recentFingerprints: readonly string[],
 ): boolean {
-  if (!EXPLORE_TOOL_NAMES.has(name)) return false
+  if (!DUPLICATE_GUARDED_TOOL_NAMES.has(name)) return false
   const fp = toolCallFingerprint(name, normalizeExploreArgs(name, args))
-  return recentFingerprints.includes(fp)
+  if (recentFingerprints.includes(fp)) return true
+  if (name !== 'explore') return false
+  const current = parseExploreFingerprint(fp)
+  if (!current) return false
+  return recentFingerprints.some((recent) => {
+    const previous = parseExploreFingerprint(recent)
+    return (
+      previous !== null &&
+      previous.scope === current.scope &&
+      isNearDuplicateQuery(previous.query, current.query)
+    )
+  })
 }
 
 export const LOOP_NUDGE_USER_MESSAGE =

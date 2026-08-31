@@ -69,7 +69,7 @@ import {
   type ReasoningCircleSignal,
 } from './reasoning-circle-detector.ts'
 
-const RECENT_FINGERPRINT_WINDOW = 16
+const RECENT_FINGERPRINT_WINDOW = 32
 /**
  * Recent turns' reasoning text kept for cross-turn circle detection (#1408):
  * `streamReasoningText` resets to empty at the top of every LLM call, so a

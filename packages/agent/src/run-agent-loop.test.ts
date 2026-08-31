@@ -952,11 +952,17 @@ describe('runAgentLoop', () => {
     await runAgentLoop({
       provider: mockProvider([
         [
-          { type: 'tool_call', toolCall: { id: '1', name: 'list_dir', args: { path: '.' } } },
+          {
+            type: 'tool_call',
+            toolCall: { id: '1', name: 'explore', args: { query: 'find the auth handler' } },
+          },
           { type: 'done' },
         ],
         [
-          { type: 'tool_call', toolCall: { id: '2', name: 'list_dir', args: { path: '.' } } },
+          {
+            type: 'tool_call',
+            toolCall: { id: '2', name: 'explore', args: { query: 'find the auth handler' } },
+          },
           { type: 'done' },
         ],
         [{ type: 'text', text: 'Done.' }, { type: 'done' }],
