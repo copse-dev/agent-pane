@@ -6203,7 +6203,6 @@ dialog.settings-overlay::backdrop {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  scroll-padding-bottom: calc(var(--action-min-height) + var(--spacing-lg) + var(--spacing-xl) + var(--spacing-lg));
   padding: calc(var(--spacing-xl) * 2) var(--spacing-xl) 0;
 }
 .settings-section,
@@ -6296,7 +6295,6 @@ dialog.settings-overlay::backdrop {
   display: flex;
   gap: var(--spacing-md);
   justify-content: flex-end;
-  pointer-events: none;
   margin-top: var(--spacing-xl);
   padding-top: var(--spacing-lg);
   padding-bottom: calc(var(--spacing-xl) + var(--spacing-lg));
@@ -6331,7 +6329,6 @@ dialog.settings-overlay::backdrop {
   -webkit-app-region: no-drag;
   position: relative;
   z-index: 1;
-  pointer-events: auto;
 }
 .settings-buttons button[type=submit] {
   background: var(--accent);
