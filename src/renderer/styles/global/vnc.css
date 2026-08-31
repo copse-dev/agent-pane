@@ -350,6 +350,27 @@
   margin-bottom: var(--spacing-sm);
 }
 
+.vnc-advanced .vnc-field-label + .vnc-field-label {
+  margin-top: var(--spacing-sm);
+}
+
+.vnc-scroll-speed-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.vnc-scroll-speed-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.vnc-scroll-speed-value {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
 .vnc-field-hint {
   color: var(--text-muted);
   font-size: var(--font-size-xs);

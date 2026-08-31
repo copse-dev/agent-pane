@@ -17,6 +17,13 @@ import { panePopoutButton } from './pane-popout-button.ts'
 import { VncIpcChannel } from './vnc-channel.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { dedupeNearbyVncServers, parseVncEndpoint, preferredVncUsername } from './vnc-machines.ts'
+import {
+  createWheelPump,
+  DEFAULT_WHEEL_SPEED,
+  MAX_WHEEL_SPEED,
+  MIN_WHEEL_SPEED,
+  type WheelStep,
+} from './vnc-wheel.ts'
 import { showToast } from './toast.ts'
 
 function vncModeActive(store: AppStore): boolean {
@@ -147,6 +154,20 @@ function mountVncSession(
     value: '5900',
     'aria-label': 'Screen sharing port',
   })
+  const scrollSpeedInput = el('input', {
+    type: 'range',
+    class: 'vnc-scroll-speed-input',
+    min: String(MIN_WHEEL_SPEED),
+    max: String(MAX_WHEEL_SPEED),
+    step: '1',
+    value: String(DEFAULT_WHEEL_SPEED),
+    'aria-label': 'Scroll speed',
+  })
+  const scrollSpeedValue = el(
+    'span',
+    { class: 'vnc-scroll-speed-value' },
+    `${String(DEFAULT_WHEEL_SPEED)}×`,
+  )
   const advancedSettings = el(
     'details',
     { class: 'vnc-advanced' },
@@ -160,6 +181,17 @@ function mountVncSession(
         'span',
         { class: 'vnc-field-hint' },
         'Defaults to 5900. An address ending in :port overrides this value.',
+      ),
+    ),
+    el(
+      'label',
+      { class: 'vnc-field-label' },
+      'Scroll speed',
+      el('span', { class: 'vnc-scroll-speed-row' }, scrollSpeedInput, scrollSpeedValue),
+      el(
+        'span',
+        { class: 'vnc-field-hint' },
+        'Wheel clicks sent per gesture. Raise this if the remote desktop scrolls too slowly.',
       ),
     ),
   )
@@ -392,6 +424,11 @@ function mountVncSession(
 
   let rfb: RFB | null = null
   let channel: VncIpcChannel | null = null
+  const wheelPump = createWheelPump({
+    emit: (step) => {
+      replayWheelStep(step)
+    },
+  })
   let connectGeneration = 0
   let discoveryGeneration = 0
   let nearbyGeneration = 0
@@ -579,6 +616,7 @@ function mountVncSession(
   function setControlEnabled(enabled: boolean): void {
     if (!rfb || !connectedAtLeastOnce) return
     controlEnabled = enabled
+    wheelPump.reset()
     rfb.viewOnly = !enabled
     updateControlUi()
     renderConnectedStatus()
@@ -588,6 +626,7 @@ function mountVncSession(
   function resetControlState(): void {
     connectedMachineName = null
     controlEnabled = false
+    wheelPump.reset()
     usernameSaveDetail = ''
     updateControlUi()
   }
@@ -1260,6 +1299,50 @@ function mountVncSession(
     }
   }
 
+  let replayingWheel = false
+  let wheelPointer: { clientX: number; clientY: number; buttons: number } | null = null
+
+  /**
+   * The pump's steps arrive across later frames, so they carry the pointer position from the
+   * gesture that produced them rather than the one live at replay time.
+   */
+  function replayWheelStep(step: WheelStep): void {
+    const canvas = screen.querySelector<HTMLCanvasElement>('canvas')
+    if (!connectedAtLeastOnce || !controlEnabled || !canvas || !wheelPointer) return
+    replayingWheel = true
+    try {
+      canvas.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaX: step.deltaX,
+          deltaY: step.deltaY,
+          deltaMode: 0,
+          clientX: wheelPointer.clientX,
+          clientY: wheelPointer.clientY,
+          buttons: wheelPointer.buttons,
+          cancelable: true,
+        }),
+      )
+    } finally {
+      replayingWheel = false
+    }
+  }
+
+  /**
+   * noVNC drops every wheel step past the first in an event, and firing the missing ones in the
+   * same tick just gets them coalesced by the remote desktop. Take the event before it reaches
+   * noVNC's canvas listener and hand it to the pump, which meters the steps out over frames.
+   */
+  const onScreenWheel = (event: WheelEvent): void => {
+    if (replayingWheel) return
+    const canvas = screen.querySelector<HTMLCanvasElement>('canvas')
+    if (!connectedAtLeastOnce || !controlEnabled || !canvas) return
+    if (!event.composedPath().includes(canvas)) return
+    event.preventDefault()
+    event.stopPropagation()
+    wheelPointer = { clientX: event.clientX, clientY: event.clientY, buttons: event.buttons }
+    wheelPump.push(event)
+  }
+
   const onScreenContextMenu = (event: MouseEvent): void => {
     const canvas = screen.querySelector<HTMLCanvasElement>('canvas')
     if (!connectedAtLeastOnce || !canvas) return
@@ -1313,6 +1396,12 @@ function mountVncSession(
     void discoverNearby()
   })
   screen.addEventListener('contextmenu', onScreenContextMenu, true)
+  screen.addEventListener('wheel', onScreenWheel, { capture: true, passive: false })
+  scrollSpeedInput.addEventListener('input', () => {
+    const speed = Number(scrollSpeedInput.value)
+    wheelPump.setSpeed(speed)
+    scrollSpeedValue.textContent = `${String(speed)}×`
+  })
   machineSelect.addEventListener('change', () => {
     updateMachineUi()
     void discoverSelectedMachine()
@@ -1392,6 +1481,7 @@ function mountVncSession(
       rfb?.disconnect()
       channel?.close()
       screen.removeEventListener('contextmenu', onScreenContextMenu, true)
+      screen.removeEventListener('wheel', onScreenWheel, true)
       stopData()
       stopStatus()
       stopWorkspace()
