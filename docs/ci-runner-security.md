@@ -5,6 +5,23 @@ contributors. Trusted push and same-repository PR jobs may use the configured
 check or e2e fleets; a fork uses only the hosted, read-only `precheck` tier in
 [`ci.yml`](../.github/workflows/ci.yml).
 
+**Since this repository went public, GitHub-hosted is the default for every
+tier and the self-hosted fleets are opt-in** via the `SELF_HOSTED_CHECKS` and
+`SELF_HOSTED_E2E` Actions variables. With neither set — the current state — no
+job reaches a self-hosted runner at all, and the guards below are defence in
+depth rather than the only thing standing between a fork and the fleet. Keep
+them anyway: they are what makes opting a tier back in safe, and the opt-in is
+one variable away.
+
+The variables were deliberately renamed from `CHECKS_RUNNER` / `E2E_RUNNER`.
+`vars.X` resolves repo-then-org and an expression cannot tell the two apart, so
+while the old names were read, an org-level `CHECKS_RUNNER=copse-checks` could
+re-route this repository's whole check tier onto the fleet with no change in
+this repo and no signal on the PR. Reading names that are set nowhere is what
+makes hosted the default in code rather than in a variable someone else can
+flip. `scripts/ci-workflow-invariants.test.ts` pins that the old names stay
+unread.
+
 Two layers keep fork code off the self-hosted box — keep **both**:
 
 1. **Fork guards (`if`)** — coverage, build, benchmarks, e2e, and every
@@ -43,7 +60,10 @@ The workflow guards are necessary but not sufficient on their own:
 
 - **Settings → Actions → General → Fork pull request workflows:** require
   approval for **all external contributors** (not just first-time ones).
-- **Runner:** keep the self-hosted runner in a runner group scoped to this repo
-  only, ideally ephemeral and isolated. GitHub advises against self-hosted
-  runners on public repos; these settings plus the guards above are what make
-  it safe.
+- **Runner:** only relevant once a tier is opted in. Keep the self-hosted
+  runner in a runner group scoped to this repo only, ideally ephemeral and
+  isolated. GitHub advises against self-hosted runners on public repos; these
+  settings plus the guards above are what make it safe. The cheapest way to
+  hold that line is to leave `SELF_HOSTED_CHECKS` / `SELF_HOSTED_E2E` unset —
+  standard hosted runners are free and unlimited on public repos, and at
+  4-vCPU / 16 GiB they are a bigger box than the 6 GB fleet container.

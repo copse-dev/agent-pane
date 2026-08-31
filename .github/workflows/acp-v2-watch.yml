@@ -37,9 +37,9 @@ concurrency:
 
 jobs:
   watch:
-    # CHECKS_RUNNER routes to the self-hosted check fleet when set (see ci.yml's
+    # SELF_HOSTED_CHECKS routes to the self-hosted check fleet when set (see ci.yml's
     # routing note); hosted otherwise. Scheduled/manual, trusted only.
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.1

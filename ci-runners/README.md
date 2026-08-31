@@ -66,7 +66,7 @@ docker compose down      # tear down
 Scaleway is the cheapest/easiest burst path when AWS billing or capacity is in
 the way. It uses the same runner image as the local/AWS flows. **Default burst
 registers e2e-only labels** (`copse-e2e`, not `copse-checks`) so check jobs
-routed via `CHECKS_RUNNER` do not compete with the e2e shard matrix; spin up a
+routed via `SELF_HOSTED_CHECKS` do not compete with the e2e shard matrix; spin up a
 separate checks-only burst when the check tier also queues (below).
 
 Prerequisites:
@@ -325,11 +325,18 @@ only warms package inputs and never affects correctness.
 **Runner routing needs no token.** The old `pick-runner` probe job — which used
 a `RUNNERS_PAT` secret (org **Self-hosted runners: Read**) to enumerate online
 runners on every run — was removed in #740. Check-tier jobs now read the
-`CHECKS_RUNNER` Actions **variable** directly
-(`runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}`): set it to
-`copse-checks` when the fleet is up, clear it (or leave it empty) to fall back
-to GitHub-hosted. Do **not** re-create a `RUNNERS_PAT` — no workflow reads it,
-and the org runner-read scope it carried is not needed for routing.
+`SELF_HOSTED_CHECKS` Actions **variable** directly
+(`runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}`): **GitHub-hosted
+is the default**, and setting the variable to `copse-checks` opts the tier onto
+this fleet. Clear it to go back to hosted. Do **not** re-create a `RUNNERS_PAT`
+— no workflow reads it, and the org runner-read scope it carried is not needed
+for routing.
+
+> **Set these at repo scope, not org scope.** Both variables are read as
+> `vars.X`, which resolves repo-then-org, so an org-level value silently
+> applies to every repo that reads the name. That is why the names changed from
+> `CHECKS_RUNNER` / `E2E_RUNNER` when `agent-pane` went public — see
+> [`docs/ci-runner-security.md`](../docs/ci-runner-security.md).
 
 The prefetch token needs both repositories because the lockfile contains the
 private `@copse/streaming-markdown` source. Leave it empty to build a cold image;
@@ -364,10 +371,11 @@ runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
 
 - Removed the two old runner dirs; repointed the `Makefile` (`make runners*`) at
   this unified fleet.
-- `agent-pane` check jobs route via the `CHECKS_RUNNER` Actions variable
-  (`runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}`); the old
-  `pick-runner` probe job was removed in #740. The e2e job is unchanged — it
-  already targets `["self-hosted","copse-e2e"]`, which these runners carry.
+- `agent-pane` check jobs route via the `SELF_HOSTED_CHECKS` Actions variable
+  (`runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}`); the old
+  `pick-runner` probe job was removed in #740. The e2e job targets
+  `["self-hosted","copse-e2e"]`, which these runners carry, but only when
+  `SELF_HOSTED_E2E=copse-e2e` — hosted is otherwise the default.
 - `streaming-markdown/.github/workflows/ci.yml` routes its check job the same
   way, so it lands on the shared `copse-checks` pool when the variable is set
   (fork PRs stay on hosted).
@@ -379,13 +387,14 @@ runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
    org default group grants all repos). Build + register with
    `make runners` — or `make runners-reprovision` to **replace the containers
    built from the now-deleted dirs**.
-2. **Set the `CHECKS_RUNNER` variable** so check jobs route to the fleet:
-   `gh variable set CHECKS_RUNNER --org copse-dev --body copse-checks --visibility all`
-   (or Settings → Secrets and variables → Actions → Variables; a repo-level
-   variable overrides the org one). Unset or empty means hosted — CI still
-   works, it just never uses self-hosted. Nothing auto-detects an offline
-   fleet, so clear the variable when taking the fleet down or routed jobs
-   will queue. No PAT is involved.
+2. **Set the opt-in variables** so jobs route to the fleet, per repo:
+   `gh variable set SELF_HOSTED_CHECKS --repo copse-dev/agent-pane --body copse-checks`
+   and, for the e2e tier,
+   `gh variable set SELF_HOSTED_E2E --repo copse-dev/agent-pane --body copse-e2e`
+   (or Settings → Secrets and variables → Actions → Variables). Unset means
+   hosted — CI still works, it just never uses self-hosted. Nothing
+   auto-detects an offline fleet, so clear the variables when taking the fleet
+   down or routed jobs will queue. No PAT is involved.
 3. **Confirm one green run** lands on the pool (an e2e job and a check job in
    agent-pane, a check job in streaming-markdown), then **merge**.
 

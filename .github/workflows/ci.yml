@@ -68,27 +68,36 @@ jobs:
   # Tighten only with data (a run record showing the real p99), and raise
   # rather than let a genuinely-slower job flake.
   #
-  # Check-tier runner routing: every `runs-on` below (except e2e, which routes
+  # Check-tier runner routing: GitHub-hosted is the DEFAULT, and the org
+  # self-hosted fleet is opt-in. Every `runs-on` below (except e2e, which routes
   # by label with its own nightly-hosted exception, and release-mac in its own
-  # workflow) reads the CHECKS_RUNNER Actions variable and falls back to
-  # GitHub-hosted when it is unset or empty:
-  #   CHECKS_RUNNER=copse-checks  ->  the org self-hosted check fleet (ci-runners/)
-  #   (unset or '')               ->  ubuntu-latest
-  # This replaces the old `pick-runner` probe job, which burned a billed
-  # GitHub-hosted minute on EVERY run (a 3-second API probe rounds up to a full
-  # minute) just to make this decision — and quietly routed the whole check
-  # tier to paid hosted runners whenever its PAT lacked org runner read. A
-  # variable costs nothing, needs no PAT, and is flipped by hand when the
-  # fleet comes up or goes down:
-  #   gh variable set CHECKS_RUNNER --org copse-dev --body copse-checks --visibility all
-  #   gh variable delete CHECKS_RUNNER --org copse-dev
-  # (or Settings -> Secrets and variables -> Actions -> Variables; a repo-level
-  # CHECKS_RUNNER overrides the org one, and an empty value means hosted).
+  # workflow) reads the SELF_HOSTED_CHECKS Actions variable:
+  #   (unset or '')                    ->  ubuntu-latest          <- default
+  #   SELF_HOSTED_CHECKS=copse-checks  ->  the fleet (ci-runners/)
   #
-  # Tradeoff vs the probe: nothing auto-detects the fleet going offline. If the
-  # variable names a fleet with no online runner, routed jobs queue until a
-  # runner returns or the variable is cleared — clear it when taking the fleet
-  # down. Fork PRs run only the `precheck` safe tier, forced onto a GitHub-hosted
+  # This inverts the old CHECKS_RUNNER scheme, which defaulted to whatever a
+  # variable said and treated hosted as the fallback. Two things changed when
+  # this repository went public:
+  #   1. Standard GitHub-hosted minutes are free and unlimited on public repos,
+  #      so the cost argument that justified the fleet is gone.
+  #   2. Public repos get 4-vCPU / 16 GiB hosted runners — more than double the
+  #      6 GB the self-hosted check cgroup allows. Hosted is now the BIGGER box,
+  #      not the fallback one.
+  # The rename is load-bearing, not cosmetic: `vars.X` resolves repo-then-org,
+  # so an org-level CHECKS_RUNNER=copse-checks used to re-route this repo's
+  # whole check tier with no change here and no signal on the PR. Reading a name
+  # that is set nowhere makes hosted the default in code rather than in a
+  # variable someone else can flip.
+  #
+  # Opting a tier back onto the fleet is therefore deliberate:
+  #   gh variable set SELF_HOSTED_CHECKS --repo copse-dev/agent-pane --body copse-checks
+  #   gh variable delete SELF_HOSTED_CHECKS --repo copse-dev/agent-pane
+  # (or Settings -> Secrets and variables -> Actions -> Variables.) Nothing
+  # auto-detects the fleet going offline, so if you set it and the pool has no
+  # online runner, routed jobs queue until a runner returns or the variable is
+  # cleared — clear it when taking the fleet down.
+  #
+  # Fork PRs run only the `precheck` safe tier, forced onto a GitHub-hosted
   # runner with a read-only token. Every heavier job that executes repository
   # code keeps its same-repo `if` guard, so untrusted commits never run on the
   # self-hosted fleet.
@@ -101,18 +110,19 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
-    # Prefer the self-hosted check fleet (CHECKS_RUNNER) to conserve Actions
-    # minutes; falls back to GitHub-hosted ubuntu-latest when the var is unset.
+    # GitHub-hosted by default; the self-hosted check fleet is opt-in via
+    # SELF_HOSTED_CHECKS (see the routing note above).
     # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
-    # under load (exit 137). If that recurs, add fleet headroom rather than
-    # re-pinning the static gate to hosted.
+    # under load (exit 137), which is why the steps below retry on 137. On the
+    # public-repo hosted runner (16 GiB) that headroom is no longer scarce; the
+    # retries stay because opting back onto the fleet must not silently regress.
     #
     # Fork PRs are pinned to GitHub-hosted: this is the one job that executes
     # fork code (typecheck/lint run the PR's package scripts and plugins), and
     # it must never reach the self-hosted fleet — same invariant gitleaks.yml
     # states for its standalone fork scan. Hosted minutes are free once the
     # repository is public, so this costs nothing on the runs it applies to.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -305,9 +315,13 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
           node scripts/check-screenshots.mts --plan --base "$BASE_SHA"
-      # Keep every full e2e run at 8 shards. Both runner classes have a tight
-      # memory ceiling: GitHub-hosted is 7 GB and each self-hosted `copse-e2e`
-      # container is capped at 6 GB. Packing the suite into 3 shards makes each
+      # Keep every full e2e run at 8 shards. This was sized when both runner
+      # classes had a tight memory ceiling: the private-repo hosted runner was
+      # 7 GB and each self-hosted `copse-e2e` container is capped at 6 GB. Public
+      # repos now get 4-vCPU / 16 GiB hosted runners, so on the default runner
+      # this fan-out is conservative — retune it against a run record rather
+      # than by assuming the headroom, and keep it safe for a fleet opt-in.
+      # Packing the suite into 3 shards makes each
       # container launch too many sequential Electron sessions; accumulated
       # Electron/gortex processes then OOM-crash unrelated late-running specs.
       # `--shard` and the subset round-robin still partition specs disjointly.
@@ -384,9 +398,9 @@ jobs:
   # before any push identity was configured).
   autoformat:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
-    # when unset. Watch for 6 GB self-hosted OOM on eslint/prettier (see precheck).
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
+    # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint/prettier (see precheck).
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
       contents: write
@@ -403,7 +417,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ github.head_ref }}
-          # Self-hosted CHECKS_RUNNER images ship curl+jq but not the gh CLI
+          # Self-hosted check-fleet images ship curl+jq but not the gh CLI
           # (ci-runners/Dockerfile). Prefer the REST API over `gh api`.
           GITHUB_API_URL: ${{ github.api_url }}
         run: |
@@ -507,11 +521,11 @@ jobs:
   check:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
-    # when unset. History: coverage/esbuild has died with "service was stopped" on
+    # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
+    # self-hosted check fleet (see the routing note above). History: coverage/esbuild has died with "service was stopped" on
     # the 6 GB self-hosted fleet under load (same class as precheck OOM) — add
     # headroom if it recurs.
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
@@ -630,9 +644,9 @@ jobs:
     # `ci-full` label forces it earlier for a draft that genuinely wants it.
     # `precheck` / `check` / `autoformat` still run on drafts, so lint, types,
     # unit tests and the autofixer keep giving fast feedback.
-    # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
-    # when unset. No Electron/display need.
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
+    # self-hosted check fleet (see the routing note above). No Electron/display need.
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
@@ -917,9 +931,9 @@ jobs:
     # `ci-full` label forces it earlier for a draft that genuinely wants it.
     # `precheck` / `check` / `autoformat` still run on drafts, so lint, types,
     # unit tests and the autofixer keep giving fast feedback.
-    # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
-    # when unset. Produces the dist artifact consumed by the e2e shards below.
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
+    # self-hosted check fleet (see the routing note above). Produces the dist artifact consumed by the e2e shards below.
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 30
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
@@ -1019,31 +1033,39 @@ jobs:
     # Draft PRs skip e2e for the same reason as `build` above; `build` is also
     # gated, so on a draft this job's `needs` are unsatisfied and it would skip
     # regardless — the explicit clause keeps the intent readable at this job.
-    # PR/push e2e runs on the self-hosted Docker runners (see ci-runners/):
-    # free minutes, and a box big enough to avoid the 2-core/7GB hosted-runner
-    # OOM that most of the shard quarantines exist to work around. The nightly
-    # `schedule` runs the full suite on GitHub-hosted ubuntu-latest.
+    # e2e runs on GitHub-hosted ubuntu-latest by default, for every event.
+    # The self-hosted Docker fleet (see ci-runners/) is opt-in via
+    # SELF_HOSTED_E2E=copse-e2e. The fleet was the default while this repo was
+    # private, when hosted meant 2-core/7GB — the box most of the shard
+    # quarantines exist to work around. A public repo gets 4-vCPU / 16 GiB
+    # hosted runners for free, which is more headroom than the 6 GB `copse-e2e`
+    # container, so the default no longer trades capacity for cost.
     #
-    # Runner is picked by TRUST and fails closed. The label set requires BOTH
-    # `self-hosted` AND `copse-e2e`, so trusted push/same-repo PR jobs land only
-    # on the Linux Docker runners (never the macOS `self-hosted` boxes, which
-    # lack `copse-e2e`). Nightly `schedule` uses GitHub-hosted ubuntu-latest. A
-    # repo-level E2E_RUNNER=ubuntu-latest override is the break-glass path when
-    # the self-hosted fleet is offline; delete it after the fleet recovers.
-    # Fork PRs are skipped by the `if` guard above and must never run on any
-    # runner — there is no hosted fallback; if that guard were ever removed, the
-    # expression below evaluates to a falsy value (not a runner label) so the
-    # job fails closed instead of dispatching untrusted code anywhere. NOTE:
-    # Without the explicit hosted override, a registered `copse-e2e` runner is
-    # required or PR/push e2e queues until the fleet returns.
+    # Inverting this also removes a wedge: the old expression treated any
+    # SELF_HOSTED_E2E value other than the exact string 'ubuntu-latest' —
+    # including UNSET — as "use the fleet". With no registered `copse-e2e`
+    # runner, deleting one variable queued every PR/push e2e job indefinitely.
+    # Now the unset case is hosted, so the failure mode of a missing or
+    # mistyped variable is "runs on hosted", not "never runs".
+    #
+    # Runner is still picked by TRUST and still fails closed:
+    #   - Nightly `schedule` and trusted push/same-repo PRs default to hosted.
+    #   - The opt-in label set requires BOTH `self-hosted` AND `copse-e2e`, so an
+    #     opted-in job lands only on the Linux Docker runners, never the macOS
+    #     `self-hosted` boxes (which lack `copse-e2e`).
+    #   - Fork PRs are skipped by the `if` guard above and must never run on any
+    #     runner. There is deliberately no fork branch here: if that guard were
+    #     ever removed, this expression evaluates to a falsy value (not a runner
+    #     label) so the job fails closed instead of dispatching untrusted code
+    #     anywhere — including onto a free hosted runner.
     runs-on: >-
       ${{ github.event_name == 'schedule' && fromJSON('["ubuntu-latest"]') ||
           ((github.event_name == 'push' ||
             (github.event_name == 'pull_request' &&
              github.event.pull_request.head.repo.full_name == github.repository))
-           && (vars.E2E_RUNNER == 'ubuntu-latest'
-               && fromJSON('["ubuntu-latest"]')
-               || fromJSON('["self-hosted", "copse-e2e"]'))) }}
+           && (vars.SELF_HOSTED_E2E == 'copse-e2e'
+               && fromJSON('["self-hosted", "copse-e2e"]')
+               || fromJSON('["ubuntu-latest"]'))) }}
     timeout-minutes: 45
     # Split the seeded e2e suite (see wdio.ci.conf.ts) into parallel shards so the
     # whole gate finishes well inside the runner window. Each shard runs a disjoint
@@ -1104,11 +1126,14 @@ jobs:
       # ("Error from intermediary") as non-retryable, and with fail-fast:true a
       # single shard's download flake cancels the whole e2e matrix (see
       # actions/download-artifact#464 and main run 29591165512).
-      # Nightly `schedule` (and the E2E_RUNNER=ubuntu-latest break-glass) run on
-      # GitHub-hosted images that do not ship ASRT's Linux backend. Executable
-      # plugins fail closed without bubblewrap+socat (selected-plugin-browser
-      # on tip 528f92ce / runs 31781384161 and 31870672634). Self-hosted
-      # runners already bake both into the image (ci-runners/Dockerfile).
+      # GitHub-hosted images do not ship ASRT's Linux backend, and hosted is now
+      # the default for every e2e event (nightly `schedule` included) — the
+      # fleet is opt-in via SELF_HOSTED_E2E. Executable plugins fail closed
+      # without bubblewrap+socat (selected-plugin-browser on tip 528f92ce /
+      # runs 31781384161 and 31870672634), so the hosted-only step below
+      # installs them. Self-hosted runners bake both into the image already
+      # (ci-runners/Dockerfile), which is why it stays gated on
+      # `runner.environment`.
       - name: Install Linux sandbox dependencies
         if: runner.environment == 'github-hosted'
         run: |
@@ -1578,7 +1603,7 @@ jobs:
     if: >-
       always() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request'
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1688,8 +1713,8 @@ jobs:
     # exact substitution as the fix for `always()` hangs.
     if: ${{ !cancelled() }}
     needs: [precheck, check, bench, build, e2e, screenshot-artifacts]
-    # Tiny aggregate gate. Prefer self-hosted (CHECKS_RUNNER) to save Actions
-    # minutes; hosted fallback when unset. Fails closed either way: if the fleet
+    # Tiny aggregate gate. Hosted by default; SELF_HOSTED_CHECKS=copse-checks
+    # opts it onto the self-hosted check fleet. Fails closed either way: if the fleet
     # is saturated this stays pending (never green), so it can't wave a run
     # through without its required status check.
     #
@@ -1703,7 +1728,7 @@ jobs:
     # Fork PRs go to GitHub-hosted regardless: fork runs must stay off the
     # fleet entirely, and the fleet's runner group should not serve public-repo
     # jobs anyway — routing there would queue this gate forever.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1719,7 +1744,7 @@ jobs:
           RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
           CURRENT_RUN_ID: ${{ github.run_id }}
-          # Self-hosted CHECKS_RUNNER images ship curl+jq but not the gh CLI
+          # Self-hosted check-fleet images ship curl+jq but not the gh CLI
           # (ci-runners/Dockerfile). #1017 moved this gate back onto that fleet,
           # so tip/supersession lookups must use the REST API — `gh api` fails
           # with `gh: command not found` and the gate fail-closes on every
