@@ -74,6 +74,28 @@ describe('resolveModelIdForm', () => {
     assert.ok(probes < 1_000, `expected a bounded search, probed ${String(probes)} candidates`)
   })
 
+  it('stays cheap on prose that reached a model-id slot', () => {
+    // Not a model id, but an unbounded label from a model listing or an ACP
+    // agent can carry this shape, and the search is quadratic in colon count
+    // once memoized: ~5 kB of colon-and-slash-dense text cost 807ms, and 20 kB
+    // did not finish. The candidate budget bounds it.
+    const prose = Array.from(
+      { length: 400 },
+      (_, i) => `src/dir${String(i)}/file${String(i)}.ts:${String(i)}:1`,
+    ).join(' ')
+    const started = Date.now()
+    assert.equal(resolveModelIdForm(prose, catalog('gpt-5')), null)
+    assert.ok(Date.now() - started < 500, 'a long colon-dense string must not stall the caller')
+  })
+
+  it('still resolves an id carrying more wrappers than any real one', () => {
+    // The budget must sit far above what a genuine id needs, so stacking every
+    // wrapper — and then some — still resolves.
+    const known = catalog('vendor/model')
+    const id = `acp:agent#${'prefix:'.repeat(8)}vendor/model${':tag'.repeat(8)}[1m]`
+    assert.equal(resolveModelIdForm(id, known), 'vendor/model')
+  })
+
   it('agrees with the unmemoized search on random ids', () => {
     // Deterministic PRNG so a failure is reproducible from the seed alone.
     let seed = 0x1f2e3d4
