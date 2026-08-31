@@ -1,9 +1,11 @@
 import { $, browser, expect } from '@wdio/globals'
 import { seedProjectConfig } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { resetUserData } from './helpers/seed-config.ts'
 
 describe('skills', () => {
   before(async () => {
+    resetUserData()
     await seedProjectConfig(process.cwd(), {
       projectId: 'skills-demo-project',
       threadId: 'skills-demo-thread',
