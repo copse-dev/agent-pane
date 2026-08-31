@@ -406,6 +406,8 @@ you want the coding agent to follow on every turn.
 `
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  let modelCardResolveGate: Promise<void> | undefined
+  let releaseModelCardResolves: (() => void) | undefined
   setGitHubListWatchBroadcast(() => {
     broadcastToAppWindows('gh:lists_tick')
   })
@@ -1260,6 +1262,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('modelCards:resolve', async (event, modelIds: unknown) => {
     assertMainFrameSender(event, win)
     const ids = parseIpcArgs(modelCardIdsSchema, [modelIds])
+    await modelCardResolveGate
     const out: Record<string, ResolvedModelCard | null> = {}
     await Promise.all(
       ids.map(async (id) => {
@@ -2511,6 +2514,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:clearMockScript', (event) => {
       assertMainFrameSender(event, win)
       clearMockScript()
+    })
+    ipcMain.handle('test:pauseModelCardResolves', (event) => {
+      assertMainFrameSender(event, win)
+      if (modelCardResolveGate) return
+      modelCardResolveGate = new Promise((resolve) => {
+        releaseModelCardResolves = resolve
+      })
+    })
+    ipcMain.handle('test:resumeModelCardResolves', (event) => {
+      assertMainFrameSender(event, win)
+      const release = releaseModelCardResolves
+      modelCardResolveGate = undefined
+      releaseModelCardResolves = undefined
+      release?.()
     })
     ipcMain.handle('test:emitAgentChunks', (event, rawThreadId: unknown, rawChunks: unknown) => {
       assertMainFrameSender(event, win)
