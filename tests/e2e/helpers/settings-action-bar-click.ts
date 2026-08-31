@@ -24,11 +24,16 @@
  * only when WebDriver reports *this* bar covering the target, scroll clear and
  * retry once. Clicks that were going to succeed are untouched.
  *
- * Deliberately narrow, in three ways. The error must name both the interception
- * and `settings-buttons`; the scroll moves the port only when the bar really
- * does cover the click point and never for the bar's own Save/Cancel; and there
- * is exactly one retry. Every other covered-element failure fails as it should —
- * this is not a blanket "retry the click somewhere else".
+ * Narrowness comes from geometry, not from reading the error. The retry happens
+ * only when this bar demonstrably covers the click point of an element inside
+ * the settings scrollport, the element is not one of the bar's own buttons, and
+ * the scrollport actually had somewhere to move; and then exactly once. Every
+ * other covered-element failure moves nothing and fails as it should — this is
+ * not a blanket "retry the click somewhere else".
+ *
+ * Identifying the culprit from the message was tried first and does not work:
+ * WebDriver names the topmost element, which is frequently one of the bar's own
+ * children rather than the bar. See {@link isClickIntercepted}.
  */
 
 /** Margin above the bar so sub-pixel rounding cannot put the target back under it. */
@@ -98,13 +103,27 @@ export type ActionBarClickSession = {
 const clickPatched = new WeakSet<object>()
 
 /**
- * Is this the one failure this helper exists for? Matched narrowly on both
- * halves of WebDriver's message — the interception *and* the bar that caused
- * it — so no other covered-element failure is ever quietly retried.
+ * Is this WebDriver's covered-element failure at all?
+ *
+ * Deliberately does *not* try to name the culprit from the message. WebDriver
+ * reports the topmost element at the point, which for this bar is as often one
+ * of its own children as the `.settings-buttons` box:
+ *
+ *   Other element would receive the click: <button id="settings-cancel">
+ *
+ * An earlier version required the message to contain `settings-buttons`, and so
+ * declined that case and rethrew — `settings-automations.e2e.ts` failed in CI
+ * for exactly this reason. Widening the substring would not have fixed it
+ * either: the bar's Save button renders as a bare `<button type="submit">`,
+ * carrying nothing to match on.
+ *
+ * Whether this bar is really the cause is therefore decided by geometry, in
+ * {@link scrollClearOfSettingsActionBar}, which answers it directly instead of
+ * guessing from text.
  */
-export function isSettingsActionBarInterception(error: unknown): boolean {
+export function isClickIntercepted(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
-  return message.includes('element click intercepted') && message.includes('settings-buttons')
+  return message.includes('element click intercepted')
 }
 
 /**
@@ -135,9 +154,15 @@ export function installSettingsActionBarClickSafety(session: ActionBarClickSessi
       try {
         return await origClick.apply(this, args)
       } catch (error) {
-        if (!isSettingsActionBarInterception(error)) throw error
+        if (!isClickIntercepted(error)) throw error
+        let scrolled = false
         try {
-          await session.execute(scrollClearOfSettingsActionBar, this, ACTION_BAR_CLEARANCE_PX)
+          scrolled =
+            (await session.execute(
+              scrollClearOfSettingsActionBar,
+              this,
+              ACTION_BAR_CLEARANCE_PX,
+            )) === true
         } catch (measureError) {
           // Best effort. Say so out loud rather than swallowing: a silent catch
           // here once hid a `ReferenceError` from module scope leaking into the
@@ -148,8 +173,13 @@ export function installSettingsActionBarClickSafety(session: ActionBarClickSessi
           )
           throw error
         }
-        // One retry only. If the bar still covers it, the scrollport had nothing
-        // left to give and the original interception is the honest answer.
+        // The scroll is the whole warrant for retrying. It returns true only
+        // when this bar really covered the click point *and* the scrollport had
+        // somewhere to go, so every other covered-element failure — a modal
+        // backdrop, a toast, an overlay, or this bar with nothing left to
+        // scroll — arrives here, moves nothing, and fails as it should.
+        if (!scrolled) throw error
+        // One retry only.
         return await origClick.apply(this, args)
       }
     },

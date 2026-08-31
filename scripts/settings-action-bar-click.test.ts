@@ -4,7 +4,7 @@ import { describe, it, beforeEach } from 'node:test'
 import {
   ACTION_BAR_CLEARANCE_PX,
   installSettingsActionBarClickSafety,
-  isSettingsActionBarInterception,
+  isClickIntercepted,
   scrollClearOfSettingsActionBar,
   type ActionBarClickSession,
 } from '../tests/e2e/helpers/settings-action-bar-click.ts'
@@ -133,8 +133,19 @@ describe('installSettingsActionBarClickSafety', () => {
     'element click intercepted: Element <summary class="plugin-settings-summary">...</summary> is ' +
     'not clickable at point (712, 785). Other element would receive the click: ' +
     '<div class="settings-buttons">...</div>'
+  // Verbatim from the shard 6 failure in run 33434063682: the bar's own Cancel
+  // button is the topmost element, so the bar's class never appears.
+  const INTERCEPTED_BY_CANCEL =
+    'element click intercepted: Element <button type="button" class="automation-add-btn">...' +
+    '</button> is not clickable at point (1010, 729). Other element would receive the click: ' +
+    '<button type="button" id="settings-cancel">...</button>'
+  const INTERCEPTED_BY_SAVE =
+    'element click intercepted: Element <button type="button" class="automation-add-btn">...' +
+    '</button> is not clickable at point (1010, 729). Other element would receive the click: ' +
+    '<button type="submit">...</button>'
 
-  function fakeSession(): {
+  /** `scrolled` is what the in-page measurement reports back: did the port move? */
+  function fakeSession(scrolled = true): {
     session: ActionBarClickSession
     registered: { name: string; attachToElement?: boolean }[]
     order: string[]
@@ -147,7 +158,7 @@ describe('installSettingsActionBarClickSafety', () => {
     const session: ActionBarClickSession = {
       execute: async () => {
         order.push('execute')
-        return true
+        return scrolled
       },
       overwriteCommand: (name, fn, attachToElement) => {
         registered.push({ name, ...(attachToElement === undefined ? {} : { attachToElement }) })
@@ -172,21 +183,26 @@ describe('installSettingsActionBarClickSafety', () => {
     }
   }
 
-  it("recognises only the action bar's own interception", () => {
-    assert.equal(isSettingsActionBarInterception(new Error(INTERCEPTED)), true)
-    // Right failure, wrong culprit.
+  it('recognises a covered-element failure without judging the culprit', () => {
+    assert.equal(isClickIntercepted(new Error(INTERCEPTED)), true)
+    // The regression this replaced a substring match for: WebDriver names the
+    // topmost element, and for this bar that is usually one of its own buttons.
+    // Requiring `settings-buttons` in the message declined this in CI.
+    assert.equal(isClickIntercepted(new Error(INTERCEPTED_BY_CANCEL)), true)
+    // Save renders as a bare submit button — there is nothing here to match on
+    // at all, which is why the culprit is decided by geometry instead.
+    assert.equal(isClickIntercepted(new Error(INTERCEPTED_BY_SAVE)), true)
+    // Another element's interception is recognised too; the measurement then
+    // declines to scroll for it. That split is asserted below, not here.
     assert.equal(
-      isSettingsActionBarInterception(
+      isClickIntercepted(
         new Error('element click intercepted: ... would receive the click: <div class="modal">'),
       ),
-      false,
+      true,
     )
-    // Right culprit named, but not an interception at all.
-    assert.equal(
-      isSettingsActionBarInterception(new Error('settings-buttons is not displayed')),
-      false,
-    )
-    assert.equal(isSettingsActionBarInterception('not an error'), false)
+    // Not an interception at all, however the bar is named.
+    assert.equal(isClickIntercepted(new Error('settings-buttons is not displayed')), false)
+    assert.equal(isClickIntercepted('not an error'), false)
   })
 
   it('overwrites click on the element scope', () => {
@@ -220,13 +236,26 @@ describe('installSettingsActionBarClickSafety', () => {
     assert.deepEqual(order, ['click', 'execute', 'click'])
   })
 
-  it('never retries an interception from anything but the action bar', async () => {
+  it('retries the bar-covered click even when a bar button is named as the culprit', async () => {
     const { session, order, invokeClick } = fakeSession()
+    installSettingsActionBarClickSafety(session)
+    assert.equal(
+      await invokeClick((n) => (n === 1 ? new Error(INTERCEPTED_BY_CANCEL) : null)),
+      'clicked',
+    )
+    assert.deepEqual(order, ['click', 'execute', 'click'])
+  })
+
+  it('never retries when the measurement finds nothing of this bar to scroll', async () => {
+    // A modal backdrop, a toast, or this bar with the scrollport already at its
+    // end: the measurement reports no movement, so the original failure stands.
+    const { session, order, invokeClick } = fakeSession(false)
     installSettingsActionBarClickSafety(session)
     const other =
       'element click intercepted: Other element would receive the click: <div class="modal-backdrop">'
     await assert.rejects(() => invokeClick(() => new Error(other)), /modal-backdrop/)
-    assert.deepEqual(order, ['click'])
+    // Measured once, then failed honestly — no second click.
+    assert.deepEqual(order, ['click', 'execute'])
   })
 
   it('rethrows the original interception when measuring throws', async () => {
