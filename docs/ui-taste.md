@@ -342,6 +342,10 @@ Rules of thumb:
 - An absolutely positioned `::before` paints in the **positioned** layer, i.e. _above_ the bar's
   in-flow children. Give the buttons `position: relative; z-index: 1` or they come out blurred
   along with the backdrop.
+- The translucent wash is visual chrome, not a hit target. Give the footer `pointer-events: none`
+  and restore `pointer-events: auto` on its actual buttons, or the empty fade becomes an invisible
+  shield over controls that are still visible beneath it. Pair that with scroll padding equal to the
+  footer depth so explicit focus and `scrollIntoView` operations stop above the bar.
 - Alternatively, mirror the onboarding pattern: make the footer a non-scrolling flex sibling
   (`flex-shrink: 0`) _outside_ the scroll region (see `onboarding.css` / `onboarding-dialog.ts`).
   Prefer this when the footer doesn't need to live inside a `<form>` for submit semantics.

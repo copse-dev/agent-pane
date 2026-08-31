@@ -175,9 +175,9 @@ describe('settings styling', function () {
       const overlay = getComputedStyle(bar, '::before')
       const barRect = bar.getBoundingClientRect()
       // Something from the scrolled section must actually pass under the bar —
-      // otherwise the transparency has nothing to reveal. Hit testing can't
-      // answer this (the bar is topmost whatever its opacity), so overlap the
-      // rectangles instead.
+      // otherwise the transparency has nothing to reveal. Use rectangles for
+      // visual overlap because the empty wash deliberately yields hit testing
+      // to the visible content beneath it.
       const section = document.querySelector<HTMLElement>('.settings-section.active')
       const passesUnder = Array.from(section?.querySelectorAll<HTMLElement>('*') ?? []).some(
         (el) => {
@@ -185,6 +185,11 @@ describe('settings styling', function () {
           return rect.height > 0 && rect.top < barRect.bottom && rect.bottom > barRect.top
         },
       )
+      const bottomHit = document.elementFromPoint(
+        barRect.left + barRect.width / 2,
+        barRect.bottom - 4,
+      )
+      const buttons = Array.from(bar.querySelectorAll<HTMLElement>('button'))
       return {
         background: style.backgroundColor,
         backgroundImage: style.backgroundImage,
@@ -192,8 +197,15 @@ describe('settings styling', function () {
         overlayBackdrop: overlay.backdropFilter,
         overlayMask: overlay.maskImage,
         overlayBackground: overlay.backgroundImage,
-        stillOwnsBottomEdge:
-          document.elementFromPoint(barRect.left + barRect.width / 2, barRect.bottom - 4) === bar,
+        emptyChromeYieldsBottomEdge: bottomHit !== bar && !bar.contains(bottomHit),
+        buttonsOwnTheirCenters: buttons.every((button) => {
+          const rect = button.getBoundingClientRect()
+          const hit = document.elementFromPoint(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
+          )
+          return hit === button || (hit ? button.contains(hit) : false)
+        }),
         passesUnder,
       }
     })
@@ -208,7 +220,12 @@ describe('settings styling', function () {
     assert.match(footer.overlayMask, /gradient/)
     assert.match(footer.overlayBackground, /gradient/)
     assert.equal(footer.passesUnder, true, 'scrolled content passes under the footer')
-    assert.equal(footer.stillOwnsBottomEdge, true, 'the bar still covers the bottom edge')
+    assert.equal(
+      footer.emptyChromeYieldsBottomEdge,
+      true,
+      'the translucent wash must not become an invisible click shield',
+    )
+    assert.equal(footer.buttonsOwnTheirCenters, true, 'Save and Cancel remain clickable')
 
     await saveElementScreenshot('#settings-dialog', 'settings-styling-footer.png')
   })
