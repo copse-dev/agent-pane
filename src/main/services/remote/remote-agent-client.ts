@@ -32,10 +32,10 @@ import { sleepMs } from '@copse/llm/stream-retry.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
-import { getActiveProjectId } from '../workspace.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { clearManagedAgentSession, runManagedAgentFromSettings } from './managed-agents-client.ts'
 import {
+  resolveRemoteAgentProjectId,
   resolveRemoteAgentRepository,
   type RemoteAgentRunOptions,
   type RemoteAgentRunResult,
@@ -935,7 +935,7 @@ export async function runRemoteAgentFromSettings(
 
   // Capture the launching project up front: a long remote run can outlast a
   // project switch, and the link/PR must land on the project it started in.
-  const launchProjectId = getActiveProjectId()
+  const launchProjectId = resolveRemoteAgentProjectId()
 
   const selectedModel = firstNonEmptyString(options.model?.trim())
   const priorSession = readSession(options.threadId)
