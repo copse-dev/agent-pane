@@ -453,6 +453,8 @@ interface TextOnlyTurnResult {
   answerText: string
   /** Recovered tool calls the caller should execute before treating the run as finished. */
   pendingToolCalls: ToolCallChunk[]
+  /** The truncation hook injected a nudge that needs another bounded text-only call. */
+  retryAfterTruncation: boolean
 }
 
 async function streamTextOnlyTurn(
@@ -460,7 +462,8 @@ async function streamTextOnlyTurn(
   messages: LLMMessage[],
   onChunk: (chunk: AgentStreamChunk) => void,
   budget: LlmCallBudget,
-  nudge = FINALIZE_NUDGE,
+  // null means `messages` already ends in the selected truncation nudge.
+  nudge: string | null = FINALIZE_NUDGE,
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
   usageModel?: string,
   coerceTextToolCallArgs?: CoerceToolArgsFn,
@@ -470,10 +473,15 @@ async function streamTextOnlyTurn(
   // length-truncated, else undefined. The loop supplies it; absent = no push.
   resolveTruncationNudge?: (stopReason: string | undefined) => Promise<string | undefined>,
 ): Promise<TextOnlyTurnResult> {
-  const empty: TextOnlyTurnResult = { answerText: '', pendingToolCalls: [] }
+  const empty: TextOnlyTurnResult = {
+    answerText: '',
+    pendingToolCalls: [],
+    retryAfterTruncation: false,
+  }
   if (!reserveLlmCall(budget)) return empty
   const signal = budget.signal
-  const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: nudge }]
+  const turnMessages: LLMMessage[] =
+    nudge === null ? [...messages] : [...messages, { role: 'user', content: nudge }]
   let assistantText = ''
   let stopReason: string | undefined
   let streamUsage: StepUsage | null = null
@@ -535,7 +543,7 @@ async function streamTextOnlyTurn(
       content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
     })
     emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
-    return { answerText: '', pendingToolCalls }
+    return { answerText: '', pendingToolCalls, retryAfterTruncation: false }
   }
 
   const trimmed = assistantText.trim()
@@ -544,18 +552,20 @@ async function streamTextOnlyTurn(
     if (!trimmed) onChunk({ type: 'text', text })
     messages.push({ role: 'assistant', content: text })
     emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
-    return { answerText: text, pendingToolCalls: [] }
+    return { answerText: text, pendingToolCalls: [], retryAfterTruncation: false }
+  }
+  const truncationNudge = await resolveTruncationNudge?.(stopReason)
+  if (truncationNudge !== undefined) {
+    if (trimmed) messages.push({ role: 'assistant', content: assistantText })
+    messages.push({ role: 'user', content: truncationNudge })
+    emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
+    return { answerText: '', pendingToolCalls: [], retryAfterTruncation: true }
   }
   if (trimmed) {
     messages.push({ role: 'assistant', content: assistantText })
-  } else {
-    const truncationNudge = await resolveTruncationNudge?.(stopReason)
-    if (truncationNudge !== undefined) {
-      messages.push({ role: 'user', content: truncationNudge })
-    }
   }
   emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
-  return { answerText: trimmed, pendingToolCalls: [] }
+  return { answerText: trimmed, pendingToolCalls: [], retryAfterTruncation: false }
 }
 
 type AgentStepContext = {
@@ -1148,7 +1158,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
               mechanism: 'text-only-turn',
               text: preNudges.stuckFinalize,
             })
-            const forced = await streamTextOnlyTurn(
+            let forced = await streamTextOnlyTurn(
               provider,
               messages,
               onChunk,
@@ -1160,6 +1170,20 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
               maxStreamOutputTokens,
               resolveTruncationNudge,
             )
+            while (forced.retryAfterTruncation && !runBudgetExhausted(budget)) {
+              forced = await streamTextOnlyTurn(
+                provider,
+                messages,
+                onChunk,
+                budget,
+                null,
+                getLastUsage,
+                usageModel,
+                coerceTextToolCallArgs,
+                maxStreamOutputTokens,
+                resolveTruncationNudge,
+              )
+            }
             if (forced.pendingToolCalls.length > 0) {
               await executeToolBatch({
                 pendingToolCalls: forced.pendingToolCalls,
@@ -1687,23 +1711,29 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         maxStreamOutputTokens,
         resolveTruncationNudge,
       )
-      while (finalResult.pendingToolCalls.length > 0 && !runBudgetExhausted(budget)) {
-        await executeToolBatch({
-          pendingToolCalls: finalResult.pendingToolCalls,
-          messages,
-          executeTool: opts.executeTool,
-          signal,
-          onChunk,
-          recentFingerprints,
-          recentToolProgress,
-          budget,
-        })
+      while (
+        (finalResult.pendingToolCalls.length > 0 || finalResult.retryAfterTruncation) &&
+        !runBudgetExhausted(budget)
+      ) {
+        const retryingTruncation = finalResult.retryAfterTruncation
+        if (finalResult.pendingToolCalls.length > 0) {
+          await executeToolBatch({
+            pendingToolCalls: finalResult.pendingToolCalls,
+            messages,
+            executeTool: opts.executeTool,
+            signal,
+            onChunk,
+            recentFingerprints,
+            recentToolProgress,
+            budget,
+          })
+        }
         finalResult = await streamTextOnlyTurn(
           provider,
           messages,
           onChunk,
           budget,
-          FINALIZE_NUDGE,
+          retryingTruncation ? null : FINALIZE_NUDGE,
           getLastUsage,
           usageModel,
           coerceTextToolCallArgs,
