@@ -1,10 +1,12 @@
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   formatCodeSearchResults,
   parseGrepStdout,
   parseRipgrepJson,
+  searchCodeContent,
   setIndexedGrepBackendForTest,
+  setIndexedGrepCommandRunnerForTest,
 } from './indexed-grep.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 
@@ -95,8 +97,71 @@ describe('indexed-grep parsing', () => {
 })
 
 describe('indexed-grep backend selection', () => {
+  afterEach(() => {
+    setIndexedGrepBackendForTest(null)
+    setIndexedGrepCommandRunnerForTest(null)
+  })
+
   it('defaults to ripgrep when no indexed backend is forced', () => {
     setIndexedGrepBackendForTest(null)
     assert.equal(formatCodeSearchResults(['a.ts:1: x'], 5, 'rg'), 'a.ts:1: x')
+  })
+
+  it('cross-checks a successful empty indexed result with ripgrep', async () => {
+    const commands: string[] = []
+    const rgMatch = JSON.stringify({
+      type: 'match',
+      data: {
+        path: { text: '/tmp/repo/src/main.ts' },
+        line_number: 12,
+        lines: { text: 'const needle = true\n' },
+      },
+    })
+    setIndexedGrepBackendForTest('ig')
+    setIndexedGrepCommandRunnerForTest(async (command) => {
+      commands.push(command)
+      return {
+        stdout: command === 'rg' ? rgMatch : '',
+        stderr: '',
+        code: 0,
+        stdoutTruncated: false,
+      }
+    })
+
+    const result = await searchCodeContent({
+      pattern: 'needle',
+      searchRoot: '/tmp/repo',
+      displayRoot: '/tmp/repo',
+      maxResults: 10,
+    })
+
+    assert.deepEqual(commands, ['ig', 'rg'])
+    assert.equal(result.backend, 'rg')
+    assert.deepEqual(result.lines, ['src/main.ts:12: const needle = true'])
+  })
+
+  it('keeps a non-empty indexed result without spawning ripgrep', async () => {
+    const commands: string[] = []
+    setIndexedGrepBackendForTest('ig')
+    setIndexedGrepCommandRunnerForTest(async (command) => {
+      commands.push(command)
+      return {
+        stdout: '/tmp/repo/src/main.ts:12: const needle = true\n',
+        stderr: '',
+        code: 0,
+        stdoutTruncated: false,
+      }
+    })
+
+    const result = await searchCodeContent({
+      pattern: 'needle',
+      searchRoot: '/tmp/repo',
+      displayRoot: '/tmp/repo',
+      maxResults: 10,
+    })
+
+    assert.deepEqual(commands, ['ig'])
+    assert.equal(result.backend, 'ig')
+    assert.deepEqual(result.lines, ['src/main.ts:12: const needle = true'])
   })
 })
