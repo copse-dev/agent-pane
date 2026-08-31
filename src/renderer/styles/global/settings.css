@@ -199,13 +199,6 @@ dialog.settings-overlay::backdrop {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  /* Keep controls clear of the sticky action bar when Chromium scrolls them
-     into view for focus, keyboard navigation, or an accessibility click. The
-     footer remains translucent, but its occupied depth is not usable viewport
-     space for an interaction target. */
-  scroll-padding-bottom: calc(
-    var(--action-min-height) + var(--spacing-lg) + var(--spacing-xl) + var(--spacing-lg)
-  );
   /* No bottom padding: a sticky footer cannot extend past its containing
      block's content box, so bottom padding here would leave a gap below the
      sticky .settings-buttons bar that scrolled content shows through. The
@@ -328,10 +321,6 @@ dialog.settings-overlay::backdrop {
   display: flex;
   gap: var(--spacing-md);
   justify-content: flex-end;
-  /* The frosted breathing room is visual chrome, not an invisible click
-     shield over controls that are still visible through it. Restrict hit
-     testing to the action buttons themselves. */
-  pointer-events: none;
   margin-top: var(--spacing-xl);
   padding-top: var(--spacing-lg);
   /* Lift the buttons off the window's bottom edge. This padding lives inside
@@ -378,7 +367,6 @@ dialog.settings-overlay::backdrop {
      positioned layer — and Save comes out blurred along with the backdrop. */
   position: relative;
   z-index: 1;
-  pointer-events: auto;
 }
 .settings-buttons button[type='submit'] {
   background: var(--accent);
