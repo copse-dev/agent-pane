@@ -129,6 +129,10 @@ function smokeProfile(workspaceRoot: string): HeadlessAgentProfile {
       browserToolsEnabled: false,
       bundledCursorSkillsEnabled: false,
       cursorHooksEnabled: false,
+      // The fixture injects its only provider below. Keep shell permission
+      // checks from contacting a developer's live LM Studio instance through
+      // the product-default safety classifier.
+      safetyClassifierEnabled: false,
       skillsEnabled: false,
       subagentsEnabled: false,
     },
