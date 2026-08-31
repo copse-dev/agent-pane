@@ -6,10 +6,12 @@ import { tmpdir } from 'node:os'
 import {
   refreshSkillsRegistry,
   listSkills,
+  listSkillsWhenReady,
   listModelInvocableSkills,
   readSkill,
   getSkill,
   setSkillsForTest,
+  resetSkillsRegistryForTest,
   SKILL_READ_MAX_BYTES,
 } from './skills-registry.ts'
 import { setSetting } from '../storage/settings.test-shim.ts'
@@ -63,6 +65,14 @@ description: Demo skill for tests
     const demo = skills.find((skill) => skill.name === 'demo-skill' && skill.source === 'project')
     assert.ok(demo, 'expected demo-skill from project .cursor/skills')
     assert.deepEqual(demo.externalLinks, [], 'link-free skill reports no external links')
+  })
+
+  it('waits for initial discovery before serving the first catalog read', async () => {
+    resetSkillsRegistryForTest()
+
+    const skills = await listSkillsWhenReady()
+
+    assert.ok(skills.some((skill) => skill.name === 'demo-skill'))
   })
 
   it('does not descend into a nested repository (git worktree or clone)', async () => {

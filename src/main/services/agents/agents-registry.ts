@@ -40,6 +40,7 @@ export interface DiscoveryRoot {
 let cached: AgentsListResult = { agents: [], skipped: [], shadowed: [] }
 let cachedMetadata: AgentMetadata[] = []
 let refreshPromise: Promise<void> | null = null
+let hasCompletedRefresh = false
 
 /** Which container a discovered root belongs to, or null if it is not one of ours. */
 function containerOf(root: string): AgentContainer | null {
@@ -173,6 +174,7 @@ export async function refreshAgentsRegistry(): Promise<void> {
     skipped,
     shadowed,
   }
+  hasCompletedRefresh = true
 }
 
 export async function initAgentsRegistry(): Promise<void> {
@@ -188,6 +190,25 @@ export async function initAgentsRegistry(): Promise<void> {
 /** Everything discovered, including what was skipped and shadowed (Settings). */
 export function listAgents(): AgentsListResult {
   return cached
+}
+
+/** Wait for initial discovery before serving a renderer catalog read. */
+export async function listAgentsWhenReady(): Promise<AgentsListResult> {
+  const pending = refreshPromise
+  if (pending) {
+    await pending
+  } else if (!hasCompletedRefresh) {
+    await initAgentsRegistry()
+  }
+  return listAgents()
+}
+
+/** Test helper — restore the cold-start state used by the first IPC read. */
+export function resetAgentsRegistryForTest(): void {
+  cached = { agents: [], skipped: [], shadowed: [] }
+  cachedMetadata = []
+  hasCompletedRefresh = false
+  refreshPromise = null
 }
 
 /** One agent's full definition, including its system-prompt body. */

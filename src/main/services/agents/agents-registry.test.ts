@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import {
   collectDiscoveryRoots,
   discoverAgentsFromRoots,
+  listAgentsWhenReady,
+  resetAgentsRegistryForTest,
   type DiscoveryRoot,
 } from './agents-registry.ts'
 import type { AgentContainer } from '@shared/types/agents.ts'
@@ -19,10 +21,12 @@ describe('agents-registry', () => {
   let restoreWorkspace: (() => void) | undefined
 
   beforeEach(async () => {
+    resetAgentsRegistryForTest()
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-agents-'))
   })
 
   afterEach(async () => {
+    resetAgentsRegistryForTest()
     restoreWorkspace?.()
     restoreWorkspace = undefined
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
@@ -78,6 +82,17 @@ describe('agents-registry', () => {
     assert.equal(winner.source, 'project')
     assert.equal(loser.name, 'reviewer')
     assert.equal(loser.shadowedBy, join(projectRoot, 'reviewer.md'))
+  })
+
+  it('waits for initial discovery before serving the first catalog read', async () => {
+    await mkdir(join(tempRoot, '.git'), { recursive: true })
+    await seed('', '.copse', 'reviewer.md', DEFINITION.replace('{where}', 'project'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+    resetAgentsRegistryForTest()
+
+    const result = await runWithWorkspaceTrust(tempRoot, true, () => listAgentsWhenReady())
+
+    assert.equal(result.agents[0]?.name, 'reviewer')
   })
 
   it('scans nested directories', async () => {

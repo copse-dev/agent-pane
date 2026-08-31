@@ -161,8 +161,8 @@ import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
-import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
-import { listAgents, initAgentsRegistry } from '../services/agents/agents-registry.ts'
+import { initSkillsRegistry, listSkillsWhenReady } from '../services/skills/skills-registry.ts'
+import { initAgentsRegistry, listAgentsWhenReady } from '../services/agents/agents-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
@@ -1824,8 +1824,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
 
-  ipcMain.handle('skills:list', () => listSkills())
-  ipcMain.handle('agents:list', () => listAgents())
+  ipcMain.handle('skills:list', () => listSkillsWhenReady())
+  ipcMain.handle('agents:list', () => listAgentsWhenReady())
   ipcMain.handle('cursorPlugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()

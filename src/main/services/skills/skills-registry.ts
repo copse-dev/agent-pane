@@ -31,6 +31,7 @@ const SKILL_CONTAINER_DIRS = new Set(['.cursor', '.agents', '.claude'])
 
 let cachedSkills: SkillMetadata[] = []
 let refreshPromise: Promise<void> | null = null
+let hasCompletedRefresh = false
 const scopedSkills = new AsyncLocalStorage<readonly SkillMetadata[]>()
 
 function activeSkills(): readonly SkillMetadata[] {
@@ -168,14 +169,29 @@ async function discoverSkillsRegistry(): Promise<SkillMetadata[]> {
 
 export async function refreshSkillsRegistry(): Promise<void> {
   cachedSkills = await discoverSkillsRegistry()
+  hasCompletedRefresh = true
 }
 
 export async function initSkillsRegistry(): Promise<void> {
   if (refreshPromise) await refreshPromise
   refreshPromise = refreshSkillsRegistry()
-  await refreshPromise
-  refreshPromise = null
-  notifyRefreshContextEstimate()
+  try {
+    await refreshPromise
+    notifyRefreshContextEstimate()
+  } finally {
+    refreshPromise = null
+  }
+}
+
+/** Wait for initial discovery before serving a renderer catalog read. */
+export async function listSkillsWhenReady(): Promise<SkillSummary[]> {
+  const pending = refreshPromise
+  if (pending) {
+    await pending
+  } else if (!hasCompletedRefresh) {
+    await initSkillsRegistry()
+  }
+  return listSkills()
 }
 
 /** Discover and scope the product skill catalog to one explicit headless run. */
@@ -258,4 +274,12 @@ export async function readSkill(name: string, relativePath = 'SKILL.md'): Promis
 /** Test helper — replace cached skills without touching disk. */
 export function setSkillsForTest(skills: SkillMetadata[]): void {
   cachedSkills = skills
+  hasCompletedRefresh = true
+}
+
+/** Test helper — restore the cold-start state used by the first IPC read. */
+export function resetSkillsRegistryForTest(): void {
+  cachedSkills = []
+  hasCompletedRefresh = false
+  refreshPromise = null
 }
