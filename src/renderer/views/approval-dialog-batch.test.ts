@@ -24,6 +24,8 @@ interface EmitReq {
   type?: 'shell' | 'mcp' | 'web'
   allowRemember?: boolean
   rememberLabel?: string
+  collapseDetails?: boolean
+  approveOnceLabel?: string
   allowTurnTreeLease?: boolean
   turnTreeLeaseLabel?: string
   turnTreeLeaseDefault?: boolean
@@ -39,13 +41,19 @@ interface Responded {
 function makeApi(): {
   api: ApiClient
   emit: (req: EmitReq) => void
+  cancel: (id: string) => void
   responses: Responded[]
 } {
   let handler: (req: Record<string, unknown>) => void = () => {}
+  let cancelHandler: (req: { id: string }) => void = () => {}
   const responses: Responded[] = []
   const overrides = {
     'agent.onApprovalRequest': (h: (req: Record<string, unknown>) => void): (() => void) => {
       handler = h
+      return () => {}
+    },
+    'agent.onApprovalCancelled': (h: (req: { id: string }) => void): (() => void) => {
+      cancelHandler = h
       return () => {}
     },
     'approval.respond': (
@@ -77,6 +85,8 @@ function makeApi(): {
         type: req.type ?? 'shell',
         allowRemember: req.allowRemember,
         rememberLabel: req.rememberLabel,
+        collapseDetails: req.collapseDetails,
+        approveOnceLabel: req.approveOnceLabel,
         allowTurnTreeLease: req.allowTurnTreeLease,
         turnTreeLeaseLabel:
           req.turnTreeLeaseLabel ??
@@ -88,6 +98,9 @@ function makeApi(): {
         turnTreeLeaseSubject:
           req.turnTreeLeaseSubject ?? (req.allowTurnTreeLease ? 'npm test' : undefined),
       })
+    },
+    cancel: (id): void => {
+      cancelHandler({ id })
     },
     responses,
   }
@@ -124,6 +137,7 @@ describe('approval dialog coalescing', () => {
   let dialog: HTMLDialogElement
   let spy: { showCalls: number }
   let emit: (req: EmitReq) => void
+  let cancel: (id: string) => void
   let responses: Responded[]
   // Scheduled timers, tagged by their delay so a test can fire the coalesce
   // (opening) window and the settle (Approve re-enable) window independently.
@@ -146,6 +160,7 @@ describe('approval dialog coalescing', () => {
     timers = []
     const made = makeApi()
     emit = made.emit
+    cancel = made.cancel
     responses = made.responses
     const store = createStore({ activeThreadId: 'focused' })
     mountSettingsDialog(store, made.api)
@@ -241,6 +256,33 @@ describe('approval dialog coalescing', () => {
       [...dialog.querySelectorAll('.approval-footer')].map((node) => node.textContent),
       ['Allow this install?', 'Allow this read?'],
     )
+  })
+
+  it('settles a reduced batch before a cancelled sibling can broaden approval', () => {
+    emit({
+      id: 'read-access',
+      title: 'Allow read access outside of the project?',
+      collapseDetails: true,
+      approveOnceLabel: 'Approve this command',
+    })
+    emit({ id: 'sibling' })
+    fireWindow()
+    assert.equal(approve().textContent, 'Approve all (2)')
+    assert.equal(approve().disabled, false)
+
+    cancel('sibling')
+
+    // The same primary-button position now grants the remaining request's
+    // broader read-access scope. A click committed against "Approve all" must
+    // not land on the changed action until the user has had time to see it.
+    assert.equal(approve().textContent, 'Approve')
+    assert.equal(approve().disabled, true)
+    approve().click()
+    assert.deepEqual(responses, [])
+
+    fireSettle()
+    approve().click()
+    assert.deepEqual(responses, [{ id: 'read-access', approved: true, remember: true }])
   })
 
   it('renders bodyAdvice and bodyFooter outside the monospaced command block', () => {
