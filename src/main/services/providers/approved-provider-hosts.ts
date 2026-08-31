@@ -12,6 +12,9 @@ import {
 } from '../../../shared/provider-hosts.ts'
 import { requestApproval } from '../approval.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
+import { runSerialized } from '../storage/write-queue.ts'
+
+const APPROVED_PROVIDER_HOSTS_MUTATION_QUEUE = 'approved-provider-hosts:mutation'
 
 function normalizeApprovedHosts(hosts: readonly string[]): string[] {
   const out: string[] = []
@@ -34,16 +37,24 @@ export function getApprovedProviderHosts(): string[] {
 }
 
 export async function setApprovedProviderHosts(hosts: readonly string[]): Promise<string[]> {
+  return runSerialized(APPROVED_PROVIDER_HOSTS_MUTATION_QUEUE, () =>
+    setApprovedProviderHostsInOrder(hosts),
+  )
+}
+
+async function setApprovedProviderHostsInOrder(hosts: readonly string[]): Promise<string[]> {
   const normalized = normalizeApprovedHosts(hosts)
   await setSetting(APPROVED_PROVIDER_HOSTS_SETTING, normalized)
   return normalized
 }
 
 export async function rememberApprovedProviderHost(host: string): Promise<void> {
-  const key = normalizeHostname(host)
-  const current = getApprovedProviderHosts()
-  if (current.includes(key)) return
-  await setApprovedProviderHosts([...current, key])
+  await runSerialized(APPROVED_PROVIDER_HOSTS_MUTATION_QUEUE, async () => {
+    const key = normalizeHostname(host)
+    const current = getApprovedProviderHosts()
+    if (current.includes(key)) return
+    await setApprovedProviderHostsInOrder([...current, key])
+  })
 }
 
 export function providerAllowUserApprovalEnabled(): boolean {

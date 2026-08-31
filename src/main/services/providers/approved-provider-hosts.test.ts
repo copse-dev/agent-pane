@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   ensureProviderHostApproved,
   getApprovedProviderHosts,
+  rememberApprovedProviderHost,
   setApprovedProviderHosts,
 } from './approved-provider-hosts.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
@@ -23,6 +24,15 @@ describe('approved-provider-hosts', () => {
   it('reads back hosts written via setApprovedProviderHosts', async () => {
     await setApprovedProviderHosts(['api.together.xyz', 'API.Together.XYZ'])
     assert.deepEqual(getApprovedProviderHosts(), ['api.together.xyz'])
+  })
+
+  it('keeps both hosts remembered concurrently', async () => {
+    await Promise.all([
+      rememberApprovedProviderHost('api.first.example'),
+      rememberApprovedProviderHost('api.second.example'),
+    ])
+
+    assert.deepEqual(getApprovedProviderHosts().sort(), ['api.first.example', 'api.second.example'])
   })
 
   it('treats an unwritten setting as an empty allowlist, not the stored customs', async () => {

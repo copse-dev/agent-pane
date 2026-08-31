@@ -75,4 +75,99 @@ describe('provider host allowlist settings', () => {
     await expect(approval).not.toBeDisplayed()
     await expect(settings).toBeDisplayed()
   })
+
+  it('keeps a delete made during host approval instead of restoring the provider', async () => {
+    await browser.execute(() => {
+      document.documentElement.dataset['providerInitialSaveState'] = 'pending'
+      void window.api.settings
+        .saveExtraProvider({
+          slug: 'acme',
+          label: 'Acme',
+          baseUrl: 'https://api.acme.example/v1',
+          models: [{ id: 'original' }],
+        })
+        .then(
+          () => {
+            document.documentElement.dataset['providerInitialSaveState'] = 'done'
+          },
+          () => {
+            document.documentElement.dataset['providerInitialSaveState'] = 'error'
+          },
+        )
+    })
+
+    const approval = $('#approval-dialog')
+    await approval.waitForDisplayed({ timeout: 15_000 })
+    await approval.$('.approval-approve').click()
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          () => document.documentElement.dataset['providerInitialSaveState'] === 'done',
+        ),
+      { timeout: 15_000, timeoutMsg: 'initial provider save did not settle' },
+    )
+
+    await browser.execute(() => {
+      document.documentElement.dataset['providerSaveState'] = 'pending'
+      void window.api.settings
+        .saveExtraProvider({
+          slug: 'acme',
+          label: 'Acme updated',
+          baseUrl: 'https://new.acme.example/v1',
+          models: [{ id: 'updated' }],
+        })
+        .then(
+          () => {
+            document.documentElement.dataset['providerSaveState'] = 'done'
+          },
+          () => {
+            document.documentElement.dataset['providerSaveState'] = 'error'
+          },
+        )
+    })
+
+    await approval.waitForDisplayed({ timeout: 15_000 })
+    await expect(approval.$('.approval-body')).toHaveText(
+      expect.stringContaining('new.acme.example'),
+    )
+
+    await browser.execute(() => {
+      document.documentElement.dataset['providerDeleteState'] = 'pending'
+      void window.api.settings.deleteExtraProvider('acme').then(
+        () => {
+          document.documentElement.dataset['providerDeleteState'] = 'done'
+        },
+        () => {
+          document.documentElement.dataset['providerDeleteState'] = 'error'
+        },
+      )
+    })
+
+    await approval.$('.approval-approve').click()
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const data = document.documentElement.dataset
+          return data['providerSaveState'] === 'done' && data['providerDeleteState'] === 'done'
+        }),
+      { timeout: 15_000, timeoutMsg: 'provider save and queued delete did not settle' },
+    )
+
+    const providerIds = await browser.execute(async () =>
+      (await window.api.settings.extraProviders()).map((provider) => provider.id),
+    )
+    assert.equal(providerIds.includes('acme'), false)
+
+    await $('#settings-close').click()
+    await $('[aria-label="Settings"]').click()
+    const providers = $('#settings-providers-host fieldset')
+    await providers.$('button=Add').waitForExist({ timeout: 15_000 })
+    const chipLabels = await providers.$$('.provider-chip').map((chip) => chip.getText())
+    assert.equal(chipLabels.includes('Acme updated'), false)
+
+    await saveElementScreenshot(
+      '#settings-providers-host fieldset',
+      'settings-provider-delete-during-approval.png',
+    )
+  })
 })

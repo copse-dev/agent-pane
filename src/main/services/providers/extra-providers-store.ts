@@ -17,9 +17,12 @@ import { getSetting, setSetting, deleteApiKey, resolveApiKey } from '../storage/
 import { ensureProviderHostApproved } from './approved-provider-hosts.ts'
 import { fetchHuggingFaceModels } from './huggingface-models.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
+import { runSerialized } from '../storage/write-queue.ts'
 
 /** Built-in slug of the Hugging Face Inference Providers provider. */
 export const HUGGINGFACE_SLUG = 'huggingface'
+
+const EXTRA_PROVIDER_MUTATION_QUEUE = 'extra-providers:mutation'
 
 function storedProviders(): StoredExtraProvider[] {
   const raw = getSetting<StoredExtraProvider[]>('extraProviders', [])
@@ -49,6 +52,12 @@ export function getResolvedExtraProvider(slug: string): ExtraProvider | null {
  *     same host stay distinct instead of clobbering each other.
  */
 export async function saveExtraProvider(
+  record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
+): Promise<ExtraProvider[]> {
+  return runSerialized(EXTRA_PROVIDER_MUTATION_QUEUE, () => saveExtraProviderInOrder(record))
+}
+
+async function saveExtraProviderInOrder(
   record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
 ): Promise<ExtraProvider[]> {
   const current = storedProviders()
@@ -101,6 +110,10 @@ export async function refreshHuggingFaceModels(
 }
 
 export async function deleteExtraProvider(slug: string): Promise<ExtraProvider[]> {
+  return runSerialized(EXTRA_PROVIDER_MUTATION_QUEUE, () => deleteExtraProviderInOrder(slug))
+}
+
+async function deleteExtraProviderInOrder(slug: string): Promise<ExtraProvider[]> {
   const current = storedProviders()
   const list = current.filter((p) => p.slug !== slug)
   await setSetting('extraProviders', list)

@@ -83,6 +83,40 @@ describe('extra-providers-store', () => {
     assert.equal(hasApiKey('acme'), false)
   })
 
+  it('does not resurrect a provider deleted while an edit awaits host approval', async () => {
+    await saveExtraProvider({
+      slug: 'acme',
+      label: 'Original',
+      baseUrl: 'https://api.acme.example/v1',
+    })
+
+    let releaseApproval: (() => void) | undefined
+    let markApprovalStarted: (() => void) | undefined
+    const approvalStarted = new Promise<void>((resolve) => {
+      markApprovalStarted = resolve
+    })
+    const approvalReleased = new Promise<void>((resolve) => {
+      releaseApproval = resolve
+    })
+    setApprovalHandler(async () => {
+      markApprovalStarted?.()
+      await approvalReleased
+      return { approved: true, remember: true }
+    })
+
+    const save = saveExtraProvider({
+      slug: 'acme',
+      label: 'Updated',
+      baseUrl: 'https://new.acme.example/v1',
+    })
+    await approvalStarted
+    const remove = deleteExtraProvider('acme')
+    releaseApproval?.()
+    await Promise.all([save, remove])
+
+    assert.equal(getResolvedExtraProvider('acme'), null)
+  })
+
   it('rejects saving a custom provider when the host is denied', async () => {
     setApprovalHandler(async () => ({ approved: false, remember: false }))
     await assert.rejects(
