@@ -191,14 +191,56 @@ describe('approval dialog coalescing', () => {
   })
 
   it('collapses a repeated header into a single heading', () => {
-    // Both requests ask the same question (parallel fetches) — the header should
-    // appear once, with no noisy per-row title repetition, just the two bodies.
-    emit({ id: 'a', title: 'Fetch from the web? — Claude', body: 'fetch one' })
-    emit({ id: 'b', title: 'Fetch from the web? — Claude', body: 'fetch two' })
+    // Both requests ask the same question (parallel fetches) — the heading and
+    // explanatory copy appear once, with only the two changing bodies listed.
+    emit({
+      id: 'a',
+      title: 'Fetch from the web? — Claude',
+      body: 'fetch one',
+      bodyAdvice: 'Network access is outside the project sandbox.',
+      bodyFooter: 'Allow these requests once?',
+    })
+    emit({
+      id: 'b',
+      title: 'Fetch from the web? — Claude',
+      body: 'fetch two',
+      bodyAdvice: 'Network access is outside the project sandbox.',
+      bodyFooter: 'Allow these requests once?',
+    })
     fireWindow()
     assert.equal(heading(), 'Fetch from the web? — Claude')
     assert.deepEqual(rowTitles(), [])
     assert.deepEqual(bodies(), ['fetch one', 'fetch two'])
+    assert.equal(dialog.querySelectorAll('.approval-item').length, 1)
+    assert.equal(dialog.querySelectorAll('.approval-body-list').length, 1)
+    assert.equal(dialog.querySelectorAll('.approval-advice').length, 1)
+    assert.equal(dialog.querySelectorAll('.approval-footer').length, 1)
+  })
+
+  it('keeps differing explanations attached to their individual requests', () => {
+    emit({
+      id: 'a',
+      title: 'Run outside sandbox?',
+      bodyAdvice: 'Needs package downloads.',
+      bodyFooter: 'Allow this install?',
+    })
+    emit({
+      id: 'b',
+      title: 'Run outside sandbox?',
+      bodyAdvice: 'Needs access to a user directory.',
+      bodyFooter: 'Allow this read?',
+    })
+    fireWindow()
+    assert.equal(dialog.querySelectorAll('.approval-body-list').length, 0)
+    assert.equal(dialog.querySelectorAll('.approval-item').length, 2)
+    assert.deepEqual(
+      [...dialog.querySelectorAll('.approval-advice')].map((node) => node.textContent),
+      ['Needs package downloads.', 'Needs access to a user directory.'],
+    )
+    assert.deepEqual(
+      [...dialog.querySelectorAll('.approval-footer')].map((node) => node.textContent),
+      ['Allow this install?', 'Allow this read?'],
+    )
   })
 
   it('renders bodyAdvice and bodyFooter outside the monospaced command block', () => {
