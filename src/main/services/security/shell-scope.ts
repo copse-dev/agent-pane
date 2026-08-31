@@ -269,6 +269,60 @@ const REASON_INTERPRETER_INLINE = 'inline script (interpreter -c/-e/--eval)'
 const REASON_BUILD_DRIVER =
   'build driver may require host caches or system build services (xcodebuild/gradle/swift/cargo)'
 
+const HEREDOC_INTERPRETER = /\b(?:python3?|node|deno|bun|ruby|perl)\b/
+/** `<<`, an optional `-`, then the delimiter — bare, backslash-escaped, or quoted. */
+const HEREDOC_DELIMITER = /^(-)?[ \t]*(?:'([^']+)'|"([^"]+)"|\\?([A-Za-z_][A-Za-z0-9_]*))/
+
+/**
+ * The heredoc an interpreter line opens, or null when it opens none.
+ *
+ * `<<` only redirects where the shell reads it as an operator, so this walks the
+ * line tracking quote state instead of pattern-matching the raw text. Quoted
+ * text opens nothing: `echo "python3 <<EOF"` prints a string and the next line
+ * is an ordinary command. The regex this replaced could not tell the two apart,
+ * and since an unterminated opener masks every following line, one quoted
+ * mention hid the rest of the command from the whole scope analysis.
+ */
+function heredocOpener(line: string): { delimiter: string; stripTabs: boolean } | null {
+  let unquoted = ''
+  let quote: string | null = null
+  for (let i = 0; i < line.length; i += 1) {
+    // charAt, not indexing: it yields '' past the end, so the lookaheads below
+    // need no bounds checks.
+    const ch = line.charAt(i)
+    if (quote !== null) {
+      if (ch === '\\' && quote === '"') i += 1
+      else if (ch === quote) quote = null
+      continue
+    }
+    // An escaped character is data, never an operator or part of a command name.
+    if (ch === '\\') {
+      i += 1
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch
+      continue
+    }
+    if (ch === '<' && line.charAt(i + 1) === '<') {
+      // `<<<` is a here-string: one line, no body to mask.
+      if (line.charAt(i + 2) === '<') {
+        i += 2
+        continue
+      }
+      if (HEREDOC_INTERPRETER.test(unquoted)) {
+        const match = HEREDOC_DELIMITER.exec(line.slice(i + 2))
+        const delimiter = match ? (match[2] ?? match[3] ?? match[4]) : undefined
+        if (delimiter !== undefined) return { delimiter, stripTabs: match?.[1] === '-' }
+      }
+      i += 1
+      continue
+    }
+    unquoted += ch
+  }
+  return null
+}
+
 /**
  * Remove interpreter heredoc bodies before applying shell-syntax scope checks.
  * The body is source code, not a sequence of shell commands: treating its lines
@@ -292,13 +346,10 @@ function maskInterpreterHeredocBodies(command: string): string {
         return ''
       }
 
-      const match =
-        /\b(?:python3?|node|deno|bun|ruby|perl)\b[^\n]*<<(-)?\s*(?:'([^']+)'|"([^"]+)"|\\?([A-Za-z_][A-Za-z0-9_]*))/.exec(
-          line,
-        )
-      if (match !== null) {
-        delimiter = match[2] ?? match[3] ?? match[4] ?? null
-        stripTabs = match[1] === '-'
+      const opener = heredocOpener(line)
+      if (opener !== null) {
+        delimiter = opener.delimiter
+        stripTabs = opener.stripTabs
       }
       return line
     })
