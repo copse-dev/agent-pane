@@ -448,16 +448,17 @@ function applyTextToolCallRecovery(
   return assistantText
 }
 
-interface TextOnlyTurnResult {
-  /** Set when the turn finishes as plain text (no recovered tools). */
+interface FinalAnswerTurnResult {
+  /** Set when the turn finishes with an answer instead of requesting tools. */
   answerText: string
-  /** Recovered tool calls the caller should execute before treating the run as finished. */
+  /** Native or text-recovered calls to execute before requesting the answer again. */
   pendingToolCalls: ToolCallChunk[]
 }
 
-async function streamTextOnlyTurn(
+async function streamFinalAnswerTurn(
   provider: LLMProvider,
   messages: LLMMessage[],
+  tools: LLMTool[],
   onChunk: (chunk: AgentStreamChunk) => void,
   budget: LlmCallBudget,
   nudge = FINALIZE_NUDGE,
@@ -469,8 +470,8 @@ async function streamTextOnlyTurn(
   // this text-only turn's stop reason; returns the nudge text when the stream was
   // length-truncated, else undefined. The loop supplies it; absent = no push.
   resolveTruncationNudge?: (stopReason: string | undefined) => Promise<string | undefined>,
-): Promise<TextOnlyTurnResult> {
-  const empty: TextOnlyTurnResult = { answerText: '', pendingToolCalls: [] }
+): Promise<FinalAnswerTurnResult> {
+  const empty: FinalAnswerTurnResult = { answerText: '', pendingToolCalls: [] }
   if (!reserveLlmCall(budget)) return empty
   const signal = budget.signal
   const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: nudge }]
@@ -478,10 +479,11 @@ async function streamTextOnlyTurn(
   let stopReason: string | undefined
   let streamUsage: StepUsage | null = null
   let streamOutputChars = 0
+  const pendingToolCalls: ToolCallChunk[] = []
 
   budget.deadline.pause()
   try {
-    for await (const chunk of provider.stream(turnMessages, [], signal)) {
+    for await (const chunk of provider.stream(turnMessages, tools, signal)) {
       if (signal?.aborted) break
       if (chunk.type === 'reasoning') {
         streamOutputChars += chunk.text.length
@@ -490,6 +492,10 @@ async function streamTextOnlyTurn(
       if (chunk.type === 'text') {
         streamOutputChars += chunk.text.length
         assistantText += chunk.text
+        onChunk(chunk)
+      }
+      if (chunk.type === 'tool_call') {
+        pendingToolCalls.push(chunk.toolCall)
         onChunk(chunk)
       }
       if (chunk.type === 'prompt_progress') onChunk(chunk)
@@ -521,7 +527,6 @@ async function streamTextOnlyTurn(
   }
   recordRunActivity(budget)
 
-  const pendingToolCalls: ToolCallChunk[] = []
   assistantText = applyTextToolCallRecovery(
     assistantText,
     pendingToolCalls,
@@ -1148,9 +1153,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
               mechanism: 'text-only-turn',
               text: preNudges.stuckFinalize,
             })
-            const forced = await streamTextOnlyTurn(
+            const forced = await streamFinalAnswerTurn(
               provider,
               messages,
+              [],
               onChunk,
               budget,
               preNudges.stuckFinalize,
@@ -1675,9 +1681,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
 
     if (!hasOpenTodos(getOpenTodos?.() ?? [])) {
-      let finalResult = await streamTextOnlyTurn(
+      let finalResult = await streamFinalAnswerTurn(
         provider,
         messages,
+        tools,
         onChunk,
         budget,
         FINALIZE_NUDGE,
@@ -1698,9 +1705,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           recentToolProgress,
           budget,
         })
-        finalResult = await streamTextOnlyTurn(
+        finalResult = await streamFinalAnswerTurn(
           provider,
           messages,
+          tools,
           onChunk,
           budget,
           FINALIZE_NUDGE,

@@ -32,6 +32,15 @@ function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
   }
 }
 
+function isFinalizationTurn(messages: LLMMessage[]): boolean {
+  const last = messages.at(-1)
+  return (
+    last?.role === 'user' &&
+    typeof last.content === 'string' &&
+    last.content.includes('write a clear final answer')
+  )
+}
+
 /** Assert the Anthropic invariant: every assistant tool_use has a tool_result. */
 function assertToolPairingValid(messages: LLMMessage[]): void {
   for (let i = 0; i < messages.length; i++) {
@@ -129,9 +138,16 @@ describe('runAgentLoop', () => {
   it('stops after maxSteps', async () => {
     let steps = 0
     await runAgentLoop({
-      provider: mockProvider([
-        [{ type: 'tool_call', toolCall: { id: '1', name: 'loop', args: {} } }, { type: 'done' }],
-      ]),
+      provider: {
+        async *stream(messages): AsyncGenerator<ProviderStreamChunk> {
+          if (isFinalizationTurn(messages)) {
+            yield { type: 'text', text: 'Stopped.' }
+          } else {
+            yield { type: 'tool_call', toolCall: { id: '1', name: 'loop', args: {} } }
+          }
+          yield { type: 'done' }
+        },
+      },
       messages: [{ role: 'user', content: 'go' }],
       tools: [],
       maxSteps: 3,
@@ -160,6 +176,48 @@ describe('runAgentLoop', () => {
     })
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('repo review')))
     assert.equal(chunks.at(-1)?.type, 'done')
+  })
+
+  it('keeps tools available and executes native tool calls during finalization (#1712)', async () => {
+    let streamCalls = 0
+    const offeredToolNames: string[][] = []
+    const executedToolNames: string[] = []
+    const provider: LLMProvider = {
+      async *stream(_messages, tools): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        offeredToolNames.push(tools.map((tool) => tool.name))
+        if (streamCalls === 1) {
+          yield { type: 'tool_call', toolCall: { id: 'list', name: 'list_dir', args: {} } }
+        } else if (streamCalls === 2) {
+          yield {
+            type: 'tool_call',
+            toolCall: { id: 'read', name: 'read_file', args: { path: 'README.md' } },
+          }
+        } else {
+          yield { type: 'text', text: 'Final answer after reading the file.' }
+        }
+        yield { type: 'done' }
+      },
+    }
+
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'inspect the repo' }],
+      tools: [
+        { name: 'list_dir', description: '', parameters: {} },
+        { name: 'read_file', description: '', parameters: {} },
+      ],
+      maxSteps: 1,
+      onChunk: () => {},
+      executeTool: async (name) => {
+        executedToolNames.push(name)
+        return 'ok'
+      },
+    })
+
+    assert.deepEqual(offeredToolNames[1], ['list_dir', 'read_file'])
+    assert.deepEqual(executedToolNames, ['list_dir', 'read_file'])
+    assert.equal(streamCalls, 3)
   })
 
   it('cuts off a runaway single generation and recovers with a short answer (#489)', async () => {
@@ -840,7 +898,7 @@ describe('runAgentLoop', () => {
         sawStuckFinalizeNudge ||= messages.some(
           (message) => message.role === 'user' && message.content === STUCK_FINALIZE_NUDGE,
         )
-        if (tools.length > 0) {
+        if (tools.length > 0 && !isFinalizationTurn(messages)) {
           toolCalls++
           yield {
             type: 'tool_call',
@@ -878,7 +936,7 @@ describe('runAgentLoop', () => {
         sawRecoveryNudge ||= messages.some(
           (message) => message.role === 'user' && message.content === recoveryNudge,
         )
-        if (tools.length === 0) {
+        if (tools.length === 0 || isFinalizationTurn(messages)) {
           toolCallsBeforeFinalTextTurn = toolCalls
           yield { type: 'text', text: 'Final.' }
           yield { type: 'done' }
@@ -1020,8 +1078,8 @@ src/renderer/views/projects-pane.ts
     const readPaths: string[] = []
     let textOnlyCalls = 0
     const provider: LLMProvider = {
-      async *stream(_messages, tools) {
-        if (tools.length === 0) {
+      async *stream(messages, tools) {
+        if (tools.length === 0 || isFinalizationTurn(messages)) {
           textOnlyCalls++
           yield {
             type: 'text',
