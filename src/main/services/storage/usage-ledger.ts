@@ -1,4 +1,4 @@
-import { loadAllProjectThreads } from '../thread-store.ts'
+import { loadAllProjectThreadMetas } from '../thread-store.ts'
 import type { StreamChunk } from '@shared/types'
 import { storageGet, storageSet } from './storage.ts'
 import {
@@ -72,7 +72,7 @@ export function recordAgentUsageChunk(
 
 export async function getUsageSummary(): Promise<UsageSummary> {
   const events = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
-  const threads = await loadAllProjectThreads()
+  const threads = await loadAllProjectThreadMetas()
   return buildUsageSummary(events, threads, Date.now(), resolveModelPricing())
 }
 
