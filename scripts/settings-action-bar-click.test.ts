@@ -54,7 +54,24 @@ describe('scrollClearOfSettingsActionBar', () => {
     // Centre at 785 — the coordinate CI reported as intercepted.
     stubRect(control, { top: 773, bottom: 797 })
 
-    assert.equal(scrollClearOfSettingsActionBar(control), true)
+    assert.equal(scrollClearOfSettingsActionBar(control, ACTION_BAR_CLEARANCE_PX), true)
+    assert.equal(scroller.scrollTop, 797 - 700 + ACTION_BAR_CLEARANCE_PX)
+  })
+
+  it('survives being shipped to the page as source, with no module scope', () => {
+    // WDIO hands `browser.execute` a function by stringifying it, so the body is
+    // re-parsed in the page with nothing around it. A reference to any
+    // module-scope binding is a ReferenceError there and nowhere else — it once
+    // silently reduced this whole helper to a no-op in CI while every
+    // module-scoped unit test still passed. Re-parse it the same way.
+    const { scroller, control } = buildSettings()
+    stubRect(control, { top: 773, bottom: 797 })
+    const shipped = new Function(`return (${scrollClearOfSettingsActionBar.toString()})`)() as (
+      element: Element,
+      clearancePx: number,
+    ) => boolean
+
+    assert.equal(shipped(control, ACTION_BAR_CLEARANCE_PX), true)
     assert.equal(scroller.scrollTop, 797 - 700 + ACTION_BAR_CLEARANCE_PX)
   })
 
@@ -63,7 +80,7 @@ describe('scrollClearOfSettingsActionBar', () => {
     // Overlaps the bar's top edge, but the centre — what WebDriver clicks — is above it.
     stubRect(control, { top: 660, bottom: 710 })
 
-    assert.equal(scrollClearOfSettingsActionBar(control), false)
+    assert.equal(scrollClearOfSettingsActionBar(control, ACTION_BAR_CLEARANCE_PX), false)
     assert.equal(scroller.scrollTop, 0)
   })
 
@@ -71,7 +88,7 @@ describe('scrollClearOfSettingsActionBar', () => {
     const { scroller, save } = buildSettings()
     stubRect(save, { top: 740, bottom: 776 })
 
-    assert.equal(scrollClearOfSettingsActionBar(save), false)
+    assert.equal(scrollClearOfSettingsActionBar(save, ACTION_BAR_CLEARANCE_PX), false)
     assert.equal(scroller.scrollTop, 0)
   })
 
@@ -82,7 +99,7 @@ describe('scrollClearOfSettingsActionBar', () => {
     assert.ok(outside)
     stubRect(outside, { top: 773, bottom: 797 })
 
-    assert.equal(scrollClearOfSettingsActionBar(outside), false)
+    assert.equal(scrollClearOfSettingsActionBar(outside, ACTION_BAR_CLEARANCE_PX), false)
   })
 
   it('reports no movement when the scrollport is already at its end', () => {
@@ -96,7 +113,7 @@ describe('scrollClearOfSettingsActionBar', () => {
       set: () => {},
     })
 
-    assert.equal(scrollClearOfSettingsActionBar(control), false)
+    assert.equal(scrollClearOfSettingsActionBar(control, ACTION_BAR_CLEARANCE_PX), false)
   })
 })
 

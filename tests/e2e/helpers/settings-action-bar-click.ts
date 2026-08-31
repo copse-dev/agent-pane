@@ -33,8 +33,15 @@ export const ACTION_BAR_CLEARANCE_PX = 8
 /**
  * Runs **in the browser**. Scrolls `element` clear of the Settings action bar
  * when the bar covers its click point. Returns whether the scrollport moved.
+ *
+ * Must stay **free of module scope**: WDIO ships this to the page as
+ * `fn.toString()`, so a reference to anything declared outside the body — a
+ * sibling const, an imported helper — is a `ReferenceError` there and nowhere
+ * else. That is why the clearance arrives as an argument rather than reading
+ * {@link ACTION_BAR_CLEARANCE_PX} directly. `settings-action-bar-click.test.ts`
+ * pins this by re-parsing the function the way WDIO does.
  */
-export function scrollClearOfSettingsActionBar(element: Element): boolean {
+export function scrollClearOfSettingsActionBar(element: Element, clearancePx: number): boolean {
   const scroller = element.closest('.settings-content')
   if (!(scroller instanceof HTMLElement)) return false
   const bar = scroller.querySelector(':scope > .settings-buttons')
@@ -53,7 +60,7 @@ export function scrollClearOfSettingsActionBar(element: Element): boolean {
   if (centreY < barRect.top) return false
 
   const before = scroller.scrollTop
-  scroller.scrollTop = before + (rect.bottom - barRect.top) + ACTION_BAR_CLEARANCE_PX
+  scroller.scrollTop = before + (rect.bottom - barRect.top) + clearancePx
   // A scrollport already at its end cannot move; the click then fails as before
   // rather than silently passing somewhere unintended.
   return scroller.scrollTop !== before
@@ -61,7 +68,11 @@ export function scrollClearOfSettingsActionBar(element: Element): boolean {
 
 /** The slice of a WDIO browser this helper needs. Kept structural so unit fakes stay small. */
 export type ActionBarClickSession = {
-  execute: (script: (element: Element) => boolean, element: unknown) => Promise<unknown>
+  execute: (
+    script: (element: Element, clearancePx: number) => boolean,
+    element: unknown,
+    clearancePx: number,
+  ) => Promise<unknown>
   /**
    * WDIO's supported command override. The third argument attaches the override
    * to the *element* scope, which is where `click` lives. Assigning through the
@@ -100,11 +111,16 @@ export function installSettingsActionBarClickSafety(session: ActionBarClickSessi
       ...args: unknown[]
     ) {
       try {
-        await session.execute(scrollClearOfSettingsActionBar, this)
-      } catch {
+        await session.execute(scrollClearOfSettingsActionBar, this, ACTION_BAR_CLEARANCE_PX)
+      } catch (error) {
         // Measuring is best effort: a stale element, a closed dialog, or a page
         // without Settings must not turn into a click failure of its own. Let
         // the real click run and report the real problem.
+        //
+        // Say so out loud, though. A silent catch here once hid a
+        // `ReferenceError` from module scope leaking into the shipped function,
+        // which looked exactly like "the correction simply did not apply".
+        console.warn('[settings-action-bar-click] could not measure the click point:', error)
       }
       return await origClick.apply(this, args)
     },
