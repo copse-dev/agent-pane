@@ -21036,14 +21036,63 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ],
-        approvalRequest: {
-          id: "demo-approval-light-accent-request",
-          title: "Run outside sandbox?",
-          body: "npm install",
-          bodyAdvice: "This command needs access the project sandbox blocks.",
-          bodyFooter: "Allow running it once outside the sandbox?",
-          type: "shell"
-        }
+        approvalRequests: [
+          {
+            id: "demo-approval-light-accent-request",
+            title: "Run outside sandbox?",
+            body: "npm install",
+            bodyAdvice: "This command needs access the project sandbox blocks.",
+            bodyFooter: "Allow running it once outside the sandbox?",
+            type: "shell"
+          }
+        ]
+      },
+      {
+        id: "approval-grouped-shell-commands",
+        label: "Grouped outside-sandbox command approval",
+        project: project("demo-approval-grouped-shell-commands-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-approval-grouped-shell-commands-thread",
+            title: "Measuring oracle execution time",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-approval-grouped-shell-commands-oracle",
+            title: "Run outside sandbox?",
+            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
+            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyFooter: "Allow running it once outside the sandbox?",
+            type: "shell"
+          },
+          {
+            id: "demo-approval-grouped-shell-commands-syntax",
+            title: "Run outside sandbox?",
+            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
+            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyFooter: "Allow running it once outside the sandbox?",
+            type: "shell"
+          },
+          {
+            id: "demo-approval-grouped-shell-commands-test",
+            title: "Run outside sandbox?",
+            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
+            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyFooter: "Allow running it once outside the sandbox?",
+            type: "shell"
+          }
+        ]
       },
       {
         id: "vnc-discovered-ports",
@@ -21446,8 +21495,8 @@ This response is streamed through the real renderer event path.`
         };
       },
       onApprovalRequest: (handler) => {
-        if (scenario.approvalRequest) {
-          const request = structuredClone(scenario.approvalRequest);
+        for (const approvalRequest of scenario.approvalRequests ?? []) {
+          const request = structuredClone(approvalRequest);
           setTimeout(() => {
             handler(request);
           }, 0);
@@ -291121,31 +291170,62 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     const uniqueTitles = new Set(batch2.map((req) => req.title));
     const sharedTitle = uniqueTitles.size === 1 ? batch2[0]?.title ?? "" : null;
     const showRowTitles = count2 > 1 && sharedTitle === null;
-    heading.textContent = count2 <= 1 ? batch2[0]?.title ?? "" : sharedTitle ?? `${String(count2)} requests`;
-    items.replaceChildren(
-      ...batch2.map((req) => {
-        const rowChildren = [];
-        if (showRowTitles) rowChildren.push(el("div", { class: "approval-item-title" }, req.title));
-        if (singleModelCompare && req.comparisonModels && req === batch2[0]) {
-          const pickers = createComparisonModelPickers(api3, req.comparisonModels, req.body);
-          readComparisonModels = pickers.read;
-          rowChildren.push(pickers.root);
-        } else {
-          if (req.bodyAdvice) {
-            rowChildren.push(el("div", { class: "approval-advice" }, req.bodyAdvice));
-          }
-          if (collapseDetails) rowChildren.push(detailsToggle());
-          const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
-          const body = el("div", { class: bodyClass }, req.body);
-          if (collapseDetails && !detailsExpanded) body.hidden = true;
-          rowChildren.push(body);
-          if (req.bodyFooter) {
-            rowChildren.push(el("div", { class: "approval-footer" }, req.bodyFooter));
-          }
-        }
-        return el("div", { class: "approval-item" }, ...rowChildren);
-      })
+    const firstRequest = batch2[0];
+    const hasSharedContext = count2 > 1 && firstRequest !== void 0 && batch2.every(
+      (req) => req.type === firstRequest.type && req.title === firstRequest.title && req.bodyAdvice === firstRequest.bodyAdvice && req.bodyFooter === firstRequest.bodyFooter
     );
+    heading.textContent = count2 <= 1 ? batch2[0]?.title ?? "" : sharedTitle ?? `${String(count2)} requests`;
+    const requestBody = (req) => {
+      const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
+      const body = el("div", { class: bodyClass }, req.body);
+      if (collapseDetails && !detailsExpanded) body.hidden = true;
+      return body;
+    };
+    if (hasSharedContext) {
+      const sharedChildren = [];
+      if (firstRequest.bodyAdvice) {
+        sharedChildren.push(el("div", { class: "approval-advice" }, firstRequest.bodyAdvice));
+      }
+      const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
+      sharedChildren.push(
+        el(
+          "div",
+          { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
+          ...batch2.map((req) => {
+            const body = requestBody(req);
+            body.setAttribute("role", "listitem");
+            return body;
+          })
+        )
+      );
+      if (firstRequest.bodyFooter) {
+        sharedChildren.push(el("div", { class: "approval-footer" }, firstRequest.bodyFooter));
+      }
+      items.replaceChildren(el("div", { class: "approval-item" }, ...sharedChildren));
+    } else {
+      items.replaceChildren(
+        ...batch2.map((req) => {
+          const rowChildren = [];
+          if (showRowTitles)
+            rowChildren.push(el("div", { class: "approval-item-title" }, req.title));
+          if (singleModelCompare && req.comparisonModels && req === batch2[0]) {
+            const pickers = createComparisonModelPickers(api3, req.comparisonModels, req.body);
+            readComparisonModels = pickers.read;
+            rowChildren.push(pickers.root);
+          } else {
+            if (req.bodyAdvice) {
+              rowChildren.push(el("div", { class: "approval-advice" }, req.bodyAdvice));
+            }
+            if (collapseDetails) rowChildren.push(detailsToggle());
+            rowChildren.push(requestBody(req));
+            if (req.bodyFooter) {
+              rowChildren.push(el("div", { class: "approval-footer" }, req.bodyFooter));
+            }
+          }
+          return el("div", { class: "approval-item" }, ...rowChildren);
+        })
+      );
+    }
     approveButton.textContent = count2 > 1 ? `Approve all (${String(count2)})` : "Approve";
     rejectButton.textContent = count2 > 1 ? `Reject all (${String(count2)})` : "Reject";
     const onceLabel = approveOnceGrant();
