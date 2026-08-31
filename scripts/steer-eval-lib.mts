@@ -703,10 +703,13 @@ export function buildSteerEvalPrompt(
 ): string {
   const omit: PromptSectionId[] = spec.kind === 'section' && armId === 'without' ? [spec.ref] : []
   const base = assemblePromptFromSections(buildPromptSections(EVAL_PROMPT_VARS), omit)
-    .replace('{WORKSPACE_ROOT}', workspace)
+    // Workspace paths are literal prompt data. A replacement string would
+    // expand `$$`, `$&`, `` $` ``, and `$'`, corrupting valid paths that
+    // contain those sequences.
+    .replace('{WORKSPACE_ROOT}', () => workspace)
     // Evals run outside a turn: no repository context to state.
-    .replace('{REPO_CONTEXT}', '')
-    .replace('{SKILLS_TOOLS_LINE}', '')
+    .replace('{REPO_CONTEXT}', () => '')
+    .replace('{SKILLS_TOOLS_LINE}', () => '')
   if (armId === 'without') return base
   if (spec.kind === 'block') return `${base}${STEER_BLOCK_TEXTS[spec.ref]}`
   if (spec.kind === 'turnStart') return `${base}\n\n${STEER_TURN_START_TEXTS[spec.ref]}`
