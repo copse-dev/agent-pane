@@ -59,8 +59,8 @@ importers:
         specifier: ^0.120.0
         version: 0.120.0(zod@4.4.3)
       '@copse/streaming-markdown':
-        specifier: ^1.0.7
-        version: 1.0.7(dompurify@3.4.14)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.0)
+        specifier: ^1.0.8
+        version: 1.0.8(dompurify@3.4.14)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.0)
       '@electron/rebuild':
         specifier: ^4.2.0
         version: 4.2.0
@@ -191,8 +191,8 @@ importers:
         specifier: ^7.5.22
         version: 7.5.22
       tldts:
-        specifier: ^7.4.10
-        version: 7.4.10
+        specifier: ^7.4.11
+        version: 7.4.11
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -280,8 +280,8 @@ packages:
   '@chevrotain/types@11.1.2':
     resolution: {integrity: sha512-U+HFai5+zmJCkK86QsaJtoITlboZHBqrVketcO2ROv865xfCMSFpELQoz1GkX5GzME8pTa+3kbKrZHQtI0gdbw==}
 
-  '@copse/streaming-markdown@1.0.7':
-    resolution: {integrity: sha512-CR3xw0HI0Oy0E0YW2/Wh6cPWz1Lf1bAaQZO7/ejA4pMIUoU5s41ZGkMHn4BYmz6Y3UYUqnxi8LM1JISA2ZaoTw==}
+  '@copse/streaming-markdown@1.0.8':
+    resolution: {integrity: sha512-ruJ05AViVAlxqkmzg4S1/TnKPGLlOGOx/30grt6ZtH06hLzQHproWL0rc/Q5NVWqXmc1yvolaJZfQ39/Pbj4QA==}
     engines: {node: '>=20'}
     peerDependencies:
       dompurify: ^3.4.13
@@ -4257,11 +4257,11 @@ packages:
     resolution: {integrity: sha512-yau8yJdTt989Mm0Bd/236QnzEiPf2xLLTqUZRUJOo/3CB078LSwzei343DgtJVmfJKJE3TMINY1u42SQsP6mXw==}
     engines: {node: '>=14.0.0'}
 
-  tldts-core@7.4.10:
-    resolution: {integrity: sha512-KnQjp53ZekKgm/r3l+u8kJGGzYgrWdP8+Mql7a4vijh2WE0IrZWspQj/TpTxDho/YxO+AnOZnIjQcCD+q6iJsw==}
+  tldts-core@7.4.11:
+    resolution: {integrity: sha512-CW3WN2rIIE/Of21mulhgnGOwoDyEFNygyIBOONSdyAuSATgMMUCpLeUlB+E8sAwA5xRV9hYPl+kyZ9citHCaKg==}
 
-  tldts@7.4.10:
-    resolution: {integrity: sha512-GgouD1B+sWwvkaEq8vXC15DjQitxbvs12oIXELpconwm+Tg3zfcEv4jgzq3vtKverDXsg3VI8aRgNL2Nra0Iog==}
+  tldts@7.4.11:
+    resolution: {integrity: sha512-aBiNayCfTQxuIJBm06M+xR14cYaYlDlSXZbgsnKzKNxDKUVq7KFwTjwBSsb7m9Y5xO8WfPnBc63WaYFMTGlvqw==}
     hasBin: true
 
   tmp-promise@3.0.3:
@@ -4694,7 +4694,7 @@ snapshots:
 
   '@chevrotain/types@11.1.2': {}
 
-  '@copse/streaming-markdown@1.0.7(dompurify@3.4.14)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.0)':
+  '@copse/streaming-markdown@1.0.8(dompurify@3.4.14)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.0)':
     optionalDependencies:
       dompurify: 3.4.14
       entities: 8.0.0
@@ -9066,11 +9066,11 @@ snapshots:
 
   tinyrainbow@3.1.1: {}
 
-  tldts-core@7.4.10: {}
+  tldts-core@7.4.11: {}
 
-  tldts@7.4.10:
+  tldts@7.4.11:
     dependencies:
-      tldts-core: 7.4.10
+      tldts-core: 7.4.11
 
   tmp-promise@3.0.3:
     dependencies:
@@ -9086,7 +9086,7 @@ snapshots:
 
   tough-cookie@6.0.2:
     dependencies:
-      tldts: 7.4.10
+      tldts: 7.4.11
 
   tr46@6.0.0:
     dependencies:
