@@ -54,7 +54,7 @@ import {
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import type { ModelSelectionEvent } from '@shared/types'
 import { isRemoteAgentProvider } from '@shared/remote-agent.ts'
-import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
+import { extractGithubPrUrls, githubPrKey, githubRepoKey } from '@shared/git/github-pr-url.ts'
 import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
@@ -1082,7 +1082,8 @@ function canonicalPrUrl(ref: GithubPrRef): string {
  * launch repo (git lookup failed), fall back to the last PR mentioned.
  */
 function pickPrUrlForRepo(refs: GithubPrRef[], repo: string | undefined): string | undefined {
-  const candidates = repo ? refs.filter((r) => `${r.owner}/${r.repo}` === repo) : refs
+  const normalizedRepo = repo?.toLowerCase()
+  const candidates = normalizedRepo ? refs.filter((r) => githubRepoKey(r) === normalizedRepo) : refs
   const chosen = candidates.length > 0 ? candidates[candidates.length - 1] : undefined
   return chosen ? canonicalPrUrl(chosen) : undefined
 }

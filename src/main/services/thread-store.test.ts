@@ -967,6 +967,31 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     })
   })
 
+  it('matches launch repositories and reverse-index lookups regardless of case', async () => {
+    await createThread('proj-1', thread('t1'))
+    await recordThreadAgentLink('proj-1', 't1', {
+      provider: 'cursor',
+      agentId: 'agent-1',
+      repo: 'Copse-Dev/Agent-Pane',
+      createdAt: 1,
+    })
+    await attachThreadPrUrl(
+      'proj-1',
+      't1',
+      prRefs('https://github.com/copse-dev/agent-pane/pull/42'),
+    )
+
+    assert.equal(
+      (await getThreadMeta('proj-1', 't1'))?.remoteAgentLink?.prUrl,
+      'https://github.com/copse-dev/agent-pane/pull/42',
+    )
+    assert.equal(
+      (await lookupThreadByPrUrl('proj-1', 'https://github.com/COPSE-DEV/AGENT-PANE/pull/42/files'))
+        ?.threadId,
+      't1',
+    )
+  })
+
   it('resolves the index by canonical key regardless of URL trailing slash', async () => {
     await createThread('proj-1', thread('t1'))
     await recordThreadAgentLink('proj-1', 't1', CURSOR_LAUNCH)

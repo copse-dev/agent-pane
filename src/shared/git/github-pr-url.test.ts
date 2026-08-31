@@ -65,4 +65,13 @@ describe('extractGithubPrUrls', () => {
     assert.ok(italic[0])
     assert.equal(githubPrKey(italic[0]), 'org/repo#5')
   })
+
+  it('deduplicates GitHub repository identities regardless of case', () => {
+    const refs = extractGithubPrUrls(
+      'https://github.com/Copse-Dev/Agent-Pane/pull/42 and https://github.com/copse-dev/agent-pane/pull/42',
+    )
+    assert.equal(refs.length, 1)
+    assert.ok(refs[0])
+    assert.equal(githubPrKey(refs[0]), 'copse-dev/agent-pane#42')
+  })
 })
