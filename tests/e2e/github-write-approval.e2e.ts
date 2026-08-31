@@ -3,6 +3,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { describeSkipInCi } from './helpers/ci-gate.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 
 // Quarantined in CI by #1680: the Electron session dies mid-spec on the
 // self-hosted runner (`invalid session id`, then `unknown command:
@@ -17,6 +18,10 @@ import { describeSkipInCi } from './helpers/ci-gate.ts'
 // (`memory.events max=10736`) with `oom_kill=0`.
 describeSkipInCi('GitHub write approval', () => {
   before(async () => {
+    // The e2e availability probe deliberately keeps real `gh` disabled. Seed a
+    // dummy API token so the write tools are registered, while MOCK_GH keeps
+    // every operation on the in-memory backend.
+    writeE2eEnv({ GITHUB_TOKEN: 'e2e-token' })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-github-write-approval-project', {
       subagentsEnabled: false,
