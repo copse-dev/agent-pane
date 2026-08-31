@@ -1229,6 +1229,42 @@ export function seedBrowserCursorAgentThreadFixture(workspaceRoot: string): void
   })
 }
 
+/** Remote-artifact summary whose valid filename contains Markdown syntax. */
+export function seedRemoteArtifactFilenameFixture(workspaceRoot: string, summary: string): void {
+  const projectId = 'e2e-remote-artifact-filename-project'
+  const threadId = 'e2e-remote-artifact-filename-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Remote artifact filename',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-remote-artifact-filename',
+            role: 'assistant',
+            content: `Remote work completed.${summary}`,
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'bc-e2e-artifact-filename',
+          createdAt: now,
+        },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+}
+
 /** Thread with a GitHub PR markdown link for PR panel e2e. */
 export function seedPrPanelChatFixture(workspaceRoot: string): void {
   const projectId = 'e2e-pr-panel-project'

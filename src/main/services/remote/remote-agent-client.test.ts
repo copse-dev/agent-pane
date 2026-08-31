@@ -1,5 +1,6 @@
 import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
+import { renderMarkdownUnsafe } from '@copse/streaming-markdown'
 import type { StreamChunk } from '@shared/types'
 import {
   applyRemoteAgentHandoffContext,
@@ -426,6 +427,20 @@ describe('formatRemoteArtifactsSummary', () => {
       summary,
       /https:\/\/api\.cursor\.com\/v1\/agents\/bc-00000000-0000-0000-0000-000000000001\/artifacts\/download\?path=artifacts%2Fscreenshot\.png/,
     )
+  })
+
+  it('keeps backticks in artifact paths inside inline code', () => {
+    const path = 'artifacts/report` [Injected](https://evil.example).txt'
+    const summary = formatRemoteArtifactsSummary({
+      agentId: 'bc-00000000-0000-0000-0000-000000000001',
+      baseUrl: 'https://api.cursor.com',
+      artifacts: [{ path }],
+    })
+    const html = renderMarkdownUnsafe(summary)
+
+    assert.ok(html.includes(`<code>${path}</code>`))
+    assert.doesNotMatch(html, /href="https:\/\/evil\.example"/)
+    assert.match(html, /artifacts%2Freport%60/)
   })
 })
 
