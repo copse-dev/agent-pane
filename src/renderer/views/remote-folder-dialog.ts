@@ -4,6 +4,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { SshRemoteDirEntry, SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import {
   emptySshHostDraft,
+  importSshConfigHosts,
   parseSshHostDraft,
   parseSshWorkspaceHosts,
   slugifyHostId,
@@ -291,16 +292,15 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
           }
           const raw = await api.settings.get('sshWorkspaceHosts')
           const existing = parseSshWorkspaceHosts(raw)
-          let next = existing
-          for (const alias of aliases) {
-            if (next.some((h) => h.id === alias.id)) continue
-            next = upsertHost(next, alias)
-          }
-          await api.settings.set('sshWorkspaceHosts', next)
+          const imported = importSshConfigHosts(existing, aliases)
+          await api.settings.set('sshWorkspaceHosts', imported.hosts)
           hosts = await api.sshWorkspace.listHosts()
-          fillHostSelect(aliases[0]?.id)
+          fillHostSelect(imported.firstAliasHostId)
           setAddingHost(false)
-          status.textContent = `Imported ${String(aliases.length)} alias(es) from SSH config.`
+          status.textContent =
+            imported.importedHostIds.length === 0
+              ? 'All SSH config aliases are already imported.'
+              : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`
           if (currentHostId) await browse('/')
         } catch (err) {
           status.textContent = err instanceof Error ? err.message : String(err)

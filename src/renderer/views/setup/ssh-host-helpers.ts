@@ -61,6 +61,51 @@ export function upsertHost(list: SshWorkspaceHost[], host: SshWorkspaceHost): Ss
   return next
 }
 
+export interface ImportSshHostsResult {
+  hosts: SshWorkspaceHost[]
+  importedHostIds: string[]
+  firstAliasHostId: string | undefined
+}
+
+function nextAvailableHostId(baseId: string, usedIds: ReadonlySet<string>): string {
+  if (!usedIds.has(baseId)) return baseId
+  for (let suffixNumber = 2; ; suffixNumber += 1) {
+    const suffix = `-${String(suffixNumber)}`
+    const candidate = `${baseId.slice(0, 64 - suffix.length)}${suffix}`
+    if (!usedIds.has(candidate)) return candidate
+  }
+}
+
+/** Merge discovered config aliases without losing aliases whose generated ids collide. */
+export function importSshConfigHosts(
+  existing: readonly SshWorkspaceHost[],
+  aliases: readonly SshWorkspaceHost[],
+): ImportSshHostsResult {
+  const hosts = [...existing]
+  const importedHostIds: string[] = []
+  const usedIds = new Set(hosts.map((host) => host.id))
+  let firstAliasHostId: string | undefined
+
+  for (const alias of aliases) {
+    const alreadyImported = hosts.find(
+      (host) => host.host.toLowerCase() === alias.host.toLowerCase(),
+    )
+    if (alreadyImported) {
+      firstAliasHostId ??= alreadyImported.id
+      continue
+    }
+
+    const id = nextAvailableHostId(alias.id, usedIds)
+    const imported = id === alias.id ? alias : { ...alias, id }
+    hosts.push(imported)
+    usedIds.add(id)
+    importedHostIds.push(id)
+    firstAliasHostId ??= id
+  }
+
+  return { hosts, importedHostIds, firstAliasHostId }
+}
+
 export function removeHost(list: SshWorkspaceHost[], id: string): SshWorkspaceHost[] {
   return list.filter((h) => h.id !== id)
 }

@@ -18,4 +18,13 @@ describe('hostFromSshConfigAlias', () => {
     assert.equal(host.port, undefined)
     assert.equal(host.identityFile, undefined)
   })
+
+  it('keeps distinct config aliases distinct when their slugs collide', () => {
+    const dotted = hostFromSshConfigAlias({ alias: 'build.prod' })
+    const dashed = hostFromSshConfigAlias({ alias: 'build-prod' })
+
+    assert.notEqual(dotted.id, dashed.id)
+    assert.equal(dotted.id, 'build-prod-d978ab5a')
+    assert.equal(dashed.id, 'build-prod')
+  })
 })
