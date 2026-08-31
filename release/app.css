@@ -167,7 +167,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --browser-chrome-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.0.6_dompurify@3.4.13_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.16.1/node_modules/@copse/streaming-markdown/styles/core.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.0.7_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.0/node_modules/@copse/streaming-markdown/styles/core.css */
 .streaming-markdown {
   & .stream-pending {
     white-space: pre-wrap;
@@ -238,7 +238,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   }
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.0.6_dompurify@3.4.13_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.16.1/node_modules/@copse/streaming-markdown/styles/default.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.0.7_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.0/node_modules/@copse/streaming-markdown/styles/default.css */
 .streaming-markdown {
   line-height: var(--sm-line-height, 1.55);
   word-break: break-word;
@@ -1809,6 +1809,34 @@ copse-ui-field input[type=password],
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.git-change-dir-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+.git-dir-view {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--spacing-sm) 0;
+}
+.git-dir-view-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+.git-dir-view-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.git-dir-view-count,
+.git-dir-view-note {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.git-dir-view-note {
+  padding: 0 var(--spacing-sm) var(--spacing-xs);
 }
 .git-change-path:not(.pr-list-title) {
   direction: rtl;
@@ -4427,7 +4455,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   gap: var(--spacing-xs);
   margin-top: calc(-1 * var(--spacing-sm));
 }
-.messages-list > :first-child + .hook-card-host {
+.msg-user + .hook-card-host {
   margin-top: var(--spacing-sm);
 }
 .hook-card,
@@ -4996,10 +5024,15 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.stop-btn {
+.submit-row {
   position: absolute;
-  right: 84px;
+  right: var(--spacing-md);
   bottom: var(--spacing-md);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stop-btn {
   border-radius: var(--radius);
   padding: 6px 12px;
   color: var(--text-secondary);
@@ -5014,16 +5047,10 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   outline: 1px solid var(--danger);
 }
 .submit-btn {
-  position: absolute;
-  right: var(--spacing-md);
-  bottom: var(--spacing-md);
   background: var(--accent);
   color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: 6px 16px;
-}
-.submit-btn.with-stop {
-  right: var(--spacing-md);
 }
 .footer-queue {
   font-size: 11px;
@@ -6176,6 +6203,7 @@ dialog.settings-overlay::backdrop {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  scroll-padding-bottom: calc(var(--action-min-height) + var(--spacing-lg) + var(--spacing-xl) + var(--spacing-lg) + var(--spacing-md));
   padding: calc(var(--spacing-xl) * 2) var(--spacing-xl) 0;
 }
 .settings-section,
@@ -9101,9 +9129,15 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
 }
+.attachment-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
 .attachment-preview-title {
   max-width: min(80ch, 80vw);
-  margin-bottom: var(--spacing-sm);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
   font-weight: 600;
@@ -9148,15 +9182,16 @@ dialog.settings-overlay::backdrop {
   overflow-wrap: anywhere;
 }
 .attachment-preview-close {
-  margin-top: var(--spacing-sm);
-  width: 100%;
-  min-width: min(280px, 80vw);
-  padding: var(--spacing-sm);
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
   border-radius: var(--radius);
   background: var(--bg-base);
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: 1.25rem;
+  line-height: 1;
   cursor: pointer;
 }
 .attachment-preview-close:hover {
