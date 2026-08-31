@@ -6203,6 +6203,7 @@ dialog.settings-overlay::backdrop {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  scroll-padding-bottom: calc(var(--action-min-height) + var(--spacing-lg) + var(--spacing-xl) + var(--spacing-lg) + var(--spacing-md));
   padding: calc(var(--spacing-xl) * 2) var(--spacing-xl) 0;
 }
 .settings-section,
