@@ -23,7 +23,11 @@ import {
   toolCallFingerprint,
 } from './agent-loop-guards.ts'
 import { measureConversationPressure } from './agent-loop-escalation.ts'
-import { recoverTextToolCalls, type CoerceToolArgsFn } from './parse-text-tool-calls.ts'
+import {
+  hasTextToolCallMarkup,
+  recoverTextToolCalls,
+  type CoerceToolArgsFn,
+} from './parse-text-tool-calls.ts'
 import {
   CONTEXT_OVERFLOW_USER_MESSAGE,
   isContextOverflowStopReason,
@@ -431,12 +435,9 @@ function applyTextToolCallRecovery(
   onChunk: (chunk: AgentStreamChunk) => void,
   coerceTextToolCallArgs?: CoerceToolArgsFn,
 ): string {
-  // Recover on either the Cursor `<tool_call>` wrapper or a bare Anthropic/MiniMax
-  // `<invoke name="…">` block — MiniMax emits the latter with no wrapper (#519), and
-  // gating on `<tool_call>` alone left those turns to leak raw XML as a final answer.
-  const hasEmbeddedCall =
-    /<\s*tool_call\s*>/i.test(assistantText) || /<\s*invoke\b/i.test(assistantText)
-  if (pendingToolCalls.length > 0 || !hasEmbeddedCall) {
+  // Keep the cheap dialect gate in the parser module so every supported wrapper
+  // and delimiter reaches recovery (#519, #1710).
+  if (pendingToolCalls.length > 0 || !hasTextToolCallMarkup(assistantText)) {
     return assistantText
   }
   const recovered = recoverTextToolCalls(assistantText, coerceTextToolCallArgs)
