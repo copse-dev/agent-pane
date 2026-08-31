@@ -23,6 +23,7 @@ import type {
 import { READ_FILE_LIMITS_CEILING } from '@copse/agent/read-file-limits.ts'
 import { extractExternalLinkHosts } from '@shared/skills/extract-skill-links.ts'
 import { notifyRefreshContextEstimate } from '../context-estimate-notify.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /** Max bytes read from a skill file (auto-approved, outside workspace). */
 export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
@@ -217,9 +218,25 @@ export function getSkill(name: string): SkillMetadata | null {
   return activeSkills().find((skill) => skill.name === name) ?? null
 }
 
+function unknownSkillError(name: string): Error {
+  const available = activeSkills().map((skill) => skill.name)
+  if (available.length === 0) {
+    return new Error(`Unknown skill "${name}". No skills are currently available.`)
+  }
+  const shown = available.slice(0, 10)
+  const remaining = available.length - shown.length
+  const more = remaining > 0 ? ` (+${String(remaining)} more; see the Skills catalog)` : ''
+  return new Error(`Unknown skill "${name}". Available skills: ${shown.join(', ')}${more}.`)
+}
+
+function isNotFoundError(error: unknown): boolean {
+  if (!isRecord(error)) return false
+  return error['code'] === 'ENOENT' || error['code'] === 'ENOTDIR'
+}
+
 export async function readSkill(name: string, relativePath = 'SKILL.md'): Promise<SkillReadResult> {
   const skill = getSkill(name)
-  if (!skill) throw new Error(`Unknown skill: ${name}`)
+  if (!skill) throw unknownSkillError(name)
 
   const normalized = relativePath.replace(/^\/+/, '')
   const target = resolve(skill.skillRoot, normalized)
@@ -228,7 +245,19 @@ export async function readSkill(name: string, relativePath = 'SKILL.md'): Promis
     throw new Error(`Path outside skill root: ${relativePath}`)
   }
 
-  const stat = await fsp.stat(target)
+  let stat: Awaited<ReturnType<typeof fsp.stat>>
+  try {
+    stat = await fsp.stat(target)
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      throw new Error(
+        `Skill file not found: ${normalized} in "${skill.name}". ` +
+          'The installed skill references a file that is missing; continue without it and report the broken reference.',
+        { cause: error },
+      )
+    }
+    throw error
+  }
   if (stat.size > SKILL_READ_MAX_BYTES) {
     throw new Error(
       `Skill file too large (${String(stat.size)} bytes; max ${String(SKILL_READ_MAX_BYTES)}): ${relativePath}`,
