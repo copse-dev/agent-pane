@@ -86,6 +86,40 @@ const REWRITE_TRACE: DemoTrace = {
   ],
 }
 
+/** `str_replace` whose replacement text carries `$` sequences. */
+const DOLLAR_TRACE: DemoTrace = {
+  id: 'dollar',
+  label: 'Replaces text containing $ sequences',
+  prompt: 'show the price',
+  steps: [
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'tc-1',
+          name: 'write_file',
+          args: { path: 'site/price.ts', content: 'const label = TODO\n' },
+        },
+      },
+    },
+    {
+      chunk: {
+        type: 'tool_call',
+        toolCall: {
+          id: 'tc-2',
+          name: 'str_replace',
+          args: {
+            path: 'site/price.ts',
+            old_string: 'TODO',
+            new_string: '`Total: $${price}`',
+          },
+        },
+      },
+    },
+    { chunk: { type: 'done', stopReason: 'end_turn' } },
+  ],
+}
+
 /** A read-only turn must never disturb whichever right-hand panel is open. */
 const READ_TRACE: DemoTrace = {
   id: 'read',
@@ -124,6 +158,7 @@ function scenarioFor(id: string, trace: DemoTrace): DemoScenario {
 const editScenario = scenarioFor('edit', EDIT_TRACE)
 const rewriteScenario = scenarioFor('rewrite', REWRITE_TRACE)
 const readScenario = scenarioFor('read', READ_TRACE)
+const dollarScenario = scenarioFor('dollar', DOLLAR_TRACE)
 
 describe('createDemoApi decisions surface', () => {
   it('exposes list/export stubs so ApiClient stays complete for the browser demo', async () => {
@@ -268,6 +303,23 @@ describe('createDemoApi trace replay', () => {
     // write as the base it would diff against an empty buffer and read as a
     // whole-file rewrite.
     assert.deepEqual(shown.at(-1)?.slice(3), ['<h1>Cupcakes</h1>\n', '<h1>Bakery</h1>\n', 'html'])
+  })
+
+  it('keeps `$` sequences in a str_replace replacement literal', async () => {
+    // `String#replace` expands `$$` in a replacement string, so the previewed
+    // diff showed `` `Total: ${price}` `` — a dollar short of what the trace
+    // asked for. The real tool has the same rule.
+    const api = createDemoApi(dollarScenario, { trace: { instant: true } })
+    const shown: unknown[][] = []
+    api.diff.onShowDiff((...args) => shown.push(args))
+
+    await runAndCollect(api, DOLLAR_TRACE.prompt)
+
+    assert.deepEqual(shown.at(-1)?.slice(3), [
+      'const label = TODO\n',
+      'const label = `Total: $${price}`\n',
+      'typescript',
+    ])
   })
 
   it('leaves the panel alone for a turn that only reads', async () => {

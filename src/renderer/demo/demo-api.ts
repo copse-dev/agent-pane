@@ -152,7 +152,9 @@ function proposedEdit(
     const oldString = stringArg(args, 'old_string')
     const newString = stringArg(args, 'new_string')
     if (oldString === undefined || newString === undefined) return undefined
-    return { path, before, after: before.replace(oldString, newString) }
+    // Function replacement, so `$&`/`$$` in the new text stay literal — the same
+    // rule the real `str_replace` tool follows.
+    return { path, before, after: before.replace(oldString, () => newString) }
   }
   return undefined
 }
