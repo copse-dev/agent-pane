@@ -309,9 +309,15 @@ function validateReasoningCheckpointPolicy(policy: ReasoningCheckpointPolicy): v
   }
 }
 
+type RunLimitStopReason = 'max_steps' | 'timeout'
+
+function runBudgetStopReason(budget: LlmCallBudget): RunLimitStopReason | null {
+  if (budget.deadline.isExpired()) return 'timeout'
+  return budget.llmCalls >= budget.maxLlmCalls ? 'max_steps' : null
+}
+
 function runBudgetExhausted(budget: LlmCallBudget): boolean {
-  if (budget.deadline.isExpired()) return true
-  return budget.llmCalls >= budget.maxLlmCalls
+  return runBudgetStopReason(budget) !== null
 }
 
 /**
@@ -997,7 +1003,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   const maxStepsRef = { value: maxSteps }
   let steps = 0
   let finishedWithAnswer = false
-  let hitRunLimit = false
+  let runLimitStopReason: RunLimitStopReason | null = null
   let toolOnlySteps = 0
   let loopNudgeSent = false
   let forceTextAttempted = false
@@ -1076,7 +1082,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   for (;;) {
     if (signal?.aborted) break
     if (budget.deadline.isExpired()) {
-      hitRunLimit = true
+      runLimitStopReason = 'timeout'
       break
     }
     const stepBudgetExhausted = steps >= maxStepsRef.value
@@ -1092,7 +1098,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         // Preserve the pre-extension boundary semantics: exhausting maxSteps
         // falls through to the bounded finalize path, while a call-only cap has
         // no reservation left and emits the run-limit result.
-        hitRunLimit = callBudgetExhausted && !stepBudgetExhausted
+        runLimitStopReason = callBudgetExhausted && !stepBudgetExhausted ? 'max_steps' : null
         break
       }
     }
@@ -1230,7 +1236,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let streamUsage: StepUsage | null = null
 
     if (!reserveLlmCall(budget)) {
-      hitRunLimit = true
+      runLimitStopReason = runBudgetStopReason(budget)
       break
     }
 
@@ -1638,7 +1644,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     if (signal?.aborted) break
   }
 
-  if (!signal?.aborted && !finishedWithAnswer && !hitRunLimit) {
+  if (!signal?.aborted && !finishedWithAnswer && runLimitStopReason === null) {
     // When open todos remain, fire `beforeFinalize` (M0.3) to select closeout
     // nudges so the model reconciles the plan via update_todos — a plain-text
     // "all done" no longer satisfies finalize. Only once the plan is clean (or
@@ -1724,8 +1730,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
   }
 
-  const timedOut = hitRunLimit || isAgentRunTimeoutAbort(signal)
-  if (timedOut && !finishedWithAnswer) {
+  const terminalRunLimitStopReason =
+    runLimitStopReason ?? (isAgentRunTimeoutAbort(signal) ? 'timeout' : null)
+  if (terminalRunLimitStopReason !== null && !finishedWithAnswer) {
     onChunk({ type: 'text', text: RUN_LIMIT_MESSAGE })
     messages.push({ role: 'assistant', content: RUN_LIMIT_MESSAGE })
   }
@@ -1737,5 +1744,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   // turn or resume (#54, #113).
   repairToolUseToolResultPairing(messages)
 
-  onChunk({ type: 'done' })
+  onChunk(
+    terminalRunLimitStopReason === null
+      ? { type: 'done' }
+      : { type: 'done', stopReason: terminalRunLimitStopReason },
+  )
 }

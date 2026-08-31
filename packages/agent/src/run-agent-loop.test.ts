@@ -1127,7 +1127,7 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => 'ok',
     })
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('LLM call limit')))
-    assert.equal(chunks.at(-1)?.type, 'done')
+    assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'max_steps' })
   })
 
   it('surfaces a terminal message when finalize returns empty', async () => {
@@ -1416,7 +1416,7 @@ src/renderer/views/projects-pane.ts
     })
     assert.equal(calls, 0)
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
-    assert.equal(chunks.at(-1)?.type, 'done')
+    assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'timeout' })
     assertToolPairingValid(messages)
   })
 
@@ -1598,7 +1598,7 @@ src/renderer/views/projects-pane.ts
       signal: controller.signal,
     })
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
-    assert.equal(chunks.at(-1)?.type, 'done')
+    assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'timeout' })
   })
 
   it('stays silent on a user-initiated abort (non-timeout reason)', async () => {
