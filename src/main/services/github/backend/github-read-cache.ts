@@ -35,6 +35,16 @@ const TTL = {
 class CacheSlot<T> {
   private entry: { value: T; storedAt: number } | null = null
   private inflight: Promise<T> | null = null
+  /**
+   * Bumped by {@link clear}. A read issued before a refresh must not answer or
+   * fill the slot after it: `clear` used to drop only `entry`, so a refresh that
+   * landed while a read was in flight was handed that same pre-refresh promise
+   * and then cached its answer for the whole TTL — the one thing "manual refresh
+   * makes the next read live" is supposed to rule out. `KeyedCache` never had
+   * the problem because clearing replaces the map, so the next key builds a
+   * fresh slot.
+   */
+  private generation = 0
   private readonly ttlMs: number
 
   constructor(ttlMs: number) {
@@ -45,14 +55,19 @@ class CacheSlot<T> {
     const existing = this.entry
     if (existing && Date.now() - existing.storedAt < this.ttlMs) return existing.value
     if (this.inflight) return this.inflight
+    const generation = this.generation
+    // Only settle the slot this read still owns; a newer read has its own.
+    const release = (): void => {
+      if (generation === this.generation) this.inflight = null
+    }
     const promise = load().then(
       (value) => {
-        this.entry = { value, storedAt: Date.now() }
-        this.inflight = null
+        if (generation === this.generation) this.entry = { value, storedAt: Date.now() }
+        release()
         return value
       },
       (err: unknown) => {
-        this.inflight = null
+        release()
         throw err
       },
     )
@@ -62,6 +77,8 @@ class CacheSlot<T> {
 
   clear(): void {
     this.entry = null
+    this.inflight = null
+    this.generation += 1
   }
 }
 
