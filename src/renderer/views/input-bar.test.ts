@@ -270,6 +270,64 @@ describe('input bar running attribution', () => {
     assert.equal(submit.textContent, 'Queue')
     assert.equal(submit.getAttribute('aria-label'), 'Queue message')
   })
+
+  it('serializes a changed draft submitted while the previous submit is awaiting IPC', async () => {
+    const running = thread()
+    running.status = 'running'
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: running.id,
+      threads: [running],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    let blockNextSkillsList = false
+    let releaseSkillsList = (): void => {}
+    const blockedSkillsList = new Promise<SkillSummary[]>((resolve) => {
+      releaseSkillsList = (): void => {
+        resolve([])
+      }
+    })
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        listSkills: () => {
+          if (!blockNextSkillsList) return Promise.resolve([])
+          blockNextSkillsList = false
+          return blockedSkillsList
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+
+    blockNextSkillsList = true
+    composer.textContent = 'First follow-up'
+    submit.click()
+    composer.textContent = 'Second follow-up'
+    submit.click()
+    releaseSkillsList()
+    await flush()
+    await flush()
+
+    const updated = store.getState().threads[0]
+    assert.ok(updated)
+    assert.deepEqual(
+      updated.messages.map((message) => message.content),
+      ['First follow-up', 'Second follow-up'],
+    )
+    assert.equal(updated.pendingMessages?.length, 2)
+    assert.equal(composer.textContent, '')
+  })
 })
 
 describe('input bar first-message checkout', () => {

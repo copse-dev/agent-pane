@@ -1500,14 +1500,31 @@ export function mountInputBar(
   // several keydown/click events could fire multiple `void submit()` calls that
   // each read the same un-cleared text and send the message more than once.
   let submitInProgress = false
+  let activeSubmitText: string | null = null
+  let submitChangedDraftAfterCurrent = false
 
   async function submit(): Promise<void> {
-    if (submitInProgress) return
+    const requestedText = composer.expandedValue().trim()
+    if (submitInProgress) {
+      // Collapse a repeated click/Enter for the same draft, but do not drop a
+      // distinct follow-up the user has already typed and explicitly submitted
+      // while the first submission is crossing its async IPC boundaries.
+      if (requestedText && requestedText !== activeSubmitText) {
+        submitChangedDraftAfterCurrent = true
+      }
+      return
+    }
     submitInProgress = true
+    activeSubmitText = requestedText
     try {
       await performSubmit()
     } finally {
       submitInProgress = false
+      activeSubmitText = null
+      if (submitChangedDraftAfterCurrent) {
+        submitChangedDraftAfterCurrent = false
+        void submit()
+      }
     }
   }
 
@@ -1778,10 +1795,15 @@ export function mountInputBar(
       startHumanTurnTree(store, id)
       dispatchAgentRun(store, api, id, payload)
     }
-    composer.clear()
-    setThreadDraftPrompt(store, id, '')
-    draftAttachmentsByThread.delete(id)
-    clearAttachments()
+    // Async provider/skill/branch checks above leave the composer interactive.
+    // If the user has already started a different draft during those checks,
+    // keep it for the serialized submit requested above instead of erasing it.
+    if (composer.expandedValue().trim() === rawText) {
+      composer.clear()
+      setThreadDraftPrompt(store, id, '')
+      draftAttachmentsByThread.delete(id)
+      clearAttachments()
+    }
     scheduleContextEstimate(0)
   }
 
