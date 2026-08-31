@@ -84,7 +84,8 @@ describe('roadmap done toggle', () => {
 
     // Revealing done work is the Status facet's job. It starts unchecked, and
     // checking it brings the row back.
-    await $('.roadmap-filter-toggle').click()
+    const filterToggle = $('.roadmap-filter-toggle')
+    await filterToggle.click()
     const doneFacet = $('.roadmap-filter-option*=done')
     await doneFacet.waitForDisplayed({ timeout: 10_000 })
     const doneCheckbox = doneFacet.$('input[type="checkbox"]')
@@ -108,9 +109,15 @@ describe('roadmap done toggle', () => {
     assert.ok(doneStyles, 'done row styles must exist')
     assert.match(doneStyles.decoration, /line-through/, 'done title is struck through')
     assert.equal(doneStyles.editorStaysEmpty, true, 'revealing a row must not open the editor')
+    // The filter popover covers this narrow pane's list. Close it so the visual
+    // reference named "revealed" actually shows the struck-through done row.
+    await filterToggle.click()
+    await doneFacet.waitForDisplayed({ reverse: true })
     await saveAppScreenshot('roadmap-done-revealed.png')
 
     // Unchecking the facet hides it again.
+    await filterToggle.click()
+    await doneFacet.waitForDisplayed({ timeout: 10_000 })
     await doneCheckbox.click()
     await browser.waitUntil(async () => (await $('.roadmap-row').isExisting()) === false, {
       timeout: 10_000,
