@@ -282,6 +282,39 @@ description: Bundled skill for tests
     assert.equal(result.relativePath, 'SKILL.md')
   })
 
+  it('names available skills when the requested skill is unknown', async () => {
+    await refreshSkillsRegistry()
+    const firstAvailable = listSkills()[0]
+    assert.ok(firstAvailable)
+    await assert.rejects(
+      () => readSkill('pstack'),
+      (error) => {
+        assert.ok(error instanceof Error)
+        assert.match(error.message, /Unknown skill "pstack"\. Available skills:/)
+        assert.ok(error.message.includes(firstAvailable.name))
+        assert.ok(error.message.length < 500, 'available-name guidance stays bounded')
+        return true
+      },
+    )
+  })
+
+  it('explains when an installed skill references a missing file', async () => {
+    await refreshSkillsRegistry()
+    await assert.rejects(
+      () => readSkill('demo-skill', 'references/patterns.md'),
+      (error) => {
+        assert.ok(error instanceof Error)
+        assert.match(
+          error.message,
+          /Skill file not found: references\/patterns\.md in "demo-skill"\. The installed skill references a file that is missing/,
+        )
+        assert.ok(error.cause instanceof Error)
+        assert.match(error.cause.message, /ENOENT/)
+        return true
+      },
+    )
+  })
+
   it('rejects symlink escape outside skill root', async () => {
     await refreshSkillsRegistry()
     const demo = getSkill('demo-skill')
