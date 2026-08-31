@@ -2,7 +2,8 @@ import type { Options } from '@wdio/types'
 import { browser } from '@wdio/globals'
 import electronBinary from 'electron'
 import { createRequire } from 'node:module'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   forceKillWedgedE2eSession,
@@ -30,7 +31,80 @@ const chromedriverBinary =
     'chromedriver',
   )
 
-let e2eUserDataDir: string | null = null
+const USER_DATA_ARG = '--user-data-dir='
+const RUN_PROFILE_PREFIX = `copse-wdio-${String(process.pid)}-`
+const PROFILE_SHUTDOWN_GRACE_MS = 500
+const INTERRUPTED_PROFILE_SHUTDOWN_GRACE_MS = 2_000
+
+function cleanupE2eUserDataDir(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+  } catch (error) {
+    // Do not turn a passing spec red during a slow Electron shutdown, but keep
+    // the failure observable so a leaked temp profile is diagnosable.
+    console.warn(`[wdio] Could not remove temporary profile ${dir}:`, error)
+  }
+}
+
+function workerProfilePrefix(cid: string): string {
+  return `${RUN_PROFILE_PREFIX}${cid.replace(/[^a-z0-9-]/gi, '-')}-profile-`
+}
+
+function cleanupProfilesWithPrefix(prefix: string): void {
+  let names: string[]
+  try {
+    names = readdirSync(tmpdir(), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix))
+      .map((entry) => entry.name)
+  } catch {
+    return
+  }
+  for (const name of names) cleanupE2eUserDataDir(join(tmpdir(), name))
+}
+
+function cleanupRunProfiles(): void {
+  cleanupProfilesWithPrefix(RUN_PROFILE_PREFIX)
+}
+
+function cleanupRunProfilesOnExit(): void {
+  // An interrupted launcher reaches `exit` after asking its worker to stop,
+  // but an orphaned Electron can still flush one last write and recreate the
+  // directory just after an immediate removal. `exit` handlers cannot await,
+  // so give that shutdown a short synchronous grace period before the sweep.
+  Atomics.wait(
+    new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)),
+    0,
+    0,
+    INTERRUPTED_PROFILE_SHUTDOWN_GRACE_MS,
+  )
+  cleanupRunProfiles()
+}
+
+async function closeE2eAppWindow(): Promise<void> {
+  try {
+    // Mark the shutdown as a quit first: a bare window close reads as the user
+    // discarding that window, and multi-window persistence would drop its
+    // record — breaking any spec that relaunches expecting every window back.
+    await browser.execute(() =>
+      (
+        window as unknown as { __copseE2e?: { markQuit?: () => Promise<void> } }
+      ).__copseE2e?.markQuit?.(),
+    )
+    await browser.closeWindow()
+  } catch {
+    // A session that is already gone needs no extra shutdown work.
+  }
+}
+
+function userDataDirFromCapabilities(capabilities: WebdriverIO.Capabilities): string {
+  const cap = capabilities as ChromeCapabilities
+  const arg = cap['goog:chromeOptions']?.args?.find((candidate) =>
+    candidate.startsWith(USER_DATA_ARG),
+  )
+  const dir = arg?.slice(USER_DATA_ARG.length)
+  if (!dir) throw new Error('WDIO worker has no assigned temporary profile')
+  return dir
+}
 
 export const config: Options.Testrunner = {
   runner: 'local',
@@ -109,12 +183,45 @@ export const config: Options.Testrunner = {
     ui: 'bdd',
     timeout: 30_000,
   },
+  onPrepare() {
+    // WDIO does not call onComplete when its launcher is interrupted. Its
+    // signal handler still exits normally, so keep one final synchronous sweep
+    // on the launcher process itself for Ctrl-C / CI cancellation.
+    process.once('exit', cleanupRunProfilesOnExit)
+  },
+  onWorkerStart(cid, capabilities) {
+    const dir = mkdtempSync(join(tmpdir(), workerProfilePrefix(cid)))
+    const cap = capabilities as ChromeCapabilities
+    const chromeOptions = cap['goog:chromeOptions'] ?? {}
+    cap['goog:chromeOptions'] = {
+      ...chromeOptions,
+      args: [
+        ...(chromeOptions.args ?? []).filter((arg) => !arg.startsWith(USER_DATA_ARG)),
+        `${USER_DATA_ARG}${dir}`,
+      ],
+    }
+  },
+  async onWorkerEnd(cid) {
+    // Electron can outlive the WDIO worker by a fraction of a second and
+    // recreate its just-removed profile while flushing shutdown state. WDIO
+    // awaits this launcher hook before scheduling the next maxInstances=1
+    // worker, so a delayed second sweep is both safe and deterministic.
+    cleanupProfilesWithPrefix(workerProfilePrefix(cid))
+    await new Promise((resolve) => setTimeout(resolve, PROFILE_SHUTDOWN_GRACE_MS))
+    cleanupProfilesWithPrefix(workerProfilePrefix(cid))
+  },
   before() {
     // A wedged deleteSession must not flip a green suite red (main tip cdeb3abf
     // attempt 3 / git-changes-image; tip 2686950f / shard 4 still FAILED until
     // overwriteCommand patched the real browser behind @wdio/globals' Proxy).
     // Cap + swallow transport deaths.
     installDeleteSessionSafety(browser)
+  },
+  async after() {
+    // ChromeDriver can leave the Electron app alive after deleting its session.
+    // Close Copse through its quit path first so it cannot keep writing to and
+    // recreating this worker's disposable profile after launcher cleanup.
+    await closeE2eAppWindow()
   },
   afterTest: async (test, _context, result) => {
     // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic
@@ -176,7 +283,7 @@ export const config: Options.Testrunner = {
   },
   beforeSession(_config, capabilities) {
     delete process.env.ELECTRON_RUN_AS_NODE
-    e2eUserDataDir = mkdtempSync(join(process.cwd(), '.wdio-profile-'))
+    const e2eUserDataDir = userDataDirFromCapabilities(capabilities)
 
     const e2eEnv: Record<string, string> = {
       COPSE_E2E: '1',
@@ -242,11 +349,6 @@ export const config: Options.Testrunner = {
     writeFileSync(e2eEnvFile, JSON.stringify(e2eEnv), 'utf8')
 
     const cap = capabilities as ChromeCapabilities
-    const chromeOptions = cap['goog:chromeOptions'] ?? {}
-    cap['goog:chromeOptions'] = {
-      ...chromeOptions,
-      args: [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${e2eUserDataDir}`])],
-    }
     assignDebugPort(cap)
   },
   async beforeCommand(commandName) {
@@ -261,20 +363,7 @@ export const config: Options.Testrunner = {
     // for its replacement to lose the app's single-instance lock. Closing the
     // current app window first lets Electron terminate cleanly before
     // reloadSession deletes the WebDriver session and launches its successor.
-    try {
-      // Mark the shutdown as a quit first: a bare window close reads as the
-      // user discarding that window, and multi-window persistence would drop
-      // its record — breaking any spec that relaunches expecting the full
-      // window set to restore (multiple-main-windows.e2e.ts).
-      await browser.execute(() =>
-        (
-          window as unknown as { __copseE2e?: { markQuit?: () => Promise<void> } }
-        ).__copseE2e?.markQuit?.(),
-      )
-      await browser.closeWindow()
-    } catch {
-      // A session that is already gone needs no extra shutdown work.
-    }
+    await closeE2eAppWindow()
     const requested = browser.requestedCapabilities as
       (ChromeCapabilities & { alwaysMatch?: ChromeCapabilities }) | undefined
     if (!requested) return
@@ -283,18 +372,12 @@ export const config: Options.Testrunner = {
     assignDebugPort(requested.alwaysMatch ?? requested)
   },
   onComplete() {
+    process.removeListener('exit', cleanupRunProfilesOnExit)
     try {
       rmSync(e2eEnvFile, { force: true })
     } catch {
       // ignore
     }
-    if (e2eUserDataDir) {
-      try {
-        rmSync(e2eUserDataDir, { recursive: true, force: true })
-      } catch {
-        // ignore
-      }
-      e2eUserDataDir = null
-    }
+    cleanupRunProfiles()
   },
 }

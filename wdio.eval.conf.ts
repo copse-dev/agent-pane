@@ -2,6 +2,7 @@ import type { Options } from '@wdio/types'
 import electronBinary from 'electron'
 import { createRequire } from 'node:module'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
@@ -110,7 +111,7 @@ export const config: Options.Testrunner = {
     process.env.OPENAI_API_KEY = ''
 
     evalUserDataDir = mkdtempSync(
-      join(process.cwd(), `.wdio-eval-userdata-${randomBytes(4).toString('hex')}-`),
+      join(tmpdir(), `copse-wdio-eval-userdata-${randomBytes(4).toString('hex')}-`),
     )
     process.env.COPSE_PANEL_USER_DATA = evalUserDataDir
     const evalWorkspaceDir = join(evalUserDataDir, 'workspace')
@@ -210,7 +211,7 @@ export const config: Options.Testrunner = {
     const chromeOptions = cap['goog:chromeOptions'] ?? {}
     const debugPort = 19200 + Math.floor(Math.random() * 200)
     evalChromeProfileDir = mkdtempSync(
-      join(process.cwd(), `.wdio-eval-chrome-${randomBytes(4).toString('hex')}-`),
+      join(tmpdir(), `copse-wdio-eval-chrome-${randomBytes(4).toString('hex')}-`),
     )
     cap['goog:chromeOptions'] = {
       ...chromeOptions,
