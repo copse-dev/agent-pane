@@ -239415,8 +239415,8 @@ var init_remote_artifact_images = __esm({
 });
 
 // packages/agent/src/parse-text-tool-calls.ts
-function stripMinimaxDelimiters(text4) {
-  return text4.replace(MINIMAX_DELIMITER_RE, "");
+function stripToolCallDialectDelimiters(text4) {
+  return text4.replace(MINIMAX_DELIMITER_RE, "").replace(DEEPSEEK_DSML_SENTINEL_RE, "");
 }
 function codeSpanMask(text4) {
   const mask = new Uint8Array(text4.length);
@@ -239473,34 +239473,51 @@ function trailingPartialToolCallIndex(s16) {
   const lt2 = s16.lastIndexOf("<");
   if (lt2 === -1) return -1;
   const tail = s16.slice(lt2).toLowerCase().replace(/\s+/g, "");
-  return tail.length < TOOL_CALL_OPENER.length && TOOL_CALL_OPENER.startsWith(tail) ? lt2 : -1;
+  const openers = [
+    TOOL_CALL_OPENER,
+    TOOL_CALLS_OPENER,
+    "<\uFF5Cdsml\uFF5Ctool_call>",
+    "<\uFF5Cdsml\uFF5Ctool_calls>",
+    "<\uFF5Cdsml\uFF5Cinvoke"
+  ];
+  return openers.some((opener) => tail.length < opener.length && opener.startsWith(tail)) ? lt2 : -1;
 }
 function stripTextToolCallBlocks(text4) {
-  let out = stripMinimaxDelimiters(text4);
+  let out = stripToolCallDialectDelimiters(text4);
   out = removeBlocksOutsideCode(out, TOOL_CALL_BLOCK_RE);
+  out = removeBlocksOutsideCode(out, TOOL_CALLS_BLOCK_RE);
   out = removeBlocksOutsideCode(out, INVOKE_BLOCK_RE);
   const blanked = blankCodeSpans(out);
   const open2 = blanked.search(OPEN_TOOL_CALL_RE);
   if (open2 !== -1) {
     out = out.slice(0, open2);
   } else {
-    const invokeOpen = blanked.search(OPEN_INVOKE_RE);
-    if (invokeOpen !== -1) {
-      out = out.slice(0, invokeOpen);
+    const callsOpen = blanked.search(OPEN_TOOL_CALLS_RE);
+    if (callsOpen !== -1) {
+      out = out.slice(0, callsOpen);
     } else {
-      const partial2 = trailingPartialToolCallIndex(blanked);
-      if (partial2 !== -1) out = out.slice(0, partial2);
+      const invokeOpen = blanked.search(OPEN_INVOKE_RE);
+      if (invokeOpen !== -1) {
+        out = out.slice(0, invokeOpen);
+      } else {
+        const partial2 = trailingPartialToolCallIndex(blanked);
+        if (partial2 !== -1) out = out.slice(0, partial2);
+      }
     }
   }
   return out.replace(/\n{3,}/g, "\n\n").trimEnd();
 }
-var TOOL_CALL_BLOCK_RE, OPEN_TOOL_CALL_RE, TOOL_CALL_OPENER, MINIMAX_DELIMITER_RE, INVOKE_BLOCK_RE, OPEN_INVOKE_RE;
+var TOOL_CALL_BLOCK_RE, TOOL_CALLS_BLOCK_RE, OPEN_TOOL_CALL_RE, OPEN_TOOL_CALLS_RE, TOOL_CALL_OPENER, TOOL_CALLS_OPENER, MINIMAX_DELIMITER_RE, DEEPSEEK_DSML_SENTINEL_RE, INVOKE_BLOCK_RE, OPEN_INVOKE_RE;
 var init_parse_text_tool_calls = __esm({
   "packages/agent/src/parse-text-tool-calls.ts"() {
     TOOL_CALL_BLOCK_RE = /<\s*tool_call\s*>([\s\S]*?)<\s*\/\s*tool_call\s*>/gi;
+    TOOL_CALLS_BLOCK_RE = /<\s*tool_calls\s*>([\s\S]*?)<\s*\/\s*tool_calls\s*>/gi;
     OPEN_TOOL_CALL_RE = /<\s*tool_call\s*>/i;
+    OPEN_TOOL_CALLS_RE = /<\s*tool_calls\s*>/i;
     TOOL_CALL_OPENER = "<tool_call>";
+    TOOL_CALLS_OPENER = "<tool_calls>";
     MINIMAX_DELIMITER_RE = /\]<\]minimax\[>\[/gi;
+    DEEPSEEK_DSML_SENTINEL_RE = /｜\s*DSML\s*｜/gi;
     INVOKE_BLOCK_RE = /<\s*invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*invoke\s*>/gi;
     OPEN_INVOKE_RE = /<\s*invoke\b/i;
   }
