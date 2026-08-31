@@ -132,4 +132,35 @@ describe('newest-first thread backfill on load', () => {
       [...ids, newId],
     )
   })
+
+  it('preserves an explicitly unpinned position across a same-thread rebuild', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'user', 'older prompt')
+    addMessage(store, threadId, 'assistant', 'older answer')
+
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const list = host.querySelector<HTMLElement>('.messages-list')
+    assert.ok(list)
+    Object.defineProperties(list, {
+      scrollHeight: { configurable: true, get: () => 1_200 },
+      clientHeight: { configurable: true, get: () => 200 },
+    })
+
+    // Establish a previous position, then scroll upward far enough to unpin.
+    list.scrollTop = 500
+    list.dispatchEvent(new Event('scroll'))
+    list.scrollTop = 120
+    const wheel = new Event('wheel')
+    Object.defineProperty(wheel, 'deltaY', { value: -120 })
+    list.dispatchEvent(wheel)
+    list.dispatchEvent(new Event('scroll'))
+
+    store.emit('threads_changed')
+
+    assert.equal(list.scrollTop, 120)
+  })
 })
