@@ -284,41 +284,70 @@ const HEREDOC_DELIMITER = /^(-)?[ \t]*(?:'([^']+)'|"([^"]+)"|\\?([A-Za-z_][A-Za-
  * mention hid the rest of the command from the whole scope analysis.
  */
 function heredocOpener(line: string): { delimiter: string; stripTabs: boolean } | null {
-  let unquoted = ''
+  // Shell quoting changes whether characters are operators, but quoted and
+  // escaped characters still form the command word: `"python3"` and
+  // `pyt"hon3"` both execute python3. Keep that decoded word text for the
+  // interpreter probe while separately tracking whether an operator is quoted.
+  let commandText = ''
   let quote: string | null = null
+  let wordStarted = false
   for (let i = 0; i < line.length; i += 1) {
     // charAt, not indexing: it yields '' past the end, so the lookaheads below
     // need no bounds checks.
     const ch = line.charAt(i)
     if (quote !== null) {
-      if (ch === '\\' && quote === '"') i += 1
-      else if (ch === quote) quote = null
+      if (ch === '\\' && quote === '"') {
+        const escaped = line.charAt(i + 1)
+        // Inside double quotes, backslash is only removed before the shell's
+        // five special characters. Before anything else it remains literal.
+        if (escaped === '$' || escaped === '`' || escaped === '"' || escaped === '\\') {
+          commandText += escaped
+        } else {
+          commandText += `\\${escaped}`
+        }
+        i += 1
+      } else if (ch === quote) quote = null
+      else commandText += ch
       continue
     }
-    // An escaped character is data, never an operator or part of a command name.
+    // An escaped character is data, never an operator. It still participates in
+    // a command word (`pyt\\hon3` executes python3), so retain its decoded value.
     if (ch === '\\') {
+      const escaped = line.charAt(i + 1)
+      if (escaped !== '') {
+        commandText += escaped
+        wordStarted = true
+      }
       i += 1
       continue
     }
     if (ch === "'" || ch === '"') {
       quote = ch
+      wordStarted = true
       continue
     }
+    // In a non-interactive shell, an unquoted `#` at the start of a word makes
+    // the remainder a comment. Nothing inside it can open a redirect.
+    if (ch === '#' && !wordStarted) break
     if (ch === '<' && line.charAt(i + 1) === '<') {
       // `<<<` is a here-string: one line, no body to mask.
       if (line.charAt(i + 2) === '<') {
+        wordStarted = false
         i += 2
         continue
       }
-      if (HEREDOC_INTERPRETER.test(unquoted)) {
+      if (HEREDOC_INTERPRETER.test(commandText)) {
         const match = HEREDOC_DELIMITER.exec(line.slice(i + 2))
         const delimiter = match ? (match[2] ?? match[3] ?? match[4]) : undefined
         if (delimiter !== undefined) return { delimiter, stripTabs: match?.[1] === '-' }
       }
+      wordStarted = false
       i += 1
       continue
     }
-    unquoted += ch
+    commandText += ch
+    if (/[\s|&;()<>]/.test(ch)) wordStarted = false
+    else wordStarted = true
   }
   return null
 }
