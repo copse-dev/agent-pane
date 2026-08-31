@@ -667,6 +667,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           localModels: [],
           totalInputTokens: 0,
           totalOutputTokens: 0,
+          hasUnpricedCloudUsage: false,
         }
         return resolved({
           day: emptyPeriod,

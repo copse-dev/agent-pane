@@ -164,6 +164,22 @@ describe('formatFooterUsageDetail', () => {
       'Usage: 1.3k tokens · 1.2k in / 80 out',
     )
   })
+
+  it('reports a published zero-rate cloud model as free', () => {
+    assert.equal(
+      formatFooterUsageDetail(
+        { inputTokens: 1200, outputTokens: 80, estimated: false },
+        {
+          model: 'openrouter:vendor/free',
+          measuredUsage: { inputTokens: 1200, outputTokens: 80 },
+          pricing: {
+            'openrouter:vendor/free': { inputPricePerMTok: 0, outputPricePerMTok: 0 },
+          },
+        },
+      ),
+      'Usage: 1.3k tokens · 1.2k in / 80 out · free',
+    )
+  })
 })
 
 describe('formatFooterUsageDetail leads with the counter total', () => {
