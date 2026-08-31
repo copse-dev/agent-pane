@@ -8,6 +8,9 @@ import {
   gortexIndexWaitArg,
   gortexMemLimitEnv,
   isOversizedGortexDaemon,
+  isGortexDaemonCommand,
+  parseGortexDaemonPid,
+  parseWindowsTasklistProcess,
   isSemanticIndexReady,
   parseGortexJson,
   parseGortexExcludes,
@@ -348,6 +351,26 @@ describe('gortex daemon scoping + reaping', () => {
     assert.equal(isOversizedGortexDaemon(400, gortexCmd), false)
     // A big process that isn't gortex → never touch it (pid-reuse guard).
     assert.equal(isOversizedGortexDaemon(9000, '/Applications/Foo.app/Foo'), false)
+    assert.equal(isOversizedGortexDaemon(9000, '/tmp/not-gortex-helper'), false)
+  })
+
+  it('accepts only an actual gortex executable and a strict pidfile', () => {
+    assert.equal(isGortexDaemonCommand('gortex daemon start'), true)
+    assert.equal(isGortexDaemonCommand('/opt/Copse App/resources/gortex daemon start'), true)
+    assert.equal(isGortexDaemonCommand('C:\\Copse\\resources\\gortex.exe'), true)
+    assert.equal(isGortexDaemonCommand('/tmp/not-gortex-helper'), false)
+    assert.equal(parseGortexDaemonPid('4312\n'), 4312)
+    assert.equal(parseGortexDaemonPid('4312garbage'), null)
+    assert.equal(parseGortexDaemonPid('1'), null)
+    assert.equal(parseGortexDaemonPid('9007199254740993'), null)
+  })
+
+  it('reads the Windows process identity used by the pid-reuse guard', () => {
+    assert.deepEqual(
+      parseWindowsTasklistProcess('"gortex.exe","4312","Console","1","12,345 K"', 4312),
+      { rssMb: 12_345 / 1024, command: 'gortex.exe' },
+    )
+    assert.equal(parseWindowsTasklistProcess('"other.exe","99","Console","1","500 K"', 4312), null)
   })
 
   it('reapOversizedGortexDaemon is best-effort and never throws on the boot path', async () => {
