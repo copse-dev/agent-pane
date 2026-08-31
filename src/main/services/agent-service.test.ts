@@ -1,9 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import * as agentService from './agent-service.ts'
 import * as providerSelection from './providers/provider-selection.ts'
 import { suggestThreadTitle } from './title-generator.ts'
 import { setSetting } from './storage/settings.ts'
+import { storageSet } from './storage/storage.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { LLMMessage, LLMProvider, StreamChunk } from '@shared/types'
 import { ToolRegistry } from './tool-registry.ts'
@@ -17,6 +21,8 @@ import {
   type PluginToolRuntimeController,
 } from './plugins/plugin-tool-controller.ts'
 import { pluginModelValue } from '@shared/plugin-model.ts'
+import { parseSpineLine } from '@shared/threads/spine-schema.ts'
+import { getThreadMeta } from './thread-store.ts'
 
 // agent-service is now an orchestrator that re-exports the public surface from the
 // focused modules it composes. These tests pin that public surface so IPC callers
@@ -231,6 +237,67 @@ describe('runAgent AgentHost decoupling', () => {
       )
     }
     assert.deepEqual(checkpoints.at(-1), result.messages.slice(0, checkpoints.at(-1)?.length))
+  })
+
+  it('persists the invisible final-answer nudge in the production thread spine (#1711)', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const root = mkdtempSync(join(tmpdir(), 'copse-agent-final-nudge-'))
+    const projectId = 'project-final-nudge'
+    const threadId = 'thread-final-nudge'
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    storageSet('activeProjectId', projectId)
+    const provider: LLMProvider = {
+      stream: async function* () {
+        yield { type: 'text' as const, text: 'Final.' }
+        yield { type: 'done' as const }
+      },
+    }
+
+    try {
+      await runWithThreadExecutionContext(
+        {
+          projectId,
+          threadId,
+          projectRoot: root,
+          root,
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity(threadId, () =>
+            agentService.runAgent(
+              threadId,
+              'finish now',
+              [],
+              { emit: () => undefined },
+              new ToolRegistry(),
+              {
+                provider,
+                contextWindow: 100_000,
+                maxSteps: 0,
+                adaptiveExtensions: false,
+              },
+            ),
+          ),
+      )
+
+      await getThreadMeta(projectId, threadId).catch(() => undefined)
+      const raw = readFileSync(join(root, projectId, threadId, 'events.jsonl'), 'utf8')
+      const lines = raw
+        .trim()
+        .split('\n')
+        .map((line) => parseSpineLine(line))
+      const nudge = lines.find((line) => line?.type === 'nudge')
+      assert.equal(nudge?.type, 'nudge')
+      assert.equal(nudge.hookId, 'final-answer-nudge')
+      assert.equal(nudge.cause, 'step-budget-exhausted')
+      assert.match(nudge.text, /write a clear final answer/)
+    } finally {
+      storageSet('activeProjectId', null)
+      rmSync(root, { recursive: true, force: true })
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+    }
   })
 
   it('emits a structured terminal record with raw provider failure details', async () => {

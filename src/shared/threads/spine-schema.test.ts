@@ -16,6 +16,7 @@ import {
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
   type SpineModelSelectedLine,
+  type SpineNudgeLine,
   type SpineMessageLine,
   type SpinePermissionDecisionLine,
 } from './spine-schema.ts'
@@ -126,6 +127,21 @@ function modelSelectedLine(id: string): SpineModelSelectedLine {
   }
 }
 
+function nudgeLine(id: string): SpineNudgeLine {
+  return {
+    v: SPINE_SCHEMA_VERSION,
+    type: 'nudge',
+    id,
+    turnId: 'turn-1',
+    step: 3,
+    recordedAt: 150,
+    hookId: 'final-answer-nudge',
+    mechanism: 'text-only-turn',
+    cause: 'step-budget-exhausted',
+    text: 'Write a clear final answer.',
+  }
+}
+
 describe('spine-schema hook_run union (decision 6)', () => {
   it('round-trips a hook_run line through serialize/parse', () => {
     const line = hookRunLine('h1', { toolset: 'ts-hash' })
@@ -195,6 +211,12 @@ describe('spine-schema hook_run union (decision 6)', () => {
 
   it('round-trips actor-attributed model selections without exposing them as messages', () => {
     const line = modelSelectedLine('model-1')
+    assert.deepEqual(parseSpineLine(serializeSpineLine(line)), line)
+    assert.deepEqual(parseSpine(serializeSpine([messageLine('m1'), line])), [messageLine('m1')])
+  })
+
+  it('round-trips applied nudges without exposing them as messages', () => {
+    const line = nudgeLine('nudge-1')
     assert.deepEqual(parseSpineLine(serializeSpineLine(line)), line)
     assert.deepEqual(parseSpine(serializeSpine([messageLine('m1'), line])), [messageLine('m1')])
   })

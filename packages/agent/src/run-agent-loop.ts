@@ -105,6 +105,7 @@ export interface AppliedNudgeRecord {
   step: number
   hookId: string
   mechanism: 'tool-enabled-message' | 'text-only-turn'
+  cause?: 'step-budget-exhausted' | 'tool-requested-during-finalization'
   text: string
 }
 
@@ -140,7 +141,7 @@ export interface AgentLoopOptions {
   onHistoryTrimmed?: () => void
   /** Called after each provider stream to read per-step token usage. */
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
-  /** Records the actual step-boundary nudge text and mechanism applied by this host. */
+  /** Records each model-visible nudge, its mechanism, and why it was applied. */
   recordAppliedNudge?: (record: AppliedNudgeRecord) => void
   /** Model id for usage/cost attribution on this loop's provider calls. */
   usageModel?: string
@@ -237,6 +238,7 @@ export interface AgentLoopOptions {
 
 const FINALIZE_NUDGE =
   'Based on your exploration so far, write a clear final answer for the user. Do not call any tools.'
+const FINAL_ANSWER_NUDGE_ID = 'final-answer-nudge'
 
 const INCOMPLETE_RUN_MESSAGE =
   'The agent stopped before producing a final answer. Try a shorter question, reduce tool use, or switch models.'
@@ -469,9 +471,20 @@ async function streamTextOnlyTurn(
   // this text-only turn's stop reason; returns the nudge text when the stream was
   // length-truncated, else undefined. The loop supplies it; absent = no push.
   resolveTruncationNudge?: (stopReason: string | undefined) => Promise<string | undefined>,
+  appliedNudgeSink?: (record: AppliedNudgeRecord) => void,
+  appliedNudgeCause?: AppliedNudgeRecord['cause'],
 ): Promise<TextOnlyTurnResult> {
   const empty: TextOnlyTurnResult = { answerText: '', pendingToolCalls: [] }
   if (!reserveLlmCall(budget)) return empty
+  if (appliedNudgeCause !== undefined) {
+    recordAppliedNudge(appliedNudgeSink, {
+      step: budget.llmCalls,
+      hookId: FINAL_ANSWER_NUDGE_ID,
+      mechanism: 'text-only-turn',
+      cause: appliedNudgeCause,
+      text: nudge,
+    })
+  }
   const signal = budget.signal
   const turnMessages: LLMMessage[] = [...messages, { role: 'user', content: nudge }]
   let assistantText = ''
@@ -1686,6 +1699,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         coerceTextToolCallArgs,
         maxStreamOutputTokens,
         resolveTruncationNudge,
+        appliedNudgeSink,
+        'step-budget-exhausted',
       )
       while (finalResult.pendingToolCalls.length > 0 && !runBudgetExhausted(budget)) {
         await executeToolBatch({
@@ -1709,6 +1724,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           coerceTextToolCallArgs,
           maxStreamOutputTokens,
           resolveTruncationNudge,
+          appliedNudgeSink,
+          'tool-requested-during-finalization',
         )
       }
       if (!finalResult.answerText.trim()) {

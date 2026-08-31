@@ -832,6 +832,29 @@ describe('runAgentLoop', () => {
     assert.equal(yieldedChunks, 1)
   })
 
+  it('records the final-answer nudge with its entry reason (#1711)', async () => {
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+    await runAgentLoop({
+      provider: mockProvider([[{ type: 'text', text: 'Final.' }, { type: 'done' }]]),
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 0,
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordAppliedNudge: (record) => applied.push(record),
+    })
+
+    assert.deepEqual(applied, [
+      {
+        step: 1,
+        hookId: 'final-answer-nudge',
+        mechanism: 'text-only-turn',
+        cause: 'step-budget-exhausted',
+        text: 'Based on your exploration so far, write a clear final answer for the user. Do not call any tools.',
+      },
+    ])
+  })
+
   it('lets a host disable pressure-triggered forced-text escalation', async () => {
     let toolCalls = 0
     let sawStuckFinalizeNudge = false
@@ -1018,6 +1041,7 @@ src/renderer/views/projects-pane.ts
 
   it('recovers phantom read_file XML from finalize text-only turn', async () => {
     const readPaths: string[] = []
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
     let textOnlyCalls = 0
     const provider: LLMProvider = {
       async *stream(_messages, tools) {
@@ -1041,6 +1065,7 @@ src/renderer/views/projects-pane.ts
       tools: [{ name: 'list_dir', description: '', parameters: {} }],
       maxSteps: 1,
       onChunk: (c) => chunks.push(c),
+      recordAppliedNudge: (record) => applied.push(record),
       coerceTextToolCallArgs: (name, args) => {
         if (name === 'read_file' && typeof args['path'] === 'string' && args['path'].trim()) {
           return args
@@ -1060,6 +1085,10 @@ src/renderer/views/projects-pane.ts
     ])
     assert.ok(chunks.some((c) => c.type === 'text_replace'))
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('Icons look good')))
+    assert.deepEqual(
+      applied.map((record) => record.cause),
+      ['step-budget-exhausted', 'tool-requested-during-finalization'],
+    )
   })
 
   it('recovers phantom read_file XML from forced text-only turn', async () => {

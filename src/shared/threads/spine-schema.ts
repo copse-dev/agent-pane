@@ -372,6 +372,20 @@ export interface SpineModelSelectedLine {
   to: string
 }
 
+/** One model-visible steering instruction applied by the agent loop. */
+export interface SpineNudgeLine {
+  v: number
+  type: 'nudge'
+  id: string
+  turnId?: string
+  step: number
+  recordedAt: number
+  hookId: string
+  mechanism: 'tool-enabled-message' | 'text-only-turn'
+  cause?: string
+  text: string
+}
+
 /** Discriminated union of every line type this schema version can write. */
 export type SpineLine =
   | SpineMessageLine
@@ -381,6 +395,7 @@ export type SpineLine =
   | SpineDecisionLine
   | SpineMachineContinuationLine
   | SpineModelSelectedLine
+  | SpineNudgeLine
 
 /** Thread-relative ref of the content-addressed toolset fingerprint blob. */
 export function toolsetBlobRef(hash: string): string {
@@ -556,6 +571,23 @@ function isSpineModelSelectedLine(value: unknown): value is SpineModelSelectedLi
   )
 }
 
+function isSpineNudgeLine(value: unknown): value is SpineNudgeLine {
+  if (!isRecord(value)) return false
+  const mechanism = value['mechanism']
+  return (
+    value['type'] === 'nudge' &&
+    typeof value['v'] === 'number' &&
+    typeof value['id'] === 'string' &&
+    (value['turnId'] === undefined || typeof value['turnId'] === 'string') &&
+    typeof value['step'] === 'number' &&
+    typeof value['recordedAt'] === 'number' &&
+    typeof value['hookId'] === 'string' &&
+    (mechanism === 'tool-enabled-message' || mechanism === 'text-only-turn') &&
+    (value['cause'] === undefined || typeof value['cause'] === 'string') &&
+    typeof value['text'] === 'string'
+  )
+}
+
 function isPlanSpineAction(value: unknown): value is PlanSpineAction {
   return (
     value === 'create' ||
@@ -606,6 +638,7 @@ export function parseSpineLine(raw: string): SpineLine | null {
   if (type === 'permission_decision' && isSpinePermissionDecisionLine(parsed)) return parsed
   if (type === 'machine_continuation' && isSpineMachineContinuationLine(parsed)) return parsed
   if (type === 'model_selected' && isSpineModelSelectedLine(parsed)) return parsed
+  if (type === 'nudge' && isSpineNudgeLine(parsed)) return parsed
 
   return null
 }

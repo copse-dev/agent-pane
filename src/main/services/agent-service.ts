@@ -64,6 +64,7 @@ import {
 } from './hook-run-recorder.ts'
 import { recordStreamCut } from './stream-stats-recorder.ts'
 import { recordReasoningCheckpoint } from './reasoning-checkpoint-recorder.ts'
+import { recordAppliedNudge } from './nudge-recorder.ts'
 import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
@@ -1889,6 +1890,7 @@ export async function runAgent(
               recordReasoningCheckpoint: (record) => {
                 recordReasoningCheckpoint(record, model)
               },
+              recordAppliedNudge,
               executeTool: executeParentTool,
               signal: controller.signal,
               maxContextTokens: contextWindow,

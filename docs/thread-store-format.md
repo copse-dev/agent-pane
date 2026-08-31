@@ -74,11 +74,12 @@ describes it to the agent, so changing the layout means updating that preamble.
 
 - **`events.jsonl`** is the linear history — one JSON line per finalized message
   (plus interleaved `hook_run`, `decision`, legacy `permission_decision`,
-  `machine_continuation`, and Plan Mode `plan` lifecycle lines, below), oldest first. It is
+  `machine_continuation`, model-visible `nudge`, and Plan Mode `plan` lifecycle lines, below),
+  oldest first. It is
   the source of ordering and structure; prose and large/opaque content live in
   referenced files (`messages/*.md`, `blobs/*`) so a draft keystroke rewrites
   one tiny file, not the whole thread.
-  Ordinary new messages, hook runs, decisions, continuations, and model-selection
+  Ordinary new messages, hook runs, nudges, decisions, continuations, and model-selection
   events are physical appends. Writers inspect at most the final byte to repair a
   legacy file without a trailing newline; they do not read or rewrite prior
   lines. Re-finalizing an existing message id deliberately replaces that line in
@@ -197,6 +198,29 @@ history.
   "budgetUsed": 2, // optional when not yet known
   "phase": "started" | "finished",
   "result": "completed" | "duplicate" | "stale" | "budget-exhausted" | "failed" // finished only
+}
+```
+
+## Applied-nudge line schema (`type: "nudge"`)
+
+Every model-visible loop steer appends the exact instruction that was delivered,
+its delivery mechanism, and its turn/step attribution. `cause` records why an
+otherwise implicit transition such as final-answer entry occurred. These lines
+are observability only: message folds skip them, while raw thread traces retain
+them beside the model output they affected.
+
+```jsonc
+{
+  "v": 1,
+  "type": "nudge",
+  "id": "<nudgeId>",
+  "turnId": "<agentRunId>",
+  "step": 4,
+  "recordedAt": 1712345678901,
+  "hookId": "final-answer-nudge",
+  "mechanism": "text-only-turn",
+  "cause": "step-budget-exhausted",
+  "text": "Based on your exploration so far, write a clear final answer for the user. Do not call any tools.",
 }
 ```
 

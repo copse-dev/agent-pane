@@ -42,6 +42,7 @@ import {
   type SpineHookRunLine,
   type SpineMachineContinuationLine,
   type SpineModelSelectedLine,
+  type SpineNudgeLine,
   type SpineDecisionLine,
   type SpinePermissionDecisionLine,
   type ThreadMeta,
@@ -1492,6 +1493,18 @@ export function appendMachineContinuation(
   projectId: string,
   threadId: string,
   line: SpineMachineContinuationLine,
+): Promise<void> {
+  return runStoreWrite(projectId, async () => {
+    const dir = threadDir(projectId, threadId)
+    await appendJsonlLine(join(dir, EVENTS_FILE), serializeSpineLine(line))
+  })
+}
+
+/** Append one model-visible agent-loop steering instruction. */
+export function appendNudge(
+  projectId: string,
+  threadId: string,
+  line: SpineNudgeLine,
 ): Promise<void> {
   return runStoreWrite(projectId, async () => {
     const dir = threadDir(projectId, threadId)
