@@ -21247,7 +21247,7 @@ function proposedEdit(name, args, written) {
     const oldString = stringArg2(args, "old_string");
     const newString = stringArg2(args, "new_string");
     if (oldString === void 0 || newString === void 0) return void 0;
-    return { path: path4, before, after: before.replace(oldString, newString) };
+    return { path: path4, before, after: before.replace(oldString, () => newString) };
   }
   return void 0;
 }
@@ -29758,25 +29758,37 @@ var init_model_intellect_generated = __esm({
 
 // packages/llm/src/model-id-forms.ts
 function resolveModelIdForm(id39, direct) {
-  const hit = direct(id39);
+  return unwrap(id39, { direct, exhausted: /* @__PURE__ */ new Set(), budget: MAX_CANDIDATES });
+}
+function unwrap(id39, search) {
+  if (search.exhausted.has(id39) || search.budget <= 0) return null;
+  search.budget -= 1;
+  const resolved3 = unwrapUncached(id39, search);
+  if (resolved3 === null) search.exhausted.add(id39);
+  return resolved3;
+}
+function unwrapUncached(id39, search) {
+  const hit = search.direct(id39);
   if (hit !== null) return hit;
   const unbracketed = id39.replace(/\[[^\]]*\]$/, "");
-  if (unbracketed !== id39) return resolveModelIdForm(unbracketed, direct);
+  if (unbracketed !== id39) return unwrap(unbracketed, search);
   const hash2 = id39.lastIndexOf("#");
-  if (hash2 >= 0) return resolveModelIdForm(id39.slice(hash2 + 1), direct);
+  if (hash2 >= 0) return unwrap(id39.slice(hash2 + 1), search);
   const sep2 = id39.indexOf(":");
   if (sep2 > 0) {
-    const stripped = resolveModelIdForm(id39.slice(sep2 + 1), direct);
+    const stripped = unwrap(id39.slice(sep2 + 1), search);
     if (stripped !== null) return stripped;
   }
   const lastColon = id39.lastIndexOf(":");
   if (lastColon > 0 && id39.slice(0, lastColon).includes("/")) {
-    return resolveModelIdForm(id39.slice(0, lastColon), direct);
+    return unwrap(id39.slice(0, lastColon), search);
   }
   return null;
 }
+var MAX_CANDIDATES;
 var init_model_id_forms = __esm({
   "packages/llm/src/model-id-forms.ts"() {
+    MAX_CANDIDATES = 256;
   }
 });
 
@@ -30094,7 +30106,9 @@ function normalizeHostname(hostname3) {
 }
 function isLoopbackHostname(hostname3) {
   const host = normalizeHostname(hostname3);
-  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
+  const embedded = embeddedIpv4(host);
+  return embedded === "127.0.0.1";
 }
 function parseIpv4Octets(host) {
   const parts = host.split(".");
@@ -30105,17 +30119,64 @@ function parseIpv4Octets(host) {
   if (a3 === void 0 || b5 === void 0 || c4 === void 0 || d4 === void 0) return null;
   return [a3, b5, c4, d4];
 }
+function parseIpv6Hextets(host) {
+  if (!host.includes(":")) return null;
+  let text4 = host;
+  const dotted = /:((?:\d{1,3}\.){3}\d{1,3})$/.exec(text4);
+  if (dotted) {
+    const octets = parseIpv4Octets(dotted[1] ?? "");
+    if (!octets) return null;
+    const [a3, b5, c4, d4] = octets;
+    text4 = `${text4.slice(0, dotted.index)}:${((a3 << 8 | b5) >>> 0).toString(16)}:${((c4 << 8 | d4) >>> 0).toString(16)}`;
+  }
+  const halves = text4.split("::");
+  if (halves.length > 2) return null;
+  const groupsOf = (part) => {
+    if (part === "") return [];
+    const out = [];
+    for (const piece of part.split(":")) {
+      if (!/^[0-9a-f]{1,4}$/.test(piece)) return null;
+      out.push(Number.parseInt(piece, 16));
+    }
+    return out;
+  };
+  const head2 = groupsOf(halves[0] ?? "");
+  if (head2 === null) return null;
+  if (halves.length === 1) return head2.length === 8 ? head2 : null;
+  const tail = groupsOf(halves[1] ?? "");
+  if (tail === null) return null;
+  const gap = 8 - head2.length - tail.length;
+  if (gap < 1) return null;
+  return [...head2, ...new Array(gap).fill(0), ...tail];
+}
+function embeddedIpv4(host) {
+  const hextets = parseIpv6Hextets(host);
+  if (hextets === null) return null;
+  const matches34 = IPV4_EMBEDDING_PREFIXES.some(
+    (prefix) => prefix.every((group2, index) => hextets[index] === group2)
+  );
+  if (!matches34) return null;
+  const high = hextets[6] ?? 0;
+  const low = hextets[7] ?? 0;
+  return `${String(high >> 8)}.${String(high & 255)}.${String(low >> 8)}.${String(low & 255)}`;
+}
+function isPrivateIpv4(octets) {
+  const [a3, b5] = octets;
+  return a3 === 0 || a3 === 10 || a3 === 127 || a3 === 169 || a3 === 172 && b5 >= 16 && b5 <= 31 || a3 === 192 && b5 === 168 || a3 === 100 && b5 >= 64 && b5 <= 127;
+}
 function isPrivateOrLinkLocalHost(hostname3) {
   const host = normalizeHostname(hostname3);
   const octets = parseIpv4Octets(host);
-  if (octets) {
-    const [a3, b5] = octets;
-    return a3 === 0 || a3 === 10 || a3 === 127 || a3 === 169 || a3 === 172 && b5 >= 16 && b5 <= 31 || a3 === 192 && b5 === 168 || a3 === 100 && b5 >= 64 && b5 <= 127;
+  if (octets) return isPrivateIpv4(octets);
+  const hextets = parseIpv6Hextets(host);
+  if (hextets === null) return false;
+  const embedded = embeddedIpv4(host);
+  if (embedded !== null) {
+    const inner2 = parseIpv4Octets(embedded);
+    if (inner2 && isPrivateIpv4(inner2)) return true;
   }
-  if (host.includes(":")) {
-    return host === "::" || host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:");
-  }
-  return false;
+  const first3 = hextets[0] ?? 0;
+  return (first3 & 65024) === 64512 || (first3 & 65472) === 65152;
 }
 function validateCredentialBaseUrl(value2, label = "Base URL") {
   const raw = value2.trim();
@@ -30150,8 +30211,19 @@ function isSafeCredentialBaseUrl(value2) {
     return false;
   }
 }
+var IPV4_EMBEDDING_PREFIXES;
 var init_credential_url = __esm({
   "packages/llm/src/credential-url.ts"() {
+    IPV4_EMBEDDING_PREFIXES = [
+      [0, 0, 0, 0, 0, 65535],
+      // ::ffff:0:0/96      IPv4-mapped
+      [0, 0, 0, 0, 65535, 0],
+      // ::ffff:0:0:0/96    IPv4-translated
+      [0, 0, 0, 0, 0, 0],
+      // ::/96              IPv4-compatible (deprecated)
+      [100, 65435, 0, 0, 0, 0]
+      // 64:ff9b::/96       NAT64 well-known
+    ];
   }
 });
 
@@ -39494,7 +39566,7 @@ var init_link_image_policy = __esm({
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
-function unwrap(el3) {
+function unwrap2(el3) {
   const parent4 = el3.parentNode;
   if (parent4) {
     while (el3.firstChild)
@@ -39513,7 +39585,7 @@ function enforceSanitizerAllowlist(root4, config4) {
       if (DROP_CONTENT_TAGS.has(tag))
         el3.remove();
       else
-        unwrap(el3);
+        unwrap2(el3);
       continue;
     }
     for (const attr of Array.from(el3.attributes)) {
