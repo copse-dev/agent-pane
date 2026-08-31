@@ -72,6 +72,34 @@ describe('validateCredentialBaseUrl', () => {
     assert.equal(isLoopbackHostname('::1'), true)
     assert.equal(isLoopbackHostname('169.254.169.254'), false)
   })
+
+  it('reads an IPv4-mapped loopback as loopback', () => {
+    // `::ffff:127.0.0.1` opens the same socket as `127.0.0.1`, so a local
+    // endpoint addressed that way must not trip the private-address rule.
+    assert.equal(isLoopbackHostname('::ffff:127.0.0.1'), true)
+    assert.equal(isLoopbackHostname('::ffff:7f00:1'), true)
+    assert.equal(isLoopbackHostname('[::ffff:127.0.0.1]'), true)
+    assert.equal(
+      validateCredentialBaseUrl('http://[::ffff:127.0.0.1]:1234/v1'),
+      'http://[::ffff:7f00:1]:1234/v1',
+    )
+  })
+
+  it('rejects a private address written in its IPv4-mapped IPv6 form', () => {
+    // The URL parser rewrites `[::ffff:169.254.169.254]` to `[::ffff:a9fe:a9fe]`,
+    // which read as an ordinary public host and carried the API key to the
+    // metadata endpoint this rule exists to block.
+    for (const url of [
+      'https://[::ffff:169.254.169.254]/latest/meta-data/',
+      'https://[::ffff:10.0.0.1]/v1',
+      'https://[::ffff:192.168.1.1]/v1',
+      'https://[0:0:0:0:0:ffff:169.254.169.254]/v1',
+      'https://[::169.254.169.254]/v1',
+      'https://[64:ff9b::169.254.169.254]/v1',
+    ]) {
+      assert.throws(() => validateCredentialBaseUrl(url), /private or link-local/, url)
+    }
+  })
 })
 
 describe('isPrivateOrLinkLocalHost', () => {
@@ -111,5 +139,41 @@ describe('isPrivateOrLinkLocalHost', () => {
   it('does not misclassify hostnames that merely start with fc/fd', () => {
     assert.equal(isPrivateOrLinkLocalHost('fd-cdn.example.com'), false)
     assert.equal(isPrivateOrLinkLocalHost('172.200.0.1'), false)
+  })
+
+  it('flags every IPv6 form that embeds a private IPv4 address', () => {
+    for (const host of [
+      '::ffff:169.254.169.254', // IPv4-mapped, dotted tail
+      '::ffff:a9fe:a9fe', // the same address as the URL parser writes it
+      '[::ffff:a9fe:a9fe]', // bracketed
+      '::ffff:10.0.0.1',
+      '::ffff:192.168.1.1',
+      '::ffff:172.16.0.1',
+      '::ffff:0:169.254.169.254', // IPv4-translated
+      '::169.254.169.254', // IPv4-compatible (deprecated)
+      '64:ff9b::169.254.169.254', // NAT64 well-known prefix
+    ]) {
+      assert.equal(isPrivateOrLinkLocalHost(host), true, host)
+    }
+  })
+
+  it('covers the whole fe80::/10 link-local range, not just fe80:', () => {
+    for (const host of ['fe80::1', 'fe90::1', 'fea0::1', 'febf::1']) {
+      assert.equal(isPrivateOrLinkLocalHost(host), true, host)
+    }
+  })
+
+  it('leaves a public IPv6 alone even when its low bits spell a private IPv4', () => {
+    // Only the well-known IPv4-embedding prefixes route to the address in the
+    // low 32 bits; an ordinary global address does not.
+    for (const host of ['2001:db8::a9fe:a9fe', '2606:4700::c0a8:101', '2001:db8::ffff:a00:1']) {
+      assert.equal(isPrivateOrLinkLocalHost(host), false, host)
+    }
+  })
+
+  it('ignores strings that are not IPv6 literals', () => {
+    for (const host of ['not:an:address', 'fe80', 'example.com:8080', '::gggg', '1:2:3::4::5']) {
+      assert.equal(isPrivateOrLinkLocalHost(host), false, host)
+    }
   })
 })
