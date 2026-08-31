@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -209,6 +210,11 @@ describe('runHeadlessAgent', () => {
 
   it('waits for a production background completion machine continuation', async () => {
     const workspace = await mkdtemp(join(tmpdir(), 'copse-headless-background-wake-'))
+    const ambientStore = await mkdtemp(join(tmpdir(), 'copse-headless-ambient-store-'))
+    const projectId = 'headless-ambient-sentinel-project'
+    const threadId = 'headless-background-wake'
+    const previousWorkspaceDir = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = ambientStore
     const provider = new BackgroundWakeProvider()
 
     try {
@@ -224,7 +230,8 @@ describe('runHeadlessAgent', () => {
         },
         {
           prompt: 'Start the bounded task.',
-          threadId: 'headless-background-wake',
+          projectId,
+          threadId,
           // A safety net against a hang, not a performance bound — nothing here
           // asserts how *fast* the continuation arrives, only that it does and
           // carries the completion. 5s was too tight to be that: this spawns a
@@ -256,8 +263,14 @@ describe('runHeadlessAgent', () => {
             message.content.includes('Background task'),
         ),
       )
+      assert.equal(existsSync(join(ambientStore, projectId, threadId)), false)
     } finally {
-      await rm(workspace, { recursive: true, force: true })
+      if (previousWorkspaceDir === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousWorkspaceDir
+      await Promise.all([
+        rm(workspace, { recursive: true, force: true }),
+        rm(ambientStore, { recursive: true, force: true }),
+      ])
     }
   })
 
