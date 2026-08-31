@@ -107,6 +107,27 @@ export function createAutomationService(
     })
   }
 
+  async function recordScheduleRun(
+    projectId: string,
+    scheduleId: string,
+    triggeredAt: number,
+    threadId: string,
+  ): Promise<void> {
+    await storageUpdate(STORAGE_KEY, (raw) => {
+      const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+      return schedules.map((schedule) =>
+        schedule.projectId === projectId && schedule.id === scheduleId
+          ? {
+              ...schedule,
+              updatedAt: Math.max(schedule.updatedAt, triggeredAt),
+              lastRunAt: triggeredAt,
+              lastCreatedThreadId: threadId,
+            }
+          : schedule,
+      )
+    })
+  }
+
   async function syncSupervisorTask(): Promise<void> {
     const supervisor = (dependencies.supervisor ?? getTaskSupervisor)()
     // The supervisor only holds durable tasks once `start()` has read them back
@@ -237,12 +258,10 @@ export function createAutomationService(
         updatedAt: triggeredAt,
       }
       await dependencies.createProjectThread(schedule.projectId, thread)
-      await replaceSchedule({
-        ...schedule,
-        updatedAt: triggeredAt,
-        lastRunAt: triggeredAt,
-        lastCreatedThreadId: threadId,
-      })
+      // The user may edit or delete the schedule while the filesystem work
+      // above is pending. Merge only the run metadata into the current row;
+      // never restore the stale snapshot that started this run.
+      await recordScheduleRun(schedule.projectId, schedule.id, triggeredAt, threadId)
       const event = {
         projectId: schedule.projectId,
         scheduleId: schedule.id,
@@ -363,12 +382,34 @@ export function createAutomationService(
 }
 
 let singleton: AutomationService | null = null
+let threadLoadGate: Promise<void> | undefined
+let releaseThreadLoads: (() => void) | undefined
+
+/** Hold or release the singleton's thread scan. E2e-only caller; tests inject their own dependency. */
+export function setAutomationThreadLoadsPausedForTests(paused: boolean): void {
+  if (paused) {
+    if (threadLoadGate) return
+    threadLoadGate = new Promise((resolve) => {
+      releaseThreadLoads = resolve
+    })
+    return
+  }
+  const release = releaseThreadLoads
+  threadLoadGate = undefined
+  releaseThreadLoads = undefined
+  release?.()
+}
+
+async function loadAutomationProjectThreads(projectId: string): Promise<Thread[]> {
+  await threadLoadGate
+  return loadProjectThreads(projectId)
+}
 
 export function getAutomationService(): AutomationService {
   singleton ??= createAutomationService({
     now: () => Date.now(),
     createProjectThread: createThread,
-    loadProjectThreads,
+    loadProjectThreads: loadAutomationProjectThreads,
     releasePreviousRun: releaseCompletedAutomationWorktree,
     isPluginEnabled: () => getPluginService().registry.isEnabled(AUTOMATIONS_PLUGIN_ID),
   })

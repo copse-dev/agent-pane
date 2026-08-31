@@ -206,7 +206,10 @@ import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-task
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
-import { getAutomationService } from '../services/automations/automation-service.ts'
+import {
+  getAutomationService,
+  setAutomationThreadLoadsPausedForTests,
+} from '../services/automations/automation-service.ts'
 import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-sensor.ts'
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
@@ -2511,6 +2514,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:clearMockScript', (event) => {
       assertMainFrameSender(event, win)
       clearMockScript()
+    })
+    ipcMain.handle('test:setAutomationThreadLoadsPaused', (event, paused: unknown) => {
+      assertMainFrameSender(event, win)
+      const value = parseIpcArgs(z.boolean(), [paused])
+      setAutomationThreadLoadsPausedForTests(value)
     })
     ipcMain.handle('test:emitAgentChunks', (event, rawThreadId: unknown, rawChunks: unknown) => {
       assertMainFrameSender(event, win)
