@@ -17,6 +17,7 @@ async function readMenuGeometry(hostSelector: string): Promise<{
   leftGap: number
   rightGap: number
   verticalGap: number
+  verticalPlacement: 'above' | 'below' | 'overlap'
   containedInSurface: boolean
   escapesPaneClip: boolean
   // Raw edges, carried so a failure can say *why* rather than only that the
@@ -41,14 +42,27 @@ async function readMenuGeometry(hostSelector: string): Promise<{
     const triggerRect = trigger.getBoundingClientRect()
     const menuRect = menu.getBoundingClientRect()
     const round = (n: number): number => Math.round(n)
+    let verticalPlacement: 'above' | 'below' | 'overlap' = 'overlap'
+    let verticalGap = -1
+    if (menuRect.top >= triggerRect.bottom) {
+      verticalPlacement = 'below'
+      verticalGap = menuRect.top - triggerRect.bottom
+    } else if (menuRect.bottom <= triggerRect.top) {
+      verticalPlacement = 'above'
+      verticalGap = triggerRect.top - menuRect.bottom
+    }
     return {
       anchorName: getComputedStyle(trigger).getPropertyValue('anchor-name'),
       positionAnchor: getComputedStyle(menu).getPropertyValue('position-anchor'),
       leftGap: Math.abs(menuRect.left - triggerRect.left),
       rightGap: Math.abs(menuRect.right - triggerRect.right),
-      verticalGap: menuRect.top - triggerRect.bottom,
+      verticalGap,
+      verticalPlacement,
       containedInSurface:
-        menuRect.left >= surfaceRect.left - 1 && menuRect.right <= surfaceRect.right + 1,
+        menuRect.left >= surfaceRect.left - 1 &&
+        menuRect.right <= surfaceRect.right + 1 &&
+        menuRect.top >= surfaceRect.top - 1 &&
+        menuRect.bottom <= surfaceRect.bottom + 1,
       escapesPaneClip: !!menu.offsetParent && !pane.contains(menu.offsetParent),
       triggerLeft: round(triggerRect.left),
       triggerRight: round(triggerRect.right),
@@ -105,6 +119,7 @@ describe('settings model picker bounds', function () {
     expect(opened).not.toBeNull()
     // Room to the right: the menu keeps its preferred left alignment.
     expect(opened?.leftGap).toBeLessThanOrEqual(1)
+    expect(opened?.verticalPlacement).not.toBe('overlap')
     expect(opened?.verticalGap).toBeGreaterThanOrEqual(3)
     expect(opened?.verticalGap).toBeLessThanOrEqual(5)
     expect(opened?.containedInSurface).toBe(true)
@@ -165,6 +180,7 @@ describe('settings model picker bounds', function () {
     }
     const flipped = await readMenuGeometry(CHAT_MODEL_HOST)
     expect(flipped?.rightGap).toBeLessThanOrEqual(1)
+    expect(flipped?.verticalPlacement).not.toBe('overlap')
     expect(flipped?.verticalGap).toBeGreaterThanOrEqual(3)
     expect(flipped?.verticalGap).toBeLessThanOrEqual(5)
     expect(flipped?.containedInSurface).toBe(true)
