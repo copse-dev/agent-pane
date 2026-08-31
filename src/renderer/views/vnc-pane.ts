@@ -557,10 +557,7 @@ function mountVncSession(
   }
 
   function connectedStatusDetail(): string {
-    const inputDetail = controlEnabled
-      ? 'Mouse and keyboard control are on.'
-      : 'View only — keyboard and mouse control are off.'
-    return usernameSaveDetail ? `${inputDetail} ${usernameSaveDetail}` : inputDetail
+    return usernameSaveDetail
   }
 
   function renderConnectedStatus(): void {

@@ -562,10 +562,9 @@ describe('VNC viewer', function () {
     assert.equal(await canvas.getAttribute('width'), String(WIDTH))
     assert.equal(await canvas.getAttribute('height'), String(HEIGHT))
     assert.equal(await $('.vnc-status-title').getText(), 'Connected to this machine')
-    assert.match(
-      await $('.vnc-status-detail').getText(),
-      /View only.*keyboard and mouse control are off/i,
-    )
+    if (secureCredentialStorage) {
+      assert.equal(await $('.vnc-status-detail').isDisplayed(), false)
+    }
     assert.equal(await $('.vnc-setup-fields').isDisplayed(), false)
     assert.equal(await $('.vnc-connect-btn').isDisplayed(), false)
     assert.equal(await $('.vnc-view-only-note').isDisplayed(), false)
@@ -609,7 +608,9 @@ describe('VNC viewer', function () {
     await controlButton.click()
     assert.equal(await controlButton.getText(), 'Stop controlling')
     assert.equal(await controlButton.getAttribute('aria-pressed'), 'true')
-    assert.match(await $('.vnc-status-detail').getText(), /mouse and keyboard control are on/i)
+    if (secureCredentialStorage) {
+      assert.equal(await $('.vnc-status-detail').isDisplayed(), false)
+    }
     assert.equal(
       await $('.vnc-tab.is-active').getAttribute('aria-label'),
       'This machine, mouse and keyboard control on',
@@ -686,7 +687,9 @@ describe('VNC viewer', function () {
     await controlButton.click()
     assert.equal(await controlButton.getText(), 'Control desktop')
     assert.equal(await controlButton.getAttribute('aria-pressed'), 'false')
-    assert.match(await $('.vnc-status-detail').getText(), /view only/i)
+    if (secureCredentialStorage) {
+      assert.equal(await $('.vnc-status-detail').isDisplayed(), false)
+    }
     assert.equal(await $('.vnc-screen').getAttribute('class'), 'vnc-screen')
     await canvas.click({ button: 'right' })
     await shareMenu.waitForDisplayed({ timeout: 5_000 })
