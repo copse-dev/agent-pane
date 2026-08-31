@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { browser } from '@wdio/globals'
-import { recentreClippedCapture } from './capture-framing.ts'
+import { recentreClippedCapture, restoreScrollAfterCapture } from './capture-framing.ts'
 
 /** Fixed viewport for committed e2e reference screenshots (see tests/e2e/screenshots/). */
 export const E2E_VIEWPORT = { width: 1280, height: 800 } as const
@@ -193,9 +193,13 @@ export async function saveElementScreenshot(selector: string, filename: string):
   await prepareE2eScreenshot()
   const el = await browser.$(selector)
   await el.waitForDisplayed({ timeout: 15_000 })
-  if (await browser.execute(recentreClippedCapture, el, '#app')) {
+  const saved = await browser.execute(recentreClippedCapture, el, '#app')
+  if (saved) {
     // Let the scroll settle before capturing, as the prepare step does.
     await browser.pause(100)
   }
   await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  // Hand the page back exactly as the caller left it — the scroll was for the
+  // capture, and specs keep interacting with the page afterwards.
+  if (saved) await browser.execute(restoreScrollAfterCapture, el, saved)
 }
