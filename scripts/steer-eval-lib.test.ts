@@ -214,6 +214,22 @@ describe('steer eval prompt arms', () => {
     assert.match(withoutArm, /Working directory: \/tmp\/ws/)
   })
 
+  it('writes workspace paths containing replacement tokens literally', () => {
+    for (const workspace of [
+      '/tmp/work$&space',
+      '/tmp/work$$space',
+      String.raw`/tmp/work$\`space`,
+      String.raw`/tmp/work$'space`,
+    ]) {
+      const prompt = buildSteerEvalPrompt(
+        workspace,
+        { kind: 'section', ref: 'gitBranchSafety' },
+        'with',
+      )
+      assert.ok(prompt.includes(`Working directory: ${workspace}`))
+    }
+  })
+
   it('a block steer appends the shipping block text to the with arm only', () => {
     const withArm = buildSteerEvalPrompt('/tmp/ws', { kind: 'block', ref: 'browserTools' }, 'with')
     const withoutArm = buildSteerEvalPrompt(

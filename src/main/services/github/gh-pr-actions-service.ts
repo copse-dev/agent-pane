@@ -1,5 +1,5 @@
-import { resolveGitHubBackend, type PrRef } from './backend/backend.ts'
-import type { PrActionResult } from '@shared/types/git.ts'
+import { resolveGitHubBackend, type PrCreateInput, type PrRef } from './backend/backend.ts'
+import type { PrActionResult, PrCreateResult } from '@shared/types/git.ts'
 
 /**
  * Wave 1 PR lifecycle write actions, each delegating to the resolved
@@ -8,6 +8,10 @@ import type { PrActionResult } from '@shared/types/git.ts'
  * facade in `gh-pr-service.ts` — they are kept out of the read-only tool
  * allow-list and their IPC handlers assert a main-frame sender.
  */
+
+export async function createPullRequest(input: PrCreateInput): Promise<PrCreateResult> {
+  return resolveGitHubBackend().createPr(input)
+}
 
 export async function rerunFailedPrRuns(ref: PrRef): Promise<PrActionResult> {
   return resolveGitHubBackend().rerunFailedRuns(ref)

@@ -71,7 +71,7 @@ jobs:
     name: build the sidecar and bridge
     # Fork pull requests stay on hosted runners, same rule as ci.yml: they
     # carry only the default read token and must never reach the fleet.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 20
 
     steps:

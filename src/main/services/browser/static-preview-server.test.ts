@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import {
+  flushPreviewStaleForTest,
   getStaticPreviewServer,
+  handlePreviewWatchEvent,
+  setPreviewStaleSink,
   shutdownStaticPreviewServers,
   staticPreviewUrl,
   workspacePreviewFileUrl,
@@ -13,6 +16,7 @@ import {
 const temporaryRoots: string[] = []
 
 afterEach(async () => {
+  setPreviewStaleSink(null)
   await shutdownStaticPreviewServers()
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true })))
 })
@@ -51,6 +55,49 @@ describe('static browser preview server', () => {
     const stylesheet = await fetch(new URL('assets/site.css', first.url))
     assert.equal(stylesheet.headers.get('content-type'), 'text/css; charset=utf-8')
     assert.equal(await stylesheet.text(), 'body { color: plum; }')
+  })
+
+  it('reports a preview stale for any file it served, not just the entry page', async () => {
+    const root = await temporaryRoot('copse-static-preview-served-')
+    await mkdir(join(root, 'assets'))
+    await writeFile(join(root, 'index.html'), '<link rel="stylesheet" href="assets/site.css">')
+    await writeFile(join(root, 'assets', 'site.css'), 'body { color: plum; }')
+    await writeFile(join(root, 'notes.md'), 'never previewed')
+
+    const stale: string[] = []
+    setPreviewStaleSink((origin) => stale.push(origin))
+    const preview = await getStaticPreviewServer(root)
+
+    // Nothing has been requested yet, so nothing can be stale.
+    handlePreviewWatchEvent(root, 'index.html')
+    flushPreviewStaleForTest()
+    assert.deepEqual(stale, [])
+
+    await fetch(preview.url)
+    await fetch(new URL('assets/site.css', preview.url))
+
+    handlePreviewWatchEvent(root, 'index.html')
+    flushPreviewStaleForTest()
+    assert.deepEqual(stale, [preview.url])
+
+    // A sub-resource edit is most of an iteration; watching only the entry
+    // document would miss it entirely.
+    stale.length = 0
+    handlePreviewWatchEvent(root, join('assets', 'site.css'))
+    flushPreviewStaleForTest()
+    assert.deepEqual(stale, [preview.url])
+
+    // A workspace file the page never loaded must not disturb it.
+    stale.length = 0
+    handlePreviewWatchEvent(root, 'notes.md')
+    flushPreviewStaleForTest()
+    assert.deepEqual(stale, [])
+
+    // A burst of writes repaints the page once, not once per file.
+    handlePreviewWatchEvent(root, 'index.html')
+    handlePreviewWatchEvent(root, join('assets', 'site.css'))
+    flushPreviewStaleForTest()
+    assert.deepEqual(stale, [preview.url])
   })
 
   it('does not follow workspace symlinks to files outside the preview root', async () => {

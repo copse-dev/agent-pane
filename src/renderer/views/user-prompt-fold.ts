@@ -23,6 +23,9 @@ export type UserPromptFoldParts = {
   tail: string
 }
 
+/** Which bookend of the accordion a {@link fillUserPromptFold} paint targets. */
+export type UserPromptFoldRegion = 'head' | 'middle' | 'tail'
+
 /** Split on `\n`; a trailing newline does not invent an extra visible line. */
 export function userPromptLines(content: string): string[] {
   if (!content) return []
@@ -126,19 +129,22 @@ function foldLabel(expanded: boolean): string {
 
 /**
  * Fill an existing `.message-text` host with the mid-fold accordion. `renderPart`
- * paints markdown (or plain text) into each bookend / middle region.
+ * paints markdown (or plain text) into each bookend / middle region. The region
+ * name is passed through for painters whose output depends on where in the
+ * message the text came from — the transcript painter uses it to keep inline
+ * paste chips bound to the right snapshots across the split.
  */
 export function fillUserPromptFold(
   host: HTMLElement,
   parts: UserPromptFoldParts,
-  renderPart: (el: HTMLElement, text: string) => void,
+  renderPart: (el: HTMLElement, text: string, region: UserPromptFoldRegion) => void,
 ): void {
   host.classList.add('msg-user-fold')
   host.classList.remove('is-expanded')
   host.replaceChildren()
 
   const head = el('div', { class: 'msg-user-fold-head' })
-  renderPart(head, parts.head)
+  renderPart(head, parts.head, 'head')
 
   const label = el('span', { class: 'msg-user-fold-label' }, foldLabel(false))
   const toggle = el(
@@ -153,10 +159,10 @@ export function fillUserPromptFold(
   )
 
   const middle = el('div', { class: 'msg-user-fold-middle' })
-  renderPart(middle, parts.middle)
+  renderPart(middle, parts.middle, 'middle')
 
   const tail = el('div', { class: 'msg-user-fold-tail' })
-  renderPart(tail, parts.tail)
+  renderPart(tail, parts.tail, 'tail')
 
   toggle.addEventListener('click', () => {
     const open = !host.classList.contains('is-expanded')

@@ -19,7 +19,7 @@ permissions:
 jobs:
   cleanup:
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     outputs:
       removed: ${{ steps.remove.outputs.removed }}
     steps:

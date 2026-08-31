@@ -21,8 +21,10 @@ import type {
   GhPrFileDiff,
   GhPrSummary,
   PrActionResult,
+  PrCreateResult,
 } from '@shared/types/git.ts'
-import type { GitHubBackend, PrRef } from './backend.ts'
+import { extractGithubPrUrls } from '@shared/git/github-pr-url.ts'
+import type { GitHubBackend, PrCreateInput, PrRef } from './backend.ts'
 import { chooseAutoMergeStrategy, type RepoMergeConfig } from './merge-strategy.ts'
 import {
   decodeGitHubFileContent,
@@ -645,6 +647,57 @@ export const ghCliBackend: GitHubBackend = {
         reran > 0
           ? `Re-ran ${String(reran)} failed run${reran === 1 ? '' : 's'} on ${branch}.`
           : `Found ${String(failed.length)} failed runs but could not re-run them.`,
+    }
+  },
+
+  async createPr(input: PrCreateInput): Promise<PrCreateResult> {
+    const args = [
+      'pr',
+      'create',
+      '-R',
+      `${input.owner}/${input.repo}`,
+      '--base',
+      input.base,
+      '--head',
+      input.head,
+      '--title',
+      input.title,
+      '--body',
+      input.body,
+    ]
+    if (input.draft) args.push('--draft')
+    const { stdout, stderr, code } = await runGh(args)
+    if (code !== 0) {
+      // "a pull request for branch X already exists: <url>" — the desired end
+      // state holds, and gh hands back the URL of the PR that satisfies it.
+      const existing = /already exists/i.test(stderr) ? extractGithubPrUrls(stderr)[0] : undefined
+      if (existing) {
+        return {
+          ok: true,
+          noop: true,
+          backend: 'cli',
+          url: existing.url,
+          number: existing.number,
+          message: `A pull request for ${input.head} already exists: ${existing.url}`,
+        }
+      }
+      return { ok: false, backend: 'cli', message: formatGhError(stderr, code) }
+    }
+    // `gh pr create` has no `--json`; success is a bare URL on stdout.
+    const ref = extractGithubPrUrls(stdout)[0]
+    if (!ref) {
+      return {
+        ok: true,
+        backend: 'cli',
+        message: `Opened the pull request, but gh printed no URL: ${stdout.trim()}`,
+      }
+    }
+    return {
+      ok: true,
+      backend: 'cli',
+      url: ref.url,
+      number: ref.number,
+      message: `Opened PR #${String(ref.number)}: ${ref.url}`,
     }
   },
 

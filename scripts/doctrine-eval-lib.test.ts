@@ -60,6 +60,17 @@ describe('doctrine eval prompt arms', () => {
     assert.match(withoutTools, /Working style:/)
   })
 
+  it('writes workspace paths containing replacement tokens literally', () => {
+    for (const workspace of [
+      '/tmp/work$&space',
+      '/tmp/work$$space',
+      String.raw`/tmp/work$\`space`,
+      String.raw`/tmp/work$'space`,
+    ]) {
+      assert.ok(buildDoctrineEvalPrompt(workspace, []).includes(`Working directory: ${workspace}`))
+    }
+  })
+
   it('always includes a full control arm', () => {
     assert.deepEqual(buildDoctrineEvalArms(['tools', 'workingStyle']), [
       { id: 'full', omit: [] },

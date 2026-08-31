@@ -14,12 +14,9 @@
 #     load-balances across both tiers instead of one fleet idling while the
 #     other is saturated.
 #
-#   * It is repo-agnostic. The old images baked THIS repo's dependency tree by
-#     using the repo root as the build context (COPY package*.json + pnpm install).
-#     That couples the image to one repo. Here we instead CLONE the target
-#     repo's branch at build time ("thread in main") and bake its deps — so the
-#     image lives in its own repo (future copse-dev/ci-runners) and is pointed
-#     at whichever consumer repo you want via build args.
+#   * It never carries or shares an installed node_modules tree. An optional
+#     build-time fetch warms pnpm's content-addressed package store; each job
+#     still performs a clean locked install and runs lifecycle scripts.
 #
 # Build (BuildKit required — for the --mount=type=secret clone token):
 #   DOCKER_BUILDKIT=1 docker build -t copse-ci-runner \
@@ -43,8 +40,7 @@ ARG NODE_MAJOR=22
 ARG TARGETARCH
 # Which consumer repo's dependency tree to bake, and at which ref. Override per
 # consumer; defaults to the heavy consumer (agent-pane) whose warm start matters
-# most. A repo with a trivial install (e.g. streaming-markdown) can be left to
-# fall back to `pnpm install` at job time — see the bake step below.
+# most. See the package-prefetch step below.
 ARG TARGET_REPO=copse-dev/agent-pane
 ARG TARGET_REF=main
 
@@ -103,13 +99,14 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*; \
     node --version; npm --version
 
-# 3) Non-root user. The runner agent refuses to run as root without
-#    RUNNER_ALLOW_RUNASROOT; a normal user is the supported path.
+# 3) Non-root user plus split pristine/runtime runner directories. The template
+#    stays root-owned in the image; the entrypoint recreates /opt/runner from it
+#    before every ephemeral registration, including Docker restart-policy starts.
 RUN useradd -m -s /bin/bash runner \
-    && mkdir -p /opt/runner \
+    && mkdir -p /opt/runner-template /opt/runner \
     && chown runner:runner /opt/runner
 
-WORKDIR /opt/runner
+WORKDIR /opt/runner-template
 
 # 4) GitHub Actions runner agent. TARGETARCH -> the release asset suffix.
 RUN set -eux; \
@@ -125,11 +122,11 @@ RUN set -eux; \
 
 # Remaining libs the runner agent itself needs. Root here; drop to runner below.
 RUN apt-get update \
-    && /opt/runner/bin/installdependencies.sh \
+    && /opt/runner-template/bin/installdependencies.sh \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --chown=runner:runner entrypoint.sh /opt/runner/entrypoint.sh
-RUN chmod +x /opt/runner/entrypoint.sh && chown -R runner:runner /opt/runner
+COPY entrypoint.sh /opt/runner-template/entrypoint.sh
+RUN chmod +x /opt/runner-template/entrypoint.sh
 
 # 5) Color-emoji font — the Noto text/symbol/CJK families above mirror macOS's
 #    broad fallback coverage for chat, while this keeps emoji out of blank
@@ -138,25 +135,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
-# 6) Bake the TARGET repo's dependency tree so ephemeral runners start warm.
-#    Unlike the old per-repo images (which COPYed from a repo-root build
-#    context), this CLONES ${TARGET_REPO}@${TARGET_REF} at build time and runs
-#    its install once, stashing node_modules (+ vendor/gortex if present) under
-#    /opt/deps/tree with the pnpm-lock.yaml hash in .lockhash. The consumer
-#    repo's setup action seeds a job's workspace from this layer when the
-#    checked-out lockfile still matches (COPSE_BAKED_DEPS), else falls back to
-#    the Actions cache / pnpm install — so the layer is never used stale.
-#
-#    The clone AND agent-pane's `pnpm install` (which pulls the PRIVATE git dependency
-#    @copse/streaming-markdown) both need a read token. It is provided as a
-#    BuildKit secret (tmpfs, never written to an image layer) and consumed only
-#    inside this RUN via GIT_CONFIG_* env vars (no token ever touches disk).
-#    Mirrors .github/actions/setup: rewrite npm's ssh-normalized git dep to
-#    https and attach the token as an http extraheader.
-#
-#    Non-fatal: if the clone or install fails the image still builds (no .ready
-#    marker) and runners fall back to pnpm install at job time. A repo with a trivial
-#    install can be built with no token at all — the bake just no-ops.
+# 6) Optionally prefetch package inputs for the target lockfile. Unlike the old
+#    bake, this never runs lifecycle scripts and never creates node_modules.
+#    The root-owned store is copied into each job's RUNNER_TEMP and then consumed
+#    by a normal, offline `pnpm install --frozen-lockfile`.
 WORKDIR /opt/deps
 RUN --mount=type=secret,id=gh_token \
     set -eux; \
@@ -172,27 +154,24 @@ RUN --mount=type=secret,id=gh_token \
         GIT_CONFIG_VALUE_2="git@github.com:"; \
     fi; \
     if git clone --depth=1 --branch "${TARGET_REF}" \
-         "https://github.com/${TARGET_REPO}.git" tree 2>/dev/null; then \
-      cd tree; \
+         "https://github.com/${TARGET_REPO}.git" source 2>/dev/null; then \
+      cd source; \
       corepack enable; \
       corepack prepare --activate; \
-      if CI=true pnpm install --frozen-lockfile; then \
-        sha256sum pnpm-lock.yaml | awk '{ print $1 }' > .lockhash; \
-        pnpm store prune >/dev/null 2>&1 || true; \
-        find . -maxdepth 1 -mindepth 1 \
-          ! -name node_modules ! -name vendor \
-          ! -name .lockhash -exec rm -rf {} + ; \
-        chmod -R a+rX /opt/deps/tree; \
-        touch .ready; \
-        echo "==> baked ${TARGET_REPO}@${TARGET_REF} ($(du -sh node_modules 2>/dev/null | cut -f1) node_modules)"; \
+      if npm_config_store_dir=/opt/deps/store pnpm fetch --frozen-lockfile; then \
+        sha256sum pnpm-lock.yaml | awk '{ print $1 }' > /opt/deps/.lockhash; \
+        touch /opt/deps/.ready; \
+        echo "==> prefetched package store for ${TARGET_REPO}@${TARGET_REF}"; \
       else \
-        echo "==> WARNING: pnpm install failed for ${TARGET_REPO} — runners fall back to cache / pnpm install"; \
+        echo "==> WARNING: pnpm fetch failed — jobs will restore the Actions package cache"; \
       fi; \
+      cd /opt/deps; \
+      rm -rf source; \
     else \
-      echo "==> WARNING: could not clone ${TARGET_REPO}@${TARGET_REF} (no/insufficient token?) — skipping bake"; \
+      echo "==> WARNING: could not clone ${TARGET_REPO}@${TARGET_REF} — skipping package prefetch"; \
     fi
-ENV COPSE_BAKED_DEPS=/opt/deps/tree
+ENV COPSE_BAKED_STORE=/opt/deps
 WORKDIR /opt/runner
 
 USER runner
-ENTRYPOINT ["/opt/runner/entrypoint.sh"]
+ENTRYPOINT ["/opt/runner-template/entrypoint.sh"]

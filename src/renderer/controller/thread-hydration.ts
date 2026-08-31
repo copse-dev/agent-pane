@@ -220,9 +220,13 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
   const offWorkspace = store.on('workspace_changed', hydrateActive)
   hydrateActive()
 
-  // Batches from the main process's one-time PR-ref backfill. Applied only to
-  // the project they belong to, and never over a thread whose transcript is in
-  // memory — there, the live scrape is authoritative (see `sidebarPrRefs`).
+  // Batches from the main process's one-time PR-ref backfill, and live pushes
+  // from `gh_pr_create` linking the PR it just opened. Applied only to the
+  // project they belong to, but to hydrated threads too: each batch carries the
+  // thread's full merged ref set, and `sidebarPrRefs` unions it with the live
+  // transcript scrape — a tool-recorded PR would otherwise be invisible on
+  // exactly the thread that opened it, since its transcript never mentions the
+  // URL.
   const offPrRefs = api.threads.onPrRefs((projectId, refs): void => {
     const state = store.getState()
     if (state.activeProjectId !== projectId || refs.length === 0) return
@@ -231,7 +235,7 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
     store.setState({
       threads: state.threads.map((t) => {
         const prRefs = byThread.get(t.id)
-        return prRefs && needsHydration(t) ? { ...t, prRefs } : t
+        return prRefs ? { ...t, prRefs } : t
       }),
     })
     store.emit('threads_changed')

@@ -387,10 +387,15 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.stop-btn {
+.submit-row {
   position: absolute;
-  right: 84px;
+  right: var(--spacing-md);
   bottom: var(--spacing-md);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stop-btn {
   border-radius: var(--radius);
   padding: 6px 12px;
   color: var(--text-secondary);
@@ -405,16 +410,10 @@
   outline: 1px solid var(--danger);
 }
 .submit-btn {
-  position: absolute;
-  right: var(--spacing-md);
-  bottom: var(--spacing-md);
   background: var(--accent);
   color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: 6px 16px;
-}
-.submit-btn.with-stop {
-  right: var(--spacing-md);
 }
 .footer-queue {
   font-size: 11px;

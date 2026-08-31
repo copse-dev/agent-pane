@@ -2,9 +2,13 @@ import type { ToolCallChunk } from '@copse/llm/wire-types.ts'
 
 /** Cursor / Qwen-style tool calls embedded in assistant text instead of native tool_calls. */
 const TOOL_CALL_BLOCK_RE = /<\s*tool_call\s*>([\s\S]*?)<\s*\/\s*tool_call\s*>/gi
+/** DeepSeek DSML wraps invokes in the plural `<tool_calls>` form. */
+const TOOL_CALLS_BLOCK_RE = /<\s*tool_calls\s*>([\s\S]*?)<\s*\/\s*tool_calls\s*>/gi
 /** A `<tool_call>` opener with no matching closer (block still streaming in). */
 const OPEN_TOOL_CALL_RE = /<\s*tool_call\s*>/i
+const OPEN_TOOL_CALLS_RE = /<\s*tool_calls\s*>/i
 const TOOL_CALL_OPENER = '<tool_call>'
+const TOOL_CALLS_OPENER = '<tool_calls>'
 const FUNCTION_RE =
   /<\s*function\s*=\s*([^>\s]+)\s*>([\s\S]*?)(?:<\s*\/\s*function\s*>|(?=<\s*function\s*=)|(?=<\s*\/\s*tool_call\s*>))/gi
 const PARAMETER_RE = /<\s*parameter\s*=\s*([^>\s]+)\s*>([\s\S]*?)<\s*\/\s*parameter\s*>/gi
@@ -16,6 +20,8 @@ const PARAMETER_RE = /<\s*parameter\s*=\s*([^>\s]+)\s*>([\s\S]*?)<\s*\/\s*parame
  * tool-call XML. Strip it before parsing and before display. (#519)
  */
 const MINIMAX_DELIMITER_RE = /\]<\]minimax\[>\[/gi
+/** DeepSeek's full-width sentinel between `<` and every DSML tag name. */
+const DEEPSEEK_DSML_SENTINEL_RE = /｜\s*DSML\s*｜/gi
 /** Anthropic / MiniMax-style `<invoke name="tool">…</invoke>` tool call embedded in text. */
 const INVOKE_BLOCK_RE =
   /<\s*invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*invoke\s*>/gi
@@ -28,18 +34,29 @@ const INVOKE_BLOCK_RE =
  * never contain backticks, so a greedy single-block match is exact.
  */
 const TOOL_CALL_INNER_RE = /<\s*tool_call\s*>([\s\S]*)<\s*\/\s*tool_call\s*>/i
+const TOOL_CALLS_INNER_RE = /<\s*tool_calls\s*>([\s\S]*)<\s*\/\s*tool_calls\s*>/i
 const INVOKE_INNER_RE =
   /<\s*invoke\s+name\s*=\s*["']?[^"'>\s]+["']?\s*>([\s\S]*)<\s*\/\s*invoke\s*>/i
 /** An `<invoke …>` opener with no matching closer (block still streaming in). */
 const OPEN_INVOKE_RE = /<\s*invoke\b/i
 /** Anthropic-style parameter inside an invoke block: `<parameter name="x">value</parameter>`. */
 const INVOKE_PARAM_NAMED_RE =
-  /<\s*parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*parameter\s*>/gi
+  /<\s*parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?(?:\s+[^>]*)?\s*>([\s\S]*?)<\s*\/\s*parameter\s*>/gi
 /** Bare child tag inside an invoke block naming a parameter: `<command>value</command>`. */
 const INVOKE_PARAM_BARE_RE = /<\s*([a-zA-Z_][\w-]*)\s*>([\s\S]*?)<\s*\/\s*\1\s*>/g
 
-function stripMinimaxDelimiters(text: string): string {
-  return text.replace(MINIMAX_DELIMITER_RE, '')
+function stripToolCallDialectDelimiters(text: string): string {
+  return text.replace(MINIMAX_DELIMITER_RE, '').replace(DEEPSEEK_DSML_SENTINEL_RE, '')
+}
+
+/** Whether completed assistant text contains a supported embedded tool-call opener. */
+export function hasTextToolCallMarkup(text: string): boolean {
+  const normalized = stripToolCallDialectDelimiters(text)
+  return (
+    OPEN_TOOL_CALL_RE.test(normalized) ||
+    OPEN_TOOL_CALLS_RE.test(normalized) ||
+    OPEN_INVOKE_RE.test(normalized)
+  )
 }
 
 const TOOL_NAME_ALIASES: Record<string, string> = {
@@ -273,20 +290,27 @@ function parseInvokeBlocks(
 export interface TextToolCallRecovery {
   cleanedText: string
   toolCalls: ToolCallChunk[]
-  /** When true, `<tool_call>` was present but nothing valid was extracted — keep raw XML in the transcript. */
+  /** When true, a supported wrapper was present but nothing valid was extracted — keep raw XML. */
   keptRawBlocks: boolean
 }
 
 /**
- * Index of a trailing, still-incomplete `<tool_call>` opener (e.g. `<tool_ca`
- * or a lone `<` arriving mid-stream), or -1 when the tail can't begin one.
+ * Index of a trailing, still-incomplete tool-call opener (e.g. `<tool_ca`, a
+ * DSML wrapper, or a lone `<` arriving mid-stream), or -1 when the tail can't begin one.
  * Whitespace inside the opener is ignored so `< tool_call` matches `<tool_call`.
  */
 function trailingPartialToolCallIndex(s: string): number {
   const lt = s.lastIndexOf('<')
   if (lt === -1) return -1
   const tail = s.slice(lt).toLowerCase().replace(/\s+/g, '')
-  return tail.length < TOOL_CALL_OPENER.length && TOOL_CALL_OPENER.startsWith(tail) ? lt : -1
+  const openers = [
+    TOOL_CALL_OPENER,
+    TOOL_CALLS_OPENER,
+    '<｜dsml｜tool_call>',
+    '<｜dsml｜tool_calls>',
+    '<｜dsml｜invoke',
+  ]
+  return openers.some((opener) => tail.length < opener.length && opener.startsWith(tail)) ? lt : -1
 }
 
 /**
@@ -300,8 +324,9 @@ function trailingPartialToolCallIndex(s: string): number {
  * appears, not once it closes.
  */
 export function stripTextToolCallBlocks(text: string): string {
-  let out = stripMinimaxDelimiters(text)
+  let out = stripToolCallDialectDelimiters(text)
   out = removeBlocksOutsideCode(out, TOOL_CALL_BLOCK_RE)
+  out = removeBlocksOutsideCode(out, TOOL_CALLS_BLOCK_RE)
   out = removeBlocksOutsideCode(out, INVOKE_BLOCK_RE)
   // Search on a code-blanked copy so a quoted `<tool_call>` / `<invoke>` example
   // is not mistaken for a streaming opener that freezes the rest of the message.
@@ -310,29 +335,34 @@ export function stripTextToolCallBlocks(text: string): string {
   if (open !== -1) {
     out = out.slice(0, open)
   } else {
-    const invokeOpen = blanked.search(OPEN_INVOKE_RE)
-    if (invokeOpen !== -1) {
-      out = out.slice(0, invokeOpen)
+    const callsOpen = blanked.search(OPEN_TOOL_CALLS_RE)
+    if (callsOpen !== -1) {
+      out = out.slice(0, callsOpen)
     } else {
-      const partial = trailingPartialToolCallIndex(blanked)
-      if (partial !== -1) out = out.slice(0, partial)
+      const invokeOpen = blanked.search(OPEN_INVOKE_RE)
+      if (invokeOpen !== -1) {
+        out = out.slice(0, invokeOpen)
+      } else {
+        const partial = trailingPartialToolCallIndex(blanked)
+        if (partial !== -1) out = out.slice(0, partial)
+      }
     }
   }
   return out.replace(/\n{3,}/g, '\n\n').trimEnd()
 }
 
 /**
- * When the model emits Cursor-style `<tool_call>` XML — or Anthropic / MiniMax-style
- * `<invoke name="tool">…</invoke>` blocks (optionally wrapped in MiniMax `]<]minimax[>[`
- * delimiters) — in text with no native tool_calls, extract executable tool calls and
- * return prose without the XML blocks.
+ * When the model emits Cursor-style `<tool_call>` XML, Anthropic / MiniMax-style
+ * `<invoke name="tool">…</invoke>` blocks, or DeepSeek DSML wrappers in text with
+ * no native tool_calls, extract executable calls and return prose without the XML.
  */
 export function recoverTextToolCalls(
   text: string,
   coerceToolArgs?: CoerceToolArgsFn,
 ): TextToolCallRecovery {
-  // MiniMax wraps each token in a delimiter; strip it so the XML beneath is parseable. (#519)
-  const normalized = stripMinimaxDelimiters(text)
+  // MiniMax and DeepSeek wrap XML tokens/tag names in delimiters; strip them so
+  // the shared function/invoke parsers see the underlying dialect.
+  const normalized = stripToolCallDialectDelimiters(text)
   // Match on a code-blanked copy so quoted `<tool_call>` / `<invoke>` examples are
   // not extracted as phantom calls. Real blocks contain no code spans, so their
   // captured inner text is identical in the blanked copy.
@@ -341,21 +371,26 @@ export function recoverTextToolCalls(
   let sawBlock = false
   let anyBlockUnparsed = false
 
-  for (const match of blanked.matchAll(TOOL_CALL_BLOCK_RE)) {
-    sawBlock = true
-    // Slice the inner from the original (not the blanked copy) so argument values
-    // containing backtick code spans survive; the blanked copy is only for
-    // locating the block range. (#519 arg corruption)
-    const inner = sliceOriginalInner(normalized, match.index, match[0].length, TOOL_CALL_INNER_RE)
-    if (!inner?.trim()) {
-      anyBlockUnparsed = true
-      continue
+  for (const [blockRe, innerRe] of [
+    [TOOL_CALL_BLOCK_RE, TOOL_CALL_INNER_RE],
+    [TOOL_CALLS_BLOCK_RE, TOOL_CALLS_INNER_RE],
+  ] as const) {
+    for (const match of blanked.matchAll(blockRe)) {
+      sawBlock = true
+      // Slice the inner from the original (not the blanked copy) so argument values
+      // containing backtick code spans survive; the blanked copy is only for
+      // locating the block range. (#519 arg corruption)
+      const inner = sliceOriginalInner(normalized, match.index, match[0].length, innerRe)
+      if (!inner?.trim()) {
+        anyBlockUnparsed = true
+        continue
+      }
+      // Cursor `<function=…>` dialect first, then the Anthropic/MiniMax/DSML invoke dialect.
+      let fromBlock = parseFunctionsInBlock(inner, coerceToolArgs)
+      if (fromBlock.length === 0) fromBlock = parseInvokeBlocks(inner, coerceToolArgs).toolCalls
+      if (fromBlock.length === 0) anyBlockUnparsed = true
+      toolCalls.push(...fromBlock)
     }
-    // Cursor `<function=…>` dialect first, then the Anthropic/MiniMax `<invoke>` dialect.
-    let fromBlock = parseFunctionsInBlock(inner, coerceToolArgs)
-    if (fromBlock.length === 0) fromBlock = parseInvokeBlocks(inner, coerceToolArgs).toolCalls
-    if (fromBlock.length === 0) anyBlockUnparsed = true
-    toolCalls.push(...fromBlock)
   }
 
   // MiniMax may emit `<invoke>` blocks without a surrounding `<tool_call>` wrapper.
@@ -376,8 +411,10 @@ export function recoverTextToolCalls(
   const keptRawBlocks = sawBlock && toolCalls.length === 0 && anyBlockUnparsed
 
   return {
-    // Even when nothing parsed, never leak the MiniMax delimiters into the transcript.
-    cleanedText: keptRawBlocks ? stripMinimaxDelimiters(text) : stripTextToolCallBlocks(text),
+    // Even when nothing parsed, never leak provider delimiters into the transcript.
+    cleanedText: keptRawBlocks
+      ? stripToolCallDialectDelimiters(text)
+      : stripTextToolCallBlocks(text),
     toolCalls,
     keptRawBlocks,
   }

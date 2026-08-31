@@ -532,6 +532,14 @@ export function mountBrowserPane(
   function navigateWebview(tab: BrowserTab, url: string): void {
     tab.loadError = null
     tab.urlInput.classList.remove('has-error')
+    // `ensureWebview` installs its own `dom-ready` listener that flushes
+    // `pendingUrl`, so for a tab whose navigation is already queued there are two
+    // handlers waiting on the same event. Both would navigate: the flush runs
+    // first and commits the URL, then this one wakes, reads `current === url`
+    // and *reloads* the page that just loaded. Leave it to the flush whenever
+    // the flush is going to happen; a caller with nothing queued (an artefact,
+    // whose data: URL never becomes `pendingUrl`) still defers here as before.
+    if (!tab.webviewReady && tab.pendingUrl === url) return
     whenWebviewReady(tab, (webview) => {
       const current = webview.getURL()
       tab.pendingUrl = null
@@ -611,6 +619,23 @@ export function mountBrowserPane(
     })
   }
 
+  /**
+   * Reveal the pane's active tab: size the webview, then park the caret in its
+   * address bar. That focus must not scroll. The marketing hero embeds this app
+   * in a same-origin iframe, and focusing a control inside one makes Chromium
+   * scroll the *embedding* page to bring the frame into view — so opening the
+   * Browser pane at the end of a hero run would yank a reader partway down
+   * copse.dev back up to the hero (see `demo/main.ts`, which parks the demo's
+   * composer focus for the same reason). Nothing outside the pane scrolls in
+   * the app itself, so this costs the real product nothing.
+   */
+  function revealActiveTab(tab: BrowserTab): void {
+    requestAnimationFrame(() => {
+      syncWebviewSize(tab)
+      tab.urlInput.focus({ preventScroll: true })
+    })
+  }
+
   function setActiveTab(tabId: string): void {
     if (activeTabId === tabId) return
     activeTabId = tabId
@@ -629,10 +654,7 @@ export function mountBrowserPane(
         navigateWebview(tab, url)
       }
       syncAddressBar(tab)
-      requestAnimationFrame(() => {
-        syncWebviewSize(tab)
-        tab.urlInput.focus()
-      })
+      revealActiveTab(tab)
     }
   }
 
@@ -643,6 +665,17 @@ export function mountBrowserPane(
 
   function openRequestedBrowserUrl(rawUrl: string): void {
     const url = normalizeBrowserUrl(rawUrl)
+    // Everything routed here is "show me this": a workspace file opened from the
+    // Files pane, a link in a transcript, a forwarded port, a PR. Re-opening one
+    // means the thing behind it has moved on — the file was just edited, the
+    // server restarted — so promote the tab already showing it and reload,
+    // rather than leaving a stale copy behind a fresh duplicate.
+    const existing = urlTabFor(url)
+    if (existing) {
+      setActiveTab(existing.id)
+      navigateTab(existing, url)
+      return
+    }
     let tab = activeTabId ? tabs.get(activeTabId) : undefined
     if (!tab || !isIdleBrowserTab(tab)) {
       addTab({ activate: true })
@@ -712,6 +745,64 @@ export function mountBrowserPane(
     if (!api || !threadId || !projectId) return
     const reopened = await api.canvas.reopenArtefact(projectId, threadId, title).catch(() => false)
     if (!reopened) showToast(`"${title}" is no longer available`)
+  }
+
+  /**
+   * The open tab already showing `url`, if any. Matched on {@link displayUrl} —
+   * the same "what is this tab pointed at" the address bar shows — so a tab
+   * whose navigation is still queued counts as showing it. Artefact tabs are
+   * skipped: their identity is the title, and their data: URL changes with
+   * every render.
+   */
+  function urlTabFor(url: string): BrowserTab | undefined {
+    for (const tab of tabs.values()) {
+      if (tab.artefactTitle) continue
+      if (displayUrl(tab) === url) return tab
+    }
+    return undefined
+  }
+
+  /**
+   * The agent asking for a page to come forward (`browser_preview`, or
+   * `browser_show` with a url). Unlike a cmd-clicked link — which means "open
+   * another one" and always earns its own tab — this means "look at this", and
+   * the agent re-serves the same loopback URL every time it iterates on a page.
+   * Promoting and reloading the tab already showing it makes the canvas the user
+   * is watching become the new version, instead of stacking a near-identical tab
+   * per iteration that they then have to close. Same reasoning as
+   * {@link artefactTabFor}, keyed on the URL because that is this tab's identity.
+   */
+  function showTabForUrl(rawUrl: string): void {
+    const url = normalizeBrowserUrl(rawUrl)
+    openRightPanel(store, 'browser')
+    const existing = urlTabFor(url)
+    if (!existing) {
+      addTab({ url, activate: true })
+      return
+    }
+    setActiveTab(existing.id)
+    // The URL is unchanged, so this reloads — which is the point: what the
+    // server returns for it has moved on since the tab last loaded it.
+    navigateTab(existing, url)
+  }
+
+  /**
+   * A preview server served a file that just changed on disk, so every tab
+   * showing a page from it is now stale. Refresh them where they are: this is
+   * the agent (or the user) editing the workspace, not a request to be looked
+   * at, so a background tab must silently become current rather than seize the
+   * pane — the same rule `openArtefact` follows for a re-render.
+   *
+   * A tab with no live webview needs nothing: it has a `pendingUrl` and will
+   * fetch the new bytes when it is next shown. `Cache-Control: no-store` on
+   * every preview response is what makes the reload return them.
+   */
+  function refreshStalePreviews(origin: string): void {
+    for (const tab of tabs.values()) {
+      if (tab.artefactTitle) continue
+      if (!displayUrl(tab).startsWith(origin)) continue
+      if (tab.webview && tab.webviewReady) tab.webview.reload()
+    }
   }
 
   function openArtefact(artefact: CanvasArtefact): void {
@@ -1015,10 +1106,7 @@ export function mountBrowserPane(
         }
         syncAddressBar(tab)
         ensureBrowserResizeObserver()
-        requestAnimationFrame(() => {
-          syncWebviewSize(tab)
-          tab.urlInput.focus()
-        })
+        revealActiveTab(tab)
       }
     } else {
       stopBrowserResizeObserver()
@@ -1159,10 +1247,8 @@ export function mountBrowserPane(
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
     api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
-    api?.browser.onShowTab?.((url) => {
-      openRightPanel(store, 'browser')
-      addTab({ url, activate: true })
-    }),
+    api?.browser.onShowTab?.(showTabForUrl),
+    api?.browser.onPreviewStale?.(refreshStalePreviews),
     api?.browser.onShareText(attachSharedText),
     api?.browser.onShareImage(attachSharedImage),
     api?.browser.onPluginTabRequest(ensurePluginBrowserTab),

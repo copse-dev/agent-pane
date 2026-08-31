@@ -35,12 +35,19 @@ export function parseGithubPrUrl(rawUrl: string): GithubPrRef | null {
 const GITHUB_PR_URL_RE =
   /https?:\/\/(?:www\.)?github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+(?:[^\s)\]>]*)/gi
 
+// Trailing characters that end a sentence or close a markdown span rather than
+// belonging to the URL. Emphasis markers matter: an agent writing
+// `**https://github.com/org/repo/pull/42**` otherwise yields a path of
+// `/org/repo/pull/42**`, which fails to parse and silently drops the thread's
+// PR chip from the sidebar.
+const URL_TRAILING_PUNCTUATION_RE = /[.,;:)\]>*_~`'"]+$/
+
 /** Collect unique GitHub PR URLs from free-form text (e.g. chat messages). */
 export function extractGithubPrUrls(text: string): GithubPrRef[] {
   const seen = new Set<string>()
   const refs: GithubPrRef[] = []
   for (const match of text.matchAll(GITHUB_PR_URL_RE)) {
-    const raw = match[0].replace(/[.,;:)\]>]+$/, '')
+    const raw = match[0].replace(URL_TRAILING_PUNCTUATION_RE, '')
     const parsed = parseGithubPrUrl(raw)
     if (!parsed) continue
     const key = `${parsed.owner}/${parsed.repo}#${String(parsed.number)}`

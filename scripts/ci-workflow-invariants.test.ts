@@ -39,12 +39,28 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
-  it('keeps the e2e hosted-runner fallback explicit and inside the trusted-event guard', () => {
+  it('defaults e2e to hosted and keeps the self-hosted fleet opt-in and trust-gated', () => {
+    // The pre-inversion expression read "anything that is not the
+    // exact string 'ubuntu-latest' means the fleet", so deleting the variable
+    // routed every PR/push e2e job to a pool with no registered runner and the
+    // jobs queued forever. Hosted must be what an unset/mistyped variable
+    // resolves to; the fleet must require an explicit opt-in value.
     const e2eJob = workflow.match(/^ {2}e2e:\n(?: {4}.*\n)+/m)?.[0]
     assert.ok(e2eJob, 'expected an `e2e:` job in ci.yml')
-    assert.match(e2eJob, /vars\.E2E_RUNNER == 'ubuntu-latest'/)
+    assert.match(
+      e2eJob,
+      /vars\.SELF_HOSTED_E2E == 'copse-e2e'\s*\n\s*&& fromJSON\('\["self-hosted", "copse-e2e"\]'\)\s*\n\s*\|\| fromJSON\('\["ubuntu-latest"\]'\)/,
+      'the fleet must be the opted-in branch and hosted the fallthrough, not the reverse',
+    )
     assert.match(e2eJob, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/)
     assert.match(e2eJob, /fromJSON\('\["self-hosted", "copse-e2e"\]'\)/)
+    // Fails closed for forks: no branch of the expression yields a runner for
+    // an untrusted event, not even a free hosted one.
+    assert.doesNotMatch(
+      e2eJob,
+      /head\.repo\.full_name != github\.repository/,
+      'e2e must have no fork branch at all — the `if` guard skips forks and the runner expression fails closed',
+    )
   })
 
   it('retains runner diagnostics when an e2e attempt loses its browser session', () => {
@@ -69,12 +85,10 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
-  it('keeps the heavy tier off trunk so day-to-day PRs stay cheap', () => {
-    // The trunk model only pays for itself if e2e/bench run once per PROMOTION
-    // rather than once per PR. Both guards are easy to lose when someone edits an
-    // unrelated clause in the same `if:`, and losing them is silent — CI simply
-    // gets expensive again. Pin both halves: no heavy tier on a trunk (`main`)
-    // push, and on a PR only when it targets `release` (or is force-labelled).
+  it('keeps expensive post-merge repetitions off trunk pushes', () => {
+    // Main pushes repeat the exact commit already gated as a PR. Keep the
+    // expensive post-merge repeat off trunk; promotion and nightly remain the
+    // environment/release-branch repetitions.
     for (const name of ['bench', 'e2e']) {
       const job = workflow.match(new RegExp(`^ {2}${name}:\\n(?: {4}.*\\n)+`, 'm'))?.[0]
       assert.ok(job, `expected a \`${name}:\` job in ci.yml`)
@@ -83,12 +97,18 @@ describe('ci.yml workflow invariants', () => {
         /github\.event_name != 'push' \|\| github\.ref != 'refs\/heads\/main'/,
         `${name} must not run on pushes to trunk`,
       )
-      assert.match(
-        job,
-        /github\.base_ref == 'release'/,
-        `${name} must only run on PRs that target release (promotion PRs)`,
-      )
     }
+  })
+
+  it('runs full e2e on merge-eligible PRs the oracle cannot safely thin', () => {
+    const e2e = jobBlock('e2e')
+    assert.match(e2e, /needs\.precheck\.outputs\.mode == 'full'/)
+    assert.match(e2e, /needs\.precheck\.outputs\.mode == 'subset'/)
+    assert.match(
+      e2e,
+      /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+      'fork PRs must remain off the self-hosted e2e fleet',
+    )
   })
 
   it('forces promotion PRs through full e2e before consulting the oracle', () => {
@@ -135,17 +155,17 @@ describe('ci.yml workflow invariants', () => {
     )
     assert.match(
       aggregate,
-      /PROMOTION_PR=\$\{\{ github\.event_name == 'pull_request' && github\.base_ref == 'release'/,
-      'the aggregate must identify same-repository promotion PRs',
+      /E2E_REQUIRED=\$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+      'the aggregate must identify same-repository PRs whose e2e job dispatched',
     )
     assert.match(
       aggregate,
-      /\$PROMOTION_PR && \[ "\$\{\{ needs\.precheck\.outputs\.e2e_shard_total \}\}" != "0" \] && \[ "\$\{\{ needs\.e2e\.result \}\}" != "success" \]/,
-      'promotion PRs must fail closed unless e2e succeeds',
+      /\$E2E_REQUIRED && \[ "\$\{\{ needs\.precheck\.outputs\.e2e_shard_total \}\}" != "0" \] && \[ "\$\{\{ needs\.e2e\.result \}\}" != "success" \]/,
+      'merge-eligible same-repository PRs must fail closed unless required e2e succeeds',
     )
   })
 
-  it('only demands promotion e2e in the cases the e2e job actually dispatches', () => {
+  it('only demands PR e2e in the cases the e2e job actually dispatches', () => {
     // The gate demanding a job that skipped itself is a deadlock, not a
     // fail-closed: `CI Passed` can never go green, and because `pull_request`
     // has no `edited` trigger, retargeting away from `main` does not re-run CI,
@@ -155,8 +175,8 @@ describe('ci.yml workflow invariants', () => {
     assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
     assert.match(
       aggregate,
-      /PROMOTION_PR=[^\n]*github\.event\.pull_request\.draft == false \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci-full'\)/,
-      'a main-based draft skips e2e, so the gate must not demand it',
+      /E2E_REQUIRED=[^\n]*github\.event\.pull_request\.draft == false \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci-full'\)/,
+      'a draft skips e2e, so the gate must not demand it',
     )
     assert.match(
       aggregate,
@@ -588,12 +608,58 @@ describe('release-publish.yml workflow invariants', () => {
   })
 })
 
+describe('runner-routing invariants across every workflow', () => {
+  const dir = resolve('.github/workflows')
+  const workflows = readdirSync(dir)
+    .filter((f) => f.endsWith('.yml'))
+    .map((f) => ({ name: f, body: readFileSync(resolve(dir, f), 'utf8') }))
+
+  it('never reads the retired CHECKS_RUNNER / E2E_RUNNER variables', () => {
+    // `vars.X` resolves repo-then-org, and an expression cannot tell the two
+    // apart. While these names were read here, an org-level
+    // CHECKS_RUNNER=copse-checks silently re-routed this repository's whole
+    // check tier onto the self-hosted fleet with no change in this repo and no
+    // signal on the PR — the exact thing a public repo must not allow. Reading
+    // names that are set nowhere is what makes hosted the default in code.
+    for (const { name, body } of workflows) {
+      assert.doesNotMatch(
+        body,
+        /vars\.(CHECKS_RUNNER|E2E_RUNNER)\b/,
+        `${name} reads a retired runner variable; use SELF_HOSTED_CHECKS / SELF_HOSTED_E2E (opt-in, hosted by default)`,
+      )
+    }
+  })
+
+  it('gives every self-hosted opt-in a hosted default', () => {
+    // A bare `${{ vars.SELF_HOSTED_CHECKS }}` renders an empty `runs-on` when
+    // the variable is unset, which errors the job. Every read must name the
+    // hosted fallback inline so the default is visible at the call site.
+    for (const { name, body } of workflows) {
+      for (const line of body.split('\n')) {
+        if (!line.includes('vars.SELF_HOSTED_CHECKS')) continue
+        assert.match(
+          line,
+          /vars\.SELF_HOSTED_CHECKS \|\| 'ubuntu-latest'/,
+          `${name}: \`${line.trim()}\` must fall back to 'ubuntu-latest'`,
+        )
+      }
+    }
+  })
+})
+
 describe('codeql.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/codeql.yml'), 'utf8')
 
-  it('scans trusted main and schedule events without spending hosted PR minutes', () => {
+  it('scans trusted main and schedule events on a runner that always resolves', () => {
     assert.doesNotMatch(workflow, /^ {2}pull_request:/m)
-    assert.match(workflow, /^ {4}runs-on: \$\{\{ vars\.CHECKS_RUNNER \}\}$/m)
+    // Previously `${{ vars.CHECKS_RUNNER }}` with no fallback: with the
+    // variable unset this rendered an empty `runs-on` and the job errored
+    // rather than running anywhere. Hosted minutes are free on a public repo,
+    // so the check tier's default is the right resolution here too.
+    assert.match(
+      workflow,
+      /^ {4}runs-on: \$\{\{ vars\.SELF_HOSTED_CHECKS \|\| 'ubuntu-latest' \}\}$/m,
+    )
   })
 })
 
@@ -670,6 +736,51 @@ describe('shared Monaco publishing invariants', () => {
       /base=\/\$\{?REPO|base=\/agent-pane\//,
       'copse.dev has no /agent-pane prefix; adding one makes every Monaco worker 404',
     )
+  })
+})
+
+// Every branch publishes into the one demo-previews branch, and an update to
+// main fans this workflow out into a dozen runs at once, so most of them lose
+// the race and restack onto the winner. The retry policy decides whether that
+// is invisible or surfaces as a red X on a PR whose contents were never wrong —
+// and a check that fails for reasons unrelated to the PR is one people learn to
+// ignore. Each property below is one "simplification" away from coming back.
+describe('demo preview publish race invariants', () => {
+  const demoPreview = readFileSync(resolve('.github/workflows/demo-preview.yml'), 'utf8')
+
+  it('jitters the backoff, so a herd does not retry in lockstep', () => {
+    const sleep = demoPreview.match(/^ *sleep \$\(\(.*\)\)$/m)?.[0]
+    assert.ok(sleep, 'expected the restack backoff sleep')
+    assert.match(
+      sleep,
+      /RANDOM/,
+      'a fixed backoff retries every racing run at the same instant, so they collide again',
+    )
+  })
+
+  it('allows more attempts than the herd is deep, and reports the real ceiling', () => {
+    const attempts = Number(demoPreview.match(/^ *attempts=(\d+)$/m)?.[1])
+    assert.ok(
+      attempts >= 10,
+      `one main update fans out into ~13 runs that drain one per round; ${String(attempts)} is short`,
+    )
+    assert.match(
+      demoPreview,
+      /Could not publish \$\{LABEL\} to demo-previews after \$\{attempts\} attempts/,
+      'the failure message has to track the ceiling, not a number an edit left behind',
+    )
+  })
+
+  it('re-applies the built tree on a retry rather than rebuilding it', () => {
+    // A retry changes which tip the target sits on, never what it publishes.
+    // Rebuilding widens the gap between fetching that tip and pushing, which is
+    // precisely the window the run has to win.
+    assert.equal(
+      demoPreview.match(/cp -R dist\/demo\/\./g)?.length,
+      1,
+      'the demo copy belongs to the build-once branch, not to every attempt',
+    )
+    assert.match(demoPreview, /git -C previews-branch checkout "\$restack_from" -- "\$path"/)
   })
 })
 
