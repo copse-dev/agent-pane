@@ -53,9 +53,15 @@ export const strReplaceTool = defineTool({
       return `old_string appears ${String(occurrences)} times; include more surrounding context so it is unique, or set replace_all to true.`
     }
 
+    // `String#replace` expands `$$`, `$&`, `` $` `` and `$'` inside a replacement
+    // *string* even when the pattern is a plain string, so the file got something
+    // other than `new_string`: `` `Total: $${price}` `` landed as
+    // `` `Total: ${price}` ``, and `$'` swallowed the rest of the file. A function
+    // replacement is taken literally, and matches what the `replace_all` branch
+    // has always done — `Array#join` never expanded anything.
     const after = replace_all
       ? before.split(old_string).join(new_string)
-      : before.replace(old_string, new_string)
+      : before.replace(old_string, () => new_string)
 
     if (after === before) {
       return 'No change: new_string is identical to old_string.'

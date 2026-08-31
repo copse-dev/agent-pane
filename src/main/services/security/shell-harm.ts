@@ -81,17 +81,23 @@ function pathVariables(context: ShellHarmContext): Array<{ re: RegExp; value: st
  * Rewrite path variables in a whole command line before lexing, quoting each
  * substitution so an expanded Windows path survives the lexer as one token.
  */
+// A home or workspace path is not a replacement pattern: `String#replace` would
+// expand `$$`, `$&`, `` $` `` and `$'` inside it, so a directory named with any
+// of those substituted something other than the path and the analysis went on to
+// read a token nobody wrote. Function replacements are taken literally.
 function substitutePathVariables(command: string, context: ShellHarmContext): string {
   let result = command
   for (const { re, value } of pathVariables(context)) {
-    result = result.replace(re, JSON.stringify(value))
+    result = result.replace(re, () => JSON.stringify(value))
   }
   return result
 }
 
 function expandPathToken(token: string, context: ShellHarmContext): string {
-  let expanded = token.replace(/^~(?=$|[\\/])/, context.homeDir)
-  for (const { re, value } of pathVariables(context)) expanded = expanded.replace(re, value)
+  let expanded = token.replace(/^~(?=$|[\\/])/, () => context.homeDir)
+  for (const { re, value } of pathVariables(context)) {
+    expanded = expanded.replace(re, () => value)
+  }
   if (isAbsolute(expanded) || isWindowsPath(expanded)) return canonicalPath(expanded, context)
   const base = context.workspaceRoot ?? process.cwd()
   return canonicalPath(

@@ -122,6 +122,24 @@ describe('Guarded YOLO shell harm gate', () => {
     }
   })
 
+  it('expands path variables literally when the path itself contains `$`', () => {
+    // `String#replace` expands `$$`, `$&`, `` $` `` and `$'` inside a replacement
+    // string, so substituting a directory named with any of them produced a path
+    // nobody has: `/work/pro$&ject` became `/work/pro$PWDject`, which no longer
+    // matched the workspace root, and `rm -rf $PWD` degraded from deny to prompt.
+    for (const workspaceRoot of [
+      '/work/pro$&ject',
+      String.raw`/work/pro$'ject`,
+      '/work/pro$$ject',
+      '/work/pro$`ject',
+    ]) {
+      assert.equal(action('rm -rf $PWD', { workspaceRoot }), 'deny', workspaceRoot)
+    }
+    for (const homeDir of ['/Users/te$&ster', '/Users/te$$ster']) {
+      assert.equal(action('rm -rf $HOME', { homeDir }), 'deny', homeDir)
+    }
+  })
+
   it('prompts for bounded overwrite and hijack forms', () => {
     for (const command of [
       'dd if=/dev/zero of=/Users/tester/.ssh/id_rsa',
