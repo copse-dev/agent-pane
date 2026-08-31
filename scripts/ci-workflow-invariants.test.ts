@@ -39,12 +39,28 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
-  it('keeps the e2e hosted-runner fallback explicit and inside the trusted-event guard', () => {
+  it('defaults e2e to hosted and keeps the self-hosted fleet opt-in and trust-gated', () => {
+    // The pre-inversion expression read "anything that is not the
+    // exact string 'ubuntu-latest' means the fleet", so deleting the variable
+    // routed every PR/push e2e job to a pool with no registered runner and the
+    // jobs queued forever. Hosted must be what an unset/mistyped variable
+    // resolves to; the fleet must require an explicit opt-in value.
     const e2eJob = workflow.match(/^ {2}e2e:\n(?: {4}.*\n)+/m)?.[0]
     assert.ok(e2eJob, 'expected an `e2e:` job in ci.yml')
-    assert.match(e2eJob, /vars\.E2E_RUNNER == 'ubuntu-latest'/)
+    assert.match(
+      e2eJob,
+      /vars\.SELF_HOSTED_E2E == 'copse-e2e'\s*\n\s*&& fromJSON\('\["self-hosted", "copse-e2e"\]'\)\s*\n\s*\|\| fromJSON\('\["ubuntu-latest"\]'\)/,
+      'the fleet must be the opted-in branch and hosted the fallthrough, not the reverse',
+    )
     assert.match(e2eJob, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/)
     assert.match(e2eJob, /fromJSON\('\["self-hosted", "copse-e2e"\]'\)/)
+    // Fails closed for forks: no branch of the expression yields a runner for
+    // an untrusted event, not even a free hosted one.
+    assert.doesNotMatch(
+      e2eJob,
+      /head\.repo\.full_name != github\.repository/,
+      'e2e must have no fork branch at all — the `if` guard skips forks and the runner expression fails closed',
+    )
   })
 
   it('retains runner diagnostics when an e2e attempt loses its browser session', () => {
@@ -592,12 +608,58 @@ describe('release-publish.yml workflow invariants', () => {
   })
 })
 
+describe('runner-routing invariants across every workflow', () => {
+  const dir = resolve('.github/workflows')
+  const workflows = readdirSync(dir)
+    .filter((f) => f.endsWith('.yml'))
+    .map((f) => ({ name: f, body: readFileSync(resolve(dir, f), 'utf8') }))
+
+  it('never reads the retired CHECKS_RUNNER / E2E_RUNNER variables', () => {
+    // `vars.X` resolves repo-then-org, and an expression cannot tell the two
+    // apart. While these names were read here, an org-level
+    // CHECKS_RUNNER=copse-checks silently re-routed this repository's whole
+    // check tier onto the self-hosted fleet with no change in this repo and no
+    // signal on the PR — the exact thing a public repo must not allow. Reading
+    // names that are set nowhere is what makes hosted the default in code.
+    for (const { name, body } of workflows) {
+      assert.doesNotMatch(
+        body,
+        /vars\.(CHECKS_RUNNER|E2E_RUNNER)\b/,
+        `${name} reads a retired runner variable; use SELF_HOSTED_CHECKS / SELF_HOSTED_E2E (opt-in, hosted by default)`,
+      )
+    }
+  })
+
+  it('gives every self-hosted opt-in a hosted default', () => {
+    // A bare `${{ vars.SELF_HOSTED_CHECKS }}` renders an empty `runs-on` when
+    // the variable is unset, which errors the job. Every read must name the
+    // hosted fallback inline so the default is visible at the call site.
+    for (const { name, body } of workflows) {
+      for (const line of body.split('\n')) {
+        if (!line.includes('vars.SELF_HOSTED_CHECKS')) continue
+        assert.match(
+          line,
+          /vars\.SELF_HOSTED_CHECKS \|\| 'ubuntu-latest'/,
+          `${name}: \`${line.trim()}\` must fall back to 'ubuntu-latest'`,
+        )
+      }
+    }
+  })
+})
+
 describe('codeql.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/codeql.yml'), 'utf8')
 
-  it('scans trusted main and schedule events without spending hosted PR minutes', () => {
+  it('scans trusted main and schedule events on a runner that always resolves', () => {
     assert.doesNotMatch(workflow, /^ {2}pull_request:/m)
-    assert.match(workflow, /^ {4}runs-on: \$\{\{ vars\.CHECKS_RUNNER \}\}$/m)
+    // Previously `${{ vars.CHECKS_RUNNER }}` with no fallback: with the
+    // variable unset this rendered an empty `runs-on` and the job errored
+    // rather than running anywhere. Hosted minutes are free on a public repo,
+    // so the check tier's default is the right resolution here too.
+    assert.match(
+      workflow,
+      /^ {4}runs-on: \$\{\{ vars\.SELF_HOSTED_CHECKS \|\| 'ubuntu-latest' \}\}$/m,
+    )
   })
 })
 

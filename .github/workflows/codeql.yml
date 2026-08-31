@@ -27,7 +27,7 @@ permissions:
 jobs:
   analyze:
     name: Analyze JavaScript and TypeScript
-    runs-on: ${{ vars.CHECKS_RUNNER }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.1
