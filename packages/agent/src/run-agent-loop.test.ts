@@ -1342,6 +1342,59 @@ src/renderer/views/projects-pane.ts
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('Done.')))
   })
 
+  // `beforeFinalize` is the highest-volume injector in a real thread and its
+  // outcomes are concatenated rather than one winning, so the applied text
+  // matches no single hook execution line.
+  it('records the closeout nudge it applied, attributed to the contributing hooks', async () => {
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        const last = messages.at(-1)
+        const content =
+          last && 'content' in last && typeof last.content === 'string' ? last.content : ''
+        if (content.includes('update_todos') || content.includes('open todos')) {
+          yield {
+            type: 'tool_call',
+            toolCall: {
+              id: 'todo-1',
+              name: 'update_todos',
+              args: { merge: true, todos: [{ id: '1', content: 'Step', status: 'completed' }] },
+            },
+          }
+        } else if (content.includes('final answer')) {
+          yield { type: 'text', text: 'Done.' }
+        }
+        // The opening turn yields neither text nor a tool call, so the loop
+        // reaches finalize (and therefore closeout) instead of answering.
+        yield { type: 'done' }
+      },
+    }
+
+    const todos: TodoItem[] = [{ id: '1', content: 'Step', status: 'pending' }]
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'big task' }],
+      tools: [{ name: 'update_todos', description: 'x', parameters: {} }],
+      maxSteps: 1,
+      getOpenTodos: () => todos,
+      recordAppliedNudge: (record) => applied.push(record),
+      onChunk: () => {},
+      executeTool: async (name) => {
+        if (name === 'update_todos') {
+          const first = todos[0]
+          if (first) first.status = 'completed'
+        }
+        return 'Plan updated (1/1 done).'
+      },
+    })
+
+    const closeout = applied.filter((record) => record.hookId.includes('todo-finalize-closeout'))
+    assert.equal(closeout.length, 1)
+    assert.ok(closeout[0])
+    assert.equal(closeout[0].mechanism, 'tool-enabled-message')
+    assert.ok(closeout[0].text.length > 0)
+  })
+
   it('surfaces a note when todos stay open after closeout attempts', async () => {
     const chunks: AgentStreamChunk[] = []
     const provider: LLMProvider = {
@@ -1820,8 +1873,9 @@ src/renderer/views/projects-pane.ts
 
     const finalize = applied.filter((record) => record.hookId === 'finalize-nudge')
     assert.equal(finalize.length, 1)
-    assert.equal(finalize[0]?.mechanism, 'text-only-turn')
-    assert.match(finalize[0]?.text ?? '', /write a clear final answer/)
+    assert.ok(finalize[0])
+    assert.equal(finalize[0].mechanism, 'text-only-turn')
+    assert.match(finalize[0].text, /write a clear final answer/)
   })
 
   it('prefers per-stream usage chunks over the shared lastUsage field (#112)', async () => {

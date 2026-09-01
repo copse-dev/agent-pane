@@ -600,6 +600,7 @@ type AgentStepContext = {
   toolSchemaReserveTokens: number
   onHistoryTrimmed?: () => void
   recordHookRun?: HookContext['recordHookRun']
+  recordAppliedNudge?: (record: AppliedNudgeRecord) => void
   continuationBudget?: ContinuationGrant
 }
 
@@ -725,6 +726,20 @@ async function closeOpenTodosBeforeFinalize(
     const result = await registry.emit('beforeFinalize', { openTodos, attempt }, hookContext)
     const nudge = mergeBlockingOutcomes(result.outcomes).injectContext
     if (!nudge) break
+    // `beforeFinalize` outcomes are *concatenated* rather than one winning, so
+    // the applied text can span several hooks and matches no single execution
+    // line. Attribute it to every hook that contributed, and record it before
+    // the turn runs: closeout is the highest-volume injector in a real thread
+    // and each attempt is a machine-initiated turn (decision 5).
+    const contributors = result.outcomes
+      .filter((record) => record.outcome.injectContext)
+      .map((record) => record.hookId)
+    recordAppliedNudge(ctx.recordAppliedNudge, {
+      step: ctx.budget.llmCalls,
+      hookId: contributors.length > 0 ? contributors.join(', ') : 'beforeFinalize',
+      mechanism: 'tool-enabled-message',
+      text: nudge,
+    })
     // A closeout turn is a machine-initiated new turn (decision 5): consume one
     // grant from the shared budget before running it, so closeout is bounded by
     // `min(MAX_TODO_CLOSEOUT_ATTEMPTS, remaining)` — the local cap tightens
@@ -755,8 +770,7 @@ type ToolBatchContext = {
 const EXPLORE_PARALLELISM = 4
 
 type SettledToolExecution =
-  | { ok: true; value: string | ToolExecuteResult }
-  | { ok: false; error: unknown }
+  { ok: true; value: string | ToolExecuteResult } | { ok: false; error: unknown }
 
 /**
  * Pre-start the batch's leading run of consecutive `explore` calls so those
@@ -1701,6 +1715,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       toolSchemaReserveTokens,
       ...(onHistoryTrimmed !== undefined ? { onHistoryTrimmed } : {}),
       ...(recordHookRun !== undefined ? { recordHookRun } : {}),
+      ...(appliedNudgeSink !== undefined ? { recordAppliedNudge: appliedNudgeSink } : {}),
       ...(opts.continuationBudget !== undefined
         ? { continuationBudget: opts.continuationBudget }
         : {}),
