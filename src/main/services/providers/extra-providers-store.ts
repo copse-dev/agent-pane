@@ -13,16 +13,13 @@ import {
 } from '@copse/llm/extra-providers.ts'
 import { providerSlugFromBaseUrl, uniqueProviderSlug } from '@copse/llm/provider-slug.ts'
 import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
-import { getSetting, setSetting, deleteApiKey, resolveApiKey } from '../storage/settings.ts'
-import { runSerialized } from '../storage/write-queue.ts'
+import { getSetting, updateSetting, deleteApiKey, resolveApiKey } from '../storage/settings.ts'
 import { ensureProviderHostApproved } from './approved-provider-hosts.ts'
 import { fetchHuggingFaceModels } from './huggingface-models.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
 
 /** Built-in slug of the Hugging Face Inference Providers provider. */
 export const HUGGINGFACE_SLUG = 'huggingface'
-
-const EXTRA_PROVIDER_MUTATION_QUEUE = 'extra-providers:mutation'
 
 function storedProviders(): StoredExtraProvider[] {
   const raw = getSetting<StoredExtraProvider[]>('extraProviders', [])
@@ -68,8 +65,8 @@ export async function saveExtraProvider(
     await ensureProviderHostApproved(baseUrl)
   }
 
-  return runSerialized(EXTRA_PROVIDER_MUTATION_QUEUE, async () => {
-    const current = storedProviders()
+  const list = await updateSetting<StoredExtraProvider[]>('extraProviders', [], (raw) => {
+    const current = Array.isArray(raw) ? raw : []
     const slug = givenSlug
       ? givenSlug
       : uniqueProviderSlug(
@@ -78,13 +75,11 @@ export async function saveExtraProvider(
         )
     const next: StoredExtraProvider = { ...record, slug }
     const index = current.findIndex((provider) => provider.slug === slug)
-    const list =
-      index >= 0
-        ? current.map((provider) => (provider.slug === slug ? next : provider))
-        : [...current, next]
-    await setSetting('extraProviders', list)
-    return resolveExtraProviders(list)
+    return index >= 0
+      ? current.map((provider) => (provider.slug === slug ? next : provider))
+      : [...current, next]
   })
+  return resolveExtraProviders(list)
 }
 
 /**
@@ -110,11 +105,12 @@ export async function refreshHuggingFaceModels(
 }
 
 export async function deleteExtraProvider(slug: string): Promise<ExtraProvider[]> {
-  return runSerialized(EXTRA_PROVIDER_MUTATION_QUEUE, async () => {
-    const current = storedProviders()
-    const list = current.filter((provider) => provider.slug !== slug)
-    await setSetting('extraProviders', list)
-    if (!BUILTIN_EXTRA_PROVIDER_SLUGS.includes(slug)) deleteApiKey(slug)
-    return resolveExtraProviders(list)
-  })
+  const list = await updateSetting<StoredExtraProvider[]>('extraProviders', [], (raw) =>
+    (Array.isArray(raw) ? raw : []).filter((provider) => provider.slug !== slug),
+  )
+  // Dropping the stored key follows the write rather than sharing its critical
+  // section: it touches the keychain, not settings, and a repeated delete of the
+  // same slug is a no-op.
+  if (!BUILTIN_EXTRA_PROVIDER_SLUGS.includes(slug)) deleteApiKey(slug)
+  return resolveExtraProviders(list)
 }
