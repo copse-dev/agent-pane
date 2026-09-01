@@ -242230,6 +242230,7 @@ function mountConversation(root4, store3, api3) {
   let lastScrollTop = 0;
   let lastProgrammaticScrollTop = -1;
   let userScrolledUpAt = 0;
+  let renderedThreadId = null;
   let backfillGeneration = 0;
   function isNearBottom() {
     const distance3 = list.scrollHeight - list.scrollTop - list.clientHeight;
@@ -242710,12 +242711,17 @@ function mountConversation(root4, store3, api3) {
     }
   }
   function rebuildForThread() {
-    pinnedToBottom = true;
-    userScrolledUpAt = 0;
-    lastScrollTop = 0;
+    const thread = getActiveThread(store3);
+    const rebuildingSameThread = thread !== void 0 && thread.id === renderedThreadId;
+    const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null;
+    if (!rebuildingSameThread) {
+      pinnedToBottom = true;
+      userScrolledUpAt = 0;
+      lastScrollTop = 0;
+    }
     clear(list);
     backfillGeneration++;
-    const thread = getActiveThread(store3);
+    renderedThreadId = thread?.id ?? null;
     if (!thread) {
       finishThreadChrome(null);
       return;
@@ -242735,7 +242741,11 @@ function mountConversation(root4, store3, api3) {
     }
     syncModelLabels();
     syncUserActions();
-    scrollToBottom(true);
+    if (preservedScrollTop === null) {
+      scrollToBottom(true);
+    } else {
+      setScrollTopProgrammatically(preservedScrollTop);
+    }
     finishThreadChrome(thread);
     if (initialStart > 0) {
       const generation = backfillGeneration;
