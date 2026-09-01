@@ -89,6 +89,13 @@ function stripIpv6Brackets(hostname: string): string {
   return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
 }
 
+function ipv6FirstHextet(host: string): number | null {
+  const separator = host.indexOf(':')
+  if (separator <= 0) return null
+  const first = host.slice(0, separator)
+  return /^[0-9a-f]{1,4}$/i.test(first) ? Number.parseInt(first, 16) : null
+}
+
 /** Loopback targets (localhost dev servers) — the primary supported workflow. */
 export function isLoopbackHost(hostname: string): boolean {
   const host = stripIpv6Brackets(hostname)
@@ -109,8 +116,13 @@ export function isBlockedHost(hostname: string): boolean {
   // Unspecified address routes to loopback on most stacks.
   if (host === '0.0.0.0' || host === '::') return true
   // IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
-  if (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe8') || host === '::')
+  const firstHextet = ipv6FirstHextet(host)
+  if (
+    firstHextet !== null &&
+    ((firstHextet & 0xfe00) === 0xfc00 || (firstHextet & 0xffc0) === 0xfe80)
+  ) {
     return true
+  }
   const v4 = parseIpv4(host)
   if (!v4) return false
   const [a, b] = v4
