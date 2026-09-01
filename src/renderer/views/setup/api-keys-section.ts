@@ -7,7 +7,13 @@ import { showConfirmDialog } from '../../views/confirm-dialog.ts'
 // (Mistral/Gemini/DeepSeek) and user customs are managed in the separate
 // custom-providers section, not here.
 export type ApiKeyProvider =
-  'anthropic' | 'openai' | 'cursor' | 'openrouter' | 'github' | 'artificial-analysis' | 'parallel'
+  | 'anthropic'
+  | 'openai'
+  | 'cursor'
+  | 'openrouter'
+  | 'github'
+  | 'artificial-analysis'
+  | 'parallel'
 
 export interface ApiKeysSection {
   root: HTMLFieldSetElement

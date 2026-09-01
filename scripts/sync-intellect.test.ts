@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { transform } from 'esbuild'
-import { check, resolveConfig } from 'prettier'
+import { formatSource } from './lib/oxfmt.mts'
 import {
   detectPayloadVersion,
   formatDataFile,
@@ -51,8 +51,8 @@ describe('formatDataFile', () => {
         },
       ],
     })
-    const config = await resolveConfig(path)
-    assert.equal(await check(formatted, { ...config, filepath: path }), true)
+    // Already formatted: running it through oxfmt again is a no-op.
+    assert.equal(await formatSource(path, formatted), formatted)
     assert.match(formatted, /"modelId": "deepseek\/deepseek-v4-reasoning"/)
   })
 })
@@ -304,7 +304,7 @@ describe('detectPayloadVersion', () => {
  * CLI. `main()` used to be called at module scope, so merely importing it here
  * ran the whole sync on every unit run: a network fetch to Artificial Analysis,
  * then a rewrite of `data/intellect.json` and of the tracked
- * `model-intellect.generated.ts` via `prettier --write`. A green `npm run check`
+ * `model-intellect.generated.ts` via `oxfmt --write`. A green `npm run check`
  * left the working tree dirty, and the bumped `// Last synced:` line went on to
  * collide with the scheduled sync in a real merge conflict.
  */

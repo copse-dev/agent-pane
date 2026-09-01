@@ -350,7 +350,7 @@ async function discoverPublisher(cfg: PublisherConfig, delayMs: number): Promise
 // ---------------------------------------------------------------------------
 
 /**
- * A single-quoted TS string literal. Emitting prettier's own quote style keeps
+ * A single-quoted TS string literal. Emitting the formatter's own quote style keeps
  * `renderFile` output byte-identical to the formatted file, so a re-run with no
  * upstream change is a true no-op for the sync workflow's `git diff --quiet`.
  */

@@ -11,7 +11,13 @@
  * start unbounded work on oversized umbrella workspaces. They are not errors.
  */
 export type IndexPhase =
-  'idle' | 'building' | 'ready' | 'error' | 'unavailable' | 'limited' | 'skipped'
+  | 'idle'
+  | 'building'
+  | 'ready'
+  | 'error'
+  | 'unavailable'
+  | 'limited'
+  | 'skipped'
 
 export interface IndexComponentStatus {
   phase: IndexPhase

@@ -7,7 +7,7 @@ is the full contributor contract.
 
 1. Use Node **22.22.2 or newer** and **pnpm** (via Corepack). The repo pins both
    in `.nvmrc` and `packageManager`.
-2. Run **`pnpm run check`**. It covers typecheck, ESLint, Prettier, dead-code
+2. Run **`pnpm run check`**. It covers typecheck, ESLint, oxfmt, dead-code
    detection, and unit tests. A green subset is not a substitute.
 3. If the change is visible in the Electron app, add or update the smallest
    focused WebdriverIO spec that reaches the state, asserts the DOM, and saves a

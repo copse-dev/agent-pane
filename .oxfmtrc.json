@@ -1,6 +1,7 @@
-// oxfmt trial config — mirrors prettier.config.mjs exactly so the two formatters are
-// compared on identical settings. Seeded with `oxfmt --migrate=prettier`, then trimmed.
-// See docs/spikes/oxfmt-trial.md for what the trial measured.
+// Formatter config. oxfmt replaced Prettier; these are the four settings the
+// repository formatted under before the move, carried over unchanged, so the
+// switch changed layout only where the two tools genuinely disagree.
+// See docs/spikes/oxfmt-trial.md for the measurements that led here.
 //
 // Named `.oxfmtrc.json` rather than `oxfmt.config.mjs` deliberately. Only the
 // `.oxfmtrc.*` names are auto-discovered, so a bare `oxfmt` run — by a human, an editor
@@ -13,19 +14,19 @@
 // give the byte-exact exclusions a second copy to drift out of sync with — the vendored
 // upstream schemas, the hook payload snapshots, and the generated headless contract are
 // all drift-checked against their exact bytes, so a stale second ignore list is the one
-// failure mode that matters here. Verified equivalent: 2395 files scanned, same 33
-// divergences, with and without the duplicated block.
+// failure mode that matters here. Verified equivalent: the same file set is scanned
+// with and without the duplicated block.
 {
-  // The four settings from prettier.config.mjs, verbatim.
+  // Carried over verbatim from the former prettier.config.mjs.
   "semi": false,
   "singleQuote": true,
   "printWidth": 100,
   "trailingComma": "all",
 
-  // NOT a Prettier setting, and it defaults to ON. Left off so the trial measures
-  // formatting divergence and nothing else: enabled, oxfmt also re-sorts the keys of
-  // every package.json it finds — the root manifest, packages/extract-zip, and
-  // benchmarks/steer/fixtures/injection-project, whose bytes are part of the steer-eval
-  // corpus rather than project source.
+  // Not a formatting setting, and it defaults to ON. Left off deliberately: enabled,
+  // oxfmt re-sorts the keys of every package.json it finds — the root manifest,
+  // packages/extract-zip, and benchmarks/steer/fixtures/injection-project, whose bytes
+  // are part of the steer-eval corpus rather than project source. Turning it on is a
+  // separate decision from which formatter runs.
   "sortPackageJson": false
 }

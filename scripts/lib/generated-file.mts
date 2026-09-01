@@ -9,10 +9,10 @@
  *
  * Every generator had its own copy of that check, and every copy was dead code,
  * because they compared the *raw render* against a file that the previous run
- * had written **and then reformatted with prettier**. The render emits one-line
- * object literals; prettier explodes them past `printWidth`. The two strings
+ * had written **and then reformatted**. The render emits one-line
+ * object literals; the formatter explodes them past `printWidth`. The two strings
  * therefore never matched, the no-op branch was unreachable, and each run
- * rewrote the file with today's date — which prettier then normalised back into
+ * rewrote the file with today's date — which the formatter then normalised back into
  * the previous content, leaving exactly a one-line `Last synced:` diff.
  *
  * Formatting first is what makes the comparison mean anything, so that is what
@@ -21,7 +21,7 @@
  */
 
 import { readFile, writeFile } from 'node:fs/promises'
-import { format, resolveConfig } from 'prettier'
+import { formatSource } from './oxfmt.mts'
 
 /** The header line every generator stamps — the one line allowed to differ. */
 const SYNC_DATE_LINE = /\/\/ Last synced: \d{4}-\d{2}-\d{2}\n/
@@ -32,13 +32,12 @@ export function stripSyncDate(source: string): string {
 }
 
 /**
- * Render `content` the way it will actually sit on disk, using the repo's
- * prettier config resolved from `path` — the same config `npx prettier --write`
- * would read, so the result is byte-comparable with the existing file.
+ * Render `content` the way it will actually sit on disk, formatted through the
+ * same oxfmt config `npm run format` would read, so the result is
+ * byte-comparable with the existing file.
  */
 export async function formatGenerated(path: string, content: string): Promise<string> {
-  const config = await resolveConfig(path)
-  return await format(content, { ...config, filepath: path })
+  return await formatSource(path, content)
 }
 
 /**

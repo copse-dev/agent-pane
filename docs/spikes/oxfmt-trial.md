@@ -1,12 +1,13 @@
 # oxfmt formatter trial
 
-**Status:** trial only. Prettier remains the formatter and the `format:check` gate. Nothing in
-this branch changes how a single committed file is formatted.
+**Status:** adopted. oxfmt is the formatter and the `format:check` gate; Prettier has been
+removed. This document is kept as the record of what the trial measured.
 
 [oxfmt](https://oxc.rs/docs/guide/usage/formatter) is VoidZero's Rust formatter, built to be a
-drop-in Prettier replacement. This branch adds it alongside Prettier — a pinned dev dependency, a
-config, and two `format:oxfmt*` scripts — so the two can be run against the same tree and the
-difference measured rather than argued about.
+drop-in Prettier replacement. It was first added alongside Prettier — a pinned dev dependency, a
+config, and two `format:oxfmt*` scripts — so the two could be run against the same tree and the
+difference measured rather than argued about. Those scripts are gone now: `format` and
+`format:check` run oxfmt directly.
 
 The motivating number is CI: `npm run format:check` costs 34-39s of the `precheck` job across the
 three most recent green `main` runs, and the `autoformat` job that pairs with it OOM-kills on the
