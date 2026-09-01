@@ -8419,6 +8419,23 @@ dialog.settings-overlay::backdrop {
 .approval-body-code {
   font-family: var(--font-mono);
 }
+.approval-body-list {
+  overflow-y: auto;
+  max-height: 320px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius);
+}
+.approval-body-list .approval-body {
+  overflow: visible;
+  max-height: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.approval-body-list .approval-body + .approval-body {
+  border-top: 1px solid var(--border-subtle, var(--border));
+}
 .approval-buttons {
   margin-top: var(--spacing-sm);
 }

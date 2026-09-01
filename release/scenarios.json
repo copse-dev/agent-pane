@@ -32,6 +32,10 @@
     "label": "Light-theme approval with a bright accent"
   },
   {
+    "id": "approval-grouped-shell-commands",
+    "label": "Grouped outside-sandbox command approval"
+  },
+  {
     "id": "vnc-discovered-ports",
     "label": "Remote desktop discovered-port list with one selected"
   },
