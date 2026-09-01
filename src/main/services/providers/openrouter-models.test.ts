@@ -1,7 +1,8 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { setSetting } from '../storage/settings.ts'
+import { deleteSetting, setSetting } from '../storage/settings.ts'
 import {
+  fetchOpenRouterModelsCached,
   parseOpenRouterModelsPayload,
   listFreeOpenRouterModels,
   openRouterModelContextLength,
@@ -145,6 +146,7 @@ describe('listFreeOpenRouterModels', () => {
     invalidateOpenRouterModelsCache()
     await setSetting('openRouterZdrOnly', true)
     await setSetting('openRouterFreeMode', false)
+    await deleteSetting('openRouterApiBase')
   })
 
   it('includes paid, tool-capable models by default when openRouterFreeMode is unset', async () => {
@@ -220,6 +222,99 @@ describe('listFreeOpenRouterModels', () => {
     restore = stubFetch(SAMPLE)
     const ctx = await openRouterModelContextLength('anthropic/claude-3.5-sonnet')
     assert.equal(ctx, 200000)
+  })
+
+  it('coalesces concurrent model and ZDR catalog fetches', async () => {
+    invalidateOpenRouterModelsCache()
+    let modelFetchCount = 0
+    let zdrFetchCount = 0
+    let markModelStarted: (() => void) | undefined
+    let markZdrStarted: (() => void) | undefined
+    let releaseModels: (() => void) | undefined
+    let releaseZdr: (() => void) | undefined
+    const modelStarted = new Promise<void>((resolve) => {
+      markModelStarted = resolve
+    })
+    const zdrStarted = new Promise<void>((resolve) => {
+      markZdrStarted = resolve
+    })
+    const modelsReleased = new Promise<void>((resolve) => {
+      releaseModels = resolve
+    })
+    const zdrReleased = new Promise<void>((resolve) => {
+      releaseZdr = resolve
+    })
+    const original = globalThis.fetch
+    globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url.includes('/endpoints/zdr')) {
+        zdrFetchCount += 1
+        markZdrStarted?.()
+        await zdrReleased
+        return new Response(JSON.stringify(ZDR_SAMPLE), { status: 200 })
+      }
+      modelFetchCount += 1
+      markModelStarted?.()
+      await modelsReleased
+      return new Response(JSON.stringify(SAMPLE), { status: 200 })
+    }
+    restore = (): void => {
+      globalThis.fetch = original
+    }
+
+    const first = listFreeOpenRouterModels()
+    const second = listFreeOpenRouterModels()
+    await modelStarted
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const observedModelFetches = modelFetchCount
+    releaseModels?.()
+    await zdrStarted
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const observedZdrFetches = zdrFetchCount
+    releaseZdr?.()
+    await Promise.all([first, second])
+
+    assert.equal(observedModelFetches, 1)
+    assert.equal(observedZdrFetches, 1)
+  })
+
+  it('does not let an invalidated old-base request replace the new-base cache', async () => {
+    invalidateOpenRouterModelsCache()
+    await setSetting('openRouterApiBase', 'https://old.example')
+    let newBaseFetchCount = 0
+    let markOldStarted: (() => void) | undefined
+    let releaseOld: (() => void) | undefined
+    const oldStarted = new Promise<void>((resolve) => {
+      markOldStarted = resolve
+    })
+    const oldReleased = new Promise<void>((resolve) => {
+      releaseOld = resolve
+    })
+    const original = globalThis.fetch
+    globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url.startsWith('https://old.example')) {
+        markOldStarted?.()
+        await oldReleased
+      } else if (url.startsWith('https://new.example')) {
+        newBaseFetchCount += 1
+      }
+      return new Response(JSON.stringify(SAMPLE), { status: 200 })
+    }
+    restore = (): void => {
+      globalThis.fetch = original
+    }
+
+    const oldRequest = fetchOpenRouterModelsCached()
+    await oldStarted
+    await setSetting('openRouterApiBase', 'https://new.example')
+    invalidateOpenRouterModelsCache()
+    await fetchOpenRouterModelsCached()
+    releaseOld?.()
+    await oldRequest
+    await fetchOpenRouterModelsCached()
+
+    assert.equal(newBaseFetchCount, 1)
   })
 })
 

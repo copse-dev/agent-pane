@@ -21,7 +21,7 @@ import type { AcpAgentSpawnConfig } from './acp-client.ts'
  * and the auth-required turn error tells the user how to change their mind.
  */
 
-const decisions = new Map<string, Promise<boolean>>()
+const decisions = new Map<string, boolean>()
 
 /** Test hook. */
 export function resetRemoteAcpEnvDecisionsForTests(): void {
@@ -41,6 +41,7 @@ function decisionKey(agentId: string, hostId: string, envNames: string[]): strin
 export async function gateRemoteAcpEnvForward(
   agentId: string,
   config: AcpAgentSpawnConfig,
+  signal?: AbortSignal,
 ): Promise<AcpAgentSpawnConfig> {
   const envNames = Object.keys(config.env ?? {})
   if (envNames.length === 0) return config
@@ -49,25 +50,32 @@ export async function gateRemoteAcpEnvForward(
 
   const key = decisionKey(agentId, target.hostId, envNames)
   let decision = decisions.get(key)
-  if (!decision) {
-    decision = requestApproval({
-      title: `Forward ${agentId} environment to ${target.hostId}?`,
-      body:
-        `The ACP agent "${agentId}" runs on the SSH host ${target.hostId} and has ` +
-        `environment configured in Settings → ACP agents: ${envNames.join(', ')}. ` +
-        `Forward these values to the remote agent so it can authenticate there? ` +
-        `They travel over the encrypted SSH channel into the agent's process ` +
-        `environment only — never on a command line (\`ps\`) or the remote disk. ` +
-        `Decline to run the agent with credentials already on the host instead.`,
-      type: 'shell',
-      cause: 'acp-remote-env',
-      allowRemember: false,
-    })
+  if (decision === undefined) {
+    decision = await requestApproval(
+      {
+        title: `Forward ${agentId} environment to ${target.hostId}?`,
+        body:
+          `The ACP agent "${agentId}" runs on the SSH host ${target.hostId} and has ` +
+          `environment configured in Settings → ACP agents: ${envNames.join(', ')}. ` +
+          `Forward these values to the remote agent so it can authenticate there? ` +
+          `They travel over the encrypted SSH channel into the agent's process ` +
+          `environment only — never on a command line (\`ps\`) or the remote disk. ` +
+          `Decline to run the agent with credentials already on the host instead.`,
+        type: 'shell',
+        cause: 'acp-remote-env',
+        allowRemember: false,
+      },
+      signal,
+    )
       .then(({ approved }) => approved)
       .catch(() => false)
+    if (signal?.aborted) {
+      delete config.env
+      return config
+    }
     decisions.set(key, decision)
   }
-  if (!(await decision)) delete config.env
+  if (!decision) delete config.env
   return config
 }
 

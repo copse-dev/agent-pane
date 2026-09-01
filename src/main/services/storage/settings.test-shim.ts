@@ -2,6 +2,7 @@ import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { firstNonEmptyString, matchesFallbackType } from '@shared/unknown-value.ts'
 import { getSettingSchema } from './settings-schema.ts'
 import { getExplicitSettingsProfile } from './settings-context.ts'
+import { runSerializedUpdate } from './write-queue.ts'
 
 const settings = new Map<string, unknown>([
   // Unit tests must not wait on an optional LM Studio scope classifier. Suites
@@ -121,6 +122,21 @@ export function setSetting(key: string, value: unknown): Promise<void> {
   }
   settings.set(key, value)
   return Promise.resolve()
+}
+
+export function updateSetting<T>(key: string, fallback: T, update: (current: T) => T): Promise<T> {
+  if (getExplicitSettingsProfile()) {
+    return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
+  }
+  const schema = getSettingSchema(key)
+  return runSerializedUpdate(
+    `settings:${key}`,
+    () => getSetting(key, fallback),
+    update,
+    (next) => {
+      settings.set(key, schema ? schema.parse(next) : next)
+    },
+  )
 }
 
 export function deleteSetting(key: string): Promise<void> {
