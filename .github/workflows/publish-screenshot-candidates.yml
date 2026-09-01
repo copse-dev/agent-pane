@@ -8,9 +8,19 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+  # Closing a stale review needs a write token and must also fire for a parent
+  # closed from a fork, so `pull_request_target` rather than `pull_request`.
+  # Nothing from the pull request is checked out or executed under this trigger
+  # — the job below only calls the API.
+  pull_request_target:
+    types: [closed]
 
 concurrency:
-  group: screenshot-candidates-${{ github.event.workflow_run.id }}
+  # `workflow_run.id` is null under `pull_request_target`, which would collapse
+  # every parent-close into one queue. Key those by parent number instead.
+  group: >-
+    screenshot-candidates-${{ github.event.workflow_run.id ||
+    format('closed-{0}', github.event.pull_request.number) }}
   cancel-in-progress: false
 
 permissions:
@@ -24,6 +34,7 @@ jobs:
     # Reject forks before minting a write token. Failed/cancelled runs have no
     # accepted evidence to publish.
     if: >-
+      github.event_name == 'workflow_run' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_repository.full_name == github.repository
@@ -341,4 +352,80 @@ jobs:
                 issue_number: parentNumber,
                 body,
               });
+            }
+
+  # A merged or closed parent strands its screenshot review PR. The publish job
+  # above can never clean that up: its only trigger is a CI run on the parent's
+  # branch, and a merged parent produces no further runs. GitHub does not close
+  # the child either — when the parent's branch is deleted on merge it
+  # RETARGETS the child to `main`, so a stale render silently becomes an open
+  # proposal against the default branch. Six such PRs had accumulated when this
+  # was written, the oldest offering 274 PNGs straight to `main`.
+  #
+  # Uses GITHUB_TOKEN rather than the release App: closing needs no App identity
+  # and deliberately should not trigger downstream workflows, and this is the
+  # more exposed of the two triggers, so it gets the narrower credential.
+  close-orphaned-reviews:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v9
+        env:
+          PARENT_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const parentNumber = Number(process.env.PARENT_NUMBER);
+            const prefix = `screenshots/pr-${parentNumber}/`;
+
+            // Match on the head ref, never the base: a retargeted child now
+            // points at `main`, which is exactly the case worth catching.
+            const pulls = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const orphans = pulls.filter(
+              (pull) =>
+                pull.head.repo?.full_name === `${owner}/${repo}` &&
+                pull.head.ref.startsWith(prefix),
+            );
+            if (orphans.length === 0) {
+              core.info(`No open screenshot review PR for #${parentNumber}.`);
+              return;
+            }
+
+            for (const pull of orphans) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pull.number,
+                body:
+                  `Closing automatically: parent PR #${parentNumber} is closed, so these ` +
+                  'candidates have no review context left. Reference screenshots only ever ' +
+                  'move through a live parent PR.',
+              });
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number: pull.number,
+                state: 'closed',
+              });
+              core.info(`Closed orphaned screenshot review PR #${pull.number}.`);
+
+              // Best-effort: the ref may already be gone via delete-branch.
+              try {
+                await github.rest.git.deleteRef({
+                  owner,
+                  repo,
+                  ref: `heads/${pull.head.ref}`,
+                });
+              } catch (error) {
+                core.info(`Could not delete ${pull.head.ref}: ${error.message}`);
+              }
             }
