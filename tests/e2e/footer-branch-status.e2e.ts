@@ -141,7 +141,17 @@ describe('footer branch status for a detached thread worktree', () => {
             createdAt: now,
             seededFromDirtyProject: false,
           },
-          messages: [],
+          // Keep this distinct from the active blank composer: restore
+          // intentionally collapses surplus unused blank threads.
+          messages: [
+            {
+              id: 'msg-user-detached',
+              role: 'user',
+              content: 'Inspect this detached worktree.',
+              toolCalls: [],
+              createdAt: now - 1,
+            },
+          ],
           usage: { inputTokens: 0, outputTokens: 0 },
           createdAt: now - 1,
           updatedAt: now - 1,
