@@ -159,6 +159,7 @@ import {
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
+import { addTrustedShellCommand } from '../services/security/command-routing-config.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
@@ -2570,6 +2571,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:requestCloseConfirm', (event) => {
       assertMainFrameSender(event, win)
       return requestCloseConfirmation()
+    })
+    ipcMain.handle('test:rememberTrustedCommands', async (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const commands = parseIpcArgs(z.array(z.string().min(1).max(128)).min(1).max(16), [raw])
+      await Promise.all(commands.map((command) => addTrustedShellCommand(command)))
+      return getSetting<unknown>('trustedShellCommands', [])
     })
 
     ipcMain.handle('test:createMainWindow', (event) => {
