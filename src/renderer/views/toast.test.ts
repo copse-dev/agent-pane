@@ -5,7 +5,12 @@ import { showToast, showErrorToast } from './toast.ts'
 import { qsRequired } from '../dom/helpers.ts'
 
 afterEach(() => {
-  document.getElementById('toast-host')?.remove()
+  const host = document.getElementById('toast-host')
+  // Removing the DOM alone leaves every auto-dismiss timeout referenced. Click
+  // each toast through its real dismiss path so the test worker can exit now,
+  // rather than waiting for the longest duration used by the fixture.
+  for (const toast of host?.querySelectorAll<HTMLElement>('.toast') ?? []) toast.click()
+  host?.remove()
 })
 
 describe('toast (#119 surface IPC errors)', () => {

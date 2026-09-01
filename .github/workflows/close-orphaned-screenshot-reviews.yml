@@ -1,0 +1,94 @@
+name: Close orphaned screenshot reviews
+
+# A merged or closed parent strands its screenshot review PR.
+# `publish-screenshot-candidates.yml` cannot clean that up: its only trigger is a
+# CI run on the parent's branch, and a merged parent produces no further runs.
+# GitHub does not close the child either — when the parent's branch is deleted on
+# merge it RETARGETS the child to `main`, so a stale render silently becomes an
+# open proposal against the default branch. Six had accumulated when this was
+# written, the oldest offering 274 PNGs straight to `main`.
+#
+# This lives in its own file rather than beside the publisher on purpose. That
+# workflow mints a write-scoped App token, and a tested invariant
+# (scripts/ci-workflow-invariants.test.ts, "separates the write-capable publisher
+# from pull-request code execution") keeps pull-request-triggered jobs out of it.
+#
+# `pull_request`, not `pull_request_target`: screenshot children only ever exist
+# for same-repo parents — the publisher rejects forks before minting a token — so
+# the writable token a same-repo `pull_request` already carries is enough, and
+# the riskier trigger buys nothing. Nothing is checked out here; this only calls
+# the API.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  close:
+    # Fork parents never have a screenshot child, and their token is read-only.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v9
+        env:
+          PARENT_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const parentNumber = Number(process.env.PARENT_NUMBER);
+            const prefix = `screenshots/pr-${parentNumber}/`;
+
+            // Match on the head ref, never the base: a child retargeted to
+            // `main` by the parent's branch deletion is exactly the case worth
+            // catching, and its base no longer identifies it.
+            const pulls = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const orphans = pulls.filter(
+              (pull) =>
+                pull.head.repo?.full_name === `${owner}/${repo}` &&
+                pull.head.ref.startsWith(prefix),
+            );
+            if (orphans.length === 0) {
+              core.info(`No open screenshot review PR for #${parentNumber}.`);
+              return;
+            }
+
+            for (const pull of orphans) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pull.number,
+                body:
+                  `Closing automatically: parent PR #${parentNumber} is closed, so these ` +
+                  'candidates have no review context left. Reference screenshots only ever ' +
+                  'move through a live parent PR.',
+              });
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number: pull.number,
+                state: 'closed',
+              });
+              core.info(`Closed orphaned screenshot review PR #${pull.number}.`);
+
+              // Best-effort: the ref may already be gone via delete-branch.
+              try {
+                await github.rest.git.deleteRef({
+                  owner,
+                  repo,
+                  ref: `heads/${pull.head.ref}`,
+                });
+              } catch (error) {
+                core.info(`Could not delete ${pull.head.ref}: ${error.message}`);
+              }
+            }

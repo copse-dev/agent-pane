@@ -5,6 +5,21 @@ import { invalidateLmStudioModelsCache } from './lm-studio-models.ts'
 import { setApiKey, deleteApiKey, setSetting } from '../storage/settings.test-shim.ts'
 import { jsonResponse } from './test-response.ts'
 
+const AMBIENT_PROVIDER_ENV_VARS = [
+  'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
+  'CURSOR_API_KEY',
+  'OPENROUTER_API_KEY',
+  'PARALLEL_API_KEY',
+  'GROQ_API_KEY',
+  'TOGETHER_API_KEY',
+  'FIREWORKS_API_KEY',
+  'MISTRAL_API_KEY',
+  'GEMINI_API_KEY',
+  'DEEPSEEK_API_KEY',
+  'COPSE_PANEL_MOCK_LLM',
+] as const
+
 function requestUrl(input: string | URL | Request): string {
   if (typeof input === 'string') return input
   if (input instanceof URL) return input.href
@@ -34,8 +49,13 @@ function stubLmStudio(contexts: Record<string, number | null>): () => void {
 
 describe('evaluateChatDefaultContext', () => {
   let restoreFetch: (() => void) | undefined
+  let originalEnvironment = new Map<string, string | undefined>()
 
   beforeEach(() => {
+    originalEnvironment = new Map(
+      AMBIENT_PROVIDER_ENV_VARS.map((name) => [name, process.env[name]]),
+    )
+    for (const name of AMBIENT_PROVIDER_ENV_VARS) Reflect.deleteProperty(process.env, name)
     invalidateLmStudioModelsCache()
     // Start from a clean local-only slate: no cloud keys, no extra providers.
     for (const p of ['anthropic', 'openai', 'cursor', 'openrouter', 'mistral', 'gemini']) {
@@ -47,6 +67,10 @@ describe('evaluateChatDefaultContext', () => {
   afterEach(() => {
     restoreFetch?.()
     restoreFetch = undefined
+    for (const [name, value] of originalEnvironment) {
+      if (value === undefined) Reflect.deleteProperty(process.env, name)
+      else process.env[name] = value
+    }
   })
 
   it('warns when only small-context local models are loaded', async () => {
