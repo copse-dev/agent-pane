@@ -30,12 +30,19 @@ async function measureTour(): Promise<TourGeometry | null> {
 }
 
 describe('marketing site Tour anchor', () => {
-  it('shows public downloads without exposing the private source repository', async () => {
+  it('publishes the source repo, and still hides it in the downloads-live stage', async () => {
     await browser.setWindowSize(1280, 800)
     await browser.url('/marketing/index.html')
     await $('.hero-copy').waitForDisplayed()
     await browser.waitUntil(() => browser.execute(() => document.fonts.status === 'loaded'))
 
+    // As published: no `data-site-mode`, so the repo links are live.
+    await expect($('.hero-copy a[href="https://github.com/copse-dev/agent-pane"]')).toBeDisplayed()
+    await expect($('footer a[href="https://github.com/copse-dev/agent-pane"]')).toBeDisplayed()
+    await expect($('.hero-badges .mode-source-live-only')).toHaveText('Free & open source')
+
+    // The pre-launch stages stay wired, so putting the attribute back still
+    // withholds every source link.
     await browser.execute(() => {
       document.documentElement.setAttribute('data-site-mode', 'downloads-live')
     })
@@ -126,14 +133,14 @@ describe('marketing site Tour anchor', () => {
     await $('.hero-copy').waitForDisplayed()
     await browser.waitUntil(() => browser.execute(() => document.fonts.status === 'loaded'))
 
-    const privateBetaBadge = $('.hero-badges .mode-source-private-only')
-    await expect(privateBetaBadge).toBeDisplayed()
-    await expect(privateBetaBadge).toHaveText('Free public beta')
+    const openSourceBadge = $('.hero-badges .mode-source-live-only')
+    await expect(openSourceBadge).toBeDisplayed()
+    await expect(openSourceBadge).toHaveText('Free & open source')
     expect(
-      (await privateBetaBadge.getSize('height')) ?? Number.POSITIVE_INFINITY,
+      (await openSourceBadge.getSize('height')) ?? Number.POSITIVE_INFINITY,
     ).toBeLessThanOrEqual(32)
     await browser.saveScreenshot(
-      join(E2E_SCREENSHOT_DIR, 'marketing-site-mobile-private-beta-badge.png'),
+      join(E2E_SCREENSHOT_DIR, 'marketing-site-mobile-open-source-badge.png'),
     )
 
     await expect($('.hero-visual')).not.toBeDisplayed()

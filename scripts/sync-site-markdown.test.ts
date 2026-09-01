@@ -342,8 +342,11 @@ describe('the published site', () => {
 
     const home = generated.find(({ path }) => path.endsWith(join('site', 'index.md')))
     assert.ok(home, 'expected the generated home-page twin')
-    assert.match(home.content, /Free public beta/)
-    assert.doesNotMatch(home.content, /open[- ]source|github\.com\/copse-dev\/agent-pane/i)
+    assert.match(home.content, /Free & open source/)
+    // The source repo is public now, so this inverts rather than disappears:
+    // it still pins what the generated twin must say about the source, it just
+    // asserts the links are present instead of absent.
+    assert.match(home.content, /github\.com\/copse-dev\/agent-pane/i)
   })
 
   it('renders into a build tree without writing beside the pages', async () => {
