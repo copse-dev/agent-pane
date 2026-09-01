@@ -23,9 +23,10 @@ export function nextAcpMeaningfulEvent(
     case 'reasoning':
       return chunk.text.trim() ? 'reasoning' : previous
     case 'tool_call':
+      return 'tool'
     case 'tool_result':
     case 'tool_call_update':
-      return 'tool'
+      return previous
     default:
       return previous
   }
