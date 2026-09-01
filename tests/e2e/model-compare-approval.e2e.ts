@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -53,8 +54,33 @@ describe('model comparison approval', function () {
     })
     await expect(reviewerA.$('.model-picker-option')).toHaveText(expect.stringContaining('sonnet'))
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'model-compare-approval-dialog.png'))
+    await saveElementScreenshot('#approval-dialog', 'model-compare-approval-dialog.png')
 
+    // A second live approval used to join this batch, replacing the interactive
+    // comparison controls with a generic two-row prompt. Keep the comparison
+    // alone and let the package approval take the next dialog turn.
+    await reviewerA.$('.model-picker-trigger').click()
+    await browser.execute(() => {
+      const bridge = (
+        window as unknown as {
+          __copseE2e?: { requestAcpPackageInstallApproval: () => Promise<unknown> }
+        }
+      ).__copseE2e
+      if (!bridge?.requestAcpPackageInstallApproval) {
+        throw new Error('__copseE2e.requestAcpPackageInstallApproval unavailable')
+      }
+      void bridge.requestAcpPackageInstallApproval().catch(() => undefined)
+    })
+
+    await expect(dialog.$('.approval-heading')).toHaveText('Compare models on this diff?')
+    await expect(dialog.$('.approval-comparison-models')).toBeDisplayed()
+    expect(await dialog.$$('.approval-model-picker').length).toBe(3)
+    await expect(dialog.$('.approval-approve')).toHaveText('Approve')
+    await saveElementScreenshot('#approval-dialog', 'model-compare-solo-approval-dialog.png')
+
+    await dialog.$('.approval-reject').click()
+    await expect(dialog.$('.approval-heading')).toHaveText('Install ACP adapters globally?')
+    expect(await dialog.$$('.approval-model-picker').length).toBe(0)
     await dialog.$('.approval-reject').click()
   })
 })
