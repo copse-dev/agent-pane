@@ -28,6 +28,31 @@ export interface WorktreeRecord {
   prunable: string | null
 }
 
+/**
+ * Compare checkout identities without trusting path spelling. Existing paths
+ * are canonicalized through the filesystem; missing Windows paths still
+ * compare case-insensitively, matching that platform's path semantics.
+ */
+export function sameWorktreePath(
+  left: string,
+  right: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const canonical = (path: string): string => {
+    const resolved = resolve(path)
+    try {
+      return realpathSync.native(resolved)
+    } catch {
+      return resolved
+    }
+  }
+  const leftPath = canonical(left)
+  const rightPath = canonical(right)
+  return platform === 'win32'
+    ? leftPath.toLowerCase() === rightPath.toLowerCase()
+    : leftPath === rightPath
+}
+
 export type ThreadWorktreeRecoveryMetadata = Pick<
   ThreadWorktree,
   'baseBranch' | 'baseCommit' | 'createdAt' | 'seededFromDirtyProject'
@@ -495,8 +520,8 @@ export async function allocateThreadWorktree(
 
   return runSerialized(`worktree-manager:${projectRoot}`, async () => {
     const target = expectedThreadWorktreePath(input.projectId, input.threadId)
-    const existing = (await listRecords(projectRoot)).find(
-      (record) => resolve(record.path) === resolve(target),
+    const existing = (await listRecords(projectRoot)).find((record) =>
+      sameWorktreePath(record.path, target),
     )
     if (existing) throw new Error(`Thread worktree is already registered: ${target}`)
 
@@ -656,8 +681,8 @@ export async function restoreRetiredThreadWorktree(
   const projectRoot = location.repositoryRoot
   const target = expectedThreadWorktreePath(input.projectId, input.threadId)
   return runSerialized(`worktree-manager:${projectRoot}`, async () => {
-    const registered = (await listRecords(projectRoot)).find(
-      (record) => resolve(record.path) === resolve(target),
+    const registered = (await listRecords(projectRoot)).find((record) =>
+      sameWorktreePath(record.path, target),
     )
     if (!registered) {
       const branchHead = await requireGitValue(
@@ -702,7 +727,7 @@ export async function validateThreadWorktree(
     throw new Error('Thread worktree base commit does not resolve exactly')
   }
   const expected = expectedThreadWorktreePath(input.projectId, input.threadId)
-  if (resolve(input.worktree.path) !== resolve(expected)) {
+  if (!sameWorktreePath(input.worktree.path, expected)) {
     throw new Error('Persisted worktree path does not match the configured thread path')
   }
 
@@ -710,7 +735,7 @@ export async function validateThreadWorktree(
   if (!canonicalPath) throw new Error('Thread worktree is missing')
   const record = (await listRecords(projectRoot)).find((asyncRecord) => {
     try {
-      return resolve(asyncRecord.path) === resolve(canonicalPath)
+      return sameWorktreePath(asyncRecord.path, canonicalPath)
     } catch {
       return false
     }
@@ -851,7 +876,7 @@ export function managedThreadIdForPath(projectId: string, path: string): string 
   assertOwnerId('project id', projectId)
   const projectDir = resolve(worktreesRoot(), projectId)
   const target = resolve(path)
-  if (dirname(target) !== projectDir) return null
+  if (!sameWorktreePath(dirname(target), projectDir)) return null
   const threadId = basename(target)
   return OWNER_ID.test(threadId) ? threadId : null
 }

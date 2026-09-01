@@ -500,6 +500,8 @@ export function seedEmptyProject(
     sshHost?: string
     /** Seed rolling usage-ledger events before the app launches. */
     usageEvents?: readonly UsageEvent[]
+    /** Seed last-seen OpenRouter rates, including legitimate zero-dollar routes. */
+    openRouterPricing?: Record<string, { inputPricePerMTok: number; outputPricePerMTok: number }>
     /**
      * The exact `pluginDisabled` list to write, replacing the host defaults. Use
      * this to opt out of a pack that ships enabled (e.g. drop
@@ -620,6 +622,9 @@ export function seedEmptyProject(
   }
   if (options?.windowBounds !== undefined) {
     settings.windowBounds = options.windowBounds
+  }
+  if (options?.openRouterPricing !== undefined) {
+    settings.openRouterPricing = options.openRouterPricing
   }
   if (options?.parallelApiKey !== undefined) {
     settings.apiKey = {

@@ -44,7 +44,7 @@ export const readTerminalTool = defineTool({
       .default(READ_TERMINAL_DEFAULT_LINES)
       .describe(`How many trailing lines to return (1–${String(READ_TERMINAL_MAX_LINES)}).`),
   }),
-  async execute({ action, id, max_lines }) {
+  async execute({ action, id, max_lines }, signal) {
     const threadId = getActiveRunThread()
     if (action === 'list') {
       const shells = listTerminalSessions(threadId)
@@ -61,7 +61,7 @@ export const readTerminalTool = defineTool({
     }
     // The scrollback is user-owned content: screen it (local safety model) and
     // fall back to explicit user approval before it reaches the agent.
-    const gate = await ensureTerminalReadPermitted(threadId, snap.label, snap.text)
+    const gate = await ensureTerminalReadPermitted(threadId, snap.label, snap.text, signal)
     if (!gate.allowed) {
       return gate.deniedMessage ?? 'The user declined to share this shell output.'
     }

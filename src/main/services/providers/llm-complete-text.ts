@@ -41,10 +41,16 @@ export async function completeMessagesWithUsage(
   provider: LLMProvider,
   messages: LLMMessage[],
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<{ text: string; usage: ModelUsage }> {
   let text = ''
   let usage = { ...EMPTY_USAGE }
   const controller = new AbortController()
+  const abortFromCaller = (): void => {
+    controller.abort(signal?.reason)
+  }
+  if (signal?.aborted) abortFromCaller()
+  else signal?.addEventListener('abort', abortFromCaller, { once: true })
   const timer = setTimeout(() => {
     controller.abort()
   }, timeoutMs)
@@ -58,6 +64,7 @@ export async function completeMessagesWithUsage(
     }
   } finally {
     clearTimeout(timer)
+    signal?.removeEventListener('abort', abortFromCaller)
   }
   return { text, usage }
 }

@@ -557,6 +557,12 @@ export function mountApprovalDialog(
         show()
       } else {
         renderBatch()
+        // Removing a sibling can change the remaining primary action from a
+        // one-shot batch approval into a broader solo grant (for example read
+        // access outside the project). Treat that semantic change like a live
+        // append so a click committed against the old label cannot land on the
+        // newly broadened action. Reject deliberately stays available.
+        startSettle()
       }
     }
     syncAttention()
