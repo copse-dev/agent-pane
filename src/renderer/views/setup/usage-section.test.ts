@@ -245,6 +245,7 @@ describe('renderModelTable alignment', () => {
       outputTokens: 200,
       estimatedCostUsd: 0.5,
       isLocal: false,
+      pricingKnown: true,
       ...over,
     }
   }
