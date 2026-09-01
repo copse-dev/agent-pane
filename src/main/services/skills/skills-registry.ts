@@ -178,6 +178,11 @@ export async function initSkillsRegistry(): Promise<void> {
   notifyRefreshContextEstimate()
 }
 
+/** Wait until an already-started discovery pass has populated the shared cache. */
+export async function waitForSkillsRegistryRefresh(): Promise<void> {
+  if (refreshPromise) await refreshPromise
+}
+
 /** Discover and scope the product skill catalog to one explicit headless run. */
 export async function runWithDiscoveredSkills<T>(fn: () => Promise<T>): Promise<T> {
   const skills = await discoverSkillsRegistry()

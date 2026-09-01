@@ -162,7 +162,11 @@ import { requestCloseConfirmation } from '../services/close-confirm.ts'
 import { addTrustedShellCommand } from '../services/security/command-routing-config.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
-import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
+import {
+  listSkills,
+  initSkillsRegistry,
+  waitForSkillsRegistryRefresh,
+} from '../services/skills/skills-registry.ts'
 import { listAgents, initAgentsRegistry } from '../services/agents/agents-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
@@ -1828,7 +1832,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
 
-  ipcMain.handle('skills:list', () => listSkills())
+  ipcMain.handle('skills:list', async () => {
+    await waitForSkillsRegistryRefresh()
+    return listSkills()
+  })
   ipcMain.handle('agents:list', () => listAgents())
   ipcMain.handle('cursorPlugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
