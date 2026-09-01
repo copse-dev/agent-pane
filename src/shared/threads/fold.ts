@@ -1,4 +1,5 @@
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
+import type { CanvasArtefactReference } from '@shared/types/canvas.ts'
 import type {
   Message,
   MessageOrigin,
@@ -50,6 +51,7 @@ interface MessageLike {
   createdAt?: number
   reasoning?: string
   images?: string[]
+  canvasArtefacts?: CanvasArtefactReference[]
   commandSummary?: string
   toolSummary?: string
   attachments?: TranscriptAttachment[]
@@ -208,6 +210,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
     line.images = images
   }
 
+  if (msg.canvasArtefacts !== undefined) line.canvasArtefacts = msg.canvasArtefacts
   if (msg.commandSummary !== undefined) line.commandSummary = msg.commandSummary
   if (msg.toolSummary !== undefined) line.toolSummary = msg.toolSummary
   if (msg.attachments !== undefined && msg.attachments.length > 0) {
@@ -411,6 +414,7 @@ function foldOne(
     })
   }
 
+  if (line.canvasArtefacts !== undefined) msg.canvasArtefacts = line.canvasArtefacts
   if (line.commandSummary !== undefined) msg.commandSummary = line.commandSummary
   if (line.toolSummary !== undefined) msg.toolSummary = line.toolSummary
   if (line.attachments !== undefined) {
@@ -449,6 +453,7 @@ export function foldMessage(
     createdAt: m.createdAt ?? 0,
     ...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
     ...(m.images !== undefined ? { images: m.images } : {}),
+    ...(m.canvasArtefacts !== undefined ? { canvasArtefacts: m.canvasArtefacts } : {}),
     ...(m.commandSummary !== undefined ? { commandSummary: m.commandSummary } : {}),
     ...(m.toolSummary !== undefined ? { toolSummary: m.toolSummary } : {}),
     ...(m.attachments !== undefined ? { attachments: m.attachments } : {}),
