@@ -454,9 +454,14 @@ app
     // that probe finishes; skills:list waits for this in-flight scan so the
     // first slash-picker open cannot observe the initial empty cache.
     const skillsReady = initSkillsRegistry()
+    // Same for agents: `agents:list` is registered with the other handlers well
+    // before the gate below, so the scan has to be in flight by then for the
+    // handler's wait to have anything to join.
+    const agentsReady = initAgentsRegistry()
     // Keep a rejection handled while boot awaits the tool probe, then surface it
     // at the existing skills-mcp gate below.
     void skillsReady.catch(() => undefined)
+    void agentsReady.catch(() => undefined)
     // The only Electron-specific seam the agent run needs: forward stream chunks
     // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.
     // Guard against a window destroyed mid-run (e.g. closed while the agent streams).
@@ -863,7 +868,7 @@ app
 
     recordStartupPhase('skills-mcp')
     await skillsReady
-    await initAgentsRegistry()
+    await agentsReady
     registerSkillTools(registry)
     await loadCustomTools(registry)
 
