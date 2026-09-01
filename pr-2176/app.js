@@ -18577,8 +18577,14 @@ function parseSshHostDraft(draft) {
     host: draft.host.trim()
   };
   if (draft.user.trim()) host.user = draft.user.trim();
-  const port = Number.parseInt(draft.port.trim(), 10);
-  if (draft.port.trim() && Number.isFinite(port)) host.port = port;
+  const portText = draft.port.trim();
+  if (portText) {
+    const port = Number(portText);
+    if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535) {
+      return { ok: false, error: "Port must be a whole number from 1 to 65535." };
+    }
+    host.port = port;
+  }
   if (draft.identityFile.trim()) host.identityFile = draft.identityFile.trim();
   if (draft.forwardAgent) host.forwardAgent = true;
   return { ok: true, host };
@@ -239207,7 +239213,7 @@ async function resolveFileReferencesInBatches(candidates, resolve2) {
 var FILE_REFERENCE_RE, TRAILING_PROSE_PUNCTUATION_RE, FILE_REFERENCE_RESOLVE_BATCH_SIZE;
 var init_file_reference = __esm({
   "src/shared/fs/file-reference.ts"() {
-    FILE_REFERENCE_RE = /(^|[^A-Za-z0-9_./-])((?:\.\/)?(?:[A-Za-z0-9_@+$.-]+\/)+[A-Za-z0-9_@+$.-]*|\.[A-Za-z0-9_@+$-][A-Za-z0-9_@+$.-]{0,30}|[A-Za-z0-9_@+$-]+\.[A-Za-z0-9][A-Za-z0-9.-]{0,15}|Dockerfile|Makefile)(?::(\d+)(?::(\d+))?)?(?=$|[^A-Za-z0-9_./-])/g;
+    FILE_REFERENCE_RE = /(^|[^A-Za-z0-9_./-])((?:\.\/)?(?:[A-Za-z0-9_@+$.-]{1,255}\/)+[A-Za-z0-9_@+$.-]*|\.[A-Za-z0-9_@+$-][A-Za-z0-9_@+$.-]{0,30}|[A-Za-z0-9_@+$-]{1,255}\.[A-Za-z0-9][A-Za-z0-9.-]{0,15}|Dockerfile|Makefile)(?::(\d+)(?::(\d+))?)?(?=$|[^A-Za-z0-9_./-])/g;
     TRAILING_PROSE_PUNCTUATION_RE = /[.,;:!?]+$/;
     FILE_REFERENCE_RESOLVE_BATCH_SIZE = 200;
   }
