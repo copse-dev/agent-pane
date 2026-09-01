@@ -99,6 +99,6 @@ export async function runAcpAdvisorPrompt(options: {
   }
   // Same consent rule as a session turn: configured provider keys reach a
   // remote SSH host only if the user approves the forward (no-op locally).
-  await gateRemoteAcpEnvForward(agent.id, config)
+  await gateRemoteAcpEnvForward(agent.id, config, options.signal)
   return runAcpAdvisorSession(config, options.model ?? agent.model, options.prompt, options.signal)
 }
