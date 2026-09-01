@@ -21,7 +21,7 @@ export const revealPiiTool = defineTool({
   parameters: z.object({
     placeholder: z.string().describe('The placeholder token to reveal, e.g. "[EMAIL_1]".'),
   }),
-  async execute({ placeholder }) {
+  async execute({ placeholder }, signal) {
     const threadId = getActiveRunThread()
     if (!threadId) return 'No active conversation, so there is nothing to reveal.'
 
@@ -31,15 +31,18 @@ export const revealPiiTool = defineTool({
       return `"${token}" is not a known redacted placeholder in this conversation. Use it as-is.`
     }
 
-    const decision = await requestApproval({
-      type: 'pii',
-      cause: 'pii-reveal',
-      title: 'Reveal redacted personal data?',
-      body:
-        `The agent is asking to see the real value behind ${token}. ` +
-        'Approving reveals it to the agent and, on the next step, sends it to the model provider. Decline to keep it on-device.',
-      allowRemember: false,
-    })
+    const decision = await requestApproval(
+      {
+        type: 'pii',
+        cause: 'pii-reveal',
+        title: 'Reveal redacted personal data?',
+        body:
+          `The agent is asking to see the real value behind ${token}. ` +
+          'Approving reveals it to the agent and, on the next step, sends it to the model provider. Decline to keep it on-device.',
+        allowRemember: false,
+      },
+      signal,
+    )
 
     if (!decision.approved) {
       return `The user declined to reveal ${token}. Continue using the placeholder.`

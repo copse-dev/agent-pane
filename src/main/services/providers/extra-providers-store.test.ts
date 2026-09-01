@@ -6,7 +6,7 @@ import {
   saveExtraProvider,
   deleteExtraProvider,
 } from './extra-providers-store.ts'
-import { setSetting, setApiKey, hasApiKey } from '../storage/settings.ts'
+import { getSetting, setSetting, setApiKey, hasApiKey } from '../storage/settings.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { BUILTIN_EXTRA_PROVIDER_SLUGS } from '@copse/llm/extra-providers.ts'
 
@@ -45,6 +45,36 @@ describe('extra-providers-store', () => {
     await saveExtraProvider({ baseUrl: 'https://api.acme.example/v1' })
     await saveExtraProvider({ baseUrl: 'https://api.acme.example/v1' })
     assert.deepEqual(slugs(), [...PRESETS, 'acme', 'acme-2'])
+  })
+
+  it('preserves providers saved concurrently', async () => {
+    let releaseApproval: (() => void) | undefined
+    let markApprovalStarted: (() => void) | undefined
+    const approvalStarted = new Promise<void>((resolve) => {
+      markApprovalStarted = resolve
+    })
+    const approvalReleased = new Promise<void>((resolve) => {
+      releaseApproval = resolve
+    })
+    setApprovalHandler(async () => {
+      markApprovalStarted?.()
+      await approvalReleased
+      return { approved: true, remember: true }
+    })
+
+    const saveCustom = saveExtraProvider({
+      slug: 'acme',
+      baseUrl: 'https://api.acme.example/v1',
+    })
+    await approvalStarted
+    await saveExtraProvider({ slug: 'mistral', includeUsage: false })
+    releaseApproval?.()
+    await saveCustom
+
+    assert.deepEqual(
+      getSetting<Array<{ slug: string }>>('extraProviders', []).map((provider) => provider.slug),
+      ['mistral', 'acme'],
+    )
   })
 
   it('treats an explicit slug as an in-place edit (the frozen slug)', async () => {

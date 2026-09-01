@@ -44,4 +44,30 @@ describe('ACP unfinished-turn recovery', () => {
     assert.equal(shouldRecoverAcpTurn('max_tokens', afterTool), false)
     assert.equal(acpTurnHasFinalResponse('max_tokens', afterAnswer), false)
   })
+
+  it('keeps final text meaningful after trailing tool completion events', () => {
+    let last = nextAcpMeaningfulEvent(null, {
+      type: 'tool_call',
+      toolCall: { id: 'search', name: 'run_shell', args: {} },
+    })
+    last = nextAcpMeaningfulEvent(last, {
+      type: 'text',
+      text: 'Updated the ADR and verified the diff.',
+    })
+    last = nextAcpMeaningfulEvent(last, {
+      type: 'tool_call_update',
+      toolCallId: 'search',
+      status: 'done',
+    })
+    last = nextAcpMeaningfulEvent(last, {
+      type: 'tool_result',
+      toolCallId: 'search',
+      result: 'found it',
+      isError: false,
+    })
+
+    assert.equal(last, 'text')
+    assert.equal(shouldRecoverAcpTurn('end_turn', last), false)
+    assert.equal(acpTurnHasFinalResponse('end_turn', last), true)
+  })
 })
