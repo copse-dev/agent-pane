@@ -24,10 +24,15 @@ const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
 export const PLAN_USAGE_CACHE_TTL_MS = 5 * 60 * 1000
 
 let planUsageCache: { snapshot: PlanUsageSnapshot; fetchedAt: number } | null = null
-let planUsageInflight: Promise<PlanUsageSnapshot> | null = null
+let planUsageGeneration = 0
+let planUsageInflight: {
+  generation: number
+  promise: Promise<PlanUsageSnapshot>
+} | null = null
 
 /** Drop cached plan usage (tests, or after credentials change). */
 export function invalidatePlanUsageCache(): void {
+  planUsageGeneration += 1
   planUsageCache = null
   planUsageInflight = null
 }
@@ -563,6 +568,22 @@ async function fetchPlanUsageSnapshotUncached(): Promise<PlanUsageSnapshot> {
   }
 }
 
+let fetchPlanUsageSnapshot = fetchPlanUsageSnapshotUncached
+
+/** Replace the network-backed loader for deterministic cache tests. */
+export function setPlanUsageSnapshotFetcherForTest(
+  fetcher: (() => Promise<PlanUsageSnapshot>) | null,
+): void {
+  fetchPlanUsageSnapshot = fetcher ?? fetchPlanUsageSnapshotUncached
+  invalidatePlanUsageCache()
+}
+
+function clearPlanUsageInflight(generation: number): void {
+  if (planUsageInflight?.generation === generation) {
+    planUsageInflight = null
+  }
+}
+
 /**
  * Host bridge around `@copse/plan-usage`. Always resolves — never rejects —
  * so Settings → Usage keeps showing the local ledger when plan fetch fails.
@@ -576,15 +597,20 @@ export async function loadPlanUsageSnapshot(options?: {
     return planUsageCache.snapshot
   }
   if (!force && planUsageInflight) {
-    return planUsageInflight
+    return planUsageInflight.promise
   }
 
-  planUsageInflight = fetchPlanUsageSnapshotUncached()
+  const generation = planUsageGeneration + 1
+  planUsageGeneration = generation
+  const promise = fetchPlanUsageSnapshot()
+  planUsageInflight = { generation, promise }
   try {
-    const snapshot = await planUsageInflight
-    planUsageCache = { snapshot, fetchedAt: Date.now() }
+    const snapshot = await promise
+    if (generation === planUsageGeneration) {
+      planUsageCache = { snapshot, fetchedAt: Date.now() }
+    }
     return snapshot
   } finally {
-    planUsageInflight = null
+    clearPlanUsageInflight(generation)
   }
 }
