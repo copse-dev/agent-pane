@@ -185,6 +185,17 @@ export async function initAgentsRegistry(): Promise<void> {
   }
 }
 
+/**
+ * Wait until an already-started discovery pass has populated the shared cache.
+ *
+ * Mirrors `waitForSkillsRegistryRefresh`. Handlers are registered well before
+ * boot reaches `initAgentsRegistry()`, so a renderer read that arrives in that
+ * window would otherwise be served the empty initial cache.
+ */
+export async function waitForAgentsRegistryRefresh(): Promise<void> {
+  if (refreshPromise) await refreshPromise
+}
+
 /** Everything discovered, including what was skipped and shadowed (Settings). */
 export function listAgents(): AgentsListResult {
   return cached

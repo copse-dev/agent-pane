@@ -167,7 +167,11 @@ import {
   initSkillsRegistry,
   waitForSkillsRegistryRefresh,
 } from '../services/skills/skills-registry.ts'
-import { listAgents, initAgentsRegistry } from '../services/agents/agents-registry.ts'
+import {
+  listAgents,
+  initAgentsRegistry,
+  waitForAgentsRegistryRefresh,
+} from '../services/agents/agents-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
@@ -1836,7 +1840,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await waitForSkillsRegistryRefresh()
     return listSkills()
   })
-  ipcMain.handle('agents:list', () => listAgents())
+  ipcMain.handle('agents:list', async () => {
+    await waitForAgentsRegistryRefresh()
+    return listAgents()
+  })
   ipcMain.handle('cursorPlugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()
