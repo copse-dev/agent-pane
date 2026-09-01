@@ -76,7 +76,12 @@ export const ACP_WIRE_TRACE_FILE = 'acp-debug.jsonl'
  * everything else classifies one inbound JSON-RPC message by its wire shape.
  */
 export type AcpWireRecordType =
-  'session' | 'request' | 'notification' | 'response' | 'batch' | 'unknown'
+  | 'session'
+  | 'request'
+  | 'notification'
+  | 'response'
+  | 'batch'
+  | 'unknown'
 
 /** A sink that appends to one thread's `acp-debug.jsonl`. */
 export interface AcpWireTrace extends AcpWireSink {

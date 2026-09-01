@@ -4,9 +4,14 @@ export const TERMINAL_BENCH_PROFILE_IDS = ['main-legacy', 'pr-1149', 'product-al
 
 export type TerminalBenchProfileId = (typeof TERMINAL_BENCH_PROFILE_IDS)[number]
 export type TerminalBenchProfileVersionedId =
-  'main-legacy@1' | 'pr-1149@1' | 'product-aligned@1' | 'product-aligned@2' | 'product-aligned@3'
+  | 'main-legacy@1'
+  | 'pr-1149@1'
+  | 'product-aligned@1'
+  | 'product-aligned@2'
+  | 'product-aligned@3'
 export type TerminalBenchProfileSelectionId =
-  TerminalBenchProfileId | TerminalBenchProfileVersionedId
+  | TerminalBenchProfileId
+  | TerminalBenchProfileVersionedId
 
 export type TerminalBenchWriteFilePolicy = 'none' | 'app-absolute' | 'workspace-relative'
 export type TerminalBenchReasoningPolicy = 'fixed-cap' | 'circle-gated-2k-checkpoints-v1'

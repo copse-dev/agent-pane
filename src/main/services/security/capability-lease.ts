@@ -23,7 +23,8 @@ export interface ShellReplayLease {
 }
 
 export type ShellReplayMatch =
-  { matched: false } | { matched: true; leaseId: string; companionSegments: string[] }
+  | { matched: false }
+  | { matched: true; leaseId: string; companionSegments: string[] }
 
 interface ShellReplayLeaseStoreOptions {
   now?: () => number

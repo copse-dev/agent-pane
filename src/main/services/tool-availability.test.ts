@@ -109,7 +109,8 @@ describe('checkToolAvailability', () => {
 
   it('runs the authenticated GitHub probe outside the project sandbox', async () => {
     let invocation:
-      { command: string; args: string[]; unsandboxed: boolean | undefined } | undefined
+      | { command: string; args: string[]; unsandboxed: boolean | undefined }
+      | undefined
     const available = await probeGhAccessible((command, args, options) => {
       invocation = { command, args, unsandboxed: options?.unsandboxed }
       return Promise.resolve({ stdout: '', stderr: '', code: 0, stdoutTruncated: false })

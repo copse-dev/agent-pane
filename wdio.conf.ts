@@ -286,7 +286,8 @@ export const config: Options.Testrunner = {
       // A session that is already gone needs no extra shutdown work.
     }
     const requested = browser.requestedCapabilities as
-      (ChromeCapabilities & { alwaysMatch?: ChromeCapabilities }) | undefined
+      | (ChromeCapabilities & { alwaysMatch?: ChromeCapabilities })
+      | undefined
     if (!requested) return
     // W3C sessions may hand back the alwaysMatch/firstMatch shape rather than
     // the flat capabilities object; reloadSession re-sends whichever it holds.
