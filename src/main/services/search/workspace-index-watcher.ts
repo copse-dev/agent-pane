@@ -12,6 +12,14 @@ import {
 const REBUILD_DEBOUNCE_MS = 500
 
 /**
+ * `fs.watch` is a latency optimization, not a durable event log: recursive
+ * watches can lose events under load (observed on Linux CI for a root-level
+ * file create). Periodically wake git consumers so an open Changes pane
+ * reconciles with disk even when the native event never arrives.
+ */
+const WORKING_TREE_RECONCILE_INTERVAL_MS = 5_000
+
+/**
  * Ceiling on watch-only (no index rebuild) roots. Git IPC arms these when the
  * Changes pane or branch UI reads a thread checkout that search indexing has
  * not registered — isolated worktrees before the first agent turn, or a
@@ -22,6 +30,8 @@ const MAX_WATCH_ONLY_ROOTS = 8
 
 interface RootWatchState {
   watcher: fs.FSWatcher | null
+  /** Whether git consumers need periodic reconciliation even without a live native watcher. */
+  withGitReconciliation: boolean
   debounceTimer: ReturnType<typeof setTimeout> | null
   rebuildInFlight: Promise<void> | null
   rebuildQueued: boolean
@@ -40,10 +50,46 @@ interface RootWatchState {
 
 /** One watcher + rebuild-coalescing state per execution root (workspace or worktree, #1400). */
 const states = new Map<string, RootWatchState>()
+let workingTreeReconcileTimer: ReturnType<typeof setInterval> | null = null
 
-function emptyState(opts: { withSemantic: boolean; withIndexRebuild: boolean }): RootWatchState {
+function reconcileWorkingTreeWatchers(): void {
+  for (const [root, state] of states) {
+    if (state.withGitReconciliation) notifyWorkspaceChanged(root)
+  }
+}
+
+/** Test hook — run the best-effort watch reconciliation without waiting five seconds. */
+export function reconcileWorkingTreeWatchersForTest(): void {
+  reconcileWorkingTreeWatchers()
+}
+
+/** Test hook — whether live roots own the shared reconciliation heartbeat. */
+export function isWorkingTreeReconcileTimerArmedForTest(): boolean {
+  return workingTreeReconcileTimer !== null
+}
+
+function ensureWorkingTreeReconcileTimer(): void {
+  if (workingTreeReconcileTimer) return
+  workingTreeReconcileTimer = setInterval(
+    reconcileWorkingTreeWatchers,
+    WORKING_TREE_RECONCILE_INTERVAL_MS,
+  )
+}
+
+function stopWorkingTreeReconcileTimerIfIdle(): void {
+  if ([...states.values()].some((state) => state.withGitReconciliation)) return
+  if (workingTreeReconcileTimer) clearInterval(workingTreeReconcileTimer)
+  workingTreeReconcileTimer = null
+}
+
+function emptyState(opts: {
+  withSemantic: boolean
+  withIndexRebuild: boolean
+  withGitReconciliation?: boolean
+}): RootWatchState {
   return {
     watcher: null,
+    withGitReconciliation: opts.withGitReconciliation ?? false,
     debounceTimer: null,
     rebuildInFlight: null,
     rebuildQueued: false,
@@ -54,7 +100,7 @@ function emptyState(opts: { withSemantic: boolean; withIndexRebuild: boolean }):
 
 function pruneWatchOnlyRoots(keepKey: string): void {
   const watchOnly = [...states.entries()].filter(
-    ([key, state]) => key !== keepKey && state.watcher != null && !state.withIndexRebuild,
+    ([key, state]) => key !== keepKey && state.withGitReconciliation && !state.withIndexRebuild,
   )
   const overflow = watchOnly.length + 1 - MAX_WATCH_ONLY_ROOTS
   if (overflow <= 0) return
@@ -83,10 +129,14 @@ function armWatcher(
 
   if (!opts.withIndexRebuild) pruneWatchOnlyRoots(key)
 
-  const state = existing ?? emptyState(opts)
+  const state = existing ?? emptyState({ ...opts, withGitReconciliation: true })
+  state.withGitReconciliation = true
   if (opts.withSemantic) state.withSemantic = true
   if (opts.withIndexRebuild) state.withIndexRebuild = true
   states.set(key, state)
+  // Keep the Changes pane self-healing even when recursive watching is
+  // unsupported or the process has temporarily exhausted native watch handles.
+  ensureWorkingTreeReconcileTimer()
 
   try {
     const watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
@@ -97,7 +147,11 @@ function armWatcher(
     // unmounted workspace root must drop the watcher, not take the app down.
     watcher.on('error', (err: unknown) => {
       console.warn('[copse-panel] workspace index watcher failed for', key, err)
-      if (states.get(key)?.watcher === watcher) stopOne(key)
+      const current = states.get(key)
+      if (current?.watcher === watcher) {
+        watcher.close()
+        current.watcher = null
+      }
     })
     state.watcher = watcher
   } catch (err) {
@@ -179,6 +233,7 @@ function stopOne(key: string): void {
   state.watcher?.close()
   if (state.debounceTimer) clearTimeout(state.debounceTimer)
   states.delete(key)
+  stopWorkingTreeReconcileTimerIfIdle()
 }
 
 /**

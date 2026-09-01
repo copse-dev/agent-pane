@@ -15,7 +15,12 @@ export function formatTokenCount(n: number): string {
 export function formatPeriodHeadline(summary: UsagePeriodSummary): string {
   const localCount = summary.localModels.length
   const cloudCount = summary.cloudModels.length
-  const parts: string[] = [formatUsd(summary.totalCostUsd)]
+  const cost = summary.hasUnpricedCloudUsage
+    ? summary.totalCostUsd > 0
+      ? `Known cost ${formatUsd(summary.totalCostUsd)}`
+      : 'Cost unavailable'
+    : formatUsd(summary.totalCostUsd)
+  const parts: string[] = [cost]
   if (cloudCount) parts.push(`${String(cloudCount)} cloud model${cloudCount === 1 ? '' : 's'}`)
   if (localCount) parts.push(`${String(localCount)} local model${localCount === 1 ? '' : 's'}`)
   return parts.join(' · ')

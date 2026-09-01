@@ -3,6 +3,20 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
+interface ModelCardTestBridge {
+  pauseModelCardResolves: () => Promise<void>
+  resumeModelCardResolves: () => Promise<void>
+}
+
+async function setModelCardResolvesPaused(paused: boolean): Promise<void> {
+  await browser.execute(async (shouldPause) => {
+    const bridge = (window as unknown as { __copseE2e?: ModelCardTestBridge }).__copseE2e
+    if (!bridge) throw new Error('__copseE2e model-card controls unavailable')
+    if (shouldPause) await bridge.pauseModelCardResolves()
+    else await bridge.resumeModelCardResolves()
+  }, paused)
+}
+
 // The value map's hover card links out to each model's vendor-published system
 // card. That link has to be *reachable*, not just rendered: the card is an
 // absolutely-positioned overlay that used to be `pointer-events: none`, so this
@@ -17,11 +31,16 @@ describe('settings usage value map model card link', function () {
     await browser.reloadSession()
   })
 
-  after(() => {
+  after(async () => {
+    await setModelCardResolvesPaused(false).catch(() => undefined)
     resetUserData()
   })
 
   it('opens a hover card with a link to the model card and keeps it reachable', async () => {
+    // Hold the background prefetch open so this hover deterministically joins
+    // an already-running request. The link must repaint when that shared answer
+    // lands; requiring another hover would leave the visible card incomplete.
+    await setModelCardResolvesPaused(true)
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
     const fieldset = $('.frontier-fieldset')
@@ -98,9 +117,11 @@ describe('settings usage value map model card link', function () {
             : 'every pointer move landed but the card stayed hidden'),
       )
     }
-    // The card section arrives with the resolver's answer, one round-trip after
-    // the hover card itself opens.
     const link = tooltip.$('a.tt-card-link')
+    assert.equal(await link.isExisting(), false, 'the resolver gate should keep the link pending')
+    await setModelCardResolvesPaused(false)
+    // No further pointer movement: the caller that joined the prefetch must
+    // repaint this same open card when the shared resolver answer arrives.
     await link.waitForDisplayed({ timeout: 5000, timeoutMsg: 'model-card link never resolved' })
     assert.match(await link.getAttribute('href'), /^https:\/\//)
     // Opened by the shell, not navigated in-renderer.

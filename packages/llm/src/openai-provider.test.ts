@@ -32,7 +32,11 @@ interface ChatCompletionChunk {
     }
     finish_reason?: string | null
   }>
-  usage?: { prompt_tokens: number; completion_tokens: number }
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    prompt_tokens_details?: { cached_tokens?: number }
+  }
 }
 
 interface OpenAIProviderForTest {
@@ -436,6 +440,31 @@ describe('OpenAIProvider stream parsing', () => {
     const done = chunks.at(-1)
     assert.ok(done && done.type === 'done')
     assert.equal(done.stopReason, 'stop')
+  })
+
+  it('reports cached prompt tokens from Chat Completions usage', async () => {
+    const provider = new OpenAIProvider('gpt-test')
+    withFakeStream(provider, [
+      { choices: [{ delta: { content: 'cached' }, finish_reason: 'stop' }] },
+      {
+        choices: [],
+        usage: {
+          prompt_tokens: 120,
+          completion_tokens: 8,
+          prompt_tokens_details: { cached_tokens: 96 },
+        },
+      },
+    ])
+
+    const chunks = await collect(provider)
+    const usage = chunks.find((chunk) => chunk.type === 'usage')
+    assert.ok(usage)
+    assert.equal(usage.cacheReadTokens, 96)
+    assert.deepEqual(provider.lastUsage, {
+      inputTokens: 120,
+      outputTokens: 8,
+      cacheReadTokens: 96,
+    })
   })
 
   it('assembles tool-call argument fragments into a single tool_call chunk', async () => {

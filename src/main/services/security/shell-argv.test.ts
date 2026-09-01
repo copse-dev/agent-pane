@@ -7,6 +7,8 @@ import {
   TRUST_TRANSPARENT_WRAPPERS,
   commandName,
   inlineCodeBody,
+  isReadOnlySimpleCommand,
+  isStructurallyReadOnlyShellCommand,
   shellRedirects,
   shellSegments,
   unwrapWrappers,
@@ -178,5 +180,65 @@ describe('commandName', () => {
     assert.equal(commandName('/usr/bin/RM'), 'rm')
     assert.equal(commandName('Remove-Item'), 'remove-item')
     assert.equal(commandName(undefined), '')
+  })
+})
+
+describe('read-only classification and its escape hatches', () => {
+  it('accepts genuine read/query commands and pipelines of them', () => {
+    for (const command of [
+      'cat data.txt',
+      'ls -la',
+      'head -n 20 data.txt',
+      'sort -u data.txt',
+      'sort -rn data.txt',
+      'grep -o foo data.txt',
+      'file data.txt',
+      'fd . -e ts',
+      'rg --json foo',
+      'grep foo data.txt | sort | uniq -c',
+      'git log --oneline',
+    ]) {
+      assert.equal(isStructurallyReadOnlyShellCommand(command), true, command)
+    }
+  })
+
+  it('rejects an allow-listed command pointed at a program to run', () => {
+    // The allow-list is by basename, so a flag that takes a program turns a
+    // "read-only" command into a launcher: these run ./tool.sh, while
+    // `./tool.sh` on its own line is opaque local execution and prompts.
+    for (const command of [
+      'sort --compress-program=./tool.sh data.txt',
+      'sort --compress-program ./tool.sh data.txt',
+      'fd . -x ./tool.sh',
+      'fd . --exec ./tool.sh',
+      'fd . -X ./tool.sh',
+      'fd . --exec-batch ./tool.sh',
+      'rg --pre ./tool.sh foo',
+      'rg --hostname-bin=./tool.sh foo',
+    ]) {
+      assert.equal(isStructurallyReadOnlyShellCommand(command), false, command)
+    }
+  })
+
+  it('rejects an allow-listed command pointed at a file to write', () => {
+    for (const command of [
+      'sort -o out.txt data.txt',
+      'sort --output=out.txt data.txt',
+      'sort --output out.txt data.txt',
+      'sort -uo out.txt data.txt',
+      'tree -o out.txt',
+      'file -C -m magic',
+    ]) {
+      assert.equal(isStructurallyReadOnlyShellCommand(command), false, command)
+    }
+  })
+
+  it('matches escape-hatch flags per command, never globally', () => {
+    // `-o` is an output file for sort and tree but "only matching" for grep,
+    // so the table has to stay keyed by command.
+    assert.equal(isReadOnlySimpleCommand('grep -o foo data.txt'), true)
+    assert.equal(isReadOnlySimpleCommand('sort -o out.txt data.txt'), false)
+    // A bare `-` is stdin, not a flag.
+    assert.equal(isReadOnlySimpleCommand('sort -'), true)
   })
 })
