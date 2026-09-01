@@ -841,7 +841,21 @@ export async function ensureShellCommandPermitted(
   // (e.g. xcodebuild). routeShellCommand internally requires auto-run to be on
   // AND the workspace to be trusted, and never waives analysis for an untrusted
   // co-segment, so this can only fire for a genuinely safe command line.
-  if (!guardedYolo && routeShellCommand(command).outcome === 'allow') return true
+  if (!guardedYolo) {
+    const routing = routeShellCommand(command)
+    if (routing.outcome === 'allow') {
+      recordDecision({
+        kind: 'shell',
+        actor: 'system',
+        verdict: 'allowed',
+        subject: SHELL_DECISION_SUBJECT,
+        scope: 'external',
+        reasons: routing.reasons,
+        source: 'trusted-command',
+      })
+      return true
+    }
+  }
 
   const autoRun = opts.autoRun ?? getSetting<boolean>('autoRunSandboxCommands', true)
   const workspaceRoot = opts.executionRoot ?? getAgentExecutionRoot()
