@@ -402,6 +402,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       },
       onApprovalCancelled: subscribe,
       onAskUserRequest: subscribe,
+      onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
       onHookQueueMessage: subscribe,

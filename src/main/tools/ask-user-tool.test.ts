@@ -44,4 +44,21 @@ describe('askUserTool', () => {
     const result = await askUserTool.execute({ questions: [{ question: 'Which DB?' }] }, signal)
     assert.equal(result, 'The user answered: (no answer)')
   })
+
+  it(
+    'returns a blank answer when the run stops while waiting for the user',
+    { timeout: 500 },
+    async () => {
+      setAskUserHandler(() => new Promise(() => {}))
+      const controller = new AbortController()
+      const pending = askUserTool.execute(
+        { questions: [{ question: 'Which DB?' }] },
+        controller.signal,
+      )
+
+      controller.abort()
+
+      assert.equal(await pending, 'The user answered: (no answer)')
+    },
+  )
 })

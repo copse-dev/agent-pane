@@ -518,6 +518,8 @@ export interface IpcEventMap {
       questions: { question: string; options?: string[] }[]
     },
   ]
+  /** Main dismisses an ask_user request when its run stops or the request expires. */
+  'agent:ask_user_cancelled': [{ id: string }]
   'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
   'security:guardedYoloChanged': [state: import('./guarded-yolo.ts').GuardedYoloState]
   'automations:triggered': [event: import('./automations.ts').AutomationTriggerEvent]
