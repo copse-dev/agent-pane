@@ -1127,6 +1127,7 @@ export async function getDefaultBranch(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<string | null> {
   if (!root) return null
+  if (e2eBranchOverride()) return DEFAULT_GIT_BRANCH
 
   const cached = defaultBranchCache.get(root)
   if (cached) {

@@ -11,6 +11,7 @@ import {
   shouldSkipAfterTestSessionTraffic,
   withTimeout,
 } from './tests/e2e/helpers/after-test-safety.ts'
+import { installSettingsActionBarClickSafety } from './tests/e2e/helpers/settings-action-bar-click.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { assignDebugPort, type ChromeCapabilities } from './tests/e2e/helpers/debug-port.ts'
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
@@ -115,6 +116,11 @@ export const config: Options.Testrunner = {
     // overwriteCommand patched the real browser behind @wdio/globals' Proxy).
     // Cap + swallow transport deaths.
     installDeleteSessionSafety(browser)
+    // Settings' sticky Save/Cancel bar hit-tests the whole of its own box, so a
+    // control scrolled under it is visible but unclickable and WebDriver will
+    // not scroll to rescue it (it only scrolls what is out of view). Nudge such
+    // a control clear at click time; see helpers/settings-action-bar-click.ts.
+    installSettingsActionBarClickSafety(browser)
   },
   afterTest: async (test, _context, result) => {
     // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic

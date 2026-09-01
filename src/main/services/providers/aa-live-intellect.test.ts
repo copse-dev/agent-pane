@@ -1,12 +1,14 @@
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   fetchLiveIntellectModels,
+  invalidateLiveIntellectCache,
   liveCacheTtlMs,
   requestLiveIntellectModels,
 } from './aa-live-intellect.ts'
 import { expectStringRecord } from '@shared/unknown-value.ts'
 import { jsonResponse } from './test-response.ts'
+import { setApiKey } from '../storage/settings.test-shim.ts'
 
 /** A fake fetch that records the request init and returns a canned response. */
 function fakeFetch(response: {
@@ -258,5 +260,59 @@ describe('fetchLiveIntellectModels mock', () => {
       if (prev === undefined) delete process.env['COPSE_AA_INTELLECT_MOCK']
       else process.env['COPSE_AA_INTELLECT_MOCK'] = prev
     }
+  })
+})
+
+describe('fetchLiveIntellectModels cache', () => {
+  afterEach(() => {
+    setApiKey('artificial-analysis', '')
+    invalidateLiveIntellectCache()
+  })
+
+  it('coalesces overlapping requests for the same key', async () => {
+    setApiKey('artificial-analysis', 'test-key')
+    let resolveResponse: ((response: Response) => void) | undefined
+    const response = new Promise<Response>((resolve) => {
+      resolveResponse = resolve
+    })
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      return response
+    }
+
+    const first = fetchLiveIntellectModels({ fetchImpl })
+    const second = fetchLiveIntellectModels({ fetchImpl })
+    assert.equal(calls, 1)
+    if (!resolveResponse) assert.fail('Response resolver was not initialized')
+    resolveResponse(jsonResponse({ data: [AA_MODEL('coalesced', 50)] }))
+    assert.deepEqual(await first, await second)
+  })
+
+  it('does not let an invalidated request restore an old-key result', async () => {
+    setApiKey('artificial-analysis', 'old-key')
+    const resolvers: Array<(response: Response) => void> = []
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      return new Promise<Response>((resolve) => resolvers.push(resolve))
+    }
+
+    const stale = fetchLiveIntellectModels({ fetchImpl })
+    setApiKey('artificial-analysis', 'new-key')
+    invalidateLiveIntellectCache()
+    const fresh = fetchLiveIntellectModels({ fetchImpl })
+    assert.equal(calls, 2)
+    const resolveFresh = resolvers[1]
+    if (!resolveFresh) assert.fail('Fresh response resolver was not initialized')
+    resolveFresh(jsonResponse({ data: [AA_MODEL('fresh', 55)] }))
+    assert.equal((await fresh).models[0]?.id, 'fresh')
+    const resolveStale = resolvers[0]
+    if (!resolveStale) assert.fail('Stale response resolver was not initialized')
+    resolveStale(jsonResponse({ data: [AA_MODEL('stale', 45)] }))
+    assert.equal((await stale).models[0]?.id, 'stale')
+
+    assert.equal((await fetchLiveIntellectModels({ fetchImpl })).models[0]?.id, 'fresh')
+    assert.equal(calls, 2)
   })
 })

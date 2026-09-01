@@ -825,6 +825,7 @@ describe('runAgentLoop', () => {
       messages: [{ role: 'user', content: 'go' }],
       tools: [],
       maxSteps: 0,
+      maxLlmCalls: 1,
       maxStreamOutputTokens: 20,
       onChunk: () => {},
       executeTool: async () => 'ok',
@@ -1127,7 +1128,7 @@ src/renderer/views/projects-pane.ts
       executeTool: async () => 'ok',
     })
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('LLM call limit')))
-    assert.equal(chunks.at(-1)?.type, 'done')
+    assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'max_steps' })
   })
 
   it('surfaces a terminal message when finalize returns empty', async () => {
@@ -1143,6 +1144,79 @@ src/renderer/views/projects-pane.ts
       chunks.some(
         (c) => c.type === 'text' && c.text.includes('stopped before producing a final answer'),
       ),
+    )
+  })
+
+  it('retries an empty length-truncated finalization instead of discarding its continuation nudge (#1407)', async () => {
+    let calls = 0
+    const prompts: string[] = []
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        calls++
+        const last = messages.at(-1)
+        if (last?.role === 'user' && typeof last.content === 'string') prompts.push(last.content)
+        if (calls === 1) {
+          yield { type: 'done', stopReason: 'max_tokens' }
+        } else {
+          yield { type: 'text', text: 'Recovered final answer.' }
+          yield { type: 'done', stopReason: 'end_turn' }
+        }
+      },
+    }
+    const chunks: AgentStreamChunk[] = []
+
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'review the repo' }],
+      tools: [],
+      maxSteps: 0,
+      maxLlmCalls: 3,
+      onChunk: (chunk) => chunks.push(chunk),
+      executeTool: async () => '',
+    })
+
+    assert.equal(calls, 2)
+    assert.equal(prompts[1], TRUNCATION_CONTINUE_NUDGE)
+    assert.ok(chunks.some((chunk) => chunk.type === 'text' && chunk.text.includes('Recovered')))
+    assert.equal(
+      chunks.some(
+        (chunk) =>
+          chunk.type === 'text' && chunk.text.includes('stopped before producing a final answer'),
+      ),
+      false,
+    )
+  })
+
+  it('continues a partially streamed finalization when it ends at max_tokens (#1407)', async () => {
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream() {
+        calls++
+        if (calls === 1) {
+          yield { type: 'text', text: 'Partial answer; ' }
+          yield { type: 'done', stopReason: 'max_tokens' }
+        } else {
+          yield { type: 'text', text: 'now complete.' }
+          yield { type: 'done', stopReason: 'end_turn' }
+        }
+      },
+    }
+    const chunks: AgentStreamChunk[] = []
+
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'review the repo' }],
+      tools: [],
+      maxSteps: 0,
+      maxLlmCalls: 3,
+      onChunk: (chunk) => chunks.push(chunk),
+      executeTool: async () => '',
+    })
+
+    assert.equal(calls, 2)
+    assert.deepEqual(
+      chunks.filter((chunk) => chunk.type === 'text').map((chunk) => chunk.text),
+      ['Partial answer; ', 'now complete.'],
     )
   })
 
@@ -1416,7 +1490,7 @@ src/renderer/views/projects-pane.ts
     })
     assert.equal(calls, 0)
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
-    assert.equal(chunks.at(-1)?.type, 'done')
+    assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'timeout' })
     assertToolPairingValid(messages)
   })
 
@@ -1598,7 +1672,7 @@ src/renderer/views/projects-pane.ts
       signal: controller.signal,
     })
     assert.ok(chunks.some((c) => c.type === 'text' && c.text.includes('time or LLM call limit')))
-    assert.equal(chunks.at(-1)?.type, 'done')
+    assert.deepEqual(chunks.at(-1), { type: 'done', stopReason: 'timeout' })
   })
 
   it('stays silent on a user-initiated abort (non-timeout reason)', async () => {

@@ -4,7 +4,7 @@ import { registerSecretSweep, requestSecretSweep } from './secret-migration.ts'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { openPersistentStore } from './persistent-store.ts'
-import { runSerialized } from './write-queue.ts'
+import { runSerialized, runSerializedUpdate } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
 import {
   expectString,
@@ -339,6 +339,28 @@ export function setSetting(key: string, value: unknown): Promise<void> {
   return runSerialized(queueKey(key), () => {
     cached.set(key, toStore)
   })
+}
+
+/**
+ * Atomically update one setting from its latest persisted value. Unlike a
+ * caller-side getSetting → setSetting sequence, the read runs inside the same
+ * per-key queue as ordinary writes, so overlapping mutations cannot overwrite
+ * one another with stale snapshots.
+ */
+export function updateSetting<T>(key: string, fallback: T, update: (current: T) => T): Promise<T> {
+  if (getExplicitSettingsProfile()) {
+    return Promise.reject(new Error('Cannot mutate settings inside an explicit settings profile.'))
+  }
+  const schema = getSettingSchema(key)
+  return runSerializedUpdate(
+    queueKey(key),
+    () => getSetting(key, fallback),
+    update,
+    (next) => {
+      const toStore = schema ? schema.parse(next) : next
+      cached.set(key, toStore)
+    },
+  )
 }
 
 /** Remove a persisted setting through the same per-key serialization as writes. */
