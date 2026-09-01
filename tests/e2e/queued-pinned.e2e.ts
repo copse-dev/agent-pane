@@ -22,29 +22,25 @@ describe('queued chats stay pinned to the bottom', function () {
     await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
 
     // Kick off a slow turn so the agent stays running while we queue follow-ups.
-    await setComposerValue('Please refactor this module [[mock:delay_ms 6000]]')
+    await setComposerValue('Please refactor this module [[mock:delay_ms 15000]]')
     await $('.submit-btn').click()
     await browser.waitUntil(async () => (await $('.stop-btn').getProperty('hidden')) !== true, {
       timeout: 10_000,
     })
 
     // Queue two follow-ups while the agent is busy.
-    for (const text of ['Also add unit tests for it.', 'Then update the README.']) {
-      await browser.execute((value: string) => {
-        const input = document.querySelector('.prompt-input') as HTMLElement | null
-        const btn = document.querySelector('.submit-btn') as HTMLButtonElement | null
-        if (input) input.textContent = value
-        btn?.click()
-      }, text)
+    for (const [index, text] of [
+      'Also add unit tests for it.',
+      'Then update the README.',
+    ].entries()) {
+      await setComposerValue(text)
+      await $('.submit-btn').click()
+      await browser.waitUntil(
+        async () => (await $$('.conversation-queued .msg-queued')).length === index + 1,
+        { timeout: 5_000 },
+      )
     }
 
-    await $('.conversation-queued .msg-queued').waitForExist({ timeout: 5_000 })
-    await browser.waitUntil(
-      async () => (await $$('.conversation-queued .msg-queued')).length === 2,
-      {
-        timeout: 5_000,
-      },
-    )
     const queuedItems = await $$('.conversation-queued .msg-queued')
     await expect(queuedItems).toHaveLength(2)
     await expect($('.conversation-queued .message-queued-badge')).toHaveText('QUEUED')
