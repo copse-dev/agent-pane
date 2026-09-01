@@ -271,6 +271,7 @@ async function installRemoteAcpAgent(
   command: string,
   hostLabel: string,
   loginShell: string,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const known = KNOWN_ACP_AGENTS.find((agent) => agent.command === command)
   if (!known?.autoInstall || !known.installPackage) return false
@@ -290,7 +291,7 @@ async function installRemoteAcpAgent(
   })
   // Fails closed when no approver is wired (inside the ACP workers, which have
   // no way to prompt) — see acp-remote-install-approval.ts.
-  if (!(await approveRemoteAcpInstall({ title, body }))) return false
+  if (!(await approveRemoteAcpInstall({ title, body }, signal))) return false
 
   const script = remoteNpmInstallScript(known.installPackage, npmBinDir)
   emitShellOutput(`[acp-ssh] installing ${known.installPackage} on ${hostLabel}…\n`)
@@ -342,6 +343,7 @@ async function resolveRemoteAgentPath(
   hostId: string,
   loginShell: string,
   allowInstall = true,
+  signal?: AbortSignal,
 ): Promise<string | null> {
   const conn = getSshConnectionManager().getConnection(hostId)
   if (!conn) return null // connect() was called just above; if it's gone, let the spawn surface it.
@@ -393,8 +395,8 @@ async function resolveRemoteAgentPath(
   // a local agent — offer to install it here, then re-detect once.
   if (allowInstall) {
     const hostLabel = findConfiguredSshHost(hostId)?.label ?? hostId
-    if (await installRemoteAcpAgent(conn, command, hostLabel, loginShell)) {
-      return await resolveRemoteAgentPath(command, hostId, loginShell, false)
+    if (await installRemoteAcpAgent(conn, command, hostLabel, loginShell, signal)) {
+      return await resolveRemoteAgentPath(command, hostId, loginShell, false, signal)
     }
   }
 
@@ -572,6 +574,7 @@ export function buildRemoteEnvPreamble(env: Record<string, string> | undefined):
 export async function spawnRemoteAcpTransport(
   input: RemoteAcpSpawnInput,
   target: AcpSshTarget,
+  signal?: AbortSignal,
 ): Promise<AcpTransport> {
   const host = findConfiguredSshHost(target.hostId)
   if (!host) throw new Error(`SSH host "${target.hostId}" is not configured.`)
@@ -582,7 +585,13 @@ export async function spawnRemoteAcpTransport(
   const loginShell = resolveRemoteLoginShell(
     manager.getConnection(target.hostId)?.capabilities?.shell,
   )
-  const remotePath = await resolveRemoteAgentPath(input.command, target.hostId, loginShell)
+  const remotePath = await resolveRemoteAgentPath(
+    input.command,
+    target.hostId,
+    loginShell,
+    true,
+    signal,
+  )
 
   const wrapped = buildRemoteAcpCommand(input, target.remoteRoot, loginShell, remotePath)
   const askpass = leaseSshAskpassEnv(process.env, target.hostId)

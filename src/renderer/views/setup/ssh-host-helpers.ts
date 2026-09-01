@@ -83,8 +83,14 @@ export function parseSshHostDraft(draft: SshHostDraft): ParseSshHostDraftResult 
     host: draft.host.trim(),
   }
   if (draft.user.trim()) host.user = draft.user.trim()
-  const port = Number.parseInt(draft.port.trim(), 10)
-  if (draft.port.trim() && Number.isFinite(port)) host.port = port
+  const portText = draft.port.trim()
+  if (portText) {
+    const port = Number(portText)
+    if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65_535) {
+      return { ok: false, error: 'Port must be a whole number from 1 to 65535.' }
+    }
+    host.port = port
+  }
   if (draft.identityFile.trim()) host.identityFile = draft.identityFile.trim()
   if (draft.forwardAgent) host.forwardAgent = true
   return { ok: true, host }

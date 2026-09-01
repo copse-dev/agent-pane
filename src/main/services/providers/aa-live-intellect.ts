@@ -140,10 +140,17 @@ function reportedIndexVersion(
   return undefined
 }
 
-let cache: { at: number; result: LiveIntellectFetch } | null = null
+let cache: { key: string; at: number; result: LiveIntellectFetch } | null = null
+let cacheGeneration = 0
+const inflight = new Map<
+  string,
+  { generation: number; token: symbol; promise: Promise<LiveIntellectFetch> }
+>()
 
 export function invalidateLiveIntellectCache(): void {
+  cacheGeneration += 1
   cache = null
+  inflight.clear()
 }
 
 /**
@@ -393,13 +400,29 @@ function mockLiveIntellectFetch(): LiveIntellectFetch {
  * (see {@link liveCacheTtlMs}) — and the cache is dropped when the key changes
  * (register-handlers `settings:setKey`).
  */
-export async function fetchLiveIntellectModels(): Promise<LiveIntellectFetch> {
+export async function fetchLiveIntellectModels(options?: {
+  fetchImpl?: typeof fetch
+}): Promise<LiveIntellectFetch> {
   if (process.env[MOCK_ENV] === '1') return mockLiveIntellectFetch()
   const key = getApiKey('artificial-analysis')
   if (!key) return { ok: true, models: [] }
-  if (cache && Date.now() - cache.at < liveCacheTtlMs(cache.result)) return cache.result
+  if (cache?.key === key && Date.now() - cache.at < liveCacheTtlMs(cache.result)) {
+    return cache.result
+  }
+  const existing = inflight.get(key)
+  if (existing?.generation === cacheGeneration) return existing.promise
 
-  const result = await requestLiveIntellectModels(key)
-  cache = { at: Date.now(), result }
-  return result
+  const generation = cacheGeneration
+  const token = Symbol(key)
+  const promise = (async (): Promise<LiveIntellectFetch> => {
+    try {
+      const result = await requestLiveIntellectModels(key, options?.fetchImpl)
+      if (generation === cacheGeneration) cache = { key, at: Date.now(), result }
+      return result
+    } finally {
+      if (inflight.get(key)?.token === token) inflight.delete(key)
+    }
+  })()
+  inflight.set(key, { generation, token, promise })
+  return promise
 }

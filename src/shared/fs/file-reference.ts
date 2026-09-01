@@ -10,8 +10,22 @@
  * including any line/col, is exposed as `text` for display and range mapping.
  */
 
+/**
+ * The `{1,255}` on the two leading runs is load-bearing, not decoration.
+ *
+ * Both `[…]{1,255}\/` and `[…]{1,255}\.` are tried at every offset the prefix
+ * group accepts, and that group accepts anything outside `[A-Za-z0-9_./-]` —
+ * which includes `@`, `+` and `$`, all three of which the runs themselves also
+ * accept. A contiguous run of those characters is therefore one starting point
+ * per character, each scanning the rest of the run to discover it holds no `/`
+ * or `.`: quadratic. Unbounded, 64k of `+` took 12s; bounded it is 0.2s and
+ * scales linearly.
+ *
+ * 255 is NAME_MAX: a path segment and a filename stem cannot exceed it on any
+ * filesystem we run on, so the cap excludes no reachable path.
+ */
 const FILE_REFERENCE_RE =
-  /(^|[^A-Za-z0-9_./-])((?:\.\/)?(?:[A-Za-z0-9_@+$.-]+\/)+[A-Za-z0-9_@+$.-]*|\.[A-Za-z0-9_@+$-][A-Za-z0-9_@+$.-]{0,30}|[A-Za-z0-9_@+$-]+\.[A-Za-z0-9][A-Za-z0-9.-]{0,15}|Dockerfile|Makefile)(?::(\d+)(?::(\d+))?)?(?=$|[^A-Za-z0-9_./-])/g
+  /(^|[^A-Za-z0-9_./-])((?:\.\/)?(?:[A-Za-z0-9_@+$.-]{1,255}\/)+[A-Za-z0-9_@+$.-]*|\.[A-Za-z0-9_@+$-][A-Za-z0-9_@+$.-]{0,30}|[A-Za-z0-9_@+$-]{1,255}\.[A-Za-z0-9][A-Za-z0-9.-]{0,15}|Dockerfile|Makefile)(?::(\d+)(?::(\d+))?)?(?=$|[^A-Za-z0-9_./-])/g
 
 const TRAILING_PROSE_PUNCTUATION_RE = /[.,;:!?]+$/
 

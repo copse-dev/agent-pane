@@ -14,8 +14,21 @@ import {
 } from './command-routing.ts'
 import { shellRequiresOutsideSandbox } from './permission-policy.ts'
 import { readOutsideProjectGrantTargets } from './read-outside-project.ts'
+import { runSerialized } from '../storage/write-queue.ts'
 
 export { TRUSTED_COMMANDS_SETTING } from '@shared/command-routing.ts'
+
+interface TrustedCommandStore {
+  read: () => unknown
+  write: (commands: readonly string[]) => Promise<void>
+}
+
+const trustedCommandStore: TrustedCommandStore = {
+  read: () => getSetting<unknown>(TRUSTED_COMMANDS_SETTING, []),
+  write: (commands) => setSetting(TRUSTED_COMMANDS_SETTING, commands),
+}
+
+const TRUSTED_COMMAND_MUTATION_QUEUE = 'trusted-commands:mutation'
 
 // Cache the parsed allow-list Set, rebuilt only when the persisted value changes.
 // getSetting validates+returns a fresh array each call, so key the cache on the
@@ -112,11 +125,23 @@ export function offerableTrustedCommand(command: string): string | null {
  * at USE time via {@link routeShellCommand}, so this grant is global-but-gated: the
  * command auto-runs only in trusted workspaces.
  */
-export async function addTrustedShellCommand(name: string): Promise<void> {
+export async function addTrustedShellCommand(
+  name: string,
+  store: TrustedCommandStore = trustedCommandStore,
+): Promise<void> {
+  await runSerialized(TRUSTED_COMMAND_MUTATION_QUEUE, () =>
+    addTrustedShellCommandInOrder(name, store),
+  )
+}
+
+async function addTrustedShellCommandInOrder(
+  name: string,
+  store: TrustedCommandStore,
+): Promise<void> {
   // The setting now carries a store schema, so an invalid entry would throw on
   // write rather than being dropped on read. Keep the documented no-op instead.
   if (!isValidTrustedCommand(name)) return
-  const current = sanitizeTrustedCommands(getSetting<unknown>(TRUSTED_COMMANDS_SETTING, []))
+  const current = sanitizeTrustedCommands(store.read())
   if (current.includes(name)) return
-  await setSetting(TRUSTED_COMMANDS_SETTING, [...current, name])
+  await store.write([...current, name])
 }

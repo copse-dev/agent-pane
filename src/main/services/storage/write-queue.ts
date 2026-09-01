@@ -26,6 +26,25 @@ export function runSerialized<T>(key: string, op: () => T | Promise<T>): Promise
   return next
 }
 
+/**
+ * Serialized read-modify-write for stores whose read must happen after every
+ * earlier write settles. Keeping the read inside {@link runSerialized} avoids
+ * the stale-snapshot pattern where two callers each append to the same old
+ * value and the later write erases the first update.
+ */
+export function runSerializedUpdate<T>(
+  key: string,
+  read: () => T,
+  update: (current: T) => T,
+  write: (next: T) => void | Promise<void>,
+): Promise<T> {
+  return runSerialized(key, async () => {
+    const next = update(read())
+    await write(next)
+    return next
+  })
+}
+
 /** Resolve once every currently-queued write, including writes it enqueues, has settled. */
 export async function drainWriteQueue(): Promise<void> {
   // A settling operation can enqueue follow-up durability work. Awaiting one

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   ensureProviderHostApproved,
   getApprovedProviderHosts,
+  rememberApprovedProviderHost,
   setApprovedProviderHosts,
 } from './approved-provider-hosts.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
@@ -23,6 +24,38 @@ describe('approved-provider-hosts', () => {
   it('reads back hosts written via setApprovedProviderHosts', async () => {
     await setApprovedProviderHosts(['api.together.xyz', 'API.Together.XYZ'])
     assert.deepEqual(getApprovedProviderHosts(), ['api.together.xyz'])
+  })
+
+  it('preserves hosts remembered while an earlier write is still pending', async () => {
+    let stored: readonly string[] = []
+    let releaseFirstWrite: (() => void) | undefined
+    let markFirstWriteStarted: (() => void) | undefined
+    const firstWriteStarted = new Promise<void>((resolve) => {
+      markFirstWriteStarted = resolve
+    })
+    const firstWriteReleased = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve
+    })
+    let writeCount = 0
+    const store = {
+      read: (): string[] => [...stored],
+      write: async (hosts: readonly string[]): Promise<void> => {
+        writeCount += 1
+        if (writeCount === 1) {
+          markFirstWriteStarted?.()
+          await firstWriteReleased
+        }
+        stored = hosts
+      },
+    }
+
+    const rememberAcme = rememberApprovedProviderHost('api.acme.example', store)
+    await firstWriteStarted
+    const rememberBeta = rememberApprovedProviderHost('api.beta.example', store)
+    releaseFirstWrite?.()
+    await Promise.all([rememberAcme, rememberBeta])
+
+    assert.deepEqual(stored, ['api.acme.example', 'api.beta.example'])
   })
 
   it('treats an unwritten setting as an empty allowlist, not the stored customs', async () => {
