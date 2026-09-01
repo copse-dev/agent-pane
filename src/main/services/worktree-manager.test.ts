@@ -21,6 +21,7 @@ import {
   readThreadWorktreeRecoveryMetadata,
   restoreRetiredThreadWorktree,
   retireThreadWorktree,
+  sameWorktreePath,
   ThreadWorktreeDetachedError,
   validateThreadWorktree,
 } from './worktree-manager.ts'
@@ -48,6 +49,28 @@ async function repository(root: string, name: string): Promise<string> {
   git(repo, ['commit', '-q', '-m', 'initial'])
   return repo
 }
+
+describe('sameWorktreePath', () => {
+  it('matches Windows checkout paths regardless of spelling case', () => {
+    assert.equal(
+      sameWorktreePath('C:\\Repos\\Widget\\worktree', 'c:\\repos\\widget\\WORKTREE', 'win32'),
+      true,
+    )
+    assert.equal(
+      sameWorktreePath('C:\\Repos\\Widget\\worktree', 'C:\\Repos\\Widget\\other', 'win32'),
+      false,
+    )
+  })
+
+  it('canonicalizes existing path aliases before comparing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-worktree-identity-'))
+    try {
+      assert.equal(sameWorktreePath(root, join(root, '.')), true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('parseWorktreePorcelain', () => {
   it('parses nul-delimited paths and optional states without quoting assumptions', () => {

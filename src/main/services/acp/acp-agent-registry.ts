@@ -1,6 +1,19 @@
 import type { AcpAgentConfig, AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { canonicalAcpAgentId, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
+import { runSerialized } from '../storage/write-queue.ts'
+
+interface AcpAgentStore {
+  read: () => AcpAgentConfig[]
+  write: (agents: AcpAgentConfig[]) => Promise<void>
+}
+
+const acpAgentStore: AcpAgentStore = {
+  read: listAcpAgents,
+  write: (agents) => setSetting('registeredAcpAgents', agents),
+}
+
+const ACP_AGENT_REGISTRY_MUTATION_QUEUE = 'acp-agent-registry:mutation'
 
 /**
  * Settings-backed registry of external ACP agents Copse can drive (client role).
@@ -83,11 +96,19 @@ export function resolveAcpPermissionMode(
  * auto-setup to register a preset (and later stamp its detected models) without
  * the renderer round-trip. Returns the updated list.
  */
-export async function upsertAcpAgent(config: AcpAgentConfig): Promise<AcpAgentConfig[]> {
-  const list = listAcpAgents()
-  config = { ...config, id: canonicalAcpAgentId(config.id) }
-  const index = list.findIndex((candidate) => candidate.id === config.id)
-  const next = index === -1 ? [...list, config] : list.map((c) => (c.id === config.id ? config : c))
-  await setSetting('registeredAcpAgents', next)
-  return next
+export async function upsertAcpAgent(
+  config: AcpAgentConfig,
+  store: AcpAgentStore = acpAgentStore,
+): Promise<AcpAgentConfig[]> {
+  const normalized = { ...config, id: canonicalAcpAgentId(config.id) }
+  return runSerialized(ACP_AGENT_REGISTRY_MUTATION_QUEUE, async () => {
+    const list = store.read()
+    const index = list.findIndex((candidate) => candidate.id === normalized.id)
+    const next =
+      index === -1
+        ? [...list, normalized]
+        : list.map((candidate) => (candidate.id === normalized.id ? normalized : candidate))
+    await store.write(next)
+    return next
+  })
 }
