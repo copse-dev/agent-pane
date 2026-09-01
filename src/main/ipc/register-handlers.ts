@@ -1334,7 +1334,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const candidate = apiKey.trim() ? apiKey : (resolveApiKey(p) ?? '')
     if (!candidate) return { ok: false, error: 'No key configured for this provider' }
     const result = await validateApiKey(p, candidate)
-    recordProviderKeyValidation(p, result.ok)
+    recordProviderKeyValidation(p, candidate, result.ok)
     return result
   })
   // Opt-in environment scan: look for provider API keys the user already has
