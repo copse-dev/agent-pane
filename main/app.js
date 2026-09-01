@@ -18560,6 +18560,36 @@ function upsertHost(list, host) {
   next3[idx] = host;
   return next3;
 }
+function nextAvailableHostId(baseId, usedIds) {
+  if (!usedIds.has(baseId)) return baseId;
+  for (let suffixNumber = 2; ; suffixNumber += 1) {
+    const suffix = `-${String(suffixNumber)}`;
+    const candidate = `${baseId.slice(0, 64 - suffix.length)}${suffix}`;
+    if (!usedIds.has(candidate)) return candidate;
+  }
+}
+function importSshConfigHosts(existing, aliases) {
+  const hosts = [...existing];
+  const importedHostIds = [];
+  const usedIds = new Set(hosts.map((host) => host.id));
+  let firstAliasHostId;
+  for (const alias of aliases) {
+    const alreadyImported = hosts.find(
+      (host) => host.host.toLowerCase() === alias.host.toLowerCase()
+    );
+    if (alreadyImported) {
+      firstAliasHostId ??= alreadyImported.id;
+      continue;
+    }
+    const id39 = nextAvailableHostId(alias.id, usedIds);
+    const imported = id39 === alias.id ? alias : { ...alias, id: id39 };
+    hosts.push(imported);
+    usedIds.add(id39);
+    importedHostIds.push(id39);
+    firstAliasHostId ??= id39;
+  }
+  return { hosts, importedHostIds, firstAliasHostId };
+}
 function removeHost(list, id39) {
   return list.filter((h3) => h3.id !== id39);
 }
@@ -19104,16 +19134,12 @@ function openRemoteFolderDialog(api3) {
           }
           const raw = await api3.settings.get("sshWorkspaceHosts");
           const existing = parseSshWorkspaceHosts(raw);
-          let next3 = existing;
-          for (const alias of aliases) {
-            if (next3.some((h3) => h3.id === alias.id)) continue;
-            next3 = upsertHost(next3, alias);
-          }
-          await api3.settings.set("sshWorkspaceHosts", next3);
+          const imported = importSshConfigHosts(existing, aliases);
+          await api3.settings.set("sshWorkspaceHosts", imported.hosts);
           hosts = await api3.sshWorkspace.listHosts();
-          fillHostSelect(aliases[0]?.id);
+          fillHostSelect(imported.firstAliasHostId);
           setAddingHost(false);
-          status.textContent = `Imported ${String(aliases.length)} alias(es) from SSH config.`;
+          status.textContent = imported.importedHostIds.length === 0 ? "All SSH config aliases are already imported." : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`;
           if (currentHostId) await browse("/");
         } catch (err2) {
           status.textContent = err2 instanceof Error ? err2.message : String(err2);
@@ -46590,19 +46616,17 @@ function createSshWorkspaceSection(api3, opts = {}) {
       }
       const raw = await api3.settings.get("sshWorkspaceHosts");
       const existing = parseSshWorkspaceHosts(raw);
-      let next3 = existing;
-      let imported = 0;
-      for (const alias of aliases) {
-        if (next3.some((h3) => h3.id === alias.id)) continue;
-        next3 = upsertHost(next3, alias);
-        imported += 1;
-      }
-      await persistHosts(next3);
-      if (imported === 0) {
+      const imported = importSshConfigHosts(existing, aliases);
+      await persistHosts(imported.hosts);
+      if (imported.importedHostIds.length === 0) {
         setInlineStatus(status, "ok", "All SSH config aliases are already imported.");
         return;
       }
-      setInlineStatus(status, "ok", `Imported ${String(imported)} alias(es) from SSH config.`);
+      setInlineStatus(
+        status,
+        "ok",
+        `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`
+      );
     })();
   });
   const root4 = el(
