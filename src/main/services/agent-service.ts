@@ -61,6 +61,7 @@ import {
   beginHookRunRecording,
   clearHookRunLiveSink,
   endHookRunRecording,
+  recordAppliedNudgeRun,
   recordFunctionHookRun,
   snapshotHookRunContext,
   setHookRunLiveSink,
@@ -192,11 +193,13 @@ import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import {
   ACP_UNFINISHED_TURN_FALLBACK,
+  ACP_UNFINISHED_TURN_RECOVERY_OPERATION_ID,
   ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
   acpTurnHasFinalResponse,
-  nextAcpMeaningfulEvent,
+  EMPTY_ACP_TURN_PROGRESS,
+  nextAcpTurnProgress,
   shouldRecoverAcpTurn,
-  type AcpLastMeaningfulEvent,
+  type AcpTurnProgress,
 } from './acp/acp-turn-recovery.ts'
 import { offerAcpReauth } from './acp/acp-reauth.ts'
 import { assembleAcpTurnStart } from './acp/acp-turn-start.ts'
@@ -944,7 +947,7 @@ export async function runAgent(
     // view: prior thread history, this turn's user prompt, and whatever the
     // agent has streamed so far.
     let acpAssistantText = ''
-    const acpProgress: { lastEvent: AcpLastMeaningfulEvent } = { lastEvent: null }
+    const acpProgress: { turn: AcpTurnProgress } = { turn: EMPTY_ACP_TURN_PROGRESS }
     let visualizationDispatch = Promise.resolve()
     const inlineVisualizationFilter = createInlineVisualizationStreamFilter((reference) => {
       if (!runContext) return
@@ -966,7 +969,7 @@ export async function runAgent(
       if (tail) {
         acpAssistantText += tail
         const tailChunk: StreamChunk = { type: 'text', text: tail }
-        acpProgress.lastEvent = nextAcpMeaningfulEvent(acpProgress.lastEvent, tailChunk)
+        acpProgress.turn = nextAcpTurnProgress(acpProgress.turn, tailChunk)
         sendChunk(tailChunk)
       }
       await visualizationDispatch
@@ -979,11 +982,11 @@ export async function runAgent(
         if (!visibleText) return
         acpAssistantText += visibleText
         const visibleChunk: StreamChunk = { type: 'text', text: visibleText }
-        acpProgress.lastEvent = nextAcpMeaningfulEvent(acpProgress.lastEvent, visibleChunk)
+        acpProgress.turn = nextAcpTurnProgress(acpProgress.turn, visibleChunk)
         sendChunk(visibleChunk)
         return
       }
-      acpProgress.lastEvent = nextAcpMeaningfulEvent(acpProgress.lastEvent, chunk)
+      acpProgress.turn = nextAcpTurnProgress(acpProgress.turn, chunk)
       sendChunk(chunk)
     }
     const budgetLedger = getContinuationLedger()
@@ -1037,13 +1040,22 @@ export async function runAgent(
         { role: 'user' as const, content: outboundPrompt },
         ...result.messages,
       ]
-      const endedAfterTools = shouldRecoverAcpTurn(result.stopReason, acpProgress.lastEvent)
+      const endedAfterTools = shouldRecoverAcpTurn(result.stopReason, acpProgress.turn)
+      const endedOn = acpProgress.turn.lastEvent
       let recoveryAttempted = false
       let recoverySucceeded = false
 
       if (endedAfterTools && budgetLedger.tryGrant(turnTreeId)) {
         recoveryAttempted = true
-        acpProgress.lastEvent = null
+        acpProgress.turn = EMPTY_ACP_TURN_PROGRESS
+        // The recovery prompt is a whole extra turn put in the user's mouth, so
+        // it is shown as a machine-origin bubble rather than only reaching the
+        // agent: an unexplained second answer is what made this hard to diagnose.
+        sendChunk({
+          type: 'machine_turn_start',
+          content: ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
+          origin: { kind: 'machine', operationId: ACP_UNFINISHED_TURN_RECOVERY_OPERATION_ID },
+        })
         const recoveryResult = await runAcpAgentFromSettings({
           threadId,
           agentId: acpRunAgentId,
@@ -1066,10 +1078,7 @@ export async function runAgent(
           { role: 'user' as const, content: ACP_UNFINISHED_TURN_RECOVERY_PROMPT },
           ...recoveryResult.messages,
         ]
-        recoverySucceeded = acpTurnHasFinalResponse(
-          recoveryResult.stopReason,
-          acpProgress.lastEvent,
-        )
+        recoverySucceeded = acpTurnHasFinalResponse(recoveryResult.stopReason, acpProgress.turn)
       }
 
       await finishInlineVisualizations()
@@ -1097,6 +1106,11 @@ export async function runAgent(
                 reason: 'ended_after_tools' as const,
                 attempted: recoveryAttempted,
                 recovered: recoverySucceeded,
+                // The record's own `lastEvent` is written from `sendChunk`, so a
+                // failed recovery stamps it 'text' off its own fallback message.
+                // This is the provider event the *original* turn ended on, which
+                // is what the decision was actually made from.
+                ...(endedOn !== null ? { endedOn } : {}),
               },
             }
           : {}),
@@ -1927,6 +1941,7 @@ export async function runAgent(
               resolvePluginSetting,
               artifactCheckpointEligible: true,
               recordHookRun: recordFunctionHookRun,
+              recordAppliedNudge: recordAppliedNudgeRun,
               onLlmCall: (count) => {
                 setHookRunStep(count)
                 // `messages` above is `trimmed`, mutated in place as turns land, so
@@ -2014,6 +2029,7 @@ export async function runAgent(
             if (isEditTool(name)) turnChangedFiles = true
           },
           recordHookRun: recordFunctionHookRun,
+          recordAppliedNudge: recordAppliedNudgeRun,
           onLlmCall: (count: number): void => {
             setHookRunStep(count)
             checkpointHistory()

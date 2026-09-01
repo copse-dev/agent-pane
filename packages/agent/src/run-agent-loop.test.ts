@@ -1787,6 +1787,43 @@ src/renderer/views/projects-pane.ts
     assert.equal(applied[0].mechanism, 'tool-enabled-message')
   })
 
+  // The finalize nudge never migrated to the stepBoundary registry, so it has no
+  // hook execution line: without this record it steers the model with no trace.
+  it('records the finalize nudge it owns outright', async () => {
+    const applied: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+    let calls = 0
+    const provider: LLMProvider = {
+      async *stream() {
+        calls++
+        if (calls === 1) {
+          yield {
+            type: 'tool_call',
+            toolCall: { id: 'call-1', name: 'run_shell', args: {} },
+          }
+          yield { type: 'done', stopReason: 'tool_use' }
+          return
+        }
+        yield { type: 'text', text: 'Here is the final answer.' }
+        yield { type: 'done', stopReason: 'end_turn' }
+      },
+    }
+
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'run_shell', description: 'run', parameters: { type: 'object' } }],
+      maxSteps: 1,
+      recordAppliedNudge: (record) => applied.push(record),
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+    })
+
+    const finalize = applied.filter((record) => record.hookId === 'finalize-nudge')
+    assert.equal(finalize.length, 1)
+    assert.equal(finalize[0]?.mechanism, 'text-only-turn')
+    assert.match(finalize[0]?.text ?? '', /write a clear final answer/)
+  })
+
   it('prefers per-stream usage chunks over the shared lastUsage field (#112)', async () => {
     const provider = {
       lastUsage: { inputTokens: 99999, outputTokens: 88888 },

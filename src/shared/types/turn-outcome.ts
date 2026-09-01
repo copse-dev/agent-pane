@@ -27,6 +27,13 @@ export interface TurnOutcome {
     reason: 'ended_after_tools'
     attempted: boolean
     recovered: boolean
+    /**
+     * Provider event the *original* turn ended on, i.e. what the recovery
+     * decision was made from. Distinct from {@link TurnOutcome.lastEvent}, which
+     * is written from the host's own chunk sink and so records the recovery's
+     * fallback message rather than anything the agent did.
+     */
+    endedOn?: 'text' | 'reasoning' | 'tool'
   }
   error?: TurnErrorDetail
   endedAt: number

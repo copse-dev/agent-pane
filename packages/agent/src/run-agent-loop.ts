@@ -242,6 +242,14 @@ export interface AgentLoopOptions {
 const FINALIZE_NUDGE =
   'Based on your exploration so far, write a clear final answer for the user. Do not call any tools.'
 
+/**
+ * Synthetic id for {@link FINALIZE_NUDGE} in the applied-nudge record. The loop
+ * owns this nudge outright — unlike its siblings it never migrated to the
+ * stepBoundary registry (#939), so it has no hook execution line, and without an
+ * applied-nudge record it steers the model with no trace anywhere.
+ */
+const FINALIZE_NUDGE_ID = 'finalize-nudge'
+
 const INCOMPLETE_RUN_MESSAGE =
   'The agent stopped before producing a final answer. Try a shorter question, reduce tool use, or switch models.'
 
@@ -1707,6 +1715,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
 
     if (!hasOpenTodos(getOpenTodos?.() ?? [])) {
+      recordAppliedNudge(appliedNudgeSink, {
+        step: budget.llmCalls,
+        hookId: FINALIZE_NUDGE_ID,
+        mechanism: 'text-only-turn',
+        text: FINALIZE_NUDGE,
+      })
       let finalResult = await streamTextOnlyTurn(
         provider,
         messages,
@@ -1734,6 +1748,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
             recentFingerprints,
             recentToolProgress,
             budget,
+          })
+        }
+        // A truncation retry already ends in its own nudge (recorded when the
+        // hook applied it); anything else re-applies the finalize nudge.
+        if (!retryingTruncation) {
+          recordAppliedNudge(appliedNudgeSink, {
+            step: budget.llmCalls,
+            hookId: FINALIZE_NUDGE_ID,
+            mechanism: 'text-only-turn',
+            text: FINALIZE_NUDGE,
           })
         }
         finalResult = await streamTextOnlyTurn(
