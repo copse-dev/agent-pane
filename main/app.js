@@ -21511,6 +21511,7 @@ This response is streamed through the real renderer event path.`
       },
       onApprovalCancelled: subscribe,
       onAskUserRequest: subscribe,
+      onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
       onHookQueueMessage: subscribe
@@ -291629,6 +291630,18 @@ function mountAskUserDialog(api3, store3) {
   api3.agent.onAskUserRequest((req) => {
     queue.push({ id: req.id, threadId: req.threadId, questions: req.questions });
     showNext();
+    syncAttention();
+  });
+  api3.agent.onAskUserCancelled(({ id: id39 }) => {
+    if (active2?.id === id39) {
+      dialog2.close();
+      active2 = null;
+      showNext();
+      syncAttention();
+      return;
+    }
+    const idx = queue.findIndex((req) => req.id === id39);
+    if (idx !== -1) queue.splice(idx, 1);
     syncAttention();
   });
   store3.on("threads_changed", () => {
