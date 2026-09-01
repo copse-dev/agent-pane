@@ -14,12 +14,15 @@ import {
 import { providerSlugFromBaseUrl, uniqueProviderSlug } from '@copse/llm/provider-slug.ts'
 import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
 import { getSetting, setSetting, deleteApiKey, resolveApiKey } from '../storage/settings.ts'
+import { runSerialized } from '../storage/write-queue.ts'
 import { ensureProviderHostApproved } from './approved-provider-hosts.ts'
 import { fetchHuggingFaceModels } from './huggingface-models.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
 
 /** Built-in slug of the Hugging Face Inference Providers provider. */
 export const HUGGINGFACE_SLUG = 'huggingface'
+
+const EXTRA_PROVIDER_MUTATION_QUEUE = 'extra-providers:mutation'
 
 function storedProviders(): StoredExtraProvider[] {
   const raw = getSetting<StoredExtraProvider[]>('extraProviders', [])
@@ -51,31 +54,37 @@ export function getResolvedExtraProvider(slug: string): ExtraProvider | null {
 export async function saveExtraProvider(
   record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
 ): Promise<ExtraProvider[]> {
-  const current = storedProviders()
   const givenSlug = (record.slug ?? '').trim()
-
-  const slug = givenSlug
-    ? givenSlug
-    : uniqueProviderSlug(
-        providerSlugFromBaseUrl(record.baseUrl ?? ''),
-        current.map((p) => p.slug),
-      )
 
   // Custom (non-builtin) providers: approve the host before it is ever persisted
   // so a disallowed baseUrl cannot land in settings (issue #438). Built-in
   // overrides ignore baseUrl via mergeBuiltin, so they skip this gate.
-  const isBuiltin = BUILTIN_EXTRA_PROVIDER_SLUGS.includes(slug)
+  // A blank slug is always custom: uniqueProviderSlug disambiguates it from all
+  // reserved built-ins once the latest stored list is available below.
+  const isBuiltin = givenSlug !== '' && BUILTIN_EXTRA_PROVIDER_SLUGS.includes(givenSlug)
   const baseUrl = record.baseUrl?.trim()
   if (!isBuiltin && baseUrl) {
     validateCredentialBaseUrl(baseUrl, 'Provider base URL')
     await ensureProviderHostApproved(baseUrl)
   }
 
-  const next: StoredExtraProvider = { ...record, slug }
-  const idx = current.findIndex((p) => p.slug === slug)
-  const list = idx >= 0 ? current.map((p) => (p.slug === slug ? next : p)) : [...current, next]
-  await setSetting('extraProviders', list)
-  return resolveExtraProviders(list)
+  return runSerialized(EXTRA_PROVIDER_MUTATION_QUEUE, async () => {
+    const current = storedProviders()
+    const slug = givenSlug
+      ? givenSlug
+      : uniqueProviderSlug(
+          providerSlugFromBaseUrl(record.baseUrl ?? ''),
+          current.map((provider) => provider.slug),
+        )
+    const next: StoredExtraProvider = { ...record, slug }
+    const index = current.findIndex((provider) => provider.slug === slug)
+    const list =
+      index >= 0
+        ? current.map((provider) => (provider.slug === slug ? next : provider))
+        : [...current, next]
+    await setSetting('extraProviders', list)
+    return resolveExtraProviders(list)
+  })
 }
 
 /**
@@ -101,9 +110,11 @@ export async function refreshHuggingFaceModels(
 }
 
 export async function deleteExtraProvider(slug: string): Promise<ExtraProvider[]> {
-  const current = storedProviders()
-  const list = current.filter((p) => p.slug !== slug)
-  await setSetting('extraProviders', list)
-  if (!BUILTIN_EXTRA_PROVIDER_SLUGS.includes(slug)) deleteApiKey(slug)
-  return resolveExtraProviders(list)
+  return runSerialized(EXTRA_PROVIDER_MUTATION_QUEUE, async () => {
+    const current = storedProviders()
+    const list = current.filter((provider) => provider.slug !== slug)
+    await setSetting('extraProviders', list)
+    if (!BUILTIN_EXTRA_PROVIDER_SLUGS.includes(slug)) deleteApiKey(slug)
+    return resolveExtraProviders(list)
+  })
 }

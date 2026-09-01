@@ -1,5 +1,6 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { setSetting } from '../storage/settings.ts'
 import { KNOWN_ACP_AGENTS, RETIRED_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
@@ -8,6 +9,7 @@ import {
   listEnabledAcpAgents,
   resolveAcpPermissionMode,
   resolveAcpSandbox,
+  upsertAcpAgent,
 } from './acp-agent-registry.ts'
 
 describe('acp agent registry', () => {
@@ -43,6 +45,47 @@ describe('acp agent registry', () => {
     assert.deepEqual(listAcpAgents(), [])
     assert.deepEqual(listEnabledAcpAgents(), [])
     assert.equal(getAcpAgent('anything'), null)
+  })
+
+  it('keeps different agents registered while an earlier write is pending', async () => {
+    let stored: AcpAgentConfig[] = []
+    let releaseFirstWrite: (() => void) | undefined
+    let markFirstWriteStarted: (() => void) | undefined
+    const firstWriteStarted = new Promise<void>((resolve) => {
+      markFirstWriteStarted = resolve
+    })
+    const firstWriteReleased = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve
+    })
+    let writeCount = 0
+    const store = {
+      read: (): AcpAgentConfig[] => stored,
+      write: async (agents: AcpAgentConfig[]): Promise<void> => {
+        writeCount += 1
+        if (writeCount === 1) {
+          markFirstWriteStarted?.()
+          await firstWriteReleased
+        }
+        stored = agents
+      },
+    }
+
+    const registerFirst = upsertAcpAgent(
+      { id: 'first', title: 'First', command: 'first', enabled: true },
+      store,
+    )
+    await firstWriteStarted
+    const registerSecond = upsertAcpAgent(
+      { id: 'second', title: 'Second', command: 'second', enabled: true },
+      store,
+    )
+    releaseFirstWrite?.()
+    await Promise.all([registerFirst, registerSecond])
+
+    assert.deepEqual(
+      stored.map((agent) => agent.id),
+      ['first', 'second'],
+    )
   })
 })
 

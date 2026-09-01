@@ -77,8 +77,9 @@ describe('terminateProcessTree', () => {
 
     // Sanity-check the precondition group kill relies on: the grandchild lives in
     // the detached child's process group.
-    const pgid = spawnSync('ps', ['-o', 'pgid=', '-p', String(grandchildPid)]).stdout.toString()
-    const sameGroup = Number(pgid.trim()) === proc.pid
+    const pgidProbe = spawnSync('ps', ['-o', 'pgid=', '-p', String(grandchildPid)])
+    const pgid = pgidProbe.error ? undefined : pgidProbe.stdout.toString().trim()
+    const sameGroup = pgid ? Number(pgid) === proc.pid : null
 
     terminateProcessTree(proc, SUBPROCESS_KILL_GRACE_MS)
     await once(proc, 'exit')
@@ -91,19 +92,27 @@ describe('terminateProcessTree', () => {
       grandchildAlive = false
     }
 
-    if (sameGroup && !grandchildAlive) {
+    // Always clean up before an assertion or environment-dependent skip. The
+    // previous unchecked ps result could throw above and orphan this sleeper
+    // for the full 30 seconds, compounding host resource pressure.
+    if (grandchildAlive) {
+      try {
+        process.kill(grandchildPid, 'SIGKILL')
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+
+    if (!grandchildAlive) {
       assert.ok(true, 'grandchild reaped via process-group kill')
+    } else if (sameGroup === null) {
+      t.skip(
+        `could not inspect the grandchild process group: ${pgidProbe.error?.message ?? 'no output'}`,
+      )
     } else {
       // Some sandboxed CI namespaces don't deliver group signals across the PID
       // boundary; the precondition (shared group) is what makes group kill correct.
       assert.ok(sameGroup, 'grandchild shares the detached child process group')
-      if (grandchildAlive) {
-        try {
-          process.kill(grandchildPid, 'SIGKILL')
-        } catch {
-          /* best-effort cleanup */
-        }
-      }
     }
   })
 })
