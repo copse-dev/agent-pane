@@ -471,7 +471,15 @@ export function renderModelTable(
       <td>${approx}${formatTokenCount(row.outputTokens)}</td>
       <td>${row.cacheReadTokens ? formatTokenCount(row.cacheReadTokens) : '-'}</td>
       <td>${row.cacheCreationTokens ? formatTokenCount(row.cacheCreationTokens) : '-'}</td>
-      <td>${row.isLocal ? 'free (local)' : formatUsd(row.estimatedCostUsd)}</td>
+      <td>${
+        row.isLocal
+          ? 'free (local)'
+          : !row.pricingKnown
+            ? 'unpriced'
+            : row.estimatedCostUsd === 0
+              ? 'free'
+              : formatUsd(row.estimatedCostUsd)
+      }</td>
     `
     tbody.append(tr)
   }

@@ -1,9 +1,11 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { ndJsonStream } from '@agentclientprotocol/sdk'
+import { z } from 'zod'
 import type { StreamChunk } from '@shared/types'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
 import { runAcpSessionPrompt, type AcpClientHandlers, type AcpTransport } from './acp-client.ts'
+import { ToolRegistry } from '../tool-registry.ts'
 import {
   clearUnrepairableOpenFileFault,
   unrepairableOpenFileFault,
@@ -132,6 +134,37 @@ describe('acp-session-pool', () => {
         { type: 'text', text: 'echo:two' },
       ],
     )
+  })
+
+  it('keeps bridged tool names out of the ordinary app log', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const registry = new ToolRegistry()
+    registry.register({
+      name: 'read_file',
+      description: 'Read a workspace file',
+      parameters: z.object({}),
+      execute: () => Promise.resolve('contents'),
+    })
+    const messages: string[] = []
+    const originalInfo = console.info
+    console.info = (...args: unknown[]): void => {
+      messages.push(args.map(String).join(' '))
+    }
+    try {
+      await acquireAcpSession({
+        threadId: 'bridge-log-thread',
+        config: CONFIG,
+        createTransport: makeTransportFactory(log),
+        registry,
+      })
+    } finally {
+      console.info = originalInfo
+    }
+
+    const bridgeLog = messages.find((message) => message.startsWith('[acp-bridge] offering'))
+    assert.ok(bridgeLog)
+    assert.match(bridgeLog, /offering 1 native tool/)
+    assert.doesNotMatch(bridgeLog, /read_file/)
   })
 
   it('threads do not share sessions, and a config change respawns', async () => {

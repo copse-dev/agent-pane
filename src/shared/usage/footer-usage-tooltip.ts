@@ -1,4 +1,9 @@
-import { costForModelUsage, formatThreadUsageCost, isLocalModel } from '@copse/llm/estimate-cost.ts'
+import {
+  costForModelUsage,
+  formatThreadUsageCost,
+  hasModelPricing,
+  isLocalModel,
+} from '@copse/llm/estimate-cost.ts'
 import type { ModelPricingMap } from '@copse/llm/model-pricing.ts'
 import type { Message, ModelUsage, ThreadUsage, ToolCall } from '@shared/types'
 import type { FooterUsageDisplay } from './footer-usage-summary.ts'
@@ -80,8 +85,8 @@ function modelRowValue(model: string, usage: ModelUsage, pricing?: ModelPricingM
   const tokens = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`
   if (isLocalModel(model)) return `${tokens} · free`
   const cost = costForModelUsage(model, usage, pricing)
-  // An unpriced model costs 0 here; showing "$0.00" would read as free, so omit it.
-  return cost > 0 ? `${tokens} · ${formatUsd(cost)}` : tokens
+  if (!hasModelPricing(model, pricing)) return `${tokens} · unpriced`
+  return `${tokens} · ${cost > 0 ? formatUsd(cost) : 'free'}`
 }
 
 /** Hover-tooltip contents for the footer token counter (in/out, cache, cost). */
@@ -133,11 +138,17 @@ export function buildFooterUsageTooltip(
     }
   }
 
+  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model]
+  const hasUnpricedUsage = pricedModels.some(
+    (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing),
+  )
   const note = estimated
     ? 'Estimated — provider usage not reported yet'
-    : cost
-      ? null
-      : 'No pricing for this model'
+    : hasUnpricedUsage
+      ? cost
+        ? 'Cost excludes models without pricing'
+        : 'No pricing for this model'
+      : null
 
   return {
     header: `Usage · ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
