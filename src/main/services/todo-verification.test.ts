@@ -4,6 +4,10 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from './thread-execution-context.ts'
+import {
   clearAllowedWorkspaceRootsForTest,
   registerAllowedWorkspaceRoot,
   setWorkspaceRootForTest,
@@ -47,6 +51,32 @@ describe('verifyTodoCheck', () => {
     const result = await verifyTodoCheck(
       { kind: 'fileExists', path: 'src/ok.ts' },
       new AbortController().signal,
+    )
+
+    assert.equal(result.passed, true)
+    assert.match(result.detail, /File exists/)
+  })
+
+  it('fileExists resolves against the thread worktree instead of the shared checkout', async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'copse-todo-project-'))
+    const worktreeRoot = mkdtempSync(join(tmpdir(), 'copse-todo-worktree-'))
+    writeFileSync(join(worktreeRoot, 'worktree-only.ts'), 'ok')
+    await registerAllowedWorkspaceRoot(projectRoot)
+    cleanupRoot = setWorkspaceRootForTest(projectRoot)
+    const context: ThreadExecutionContext = {
+      projectId: 'project',
+      threadId: 'thread',
+      projectRoot,
+      root: worktreeRoot,
+      checkoutMode: 'worktree',
+      branch: 'codex/fix',
+    }
+
+    const result = await runWithThreadExecutionContext(context, () =>
+      verifyTodoCheck(
+        { kind: 'fileExists', path: 'worktree-only.ts' },
+        new AbortController().signal,
+      ),
     )
 
     assert.equal(result.passed, true)

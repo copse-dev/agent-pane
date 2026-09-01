@@ -31,7 +31,7 @@ describe('footer branch picker', () => {
     const menu = await picker.$('.branch-picker-menu')
     await expect(menu).toBeDisplayed()
     await expect(menu.$('.branch-picker-option')).toBeDisplayed({ wait: 10_000 })
-    await expect(menu.$('.branch-picker-action')).not.toBeDisplayed()
+    await expect(menu.$('.branch-picker-action')).not.toExist()
 
     const branchOptions = await menu.$$('.branch-picker-option')
     await expect(branchOptions.length).toBeGreaterThan(0)

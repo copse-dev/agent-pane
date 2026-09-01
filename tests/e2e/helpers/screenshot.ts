@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { browser } from '@wdio/globals'
+import { recentreClippedCapture, restoreScrollAfterCapture } from './capture-framing.ts'
 
 /** Fixed viewport for committed e2e reference screenshots (see tests/e2e/screenshots/). */
 export const E2E_VIEWPORT = { width: 1280, height: 800 } as const
@@ -178,10 +179,27 @@ export async function waitForImagesSettled(
   )
 }
 
-/** Capture a single element after pinning the viewport (footer, input bar, etc.). */
+/**
+ * Capture a single element after pinning the viewport (footer, input bar, etc.).
+ *
+ * The pin happens *after* the caller has scrolled its subject into view, and it
+ * shrinks the shell — so on a tall-windowed runner the subject can end up
+ * outside the pinned box and the capture comes back truncated, with the
+ * settings action bar over whatever is left. Re-centre in that case only; see
+ * {@link recentreClippedCapture} for the measurements and for why an element
+ * already inside the shell is deliberately left exactly where the spec put it.
+ */
 export async function saveElementScreenshot(selector: string, filename: string): Promise<void> {
   await prepareE2eScreenshot()
   const el = await browser.$(selector)
   await el.waitForDisplayed({ timeout: 15_000 })
+  const saved = await browser.execute(recentreClippedCapture, el, '#app')
+  if (saved) {
+    // Let the scroll settle before capturing, as the prepare step does.
+    await browser.pause(100)
+  }
   await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  // Hand the page back exactly as the caller left it — the scroll was for the
+  // capture, and specs keep interacting with the page afterwards.
+  if (saved) await browser.execute(restoreScrollAfterCapture, el, saved)
 }

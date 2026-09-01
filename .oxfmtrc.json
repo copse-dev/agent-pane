@@ -1,0 +1,31 @@
+// oxfmt trial config — mirrors prettier.config.mjs exactly so the two formatters are
+// compared on identical settings. Seeded with `oxfmt --migrate=prettier`, then trimmed.
+// See docs/spikes/oxfmt-trial.md for what the trial measured.
+//
+// Named `.oxfmtrc.json` rather than `oxfmt.config.mjs` deliberately. Only the
+// `.oxfmtrc.*` names are auto-discovered, so a bare `oxfmt` run — by a human, an editor
+// extension, or an agent — picks these settings up. A config reachable only via `-c`
+// would let a bare run fall through to oxfmt's own defaults (semicolons, double quotes)
+// and rewrite the entire repository.
+//
+// There is deliberately no `ignorePatterns` block, even though `--migrate` emits one:
+// oxfmt reads `.prettierignore` and `.gitignore` natively. Duplicating the list would
+// give the byte-exact exclusions a second copy to drift out of sync with — the vendored
+// upstream schemas, the hook payload snapshots, and the generated headless contract are
+// all drift-checked against their exact bytes, so a stale second ignore list is the one
+// failure mode that matters here. Verified equivalent: 2395 files scanned, same 33
+// divergences, with and without the duplicated block.
+{
+  // The four settings from prettier.config.mjs, verbatim.
+  "semi": false,
+  "singleQuote": true,
+  "printWidth": 100,
+  "trailingComma": "all",
+
+  // NOT a Prettier setting, and it defaults to ON. Left off so the trial measures
+  // formatting divergence and nothing else: enabled, oxfmt also re-sorts the keys of
+  // every package.json it finds — the root manifest, packages/extract-zip, and
+  // benchmarks/steer/fixtures/injection-project, whose bytes are part of the steer-eval
+  // corpus rather than project source.
+  "sortPackageJson": false
+}

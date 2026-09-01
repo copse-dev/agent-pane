@@ -292,6 +292,15 @@ export function terminalBenchProfileToolNames(profile: TerminalBenchProfile): st
   return profile.exposesWriteFile ? ['run_shell', 'write_file'] : ['run_shell']
 }
 
+export function terminalBenchSystemPrompt(
+  profile: TerminalBenchProfile,
+  workspaceRoot: string,
+): string {
+  // The root is literal prompt data. Replacement strings expand `$$`, `$&`,
+  // `` $` ``, and `$'`, corrupting valid workspace paths containing them.
+  return profile.systemPrompt.replaceAll('{WORKSPACE_ROOT}', () => workspaceRoot)
+}
+
 export function terminalShellResultIsError(
   profile: TerminalBenchProfile,
   result: TerminalToolResult,
@@ -392,7 +401,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
   const messages = [
     {
       role: 'system' as const,
-      content: profile.systemPrompt.replaceAll('{WORKSPACE_ROOT}', parsed.workspaceRoot),
+      content: terminalBenchSystemPrompt(profile, parsed.workspaceRoot),
     },
     ...(steering
       ? [
