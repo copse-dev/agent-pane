@@ -173,10 +173,16 @@ let cache: {
   at: number
   result: Awaited<ReturnType<typeof fetchOpenRouterModels>>
 } | null = null
+const modelFetches = new Map<string, Promise<Awaited<ReturnType<typeof fetchOpenRouterModels>>>>()
+const zdrFetches = new Map<string, Promise<Set<string>>>()
+let cacheGeneration = 0
 
 export function invalidateOpenRouterModelsCache(): void {
+  cacheGeneration += 1
   cache = null
   zdrCache = null
+  modelFetches.clear()
+  zdrFetches.clear()
 }
 
 /** All OpenRouter models (cached); failures are cached too to avoid repeat timeouts. */
@@ -188,14 +194,30 @@ export async function fetchOpenRouterModelsCached(): Promise<{
   const key = openRouterApiBase()
   const now = Date.now()
   if (cache && cache.key === key && now - cache.at < MODELS_TTL_MS) return cache.result
-  const result = await fetchOpenRouterModels()
-  cache = { key, at: now, result }
-  // Snapshot the catalog's rates so the usage ledger can price OpenRouter turns
-  // without a network round-trip (and after a model leaves the catalog). Best
-  // effort by design: pricing is a display concern, never a reason to fail a
-  // model list. Fire-and-forget so the picker isn't held up by a settings write.
-  if (result.ok) void rememberOpenRouterPricing(result.models).catch(() => {})
-  return result
+  const activeFetch = modelFetches.get(key)
+  if (activeFetch) return activeFetch
+
+  const generation = cacheGeneration
+  const pending = fetchOpenRouterModels()
+    .then((result) => {
+      // An invalidation or API-base change while the request was in flight means
+      // this response belongs to an older cache epoch. Return it to its original
+      // caller, but never let it overwrite the newer base's cache.
+      if (cacheGeneration === generation && openRouterApiBase() === key) {
+        cache = { key, at: Date.now(), result }
+        // Snapshot the catalog's rates so the usage ledger can price OpenRouter turns
+        // without a network round-trip (and after a model leaves the catalog). Best
+        // effort by design: pricing is a display concern, never a reason to fail a
+        // model list. Fire-and-forget so the picker isn't held up by a settings write.
+        if (result.ok) void rememberOpenRouterPricing(result.models).catch(() => {})
+      }
+      return result
+    })
+    .finally(() => {
+      if (modelFetches.get(key) === pending) modelFetches.delete(key)
+    })
+  modelFetches.set(key, pending)
+  return pending
 }
 
 // ---- ZDR endpoint list ----------------------------------------------------
@@ -242,9 +264,22 @@ async function fetchZdrIdentifiersCached(): Promise<Set<string>> {
   if (zdrCache && zdrCache.key === key && now - zdrCache.at < MODELS_TTL_MS) {
     return zdrCache.identifiers
   }
-  const identifiers = await fetchZdrIdentifiers()
-  zdrCache = { key, at: now, identifiers }
-  return identifiers
+  const activeFetch = zdrFetches.get(key)
+  if (activeFetch) return activeFetch
+
+  const generation = cacheGeneration
+  const pending = fetchZdrIdentifiers()
+    .then((identifiers) => {
+      if (cacheGeneration === generation && openRouterApiBase() === key) {
+        zdrCache = { key, at: Date.now(), identifiers }
+      }
+      return identifiers
+    })
+    .finally(() => {
+      if (zdrFetches.get(key) === pending) zdrFetches.delete(key)
+    })
+  zdrFetches.set(key, pending)
+  return pending
 }
 
 /**

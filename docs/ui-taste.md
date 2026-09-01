@@ -342,6 +342,14 @@ Rules of thumb:
 - An absolutely positioned `::before` paints in the **positioned** layer, i.e. _above_ the bar's
   in-flow children. Give the buttons `position: relative; z-index: 1` or they come out blurred
   along with the backdrop.
+- A sticky bar covers the bottom of its own scrollport, so that depth is not landing space. Give the
+  scroll container `scroll-padding-bottom` at least the bar's height: `scrollIntoView`, keyboard
+  focus and accessibility scrolls then stop _above_ the bar instead of parking a control underneath
+  it. Round the reserve up — a target that lands a few px inside the bar is a target whose click
+  the bar can still intercept. Resist reaching for `pointer-events: none` on the bar to paper over
+  this: the wash is ~60% opaque where it meets the buttons, so making it click-through lets people
+  hit controls they cannot properly see, and it costs you the assertion that the bar covers its
+  scrollport edge at all.
 - Alternatively, mirror the onboarding pattern: make the footer a non-scrolling flex sibling
   (`flex-shrink: 0`) _outside_ the scroll region (see `onboarding.css` / `onboarding-dialog.ts`).
   Prefer this when the footer doesn't need to live inside a `<form>` for submit semantics.

@@ -113,14 +113,17 @@ import { getThreadExecutionContext } from '../thread-execution-context.ts'
  * (it would pull Electron/node-pty into those bundles). See
  * acp-remote-install-approval.ts.
  */
-setRemoteAcpInstallApprover(async ({ title, body }) => {
-  const { approved } = await requestApproval({
-    title,
-    body,
-    type: 'shell',
-    cause: 'acp-package-setup',
-    allowRemember: false,
-  })
+setRemoteAcpInstallApprover(async ({ title, body }, signal) => {
+  const { approved } = await requestApproval(
+    {
+      title,
+      body,
+      type: 'shell',
+      cause: 'acp-package-setup',
+      allowRemember: false,
+    },
+    signal,
+  )
   return approved
 })
 
@@ -422,7 +425,7 @@ export async function runAcpAgentFromSettings(
   // Provider keys configured for this agent cross to a remote SSH host only
   // with the user's consent; on denial the agent runs with whatever
   // credentials already live on that host. No-op for local workspaces.
-  await gateRemoteAcpEnvForward(agent.id, spawnConfig)
+  await gateRemoteAcpEnvForward(agent.id, spawnConfig, options.signal)
 
   // Accumulate streamed assistant text so the turn contributes to thread history
   // (the external agent owns the model loop, so this is the only transcript we
@@ -506,6 +509,7 @@ export async function runAcpAgentFromSettings(
       threadId: options.threadId,
       config: spawnConfig,
       registry: options.registry,
+      signal: options.signal,
     })
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)

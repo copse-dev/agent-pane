@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import {
@@ -22,6 +22,7 @@ function git(cwd: string, args: string[]): string {
 describe('settings → Storage → worktree actions', function () {
   this.timeout(120_000)
   let projectRoot = ''
+  let openedProjectRoot = ''
   let worktreeRoot = ''
 
   before(async () => {
@@ -31,6 +32,10 @@ describe('settings → Storage → worktree actions', function () {
     const worktreesRoot = process.env['COPSE_WORKTREES_DIR']
     if (!worktreesRoot) throw new Error('COPSE_WORKTREES_DIR is not configured for e2e')
     projectRoot = join(dirname(worktreesRoot), 'settings-worktree-actions-project')
+    const differentlyCasedProjectRoot = join(
+      dirname(projectRoot),
+      basename(projectRoot).toUpperCase(),
+    )
     worktreeRoot = join(worktreesRoot, PROJECT_ID, THREAD_ID)
     mkdirSync(projectRoot, { recursive: true })
     git(projectRoot, ['init', '-q', '-b', 'main'])
@@ -40,6 +45,9 @@ describe('settings → Storage → worktree actions', function () {
     writeFileSync(join(projectRoot, 'README.md'), 'worktree settings actions fixture\n')
     git(projectRoot, ['add', '.gitignore', 'README.md'])
     git(projectRoot, ['commit', '-qm', 'seed'])
+    openedProjectRoot = existsSync(differentlyCasedProjectRoot)
+      ? differentlyCasedProjectRoot
+      : projectRoot
 
     mkdirSync(dirname(worktreeRoot), { recursive: true })
     const baseCommit = git(projectRoot, ['rev-parse', 'HEAD'])
@@ -53,7 +61,7 @@ describe('settings → Storage → worktree actions', function () {
 
     const now = Date.now()
     writeSeedConfig({
-      projects: [{ id: PROJECT_ID, path: projectRoot, name: 'Worktree actions' }],
+      projects: [{ id: PROJECT_ID, path: openedProjectRoot, name: 'Worktree actions' }],
       activeProjectId: PROJECT_ID,
       [`threads:${PROJECT_ID}`]: [
         {
@@ -98,6 +106,8 @@ describe('settings → Storage → worktree actions', function () {
   it('shows thread, terminal, and package cleanup actions', async () => {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').$('button[data-section="storage"]').click()
+
+    await expect($$('.sources-row[data-worktree-path]')).toBeElementsArrayOfSize(1)
 
     const row = $(`.sources-row[data-worktree-path="${worktreeRoot}"]`)
     await row.waitForDisplayed({ timeout: 30_000 })

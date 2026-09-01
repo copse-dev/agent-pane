@@ -76,6 +76,33 @@ describe('SSH settings section', () => {
       `expected ≥8px between Edit and Remove, got remove.x=${String(removeBox.x)} edit.right=${String(editBox.x + editSize.width)}`,
     )
 
+    const labelInput = sshSection.$('input[name="sshHostLabel"]')
+    const hostInput = sshSection.$('input[name="sshHostHost"]')
+    const portInput = sshSection.$('input[name="sshHostPort"]')
+    await labelInput.setValue('Invalid port host')
+    await hostInput.setValue('invalid.example')
+    await portInput.setValue('22garbage')
+    await browser.execute(() => {
+      document.querySelector('.ssh-host-form')?.scrollIntoView({ block: 'center' })
+    })
+    // The fixed settings footer currently intercepts low controls on main
+    // (#2067); invoke the product handler directly so this validation eval stays
+    // scoped to the port parser while that independent layout fix is pending.
+    await browser.execute(() => {
+      document.querySelector<HTMLButtonElement>('.ssh-host-save')?.click()
+    })
+    await expect(sshSection.$('.ssh-host-status')).toHaveText(
+      'Port must be a whole number from 1 to 65535.',
+    )
+    await expect(sshSection.$$('.ssh-host-row')).toBeElementsArrayOfSize(1)
+    await browser.execute(() => {
+      document.querySelector('.ssh-host-status')?.scrollIntoView({ block: 'center' })
+    })
+    await saveElementScreenshot('#settings-dialog', 'settings-ssh-invalid-port.png')
+    await browser.execute(() => {
+      document.querySelector<HTMLButtonElement>('.ssh-host-clear')?.click()
+    })
+
     await enabledToggle.click()
     assert.equal(await enabledToggle.isSelected(), true)
 

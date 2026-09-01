@@ -79,6 +79,7 @@ describe('createRegistry GitHub tool gating', () => {
 
   afterEach(() => {
     setGhAvailableForTest(null)
+    delete process.env['COPSE_PANEL_MOCK_GH']
   })
 
   it('registers the read-only GitHub tools when gh is accessible', () => {
@@ -97,6 +98,19 @@ describe('createRegistry GitHub tool gating', () => {
     }
     // Non-GitHub tools are still exposed regardless of gh availability.
     assert.equal(registry.has('run_shell'), true)
+  })
+
+  it('registers GitHub write tools for the mock backend without exposing read-only tools', () => {
+    setGhAvailableForTest(false)
+    process.env['COPSE_PANEL_MOCK_GH'] = '1'
+
+    const registry = createRegistry()
+
+    assert.equal(registry.has('gh_pr_create'), true)
+    assert.equal(registry.has('gh_pr_mark_ready'), true)
+    for (const name of GH_READONLY_TOOLS) {
+      assert.equal(registry.has(name), false, `expected ${name} to remain omitted`)
+    }
   })
 
   // Startup builds the registry *before* awaiting `checkToolAvailability()`, so

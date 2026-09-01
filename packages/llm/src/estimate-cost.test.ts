@@ -104,6 +104,33 @@ describe('estimateUsageCost', () => {
     )
   })
 
+  it('distinguishes an explicitly free cloud route from an unpriced route', () => {
+    const usage = { inputTokens: 1_000_000, outputTokens: 100_000 }
+    assert.equal(
+      estimateUsageCost(
+        { 'openrouter:vendor/free': usage },
+        {
+          'openrouter:vendor/free': {
+            inputPricePerMTok: 0,
+            outputPricePerMTok: 0,
+          },
+        },
+      ),
+      'free',
+    )
+    assert.equal(estimateUsageCost({ 'openrouter:vendor/unknown': usage }), '')
+  })
+
+  it('marks a known cost as partial when another used model is unpriced', () => {
+    assert.equal(
+      estimateUsageCost({
+        'claude-sonnet-4-6': { inputTokens: 1_000_000, outputTokens: 0 },
+        'openrouter:vendor/unknown': { inputTokens: 1_000_000, outputTokens: 0 },
+      }),
+      '~$3.00 (partial)',
+    )
+  })
+
   it('passes the rate map through formatThreadUsageCost byModel breakdown', () => {
     assert.equal(
       formatThreadUsageCost(

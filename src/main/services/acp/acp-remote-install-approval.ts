@@ -18,7 +18,10 @@ export interface RemoteAcpInstallRequest {
   body: string
 }
 
-type RemoteAcpInstallApprover = (req: RemoteAcpInstallRequest) => Promise<boolean>
+type RemoteAcpInstallApprover = (
+  req: RemoteAcpInstallRequest,
+  signal?: AbortSignal,
+) => Promise<boolean>
 
 let approver: RemoteAcpInstallApprover | null = null
 
@@ -28,7 +31,10 @@ export function setRemoteAcpInstallApprover(fn: RemoteAcpInstallApprover | null)
 }
 
 /** Ask the user. False (deny) whenever no approver is wired up. */
-export async function approveRemoteAcpInstall(req: RemoteAcpInstallRequest): Promise<boolean> {
+export async function approveRemoteAcpInstall(
+  req: RemoteAcpInstallRequest,
+  signal?: AbortSignal,
+): Promise<boolean> {
   if (!approver) return false
-  return await approver(req)
+  return await approver(req, signal)
 }
