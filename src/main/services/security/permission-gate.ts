@@ -366,15 +366,22 @@ async function promptShell(
   return approved
 }
 
-async function promptGuardedYoloHarm(command: string, reasons: string[]): Promise<boolean> {
-  const { approved } = await requestApproval({
-    title: 'Guarded YOLO safety check',
-    body: command,
-    bodyAdvice: formatGuardedYoloHarmPromptAdvice(reasons),
-    type: 'shell',
-    cause: 'shell-guarded-yolo-harm',
-    allowRemember: false,
-  })
+async function promptGuardedYoloHarm(
+  command: string,
+  reasons: string[],
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const { approved } = await requestApproval(
+    {
+      title: 'Guarded YOLO safety check',
+      body: command,
+      bodyAdvice: formatGuardedYoloHarmPromptAdvice(reasons),
+      type: 'shell',
+      cause: 'shell-guarded-yolo-harm',
+      allowRemember: false,
+    },
+    signal,
+  )
   return approved
 }
 
@@ -469,24 +476,34 @@ export async function promptExpectedSandboxBlock(
  * Prompt to install Socket Firewall before running a package install. Declining
  * cancels the install rather than running it unscanned.
  */
-export async function promptInstallSocketFirewall(command: string): Promise<boolean> {
-  const { approved } = await requestApproval({
-    title: 'Install Socket Firewall?',
-    cause: 'shell-package-install',
-    body: [
-      'This command installs packages and will be scanned by Socket Firewall (sfw)',
-      'to block known-malicious packages — but sfw is not installed yet.',
-      '',
-      'Install it now (npm install -g sfw) and continue? Declining cancels the install.',
-      '',
-      command,
-    ].join('\n'),
-    type: 'shell',
-  })
+export async function promptInstallSocketFirewall(
+  command: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const { approved } = await requestApproval(
+    {
+      title: 'Install Socket Firewall?',
+      cause: 'shell-package-install',
+      body: [
+        'This command installs packages and will be scanned by Socket Firewall (sfw)',
+        'to block known-malicious packages — but sfw is not installed yet.',
+        '',
+        'Install it now (npm install -g sfw) and continue? Declining cancels the install.',
+        '',
+        command,
+      ].join('\n'),
+      type: 'shell',
+    },
+    signal,
+  )
   return approved
 }
 
-async function checkMcpPermission(toolName: string, args: unknown): Promise<boolean> {
+async function checkMcpPermission(
+  toolName: string,
+  args: unknown,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const meta = getMcpToolMeta(toolName)
   const decision = decideMcpPermission({
     toolName,
@@ -501,15 +518,18 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
   const bodyLines = [JSON.stringify(args, null, 2)]
   if (hints.length) bodyLines.push('', `Hints: ${hints.join(', ')}`)
 
-  const { approved, remember } = await requestApproval({
-    title: `MCP tool: ${mcpToolLabel(toolName)}`,
-    body: bodyLines.join('\n'),
-    type: 'mcp',
-    subject: toolName,
-    scope: 'external',
-    cause: 'mcp-tool',
-    allowRemember: true,
-  })
+  const { approved, remember } = await requestApproval(
+    {
+      title: `MCP tool: ${mcpToolLabel(toolName)}`,
+      body: bodyLines.join('\n'),
+      type: 'mcp',
+      subject: toolName,
+      scope: 'external',
+      cause: 'mcp-tool',
+      allowRemember: true,
+    },
+    signal,
+  )
   if (approved && remember) await rememberMcpTool(toolName)
   return approved
 }
@@ -521,24 +541,31 @@ async function rememberWebOrigin(origin: string): Promise<void> {
   })
 }
 
-async function promptWebOrigin(origin: string, detail: string): Promise<boolean> {
-  const { approved, remember } = await requestApproval({
-    title: 'Allow web origin?',
-    body: formatWebPromptBody(origin, detail),
-    type: 'web',
-    cause: 'web-origin',
-    subject: origin,
-    scope: 'external',
-    allowRemember: true,
-    rememberLabel: 'Always allow this web origin',
-  })
+async function promptWebOrigin(
+  origin: string,
+  detail: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const { approved, remember } = await requestApproval(
+    {
+      title: 'Allow web origin?',
+      body: formatWebPromptBody(origin, detail),
+      type: 'web',
+      cause: 'web-origin',
+      subject: origin,
+      scope: 'external',
+      allowRemember: true,
+      rememberLabel: 'Always allow this web origin',
+    },
+    signal,
+  )
   if (!approved) return false
   if (remember) await rememberWebOrigin(origin)
   else grantWebOriginForNextFetch(origin)
   return true
 }
 
-async function checkFetchUrlPermission(args: unknown): Promise<boolean> {
+async function checkFetchUrlPermission(args: unknown, signal?: AbortSignal): Promise<boolean> {
   const url = fetchUrlFromArgs(args)
   if (!url) throw new Error('fetch_url requires a URL argument')
 
@@ -552,10 +579,10 @@ async function checkFetchUrlPermission(args: unknown): Promise<boolean> {
   if (decision.action === 'deny') {
     throw new Error(`Web access denied: ${decision.reasons.join('; ')}`)
   }
-  return promptWebOrigin(decision.origin, url)
+  return promptWebOrigin(decision.origin, url, signal)
 }
 
-async function checkWebSearchPermission(): Promise<boolean> {
+async function checkWebSearchPermission(signal?: AbortSignal): Promise<boolean> {
   const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
   const decision = decideWebSearchPermission({
     allowedOrigins: webAllowedOriginsWithDefaults(saved),
@@ -568,10 +595,11 @@ async function checkWebSearchPermission(): Promise<boolean> {
   return promptWebOrigin(
     decision.origin,
     `DuckDuckGo search is allowed by default through: ${DEFAULT_WEB_ALLOWED_ORIGINS.join(', ')}`,
+    signal,
   )
 }
 
-async function checkParallelSearchPermission(): Promise<boolean> {
+async function checkParallelSearchPermission(signal?: AbortSignal): Promise<boolean> {
   // Enabling the `copse.parallel-search` pack (default-off, experimental,
   // explicit API key) IS the user's consent to send search queries to Parallel.
   // Auto-allow its fixed API origin while the pack is enabled, mirroring how
@@ -592,6 +620,7 @@ async function checkParallelSearchPermission(): Promise<boolean> {
   return promptWebOrigin(
     decision.origin,
     'The objective and search queries will be sent to Parallel. Requests may consume paid API credits; Zero Data Retention depends on your Parallel account agreement.',
+    signal,
   )
 }
 
@@ -603,17 +632,24 @@ async function checkParallelSearchPermission(): Promise<boolean> {
  * A tool that declared `requiresApproval: true` opts out of remembering: it
  * always prompts, so a remembered grant is ignored for those tools.
  */
-async function checkCustomToolPermission(toolName: string, args: unknown): Promise<boolean> {
+async function checkCustomToolPermission(
+  toolName: string,
+  args: unknown,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const alwaysPrompt = customToolRequiresApproval(toolName)
   if (!alwaysPrompt && isCustomToolRemembered(toolName)) return true
-  const { approved, remember } = await requestApproval({
-    title: `Custom tool: ${customToolLabel(toolName)}`,
-    body: JSON.stringify(args, null, 2),
-    type: 'mcp',
-    cause: 'custom-tool',
-    // No "remember" for always-prompt tools: a saved grant would never be honored.
-    allowRemember: !alwaysPrompt,
-  })
+  const { approved, remember } = await requestApproval(
+    {
+      title: `Custom tool: ${customToolLabel(toolName)}`,
+      body: JSON.stringify(args, null, 2),
+      type: 'mcp',
+      cause: 'custom-tool',
+      // No "remember" for always-prompt tools: a saved grant would never be honored.
+      allowRemember: !alwaysPrompt,
+    },
+    signal,
+  )
   if (approved && remember && !alwaysPrompt) await rememberCustomTool(toolName)
   return approved
 }
@@ -623,16 +659,23 @@ async function checkCustomToolPermission(toolName: string, args: unknown): Promi
  * "remember" yet — the per-repo grant granularity is still an open question, so
  * every approve / merge-when-ready / mark-ready / rerun-CI call asks first.
  */
-async function checkGithubWriteToolPermission(toolName: string, args: unknown): Promise<boolean> {
+async function checkGithubWriteToolPermission(
+  toolName: string,
+  args: unknown,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const prompt = formatGithubWritePrompt(toolName, args)
-  const { approved } = await requestApproval({
-    title: prompt.title,
-    body: prompt.body,
-    type: 'mcp',
-    cause: 'github-write',
-    allowRemember: false,
-    subject: toolName,
-  })
+  const { approved } = await requestApproval(
+    {
+      title: prompt.title,
+      body: prompt.body,
+      type: 'mcp',
+      cause: 'github-write',
+      allowRemember: false,
+      subject: toolName,
+    },
+    signal,
+  )
   return approved
 }
 
@@ -680,16 +723,26 @@ function firePermissionDecision(
   })
 }
 
-async function checkShellPermission(args: unknown, originalCommand?: string): Promise<boolean> {
+async function checkShellPermission(
+  args: unknown,
+  originalCommand?: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) {
-    return promptShell('(invalid command)', ['missing command argument'], false, 'shell-in-sandbox')
+    return promptShell(
+      '(invalid command)',
+      ['missing command argument'],
+      false,
+      'shell-in-sandbox',
+      signal,
+    )
   }
 
-  return ensureShellCommandPermitted(
-    command,
-    originalCommand !== undefined ? { originalCommand } : {},
-  )
+  return ensureShellCommandPermitted(command, {
+    ...(originalCommand !== undefined ? { originalCommand } : {}),
+    ...(signal !== undefined ? { signal } : {}),
+  })
 }
 
 function activeShellReplayLeaseIdentity(
@@ -866,7 +919,7 @@ export async function ensureShellCommandPermitted(
   }
 
   if (guardedYolo) {
-    const approved = await promptGuardedYoloHarm(command, decision.reasons)
+    const approved = await promptGuardedYoloHarm(command, decision.reasons, opts.signal)
     auditGuardedYolo(approved ? 'approved' : 'declined')
     return approved
   }
@@ -1006,7 +1059,10 @@ async function rememberBrowserOrigin(origin: string): Promise<void> {
   )
 }
 
-async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
+async function checkBrowserNavigatePermission(
+  args: unknown,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const url = browserUrlFromArgs(args)
   if (!url) throw new Error('browser_navigate requires a url argument')
 
@@ -1020,15 +1076,18 @@ async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
     throw new Error(`Browser navigation denied: ${decision.reasons.join('; ')}`)
   }
 
-  const { approved, remember } = await requestApproval({
-    title: 'Allow browser navigation?',
-    body: formatBrowserPromptBody(decision.origin, url),
-    type: 'mcp',
-    cause: 'browser-navigation',
-    subject: url,
-    scope: 'external',
-    allowRemember: true,
-  })
+  const { approved, remember } = await requestApproval(
+    {
+      title: 'Allow browser navigation?',
+      body: formatBrowserPromptBody(decision.origin, url),
+      type: 'mcp',
+      cause: 'browser-navigation',
+      subject: url,
+      scope: 'external',
+      allowRemember: true,
+    },
+    signal,
+  )
   if (approved && remember) await rememberBrowserOrigin(decision.origin)
   return approved
 }
@@ -1053,10 +1112,11 @@ const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
 async function checkBackgroundProcessPermission(
   args: unknown,
   originalCommand?: string,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   // Only a `start` action carries a command; management actions leave it empty.
   const command = backgroundCommandFromArgs(args)
-  if (command && !(await checkShellPermission(args, originalCommand))) return false
+  if (command && !(await checkShellPermission(args, originalCommand, signal))) return false
 
   if (!backgroundAllowsPortBinding(args)) return true
 
@@ -1075,16 +1135,19 @@ async function checkBackgroundProcessPermission(
   const allowed = getSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [])
   if (allowed.includes(root)) return true
 
-  const { approved, remember } = await requestApproval({
-    title: 'Allow this project to bind a local port?',
-    type: 'shell',
-    cause: 'shell-port-binding',
-    ...shellPromptToApprovalFields(
-      formatPortBindingPromptParts(root, backgroundCommandFromArgs(args)),
-    ),
-    allowRemember: true,
-    rememberLabel: 'Always allow local port binding in this project',
-  })
+  const { approved, remember } = await requestApproval(
+    {
+      title: 'Allow this project to bind a local port?',
+      type: 'shell',
+      cause: 'shell-port-binding',
+      ...shellPromptToApprovalFields(
+        formatPortBindingPromptParts(root, backgroundCommandFromArgs(args)),
+      ),
+      allowRemember: true,
+      rememberLabel: 'Always allow local port binding in this project',
+    },
+    signal,
+  )
   if (approved && remember) {
     await updateSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [], (current) =>
       current.includes(root) ? current : [...current, root],
@@ -1142,17 +1205,24 @@ export async function ensureTerminalPermitted(
  * approval path a policy `ask` uses (B4). The hook's `agentMessage` / `userMessage`
  * (if any) heads the prompt body so the user sees *why* the hook wants review.
  */
-async function promptHookAsk(check: PermissionCheck, decision: HookGateDecision): Promise<boolean> {
+async function promptHookAsk(
+  check: PermissionCheck,
+  decision: HookGateDecision,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const detail = decision.agentMessage ?? decision.userMessage
   const bodyLines: string[] = []
   if (detail) bodyLines.push(detail, '')
   bodyLines.push(JSON.stringify(check.args, null, 2))
-  const { approved } = await requestApproval({
-    title: `Hook asks to confirm: ${check.toolName}`,
-    body: bodyLines.join('\n'),
-    cause: 'hook-ask',
-    type: check.toolName === 'run_shell' || check.toolName === 'run_background' ? 'shell' : 'mcp',
-  })
+  const { approved } = await requestApproval(
+    {
+      title: `Hook asks to confirm: ${check.toolName}`,
+      body: bodyLines.join('\n'),
+      cause: 'hook-ask',
+      type: check.toolName === 'run_shell' || check.toolName === 'run_background' ? 'shell' : 'mcp',
+    },
+    signal,
+  )
   return approved
 }
 
@@ -1203,7 +1273,10 @@ interface ToolGateHookOutcome {
   injectContext?: string
 }
 
-async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookOutcome> {
+async function applyToolGateHooks(
+  check: PermissionCheck,
+  signal?: AbortSignal,
+): Promise<ToolGateHookOutcome> {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return { ok: true }
 
   const workspaceRoot = getAgentProjectRoot()
@@ -1212,7 +1285,13 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookO
 
   const decision = await runToolGateHooks(
     { toolName: check.toolName, args: check.args },
-    { workspaceRoot, executionRoot, projectTrusted, agentSession: currentAgentSessionInfo() },
+    {
+      workspaceRoot,
+      executionRoot,
+      projectTrusted,
+      agentSession: currentAgentSessionInfo(),
+      ...(signal !== undefined ? { signal } : {}),
+    },
   )
   recordHookDecision(check.toolName, decision)
 
@@ -1252,7 +1331,7 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookO
     decision.injectContext !== undefined ? { injectContext: decision.injectContext } : {}
 
   if (decision.permission === 'ask') {
-    const approved = await promptHookAsk(check, decision)
+    const approved = await promptHookAsk(check, decision, signal)
     if (approved) return { ok: true, ...rewrite, ...inject }
     if (decision.agentMessage) throw new Error(`Blocked by a hook: ${decision.agentMessage}`)
     return { ok: false }
@@ -1272,12 +1351,15 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookO
  * changes the workspace or reaches the network MUST either route through the
  * diff queue or get an explicit case here; do not rely on the default branch.
  */
-export async function ensureToolPermitted(check: PermissionCheck): Promise<boolean> {
+export async function ensureToolPermitted(
+  check: PermissionCheck,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const originalShellCommand =
     check.toolName === 'run_shell' || check.toolName === 'run_background'
       ? shellCommandFromArgs(check.args)
       : null
-  const gate = await applyToolGateHooks(check)
+  const gate = await applyToolGateHooks(check, signal)
   if (!gate.ok) return false
 
   // H1: a hook rewrote the tool input. Apply the rewrite *in place* so (a) the
@@ -1313,7 +1395,7 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   if (SANDBOX_TOOLS.has(toolName)) return true
 
   if (toolName === 'browser_navigate') {
-    return checkBrowserNavigatePermission(args)
+    return checkBrowserNavigatePermission(args, signal)
   }
   // Snapshot/screenshot/click/type act on the already-approved page; auto-run.
   if (BROWSER_TOOLS.has(toolName) || READ_ONLY_BROWSER_TOOLS.has(toolName)) {
@@ -1321,15 +1403,15 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   }
 
   if (toolName === 'fetch_url') {
-    return checkFetchUrlPermission(args)
+    return checkFetchUrlPermission(args, signal)
   }
 
   if (toolName === 'web_search') {
-    return checkWebSearchPermission()
+    return checkWebSearchPermission(signal)
   }
 
   if (toolName === 'parallel_search') {
-    return checkParallelSearchPermission()
+    return checkParallelSearchPermission(signal)
   }
 
   // GitHub CI tools never mutate remote state. Status/log reads are ephemeral;
@@ -1341,23 +1423,23 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   // Mutating PR actions (approve / merge-when-ready / mark-ready / rerun CI)
   // change state on github.com, so they always prompt — never auto-run.
   if (GITHUB_WRITE_TOOLS.has(toolName)) {
-    return checkGithubWriteToolPermission(toolName, args)
+    return checkGithubWriteToolPermission(toolName, args, signal)
   }
 
   if (toolName.startsWith('mcp__')) {
-    return checkMcpPermission(toolName, args)
+    return checkMcpPermission(toolName, args, signal)
   }
 
   if (toolName.startsWith(CUSTOM_TOOL_PREFIX)) {
-    return checkCustomToolPermission(toolName, args)
+    return checkCustomToolPermission(toolName, args, signal)
   }
 
   if (toolName === 'run_shell') {
-    return checkShellPermission(args, originalShellCommand ?? undefined)
+    return checkShellPermission(args, originalShellCommand ?? undefined, signal)
   }
 
   if (toolName === 'run_background') {
-    return checkBackgroundProcessPermission(args, originalShellCommand ?? undefined)
+    return checkBackgroundProcessPermission(args, originalShellCommand ?? undefined, signal)
   }
 
   // Default-allow: read-only/in-process tools (and mutating tools that are
