@@ -89,6 +89,62 @@ describe('fileReferenceMatches', () => {
     assert.ok(match)
     assert.equal(text.slice(match.start, match.end), 'src/a/b.ts:10:2')
   })
+
+  it('scans a long run of @/+/$ in linear time', () => {
+    // `@`, `+` and `$` are the characters the prefix group and both leading
+    // runs all accept, so a run of them is one starting offset per character
+    // with the whole remaining run to scan from each. Unbounded that is
+    // quadratic: this input took ~12s before the runs were capped.
+    const text = '$+a@$+'.repeat(11_000)
+    const started = performance.now()
+    fileReferenceMatches(text)
+    const elapsed = performance.now() - started
+    assert.ok(
+      elapsed < 2_000,
+      `scanning ${String(text.length)} chars took ${elapsed.toFixed(0)}ms; the leading runs are backtracking again`,
+    )
+  })
+
+  it('still matches paths and stems right up to the length cap', () => {
+    // The cap is NAME_MAX, so everything a filesystem can actually hold must
+    // still match — the fix is only allowed to drop the unreachable tail.
+    const stem = 'a'.repeat(255)
+    assert.deepEqual(
+      fileReferenceMatches(`see ${stem}.ts here`).map((m) => m.candidate),
+      [`${stem}.ts`],
+    )
+    const segment = 'b'.repeat(255)
+    assert.deepEqual(
+      fileReferenceMatches(`see src/${segment}/x.ts here`).map((m) => m.candidate),
+      [`src/${segment}/x.ts`],
+    )
+    assert.deepEqual(
+      fileReferenceMatches(`see ${segment}/x.ts here`).map((m) => m.candidate),
+      [`${segment}/x.ts`],
+    )
+  })
+
+  it('reports the same candidates as before for everyday text', () => {
+    // The scan runs over every user prompt, so the common shapes must keep
+    // producing exactly what they produced before the runs were capped —
+    // including the pre-existing quirks (an email address and a base64 blob
+    // both look enough like `stem.ext` to match, and still do).
+    assert.deepEqual(
+      fileReferenceMatches('the fix is in src/main/index.ts, see also .env and Makefile').map(
+        (m) => m.candidate,
+      ),
+      ['src/main/index.ts', '.env', 'Makefile'],
+    )
+    assert.deepEqual(fileReferenceMatches('{"a":1,"b":[2,3]}'), [])
+    assert.deepEqual(
+      fileReferenceMatches('user@example.com pinged').map((m) => m.candidate),
+      ['user@example.com'],
+    )
+    assert.deepEqual(
+      fileReferenceMatches('aGVsbG8gd29ybGQgdGhpcyBpcyBhIHRlc3Q+Pz8/Pw==').map((m) => m.candidate),
+      ['aGVsbG8gd29ybGQgdGhpcyBpcyBhIHRlc3Q+Pz8/Pw'],
+    )
+  })
 })
 
 describe('resolveFileReferencesInBatches', () => {

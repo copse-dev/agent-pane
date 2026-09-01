@@ -129,6 +129,17 @@ describe('pointHtmlAtMonacoBase', () => {
     assert.ok(rewritten.indexOf('copse-monaco-base') < rewritten.indexOf('</head>'))
   })
 
+  it('writes URL paths containing replacement tokens literally', () => {
+    for (const segment of ['$&', '$$', String.raw`$\``, "$'"]) {
+      const tokenBase = `https://example.test/work${segment}space/`
+      const rewritten = pointHtmlAtMonacoBase(template, tokenBase)
+      const escapedBase = tokenBase.replaceAll('&', '&amp;')
+
+      assert.ok(rewritten.includes(`${tokenBase}vs/editor/browser/widget/diffEditor/style.css`))
+      assert.ok(rewritten.includes(`<meta name="copse-monaco-base" content="${escapedBase}" />`))
+    }
+  })
+
   it('never declares the base as an inline script', () => {
     // The template's own CSP is `script-src 'self'` with no `unsafe-inline`, so
     // an inline script carrying the base is refused and the loader silently

@@ -80,14 +80,16 @@ export function pointHtmlAtMonacoBase(html: string, baseUrl: string): string {
   if (!html.includes('</head>')) {
     throw new Error('index.html has no </head> to inject the Monaco base into')
   }
-  const repointed = html.replaceAll(LOCAL_MONACO_PREFIX, base)
+  // URLs are literal markup data. Replacement strings expand `$$`, `$&`,
+  // `` $` ``, and `$'`, all of which are valid URL path text.
+  const repointed = html.replaceAll(LOCAL_MONACO_PREFIX, () => base)
   // A meta, not an inline script: the page ships `script-src 'self'` with no
   // `unsafe-inline`, so a `<script>window.…=…</script>` is refused outright and
   // the base silently never arrives. Escape the quotes rather than trusting the
   // URL — this is markup, and JSON.stringify does not produce HTML.
   const content = base.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
   const inject = `<meta name="copse-monaco-base" content="${content}" />`
-  return repointed.replace('</head>', `  ${inject}\n  </head>`)
+  return repointed.replace('</head>', () => `  ${inject}\n  </head>`)
 }
 
 // `node scripts/copy-monaco-workers.mts <dir>` populates <dir> as a Monaco root.
