@@ -78,6 +78,26 @@
 .approval-body-code {
   font-family: var(--font-mono);
 }
+/* A homogeneous batch shares one explanation and presents only its changing
+ * subjects as a compact list. The list owns the outer card and scrollbar so
+ * parallel commands read as one approval decision, not repeated prompts. */
+.approval-body-list {
+  overflow-y: auto;
+  max-height: 320px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius);
+}
+.approval-body-list .approval-body {
+  overflow: visible;
+  max-height: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.approval-body-list .approval-body + .approval-body {
+  border-top: 1px solid var(--border-subtle, var(--border));
+}
 /* Button look lives on `.ui-btn*`; this host keeps layout + the once-button rail. */
 .approval-buttons {
   margin-top: var(--spacing-sm);
