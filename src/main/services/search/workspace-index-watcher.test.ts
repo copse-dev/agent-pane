@@ -10,7 +10,9 @@ import {
   flushScheduledIndexRebuild,
   handleWorkspaceWatchEvent,
   isRootWatched,
+  isWorkingTreeReconcileTimerArmedForTest,
   isWorkingTreeWatched,
+  reconcileWorkingTreeWatchersForTest,
   scheduleIndexRebuild,
   startWorkspaceIndexWatcher,
   stopWorkspaceIndexWatcher,
@@ -72,6 +74,23 @@ describe('workspace-index-watcher', () => {
     assert.ok(getIndex(tempRoot)?.paths.includes('src/app.ts'))
   })
 
+  it('reconciles git consumers when the native watcher loses an event', () => {
+    const changedRoots: string[] = []
+    setWorkspaceChangeSink((root) => changedRoots.push(root))
+
+    assert.equal(isWorkingTreeReconcileTimerArmedForTest(), true)
+    reconcileWorkingTreeWatchersForTest()
+    flushWorkspaceChangeNotify()
+
+    assert.deepEqual(changedRoots, [tempRoot])
+
+    stopWorkspaceIndexWatcher(tempRoot)
+    assert.equal(isWorkingTreeReconcileTimerArmedForTest(), false)
+    reconcileWorkingTreeWatchersForTest()
+    flushWorkspaceChangeNotify()
+    assert.deepEqual(changedRoots, [tempRoot], 'stopped roots should not be reconciled')
+  })
+
   it('arms a git-only watch without claiming the index is current', async () => {
     const worktreeRoot = await mkdtemp(join(tmpdir(), 'copse-panel-git-only-watch-'))
     try {
@@ -127,13 +146,21 @@ describe('workspace-index-watcher', () => {
     }
   })
 
-  it('drops the watcher on error instead of leaving an uncaught exception', () => {
+  it('falls back to reconciliation when a native watcher errors', () => {
+    const changedRoots: string[] = []
+    setWorkspaceChangeSink((root) => changedRoots.push(root))
+
     assert.equal(isRootWatched(tempRoot), true)
     assert.equal(
       emitWorkspaceIndexWatcherErrorForTest(tempRoot, new Error('ENOENT: watch root gone')),
       true,
     )
     assert.equal(isRootWatched(tempRoot), false)
+    assert.equal(isWorkingTreeReconcileTimerArmedForTest(), true)
+
+    reconcileWorkingTreeWatchersForTest()
+    flushWorkspaceChangeNotify()
+    assert.deepEqual(changedRoots, [tempRoot])
   })
 
   it('stopping one root leaves the other watched', async () => {

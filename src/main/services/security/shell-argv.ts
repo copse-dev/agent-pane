@@ -255,10 +255,48 @@ export function isReadOnlySimpleCommand(segment: string): boolean {
   if (!name) return false
   if (name === 'git') return isReadOnlyGitCommand(argv)
   if (!READ_ONLY_SHELL_BASENAMES.has(name)) return false
-  if (name === 'rg' && argv.some((arg) => arg === '--pre' || arg.startsWith('--pre='))) {
-    return false
+  return !argv.slice(1).some((arg) => isEscapeHatchFlag(name, arg))
+}
+
+/**
+ * Flags that turn one of the allow-listed commands above into a launcher or a
+ * writer. The allow-list is by basename, so without these a "read-only" command
+ * runs whatever it is pointed at: `sort --compress-program=./x.sh` executes
+ * `./x.sh` on its temporary files and `fd -x ./x.sh` executes it once per
+ * result — while `./x.sh` on its own line is opaque local execution and
+ * prompts. `git` gets the same treatment a few lines below, and `rg --pre` was
+ * already handled here; these are its siblings.
+ *
+ * Per command, never global: `grep -o` is "only matching", not an output file.
+ */
+const ESCAPE_HATCH_FLAGS: ReadonlyMap<string, { short: string; long: ReadonlySet<string> }> =
+  new Map([
+    // -o/--output write the result to a file; --compress-program runs a program.
+    ['sort', { short: 'o', long: new Set(['--output', '--compress-program']) }],
+    // -x/--exec and -X/--exec-batch run a command per result / once for all.
+    ['fd', { short: 'xX', long: new Set(['--exec', '--exec-batch']) }],
+    // -o sends output to a file.
+    ['tree', { short: 'o', long: new Set(['--output']) }],
+    // --pre preprocesses each file through a program; --hostname-bin runs one.
+    ['rg', { short: '', long: new Set(['--pre', '--hostname-bin']) }],
+    // -C compiles the magic file named by -m, writing it out.
+    ['file', { short: 'C', long: new Set(['--compile']) }],
+  ])
+
+function isEscapeHatchFlag(command: string, arg: string): boolean {
+  const hatches = ESCAPE_HATCH_FLAGS.get(command)
+  if (!hatches) return false
+  if (arg.startsWith('--')) {
+    const equals = arg.indexOf('=')
+    return hatches.long.has(equals === -1 ? arg : arg.slice(0, equals))
   }
-  return true
+  // A short flag may arrive bundled (`sort -uo out.txt`), so look at every
+  // character rather than comparing the token whole. A bare `-` is stdin.
+  if (!arg.startsWith('-') || arg.length < 2) return false
+  for (let index = 1; index < arg.length; index += 1) {
+    if (hatches.short.includes(arg.charAt(index))) return true
+  }
+  return false
 }
 
 function isReadOnlyGitCommand(argv: readonly string[]): boolean {

@@ -13,6 +13,7 @@ import {
   type SessionUpdate,
   type Stream,
 } from '@agentclientprotocol/sdk'
+import { z } from 'zod'
 import type { StreamChunk, Thread } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
 import {
@@ -27,6 +28,7 @@ import { tapAcpWireStream } from './acp-wire-tap.ts'
 import { acquireAcpSession, disposeAllAcpSessions } from './acp-session-pool.ts'
 import { runAcpSessionPrompt } from './acp-client.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { ToolRegistry } from '../tool-registry.ts'
 import {
   loadProjectThreads,
   readThreadDirectory,
@@ -437,13 +439,14 @@ describe('acp wire trace', () => {
     )
   })
 
-  it('opens with a self-describing header naming the thread and agent', async () => {
+  it('opens with a self-describing header naming the thread, agent, and bridged tools', async () => {
     await saveProjectThread('p1', threadOf('t1'))
     const trace = await createAcpWireTrace(
       {
         threadId: 't1',
         projectId: 'p1',
         agent: { command: 'cursor-agent', args: ['--acp'] },
+        bridgeToolNames: ['read_file', 'run_shell'],
       },
       ON,
     )
@@ -460,6 +463,7 @@ describe('acp wire trace', () => {
       projectId: 'p1',
       pid: process.pid,
       agent: { command: 'cursor-agent', args: ['--acp'] },
+      nativeBridge: { toolNames: ['read_file', 'run_shell'] },
     })
   })
 
@@ -562,12 +566,13 @@ describe('acp wire trace (session pool integration)', () => {
     }
   }
 
-  async function runOneTurn(): Promise<StreamChunk[]> {
+  async function runOneTurn(registry?: ToolRegistry): Promise<StreamChunk[]> {
     await saveProjectThread('proj-1', threadOf('thread-1'))
     const { entry } = await acquireAcpSession({
       threadId: 'thread-1',
       config: { command: 'fake-cursor', cwd: root },
       createTransport: cursorLikeTransport(),
+      ...(registry ? { registry } : {}),
     })
     const chunks: StreamChunk[] = []
     entry.open.handlers.current = {
@@ -609,6 +614,26 @@ describe('acp wire trace (session pool integration)', () => {
     assert.equal(update['name'], 'mcp__linear__create_issue')
     assert.deepEqual(update['_meta'], { 'cursor.dev/serverName': 'linear' })
     assert.deepEqual(update['vendorExtension'], { serverName: 'linear' })
+  })
+
+  it('records the live native bridge toolset in the session header', async () => {
+    process.env['COPSE_DEBUG_ACP_UPDATES'] = '1'
+    const registry = new ToolRegistry()
+    for (const name of ['read_file', 'run_shell']) {
+      registry.register({
+        name,
+        description: `Test ${name}`,
+        parameters: z.object({}),
+        execute: () => Promise.resolve('ok'),
+      })
+    }
+
+    await runOneTurn(registry)
+
+    const traced = join(root, 'proj-1', 'thread-1', ACP_WIRE_TRACE_FILE)
+    const header = readTrace(traced).find((record) => record['type'] === 'session')
+    const nativeBridge = at(header, 'msg', 'nativeBridge')
+    assert.deepEqual(nativeBridge['toolNames'], ['read_file', 'run_shell'])
   })
 
   it('leaves no trace behind on the same turn with the flag unset', async () => {

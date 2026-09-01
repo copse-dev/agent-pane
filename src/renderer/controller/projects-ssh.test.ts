@@ -69,4 +69,24 @@ describe('ssh workspace settings helpers', () => {
     assert.equal(parsed.host.id, 'prod')
     assert.equal(parsed.host.user, 'ubuntu')
   })
+
+  it('accepts only whole SSH ports in the TCP range', () => {
+    const draft = {
+      ...emptySshHostDraft(),
+      label: 'Prod',
+      host: 'prod.example',
+    }
+
+    const valid = parseSshHostDraft({ ...draft, port: '2222' })
+    assert.ok(valid.ok)
+    assert.equal(valid.host.port, 2222)
+
+    for (const port of ['22garbage', '22.5', '0', '-1', '65536']) {
+      const invalid = parseSshHostDraft({ ...draft, port })
+      assert.deepEqual(invalid, {
+        ok: false,
+        error: 'Port must be a whole number from 1 to 65535.',
+      })
+    }
+  })
 })

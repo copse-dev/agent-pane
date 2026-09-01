@@ -8,6 +8,7 @@ import {
   classifyGitBlob,
   countDiffChangedLines,
   getCurrentCommitHash,
+  getBranches,
   getDefaultBranch,
   getGitDiffText,
   getGitFileDiff,
@@ -986,6 +987,26 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     resetDefaultBranchCache()
     if (repo) await rm(repo, { recursive: true, force: true })
     repo = ''
+  })
+
+  it('keeps the e2e default aligned with the mocked branch list', async () => {
+    const previousE2e = process.env['COPSE_E2E']
+    const previousBranch = process.env['COPSE_PANEL_MOCK_BRANCH']
+    try {
+      process.env['COPSE_E2E'] = '1'
+      process.env['COPSE_PANEL_MOCK_BRANCH'] = 'work'
+
+      assert.deepEqual(await getBranches('/unused-e2e-root'), [
+        { name: 'work', lastCommitDate: '2020-01-01 00:00:00 +0000' },
+        { name: 'main', lastCommitDate: '2020-01-01 00:00:00 +0000' },
+      ])
+      assert.equal(await getDefaultBranch('/unused-e2e-root'), 'main')
+    } finally {
+      if (previousE2e === undefined) delete process.env['COPSE_E2E']
+      else process.env['COPSE_E2E'] = previousE2e
+      if (previousBranch === undefined) delete process.env['COPSE_PANEL_MOCK_BRANCH']
+      else process.env['COPSE_PANEL_MOCK_BRANCH'] = previousBranch
+    }
   })
 
   it('uses origin/HEAD over init.defaultBranch when both exist', async () => {
