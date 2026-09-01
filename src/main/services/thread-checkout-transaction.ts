@@ -1,5 +1,4 @@
 import { realpath } from 'node:fs/promises'
-import { resolve } from 'node:path'
 import type { Project } from '@shared/types/state.ts'
 import type { Thread } from '@shared/types/thread.ts'
 import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
@@ -21,6 +20,7 @@ import {
   listProjectWorktrees,
   readThreadWorktreeRecoveryMetadata,
   retireThreadWorktree,
+  sameWorktreePath,
   validateThreadWorktree,
 } from './worktree-manager.ts'
 import {
@@ -184,7 +184,7 @@ export async function recoverUnpersistedWorktree(input: {
 }): Promise<ThreadWorktree | null> {
   const target = expectedThreadWorktreePath(input.projectId, input.threadId)
   const records = await listProjectWorktrees(input.projectRoot)
-  const existing = records.find((record) => resolve(record.path) === resolve(target))
+  const existing = records.find((record) => sameWorktreePath(record.path, target))
   if (!existing?.branch || !existing.head) return null
   const canonicalPath = await realpath(existing.path).catch(() => null)
   if (!canonicalPath) return null
