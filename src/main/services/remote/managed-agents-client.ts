@@ -30,10 +30,10 @@ import { z } from 'zod'
 import { getSetting, resolveApiKey } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
-import { getActiveProjectId } from '../workspace.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import {
   parseGithubOwnerRepo,
+  resolveRemoteAgentProjectId,
   resolveRemoteAgentRepository,
   type RemoteAgentRunOptions,
   type RemoteAgentRunResult,
@@ -439,7 +439,7 @@ export async function runManagedAgentFromSettings(
 
   // Capture the launching project up front: a long remote run can outlast a
   // project switch, and the link/PR must land on the project it started in.
-  const launchProjectId = getActiveProjectId()
+  const launchProjectId = resolveRemoteAgentProjectId()
 
   const selectedModel = resolveManagedAgentModelId({
     provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,

@@ -1729,6 +1729,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // (especially scrolling up mid-stream) is never mistaken for autoscroll (#468).
   let lastProgrammaticScrollTop = -1
   let userScrolledUpAt = 0
+  let renderedThreadId: string | null = null
   // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
   // instead of touching a list that has since been cleared/rebuilt again.
@@ -2505,12 +2506,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function rebuildForThread(): void {
-    pinnedToBottom = true
-    userScrolledUpAt = 0
-    lastScrollTop = 0
+    const thread = getActiveThread(store)
+    const rebuildingSameThread = thread !== undefined && thread.id === renderedThreadId
+    const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null
+    if (!rebuildingSameThread) {
+      pinnedToBottom = true
+      userScrolledUpAt = 0
+      lastScrollTop = 0
+    }
     clear(list)
     backfillGeneration++
-    const thread = getActiveThread(store)
+    renderedThreadId = thread?.id ?? null
     if (!thread) {
       finishThreadChrome(null)
       return
@@ -2546,7 +2552,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // the view lands at the bottom before the chrome is inserted around it.
     syncModelLabels()
     syncUserActions()
-    scrollToBottom(true)
+    if (preservedScrollTop === null) {
+      scrollToBottom(true)
+    } else {
+      setScrollTopProgrammatically(preservedScrollTop)
+    }
     finishThreadChrome(thread)
     if (initialStart > 0) {
       const generation = backfillGeneration

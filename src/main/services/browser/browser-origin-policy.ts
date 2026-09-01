@@ -89,13 +89,20 @@ function stripIpv6Brackets(hostname: string): string {
   return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
 }
 
+function ipv6FirstHextet(host: string): number | null {
+  const separator = host.indexOf(':')
+  if (separator <= 0) return null
+  const first = host.slice(0, separator)
+  return /^[0-9a-f]{1,4}$/i.test(first) ? Number.parseInt(first, 16) : null
+}
+
 /** Loopback targets (localhost dev servers) — the primary supported workflow. */
 export function isLoopbackHost(hostname: string): boolean {
   const host = stripIpv6Brackets(hostname)
   if (host === 'localhost' || host.endsWith('.localhost')) return true
   if (host === '::1' || host === '0:0:0:0:0:0:0:1') return true
   // 127.0.0.0/8
-  const v4 = parseIpv4(host)
+  const v4 = parseIpv4Address(host)
   if (v4 && v4[0] === 127) return true
   return false
 }
@@ -109,9 +116,14 @@ export function isBlockedHost(hostname: string): boolean {
   // Unspecified address routes to loopback on most stacks.
   if (host === '0.0.0.0' || host === '::') return true
   // IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
-  if (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe8') || host === '::')
+  const firstHextet = ipv6FirstHextet(host)
+  if (
+    firstHextet !== null &&
+    ((firstHextet & 0xfe00) === 0xfc00 || (firstHextet & 0xffc0) === 0xfe80)
+  ) {
     return true
-  const v4 = parseIpv4(host)
+  }
+  const v4 = parseIpv4Address(host)
   if (!v4) return false
   const [a, b] = v4
   if (a === 10) return true // 10.0.0.0/8
@@ -132,6 +144,24 @@ function parseIpv4(host: string): [number, number, number, number] | null {
   return a === undefined || b === undefined || c === undefined || d === undefined
     ? null
     : [a, b, c, d]
+}
+
+/** IPv4 literals, including their IPv4-mapped IPv6 representation (::ffff:0:0/96). */
+function parseIpv4Address(host: string): [number, number, number, number] | null {
+  const direct = parseIpv4(host)
+  if (direct) return direct
+
+  const prefix = '::ffff:'
+  if (!host.toLowerCase().startsWith(prefix)) return null
+  const suffix = host.slice(prefix.length)
+  const dotted = parseIpv4(suffix)
+  if (dotted) return dotted
+
+  const words = suffix.split(':')
+  if (words.length !== 2 || words.some((word) => !/^[0-9a-f]{1,4}$/i.test(word))) return null
+  const high = Number.parseInt(words[0] ?? '', 16)
+  const low = Number.parseInt(words[1] ?? '', 16)
+  return [high >>> 8, high & 0xff, low >>> 8, low & 0xff]
 }
 
 export type BrowserNavDecision =

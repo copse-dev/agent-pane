@@ -244,7 +244,7 @@ async function prepareCommand(command: string, signal: AbortSignal): Promise<Pre
   if (!detection.isInstall) return { command, env: baseEnv, banner: '' }
 
   if (!isSocketFirewallAvailable()) {
-    const approved = await promptInstallSocketFirewall(command)
+    const approved = await promptInstallSocketFirewall(command, signal)
     if (!approved) {
       return {
         refused:

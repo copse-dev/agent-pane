@@ -3,12 +3,14 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { transform } from 'esbuild'
 import { check, resolveConfig } from 'prettier'
 import {
   detectPayloadVersion,
   formatDataFile,
   graduateWanted,
   mergeApiModels,
+  renderFile,
   requestAaModels,
   type AaApiModel,
   type DataFile,
@@ -52,6 +54,40 @@ describe('formatDataFile', () => {
     const config = await resolveConfig(path)
     assert.equal(await check(formatted, { ...config, filepath: path }), true)
     assert.match(formatted, /"modelId": "deepseek\/deepseek-v4-reasoning"/)
+  })
+})
+
+describe('renderFile', () => {
+  it('keeps arbitrary API metadata literal in valid generated TypeScript', async () => {
+    const metadata = String.raw`model\path'` + '\nnext'
+    const attribution = String.raw`credit\path'` + '\nexport const injected = true'
+    const source = renderFile(
+      {
+        ...BASE,
+        canonicalVersion: metadata,
+        attribution,
+        scores: [
+          {
+            modelId: metadata,
+            value: 42,
+            indexVersion: metadata,
+            source: metadata,
+            asOf: '2026-08-31',
+            aliases: [`${metadata} alias`],
+          },
+        ],
+        wanted: undefined,
+      },
+      [],
+      '2026-08-31',
+    )
+
+    await transform(source, { loader: 'ts' })
+    assert.ok(source.includes(JSON.stringify(metadata)))
+    assert.ok(source.includes(JSON.stringify(`${metadata} alias`)))
+    assert.ok(source.includes(JSON.stringify(attribution)))
+    assert.doesNotMatch(source, /\nexport const injected/)
+    assert.match(source, /\n\/\/ export const injected = true/)
   })
 })
 

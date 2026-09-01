@@ -32,10 +32,10 @@ import { sleepMs } from '@copse/llm/stream-retry.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
-import { getActiveProjectId } from '../workspace.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { clearManagedAgentSession, runManagedAgentFromSettings } from './managed-agents-client.ts'
 import {
+  resolveRemoteAgentProjectId,
   resolveRemoteAgentRepository,
   type RemoteAgentRunOptions,
   type RemoteAgentRunResult,
@@ -635,8 +635,15 @@ function formatBytes(bytes: number | undefined): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function escapeInlineCode(value: string): string {
-  return value.replace(/`/g, '\\`')
+function inlineCode(value: string): string {
+  const backtickRuns = value.match(/`+/g) ?? []
+  const fenceLength = backtickRuns.reduce((longest, run) => Math.max(longest, run.length + 1), 1)
+  const fence = '`'.repeat(fenceLength)
+  // CommonMark code spans do not interpret backslash escapes. A delimiter
+  // longer than every run in the filename keeps backticks inside the span;
+  // padding is stripped by the parser and preserves leading/trailing spaces.
+  const content = backtickRuns.length > 0 || /^\s|\s$/.test(value) ? ` ${value} ` : value
+  return `${fence}${content}${fence}`
 }
 
 export function formatRemoteArtifactsSummary(input: {
@@ -649,7 +656,7 @@ export function formatRemoteArtifactsSummary(input: {
     const size = formatBytes(artifact.sizeBytes)
     const meta = size ? ` (${size})` : ''
     const url = remoteArtifactDownloadEndpoint(input.baseUrl, input.agentId, artifact.path)
-    return `- \`${escapeInlineCode(artifact.path)}\`${meta} — [Open](${url})`
+    return `- ${inlineCode(artifact.path)}${meta} — [Open](${url})`
   })
   return `\n\n---\n_Remote agent artifacts:_\n${lines.join('\n')}`
 }
@@ -935,7 +942,7 @@ export async function runRemoteAgentFromSettings(
 
   // Capture the launching project up front: a long remote run can outlast a
   // project switch, and the link/PR must land on the project it started in.
-  const launchProjectId = getActiveProjectId()
+  const launchProjectId = resolveRemoteAgentProjectId()
 
   const selectedModel = firstNonEmptyString(options.model?.trim())
   const priorSession = readSession(options.threadId)

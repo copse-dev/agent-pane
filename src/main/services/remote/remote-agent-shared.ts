@@ -1,7 +1,8 @@
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import type { RemoteAgentProvider } from '@shared/remote-agent.ts'
 import { getGithubRepoSlug } from '../github/git-service.ts'
-import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
+import { getActiveProjectId, getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
+import { getThreadExecutionContext } from '../thread-execution-context.ts'
 
 /**
  * Options for a single remote-agent turn. Shared by every provider adapter
@@ -43,8 +44,15 @@ export async function resolveRemoteAgentRepository(
   options: { getGithubRepoSlug?: GithubRepoSlugResolver } = {},
 ): Promise<string | null> {
   const resolveSlug = options.getGithubRepoSlug ?? getGithubRepoSlug
-  const slug = await resolveSlug(getActiveProjectRoot() ?? getWorkspaceRoot())
+  const slug = await resolveSlug(
+    getThreadExecutionContext()?.root ?? getActiveProjectRoot() ?? getWorkspaceRoot(),
+  )
   return slug ? `https://github.com/${slug}` : null
+}
+
+/** Stable project owner for a run, even when a background turn outlives a UI switch. */
+export function resolveRemoteAgentProjectId(): string | null {
+  return getThreadExecutionContext()?.projectId ?? getActiveProjectId()
 }
 
 /** Parse `owner` and `repo` out of a GitHub repository URL or `owner/repo` slug. */
@@ -57,6 +65,7 @@ export function parseGithubOwnerRepo(repository: string): { owner: string; repo:
   }
   try {
     const url = new URL(trimmed)
+    if (url.hostname.replace(/^www\./i, '').toLowerCase() !== 'github.com') return null
     const parts = url.pathname.replace(/^\/+/, '').split('/')
     if (parts.length >= 2 && parts[0] && parts[1]) {
       return { owner: parts[0], repo: parts[1].replace(/\.git$/, '') }

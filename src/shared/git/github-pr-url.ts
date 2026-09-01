@@ -50,7 +50,7 @@ export function extractGithubPrUrls(text: string): GithubPrRef[] {
     const raw = match[0].replace(URL_TRAILING_PUNCTUATION_RE, '')
     const parsed = parseGithubPrUrl(raw)
     if (!parsed) continue
-    const key = `${parsed.owner}/${parsed.repo}#${String(parsed.number)}`
+    const key = githubPrKey(parsed)
     if (seen.has(key)) continue
     seen.add(key)
     refs.push(parsed)
@@ -58,7 +58,12 @@ export function extractGithubPrUrls(text: string): GithubPrRef[] {
   return refs
 }
 
+/** Case-insensitive GitHub repository identity (`owner/repo`). */
+export function githubRepoKey(ref: Pick<GithubPrRef, 'owner' | 'repo'>): string {
+  return `${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}`
+}
+
 /** Stable key for deduplicating PR references across the UI. */
 export function githubPrKey(ref: Pick<GithubPrRef, 'owner' | 'repo' | 'number'>): string {
-  return `${ref.owner}/${ref.repo}#${String(ref.number)}`
+  return `${githubRepoKey(ref)}#${String(ref.number)}`
 }

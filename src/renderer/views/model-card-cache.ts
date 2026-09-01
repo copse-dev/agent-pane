@@ -16,7 +16,7 @@ import type { ModelCardCandidate } from '@copse/llm/model-card-candidates.ts'
 
 /** Resolved cards by model id. `null` means "asked, and there is no card". */
 const resolved = new Map<string, ModelCardCandidate | null>()
-const inFlight = new Set<string>()
+const inFlight = new Map<string, Promise<boolean>>()
 
 /**
  * The card for a model id, or null when none resolved or none is known yet.
@@ -45,8 +45,9 @@ export function clearResolvedModelCards(): void {
 type ModelCardApi = Pick<ApiClient['modelCards'], 'resolve'>
 
 /**
- * Resolve any of `ids` not already known or in flight. Resolves to true when at
- * least one new answer landed, so a caller can repaint only when it matters.
+ * Resolve any of `ids` not already known, joining work already in flight.
+ * Resolves to true when at least one requested answer lands after this call,
+ * so every interested caller can repaint when it matters.
  * Never rejects: an unavailable bridge or a failed call means "no cards yet",
  * and the ids stay unresolved so a later call can retry.
  */
@@ -55,23 +56,41 @@ export async function requestModelCards(
   api: ModelCardApi | undefined,
 ): Promise<boolean> {
   if (!api) return false
-  const missing = [...new Set(ids)].filter((id) => !resolved.has(id) && !inFlight.has(id))
-  if (missing.length === 0) return false
-  for (const id of missing) inFlight.add(id)
-  try {
-    const answers = await api.resolve(missing)
-    let landed = false
+  const requested = [...new Set(ids)].filter((id) => !resolved.has(id))
+  const waiting = requested.flatMap((id) => {
+    const pending = inFlight.get(id)
+    return pending ? [pending] : []
+  })
+  const missing = requested.filter((id) => !inFlight.has(id))
+
+  if (missing.length > 0) {
+    const batch = (async (): Promise<Set<string>> => {
+      try {
+        const answers = await api.resolve(missing)
+        const landed = new Set<string>()
+        for (const id of missing) {
+          // An id the main process omitted is still unanswered, not "no card" —
+          // leaving it unresolved keeps a later retry possible.
+          if (!Object.prototype.hasOwnProperty.call(answers, id)) continue
+          resolved.set(id, answers[id] ?? null)
+          landed.add(id)
+        }
+        return landed
+      } catch {
+        return new Set<string>()
+      }
+    })()
+
     for (const id of missing) {
-      // An id the main process omitted is still unanswered, not "no card" —
-      // leaving it unresolved keeps a later retry possible.
-      if (!Object.prototype.hasOwnProperty.call(answers, id)) continue
-      resolved.set(id, answers[id] ?? null)
-      landed = true
+      const pending = batch.then((landed) => landed.has(id))
+      inFlight.set(id, pending)
+      waiting.push(pending)
+      void pending.then(() => {
+        if (inFlight.get(id) === pending) inFlight.delete(id)
+      })
     }
-    return landed
-  } catch {
-    return false
-  } finally {
-    for (const id of missing) inFlight.delete(id)
   }
+
+  if (waiting.length === 0) return false
+  return (await Promise.all(waiting)).some(Boolean)
 }

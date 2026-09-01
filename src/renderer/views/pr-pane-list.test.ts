@@ -70,3 +70,22 @@ test('mergePrLists enriches linked refs from pools and placeholders the rest', (
   // #42 appears once despite being both linked and pooled.
   assert.equal(merged.filter((pr) => pr.number === 42).length, 1)
 })
+
+test('mergePrLists enriches a linked ref whose repository casing differs from the pool', () => {
+  const merged = mergePrLists(
+    [{ owner: 'Copse-Dev', repo: 'Copse-Panel', number: 42 }],
+    [
+      [
+        summary({
+          owner: 'copse-dev',
+          repo: 'copse-panel',
+          number: 42,
+          title: 'Add GitHub PR panel tab',
+        }),
+      ],
+    ],
+  )
+
+  assert.equal(merged.length, 1)
+  assert.equal(merged[0]?.title, 'Add GitHub PR panel tab')
+})

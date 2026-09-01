@@ -185,6 +185,19 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
     syncAttention()
   })
 
+  api.agent.onAskUserCancelled(({ id }) => {
+    if (active?.id === id) {
+      dialog.close()
+      active = null
+      showNext()
+      syncAttention()
+      return
+    }
+    const idx = queue.findIndex((req) => req.id === id)
+    if (idx !== -1) queue.splice(idx, 1)
+    syncAttention()
+  })
+
   // Follow the focus when the user switches threads: withdraw a question whose
   // thread they just left, then surface a backgrounded one for the thread they
   // landed on. Also fires on project switches.

@@ -54,7 +54,7 @@ import {
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import type { ModelSelectionEvent } from '@shared/types'
 import { isRemoteAgentProvider } from '@shared/remote-agent.ts'
-import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
+import { extractGithubPrUrls, githubPrKey, githubRepoKey } from '@shared/git/github-pr-url.ts'
 import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
@@ -461,9 +461,9 @@ async function prefetchThreadFiles(dir: string, spineRaw: string): Promise<Map<s
  * them, but their directories stay on disk and every message, tool result and
  * base64 image in them used to be folded back into the renderer's store on each
  * project load — a heap that only ever grew, holding history no surface could
- * show. `includeArchived` defaults to true so the whole-history readers (the
- * usage ledger's all-time totals, agent discovery) are unchanged; the renderer's
- * `threads:loadProject` opts out.
+ * show. `includeArchived` defaults to true so whole-history readers, agent
+ * discovery, and metadata-only all-time usage totals remain complete; the
+ * renderer's `threads:loadProject` opts out.
  */
 export interface ThreadLoadOptions {
   includeArchived?: boolean
@@ -755,8 +755,8 @@ async function readProjectThreads(
  * Every thread's metadata, without any transcript. What the sidebar needs.
  *
  * Deliberately a separate function from {@link loadProjectThreads} rather than a
- * mode on it. Four main-process callers (release smoke, the automation
- * scheduler, cursor-agent discovery, whole-history search) genuinely want the
+ * mode on it. Main-process callers such as release smoke, the automation
+ * scheduler, cursor-agent discovery, and whole-history search genuinely want the
  * messages, and a load that quietly stopped returning them would break each in a
  * way no type checks: `messages` would simply be empty. The names now say which
  * one a caller is asking for.
@@ -1082,7 +1082,8 @@ function canonicalPrUrl(ref: GithubPrRef): string {
  * launch repo (git lookup failed), fall back to the last PR mentioned.
  */
 function pickPrUrlForRepo(refs: GithubPrRef[], repo: string | undefined): string | undefined {
-  const candidates = repo ? refs.filter((r) => `${r.owner}/${r.repo}` === repo) : refs
+  const normalizedRepo = repo?.toLowerCase()
+  const candidates = normalizedRepo ? refs.filter((r) => githubRepoKey(r) === normalizedRepo) : refs
   const chosen = candidates.length > 0 ? candidates[candidates.length - 1] : undefined
   return chosen ? canonicalPrUrl(chosen) : undefined
 }
@@ -1900,7 +1901,7 @@ export function listOrphanProjectStores(
 }
 
 /**
- * Load every thread across all projects (usage summaries, etc.).
+ * Load every transcript across configured projects for whole-history callers.
  *
  * Must go through {@link loadProjectThreads} (the per-project write queue), not
  * {@link readProjectThreads} directly: once reads are async and yield to the
@@ -1908,13 +1909,30 @@ export function listOrphanProjectStores(
  * observe a torn thread directory.
  */
 export async function loadAllProjectThreads(): Promise<Thread[]> {
-  const projects = recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
-    const id = project['id']
-    return typeof id === 'string' && id.length > 0 ? [{ id }] : []
-  })
   const threads: Thread[] = []
-  for (const project of projects) {
-    threads.push(...(await loadProjectThreads(project.id)))
+  for (const projectId of configuredProjectIds()) {
+    threads.push(...(await loadProjectThreads(projectId)))
   }
   return threads
+}
+
+/**
+ * Load every thread's metadata across configured projects, without folding any
+ * transcript bodies. Usage summaries consume only `thread.usage`, so paying for
+ * messages, tool results, and blobs here would make opening Usage scale with
+ * unrelated conversation history and let one corrupt body hide valid totals.
+ */
+export async function loadAllProjectThreadMetas(): Promise<Thread[]> {
+  const threads: Thread[] = []
+  for (const projectId of configuredProjectIds()) {
+    threads.push(...(await loadProjectThreadMetas(projectId)))
+  }
+  return threads
+}
+
+function configuredProjectIds(): string[] {
+  return recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
+    const id = project['id']
+    return typeof id === 'string' && id.length > 0 ? [id] : []
+  })
 }

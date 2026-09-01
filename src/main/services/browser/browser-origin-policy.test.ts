@@ -50,6 +50,11 @@ describe('isLoopbackHost', () => {
     assert.equal(isLoopbackHost('::1'), true)
     assert.equal(isLoopbackHost('example.com'), false)
   })
+
+  it('matches IPv4-mapped IPv6 loopback addresses', () => {
+    assert.equal(isLoopbackHost('::ffff:7f00:1'), true)
+    assert.equal(isLoopbackHost('[::ffff:127.0.0.1]'), true)
+  })
 })
 
 describe('isBlockedHost', () => {
@@ -62,10 +67,29 @@ describe('isBlockedHost', () => {
     assert.equal(isBlockedHost('fd00::1'), true)
   })
 
+  it('blocks the complete IPv6 link-local fe80::/10 range', () => {
+    for (const host of ['fe80::1', 'fe90::1', 'fea0::1', 'febf::1']) {
+      assert.equal(isBlockedHost(host), true, host)
+    }
+  })
+
+  it('does not widen the IPv6 link-local range beyond its prefix', () => {
+    for (const host of ['fe7f::1', 'fec0::1', 'fe8::1']) {
+      assert.equal(isBlockedHost(host), false, host)
+    }
+  })
+
   it('does not flag public hosts or loopback', () => {
     assert.equal(isBlockedHost('example.com'), false)
     assert.equal(isBlockedHost('127.0.0.1'), false)
     assert.equal(isBlockedHost('8.8.8.8'), false)
+  })
+
+  it('applies IPv4 policy to IPv4-mapped IPv6 addresses', () => {
+    assert.equal(isBlockedHost('::ffff:a00:5'), true)
+    assert.equal(isBlockedHost('::ffff:a9fe:a9fe'), true)
+    assert.equal(isBlockedHost('[::ffff:192.168.1.10]'), true)
+    assert.equal(isBlockedHost('::ffff:808:808'), false)
   })
 })
 
@@ -94,6 +118,16 @@ describe('decideBrowserNavigation', () => {
 
   it('denies private targets without prompting', () => {
     const d = decideBrowserNavigation({ url: 'http://169.254.169.254/latest', ...base })
+    assert.equal(d.action, 'deny')
+  })
+
+  it('denies IPv6 link-local targets without prompting', () => {
+    const d = decideBrowserNavigation({ url: 'http://[fe90::1]/status', ...base })
+    assert.equal(d.action, 'deny')
+  })
+
+  it('denies IPv4-mapped metadata targets without prompting', () => {
+    const d = decideBrowserNavigation({ url: 'http://[::ffff:169.254.169.254]/latest', ...base })
     assert.equal(d.action, 'deny')
   })
 

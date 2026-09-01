@@ -32,6 +32,32 @@ describe('parseNpmVersionTuple / compareNpmVersions', () => {
     assert.equal(isNpmVersionOlder('1.1.7', '1.1.0'), false)
     assert.equal(isNpmVersionOlder('nope', '1.1.7'), false)
   })
+
+  it('orders prereleases before stable releases and by prerelease identifier', () => {
+    assert.equal(isNpmVersionOlder('1.1.0-beta.1', '1.1.0'), true)
+    assert.equal(isNpmVersionOlder('1.1.0-beta.1', '1.1.0-beta.2'), true)
+    assert.equal(isNpmVersionOlder('1.1.0-beta.2', '1.1.0-beta.1'), false)
+    assert.equal(compareNpmVersions('1.1.0+local.1', '1.1.0+registry.2'), 0)
+  })
+
+  it('follows SemVer prerelease precedence across numeric and text identifiers', () => {
+    const ordered = [
+      '1.0.0-alpha',
+      '1.0.0-alpha.1',
+      '1.0.0-alpha.beta',
+      '1.0.0-beta',
+      '1.0.0-beta.2',
+      '1.0.0-beta.11',
+      '1.0.0-rc.1',
+      '1.0.0',
+    ]
+    for (let i = 1; i < ordered.length; i += 1) {
+      const previous = ordered[i - 1]
+      const current = ordered[i]
+      assert.ok(previous && current)
+      assert.ok(compareNpmVersions(previous, current) < 0, `${previous} should precede ${current}`)
+    }
+  })
 })
 
 describe('readInstalledNpmPackageVersion', () => {
