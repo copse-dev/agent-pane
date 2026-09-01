@@ -282,14 +282,17 @@ async function ensureReviewApproved(
 ): Promise<boolean> {
   if (approvedReviewThreads.has(threadId)) return true
   if (signal.aborted) return false
-  const { approved, remember } = await requestApproval({
-    type: 'review-spend',
-    title: 'Review this diff with a paid model?',
-    cause: 'review-spend',
-    body: reviewSpendApprovalBody(reviewModel),
-    allowRemember: true,
-    rememberLabel: 'Always review with this model in this chat',
-  })
+  const { approved, remember } = await requestApproval(
+    {
+      type: 'review-spend',
+      title: 'Review this diff with a paid model?',
+      cause: 'review-spend',
+      body: reviewSpendApprovalBody(reviewModel),
+      allowRemember: true,
+      rememberLabel: 'Always review with this model in this chat',
+    },
+    signal,
+  )
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal.aborted can flip during the awaited approval; TS narrows it from the guard above
   if (signal.aborted) return false
   if (approved && remember) approvedReviewThreads.add(threadId)

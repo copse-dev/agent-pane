@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import {
   ensureExecutionRootWatched,
   handleExecutionRootEvent,
+  handleExecutionRootWatchFailure,
   stopWatchingExecutionRoot,
   stopAllExecutionRootWatchers,
   watchedExecutionRootsForTest,
@@ -47,10 +48,17 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<boo
 async function detectFsEventDelivery(): Promise<boolean> {
   const dir = await mkdtemp(join(tmpdir(), 'copse-probe-'))
   let fired = false
+  let failed = false
   let watcher: fs.FSWatcher | undefined
   try {
     watcher = fs.watch(dir, { recursive: true, persistent: false }, () => {
       fired = true
+    })
+    // Some platforms defer recursive setup until after fs.watch returns. A
+    // resource-limit refusal then arrives as an error event, not a thrown
+    // exception; consume it here so capability detection can report false.
+    watcher.once('error', () => {
+      failed = true
     })
   } catch {
     await rm(dir, { recursive: true, force: true })
@@ -58,7 +66,8 @@ async function detectFsEventDelivery(): Promise<boolean> {
   }
   try {
     await writeFile(join(dir, 'probe.txt'), 'probe\n')
-    return await waitFor(() => fired, 3_000)
+    await waitFor(() => fired || failed, 3_000)
+    return fired
   } finally {
     watcher.close()
     await rm(dir, { recursive: true, force: true })
@@ -171,6 +180,14 @@ describe('execution-root-watcher', () => {
     it('invalidates everything under the root when the filename is unknown', () => {
       setCachedToolResult(identity(root), 'search_code', { path: 'docs' }, 'docs-hits')
       handleExecutionRootEvent(root, null)
+      assert.equal(getCachedToolResult(identity(root), 'search_code', { path: 'docs' }), undefined)
+    })
+
+    it('invalidates cached results when watcher coverage fails', () => {
+      setCachedToolResult(identity(root), 'search_code', { path: 'docs' }, 'stale')
+
+      handleExecutionRootWatchFailure(root)
+
       assert.equal(getCachedToolResult(identity(root), 'search_code', { path: 'docs' }), undefined)
     })
 

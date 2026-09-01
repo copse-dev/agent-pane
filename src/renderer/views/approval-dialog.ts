@@ -275,37 +275,79 @@ export function mountApprovalDialog(
     const uniqueTitles = new Set(batch.map((req) => req.title))
     const sharedTitle = uniqueTitles.size === 1 ? (batch[0]?.title ?? '') : null
     const showRowTitles = count > 1 && sharedTitle === null
+    const firstRequest = batch[0]
+    // A homogeneous batch is one approval question with several subjects. Keep
+    // its explanatory copy around the group instead of repeating it around
+    // every command. Matching the visible context (not just `type`) ensures a
+    // command-specific warning or answer prompt is never hidden by grouping.
+    const hasSharedContext =
+      count > 1 &&
+      firstRequest !== undefined &&
+      batch.every(
+        (req) =>
+          req.type === firstRequest.type &&
+          req.title === firstRequest.title &&
+          req.bodyAdvice === firstRequest.bodyAdvice &&
+          req.bodyFooter === firstRequest.bodyFooter,
+      )
 
     heading.textContent =
       count <= 1 ? (batch[0]?.title ?? '') : (sharedTitle ?? `${String(count)} requests`)
 
-    items.replaceChildren(
-      ...batch.map((req) => {
-        const rowChildren: (Node | string)[] = []
-        if (showRowTitles) rowChildren.push(el('div', { class: 'approval-item-title' }, req.title))
-        if (singleModelCompare && req.comparisonModels && req === batch[0]) {
-          const pickers = createComparisonModelPickers(api, req.comparisonModels, req.body)
-          readComparisonModels = pickers.read
-          rowChildren.push(pickers.root)
-        } else {
-          if (req.bodyAdvice) {
-            rowChildren.push(el('div', { class: 'approval-advice' }, req.bodyAdvice))
+    const requestBody = (req: PendingApproval): HTMLElement => {
+      // Shell commands stay monospaced; other prompts (PR targets, origins) use the
+      // interface font so they don't read as a raw JSON dump in a <pre>.
+      const bodyClass = req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body'
+      const body = el('div', { class: bodyClass }, req.body)
+      if (collapseDetails && !detailsExpanded) body.hidden = true
+      return body
+    }
+
+    if (hasSharedContext) {
+      const sharedChildren: (Node | string)[] = []
+      if (firstRequest.bodyAdvice) {
+        sharedChildren.push(el('div', { class: 'approval-advice' }, firstRequest.bodyAdvice))
+      }
+      const bodyLabel = firstRequest.type === 'shell' ? 'Commands requiring approval' : 'Requests'
+      sharedChildren.push(
+        el(
+          'div',
+          { class: 'approval-body-list', role: 'list', 'aria-label': bodyLabel },
+          ...batch.map((req) => {
+            const body = requestBody(req)
+            body.setAttribute('role', 'listitem')
+            return body
+          }),
+        ),
+      )
+      if (firstRequest.bodyFooter) {
+        sharedChildren.push(el('div', { class: 'approval-footer' }, firstRequest.bodyFooter))
+      }
+      items.replaceChildren(el('div', { class: 'approval-item' }, ...sharedChildren))
+    } else {
+      items.replaceChildren(
+        ...batch.map((req) => {
+          const rowChildren: (Node | string)[] = []
+          if (showRowTitles)
+            rowChildren.push(el('div', { class: 'approval-item-title' }, req.title))
+          if (singleModelCompare && req.comparisonModels && req === batch[0]) {
+            const pickers = createComparisonModelPickers(api, req.comparisonModels, req.body)
+            readComparisonModels = pickers.read
+            rowChildren.push(pickers.root)
+          } else {
+            if (req.bodyAdvice) {
+              rowChildren.push(el('div', { class: 'approval-advice' }, req.bodyAdvice))
+            }
+            if (collapseDetails) rowChildren.push(detailsToggle())
+            rowChildren.push(requestBody(req))
+            if (req.bodyFooter) {
+              rowChildren.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
+            }
           }
-          if (collapseDetails) rowChildren.push(detailsToggle())
-          // Shell commands stay monospaced; other prompts (PR targets, origins) use the
-          // interface font so they don't read as a raw JSON dump in a <pre>.
-          const bodyClass =
-            req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body'
-          const body = el('div', { class: bodyClass }, req.body)
-          if (collapseDetails && !detailsExpanded) body.hidden = true
-          rowChildren.push(body)
-          if (req.bodyFooter) {
-            rowChildren.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
-          }
-        }
-        return el('div', { class: 'approval-item' }, ...rowChildren)
-      }),
-    )
+          return el('div', { class: 'approval-item' }, ...rowChildren)
+        }),
+      )
+    }
 
     approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : 'Approve'
     rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : 'Reject'
@@ -503,6 +545,12 @@ export function mountApprovalDialog(
         show()
       } else {
         renderBatch()
+        // Removing a sibling can change the remaining primary action from a
+        // one-shot batch approval into a broader solo grant (for example read
+        // access outside the project). Treat that semantic change like a live
+        // append so a click committed against the old label cannot land on the
+        // newly broadened action. Reject deliberately stays available.
+        startSettle()
       }
     }
     syncAttention()
