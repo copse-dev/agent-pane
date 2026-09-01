@@ -240,11 +240,11 @@ export async function acquireAcpSession(
       `[acp-bridge] no tool registry supplied for thread ${opts.threadId}; native tools will be unavailable this session`,
     )
   } else if (bridge) {
-    // The offered tool list is the first thing anyone asks for when an agent
-    // "did not use" a native tool, and an ACP run records no toolset
-    // fingerprint of its own (that is a native-loop spine line).
+    // Keep the ordinary app log compact. The exact offered toolset is recorded
+    // in the opt-in ACP diagnostic header below, where it can still answer why
+    // an agent "did not use" a particular native tool.
     console.info(
-      `[acp-bridge] offering ${String(bridge.toolNames.length)} native tool(s) to thread ${opts.threadId}: ${bridge.toolNames.join(', ')}`,
+      `[acp-bridge] offering ${String(bridge.toolNames.length)} native tool(s) to thread ${opts.threadId}`,
     )
   }
   const config: AcpAgentSpawnConfig = {
@@ -260,6 +260,7 @@ export async function acquireAcpSession(
   const trace = await createAcpWireTrace({
     threadId: opts.threadId,
     agent: { command: opts.config.command, args: opts.config.args },
+    ...(bridge ? { bridgeToolNames: bridge.toolNames } : {}),
   })
 
   let open: OpenAcpSession
