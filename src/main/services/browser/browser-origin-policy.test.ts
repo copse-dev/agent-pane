@@ -51,9 +51,15 @@ describe('isLoopbackHost', () => {
     assert.equal(isLoopbackHost('example.com'), false)
   })
 
-  it('matches IPv4-mapped IPv6 loopback addresses', () => {
-    assert.equal(isLoopbackHost('::ffff:7f00:1'), true)
+  it('matches ::1 and loopback written in every spelling', () => {
+    assert.equal(isLoopbackHost('[::1]'), true)
+    assert.equal(isLoopbackHost('0:0:0:0:0:0:0:1'), true)
+    // A loopback dev server addressed through an IPv4-mapped literal reaches
+    // the same socket, so it must not be treated as a public origin.
     assert.equal(isLoopbackHost('[::ffff:127.0.0.1]'), true)
+    // The hex spelling of the same mapped address.
+    assert.equal(isLoopbackHost('::ffff:7f00:1'), true)
+    assert.equal(isLoopbackHost('[::ffff:8.8.8.8]'), false)
   })
 })
 
@@ -85,11 +91,50 @@ describe('isBlockedHost', () => {
     assert.equal(isBlockedHost('8.8.8.8'), false)
   })
 
-  it('applies IPv4 policy to IPv4-mapped IPv6 addresses', () => {
-    assert.equal(isBlockedHost('::ffff:a00:5'), true)
-    assert.equal(isBlockedHost('::ffff:a9fe:a9fe'), true)
-    assert.equal(isBlockedHost('[::ffff:192.168.1.10]'), true)
-    assert.equal(isBlockedHost('::ffff:808:808'), false)
+  it('does not mistake a hostname for an IPv6 range', () => {
+    // `startsWith('fc')` / `'fd'` / `'fe8'` matched names as well as literals,
+    // so every one of these public sites was denied as "private/link-local".
+    for (const host of [
+      'fda.gov',
+      'fcc.gov',
+      'fdic.gov',
+      'fdroid.org',
+      'fc-barcelona.com',
+      'fe8.dev',
+      'fe80.example.com',
+    ]) {
+      assert.equal(isBlockedHost(host), false, `${host} is a public hostname, not an address`)
+    }
+  })
+
+  it('covers the whole of fc00::/7 and fe80::/10, and nothing either side', () => {
+    // fe80::/10 runs to febf, so a `fe8` prefix test missed three quarters of it.
+    assert.equal(isBlockedHost('fc00::'), true)
+    assert.equal(isBlockedHost('fdff:ffff::1'), true)
+    assert.equal(isBlockedHost('fbff::1'), false)
+    assert.equal(isBlockedHost('fe80::1'), true)
+    assert.equal(isBlockedHost('fe90::1'), true)
+    assert.equal(isBlockedHost('febf::1'), true)
+    assert.equal(isBlockedHost('fe7f::1'), false)
+    assert.equal(isBlockedHost('fec0::1'), false) // deprecated site-local, outside the /10
+    assert.equal(isBlockedHost('2001:4860:4860::8888'), false)
+  })
+
+  it('blocks a private address embedded in an IPv6 literal', () => {
+    // These reach exactly the hosts the plain-IPv4 forms above reach.
+    assert.equal(isBlockedHost('[::ffff:169.254.169.254]'), true)
+    // What `new URL()` normalises the line above to.
+    assert.equal(isBlockedHost('[::ffff:a9fe:a9fe]'), true)
+    assert.equal(isBlockedHost('[::ffff:192.168.1.1]'), true)
+    assert.equal(isBlockedHost('[::ffff:10.0.0.5]'), true)
+    assert.equal(isBlockedHost('[64:ff9b::169.254.169.254]'), true)
+    assert.equal(isBlockedHost('[::ffff:8.8.8.8]'), false)
+  })
+
+  it('treats malformed input as a hostname rather than throwing', () => {
+    for (const host of ['', 'not:an:address', '::ffff:999.1.1.1', 'fc00:::1', '1.2.3']) {
+      assert.equal(isBlockedHost(host), false, host)
+    }
   })
 })
 
@@ -121,14 +166,23 @@ describe('decideBrowserNavigation', () => {
     assert.equal(d.action, 'deny')
   })
 
-  it('denies IPv6 link-local targets without prompting', () => {
-    const d = decideBrowserNavigation({ url: 'http://[fe90::1]/status', ...base })
+  it('denies the same target written as an IPv4-mapped IPv6 literal', () => {
+    // Reaches the same host; previously this returned `prompt`, describing a
+    // link-local address to the user as a new public web origin — and an
+    // approval taken with "remember" would have persisted it as an allowed
+    // origin, so it would never prompt again.
+    const d = decideBrowserNavigation({
+      url: 'http://[::ffff:169.254.169.254]/latest',
+      ...base,
+    })
     assert.equal(d.action, 'deny')
   })
 
-  it('denies IPv4-mapped metadata targets without prompting', () => {
-    const d = decideBrowserNavigation({ url: 'http://[::ffff:169.254.169.254]/latest', ...base })
-    assert.equal(d.action, 'deny')
+  it('prompts for a public site whose name begins fc, fd or fe8', () => {
+    // These were denied outright with "is a private/link-local address".
+    for (const url of ['https://fda.gov/x', 'https://fcc.gov/x', 'https://fdroid.org/x']) {
+      assert.equal(decideBrowserNavigation({ url, ...base }).action, 'prompt', url)
+    }
   })
 
   it('denies new origins when approval is disabled', () => {
