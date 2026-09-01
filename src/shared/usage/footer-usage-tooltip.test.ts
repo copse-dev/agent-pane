@@ -82,6 +82,48 @@ describe('buildFooterUsageTooltip', () => {
     assert.equal(tooltip.note, 'No pricing for this model')
   })
 
+  it('labels a published zero-rate route as free rather than unpriced', () => {
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 1200, outputTokens: 80, estimated: false },
+      {
+        model: 'openrouter:vendor/free',
+        messages: [],
+        measuredUsage: { inputTokens: 1200, outputTokens: 80 },
+        pricing: {
+          'openrouter:vendor/free': { inputPricePerMTok: 0, outputPricePerMTok: 0 },
+        },
+      },
+    )
+
+    assert.equal(value(tooltip.rows, 'Cost'), 'free')
+    assert.equal(tooltip.note, null)
+  })
+
+  it('marks mixed known and unknown costs as partial', () => {
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 2_000_000, outputTokens: 0, estimated: false },
+      {
+        model: 'claude-sonnet-4-6',
+        messages: [],
+        measuredUsage: {
+          inputTokens: 2_000_000,
+          outputTokens: 0,
+          byModel: {
+            'claude-sonnet-4-6': { inputTokens: 1_000_000, outputTokens: 0 },
+            'openrouter:vendor/unknown': { inputTokens: 1_000_000, outputTokens: 0 },
+          },
+        },
+      },
+    )
+
+    assert.equal(value(tooltip.rows, 'Cost'), '~$3.00 (partial)')
+    assert.equal(tooltip.note, 'Cost excludes models without pricing')
+    assert.equal(
+      value(tooltip.modelRows, 'openrouter:vendor/unknown'),
+      '1.0M in / 0 out · unpriced',
+    )
+  })
+
   it('breaks cost down per model once a thread spans more than one', () => {
     const tooltip = buildFooterUsageTooltip(
       { inputTokens: 3200, outputTokens: 400, estimated: false },

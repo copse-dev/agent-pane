@@ -30,7 +30,7 @@ import { acpBridgeNetworkScopeAlreadyApplies } from '../acp/acp-bridge-permissio
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from '../approval.ts'
 import { recordDecision } from './decision-log-store.ts'
-import { getSetting, setSetting } from '../storage/settings.ts'
+import { getSetting, updateSetting } from '../storage/settings.ts'
 import {
   SANDBOX_TOOLS,
   decideShellPermission,
@@ -515,11 +515,10 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
 }
 
 async function rememberWebOrigin(origin: string): Promise<void> {
-  const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
-  const allowed = webAllowedOriginsWithDefaults(saved)
-  if (!allowed.includes(origin)) {
-    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, normalizeWebAllowedOrigins([...allowed, origin]))
-  }
+  await updateSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null, (saved) => {
+    const allowed = webAllowedOriginsWithDefaults(saved)
+    return normalizeWebAllowedOrigins(allowed.includes(origin) ? allowed : [...allowed, origin])
+  })
 }
 
 async function promptWebOrigin(origin: string, detail: string): Promise<boolean> {
@@ -1002,10 +1001,9 @@ function browserUrlFromArgs(args: unknown): string | null {
 }
 
 async function rememberBrowserOrigin(origin: string): Promise<void> {
-  const saved = getSetting<string[]>('browserAllowedOrigins', [])
-  if (!saved.includes(origin)) {
-    await setSetting('browserAllowedOrigins', [...saved, origin])
-  }
+  await updateSetting<string[]>('browserAllowedOrigins', [], (saved) =>
+    saved.includes(origin) ? saved : [...saved, origin],
+  )
 }
 
 async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
@@ -1087,8 +1085,10 @@ async function checkBackgroundProcessPermission(
     allowRemember: true,
     rememberLabel: 'Always allow local port binding in this project',
   })
-  if (approved && remember && !allowed.includes(root)) {
-    await setSetting(PORT_BINDING_ALLOWED_ROOTS_SETTING, [...allowed, root])
+  if (approved && remember) {
+    await updateSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [], (current) =>
+      current.includes(root) ? current : [...current, root],
+    )
   }
   return approved
 }
