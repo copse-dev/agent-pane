@@ -113,14 +113,17 @@ import { getThreadExecutionContext } from '../thread-execution-context.ts'
  * (it would pull Electron/node-pty into those bundles). See
  * acp-remote-install-approval.ts.
  */
-setRemoteAcpInstallApprover(async ({ title, body }) => {
-  const { approved } = await requestApproval({
-    title,
-    body,
-    type: 'shell',
-    cause: 'acp-package-setup',
-    allowRemember: false,
-  })
+setRemoteAcpInstallApprover(async ({ title, body }, signal) => {
+  const { approved } = await requestApproval(
+    {
+      title,
+      body,
+      type: 'shell',
+      cause: 'acp-package-setup',
+      allowRemember: false,
+    },
+    signal,
+  )
   return approved
 })
 
@@ -506,6 +509,7 @@ export async function runAcpAgentFromSettings(
       threadId: options.threadId,
       config: spawnConfig,
       registry: options.registry,
+      signal: options.signal,
     })
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)

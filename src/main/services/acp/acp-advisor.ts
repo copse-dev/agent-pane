@@ -55,9 +55,7 @@ export async function runAcpAdvisorSession(
       // No readTextFile / writeTextFile: fs capability requests fail as unsupported.
     },
   }
-  const open = createTransport
-    ? await openAcpSession(config, handlers, createTransport)
-    : await openAcpSession(config, handlers)
+  const open = await openAcpSession(config, handlers, createTransport, undefined, null, signal)
   try {
     const stop = await runAcpSessionPrompt(open, prompt, model, signal)
     if (stop.stopReason === 'cancelled') {
