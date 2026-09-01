@@ -1,37 +1,52 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { getSetting, setSetting } from '../storage/settings.ts'
+import { runSerialized } from '../storage/write-queue.ts'
 import { addTrustedShellCommand } from './command-routing-config.ts'
 
+const SETTING = 'trustedShellCommands'
+
 describe('trusted command settings', () => {
-  it('keeps commands remembered while an earlier write is still pending', async () => {
-    let stored: readonly string[] = []
-    let releaseFirstWrite: (() => void) | undefined
-    let markFirstWriteStarted: (() => void) | undefined
-    const firstWriteStarted = new Promise<void>((resolve) => {
-      markFirstWriteStarted = resolve
-    })
-    const firstWriteReleased = new Promise<void>((resolve) => {
-      releaseFirstWrite = resolve
-    })
-    let writeCount = 0
-    const store = {
-      read: (): unknown => stored,
-      write: async (commands: readonly string[]): Promise<void> => {
-        writeCount += 1
-        if (writeCount === 1) {
-          markFirstWriteStarted?.()
-          await firstWriteReleased
-        }
-        stored = commands
-      },
-    }
+  it('keeps both commands when two grants overlap', async () => {
+    await setSetting(SETTING, [])
 
-    const rememberCurl = addTrustedShellCommand('curl', store)
-    await firstWriteStarted
-    const rememberXcodebuild = addTrustedShellCommand('xcodebuild', store)
-    releaseFirstWrite?.()
-    await Promise.all([rememberCurl, rememberXcodebuild])
+    await Promise.all([addTrustedShellCommand('curl'), addTrustedShellCommand('xcodebuild')])
 
-    assert.deepEqual(stored, ['curl', 'xcodebuild'])
+    assert.deepEqual(getSetting<string[]>(SETTING, []), ['curl', 'xcodebuild'])
+  })
+
+  it('reads inside the settings queue for its own key, not a private one', async () => {
+    // The lost update this guards against is a read taken before some *other*
+    // writer of the same key has landed. A queue of its own cannot see that
+    // writer, so the mutation has to sit on `settings:<key>` like every other
+    // write to it.
+    await setSetting(SETTING, [])
+
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    void runSerialized(`settings:${SETTING}`, () => blocked)
+
+    let settled = false
+    const remember = addTrustedShellCommand('curl').then(() => {
+      settled = true
+    })
+    for (let i = 0; i < 15; i++) await new Promise((resolve) => setTimeout(resolve, 1))
+
+    assert.equal(settled, false, 'the grant must wait behind the queued settings write')
+
+    release()
+    await remember
+    assert.deepEqual(getSetting<string[]>(SETTING, []), ['curl'])
+  })
+
+  it('is a no-op for a duplicate or malformed entry', async () => {
+    await setSetting(SETTING, ['curl'])
+
+    await addTrustedShellCommand('curl')
+    await addTrustedShellCommand('not a command')
+
+    assert.deepEqual(getSetting<string[]>(SETTING, []), ['curl'])
   })
 })
