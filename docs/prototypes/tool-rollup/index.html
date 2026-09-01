@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tool rollup interaction prototype</title>
+<style>html{color-scheme:light dark}body{margin:0;min-width:320px;padding:16px;background:light-dark(#f5f7f5,#1e1e1e)}</style>
+</head>
+<body>
+<style>
+@font-face{font-family:"Copse Pliant";src:url("../../../src/assets/fonts/Pliant-Variable.ttf") format("truetype");font-style:normal;font-weight:100 900;font-display:swap}
+#copse-tertiary{color-scheme:light dark;--tint:#244c25;--bg:light-dark(color-mix(in srgb,var(--tint) 7.6%,#fff),color-mix(in srgb,var(--tint) 4%,#1e1e1e));--hover:light-dark(color-mix(in srgb,var(--tint) 7.6%,#e8e8e8),color-mix(in srgb,var(--tint) 4%,#2a2d2e));--primary:light-dark(#333,#d4d4d4);--secondary:light-dark(#5f5f5f,#a6a6a6);--muted:light-dark(#767676,#808080);--border:light-dark(#e4e4e4,#333);--accent:light-dark(color-mix(in srgb,#ff93d0 30%,black),#ff93d0);--success:light-dark(#1a7f37,#4ec9b0);--error:light-dark(#cf222e,#f48771);--xs:4px;--sm:8px;--md:12px;--lg:16px;--radius:6px;width:100%;color:var(--primary);font-family:"Copse Pliant",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+#copse-tertiary *{box-sizing:border-box}
+#copse-tertiary .surface{overflow:hidden;background:var(--bg);border-radius:8px}
+#copse-tertiary .controls{display:flex;align-items:center;justify-content:space-between;gap:var(--sm);flex-wrap:wrap;padding:var(--sm) var(--md);border-bottom:1px solid var(--border)}
+#copse-tertiary .tabs,#copse-tertiary .toggles{display:flex;align-items:center;gap:var(--xs);flex-wrap:wrap}
+#copse-tertiary .tab{appearance:none;border:0;border-radius:var(--radius);padding:var(--xs) var(--sm);color:var(--muted);background:transparent;font:inherit;font-size:12px;line-height:22px;cursor:pointer}
+#copse-tertiary .tab:hover,#copse-tertiary .tab[aria-pressed=true]{color:var(--primary);background:var(--hover)}
+#copse-tertiary .recommended{color:var(--accent);margin-left:var(--xs)}
+#copse-tertiary .toggle{display:flex;align-items:center;gap:var(--xs);padding-inline:var(--xs);color:var(--muted);font-size:12px;line-height:22px;cursor:pointer;white-space:nowrap}
+#copse-tertiary .toggle input{accent-color:var(--accent)}
+#copse-tertiary .transcript{display:grid;padding:var(--lg) 0 calc(var(--lg) + var(--sm))}
+#copse-tertiary .msg{width:min(100%,960px);margin-inline:auto;padding:var(--sm) var(--md);overflow:visible}
+#copse-tertiary .prose{font-size:14px;line-height:22px}#copse-tertiary .prose p{margin:0}
+#copse-tertiary .run{min-width:0;padding:2px 0;font-size:12px;line-height:22px}
+#copse-tertiary .run-summary{position:relative;display:flex;align-items:center;gap:var(--sm);width:100%;max-width:100%;min-width:0;padding:1px 28px 1px var(--xs);margin-inline:calc(-1 * var(--xs));border:0;border-radius:var(--radius);background:transparent;color:var(--muted);font:inherit;font-style:italic;cursor:pointer;text-align:left}
+#copse-tertiary .run-summary:hover{color:var(--secondary);background:var(--hover)}
+#copse-tertiary .activity-slot{position:absolute;right:calc(100% - var(--xs) / 2);top:50%;transform:translateY(-50%);display:grid;place-items:center;width:calc(var(--md) - var(--xs) / 2);height:calc(var(--md) - var(--xs) / 2);color:var(--accent);pointer-events:none}
+#copse-tertiary .activity-slot:empty{display:none}
+#copse-tertiary .reasoning-activity-icon{width:100%;height:100%;overflow:visible;color:var(--accent)}
+#copse-tertiary .reasoning-activity-path{fill:none;stroke:currentColor;stroke-width:152;stroke-linecap:round;stroke-dasharray:1 1;stroke-dashoffset:1;opacity:0;animation:copse-tertiary-activity 2.5s ease-in-out infinite}
+@keyframes copse-tertiary-activity{0%,1%{stroke-dashoffset:1;opacity:0}2%{stroke-dashoffset:1;opacity:1}46%,56%{stroke-dashoffset:0;opacity:1}98%{stroke-dashoffset:-1;opacity:1}99%,100%{stroke-dashoffset:-1;opacity:0}}
+#copse-tertiary .run-label{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#copse-tertiary .run-meta{flex:none;color:var(--muted);white-space:nowrap;font-style:normal}
+#copse-tertiary .failure{color:var(--error)}
+#copse-tertiary .run-chevron,#copse-tertiary .step-chevron{display:grid;place-items:center;width:16px;height:16px;color:currentColor}
+#copse-tertiary .run-chevron{position:absolute;right:var(--xs);top:50%;transform:translateY(-50%)}
+#copse-tertiary .run-chevron svg,#copse-tertiary .step-chevron svg{display:block;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .12s ease;transform-origin:50% 50%}
+#copse-tertiary .step-chevron.is-loading{color:var(--muted)}
+#copse-tertiary .step-chevron.is-loading .reasoning-activity-icon{width:10px;height:10px;color:currentColor}
+#copse-tertiary [aria-expanded=true]>.run-chevron svg,#copse-tertiary [aria-expanded=true]>.step-chevron:not(.is-loading) svg{transform:rotate(90deg)}
+#copse-tertiary .run-body{display:none;flex-direction:column;margin-top:var(--xs);padding-left:var(--sm);border-left:1px solid var(--border)}
+#copse-tertiary .run-body.open{display:flex}
+#copse-tertiary .step{min-width:0;margin:0 0 var(--xs)}
+#copse-tertiary .step-summary{display:grid;grid-template-columns:16px minmax(0,1fr) auto;align-items:center;gap:var(--xs);width:100%;min-width:0;padding:2px var(--xs);margin-inline:calc(-1 * var(--xs));border:0;border-radius:var(--radius);background:transparent;color:var(--secondary);font:inherit;cursor:pointer;text-align:left}
+#copse-tertiary .step-summary:hover{color:var(--primary);background:var(--hover)}
+#copse-tertiary .step-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#copse-tertiary .step-meta{color:var(--muted);white-space:nowrap}
+#copse-tertiary .step-body{display:none;margin-top:var(--xs);padding-left:20px;color:var(--muted)}
+
+#copse-tertiary .step-body.open{display:block}
+#copse-tertiary .child-rail{display:flex;flex-direction:column;padding-left:var(--sm);border-left:1px solid var(--border)}
+#copse-tertiary .child-rail.depth-cap{margin-left:0;padding-left:0;border-left:0}
+#copse-tertiary .tool-row{display:flex;align-items:center;gap:var(--sm);width:fit-content;max-width:100%;min-width:0;padding:1px var(--xs);margin-inline:calc(-1 * var(--xs));border-radius:var(--radius);color:var(--secondary)}
+#copse-tertiary .tool-row:hover{color:var(--primary);background:var(--hover)}
+#copse-tertiary .tool-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#copse-tertiary .tool-kind{flex:none;color:var(--muted);white-space:nowrap}
+#copse-tertiary .guardian{display:flex;align-items:center;gap:var(--sm);padding:1px var(--xs);margin-inline:calc(-1 * var(--xs));color:var(--secondary)}
+#copse-tertiary .check{color:var(--success)}
+#copse-tertiary .mode-note{padding-top:var(--xs);color:var(--muted);font-size:12px;line-height:22px}
+@media(prefers-reduced-motion:reduce){#copse-tertiary .reasoning-activity-path{stroke-dasharray:1 0;opacity:1;animation:none}#copse-tertiary .run-chevron svg,#copse-tertiary .step-chevron svg{transition:none}}
+@media(max-width:560px){#copse-tertiary .controls{align-items:flex-start}#copse-tertiary .tabs{width:100%}#copse-tertiary .tab{flex:1 1 44%}#copse-tertiary .run-summary{display:grid;grid-template-columns:minmax(0,1fr);gap:0;padding-right:28px}#copse-tertiary .run-meta{grid-row:2}#copse-tertiary .step-summary{grid-template-columns:16px minmax(0,1fr)}#copse-tertiary .step-meta{grid-column:2;grid-row:2}}
+</style>
+
+<div id="copse-tertiary"><div class="surface">
+  <div class="controls"><div class="tabs" aria-label="Rollup approach"><button class="tab" type="button" data-mode="message" aria-pressed="false">A · Current</button><button class="tab" type="button" data-mode="turn" aria-pressed="false">B · Whole turn</button><button class="tab" type="button" data-mode="runs" aria-pressed="true">C · Runs <span class="recommended">Recommended</span></button><button class="tab" type="button" data-mode="steps" aria-pressed="false">D · Steps</button></div><div class="toggles"><label class="toggle"><input id="tertiary-reviews" type="checkbox"><span>Count reviews</span></label><label class="toggle"><input id="tertiary-loading" type="checkbox"><span>Show loading</span></label></div></div>
+  <div class="transcript"><div class="msg prose"><p>I’ll run a quick, read-only health check.</p></div><div class="msg" id="tertiary-before"></div><div class="msg prose"><p>The local picture is encouraging. I’m checking CI and the test oracle now.</p></div><div class="msg" id="tertiary-after"></div><div class="msg mode-note" id="tertiary-note" aria-live="polite"></div><div class="msg prose"><p>The repo is clean and current. CI is green, and the focused oracle found no changed files requiring tests.</p></div></div>
+</div></div>
+
+<script>
+(()=>{const root=document.getElementById("copse-tertiary"),before=root.querySelector("#tertiary-before"),after=root.querySelector("#tertiary-after"),note=root.querySelector("#tertiary-note"),reviewToggle=root.querySelector("#tertiary-reviews"),loadingToggle=root.querySelector("#tertiary-loading"),tabs=[...root.querySelectorAll(".tab")];
+const first=[{name:"Read recent commits",kind:"git log"},{name:"Inspect pull request",kind:"GitHub"},{name:"Check working tree",kind:"git status"}],later=[{reason:"Check CI and the test oracle",tools:[{name:"Check working tree",kind:"git status"},{name:"List CI runs",kind:"GitHub"},{name:"Run test oracle",kind:"failed",failed:true}]},{reason:"Inspect branch tracking",tools:[{name:"List branches",kind:"git branch"},{name:"Check divergence",kind:"git rev-list"},{name:"Inspect failed CI",kind:"GitHub"}]},{reason:"Locate the oracle implementation",tools:[{name:"Search repository",kind:"search"}]},{reason:"Find its package script",tools:[{name:"Search scripts",kind:"search"}]},{reason:"Confirm the command",tools:[{name:"Read package.json",kind:"file"}]},{reason:"Run the sandbox-safe fallback",children:[{reason:"Invoke the oracle directly",tools:[{name:"Run oracle directly",kind:"shell"}]}]},{reason:"Verify the final CI state",loading:true,tools:[{name:"Check CI again",kind:"GitHub"}]}];
+let mode="runs",nextId=0;const one=(tools,reason)=>[{reason,tools}],chevronSvg=()=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>`,spiralSvg=()=>`<svg class="reasoning-activity-icon" viewBox="-540 -540 1080 1080" aria-hidden="true" focusable="false"><path class="reasoning-activity-path" pathLength="1" d="M416.134 -141.959 C384 -475 -72 -488 -286.485 -266.216 C-474.71 -71.585 -423.084 227.135 -226.856 360.464 C5 518 328 385 297.052 111.165 C273.531 -96.947 -15 -98 -62.629 47.319 C-128.956 249.689 154 322 180.928 153.093"></path></svg>`;
+function itemTools(item){return [...(item.tools||[]),...(item.children||[]).flatMap(itemTools)]}function flatten(items){return items.flatMap(itemTools)}
+function toolRows(item,reviews){const out=[];(item.tools||[]).forEach(tool=>{out.push(`<div class="tool-row"><span class="tool-name">${tool.name}</span><span class="tool-kind${tool.failed?" failure":""}">${tool.kind}</span></div>`);if(reviews)out.push(`<div class="guardian"><span>Guardian Review</span><span class="check">✓</span></div>`)});return out.join("")}
+function stepRows(items,reviews,nested,depth=2){if(!nested)return items.map(item=>toolRows(item,reviews)).join("");return items.map(item=>{nextId+=1;const id=`tertiary-step-${nextId}`,leafTools=itemTools(item),count=leafTools.length+(reviews?leafTools.length:0),noun=reviews?"tools":(count===1?"operation":"operations"),failed=leafTools.filter(tool=>tool.failed).length,children=item.children||[],loading=loadingToggle.checked&&item.loading===true,open=children.length>0,body=children.length?`<div class="child-rail${depth>=3?" depth-cap":""}">${stepRows(children,reviews,true,depth+1)}</div>`:toolRows(item,reviews);return `<div class="step"><button class="step-summary" type="button" aria-expanded="${open}" aria-controls="${id}"><span class="step-chevron${loading?" is-loading":""}" aria-hidden="true">${loading?spiralSvg():chevronSvg()}</span><span class="step-title">${item.reason}</span><span class="step-meta">${count} ${noun}${failed?` · <span class="failure">${failed} failed</span>`:""}</span></button><div class="step-body${open?" open":""}" id="${id}">${body}</div></div>`}).join("")}
+function run(items,opt={}){nextId+=1;const id=`tertiary-run-${nextId}`,reviews=reviewToggle.checked,all=flatten(items),count=all.length+(reviews?all.length:0),failed=all.filter(tool=>tool.failed).length,noun=reviews?"tools":(opt.operations?(count===1?"operation":"operations"):(count===1?"tool":"tools")),label=opt.label||`Used ${count} ${noun}`,meta=opt.label?`${count} ${noun}${opt.steps?` · ${items.length} steps`:""}${failed?` · <span class="failure">${failed} failed</span>`:""}`:(failed?`<span class="failure">${failed} failed</span>`:""),open=opt.open===true,loading=loadingToggle.checked&&opt.loading===true;return `<div class="run"><button class="run-summary" type="button" aria-expanded="${open}" aria-controls="${id}"><span class="activity-slot">${loading?spiralSvg():""}</span><span class="run-label">${label}</span><span class="run-meta">${meta}</span><span class="run-chevron" aria-hidden="true">${chevronSvg()}</span></button><div class="run-body${open?" open":""}" id="${id}">${stepRows(items,reviews,opt.nested)}</div></div>`}
+function bind(selector){root.querySelectorAll(selector).forEach(button=>button.addEventListener("click",()=>{const open=button.getAttribute("aria-expanded")==="true";button.setAttribute("aria-expanded",String(!open));root.querySelector(`#${button.getAttribute("aria-controls")}`).classList.toggle("open",!open)}))}
+function render(){before.innerHTML="";after.innerHTML="";if(mode==="message"){before.innerHTML=run(one(first,"Initial repository checks"));after.innerHTML=later.map((item,index)=>run([item],{loading:index===later.length-1})).join("");note.textContent="Settled rows have no activity icon; enable Show loading to reveal Copse’s real spiral."}if(mode==="turn"){after.innerHTML=run([{reason:"Initial repository checks",tools:first},...later],{label:"Completed repository health check",nested:true,open:true,loading:true});note.textContent="Loading child steps replace their chevron with the muted activity spiral."}if(mode==="runs"){before.innerHTML=run(one(first,"Initial repository checks"),{label:"Checked commits, PR, and working tree"});after.innerHTML=run(later,{label:"Checked CI, branch state, and test coverage",nested:true,open:true,loading:true});note.textContent="Enable Show loading: the active child swaps its chevron for the muted spiral."}if(mode==="steps"){before.innerHTML=run(one(first,"Initial repository checks"),{label:"Initial repository checks",operations:true});after.innerHTML=run(later,{label:"Repository health check by step",operations:true,nested:true,steps:true,open:true,loading:true});note.textContent="Active child steps use the muted spiral; completed steps retain disclosure chevrons."}bind(".run-summary");bind(".step-summary")}
+tabs.forEach(tab=>tab.addEventListener("click",()=>{mode=tab.dataset.mode;tabs.forEach(item=>item.setAttribute("aria-pressed",String(item===tab)));render()}));reviewToggle.addEventListener("change",render);loadingToggle.addEventListener("change",render);render()})();
+</script>
+</body>
+</html>
