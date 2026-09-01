@@ -291158,11 +291158,16 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     const waiting = queue.map((req) => req.threadId).filter((id39) => !!id39 && (hidden || id39 !== activeThreadId));
     setAttentionThreads(store3, "approval", waiting);
   }
+  function requiresSoloPrompt(req) {
+    return req.type === "model-compare";
+  }
   function drainShowableIntoBatch() {
     let moved = 0;
     for (let i4 = 0; i4 < queue.length; ) {
       const req = queue[i4];
       if (req && isShowable(req)) {
+        const first3 = batch2[0];
+        if (first3 && (requiresSoloPrompt(first3) || requiresSoloPrompt(req))) break;
         queue.splice(i4, 1);
         batch2.push(req);
         moved++;
