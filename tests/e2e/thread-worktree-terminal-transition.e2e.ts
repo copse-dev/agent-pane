@@ -9,7 +9,7 @@ import {
   approvalDialogShowing,
   approveUnsandboxedTerminalIfPrompted,
 } from './helpers/terminal-approval.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-worktree-terminal-transition-project'
 const THREAD_ID = 'e2e-worktree-terminal-transition-thread'
@@ -24,20 +24,10 @@ async function xtermText(): Promise<string> {
   )
 }
 
-// QUARANTINED — see #1673. The thread worktree is never allocated, so this
-// spec fails on every `ci-full` run with the same three values: `1 terminal
-// tab(s), approval dialog is not showing, checkout badges:` (empty). Three
-// candidate fixes have been tried and disproved — the diagnostics below (added
-// by #1641) are what ruled them out — and the cause sits upstream of the
-// terminal, in whatever makes the policy degrade to `checkoutMode: 'shared'`.
-//
-// Skipped so unrelated trunk PRs that force the full e2e tier can land. This is
-// a deliberate loss of coverage, not a fix: if the policy really is degrading in
-// a repo that *can* name its default branch, that is a product bug this skip now
-// hides. #1673 carries the evidence and the instrumentation next step.
-//
-// Reinstate by restoring `describe` once allocation works.
-describe.skip('terminal checkout transition', () => {
+// Regression for #1673. This was quarantined while the first-send policy silently
+// degraded to a shared checkout. Current main allocates the worktree again; keep
+// the scenario enabled so the shared-to-isolated terminal transition stays covered.
+describe('terminal checkout transition', () => {
   let projectRoot = ''
   let worktreeRoot = ''
 
@@ -187,6 +177,10 @@ describe.skip('terminal checkout transition', () => {
       timeout: 30_000,
       timeoutMsg: 'expected the replacement terminal to use the thread worktree',
     })
-    await saveAppScreenshot('thread-worktree-terminal-transition.png')
+    await browser.execute(() => {
+      const list = document.querySelector<HTMLElement>('.terminals-list')
+      if (list) list.style.flex = 'none'
+    })
+    await saveElementScreenshot('.terminals-list', 'thread-worktree-terminal-transition.png')
   })
 })
