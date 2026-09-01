@@ -21745,7 +21745,8 @@ This response is streamed through the real renderer event path.`
           cloudModels: [],
           localModels: [],
           totalInputTokens: 0,
-          totalOutputTokens: 0
+          totalOutputTokens: 0,
+          hasUnpricedCloudUsage: false
         };
         return resolved({
           day: emptyPeriod,
@@ -24710,6 +24711,9 @@ function pricingForModel(model, pricing) {
   if (!info2) return null;
   return info2;
 }
+function hasModelPricing(model, pricing) {
+  return pricingForModel(model, pricing) !== null;
+}
 function costForModelUsage(model, usage, pricing) {
   const info2 = pricingForModel(model, pricing);
   if (!info2) return 0;
@@ -24727,19 +24731,26 @@ function estimateUsageCost(byModel, pricing) {
   if (entries2.length === 0) return "";
   let totalCost = 0;
   let hasLocal = false;
-  let hasBillable = false;
+  let hasPricedCloud = false;
+  let hasUnpricedCloud = false;
   for (const [model, usage] of entries2) {
     if (isLocalModel(model)) {
       hasLocal = true;
       continue;
     }
+    if (hasModelPricing(model, pricing)) hasPricedCloud = true;
+    else hasUnpricedCloud = true;
     const cost = costForModelUsage(model, usage, pricing);
-    if (cost > 0) hasBillable = true;
     totalCost += cost;
   }
-  if (!hasBillable && hasLocal) return "free (local)";
-  if (totalCost === 0) return "";
+  if (totalCost === 0) {
+    if (hasUnpricedCloud) return "";
+    if (hasPricedCloud) return "free";
+    if (hasLocal) return "free (local)";
+    return "";
+  }
   const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
+  if (hasUnpricedCloud) return `${costStr} (partial)`;
   return hasLocal ? `${costStr} (+ local free)` : costStr;
 }
 function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
@@ -43634,7 +43645,8 @@ function formatTokenCount(n2) {
 function formatPeriodHeadline(summary) {
   const localCount = summary.localModels.length;
   const cloudCount = summary.cloudModels.length;
-  const parts = [formatUsd(summary.totalCostUsd)];
+  const cost = summary.hasUnpricedCloudUsage ? summary.totalCostUsd > 0 ? `Known cost ${formatUsd(summary.totalCostUsd)}` : "Cost unavailable" : formatUsd(summary.totalCostUsd);
+  const parts = [cost];
   if (cloudCount) parts.push(`${String(cloudCount)} cloud model${cloudCount === 1 ? "" : "s"}`);
   if (localCount) parts.push(`${String(localCount)} local model${localCount === 1 ? "" : "s"}`);
   return parts.join(" \xB7 ");
@@ -43712,29 +43724,44 @@ function resolvedModelCard(id39) {
 }
 async function requestModelCards(ids, api3) {
   if (!api3) return false;
-  const missing = [...new Set(ids)].filter((id39) => !resolved2.has(id39) && !inFlight.has(id39));
-  if (missing.length === 0) return false;
-  for (const id39 of missing) inFlight.add(id39);
-  try {
-    const answers = await api3.resolve(missing);
-    let landed = false;
+  const requested = [...new Set(ids)].filter((id39) => !resolved2.has(id39));
+  const waiting = requested.flatMap((id39) => {
+    const pending = inFlight.get(id39);
+    return pending ? [pending] : [];
+  });
+  const missing = requested.filter((id39) => !inFlight.has(id39));
+  if (missing.length > 0) {
+    const batch2 = (async () => {
+      try {
+        const answers = await api3.resolve(missing);
+        const landed = /* @__PURE__ */ new Set();
+        for (const id39 of missing) {
+          if (!Object.prototype.hasOwnProperty.call(answers, id39)) continue;
+          resolved2.set(id39, answers[id39] ?? null);
+          landed.add(id39);
+        }
+        return landed;
+      } catch {
+        return /* @__PURE__ */ new Set();
+      }
+    })();
     for (const id39 of missing) {
-      if (!Object.prototype.hasOwnProperty.call(answers, id39)) continue;
-      resolved2.set(id39, answers[id39] ?? null);
-      landed = true;
+      const pending = batch2.then((landed) => landed.has(id39));
+      inFlight.set(id39, pending);
+      waiting.push(pending);
+      void pending.then(() => {
+        if (inFlight.get(id39) === pending) inFlight.delete(id39);
+      });
     }
-    return landed;
-  } catch {
-    return false;
-  } finally {
-    for (const id39 of missing) inFlight.delete(id39);
   }
+  if (waiting.length === 0) return false;
+  return (await Promise.all(waiting)).some(Boolean);
 }
 var resolved2, inFlight;
 var init_model_card_cache = __esm({
   "src/renderer/views/model-card-cache.ts"() {
     resolved2 = /* @__PURE__ */ new Map();
-    inFlight = /* @__PURE__ */ new Set();
+    inFlight = /* @__PURE__ */ new Map();
   }
 });
 
@@ -46093,7 +46120,7 @@ function renderModelTable(host, title2, rows, emptyText) {
       <td>${approx}${formatTokenCount(row2.outputTokens)}</td>
       <td>${row2.cacheReadTokens ? formatTokenCount(row2.cacheReadTokens) : "-"}</td>
       <td>${row2.cacheCreationTokens ? formatTokenCount(row2.cacheCreationTokens) : "-"}</td>
-      <td>${row2.isLocal ? "free (local)" : formatUsd(row2.estimatedCostUsd)}</td>
+      <td>${row2.isLocal ? "free (local)" : !row2.pricingKnown ? "unpriced" : row2.estimatedCostUsd === 0 ? "free" : formatUsd(row2.estimatedCostUsd)}</td>
     `;
     tbody.append(tr2);
   }
@@ -255561,7 +255588,8 @@ function modelRowValue(model, usage, pricing) {
   const tokens2 = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`;
   if (isLocalModel(model)) return `${tokens2} \xB7 free`;
   const cost = costForModelUsage(model, usage, pricing);
-  return cost > 0 ? `${tokens2} \xB7 ${formatUsd(cost)}` : tokens2;
+  if (!hasModelPricing(model, pricing)) return `${tokens2} \xB7 unpriced`;
+  return `${tokens2} \xB7 ${cost > 0 ? formatUsd(cost) : "free"}`;
 }
 function buildFooterUsageTooltip(display, opts) {
   const { inputTokens, outputTokens, estimated } = display;
@@ -255593,7 +255621,11 @@ function buildFooterUsageTooltip(display, opts) {
       modelRows.push({ label: model, value: modelRowValue(model, modelUsage, opts.pricing) });
     }
   }
-  const note2 = estimated ? "Estimated \u2014 provider usage not reported yet" : cost ? null : "No pricing for this model";
+  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model];
+  const hasUnpricedUsage = pricedModels.some(
+    (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing)
+  );
+  const note2 = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models without pricing" : "No pricing for this model" : null;
   return {
     header: `Usage \xB7 ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
     rows,
@@ -291343,6 +291375,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
         show3();
       } else {
         renderBatch();
+        startSettle();
       }
     }
     syncAttention();
