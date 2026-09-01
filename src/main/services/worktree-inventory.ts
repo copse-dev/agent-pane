@@ -35,6 +35,7 @@ import {
   releaseWorktreeRoot,
   repositoryLocation,
   runWorktreeGit,
+  sameWorktreePath,
   type WorktreeRecord,
 } from './worktree-manager.ts'
 
@@ -174,8 +175,7 @@ function linkedRecords(
   return records.filter((record) => {
     if (record.bare) return false
     try {
-      const path = resolve(record.path)
-      return excludedCheckoutRoots.every((root) => path !== resolve(root))
+      return excludedCheckoutRoots.every((root) => !sameWorktreePath(record.path, root))
     } catch {
       return false
     }
@@ -280,7 +280,7 @@ async function describeRecord(
   // A thread whose metadata points somewhere else no longer owns this checkout;
   // saying so is what makes an abandoned copy safe to reclaim.
   const recorded = meta?.worktree
-  const linked = recorded !== undefined && resolve(recorded.path) === resolve(record.path)
+  const linked = recorded !== undefined && sameWorktreePath(recorded.path, record.path)
   const baseBranch = linked ? recorded.baseBranch : null
   const [changed, gitActivity, rootMtime, dirCreatedAt] = await Promise.all([
     inspectChanges(record.path),
@@ -358,13 +358,12 @@ async function requireRegisteredWorktree(
   const repository = await resolveInventoryRepository(input.projectId, input.projectRoot)
   if (!repository) throw new Error('That project repository is no longer available')
   const { repositoryRoot, projectRelativePath } = repository
-  const target = resolve(input.path)
   const record = linkedRecords(repository.records, [
     repository.repositoryRoot,
     repository.projectCheckoutRoot,
   ]).find((candidate) => {
     try {
-      return resolve(candidate.path) === target
+      return sameWorktreePath(candidate.path, input.path)
     } catch {
       return false
     }
