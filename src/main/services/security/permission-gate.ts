@@ -112,6 +112,7 @@ import {
   type ShellReplayLeaseIdentity,
 } from './capability-lease.ts'
 import { commandName, shellSegments } from './shell-argv.ts'
+import { rememberPermissionValue } from './permission-memory.ts'
 import {
   analyzeShellCommand,
   dangerousInSandboxReasons,
@@ -515,11 +516,12 @@ async function checkMcpPermission(toolName: string, args: unknown): Promise<bool
 }
 
 async function rememberWebOrigin(origin: string): Promise<void> {
-  const saved = getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)
-  const allowed = webAllowedOriginsWithDefaults(saved)
-  if (!allowed.includes(origin)) {
-    await setSetting(WEB_ALLOWED_ORIGINS_SETTING, normalizeWebAllowedOrigins([...allowed, origin]))
-  }
+  await rememberPermissionValue(WEB_ALLOWED_ORIGINS_SETTING, origin, {
+    read: () =>
+      webAllowedOriginsWithDefaults(getSetting<string[] | null>(WEB_ALLOWED_ORIGINS_SETTING, null)),
+    write: (allowed) =>
+      setSetting(WEB_ALLOWED_ORIGINS_SETTING, normalizeWebAllowedOrigins(allowed)),
+  })
 }
 
 async function promptWebOrigin(origin: string, detail: string): Promise<boolean> {
@@ -1002,10 +1004,10 @@ function browserUrlFromArgs(args: unknown): string | null {
 }
 
 async function rememberBrowserOrigin(origin: string): Promise<void> {
-  const saved = getSetting<string[]>('browserAllowedOrigins', [])
-  if (!saved.includes(origin)) {
-    await setSetting('browserAllowedOrigins', [...saved, origin])
-  }
+  await rememberPermissionValue('browserAllowedOrigins', origin, {
+    read: () => getSetting<string[]>('browserAllowedOrigins', []),
+    write: (allowed) => setSetting('browserAllowedOrigins', allowed),
+  })
 }
 
 async function checkBrowserNavigatePermission(args: unknown): Promise<boolean> {
@@ -1087,8 +1089,11 @@ async function checkBackgroundProcessPermission(
     allowRemember: true,
     rememberLabel: 'Always allow local port binding in this project',
   })
-  if (approved && remember && !allowed.includes(root)) {
-    await setSetting(PORT_BINDING_ALLOWED_ROOTS_SETTING, [...allowed, root])
+  if (approved && remember) {
+    await rememberPermissionValue(PORT_BINDING_ALLOWED_ROOTS_SETTING, root, {
+      read: () => getSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, []),
+      write: (roots) => setSetting(PORT_BINDING_ALLOWED_ROOTS_SETTING, roots),
+    })
   }
   return approved
 }
