@@ -55,6 +55,8 @@ export interface AcquireAcpSessionOptions {
   registry?: ToolRegistry | undefined
   /** Test seam: in-memory transport instead of spawning a process. */
   createTransport?: AcpTransportFactory | undefined
+  /** Cancels run-owned startup prompts while opening a fresh transport. */
+  signal?: AbortSignal | undefined
 }
 
 const IDLE_MS = 10 * 60 * 1000
@@ -268,6 +270,7 @@ export async function acquireAcpSession(
       opts.createTransport,
       resumeSessionId,
       trace,
+      opts.signal,
     )
   } catch (err) {
     bridgeAbort.abort()
