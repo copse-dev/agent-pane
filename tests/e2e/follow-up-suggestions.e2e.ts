@@ -1,4 +1,4 @@
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import {
   cleanupGitChangesFixture,
   resetUserData,
@@ -20,7 +20,7 @@ async function completeMockTurn(): Promise<void> {
 }
 
 describe('follow-up suggestion bubbles', () => {
-  describe('mock demo (Changes + Debug CI + Continue Plan)', () => {
+  describe('mock demo (Debug CI + Compare models + Continue Plan)', () => {
     before(async () => {
       resetUserData()
       seedEmptyProject(process.cwd(), 'e2e-follow-up-mock-project', {
@@ -37,14 +37,14 @@ describe('follow-up suggestion bubbles', () => {
 
     it('shows demo bubbles after a turn completes', async () => {
       await completeMockTurn()
-
-      const changesBubble = await $('.follow-up-bubble-changes')
-      await expect(changesBubble).toBeDisplayed()
-      await expect(changesBubble.$('.follow-up-stat-add')).toHaveText('+1')
-      await expect(changesBubble.$('.follow-up-stat-del')).toHaveText('-1')
+      await expect($$('.follow-up-bubble')).toBeElementsArrayOfSize(3)
+      await expect($('.follow-up-bubble-changes')).not.toExist()
 
       const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
       await expect(ciBubble).toHaveText('Debug CI Failure')
+
+      const compareBubble = await $('.follow-up-bubble[data-id="compare-models"]')
+      await expect(compareBubble).toHaveText('Compare models')
 
       const continuePlanBubble = await $('.follow-up-bubble[data-id="continue-plan"]')
       await expect(continuePlanBubble).toHaveText('Continue: Run the test suite')

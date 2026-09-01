@@ -14,6 +14,12 @@ function remoteFsError(
   return err
 }
 
+function nulTerminatedFields(stdout: string): string[] {
+  const lastTerminator = stdout.lastIndexOf('\0')
+  if (lastTerminator === -1) return []
+  return stdout.slice(0, lastTerminator).split('\0')
+}
+
 /** Exec-based remote filesystem — reuses the host's POSIX tools over SSH. */
 export class SshWorkspaceFs implements WorkspaceFsPathProbe {
   readonly hostId: string
@@ -141,33 +147,39 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
   }
 
   async readdir(path: string): Promise<string[]> {
-    const result = await this.exec(
-      `find ${this.quote(path)} -mindepth 1 -maxdepth 1 -printf '%f\\n' 2>/dev/null || ls -1 ${this.quote(path)}`,
-    )
-    if (result.code !== 0) throw remoteFsError(path, result)
-    return result.stdout.split('\n').filter(Boolean)
-  }
-
-  async readdirWithTypes(path: string): Promise<Array<{ name: string; isDir: boolean }>> {
     const gnuFind = await this.exec(
-      `find ${this.quote(path)} -mindepth 1 -maxdepth 1 -printf '%y\\t%f\\n' 2>/dev/null`,
+      `find ${this.quote(path)} -mindepth 1 -maxdepth 1 -printf '%f\\0' 2>/dev/null`,
     )
     const result =
       gnuFind.code === 0
         ? gnuFind
         : await this.exec(
-            `find ${this.quote(path)} -mindepth 1 -maxdepth 1 -exec sh -c 'for p do if [ -d "$p" ]; then printf "d\\t%s\\n" "\${p##*/}"; else printf "f\\t%s\\n" "\${p##*/}"; fi; done' sh {} +`,
+            `find ${this.quote(path)} -mindepth 1 -maxdepth 1 -exec sh -c 'for p do printf "%s\\000" "\${p##*/}"; done' sh {} +`,
           )
     if (result.code !== 0) throw remoteFsError(path, result)
-    return result.stdout
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        const tab = line.indexOf('\t')
-        const kind = tab === -1 ? 'f' : line.slice(0, tab)
-        const name = tab === -1 ? line : line.slice(tab + 1)
-        return { name, isDir: kind === 'd' }
-      })
+    return nulTerminatedFields(result.stdout)
+  }
+
+  async readdirWithTypes(path: string): Promise<Array<{ name: string; isDir: boolean }>> {
+    const gnuFind = await this.exec(
+      `find ${this.quote(path)} -mindepth 1 -maxdepth 1 -printf '%y\\0%f\\0' 2>/dev/null`,
+    )
+    const result =
+      gnuFind.code === 0
+        ? gnuFind
+        : await this.exec(
+            `find ${this.quote(path)} -mindepth 1 -maxdepth 1 -exec sh -c 'for p do if [ -d "$p" ]; then printf "d\\000%s\\000" "\${p##*/}"; else printf "f\\000%s\\000" "\${p##*/}"; fi; done' sh {} +`,
+          )
+    if (result.code !== 0) throw remoteFsError(path, result)
+    const fields = nulTerminatedFields(result.stdout)
+    const entries: Array<{ name: string; isDir: boolean }> = []
+    for (let index = 0; index + 1 < fields.length; index += 2) {
+      const kind = fields[index]
+      const name = fields[index + 1]
+      if (kind === undefined || name === undefined) break
+      entries.push({ name, isDir: kind === 'd' })
+    }
+    return entries
   }
 }
 

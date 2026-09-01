@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { runSerialized, drainWriteQueue } from './write-queue.ts'
+import { runSerialized, runSerializedUpdate, drainWriteQueue } from './write-queue.ts'
 
 const tick = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
 
@@ -29,6 +29,41 @@ describe('write-queue', () => {
       })
     await Promise.all([mk(1), mk(2), mk(3)])
     assert.deepEqual(order, [1, 2, 3])
+  })
+
+  it('re-reads the latest value before each serialized update', async () => {
+    let stored: readonly string[] = []
+    let releaseFirstWrite: (() => void) | undefined
+    let markFirstWriteStarted: (() => void) | undefined
+    const firstWriteStarted = new Promise<void>((resolve) => {
+      markFirstWriteStarted = resolve
+    })
+    const firstWriteReleased = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve
+    })
+    let writeCount = 0
+    const append = (value: string): Promise<readonly string[]> =>
+      runSerializedUpdate(
+        'update',
+        () => stored,
+        (current) => [...current, value],
+        async (next) => {
+          writeCount += 1
+          if (writeCount === 1) {
+            markFirstWriteStarted?.()
+            await firstWriteReleased
+          }
+          stored = next
+        },
+      )
+
+    const appendA = append('a')
+    await firstWriteStarted
+    const appendB = append('b')
+    releaseFirstWrite?.()
+    await Promise.all([appendA, appendB])
+
+    assert.deepEqual(stored, ['a', 'b'])
   })
 
   it('does not serialize across different keys', async () => {

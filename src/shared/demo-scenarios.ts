@@ -66,8 +66,8 @@ export interface DemoScenario {
    * the only way to reach `.vnc-discovered-port.selected` deterministically.
    */
   vncDiscoveredPorts?: readonly number[]
-  /** Seed one host approval so browser geometry specs can inspect the real dialog. */
-  approvalRequest?: {
+  /** Seed host approvals so browser geometry specs can inspect the real dialog. */
+  approvalRequests?: readonly {
     id: string
     title: string
     body: string
@@ -75,7 +75,7 @@ export interface DemoScenario {
     bodyFooter?: string
     type: string
     allowRemember?: boolean
-  }
+  }[]
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -592,14 +592,66 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         updatedAt: FIXED_TIME,
       },
     ],
-    approvalRequest: {
-      id: 'demo-approval-light-accent-request',
-      title: 'Run outside sandbox?',
-      body: 'npm install',
-      bodyAdvice: 'This command needs access the project sandbox blocks.',
-      bodyFooter: 'Allow running it once outside the sandbox?',
-      type: 'shell',
+    approvalRequests: [
+      {
+        id: 'demo-approval-light-accent-request',
+        title: 'Run outside sandbox?',
+        body: 'npm install',
+        bodyAdvice: 'This command needs access the project sandbox blocks.',
+        bodyFooter: 'Allow running it once outside the sandbox?',
+        type: 'shell',
+      },
+    ],
+  },
+  {
+    id: 'approval-grouped-shell-commands',
+    label: 'Grouped outside-sandbox command approval',
+    project: project('demo-approval-grouped-shell-commands-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
     },
+    threads: [
+      {
+        id: 'demo-approval-grouped-shell-commands-thread',
+        title: 'Measuring oracle execution time',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    approvalRequests: [
+      {
+        id: 'demo-approval-grouped-shell-commands-oracle',
+        title: 'Run outside sandbox?',
+        body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
+        bodyAdvice:
+          'This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).',
+        bodyFooter: 'Allow running it once outside the sandbox?',
+        type: 'shell',
+      },
+      {
+        id: 'demo-approval-grouped-shell-commands-syntax',
+        title: 'Run outside sandbox?',
+        body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
+        bodyAdvice:
+          'This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).',
+        bodyFooter: 'Allow running it once outside the sandbox?',
+        type: 'shell',
+      },
+      {
+        id: 'demo-approval-grouped-shell-commands-test',
+        title: 'Run outside sandbox?',
+        body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
+        bodyAdvice:
+          'This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).',
+        bodyFooter: 'Allow running it once outside the sandbox?',
+        type: 'shell',
+      },
+    ],
   },
   {
     id: 'vnc-discovered-ports',
