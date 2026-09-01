@@ -9,6 +9,7 @@ import {
   parseUsageEvents,
   pruneUsageEvents,
 } from './aggregate-usage.ts'
+import { formatPeriodHeadline } from './format-usage-summary.ts'
 import type { Thread } from '@shared/types'
 import type { UsageEvent } from './usage-event.ts'
 
@@ -140,8 +141,31 @@ describe('aggregate usage', () => {
     assert.equal(summary.day.localModels.length, 1)
     assert.ok(summary.day.totalCostUsd > 0)
     assert.equal(summary.day.localModels[0]?.estimatedCostUsd, 0)
+    assert.equal(summary.day.cloudModels[0]?.pricingKnown, true)
+    assert.equal(summary.day.hasUnpricedCloudUsage, false)
     assert.equal(summary.trackingStartedAt, NOW - 1000)
     assert.equal(summary.ledgerEventCount, 2)
+  })
+
+  it('keeps free and unpriced cloud usage distinct', () => {
+    const summary = buildUsageSummary(
+      [
+        event({ model: 'openrouter:vendor/free', inputTokens: 100, outputTokens: 10 }),
+        event({ model: 'openrouter:vendor/unknown', inputTokens: 100, outputTokens: 10 }),
+      ],
+      [],
+      NOW,
+      {
+        'openrouter:vendor/free': { inputPricePerMTok: 0, outputPricePerMTok: 0 },
+      },
+    )
+    const free = summary.day.cloudModels.find((row) => row.model.endsWith('/free'))
+    const unknown = summary.day.cloudModels.find((row) => row.model.endsWith('/unknown'))
+    assert.equal(free?.pricingKnown, true)
+    assert.equal(free.estimatedCostUsd, 0)
+    assert.equal(unknown?.pricingKnown, false)
+    assert.equal(summary.day.hasUnpricedCloudUsage, true)
+    assert.equal(formatPeriodHeadline(summary.day), 'Cost unavailable · 2 cloud models')
   })
 
   it('parseUsageEvents drops malformed records', () => {
