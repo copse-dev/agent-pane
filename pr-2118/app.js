@@ -18577,8 +18577,14 @@ function parseSshHostDraft(draft) {
     host: draft.host.trim()
   };
   if (draft.user.trim()) host.user = draft.user.trim();
-  const port = Number.parseInt(draft.port.trim(), 10);
-  if (draft.port.trim() && Number.isFinite(port)) host.port = port;
+  const portText = draft.port.trim();
+  if (portText) {
+    const port = Number(portText);
+    if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535) {
+      return { ok: false, error: "Port must be a whole number from 1 to 65535." };
+    }
+    host.port = port;
+  }
   if (draft.identityFile.trim()) host.identityFile = draft.identityFile.trim();
   if (draft.forwardAgent) host.forwardAgent = true;
   return { ok: true, host };
@@ -21036,14 +21042,63 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ],
-        approvalRequest: {
-          id: "demo-approval-light-accent-request",
-          title: "Run outside sandbox?",
-          body: "npm install",
-          bodyAdvice: "This command needs access the project sandbox blocks.",
-          bodyFooter: "Allow running it once outside the sandbox?",
-          type: "shell"
-        }
+        approvalRequests: [
+          {
+            id: "demo-approval-light-accent-request",
+            title: "Run outside sandbox?",
+            body: "npm install",
+            bodyAdvice: "This command needs access the project sandbox blocks.",
+            bodyFooter: "Allow running it once outside the sandbox?",
+            type: "shell"
+          }
+        ]
+      },
+      {
+        id: "approval-grouped-shell-commands",
+        label: "Grouped outside-sandbox command approval",
+        project: project("demo-approval-grouped-shell-commands-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-approval-grouped-shell-commands-thread",
+            title: "Measuring oracle execution time",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        approvalRequests: [
+          {
+            id: "demo-approval-grouped-shell-commands-oracle",
+            title: "Run outside sandbox?",
+            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
+            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyFooter: "Allow running it once outside the sandbox?",
+            type: "shell"
+          },
+          {
+            id: "demo-approval-grouped-shell-commands-syntax",
+            title: "Run outside sandbox?",
+            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
+            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyFooter: "Allow running it once outside the sandbox?",
+            type: "shell"
+          },
+          {
+            id: "demo-approval-grouped-shell-commands-test",
+            title: "Run outside sandbox?",
+            body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
+            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyFooter: "Allow running it once outside the sandbox?",
+            type: "shell"
+          }
+        ]
       },
       {
         id: "vnc-discovered-ports",
@@ -21446,8 +21501,8 @@ This response is streamed through the real renderer event path.`
         };
       },
       onApprovalRequest: (handler) => {
-        if (scenario.approvalRequest) {
-          const request = structuredClone(scenario.approvalRequest);
+        for (const approvalRequest of scenario.approvalRequests ?? []) {
+          const request = structuredClone(approvalRequest);
           setTimeout(() => {
             handler(request);
           }, 0);
@@ -21696,7 +21751,8 @@ This response is streamed through the real renderer event path.`
           cloudModels: [],
           localModels: [],
           totalInputTokens: 0,
-          totalOutputTokens: 0
+          totalOutputTokens: 0,
+          hasUnpricedCloudUsage: false
         };
         return resolved({
           day: emptyPeriod,
@@ -24661,6 +24717,9 @@ function pricingForModel(model, pricing) {
   if (!info2) return null;
   return info2;
 }
+function hasModelPricing(model, pricing) {
+  return pricingForModel(model, pricing) !== null;
+}
 function costForModelUsage(model, usage, pricing) {
   const info2 = pricingForModel(model, pricing);
   if (!info2) return 0;
@@ -24678,19 +24737,26 @@ function estimateUsageCost(byModel, pricing) {
   if (entries2.length === 0) return "";
   let totalCost = 0;
   let hasLocal = false;
-  let hasBillable = false;
+  let hasPricedCloud = false;
+  let hasUnpricedCloud = false;
   for (const [model, usage] of entries2) {
     if (isLocalModel(model)) {
       hasLocal = true;
       continue;
     }
+    if (hasModelPricing(model, pricing)) hasPricedCloud = true;
+    else hasUnpricedCloud = true;
     const cost = costForModelUsage(model, usage, pricing);
-    if (cost > 0) hasBillable = true;
     totalCost += cost;
   }
-  if (!hasBillable && hasLocal) return "free (local)";
-  if (totalCost === 0) return "";
+  if (totalCost === 0) {
+    if (hasUnpricedCloud) return "";
+    if (hasPricedCloud) return "free";
+    if (hasLocal) return "free (local)";
+    return "";
+  }
   const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
+  if (hasUnpricedCloud) return `${costStr} (partial)`;
   return hasLocal ? `${costStr} (+ local free)` : costStr;
 }
 function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
@@ -43585,7 +43651,8 @@ function formatTokenCount(n2) {
 function formatPeriodHeadline(summary) {
   const localCount = summary.localModels.length;
   const cloudCount = summary.cloudModels.length;
-  const parts = [formatUsd(summary.totalCostUsd)];
+  const cost = summary.hasUnpricedCloudUsage ? summary.totalCostUsd > 0 ? `Known cost ${formatUsd(summary.totalCostUsd)}` : "Cost unavailable" : formatUsd(summary.totalCostUsd);
+  const parts = [cost];
   if (cloudCount) parts.push(`${String(cloudCount)} cloud model${cloudCount === 1 ? "" : "s"}`);
   if (localCount) parts.push(`${String(localCount)} local model${localCount === 1 ? "" : "s"}`);
   return parts.join(" \xB7 ");
@@ -43663,29 +43730,44 @@ function resolvedModelCard(id39) {
 }
 async function requestModelCards(ids, api3) {
   if (!api3) return false;
-  const missing = [...new Set(ids)].filter((id39) => !resolved2.has(id39) && !inFlight.has(id39));
-  if (missing.length === 0) return false;
-  for (const id39 of missing) inFlight.add(id39);
-  try {
-    const answers = await api3.resolve(missing);
-    let landed = false;
+  const requested = [...new Set(ids)].filter((id39) => !resolved2.has(id39));
+  const waiting = requested.flatMap((id39) => {
+    const pending = inFlight.get(id39);
+    return pending ? [pending] : [];
+  });
+  const missing = requested.filter((id39) => !inFlight.has(id39));
+  if (missing.length > 0) {
+    const batch2 = (async () => {
+      try {
+        const answers = await api3.resolve(missing);
+        const landed = /* @__PURE__ */ new Set();
+        for (const id39 of missing) {
+          if (!Object.prototype.hasOwnProperty.call(answers, id39)) continue;
+          resolved2.set(id39, answers[id39] ?? null);
+          landed.add(id39);
+        }
+        return landed;
+      } catch {
+        return /* @__PURE__ */ new Set();
+      }
+    })();
     for (const id39 of missing) {
-      if (!Object.prototype.hasOwnProperty.call(answers, id39)) continue;
-      resolved2.set(id39, answers[id39] ?? null);
-      landed = true;
+      const pending = batch2.then((landed) => landed.has(id39));
+      inFlight.set(id39, pending);
+      waiting.push(pending);
+      void pending.then(() => {
+        if (inFlight.get(id39) === pending) inFlight.delete(id39);
+      });
     }
-    return landed;
-  } catch {
-    return false;
-  } finally {
-    for (const id39 of missing) inFlight.delete(id39);
   }
+  if (waiting.length === 0) return false;
+  return (await Promise.all(waiting)).some(Boolean);
 }
 var resolved2, inFlight;
 var init_model_card_cache = __esm({
   "src/renderer/views/model-card-cache.ts"() {
     resolved2 = /* @__PURE__ */ new Map();
-    inFlight = /* @__PURE__ */ new Set();
+    inFlight = /* @__PURE__ */ new Map();
   }
 });
 
@@ -46044,7 +46126,7 @@ function renderModelTable(host, title2, rows, emptyText) {
       <td>${approx}${formatTokenCount(row2.outputTokens)}</td>
       <td>${row2.cacheReadTokens ? formatTokenCount(row2.cacheReadTokens) : "-"}</td>
       <td>${row2.cacheCreationTokens ? formatTokenCount(row2.cacheCreationTokens) : "-"}</td>
-      <td>${row2.isLocal ? "free (local)" : formatUsd(row2.estimatedCostUsd)}</td>
+      <td>${row2.isLocal ? "free (local)" : !row2.pricingKnown ? "unpriced" : row2.estimatedCostUsd === 0 ? "free" : formatUsd(row2.estimatedCostUsd)}</td>
     `;
     tbody.append(tr2);
   }
@@ -239131,7 +239213,7 @@ async function resolveFileReferencesInBatches(candidates, resolve2) {
 var FILE_REFERENCE_RE, TRAILING_PROSE_PUNCTUATION_RE, FILE_REFERENCE_RESOLVE_BATCH_SIZE;
 var init_file_reference = __esm({
   "src/shared/fs/file-reference.ts"() {
-    FILE_REFERENCE_RE = /(^|[^A-Za-z0-9_./-])((?:\.\/)?(?:[A-Za-z0-9_@+$.-]+\/)+[A-Za-z0-9_@+$.-]*|\.[A-Za-z0-9_@+$-][A-Za-z0-9_@+$.-]{0,30}|[A-Za-z0-9_@+$-]+\.[A-Za-z0-9][A-Za-z0-9.-]{0,15}|Dockerfile|Makefile)(?::(\d+)(?::(\d+))?)?(?=$|[^A-Za-z0-9_./-])/g;
+    FILE_REFERENCE_RE = /(^|[^A-Za-z0-9_./-])((?:\.\/)?(?:[A-Za-z0-9_@+$.-]{1,255}\/)+[A-Za-z0-9_@+$.-]*|\.[A-Za-z0-9_@+$-][A-Za-z0-9_@+$.-]{0,30}|[A-Za-z0-9_@+$-]{1,255}\.[A-Za-z0-9][A-Za-z0-9.-]{0,15}|Dockerfile|Makefile)(?::(\d+)(?::(\d+))?)?(?=$|[^A-Za-z0-9_./-])/g;
     TRAILING_PROSE_PUNCTUATION_RE = /[.,;:!?]+$/;
     FILE_REFERENCE_RESOLVE_BATCH_SIZE = 200;
   }
@@ -239415,8 +239497,8 @@ var init_remote_artifact_images = __esm({
 });
 
 // packages/agent/src/parse-text-tool-calls.ts
-function stripMinimaxDelimiters(text4) {
-  return text4.replace(MINIMAX_DELIMITER_RE, "");
+function stripToolCallDialectDelimiters(text4) {
+  return text4.replace(MINIMAX_DELIMITER_RE, "").replace(DEEPSEEK_DSML_SENTINEL_RE, "");
 }
 function codeSpanMask(text4) {
   const mask = new Uint8Array(text4.length);
@@ -239473,34 +239555,51 @@ function trailingPartialToolCallIndex(s16) {
   const lt2 = s16.lastIndexOf("<");
   if (lt2 === -1) return -1;
   const tail = s16.slice(lt2).toLowerCase().replace(/\s+/g, "");
-  return tail.length < TOOL_CALL_OPENER.length && TOOL_CALL_OPENER.startsWith(tail) ? lt2 : -1;
+  const openers = [
+    TOOL_CALL_OPENER,
+    TOOL_CALLS_OPENER,
+    "<\uFF5Cdsml\uFF5Ctool_call>",
+    "<\uFF5Cdsml\uFF5Ctool_calls>",
+    "<\uFF5Cdsml\uFF5Cinvoke"
+  ];
+  return openers.some((opener) => tail.length < opener.length && opener.startsWith(tail)) ? lt2 : -1;
 }
 function stripTextToolCallBlocks(text4) {
-  let out = stripMinimaxDelimiters(text4);
+  let out = stripToolCallDialectDelimiters(text4);
   out = removeBlocksOutsideCode(out, TOOL_CALL_BLOCK_RE);
+  out = removeBlocksOutsideCode(out, TOOL_CALLS_BLOCK_RE);
   out = removeBlocksOutsideCode(out, INVOKE_BLOCK_RE);
   const blanked = blankCodeSpans(out);
   const open2 = blanked.search(OPEN_TOOL_CALL_RE);
   if (open2 !== -1) {
     out = out.slice(0, open2);
   } else {
-    const invokeOpen = blanked.search(OPEN_INVOKE_RE);
-    if (invokeOpen !== -1) {
-      out = out.slice(0, invokeOpen);
+    const callsOpen = blanked.search(OPEN_TOOL_CALLS_RE);
+    if (callsOpen !== -1) {
+      out = out.slice(0, callsOpen);
     } else {
-      const partial2 = trailingPartialToolCallIndex(blanked);
-      if (partial2 !== -1) out = out.slice(0, partial2);
+      const invokeOpen = blanked.search(OPEN_INVOKE_RE);
+      if (invokeOpen !== -1) {
+        out = out.slice(0, invokeOpen);
+      } else {
+        const partial2 = trailingPartialToolCallIndex(blanked);
+        if (partial2 !== -1) out = out.slice(0, partial2);
+      }
     }
   }
   return out.replace(/\n{3,}/g, "\n\n").trimEnd();
 }
-var TOOL_CALL_BLOCK_RE, OPEN_TOOL_CALL_RE, TOOL_CALL_OPENER, MINIMAX_DELIMITER_RE, INVOKE_BLOCK_RE, OPEN_INVOKE_RE;
+var TOOL_CALL_BLOCK_RE, TOOL_CALLS_BLOCK_RE, OPEN_TOOL_CALL_RE, OPEN_TOOL_CALLS_RE, TOOL_CALL_OPENER, TOOL_CALLS_OPENER, MINIMAX_DELIMITER_RE, DEEPSEEK_DSML_SENTINEL_RE, INVOKE_BLOCK_RE, OPEN_INVOKE_RE;
 var init_parse_text_tool_calls = __esm({
   "packages/agent/src/parse-text-tool-calls.ts"() {
     TOOL_CALL_BLOCK_RE = /<\s*tool_call\s*>([\s\S]*?)<\s*\/\s*tool_call\s*>/gi;
+    TOOL_CALLS_BLOCK_RE = /<\s*tool_calls\s*>([\s\S]*?)<\s*\/\s*tool_calls\s*>/gi;
     OPEN_TOOL_CALL_RE = /<\s*tool_call\s*>/i;
+    OPEN_TOOL_CALLS_RE = /<\s*tool_calls\s*>/i;
     TOOL_CALL_OPENER = "<tool_call>";
+    TOOL_CALLS_OPENER = "<tool_calls>";
     MINIMAX_DELIMITER_RE = /\]<\]minimax\[>\[/gi;
+    DEEPSEEK_DSML_SENTINEL_RE = /｜\s*DSML\s*｜/gi;
     INVOKE_BLOCK_RE = /<\s*invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*invoke\s*>/gi;
     OPEN_INVOKE_RE = /<\s*invoke\b/i;
   }
@@ -255505,7 +255604,8 @@ function modelRowValue(model, usage, pricing) {
   const tokens2 = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`;
   if (isLocalModel(model)) return `${tokens2} \xB7 free`;
   const cost = costForModelUsage(model, usage, pricing);
-  return cost > 0 ? `${tokens2} \xB7 ${formatUsd(cost)}` : tokens2;
+  if (!hasModelPricing(model, pricing)) return `${tokens2} \xB7 unpriced`;
+  return `${tokens2} \xB7 ${cost > 0 ? formatUsd(cost) : "free"}`;
 }
 function buildFooterUsageTooltip(display, opts) {
   const { inputTokens, outputTokens, estimated } = display;
@@ -255537,7 +255637,11 @@ function buildFooterUsageTooltip(display, opts) {
       modelRows.push({ label: model, value: modelRowValue(model, modelUsage, opts.pricing) });
     }
   }
-  const note2 = estimated ? "Estimated \u2014 provider usage not reported yet" : cost ? null : "No pricing for this model";
+  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model];
+  const hasUnpricedUsage = pricedModels.some(
+    (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing)
+  );
+  const note2 = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models without pricing" : "No pricing for this model" : null;
   return {
     header: `Usage \xB7 ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
     rows,
@@ -291114,31 +291218,62 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     const uniqueTitles = new Set(batch2.map((req) => req.title));
     const sharedTitle = uniqueTitles.size === 1 ? batch2[0]?.title ?? "" : null;
     const showRowTitles = count2 > 1 && sharedTitle === null;
-    heading.textContent = count2 <= 1 ? batch2[0]?.title ?? "" : sharedTitle ?? `${String(count2)} requests`;
-    items.replaceChildren(
-      ...batch2.map((req) => {
-        const rowChildren = [];
-        if (showRowTitles) rowChildren.push(el("div", { class: "approval-item-title" }, req.title));
-        if (singleModelCompare && req.comparisonModels && req === batch2[0]) {
-          const pickers = createComparisonModelPickers(api3, req.comparisonModels, req.body);
-          readComparisonModels = pickers.read;
-          rowChildren.push(pickers.root);
-        } else {
-          if (req.bodyAdvice) {
-            rowChildren.push(el("div", { class: "approval-advice" }, req.bodyAdvice));
-          }
-          if (collapseDetails) rowChildren.push(detailsToggle());
-          const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
-          const body = el("div", { class: bodyClass }, req.body);
-          if (collapseDetails && !detailsExpanded) body.hidden = true;
-          rowChildren.push(body);
-          if (req.bodyFooter) {
-            rowChildren.push(el("div", { class: "approval-footer" }, req.bodyFooter));
-          }
-        }
-        return el("div", { class: "approval-item" }, ...rowChildren);
-      })
+    const firstRequest = batch2[0];
+    const hasSharedContext = count2 > 1 && firstRequest !== void 0 && batch2.every(
+      (req) => req.type === firstRequest.type && req.title === firstRequest.title && req.bodyAdvice === firstRequest.bodyAdvice && req.bodyFooter === firstRequest.bodyFooter
     );
+    heading.textContent = count2 <= 1 ? batch2[0]?.title ?? "" : sharedTitle ?? `${String(count2)} requests`;
+    const requestBody = (req) => {
+      const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
+      const body = el("div", { class: bodyClass }, req.body);
+      if (collapseDetails && !detailsExpanded) body.hidden = true;
+      return body;
+    };
+    if (hasSharedContext) {
+      const sharedChildren = [];
+      if (firstRequest.bodyAdvice) {
+        sharedChildren.push(el("div", { class: "approval-advice" }, firstRequest.bodyAdvice));
+      }
+      const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
+      sharedChildren.push(
+        el(
+          "div",
+          { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
+          ...batch2.map((req) => {
+            const body = requestBody(req);
+            body.setAttribute("role", "listitem");
+            return body;
+          })
+        )
+      );
+      if (firstRequest.bodyFooter) {
+        sharedChildren.push(el("div", { class: "approval-footer" }, firstRequest.bodyFooter));
+      }
+      items.replaceChildren(el("div", { class: "approval-item" }, ...sharedChildren));
+    } else {
+      items.replaceChildren(
+        ...batch2.map((req) => {
+          const rowChildren = [];
+          if (showRowTitles)
+            rowChildren.push(el("div", { class: "approval-item-title" }, req.title));
+          if (singleModelCompare && req.comparisonModels && req === batch2[0]) {
+            const pickers = createComparisonModelPickers(api3, req.comparisonModels, req.body);
+            readComparisonModels = pickers.read;
+            rowChildren.push(pickers.root);
+          } else {
+            if (req.bodyAdvice) {
+              rowChildren.push(el("div", { class: "approval-advice" }, req.bodyAdvice));
+            }
+            if (collapseDetails) rowChildren.push(detailsToggle());
+            rowChildren.push(requestBody(req));
+            if (req.bodyFooter) {
+              rowChildren.push(el("div", { class: "approval-footer" }, req.bodyFooter));
+            }
+          }
+          return el("div", { class: "approval-item" }, ...rowChildren);
+        })
+      );
+    }
     approveButton.textContent = count2 > 1 ? `Approve all (${String(count2)})` : "Approve";
     rejectButton.textContent = count2 > 1 ? `Reject all (${String(count2)})` : "Reject";
     const onceLabel = approveOnceGrant();
@@ -291256,6 +291391,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
         show3();
       } else {
         renderBatch();
+        startSettle();
       }
     }
     syncAttention();

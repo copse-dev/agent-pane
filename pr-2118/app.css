@@ -6203,6 +6203,7 @@ dialog.settings-overlay::backdrop {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  scroll-padding-bottom: calc(var(--action-min-height) + var(--spacing-lg) + var(--spacing-xl) + var(--spacing-lg) + var(--spacing-md));
   padding: calc(var(--spacing-xl) * 2) var(--spacing-xl) 0;
 }
 .settings-section,
@@ -8417,6 +8418,23 @@ dialog.settings-overlay::backdrop {
 }
 .approval-body-code {
   font-family: var(--font-mono);
+}
+.approval-body-list {
+  overflow-y: auto;
+  max-height: 320px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius);
+}
+.approval-body-list .approval-body {
+  overflow: visible;
+  max-height: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.approval-body-list .approval-body + .approval-body {
+  border-top: 1px solid var(--border-subtle, var(--border));
 }
 .approval-buttons {
   margin-top: var(--spacing-sm);
