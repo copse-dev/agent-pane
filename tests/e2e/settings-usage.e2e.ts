@@ -35,7 +35,28 @@ describe('settings usage panel', function () {
           threadId: 'thread-1',
           projectId: 'e2e-usage-panel',
         },
+        {
+          at: now,
+          model: 'openrouter:vendor/free',
+          source: 'agent',
+          inputTokens: 1000,
+          outputTokens: 100,
+          threadId: 'thread-1',
+          projectId: 'e2e-usage-panel',
+        },
+        {
+          at: now,
+          model: 'openrouter:vendor/unknown',
+          source: 'agent',
+          inputTokens: 1000,
+          outputTokens: 100,
+          threadId: 'thread-1',
+          projectId: 'e2e-usage-panel',
+        },
       ],
+      openRouterPricing: {
+        'openrouter:vendor/free': { inputPricePerMTok: 0, outputPricePerMTok: 0 },
+      },
     })
     await browser.reloadSession()
   })
@@ -53,8 +74,8 @@ describe('settings usage panel', function () {
         localModels: Array<{ model: string }>
       }
     }
-    assert.equal(summary.ledgerEventCount, 2)
-    assert.ok(summary.day.totalInputTokens >= 1700)
+    assert.equal(summary.ledgerEventCount, 4)
+    assert.ok(summary.day.totalInputTokens >= 3700)
     assert.ok(summary.day.cloudModels.some((m) => m.model === 'claude-sonnet-4-6'))
     assert.ok(summary.day.localModels.some((m) => m.model.startsWith('lmstudio:')))
 
@@ -67,7 +88,7 @@ describe('settings usage panel', function () {
     const config = JSON.parse(readFileSync(join(getCopseUserDataDir(), 'config.json'), 'utf8')) as {
       usageEvents?: unknown[]
     }
-    assert.equal(config.usageEvents?.length, 2)
+    assert.equal(config.usageEvents?.length, 4)
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
@@ -117,8 +138,48 @@ describe('settings usage panel', function () {
     await expect($('.usage-model-group:nth-of-type(1) tbody tr')).toBeDisplayed()
     await expect($('.usage-model-group:nth-of-type(2) tbody tr')).toBeDisplayed()
 
+    const cloudRows = await browser.execute(() =>
+      [...document.querySelectorAll('.usage-model-group:nth-of-type(1) tbody tr')].map(
+        (row) => row.textContent ?? '',
+      ),
+    )
+    assert.ok(
+      cloudRows.some((row) => row.includes('openrouter:vendor/free') && row.includes('free')),
+      'published zero-rate route should render as free',
+    )
+    assert.ok(
+      cloudRows.some(
+        (row) => row.includes('openrouter:vendor/unknown') && row.includes('unpriced'),
+      ),
+      'unknown route should render as unpriced',
+    )
+
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-limits.png')
+
+    const cloudGroup = $('.usage-model-group:nth-of-type(1)')
+    await prepareE2eScreenshot()
+    await browser.execute(() => {
+      document
+        .querySelector('.usage-model-group:nth-of-type(1)')
+        ?.scrollIntoView({ block: 'center', inline: 'nearest' })
+    })
+    await browser.pause(100)
+    const pricingClearance = await browser.execute(() => {
+      const group = document.querySelector('.usage-model-group:nth-of-type(1)')
+      const footer = document.querySelector('.settings-buttons')
+      if (!group || !footer) return null
+      return {
+        groupBottom: group.getBoundingClientRect().bottom,
+        footerTop: footer.getBoundingClientRect().top,
+      }
+    })
+    assert.ok(pricingClearance, 'expected pricing table and sticky settings footer geometry')
+    assert.ok(
+      pricingClearance.groupBottom <= pricingClearance.footerTop,
+      `pricing states must remain fully visible above the sticky settings footer: ${JSON.stringify(pricingClearance)}`,
+    )
+    await cloudGroup.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'settings-usage-pricing-states.png'))
 
     await browser.execute(() => {
       document.querySelector('.usage-credit-grant')?.scrollIntoView({ block: 'center' })

@@ -77,9 +77,24 @@ describe('model card cache', () => {
   })
 
   it('collapses concurrent requests for the same id', async () => {
-    const api = stubApi({ a: CARD })
-    await Promise.all([requestModelCards(['a'], api), requestModelCards(['a'], api)])
-    assert.equal(api.batches.length, 1)
+    let release: ((answers: Record<string, ModelCardCandidate | null>) => void) | undefined
+    const batches: string[][] = []
+    const api = {
+      resolve: (ids: string[]): Promise<Record<string, ModelCardCandidate | null>> => {
+        batches.push(ids)
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      },
+    }
+
+    const prefetch = requestModelCards(['a'], api)
+    const hover = requestModelCards(['a'], api)
+    assert.equal(batches.length, 1)
+    release?.({ a: CARD })
+
+    assert.equal(await prefetch, true)
+    assert.equal(await hover, true, 'the second caller must repaint when the shared answer lands')
   })
 
   it('leaves an id unresolved when the bridge omits it, so a retry is possible', async () => {

@@ -449,6 +449,14 @@ app
     // plugin the user turned off in a previous session.
     getPluginService()
     const registry = createRegistry()
+    // Start skill discovery while the rest of main-process boot and the tool
+    // availability probe continue. The renderer can become interactive before
+    // that probe finishes; skills:list waits for this in-flight scan so the
+    // first slash-picker open cannot observe the initial empty cache.
+    const skillsReady = initSkillsRegistry()
+    // Keep a rejection handled while boot awaits the tool probe, then surface it
+    // at the existing skills-mcp gate below.
+    void skillsReady.catch(() => undefined)
     // The only Electron-specific seam the agent run needs: forward stream chunks
     // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.
     // Guard against a window destroyed mid-run (e.g. closed while the agent streams).
@@ -854,7 +862,7 @@ app
     syncCiInvestigatorTools(registry)
 
     recordStartupPhase('skills-mcp')
-    await initSkillsRegistry()
+    await skillsReady
     await initAgentsRegistry()
     registerSkillTools(registry)
     await loadCustomTools(registry)

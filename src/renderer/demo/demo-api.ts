@@ -392,8 +392,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }
       },
       onApprovalRequest: (handler) => {
-        if (scenario.approvalRequest) {
-          const request = structuredClone(scenario.approvalRequest)
+        for (const approvalRequest of scenario.approvalRequests ?? []) {
+          const request = structuredClone(approvalRequest)
           setTimeout(() => {
             handler(request)
           }, 0)
@@ -667,6 +667,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           localModels: [],
           totalInputTokens: 0,
           totalOutputTokens: 0,
+          hasUnpricedCloudUsage: false,
         }
         return resolved({
           day: emptyPeriod,
