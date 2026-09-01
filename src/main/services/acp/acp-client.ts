@@ -706,7 +706,10 @@ export interface AcpTransport {
 }
 
 /** Transport injection point so tests can wire an in-process agent. */
-export type AcpTransportFactory = (config: AcpAgentSpawnConfig) => Promise<AcpTransport>
+export type AcpTransportFactory = (
+  config: AcpAgentSpawnConfig,
+  signal?: AbortSignal,
+) => Promise<AcpTransport>
 
 function acpChildStdoutStream(
   child: ChildProcess,
@@ -793,12 +796,15 @@ function captureAcpChildStderr(
   return { tail: () => tail, resourceFault: faults.current }
 }
 
-async function spawnTransport(config: AcpAgentSpawnConfig): Promise<AcpTransport> {
+async function spawnTransport(
+  config: AcpAgentSpawnConfig,
+  signal?: AbortSignal,
+): Promise<AcpTransport> {
   // When the active project is an SSH workspace and the user opted in, spawn the
   // agent on the remote host (stdio over SSH) instead of locally — see
   // docs/plans/acp-over-ssh.md. Otherwise fall through to the local spawn.
   const sshTarget = acpSshTarget(config.cwd)
-  if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget)
+  if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget, signal)
   let child: ChildProcess
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     try {
@@ -888,8 +894,9 @@ export async function openAcpSession(
   createTransport: AcpTransportFactory = spawnTransport,
   resumeSessionId?: string,
   trace: AcpWireSink | null = null,
+  signal?: AbortSignal,
 ): Promise<OpenAcpSession> {
-  const transport = await createTransport(config)
+  const transport = await createTransport(config, signal)
   // Opt-in diagnostic (`COPSE_DEBUG_ACP_UPDATES=1`): record every inbound
   // JSON-RPC message verbatim, before the SDK's schema parse strips unmodelled
   // fields and before `sessionUpdateToStreamChunk` normalizes what survives.
