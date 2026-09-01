@@ -132,6 +132,7 @@ function setup(
             localModels: [],
             totalInputTokens: 0,
             totalOutputTokens: 0,
+            hasUnpricedCloudUsage: false,
           },
           month: {
             totalCostUsd: 0,
@@ -139,6 +140,7 @@ function setup(
             localModels: [],
             totalInputTokens: 0,
             totalOutputTokens: 0,
+            hasUnpricedCloudUsage: false,
           },
           period90d: {
             totalCostUsd: 0,
@@ -146,6 +148,7 @@ function setup(
             localModels: [],
             totalInputTokens: 0,
             totalOutputTokens: 0,
+            hasUnpricedCloudUsage: false,
           },
           allTime: {
             totalCostUsd: 0,
@@ -153,6 +156,7 @@ function setup(
             localModels: [],
             totalInputTokens: 0,
             totalOutputTokens: 0,
+            hasUnpricedCloudUsage: false,
           },
           trackingStartedAt: null,
           ledgerEventCount: 0,

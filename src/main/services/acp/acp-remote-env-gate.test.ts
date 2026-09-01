@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { setApprovalHandler } from '../approval.ts'
 import {
   gateRemoteAcpEnvForward,
   remoteAcpAuthRequiredHint,
@@ -11,10 +12,7 @@ import {
 
 const REMOTE_ROOT = '/remote/project'
 
-// The SSH-target + env path is deliberately untested here: it opens the real
-// approval dialog, which needs a window. Its fail-closed shape (no dialog →
-// env deleted) is enforced by gateRemoteAcpEnvForward's `.catch(() => false)`.
-describe('gateRemoteAcpEnvForward (paths that never prompt)', () => {
+describe('gateRemoteAcpEnvForward', () => {
   beforeEach(async () => {
     resetRemoteAcpEnvDecisionsForTests()
     await setSetting('sshWorkspaceEnabled', true)
@@ -28,6 +26,7 @@ describe('gateRemoteAcpEnvForward (paths that never prompt)', () => {
   })
 
   afterEach(async () => {
+    setApprovalHandler(null)
     resetRemoteAcpEnvDecisionsForTests()
     setWorkspaceRootForTest(null)
     storageSet('activeProjectId', null)
@@ -51,6 +50,90 @@ describe('gateRemoteAcpEnvForward (paths that never prompt)', () => {
     }
     await gateRemoteAcpEnvForward('claude-acp', config)
     assert.deepEqual(config.env, { ANTHROPIC_API_KEY: 'sk-local' })
+  })
+
+  it(
+    'cancels the prompt without remembering cancellation as denial',
+    { timeout: 500 },
+    async () => {
+      let handlerSignal: AbortSignal | undefined
+      let markPrompted!: () => void
+      const prompted = new Promise<void>((resolve) => {
+        markPrompted = resolve
+      })
+      setApprovalHandler(
+        (_request, approvalSignal) =>
+          new Promise(() => {
+            handlerSignal = approvalSignal
+            markPrompted()
+          }),
+      )
+      const controller = new AbortController()
+      const cancelledConfig = {
+        command: 'claude-code-acp',
+        cwd: REMOTE_ROOT,
+        env: { ANTHROPIC_API_KEY: 'sk-cancelled' },
+      }
+      const cancelled = gateRemoteAcpEnvForward('claude-acp', cancelledConfig, controller.signal)
+      await prompted
+
+      controller.abort()
+
+      await cancelled
+      assert.equal(handlerSignal?.aborted, true)
+      assert.equal(cancelledConfig.env, undefined)
+
+      let promptedAgain = false
+      setApprovalHandler(() => {
+        promptedAgain = true
+        return Promise.resolve({ approved: true, remember: false })
+      })
+      const nextConfig = {
+        command: 'claude-code-acp',
+        cwd: REMOTE_ROOT,
+        env: { ANTHROPIC_API_KEY: 'sk-next-run' },
+      }
+      await gateRemoteAcpEnvForward('claude-acp', nextConfig, new AbortController().signal)
+      assert.equal(promptedAgain, true)
+      assert.deepEqual(nextConfig.env, { ANTHROPIC_API_KEY: 'sk-next-run' })
+    },
+  )
+
+  it('coalesces concurrent prompts and remembers the shared answer', async () => {
+    let prompts = 0
+    let approve!: () => void
+    setApprovalHandler(
+      () =>
+        new Promise((resolve) => {
+          prompts += 1
+          approve = (): void => {
+            resolve({ approved: true, remember: false })
+          }
+        }),
+    )
+    const first = {
+      command: 'claude-code-acp',
+      cwd: REMOTE_ROOT,
+      env: { ANTHROPIC_API_KEY: 'sk-first' },
+    }
+    const second = {
+      command: 'claude-code-acp',
+      cwd: REMOTE_ROOT,
+      env: { ANTHROPIC_API_KEY: 'sk-second' },
+    }
+    const firstPending = gateRemoteAcpEnvForward('claude-acp', first, new AbortController().signal)
+    const secondPending = gateRemoteAcpEnvForward(
+      'claude-acp',
+      second,
+      new AbortController().signal,
+    )
+    await Promise.resolve()
+
+    assert.equal(prompts, 1)
+    approve()
+    await Promise.all([firstPending, secondPending])
+    assert.deepEqual(first.env, { ANTHROPIC_API_KEY: 'sk-first' })
+    assert.deepEqual(second.env, { ANTHROPIC_API_KEY: 'sk-second' })
   })
 })
 

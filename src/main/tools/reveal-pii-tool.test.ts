@@ -13,8 +13,8 @@ import {
 import { normalizeToolExecuteResult } from '@shared/types'
 import { revealPiiTool } from './reveal-pii-tool.ts'
 
-const runReveal = async (placeholder: string): Promise<string> =>
-  normalizeToolExecuteResult(await revealPiiTool.execute({ placeholder }, signal)).result
+const runReveal = async (placeholder: string, runSignal = signal): Promise<string> =>
+  normalizeToolExecuteResult(await revealPiiTool.execute({ placeholder }, runSignal)).result
 
 function fakeGuard(): PiiGuard {
   const reverse = new Map<string, string>()
@@ -75,6 +75,29 @@ describe('reveal_pii tool', () => {
     })
     assert.match(out, /declined/)
     assert.doesNotMatch(out, /john@example\.com/)
+  })
+
+  it('dismisses a pending reveal prompt when the run aborts', { timeout: 500 }, async () => {
+    let handlerSignal: AbortSignal | undefined
+    setApprovalHandler(
+      (_request, approvalSignal) =>
+        new Promise(() => {
+          handlerSignal = approvalSignal
+        }),
+    )
+    const controller = new AbortController()
+    const pending = runWithActiveRunIdentity('thread-1', () => {
+      setActiveRunThread('thread-1')
+      return runReveal('[PII_1]', controller.signal)
+    })
+    await Promise.resolve()
+
+    controller.abort()
+
+    const out = await pending
+    assert.match(out, /declined/)
+    assert.doesNotMatch(out, /john@example\.com/)
+    assert.equal(handlerSignal?.aborted, true)
   })
 
   it('does not prompt for an unknown placeholder', async () => {
