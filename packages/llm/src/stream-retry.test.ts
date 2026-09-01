@@ -96,7 +96,7 @@ describe('isRetryableStreamError', () => {
     assert.equal(isRetryableStreamError(new Error('LM Studio: model failed to load')), false)
   })
 
-  it('does not retry a deterministic OpenRouter routing-policy failure, even as a 5xx', () => {
+  it('keeps routing-policy failures out of the generic multi-retry bucket', () => {
     const current = Object.assign(
       new Error(
         '503 {"error":{"message":"There is no available model provider that meets your routing requirements.","code":503}}',
@@ -250,6 +250,79 @@ describe('yieldStreamWithRetry', () => {
       for await (const _ of yieldStreamWithRetry(run, { maxAttempts: 2 })) void _
     })
     assert.equal(attempts, 2)
+  })
+
+  it('retries an OpenRouter routing-policy failure exactly once', async () => {
+    let attempts = 0
+    const routingPolicyError = Object.assign(
+      new Error('No endpoints found matching your data policy (Zero data retention).'),
+      { status: 404 },
+    )
+    const run = failingStream(() => {
+      attempts++
+      throw routingPolicyError
+    })
+
+    await assert.rejects(async () => {
+      for await (const _ of yieldStreamWithRetry(run, {
+        maxAttempts: 4,
+        delayMs: () => 0,
+      })) {
+        void _
+      }
+    }, routingPolicyError)
+
+    assert.equal(attempts, 2)
+  })
+
+  it('recovers when a routing-policy retry finds an eligible endpoint', async () => {
+    let attempts = 0
+    async function* run(): AsyncGenerator<string> {
+      attempts++
+      if (attempts === 1) {
+        throw Object.assign(
+          new Error('There is no available model provider that meets your routing requirements.'),
+          { status: 503 },
+        )
+      }
+      yield 'ok'
+    }
+
+    const out: string[] = []
+    for await (const value of yieldStreamWithRetry(run, {
+      maxAttempts: 4,
+      delayMs: () => 0,
+    })) {
+      out.push(value)
+    }
+
+    assert.deepEqual(out, ['ok'])
+    assert.equal(attempts, 2)
+  })
+
+  it('does not retry a routing-policy failure after stream content', async () => {
+    let attempts = 0
+    async function* run(): AsyncGenerator<string> {
+      attempts++
+      yield 'partial'
+      throw Object.assign(
+        new Error('No endpoints found matching your data policy (Zero data retention).'),
+        { status: 404 },
+      )
+    }
+
+    const out: string[] = []
+    await assert.rejects(async () => {
+      for await (const value of yieldStreamWithRetry(run, {
+        maxAttempts: 4,
+        delayMs: () => 0,
+      })) {
+        out.push(value)
+      }
+    })
+
+    assert.deepEqual(out, ['partial'])
+    assert.equal(attempts, 1)
   })
 
   it('stops retrying when the signal is aborted', async () => {
