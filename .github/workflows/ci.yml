@@ -375,15 +375,16 @@ jobs:
   # (no PAT) or can't run (fork PR).
   #
   # Scope to files changed vs the PR base (not the whole tree): full-repo
-  # `eslint . --fix` + `prettier --write .` regularly OOM-kill (exit 137) on
-  # the 6 GB check runners under fleet load, painting every PR red before
-  # precheck even starts. Diff-scoped autofix is enough — the gate half still
-  # checks the whole tree — and keeps peak memory proportional to the PR.
+  # `eslint . --fix` regularly OOM-kills (exit 137) on the 6 GB check runners
+  # under fleet load, painting every PR red before precheck even starts —
+  # `prettier --write .` did too, before oxfmt replaced it. Diff-scoped autofix
+  # is enough — the gate half still checks the whole tree — and keeps peak
+  # memory proportional to the PR.
   #
   # A SEPARATE job rather than folded into `precheck`: precheck checks out the
   # merge ref (fetch-depth: 0) so the e2e oracle can diff against base, whereas
-  # committing needs the branch (head_ref) checkout. Prettier runs last so it tidies whatever
-  # ESLint rewrote; `eslint-config-prettier` means the two never fight.
+  # committing needs the branch (head_ref) checkout. The formatter runs last so it tidies
+  # whatever ESLint rewrote; `eslint-config-prettier` means the two never fight.
   #
   # Pushed as the copse-release-bot App rather than with the default
   # GITHUB_TOKEN: GitHub won't start a run for a GITHUB_TOKEN push (recursion
@@ -399,7 +400,7 @@ jobs:
   autoformat:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
-    # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint/prettier (see precheck).
+    # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
     runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
@@ -489,8 +490,10 @@ jobs:
         if: steps.changed.outputs.any == 'true'
       # `|| true` on eslint: a non-autofixable lint error must not abort the run —
       # we still want the fixes ESLint did apply to land. Real lint failures stay
-      # the job of precheck's `lint` gate, not this fixer. Prettier retries once
-      # on OOM (137); a second kill fails the job so a wedged runner is visible.
+      # the job of precheck's `lint` gate, not this fixer. The formatter retries
+      # once on OOM (137); a second kill fails the job so a wedged runner is
+      # visible. oxfmt is a Rust binary and has not been seen to OOM here, but
+      # the retry costs nothing and this fleet is where the kills happened.
       - name: Autofix changed files
         if: steps.changed.outputs.any == 'true'
         run: |
@@ -498,14 +501,14 @@ jobs:
           echo "Autofixing ${#files[@]} changed file(s)"
           npx eslint --fix -- "${files[@]}" || true
           set +e
-          npx prettier --write -- "${files[@]}"
+          npx oxfmt --write -- "${files[@]}"
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then exit 0; fi
           if [ "$status" -ne 137 ]; then exit "$status"; fi
-          echo "::warning::prettier OOM-killed (137); retrying once"
+          echo "::warning::oxfmt OOM-killed (137); retrying once"
           sleep 10
-          npx prettier --write -- "${files[@]}"
+          npx oxfmt --write -- "${files[@]}"
       - name: Commit and push fixes
         if: steps.changed.outputs.any == 'true'
         run: |
@@ -515,7 +518,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "style: apply eslint --fix and prettier"
+          git commit -am "style: apply eslint --fix and oxfmt"
           git push
 
   check:

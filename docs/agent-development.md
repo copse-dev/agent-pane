@@ -115,7 +115,7 @@ thread references. See [`thread-store-format.md`](thread-store-format.md).
 ## Focused validation
 
 The post-edit hook runs `scripts/hook-file-check.mts` through the Copse, Cursor, and Claude hook
-configs. It auto-applies Prettier and reports type-unaware ESLint findings. A reported rewrite makes
+configs. It auto-applies oxfmt and reports type-unaware ESLint findings. A reported rewrite makes
 the agent's prior view stale, so re-read that file. Type-aware rules and `tsc` remain part of
 `npm run check`.
 

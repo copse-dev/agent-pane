@@ -614,7 +614,7 @@ async function main(): Promise<void> {
 // from here, and at module scope this ran the whole sync on every unit run:
 // a network fetch to Artificial Analysis, then a rewrite of two tracked files
 // (`data/intellect.json` and `model-intellect.generated.ts`, the latter through
-// `prettier --write`). A green `npm run check` therefore left the working tree
+// `oxfmt --write`). A green `npm run check` therefore left the working tree
 // dirty, and the bumped `// Last synced:` line went on to collide with the
 // scheduled sync in a real merge conflict.
 //
