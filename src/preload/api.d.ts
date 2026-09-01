@@ -230,6 +230,7 @@ export interface ApiClient {
         questions: { question: string; options?: string[] }[]
       }) => void,
     ) => () => void
+    onAskUserCancelled: (handler: (req: { id: string }) => void) => () => void
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => () => void
     onRefreshContextEstimate: (handler: () => void) => () => void
     /**

@@ -313,6 +313,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('agent:ask_user_request', listener)
       }
     },
+    onAskUserCancelled: (handler: (req: { id: string }) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+        handler(req)
+      }
+      ipcRenderer.on('agent:ask_user_cancelled', listener)
+      return (): void => {
+        ipcRenderer.off('agent:ask_user_cancelled', listener)
+      }
+    },
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => {
       const listener = (
         _e: Electron.IpcRendererEvent,

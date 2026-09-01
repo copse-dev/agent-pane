@@ -23,6 +23,7 @@ interface AskUserRequest {
 
 interface Harness {
   emit: (req: AskUserRequest) => void
+  cancel: (id: string) => void
   responses: { id: string; answers: string[] }[]
 }
 
@@ -30,6 +31,7 @@ interface Harness {
 // every ask.respond call so we can assert the answers handed back.
 function stubApi(): { api: ApiClient; harness: Harness } {
   let listener: ((req: AskUserRequest) => void) | null = null
+  let cancelledListener: ((req: { id: string }) => void) | null = null
   const responses: { id: string; answers: string[] }[] = []
   const base = createFakeApi()
   const api: ApiClient = {
@@ -38,6 +40,10 @@ function stubApi(): { api: ApiClient; harness: Harness } {
       ...base.agent,
       onAskUserRequest: (handler: (req: AskUserRequest) => void): (() => void) => {
         listener = handler
+        return (): void => {}
+      },
+      onAskUserCancelled: (handler: (req: { id: string }) => void): (() => void) => {
+        cancelledListener = handler
         return (): void => {}
       },
     },
@@ -57,6 +63,10 @@ function stubApi(): { api: ApiClient; harness: Harness } {
         questions: req.questions,
         ...(req.threadId === undefined ? {} : { threadId: req.threadId }),
       })
+    },
+    cancel: (id) => {
+      if (!cancelledListener) throw new Error('no ask_user cancellation listener registered')
+      cancelledListener({ id })
     },
     responses,
   }
@@ -223,6 +233,32 @@ describe('ask_user dialog (component)', () => {
       { id: 'a', answers: ['1'] },
       { id: 'b', answers: ['2'] },
     ])
+  })
+
+  it('dismisses a cancelled active request without responding on its behalf', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'cancelled', questions: [{ question: 'Still waiting?' }] })
+    assert.equal(dialog().open, true)
+
+    harness.cancel('cancelled')
+
+    assert.equal(dialog().open, false)
+    assert.deepEqual(harness.responses, [])
+  })
+
+  it('removes a cancelled queued request before showing the next question', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'active', questions: [{ question: 'First?' }] })
+    harness.emit({ id: 'cancelled', questions: [{ question: 'Never show?' }] })
+    harness.emit({ id: 'next', questions: [{ question: 'Third?' }] })
+
+    harness.cancel('cancelled')
+    at(inputs(), 0).value = 'done'
+    submitForm()
+
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'Third?')
   })
 })
 
