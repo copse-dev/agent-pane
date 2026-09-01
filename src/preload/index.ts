@@ -1267,6 +1267,9 @@ if (process.env['COPSE_E2E'] === '1') {
     requestCloseConfirm() {
       return ipcRenderer.invoke('test:requestCloseConfirm')
     },
+    rememberOpenRouterPricingBatches(batches: unknown) {
+      return ipcRenderer.invoke('test:rememberOpenRouterPricingBatches', batches)
+    },
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')
     },

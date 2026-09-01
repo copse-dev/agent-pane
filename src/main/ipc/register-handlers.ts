@@ -102,7 +102,10 @@ import {
   refreshHuggingFaceModels,
   HUGGINGFACE_SLUG,
 } from '../services/providers/extra-providers-store.ts'
-import { resolveModelPricing } from '../services/providers/model-pricing-store.ts'
+import {
+  rememberOpenRouterPricing,
+  resolveModelPricing,
+} from '../services/providers/model-pricing-store.ts'
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
@@ -2533,6 +2536,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:requestCloseConfirm', (event) => {
       assertMainFrameSender(event, win)
       return requestCloseConfirmation()
+    })
+    ipcMain.handle('test:rememberOpenRouterPricingBatches', async (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const modelSchema = z.object({
+        id: z.string().min(1).max(256),
+        inputPricePerMTok: z.number().nonnegative().nullable(),
+        outputPricePerMTok: z.number().nonnegative().nullable(),
+      })
+      const batches = parseIpcArgs(z.array(z.array(modelSchema).min(1).max(32)).min(1).max(8), [
+        raw,
+      ])
+      await Promise.all(batches.map((models) => rememberOpenRouterPricing(models)))
+      return resolveModelPricing()
     })
 
     ipcMain.handle('test:createMainWindow', (event) => {

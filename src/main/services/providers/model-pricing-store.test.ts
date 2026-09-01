@@ -37,6 +37,47 @@ describe('model pricing store', () => {
     assert.equal(persisted['openrouter:vendor/current']?.inputPricePerMTok, 1)
   })
 
+  it('keeps disjoint rates remembered while an earlier write is pending', async () => {
+    let stored = {}
+    let releaseFirstWrite: (() => void) | undefined
+    let markFirstWriteStarted: (() => void) | undefined
+    const firstWriteStarted = new Promise<void>((resolve) => {
+      markFirstWriteStarted = resolve
+    })
+    const firstWriteReleased = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve
+    })
+    let writeCount = 0
+    const store = {
+      read: (): typeof stored => stored,
+      write: async (pricing: typeof stored): Promise<void> => {
+        writeCount += 1
+        if (writeCount === 1) {
+          markFirstWriteStarted?.()
+          await firstWriteReleased
+        }
+        stored = pricing
+      },
+    }
+
+    const rememberFirst = rememberOpenRouterPricing(
+      [{ id: 'vendor/first', inputPricePerMTok: 1, outputPricePerMTok: 2 }],
+      store,
+    )
+    await firstWriteStarted
+    const rememberSecond = rememberOpenRouterPricing(
+      [{ id: 'vendor/second', inputPricePerMTok: 3, outputPricePerMTok: 4 }],
+      store,
+    )
+    releaseFirstWrite?.()
+    await Promise.all([rememberFirst, rememberSecond])
+
+    assert.deepEqual(Object.keys(stored).sort(), [
+      'openrouter:vendor/first',
+      'openrouter:vendor/second',
+    ])
+  })
+
   it('takes the newer rate when a model is repriced upstream', async () => {
     await rememberOpenRouterPricing([{ id: 'a/b', inputPricePerMTok: 1, outputPricePerMTok: 1 }])
     await rememberOpenRouterPricing([{ id: 'a/b', inputPricePerMTok: 5, outputPricePerMTok: 9 }])

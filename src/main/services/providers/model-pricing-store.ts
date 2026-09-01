@@ -26,10 +26,23 @@ import {
 } from '@copse/llm/model-pricing.ts'
 import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
+import { runSerialized } from '../storage/write-queue.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 
 /** Settings key holding the last-seen OpenRouter catalog rates. */
 export const OPENROUTER_PRICING_KEY = 'openRouterPricing'
+
+interface OpenRouterPricingStore {
+  read: () => ModelPricingMap
+  write: (pricing: ModelPricingMap) => Promise<void>
+}
+
+const openRouterPricingStore: OpenRouterPricingStore = {
+  read: getPersistedOpenRouterPricing,
+  write: (pricing) => setSetting(OPENROUTER_PRICING_KEY, pricing),
+}
+
+const OPENROUTER_PRICING_MUTATION_QUEUE = 'openrouter-pricing:mutation'
 
 /** Last-seen OpenRouter rates, keyed `openrouter:<modelId>`. */
 export function getPersistedOpenRouterPricing(): ModelPricingMap {
@@ -47,11 +60,21 @@ export function getPersistedOpenRouterPricing(): ModelPricingMap {
  */
 export async function rememberOpenRouterPricing(
   models: readonly PricedCatalogModel[],
+  store: OpenRouterPricingStore = openRouterPricingStore,
 ): Promise<void> {
   const fresh = openRouterPricingMap(models)
   if (Object.keys(fresh).length === 0) return
-  const merged = mergeModelPricing(getPersistedOpenRouterPricing(), fresh)
-  await setSetting(OPENROUTER_PRICING_KEY, merged)
+  await runSerialized(OPENROUTER_PRICING_MUTATION_QUEUE, () =>
+    rememberOpenRouterPricingInOrder(fresh, store),
+  )
+}
+
+async function rememberOpenRouterPricingInOrder(
+  fresh: ModelPricingMap,
+  store: OpenRouterPricingStore,
+): Promise<void> {
+  const merged = mergeModelPricing(store.read(), fresh)
+  await store.write(merged)
 }
 
 /**
