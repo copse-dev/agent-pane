@@ -19,6 +19,11 @@ function pricingForModel(model: string, pricing?: ModelPricingMap): ModelPricing
   return info
 }
 
+/** Whether a cloud model has a real rate, including an explicitly free (zero-rate) route. */
+export function hasModelPricing(model: string, pricing?: ModelPricingMap): boolean {
+  return pricingForModel(model, pricing) !== null
+}
+
 /** USD estimate for a single model's token usage (cache-aware when breakdown is present). */
 export function costForModelUsage(
   model: string,
@@ -57,21 +62,28 @@ export function estimateUsageCost(
 
   let totalCost = 0
   let hasLocal = false
-  let hasBillable = false
+  let hasPricedCloud = false
+  let hasUnpricedCloud = false
 
   for (const [model, usage] of entries) {
     if (isLocalModel(model)) {
       hasLocal = true
       continue
     }
+    if (hasModelPricing(model, pricing)) hasPricedCloud = true
+    else hasUnpricedCloud = true
     const cost = costForModelUsage(model, usage, pricing)
-    if (cost > 0) hasBillable = true
     totalCost += cost
   }
 
-  if (!hasBillable && hasLocal) return 'free (local)'
-  if (totalCost === 0) return ''
+  if (totalCost === 0) {
+    if (hasUnpricedCloud) return ''
+    if (hasPricedCloud) return 'free'
+    if (hasLocal) return 'free (local)'
+    return ''
+  }
   const costStr = totalCost < 0.01 ? '<$0.01' : `~$${totalCost.toFixed(2)}`
+  if (hasUnpricedCloud) return `${costStr} (partial)`
   return hasLocal ? `${costStr} (+ local free)` : costStr
 }
 

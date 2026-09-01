@@ -124,15 +124,18 @@ async function ensureApproved(
   if (preChosen) return preChosen
   if (!comparisonNeedsApproval(models, isBillableModel)) return models
   if (approvedThreads.has(threadId)) return models
-  const { approved, remember, comparisonModels } = await requestApproval({
-    type: 'model-compare',
-    cause: 'review-spend',
-    title: 'Compare models on this diff?',
-    body: comparisonApprovalPickerIntro(),
-    comparisonModels: models,
-    allowRemember: true,
-    rememberLabel: 'Always run comparisons in this chat',
-  })
+  const { approved, remember, comparisonModels } = await requestApproval(
+    {
+      type: 'model-compare',
+      cause: 'review-spend',
+      title: 'Compare models on this diff?',
+      body: comparisonApprovalPickerIntro(),
+      comparisonModels: models,
+      allowRemember: true,
+      rememberLabel: 'Always run comparisons in this chat',
+    },
+    signal,
+  )
   // The user may have hit Stop while the modal was open; don't start a billable
   // run for an aborted turn.
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal.aborted can flip during the awaited approval; TS narrows it from the guard above

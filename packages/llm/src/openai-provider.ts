@@ -4,6 +4,7 @@ import type {
   LLMProvider,
   LLMMessage,
   LLMTool,
+  ModelUsage,
   ProviderStreamChunk,
 } from './wire-types.ts'
 import { withAppAttribution } from './app-attribution.ts'
@@ -82,7 +83,7 @@ function* yieldAssembledToolCalls(
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
   private readonly model: string
-  lastUsage: { inputTokens: number; outputTokens: number } | null = null
+  lastUsage: ModelUsage | null = null
 
   // `baseURL` lets this provider talk to any OpenAI-compatible server (e.g.
   // LM Studio at http://localhost:1234/v1). Such servers often ignore the API
@@ -211,13 +212,15 @@ export class OpenAIProvider implements LLMProvider {
 
         const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
         let finishReason: string | undefined
-        let streamUsage: { inputTokens: number; outputTokens: number } | null = null
+        let streamUsage: ModelUsage | null = null
 
         for await (const event of stream) {
           if (event.usage) {
+            const cacheReadTokens = event.usage.prompt_tokens_details?.cached_tokens
             streamUsage = {
               inputTokens: event.usage.prompt_tokens,
               outputTokens: event.usage.completion_tokens,
+              ...(typeof cacheReadTokens === 'number' ? { cacheReadTokens } : {}),
             }
             self.lastUsage = streamUsage
           }
@@ -273,6 +276,9 @@ export class OpenAIProvider implements LLMProvider {
             model,
             inputTokens: streamUsage.inputTokens,
             outputTokens: streamUsage.outputTokens,
+            ...(streamUsage.cacheReadTokens !== undefined
+              ? { cacheReadTokens: streamUsage.cacheReadTokens }
+              : {}),
           }
         }
         yield finishReason ? { type: 'done', stopReason: finishReason } : { type: 'done' }

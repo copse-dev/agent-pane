@@ -2,6 +2,7 @@ import { validateApiKey } from './validate-api-key.ts'
 import { resolveApiKey } from '../storage/settings.ts'
 
 interface CachedValidation {
+  key: string
   ok: boolean
   expiresAt: number
 }
@@ -13,21 +14,33 @@ const VALIDATION_TTL_MS = 5 * 60 * 1000
 const VALIDATION_FAILURE_TTL_MS = 30 * 1000
 
 const validationCache = new Map<string, CachedValidation>()
+let validationGeneration = 0
+const validationInflight = new Map<
+  string,
+  { key: string; generation: number; token: symbol; promise: Promise<boolean> }
+>()
 
 export function invalidateProviderKeyStatus(provider: string): void {
+  validationGeneration += 1
   validationCache.delete(provider)
+  validationInflight.delete(provider)
 }
 
 /** Seed the cache after an explicit validateKey call from Settings. */
-export function recordProviderKeyValidation(provider: string, ok: boolean): void {
+export function recordProviderKeyValidation(provider: string, key: string, ok: boolean): void {
+  validationGeneration += 1
+  validationInflight.delete(provider)
   validationCache.set(provider, {
+    key: key.trim(),
     ok,
     expiresAt: Date.now() + (ok ? VALIDATION_TTL_MS : VALIDATION_FAILURE_TTL_MS),
   })
 }
 
 export function clearProviderKeyStatusCache(): void {
+  validationGeneration += 1
   validationCache.clear()
+  validationInflight.clear()
 }
 
 /**
@@ -35,16 +48,33 @@ export function clearProviderKeyStatusCache(): void {
  * Absent or blank keys are unavailable; a present but rejected key is too.
  */
 export async function isProviderKeyUsable(provider: string): Promise<boolean> {
-  const key = resolveApiKey(provider)
-  if (!key?.trim()) return false
+  const key = resolveApiKey(provider)?.trim()
+  if (!key) return false
 
   const cached = validationCache.get(provider)
-  if (cached && cached.expiresAt > Date.now()) return cached.ok
+  if (cached?.key === key && cached.expiresAt > Date.now()) return cached.ok
+  const existing = validationInflight.get(provider)
+  if (existing?.key === key && existing.generation === validationGeneration) {
+    return existing.promise
+  }
 
-  const result = await validateApiKey(provider, key)
-  validationCache.set(provider, {
-    ok: result.ok,
-    expiresAt: Date.now() + (result.ok ? VALIDATION_TTL_MS : VALIDATION_FAILURE_TTL_MS),
-  })
-  return result.ok
+  const generation = validationGeneration
+  const token = Symbol(provider)
+  const promise = (async (): Promise<boolean> => {
+    try {
+      const result = await validateApiKey(provider, key)
+      if (generation === validationGeneration) {
+        validationCache.set(provider, {
+          key,
+          ok: result.ok,
+          expiresAt: Date.now() + (result.ok ? VALIDATION_TTL_MS : VALIDATION_FAILURE_TTL_MS),
+        })
+      }
+      return result.ok
+    } finally {
+      if (validationInflight.get(provider)?.token === token) validationInflight.delete(provider)
+    }
+  })()
+  validationInflight.set(provider, { key, generation, token, promise })
+  return promise
 }
