@@ -23,7 +23,7 @@ describe('resolveAgentChatModel', () => {
   it('falls back to the default local chat model when a remote agent has no valid key', async () => {
     await setSetting('model', 'remote-agent:cursor')
     setApiKey('cursor', 'cur_invalid')
-    recordProviderKeyValidation('cursor', false)
+    recordProviderKeyValidation('cursor', 'cur_invalid', false)
 
     const resolved = await resolveAgentChatModel('remote-agent:cursor')
     assert.equal(resolved.model, FALLBACK_APP_CHAT_MODEL)
@@ -35,7 +35,7 @@ describe('resolveAgentChatModel', () => {
 
   it('reports the blocked selection so the turn can offer an alternative', async () => {
     setApiKey('anthropic', 'sk-ant-api03-invalid')
-    recordProviderKeyValidation('anthropic', false)
+    recordProviderKeyValidation('anthropic', 'sk-ant-api03-invalid', false)
 
     const resolved = await resolveAgentChatModel('remote-agent:anthropic#claude-opus-4-8')
     assert.deepEqual(resolved.blockedRemoteAgent, {
@@ -57,7 +57,7 @@ describe('resolveAgentChatModel', () => {
 
   it('keeps a remote agent when its key validated successfully', async () => {
     setApiKey('cursor', 'cur_valid')
-    recordProviderKeyValidation('cursor', true)
+    recordProviderKeyValidation('cursor', 'cur_valid', true)
 
     const resolved = await resolveAgentChatModel('remote-agent:cursor')
     assert.equal(resolved.model, 'remote-agent:cursor')
@@ -75,7 +75,7 @@ describe('resolveAgentChatModel', () => {
       { id: 'claude-agent-acp', title: 'Claude', command: 'claude-agent-acp', enabled: true },
     ])
     setApiKey('anthropic', 'sk-ant-api03-valid')
-    recordProviderKeyValidation('anthropic', true)
+    recordProviderKeyValidation('anthropic', 'sk-ant-api03-valid', true)
 
     const resolved = await resolveAgentChatModel('remote-agent:anthropic')
     assert.equal(resolved.model, 'remote-agent:anthropic')
@@ -88,7 +88,7 @@ describe('resolveAgentChatModel', () => {
       { id: 'claude-code-acp', title: 'Claude Code', command: 'claude-code-acp', enabled: true },
     ])
     setApiKey('anthropic', 'sk-ant-api03-valid')
-    recordProviderKeyValidation('anthropic', true)
+    recordProviderKeyValidation('anthropic', 'sk-ant-api03-valid', true)
 
     const resolved = await resolveAgentChatModel('remote-agent:anthropic#claude-opus-4-8')
     assert.equal(resolved.model, 'remote-agent:anthropic#claude-opus-4-8')

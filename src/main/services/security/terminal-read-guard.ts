@@ -39,7 +39,10 @@ When uncertain, use "risky" with lower confidence.`
 // fallback whenever the classifier cannot vouch for the visible tail.
 const CLASSIFIER_INPUT_MAX_CHARS = 6_000
 
-export async function classifyTerminalSnapshot(text: string): Promise<TerminalReadVerdict | null> {
+export async function classifyTerminalSnapshot(
+  text: string,
+  signal?: AbortSignal,
+): Promise<TerminalReadVerdict | null> {
   if (!getSetting<boolean>('safetyClassifierEnabled', true)) return null
 
   const model = normalizeRoleModelSelection(
@@ -58,6 +61,7 @@ export async function classifyTerminalSnapshot(text: string): Promise<TerminalRe
         { role: 'user', content: text.slice(-CLASSIFIER_INPUT_MAX_CHARS) },
       ],
       FETCH_TIMEOUTS.safetyClassification,
+      signal,
     )
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
@@ -82,6 +86,7 @@ type TerminalReadGate = (
   threadId: string | null,
   label: string,
   text: string,
+  signal?: AbortSignal,
 ) => Promise<TerminalReadGateResult>
 
 // "Always allow for this chat" remembers per thread for this app session only —
@@ -92,25 +97,29 @@ async function gateImpl(
   threadId: string | null,
   label: string,
   text: string,
+  signal?: AbortSignal,
 ): Promise<TerminalReadGateResult> {
   if (threadId && rememberedThreads.has(threadId)) return { allowed: true }
 
-  const verdict = await classifyTerminalSnapshot(text)
+  const verdict = await classifyTerminalSnapshot(text, signal)
   if (!terminalReadNeedsApproval(verdict)) return { allowed: true }
 
   const why = verdict
     ? `The safety model flagged it: ${verdict.reason}`
     : 'The safety model could not screen it.'
-  const decision = await requestApproval({
-    type: 'shell',
-    title: 'Share terminal output with the agent?',
-    cause: 'terminal-output-share',
-    body:
-      `The agent wants to read recent output from your "${label}" shell. ${why} ` +
-      'Approve to share this snapshot with the agent (and, on the next step, the model provider).',
-    allowRemember: true,
-    rememberLabel: 'Always allow for this chat',
-  })
+  const decision = await requestApproval(
+    {
+      type: 'shell',
+      title: 'Share terminal output with the agent?',
+      cause: 'terminal-output-share',
+      body:
+        `The agent wants to read recent output from your "${label}" shell. ${why} ` +
+        'Approve to share this snapshot with the agent (and, on the next step, the model provider).',
+      allowRemember: true,
+      rememberLabel: 'Always allow for this chat',
+    },
+    signal,
+  )
   if (!decision.approved) {
     return {
       allowed: false,
@@ -129,8 +138,9 @@ export function ensureTerminalReadPermitted(
   threadId: string | null,
   label: string,
   text: string,
+  signal?: AbortSignal,
 ): Promise<TerminalReadGateResult> {
-  return gate(threadId, label, text)
+  return gate(threadId, label, text, signal)
 }
 
 /** Replace the gate in unit tests; pass `null` to restore the real one. */

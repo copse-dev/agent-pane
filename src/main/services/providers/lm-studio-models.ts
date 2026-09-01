@@ -233,25 +233,37 @@ export function contextLengthForModel(models: LmStudioModelInfo[], modelId: stri
 }
 
 const LM_MODELS_TTL_MS = 60_000
+type LmStudioModelsResult = {
+  ok: boolean
+  models: LmStudioModelInfo[]
+  error?: string
+}
 let lmModelsCache: {
   key: string
   at: number
-  result: { ok: boolean; models: LmStudioModelInfo[]; error?: string }
+  result: LmStudioModelsResult
 } | null = null
+let lmModelsCacheGeneration = 0
+const lmModelsInflight = new Map<
+  string,
+  { generation: number; token: symbol; promise: Promise<LmStudioModelsResult> }
+>()
 
 export function invalidateLmStudioModelsCache(): void {
+  lmModelsCacheGeneration += 1
   lmModelsCache = null
+  lmModelsInflight.clear()
 }
 
 /** Cached models list (URL + API key); failures cached to avoid repeated timeouts. */
 export async function fetchLmStudioModelsCached(
   openAiBaseUrl: string,
   apiKey?: string,
-): Promise<{ ok: boolean; models: LmStudioModelInfo[]; error?: string }> {
+): Promise<LmStudioModelsResult> {
   // Normalize before caching so `localhost` and `127.0.0.1` share one entry.
   const url = preferIpv4LoopbackUrl(stripTrailingSlash(openAiBaseUrl || DEFAULT_LM_STUDIO_URL))
   const key = lmStudioApiKey(apiKey)
-  const cacheKey = `${url}${key}`
+  const cacheKey = JSON.stringify([url, key])
   const now = Date.now()
   if (
     lmModelsCache &&
@@ -260,7 +272,22 @@ export async function fetchLmStudioModelsCached(
   ) {
     return lmModelsCache.result
   }
-  const result = await fetchLmStudioModels(url, key)
-  lmModelsCache = { key: cacheKey, at: now, result }
-  return result
+  const existing = lmModelsInflight.get(cacheKey)
+  if (existing?.generation === lmModelsCacheGeneration) return existing.promise
+
+  const generation = lmModelsCacheGeneration
+  const token = Symbol(cacheKey)
+  const promise = (async (): Promise<LmStudioModelsResult> => {
+    try {
+      const result = await fetchLmStudioModels(url, key)
+      if (generation === lmModelsCacheGeneration) {
+        lmModelsCache = { key: cacheKey, at: Date.now(), result }
+      }
+      return result
+    } finally {
+      if (lmModelsInflight.get(cacheKey)?.token === token) lmModelsInflight.delete(cacheKey)
+    }
+  })()
+  lmModelsInflight.set(cacheKey, { generation, token, promise })
+  return promise
 }
