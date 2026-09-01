@@ -18238,15 +18238,18 @@ function extractGithubPrUrls(text4) {
     const raw = match3[0].replace(URL_TRAILING_PUNCTUATION_RE, "");
     const parsed2 = parseGithubPrUrl(raw);
     if (!parsed2) continue;
-    const key = `${parsed2.owner}/${parsed2.repo}#${String(parsed2.number)}`;
+    const key = githubPrKey(parsed2);
     if (seen.has(key)) continue;
     seen.add(key);
     refs.push(parsed2);
   }
   return refs;
 }
+function githubRepoKey(ref) {
+  return `${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}`;
+}
 function githubPrKey(ref) {
-  return `${ref.owner}/${ref.repo}#${String(ref.number)}`;
+  return `${githubRepoKey(ref)}#${String(ref.number)}`;
 }
 var GITHUB_PR_PATH_RE, GITHUB_PR_URL_RE, URL_TRAILING_PUNCTUATION_RE;
 var init_github_pr_url = __esm({
@@ -270123,9 +270126,7 @@ function mergePrLists(linked, pools) {
     const key = githubPrKey(ref);
     if (seen.has(key)) continue;
     seen.add(key);
-    const fromPools = known.find(
-      (pr2) => pr2.owner === ref.owner && pr2.repo === ref.repo && pr2.number === ref.number
-    );
+    const fromPools = known.find((pr2) => githubPrKey(pr2) === key);
     merged.push(
       fromPools ?? {
         ...ref,
