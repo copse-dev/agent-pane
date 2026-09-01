@@ -1261,6 +1261,12 @@ if (process.env['COPSE_E2E'] === '1') {
     clearMockScript() {
       return ipcRenderer.invoke('test:clearMockScript')
     },
+    pauseModelCardResolves() {
+      return ipcRenderer.invoke('test:pauseModelCardResolves')
+    },
+    resumeModelCardResolves() {
+      return ipcRenderer.invoke('test:resumeModelCardResolves')
+    },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
     },
