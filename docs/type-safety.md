@@ -14,11 +14,11 @@ The checks that keep the codebase honest run together under **`npm run check`** 
 - **ESLint** (`npm run lint`) — flat config in `eslint.config.mjs`, on `typescript-eslint`'s
   `strictTypeChecked`, with no suppression baseline — see
   [The suppression baseline is empty](#the-suppression-baseline-is-empty--keep-it-that-way).
-- **Prettier** (`npm run format:check`).
+- **oxfmt** (`npm run format:check`).
 
 Run `npm run check` before every commit — never hand-format or eyeball types in place of it. For a
 fast inner loop on a few files, `npx tsc --noEmit -p tsconfig.web.json`, `npx eslint <files>`, and
-`npx prettier --write <files>` are the same tools `check` invokes.
+`npx oxfmt --write <files>` are the same tools `check` invokes.
 
 ## Write code the linter never has to flag
 

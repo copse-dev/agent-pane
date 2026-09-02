@@ -169,7 +169,11 @@ const SYSTEM_ROOTS = [
  * the mercy of string surgery.
  */
 type CatastrophicScope =
-  'filesystem root' | 'system tree' | 'home root' | 'workspace root' | 'drive root'
+  | 'filesystem root'
+  | 'system tree'
+  | 'home root'
+  | 'workspace root'
+  | 'drive root'
 
 interface CatastrophicHit {
   scope: CatastrophicScope

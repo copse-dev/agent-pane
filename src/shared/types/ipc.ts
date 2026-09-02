@@ -4,7 +4,14 @@ import type { GitFileDiff, GitStatusResult, GitBranchStatus, GitPromptState } fr
 import type { McpServerStatus, CuratedMcpServerStatus } from './mcp.ts'
 
 type Provider =
-  'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter' | 'mistral' | 'gemini' | 'deepseek'
+  | 'anthropic'
+  | 'openai'
+  | 'lmstudio'
+  | 'cursor'
+  | 'openrouter'
+  | 'mistral'
+  | 'gemini'
+  | 'deepseek'
 type CloudProvider = Exclude<Provider, 'lmstudio'>
 
 interface AvailableProviders {

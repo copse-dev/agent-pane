@@ -1,4 +1,5 @@
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
+import type { CanvasArtefactReference } from '@shared/types/canvas.ts'
 import type {
   ModelUsage,
   MessageOrigin,
@@ -97,6 +98,8 @@ export interface SpineMessageLine {
   content: ContentRef
   reasoning?: ContentRef
   images?: ImageRef[]
+  /** Canvas artefacts presented inline with this assistant message. */
+  canvasArtefacts?: CanvasArtefactReference[]
   commandSummary?: string
   /** Small-model polish for the turn tool rollup; optional, display-only. */
   toolSummary?: string
@@ -419,6 +422,11 @@ function isSpineMessageLine(value: unknown): value is SpineMessageLine {
     typeof value['id'] === 'string' &&
     (role === 'user' || role === 'assistant' || role === 'error') &&
     isContentRef(value['content']) &&
+    (value['canvasArtefacts'] === undefined ||
+      (Array.isArray(value['canvasArtefacts']) &&
+        value['canvasArtefacts'].every(
+          (artefact) => isRecord(artefact) && typeof artefact['title'] === 'string',
+        ))) &&
     (value['toolCalls'] === undefined || Array.isArray(value['toolCalls']))
   )
 }

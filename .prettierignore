@@ -1,3 +1,8 @@
+# The formatter's ignore list. Still named `.prettierignore` after the move to
+# oxfmt: oxfmt reads `.gitignore` and `.prettierignore` by default and has no
+# ignore file of its own, so renaming this would silently un-ignore every path
+# below — including the byte-exact ones a test compares against.
+
 dist/
 dist-test/
 dist-types/

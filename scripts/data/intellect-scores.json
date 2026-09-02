@@ -201,8 +201,8 @@
       "modelId": "mistralai/mistral-small-24b",
       "value": 6.7,
       "indexVersion": "v4.1",
-      "source": "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-08-25",
-      "asOf": "2026-08-25",
+      "source": "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-09-01",
+      "asOf": "2026-09-01",
       "aliases": ["mistral-small-3", "mistral-small-24b", "mistral-small-3-1", "Mistral Small 24B"]
     },
     {
@@ -4316,6 +4316,69 @@
       "indexVersion": "v4.1",
       "source": "Artificial Analysis API (index v4.1), model 'lfm2-5-2-6b', fetched 2026-08-25",
       "asOf": "2026-08-25"
+    },
+    {
+      "modelId": "apodex-1-1",
+      "value": 44,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'apodex-1-1', fetched 2026-09-01",
+      "asOf": "2026-09-01"
+    },
+    {
+      "modelId": "granite-4-2-3b",
+      "value": 14.3,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'granite-4-2-3b', fetched 2026-09-01",
+      "asOf": "2026-09-01"
+    },
+    {
+      "modelId": "granite-4-2-30b",
+      "value": 23.7,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'granite-4-2-30b', fetched 2026-09-01",
+      "asOf": "2026-09-01"
+    },
+    {
+      "modelId": "glm-5-3-flash",
+      "value": 57.5,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'glm-5-3-flash', fetched 2026-09-01",
+      "asOf": "2026-09-01"
+    },
+    {
+      "modelId": "qwen3-8-27b-non-reasoning",
+      "value": 34.7,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'qwen3-8-27b-non-reasoning', fetched 2026-09-01",
+      "asOf": "2026-09-01"
+    },
+    {
+      "modelId": "deepseek-v4-flash-vision",
+      "value": 51.5,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash-vision', fetched 2026-09-01",
+      "asOf": "2026-09-01"
+    },
+    {
+      "modelId": "qwen3-8-flash-next",
+      "value": 55.8,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'qwen3-8-flash-next', fetched 2026-09-01",
+      "asOf": "2026-09-01"
+    },
+    {
+      "modelId": "granite-4-2-8b",
+      "value": 19.6,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'granite-4-2-8b', fetched 2026-09-01",
+      "asOf": "2026-09-01"
+    },
+    {
+      "modelId": "agnes-2-5-pro-beta",
+      "value": 49.1,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'agnes-2-5-pro-beta', fetched 2026-09-01",
+      "asOf": "2026-09-01"
     }
   ],
   "wanted": [

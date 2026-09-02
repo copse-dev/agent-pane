@@ -96,9 +96,9 @@ async function bundleTests(testFiles: string[]): Promise<void> {
       // so bundling it breaks that lookup ("cannot be bundled"). Tests that build
       // a worker bundle to assert what it links against need the real package.
       'esbuild',
-      // Keep Prettier external so it can load its own plugins and runtime files.
-      // Needed by scripts/lib/generated-file.mts.
-      'prettier',
+      // Keep oxfmt external — it resolves its native binding at runtime and
+      // scripts/lib/oxfmt.mts spawns its CLI from node_modules/.bin.
+      'oxfmt',
     ],
     alias: {
       '@shared': resolve('./src/shared'),

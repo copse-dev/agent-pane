@@ -148,7 +148,9 @@ export function supportsMidConversationSystem(model: string): boolean {
 
 /** Where current-turn operator instructions belong for one stored model selection. */
 export type OperatorInstructionPlacement =
-  'trailing-developer' | 'trailing-system' | 'leading-system'
+  | 'trailing-developer'
+  | 'trailing-system'
+  | 'leading-system'
 
 /**
  * Namespaces that put a first-party cloud model id on the wire, so a family

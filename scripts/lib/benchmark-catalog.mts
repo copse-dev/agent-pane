@@ -145,7 +145,11 @@ export interface TraceMessage {
 }
 
 export type BenchmarkFlag =
-  'agent-error' | 'low-work' | 'missing-trace' | 'partial-trace' | 'verifier-error'
+  | 'agent-error'
+  | 'low-work'
+  | 'missing-trace'
+  | 'partial-trace'
+  | 'verifier-error'
 
 export type BenchmarkOutcome = 'error' | 'fail' | 'invalid' | 'pass' | 'timeout'
 

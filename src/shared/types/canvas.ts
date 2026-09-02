@@ -37,6 +37,15 @@ export interface CanvasArtefactIdentity {
 }
 
 /**
+ * A canvas artefact attached to one assistant message for transcript display.
+ * The owning message already supplies the thread scope, so persisting the title
+ * alone avoids baking a stale thread id into forks or imported transcripts.
+ */
+export interface CanvasArtefactReference {
+  title: string
+}
+
+/**
  * A saved artefact as the transcript needs it: enough to draw the preview card
  * that offers to reopen it, without reading the (much larger) body back.
  */
