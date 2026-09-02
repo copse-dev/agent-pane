@@ -24278,7 +24278,7 @@ function isBestValueChatModel(model) {
 function lmStudioChatModelValue(modelId) {
   return `lmstudio:${modelId}`;
 }
-var DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS, BEST_VALUE_CHAT_MODEL, BEST_VALUE_CHAT_MODEL_LABEL, FALLBACK_APP_CHAT_MODEL, DEFAULT_APP_CHAT_MODEL;
+var DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS, BEST_VALUE_CHAT_MODEL, BEST_VALUE_CHAT_MODEL_LABEL, FALLBACK_APP_CHAT_MODEL, SAFETY_MODEL_MIN_INTELLECT, DEFAULT_SAFETY_MODEL, DEFAULT_APP_CHAT_MODEL;
 var init_lm_studio_defaults = __esm({
   "src/shared/lm-studio-defaults.ts"() {
     init_dynamic_model();
@@ -24292,6 +24292,8 @@ var init_lm_studio_defaults = __esm({
     BEST_VALUE_CHAT_MODEL = BEST_VALUE_MODEL_SELECTOR;
     BEST_VALUE_CHAT_MODEL_LABEL = "Best value (plan / price)";
     FALLBACK_APP_CHAT_MODEL = `lmstudio:${LM_STUDIO_MODEL_IDS.chat}`;
+    SAFETY_MODEL_MIN_INTELLECT = 20;
+    DEFAULT_SAFETY_MODEL = minIntellectSelector(SAFETY_MODEL_MIN_INTELLECT);
     DEFAULT_APP_CHAT_MODEL = BEST_VALUE_CHAT_MODEL;
   }
 });
@@ -32157,11 +32159,14 @@ async function fetchModelOptions(api3, current, opts = {}) {
   }
   const lmGroup = "Local models";
   let models;
+  let localCatalogueKnown;
   try {
     const modelInfo = api3.lmStudio.modelInfo ? await api3.lmStudio.modelInfo() : [];
     models = modelInfo.length > 0 ? modelInfo : (await api3.lmStudio.models()).map((id39) => ({ id: id39 }));
+    localCatalogueKnown = models.length > 0;
   } catch {
     models = [];
+    localCatalogueKnown = false;
   }
   for (const model of models) {
     const { id: id39 } = model;
@@ -32178,7 +32183,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
     if (current.startsWith("lmstudio:")) {
       options2.push({
         value: current,
-        label: `${modelDisplayLabel(current)} (offline)`,
+        label: `${modelDisplayLabel(current)} ${localCatalogueKnown ? "(not available)" : "(offline)"}`,
         group: lmGroup
       });
     } else if (includeAgentModels && current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
@@ -32236,11 +32241,30 @@ async function fetchSmallTasksModelOptions(api3, current) {
 async function fetchRoleModelOptions(api3, current, autoLabel = "(auto \u2014 prefer on-device)") {
   return [
     autoModelOption(autoLabel),
+    // A role may hold a *rule* rather than an id — the instruct/safety role
+    // defaults to one, and onboarding writes one for research. Offer the rules
+    // alongside the concrete models, or the stored value matches no option and
+    // renders through the pinned-id fallback as "auto:best-local (no key)".
+    // Role selectors are excluded: pointing a role at a role is circular.
+    ...automaticModelChoices(),
     ...await fetchModelOptions(api3, current, { includeAgentModels: false })
   ];
 }
-function localModelOptions(models, autoLabel = "(auto \u2014 first loaded model)") {
-  return [autoModelOption(autoLabel), ...models.map((id39) => ({ value: id39, label: id39 }))];
+function automaticModelChoices() {
+  return dynamicModelChoices().filter((choice2) => choice2.group !== "By role").map((choice2) => ({
+    value: choice2.value,
+    label: `${choice2.label} \u2014 ${choice2.description}`,
+    group: choice2.group
+  }));
+}
+function localModelOptions(models, autoLabel = "(auto \u2014 first loaded model)", current = "") {
+  const options2 = [autoModelOption(autoLabel), ...models.map((id39) => ({ value: id39, label: id39 }))];
+  const pinned = current.trim();
+  if (pinned && !options2.some((option2) => option2.value === pinned)) {
+    const rule = dynamicModelLabel(pinned);
+    options2.push({ value: pinned, label: rule ?? `${pinned} (not available)` });
+  }
+  return options2;
 }
 function dynamicModelOptions(current, autoLabel) {
   const options2 = dynamicModelChoices().map((choice2) => ({
@@ -35335,7 +35359,7 @@ function createLmStudioSection(api3, opts = {}) {
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,
       safetyExternalDenyThreshold: currentExternalDeny ?? 1,
-      safetyModel: opts2?.safetyModel ?? currentSafety ?? at(PREFERRED_MODELS, 2).id,
+      safetyModel: opts2?.safetyModel ?? currentSafety ?? DEFAULT_SAFETY_MODEL,
       autoRunSandboxCommands: currentAutoRun ?? true,
       mcpAutoAllowReadOnly: currentMcpAuto ?? false,
       defaultReadonlyMode: currentReadonly ?? false,
@@ -35374,7 +35398,6 @@ function createLmStudioSection(api3, opts = {}) {
 var init_lm_studio_section = __esm({
   "src/renderer/views/setup/lm-studio-section.ts"() {
     init_preferred_models();
-    init_array_utils();
     init_web_origins();
     init_provider_hosts();
     init_context_window_advice();
@@ -43344,7 +43367,7 @@ function createModelRoutingSection(api3, options2 = {}) {
       routingField(
         "Instruct / safety model",
         safetyModel,
-        "Classifies shell commands and screens terminal reads. A cloud choice sends that screening content to its provider."
+        "Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does \u2014 a cloud choice sends that screening content to its provider."
       ),
       routingField("Post-turn review model", reviewModel, "Reviews the diff after an editing turn")
     )
@@ -43377,12 +43400,21 @@ function createModelRoutingSection(api3, options2 = {}) {
     safety: (current) => fetchRoleModelOptions(api3, current),
     review: (current) => fetchRoleModelOptions(api3, current, "(auto: prefer on-device)")
   } : {
-    coder: () => Promise.resolve(localModelOptions(availableLocalModels)),
-    research: () => Promise.resolve(
-      localModelOptions(availableLocalModels, "(auto: use default local model)")
+    // `current` is forwarded so a role pinned to a model the server does
+    // not have keeps a row of its own, flagged as not available, instead
+    // of silently rendering as the auto option.
+    coder: (current) => Promise.resolve(
+      localModelOptions(availableLocalModels, "(auto \u2014 first loaded model)", current)
     ),
-    safety: () => Promise.resolve(localModelOptions(availableLocalModels)),
-    review: () => Promise.resolve(localModelOptions(availableLocalModels, "(auto: prefer on-device)"))
+    research: (current) => Promise.resolve(
+      localModelOptions(availableLocalModels, "(auto: use default local model)", current)
+    ),
+    safety: (current) => Promise.resolve(
+      localModelOptions(availableLocalModels, "(auto \u2014 first loaded model)", current)
+    ),
+    review: (current) => Promise.resolve(
+      localModelOptions(availableLocalModels, "(auto: prefer on-device)", current)
+    )
   };
   const modelPickers = {
     coder: mountModelSelectPicker(localDefaultModel, {
@@ -43420,9 +43452,9 @@ function createModelRoutingSection(api3, options2 = {}) {
           coder ? canonicalRoleSelection(coder) : lmStudioChatModelValue(at(PREFERRED_MODELS, 0).id)
         ),
         modelPickers.research.refresh(canonicalRoleSelection(research ?? "")),
-        modelPickers.safety.refresh(
-          safety ? canonicalRoleSelection(safety) : lmStudioChatModelValue(at(PREFERRED_MODELS, 2).id)
-        ),
+        // Unset means the *rule*, not the model we recommend downloading —
+        // showing a concrete local id here would misreport what actually runs.
+        modelPickers.safety.refresh(safety ? canonicalRoleSelection(safety) : DEFAULT_SAFETY_MODEL),
         modelPickers.review.refresh(canonicalRoleSelection(review ?? ""))
       ]);
       return;
@@ -43439,7 +43471,7 @@ function createModelRoutingSection(api3, options2 = {}) {
         localModel?.replace(/^lmstudio:/, "") ?? at(PREFERRED_MODELS, 0).id
       ),
       modelPickers.research.refresh(subagent?.replace(/^lmstudio:/, "") ?? ""),
-      modelPickers.safety.refresh(safety?.replace(/^lmstudio:/, "") ?? at(PREFERRED_MODELS, 2).id),
+      modelPickers.safety.refresh(safety?.replace(/^lmstudio:/, "") ?? DEFAULT_SAFETY_MODEL),
       modelPickers.review.refresh(review?.replace(/^lmstudio:/, "") ?? "")
     ]);
   }
