@@ -194,7 +194,13 @@ describe('settings model routing placement', function () {
     const review = $('select[name="reviewModel"]')
     assert.equal(await coder.getValue(), `lmstudio:${LOCAL_MODELS[0]}`)
     assert.equal(await research.getValue(), 'claude-haiku-4-5')
-    assert.equal(await safety.getValue(), `lmstudio:${LOCAL_MODELS[2]}`)
+    // This suite never seeds `safetyModel`, so this asserts what an *unset*
+    // safety role displays as. It is a rule rather than a model id, and
+    // deliberately so: a fixed local default is wrong for anyone without a
+    // local server, and it fails there silently. Spelled literally rather than
+    // imported from `DEFAULT_SAFETY_MODEL`, so changing that default has to
+    // come past this assertion instead of quietly rewriting it.
+    assert.equal(await safety.getValue(), 'auto:best-local')
     assert.equal(await review.getValue(), '')
     const reviewAutoLabel = await browser.execute(
       () =>
