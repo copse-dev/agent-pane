@@ -53,7 +53,7 @@ export function createModelRoutingSection(
       routingField(
         'Instruct / safety model',
         safetyModel,
-        'Classifies shell commands and screens terminal reads. Defaults to the best model on this device, falling back to the cheapest reachable one when you have no local server — and any cloud choice sends that screening content to its provider.',
+        'Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does — a cloud choice sends that screening content to its provider.',
       ),
       routingField('Post-turn review model', reviewModel, 'Reviews the diff after an editing turn'),
     ),

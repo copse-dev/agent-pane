@@ -8,8 +8,8 @@ import {
   invalidateLmStudioModelsCache,
   normalizeRoleModelSelection,
 } from '../providers/provider-selection.ts'
-import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
-import { BEST_LOCAL_MODEL_SELECTOR, isDynamicModel } from '@copse/llm/dynamic-model.ts'
+import { DEFAULT_SAFETY_MODEL, SAFETY_MODEL_MIN_INTELLECT } from '@shared/lm-studio-defaults.ts'
+import { isDynamicModel, minIntellectSelector } from '@copse/llm/dynamic-model.ts'
 import { pickDynamicModel } from '@copse/llm/dynamic-model-pick.ts'
 import type { FrontierPoint } from '@copse/llm/pareto-frontier.ts'
 import {
@@ -195,7 +195,7 @@ describe('reportSafetyModelProblem', () => {
  */
 describe('auto: rules on role settings', () => {
   it('the safety default is a rule, not a pinned local id', () => {
-    assert.equal(DEFAULT_SAFETY_MODEL, BEST_LOCAL_MODEL_SELECTOR)
+    assert.equal(DEFAULT_SAFETY_MODEL, minIntellectSelector(SAFETY_MODEL_MIN_INTELLECT))
     assert.ok(isDynamicModel(DEFAULT_SAFETY_MODEL))
   })
 
@@ -213,17 +213,24 @@ describe('auto: rules on role settings', () => {
     assert.equal(await findSafetyModelProblem(DEFAULT_SAFETY_MODEL), null)
   })
 
-  it('prefers a local model and falls back to a reachable route otherwise', () => {
-    const local: FrontierPoint = {
-      id: 'lmstudio:small',
-      intellect: 12,
+  it('takes a qualifying local model, and a cloud one only when none qualifies', () => {
+    const weakLocal: FrontierPoint = {
+      id: 'lmstudio:weak',
+      intellect: 8,
+      costPerMTok: 0,
+      local: true,
+      onFrontier: true,
+    }
+    const goodLocal: FrontierPoint = {
+      id: 'lmstudio:good',
+      intellect: 31.7,
       costPerMTok: 0,
       local: true,
       onFrontier: true,
     }
     const cloudCheap: FrontierPoint = {
       id: 'cloud-cheap',
-      intellect: 20,
+      intellect: 25,
       costPerMTok: 0.5,
       onFrontier: true,
     }
@@ -233,19 +240,16 @@ describe('auto: rules on role settings', () => {
       costPerMTok: 30,
       onFrontier: true,
     }
+    const rule = { kind: 'min-intellect', threshold: SAFETY_MODEL_MIN_INTELLECT } as const
 
-    // With a local model present it wins outright, however much smarter the
-    // cloud options are: screening reads terminal scrollback, so staying on
-    // the machine is the point.
-    assert.equal(
-      pickDynamicModel({ kind: 'best-local' }, [local, cloudCheap, cloudDear])?.id,
-      'lmstudio:small',
-    )
-    // With no local server the rule still resolves — to the cheapest reachable
-    // route, which is what makes the classifier work at all for cloud-only users.
-    assert.equal(
-      pickDynamicModel({ kind: 'best-local' }, [cloudCheap, cloudDear])?.id,
-      'cloud-cheap',
-    )
+    // A local model over the bar wins outright, however much smarter the cloud
+    // options are: screening reads terminal scrollback, so staying on the
+    // machine is the point. Local counts as free, and free wins.
+    assert.equal(pickDynamicModel(rule, [goodLocal, cloudCheap, cloudDear])?.id, 'lmstudio:good')
+    // A local model *under* the bar does not qualify, so screening moves to the
+    // cheapest cloud route that does -- the whole reason the bar exists.
+    assert.equal(pickDynamicModel(rule, [weakLocal, cloudCheap, cloudDear])?.id, 'cloud-cheap')
+    // No local server at all: still resolves, still to the cheapest qualifier.
+    assert.equal(pickDynamicModel(rule, [cloudCheap, cloudDear])?.id, 'cloud-cheap')
   })
 })

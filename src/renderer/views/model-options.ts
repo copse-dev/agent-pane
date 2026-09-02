@@ -687,10 +687,18 @@ export async function fetchRoleModelOptions(
   ]
 }
 
-/** The `auto:` rules that resolve without reference to another role. */
+/**
+ * The `auto:` rules that resolve without reference to another role — the
+ * automatic pickers and the intelligence floors. Role rules are excluded:
+ * pointing a role at a role is circular.
+ *
+ * The intelligence floors have to be here, not just the Automatic group: the
+ * safety role defaults to one, and a stored value with no matching option falls
+ * through to the pinned-id branch and renders as "auto:min-intellect:20 (no key)".
+ */
 function automaticModelChoices(): ModelOption[] {
   return dynamicModelChoices()
-    .filter((choice) => choice.group === 'Automatic')
+    .filter((choice) => choice.group !== 'By role')
     .map((choice) => ({
       value: choice.value,
       label: `${choice.label} — ${choice.description}`,

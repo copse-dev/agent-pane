@@ -200,7 +200,7 @@ describe('settings model routing placement', function () {
     // local server, and it fails there silently. Spelled literally rather than
     // imported from `DEFAULT_SAFETY_MODEL`, so changing that default has to
     // come past this assertion instead of quietly rewriting it.
-    assert.equal(await safety.getValue(), 'auto:best-local')
+    assert.equal(await safety.getValue(), 'auto:min-intellect:20')
     assert.equal(await review.getValue(), '')
     const reviewAutoLabel = await browser.execute(
       () =>

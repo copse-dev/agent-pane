@@ -5,7 +5,13 @@ import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { resolveExtraProviders } from '@copse/llm/extra-providers.ts'
 import { cloudModelIntellectHint } from '@copse/llm/intellect-hints.ts'
 import { getIntellectScore } from '@copse/llm/model-intellect.ts'
-import { fetchModelOptions, localModelOptions, modelDisplayLabel } from './model-options.ts'
+import {
+  fetchModelOptions,
+  fetchRoleModelOptions,
+  localModelOptions,
+  modelDisplayLabel,
+} from './model-options.ts'
+import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 interface MockOpts {
@@ -742,5 +748,24 @@ describe('a local model that is configured but not available', () => {
     const offline = unreachable.find((o) => o.value === 'lmstudio:qwen/qwen3-4b-2507')
     assert.ok(offline)
     assert.match(offline.label, /offline/)
+  })
+})
+
+describe('role pickers and the safety default', () => {
+  it('offers the exact rule the safety role defaults to', async () => {
+    // A `<select>` whose value matches no option renders its *first* option
+    // instead, and the pinned-id fallback would label the rule
+    // "auto:min-intellect:20 (no key)". The default must be a real row.
+    const options = await fetchRoleModelOptions(mockApi(), DEFAULT_SAFETY_MODEL)
+    const row = options.find((o) => o.value === DEFAULT_SAFETY_MODEL)
+    assert.ok(row, `no option for ${DEFAULT_SAFETY_MODEL}`)
+    assert.doesNotMatch(row.label, /no key/)
+  })
+
+  it('offers the automatic rules but never a role rule', async () => {
+    const options = await fetchRoleModelOptions(mockApi(), '')
+    assert.ok(options.some((o) => o.value === 'auto:best-local'))
+    // Pointing a role at a role is circular.
+    assert.ok(!options.some((o) => o.value.startsWith('auto:role:')))
   })
 })
