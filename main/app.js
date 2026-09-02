@@ -16412,6 +16412,12 @@ function setMessageContent(store3, messageId, content) {
   });
   store3.emit("message_token", messageId, content);
 }
+function addMessageCanvasArtefact(store3, messageId, artefact) {
+  updateMessage(store3, messageId, (message2) => {
+    message2.canvasArtefacts = [...message2.canvasArtefacts ?? [], artefact];
+  });
+  store3.emit("message_canvas_artefacts_changed", messageId);
+}
 function setMessageCommandSummary(store3, messageId, commandSummary) {
   updateMessage(store3, messageId, (m3) => {
     m3.commandSummary = commandSummary;
@@ -22539,6 +22545,7 @@ function createStore(initial2) {
     message_queued: /* @__PURE__ */ new Set(),
     message_token: /* @__PURE__ */ new Set(),
     message_reasoning: /* @__PURE__ */ new Set(),
+    message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
     message_done: /* @__PURE__ */ new Set(),
     tool_call_started: /* @__PURE__ */ new Set(),
     tool_call_updated: /* @__PURE__ */ new Set(),
@@ -50680,6 +50687,7 @@ function copyMessage(message2) {
     review: _review,
     toolCalls,
     images,
+    canvasArtefacts,
     attachments,
     ...rest
   } = message2;
@@ -50689,6 +50697,7 @@ function copyMessage(message2) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     toolCalls: (toolCalls ?? []).map((toolCall) => ({ ...toolCall })),
     ...images !== void 0 ? { images: [...images] } : {},
+    ...canvasArtefacts !== void 0 ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) } : {},
     ...attachments !== void 0 ? { attachments: attachments.map((attachment) => ({ ...attachment })) } : {}
   };
 }
@@ -239729,6 +239738,86 @@ var init_acp_cursor_transport_noise = __esm({
   }
 });
 
+// src/shared/inline-visualization.ts
+function decodeVisualizationReference(payload) {
+  return safeJsonParse(payload, decodeWithSchema(visualizationReferenceSchema));
+}
+function createInlineVisualizationStreamFilter(onReference) {
+  let pending = "";
+  const drain = (final) => {
+    let visible = "";
+    for (; ; ) {
+      const start2 = pending.indexOf(FRAME_START);
+      if (start2 < 0) {
+        if (!final && pending.endsWith(FRAME_START)) {
+          visible += pending.slice(0, -FRAME_START.length);
+          pending = FRAME_START;
+        } else {
+          visible += pending;
+          pending = "";
+        }
+        return visible;
+      }
+      visible += pending.slice(0, start2);
+      pending = pending.slice(start2);
+      const separator = pending.indexOf(FRAME_SEPARATOR, FRAME_START.length);
+      if (separator < 0) {
+        if (!final && pending.length <= FRAME_START.length + MAX_OPERATOR_CHARS) return visible;
+        if (final) {
+          pending = "";
+          return visible;
+        }
+        visible += FRAME_START;
+        pending = pending.slice(FRAME_START.length);
+        continue;
+      }
+      const end = pending.indexOf(FRAME_END, separator + FRAME_SEPARATOR.length);
+      if (end < 0) {
+        if (!final) return visible;
+        pending = "";
+        return visible;
+      }
+      const operator = pending.slice(FRAME_START.length, separator);
+      const payload = pending.slice(separator + FRAME_SEPARATOR.length, end);
+      pending = pending.slice(end + FRAME_END.length);
+      if (operator === VISUALIZE_OPERATOR) {
+        const reference = decodeVisualizationReference(payload);
+        if (reference) onReference(reference);
+      }
+    }
+  };
+  return {
+    push(text4) {
+      pending += text4;
+      return drain(false);
+    },
+    finish() {
+      return drain(true);
+    }
+  };
+}
+function stripInlineVisualizationReferences(text4) {
+  const filter8 = createInlineVisualizationStreamFilter(() => {
+  });
+  return filter8.push(text4) + filter8.finish();
+}
+var FRAME_START, FRAME_SEPARATOR, FRAME_END, VISUALIZE_OPERATOR, MAX_OPERATOR_CHARS, visualizationReferenceSchema;
+var init_inline_visualization = __esm({
+  "src/shared/inline-visualization.ts"() {
+    init_zod();
+    init_safe_json();
+    FRAME_START = "\uE200";
+    FRAME_SEPARATOR = "\uE202";
+    FRAME_END = "\uE201";
+    VISUALIZE_OPERATOR = "visualize";
+    MAX_OPERATOR_CHARS = 64;
+    visualizationReferenceSchema = external_exports.looseObject({
+      path: external_exports.string().min(1),
+      title: external_exports.string().min(1).max(200).optional()
+    });
+  }
+});
+
 // src/shared/threads/message-model.ts
 function primaryChatModels(messages) {
   const seen = /* @__PURE__ */ new Set();
@@ -241293,11 +241382,7 @@ function appendStandardToolSections(card2, tc2, label, summaryClass, count2) {
 function appendIfPresent(node2) {
   return node2 ? [node2] : [];
 }
-function createCanvasPreviewSection(tc2, threadId) {
-  if (tc2.status !== "done") return null;
-  const uri = artefactUriFromToolResult(tc2.result);
-  if (!uri) return null;
-  const title2 = artefactTitleFromUri(uri);
+function createCanvasPreviewCard(threadId, title2) {
   const preview = getArtefactPreview(threadId, title2);
   if (!preview) return null;
   const open2 = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Open");
@@ -241316,6 +241401,22 @@ function createCanvasPreviewSection(tc2, threadId) {
     )
   );
 }
+function createCanvasPreviewSection(tc2, threadId) {
+  if (tc2.status !== "done") return null;
+  const uri = artefactUriFromToolResult(tc2.result);
+  return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null;
+}
+function syncMessageCanvasPreviews(msgEl, msg, threadId) {
+  const body = msgEl.querySelector(":scope > .message-body");
+  if (!body) return;
+  body.querySelector(":scope > .message-canvas-previews")?.remove();
+  const cards = (msg.canvasArtefacts ?? []).flatMap((artefact) => {
+    const card2 = createCanvasPreviewCard(threadId, artefact.title);
+    return card2 ? [card2] : [];
+  });
+  if (cards.length === 0) return;
+  body.append(el("div", { class: "message-canvas-previews" }, ...cards));
+}
 function createIndividualToolCard(tc2, label, api3, threadId) {
   if (tc2.subagent) return createSubagentToolCard(tc2, label, api3);
   const card2 = el("details", {
@@ -241331,7 +241432,7 @@ function createIndividualToolCard(tc2, label, api3, threadId) {
   return card2;
 }
 function assistantDisplayParts(content) {
-  const stripped = stripTextToolCallBlocks(content);
+  const stripped = stripInlineVisualizationReferences(stripTextToolCallBlocks(content));
   const { body, noise } = splitCursorAcpTransportNoise(stripped);
   return { body, transportNoise: noise };
 }
@@ -242563,6 +242664,7 @@ function mountConversation(root4, store3, api3) {
       ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
       ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {}
     });
+    syncMessageCanvasPreviews(msgEl, msg, threadId);
     if (msg.review) renderMessageReview(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
   }
@@ -242870,6 +242972,15 @@ function mountConversation(root4, store3, api3) {
         scrollToBottom();
       }
     }),
+    store3.on("message_canvas_artefacts_changed", (mid) => {
+      const thread = getActiveThread(store3);
+      const msg = thread?.messages.find((message2) => message2.id === mid);
+      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      if (thread && msg?.role === "assistant" && msgEl) {
+        syncMessageCanvasPreviews(msgEl, msg, thread.id);
+        scrollToBottom();
+      }
+    }),
     store3.on("message_reasoning", (mid) => {
       const thread = getActiveThread(store3);
       const msg = thread?.messages.find((m3) => m3.id === mid);
@@ -243007,6 +243118,7 @@ var init_conversation = __esm({
     init_remote_artifact_images();
     init_parse_text_tool_calls();
     init_acp_cursor_transport_noise();
+    init_inline_visualization();
     init_message_model();
     init_model_display();
     init_attachment_icons();
@@ -255465,6 +255577,7 @@ function threadToJsonl(thread) {
         content: msg.content,
         ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
         images: msg.images,
+        ...msg.canvasArtefacts !== void 0 ? { canvasArtefacts: msg.canvasArtefacts } : {},
         commandSummary: msg.commandSummary,
         ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
         ...msg.model !== void 0 ? { model: msg.model } : {},
@@ -293221,6 +293334,16 @@ function startAgentController(store3, api3) {
         st3.msgId ??= addAssistantMessage(store3, threadId);
         setMessageContent(store3, st3.msgId, chunk.text);
         st3.currentText = chunk.text;
+        break;
+      }
+      case "canvas_artefact": {
+        if (!st3.msgId || st3.toolSinceText) {
+          if (st3.toolSinceText && st3.msgId) store3.emit("message_done", st3.msgId);
+          st3.msgId = addAssistantMessage(store3, threadId);
+          st3.toolSinceText = false;
+          st3.currentText = "";
+        }
+        addMessageCanvasArtefact(store3, st3.msgId, chunk.artefact);
         break;
       }
       case "tool_call": {
