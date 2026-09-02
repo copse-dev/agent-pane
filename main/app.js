@@ -258663,7 +258663,10 @@ function mountContextPanel(root4, store3, api3, monaco) {
   function fallbackMode(md) {
     return md ? "preview" : "source";
   }
+  let renderedPreviewContent = null;
   function renderMarkdownPreview(content) {
+    if (content === renderedPreviewContent) return;
+    renderedPreviewContent = content;
     previewContainer.innerHTML = renderMarkdown(content);
     attachCodeBlockCopyButtons(previewContainer);
     void annotateFileReferences(previewContainer, api3);
