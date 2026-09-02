@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
+import {
+  createInlineVisualizationStreamFilter,
+  stripInlineVisualizationReferences,
+} from '@shared/inline-visualization.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
@@ -46,6 +50,7 @@ import {
   setActiveRunTurnTreeId,
 } from './thread-models.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { dispatchInlineVisualization } from './inline-visualization.ts'
 import { updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
@@ -940,10 +945,44 @@ export async function runAgent(
     // agent has streamed so far.
     let acpAssistantText = ''
     const acpProgress: { lastEvent: AcpLastMeaningfulEvent } = { lastEvent: null }
+    let visualizationDispatch = Promise.resolve()
+    const inlineVisualizationFilter = createInlineVisualizationStreamFilter((reference) => {
+      if (!runContext) return
+      // Preserve reference order even when one preview takes longer to capture.
+      visualizationDispatch = visualizationDispatch.then(async () => {
+        try {
+          const artefact = await dispatchInlineVisualization(reference, {
+            root: runContext.root,
+            threadId,
+          })
+          sendChunk({ type: 'canvas_artefact', artefact })
+        } catch (err) {
+          console.warn('[inline-visualization] could not render reference:', errorMessage(err))
+        }
+      })
+    })
+    const finishInlineVisualizations = async (): Promise<void> => {
+      const tail = inlineVisualizationFilter.finish()
+      if (tail) {
+        acpAssistantText += tail
+        const tailChunk: StreamChunk = { type: 'text', text: tail }
+        acpProgress.lastEvent = nextAcpMeaningfulEvent(acpProgress.lastEvent, tailChunk)
+        sendChunk(tailChunk)
+      }
+      await visualizationDispatch
+    }
     const acpChunkSink = (chunk: StreamChunk): void => {
       runAbort.deadline.recordActivity()
       runAbort.schedule()
-      if (chunk.type === 'text') acpAssistantText += chunk.text
+      if (chunk.type === 'text') {
+        const visibleText = inlineVisualizationFilter.push(chunk.text)
+        if (!visibleText) return
+        acpAssistantText += visibleText
+        const visibleChunk: StreamChunk = { type: 'text', text: visibleText }
+        acpProgress.lastEvent = nextAcpMeaningfulEvent(acpProgress.lastEvent, visibleChunk)
+        sendChunk(visibleChunk)
+        return
+      }
       acpProgress.lastEvent = nextAcpMeaningfulEvent(acpProgress.lastEvent, chunk)
       sendChunk(chunk)
     }
@@ -1033,10 +1072,17 @@ export async function runAgent(
         )
       }
 
+      await finishInlineVisualizations()
+
       if (endedAfterTools && !recoverySucceeded) {
         sendChunk({ type: 'text', text: `\n\n${ACP_UNFINISHED_TURN_FALLBACK}` })
         messages.push({ role: 'assistant', content: ACP_UNFINISHED_TURN_FALLBACK })
       }
+
+      messages = messages.map((message): LLMMessage => {
+        if (message.role !== 'assistant' || typeof message.content !== 'string') return message
+        return { ...message, content: stripInlineVisualizationReferences(message.content) }
+      })
 
       const normalized = normalizeStopReason(result.stopReason.toLowerCase())
       pendingTurnOutcome = {
@@ -1059,6 +1105,7 @@ export async function runAgent(
       sendChunk({ type: 'done', stopReason: result.stopReason })
       return resultWithOutcome({ usage, messages })
     } catch (err) {
+      await finishInlineVisualizations()
       // Keep what the failed turn streamed: the partial assistant text stays in
       // history (so the next turn's preamble knows what already happened) and
       // its estimated usage is reported instead of a silent zero. The error
@@ -1107,7 +1154,7 @@ export async function runAgent(
       // content when the agent failed before emitting a token — an auth failure
       // at connect time — which used to persist nothing at all.
       const cleanedPartial = partial?.assistantText
-        ? stripCursorAcpTransportNoise(partial.assistantText)
+        ? stripInlineVisualizationReferences(stripCursorAcpTransportNoise(partial.assistantText))
         : undefined
       const content = [
         cleanedPartial,

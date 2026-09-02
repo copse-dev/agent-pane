@@ -156,10 +156,31 @@ describe('canvas artefact refresh', () => {
       }
     })
     await $('.canvas-preview-card').waitForExist({ timeout: 20_000 })
-    const src = await browser.execute(
-      () => document.querySelector('.canvas-preview-image')?.getAttribute('src') ?? '',
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            (document.querySelector<HTMLImageElement>('.canvas-preview-image')?.naturalWidth ?? 0) >
+            0,
+        ),
+      { timeout: 20_000, timeoutMsg: 'expected the canvas preview image to load' },
     )
-    expect(src).toContain('data:image/png')
+    const preview = await browser.execute(() => {
+      const image = document.querySelector<HTMLImageElement>('.canvas-preview-image')
+      if (!image) return null
+      return {
+        src: image.getAttribute('src') ?? '',
+        naturalWidth: image.naturalWidth,
+        renderedWidth: image.getBoundingClientRect().width,
+      }
+    })
+    if (!preview) throw new Error('expected a canvas preview image')
+    expect(preview.src).toContain('data:image/png')
+    // A browser must not enlarge the thumbnail: that is what made prototype
+    // text visibly blurry when the old 480px capture filled the transcript.
+    expect(preview.naturalWidth).toBeGreaterThanOrEqual(Math.ceil(preview.renderedWidth))
+    expect(preview.renderedWidth).toBeLessThanOrEqual(1280)
+    await saveAppScreenshot('canvas-artefact-preview.png')
   })
 
   it('does not show one thread’s thumbnail on a same-title card in another thread', async () => {

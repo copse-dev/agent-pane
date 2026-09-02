@@ -687,6 +687,7 @@
 /* Canvas preview card: the thumbnail of a rendered artefact, with the Open
    button that promotes its (background) Browser-pane tab to the front. */
 .canvas-preview-card {
+  max-width: 1280px;
   margin: 8px 0 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius);

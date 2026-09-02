@@ -125,6 +125,7 @@ function copyMessage(message: Message): Message {
     review: _review,
     toolCalls,
     images,
+    canvasArtefacts,
     attachments,
     ...rest
   } = message
@@ -134,6 +135,9 @@ function copyMessage(message: Message): Message {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     toolCalls: (toolCalls ?? []).map((toolCall) => ({ ...toolCall })),
     ...(images !== undefined ? { images: [...images] } : {}),
+    ...(canvasArtefacts !== undefined
+      ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) }
+      : {}),
     ...(attachments !== undefined
       ? { attachments: attachments.map((attachment) => ({ ...attachment })) }
       : {}),
