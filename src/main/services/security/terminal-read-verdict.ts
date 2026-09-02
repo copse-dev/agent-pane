@@ -20,6 +20,56 @@ export interface TerminalReadVerdict {
 }
 
 /**
+ * How much of a snapshot the safety model is shown: its trailing slice — the
+ * most recent output, which is also what the agent asked for. Safety models may
+ * have small context windows and the screening call has a short timeout, so
+ * the window is deliberately modest.
+ *
+ * The window is also the limit of what a verdict can vouch for. A snapshot
+ * larger than this is never auto-shared on a "safe" verdict: the model saw
+ * only the tail, and a confident "ordinary build log" for the tail says
+ * nothing about a token or an instruction to the agent scrolled above it
+ * (#2280). What the model did not see goes to the user instead.
+ */
+export const TERMINAL_READ_SCREEN_MAX_CHARS = 6_000
+
+export interface TerminalReadScreenWindow {
+  /** The trailing slice the safety model is shown. */
+  screened: string
+  /** Characters above the window that the model never sees; 0 when it all fits. */
+  unscreenedChars: number
+  /**
+   * Lines that end above the window. A line cut by the boundary is partly
+   * visible to the model and is not counted; `unscreenedChars` is the gate's
+   * criterion, this is for the user-facing explanation.
+   */
+  unscreenedLines: number
+  /** Lines in the whole snapshot. */
+  totalLines: number
+}
+
+function countNewlines(text: string): number {
+  let count = 0
+  for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) count += 1
+  return count
+}
+
+/** Split a snapshot into the part the safety model screens and the part it never sees. */
+export function terminalReadScreenWindow(text: string): TerminalReadScreenWindow {
+  const totalLines = text.length === 0 ? 0 : countNewlines(text) + 1
+  const unscreenedChars = Math.max(0, text.length - TERMINAL_READ_SCREEN_MAX_CHARS)
+  if (unscreenedChars === 0) {
+    return { screened: text, unscreenedChars: 0, unscreenedLines: 0, totalLines }
+  }
+  return {
+    screened: text.slice(-TERMINAL_READ_SCREEN_MAX_CHARS),
+    unscreenedChars,
+    unscreenedLines: countNewlines(text.slice(0, unscreenedChars)),
+    totalLines,
+  }
+}
+
+/**
  * Parse the safety model's raw reply into a trusted verdict, or `null` when
  * unusable. This is the trust boundary between LLM freeform text and the
  * permission gate: unknown risk values and reason-less verdicts are rejected

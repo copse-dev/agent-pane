@@ -9,7 +9,10 @@ import {
   listTerminalSessions,
   readTerminalSessionOutput,
 } from '../services/exec/terminal-service.ts'
-import { ensureTerminalReadPermitted } from '../services/security/terminal-read-guard.ts'
+import {
+  TERMINAL_READ_SCREEN_MAX_CHARS,
+  ensureTerminalReadPermitted,
+} from '../services/security/terminal-read-guard.ts'
 
 function formatListLine(info: { id: string; label: string; active: boolean }): string {
   const mark = info.active ? ' (active)' : ''
@@ -24,7 +27,10 @@ export const readTerminalTool = defineTool({
   name: 'read_terminal',
   provenance: 'external',
   description:
-    "Read output from the user's open Shells tabs (interactive terminals in the right panel), not agent-run commands. Actions: `list` open shells for this chat; `read` recent scrollback (defaults to the active tab). Pass `id` from list to pick a tab; `max_lines` (default 200, max 2000) to control how much history to pull — use a smaller window for a quick check, or a larger one / hand the result to a subagent when the log is noisy. Prefer this over asking the user to paste when a shell is already open. Users can also `@shell` a tab into chat explicitly.",
+    "Read output from the user's open Shells tabs (interactive terminals in the right panel), not agent-run commands. Actions: `list` open shells for this chat; `read` recent scrollback (defaults to the active tab). Pass `id` from list to pick a tab; " +
+    `\`max_lines\` (default ${String(READ_TERMINAL_DEFAULT_LINES)}, max ${String(READ_TERMINAL_MAX_LINES)}) to control how much history to pull — use a smaller window for a quick check, or a larger one / hand the result to a subagent when the log is noisy. ` +
+    `Snapshots are screened by a local safety model before they are shared; one larger than about ${String(TERMINAL_READ_SCREEN_MAX_CHARS)} characters exceeds what it screens and asks the user first, so keep quick checks small. ` +
+    'Prefer this over asking the user to paste when a shell is already open. Users can also `@shell` a tab into chat explicitly.',
   parameters: z.object({
     action: z
       .enum(['list', 'read'])

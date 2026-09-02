@@ -8,10 +8,17 @@ import { completeMessagesWithUsage } from '../providers/llm-complete-text.ts'
 import {
   parseTerminalReadVerdict,
   terminalReadNeedsApproval,
+  terminalReadScreenWindow,
+  type TerminalReadScreenWindow,
   type TerminalReadVerdict,
 } from './terminal-read-verdict.ts'
 
-export { parseTerminalReadVerdict, terminalReadNeedsApproval } from './terminal-read-verdict.ts'
+export {
+  TERMINAL_READ_SCREEN_MAX_CHARS,
+  parseTerminalReadVerdict,
+  terminalReadNeedsApproval,
+  terminalReadScreenWindow,
+} from './terminal-read-verdict.ts'
 export type { TerminalReadVerdict } from './terminal-read-verdict.ts'
 
 /**
@@ -21,6 +28,11 @@ export type { TerminalReadVerdict } from './terminal-read-verdict.ts'
  * agent (prompt injection). Before a snapshot is auto-shared, the local safety
  * model screens it; anything flagged — or any screening failure — falls back to
  * an explicit user approval instead of silently allowing or denying.
+ *
+ * A verdict only ever vouches for what the model was shown. The model sees at
+ * most {@link TERMINAL_READ_SCREEN_MAX_CHARS} of the snapshot's tail, so a
+ * snapshot larger than that is treated as unscreened and goes to the user too,
+ * however confident the model is about the part it saw (#2280).
  */
 
 const SYSTEM_PROMPT = `You are a security screener for a coding assistant.
@@ -33,12 +45,12 @@ Mark "risky" if the output appears to contain: secrets or credentials (API keys,
 Mark "safe" only when you are confident it is ordinary command output with none of the above.
 When uncertain, use "risky" with lower confidence.`
 
-// Safety models may have small context windows; screen the trailing slice of
-// the snapshot (the most recent output, which is also what the agent asked
-// for). A secret scrolled beyond this window is still covered by the approval
-// fallback whenever the classifier cannot vouch for the visible tail.
-const CLASSIFIER_INPUT_MAX_CHARS = 6_000
-
+/**
+ * Screen the tail of a snapshot with the safety model. Only the trailing
+ * {@link TERMINAL_READ_SCREEN_MAX_CHARS} are sent, so the verdict describes
+ * that slice and nothing above it; the gate below is what turns a verdict into
+ * a sharing decision, and it never auto-allows more than was screened.
+ */
 export async function classifyTerminalSnapshot(
   text: string,
   signal?: AbortSignal,
@@ -58,7 +70,7 @@ export async function classifyTerminalSnapshot(
       provider,
       [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: text.slice(-CLASSIFIER_INPUT_MAX_CHARS) },
+        { role: 'user', content: terminalReadScreenWindow(text).screened },
       ],
       FETCH_TIMEOUTS.safetyClassification,
       signal,
@@ -89,9 +101,26 @@ type TerminalReadGate = (
   signal?: AbortSignal,
 ) => Promise<TerminalReadGateResult>
 
+type TerminalSnapshotClassifier = (
+  text: string,
+  signal?: AbortSignal,
+) => Promise<TerminalReadVerdict | null>
+
 // "Always allow for this chat" remembers per thread for this app session only —
 // a durable grant would outlive the shell content the user actually looked at.
 const rememberedThreads = new Set<string>()
+
+/** User-facing reason for a snapshot the model was never shown all of. */
+function describeUnscreened(window: TerminalReadScreenWindow): string {
+  if (window.unscreenedLines === 0) {
+    return 'It is larger than the safety model screens, so part of it was not screened.'
+  }
+  const screenedLines = window.totalLines - window.unscreenedLines
+  return (
+    `It is larger than the safety model screens: only the most recent ${String(screenedLines)} ` +
+    `of its ${String(window.totalLines)} lines were screened.`
+  )
+}
 
 async function gateImpl(
   threadId: string | null,
@@ -101,12 +130,22 @@ async function gateImpl(
 ): Promise<TerminalReadGateResult> {
   if (threadId && rememberedThreads.has(threadId)) return { allowed: true }
 
-  const verdict = await classifyTerminalSnapshot(text, signal)
-  if (!terminalReadNeedsApproval(verdict)) return { allowed: true }
+  const window = terminalReadScreenWindow(text)
+  let why: string
+  if (window.unscreenedChars > 0) {
+    // No verdict on the tail could vouch for what sits above it, so no verdict
+    // could auto-allow this snapshot. Ask the user straight away rather than
+    // spend a screening call (and its latency) on an answer that cannot change
+    // the outcome.
+    why = describeUnscreened(window)
+  } else {
+    const verdict = await classifier(text, signal)
+    if (!terminalReadNeedsApproval(verdict)) return { allowed: true }
+    why = verdict
+      ? `The safety model flagged it: ${verdict.reason}`
+      : 'The safety model could not screen it.'
+  }
 
-  const why = verdict
-    ? `The safety model flagged it: ${verdict.reason}`
-    : 'The safety model could not screen it.'
   const decision = await requestApproval(
     {
       type: 'shell',
@@ -132,6 +171,7 @@ async function gateImpl(
 }
 
 let gate: TerminalReadGate = gateImpl
+let classifier: TerminalSnapshotClassifier = classifyTerminalSnapshot
 
 /** Screen a scrollback snapshot before it reaches the agent (see module doc). */
 export function ensureTerminalReadPermitted(
@@ -146,4 +186,14 @@ export function ensureTerminalReadPermitted(
 /** Replace the gate in unit tests; pass `null` to restore the real one. */
 export function setTerminalReadGateForTest(next: TerminalReadGate | null): void {
   gate = next ?? gateImpl
+}
+
+/**
+ * Replace the safety-model call the real gate makes; pass `null` to restore
+ * it. Lets a test drive the gate with a scripted verdict and no model.
+ */
+export function setTerminalSnapshotClassifierForTest(
+  next: TerminalSnapshotClassifier | null,
+): void {
+  classifier = next ?? classifyTerminalSnapshot
 }
