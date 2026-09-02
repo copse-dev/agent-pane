@@ -97,16 +97,25 @@ export function createModelRoutingSection(
             fetchRoleModelOptions(api, current, '(auto: prefer on-device)'),
         }
       : {
-          coder: (): Promise<ModelOption[]> =>
-            Promise.resolve(localModelOptions(availableLocalModels)),
-          research: (): Promise<ModelOption[]> =>
+          // `current` is forwarded so a role pinned to a model the server does
+          // not have keeps a row of its own, flagged as not available, instead
+          // of silently rendering as the auto option.
+          coder: (current: string): Promise<ModelOption[]> =>
             Promise.resolve(
-              localModelOptions(availableLocalModels, '(auto: use default local model)'),
+              localModelOptions(availableLocalModels, '(auto — first loaded model)', current),
             ),
-          safety: (): Promise<ModelOption[]> =>
-            Promise.resolve(localModelOptions(availableLocalModels)),
-          review: (): Promise<ModelOption[]> =>
-            Promise.resolve(localModelOptions(availableLocalModels, '(auto: prefer on-device)')),
+          research: (current: string): Promise<ModelOption[]> =>
+            Promise.resolve(
+              localModelOptions(availableLocalModels, '(auto: use default local model)', current),
+            ),
+          safety: (current: string): Promise<ModelOption[]> =>
+            Promise.resolve(
+              localModelOptions(availableLocalModels, '(auto — first loaded model)', current),
+            ),
+          review: (current: string): Promise<ModelOption[]> =>
+            Promise.resolve(
+              localModelOptions(availableLocalModels, '(auto: prefer on-device)', current),
+            ),
         }
   const modelPickers = {
     coder: mountModelSelectPicker(localDefaultModel, {

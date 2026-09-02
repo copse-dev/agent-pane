@@ -5,7 +5,7 @@ import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { resolveExtraProviders } from '@copse/llm/extra-providers.ts'
 import { cloudModelIntellectHint } from '@copse/llm/intellect-hints.ts'
 import { getIntellectScore } from '@copse/llm/model-intellect.ts'
-import { fetchModelOptions, modelDisplayLabel } from './model-options.ts'
+import { fetchModelOptions, localModelOptions, modelDisplayLabel } from './model-options.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 interface MockOpts {
@@ -695,5 +695,52 @@ describe('fetchModelOptions visibility', () => {
     assert.match(current.label, /no key/)
     // The current-selection fallback means we are not "empty", so no global message.
     assert.ok(!options.some((o) => /No models available/.test(o.label)))
+  })
+})
+
+/**
+ * A role can be pinned to a local model that was never downloaded — the safety
+ * role ships pre-pinned to one, so a fresh install whose download never
+ * finished is exactly this case. The picker must say so: a `<select>` whose
+ * value matches no option renders the *first* option instead, which here reads
+ * as "auto" — the one thing the setting is not.
+ */
+describe('a local model that is configured but not available', () => {
+  it('keeps the pinned id as its own row, flagged as not available', () => {
+    const options = localModelOptions(['google/gemma-4-e4b'], '(auto)', 'qwen/qwen3-4b-2507')
+    const pinned = options.find((o) => o.value === 'qwen/qwen3-4b-2507')
+    assert.ok(pinned)
+    assert.match(pinned.label, /not available/)
+  })
+
+  it('adds no extra row when the pinned id is installed', () => {
+    const options = localModelOptions(['google/gemma-4-e4b'], '(auto)', 'google/gemma-4-e4b')
+    assert.equal(options.length, 2)
+    assert.ok(!options.some((o) => /not available/.test(o.label)))
+  })
+
+  it('adds no extra row when nothing is pinned', () => {
+    assert.deepEqual(localModelOptions(['a'], '(auto)'), [
+      { value: '', label: '(auto)' },
+      { value: 'a', label: 'a' },
+    ])
+  })
+
+  it('says "not available" when the server answered, "offline" when it did not', async () => {
+    const listed = await fetchModelOptions(
+      mockApi({ lmStudioModels: ['google/gemma-4-e4b'] }),
+      'lmstudio:qwen/qwen3-4b-2507',
+    )
+    const absent = listed.find((o) => o.value === 'lmstudio:qwen/qwen3-4b-2507')
+    assert.ok(absent)
+    assert.match(absent.label, /not available/)
+
+    const unreachable = await fetchModelOptions(
+      mockApi({ lmStudioModels: [] }),
+      'lmstudio:qwen/qwen3-4b-2507',
+    )
+    const offline = unreachable.find((o) => o.value === 'lmstudio:qwen/qwen3-4b-2507')
+    assert.ok(offline)
+    assert.match(offline.label, /offline/)
   })
 })

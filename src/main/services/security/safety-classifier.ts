@@ -7,6 +7,7 @@ import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { parseClassification, type ClassificationResult } from './safety-classification-parse.ts'
 import { completeMessagesWithUsage } from '../providers/llm-complete-text.ts'
+import { findSafetyModelProblem, reportSafetyModelProblem } from './safety-model-availability.ts'
 
 export type { ClassificationResult } from './safety-classification-parse.ts'
 export { parseClassification } from './safety-classification-parse.ts'
@@ -35,6 +36,15 @@ export async function classifyShellScope(command: string): Promise<Classificatio
 
   const model = resolveSafetyModel()
   if (!model) return null
+
+  // Establish up front whether the model can run. Without this a missing model
+  // costs a doomed request per command and lands in the same `catch` as a real
+  // screening failure, so the gate silently loses its classifier for good.
+  const problem = await findSafetyModelProblem(model)
+  if (problem) {
+    reportSafetyModelProblem(problem)
+    return null
+  }
 
   const workspaceRoot = getWorkspaceRoot()
   const payload = {
