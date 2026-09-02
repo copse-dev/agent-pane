@@ -114,6 +114,24 @@ describe('subagent local model routing', () => {
     assert.equal(route.contextWindow, 8192)
   })
 
+  /**
+   * Onboarding writes an `auto:` rule into every role it configures, so a role
+   * setting routinely holds a rule rather than an id. It used to reach
+   * `buildProvider` as `lmstudio:auto:best-local` -- the legacy bare-id upgrade
+   * prefixing a value that was never an id -- and route to a model that cannot
+   * exist. `usageModel` matters as much as the provider: the ledger has to name
+   * the model that actually ran, not the rule that chose it.
+   */
+  it('expands a rule stored on a role instead of routing to it as an id', async () => {
+    setSetting('subagentModel', 'auto:best-local')
+    restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'default-local' }] }))
+
+    const route = await buildSubagentRoute('claude-sonnet-4-6')
+    assert.ok(route)
+    assert.ok(!route.usageModel.startsWith('lmstudio:auto:'))
+    assert.ok(!route.usageModel.includes('auto:'))
+  })
+
   it('defaults review to an on-device model', async () => {
     restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'default-local' }] }))
     setSetting('localDefaultModel', 'default-local')

@@ -1,4 +1,4 @@
-import { BEST_VALUE_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
+import { BEST_VALUE_MODEL_SELECTOR, minIntellectSelector } from '@copse/llm/dynamic-model.ts'
 import { firstNonEmptyString } from './unknown-value.ts'
 
 /**
@@ -38,6 +38,42 @@ export const BEST_VALUE_CHAT_MODEL_LABEL = 'Best value (plan / price)'
 
 /** Concrete local fallback when best-value resolution finds no routable model. */
 export const FALLBACK_APP_CHAT_MODEL = `lmstudio:${LM_STUDIO_MODEL_IDS.chat}`
+
+/**
+ * Intelligence floor for the instruct/safety role.
+ *
+ * Screening a shell command or a terminal snapshot is a small classification
+ * job, but a model that cannot hold the output format is worse than useless
+ * here: it fails to parse, the gate falls back to asking, and the user gets a
+ * prompt on every call with no idea why. The bar exists to keep a model that
+ * weak from being chosen automatically.
+ *
+ * 20 is the lowest rung the picker offers ({@link MIN_INTELLECT_THRESHOLDS}),
+ * so a hand-set value can always be read against the same scale.
+ */
+export const SAFETY_MODEL_MIN_INTELLECT = 20
+
+/**
+ * Default for the instruct/safety role: the best model on this device that
+ * clears {@link SAFETY_MODEL_MIN_INTELLECT}, or the cheapest cloud route that
+ * clears it when no local model does.
+ *
+ * A relative rule rather than `LM_STUDIO_MODEL_IDS.safety`, for the same reason
+ * every other role stores one: a fixed local id is wrong for the large number of
+ * users who never set up a local server, and it fails *silently* there — the
+ * classifier reports enabled while pointing at a model that will never exist.
+ * `LM_STUDIO_MODEL_IDS.safety` stays the id we recommend downloading; it is no
+ * longer what an unconfigured install pretends to be using.
+ *
+ * Two consequences worth knowing, both deliberate. Screening moves to a cloud
+ * provider when nothing local clears the bar, so terminal scrollback and shell
+ * commands are sent there — the picker's hint says so, and a qualifying local
+ * model always wins, because `min-intellect` prefers routes that cost nothing
+ * at the margin. And a model with no measured score cannot be chosen at all:
+ * `localFrontierCandidates` only admits models the local catalog has scored, so
+ * the bar is applied to a smaller pool than the machine may actually hold.
+ */
+export const DEFAULT_SAFETY_MODEL = minIntellectSelector(SAFETY_MODEL_MIN_INTELLECT)
 
 /**
  * Default chat model setting for new installs / unset `model`. Resolves at

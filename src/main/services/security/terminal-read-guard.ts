@@ -1,10 +1,16 @@
 import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
-import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { buildProvider, normalizeRoleModelSelection } from '../providers/provider-selection.ts'
+import { resolveDynamicModelId } from '../providers/dynamic-model.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { requestApproval } from '../approval.ts'
 import { completeMessagesWithUsage } from '../providers/llm-complete-text.ts'
+import {
+  findSafetyModelProblem,
+  reportSafetyModelProblem,
+  type SafetyModelProblem,
+} from './safety-model-availability.ts'
 import {
   parseTerminalReadVerdict,
   terminalReadNeedsApproval,
@@ -33,6 +39,11 @@ export type { TerminalReadVerdict } from './terminal-read-verdict.ts'
  * most {@link TERMINAL_READ_SCREEN_MAX_CHARS} of the snapshot's tail, so a
  * snapshot larger than that is treated as unscreened and goes to the user too,
  * however confident the model is about the part it saw (#2280).
+ *
+ * The fallback stays fail-closed either way, but it does not stay silent: a
+ * model that is configured and simply absent is reported as such, because a
+ * prompt on every single read reads as a transient glitch and nobody goes
+ * looking for a setting that is quietly pointing at nothing.
  */
 
 const SYSTEM_PROMPT = `You are a security screener for a coding assistant.
@@ -46,6 +57,17 @@ Mark "safe" only when you are confident it is ordinary command output with none 
 When uncertain, use "risky" with lower confidence.`
 
 /**
+ * Outcome of one screening attempt. `problem` separates "the configured model
+ * cannot run" from "screening was attempted and produced nothing usable" —
+ * both fall back to approval, but only one of them is worth telling the user
+ * how to fix.
+ */
+export interface TerminalReadScreening {
+  verdict: TerminalReadVerdict | null
+  problem: SafetyModelProblem | null
+}
+
+/**
  * Screen the tail of a snapshot with the safety model. Only the trailing
  * {@link TERMINAL_READ_SCREEN_MAX_CHARS} are sent, so the verdict describes
  * that slice and nothing above it; the gate below is what turns a verdict into
@@ -54,13 +76,21 @@ When uncertain, use "risky" with lower confidence.`
 export async function classifyTerminalSnapshot(
   text: string,
   signal?: AbortSignal,
-): Promise<TerminalReadVerdict | null> {
-  if (!getSetting<boolean>('safetyClassifierEnabled', true)) return null
+): Promise<TerminalReadScreening> {
+  if (!getSetting<boolean>('safetyClassifierEnabled', true)) return { verdict: null, problem: null }
 
-  const model = normalizeRoleModelSelection(
-    getSettingTrimmed('safetyModel', LM_STUDIO_MODEL_IDS.safety),
+  // The stored setting may be an `auto:` rule (the default is one); expand it
+  // before it is treated as an id.
+  const model = await resolveDynamicModelId(
+    normalizeRoleModelSelection(getSettingTrimmed('safetyModel', DEFAULT_SAFETY_MODEL)),
   )
-  if (!model) return null
+  if (!model) return { verdict: null, problem: null }
+
+  const problem = await findSafetyModelProblem(model)
+  if (problem) {
+    reportSafetyModelProblem(problem)
+    return { verdict: null, problem }
+  }
 
   try {
     // Screening a terminal read is a one-shot judgement — same cap as the
@@ -82,9 +112,9 @@ export async function classifyTerminalSnapshot(
         ...usage,
       })
     }
-    return parseTerminalReadVerdict(content)
+    return { verdict: parseTerminalReadVerdict(content), problem: null }
   } catch {
-    return null
+    return { verdict: null, problem: null }
   }
 }
 
@@ -104,7 +134,7 @@ type TerminalReadGate = (
 type TerminalSnapshotClassifier = (
   text: string,
   signal?: AbortSignal,
-) => Promise<TerminalReadVerdict | null>
+) => Promise<TerminalReadScreening>
 
 // "Always allow for this chat" remembers per thread for this app session only —
 // a durable grant would outlive the shell content the user actually looked at.
@@ -139,11 +169,11 @@ async function gateImpl(
     // the outcome.
     why = describeUnscreened(window)
   } else {
-    const verdict = await classifier(text, signal)
+    const { verdict, problem } = await classifier(text, signal)
     if (!terminalReadNeedsApproval(verdict)) return { allowed: true }
     why = verdict
       ? `The safety model flagged it: ${verdict.reason}`
-      : 'The safety model could not screen it.'
+      : (problem?.message ?? 'The safety model could not screen it.')
   }
 
   const decision = await requestApproval(
