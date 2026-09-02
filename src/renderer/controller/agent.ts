@@ -4,6 +4,7 @@ import {
   addMessage,
   appendToken,
   appendReasoning,
+  addMessageCanvasArtefact,
   addToolCall,
   updateToolCall,
   findToolCall,
@@ -199,6 +200,18 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         st.msgId ??= addAssistantMessage(store, threadId)
         setMessageContent(store, st.msgId, chunk.text)
         st.currentText = chunk.text
+        break
+      }
+      case 'canvas_artefact': {
+        // A reference can be the entire post-tool answer. Give it a fresh
+        // assistant bubble just as reasoning or visible text would receive.
+        if (!st.msgId || st.toolSinceText) {
+          if (st.toolSinceText && st.msgId) store.emit('message_done', st.msgId)
+          st.msgId = addAssistantMessage(store, threadId)
+          st.toolSinceText = false
+          st.currentText = ''
+        }
+        addMessageCanvasArtefact(store, st.msgId, chunk.artefact)
         break
       }
       case 'tool_call': {
