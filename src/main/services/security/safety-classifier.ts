@@ -1,14 +1,18 @@
-import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
-import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
+import { getSetting } from '../storage/settings.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
-import { buildProvider, normalizeRoleModelSelection } from '../providers/provider-selection.ts'
-import { resolveDynamicModelId } from '../providers/dynamic-model.ts'
+import { buildProvider } from '../providers/provider-selection.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { parseClassification, type ClassificationResult } from './safety-classification-parse.ts'
 import { completeMessagesWithUsage } from '../providers/llm-complete-text.ts'
 import { findSafetyModelProblem, reportSafetyModelProblem } from './safety-model-availability.ts'
+import {
+  isScreeningTimeout,
+  noteSafetyModelAnswered,
+  noteSafetyModelTimeout,
+} from './safety-model-cooldown.ts'
+import { resolveSafetyScreeningModel } from './safety-screening-model.ts'
 
 export type { ClassificationResult } from './safety-classification-parse.ts'
 export { parseClassification } from './safety-classification-parse.ts'
@@ -28,23 +32,16 @@ Mark as "external" if the command might: use the network, read/write outside the
 Mark as "sandbox" only when you are confident the command stays within the workspace with no network.
 When uncertain, use "external" with lower confidence.`
 
-/**
- * The model this screening will actually run on.
- *
- * The stored setting may be an `auto:` rule (the default is one), so expand it
- * before anything treats the value as an id. The result is what gets checked
- * for availability, routed, and billed to the usage ledger.
- */
-function resolveSafetyModel(): Promise<string> {
-  return resolveDynamicModelId(
-    normalizeRoleModelSelection(getSettingTrimmed('safetyModel', DEFAULT_SAFETY_MODEL)),
-  )
-}
-
 export async function classifyShellScope(command: string): Promise<ClassificationResult | null> {
   if (!getSetting<boolean>('safetyClassifierEnabled', true)) return null
 
-  const model = await resolveSafetyModel()
+  // Which model screens — the stored rule expanded, minus anything currently
+  // being routed around for missing the budget (`safety-screening-model.ts`).
+  const { model, problem: routing } = await resolveSafetyScreeningModel()
+  if (routing) {
+    reportSafetyModelProblem(routing)
+    return null
+  }
   if (!model) return null
 
   // Establish up front whether the model can run. Without this a missing model
@@ -81,6 +78,7 @@ export async function classifyShellScope(command: string): Promise<Classificatio
       ],
       FETCH_TIMEOUTS.safetyClassification,
     )
+    noteSafetyModelAnswered(model)
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
         model,
@@ -89,7 +87,12 @@ export async function classifyShellScope(command: string): Promise<Classificatio
       })
     }
     return parseClassification(text)
-  } catch {
+  } catch (err) {
+    // A model too slow to finish is worth remembering, so the next command does
+    // not buy the same budget of nothing. Other failures say nothing about speed.
+    if (isScreeningTimeout(err)) {
+      reportSafetyModelProblem(noteSafetyModelTimeout(model, FETCH_TIMEOUTS.safetyClassification))
+    }
     return null
   }
 }
