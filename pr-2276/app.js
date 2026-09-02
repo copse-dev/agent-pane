@@ -24278,7 +24278,7 @@ function isBestValueChatModel(model) {
 function lmStudioChatModelValue(modelId) {
   return `lmstudio:${modelId}`;
 }
-var DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS, BEST_VALUE_CHAT_MODEL, BEST_VALUE_CHAT_MODEL_LABEL, FALLBACK_APP_CHAT_MODEL, DEFAULT_SAFETY_MODEL, DEFAULT_APP_CHAT_MODEL;
+var DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS, BEST_VALUE_CHAT_MODEL, BEST_VALUE_CHAT_MODEL_LABEL, FALLBACK_APP_CHAT_MODEL, SAFETY_MODEL_MIN_INTELLECT, DEFAULT_SAFETY_MODEL, DEFAULT_APP_CHAT_MODEL;
 var init_lm_studio_defaults = __esm({
   "src/shared/lm-studio-defaults.ts"() {
     init_dynamic_model();
@@ -24292,7 +24292,8 @@ var init_lm_studio_defaults = __esm({
     BEST_VALUE_CHAT_MODEL = BEST_VALUE_MODEL_SELECTOR;
     BEST_VALUE_CHAT_MODEL_LABEL = "Best value (plan / price)";
     FALLBACK_APP_CHAT_MODEL = `lmstudio:${LM_STUDIO_MODEL_IDS.chat}`;
-    DEFAULT_SAFETY_MODEL = BEST_LOCAL_MODEL_SELECTOR;
+    SAFETY_MODEL_MIN_INTELLECT = 20;
+    DEFAULT_SAFETY_MODEL = minIntellectSelector(SAFETY_MODEL_MIN_INTELLECT);
     DEFAULT_APP_CHAT_MODEL = BEST_VALUE_CHAT_MODEL;
   }
 });
@@ -32250,7 +32251,7 @@ async function fetchRoleModelOptions(api3, current, autoLabel = "(auto \u2014 pr
   ];
 }
 function automaticModelChoices() {
-  return dynamicModelChoices().filter((choice2) => choice2.group === "Automatic").map((choice2) => ({
+  return dynamicModelChoices().filter((choice2) => choice2.group !== "By role").map((choice2) => ({
     value: choice2.value,
     label: `${choice2.label} \u2014 ${choice2.description}`,
     group: choice2.group
@@ -43366,7 +43367,7 @@ function createModelRoutingSection(api3, options2 = {}) {
       routingField(
         "Instruct / safety model",
         safetyModel,
-        "Classifies shell commands and screens terminal reads. Defaults to the best model on this device, falling back to the cheapest reachable one when you have no local server \u2014 and any cloud choice sends that screening content to its provider."
+        "Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does \u2014 a cloud choice sends that screening content to its provider."
       ),
       routingField("Post-turn review model", reviewModel, "Reviews the diff after an editing turn")
     )
