@@ -1,6 +1,7 @@
 import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
-import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { buildProvider, normalizeRoleModelSelection } from '../providers/provider-selection.ts'
+import { resolveDynamicModelId } from '../providers/dynamic-model.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { requestApproval } from '../approval.ts'
@@ -66,8 +67,10 @@ export async function classifyTerminalSnapshot(
 ): Promise<TerminalReadScreening> {
   if (!getSetting<boolean>('safetyClassifierEnabled', true)) return { verdict: null, problem: null }
 
-  const model = normalizeRoleModelSelection(
-    getSettingTrimmed('safetyModel', LM_STUDIO_MODEL_IDS.safety),
+  // The stored setting may be an `auto:` rule (the default is one); expand it
+  // before it is treated as an id.
+  const model = await resolveDynamicModelId(
+    normalizeRoleModelSelection(getSettingTrimmed('safetyModel', DEFAULT_SAFETY_MODEL)),
   )
   if (!model) return { verdict: null, problem: null }
 

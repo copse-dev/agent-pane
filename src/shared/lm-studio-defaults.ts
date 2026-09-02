@@ -1,4 +1,4 @@
-import { BEST_VALUE_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
+import { BEST_LOCAL_MODEL_SELECTOR, BEST_VALUE_MODEL_SELECTOR } from '@copse/llm/dynamic-model.ts'
 import { firstNonEmptyString } from './unknown-value.ts'
 
 /**
@@ -38,6 +38,25 @@ export const BEST_VALUE_CHAT_MODEL_LABEL = 'Best value (plan / price)'
 
 /** Concrete local fallback when best-value resolution finds no routable model. */
 export const FALLBACK_APP_CHAT_MODEL = `lmstudio:${LM_STUDIO_MODEL_IDS.chat}`
+
+/**
+ * Default for the instruct/safety role: strongest model on this device, and —
+ * when there is no local server at all — the cheapest reachable route instead
+ * (see `pickDynamicModel`'s `best-local` case).
+ *
+ * A relative rule rather than `LM_STUDIO_MODEL_IDS.safety`, for the same reason
+ * every other role stores one: a fixed local id is wrong for the large number of
+ * users who never set up a local server, and it fails *silently* there — the
+ * classifier reports enabled while pointing at a model that will never exist.
+ * `LM_STUDIO_MODEL_IDS.safety` stays the id we recommend downloading; it is no
+ * longer what an unconfigured install pretends to be using.
+ *
+ * Note the trade-off this encodes: with no local model, screening moves to a
+ * cloud provider, so terminal scrollback and shell commands are sent there.
+ * That is why the picker's hint says so, and why a local model always wins when
+ * one is present.
+ */
+export const DEFAULT_SAFETY_MODEL = BEST_LOCAL_MODEL_SELECTOR
 
 /**
  * Default chat model setting for new installs / unset `model`. Resolves at

@@ -1,8 +1,9 @@
 import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
-import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { buildProvider, normalizeRoleModelSelection } from '../providers/provider-selection.ts'
+import { resolveDynamicModelId } from '../providers/dynamic-model.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { parseClassification, type ClassificationResult } from './safety-classification-parse.ts'
@@ -27,14 +28,23 @@ Mark as "external" if the command might: use the network, read/write outside the
 Mark as "sandbox" only when you are confident the command stays within the workspace with no network.
 When uncertain, use "external" with lower confidence.`
 
-function resolveSafetyModel(): string {
-  return normalizeRoleModelSelection(getSettingTrimmed('safetyModel', LM_STUDIO_MODEL_IDS.safety))
+/**
+ * The model this screening will actually run on.
+ *
+ * The stored setting may be an `auto:` rule (the default is one), so expand it
+ * before anything treats the value as an id. The result is what gets checked
+ * for availability, routed, and billed to the usage ledger.
+ */
+function resolveSafetyModel(): Promise<string> {
+  return resolveDynamicModelId(
+    normalizeRoleModelSelection(getSettingTrimmed('safetyModel', DEFAULT_SAFETY_MODEL)),
+  )
 }
 
 export async function classifyShellScope(command: string): Promise<ClassificationResult | null> {
   if (!getSetting<boolean>('safetyClassifierEnabled', true)) return null
 
-  const model = resolveSafetyModel()
+  const model = await resolveSafetyModel()
   if (!model) return null
 
   // Establish up front whether the model can run. Without this a missing model

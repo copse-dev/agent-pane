@@ -4,7 +4,14 @@ import { createServer, type Server } from 'node:http'
 import { setSetting, setApiKey } from '../storage/settings.ts'
 import { findSafetyModelProblem } from './safety-model-availability.ts'
 import { classifyShellScope } from './safety-classifier.ts'
-import { invalidateLmStudioModelsCache } from '../providers/provider-selection.ts'
+import {
+  invalidateLmStudioModelsCache,
+  normalizeRoleModelSelection,
+} from '../providers/provider-selection.ts'
+import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
+import { BEST_LOCAL_MODEL_SELECTOR, isDynamicModel } from '@copse/llm/dynamic-model.ts'
+import { pickDynamicModel } from '@copse/llm/dynamic-model-pick.ts'
+import type { FrontierPoint } from '@copse/llm/pareto-frontier.ts'
 import {
   reportSafetyModelProblem,
   resetSafetyModelProblemReportsForTest,
@@ -176,5 +183,69 @@ describe('reportSafetyModelProblem', () => {
     const events = await readDecisionLog(PROJECT)
     assert.equal(events.length, 2)
     assert.deepEqual(events.map((e) => e.threadId).sort(), ['t-availability', 't-other'])
+  })
+})
+
+/**
+ * The safety role stores a *rule* by default (`DEFAULT_SAFETY_MODEL`), because
+ * a fixed local id is wrong for everyone without a local server and fails
+ * silently there. The rule is only worth anything if it survives the read path
+ * intact — it used to be mangled into `lmstudio:auto:best-local`, an id that
+ * cannot exist.
+ */
+describe('auto: rules on role settings', () => {
+  it('the safety default is a rule, not a pinned local id', () => {
+    assert.equal(DEFAULT_SAFETY_MODEL, BEST_LOCAL_MODEL_SELECTOR)
+    assert.ok(isDynamicModel(DEFAULT_SAFETY_MODEL))
+  })
+
+  it('survives the legacy bare-id upgrade instead of being prefixed', () => {
+    for (const rule of ['auto:best-local', 'auto:cheapest', 'auto:min-intellect:30']) {
+      assert.equal(normalizeRoleModelSelection(rule), rule)
+    }
+    // The legacy upgrade itself still applies to genuinely bare ids.
+    assert.equal(normalizeRoleModelSelection(INSTALLED), `lmstudio:${INSTALLED}`)
+  })
+
+  it('is not mistaken for an unavailable model', async () => {
+    // A rule has no id to install; pre-checking it as one would report a
+    // configuration fault on a perfectly valid default.
+    assert.equal(await findSafetyModelProblem(DEFAULT_SAFETY_MODEL), null)
+  })
+
+  it('prefers a local model and falls back to a reachable route otherwise', () => {
+    const local: FrontierPoint = {
+      id: 'lmstudio:small',
+      intellect: 12,
+      costPerMTok: 0,
+      local: true,
+      onFrontier: true,
+    }
+    const cloudCheap: FrontierPoint = {
+      id: 'cloud-cheap',
+      intellect: 20,
+      costPerMTok: 0.5,
+      onFrontier: true,
+    }
+    const cloudDear: FrontierPoint = {
+      id: 'cloud-dear',
+      intellect: 60,
+      costPerMTok: 30,
+      onFrontier: true,
+    }
+
+    // With a local model present it wins outright, however much smarter the
+    // cloud options are: screening reads terminal scrollback, so staying on
+    // the machine is the point.
+    assert.equal(
+      pickDynamicModel({ kind: 'best-local' }, [local, cloudCheap, cloudDear])?.id,
+      'lmstudio:small',
+    )
+    // With no local server the rule still resolves — to the cheapest reachable
+    // route, which is what makes the classifier work at all for cloud-only users.
+    assert.equal(
+      pickDynamicModel({ kind: 'best-local' }, [cloudCheap, cloudDear])?.id,
+      'cloud-cheap',
+    )
   })
 })

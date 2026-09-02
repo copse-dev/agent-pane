@@ -1,7 +1,7 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { PREFERRED_MODELS } from '@shared/preferred-models.ts'
 import { at } from '@shared/array-utils.ts'
-import { lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
+import { DEFAULT_SAFETY_MODEL, lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
 import { fetchRoleModelOptions, localModelOptions, type ModelOption } from '../model-options.ts'
 import { mountModelSelectPicker } from '../model-picker.ts'
 import { el } from '../../dom/helpers.ts'
@@ -53,7 +53,7 @@ export function createModelRoutingSection(
       routingField(
         'Instruct / safety model',
         safetyModel,
-        'Classifies shell commands and screens terminal reads. A cloud choice sends that screening content to its provider.',
+        'Classifies shell commands and screens terminal reads. Defaults to the best model on this device, falling back to the cheapest reachable one when you have no local server — and any cloud choice sends that screening content to its provider.',
       ),
       routingField('Post-turn review model', reviewModel, 'Reviews the diff after an editing turn'),
     ),
@@ -157,11 +157,9 @@ export function createModelRoutingSection(
             : lmStudioChatModelValue(at(PREFERRED_MODELS, 0).id),
         ),
         modelPickers.research.refresh(canonicalRoleSelection(research ?? '')),
-        modelPickers.safety.refresh(
-          safety
-            ? canonicalRoleSelection(safety)
-            : lmStudioChatModelValue(at(PREFERRED_MODELS, 2).id),
-        ),
+        // Unset means the *rule*, not the model we recommend downloading —
+        // showing a concrete local id here would misreport what actually runs.
+        modelPickers.safety.refresh(safety ? canonicalRoleSelection(safety) : DEFAULT_SAFETY_MODEL),
         modelPickers.review.refresh(canonicalRoleSelection(review ?? '')),
       ])
       return
@@ -179,7 +177,7 @@ export function createModelRoutingSection(
         localModel?.replace(/^lmstudio:/, '') ?? at(PREFERRED_MODELS, 0).id,
       ),
       modelPickers.research.refresh(subagent?.replace(/^lmstudio:/, '') ?? ''),
-      modelPickers.safety.refresh(safety?.replace(/^lmstudio:/, '') ?? at(PREFERRED_MODELS, 2).id),
+      modelPickers.safety.refresh(safety?.replace(/^lmstudio:/, '') ?? DEFAULT_SAFETY_MODEL),
       modelPickers.review.refresh(review?.replace(/^lmstudio:/, '') ?? ''),
     ])
   }

@@ -61,7 +61,11 @@ import {
   BEST_VALUE_CHAT_MODEL_LABEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
-import { AUTO_MODEL_PREFIX, dynamicModelChoices } from '@copse/llm/dynamic-model.ts'
+import {
+  AUTO_MODEL_PREFIX,
+  dynamicModelChoices,
+  dynamicModelLabel,
+} from '@copse/llm/dynamic-model.ts'
 import {
   canonicalModelLabel,
   claudeModelIdFromLabel,
@@ -673,8 +677,25 @@ export async function fetchRoleModelOptions(
 ): Promise<ModelOption[]> {
   return [
     autoModelOption(autoLabel),
+    // A role may hold a *rule* rather than an id — the instruct/safety role
+    // defaults to one, and onboarding writes one for research. Offer the rules
+    // alongside the concrete models, or the stored value matches no option and
+    // renders through the pinned-id fallback as "auto:best-local (no key)".
+    // Role selectors are excluded: pointing a role at a role is circular.
+    ...automaticModelChoices(),
     ...(await fetchModelOptions(api, current, { includeAgentModels: false })),
   ]
+}
+
+/** The `auto:` rules that resolve without reference to another role. */
+function automaticModelChoices(): ModelOption[] {
+  return dynamicModelChoices()
+    .filter((choice) => choice.group === 'Automatic')
+    .map((choice) => ({
+      value: choice.value,
+      label: `${choice.label} — ${choice.description}`,
+      group: choice.group,
+    }))
 }
 
 /**
@@ -694,7 +715,10 @@ export function localModelOptions(
   const options = [autoModelOption(autoLabel), ...models.map((id) => ({ value: id, label: id }))]
   const pinned = current.trim()
   if (pinned && !options.some((option) => option.value === pinned)) {
-    options.push({ value: pinned, label: `${pinned} (not available)` })
+    // A rule is not a missing model: it has no id to install, and resolves to
+    // whatever fits this machine. Label it as the rule it is.
+    const rule = dynamicModelLabel(pinned)
+    options.push({ value: pinned, label: rule ?? `${pinned} (not available)` })
   }
   return options
 }
