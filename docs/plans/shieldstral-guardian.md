@@ -1,15 +1,21 @@
 # Shieldstral and the guardian
 
-Status: **Proposed** — design only; nothing on `main`. Phase 0 ran on 2026-09-02;
-results below.
+Status: **Proposed — recommend not proceeding.** Phase 0 and a follow-up bake-off
+ran on 2026-09-02 and came out against adoption. Nothing on `main`. The findings
+are kept because they answer questions that will be asked again.
 
 Whether [Shieldstral-1.0-3B](https://huggingface.co/mistralai/Shieldstral-1.0-3B)
 — a 3B Apache-2.0 policy-adaptive classifier that answers a plain-language yes/no
 question about a document and returns a calibrated probability — should back a
 guardian in Copse.
 
-**Recommendation: yes for content screening, no for action review.** Those are
-two different jobs, and the guardian we see in the app today is the second one.
+**Recommendation: no, on both lanes.** Shieldstral is the wrong shape for action
+review (that is what "Guardian Review" in the app actually does, and it is
+Codex's, not ours). And on content screening — the lane it _is_ shaped for — a
+head-to-head found it beaten on secrets by a 40-line deterministic scanner and
+beaten on prompt injection by the classifier we already ship. Details in
+[Phase 0.5](#phase-05-the-bake-off). The original argument is
+left below so the reasoning can be re-checked rather than re-run.
 
 ## The guardian we already have is Codex's
 
@@ -178,6 +184,61 @@ gate, not treated as prompt copy someone can tidy up later.
 per question. It is enough to pass the kill gate and to redirect Phase 1; it is not
 evidence of a rate. Phase 1's labelled set still decides.
 
+## Phase 0.5: the bake-off
+
+Phase 0 passed its gate but left Shieldstral looking weak on injection. Rather
+than spend Phase 1's 1–2 days of labelling to find out, two cheap arms ran first
+against the same documents — the incumbent approach, and a deterministic scanner.
+Both are the arms Phase 1 specified; running them early was meant to kill the
+plan quickly if it deserved killing. It did.
+
+| Document                          | Shieldstral        | Incumbent JSON | Regex + entropy  |
+| --------------------------------- | ------------------ | -------------- | ---------------- |
+| secrets: `.env` dump              | 0.9798 ✅          | risky ✅       | 3 rules fired ✅ |
+| secrets: vite build log           | 0.0001 ✅          | safe ✅        | clean ✅         |
+| injection: attack text            | 0.4549 ❌ (missed) | risky ✅       | clean (n/a)      |
+| injection: our threat-model prose | 0.2303 ✅          | safe ✅        | clean ✅         |
+| benign: ordinary README           | 0.0519 ✅          | safe ✅        | clean ✅         |
+| **cost per verdict**              | **1 token**        | 160–424 tokens | ~0               |
+
+**Shieldstral loses both lanes.** On secrets a 40-line scanner matches its
+separation for free, instantly, and names the rule that fired — an auditable
+reason where the model offers only a number. On injection the classifier we
+already ship gets the case Shieldstral misses. There is no lane left where the
+3B model is the best available answer.
+
+Three things worth keeping from the run:
+
+- **Shieldstral's one real advantage is cost**, and it is large: one token per
+  verdict against 160–424 for the incumbent, nearly all of it reasoning. That
+  matters against the 8s `FETCH_TIMEOUTS.safetyClassification` budget if the
+  safety role is ever bound to a reasoning model — which is exactly what happened
+  here. It does not matter enough to buy worse verdicts.
+- **The incumbent's `confidence` is always 1.00.** That confirms the original
+  critique — the number is invented, not calibrated — but it also means the
+  `confidence < 0.5` branch of `terminalReadNeedsApproval` effectively never
+  fires. The defect is real; swapping models was the wrong fix for it.
+- **The deterministic scanner's win is partly luck.** Its named-assignment rule
+  has a `\b` bug that misses `AWS_SECRET_ACCESS_KEY=…` (the underscore defeats the
+  word boundary); only the entropy backstop caught it. Real gitleaks has hundreds
+  of tuned rules and would likely do better, not worse — but any adoption should
+  use the real thing rather than this sketch.
+
+**Weight.** Five documents, one positive per lane, and the incumbent arm used
+`google/gemma-4-e4b` as a stand-in (see below). This is a smoke test. It is not
+enough to prove the incumbent is good; it is enough to show Shieldstral is not
+better, which is the only question that needed answering before spending a week.
+
+### Side finding: the configured safety model is not installed
+
+`safetyModel` is set to `lmstudio:qwen/qwen3-4b-2507`, and that model is not
+present on this machine or on any linked LM Link device. So `buildProvider`
+throws, both call sites hit their `catch`, and the classifier returns `null`:
+`classifyShellScope` contributes nothing, and `terminalReadNeedsApproval(null)`
+prompts every time. The behaviour is correctly fail-closed — but it has been
+silently inert, with `safetyClassifierEnabled: true` in settings and nothing in
+the UI saying the model is missing. Worth its own issue; unrelated to Shieldstral.
+
 ## Local-model question
 
 Yes, and close to forced. The screen exists partly so scrollback that may contain
@@ -191,6 +252,10 @@ OpenAI-compatible endpoint. LM Studio (GGUF) is the target; llama.cpp
 endpoint, so it is not on the scoring path despite being installed here.
 
 ## Plan
+
+Kept as written for the record. **Phase 0 ran and passed; Phase 0.5 ran and ended
+it. Phases 1–3 are not recommended** — they exist here as the shape a future
+model-backed screen should take, not as work to pick up.
 
 ### Phase 0 — Feasibility spike (~1 hour, no repo code)
 
@@ -307,22 +372,21 @@ separately.
 
 ## Open questions
 
-- ~~Does Shieldstral's calibration survive transfer to secrets and injection at
-  all?~~ Partly answered by Phase 0: **yes for secrets, doubtfully for injection.**
-  The remaining question is whether a per-question threshold and a pinned phrasing
-  make injection usable, or whether that lane should be dropped.
-- The Phase 0 hypothesis worth testing at scale: does Shieldstral detect the
-  _topic_ rather than the _act_? It ranked prose about injection above an ordinary
-  README, which is the right order but for a reason that may not generalise — our
-  repo is full of security prose, so a topic detector would prompt constantly on
-  exactly the files developers read most.
-- Inverted from the original framing: it now looks likelier that the **secrets**
-  half is where the model earns its place and injection is the doubtful one — but
-  secrets is also where a deterministic scanner is strongest. If `gitleaks`-shaped
-  rules match Phase 0's 0.9798-vs-0.0001 separation, Shieldstral wins nothing on
-  the one lane where it currently looks good.
-- Multimodal via GGUF (Pixtral encoder plus `mmproj`) is the least certain part of
-  the local story. Text-only first; images are a Phase 3 question. The projector is
-  already downloaded, so the probe is cheap when we get there.
-- Multimodal via GGUF (Pixtral encoder plus `mmproj`) is the least certain part of
-  the local story. Text-only first; images are a Phase 3 question.
+- ~~Does Shieldstral's calibration survive transfer to secrets and injection?~~
+  **Answered, and it turned out not to matter.** It transfers to secrets and not
+  to injection — but a deterministic scanner already covers secrets, and the
+  shipping classifier already covers injection.
+- ~~Should the secrets half be a deterministic scanner?~~ **Yes**, on the evidence
+  — using real gitleaks rules rather than the 40-line sketch in Phase 0.5.
+- Now the more interesting question: **the incumbent's `confidence` is
+  meaningless.** It returned 1.00 on every document, so the `confidence < 0.5`
+  branch of `terminalReadNeedsApproval` never fires. Either derive a signal that
+  means something or delete the branch and state plainly that the screen is
+  binary. Swapping models was the wrong fix for a defect that is really about the
+  contract.
+- Untested: whether the shipping screen is actually _good_. Phase 0.5 shows only
+  that Shieldstral is not better. A 30–50 item labelled set would be cheap and
+  would answer a question nobody has measured — and it is the piece of Phase 1
+  worth salvaging.
+- Untested and now unmotivated: multimodal via GGUF (Pixtral encoder plus
+  `mmproj`). The projector is downloaded if anyone wants the probe.
