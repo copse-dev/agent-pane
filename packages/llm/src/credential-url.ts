@@ -37,8 +37,16 @@ function parseIpv4Octets(host: string): [number, number, number, number] | null 
   return [a, b, c, d]
 }
 
-/** The eight 16-bit groups of an IPv6 literal, `::` expanded, or null. */
-function parseIpv6Hextets(host: string): number[] | null {
+/**
+ * The eight 16-bit groups of an IPv6 literal, `::` expanded, or null.
+ *
+ * Exported for the browser navigation policy
+ * (`main/services/browser/browser-origin-policy.ts`), which blocks a different
+ * set of ranges from the rule below — loopback is allowed there, since a
+ * localhost dev server is the whole point — but must decide them on the parsed
+ * address for the same reasons.
+ */
+export function parseIpv6Hextets(host: string): number[] | null {
   if (!host.includes(':')) return null
   let text = host
   // A trailing dotted quad (`::ffff:1.2.3.4`) is the low two groups written out.
@@ -86,7 +94,7 @@ const IPV4_EMBEDDING_PREFIXES: ReadonlyArray<readonly number[]> = [
 ]
 
 /** The IPv4 address an IPv6 literal embeds, in dotted form, or null. */
-function embeddedIpv4(host: string): string | null {
+export function embeddedIpv4(host: string): string | null {
   const hextets = parseIpv6Hextets(host)
   if (hextets === null) return null
   const matches = IPV4_EMBEDDING_PREFIXES.some((prefix) =>

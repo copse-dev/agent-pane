@@ -59,7 +59,12 @@ export const CLAUDE_DEFAULT_HOOK_TIMEOUT_MS = 600_000
  * `SubagentStop` → `subagentStop`.
  */
 type DiscoveredClaudeEvent =
-  'PreToolUse' | 'SessionStart' | 'PostToolUse' | 'UserPromptSubmit' | 'Stop' | 'SubagentStop'
+  | 'PreToolUse'
+  | 'SessionStart'
+  | 'PostToolUse'
+  | 'UserPromptSubmit'
+  | 'Stop'
+  | 'SubagentStop'
 
 /**
  * The Claude events Copse actually wires (discovers + fires). Every other event

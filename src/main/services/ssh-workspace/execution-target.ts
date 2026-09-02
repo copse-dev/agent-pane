@@ -9,7 +9,8 @@ import { findConfiguredSshHost } from './hosts.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
 export type ExecutionTarget =
-  { kind: 'local' } | { kind: 'ssh'; hostId: string; remoteRoot: string }
+  | { kind: 'local' }
+  | { kind: 'ssh'; hostId: string; remoteRoot: string }
 
 interface StoredProject {
   id: string

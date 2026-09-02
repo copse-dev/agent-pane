@@ -125,8 +125,12 @@ function attachRfb38AuthenticationFailure(
   onUsername: (username: string) => void,
 ): void {
   let state:
-    'version' | 'security' | 'vencrypt-version' | 'vencrypt-subtype' | 'credentials' | 'done' =
-    'version'
+    | 'version'
+    | 'security'
+    | 'vencrypt-version'
+    | 'vencrypt-subtype'
+    | 'credentials'
+    | 'done' = 'version'
   let buffered = Buffer.alloc(0)
   socket.write('RFB 003.008\n')
   socket.on('data', (chunk: Buffer) => {

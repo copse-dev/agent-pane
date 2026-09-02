@@ -128,7 +128,8 @@ export type ShellPermissionDecision =
 export type ShellPermissionMode = 'standard' | 'guarded-yolo'
 
 export type TerminalPermissionDecision =
-  { action: 'allow' } | { action: 'prompt'; reason: 'sandbox-unavailable' | 'remote-target' }
+  | { action: 'allow' }
+  | { action: 'prompt'; reason: 'sandbox-unavailable' | 'remote-target' }
 
 /**
  * Integrated terminals are user-directed and run outside the project seatbelt on
@@ -585,7 +586,8 @@ export function isStructurallyReadOnlyMcpToolName(toolName: string | undefined):
 }
 
 export type McpPermissionDecision =
-  { action: 'allow'; reasons: string[] } | { action: 'prompt'; reasons: string[] }
+  | { action: 'allow'; reasons: string[] }
+  | { action: 'prompt'; reasons: string[] }
 
 export interface McpPermissionInput {
   /** Full tool name (`mcp__<server>__<tool>`), used for the structural read-only name check. */
