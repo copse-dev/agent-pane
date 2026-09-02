@@ -16412,6 +16412,12 @@ function setMessageContent(store3, messageId, content) {
   });
   store3.emit("message_token", messageId, content);
 }
+function addMessageCanvasArtefact(store3, messageId, artefact) {
+  updateMessage(store3, messageId, (message2) => {
+    message2.canvasArtefacts = [...message2.canvasArtefacts ?? [], artefact];
+  });
+  store3.emit("message_canvas_artefacts_changed", messageId);
+}
 function setMessageCommandSummary(store3, messageId, commandSummary) {
   updateMessage(store3, messageId, (m3) => {
     m3.commandSummary = commandSummary;
@@ -22539,6 +22545,7 @@ function createStore(initial2) {
     message_queued: /* @__PURE__ */ new Set(),
     message_token: /* @__PURE__ */ new Set(),
     message_reasoning: /* @__PURE__ */ new Set(),
+    message_canvas_artefacts_changed: /* @__PURE__ */ new Set(),
     message_done: /* @__PURE__ */ new Set(),
     tool_call_started: /* @__PURE__ */ new Set(),
     tool_call_updated: /* @__PURE__ */ new Set(),
@@ -24271,7 +24278,7 @@ function isBestValueChatModel(model) {
 function lmStudioChatModelValue(modelId) {
   return `lmstudio:${modelId}`;
 }
-var DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS, BEST_VALUE_CHAT_MODEL, BEST_VALUE_CHAT_MODEL_LABEL, FALLBACK_APP_CHAT_MODEL, DEFAULT_APP_CHAT_MODEL;
+var DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS, BEST_VALUE_CHAT_MODEL, BEST_VALUE_CHAT_MODEL_LABEL, FALLBACK_APP_CHAT_MODEL, SAFETY_MODEL_MIN_INTELLECT, DEFAULT_SAFETY_MODEL, DEFAULT_APP_CHAT_MODEL;
 var init_lm_studio_defaults = __esm({
   "src/shared/lm-studio-defaults.ts"() {
     init_dynamic_model();
@@ -24285,6 +24292,8 @@ var init_lm_studio_defaults = __esm({
     BEST_VALUE_CHAT_MODEL = BEST_VALUE_MODEL_SELECTOR;
     BEST_VALUE_CHAT_MODEL_LABEL = "Best value (plan / price)";
     FALLBACK_APP_CHAT_MODEL = `lmstudio:${LM_STUDIO_MODEL_IDS.chat}`;
+    SAFETY_MODEL_MIN_INTELLECT = 20;
+    DEFAULT_SAFETY_MODEL = minIntellectSelector(SAFETY_MODEL_MIN_INTELLECT);
     DEFAULT_APP_CHAT_MODEL = BEST_VALUE_CHAT_MODEL;
   }
 });
@@ -24921,6 +24930,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-13"
         }
       ],
+      "agnes-2-5-pro-beta": [
+        {
+          value: 49.1,
+          indexVersion: "v4.1",
+          source: "Artificial Analysis API (index v4.1), model 'agnes-2-5-pro-beta', fetched 2026-09-01",
+          asOf: "2026-09-01"
+        }
+      ],
       "apertus-70b-instruct": [
         {
           value: 2,
@@ -24935,6 +24952,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'apertus-8b-instruct', fetched 2026-08-13",
           asOf: "2026-08-13"
+        }
+      ],
+      "apodex-1-1": [
+        {
+          value: 44,
+          indexVersion: "v4.1",
+          source: "Artificial Analysis API (index v4.1), model 'apodex-1-1', fetched 2026-09-01",
+          asOf: "2026-09-01"
         }
       ],
       "apriel-v1-5-15b-thinker": [
@@ -25573,6 +25598,14 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash-non-reasoning', fetched 2026-08-13",
           asOf: "2026-08-13"
+        }
+      ],
+      "deepseek-v4-flash-vision": [
+        {
+          value: 51.5,
+          indexVersion: "v4.1",
+          source: "Artificial Analysis API (index v4.1), model 'deepseek-v4-flash-vision', fetched 2026-09-01",
+          asOf: "2026-09-01"
         }
       ],
       "deepseek-v4-pro": [
@@ -26343,6 +26376,14 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-08-25"
         }
       ],
+      "glm-5-3-flash": [
+        {
+          value: 57.5,
+          indexVersion: "v4.1",
+          source: "Artificial Analysis API (index v4.1), model 'glm-5-3-flash', fetched 2026-09-01",
+          asOf: "2026-09-01"
+        }
+      ],
       "glm-5-non-reasoning": [
         {
           value: 33.2,
@@ -27067,6 +27108,30 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'granite-4-1-8b', fetched 2026-08-13",
           asOf: "2026-08-13"
+        }
+      ],
+      "granite-4-2-30b": [
+        {
+          value: 23.7,
+          indexVersion: "v4.1",
+          source: "Artificial Analysis API (index v4.1), model 'granite-4-2-30b', fetched 2026-09-01",
+          asOf: "2026-09-01"
+        }
+      ],
+      "granite-4-2-3b": [
+        {
+          value: 14.3,
+          indexVersion: "v4.1",
+          source: "Artificial Analysis API (index v4.1), model 'granite-4-2-3b', fetched 2026-09-01",
+          asOf: "2026-09-01"
+        }
+      ],
+      "granite-4-2-8b": [
+        {
+          value: 19.6,
+          indexVersion: "v4.1",
+          source: "Artificial Analysis API (index v4.1), model 'granite-4-2-8b', fetched 2026-09-01",
+          asOf: "2026-09-01"
         }
       ],
       "grok-1": [
@@ -28297,8 +28362,8 @@ var init_model_intellect_generated = __esm({
         {
           value: 6.7,
           indexVersion: "v4.1",
-          source: "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-08-25",
-          asOf: "2026-08-25"
+          source: "Artificial Analysis API (index v4.1), model 'mistral-small-3', fetched 2026-09-01",
+          asOf: "2026-09-01"
         }
       ],
       "mixtral-8x7b-instruct": [
@@ -29289,6 +29354,22 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis API (index v4.1), model 'qwen3-8-27b-medium', fetched 2026-08-25",
           asOf: "2026-08-25"
+        }
+      ],
+      "qwen3-8-27b-non-reasoning": [
+        {
+          value: 34.7,
+          indexVersion: "v4.1",
+          source: "Artificial Analysis API (index v4.1), model 'qwen3-8-27b-non-reasoning', fetched 2026-09-01",
+          asOf: "2026-09-01"
+        }
+      ],
+      "qwen3-8-flash-next": [
+        {
+          value: 55.8,
+          indexVersion: "v4.1",
+          source: "Artificial Analysis API (index v4.1), model 'qwen3-8-flash-next', fetched 2026-09-01",
+          asOf: "2026-09-01"
         }
       ],
       "qwen3-8-max": [
@@ -32078,11 +32159,14 @@ async function fetchModelOptions(api3, current, opts = {}) {
   }
   const lmGroup = "Local models";
   let models;
+  let localCatalogueKnown;
   try {
     const modelInfo = api3.lmStudio.modelInfo ? await api3.lmStudio.modelInfo() : [];
     models = modelInfo.length > 0 ? modelInfo : (await api3.lmStudio.models()).map((id39) => ({ id: id39 }));
+    localCatalogueKnown = models.length > 0;
   } catch {
     models = [];
+    localCatalogueKnown = false;
   }
   for (const model of models) {
     const { id: id39 } = model;
@@ -32099,7 +32183,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
     if (current.startsWith("lmstudio:")) {
       options2.push({
         value: current,
-        label: `${modelDisplayLabel(current)} (offline)`,
+        label: `${modelDisplayLabel(current)} ${localCatalogueKnown ? "(not available)" : "(offline)"}`,
         group: lmGroup
       });
     } else if (includeAgentModels && current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
@@ -32157,11 +32241,30 @@ async function fetchSmallTasksModelOptions(api3, current) {
 async function fetchRoleModelOptions(api3, current, autoLabel = "(auto \u2014 prefer on-device)") {
   return [
     autoModelOption(autoLabel),
+    // A role may hold a *rule* rather than an id — the instruct/safety role
+    // defaults to one, and onboarding writes one for research. Offer the rules
+    // alongside the concrete models, or the stored value matches no option and
+    // renders through the pinned-id fallback as "auto:best-local (no key)".
+    // Role selectors are excluded: pointing a role at a role is circular.
+    ...automaticModelChoices(),
     ...await fetchModelOptions(api3, current, { includeAgentModels: false })
   ];
 }
-function localModelOptions(models, autoLabel = "(auto \u2014 first loaded model)") {
-  return [autoModelOption(autoLabel), ...models.map((id39) => ({ value: id39, label: id39 }))];
+function automaticModelChoices() {
+  return dynamicModelChoices().filter((choice2) => choice2.group !== "By role").map((choice2) => ({
+    value: choice2.value,
+    label: `${choice2.label} \u2014 ${choice2.description}`,
+    group: choice2.group
+  }));
+}
+function localModelOptions(models, autoLabel = "(auto \u2014 first loaded model)", current = "") {
+  const options2 = [autoModelOption(autoLabel), ...models.map((id39) => ({ value: id39, label: id39 }))];
+  const pinned = current.trim();
+  if (pinned && !options2.some((option2) => option2.value === pinned)) {
+    const rule = dynamicModelLabel(pinned);
+    options2.push({ value: pinned, label: rule ?? `${pinned} (not available)` });
+  }
+  return options2;
 }
 function dynamicModelOptions(current, autoLabel) {
   const options2 = dynamicModelChoices().map((choice2) => ({
@@ -35256,7 +35359,7 @@ function createLmStudioSection(api3, opts = {}) {
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,
       safetyExternalDenyThreshold: currentExternalDeny ?? 1,
-      safetyModel: opts2?.safetyModel ?? currentSafety ?? at(PREFERRED_MODELS, 2).id,
+      safetyModel: opts2?.safetyModel ?? currentSafety ?? DEFAULT_SAFETY_MODEL,
       autoRunSandboxCommands: currentAutoRun ?? true,
       mcpAutoAllowReadOnly: currentMcpAuto ?? false,
       defaultReadonlyMode: currentReadonly ?? false,
@@ -35295,7 +35398,6 @@ function createLmStudioSection(api3, opts = {}) {
 var init_lm_studio_section = __esm({
   "src/renderer/views/setup/lm-studio-section.ts"() {
     init_preferred_models();
-    init_array_utils();
     init_web_origins();
     init_provider_hosts();
     init_context_window_advice();
@@ -43265,7 +43367,7 @@ function createModelRoutingSection(api3, options2 = {}) {
       routingField(
         "Instruct / safety model",
         safetyModel,
-        "Classifies shell commands and screens terminal reads. A cloud choice sends that screening content to its provider."
+        "Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does \u2014 a cloud choice sends that screening content to its provider."
       ),
       routingField("Post-turn review model", reviewModel, "Reviews the diff after an editing turn")
     )
@@ -43298,12 +43400,21 @@ function createModelRoutingSection(api3, options2 = {}) {
     safety: (current) => fetchRoleModelOptions(api3, current),
     review: (current) => fetchRoleModelOptions(api3, current, "(auto: prefer on-device)")
   } : {
-    coder: () => Promise.resolve(localModelOptions(availableLocalModels)),
-    research: () => Promise.resolve(
-      localModelOptions(availableLocalModels, "(auto: use default local model)")
+    // `current` is forwarded so a role pinned to a model the server does
+    // not have keeps a row of its own, flagged as not available, instead
+    // of silently rendering as the auto option.
+    coder: (current) => Promise.resolve(
+      localModelOptions(availableLocalModels, "(auto \u2014 first loaded model)", current)
     ),
-    safety: () => Promise.resolve(localModelOptions(availableLocalModels)),
-    review: () => Promise.resolve(localModelOptions(availableLocalModels, "(auto: prefer on-device)"))
+    research: (current) => Promise.resolve(
+      localModelOptions(availableLocalModels, "(auto: use default local model)", current)
+    ),
+    safety: (current) => Promise.resolve(
+      localModelOptions(availableLocalModels, "(auto \u2014 first loaded model)", current)
+    ),
+    review: (current) => Promise.resolve(
+      localModelOptions(availableLocalModels, "(auto: prefer on-device)", current)
+    )
   };
   const modelPickers = {
     coder: mountModelSelectPicker(localDefaultModel, {
@@ -43341,9 +43452,9 @@ function createModelRoutingSection(api3, options2 = {}) {
           coder ? canonicalRoleSelection(coder) : lmStudioChatModelValue(at(PREFERRED_MODELS, 0).id)
         ),
         modelPickers.research.refresh(canonicalRoleSelection(research ?? "")),
-        modelPickers.safety.refresh(
-          safety ? canonicalRoleSelection(safety) : lmStudioChatModelValue(at(PREFERRED_MODELS, 2).id)
-        ),
+        // Unset means the *rule*, not the model we recommend downloading —
+        // showing a concrete local id here would misreport what actually runs.
+        modelPickers.safety.refresh(safety ? canonicalRoleSelection(safety) : DEFAULT_SAFETY_MODEL),
         modelPickers.review.refresh(canonicalRoleSelection(review ?? ""))
       ]);
       return;
@@ -43360,7 +43471,7 @@ function createModelRoutingSection(api3, options2 = {}) {
         localModel?.replace(/^lmstudio:/, "") ?? at(PREFERRED_MODELS, 0).id
       ),
       modelPickers.research.refresh(subagent?.replace(/^lmstudio:/, "") ?? ""),
-      modelPickers.safety.refresh(safety?.replace(/^lmstudio:/, "") ?? at(PREFERRED_MODELS, 2).id),
+      modelPickers.safety.refresh(safety?.replace(/^lmstudio:/, "") ?? DEFAULT_SAFETY_MODEL),
       modelPickers.review.refresh(review?.replace(/^lmstudio:/, "") ?? "")
     ]);
   }
@@ -50608,6 +50719,7 @@ function copyMessage(message2) {
     review: _review,
     toolCalls,
     images,
+    canvasArtefacts,
     attachments,
     ...rest
   } = message2;
@@ -50617,6 +50729,7 @@ function copyMessage(message2) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     toolCalls: (toolCalls ?? []).map((toolCall) => ({ ...toolCall })),
     ...images !== void 0 ? { images: [...images] } : {},
+    ...canvasArtefacts !== void 0 ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) } : {},
     ...attachments !== void 0 ? { attachments: attachments.map((attachment) => ({ ...attachment })) } : {}
   };
 }
@@ -239660,6 +239773,86 @@ var init_acp_cursor_transport_noise = __esm({
   }
 });
 
+// src/shared/inline-visualization.ts
+function decodeVisualizationReference(payload) {
+  return safeJsonParse(payload, decodeWithSchema(visualizationReferenceSchema));
+}
+function createInlineVisualizationStreamFilter(onReference) {
+  let pending = "";
+  const drain = (final) => {
+    let visible = "";
+    for (; ; ) {
+      const start2 = pending.indexOf(FRAME_START);
+      if (start2 < 0) {
+        if (!final && pending.endsWith(FRAME_START)) {
+          visible += pending.slice(0, -FRAME_START.length);
+          pending = FRAME_START;
+        } else {
+          visible += pending;
+          pending = "";
+        }
+        return visible;
+      }
+      visible += pending.slice(0, start2);
+      pending = pending.slice(start2);
+      const separator = pending.indexOf(FRAME_SEPARATOR, FRAME_START.length);
+      if (separator < 0) {
+        if (!final && pending.length <= FRAME_START.length + MAX_OPERATOR_CHARS) return visible;
+        if (final) {
+          pending = "";
+          return visible;
+        }
+        visible += FRAME_START;
+        pending = pending.slice(FRAME_START.length);
+        continue;
+      }
+      const end = pending.indexOf(FRAME_END, separator + FRAME_SEPARATOR.length);
+      if (end < 0) {
+        if (!final) return visible;
+        pending = "";
+        return visible;
+      }
+      const operator = pending.slice(FRAME_START.length, separator);
+      const payload = pending.slice(separator + FRAME_SEPARATOR.length, end);
+      pending = pending.slice(end + FRAME_END.length);
+      if (operator === VISUALIZE_OPERATOR) {
+        const reference = decodeVisualizationReference(payload);
+        if (reference) onReference(reference);
+      }
+    }
+  };
+  return {
+    push(text4) {
+      pending += text4;
+      return drain(false);
+    },
+    finish() {
+      return drain(true);
+    }
+  };
+}
+function stripInlineVisualizationReferences(text4) {
+  const filter8 = createInlineVisualizationStreamFilter(() => {
+  });
+  return filter8.push(text4) + filter8.finish();
+}
+var FRAME_START, FRAME_SEPARATOR, FRAME_END, VISUALIZE_OPERATOR, MAX_OPERATOR_CHARS, visualizationReferenceSchema;
+var init_inline_visualization = __esm({
+  "src/shared/inline-visualization.ts"() {
+    init_zod();
+    init_safe_json();
+    FRAME_START = "\uE200";
+    FRAME_SEPARATOR = "\uE202";
+    FRAME_END = "\uE201";
+    VISUALIZE_OPERATOR = "visualize";
+    MAX_OPERATOR_CHARS = 64;
+    visualizationReferenceSchema = external_exports.looseObject({
+      path: external_exports.string().min(1),
+      title: external_exports.string().min(1).max(200).optional()
+    });
+  }
+});
+
 // src/shared/threads/message-model.ts
 function primaryChatModels(messages) {
   const seen = /* @__PURE__ */ new Set();
@@ -241224,11 +241417,7 @@ function appendStandardToolSections(card2, tc2, label, summaryClass, count2) {
 function appendIfPresent(node2) {
   return node2 ? [node2] : [];
 }
-function createCanvasPreviewSection(tc2, threadId) {
-  if (tc2.status !== "done") return null;
-  const uri = artefactUriFromToolResult(tc2.result);
-  if (!uri) return null;
-  const title2 = artefactTitleFromUri(uri);
+function createCanvasPreviewCard(threadId, title2) {
   const preview = getArtefactPreview(threadId, title2);
   if (!preview) return null;
   const open2 = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, "Open");
@@ -241247,6 +241436,22 @@ function createCanvasPreviewSection(tc2, threadId) {
     )
   );
 }
+function createCanvasPreviewSection(tc2, threadId) {
+  if (tc2.status !== "done") return null;
+  const uri = artefactUriFromToolResult(tc2.result);
+  return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null;
+}
+function syncMessageCanvasPreviews(msgEl, msg, threadId) {
+  const body = msgEl.querySelector(":scope > .message-body");
+  if (!body) return;
+  body.querySelector(":scope > .message-canvas-previews")?.remove();
+  const cards = (msg.canvasArtefacts ?? []).flatMap((artefact) => {
+    const card2 = createCanvasPreviewCard(threadId, artefact.title);
+    return card2 ? [card2] : [];
+  });
+  if (cards.length === 0) return;
+  body.append(el("div", { class: "message-canvas-previews" }, ...cards));
+}
 function createIndividualToolCard(tc2, label, api3, threadId) {
   if (tc2.subagent) return createSubagentToolCard(tc2, label, api3);
   const card2 = el("details", {
@@ -241262,7 +241467,7 @@ function createIndividualToolCard(tc2, label, api3, threadId) {
   return card2;
 }
 function assistantDisplayParts(content) {
-  const stripped = stripTextToolCallBlocks(content);
+  const stripped = stripInlineVisualizationReferences(stripTextToolCallBlocks(content));
   const { body, noise } = splitCursorAcpTransportNoise(stripped);
   return { body, transportNoise: noise };
 }
@@ -242500,6 +242705,7 @@ function mountConversation(root4, store3, api3) {
       ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
       ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {}
     });
+    syncMessageCanvasPreviews(msgEl, msg, threadId);
     if (msg.review) renderMessageReview(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
   }
@@ -242807,6 +243013,15 @@ function mountConversation(root4, store3, api3) {
         scrollToBottom();
       }
     }),
+    store3.on("message_canvas_artefacts_changed", (mid) => {
+      const thread = getActiveThread(store3);
+      const msg = thread?.messages.find((message2) => message2.id === mid);
+      const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
+      if (thread && msg?.role === "assistant" && msgEl) {
+        syncMessageCanvasPreviews(msgEl, msg, thread.id);
+        scrollToBottom();
+      }
+    }),
     store3.on("message_reasoning", (mid) => {
       const thread = getActiveThread(store3);
       const msg = thread?.messages.find((m3) => m3.id === mid);
@@ -242944,6 +243159,7 @@ var init_conversation = __esm({
     init_remote_artifact_images();
     init_parse_text_tool_calls();
     init_acp_cursor_transport_noise();
+    init_inline_visualization();
     init_message_model();
     init_model_display();
     init_attachment_icons();
@@ -255402,6 +255618,7 @@ function threadToJsonl(thread) {
         content: msg.content,
         ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
         images: msg.images,
+        ...msg.canvasArtefacts !== void 0 ? { canvasArtefacts: msg.canvasArtefacts } : {},
         commandSummary: msg.commandSummary,
         ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
         ...msg.model !== void 0 ? { model: msg.model } : {},
@@ -258600,7 +258817,10 @@ function mountContextPanel(root4, store3, api3, monaco) {
   function fallbackMode(md) {
     return md ? "preview" : "source";
   }
+  let renderedPreviewContent = null;
   function renderMarkdownPreview(content) {
+    if (content === renderedPreviewContent) return;
+    renderedPreviewContent = content;
     previewContainer.innerHTML = renderMarkdown(content);
     attachCodeBlockCopyButtons(previewContainer);
     void annotateFileReferences(previewContainer, api3);
@@ -293155,6 +293375,16 @@ function startAgentController(store3, api3) {
         st3.msgId ??= addAssistantMessage(store3, threadId);
         setMessageContent(store3, st3.msgId, chunk.text);
         st3.currentText = chunk.text;
+        break;
+      }
+      case "canvas_artefact": {
+        if (!st3.msgId || st3.toolSinceText) {
+          if (st3.toolSinceText && st3.msgId) store3.emit("message_done", st3.msgId);
+          st3.msgId = addAssistantMessage(store3, threadId);
+          st3.toolSinceText = false;
+          st3.currentText = "";
+        }
+        addMessageCanvasArtefact(store3, st3.msgId, chunk.artefact);
         break;
       }
       case "tool_call": {
