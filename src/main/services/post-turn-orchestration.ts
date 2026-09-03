@@ -71,6 +71,7 @@ export interface RunParentContinuationOptions {
   onEditTool?: (name: string) => void
   /** Spine-recording sink + step attribution for hooks fired in continuation loops (decision 6). */
   recordHookRun?: AgentLoopOptions['recordHookRun']
+  recordAppliedNudge?: AgentLoopOptions['recordAppliedNudge']
   onLlmCall?: AgentLoopOptions['onLlmCall']
   recordStreamCut?: AgentLoopOptions['recordStreamCut']
   recordReasoningCheckpoint?: AgentLoopOptions['recordReasoningCheckpoint']
@@ -116,8 +117,23 @@ export async function runPreReviewTodoGate(opts: RunParentContinuationOptions): 
   }
 }
 
-/** One parent agent loop seeded with a synthetic user nudge. */
+/** Operation id on the machine bubble that shows a post-turn continuation nudge. */
+export const POST_TURN_CONTINUATION_OPERATION_ID = 'post-turn-continuation'
+
+/**
+ * One parent agent loop seeded with a synthetic user nudge.
+ *
+ * The nudge is announced as a machine-origin bubble before it is pushed: it
+ * starts a fresh turn in the user's name, so leaving it out of the transcript
+ * makes the extra answer that follows look like the agent repeating itself for
+ * no reason.
+ */
 export async function runParentContinuationTurn(opts: RunParentContinuationOptions): Promise<void> {
+  opts.onChunk({
+    type: 'machine_turn_start',
+    content: opts.userNudge,
+    origin: { kind: 'machine', operationId: POST_TURN_CONTINUATION_OPERATION_ID },
+  })
   opts.messages.push({ role: 'user', content: opts.userNudge })
   await runAgentLoop({
     provider: opts.provider,
@@ -138,6 +154,9 @@ export async function runParentContinuationTurn(opts: RunParentContinuationOptio
       ? { coerceTextToolCallArgs: opts.coerceTextToolCallArgs }
       : {}),
     ...(opts.recordHookRun !== undefined ? { recordHookRun: opts.recordHookRun } : {}),
+    ...(opts.recordAppliedNudge !== undefined
+      ? { recordAppliedNudge: opts.recordAppliedNudge }
+      : {}),
     ...(opts.onLlmCall !== undefined ? { onLlmCall: opts.onLlmCall } : {}),
     ...(opts.recordStreamCut !== undefined ? { recordStreamCut: opts.recordStreamCut } : {}),
     ...(opts.recordReasoningCheckpoint !== undefined
