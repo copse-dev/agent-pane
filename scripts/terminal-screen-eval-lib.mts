@@ -414,6 +414,9 @@ export async function run(argv: string[]): Promise<number> {
             correct: o.correct,
             verdict: o.verdict,
             completionTokens: o.completionTokens,
+            // Wall-clock per request. Only meaningful at --concurrency 1; under a
+            // pool it measures throughput, not the latency one screen would see.
+            ms: o.ms,
           })),
         },
         null,
