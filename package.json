@@ -179,7 +179,7 @@
   "devDependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",
     "@anthropic-ai/sdk": "^0.121.0",
-    "@copse/streaming-markdown": "^1.0.8",
+    "@copse/streaming-markdown": "^1.1.0",
     "@electron/rebuild": "^4.2.0",
     "@eslint/js": "^10.0.1",
     "@lmstudio/sdk": "^1.5.0",
