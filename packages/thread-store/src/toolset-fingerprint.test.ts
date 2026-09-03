@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import type { LLMTool } from '@shared/types'
+import type { LLMTool } from '@copse/llm/wire-types.ts'
 import { fingerprintToolset } from './toolset-fingerprint.ts'
-import { expectArray, expectRecord, expectString } from '../unknown-value.ts'
+import { expectArray, expectRecord, expectString } from '@copse/std/unknown-value.ts'
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 

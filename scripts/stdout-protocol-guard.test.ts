@@ -43,6 +43,7 @@ const ALIASES: readonly (readonly [string, string])[] = [
   ['@copse/llm/', 'packages/llm/src/'],
   ['@copse/plan-usage/', 'packages/plan-usage/src/'],
   ['@copse/std/', 'packages/std/src/'],
+  ['@copse/thread-store/', 'packages/thread-store/src/'],
 ]
 
 const IMPORT_PATTERN =

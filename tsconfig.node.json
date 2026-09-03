@@ -39,7 +39,8 @@
     "packages/extract-zip/**/*",
     "packages/llm/src/**/*",
     "packages/plan-usage/src/**/*",
-    "packages/std/src/**/*"
+    "packages/std/src/**/*",
+    "packages/thread-store/src/**/*"
   ],
   "exclude": ["src/sidecar/ws-bridge"]
 }

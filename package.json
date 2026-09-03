@@ -183,6 +183,7 @@
     "@copse/llm": "workspace:*",
     "@copse/plan-usage": "workspace:*",
     "@copse/std": "workspace:*",
+    "@copse/thread-store": "workspace:*",
     "@copse/streaming-markdown": "^1.1.0",
     "@electron/rebuild": "^4.2.0",
     "@eslint/js": "^10.0.1",

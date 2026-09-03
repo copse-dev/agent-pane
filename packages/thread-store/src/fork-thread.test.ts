@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Message, Thread } from '@shared/types'
+import type { Message, Thread } from './thread-types.ts'
 import { buildForkedThread, forkThreadTitle } from './fork-thread.ts'
 
 function userMessage(id: string, content: string, extra: Partial<Message> = {}): Message {
