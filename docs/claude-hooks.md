@@ -101,10 +101,10 @@ on matching tool calls, outside the project sandbox, with non-LLM tool tokens pr
 
 ## Related files
 
-- `src/main/services/hooks/claude-adapter.ts` — Claude dialect adapter: discovery, matcher,
+- `packages/hooks-dialects/src/claude-adapter.ts` — Claude dialect adapter: discovery, matcher,
   PreToolUse wire marshalling, exit-code table (exit-2 deny)
 - `src/main/services/hooks/tool-gate.ts` — maps tool calls onto the canonical `toolGate` event
 - `src/main/services/security/permission-gate.ts` — calls the tool-gate hooks (both dialects)
-- `src/shared/types/claude-hooks.ts` / `src/shared/types/hooks.ts` — types
+- `packages/hooks-dialects/src/claude-hooks.ts` / `packages/hooks-dialects/src/hooks-types.ts` — types
 - `docs/cursor-hooks.md` — Cursor hooks contract
 - `docs/plans/settings-transparency.md` — #639 tracking

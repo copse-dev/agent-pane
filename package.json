@@ -180,6 +180,7 @@
     "@agentclientprotocol/sdk": "^1.4.0",
     "@anthropic-ai/sdk": "^0.121.0",
     "@copse/agent": "workspace:*",
+    "@copse/hooks-dialects": "workspace:*",
     "@copse/llm": "workspace:*",
     "@copse/plan-usage": "workspace:*",
     "@copse/shell-guard": "workspace:*",

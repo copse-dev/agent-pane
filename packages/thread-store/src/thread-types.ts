@@ -37,20 +37,11 @@ export interface ModelSelectionEvent {
   to: string
 }
 
-/**
- * Provenance of a queued message (decision 10). A queued message can be authored
- * by a human (origin absent) or produced by an async hook's `queueMessage`
- * output — the only async output channel (decision 4). The message role stays
- * `user` for the LLM; `origin` lives purely in the data model so the UI can
- * attribute it and the spine stays honest about authorship.
- */
-export interface QueuedMessageOrigin {
-  kind: 'hook'
-  /** Registered hook id that produced the message. */
-  hookId: string
-  /** Canonical event the hook fired on (e.g. `stop`, `afterToolUse`). */
-  event: string
-}
+// Hook provenance is owned by the hooks platform in `@copse/agent` (decision 10);
+// imported for the message types below and re-exported so `@shared/types`
+// consumers are unchanged.
+import type { QueuedMessageOrigin } from '@copse/agent/hooks/hook-outcome.ts'
+export type { QueuedMessageOrigin } from '@copse/agent/hooks/hook-outcome.ts'
 
 /** Provenance for a host-native continuation that started without a human submit. */
 export interface MachineMessageOrigin {

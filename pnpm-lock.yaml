@@ -61,6 +61,9 @@ importers:
       '@copse/agent':
         specifier: workspace:*
         version: link:packages/agent
+      '@copse/hooks-dialects':
+        specifier: workspace:*
+        version: link:packages/hooks-dialects
       '@copse/llm':
         specifier: workspace:*
         version: link:packages/llm
@@ -257,6 +260,21 @@ importers:
       '@electron-internal/extract-zip':
         specifier: 1.0.4
         version: 1.0.4
+
+  packages/hooks-dialects:
+    dependencies:
+      '@copse/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@copse/std':
+        specifier: workspace:*
+        version: link:../std
+      micromatch:
+        specifier: ^4.0.8
+        version: 4.0.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/llm:
     dependencies:

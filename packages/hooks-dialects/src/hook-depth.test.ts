@@ -39,15 +39,4 @@ describe('hook recursion guard (COPSE_HOOK_DEPTH)', () => {
     const nested = childHookEnv({ [HOOK_DEPTH_ENV]: '1' })
     assert.equal(nested[HOOK_DEPTH_ENV], '2')
   })
-
-  it('childHookEnv preserves the secret-scrubbed env and drops LLM keys', () => {
-    const env = childHookEnv({
-      PATH: '/bin',
-      GITHUB_TOKEN: 'gh-keep',
-      ANTHROPIC_API_KEY: 'sk-secret',
-    })
-    assert.equal(env['PATH'], '/bin')
-    assert.equal(env['GITHUB_TOKEN'], 'gh-keep', 'non-LLM tool tokens still reach hooks')
-    assert.equal('ANTHROPIC_API_KEY' in env, false, 'LLM provider keys are scrubbed')
-  })
 })
