@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { isRecord, optionalBoolean, optionalRecord, optionalString } from './unknown-value.mts'
+import { isRecord, optionalBoolean, optionalRecord, optionalString } from './unknown-value.ts'
 
 describe('unknown value helpers', () => {
   it('treats null and undefined as absent optional values', () => {
