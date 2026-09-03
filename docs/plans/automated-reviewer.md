@@ -2,7 +2,8 @@
 
 Status: **Proposed** — design only. Nothing in this document is on `main`. It supersedes
 the surfacing and validation gaps in the existing `copse.model-comparison` plugin, which
-stays as-is until Phase 2 rewires it.
+stays as-is until Phase 2 rewires it. Binding decision 1 (execution isolation) was recorded
+on 2026-09-03; the rest of the open questions are numbered in §Competitive position.
 
 Prior art that prompted this: FFmpeg's **Forgejo Fairy**, the opt-in LLM reviewer a
 contributor adds to a pull request by hand ([`doc/developer.texi`](https://ffmpeg.org/developer.html):
@@ -251,6 +252,104 @@ decision rather than a rewrite.
   label, or adding the reviewer, exactly as Fairy is invited — never automatic on every
   push, and never a required check.
 
+### Execution isolation
+
+**Decided — binding decision 1.** Every stage that runs the code under review (Stage 0's
+build baseline, Stage 2's reviewer tool calls, Stage 4's reproducers) runs inside an
+isolated, **ephemeral execution cell**: an OS sandbox, or a container or VM created for one
+review and destroyed after it. No reviewer agent, and nothing the cell executes, ever has
+direct access to sensitive data.
+
+This consumes [`execution-runtime-security.md`](execution-runtime-security.md) rather than
+restating it. Its binding decisions 1 (a session is separate from its runtime), 3 (a grant
+names scope and duration), 4 (fail-closed, per-execution network), 5 (raw credentials stay
+outside untrusted workloads) and 11 (unattended work has a non-human principal) are the
+reviewer's rules too, and its GitHub credential broker is the path any forge write takes.
+
+**Two privilege domains.**
+
+| Domain                              | Holds                                                                      | Runs                                                                                             | Never                                                                                                   |
+| ----------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Orchestrator (trusted)              | provider keys, forge tokens, the findings store, the suppression store     | the agent loops, model calls, clustering, ranking, rendering, forge writes                        | repo code, build scripts, tests                                                                         |
+| Execution cell (untrusted, ephemeral) | the two checkouts (merge-base, head), a scratch dir, a read-only dependency cache | build, typecheck, lint, tests, reproducers; the brokered `read_file` / `run` the agents call | secrets, the host filesystem, `~/.copse`, other repositories, any network beyond the allowlist |
+
+The agent loops live in the orchestrator and their tools are **brokered** into the cell over
+a narrow RPC — the shape `src/main/project-sandbox/sandbox-fs-server.ts` already has for
+filesystem reads. That placement is the whole point. If the loop ran inside the cell it would
+need the provider key inside the cell, which is exactly the CodeRabbit leak path: a
+repo-controlled `.rubocop.yml` executed Ruby with the production environment in scope, and
+the GitHub App private key went with it. Everything that comes back from the cell — exit
+codes, capped logs, JUnit, a reproducer test file — is untrusted input to the orchestrator:
+size-capped, never evaluated, wrapped by `packages/agent/src/external-content.ts` before a
+model sees it.
+
+**What "sensitive data" means**, so the rule is checkable: model-provider keys; forge
+credentials (App private keys, installation tokens, `GITHUB_TOKEN`, PATs); the profile under
+`~/.copse` (settings, threads, memories, the knowledge store); SSH keys, git credential
+helpers, cloud credentials, keychains; any other repository on the machine; the environment
+at large; and, for a hosted deployment, any other tenant's review. The diff itself is scrubbed
+before it reaches a model — `packages/llm/src/redact-secrets.ts` plus the repo's
+`.gitleaks.toml` rules run over every review input — because a secret committed in the PR is
+still a secret.
+
+**Cell capabilities** — the checklist a backend must satisfy to be called supported:
+
+- **Filesystem:** its own checkouts and scratch only. No home directory, no host mounts.
+- **Secrets:** none; environment scrubbed. Dependencies come from a pre-populated,
+  read-only, content-addressed cache. If a registry must be reached, it is through the
+  broker with a scoped, read-only, short-lived credential — never a raw token in `env`.
+- **Network:** default deny. Allowlist at most package registries. Never model providers,
+  never the forge, never host loopback, never cloud instance metadata or private ranges.
+- **Process:** CPU, memory, disk and wall-clock limits; no privileged operations; no
+  container socket.
+- **Output:** structured results only, capped. The reproducer test file is the one artefact
+  kept, and it is stored orchestrator-side.
+- **Lifetime:** created per review, destroyed after. Nothing inside a cell survives to the
+  next review, so a poisoned cache or a planted binary has nothing to persist on.
+
+**Trust × isolation policy.** Two facts decide whether execution happens at all:
+
+|                                          | Isolation available                                                                                     | No isolation                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Own diff** (the user's working tree)   | Execute.                                                                                                | Execute only with explicit per-run consent, mirroring the shell gate's "no sandbox, so prompt" rule. |
+| **Foreign diff** (a contributor's PR)    | Execute. Recommendation: a container or VM, not the process-scoped OS sandbox alone (see below).       | **Never execute.** Degrade to read-only lenses plus the challenger pass, and say so in the report.   |
+
+An OS sandbox (macOS ASRT, Linux bubblewrap) and an ephemeral container or VM are not the
+same strength. The process-scoped sandbox is proposed as sufficient for reviewing one's own
+changes, where the "attacker" already has a shell on the machine; a foreign diff gets a
+throwaway container or VM. Whether the OS sandbox is ever enough for a foreign diff is the one
+sub-question decision 1 leaves open.
+
+**Backend per shell.**
+
+- **App:** `src/main/project-sandbox/` as it exists — ASRT on macOS, bubblewrap on Linux.
+  Per [`../shell-permissions.md`](../shell-permissions.md) there is no containment on
+  Windows or when the sandbox fails to start, so there the reviewer does not execute. For
+  foreign diffs the per-thread container runtime proposed in
+  [`unattended-runs.md`](unattended-runs.md) and
+  [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1 (the local-docker provider)
+  is the backend; the reviewer is a consumer of that runtime, not a second implementation.
+- **CLI:** an `IsolationBackend` abstraction from day one — OS sandbox, Docker/Podman, or a
+  microVM — detected at start. With none present the CLI runs the read-only pipeline and
+  prints why. There is no flag that executes a foreign diff unisolated; the
+  `--i-trust-this-diff` idea from the first draft of this plan is withdrawn.
+- **CI:** a GitHub-hosted runner is ephemeral but not secret-free, so the workflow is two
+  jobs. **Job A** checks out the PR head on the `pull_request` event — never
+  `pull_request_target` — with `permissions: {}` and no secrets, runs Stage 0 and the
+  reproducers, and uploads results as an artefact. **Job B** runs on the base ref with the
+  model key and a write token, downloads the artefact, runs the model stages, and posts
+  findings. Self-hosted Forgejo runners must be ephemeral (a fresh container per job): a
+  persistent runner is precisely what a malicious PR would persist on.
+
+**Conformance test, in Phase 0.** A review of a deliberately hostile fixture — a
+`postinstall` that reads the environment and tries to exfiltrate it, a repo-controlled linter
+config that executes code, a test that reads `~/.copse`, and a README carrying an instruction
+aimed at the agent (the pattern already in `benchmarks/steer/fixtures/injection-project/`) —
+run with canary secrets in the orchestrator's environment. Pass criteria: no canary appears in
+any cell output, model request or finding; no egress from the cell beyond the allowlist; the
+README's instruction produced no tool call. This runs in CI for every backend and is the gate
+on calling a backend supported.
+
 ### Configuration
 
 A repo-owned `review.config.*` (or a `[review]` block in an existing config) declaring:
@@ -261,19 +360,30 @@ security-sensitive, `docs/**` is not"); and the output cap. Repo-owned so a proj
 teach the reviewer its conventions — which is the difference between a tool people adopt
 and a tool people mute.
 
+## Binding decisions
+
+Changing one of these requires updating this document in the same change — the convention
+[`execution-runtime-security.md`](execution-runtime-security.md) uses.
+
+1. **Execution is isolated and ephemeral; agents never touch sensitive data.** Every stage
+   that runs the code under review does so in an OS sandbox or an ephemeral container/VM
+   created for that review, with no secrets, no host filesystem, and no network beyond an
+   allowlist. The reviewer agents run outside that cell and reach it only through brokered
+   tools. Where no isolation exists, a foreign diff is never executed. Recorded 2026-09-03;
+   design in §Execution isolation.
+
 ## What needs to be solved
 
 Ordered by how likely each is to sink the thing.
 
-1. **Executing untrusted code.** Stages 0, 2 and 4 all run the code under review. On a PR
-   from an arbitrary contributor that is straightforwardly arbitrary code execution — the
-   FFmpeg case makes this concrete. This must run inside `project-sandbox/` with an
-   explicit network scope, and the CLI shell must refuse to run build/test stages outside
-   a sandbox unless the user passes an explicit `--i-trust-this-diff`-shaped flag. Copse
-   has the containment primitives and a documented permission contract
-   ([`../shell-permissions.md`](../shell-permissions.md)); what does not exist is a policy
-   for _review_ specifically. **This is the gating decision for Phase 1 and it is a
-   security design task, not an implementation detail.**
+1. **Executing untrusted code — decided.** Binding decision 1 and §Execution isolation
+   settle the policy: Stages 0, 2 and 4 run in an ephemeral, secret-free cell, the agents
+   are brokered in, and a foreign diff without isolation is never executed. What stays
+   open underneath it: which isolation backends the CLI supports at launch and how it
+   detects them; whether the process-scoped OS sandbox is ever enough for a foreign diff
+   (recommendation: no); the read-only dependency cache, since "the build cannot fetch" is
+   the common case once the network is closed; and the Forgejo self-hosted runner story,
+   which we cannot enforce and must document as a requirement.
 2. **Finding identity.** Clustering across reviewers, and stability across pushes and
    rebases. Naive string similarity will both over- and under-merge. Anchoring to content
    hashes plus overlapping ranges is the starting proposal; it needs a real corpus to
@@ -287,7 +397,8 @@ Ordered by how likely each is to sink the thing.
    that takes forty minutes. Define the degradation ladder explicitly — full run →
    changed-package subset → single reproducing test → adversarial challenge only → declare
    the finding unverified and say so — and make which rung was reached visible in the
-   output.
+   output. Binding decision 1 adds a rung above all of these: with no isolation backend, a
+   foreign diff never reaches the first one.
 5. **Correlated model error.** Two models from one family agree on one hallucination.
    Agreement is only evidence if the reviewers are actually independent. Needs a stated
    position on which diversity axes count (family ≫ size ≫ sampling), and a challenger
@@ -310,10 +421,14 @@ Ordered by how likely each is to sink the thing.
 
 ## Phases
 
-- **Phase 0 — Findings schema + Stage 0.** `@copse/review` with the finding type, and the
-  build/test baseline diff. No models at all. Ships value immediately ("this doesn't
-  compile / this test regressed") and proves the sandbox story before any model spend.
-- **Phase 1 — CLI shell.** `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5. Dogfood on this repo's own PRs. Settle the sandbox policy here.
+- **Phase 0 — Findings schema + Stage 0 + isolation.** `@copse/review` with the finding
+  type, the build/test baseline diff, the `IsolationBackend` abstraction with at least one
+  real backend, and the hostile-fixture conformance test. No models at all. Ships value
+  immediately ("this doesn't compile / this test regressed"). Stage 0 _is_ execution, so
+  this is where binding decision 1 is proven, before any model spend.
+- **Phase 1 — CLI shell.** `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5.
+  Dogfood on this repo's own PRs. Extend the isolation backends to what CLI users actually
+  have (Docker/Podman, a microVM).
 - **Phase 2 — Multi-model + verification.** Lenses, fan-out, clustering, the challenger
   role, reproducer generation. Retire the comparison judge in favour of per-finding
   verdicts.
@@ -332,6 +447,144 @@ Ordered by how likely each is to sink the thing.
 - Not an autofixer in this plan. `remedy` is a suggested patch a human applies; applying
   it automatically is separate work with a separate risk profile.
 - Not a hosted service. Local-first, provider-agnostic, runs against a local model.
+
+## Competitive position
+
+Compiled 2026-09-03 from search summaries and vendor posts citing Martian's benchmark; most
+primary pages were unreachable from the authoring environment. Treat every figure as
+indicative, as [`competitive-landscape.md`](competitive-landscape.md) advises for
+secondary sources.
+
+Built as designed, the reviewer sits in a gap nobody occupies: general-purpose review where
+a finding reaches a human only after execution confirmed it or a refutation pass failed to
+kill it. The best published precision in the field is about 76% on Martian's independent
+Code Review Bench. That is the number the design is aimed at.
+
+**Three groups.**
+
+- **Hosted incumbents** — CodeRabbit, Greptile, Cursor Bugbot, GitHub Copilot, Codex,
+  Gemini, Qodo, Anthropic's managed Code Review. All judge without executing. Bugbot runs
+  eight parallel passes with majority voting and a validator model, the nearest thing to
+  our ensemble, but nothing runs the code. Copilot review now runs on Actions runners yet
+  restricts its tool calls to read-only. Codex Security reproduces an issue in a sandbox
+  before surfacing it — our Stage 4 exactly — but only for security findings and only on
+  their cloud; whether plain Codex review executes is unconfirmed. Anthropic's managed
+  review dispatches parallel specialised agents, which is our lenses idea shipped as a
+  service at roughly ten times Bugbot's price.
+- **Local and self-hosted** — Qodo's PR-Agent is now a community-maintained legacy project;
+  the rest is diff-in-a-prompt Actions pointed at Ollama, or Alibaba's rules-plus-LLM
+  `open-code-review`. This slot is open, and running a serious pipeline against a local
+  model with zero data egress is what Copse already is.
+- **Multi-model consensus tools** — Star Chamber, claude-consensus, ensemble. They fan out
+  and synthesise with no execution; the commentary around them already argues that
+  vote-counting compounds correlated error and refutation is what is needed. That is this
+  design, so it is a citable framing rather than a competitor.
+
+One sharp point: [`competitive-landscape.md`](competitive-landscape.md) lists Copse's
+two-model comparison as unusual among desktop agents. Against PR reviewers it is commodity.
+The same feature is a differentiator in one category and table stakes in the other.
+
+| Axis                       | Field today                                       | This design                                                    |
+| -------------------------- | ------------------------------------------------- | -------------------------------------------------------------- |
+| Verification by execution  | Codex Security only, security findings            | Every finding, any class                                       |
+| Ensemble                   | Bugbot: 8 passes, one vendor, validator model     | Cross-vendor, challenger scored on refutations                 |
+| Local model, no egress     | PR-Agent, DIY Actions                             | First-class shell                                              |
+| Codebase context           | Greptile's graph, Copilot's agentic explore       | Diff plus neighbourhood; Copse semantic search not yet wired in |
+| Learns from dismissals     | CodeRabbit learnings, Bugbot rules                | Suppression only                                               |
+| Forges                     | CodeRabbit four, Bugbot GitHub only               | GitHub and Forgejo                                             |
+| Setup                      | Two clicks                                        | Isolation backend plus build commands                          |
+| Latency                    | Bugbot about 90 s                                 | Minutes, bounded by the test suite                             |
+| Benchmark presence         | Martian ranks 13–17 tools                         | None                                                           |
+
+Published numbers, to fix the bar (each vendor claims first on a different date or metric,
+so read them as a range):
+
+| Tool                   | Precision           | Recall | F1              | Source                  |
+| ---------------------- | ------------------- | ------ | --------------- | ----------------------- |
+| Greptile, July 2026    | 76.2                | 50.6   | 60.8            | vendor, citing Martian  |
+| Qodo                   | 62.3                | 66.4   | 64.3            | vendor, citing Martian  |
+| CodeRabbit, Feb 2026   | 49.2                | 53.5   | #1 F1 at launch | vendor, citing Martian  |
+| Cursor Bugbot          | 70%+ resolution     | —      | —               | vendor                  |
+| GitHub Copilot         | 71% actionable      | —      | —               | vendor                  |
+
+The range says even the leader is wrong or ignored one comment in four. Price floor for
+context: Gemini free, GitLab Duo about $0.25 per MR, Bugbot about $1.20 per review, Anthropic
+managed review in the tens of dollars.
+
+**Where this design is weaker.** Table stakes it lacks: PR summaries, inline suggested
+changes, one-click fix, learnings, four-forge support, two-click install. Cost, because
+verification is the expensive stage. Latency, because ninety seconds is unreachable if the
+suite runs. Codebase context, where Greptile's graph is a real advantage on large repos. And
+the moat is copyable: Copilot already sits on a runner and chose read-only, and that is a
+switch they can flip.
+
+### Questions the position raises
+
+Numbered to match the working list; answered ones say so.
+
+**Positioning**
+
+1. **Who is the customer?** OSS maintainers with AI policies like FFmpeg's, regulated teams
+   that cannot send code out, or Copse users. Each picks a different first shell.
+   Recommendation: OSS maintainers and local-first teams — the segment is unoccupied and
+   the Fairy lineage is a story.
+2. **Is "only what we proved" the pitch, at the cost of recall?** Recommendation: yes.
+   Precision is where the field is weakest and the benchmark rewards it directly.
+3. **Opt-in per PR or always-on?** Fairy is opt-in; every incumbent is always-on. Opt-in
+   risks recreating Problem 1. Overlaps open decision 3 below.
+4. **Narrow or broad?** Bugbot proves narrow works commercially. Recommendation: bugs and
+   regressions only; defer summaries.
+
+**Proof**
+
+5. **What precision makes us credible?** Recommendation: above 85% on Martian's offline
+   track before any public claim. The pipeline is open source, so we can run it ourselves.
+6. **Does cross-vendor ensembling beat single-vendor multi-pass?** Unknown and testable;
+   the first ablation for `bench:review`.
+7. **What fraction of findings can execution settle?** If under half, the challenger pass
+   is the product and the reproducer is a bonus.
+8. **How do we get on the online track?** It measures tools deployed on live OSS PRs, so
+   distribution precedes measurement.
+
+**Economics**
+
+9. **Cost per review and who pays.** Budget cap, staged escalation, and a free Stage 0 tier
+   are the levers.
+10. **Latency target.** What is acceptable for an invited reviewer versus an always-on one?
+11. **Can a local model carry the reviewer lens**, with a frontier model reserved for the
+    challenger? That decides whether local-first is real or marketing.
+
+**Security**
+
+12. **The sandbox for untrusted PRs — decided.** Binding decision 1: isolated and ephemeral,
+    agents never touch sensitive data. Design in §Execution isolation. The CodeRabbit RCE
+    (an unsandboxed RuboCop, a malicious config, the App key, a million repositories) is the
+    reference incident.
+
+**Product gaps**
+
+13. **Codebase context.** Wire Copse's semantic search into Stage 1, or accept the gap on
+    large repos?
+14. **Learnings.** CodeRabbit-style prompt learning from dismissals, or suppression only?
+    Privacy implications for the local-first customer.
+15. **Interop.** Emit SARIF so findings land in GitHub code scanning and any SAST dashboard.
+    Cheap, and no competitor leads with it.
+16. **Ecosystems.** Stage 0 needs build and test detection per language. FFmpeg is C and
+    make; Copse is TypeScript. Which first?
+
+Sources: [Martian Code Review Bench](https://codereview.withmartian.com/) ·
+[Greptile on Martian](https://www.greptile.com/content-library/greptile-martian-code-review-benchmark) ·
+[Qodo on Martian](https://www.qodo.ai/blog/qodo-ranked-1-ai-code-review-tool-in-martians-code-review-benchmark/) ·
+[CodeRabbit on Martian](https://www.coderabbit.ai/blog/coderabbit-tops-martian-code-review-benchmark) ·
+[Bugbot 2026](https://weavai.app/blog/en/2026/05/12/cursor-bugbot-2026-review-ai-bug-detection-autofix/) ·
+[Copilot agentic review](https://github.blog/changelog/2026-03-05-copilot-code-review-now-runs-on-an-agentic-architecture/) ·
+[Copilot MCP read-only](https://github.blog/changelog/2026-07-29-copilot-code-review-agent-skills-and-mcp-now-generally-available/) ·
+[Codex Security](https://help.openai.com/en/articles/20001107-codex-security) ·
+[Anthropic Code Review](https://alphasignalai.substack.com/p/anthropic-releases-code-review-that) ·
+[PwnedRabbit, Endor Labs](https://www.endorlabs.com/learn/when-coderabbit-became-pwnedrabbit-a-cautionary-tale-for-every-github-app-vendor-and-their-customers) ·
+[Star Chamber, Mozilla.ai](https://blog.mozilla.ai/the-star-chamber-multi-llm-consensus-for-code-quality/) ·
+[Three Models Agreed](https://www.digitalapplied.com/blog/cross-model-review-consensus-verification-2026) ·
+[Alibaba open-code-review](https://github.com/alibaba/open-code-review)
 
 ## Open decisions
 
