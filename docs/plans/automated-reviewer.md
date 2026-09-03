@@ -108,8 +108,9 @@ which only the agent calls, and a "Compare models" follow-up bubble that appears
 None of those is the moment a human actually wants a review. The fix is not to lower a
 gate; it is to add the gesture Fairy has and Copse lacks: **an explicit "review this" act,
 in the surface where the human is already looking at the change** — the Changes view, PR
-creation, `copse review` in a terminal. Automatic-on-every-editing-turn is the wrong trigger regardless of
-its default; it fires when nobody asked and trains people to ignore the card.
+creation, `copse review` in a terminal. Automatic-on-every-editing-turn is the wrong
+trigger regardless of its default; it fires when nobody asked and trains people to ignore
+the card.
 
 ### Problem 2 — nothing validates
 
@@ -299,10 +300,10 @@ model sees it.
 credentials (App private keys, installation tokens, `GITHUB_TOKEN`, PATs); the profile under
 `~/.copse` (settings, threads, memories, the knowledge store); SSH keys, git credential
 helpers, cloud credentials, keychains; any other repository on the machine; the environment
-at large; and, should anyone run it as a shared service, any other tenant's review. The diff itself is scrubbed
-before it reaches a model — `packages/llm/src/redact-secrets.ts` plus the repo's
-`.gitleaks.toml` rules run over every review input — because a secret committed in the PR is
-still a secret.
+at large; and, should anyone run it as a shared service, any other tenant's review. The
+diff itself is scrubbed before it reaches a model — `packages/llm/src/redact-secrets.ts`
+plus the repo's `.gitleaks.toml` rules run over every review input — because a secret
+committed in the PR is still a secret.
 
 **Cell capabilities** — the checklist a backend must satisfy to be called supported:
 
@@ -572,8 +573,8 @@ Numbered Q1–Q16 to match the working list; answered ones say so.
 
 **Security**
 
-12. **Q12 — The sandbox for untrusted PRs — decided.** Binding decision B1: isolated and ephemeral,
-    agents never touch sensitive data. Design in §Execution isolation. The CodeRabbit RCE
+12. **Q12 — The sandbox for untrusted PRs — decided.** Binding decision B1: isolated and
+    ephemeral, agents never touch sensitive data. Design in §Execution isolation. The CodeRabbit RCE
     (an unsandboxed RuboCop, a malicious config, the App key, a million repositories) is the
     reference incident.
 
