@@ -242,27 +242,74 @@ const CLAUDE_ACP_COMMANDS: ReadonlySet<string> = new Set(
     .map((agent) => agent.command),
 )
 
+/** The catalog ids of those same agents — the second way to recognise one. */
+const CLAUDE_ACP_IDS: ReadonlySet<string> = new Set(
+  [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS]
+    .filter((agent) => agent.requiresClient === 'claude')
+    .map((agent) => canonicalAcpAgentId(agent.id)),
+)
+
 const CODEX_ACP_COMMANDS: ReadonlySet<string> = new Set(
   [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS]
     .filter((agent) => canonicalAcpAgentId(agent.id) === 'codex-acp')
     .map((agent) => agent.command),
 )
 
+// Codex has one catalog entry, and the command set above is already defined as
+// the entries canonicalising to this id — so the id set is this id, spelled out
+// rather than derived through a filter that can only ever produce it.
+const CODEX_ACP_IDS: ReadonlySet<string> = new Set(['codex-acp'])
+
+/**
+ * The bare program a spawn command names. An agent registered by absolute path
+ * (`/opt/homebrew/bin/claude-agent-acp`) or through a platform shim
+ * (`claude-agent-acp.cmd`) launches the same adapter as the catalog's bare
+ * `claude-agent-acp`, and losing the match over that spelling costs the user
+ * their plan billing path.
+ */
+function commandProgram(command: string): string {
+  const base = command.trim().split(/[\\/]/).pop() ?? ''
+  return base.replace(/\.(?:cmd|bat|exe|ps1)$/i, '')
+}
+
+/**
+ * Whether an agent launches one of a known set of adapters. The spawn command
+ * is the primary evidence — a custom label or a legacy id can still launch the
+ * plan-backed adapter — but an agent wrapped in a runner (`npx …`) hides it,
+ * so a canonical id from the catalog counts as well.
+ */
+function isKnownAcpAgent(
+  agent: AcpAgentIdentity,
+  commands: ReadonlySet<string>,
+  ids: ReadonlySet<string>,
+): boolean {
+  if (commands.has(agent.command) || commands.has(commandProgram(agent.command))) return true
+  return agent.id !== undefined && ids.has(canonicalAcpAgentId(agent.id))
+}
+
 export type AcpPlanProvider = 'claude' | 'codex'
 
-/** Whether a configured ACP agent wraps Claude, matched by its spawn command. */
-export function isClaudeAcpAgent(agent: Pick<AcpAgentConfig, 'command'>): boolean {
-  return CLAUDE_ACP_COMMANDS.has(agent.command)
+/**
+ * What an agent must carry to be recognised. `id` is optional so callers that
+ * only hold a command (agent detection, setup probes) keep working.
+ */
+type AcpAgentIdentity = Pick<AcpAgentConfig, 'command'> & Partial<Pick<AcpAgentConfig, 'id'>>
+
+/** Whether a configured ACP agent wraps Claude — see {@link isKnownAcpAgent}. */
+export function isClaudeAcpAgent(agent: AcpAgentIdentity): boolean {
+  return isKnownAcpAgent(agent, CLAUDE_ACP_COMMANDS, CLAUDE_ACP_IDS)
 }
 
 /**
  * Subscription provider used by a known ACP agent, or `null` for agents whose
- * billing path Copse cannot identify. Match commands rather than persisted ids:
- * custom labels and legacy ids can still launch the same plan-backed adapter.
+ * billing path Copse cannot identify. An unidentified agent is more expensive
+ * than it looks: it is left out of the routable frontier, so every `auto:`
+ * selector settles for a paid API route while the picker goes on listing the
+ * plan one.
  */
-export function acpPlanProvider(agent: Pick<AcpAgentConfig, 'command'>): AcpPlanProvider | null {
+export function acpPlanProvider(agent: AcpAgentIdentity): AcpPlanProvider | null {
   if (isClaudeAcpAgent(agent)) return 'claude'
-  if (CODEX_ACP_COMMANDS.has(agent.command)) return 'codex'
+  if (isKnownAcpAgent(agent, CODEX_ACP_COMMANDS, CODEX_ACP_IDS)) return 'codex'
   return null
 }
 

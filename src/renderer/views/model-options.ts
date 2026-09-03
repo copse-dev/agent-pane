@@ -66,11 +66,8 @@ import {
   dynamicModelChoices,
   dynamicModelLabel,
 } from '@copse/llm/dynamic-model.ts'
-import {
-  canonicalModelLabel,
-  claudeModelIdFromLabel,
-  modelDisplayName,
-} from '@copse/llm/model-label.ts'
+import { canonicalModelLabel, modelDisplayName } from '@copse/llm/model-label.ts'
+import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 
 const ACP_GROUP = 'Agents on this device'
@@ -100,26 +97,17 @@ export function modelDisplayLabel(model: string): string {
 
 /**
  * Intellect hint for a model an agent named itself. The same weights arrive
- * spelled every which way ("Opus 4.8", "Claude 4.6 Sonnet", a bare id), so each
- * form the agent gave us is tried against the measurement alias map first, and
- * only then the Anthropic id a plain family + version denotes — which is how a
- * spelling no alias covers still finds its measurement. Null when none resolve,
- * so an unmeasured model renders without a hint rather than with a guess.
+ * spelled every which way ("Opus 4.8", "Claude 4.6 Sonnet", a bare id), so the
+ * forms are resolved by {@link resolveAgentModelIdentity} — shared with the
+ * routable frontier, so a row this picker can annotate is one an `auto:`
+ * selector can also pick. Null when none resolve, so an unmeasured model
+ * renders without a hint rather than with a guess.
  */
 function agentModelIntellectHint(
   ...forms: ReadonlyArray<string | null | undefined>
 ): string | null {
-  const named = forms.filter((form): form is string => Boolean(form))
-  for (const form of named) {
-    const hint = modelIntellectHint(form)
-    if (hint) return hint
-  }
-  for (const form of named) {
-    const id = claudeModelIdFromLabel(form)
-    const hint = id === null ? null : modelIntellectHint(id)
-    if (hint) return hint
-  }
-  return null
+  const id = resolveAgentModelIdentity(...forms)
+  return id === null ? null : modelIntellectHint(id)
 }
 
 async function pluginModelOptions(

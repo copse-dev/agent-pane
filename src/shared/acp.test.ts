@@ -182,6 +182,26 @@ describe('ACP plan provider', () => {
     assert.equal(acpPlanProvider({ command: 'cursor-agent' }), null)
     assert.equal(acpPlanProvider({ command: 'my-agent' }), null)
   })
+
+  it('recognizes the same adapter spawned by path or through a platform shim', () => {
+    // Registering an agent by absolute path is the same binary; losing the
+    // match costs the user the plan route in every `auto:` selection.
+    assert.equal(acpPlanProvider({ command: '/opt/homebrew/bin/claude-agent-acp' }), 'claude')
+    assert.equal(acpPlanProvider({ command: 'C:\\tools\\claude-agent-acp.cmd' }), 'claude')
+    assert.equal(acpPlanProvider({ command: '/usr/local/bin/codex-acp' }), 'codex')
+    // A path is not a licence to guess: an unrelated program stays unknown.
+    assert.equal(acpPlanProvider({ command: '/usr/local/bin/my-agent' }), null)
+  })
+
+  it('recognizes a catalog agent wrapped in a runner by its canonical id', () => {
+    // `npx @agentclientprotocol/claude-agent-acp` hides the adapter behind the
+    // runner, but the registered agent still carries the catalog id.
+    assert.equal(acpPlanProvider({ id: 'claude-acp', command: 'npx' }), 'claude')
+    assert.equal(acpPlanProvider({ id: 'codex-acp', command: 'npx' }), 'codex')
+    assert.equal(isClaudeAcpAgent({ id: 'claude-acp', command: 'npx' }), true)
+    // A custom agent under its own id gets no plan claim from its runner.
+    assert.equal(acpPlanProvider({ id: 'my-agent', command: 'npx' }), null)
+  })
 })
 
 describe('ACP session config options', () => {
