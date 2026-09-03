@@ -2,8 +2,10 @@
 
 Status: **Proposed** — design only. Nothing in this document is on `main`. It supersedes
 the surfacing and validation gaps in the existing `copse.model-comparison` plugin, which
-stays as-is until Phase 2 rewires it. Binding decision 1 (execution isolation) was recorded
-on 2026-09-03; the rest of the open questions are numbered in §Competitive position.
+stays as-is until Phase 2 retires its judge and Phase 3 replaces it with `copse.review`.
+Binding decision B1 (execution isolation) was recorded on 2026-09-03. Problems are numbered
+P1–P9 in §What needs to be solved, questions Q1–Q16 in §Competitive position, and the
+remaining decisions D1–D4 in §Open decisions.
 
 Prior art that prompted this: FFmpeg's **Forgejo Fairy**, the opt-in LLM reviewer a
 contributor adds to a pull request by hand ([`doc/developer.texi`](https://ffmpeg.org/developer.html):
@@ -17,6 +19,10 @@ explicitly marked as inference.
 Related: the in-tree `copse.model-comparison` plugin (`src/main/services/model-comparison.ts`,
 `model-comparison-runner.ts`, `packages/agent/src/plugins/model-comparison-plugin.ts`) — no plan
 doc of its own;
+[`hooks-and-feature-packs.md`](hooks-and-feature-packs.md), whose decisions log
+[`../../AGENTS.md`](../../AGENTS.md) makes binding for feature-pack work — its P5 extracted
+the pack Phase 3 replaces, its decision 15 governs the typed chunk the findings card
+consumes, and its decision 5 budgets any machine turn a review starts;
 [`headless-automation-contract.md`](headless-automation-contract.md) (the contract a CLI
 shell must speak), [`dark-factory-pr-orchestrator.md`](dark-factory-pr-orchestrator.md)
 (the fleet supervisor that would _schedule_ reviews), [`industry-benchmarks.md`](industry-benchmarks.md)
@@ -91,15 +97,16 @@ gesture that invokes it. See below.
 
 ### Problem 1 — it is never surfaced
 
-The comparison is gated behind, in series: an experimental plugin that is default-off; a
-second top-level opt-in (`modelComparisonAutoOnReview`, default false) for the automatic
-path; and a spend-approval modal when any chosen model is billable. The only ambient
-entry is a "Compare models" follow-up bubble, itself conditional on `when:
-'workspace-changes'`.
+The comparison sits behind two hard gates and one conditional one. The plugin is
+`stability: 'experimental'`, so it is default-off; the automatic path additionally needs the
+top-level `modelComparisonAutoOnReview` opt-in, default false; and a spend-approval modal
+appears when any chosen model is billable, skipped when every model is local or when the user
+picked the models themselves. Its two on-demand entries are the `compare_models` native tool,
+which only the agent calls, and a "Compare models" follow-up bubble that appears only
+`when: 'workspace-changes'`.
 
-That is four gates before a first-time user sees a comparison, and none of them is the
-moment a human actually wants a review. The fix is not to lower a gate; it is to add the
-gesture Fairy has and Copse lacks: **an explicit "review this" act, in the surface where
+None of those is the moment a human actually wants a review. The fix is not to lower a
+gate; it is to add the gesture Fairy has and Copse lacks: **an explicit "review this" act, in the surface where
 the human is already looking at the change** — the Changes view, PR creation, `copse
 review` in a terminal. Automatic-on-every-editing-turn is the wrong trigger regardless of
 its default; it fires when nobody asked and trains people to ignore the card.
@@ -108,9 +115,10 @@ its default; it fires when nobody asked and trains people to ignore the card.
 
 `REVIEW_TOOL_NAMES` is `read_file`, `list_dir`, `search_code`, `git_diff`, `git_status`,
 `git_log`, `staged_diffs`, `read_staged_diff`. There is no shell, no build, no test run.
-Both reviewers read the same diff (capped at `MAX_DIFF_CHARS = 12_000`) and the same
-source files. The judge reads _only their two prose outputs_ and is explicitly told **"Do
-NOT re-review the code yourself"**.
+Both reviewers start from the same diff, capped at `MAX_DIFF_CHARS = 12_000`, and each
+drives its own read-only tool loop from there. The judge is weaker still: a single
+`completeTextWithUsage` call with no tools at all, fed only the parent goal and the two prose
+reviews, and explicitly told **"Do NOT re-review the code yourself"**.
 
 So the pipeline has no contact with a compiler, a type checker, a linter or a test at any
 point. Two models can agree, fluently and in detail, on a claim that thirty seconds of
@@ -123,7 +131,9 @@ evidence; execution is worth a great deal.
 Because the output is markdown, a finding has no identity. That single fact blocks:
 per-finding verification, dedupe across reviewers, ranking, capping, inline PR comments,
 "I already dismissed this", machine consumption by CI, and any measurement of whether the
-reviewer is getting better or worse.
+reviewer is getting better or worse. The one structured hook that exists — the verdict's
+`todoUpdates`, which can mint a todo item per finding — is a task id, not a finding id: it
+carries no anchor, no evidence, and does not survive the next push.
 
 ## Design
 
@@ -177,8 +187,10 @@ contracts/API compatibility, tests, security, concurrency/resources, docs-vs-beh
 Lenses matter more than model count: two models on one generic "review this" prompt
 mostly produce the same middle-of-the-distribution observations, whereas one model given
 "only look for broken contracts" produces something the correctness lens didn't. Each
-reviewer runs in its own sandboxed checkout and **may execute** — run the tests, run a
-scratch script — but cannot write to the real tree or the network beyond policy.
+reviewer **may execute** — run the tests, run a scratch script — inside the cell. Read-only
+lenses share the cell's read-only head checkout; any reviewer that writes gets its own git
+worktree of head, so N × M reviewers never collide. Nothing reaches the real tree or the
+network beyond policy.
 Output: candidate findings, not prose.
 _Reuse: `run-subagent.ts`, the fan-out in `model-comparison-runner.ts`,
 `provider-selection.ts`, `dynamic-model.ts`._
@@ -254,7 +266,7 @@ decision rather than a rewrite.
 
 ### Execution isolation
 
-**Decided — binding decision 1.** Every stage that runs the code under review (Stage 0's
+**Decided — binding decision B1.** Every stage that runs the code under review (Stage 0's
 build baseline, Stage 2's reviewer tool calls, Stage 4's reproducers) runs inside an
 isolated, **ephemeral execution cell**: an OS sandbox, or a container or VM created for one
 review and destroyed after it. No reviewer agent, and nothing the cell executes, ever has
@@ -271,7 +283,7 @@ reviewer's rules too, and its GitHub credential broker is the path any forge wri
 | Domain                                | Holds                                                                             | Runs                                                                                         | Never                                                                                          |
 | ------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Orchestrator (trusted)                | provider keys, forge tokens, the findings store, the suppression store            | the agent loops, model calls, clustering, ranking, rendering, forge writes                   | repo code, build scripts, tests                                                                |
-| Execution cell (untrusted, ephemeral) | the two checkouts (merge-base, head), a scratch dir, a read-only dependency cache | build, typecheck, lint, tests, reproducers; the brokered `read_file` / `run` the agents call | secrets, the host filesystem, `~/.copse`, other repositories, any network beyond the allowlist |
+| Execution cell (untrusted, ephemeral) | two read-only reference checkouts (merge-base, head), a per-reviewer git worktree of head for anything that writes, a scratch dir, a read-only dependency cache | build, typecheck, lint, tests, reproducers; the brokered `read_file` / `run` the agents call | secrets, the host filesystem, `~/.copse`, other repositories, any network beyond the allowlist |
 
 The agent loops live in the orchestrator and their tools are **brokered** into the cell over
 a narrow RPC — the shape `src/main/project-sandbox/sandbox-fs-server.ts` already has for
@@ -287,7 +299,7 @@ model sees it.
 credentials (App private keys, installation tokens, `GITHUB_TOKEN`, PATs); the profile under
 `~/.copse` (settings, threads, memories, the knowledge store); SSH keys, git credential
 helpers, cloud credentials, keychains; any other repository on the machine; the environment
-at large; and, for a hosted deployment, any other tenant's review. The diff itself is scrubbed
+at large; and, should anyone run it as a shared service, any other tenant's review. The diff itself is scrubbed
 before it reaches a model — `packages/llm/src/redact-secrets.ts` plus the repo's
 `.gitleaks.toml` rules run over every review input — because a secret committed in the PR is
 still a secret.
@@ -331,8 +343,7 @@ sub-question decision 1 leaves open.
   is the backend; the reviewer is a consumer of that runtime, not a second implementation.
 - **CLI:** an `IsolationBackend` abstraction from day one — OS sandbox, Docker/Podman, or a
   microVM — detected at start. With none present the CLI runs the read-only pipeline and
-  prints why. There is no flag that executes a foreign diff unisolated; the
-  `--i-trust-this-diff` idea from the first draft of this plan is withdrawn.
+  prints why. There is no flag that executes a foreign diff unisolated.
 - **CI:** a GitHub-hosted runner is ephemeral but not secret-free, so the workflow is two
   jobs. **Job A** checks out the PR head on the `pull_request` event — never
   `pull_request_target` — with `permissions: {}` and no secrets, runs Stage 0 and the
@@ -360,23 +371,23 @@ security-sensitive, `docs/**` is not"); and the output cap. Repo-owned so a proj
 teach the reviewer its conventions — which is the difference between a tool people adopt
 and a tool people mute.
 
-## Binding decisions
+## Binding decisions (B)
 
 Changing one of these requires updating this document in the same change — the convention
 [`execution-runtime-security.md`](execution-runtime-security.md) uses.
 
-1. **Execution is isolated and ephemeral; agents never touch sensitive data.** Every stage
+1. **B1 — Execution is isolated and ephemeral; agents never touch sensitive data.** Every stage
    that runs the code under review does so in an OS sandbox or an ephemeral container/VM
    created for that review, with no secrets, no host filesystem, and no network beyond an
    allowlist. The reviewer agents run outside that cell and reach it only through brokered
    tools. Where no isolation exists, a foreign diff is never executed. Recorded 2026-09-03;
    design in §Execution isolation.
 
-## What needs to be solved
+## What needs to be solved (P)
 
 Ordered by how likely each is to sink the thing.
 
-1. **Executing untrusted code — decided.** Binding decision 1 and §Execution isolation
+1. **P1 — Executing untrusted code — decided.** Binding decision B1 and §Execution isolation
    settle the policy: Stages 0, 2 and 4 run in an ephemeral, secret-free cell, the agents
    are brokered in, and a foreign diff without isolation is never executed. What stays
    open underneath it: which isolation backends the CLI supports at launch and how it
@@ -384,38 +395,38 @@ Ordered by how likely each is to sink the thing.
    (recommendation: no); the read-only dependency cache, since "the build cannot fetch" is
    the common case once the network is closed; and the Forgejo self-hosted runner story,
    which we cannot enforce and must document as a requirement.
-2. **Finding identity.** Clustering across reviewers, and stability across pushes and
+2. **P2 — Finding identity.** Clustering across reviewers, and stability across pushes and
    rebases. Naive string similarity will both over- and under-merge. Anchoring to content
    hashes plus overlapping ranges is the starting proposal; it needs a real corpus to
    tune against, and it is the crux of both Stage 3 and suppression.
-3. **Cost and latency.** N models × M lenses × verification is easily 20× a current
+3. **P3 — Cost and latency.** N models × M lenses × verification is easily 20× a current
    review. Needs: a declared budget, staged escalation (cheap broad pass → expensive
    verification on survivors only), caching keyed on `(base, head, config)`, and honest
    reporting of spend. The existing per-model usage accounting and
    `estimateUsageCost` give the accounting; the policy is missing.
-4. **Verification when there is nothing to run.** Many repos have no tests, or a suite
+4. **P4 — Verification when there is nothing to run.** Many repos have no tests, or a suite
    that takes forty minutes. Define the degradation ladder explicitly — full run →
    changed-package subset → single reproducing test → adversarial challenge only → declare
    the finding unverified and say so — and make which rung was reached visible in the
-   output. Binding decision 1 adds a rung above all of these: with no isolation backend, a
+   output. Binding decision B1 adds a rung above all of these: with no isolation backend, a
    foreign diff never reaches the first one.
-5. **Correlated model error.** Two models from one family agree on one hallucination.
+5. **P5 — Correlated model error.** Two models from one family agree on one hallucination.
    Agreement is only evidence if the reviewers are actually independent. Needs a stated
    position on which diversity axes count (family ≫ size ≫ sampling), and a challenger
    role that is scored on refutations rather than agreements.
-6. **Measurement.** Without a precision number this degrades into noise within a quarter,
+6. **P6 — Measurement.** Without a precision number this degrades into noise within a quarter,
    and nobody will notice which change did it. Needs a `bench:review` harness on a corpus
    of PRs with known outcomes, following the pattern in
    [`industry-benchmarks.md`](industry-benchmarks.md), reporting precision on surfaced
    findings (primary), reproducer rate, and cost per confirmed finding. **Precision is the
    metric. Recall is explicitly not.**
-7. **Prompt injection from the diff.** The reviewer reads attacker-controlled source and
+7. **P7 — Prompt injection from the diff.** The reviewer reads attacker-controlled source and
    comments and then acts on them. `packages/agent/src/external-content.ts` exists; it
    must wrap every review input, and a finding must never be able to instruct the pipeline.
-8. **Suppression that isn't annoying.** Dismissed findings must stay dismissed across
+8. **P8 — Suppression that isn't annoying.** Dismissed findings must stay dismissed across
    pushes without also hiding a genuinely new problem at the same location. Depends
    entirely on (2).
-9. **Where the gesture lives in the app.** "Review" in the Changes view is the proposal;
+9. **P9 — Where the gesture lives in the app.** "Review" in the Changes view is the proposal;
    it needs a design pass against [`../ui-taste.md`](../ui-taste.md) and, per
    [`../../AGENTS.md`](../../AGENTS.md), visual evidence.
 
@@ -425,7 +436,7 @@ Ordered by how likely each is to sink the thing.
   type, the build/test baseline diff, the `IsolationBackend` abstraction with at least one
   real backend, and the hostile-fixture conformance test. No models at all. Ships value
   immediately ("this doesn't compile / this test regressed"). Stage 0 _is_ execution, so
-  this is where binding decision 1 is proven, before any model spend.
+  this is where binding decision B1 is proven, before any model spend.
 - **Phase 1 — CLI shell.** `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5.
   Dogfood on this repo's own PRs. Extend the isolation backends to what CLI users actually
   have (Docker/Podman, a microVM).
@@ -433,7 +444,10 @@ Ordered by how likely each is to sink the thing.
   role, reproducer generation. Retire the comparison judge in favour of per-finding
   verdicts.
 - **Phase 3 — App shell.** `copse.model-comparison` → `copse.review`; findings card;
-  the Changes-view gesture; dismissal persisted.
+  the Changes-view gesture; dismissal persisted. This replaces the first-party pack that
+  [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md) P5 extracted, so its decisions
+  log binds here: decision 15 for the typed chunk the findings card consumes, decision 5 for
+  any machine turn a review starts.
 - **Phase 4 — CI shell.** GitHub Action, inline comments, opt-in by label. Forgejo
   equivalent.
 - **Phase 5 — Eval.** `bench:review` and a precision gate. Arguably belongs at Phase 2;
@@ -446,7 +460,9 @@ Ordered by how likely each is to sink the thing.
 - Not a linter or a formatter — it defers to the repo's own.
 - Not an autofixer in this plan. `remedy` is a suggested patch a human applies; applying
   it automatically is separate work with a separate risk profile.
-- Not a hosted service. Local-first, provider-agnostic, runs against a local model.
+- Not a hosted service from us. Local-first, provider-agnostic, runs against a local model.
+  Nothing stops someone else hosting it, which is why §Execution isolation names other
+  tenants' data.
 
 ## Competitive position
 
@@ -518,58 +534,58 @@ suite runs. Codebase context, where Greptile's graph is a real advantage on larg
 the moat is copyable: Copilot already sits on a runner and chose read-only, and that is a
 switch they can flip.
 
-### Questions the position raises
+### Questions the position raises (Q)
 
-Numbered to match the working list; answered ones say so.
+Numbered Q1–Q16 to match the working list; answered ones say so.
 
 **Positioning**
 
-1. **Who is the customer?** OSS maintainers with AI policies like FFmpeg's, regulated teams
+1. **Q1 — Who is the customer?** OSS maintainers with AI policies like FFmpeg's, regulated teams
    that cannot send code out, or Copse users. Each picks a different first shell.
    Recommendation: OSS maintainers and local-first teams — the segment is unoccupied and
    the Fairy lineage is a story.
-2. **Is "only what we proved" the pitch, at the cost of recall?** Recommendation: yes.
+2. **Q2 — Is "only what we proved" the pitch, at the cost of recall?** Recommendation: yes.
    Precision is where the field is weakest and the benchmark rewards it directly.
-3. **Opt-in per PR or always-on?** Fairy is opt-in; every incumbent is always-on. Opt-in
-   risks recreating Problem 1. Overlaps open decision 3 below.
-4. **Narrow or broad?** Bugbot proves narrow works commercially. Recommendation: bugs and
+3. **Q3 — Opt-in per PR or always-on?** Fairy is opt-in; every incumbent is always-on. Opt-in
+   risks recreating Problem 1. Overlaps D3.
+4. **Q4 — Narrow or broad?** Bugbot proves narrow works commercially. Recommendation: bugs and
    regressions only; defer summaries.
 
 **Proof**
 
-5. **What precision makes us credible?** Recommendation: above 85% on Martian's offline
+5. **Q5 — What precision makes us credible?** Recommendation: above 85% on Martian's offline
    track before any public claim. The pipeline is open source, so we can run it ourselves.
-6. **Does cross-vendor ensembling beat single-vendor multi-pass?** Unknown and testable;
+6. **Q6 — Does cross-vendor ensembling beat single-vendor multi-pass?** Unknown and testable;
    the first ablation for `bench:review`.
-7. **What fraction of findings can execution settle?** If under half, the challenger pass
+7. **Q7 — What fraction of findings can execution settle?** If under half, the challenger pass
    is the product and the reproducer is a bonus.
-8. **How do we get on the online track?** It measures tools deployed on live OSS PRs, so
+8. **Q8 — How do we get on the online track?** It measures tools deployed on live OSS PRs, so
    distribution precedes measurement.
 
 **Economics**
 
-9. **Cost per review and who pays.** Budget cap, staged escalation, and a free Stage 0 tier
+9. **Q9 — Cost per review and who pays.** Budget cap, staged escalation, and a free Stage 0 tier
    are the levers.
-10. **Latency target.** What is acceptable for an invited reviewer versus an always-on one?
-11. **Can a local model carry the reviewer lens**, with a frontier model reserved for the
+10. **Q10 — Latency target.** What is acceptable for an invited reviewer versus an always-on one?
+11. **Q11 — Can a local model carry the reviewer lens**, with a frontier model reserved for the
     challenger? That decides whether local-first is real or marketing.
 
 **Security**
 
-12. **The sandbox for untrusted PRs — decided.** Binding decision 1: isolated and ephemeral,
+12. **Q12 — The sandbox for untrusted PRs — decided.** Binding decision B1: isolated and ephemeral,
     agents never touch sensitive data. Design in §Execution isolation. The CodeRabbit RCE
     (an unsandboxed RuboCop, a malicious config, the App key, a million repositories) is the
     reference incident.
 
 **Product gaps**
 
-13. **Codebase context.** Wire Copse's semantic search into Stage 1, or accept the gap on
+13. **Q13 — Codebase context.** Wire Copse's semantic search into Stage 1, or accept the gap on
     large repos?
-14. **Learnings.** CodeRabbit-style prompt learning from dismissals, or suppression only?
+14. **Q14 — Learnings.** CodeRabbit-style prompt learning from dismissals, or suppression only?
     Privacy implications for the local-first customer.
-15. **Interop.** Emit SARIF so findings land in GitHub code scanning and any SAST dashboard.
+15. **Q15 — Interop.** Emit SARIF so findings land in GitHub code scanning and any SAST dashboard.
     Cheap, and no competitor leads with it.
-16. **Ecosystems.** Stage 0 needs build and test detection per language. FFmpeg is C and
+16. **Q16 — Ecosystems.** Stage 0 needs build and test detection per language. FFmpeg is C and
     make; Copse is TypeScript. Which first?
 
 Sources: [Martian Code Review Bench](https://codereview.withmartian.com/) ·
@@ -586,15 +602,15 @@ Sources: [Martian Code Review Bench](https://codereview.withmartian.com/) ·
 [Three Models Agreed](https://www.digitalapplied.com/blog/cross-model-review-consensus-verification-2026) ·
 [Alibaba open-code-review](https://github.com/alibaba/open-code-review)
 
-## Open decisions
+## Open decisions (D)
 
-1. **Name.** Working title only. It wants a real one before Phase 1, since it becomes a
+1. **D1 — Name.** Working title only. It wants a real one before Phase 1, since it becomes a
    package name, a binary name and a bot identity.
-2. **Does Phase 0 ship inside Copse or as the standalone package from day one?**
+2. **D2 — Does Phase 0 ship inside Copse or as the standalone package from day one?**
    Recommendation: the package from day one, consumed by Copse — retrofitting the boundary
    later is how the boundary rots.
-3. **Default trigger in the app.** Recommendation: explicit gesture only, no
+3. **D3 — Default trigger in the app.** Recommendation: explicit gesture only, no
    automatic-per-turn mode at all. Deleting the auto path is a simplification, not a
    regression, given Problem 1.
-4. **Does the reviewer get its own repository?** Deferred by request. The `@copse/review`
+4. **D4 — Does the reviewer get its own repository?** Deferred by request. The `@copse/review`
    boundary is what keeps the option open at low cost.
