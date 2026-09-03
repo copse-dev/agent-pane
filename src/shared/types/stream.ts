@@ -1,5 +1,6 @@
 import type { MachineMessageOrigin, ModelComparison } from './thread.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
+import type { CanvasArtefactReference } from './canvas.ts'
 import type { TodoItem } from './todo.ts'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 // The provider-emitted chunks are owned by the LLM module; the loop-emitted
@@ -27,6 +28,11 @@ export type { ProviderStreamChunk, ToolCallChunk } from '@copse/llm/wire-types.t
  */
 export type StreamChunk =
   | AgentStreamChunk
+  /** A provider presentation reference resolved through Copse's canvas. */
+  | {
+      type: 'canvas_artefact'
+      artefact: CanvasArtefactReference
+    }
   /** A host-native continuation began without a human submit. */
   | { type: 'machine_turn_start'; content: UserContent; origin: MachineMessageOrigin }
   /**

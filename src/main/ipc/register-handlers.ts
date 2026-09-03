@@ -159,10 +159,19 @@ import {
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
+import { addTrustedShellCommand } from '../services/security/command-routing-config.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
-import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
-import { listAgents, initAgentsRegistry } from '../services/agents/agents-registry.ts'
+import {
+  listSkills,
+  initSkillsRegistry,
+  waitForSkillsRegistryRefresh,
+} from '../services/skills/skills-registry.ts'
+import {
+  listAgents,
+  initAgentsRegistry,
+  waitForAgentsRegistryRefresh,
+} from '../services/agents/agents-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
@@ -409,6 +418,8 @@ you want the coding agent to follow on every turn.
 `
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  let modelCardResolveGate: Promise<void> | undefined
+  let releaseModelCardResolves: (() => void) | undefined
   setGitHubListWatchBroadcast(() => {
     broadcastToAppWindows('gh:lists_tick')
   })
@@ -1263,6 +1274,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('modelCards:resolve', async (event, modelIds: unknown) => {
     assertMainFrameSender(event, win)
     const ids = parseIpcArgs(modelCardIdsSchema, [modelIds])
+    await modelCardResolveGate
     const out: Record<string, ResolvedModelCard | null> = {}
     await Promise.all(
       ids.map(async (id) => {
@@ -1333,7 +1345,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const candidate = apiKey.trim() ? apiKey : (resolveApiKey(p) ?? '')
     if (!candidate) return { ok: false, error: 'No key configured for this provider' }
     const result = await validateApiKey(p, candidate)
-    recordProviderKeyValidation(p, result.ok)
+    recordProviderKeyValidation(p, candidate, result.ok)
     return result
   })
   // Opt-in environment scan: look for provider API keys the user already has
@@ -1827,8 +1839,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
 
-  ipcMain.handle('skills:list', () => listSkills())
-  ipcMain.handle('agents:list', () => listAgents())
+  ipcMain.handle('skills:list', async () => {
+    await waitForSkillsRegistryRefresh()
+    return listSkills()
+  })
+  ipcMain.handle('agents:list', async () => {
+    await waitForAgentsRegistryRefresh()
+    return listAgents()
+  })
   ipcMain.handle('cursorPlugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()
@@ -2499,6 +2517,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .refine((step) => step.tool !== undefined || step.text !== undefined, {
         message: 'mock script step needs tool or text',
       })
+    const testApprovalRequestSchema = z.object({
+      id: z.string().min(1).max(256),
+      title: z.string().min(1).max(2_000),
+      body: z.string().max(20_000),
+      bodyAdvice: z.string().max(20_000).optional(),
+      bodyFooter: z.string().max(20_000).optional(),
+      type: z.string().min(1).max(128),
+      collapseDetails: z.boolean().optional(),
+      approveOnceLabel: z.string().max(500).optional(),
+    })
 
     ipcMain.handle('test:setMockScript', (event, raw: unknown) => {
       assertMainFrameSender(event, win)
@@ -2515,6 +2543,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       clearMockScript()
     })
+    ipcMain.handle('test:pauseModelCardResolves', (event) => {
+      assertMainFrameSender(event, win)
+      if (modelCardResolveGate) return
+      modelCardResolveGate = new Promise((resolve) => {
+        releaseModelCardResolves = resolve
+      })
+    })
+    ipcMain.handle('test:resumeModelCardResolves', (event) => {
+      assertMainFrameSender(event, win)
+      const release = releaseModelCardResolves
+      modelCardResolveGate = undefined
+      releaseModelCardResolves = undefined
+      release?.()
+    })
     ipcMain.handle('test:setAutomationThreadLoadsPaused', (event, paused: unknown) => {
       assertMainFrameSender(event, win)
       const value = parseIpcArgs(z.boolean(), [paused])
@@ -2527,6 +2569,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [rawThreadId, rawChunks],
       )
       for (const chunk of chunks) win.webContents.send('agent:chunk', threadId, chunk)
+    })
+    ipcMain.handle('test:emitApprovalRequests', (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const requests = parseIpcArgs(z.array(testApprovalRequestSchema).min(1).max(16), [raw])
+      for (const request of requests) win.webContents.send('agent:approval_request', request)
+    })
+    ipcMain.handle('test:cancelApprovalRequest', (event, rawId: unknown) => {
+      assertMainFrameSender(event, win)
+      const id = parseIpcArgs(z.string().min(1).max(256), [rawId])
+      win.webContents.send('agent:approval_cancelled', { id })
     })
     ipcMain.handle('test:requestSshPrompt', (event, prompt: unknown, kind: unknown) => {
       assertMainFrameSender(event, win)
@@ -2541,6 +2593,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:requestCloseConfirm', (event) => {
       assertMainFrameSender(event, win)
       return requestCloseConfirmation()
+    })
+    ipcMain.handle('test:rememberTrustedCommands', async (event, raw: unknown) => {
+      assertMainFrameSender(event, win)
+      const commands = parseIpcArgs(z.array(z.string().min(1).max(128)).min(1).max(16), [raw])
+      await Promise.all(commands.map((command) => addTrustedShellCommand(command)))
+      return getSetting<unknown>('trustedShellCommands', [])
     })
 
     ipcMain.handle('test:createMainWindow', (event) => {

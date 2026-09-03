@@ -197,6 +197,16 @@ export function mountApprovalDialog(
     setAttentionThreads(store, 'approval', waiting)
   }
 
+  /**
+   * Model comparison owns three interactive pickers and returns one selection
+   * with its answer. Folding any sibling into that prompt removes the pickers
+   * (the batched layout has no coherent way to submit one selection per row),
+   * so it must take a dialog turn by itself.
+   */
+  function requiresSoloPrompt(req: PendingApproval): boolean {
+    return req.type === 'model-compare'
+  }
+
   /** Move every currently-showable queued request onto the on-screen batch,
    * preserving arrival order (older requests stay at the top of the list). */
   function drainShowableIntoBatch(): number {
@@ -204,6 +214,8 @@ export function mountApprovalDialog(
     for (let i = 0; i < queue.length;) {
       const req = queue[i]
       if (req && isShowable(req)) {
+        const first = batch[0]
+        if (first && (requiresSoloPrompt(first) || requiresSoloPrompt(req))) break
         queue.splice(i, 1)
         batch.push(req)
         moved++
@@ -545,6 +557,12 @@ export function mountApprovalDialog(
         show()
       } else {
         renderBatch()
+        // Removing a sibling can change the remaining primary action from a
+        // one-shot batch approval into a broader solo grant (for example read
+        // access outside the project). Treat that semantic change like a live
+        // append so a click committed against the old label cannot land on the
+        // newly broadened action. Reject deliberately stays available.
+        startSettle()
       }
     }
     syncAttention()

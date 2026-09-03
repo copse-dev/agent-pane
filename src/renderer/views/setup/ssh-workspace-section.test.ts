@@ -2,6 +2,7 @@ import '../../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient } from '../../../preload/api.d.ts'
+import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { createSshWorkspaceSection } from './ssh-workspace-section.ts'
 import { createFakeApi } from '../../fake-api.test-support.ts'
 
@@ -10,6 +11,7 @@ function mockApi(initial: {
   hosts?: unknown[]
   strict?: string
   credentialHostIds?: string[]
+  configAliases?: SshWorkspaceHost[]
 }): {
   api: ApiClient
   sets: Array<{ key: string; value: unknown }>
@@ -37,7 +39,7 @@ function mockApi(initial: {
       },
       sshWorkspace: {
         ...base['sshWorkspace'],
-        listConfigAliases: async () => [],
+        listConfigAliases: async () => initial.configAliases ?? [],
         listCredentialHostIds: async () => [...credentialHostIds],
         forgetCredentials: async (hostId: string): Promise<void> => {
           forgotten.push(hostId)
@@ -152,5 +154,26 @@ describe('createSshWorkspaceSection', () => {
 
     assert.deepEqual(forgotten, ['dev'])
     assert.deepEqual(sets.at(-1), { key: 'sshWorkspaceHosts', value: [] })
+  })
+
+  it('imports colliding SSH aliases as separate hosts', async () => {
+    const configAliases = [
+      { id: 'build-prod-a1b2c3d4', label: 'build.prod', host: 'build.prod' },
+      { id: 'build-prod', label: 'build-prod', host: 'build-prod' },
+    ]
+    const { api, sets } = mockApi({ hosts: [], configAliases })
+    const section = createSshWorkspaceSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+
+    section.root.querySelector<HTMLButtonElement>('.ssh-import-config')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.deepEqual(sets.at(-1), { key: 'sshWorkspaceHosts', value: configAliases })
+    assert.equal(section.root.querySelectorAll('.ssh-host-row').length, 2)
+    assert.equal(
+      section.root.querySelector('.ssh-host-status')?.textContent,
+      'Imported 2 alias(es) from SSH config.',
+    )
   })
 })

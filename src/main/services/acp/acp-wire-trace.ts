@@ -76,7 +76,12 @@ export const ACP_WIRE_TRACE_FILE = 'acp-debug.jsonl'
  * everything else classifies one inbound JSON-RPC message by its wire shape.
  */
 export type AcpWireRecordType =
-  'session' | 'request' | 'notification' | 'response' | 'batch' | 'unknown'
+  | 'session'
+  | 'request'
+  | 'notification'
+  | 'response'
+  | 'batch'
+  | 'unknown'
 
 /** A sink that appends to one thread's `acp-debug.jsonl`. */
 export interface AcpWireTrace extends AcpWireSink {
@@ -93,6 +98,8 @@ export interface AcpWireTraceTarget {
   projectId?: string | undefined
   /** Agent spawn identity, recorded on the header line for provenance. */
   agent?: { command: string; args?: readonly string[] | undefined } | undefined
+  /** Exact Copse-native toolset offered through the bridge, when one started. */
+  bridgeToolNames?: readonly string[] | undefined
 }
 
 export function isAcpWireTraceEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -253,8 +260,9 @@ function maskSecret(arg: string): string {
 /**
  * Open a trace for one thread's ACP session, or return `null` when the flag is
  * off (or the thread's owning project cannot be resolved). Writes a header line
- * naming the thread, project, and agent, so a file handed back by a user is
- * self-describing.
+ * naming the thread, project, agent, and bridged native toolset, so a file handed
+ * back by a user is self-describing without putting the full tool list in the
+ * ordinary app log.
  */
 export async function createAcpWireTrace(
   target: AcpWireTraceTarget,
@@ -294,6 +302,9 @@ export async function createAcpWireTrace(
                 args: (target.agent.args ?? []).map(maskSecret),
               },
             }
+          : {}),
+        ...(target.bridgeToolNames
+          ? { nativeBridge: { toolNames: [...target.bridgeToolNames] } }
           : {}),
       },
     }),

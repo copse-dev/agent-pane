@@ -79,7 +79,13 @@ export type { DetectedAcpAgent }
 
 /** Fixed cloud providers with a user-supplied API key (presets/customs use slugs). */
 export type ApiKeyProvider =
-  'anthropic' | 'openai' | 'cursor' | 'openrouter' | 'mistral' | 'gemini' | 'deepseek'
+  | 'anthropic'
+  | 'openai'
+  | 'cursor'
+  | 'openrouter'
+  | 'mistral'
+  | 'gemini'
+  | 'deepseek'
 
 export type { ExtraProvider, ExtraProviderModel, StoredExtraProvider }
 
@@ -230,6 +236,7 @@ export interface ApiClient {
         questions: { question: string; options?: string[] }[]
       }) => void,
     ) => () => void
+    onAskUserCancelled: (handler: (req: { id: string }) => void) => () => void
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => () => void
     onRefreshContextEstimate: (handler: () => void) => () => void
     /**

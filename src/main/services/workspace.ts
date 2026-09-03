@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, realpathSync } from 'node:fs'
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { copseWorkspaceDir } from './storage/copse-paths.ts'
 import { storageGet, storageSet } from './storage/storage.ts'
@@ -119,14 +119,53 @@ export async function seedAllowedWorkspaceRoots(
         // Local project roots always live on the Mac/host disk — never probe
         // them through an active SSH PathBackend (that would ask the remote
         // host whether `/Users/...` exists and silently drop the seed).
-        allowedWorkspaceRoots.add(
-          workspaceRootKey(await canonicalWorkspaceRoot(project.path, localWorkspaceFs)),
-        )
+        await registerAllowedLocalWorkspaceRoot(project.path)
       }
     } catch {
       // Ignore stale or missing persisted project paths.
     }
   }
+}
+
+/**
+ * Register sandbox metadata when an allowed project lives inside an existing
+ * linked Git worktree. The `.git` file points outside the selected project, so
+ * a plain workspace allow-list entry is not enough for sandboxed Git commands
+ * to read HEAD, refs, or the worktree index.
+ */
+async function registerAllowedLinkedWorktree(root: string): Promise<void> {
+  let cursor = root
+  for (;;) {
+    try {
+      const dotGit = await stat(join(cursor, '.git'))
+      if (dotGit.isFile()) {
+        try {
+          await registerInternalWorkspaceRoot(cursor, root)
+        } catch {
+          // Gitfiles also represent submodules and may be malformed. Neither
+          // grants linked-worktree authority; the project remains allowlisted.
+        }
+        return
+      }
+      if (dotGit.isDirectory()) return
+    } catch (error) {
+      // A missing marker means this is not a repository boundary. Any other
+      // filesystem error must not make us skip a boundary we could not inspect
+      // and accidentally grant authority from an enclosing repository.
+      if (!isRecord(error) || error['code'] !== 'ENOENT') return
+    }
+
+    const parent = dirname(cursor)
+    if (parent === cursor) return
+    cursor = parent
+  }
+}
+
+async function registerAllowedLocalWorkspaceRoot(root: string): Promise<string> {
+  const canonical = await canonicalWorkspaceRoot(root, localWorkspaceFs)
+  allowedWorkspaceRoots.add(workspaceRootKey(canonical))
+  await registerAllowedLinkedWorktree(canonical)
+  return canonical
 }
 
 /** Register a folder the user opened or saved as a project (canonical path). */
@@ -142,9 +181,7 @@ export async function registerAllowedWorkspaceRoot(
   // Open Folder / Relocate always pick a local directory. Use the local FS
   // even when an SSH project is still the active execution target — otherwise
   // `getActivePathBackend()` would check the path on the remote host.
-  const canonical = await canonicalWorkspaceRoot(root, localWorkspaceFs)
-  allowedWorkspaceRoots.add(workspaceRootKey(canonical))
-  return canonical
+  return registerAllowedLocalWorkspaceRoot(root)
 }
 
 export async function assertAllowedWorkspaceRoot(root: string, sshHost?: string): Promise<string> {
@@ -175,8 +212,8 @@ export async function registerInternalWorkspaceRoot(
   checkoutRoot: string,
   executionRoot: string = checkoutRoot,
 ): Promise<InternalWorkspaceRootRegistration> {
-  const canonicalCheckoutRoot = await canonicalWorkspaceRoot(checkoutRoot)
-  const canonicalExecutionRoot = await canonicalWorkspaceRoot(executionRoot)
+  const canonicalCheckoutRoot = await canonicalWorkspaceRoot(checkoutRoot, localWorkspaceFs)
+  const canonicalExecutionRoot = await canonicalWorkspaceRoot(executionRoot, localWorkspaceFs)
   const executionRelative = relative(canonicalCheckoutRoot, canonicalExecutionRoot)
   if (executionRelative === '..' || executionRelative.startsWith(`..${sep}`)) {
     throw new Error('Internal execution root is outside its linked Git worktree')

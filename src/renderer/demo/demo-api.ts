@@ -402,6 +402,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       },
       onApprovalCancelled: subscribe,
       onAskUserRequest: subscribe,
+      onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
       onHookQueueMessage: subscribe,
@@ -667,6 +668,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           localModels: [],
           totalInputTokens: 0,
           totalOutputTokens: 0,
+          hasUnpricedCloudUsage: false,
         }
         return resolved({
           day: emptyPeriod,

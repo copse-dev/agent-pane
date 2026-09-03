@@ -70,7 +70,7 @@ test('round-trips a message whose body contains a --- fence', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
-test('round-trips reasoning, images, commandSummary, and toolSummary', () => {
+test('round-trips reasoning, images, canvas artefacts, commandSummary, and toolSummary', () => {
   const messages: Message[] = [
     {
       id: 'a1',
@@ -78,6 +78,7 @@ test('round-trips reasoning, images, commandSummary, and toolSummary', () => {
       content: 'done',
       reasoning: 'let me think\n---\nabout it',
       images: ['data:image/png;base64,iVBORw0KGgo=', 'data:image/gif;base64,R0lGOD=='],
+      canvasArtefacts: [{ title: 'Tool rollup approaches' }],
       commandSummary: 'ran two commands',
       toolSummary: 'Read the settings UI',
       toolCalls: [],

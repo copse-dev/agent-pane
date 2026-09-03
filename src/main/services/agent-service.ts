@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
+import {
+  createInlineVisualizationStreamFilter,
+  stripInlineVisualizationReferences,
+} from '@shared/inline-visualization.ts'
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
@@ -46,6 +50,7 @@ import {
   setActiveRunTurnTreeId,
 } from './thread-models.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { dispatchInlineVisualization } from './inline-visualization.ts'
 import { updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
@@ -56,6 +61,7 @@ import {
   beginHookRunRecording,
   clearHookRunLiveSink,
   endHookRunRecording,
+  recordAppliedNudgeRun,
   recordFunctionHookRun,
   snapshotHookRunContext,
   setHookRunLiveSink,
@@ -187,11 +193,13 @@ import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import {
   ACP_UNFINISHED_TURN_FALLBACK,
+  ACP_UNFINISHED_TURN_RECOVERY_OPERATION_ID,
   ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
   acpTurnHasFinalResponse,
-  nextAcpMeaningfulEvent,
+  EMPTY_ACP_TURN_PROGRESS,
+  nextAcpTurnProgress,
   shouldRecoverAcpTurn,
-  type AcpLastMeaningfulEvent,
+  type AcpTurnProgress,
 } from './acp/acp-turn-recovery.ts'
 import { offerAcpReauth } from './acp/acp-reauth.ts'
 import { assembleAcpTurnStart } from './acp/acp-turn-start.ts'
@@ -282,14 +290,17 @@ async function ensureReviewApproved(
 ): Promise<boolean> {
   if (approvedReviewThreads.has(threadId)) return true
   if (signal.aborted) return false
-  const { approved, remember } = await requestApproval({
-    type: 'review-spend',
-    title: 'Review this diff with a paid model?',
-    cause: 'review-spend',
-    body: reviewSpendApprovalBody(reviewModel),
-    allowRemember: true,
-    rememberLabel: 'Always review with this model in this chat',
-  })
+  const { approved, remember } = await requestApproval(
+    {
+      type: 'review-spend',
+      title: 'Review this diff with a paid model?',
+      cause: 'review-spend',
+      body: reviewSpendApprovalBody(reviewModel),
+      allowRemember: true,
+      rememberLabel: 'Always review with this model in this chat',
+    },
+    signal,
+  )
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal.aborted can flip during the awaited approval; TS narrows it from the guard above
   if (signal.aborted) return false
   if (approved && remember) approvedReviewThreads.add(threadId)
@@ -936,12 +947,46 @@ export async function runAgent(
     // view: prior thread history, this turn's user prompt, and whatever the
     // agent has streamed so far.
     let acpAssistantText = ''
-    const acpProgress: { lastEvent: AcpLastMeaningfulEvent } = { lastEvent: null }
+    const acpProgress: { turn: AcpTurnProgress } = { turn: EMPTY_ACP_TURN_PROGRESS }
+    let visualizationDispatch = Promise.resolve()
+    const inlineVisualizationFilter = createInlineVisualizationStreamFilter((reference) => {
+      if (!runContext) return
+      // Preserve reference order even when one preview takes longer to capture.
+      visualizationDispatch = visualizationDispatch.then(async () => {
+        try {
+          const artefact = await dispatchInlineVisualization(reference, {
+            root: runContext.root,
+            threadId,
+          })
+          sendChunk({ type: 'canvas_artefact', artefact })
+        } catch (err) {
+          console.warn('[inline-visualization] could not render reference:', errorMessage(err))
+        }
+      })
+    })
+    const finishInlineVisualizations = async (): Promise<void> => {
+      const tail = inlineVisualizationFilter.finish()
+      if (tail) {
+        acpAssistantText += tail
+        const tailChunk: StreamChunk = { type: 'text', text: tail }
+        acpProgress.turn = nextAcpTurnProgress(acpProgress.turn, tailChunk)
+        sendChunk(tailChunk)
+      }
+      await visualizationDispatch
+    }
     const acpChunkSink = (chunk: StreamChunk): void => {
       runAbort.deadline.recordActivity()
       runAbort.schedule()
-      if (chunk.type === 'text') acpAssistantText += chunk.text
-      acpProgress.lastEvent = nextAcpMeaningfulEvent(acpProgress.lastEvent, chunk)
+      if (chunk.type === 'text') {
+        const visibleText = inlineVisualizationFilter.push(chunk.text)
+        if (!visibleText) return
+        acpAssistantText += visibleText
+        const visibleChunk: StreamChunk = { type: 'text', text: visibleText }
+        acpProgress.turn = nextAcpTurnProgress(acpProgress.turn, visibleChunk)
+        sendChunk(visibleChunk)
+        return
+      }
+      acpProgress.turn = nextAcpTurnProgress(acpProgress.turn, chunk)
       sendChunk(chunk)
     }
     const budgetLedger = getContinuationLedger()
@@ -995,13 +1040,22 @@ export async function runAgent(
         { role: 'user' as const, content: outboundPrompt },
         ...result.messages,
       ]
-      const endedAfterTools = shouldRecoverAcpTurn(result.stopReason, acpProgress.lastEvent)
+      const endedAfterTools = shouldRecoverAcpTurn(result.stopReason, acpProgress.turn)
+      const endedOn = acpProgress.turn.lastEvent
       let recoveryAttempted = false
       let recoverySucceeded = false
 
       if (endedAfterTools && budgetLedger.tryGrant(turnTreeId)) {
         recoveryAttempted = true
-        acpProgress.lastEvent = null
+        acpProgress.turn = EMPTY_ACP_TURN_PROGRESS
+        // The recovery prompt is a whole extra turn put in the user's mouth, so
+        // it is shown as a machine-origin bubble rather than only reaching the
+        // agent: an unexplained second answer is what made this hard to diagnose.
+        sendChunk({
+          type: 'machine_turn_start',
+          content: ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
+          origin: { kind: 'machine', operationId: ACP_UNFINISHED_TURN_RECOVERY_OPERATION_ID },
+        })
         const recoveryResult = await runAcpAgentFromSettings({
           threadId,
           agentId: acpRunAgentId,
@@ -1024,16 +1078,20 @@ export async function runAgent(
           { role: 'user' as const, content: ACP_UNFINISHED_TURN_RECOVERY_PROMPT },
           ...recoveryResult.messages,
         ]
-        recoverySucceeded = acpTurnHasFinalResponse(
-          recoveryResult.stopReason,
-          acpProgress.lastEvent,
-        )
+        recoverySucceeded = acpTurnHasFinalResponse(recoveryResult.stopReason, acpProgress.turn)
       }
+
+      await finishInlineVisualizations()
 
       if (endedAfterTools && !recoverySucceeded) {
         sendChunk({ type: 'text', text: `\n\n${ACP_UNFINISHED_TURN_FALLBACK}` })
         messages.push({ role: 'assistant', content: ACP_UNFINISHED_TURN_FALLBACK })
       }
+
+      messages = messages.map((message): LLMMessage => {
+        if (message.role !== 'assistant' || typeof message.content !== 'string') return message
+        return { ...message, content: stripInlineVisualizationReferences(message.content) }
+      })
 
       const normalized = normalizeStopReason(result.stopReason.toLowerCase())
       pendingTurnOutcome = {
@@ -1048,6 +1106,11 @@ export async function runAgent(
                 reason: 'ended_after_tools' as const,
                 attempted: recoveryAttempted,
                 recovered: recoverySucceeded,
+                // The record's own `lastEvent` is written from `sendChunk`, so a
+                // failed recovery stamps it 'text' off its own fallback message.
+                // This is the provider event the *original* turn ended on, which
+                // is what the decision was actually made from.
+                ...(endedOn !== null ? { endedOn } : {}),
               },
             }
           : {}),
@@ -1056,6 +1119,7 @@ export async function runAgent(
       sendChunk({ type: 'done', stopReason: result.stopReason })
       return resultWithOutcome({ usage, messages })
     } catch (err) {
+      await finishInlineVisualizations()
       // Keep what the failed turn streamed: the partial assistant text stays in
       // history (so the next turn's preamble knows what already happened) and
       // its estimated usage is reported instead of a silent zero. The error
@@ -1104,7 +1168,7 @@ export async function runAgent(
       // content when the agent failed before emitting a token — an auth failure
       // at connect time — which used to persist nothing at all.
       const cleanedPartial = partial?.assistantText
-        ? stripCursorAcpTransportNoise(partial.assistantText)
+        ? stripInlineVisualizationReferences(stripCursorAcpTransportNoise(partial.assistantText))
         : undefined
       const content = [
         cleanedPartial,
@@ -1877,6 +1941,7 @@ export async function runAgent(
               resolvePluginSetting,
               artifactCheckpointEligible: true,
               recordHookRun: recordFunctionHookRun,
+              recordAppliedNudge: recordAppliedNudgeRun,
               onLlmCall: (count) => {
                 setHookRunStep(count)
                 // `messages` above is `trimmed`, mutated in place as turns land, so
@@ -1964,6 +2029,7 @@ export async function runAgent(
             if (isEditTool(name)) turnChangedFiles = true
           },
           recordHookRun: recordFunctionHookRun,
+          recordAppliedNudge: recordAppliedNudgeRun,
           onLlmCall: (count: number): void => {
             setHookRunStep(count)
             checkpointHistory()

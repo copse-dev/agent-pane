@@ -40,7 +40,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
-import * as prettier from 'prettier'
+import { formatSource, isUnformatted } from './lib/oxfmt.mts'
 import {
   type Finding,
   type HookDialect,
@@ -122,15 +122,20 @@ async function lintFindings(abs: string, rel: string): Promise<Finding[]> {
 }
 
 /**
- * Prettier on one file. Under `--fix` an unformatted file is **rewritten** and
+ * oxfmt on one file. Under `--fix` an unformatted file is **rewritten** and
  * reported as repaired rather than as a finding: formatting is deterministic
  * and semantically neutral, so making the agent spend a turn running
- * `prettier --write` on its own edit buys nothing.
+ * `oxfmt --write` on its own edit buys nothing.
  *
  * ESLint deliberately has no equivalent. `eslint --fix` applies real code
  * changes (`prefer-const`, import rewrites), and rewriting the semantics of a
  * line the agent just wrote — without it seeing the change — is a different
  * thing from re-indenting it. Those stay reported, with the fix command.
+ *
+ * `isUnformatted` answers on the real path, so an ignored file and a file type
+ * oxfmt does not handle both come back as "nothing to say" without a special
+ * case here. The rewrite then formats the bytes we read, via stdin, so the
+ * re-read guard below still means what it says.
  */
 async function formatFile(
   abs: string,
@@ -138,26 +143,23 @@ async function formatFile(
   fix: boolean,
 ): Promise<{ findings: Finding[]; repaired: string[] }> {
   const none = { findings: [], repaired: [] }
-  const info = await prettier.getFileInfo(abs, { ignorePath: resolve(ROOT, '.prettierignore') })
-  if (info.ignored || info.inferredParser === null) return none
-  const source = await readFile(abs, 'utf8')
-  const options = await prettier.resolveConfig(abs)
-  if (await prettier.check(source, { ...options, filepath: abs })) return none
+  if (!(await isUnformatted(abs))) return none
 
   if (!fix) {
     return {
       findings: [
-        { tool: 'prettier', detail: '  file is not formatted', fix: `npx prettier --write ${rel}` },
+        { tool: 'oxfmt', detail: '  file is not formatted', fix: `npx oxfmt --write ${rel}` },
       ],
       repaired: [],
     }
   }
-  const formatted = await prettier.format(source, { ...options, filepath: abs })
+  const source = await readFile(abs, 'utf8')
+  const formatted = await formatSource(abs, source)
   // Re-read guard: only write when the file still holds what we formatted, so a
   // concurrent edit between the read and the write is never clobbered.
   if ((await readFile(abs, 'utf8')) !== source) return none
   await writeFile(abs, formatted, 'utf8')
-  return { findings: [], repaired: ['prettier'] }
+  return { findings: [], repaired: ['oxfmt'] }
 }
 
 /** Run the checks for one file and return its report, or null when it is clean. */

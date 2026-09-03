@@ -22,7 +22,7 @@ import {
   type ToolCacheIdentity,
 } from './search/tool-result-cache.ts'
 
-type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
+type PermissionGateFn = (check: PermissionCheck, signal?: AbortSignal) => Promise<boolean>
 
 interface RegisteredTool {
   name: string
@@ -37,13 +37,13 @@ interface RegisteredTool {
 let permissionGateOverride: PermissionGateFn | null = null
 let permissionGateDefault: PermissionGateFn | null = null
 
-async function ensurePermitted(check: PermissionCheck): Promise<boolean> {
-  if (permissionGateOverride) return permissionGateOverride(check)
+async function ensurePermitted(check: PermissionCheck, signal: AbortSignal): Promise<boolean> {
+  if (permissionGateOverride) return permissionGateOverride(check, signal)
   if (!permissionGateDefault) {
     const mod = await import('./security/permission-gate.ts')
     permissionGateDefault = mod.ensureToolPermitted
   }
-  return permissionGateDefault(check)
+  return permissionGateDefault(check, signal)
 }
 
 /** Test hook — bypasses the real permission gate (and its Electron deps). */
@@ -144,7 +144,7 @@ export class ToolRegistry {
     // The check is passed by reference so the gate can stamp back a hook's
     // current-turn injected context (H2) — read off the same object after.
     const check: PermissionCheck = { toolName: name, args: parsed }
-    const permitted = await ensurePermitted(check)
+    const permitted = await ensurePermitted(check, signal)
     if (!permitted) return `User rejected the ${name} tool call.`
 
     // Search caching is scoped to a thread's fixed execution root, so it needs

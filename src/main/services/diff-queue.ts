@@ -1,7 +1,7 @@
 import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { dirname } from 'node:path'
+import { dirname, isAbsolute, relative, sep } from 'node:path'
 import type { BrowserWindow, IpcMain } from 'electron'
 import {
   assertWriteTargetWithinRoot,
@@ -49,6 +49,32 @@ export interface DiffDecision {
   status: 'applied_directly' | 'approved' | 'rejected' | 'conflict' | 'error'
   at: number
   error?: string
+}
+
+/**
+ * The queue's identity for a path: one file is one row, however the caller spelled it.
+ *
+ * Rows are matched by exact string, and the file tools accept several spellings
+ * of the same file — `resolvePathWithinRoot` takes an absolute path as readily
+ * as a relative one, and a model that copies a path out of a compiler error
+ * gets the absolute form. Without this, `a.txt`, `./a.txt` and
+ * `<root>/a.txt` each opened their own row for one file: the diff panel showed
+ * duplicates, `str_replace`'s promise to compose onto pending content silently
+ * read stale disk content instead, and approving them left the later rows to
+ * fail the stale-overwrite guard.
+ *
+ * Deliberately lexical and conservative. `..` segments are left alone rather
+ * than collapsed: `sub/../a.txt` is only the same file as `a.txt` when `sub` is
+ * not a symlink, and this key must never merge two rows that a symlink makes
+ * distinct. An absolute path is adopted only while it stays inside the root.
+ */
+function queuePath(path: string, root: string | null): string {
+  let candidate = path.split(sep).join('/')
+  if (root !== null && isAbsolute(path)) {
+    const fromRoot = relative(root, path).split(sep).join('/')
+    if (fromRoot !== '' && !fromRoot.startsWith('../')) candidate = fromRoot
+  }
+  return candidate.replace(/^(?:\.\/)+/, '').replace(/\/{2,}/g, '/')
 }
 
 /** One row per path; later edits update `after` but keep the original `before` snapshot. */
@@ -285,12 +311,16 @@ export function listStagedDiffEntries(owner?: ThreadExecutionOwner): QueueEntry[
 }
 
 export function getStagedDiffEntry(path: string, owner?: ThreadExecutionOwner): QueueEntry | null {
-  const entry = stateFor(owner).queue.find((e) => e.path === path)
+  const state = stateFor(owner)
+  const key = queuePath(path, executionRootFor(state))
+  const entry = state.queue.find((e) => e.path === key)
   return entry ? cloneEntry(entry) : null
 }
 
 export function getPendingAfterContent(path: string): string | null {
-  return stateFor().queue.find((e) => e.path === path)?.after ?? null
+  const state = stateFor()
+  const key = queuePath(path, executionRootFor(state))
+  return state.queue.find((e) => e.path === key)?.after ?? null
 }
 
 async function readCurrentContent(
@@ -1007,7 +1037,7 @@ function restage(owner: ThreadExecutionOwner, entry: QueueEntry, current: string
 }
 
 export function stageDiff(
-  path: string,
+  rawPath: string,
   before: string,
   after: string,
   language: string,
@@ -1015,6 +1045,7 @@ export function stageDiff(
   if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
   const owner = requireThreadExecutionOwner()
   const state = stateFor(owner)
+  const path = queuePath(rawPath, executionRootFor(state))
   const hadPending = state.queue.some((e) => e.path === path)
   upsertStagedDiffEntry(state.queue, { path, before, after, language, op: 'write' })
   const entry = state.queue.find((e) => e.path === path)
@@ -1039,7 +1070,7 @@ export function stageDiff(
 }
 
 export async function applyOrStageDiff(
-  path: string,
+  rawPath: string,
   before: string,
   after: string,
   language: string,
@@ -1047,6 +1078,7 @@ export async function applyOrStageDiff(
   if (isAgentRunReadonly()) return READONLY_MODE_BLOCK_MESSAGE
   const owner = requireThreadExecutionOwner()
   const state = stateFor(owner)
+  const path = queuePath(rawPath, executionRootFor(state))
   const direct = await canApplyDirectly(state, path)
   if (!direct.ok) {
     const staged = await stageDiff(path, before, after, language)
@@ -1116,10 +1148,14 @@ function appliedFileOpVerb(entry: FileOpRequest): string {
  * {@link applyDiffEntry}, so hooks, the stale-content guard, and ownership
  * bookkeeping behave the same however the op got there.
  */
-export async function applyOrStageFileOp(entry: FileOpRequest): Promise<string> {
+export async function applyOrStageFileOp(request: FileOpRequest): Promise<string> {
   if (isAgentRunReadonly()) return READONLY_MODE_BLOCK_MESSAGE
   const owner = requireThreadExecutionOwner()
   const state = stateFor(owner)
+  const entry: FileOpRequest = {
+    ...request,
+    path: queuePath(request.path, executionRootFor(state)),
+  }
   const direct = await canApplyFileOpDirectly(state, entry.op, entry.path)
   if (!direct.ok) {
     const staged = await stageFileOp(entry)
@@ -1168,10 +1204,14 @@ export async function applyOrStageFileOp(entry: FileOpRequest): Promise<string> 
  * the user as a before/after diff (delete: full removal; rename: content moved;
  * mkdir: directory marker) and is not applied until approved.
  */
-function stageFileOp(entry: FileOpRequest): Promise<string> {
+function stageFileOp(request: FileOpRequest): Promise<string> {
   if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
   const owner = requireThreadExecutionOwner()
   const state = stateFor(owner)
+  const entry: FileOpRequest = {
+    ...request,
+    path: queuePath(request.path, executionRootFor(state)),
+  }
   const existingIdx = state.queue.findIndex((e) => e.path === entry.path)
   const queued: QueueEntry = {
     path: entry.path,

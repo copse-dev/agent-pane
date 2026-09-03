@@ -11,7 +11,14 @@ import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plug
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 
 export type PanelControlId =
-  'explorer' | 'terminal' | 'changes' | 'prs' | 'memories' | 'roadmap' | 'browser' | 'vnc'
+  | 'explorer'
+  | 'terminal'
+  | 'changes'
+  | 'prs'
+  | 'memories'
+  | 'roadmap'
+  | 'browser'
+  | 'vnc'
 
 interface PanelControlDef {
   id: PanelControlId

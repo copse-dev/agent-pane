@@ -500,6 +500,8 @@ export function seedEmptyProject(
     sshHost?: string
     /** Seed rolling usage-ledger events before the app launches. */
     usageEvents?: readonly UsageEvent[]
+    /** Seed last-seen OpenRouter rates, including legitimate zero-dollar routes. */
+    openRouterPricing?: Record<string, { inputPricePerMTok: number; outputPricePerMTok: number }>
     /**
      * The exact `pluginDisabled` list to write, replacing the host defaults. Use
      * this to opt out of a pack that ships enabled (e.g. drop
@@ -620,6 +622,9 @@ export function seedEmptyProject(
   }
   if (options?.windowBounds !== undefined) {
     settings.windowBounds = options.windowBounds
+  }
+  if (options?.openRouterPricing !== undefined) {
+    settings.openRouterPricing = options.openRouterPricing
   }
   if (options?.parallelApiKey !== undefined) {
     settings.apiKey = {
@@ -1219,6 +1224,42 @@ export function seedBrowserCursorAgentThreadFixture(workspaceRoot: string): void
         },
         createdAt: now - 1_000,
         updatedAt: now - 1_000,
+      },
+    ],
+  })
+}
+
+/** Remote-artifact summary whose valid filename contains Markdown syntax. */
+export function seedRemoteArtifactFilenameFixture(workspaceRoot: string, summary: string): void {
+  const projectId = 'e2e-remote-artifact-filename-project'
+  const threadId = 'e2e-remote-artifact-filename-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Remote artifact filename',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-remote-artifact-filename',
+            role: 'assistant',
+            content: `Remote work completed.${summary}`,
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'bc-e2e-artifact-filename',
+          createdAt: now,
+        },
+        createdAt: now,
+        updatedAt: now,
       },
     ],
   })

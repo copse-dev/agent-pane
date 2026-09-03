@@ -2,7 +2,7 @@
 // Vendor-published model cards / system cards, keyed by canonical model id.
 // Source of truth: scripts/data/model-cards.json.
 // Absent models mean "no sourced card yet", and the UI shows no link.
-// Last synced: 2026-08-04
+// Last synced: 2026-09-02
 
 /** Whether a link is a card about this model, or a vendor hub listing cards. */
 export type ModelCardKind = 'system-card' | 'model-card' | 'index'
@@ -25,39 +25,53 @@ export interface ModelCard {
 
 export const MODEL_CARDS: Record<string, ModelCard> = {
   'claude-fable-5': {
-    url: 'https://www.anthropic.com/transparency',
-    title: 'Anthropic transparency hub',
+    url: 'https://www.anthropic.com/claude-fable-5-mythos-5-system-card',
+    title: 'Claude Fable 5 & Claude Mythos 5 system card',
     publisher: 'Anthropic',
-    kind: 'index',
-    asOf: '2026-08-04',
+    kind: 'system-card',
+    asOf: '2026-09-02',
+  },
+  'claude-fable-5-1': {
+    url: 'https://www.anthropic.com/claude-fable-5-1-mythos-5-1-system-card',
+    title: 'Claude Fable 5.1 & Claude Mythos 5.1 system card',
+    publisher: 'Anthropic',
+    kind: 'system-card',
+    asOf: '2026-09-02',
   },
   'claude-haiku-4-5': {
-    url: 'https://www.anthropic.com/transparency',
-    title: 'Anthropic transparency hub',
+    url: 'https://www.anthropic.com/claude-haiku-4-5-system-card',
+    title: 'Claude Haiku 4.5 system card',
     publisher: 'Anthropic',
-    kind: 'index',
-    asOf: '2026-08-04',
+    kind: 'system-card',
+    asOf: '2026-09-02',
   },
   'claude-opus-4-8': {
-    url: 'https://www.anthropic.com/transparency',
-    title: 'Anthropic transparency hub',
+    url: 'https://www.anthropic.com/claude-opus-4-8-system-card',
+    title: 'Claude Opus 4.8 system card',
     publisher: 'Anthropic',
-    kind: 'index',
-    asOf: '2026-08-04',
+    kind: 'system-card',
+    asOf: '2026-09-02',
+  },
+  'claude-opus-5': {
+    url: 'https://www.anthropic.com/claude-opus-5-system-card',
+    title: 'Claude Opus 5 system card',
+    publisher: 'Anthropic',
+    kind: 'system-card',
+    asOf: '2026-09-02',
   },
   'claude-sonnet-4-6': {
-    url: 'https://www.anthropic.com/transparency',
-    title: 'Anthropic transparency hub',
+    url: 'https://www.anthropic.com/claude-sonnet-4-6-system-card',
+    title: 'Claude Sonnet 4.6 system card',
     publisher: 'Anthropic',
-    kind: 'index',
-    asOf: '2026-08-04',
+    kind: 'system-card',
+    asOf: '2026-09-02',
   },
   'claude-sonnet-5': {
-    url: 'https://www.anthropic.com/transparency',
-    title: 'Anthropic transparency hub',
+    url: 'https://www.anthropic.com/claude-sonnet-5-system-card',
+    title: 'Claude Sonnet 5 system card',
     publisher: 'Anthropic',
-    kind: 'index',
-    asOf: '2026-08-04',
+    kind: 'system-card',
+    asOf: '2026-09-02',
   },
   'gpt-4o': {
     url: 'https://openai.com/index/gpt-4o-system-card/',

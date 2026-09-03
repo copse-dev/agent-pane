@@ -32,7 +32,11 @@ interface TrialSummary {
 }
 
 type FailureCategory =
-  'pass' | 'timeout' | 'infrastructure-invalid' | 'output-finalization' | 'validation-failure'
+  | 'pass'
+  | 'timeout'
+  | 'infrastructure-invalid'
+  | 'output-finalization'
+  | 'validation-failure'
 
 interface TraceMetrics {
   inputTokens: number

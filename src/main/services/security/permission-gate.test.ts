@@ -141,6 +141,37 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('cancels a pending tool approval when the run aborts', async () => {
+    setPermissionGateForTests(null)
+    const controller = new AbortController()
+    let handlerSignal: AbortSignal | undefined
+    let markStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    setApprovalHandler(
+      (_request, signal) =>
+        new Promise<never>(() => {
+          handlerSignal = signal
+          markStarted?.()
+        }),
+    )
+
+    try {
+      const pending = ensureToolPermitted(
+        { toolName: 'gh_pr_approve', args: { number: 1 } },
+        controller.signal,
+      )
+      await started
+      controller.abort()
+
+      assert.equal(await pending, false)
+      assert.equal(handlerSignal?.aborted, true)
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
+
   it('surfaces human GitHub write prompt copy instead of snake_case + JSON', async () => {
     setPermissionGateForTests(null)
     let title = ''

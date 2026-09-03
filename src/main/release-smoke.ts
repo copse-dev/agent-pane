@@ -13,7 +13,9 @@ const PTY_SMOKE_WRITE_DELAY_MS = 500
 const PTY_SMOKE_EXIT_GRACE_MS = 500
 
 export type PtySmokeExitDecision =
-  { action: 'resolve' } | { action: 'reject'; message: string } | { action: 'wait' }
+  | { action: 'resolve' }
+  | { action: 'reject'; message: string }
+  | { action: 'wait' }
 
 /**
  * Pure settlement rule used after the PTY process exits.

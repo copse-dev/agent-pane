@@ -2,8 +2,8 @@ import * as esbuild from 'esbuild'
 import { glob, readFile, rm } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { dirname, relative, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { selectTestFiles, describeNoMatch, testOutputPath } from './lib/test-filter.mts'
+import { rewriteModuleRelativeTestPaths } from './lib/module-relative-test-paths.mts'
 
 const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
 const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
@@ -96,9 +96,9 @@ async function bundleTests(testFiles: string[]): Promise<void> {
       // so bundling it breaks that lookup ("cannot be bundled"). Tests that build
       // a worker bundle to assert what it links against need the real package.
       'esbuild',
-      // Keep Prettier external so it can load its own plugins and runtime files.
-      // Needed by scripts/lib/generated-file.mts.
-      'prettier',
+      // Keep oxfmt external — it resolves its native binding at runtime and
+      // scripts/lib/oxfmt.mts spawns its CLI from node_modules/.bin.
+      'oxfmt',
     ],
     alias: {
       '@shared': resolve('./src/shared'),
@@ -162,11 +162,7 @@ async function bundleTests(testFiles: string[]): Promise<void> {
               /\.(?:ts|mts)$/,
               '.mjs',
             )
-            const contents = source
-              .replace(/\bimport\.meta\.url\b/g, JSON.stringify(pathToFileURL(args.path).href))
-              .replace(/\bimport\.meta\.dirname\b/g, JSON.stringify(dirname(args.path)))
-              .replace(/\b__filename\b/g, JSON.stringify(outputPath))
-              .replace(/\b__dirname\b/g, JSON.stringify(dirname(outputPath)))
+            const contents = rewriteModuleRelativeTestPaths(source, args.path, outputPath)
             return { contents, loader: 'ts', resolveDir: dirname(args.path) }
           })
         },

@@ -16,6 +16,7 @@ import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.
 import { assignDebugPort, type ChromeCapabilities } from './tests/e2e/helpers/debug-port.ts'
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
+import { installE2eProfileCleanup } from './tests/e2e/helpers/profile-cleanup.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
@@ -32,6 +33,7 @@ const chromedriverBinary =
   )
 
 let e2eUserDataDir: string | null = null
+let cleanupE2eUserDataDir: (() => void) | null = null
 
 export const config: Options.Testrunner = {
   runner: 'local',
@@ -182,7 +184,9 @@ export const config: Options.Testrunner = {
   },
   beforeSession(_config, capabilities) {
     delete process.env.ELECTRON_RUN_AS_NODE
+    cleanupE2eUserDataDir?.()
     e2eUserDataDir = mkdtempSync(join(process.cwd(), '.wdio-profile-'))
+    cleanupE2eUserDataDir = installE2eProfileCleanup(e2eUserDataDir)
 
     const e2eEnv: Record<string, string> = {
       COPSE_E2E: '1',
@@ -282,11 +286,17 @@ export const config: Options.Testrunner = {
       // A session that is already gone needs no extra shutdown work.
     }
     const requested = browser.requestedCapabilities as
-      (ChromeCapabilities & { alwaysMatch?: ChromeCapabilities }) | undefined
+      | (ChromeCapabilities & { alwaysMatch?: ChromeCapabilities })
+      | undefined
     if (!requested) return
     // W3C sessions may hand back the alwaysMatch/firstMatch shape rather than
     // the flat capabilities object; reloadSession re-sends whichever it holds.
     assignDebugPort(requested.alwaysMatch ?? requested)
+  },
+  afterSession() {
+    cleanupE2eUserDataDir?.()
+    cleanupE2eUserDataDir = null
+    e2eUserDataDir = null
   },
   onComplete() {
     try {
@@ -294,13 +304,8 @@ export const config: Options.Testrunner = {
     } catch {
       // ignore
     }
-    if (e2eUserDataDir) {
-      try {
-        rmSync(e2eUserDataDir, { recursive: true, force: true })
-      } catch {
-        // ignore
-      }
-      e2eUserDataDir = null
-    }
+    cleanupE2eUserDataDir?.()
+    cleanupE2eUserDataDir = null
+    e2eUserDataDir = null
   },
 }

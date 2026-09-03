@@ -280,7 +280,8 @@ function toMcpContent(
   images: readonly ToolResultImage[] | undefined,
 ): ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[] {
   const blocks: (
-    { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+    | { type: 'text'; text: string }
+    | { type: 'image'; data: string; mimeType: string }
   )[] = [{ type: 'text', text: result }]
   for (const image of images ?? []) {
     const match = /^data:([^;,]+);base64,(.+)$/s.exec(image.dataUrl)

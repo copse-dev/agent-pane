@@ -375,15 +375,16 @@ jobs:
   # (no PAT) or can't run (fork PR).
   #
   # Scope to files changed vs the PR base (not the whole tree): full-repo
-  # `eslint . --fix` + `prettier --write .` regularly OOM-kill (exit 137) on
-  # the 6 GB check runners under fleet load, painting every PR red before
-  # precheck even starts. Diff-scoped autofix is enough — the gate half still
-  # checks the whole tree — and keeps peak memory proportional to the PR.
+  # `eslint . --fix` regularly OOM-kills (exit 137) on the 6 GB check runners
+  # under fleet load, painting every PR red before precheck even starts —
+  # `prettier --write .` did too, before oxfmt replaced it. Diff-scoped autofix
+  # is enough — the gate half still checks the whole tree — and keeps peak
+  # memory proportional to the PR.
   #
   # A SEPARATE job rather than folded into `precheck`: precheck checks out the
   # merge ref (fetch-depth: 0) so the e2e oracle can diff against base, whereas
-  # committing needs the branch (head_ref) checkout. Prettier runs last so it tidies whatever
-  # ESLint rewrote; `eslint-config-prettier` means the two never fight.
+  # committing needs the branch (head_ref) checkout. The formatter runs last so it tidies
+  # whatever ESLint rewrote; `eslint-config-prettier` means the two never fight.
   #
   # Pushed as the copse-release-bot App rather than with the default
   # GITHUB_TOKEN: GitHub won't start a run for a GITHUB_TOKEN push (recursion
@@ -399,7 +400,7 @@ jobs:
   autoformat:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
-    # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint/prettier (see precheck).
+    # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
     runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
@@ -489,8 +490,10 @@ jobs:
         if: steps.changed.outputs.any == 'true'
       # `|| true` on eslint: a non-autofixable lint error must not abort the run —
       # we still want the fixes ESLint did apply to land. Real lint failures stay
-      # the job of precheck's `lint` gate, not this fixer. Prettier retries once
-      # on OOM (137); a second kill fails the job so a wedged runner is visible.
+      # the job of precheck's `lint` gate, not this fixer. The formatter retries
+      # once on OOM (137); a second kill fails the job so a wedged runner is
+      # visible. oxfmt is a Rust binary and has not been seen to OOM here, but
+      # the retry costs nothing and this fleet is where the kills happened.
       - name: Autofix changed files
         if: steps.changed.outputs.any == 'true'
         run: |
@@ -498,14 +501,14 @@ jobs:
           echo "Autofixing ${#files[@]} changed file(s)"
           npx eslint --fix -- "${files[@]}" || true
           set +e
-          npx prettier --write -- "${files[@]}"
+          npx oxfmt --write -- "${files[@]}"
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then exit 0; fi
           if [ "$status" -ne 137 ]; then exit "$status"; fi
-          echo "::warning::prettier OOM-killed (137); retrying once"
+          echo "::warning::oxfmt OOM-killed (137); retrying once"
           sleep 10
-          npx prettier --write -- "${files[@]}"
+          npx oxfmt --write -- "${files[@]}"
       - name: Commit and push fixes
         if: steps.changed.outputs.any == 'true'
         run: |
@@ -515,7 +518,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "style: apply eslint --fix and prettier"
+          git commit -am "style: apply eslint --fix and oxfmt"
           git push
 
   check:
@@ -1604,16 +1607,78 @@ jobs:
       always() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request'
     runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
-    timeout-minutes: 10
+    # Raised from 10 to cover the checkout + dependency install that the noise
+    # filter below needs. Both are cache-warm on the fleet; the budget is for a
+    # cold runner, not the steady state.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
+      # Checkout FIRST: `actions/checkout` cleans the workspace, so downloading
+      # the shard artifacts before it would wipe them. No `ref:` — the default
+      # merge commit is what the e2e shards rendered against, so the filter's
+      # `git diff` reproduces exactly the comparison they made. `fetch-depth: 0`
+      # for the filter's flap lookback and its `origin/main` scope base.
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          # Mirrors precheck: never leave even the read-only GITHUB_TOKEN in a
+          # fork checkout, but keep it for same-repo runs, which is the only
+          # shape `./.github/actions/setup` is proven against in this pipeline.
+          persist-credentials: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+      - uses: ./.github/actions/setup
       - name: Download rendered screenshot candidates
         uses: actions/download-artifact@v8
         with:
           pattern: screenshots-*
           merge-multiple: true
           path: candidates
+      # Reference PNGs are pixel-rendered on the runner, so a re-render of an
+      # UNCHANGED screen still differs by a handful of anti-aliased pixels. Left
+      # unfiltered every PR ships a review PR of near-wholesale re-renders —
+      # measured at 280 shots on #2134, a PR that changed no source file at all,
+      # of which `filter-screenshots` classified 0 as real. Reviewers cannot find
+      # signal in that, so they rubber-stamp it.
+      #
+      # `scripts/filter-screenshots.mts` (#609) already encodes the keep /
+      # ignore / flap decision and was written for exactly this, but it was only
+      # ever documented as a manual local step. Run it here, in the job that
+      # merges the shard slices, so the candidate artifact carries only real
+      # changes and the downstream review PR is worth opening.
+      - name: Drop render noise from the candidate set
+        env:
+          # The filter's documented escape hatch: the label means "refresh
+          # everything", including sub-threshold micro-diffs.
+          UPDATE_SCREENSHOTS_LABEL: >-
+            ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+        run: |
+          set -euo pipefail
+          shots='candidates/tests/e2e/screenshots'
+          if ! compgen -G "$shots/*.png" > /dev/null; then
+            echo 'No candidate PNGs to filter.'
+            exit 0
+          fi
+
+          # Lay the re-renders over the checked-out baseline. A plain copy, not
+          # `git checkout` — the latter writes the index too, and the filter
+          # reads the UNSTAGED working-tree diff (`git diff --name-only`), so a
+          # staged candidate is invisible to it and would be silently kept.
+          cp "$shots"/*.png tests/e2e/screenshots/
+
+          # Restores every sub-threshold shot to its committed bytes in place.
+          node scripts/filter-screenshots.mts
+
+          # Whatever the filter restored no longer differs from the baseline, so
+          # drop it from the artifact. Iterating the artifact (not the worktree)
+          # keeps the per-shard `.shard-N` provenance markers untouched.
+          for png in "$shots"/*.png; do
+            rel="tests/e2e/screenshots/$(basename "$png")"
+            if git diff --quiet -- "$rel" 2>/dev/null &&
+              ! git ls-files --others --exclude-standard --error-unmatch "$rel" > /dev/null 2>&1
+            then
+              rm -f "$png"
+            fi
+          done
       - name: Summarize candidate screenshots
         id: candidates
         run: |
