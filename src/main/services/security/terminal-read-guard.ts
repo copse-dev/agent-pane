@@ -1,7 +1,5 @@
-import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
-import { DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
-import { buildProvider, normalizeRoleModelSelection } from '../providers/provider-selection.ts'
-import { resolveDynamicModelId } from '../providers/dynamic-model.ts'
+import { getSetting } from '../storage/settings.ts'
+import { buildProvider } from '../providers/provider-selection.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { requestApproval } from '../approval.ts'
@@ -11,6 +9,12 @@ import {
   reportSafetyModelProblem,
   type SafetyModelProblem,
 } from './safety-model-availability.ts'
+import {
+  isScreeningTimeout,
+  noteSafetyModelAnswered,
+  noteSafetyModelTimeout,
+} from './safety-model-cooldown.ts'
+import { resolveSafetyScreeningModel } from './safety-screening-model.ts'
 import {
   parseTerminalReadVerdict,
   terminalReadNeedsApproval,
@@ -31,7 +35,10 @@ export type { TerminalReadVerdict } from './terminal-read-verdict.ts'
  * The fallback stays fail-closed either way, but it does not stay silent: a
  * model that is configured and simply absent is reported as such, because a
  * prompt on every single read reads as a transient glitch and nobody goes
- * looking for a setting that is quietly pointing at nothing.
+ * looking for a setting that is quietly pointing at nothing. A model that is
+ * present but cannot answer inside the budget is reported the same way, and
+ * then routed around for a while (`safety-model-cooldown.ts`) so the next read
+ * screens on something faster instead of buying the same silence again.
  */
 
 const SYSTEM_PROMPT = `You are a security screener for a coding assistant.
@@ -67,11 +74,11 @@ export async function classifyTerminalSnapshot(
 ): Promise<TerminalReadScreening> {
   if (!getSetting<boolean>('safetyClassifierEnabled', true)) return { verdict: null, problem: null }
 
-  // The stored setting may be an `auto:` rule (the default is one); expand it
-  // before it is treated as an id.
-  const model = await resolveDynamicModelId(
-    normalizeRoleModelSelection(getSettingTrimmed('safetyModel', DEFAULT_SAFETY_MODEL)),
-  )
+  const { model, problem: routing } = await resolveSafetyScreeningModel()
+  if (routing) {
+    reportSafetyModelProblem(routing)
+    return { verdict: null, problem: routing }
+  }
   if (!model) return { verdict: null, problem: null }
 
   const problem = await findSafetyModelProblem(model)
@@ -93,6 +100,7 @@ export async function classifyTerminalSnapshot(
       FETCH_TIMEOUTS.safetyClassification,
       signal,
     )
+    noteSafetyModelAnswered(model)
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
         model,
@@ -101,8 +109,11 @@ export async function classifyTerminalSnapshot(
       })
     }
     return { verdict: parseTerminalReadVerdict(content), problem: null }
-  } catch {
-    return { verdict: null, problem: null }
+  } catch (err) {
+    if (!isScreeningTimeout(err, signal)) return { verdict: null, problem: null }
+    const timedOut = noteSafetyModelTimeout(model, FETCH_TIMEOUTS.safetyClassification)
+    reportSafetyModelProblem(timedOut)
+    return { verdict: null, problem: timedOut }
   }
 }
 
