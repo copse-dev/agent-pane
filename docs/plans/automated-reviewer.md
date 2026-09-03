@@ -106,9 +106,9 @@ which only the agent calls, and a "Compare models" follow-up bubble that appears
 `when: 'workspace-changes'`.
 
 None of those is the moment a human actually wants a review. The fix is not to lower a
-gate; it is to add the gesture Fairy has and Copse lacks: **an explicit "review this" act, in the surface where
-the human is already looking at the change** — the Changes view, PR creation, `copse
-review` in a terminal. Automatic-on-every-editing-turn is the wrong trigger regardless of
+gate; it is to add the gesture Fairy has and Copse lacks: **an explicit "review this" act,
+in the surface where the human is already looking at the change** — the Changes view, PR
+creation, `copse review` in a terminal. Automatic-on-every-editing-turn is the wrong trigger regardless of
 its default; it fires when nobody asked and trains people to ignore the card.
 
 ### Problem 2 — nothing validates
