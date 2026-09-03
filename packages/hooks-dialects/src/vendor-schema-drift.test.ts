@@ -11,10 +11,10 @@ import {
   CURSOR_RECOGNISED_UNWIRED_HOOK_EVENTS,
   CURSOR_SCHEMA_PIN,
   isRecognisedCursorEvent,
-} from '@shared/hooks/vendored-hook-schemas.ts'
-import { CURSOR_WIRED_HOOK_EVENTS } from '@shared/types/cursor-hooks.ts'
+} from './vendored-hook-schemas.ts'
+import { CURSOR_WIRED_HOOK_EVENTS } from './cursor-hooks.ts'
 import { CLAUDE_WIRED_HOOK_EVENTS } from './claude-adapter.ts'
-import { expectRecord } from '@shared/unknown-value.ts'
+import { expectRecord } from '@copse/std/unknown-value.ts'
 
 // G3 — Vendored schemas + CI drift detector.
 //

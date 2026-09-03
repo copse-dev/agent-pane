@@ -148,82 +148,11 @@ export interface SpineMessageLine {
   toolCalls: SpineToolCall[]
 }
 
-/**
- * Compact normalized summary of what a hook execution decided. Small on
- * purpose: the raw response bytes live in the referenced stdout blob, so text
- * channels are summarized as character counts, never inlined.
- */
-export interface SpineHookRunDecision {
-  /** Permission verdict the hook returned, when it returned one. */
-  permission?: 'allow' | 'deny' | 'ask'
-  /** The hook asked to halt the whole run (`continue: false`). */
-  haltRun?: boolean
-  /**
-   * A `haltRun` was routed through the run's abort path (H3, decision 12): the
-   * active turn tree was aborted, attributed to this hook. Set on the halt
-   * *effect* line the abort path records — distinct from `haltRun`, which only
-   * marks that a hook *asked* to halt.
-   */
-  haltApplied?: boolean
-  /**
-   * A `haltRun` was a **suppressed no-op** because it arrived stale — its
-   * emitting turn tree was no longer current (H3, decision 16). Recorded so a
-   * late async hook's suppressed stop is visible in the transcript rather than
-   * silent, and never mistaken for an applied halt.
-   */
-  haltSuppressedStale?: boolean
-  /**
-   * The halt reason the hook supplied (`continue: false` + `stopReason`), bounded
-   * for the spine. Carried on the halt effect line so a future hook card (G1) can
-   * render *why* the run stopped without re-reading the stdout blob.
-   */
-  stopReason?: string
-  /** The hook rewrote the gated tool's input. */
-  updatedInput?: boolean
-  /**
-   * This nudge was the one the loop actually pushed into the conversation. Set
-   * on the nudge *effect* line the loop records — distinct from a step-boundary
-   * hook's own execution line, which only marks that the hook *offered* an
-   * `injectContext`.
-   *
-   * Several nudge hooks routinely fire at the same step boundary and all return
-   * text, but `runAgentLoop` pushes at most one of them (`reasoning-runaway`
-   * supersedes `truncation-continue` on a cut-off reasoning stream, for
-   * instance). Without this line every offer reads as an applied effect, so a
-   * discarded nudge is indistinguishable from the one that steered the model.
-   */
-  nudgeApplied?: boolean
-  /**
-   * How the applied nudge reached the model: appended to a normal tool-enabled
-   * turn, or used as the prompt for a forced text-only finalization. Carried on
-   * the nudge effect line.
-   */
-  nudgeMechanism?: 'tool-enabled-message' | 'text-only-turn'
-  /** Character counts of text channels (full text: stdout blob / applied context). */
-  injectContextChars?: number
-  agentMessageChars?: number
-  userMessageChars?: number
-  /**
-   * Character count of an async queued follow-up the hook emitted (D1:
-   * `subagentStop`'s `followup_message`, routed to the pending-message queue).
-   */
-  queuedMessageChars?: number
-  /**
-   * Number of session-scoped env keys a `sessionStart` hook exported (H4;
-   * Cursor's `env` output). Recorded so an env-propagating session start is
-   * visible in the transcript — the values themselves stay in the stdout blob.
-   */
-  sessionEnvKeys?: number
-  /**
-   * The hook ran inside the project sandbox and was **blocked by it** (F3,
-   * decision 7): the OS seatbelt logged policy violations (or the sandbox
-   * wrapper failed to start), so the run is resolved as a failure per the hook's
-   * `onFailure` — never a silent fail-open that hides the block. Keyed off
-   * runner-side signals only (recorded violations / wrapper spawn failure), never
-   * the hook's own stdout (issue #104), so a hook cannot forge or hide it.
-   */
-  sandboxBlocked?: boolean
-}
+// The decision summary is owned by the hooks platform in `@copse/agent` (a
+// dialect adapter produces it, the spine records it); re-exported under the
+// spine's name so existing importers are unchanged.
+export type { HookRunDecision as SpineHookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
+import type { HookRunDecision as SpineHookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
 
 /**
  * One line of `events.jsonl`: a single hook execution (decision 6 of
