@@ -16,7 +16,7 @@ describe('checkPlanFor', () => {
     assert.deepEqual(checkPlanFor('scripts/build.mts'), { lint: true, format: true })
   })
 
-  it('formats but does not lint the non-code files prettier owns', () => {
+  it('formats but does not lint the non-code files the formatter owns', () => {
     assert.deepEqual(checkPlanFor('docs/testing-strategy.md'), { lint: false, format: true })
     assert.deepEqual(checkPlanFor('package.json'), { lint: false, format: true })
     assert.deepEqual(checkPlanFor('src/renderer/styles/global/base.css'), {
@@ -112,9 +112,9 @@ describe('renderReport', () => {
     fix: 'npx eslint src/a.ts',
   }
   const formatFinding: Finding = {
-    tool: 'prettier',
+    tool: 'oxfmt',
     detail: '  file is not formatted',
-    fix: 'npx prettier --write src/a.ts',
+    fix: 'npx oxfmt --write src/a.ts',
   }
   const findings: Finding[] = [lintFinding, formatFinding]
 
@@ -134,7 +134,7 @@ describe('renderReport', () => {
     const out = report('src/a.ts', findings, [])
     assert.match(out, /src\/a\.ts: 2 issue\(s\)/)
     assert.match(out, /\[eslint\]/)
-    assert.match(out, /fix: npx prettier --write src\/a\.ts/)
+    assert.match(out, /fix: npx oxfmt --write src\/a\.ts/)
   })
 
   it('states that the check is a subset, so it is never read as a full green', () => {
@@ -159,13 +159,13 @@ describe('renderReport', () => {
   it('reports an auto-fix even with no findings, so the agent knows its copy is stale', () => {
     // A silent rewrite is worse than none: the agent would later match an edit
     // against text the file no longer holds.
-    const out = report('src/a.ts', [], ['prettier'])
-    assert.match(out, /rewritten on disk by prettier/)
+    const out = report('src/a.ts', [], ['oxfmt'])
+    assert.match(out, /rewritten on disk by oxfmt/)
     assert.match(out, /Re-read it before your next edit/)
   })
 
   it('leads with the rewrite when a repair and a finding coincide', () => {
-    const out = report('src/a.ts', [lintFinding], ['prettier'])
+    const out = report('src/a.ts', [lintFinding], ['oxfmt'])
     assert.ok(out.indexOf('rewritten on disk') < out.indexOf('[eslint]'))
   })
 })

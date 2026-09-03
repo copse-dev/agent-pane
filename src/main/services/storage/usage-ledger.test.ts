@@ -1,11 +1,16 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { at } from '@shared/array-utils.ts'
+import type { Thread } from '@shared/types'
 import { storageSet } from './storage.ts'
 import { setSetting } from './settings.ts'
 import { OPENROUTER_PRICING_KEY } from '../providers/model-pricing-store.ts'
 import { getUsageSummary, recordUsageEvent } from './usage-ledger.ts'
 import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
+import { saveProjectThread } from '../thread-store.ts'
 
 describe('usage ledger', () => {
   it('persists events and exposes them in day/month summaries', async () => {
@@ -84,5 +89,51 @@ describe('usage ledger', () => {
     recordUsageEvent(input)
     recordUsageEvent(input)
     assert.equal((await getUsageSummary()).ledgerEventCount, 2)
+  })
+
+  it('builds all-time totals from metadata without reading transcript bodies (#1154)', async () => {
+    const previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    const root = mkdtempSync(join(tmpdir(), 'copse-usage-metadata-'))
+    const projectId = 'usage-metadata-project'
+    const thread: Thread = {
+      id: 'usage-metadata-thread',
+      title: 'Usage metadata',
+      status: 'idle',
+      messages: [
+        {
+          id: 'missing-message',
+          role: 'user',
+          content: 'This body will be removed after the metadata is saved.',
+          toolCalls: [],
+          createdAt: 1,
+        },
+      ],
+      usage: {
+        inputTokens: 123,
+        outputTokens: 45,
+        byModel: {
+          'claude-sonnet-4-6': { inputTokens: 123, outputTokens: 45 },
+        },
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    process.env['COPSE_WORKSPACE_DIR'] = root
+    storageSet('projects', [{ id: projectId, path: root, name: 'usage metadata' }])
+    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+
+    try {
+      await saveProjectThread(projectId, thread)
+      rmSync(join(root, projectId, thread.id, 'messages', 'missing-message.md'))
+
+      const summary = await getUsageSummary()
+
+      assert.equal(summary.allTime.totalInputTokens, 123)
+      assert.equal(summary.allTime.totalOutputTokens, 45)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+      if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+    }
   })
 })

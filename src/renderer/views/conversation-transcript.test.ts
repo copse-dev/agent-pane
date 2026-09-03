@@ -2,12 +2,17 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
+import { addMessage, addMessageCanvasArtefact, createThread } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
+import {
+  resetArtefactPreviewsForTest,
+  setArtefactPreview,
+  setArtefactShowHandler,
+} from '../canvas/artefact-previews.ts'
 
 // Renders a sent user message carrying transcript attachments (input-bar.ts
 // builds these on send) and asserts the composer's paste chip appears inline at
@@ -40,8 +45,23 @@ function mountWithUserMessage(
   mountConversation(host, store, fakeApi())
 }
 
+function mountWithAssistantMessage(content: string, canvasTitle?: string): string {
+  const store = createStore()
+  const threadId = createThread(store)
+  const messageId = addMessage(store, threadId, 'assistant', content)
+  if (canvasTitle) {
+    addMessageCanvasArtefact(store, messageId, { title: canvasTitle })
+    setArtefactPreview(threadId, canvasTitle, 'data:image/png;base64,AAAA')
+  }
+  const host = document.createElement('div')
+  document.body.append(host)
+  mountConversation(host, store, fakeApi())
+  return threadId
+}
+
 afterEach(() => {
   document.body.replaceChildren()
+  resetArtefactPreviewsForTest()
 })
 
 describe('user transcript attachment chips', () => {
@@ -256,5 +276,38 @@ describe('user transcript attachment chips', () => {
       document.querySelector('.msg-resend-without-images')?.textContent,
       'Resend without image',
     )
+  })
+})
+
+describe('assistant inline visualization references', () => {
+  it('hides provider control data while preserving the surrounding answer', () => {
+    const reference =
+      '\u{e200}visualize\u{e202}{"path":"/workspace/chart.html","title":"Chart"}\u{e201}'
+    mountWithAssistantMessage(`Before\n${reference}\nAfter`)
+
+    const textEl = document.querySelector('.msg-assistant .message-text')
+    assert.ok(textEl, 'assistant message text is rendered')
+    assert.equal(textEl.textContent, 'Before\nAfter')
+    assert.doesNotMatch(textEl.textContent, /visualize|chart\.html/)
+    assert.equal(document.querySelector('.tool-card'), null)
+  })
+
+  it('shows the existing canvas preview card directly beneath an assistant answer', () => {
+    let opened: { threadId: string; title: string } | null = null
+    setArtefactShowHandler((threadId, title) => {
+      opened = { threadId, title }
+    })
+
+    const threadId = mountWithAssistantMessage('Here is the chart.', 'Chart')
+    const card = document.querySelector(
+      '.msg-assistant > .message-body > .message-canvas-previews .canvas-preview-card',
+    )
+    assert.ok(card)
+    assert.equal(card.querySelector('.canvas-preview-title')?.textContent, 'Chart')
+    assert.match(card.querySelector('img')?.getAttribute('src') ?? '', /^data:image\/png/)
+    assert.equal(document.querySelector('.tool-card'), null)
+
+    card.querySelector<HTMLButtonElement>('button')?.click()
+    assert.deepEqual(opened, { threadId, title: 'Chart' })
   })
 })

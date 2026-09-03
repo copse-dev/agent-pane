@@ -226,7 +226,8 @@ const SHELL_INVOCATION =
 const winQuote = (value: string): string => `"${value.replace(/"/g, '""')}"`
 
 type PreparedCommand =
-  { command: string; env: NodeJS.ProcessEnv; banner: string } | { refused: string }
+  | { command: string; env: NodeJS.ProcessEnv; banner: string }
+  | { refused: string }
 
 /**
  * When a command performs a package install, route the whole command through
@@ -244,7 +245,7 @@ async function prepareCommand(command: string, signal: AbortSignal): Promise<Pre
   if (!detection.isInstall) return { command, env: baseEnv, banner: '' }
 
   if (!isSocketFirewallAvailable()) {
-    const approved = await promptInstallSocketFirewall(command)
+    const approved = await promptInstallSocketFirewall(command, signal)
     if (!approved) {
       return {
         refused:

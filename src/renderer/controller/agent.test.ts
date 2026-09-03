@@ -132,6 +132,7 @@ function setup(
             localModels: [],
             totalInputTokens: 0,
             totalOutputTokens: 0,
+            hasUnpricedCloudUsage: false,
           },
           month: {
             totalCostUsd: 0,
@@ -139,6 +140,7 @@ function setup(
             localModels: [],
             totalInputTokens: 0,
             totalOutputTokens: 0,
+            hasUnpricedCloudUsage: false,
           },
           period90d: {
             totalCostUsd: 0,
@@ -146,6 +148,7 @@ function setup(
             localModels: [],
             totalInputTokens: 0,
             totalOutputTokens: 0,
+            hasUnpricedCloudUsage: false,
           },
           allTime: {
             totalCostUsd: 0,
@@ -153,6 +156,7 @@ function setup(
             localModels: [],
             totalInputTokens: 0,
             totalOutputTokens: 0,
+            hasUnpricedCloudUsage: false,
           },
           trackingStartedAt: null,
           ledgerEventCount: 0,
@@ -289,6 +293,27 @@ test('text chunks create one assistant message and accumulate tokens', () => {
   assert.equal(messages().length, 1)
   assert.equal(at(messages(), 0).role, 'assistant')
   assert.equal(at(messages(), 0).content, 'Hello world')
+})
+
+test('canvas artefact chunks attach presentation metadata without a tool call', () => {
+  const { send, messages } = setup()
+  send({ type: 'text', text: 'Here is the chart.' })
+  send({ type: 'canvas_artefact', artefact: { title: 'Chart' } })
+
+  assert.deepEqual(at(messages(), 0).canvasArtefacts, [{ title: 'Chart' }])
+  assert.deepEqual(at(messages(), 0).toolCalls, [])
+})
+
+test('a visualization-only answer after tools gets its own assistant bubble', () => {
+  const { send, messages } = setup()
+  send({ type: 'tool_call', toolCall: { id: 'tc1', name: 'read_file', args: {} } })
+  send({ type: 'tool_result', toolCallId: 'tc1', result: 'ok', isError: false })
+  send({ type: 'canvas_artefact', artefact: { title: 'Chart' } })
+
+  assert.equal(messages().length, 2)
+  assert.equal(at(messages(), 0).toolCalls.length, 1)
+  assert.deepEqual(at(messages(), 1).canvasArtefacts, [{ title: 'Chart' }])
+  assert.deepEqual(at(messages(), 1).toolCalls, [])
 })
 
 test('assistant messages record the requested (picker) model', () => {

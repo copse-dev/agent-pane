@@ -15,8 +15,8 @@ import { normalizeToolExecuteResult } from '@shared/types'
 
 const signal = new AbortController().signal
 
-async function run(args: unknown): Promise<string> {
-  const result = await readTerminalTool.execute(readTerminalTool.parameters.parse(args), signal)
+async function run(args: unknown, runSignal = signal): Promise<string> {
+  const result = await readTerminalTool.execute(readTerminalTool.parameters.parse(args), runSignal)
   return normalizeToolExecuteResult(result).result
 }
 
@@ -83,6 +83,43 @@ describe('read_terminal tool', () => {
       assert.match(result, /declined to share/)
       assert.doesNotMatch(result, /hunter2/)
     })
+  })
+
+  it('cancels a pending scrollback gate when the run aborts', { timeout: 500 }, async () => {
+    let guardSignal: AbortSignal | undefined
+    setTerminalReadGateForTest((_threadId, _label, _text, signalFromRun?: AbortSignal) => {
+      guardSignal = signalFromRun
+      return new Promise((resolve) => {
+        signalFromRun?.addEventListener(
+          'abort',
+          () => {
+            resolve({
+              allowed: false,
+              deniedMessage: 'The terminal read was cancelled.',
+            })
+          },
+          { once: true },
+        )
+      })
+    })
+    const controller = new AbortController()
+    const pending = runWithActiveRunIdentity('thread-a', async () => {
+      setActiveRunThread('thread-a')
+      const id = __testInjectTerminalSession({
+        ownerId: 1,
+        label: 'Secrets',
+        threadId: 'thread-a',
+        outputText: 'API_TOKEN=secret\n',
+      })
+      setActiveTerminalSession(id, 1)
+      return run({ action: 'read', max_lines: 200 }, controller.signal)
+    })
+    await Promise.resolve()
+
+    controller.abort()
+
+    assert.equal(await pending, 'The terminal read was cancelled.')
+    assert.equal(guardSignal?.aborted, true)
   })
 
   it('read by id fails for the wrong thread', async () => {

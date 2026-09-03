@@ -5,7 +5,8 @@
  * is no reason to duplicate a recording the agent can already open.
  */
 export type PromptVideoAttachment = { name: string; mimeType: string } & (
-  { bytes: ArrayBuffer; path?: undefined } | { path: string; bytes?: undefined }
+  | { bytes: ArrayBuffer; path?: undefined }
+  | { path: string; bytes?: undefined }
 )
 
 /**
@@ -14,7 +15,8 @@ export type PromptVideoAttachment = { name: string; mimeType: string } & (
  * the workspace, which is referenced where it lies.
  */
 export type PromptArchiveAttachment = { name: string } & (
-  { bytes: ArrayBuffer; path?: undefined } | { path: string; bytes?: undefined }
+  | { bytes: ArrayBuffer; path?: undefined }
+  | { path: string; bytes?: undefined }
 )
 
 export interface PromptAttachmentHandlers {

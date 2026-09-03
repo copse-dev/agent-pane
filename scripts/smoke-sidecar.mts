@@ -230,13 +230,24 @@ socket.send(
     args: [{ t: 1, kind: 'span', src: 'renderer', name: 'smoke:probe', ms: 4.2 }],
   }),
 )
-// The tracer buffers and flushes on a 250 ms timer.
-await new Promise((r) => setTimeout(r, 1500))
-const trace = existsSync(perfOut) ? readFileSync(perfOut, 'utf8') : ''
-if (!trace.includes('"name":"main:boot-complete"'))
-  fail('perf trace has no main-process boot records')
-if (!trace.includes('"name":"smoke:probe"'))
-  fail('renderer perf record never reached the main NDJSON stream')
+// Wait for both records rather than sleeping a fixed interval. The tracer
+// flushes on a 250 ms timer, but `main:boot-complete` is only marked once boot
+// has awaited the tool-availability probe — `gh auth status`, a network round
+// trip that alone takes 1.5 s+ on hosted runners — and nothing above waits for
+// boot to finish: the WS endpoint is up and answering long before it does. A
+// fixed sleep therefore raced the probe and lost on slow days.
+const traceDeadline = Date.now() + 30_000
+let trace = ''
+const traceHas = (name: string): boolean => trace.includes(`"name":"${name}"`)
+while (!(traceHas('main:boot-complete') && traceHas('smoke:probe'))) {
+  if (Date.now() > traceDeadline) {
+    if (!traceHas('main:boot-complete')) fail('perf trace has no main-process boot records')
+    fail('renderer perf record never reached the main NDJSON stream')
+  }
+  if (sidecarExited()) fail('sidecar exited before the perf trace was complete')
+  await new Promise((r) => setTimeout(r, 250))
+  trace = existsSync(perfOut) ? readFileSync(perfOut, 'utf8') : ''
+}
 console.log('renderer perf records reach the shared NDJSON trace')
 
 // The transport must enforce the preload contract: a channel outside the

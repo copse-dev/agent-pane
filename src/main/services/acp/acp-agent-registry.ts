@@ -1,6 +1,6 @@
 import type { AcpAgentConfig, AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { canonicalAcpAgentId, findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
-import { getSetting, setSetting } from '../storage/settings.ts'
+import { getSetting, updateSetting } from '../storage/settings.ts'
 
 /**
  * Settings-backed registry of external ACP agents Copse can drive (client role).
@@ -11,15 +11,21 @@ import { getSetting, setSetting } from '../storage/settings.ts'
  * value, `parseAcpModel` extracts the id, and {@link getAcpAgent} resolves it to
  * the spawn config the run service hands to the ACP client.
  */
-export function listAcpAgents(): AcpAgentConfig[] {
-  // Normalise renamed ids on the way out (`LEGACY_ACP_AGENT_IDS`), so a config
-  // written before an agent was renamed still resolves its catalog entry — and
-  // therefore its seatbelt — rather than silently reading as a custom agent.
-  return getSetting<AcpAgentConfig[]>('registeredAcpAgents', []).map((agent) =>
+/**
+ * Normalise renamed ids (`LEGACY_ACP_AGENT_IDS`), so a config written before an
+ * agent was renamed still resolves its catalog entry — and therefore its
+ * seatbelt — rather than silently reading as a custom agent.
+ */
+function canonicalizeAcpAgents(agents: readonly AcpAgentConfig[]): AcpAgentConfig[] {
+  return agents.map((agent) =>
     agent.id === canonicalAcpAgentId(agent.id)
       ? agent
       : { ...agent, id: canonicalAcpAgentId(agent.id) },
   )
+}
+
+export function listAcpAgents(): AcpAgentConfig[] {
+  return canonicalizeAcpAgents(getSetting<AcpAgentConfig[]>('registeredAcpAgents', []))
 }
 
 /** Configured agents the user has enabled — the ones the picker should offer. */
@@ -84,10 +90,12 @@ export function resolveAcpPermissionMode(
  * the renderer round-trip. Returns the updated list.
  */
 export async function upsertAcpAgent(config: AcpAgentConfig): Promise<AcpAgentConfig[]> {
-  const list = listAcpAgents()
-  config = { ...config, id: canonicalAcpAgentId(config.id) }
-  const index = list.findIndex((candidate) => candidate.id === config.id)
-  const next = index === -1 ? [...list, config] : list.map((c) => (c.id === config.id ? config : c))
-  await setSetting('registeredAcpAgents', next)
-  return next
+  const normalized = { ...config, id: canonicalAcpAgentId(config.id) }
+  return updateSetting<AcpAgentConfig[]>('registeredAcpAgents', [], (current) => {
+    const list = canonicalizeAcpAgents(current)
+    const index = list.findIndex((candidate) => candidate.id === normalized.id)
+    return index === -1
+      ? [...list, normalized]
+      : list.map((candidate) => (candidate.id === normalized.id ? normalized : candidate))
+  })
 }

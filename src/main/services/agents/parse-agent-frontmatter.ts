@@ -29,7 +29,8 @@ export interface RejectedAgentFile {
 }
 
 export type AgentParseResult =
-  { ok: true; agent: ParsedAgentFile } | { ok: false; rejected: RejectedAgentFile }
+  | { ok: true; agent: ParsedAgentFile }
+  | { ok: false; rejected: RejectedAgentFile }
 
 /**
  * Frontmatter fields Copse recognises but does not act on yet, with the copy

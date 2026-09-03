@@ -36,7 +36,8 @@ let worktreeOverlayExecutor: (
 /** Test hook — replace git/filesystem worktree overlay generation. */
 export function setWorktreeSemanticOverlayExecutorForTest(
   executor:
-    ((options: WorktreeSemanticOverlayOptions) => Promise<WorktreeSemanticOverlayResult>) | null,
+    | ((options: WorktreeSemanticOverlayOptions) => Promise<WorktreeSemanticOverlayResult>)
+    | null,
 ): void {
   worktreeOverlayExecutor = executor ?? overlayWorktreeSemanticResults
 }

@@ -3,12 +3,14 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { check, resolveConfig } from 'prettier'
+import { transform } from 'esbuild'
+import { formatSource } from './lib/oxfmt.mts'
 import {
   detectPayloadVersion,
   formatDataFile,
   graduateWanted,
   mergeApiModels,
+  renderFile,
   requestAaModels,
   type AaApiModel,
   type DataFile,
@@ -49,9 +51,43 @@ describe('formatDataFile', () => {
         },
       ],
     })
-    const config = await resolveConfig(path)
-    assert.equal(await check(formatted, { ...config, filepath: path }), true)
+    // Already formatted: running it through oxfmt again is a no-op.
+    assert.equal(await formatSource(path, formatted), formatted)
     assert.match(formatted, /"modelId": "deepseek\/deepseek-v4-reasoning"/)
+  })
+})
+
+describe('renderFile', () => {
+  it('keeps arbitrary API metadata literal in valid generated TypeScript', async () => {
+    const metadata = String.raw`model\path'` + '\nnext'
+    const attribution = String.raw`credit\path'` + '\nexport const injected = true'
+    const source = renderFile(
+      {
+        ...BASE,
+        canonicalVersion: metadata,
+        attribution,
+        scores: [
+          {
+            modelId: metadata,
+            value: 42,
+            indexVersion: metadata,
+            source: metadata,
+            asOf: '2026-08-31',
+            aliases: [`${metadata} alias`],
+          },
+        ],
+        wanted: undefined,
+      },
+      [],
+      '2026-08-31',
+    )
+
+    await transform(source, { loader: 'ts' })
+    assert.ok(source.includes(JSON.stringify(metadata)))
+    assert.ok(source.includes(JSON.stringify(`${metadata} alias`)))
+    assert.ok(source.includes(JSON.stringify(attribution)))
+    assert.doesNotMatch(source, /\nexport const injected/)
+    assert.match(source, /\n\/\/ export const injected = true/)
   })
 })
 
@@ -268,7 +304,7 @@ describe('detectPayloadVersion', () => {
  * CLI. `main()` used to be called at module scope, so merely importing it here
  * ran the whole sync on every unit run: a network fetch to Artificial Analysis,
  * then a rewrite of `data/intellect.json` and of the tracked
- * `model-intellect.generated.ts` via `prettier --write`. A green `npm run check`
+ * `model-intellect.generated.ts` via `oxfmt --write`. A green `npm run check`
  * left the working tree dirty, and the bumped `// Last synced:` line went on to
  * collide with the scheduled sync in a real merge conflict.
  */

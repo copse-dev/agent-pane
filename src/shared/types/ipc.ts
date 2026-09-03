@@ -4,7 +4,14 @@ import type { GitFileDiff, GitStatusResult, GitBranchStatus, GitPromptState } fr
 import type { McpServerStatus, CuratedMcpServerStatus } from './mcp.ts'
 
 type Provider =
-  'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter' | 'mistral' | 'gemini' | 'deepseek'
+  | 'anthropic'
+  | 'openai'
+  | 'lmstudio'
+  | 'cursor'
+  | 'openrouter'
+  | 'mistral'
+  | 'gemini'
+  | 'deepseek'
 type CloudProvider = Exclude<Provider, 'lmstudio'>
 
 interface AvailableProviders {
@@ -518,6 +525,8 @@ export interface IpcEventMap {
       questions: { question: string; options?: string[] }[]
     },
   ]
+  /** Main dismisses an ask_user request when its run stops or the request expires. */
+  'agent:ask_user_cancelled': [{ id: string }]
   'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
   'security:guardedYoloChanged': [state: import('./guarded-yolo.ts').GuardedYoloState]
   'automations:triggered': [event: import('./automations.ts').AutomationTriggerEvent]

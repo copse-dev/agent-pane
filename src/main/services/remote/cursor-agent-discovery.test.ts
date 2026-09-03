@@ -57,6 +57,14 @@ describe('cursorAgentMatchesRepository', () => {
     assert.equal(cursorAgentMatchesRepository(agent, 'https://github.com/acme/project'), true)
     assert.equal(cursorAgentMatchesRepository(agent, 'https://github.com/acme/other'), false)
   })
+
+  it('does not match an owner/repo path from a non-GitHub host', () => {
+    const agent = detail({
+      id: 'bc-cross-host',
+      repos: [{ url: 'https://gitlab.com/acme/project' }],
+    })
+    assert.equal(cursorAgentMatchesRepository(agent, 'https://github.com/acme/project'), false)
+  })
 })
 
 describe('collectLinkedCursorAgentIds', () => {

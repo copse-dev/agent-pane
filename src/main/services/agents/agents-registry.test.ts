@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os'
 import {
   collectDiscoveryRoots,
   discoverAgentsFromRoots,
+  initAgentsRegistry,
+  listAgents,
+  waitForAgentsRegistryRefresh,
   type DiscoveryRoot,
 } from './agents-registry.ts'
 import type { AgentContainer } from '@shared/types/agents.ts'
@@ -171,5 +174,29 @@ describe('agents-registry', () => {
 
     assert.equal(project.length, 1, 'the worktree copy must not be discovered')
     assert.equal(project[0]?.root, join(tempRoot, '.claude', 'agents'))
+  })
+
+  it('serves a read that lands mid-boot the discovered catalog, not the empty cache', async () => {
+    await seed('', '.claude', 'reviewer.md', DEFINITION.replace('{where}', 'project'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+
+    await runWithWorkspaceTrust(tempRoot, true, async () => {
+      // Boot starts discovery and moves on; `agents:list` is already registered.
+      const booting = initAgentsRegistry()
+
+      // This is what the handler used to do on its own, and why the first
+      // slash-picker open could come up empty.
+      assert.deepEqual(listAgents().agents, [], 'the cache is still cold here')
+
+      // This is what it does now.
+      await waitForAgentsRegistryRefresh()
+      assert.deepEqual(
+        listAgents().agents.map((agent) => agent.name),
+        ['reviewer'],
+        'a read during boot discovery must see the discovered catalog',
+      )
+
+      await booting
+    })
   })
 })

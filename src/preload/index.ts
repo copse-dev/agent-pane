@@ -313,6 +313,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('agent:ask_user_request', listener)
       }
     },
+    onAskUserCancelled: (handler: (req: { id: string }) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+        handler(req)
+      }
+      ipcRenderer.on('agent:ask_user_cancelled', listener)
+      return (): void => {
+        ipcRenderer.off('agent:ask_user_cancelled', listener)
+      }
+    },
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
@@ -1261,11 +1270,20 @@ if (process.env['COPSE_E2E'] === '1') {
     clearMockScript() {
       return ipcRenderer.invoke('test:clearMockScript')
     },
+    pauseModelCardResolves() {
+      return ipcRenderer.invoke('test:pauseModelCardResolves')
+    },
+    resumeModelCardResolves() {
+      return ipcRenderer.invoke('test:resumeModelCardResolves')
+    },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
     },
     requestCloseConfirm() {
       return ipcRenderer.invoke('test:requestCloseConfirm')
+    },
+    rememberTrustedCommands(commands: string[]) {
+      return ipcRenderer.invoke('test:rememberTrustedCommands', commands)
     },
     createMainWindow() {
       return ipcRenderer.invoke('test:createMainWindow')
@@ -1284,6 +1302,12 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)
+    },
+    emitApprovalRequests(requests: unknown) {
+      return ipcRenderer.invoke('test:emitApprovalRequests', requests)
+    },
+    cancelApprovalRequest(id: string) {
+      return ipcRenderer.invoke('test:cancelApprovalRequest', id)
     },
     setSemanticIndexScaleGuard(phase: 'limited' | 'skipped', reason: string) {
       return ipcRenderer.invoke('test:setSemanticIndexScaleGuard', phase, reason)

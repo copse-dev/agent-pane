@@ -33,7 +33,6 @@ export default ts.config(
       '.claude/**',
       'eslint.config.mjs',
       'eslint.hook.config.mjs',
-      'prettier.config.mjs',
       'wdio.conf.ts',
       'wdio.ci.conf.ts',
       'wdio.eval.conf.ts',

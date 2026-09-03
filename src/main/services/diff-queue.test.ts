@@ -16,6 +16,7 @@ import {
   clearDiffQueueForTest,
   getDiffQueueForTest,
   getRecentStagedDiffDecision,
+  getPendingAfterContent,
   getStagedDiffEntry,
   listWorktreeChangesSince,
   runWithStagedDiffResolver,
@@ -816,6 +817,71 @@ describe('stageDiff same-path coalescing (#118)', () => {
     await stageDiff('b.txt', '', 'b\n', 'plaintext')
     const queue = getDiffQueueForTest()
     assert.equal(queue.length, 2)
+  })
+})
+
+describe('staged diffs are keyed by file, not by spelling', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    clearDiffQueueForTest()
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-spelling-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    restoreWorkspace?.()
+    clearDiffQueueForTest()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  ownedIt('coalesces the spellings the file tools all accept onto one row', async () => {
+    // `resolvePathWithinRoot` takes any of these and reaches the same file, so
+    // the queue must too — a model that copies a path out of a compiler error
+    // gets the absolute form, and `./` prefixes come and go between calls.
+    await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
+    await stageDiff('./a.txt', 'orig\n', 'v2\n', 'plaintext')
+    await stageDiff(join(tempRoot, 'a.txt'), 'orig\n', 'v3\n', 'plaintext')
+
+    const queue = getDiffQueueForTest()
+    assert.equal(
+      queue.length,
+      1,
+      `one file must be one row, saw ${JSON.stringify(queue.map((e) => e.path))}`,
+    )
+    assert.equal(at(queue, 0).path, 'a.txt')
+    // Coalescing keeps the first `before` snapshot and the latest proposal,
+    // exactly as it does for a repeated identical spelling.
+    assert.equal(at(queue, 0).before, 'orig\n')
+    assert.equal(at(queue, 0).after, 'v3\n')
+  })
+
+  ownedIt('finds the pending content under any of those spellings', async () => {
+    // `str_replace` composes onto pending content via this lookup. Missing it
+    // silently reads stale on-disk content instead of the proposed content.
+    await stageDiff('src/a.ts', 'orig\n', 'pending\n', 'typescript')
+    for (const spelling of ['src/a.ts', './src/a.ts', 'src//a.ts', join(tempRoot, 'src/a.ts')]) {
+      assert.equal(getPendingAfterContent(spelling), 'pending\n', spelling)
+      assert.equal(getStagedDiffEntry(spelling)?.after, 'pending\n', spelling)
+    }
+  })
+
+  ownedIt('leaves a `..` segment alone rather than resolving it', async () => {
+    // `sub/../a.txt` is only the same file as `a.txt` when `sub` is not a
+    // symlink. The key is lexical, so it must not merge rows a symlink makes
+    // distinct — staying separate is the safe direction.
+    await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
+    await stageDiff('sub/../a.txt', 'orig\n', 'v2\n', 'plaintext')
+    assert.equal(getDiffQueueForTest().length, 2)
+  })
+
+  ownedIt('does not adopt an absolute path from outside the workspace', async () => {
+    // Escaping the root must keep its own identity rather than colliding with
+    // a workspace-relative row.
+    await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
+    await stageDiff(join(tempRoot, '..', 'elsewhere', 'a.txt'), 'orig\n', 'v2\n', 'plaintext')
+    assert.equal(getDiffQueueForTest().length, 2)
   })
 })
 

@@ -104,6 +104,17 @@ export function handleExecutionRootEvent(root: string, filename: string | null):
 }
 
 /**
+ * Drop every cached result that depended on a watcher which stopped working.
+ * Keeping those entries after coverage is lost would let an external edit make
+ * them stale forever: cache reads happen before the next attempt to establish a
+ * watcher, so nothing else gets a chance to recover first.
+ */
+export function handleExecutionRootWatchFailure(root: string): void {
+  invalidateToolResultCacheForChange(root, null)
+  stopWatchingExecutionRoot(root)
+}
+
+/**
  * Idempotently watch `root`. Returns false when no watcher could be
  * established — the caller must then treat the root as uncacheable rather than
  * cache results it can never invalidate.
@@ -129,8 +140,11 @@ export function ensureExecutionRootWatched(root: string): boolean {
     // Dropping the watcher leaves the root uncacheable, which is the same
     // degraded state as never having established one.
     watcher.on('error', (err: unknown) => {
+      // Ignore a late error from a watcher that was already closed and replaced
+      // for the same root; its replacement still provides cache coverage.
+      if (watchers.get(root) !== watcher) return
       console.warn('[copse-panel] tool result cache watcher failed for', root, err)
-      stopWatchingExecutionRoot(root)
+      handleExecutionRootWatchFailure(root)
     })
     watchers.set(root, watcher)
     return true

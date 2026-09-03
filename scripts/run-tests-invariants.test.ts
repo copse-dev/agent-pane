@@ -29,10 +29,7 @@ describe('unit test runner build contract', () => {
 
   it('preserves module-relative paths before modules enter shared chunks', () => {
     assert.match(runner, /name: 'module-relative-test-paths'/)
-    assert.match(runner, /pathToFileURL\(args\.path\)\.href/)
-    assert.match(runner, /JSON\.stringify\(dirname\(args\.path\)\)/)
-    assert.match(runner, /JSON\.stringify\(outputPath\)/)
-    assert.match(runner, /JSON\.stringify\(dirname\(outputPath\)\)/)
+    assert.match(runner, /rewriteModuleRelativeTestPaths\(source, args\.path, outputPath\)/)
   })
 
   it('adapts Electron CommonJS properties to statically named ESM exports', () => {
