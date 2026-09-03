@@ -67,6 +67,9 @@ importers:
       '@copse/plan-usage':
         specifier: workspace:*
         version: link:packages/plan-usage
+      '@copse/shell-guard':
+        specifier: workspace:*
+        version: link:packages/shell-guard
       '@copse/std':
         specifier: workspace:*
         version: link:packages/std
@@ -277,6 +280,12 @@ importers:
         version: link:../std
 
   packages/std: {}
+
+  packages/shell-guard:
+    dependencies:
+      shell-quote:
+        specifier: ^1.10.0
+        version: 1.10.0
 
 packages:
 
