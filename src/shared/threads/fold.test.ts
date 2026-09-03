@@ -70,7 +70,7 @@ test('round-trips a message whose body contains a --- fence', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
-test('round-trips reasoning, images, canvas artefacts, commandSummary, and toolSummary', () => {
+test('round-trips reasoning, images, canvas artefacts, commandSummary, toolSummary, and runSummary', () => {
   const messages: Message[] = [
     {
       id: 'a1',
@@ -81,6 +81,9 @@ test('round-trips reasoning, images, canvas artefacts, commandSummary, and toolS
       canvasArtefacts: [{ title: 'Tool rollup approaches' }],
       commandSummary: 'ran two commands',
       toolSummary: 'Read the settings UI',
+      // Only ever set on a run's anchor, and distinct from that message's own
+      // toolSummary — the run's label covers the messages that follow it too.
+      runSummary: 'Checked CI, branch state, and test coverage',
       toolCalls: [],
       createdAt: 5,
     },

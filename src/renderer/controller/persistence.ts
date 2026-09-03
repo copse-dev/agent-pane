@@ -545,14 +545,20 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     // carry the latest args/response across an app restart. Do not persist a
     // running tool: the v1 spine deliberately has no running status.
     store.on('tool_call_updated', (messageId, toolCallId) => {
-      if (!toolCallId) return
       const threadId = threadIdOfMessage(messageId)
       if (!threadId) return
       const message = getThreadById(store, threadId)?.messages.find(
         (candidate) => candidate.id === messageId,
       )
-      const toolCall = message?.toolCalls.find((candidate) => candidate.id === toolCallId)
-      if (!toolCall || toolCall.status === 'running') return
+      if (!message) return
+      if (toolCallId) {
+        const toolCall = message.toolCalls.find((candidate) => candidate.id === toolCallId)
+        if (!toolCall || toolCall.status === 'running') return
+      }
+      // An empty tool-call id is a small-model rollup label landing on the
+      // message (command / turn / run summary). A run summary in particular
+      // resolves against its *anchor*, whose `message_done` fired turns ago, so
+      // without this the polished label never reached disk.
       const backgroundProjectId = backgroundProjectOf(store, threadId)
       if (backgroundProjectId) {
         persistBackgroundMessage(backgroundProjectId, threadId, messageId)

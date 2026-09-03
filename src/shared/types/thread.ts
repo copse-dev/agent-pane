@@ -374,6 +374,14 @@ export interface Message {
    */
   toolSummary?: string
   /**
+   * Small-model polish for the *run* this message anchors — the rollup that
+   * spans this message and the tool-only assistant messages that follow it.
+   * Only ever set on a run's anchor, and only once the run spans more than one
+   * message; {@link Message.toolSummary} stays this message's own label and is
+   * shown as its step heading inside the run.
+   */
+  runSummary?: string
+  /**
    * Primary-chat model that produced this assistant message — the concrete
    * route actually run, after a dynamic selector (`auto:…`) was expanded.
    * Surfaced in the transcript only when the thread used more than one primary

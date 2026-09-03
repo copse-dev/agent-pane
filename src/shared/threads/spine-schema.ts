@@ -103,6 +103,12 @@ export interface SpineMessageLine {
   commandSummary?: string
   /** Small-model polish for the turn tool rollup; optional, display-only. */
   toolSummary?: string
+  /**
+   * Small-model polish for the cross-message run this message anchors;
+   * optional, display-only. Absent on every spine written before runs existed,
+   * where the derived `Used N tools` label stands in.
+   */
+  runSummary?: string
   /** Display metadata is inline; text snapshots are referenced blob files. */
   attachments?: SpineTranscriptAttachment[]
   /**
