@@ -47268,7 +47268,7 @@ var init_parallel_search_plugin_settings = __esm({
   }
 });
 
-// src/shared/command-routing.ts
+// packages/shell-guard/src/trusted-commands.ts
 function isValidTrustedCommand(name) {
   return VALID_COMMAND.test(name);
 }
@@ -47302,10 +47302,17 @@ function sanitizeTrustedCommands(value2) {
   return out;
 }
 var TRUSTED_COMMANDS_SETTING, VALID_COMMAND;
-var init_command_routing = __esm({
-  "src/shared/command-routing.ts"() {
+var init_trusted_commands = __esm({
+  "packages/shell-guard/src/trusted-commands.ts"() {
     TRUSTED_COMMANDS_SETTING = "trustedShellCommands";
     VALID_COMMAND = /^[A-Za-z0-9._+-]+$/;
+  }
+});
+
+// src/shared/command-routing.ts
+var init_command_routing = __esm({
+  "src/shared/command-routing.ts"() {
+    init_trusted_commands();
   }
 });
 
