@@ -15895,12 +15895,69 @@ var init_zod = __esm({
   }
 });
 
-// packages/agent/src/internal-utils.ts
+// packages/std/src/unknown-value.ts
 function isRecord(value2) {
   return typeof value2 === "object" && value2 !== null && !Array.isArray(value2);
 }
-var init_internal_utils = __esm({
-  "packages/agent/src/internal-utils.ts"() {
+function expectRecord(value2, label = "value") {
+  if (!isRecord(value2)) throw new TypeError(`${label} must be an object`);
+  return value2;
+}
+function recordArrayOrEmpty(value2) {
+  return Array.isArray(value2) ? value2.filter(isRecord) : [];
+}
+function expectString(value2, label = "value") {
+  if (typeof value2 !== "string") throw new TypeError(`${label} must be a string`);
+  return value2;
+}
+function expectNumber(value2, label = "value") {
+  if (typeof value2 !== "number") throw new TypeError(`${label} must be a number`);
+  return value2;
+}
+function expectBoolean(value2, label = "value") {
+  if (typeof value2 !== "boolean") throw new TypeError(`${label} must be a boolean`);
+  return value2;
+}
+function expectStringArray(value2, label = "value") {
+  if (!Array.isArray(value2) || !value2.every((item) => typeof item === "string")) {
+    throw new TypeError(`${label} must be an array of strings`);
+  }
+  return value2;
+}
+function stringRecordOrEmpty(value2) {
+  if (!isRecord(value2)) return {};
+  const result = {};
+  for (const [key, entry] of Object.entries(value2)) {
+    if (typeof entry === "string") result[key] = entry;
+  }
+  return result;
+}
+function optionalString(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectString(value2, label);
+}
+function optionalBoolean(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectBoolean(value2, label);
+}
+function optionalNumber(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectNumber(value2, label);
+}
+function optionalStringArray(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectStringArray(value2, label);
+}
+function firstNonEmptyString(...values3) {
+  return values3.find(
+    (value2) => value2 !== void 0 && value2 !== null && value2 !== ""
+  );
+}
+function nonEmptyStringOr(value2, fallback) {
+  return firstNonEmptyString(value2, fallback) ?? fallback;
+}
+var init_unknown_value = __esm({
+  "packages/std/src/unknown-value.ts"() {
   }
 });
 
@@ -15949,7 +16006,7 @@ var init_parse_agent_run_payload = __esm({
   "packages/agent/src/parse-agent-run-payload.ts"() {
     init_model_parameters();
     init_zod();
-    init_internal_utils();
+    init_unknown_value();
     userContentSchema = external_exports.union([
       external_exports.string(),
       external_exports.array(
@@ -16078,7 +16135,7 @@ var init_active_thread_owner = __esm({
   }
 });
 
-// src/shared/array-utils.ts
+// packages/std/src/array-utils.ts
 function at(array5, index) {
   const value2 = array5[index];
   if (value2 === void 0) {
@@ -16087,7 +16144,14 @@ function at(array5, index) {
   return value2;
 }
 var init_array_utils = __esm({
+  "packages/std/src/array-utils.ts"() {
+  }
+});
+
+// src/shared/array-utils.ts
+var init_array_utils2 = __esm({
   "src/shared/array-utils.ts"() {
+    init_array_utils();
   }
 });
 
@@ -16656,7 +16720,7 @@ function applyPreparedThreadCheckout(store3, threadId, prepared) {
 var randomUUID, messageIndexByStore;
 var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
-    init_array_utils();
+    init_array_utils2();
     randomUUID = () => globalThis.crypto.randomUUID();
     messageIndexByStore = /* @__PURE__ */ new WeakMap();
   }
@@ -16714,75 +16778,16 @@ var init_background_threads = __esm({
 });
 
 // src/shared/unknown-value.mts
-function isRecord2(value2) {
-  return typeof value2 === "object" && value2 !== null && !Array.isArray(value2);
-}
-function expectRecord(value2, label = "value") {
-  if (!isRecord2(value2)) throw new TypeError(`${label} must be an object`);
-  return value2;
-}
-function recordArrayOrEmpty(value2) {
-  return Array.isArray(value2) ? value2.filter(isRecord2) : [];
-}
-function expectString(value2, label = "value") {
-  if (typeof value2 !== "string") throw new TypeError(`${label} must be a string`);
-  return value2;
-}
-function expectNumber(value2, label = "value") {
-  if (typeof value2 !== "number") throw new TypeError(`${label} must be a number`);
-  return value2;
-}
-function expectBoolean(value2, label = "value") {
-  if (typeof value2 !== "boolean") throw new TypeError(`${label} must be a boolean`);
-  return value2;
-}
-function expectStringArray(value2, label = "value") {
-  if (!Array.isArray(value2) || !value2.every((item) => typeof item === "string")) {
-    throw new TypeError(`${label} must be an array of strings`);
-  }
-  return value2;
-}
-function stringRecordOrEmpty(value2) {
-  if (!isRecord2(value2)) return {};
-  const result = {};
-  for (const [key, entry] of Object.entries(value2)) {
-    if (typeof entry === "string") result[key] = entry;
-  }
-  return result;
-}
-function optionalString(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectString(value2, label);
-}
-function optionalBoolean(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectBoolean(value2, label);
-}
-function optionalNumber(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectNumber(value2, label);
-}
-function optionalStringArray(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectStringArray(value2, label);
-}
-function firstNonEmptyString(...values3) {
-  return values3.find(
-    (value2) => value2 !== void 0 && value2 !== null && value2 !== ""
-  );
-}
-function nonEmptyStringOr(value2, fallback) {
-  return firstNonEmptyString(value2, fallback) ?? fallback;
-}
-var init_unknown_value = __esm({
+var init_unknown_value2 = __esm({
   "src/shared/unknown-value.mts"() {
+    init_unknown_value();
   }
 });
 
 // src/shared/unknown-value.ts
-var init_unknown_value2 = __esm({
+var init_unknown_value3 = __esm({
   "src/shared/unknown-value.ts"() {
-    init_unknown_value();
+    init_unknown_value2();
   }
 });
 
@@ -17100,7 +17105,7 @@ var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
     init_background_threads();
-    init_unknown_value2();
+    init_unknown_value3();
     KEY_PROJECTS = "projects";
     KEY_PROJECT_GROUPS = "projectGroups";
     writeChains = /* @__PURE__ */ new Map();
@@ -17138,7 +17143,7 @@ function getToolDisplayName(name, tense = "done") {
   return formatToolNameFallback(name);
 }
 function stringArg(args, key) {
-  if (!isRecord2(args)) return null;
+  if (!isRecord(args)) return null;
   const value2 = args[key];
   return typeof value2 === "string" && value2.length > 0 ? value2 : null;
 }
@@ -17159,7 +17164,7 @@ function shellCommandLabel(command) {
   return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}\u2026`;
 }
 function shellCommandArg(args) {
-  if (!isRecord2(args)) return null;
+  if (!isRecord(args)) return null;
   const command = args["command"];
   return typeof command === "string" && command.trim() ? command : null;
 }
@@ -17331,7 +17336,7 @@ function buildToolCallDisplayItems(toolCalls, opts) {
 var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
       read_file: { running: "Reading file", done: "Read file" },
@@ -17505,7 +17510,7 @@ function formatTodoProgress(todos) {
 }
 var init_todo_logic = __esm({
   "src/shared/todos/todo-logic.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     init_todo_steering();
   }
 });
@@ -18641,7 +18646,7 @@ function parseSshHostDraft(draft) {
 var SSH_HOST_ID_RE;
 var init_ssh_host_helpers = __esm({
   "src/renderer/views/setup/ssh-host-helpers.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     SSH_HOST_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
   }
 });
@@ -21331,7 +21336,7 @@ function providerSlug(model) {
   return void 0;
 }
 function stringArg2(args, key) {
-  if (!isRecord2(args)) return void 0;
+  if (!isRecord(args)) return void 0;
   const value2 = args[key];
   return typeof value2 === "string" ? value2 : void 0;
 }
@@ -22098,7 +22103,7 @@ var init_demo_api = __esm({
     init_trace_player();
     init_token_estimate();
     init_files();
-    init_unknown_value2();
+    init_unknown_value3();
     init_demo_scenarios();
     init_icons();
     DEMO_MODEL = "mock:demo";
@@ -23869,12 +23874,19 @@ var init_rename_blur = __esm({
   }
 });
 
-// src/shared/errors.ts
+// packages/std/src/errors.ts
 function errorMessage(err2) {
   return err2 instanceof Error ? err2.message : String(err2);
 }
 var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
+  }
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
   "src/shared/errors.ts"() {
+    init_errors3();
   }
 });
 
@@ -24292,7 +24304,7 @@ var DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS, BEST_VALUE_CHAT_MODEL, BEST_VALU
 var init_lm_studio_defaults = __esm({
   "src/shared/lm-studio-defaults.ts"() {
     init_dynamic_model();
-    init_unknown_value2();
+    init_unknown_value3();
     DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234/v1";
     LM_STUDIO_MODEL_IDS = {
       chat: "qwen/qwen3.6-35b-a3b",
@@ -24349,7 +24361,7 @@ var init_remote_agent = __esm({
     init_model_selection();
     init_model_catalog();
     init_managed_agents();
-    init_unknown_value2();
+    init_unknown_value3();
     REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
     REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
     CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
@@ -24648,7 +24660,7 @@ function parseAcpAgentConfigs(value2) {
     if (Array.isArray(entry["args"]) && entry["args"].every((arg) => typeof arg === "string")) {
       agent.args = entry["args"];
     }
-    if (isRecord2(entry["env"])) agent.env = stringRecordOrEmpty(entry["env"]);
+    if (isRecord(entry["env"])) agent.env = stringRecordOrEmpty(entry["env"]);
     if (typeof entry["model"] === "string") agent.model = entry["model"];
     if (Array.isArray(entry["availableModels"])) {
       agent.availableModels = parseChoices(entry["availableModels"], true);
@@ -24658,7 +24670,7 @@ function parseAcpAgentConfigs(value2) {
     if (Array.isArray(entry["availablePermissionModes"])) {
       agent.availablePermissionModes = parseChoices(entry["availablePermissionModes"], true);
     }
-    if (isRecord2(entry["configOptions"])) {
+    if (isRecord(entry["configOptions"])) {
       agent.configOptions = stringRecordOrEmpty(entry["configOptions"]);
     }
     if (Array.isArray(entry["availableConfigOptions"])) {
@@ -24667,7 +24679,7 @@ function parseAcpAgentConfigs(value2) {
     const sandbox = entry["sandbox"];
     if (sandbox === false) {
       agent.sandbox = false;
-    } else if (isRecord2(sandbox) && Array.isArray(sandbox["allowedDomains"]) && sandbox["allowedDomains"].every((domain2) => typeof domain2 === "string")) {
+    } else if (isRecord(sandbox) && Array.isArray(sandbox["allowedDomains"]) && sandbox["allowedDomains"].every((domain2) => typeof domain2 === "string")) {
       agent.sandbox = { allowedDomains: sandbox["allowedDomains"] };
       if (Array.isArray(sandbox["homeDirs"]) && sandbox["homeDirs"].every((dir2) => typeof dir2 === "string")) {
         agent.sandbox.homeDirs = sandbox["homeDirs"];
@@ -24736,7 +24748,7 @@ var KNOWN_CONFIG_CATEGORIES, CLAUDE_ACP_COMMANDS, CODEX_ACP_COMMANDS;
 var init_acp = __esm({
   "src/shared/acp.ts"() {
     init_acp_known_agents();
-    init_unknown_value();
+    init_unknown_value2();
     init_reserved_prefixes();
     init_reserved_prefixes();
     init_model_selection();
@@ -33956,7 +33968,7 @@ var init_custom_providers_section = __esm({
     init_icons();
     init_inline_status();
     init_confirm_dialog();
-    init_unknown_value2();
+    init_unknown_value3();
     FIXED_PROVIDERS = [
       {
         id: "openai",
@@ -35055,7 +35067,7 @@ function lowContextAdvice(contextWindow, opts = {}) {
 var RECOMMENDED_MIN_CONTEXT_WINDOW, VRAM_CALCULATOR_URL, LM_STUDIO_CONTEXT_GUIDE_URL, CONTEXT_NEARLY_FULL_RATIO;
 var init_context_window_advice = __esm({
   "src/shared/context-window-advice.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     RECOMMENDED_MIN_CONTEXT_WINDOW = 16384;
     VRAM_CALCULATOR_URL = "https://apxml.com/tools/vram-calculator";
     LM_STUDIO_CONTEXT_GUIDE_URL = "https://github.com/copse-dev/agent-pane/blob/main/docs/lm-studio-context-persistence.md";
@@ -35414,7 +35426,7 @@ var init_lm_studio_section = __esm({
     init_lm_studio_defaults();
     init_helpers();
     init_inline_status();
-    init_unknown_value2();
+    init_unknown_value3();
   }
 });
 
@@ -43380,7 +43392,7 @@ var BACKEND_OPTIONS;
 var init_gh_cli_section = __esm({
   "src/renderer/views/setup/gh-cli-section.ts"() {
     init_dist();
-    init_errors3();
+    init_errors4();
     init_helpers();
     init_ui();
     BACKEND_OPTIONS = [
@@ -43542,12 +43554,12 @@ function canonicalRoleSelection(value2) {
 var init_model_routing_section = __esm({
   "src/renderer/views/setup/model-routing-section.ts"() {
     init_preferred_models();
-    init_array_utils();
+    init_array_utils2();
     init_lm_studio_defaults();
     init_model_options();
     init_model_picker();
     init_helpers();
-    init_unknown_value2();
+    init_unknown_value3();
     init_ui();
   }
 });
@@ -50596,7 +50608,7 @@ function mountSettingsDialog(store3, api3) {
 var PLUGIN_NAME_ACRONYMS, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingPluginDetail;
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
-    init_errors3();
+    init_errors4();
     init_auto_approval();
     init_state();
     init_dialog_shell();
@@ -50634,7 +50646,7 @@ var init_settings_dialog = __esm({
     init_web_origins();
     init_provider_hosts();
     init_command_routing();
-    init_unknown_value2();
+    init_unknown_value3();
     init_developer_mode();
     init_appearance();
     init_projects();
@@ -51101,7 +51113,7 @@ var init_project_groups = __esm({
   }
 });
 
-// src/shared/safe-json.ts
+// packages/std/src/safe-json.ts
 function decodeWithSchema(schema2) {
   return (value2) => {
     const result = schema2.safeParse(value2);
@@ -51123,7 +51135,14 @@ function safeJsonParse(text4, decoder2) {
   }
 }
 var init_safe_json = __esm({
+  "packages/std/src/safe-json.ts"() {
+  }
+});
+
+// src/shared/safe-json.ts
+var init_safe_json2 = __esm({
   "src/shared/safe-json.ts"() {
+    init_safe_json();
   }
 });
 
@@ -51133,7 +51152,7 @@ function serializeSidebarDrag(payload) {
 }
 function parseSidebarDrag(raw) {
   const parsed2 = safeJsonParse(raw);
-  if (!isRecord2(parsed2)) return null;
+  if (!isRecord(parsed2)) return null;
   const kind = parsed2["kind"];
   const id39 = parsed2["id"];
   if (kind !== "project" && kind !== "group") return null;
@@ -51158,8 +51177,8 @@ function isSidebarDrag(types2) {
 var SIDEBAR_DRAG_MIME, GROUP_EDGE_BAND;
 var init_projects_drag = __esm({
   "src/renderer/views/projects-drag.ts"() {
-    init_safe_json();
-    init_unknown_value2();
+    init_safe_json2();
+    init_unknown_value3();
     SIDEBAR_DRAG_MIME = "application/x-copse-panel-sidebar-item";
     GROUP_EDGE_BAND = 0.25;
   }
@@ -52494,7 +52513,7 @@ var outcomeCaptureSchema;
 var init_hook_run_detail = __esm({
   "src/shared/hooks/hook-run-detail.ts"() {
     init_zod();
-    init_safe_json();
+    init_safe_json2();
     outcomeCaptureSchema = external_exports.object({
       decision: external_exports.string().optional(),
       haltReason: external_exports.string().optional(),
@@ -239899,7 +239918,7 @@ var FRAME_START, FRAME_SEPARATOR, FRAME_END, VISUALIZE_OPERATOR, MAX_OPERATOR_CH
 var init_inline_visualization = __esm({
   "src/shared/inline-visualization.ts"() {
     init_zod();
-    init_safe_json();
+    init_safe_json2();
     FRAME_START = "\uE200";
     FRAME_SEPARATOR = "\uE202";
     FRAME_END = "\uE201";
@@ -240752,7 +240771,7 @@ function hasOpenTodos(todos) {
 var MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT;
 var init_agent_loop_guards = __esm({
   "packages/agent/src/agent-loop-guards.ts"() {
-    init_internal_utils();
+    init_unknown_value();
     MAX_TODO_CLOSEOUT_ATTEMPTS = 3;
     OPEN_TODOS_FINALIZE_NUDGE = `You still have open todos in the plan. Before finishing:
 1. Call update_todos (merge=true) to mark each finished item completed or cancel items you will not do.
@@ -241019,7 +241038,7 @@ var init_comparison_panel = __esm({
     init_retry_button();
     init_dist();
     init_file_links();
-    init_unknown_value2();
+    init_unknown_value3();
   }
 });
 
@@ -241096,7 +241115,7 @@ var init_retry_review_comparison = __esm({
 });
 
 // src/renderer/views/tool-args-format.ts
-function isRecord3(value2) {
+function isRecord2(value2) {
   return !!value2 && typeof value2 === "object" && !Array.isArray(value2);
 }
 function displayValue(value2) {
@@ -241122,7 +241141,7 @@ function normalizeValue(value2) {
 function normalizeDeep(value2) {
   const normalized = normalizeValue(value2);
   if (Array.isArray(normalized)) return normalized.map(normalizeDeep);
-  if (!isRecord3(normalized)) return normalized;
+  if (!isRecord2(normalized)) return normalized;
   return Object.fromEntries(
     Object.entries(normalized).map(([key, entry]) => [key, normalizeDeep(entry)])
   );
@@ -241136,14 +241155,14 @@ function optionalString2(value2) {
 }
 function terminalPayloadFrom(value2) {
   const normalized = normalizeDeep(value2);
-  if (!isRecord3(normalized)) return null;
+  if (!isRecord2(normalized)) return null;
   const success2 = normalizeValue(normalized["success"]);
-  if (isRecord3(success2)) {
+  if (isRecord2(success2)) {
     const { success: _success2, error: _error, ...meta5 } = normalized;
     return { status: "success", payload: success2, meta: meta5 };
   }
   const error53 = normalizeValue(normalized["error"]);
-  if (isRecord3(error53)) {
+  if (isRecord2(error53)) {
     const { success: _success2, error: _error, ...meta5 } = normalized;
     return { status: "error", payload: error53, meta: meta5 };
   }
@@ -241200,13 +241219,13 @@ function entriesForDisplay(value2) {
 }
 function unwrapResultEnvelope(value2) {
   value2 = normalizeValue(value2);
-  if (!isRecord3(value2)) return value2;
+  if (!isRecord2(value2)) return value2;
   const entries2 = Object.entries(value2);
   const [firstEntry] = entries2;
   if (entries2.length !== 1 || !firstEntry) return value2;
   const [key, rawEntry] = firstEntry;
   const entry = normalizeValue(rawEntry);
-  if ((key === "success" || key === "error") && isRecord3(entry)) return entry;
+  if ((key === "success" || key === "error") && isRecord2(entry)) return entry;
   return value2;
 }
 function formatReadableValue(value2, indent = 0) {
@@ -241218,7 +241237,7 @@ function formatReadableValue(value2, indent = 0) {
 ${rendered}` : ` ${rendered.trim()}`}`;
     }).join("\n");
   }
-  if (!isRecord3(unwrapped)) return `${" ".repeat(indent)}${displayValue(unwrapped)}`;
+  if (!isRecord2(unwrapped)) return `${" ".repeat(indent)}${displayValue(unwrapped)}`;
   return entriesForDisplay(unwrapped).map(([key, rawEntry]) => {
     const entry = normalizeValue(rawEntry);
     const pad3 = " ".repeat(indent);
@@ -241226,7 +241245,7 @@ ${rendered}` : ` ${rendered.trim()}`}`;
       return `${pad3}${key}:
 ${indentLines(entry.replace(/\n+$/, ""), indent + 2)}`;
     }
-    if (isRecord3(entry) || Array.isArray(entry)) {
+    if (isRecord2(entry) || Array.isArray(entry)) {
       return `${pad3}${key}:
 ${formatReadableValue(entry, indent + 2)}`;
     }
@@ -253943,7 +253962,7 @@ var init_handle_file_drop = __esm({
   "src/renderer/attachments/handle-file-drop.ts"() {
     init_video_media();
     init_archive_media();
-    init_unknown_value2();
+    init_unknown_value3();
     WORKSPACE_PATH_MIME = "application/x-copse-panel-path";
   }
 });
@@ -258489,7 +258508,7 @@ var init_input_bar = __esm({
     init_panel_mode_controls();
     init_guarded_yolo_control();
     init_active_thread_owner();
-    init_unknown_value2();
+    init_unknown_value3();
     init_acp();
     init_model_options();
     init_model_display();
@@ -269093,7 +269112,7 @@ var init_terminals_pane = __esm({
     init_selection_to_chat2();
     init_terminal_file_links();
     init_scoped_tabs();
-    init_array_utils();
+    init_array_utils2();
     init_xterm_scrollback();
     init_shell_catalog();
     init_read_terminal();
@@ -269123,7 +269142,7 @@ function stripAnsi(text4) {
   return text4.replace(ANSI_RE, "");
 }
 function shellCommandFromArgs(args) {
-  if (!isRecord2(args)) return null;
+  if (!isRecord(args)) return null;
   const command = args["command"];
   return typeof command === "string" && command.trim() ? command : null;
 }
@@ -269360,9 +269379,9 @@ var init_agent_tasks = __esm({
   "src/renderer/views/agent-tasks.ts"() {
     init_helpers();
     init_tool_display();
-    init_array_utils();
+    init_array_utils2();
     init_scoped_tabs();
-    init_unknown_value2();
+    init_unknown_value3();
     MAX_TASKS = 60;
     MAX_OUTPUT_CHARS = 2e5;
     ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
@@ -270366,7 +270385,7 @@ var init_git_changes_pane = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_pane_popout_seed();
-    init_array_utils();
+    init_array_utils2();
     init_toast();
     init_confirm_dialog();
     init_staged_diff_ui();
@@ -271312,7 +271331,7 @@ var init_pr_pane = __esm({
     init_pane_popout_button();
     init_pane_popout_seed();
     init_thread_helpers();
-    init_array_utils();
+    init_array_utils2();
     init_confirm_dialog();
     init_github_pr_url();
     init_remote_agent_link();
@@ -271653,7 +271672,7 @@ var init_memories_pane = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_knowledge_date();
-    init_unknown_value2();
+    init_unknown_value3();
     init_icons();
     init_pane_loading();
   }
@@ -273853,7 +273872,7 @@ var init_roadmap_pane = __esm({
     init_prompt_attachments();
     init_attachment_icons();
     init_image_expand();
-    init_unknown_value2();
+    init_unknown_value3();
     STATUS_OPTIONS = [
       "ready",
       "blocked",
@@ -274812,7 +274831,7 @@ var init_browser_pane = __esm({
     init_browser_url();
     init_artefact();
     init_browser_session();
-    init_unknown_value2();
+    init_unknown_value3();
     init_panels();
     init_prompt_attachments();
     init_toast();
@@ -293323,7 +293342,7 @@ var namedThreads;
 var init_thread_naming = __esm({
   "src/renderer/controller/thread-naming.ts"() {
     init_thread_helpers();
-    init_unknown_value2();
+    init_unknown_value3();
     namedThreads = /* @__PURE__ */ new Set();
   }
 });
@@ -293335,8 +293354,8 @@ function userContentToText(content) {
 }
 var init_remote_agent_stream = __esm({
   "src/shared/remote-agent-stream.ts"() {
-    init_array_utils();
-    init_unknown_value2();
+    init_array_utils2();
+    init_unknown_value3();
   }
 });
 
@@ -294749,7 +294768,7 @@ function clampNumber(val, fallback, min10, max10) {
   return clamp5(val, min10, max10);
 }
 function parseSavedLayout(raw) {
-  if (!isRecord2(raw)) return { ...DEFAULT_LAYOUT };
+  if (!isRecord(raw)) return { ...DEFAULT_LAYOUT };
   const saved = raw;
   return {
     projectsPaneWidth: clampNumber(
@@ -294925,7 +294944,7 @@ var init_pane_resizer = __esm({
   "src/renderer/views/pane-resizer.ts"() {
     init_layout();
     init_portrait_right_panel_layout();
-    init_unknown_value2();
+    init_unknown_value3();
   }
 });
 
