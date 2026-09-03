@@ -212,6 +212,31 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('keeps the filled queued action the same visual size as the outlined ones', () => {
+    const css = read('input-bar.css')
+    // Every chip in `.message-queued-actions` is already the same box, so no
+    // geometry assertion would have caught the bug this guards: "Send now" only
+    // *looked* a size larger than "Edit"/"Delete" because a saturated fill
+    // painted out to the border edge blooms, while a neutral chip reads as a
+    // hairline around a near-background fill. Clipping the fill to the padding
+    // box puts every chip's solid area in the same inner box. Chromium has no
+    // layout effect to observe here and happy-dom has no paint at all, so pin
+    // the declaration on the two filled variants.
+    for (const selector of ['.queued-action.queued-send-now', '.queued-action.queued-release']) {
+      assert.ok(
+        declares(css, selector, /background-clip:\s*padding-box/),
+        `${selector} must clip its fill to the padding box so it does not read larger than the outlined chips beside it`,
+      )
+    }
+    // The compensation is only sound while the boxes really are identical: it
+    // insets the fill by the border, so a filled chip that dropped the shared
+    // 1px border would shrink instead of matching.
+    assert.ok(
+      declares(css, '.queued-action', /border:\s*1px solid/),
+      '.queued-action must keep the 1px border the padding-box clip insets against',
+    )
+  })
+
   it('auto-sizes the composer to its content', () => {
     const css = read('input-bar.css')
     // The composer is a contenteditable (composer-editor.ts), which grows with

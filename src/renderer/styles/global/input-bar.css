@@ -457,9 +457,12 @@
   color: white;
   background: var(--warning, #d18616);
 }
+/* Held's primary action is the same filled chip in the same row of outlined
+   ones, so it takes the same padding-box clip — see `.queued-send-now` below. */
 .queued-action.queued-release {
   color: white;
   background: var(--accent);
+  background-clip: padding-box;
   border-color: transparent;
 }
 .queued-action.queued-release:hover {
@@ -488,10 +491,19 @@
   color: var(--text-primary);
   border-color: var(--text-muted);
 }
+/* Every chip in this row is the same box: same font, same padding, same 1px
+   border, stretched to one height by the flex row. A filled one still does not
+   read that way — a saturated fill painted out to the border edge blooms
+   against the dark card, while a neutral chip reads as a hairline around a
+   near-background fill, so "Send now" looks a size larger than the "Edit" and
+   "Delete" beside it. Clipping the fill to the padding box lands every chip's
+   solid area in the same inner box, which is the region the eye compares.
+   Geometry is untouched: these buttons were, and remain, the same size. */
 .queued-action.queued-send,
 .queued-action.queued-send-now {
   color: var(--text-on-accent);
   background: var(--accent);
+  background-clip: padding-box;
   border-color: transparent;
 }
 .queued-action.queued-send:hover,

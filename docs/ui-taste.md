@@ -97,6 +97,23 @@ class-name sugar (tests/docs do not count). Prefer extracting repeated **panel s
 (tabs+content, list+viewer chrome) over inventing more atom variants — see
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
 
+### A filled action reads larger than the outlined ones beside it
+
+In a row that mixes one filled action with outlined ones — the queued message's
+`Edit / Send now / Delete`, and any row shaped like it — the filled chip looks a size
+bigger even when every button in the row is provably the same box. It is not a layout
+bug and no geometry assertion catches it: a saturated fill painted out to the border
+edge blooms against a dark surface, while a neutral chip reads as a hairline around a
+near-background fill, so the eye compares two different regions.
+
+Reach for `background-clip: padding-box` on the filled variant rather than trimming its
+padding. The clip insets the fill by the shared 1px border, landing every chip's solid
+area in the same inner box; trimming padding does nothing anyway, because the flex row
+stretches all of them back to one height. Keep the border width the filled chip insets
+against — drop it and the fill shrinks instead of matching. Guarded by
+`keeps the filled queued action the same visual size as the outlined ones` in
+[`modern-css.test.ts`](../src/renderer/styles/modern-css.test.ts).
+
 ### Agent-authored dialog copy and secrets
 
 - Agent-authored prose in a dialog follows the same sanitized Markdown contract as transcript
