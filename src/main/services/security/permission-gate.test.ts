@@ -1531,11 +1531,22 @@ describe('formatGuardedYoloHarmPromptAdvice', () => {
   })
 
   it('caps enormous operands and total advice length', () => {
-    const hugeOperand = `script contents could not be inspected safely: ${'a/'.repeat(500)}z`
-    const advice = formatGuardedYoloHarmPromptAdvice([hugeOperand, hugeOperand, hugeOperand])
-    assert.ok(advice.length <= 1300)
-    assert.ok(advice.includes('…'))
-    assert.ok(advice.endsWith('Approve this bounded destructive action once?'))
+    // Operands must differ: reasons are deduped on their resolved text, so
+    // repeating one collapses to a single line and exercises neither cap.
+    const huge = (n: number): string =>
+      `script contents could not be inspected safely: ${'a/'.repeat(500)}${String(n)}`
+
+    // Per-reason cap, well inside the total budget.
+    const one = formatGuardedYoloHarmPromptAdvice([huge(0)])
+    assert.ok(one.includes('…'))
+    assert.ok(one.length < 400)
+
+    // Enough distinct reasons to overrun the total budget as well.
+    const many = formatGuardedYoloHarmPromptAdvice(Array.from({ length: 12 }, (_, i) => huge(i)))
+    assert.ok(many.length <= 1300)
+    assert.ok(many.length > 400)
+    assert.ok(many.includes('…'))
+    assert.ok(many.endsWith('Approve this bounded destructive action once?'))
   })
 })
 

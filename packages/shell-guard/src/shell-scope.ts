@@ -84,7 +84,7 @@ const CMD_POS = String.raw`(?:^|[\n|;&(])\s*`
 // this classifier (and to the file-blind safety classifier) — a hard escape even
 // under the sandbox, exactly like `node ./x.js`. Shared verbatim between the regex
 // entry and the token layer so the two dedupe against each other. (#581)
-const REASON_LOCAL_EXECUTABLE =
+const REASON_LOCAL_EXECUTABLE: ScopeReason =
   'executes an in-workspace file directly (contents opaque to analysis)'
 
 // Commands that clearly reach outside the workspace or network.
@@ -252,7 +252,7 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
 ]
 
 /** Shared so the chat-store waiver below can name the rule it may waive. */
-const REASON_HOME_PATH = 'home directory path (~/)'
+const REASON_HOME_PATH: ScopeReason = 'home directory path (~/)'
 
 // Paths that indicate access outside the workspace.
 const OUTSIDE_PATH_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> = [
@@ -302,10 +302,10 @@ const REGISTRY_REDIRECT_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> = [
 // means it cannot fall behind the regex baseline it is meant to reinforce.
 // Exact reason strings shared with the regex entries above, so token-derived and
 // regex-derived hits dedupe against each other.
-const REASON_INTERPRETER_FILE =
+const REASON_INTERPRETER_FILE: ScopeReason =
   'runs a local script via an interpreter (contents opaque to analysis)'
-const REASON_INTERPRETER_INLINE = 'inline script (interpreter -c/-e/--eval)'
-const REASON_BUILD_DRIVER =
+const REASON_INTERPRETER_INLINE: ScopeReason = 'inline script (interpreter -c/-e/--eval)'
+const REASON_BUILD_DRIVER: ScopeReason =
   'build driver may require host caches or system build services (xcodebuild/gradle/swift/cargo)'
 
 const HEREDOC_INTERPRETER = /\b(?:python3?|node|deno|bun|ruby|perl)\b/
@@ -456,11 +456,14 @@ function isHostDependentBuildDriver(exe: string, args: string[]): boolean {
  * harm gate and trusted-command routing; anything no lexer there can turn into a
  * plain argv is left entirely to the regex fallback.
  */
-function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHard: boolean } {
-  const reasons: string[] = []
+function tokenBasedExternalReasons(command: string): {
+  reasons: ScopeReason[]
+  hasHard: boolean
+} {
+  const reasons: ScopeReason[] = []
   let hasHard = false
 
-  const addReason = (reason: string): void => {
+  const addReason = (reason: ScopeReason): void => {
     if (!reasons.includes(reason)) reasons.push(reason)
   }
 
@@ -501,8 +504,8 @@ function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHar
 // (network download, install, git push, command substitution, …) rather than a
 // fuzzy `ambiguous` matcher. It decides whether the verdict is `external`
 // (prompt + run outside) or merely `ambiguous` (auto-run inside the sandbox).
-function collectExternalReasons(command: string): { reasons: string[]; hasHard: boolean } {
-  const reasons: string[] = []
+function collectExternalReasons(command: string): { reasons: ScopeReason[]; hasHard: boolean } {
+  const reasons: ScopeReason[] = []
   let hasHard = false
   const shellCommand = maskInterpreterHeredocBodies(command)
   const variants = [shellCommand, normalizeShellCommandForAnalysis(shellCommand)]
@@ -691,7 +694,7 @@ const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> 
 
 /** Destructive/resource-exhausting patterns that warrant a prompt even when sandboxed. */
 export function dangerousInSandboxReasons(command: string): string[] {
-  const reasons: string[] = []
+  const reasons: ScopeReason[] = []
   const variants = [command, normalizeShellCommandForAnalysis(command)]
   for (const text of variants) {
     for (const { re, reason } of DANGEROUS_IN_SANDBOX_PATTERNS) {
@@ -707,10 +710,13 @@ export function analyzeShellCommand(
 ): ShellScopeAnalysis {
   const trimmed = command.trim()
   if (!trimmed) {
-    return { verdict: 'sandbox', reasons: ['empty command'] }
+    return { verdict: 'sandbox', reasons: ['empty command'] satisfies ScopeReason[] }
   }
 
-  const { reasons, hasHard } = collectExternalReasons(trimmed)
+  const { reasons: scopeReasons, hasHard } = collectExternalReasons(trimmed)
+  // Widened here and only here: `referencesOutsideWorkspace` can return the one
+  // runtime-built reason, which by construction is not a `ScopeReason` key.
+  const reasons: string[] = scopeReasons
 
   // Outside-workspace filesystem access is always a hard escape: we want such
   // commands to prompt and run outside the sandbox, not attempt-then-retry.
@@ -722,7 +728,10 @@ export function analyzeShellCommand(
 
   if (reasons.length === 0) {
     // Local-only commands with no escape signals are sandbox-contained.
-    return { verdict: 'sandbox', reasons: ['no network or outside-path signals detected'] }
+    return {
+      verdict: 'sandbox',
+      reasons: ['no network or outside-path signals detected'] satisfies ScopeReason[],
+    }
   }
 
   // Only fuzzy "may reach" matchers fired → ambiguous: safe to auto-run inside an
@@ -807,12 +816,16 @@ export function isReplayableOpaqueLocalExecution(analysis: ShellScopeAnalysis): 
  * typecheck: a rule cannot ship without copy the person answering the prompt can
  * understand.
  *
- * Several identifiers deliberately map to the SAME sentence. A `-c` body and a
- * heredoc are one fact to whoever is approving ("this runs code I can't see"),
- * and `--eval` trips the generic dynamic-execution matcher as well as the
- * interpreter one. `describeShellScopeReasons` dedupes on the resolved text, so
- * the dialog states each distinct concern once instead of listing the two or
- * three internal rules that happened to fire.
+ * Some identifiers deliberately map to the SAME sentence, and
+ * `describeShellScopeReasons` dedupes on the resolved text, so the rules that
+ * describe one fact contribute one line: a `-c` body and a heredoc are both
+ * "this runs code I can't see" to whoever is approving, and `~/` and `$HOME`
+ * are both "in your home directory".
+ *
+ * Rules describing DIFFERENT facts keep different sentences even when they fire
+ * together. `node --eval x` reports both the interpreter rule and the generic
+ * dynamic-execution one, because `--eval` matches both; the two sentences are
+ * worded so the second adds something rather than restating the first.
  */
 const SCOPE_REASON_TEXT = {
   // Network reach
@@ -869,8 +882,7 @@ const SCOPE_REASON_TEXT = {
     "Runs a script written inside the command itself, so Copse can't tell what it does",
   'heredoc script fed to an interpreter':
     "Runs a script written inside the command itself, so Copse can't tell what it does",
-  'dynamic execution / encoding':
-    "Builds and runs code as it goes (eval/exec/base64), so Copse can't tell what it does",
+  'dynamic execution / encoding': 'Builds and runs code as it goes (eval/exec/base64)',
   'runs a local script via an interpreter (contents opaque to analysis)':
     "Runs a script file from the project, so Copse can't tell what it does",
   'executes an in-workspace file directly (contents opaque to analysis)':

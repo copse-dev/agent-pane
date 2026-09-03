@@ -73,15 +73,19 @@ decision spine, so they must stay stable — which is why they read like rules
 
 `shell-scope.ts` therefore keeps a second table, `SCOPE_REASON_TEXT`, holding one plain-English
 sentence per reason, and `describeShellScopeReasons` resolves a reason list into sentences at the
-moment a prompt is built. The prompt formatters in `permission-policy.ts` render those as a bullet
-per line. Logs, hooks and the decision spine keep the identifiers.
+moment a prompt is built. The shell prompt formatters in `permission-policy.ts` render those as a
+bullet per line; the Guarded YOLO harm prompt resolves the same sentences but keeps its existing
+one-paragraph `Potential harm: …` shape, because it is capped by length rather than by line. Logs,
+hooks and the decision spine keep the identifiers.
 
 Two properties this contract depends on:
 
 - **Every rule has copy.** `ScopeReason` is derived from the keys of `SCOPE_REASON_TEXT` and
-  annotates the pattern tables, so a new classifier rule whose reason has no sentence fails to
-  typecheck. Reasons built at runtime (`absolute path outside workspace: …`) are matched by prefix;
-  anything still unrecognised is shown verbatim rather than dropped.
+  annotates the pattern tables, the shared reason constants, and the accumulators both classifier
+  passes push through, so a new classifier rule whose reason has no sentence fails to typecheck.
+  The one deliberate exception is the runtime-built `absolute path outside workspace: …`, which
+  bakes in an operand and so is matched by prefix instead; anything still unrecognised is shown
+  verbatim rather than dropped.
 - **One concern, one line.** Deduping happens on the resolved sentence, so rules that describe the
   same underlying fact collapse — a heredoc and a `-c` body are both "runs a script written inside
   the command itself", and `~/` and `$HOME` are both "in your home directory".

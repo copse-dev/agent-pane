@@ -307,6 +307,17 @@ describe('approval dialog coalescing', () => {
       '• Downloads from the internet (curl/wget)',
       '• Reads or writes in your home directory, outside the project',
     ])
+
+    // Each bullet is its own box so a reason too long for the dialog wraps with a
+    // hanging indent; the lead-in line is not one. The newlines live between them,
+    // so the advice element's text is still exactly what the main process sent.
+    assert.deepEqual(
+      [...advice.querySelectorAll('.approval-advice-item')].map((node) => node.textContent),
+      [
+        '• Downloads from the internet (curl/wget)',
+        '• Reads or writes in your home directory, outside the project',
+      ],
+    )
   })
 
   it('renders bodyAdvice and bodyFooter outside the monospaced command block', () => {
