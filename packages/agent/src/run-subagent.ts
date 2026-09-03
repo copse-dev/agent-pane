@@ -1,4 +1,4 @@
-import { errorMessage } from './internal-utils.ts'
+import { errorMessage } from '@copse/std/errors.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import { defaultMaxLlmCallsForSteps } from './agent-loop-limits.ts'
 import {

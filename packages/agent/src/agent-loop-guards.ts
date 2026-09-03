@@ -1,5 +1,5 @@
 import type { TodoItem } from './wire-types.ts'
-import { isRecord } from './internal-utils.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 /** Tools that only gather context — repeating them often indicates a stuck loop. */
 export const EXPLORE_TOOL_NAMES = new Set([

@@ -182,6 +182,8 @@
     "@copse/agent": "workspace:*",
     "@copse/llm": "workspace:*",
     "@copse/plan-usage": "workspace:*",
+    "@copse/shell-guard": "workspace:*",
+    "@copse/std": "workspace:*",
     "@copse/streaming-markdown": "^1.1.0",
     "@electron/rebuild": "^4.2.0",
     "@eslint/js": "^10.0.1",
