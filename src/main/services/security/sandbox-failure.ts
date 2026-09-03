@@ -2,7 +2,7 @@ import type { ShellPromptParts } from './permission-policy.ts'
 import { flattenShellPromptParts } from './permission-policy.ts'
 
 /**
- * Detect when a shell command failed because the macOS project sandbox blocked it.
+ * Detect when a shell command failed because the project sandbox blocked it.
  *
  * SECURITY (issue #104): this detection must NOT use command-controlled stdout/stderr.
  * A command can trivially `echo "operation not permitted"` to fake a sandbox failure
@@ -57,7 +57,7 @@ export function formatUnsandboxedPromptParts(command: string, reasons: string[])
   const detail = reasons.length ? reasons.join('; ') : 'sandbox restriction suspected'
   return {
     command,
-    bodyAdvice: `This command failed inside the macOS project sandbox (${detail}).`,
+    bodyAdvice: `This command failed inside the project sandbox (${detail}).`,
     bodyFooter: 'Allow running it once without sandbox restrictions?',
   }
 }

@@ -1,6 +1,10 @@
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
+import {
+  analyzeShellCommand,
+  dangerousInSandboxReasons,
+  describeShellScopeReasons,
+} from './shell-scope.ts'
 import type { ShellHarmDecision } from './shell-harm.ts'
 import type { ClassificationResult } from './safety-classifier.ts'
 import { isWebOriginAllowed, parseFetchUrl, webOriginKey } from './web-origin-policy.ts'
@@ -297,10 +301,25 @@ export function shellPromptToApprovalFields(parts: ShellPromptParts): {
   }
 }
 
+/**
+ * The classifier's reasons as the person answering the prompt reads them: one
+ * plain sentence per distinct concern, resolved by `describeShellScopeReasons`
+ * from the rule identifiers the classifier records.
+ *
+ * Bulleted even for a single reason, so the copy has one shape however many
+ * rules fired and a long sentence wraps under its own marker instead of
+ * trailing off the end of a paragraph.
+ */
+function reasonList(reasons: readonly string[]): string {
+  return describeShellScopeReasons(reasons)
+    .map((line) => `• ${line}`)
+    .join('\n')
+}
+
 export function formatShellPromptParts(command: string, reasons: string[]): ShellPromptParts {
   return {
     command,
-    ...(reasons.length ? { bodyFooter: `Reason: ${reasons.join('; ')}` } : {}),
+    ...(reasons.length ? { bodyFooter: `Why this needs approval:\n${reasonList(reasons)}` } : {}),
   }
 }
 
@@ -337,6 +356,13 @@ export function formatPortBindingPromptParts(
   }
 }
 
+/**
+ * Stand-in when the caller had no reasons to pass on, so the prompt still says
+ * something. It travels as a reason: `describeShellScopeReasons` passes text it
+ * does not recognise through unchanged.
+ */
+const NEEDS_OUTSIDE_ACCESS: readonly string[] = ['Needs network or outside-project access']
+
 export function formatExternalSandboxPromptBody(command: string, reasons: string[]): string {
   return flattenShellPromptParts(formatExternalSandboxPromptParts(command, reasons))
 }
@@ -345,10 +371,14 @@ export function formatExternalSandboxPromptParts(
   command: string,
   reasons: string[],
 ): ShellPromptParts {
-  const detail = reasons.length ? reasons.join('; ') : 'network or outside-workspace access'
   return {
     command,
-    bodyAdvice: `This command needs access the macOS project sandbox blocks (${detail}).`,
+    // The platform is deliberately unnamed: this prompt only appears while a
+    // project sandbox is active, which is seatbelt on macOS and bubblewrap on
+    // Linux, and naming the wrong one is worse than naming none.
+    bodyAdvice: `The project sandbox would block this command:\n${reasonList(
+      reasons.length ? reasons : NEEDS_OUTSIDE_ACCESS,
+    )}`,
     bodyFooter: 'Allow running it once outside the sandbox?',
   }
 }
@@ -367,13 +397,13 @@ export function formatExpectedSandboxBlockPromptParts(
   command: string,
   reasons: string[],
 ): ShellPromptParts {
-  const detail = reasons.length ? reasons.join('; ') : 'network or outside-workspace access'
   return {
     command,
     bodyAdvice:
-      `The agent expects this command to need access the macOS project sandbox blocks ` +
-      `(${detail}) and is asking to run it outside the sandbox up front, rather than ` +
-      'letting it fail inside first.',
+      `The agent expects the project sandbox to block this command:\n${reasonList(
+        reasons.length ? reasons : NEEDS_OUTSIDE_ACCESS,
+      )}\n\n` +
+      'It is asking to run outside the sandbox up front, rather than letting it fail inside first.',
     bodyFooter:
       "This is the agent's expectation, not a confirmed sandbox block. " +
       'Allow running it once outside the sandbox?',
