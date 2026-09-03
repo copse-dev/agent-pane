@@ -141,6 +141,21 @@ export const followUpContextSchema = z.object({
 })
 
 /**
+ * `gh:createPrForThread` request. Every field reaches `gh pr create` as an
+ * argument, so the shape is pinned and bounded rather than forwarded. Branch
+ * bounds match `git:checkoutBranch`; owner/repo match the PR-ref handlers.
+ */
+export const zPrCreateRequest = z.object({
+  title: z.string().min(1).max(300),
+  body: z.string().max(20_000).optional(),
+  base: z.string().min(1).max(256).optional(),
+  head: z.string().min(1).max(256).optional(),
+  draft: z.boolean().optional(),
+  owner: z.string().min(1).max(128).optional(),
+  repo: z.string().min(1).max(128).optional(),
+})
+
+/**
  * `hooks:test` request (G2 dry-run tester). The renderer echoes back a
  * discovered hook's identity from Sources; validate it so a compromised
  * renderer cannot smuggle an arbitrary command through the dry-run spawn — the

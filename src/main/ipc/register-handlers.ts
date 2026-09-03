@@ -55,6 +55,7 @@ import {
   zPathString,
   zProjectId,
   zThreadId,
+  zPrCreateRequest,
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
@@ -300,6 +301,7 @@ import {
   markPrReady,
   rerunFailedPrRuns,
 } from '../services/github/gh-pr-actions-service.ts'
+import { createPrForThread } from '../services/github/pr-create-service.ts'
 import {
   getMcpServerStatuses,
   reloadMcpServers,
@@ -2298,6 +2300,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     repo: parseIpcArgs(z.string().min(1).max(128), [repo]),
     number: parseIpcArgs(z.number().int().positive(), [number]),
   })
+  // The "Create PR" chip's second half. Runs the same `createPrForThread` the
+  // `gh_pr_create` tool does — trailer, target resolution and thread linking
+  // included — so a PR opened from the dialog is indistinguishable from one the
+  // agent opened. No model call: by this point the user has settled every
+  // argument, and the dialog they just confirmed is the decision to publish.
+  ipcMain.handle(
+    'gh:createPrForThread',
+    async (event, projectIdArg: unknown, threadIdArg: unknown, requestArg: unknown) => {
+      assertMainFrameSender(event, win)
+      const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+      const request = parseIpcArgs(zPrCreateRequest, [requestArg])
+      const context = await resolveThreadExecutionContext(projectId, threadId)
+      return createPrForThread(request, context)
+    },
+  )
   ipcMain.handle('gh:rerunFailedRuns', (event, owner: unknown, repo: unknown, number: unknown) => {
     assertMainFrameSender(event, win)
     return rerunFailedPrRuns(parsePrRef(owner, repo, number))

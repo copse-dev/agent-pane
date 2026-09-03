@@ -15,7 +15,7 @@ import {
   pluginFollowUpConditionMet,
   parseModelFollowUpIds,
 } from './follow-up-service.ts'
-import { buildContinuePlanSuggestion } from '@shared/follow-ups/presets.ts'
+import { buildContinuePlanSuggestion, buildCreatePrPrompt } from '@shared/follow-ups/presets.ts'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import { definePlugin, type RegisteredPlugin } from '@copse/agent/plugins/plugin-manifest.ts'
 import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
@@ -237,6 +237,7 @@ describe('continue-plan deterministic bubble', () => {
     hasMergeConflicts: false,
     hasCiFailures: false,
     changeStats: null,
+    canOpenPr: false,
   }
 
   it('leads with the plan when open todos survive the turn', () => {
@@ -266,6 +267,72 @@ describe('continue-plan deterministic bubble', () => {
       toolNames: [],
     })
     assert.deepEqual(suggestions, [])
+  })
+})
+
+describe('create-pr deterministic bubble', () => {
+  const base = {
+    branch: 'feature/x',
+    hasOpenPr: false,
+    hasMergeConflicts: false,
+    hasCiFailures: false,
+    changeStats: { additions: 118, deletions: 36 },
+    canOpenPr: true,
+  }
+  const turn = { userMessage: 'make a pr', assistantMessage: 'Done.', toolNames: [] }
+
+  it('offers the PR bubble right after the changeset chip', () => {
+    assert.deepEqual(
+      buildDeterministicFollowUps(base, turn).map((s) => s.id),
+      ['changes', 'create-pr'],
+    )
+  })
+
+  it('opens the dialog rather than sending its prompt', () => {
+    const pr = buildDeterministicFollowUps(base, turn).find((s) => s.id === 'create-pr')
+    assert.equal(pr?.action, 'create-pr')
+  })
+
+  it('stays offered once the agent has committed and git status is clean', () => {
+    // canOpenPr covers committed-but-unpublished work, which is exactly the
+    // state a turn that ends in a commit leaves behind.
+    const suggestions = buildDeterministicFollowUps({ ...base, changeStats: null }, turn)
+    assert.deepEqual(
+      suggestions.map((s) => s.id),
+      ['create-pr'],
+    )
+  })
+
+  it('is withheld when the branch already has an open PR', () => {
+    const suggestions = buildDeterministicFollowUps(
+      { ...base, hasOpenPr: true, canOpenPr: false },
+      turn,
+    )
+    assert.equal(
+      suggestions.some((s) => s.id === 'create-pr'),
+      false,
+    )
+  })
+})
+
+describe('buildCreatePrPrompt', () => {
+  it('carries the title and asks for a draft', () => {
+    const prompt = buildCreatePrPrompt({ title: 'Roll up tool activity', draft: true })
+    assert.match(prompt, /Use this title: Roll up tool activity/)
+    assert.match(prompt, /--draft/)
+  })
+
+  it('states "not a draft" explicitly rather than staying silent', () => {
+    // Omitting the draft line would let the agent pick, and the checkbox the
+    // user just left unticked is a decision, not an absence.
+    const prompt = buildCreatePrPrompt({ title: 'Fix the footer', draft: false })
+    assert.match(prompt, /ready for review, not as a draft/)
+    assert.equal(prompt.includes('--draft'), false)
+  })
+
+  it('omits the title line when the field was left blank', () => {
+    const prompt = buildCreatePrPrompt({ title: '   ', draft: false })
+    assert.equal(prompt.includes('Use this title'), false)
   })
 })
 

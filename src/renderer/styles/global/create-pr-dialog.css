@@ -1,0 +1,100 @@
+#create-pr-dialog {
+  max-width: 460px;
+}
+.create-pr-dialog h3 {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+.create-pr-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.create-pr-dialog-field + .create-pr-dialog-field {
+  margin-top: var(--spacing-md);
+}
+.create-pr-dialog-field label {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.create-pr-dialog-title-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--font-size-base);
+}
+.create-pr-dialog-title-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.create-pr-dialog-body-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  resize: vertical;
+}
+.create-pr-dialog-body-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+/* While the proposal is in flight the field is empty and its placeholder reads
+   "Writing a description…" — pulse it so the wait is visibly the app's, not a
+   field the user is expected to fill this second. */
+.create-pr-dialog-body-input.is-pending::placeholder {
+  animation: create-pr-body-pending 1.4s ease-in-out infinite;
+}
+@keyframes create-pr-body-pending {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+/* The draft toggle sits with the title, not among the buttons: it is part of
+   what is being described, not a second confirmation. */
+.create-pr-dialog-draft {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.create-pr-dialog-draft-toggle {
+  /* Optical alignment with the first line of label text beside it. */
+  margin-top: 1px;
+}
+.create-pr-dialog-draft-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.create-pr-dialog-draft-text label {
+  cursor: pointer;
+}
+.create-pr-dialog-draft-hint {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.create-pr-dialog-hint {
+  margin: var(--spacing-md) 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+.create-pr-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}

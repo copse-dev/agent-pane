@@ -224,6 +224,16 @@
 .follow-up-bubble-changes .follow-up-label {
   color: var(--text-muted);
 }
+/* The only bubble that publishes anything: accented so it reads as the offer,
+   not as another neutral chip. */
+.follow-up-bubble-create-pr {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--text);
+}
+.follow-up-bubble-create-pr:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+  border-color: var(--accent);
+}
 .follow-up-stat-add {
   color: #3dd68c;
   font-weight: 500;
