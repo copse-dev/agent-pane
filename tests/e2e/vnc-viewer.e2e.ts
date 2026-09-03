@@ -125,8 +125,12 @@ function attachRfb38AuthenticationFailure(
   onUsername: (username: string) => void,
 ): void {
   let state:
-    'version' | 'security' | 'vencrypt-version' | 'vencrypt-subtype' | 'credentials' | 'done' =
-    'version'
+    | 'version'
+    | 'security'
+    | 'vencrypt-version'
+    | 'vencrypt-subtype'
+    | 'credentials'
+    | 'done' = 'version'
   let buffered = Buffer.alloc(0)
   socket.write('RFB 003.008\n')
   socket.on('data', (chunk: Buffer) => {
@@ -342,15 +346,34 @@ describe('VNC viewer', function () {
       'kingston-mac-mini · jonathankingston@localhost',
     ])
     assert.doesNotMatch(machineOptions.join('\n'), /test-mac-box/)
-    assert.match(await $('.vnc-nearby-status').getText(), /1 matched to saved SSH/i)
+    assert.equal(await $('.vnc-nearby-status').isDisplayed(), false)
     assert.equal(await $('.vnc-nearby-btn').isDisplayed(), false)
+    const deviceSummaries = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLElement>('.vnc-device')].map((item) => ({
+        name: item.querySelector('.vnc-device-name')?.textContent ?? '',
+        meta: item.querySelector('.vnc-device-meta')?.textContent ?? '',
+      })),
+    )
+    assert.deepEqual(
+      deviceSummaries.map(({ name }) => name),
+      ['This machine', 'Studio Mac', 'Add device', 'kingston-mac-mini'],
+    )
+    assert.equal(deviceSummaries.length, 4)
+    assert.equal(await $('.vnc-device.is-selected .vnc-device-name').getText(), 'This machine')
+    assert.equal(
+      await $('.vnc-device.is-selected .vnc-device-header').getAttribute('aria-expanded'),
+      'true',
+    )
+    assert.equal(await $('.vnc-setup-username-field').isDisplayed(), true)
+    assert.equal(await $('.vnc-setup-password-field').isDisplayed(), true)
+    assert.equal(await $('.vnc-connect-btn').getText(), 'Sign in & connect')
+    assert.match(deviceSummaries[1]?.meta ?? '', /Nearby.*studio\.local:5900/i)
+    assert.match(deviceSummaries[3]?.meta ?? '', /Saved SSH.*jonathankingston@localhost/i)
 
-    const machineSelect = $('.vnc-machine-select')
     const previousFilesWidth = await browser.execute(() => {
       const body = document.getElementById('body')
       const previous = body?.style.getPropertyValue('--files-width') ?? ''
-      body?.style.setProperty('--files-width', '700px')
-      document.querySelector<HTMLSelectElement>('.vnc-machine-select')?.setAttribute('size', '6')
+      body?.style.setProperty('--files-width', '520px')
       window.dispatchEvent(new Event('resize'))
       return previous
     })
@@ -359,13 +382,17 @@ describe('VNC viewer', function () {
       const body = document.getElementById('body')
       if (filesWidth) body?.style.setProperty('--files-width', filesWidth)
       else body?.style.removeProperty('--files-width')
-      document.querySelector<HTMLSelectElement>('.vnc-machine-select')?.removeAttribute('size')
       window.dispatchEvent(new Event('resize'))
     }, previousFilesWidth)
-    await machineSelect.selectByAttribute('value', 'network:manual')
+    await $('.vnc-device-header[data-machine="network:manual"]').click()
     const addressInput = $('.vnc-address-input')
     await addressInput.waitForDisplayed()
+    assert.equal(await $('.vnc-device.is-selected .vnc-device-name').getText(), 'Add device')
+    assert.equal(await $('.vnc-setup-username-field').isDisplayed(), true)
+    assert.equal(await $('.vnc-setup-password-field').isDisplayed(), true)
+    assert.equal(await $('.vnc-connect-btn').getText(), 'Sign in & connect')
     assert.equal(await portInput.getValue(), '5900')
+    await saveElementScreenshot('#pane-files', 'vnc-viewer-add-device.png')
     await addressInput.setValue('192.168.1.20:5901')
     assert.match(await $('.vnc-network-warning').getText(), /unencrypted/i)
     await $('.vnc-connect-btn').click()
@@ -374,7 +401,7 @@ describe('VNC viewer', function () {
     assert.match(await $('.confirm-dialog-message').getText(), /192\.168\.1\.20:5901/)
     assert.match(await $('.confirm-dialog-detail').getText(), /does not encrypt/i)
     await $('.confirm-dialog-cancel').click()
-    await machineSelect.selectByAttribute('value', 'local')
+    await $('.vnc-device-header[data-machine="local"]').click()
 
     // macOS Screen Sharing often yields exactly one local RFB; Linux CI has none.
     // Wait for discovery to leave the in-flight copy, then only pin the one-port
@@ -502,13 +529,31 @@ describe('VNC viewer', function () {
     await advancedSummary.click()
     await browser.waitUntil(async () => !(await portInput.isDisplayed()))
     if (secureCredentialStorage) {
+      const savedTarget = { kind: 'loopback', port } as const
       assert.equal(
         await browser.execute(
-          (savedTarget) => window.api.vnc.rememberPassword(savedTarget, 'saved-password'),
-          { kind: 'loopback', port } as const,
+          (target) => window.api.vnc.rememberUsername(target, 'saved-user'),
+          savedTarget,
         ),
         true,
       )
+      assert.equal(
+        await browser.execute(
+          (target) => window.api.vnc.rememberPassword(target, 'saved-password'),
+          savedTarget,
+        ),
+        true,
+      )
+      await browser.execute(() => {
+        document
+          .querySelector<HTMLInputElement>('.vnc-port-input')
+          ?.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await $('.vnc-saved-login').waitForDisplayed()
+      assert.match(await $('.vnc-saved-login').getText(), /Signed in as saved-user/i)
+      assert.equal(await $('.vnc-setup-credentials').isDisplayed(), false)
+      assert.equal(await $('.vnc-connect-btn').getText(), 'Connect')
+      await saveElementScreenshot('#pane-files', 'vnc-viewer-saved-device-details.png')
     }
     await $('.vnc-connect-btn').click()
 

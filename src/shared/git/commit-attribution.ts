@@ -43,3 +43,15 @@ export function appendCommitAttribution(message: string, models: string[]): stri
   if (body.includes(COPSE_COAUTHOR)) return `${body}\n`
   return `${body}\n\n${buildCommitAttribution(models)}\n`
 }
+
+/**
+ * Append the same attribution block to a pull request body, so a PR Copse
+ * opened credits the run the way its commits do. Delegates to
+ * {@link appendCommitAttribution} (same trim, same idempotence check); the one
+ * extra case is an empty body, which yields the trailer alone rather than a
+ * leading blank line.
+ */
+export function appendPrBodyAttribution(body: string, models: string[]): string {
+  if (!body.trim()) return `${buildCommitAttribution(models)}\n`
+  return appendCommitAttribution(body, models)
+}

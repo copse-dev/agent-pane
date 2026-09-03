@@ -43,11 +43,6 @@ describe('lm-studio-models source integrity', () => {
       'lm-studio-models.ts must remain plain UTF-8 text (null bytes break tooling and cache keys)',
     )
   })
-
-  it('builds LM Studio cache keys from url and api key only', () => {
-    const src = readFileSync(SOURCE_PATH, 'utf8')
-    assert.match(src, /const cacheKey = `\$\{url\}\$\{key\}`/)
-  })
 })
 
 describe('subagent local model routing', () => {
@@ -117,6 +112,24 @@ describe('subagent local model routing', () => {
     const route = await buildSubagentRoute('gpt-4o')
     assert.ok(route)
     assert.equal(route.contextWindow, 8192)
+  })
+
+  /**
+   * Onboarding writes an `auto:` rule into every role it configures, so a role
+   * setting routinely holds a rule rather than an id. It used to reach
+   * `buildProvider` as `lmstudio:auto:best-local` -- the legacy bare-id upgrade
+   * prefixing a value that was never an id -- and route to a model that cannot
+   * exist. `usageModel` matters as much as the provider: the ledger has to name
+   * the model that actually ran, not the rule that chose it.
+   */
+  it('expands a rule stored on a role instead of routing to it as an id', async () => {
+    setSetting('subagentModel', 'auto:best-local')
+    restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'default-local' }] }))
+
+    const route = await buildSubagentRoute('claude-sonnet-4-6')
+    assert.ok(route)
+    assert.ok(!route.usageModel.startsWith('lmstudio:auto:'))
+    assert.ok(!route.usageModel.includes('auto:'))
   })
 
   it('defaults review to an on-device model', async () => {
@@ -400,6 +413,77 @@ describe('listLmStudioModels cache', () => {
     await listLmStudioModels()
     setApiKey('lmstudio', 'other-key')
     await listLmStudioModels()
+    assert.equal(fetchMock.mock.callCount(), 4)
+  })
+
+  it('does not collide when different URL and key pairs have the same concatenation', async () => {
+    setSetting('localServerUrl', 'http://127.0.0.1:1234/v1a')
+    setApiKey('lmstudio', 'b')
+    fetchMock = mock.fn<typeof fetch>(async (input) => {
+      const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url
+      return jsonResponse({ data: [{ id: url.includes('/v1a/') ? 'first' : 'second' }] })
+    })
+    restoreFetch?.()
+    restoreFetch = stubFetch(fetchMock)
+    assert.deepEqual(await listLmStudioModels(), ['first'])
+
+    setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
+    setApiKey('lmstudio', 'ab')
+    assert.deepEqual(await listLmStudioModels(), ['second'])
+    assert.equal(fetchMock.mock.callCount(), 4)
+  })
+
+  it('coalesces overlapping model-list requests', async () => {
+    const resolvers: Array<(response: Response) => void> = []
+    fetchMock = mock.fn<typeof fetch>(
+      async () => new Promise<Response>((resolve) => resolvers.push(resolve)),
+    )
+    restoreFetch?.()
+    restoreFetch = stubFetch(fetchMock)
+
+    const first = listLmStudioModels()
+    const second = listLmStudioModels()
+    assert.equal(fetchMock.mock.callCount(), 2)
+    const resolveOpenAi = resolvers[0]
+    const resolveNative = resolvers[1]
+    if (!resolveOpenAi || !resolveNative)
+      assert.fail('Model response resolvers were not initialized')
+    resolveOpenAi(jsonResponse({ data: [{ id: 'coalesced' }] }))
+    resolveNative(jsonResponse({ models: [] }))
+    assert.deepEqual(await first, ['coalesced'])
+    assert.deepEqual(await second, ['coalesced'])
+  })
+
+  it('does not let an invalidated request repopulate the cache', async () => {
+    const resolvers: Array<(response: Response) => void> = []
+    fetchMock = mock.fn<typeof fetch>(
+      async () => new Promise<Response>((resolve) => resolvers.push(resolve)),
+    )
+    restoreFetch?.()
+    restoreFetch = stubFetch(fetchMock)
+
+    const stale = listLmStudioModels()
+    invalidateLmStudioModelsCache()
+    const fresh = listLmStudioModels()
+    assert.equal(fetchMock.mock.callCount(), 4)
+    const resolveFreshOpenAi = resolvers[2]
+    const resolveFreshNative = resolvers[3]
+    if (!resolveFreshOpenAi || !resolveFreshNative) {
+      assert.fail('Fresh model response resolvers were not initialized')
+    }
+    resolveFreshOpenAi(jsonResponse({ data: [{ id: 'fresh' }] }))
+    resolveFreshNative(jsonResponse({ models: [] }))
+    assert.deepEqual(await fresh, ['fresh'])
+    const resolveStaleOpenAi = resolvers[0]
+    const resolveStaleNative = resolvers[1]
+    if (!resolveStaleOpenAi || !resolveStaleNative) {
+      assert.fail('Stale model response resolvers were not initialized')
+    }
+    resolveStaleOpenAi(jsonResponse({ data: [{ id: 'stale' }] }))
+    resolveStaleNative(jsonResponse({ models: [] }))
+    assert.deepEqual(await stale, ['stale'])
+
+    assert.deepEqual(await listLmStudioModels(), ['fresh'])
     assert.equal(fetchMock.mock.callCount(), 4)
   })
 })

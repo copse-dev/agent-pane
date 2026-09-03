@@ -31,6 +31,33 @@ describe('ToolRegistry', () => {
     setPermissionGateForTests(null)
   })
 
+  it('passes the run abort signal into the permission gate', async () => {
+    const controller = new AbortController()
+    let gateSignal: AbortSignal | undefined
+    let executed = false
+    setPermissionGateForTests(async (_check, signal?: AbortSignal) => {
+      gateSignal = signal
+      return false
+    })
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'gated',
+      description: 'requires approval',
+      parameters: z.object({}),
+      execute: async () => {
+        executed = true
+        return 'ran'
+      },
+    })
+
+    const result = await reg.execute('gated', {}, controller.signal)
+
+    assert.equal(gateSignal, controller.signal)
+    assert.equal(result, 'User rejected the gated tool call.')
+    assert.equal(executed, false)
+    setPermissionGateForTests(null)
+  })
+
   // H2 (docs/plans/hooks-and-feature-packs.md): a toolGate hook's injected
   // context is stamped onto the check by the gate; the runner appends it to the
   // tool result so the model reads it in the current turn.

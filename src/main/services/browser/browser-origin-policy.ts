@@ -5,7 +5,12 @@
  * SSRF-style pivots from an agent-controlled URL.
  *
  * Kept free of Electron imports so it runs under the bundled unit-test runner.
+ *
+ * Address parsing is shared with the credential-URL and fetch_url rules
+ * (`credential-url.ts`); only the range table below is the browser's own, since
+ * loopback is allowed here rather than blocked.
  */
+import { embeddedIpv4, parseIpv6Hextets } from '@copse/llm/credential-url.ts'
 
 export const BROWSER_TOOLS = new Set([
   'browser_preview',
@@ -89,37 +94,59 @@ function stripIpv6Brackets(hostname: string): string {
   return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
 }
 
+/**
+ * The IPv4 address `host` denotes, written plainly or carried inside an IPv6
+ * literal. `[::ffff:169.254.169.254]` reaches the same host as
+ * `169.254.169.254`, so it has to be classified the same way.
+ */
+function ipv4For(host: string): [number, number, number, number] | null {
+  return parseIpv4(host) ?? parseIpv4(embeddedIpv4(host) ?? '')
+}
+
 /** Loopback targets (localhost dev servers) — the primary supported workflow. */
 export function isLoopbackHost(hostname: string): boolean {
   const host = stripIpv6Brackets(hostname)
   if (host === 'localhost' || host.endsWith('.localhost')) return true
-  if (host === '::1' || host === '0:0:0:0:0:0:0:1') return true
-  // 127.0.0.0/8
-  const v4 = parseIpv4(host)
-  if (v4 && v4[0] === 127) return true
-  return false
+  const hextets = parseIpv6Hextets(host)
+  // ::1 in any spelling, including the fully written-out form.
+  if (hextets && hextets.every((group, index) => group === (index === 7 ? 1 : 0))) return true
+  const v4 = ipv4For(host)
+  return v4 !== null && v4[0] === 127 // 127.0.0.0/8
 }
 
 /**
  * Private, link-local, and cloud-metadata targets. Denied so an agent cannot use
  * the headless browser to reach internal services the user never intended to expose.
+ *
+ * Ranges are decided on the parsed address, never on the hostname text. A
+ * `startsWith('fc')` test also matches every name that happens to begin those
+ * letters (fda.gov, fcc.gov, fdroid.org), a `'fe8'` test covers only a quarter
+ * of fe80::/10 — which runs to febf — and neither sees an IPv4 address written
+ * inside an IPv6 literal.
  */
 export function isBlockedHost(hostname: string): boolean {
   const host = stripIpv6Brackets(hostname)
   // Unspecified address routes to loopback on most stacks.
-  if (host === '0.0.0.0' || host === '::') return true
-  // IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
-  if (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe8') || host === '::')
-    return true
-  const v4 = parseIpv4(host)
-  if (!v4) return false
-  const [a, b] = v4
-  if (a === 10) return true // 10.0.0.0/8
-  if (a === 127) return false // loopback handled separately (allowed)
-  if (a === 172 && b >= 16 && b <= 31) return true // 172.16.0.0/12
-  if (a === 192 && b === 168) return true // 192.168.0.0/16
-  if (a === 169 && b === 254) return true // link-local incl. 169.254.169.254 metadata
-  if (a === 100 && b >= 64 && b <= 127) return true // 100.64.0.0/10 carrier-grade NAT
+  if (host === '0.0.0.0') return true
+  const v4 = ipv4For(host)
+  if (v4) {
+    const [a, b] = v4
+    if (v4.every((octet) => octet === 0)) return true
+    if (a === 10) return true // 10.0.0.0/8
+    if (a === 127) return false // loopback handled separately (allowed)
+    if (a === 172 && b >= 16 && b <= 31) return true // 172.16.0.0/12
+    if (a === 192 && b === 168) return true // 192.168.0.0/16
+    if (a === 169 && b === 254) return true // link-local incl. 169.254.169.254 metadata
+    if (a === 100 && b >= 64 && b <= 127) return true // 100.64.0.0/10 carrier-grade NAT
+    return false
+  }
+  const hextets = parseIpv6Hextets(host)
+  // Not an IP literal at all: a hostname. DNS is deliberately not resolved here.
+  if (!hextets) return false
+  if (hextets.every((group) => group === 0)) return true // ::
+  const first = hextets[0] ?? 0
+  if ((first & 0xfe00) === 0xfc00) return true // fc00::/7 unique-local
+  if ((first & 0xffc0) === 0xfe80) return true // fe80::/10 link-local
   return false
 }
 

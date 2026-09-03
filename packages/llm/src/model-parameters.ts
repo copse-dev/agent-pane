@@ -654,7 +654,9 @@ export function anthropicThinkingBudget(level: ReasoningLevel, maxTokens: number
 /** Anthropic `thinking` / `output_config` / sampling fields for a request body. */
 export interface AnthropicParameterFields {
   thinking?:
-    { type: 'adaptive' } | { type: 'disabled' } | { type: 'enabled'; budget_tokens: number }
+    | { type: 'adaptive' }
+    | { type: 'disabled' }
+    | { type: 'enabled'; budget_tokens: number }
   output_config?: { effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' }
   temperature?: number
   top_p?: number

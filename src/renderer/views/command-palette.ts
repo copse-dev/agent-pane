@@ -283,7 +283,7 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
     }))
   }
 
-  const threadKey = (h: ThreadHit): string => `${h.projectId} ${h.threadId}`
+  const threadKey = (h: ThreadHit): string => `${h.projectId}\u0000${h.threadId}`
 
   async function loadThreads(): Promise<void> {
     const token = ++threadToken

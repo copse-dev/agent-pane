@@ -98,6 +98,7 @@ interface CapturedRequestBody {
   reasoning_effort?: string
   temperature?: number
   top_p?: number
+  presence_penalty?: number
   max_tokens?: number
   maxOutputTokens?: number
 }
@@ -375,16 +376,34 @@ describe('createLMStudioProvider', () => {
     assert.ok(provider instanceof OpenAIProvider)
   })
 
-  it('preserves tuned model parameters through the OpenAI-compatible transport', async () => {
+  it('preserves tuned model parameters through the native SDK transport', async () => {
+    // The sampling knobs and output ceiling are asserted against the SDK config
+    // in lm-studio-provider.test.ts; here it is enough to pin that tuned
+    // parameters no longer force the OpenAI-compatible fallback transport.
     const provider = createLMStudioProvider(
       'http://localhost:1234/v1',
       'qwen/qwen3.6-35b-a3b',
       'lm-studio',
       { temperature: 0.4 },
     )
+    assert.ok(provider instanceof LMStudioProvider)
+    // The factory is the only place that can drop `params` on the way in, and
+    // the transport assertion above would still pass if it did.
+    assert.deepEqual(Reflect.get(provider, 'params'), { temperature: 0.4 })
+  })
+
+  it('keeps parameters the native SDK cannot represent on the compatible transport', async () => {
+    const provider = createLMStudioProvider(
+      'http://localhost:1234/v1',
+      'local-model',
+      'lm-studio',
+      { reasoning: 'high', presencePenalty: 1.25 },
+    )
+
     assert.ok(provider instanceof OpenAIProvider)
     const request = await captureRequest(provider)
-    assert.equal(request.temperature, 0.4)
+    assert.equal(request.reasoning_effort, 'high')
+    assert.equal(request.presence_penalty, 1.25)
   })
 })
 

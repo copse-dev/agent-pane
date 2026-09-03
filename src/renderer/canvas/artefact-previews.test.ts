@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
+import type { CanvasArtefactSummary } from '@shared/types/canvas.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 import {
   artefactUriFromToolResult,
   getArtefactPreview,
+  hydrateArtefactPreviews,
   requestArtefactShow,
   resetArtefactPreviewsForTest,
   setArtefactPreview,
@@ -53,6 +56,42 @@ describe('artefact preview registry', () => {
     assert.doesNotThrow(() => {
       requestArtefactShow('thread-a', 'Sales Dashboard')
     })
+  })
+})
+
+describe('hydrateArtefactPreviews', () => {
+  beforeEach(() => {
+    resetArtefactPreviewsForTest()
+  })
+
+  it('restores thumbnails saved by an earlier session', async () => {
+    const api = createPendingApi({
+      'canvas.listArtefacts': async (): Promise<CanvasArtefactSummary[]> => [
+        { title: 'Sales Dashboard', preview: 'data:image/png;base64,SAVED' },
+      ],
+    })
+
+    assert.equal(await hydrateArtefactPreviews(api, 'project-1', 'thread-a'), true)
+    assert.equal(getArtefactPreview('thread-a', 'Sales Dashboard'), 'data:image/png;base64,SAVED')
+  })
+
+  it('reports nothing added for a thread that saved no thumbnails', async () => {
+    const api = createPendingApi({
+      'canvas.listArtefacts': async (): Promise<CanvasArtefactSummary[]> => [
+        { title: 'No Thumbnail' },
+      ],
+    })
+
+    assert.equal(await hydrateArtefactPreviews(api, 'project-1', 'thread-a'), false)
+  })
+
+  it('survives a canvas store it cannot read', async () => {
+    const api = createPendingApi({
+      'canvas.listArtefacts': (): Promise<CanvasArtefactSummary[]> =>
+        Promise.reject(new Error('unreadable')),
+    })
+
+    assert.equal(await hydrateArtefactPreviews(api, 'project-1', 'thread-a'), false)
   })
 })
 

@@ -13,7 +13,9 @@ const PTY_SMOKE_WRITE_DELAY_MS = 500
 const PTY_SMOKE_EXIT_GRACE_MS = 500
 
 export type PtySmokeExitDecision =
-  { action: 'resolve' } | { action: 'reject'; message: string } | { action: 'wait' }
+  | { action: 'resolve' }
+  | { action: 'reject'; message: string }
+  | { action: 'wait' }
 
 /**
  * Pure settlement rule used after the PTY process exits.
@@ -74,16 +76,10 @@ async function smokeTestPty(): Promise<void> {
         reject(new Error('Packaged PTY smoke test timed out'))
       })
     }, PTY_SMOKE_TIMEOUT_MS)
-    const resolveIfMarked = (): void => {
-      if (!data.includes(marker)) return
-      finish(() => {
-        child.kill()
-        resolve(data)
-      })
-    }
+    // Wait for onExit before settling even after the marker arrives. Resolving
+    // while node-pty is still tearing down can leave its helper process alive.
     child.onData((chunk) => {
       data += chunk
-      resolveIfMarked()
     })
     child.onExit(({ exitCode }) => {
       setTimeout(() => {

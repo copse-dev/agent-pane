@@ -4,9 +4,11 @@ import {
   isMockGhEnabled,
   mockGetGhPrChecksState,
   mockGetGhPrDetails,
+  mockGetGhPrFileDiff,
   mockGhCliStatus,
   mockListMyOpenPrs,
   mockListWorkspaceOpenPrs,
+  MOCK_GH_OTHER_PR_NUMBER,
   MOCK_GH_PR_NUMBER,
   MOCK_GH_PR_OWNER,
   MOCK_GH_PR_REPO,
@@ -33,6 +35,16 @@ describe('gh-pr-mock', () => {
     })
     assert.ok(details?.body.includes('PRs'))
     assert.equal(details?.files.length, 4)
+    const imageDiff = mockGetGhPrFileDiff(
+      {
+        owner: MOCK_GH_PR_OWNER,
+        repo: MOCK_GH_PR_REPO,
+        number: MOCK_GH_OTHER_PR_NUMBER,
+      },
+      'tests/e2e/screenshots/pr-panel.png',
+    )
+    assert.match(imageDiff?.beforeImage ?? '', /^data:image\/png;base64,/)
+    assert.match(imageDiff?.afterImage ?? '', /^data:image\/png;base64,/)
   })
 
   it('returns workspace-scoped PR fixtures by repo', () => {

@@ -1,5 +1,6 @@
 import type { ModelParameters, ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { AgentRunPayload } from './skills.ts'
+import type { CanvasArtefactReference } from './canvas.ts'
 import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
 import type { GithubPrRef } from '../git/github-pr-url.ts'
@@ -362,6 +363,8 @@ export interface Message {
   /** Pasted image attachments as data URLs (user messages only). */
   images?: string[]
   toolCalls: ToolCall[]
+  /** Canvas previews presented with this answer without fabricating tool calls. */
+  canvasArtefacts?: CanvasArtefactReference[]
   /** Small-model rollup label for this message's batch of shell commands. */
   commandSummary?: string
   /**

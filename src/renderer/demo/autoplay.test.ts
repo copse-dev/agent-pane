@@ -86,7 +86,9 @@ describe('typeIntoComposer', () => {
 describe('revealFinalPreview', () => {
   it('opens the final assistant link, waits for its preview, then expands Browser', async () => {
     document.body.innerHTML = `
-      <article class="msg-assistant"><a href="http://localhost:4173">Preview</a></article>
+      <div class="messages-list">
+        <article class="msg-assistant"><a href="http://localhost:4173">Preview</a></article>
+      </div>
       <section id="browser-viewer-host"></section>
       <section id="browser-tabs-host">
         <button class="pane-popout-btn" aria-label="Expand browser">Expand</button>
@@ -118,11 +120,45 @@ describe('revealFinalPreview', () => {
       scrollClicked = true
     })
 
-    assert.equal(await revealFinalPreview(document, { timeoutMs: 100 }), true)
-    assert.equal(linkClicked, true)
-    assert.equal(expandClicked, true)
-    assert.equal(scrollClicked, true)
-    assert.notEqual(document.activeElement?.className, 'browser-url-input')
+    // A tall answer in a short transcript: centring it scrolls the box down by
+    // (20 + 200 / 2) - (0 + 100 / 2) = 70.
+    const transcript = document.querySelector<HTMLElement>('.messages-list')
+    assert.ok(transcript)
+    transcript.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 300, 100)
+    const message = document.querySelector<HTMLElement>('.msg-assistant')
+    assert.ok(message)
+    message.getBoundingClientRect = (): DOMRect => new DOMRect(0, 20, 300, 200)
+
+    // The marketing hero embeds this document in a same-origin iframe, where
+    // `scrollIntoView` walks past the iframe and scrolls copse.dev itself. The
+    // finished answer must be centred by moving this scroll box alone, leaving
+    // the embedding page where the reader left it.
+    let scrolledIntoView = 0
+    const scrollDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'scrollIntoView',
+    )
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value(): void {
+        scrolledIntoView++
+      },
+    })
+    try {
+      assert.equal(await revealFinalPreview(document, { timeoutMs: 100 }), true)
+      assert.equal(linkClicked, true)
+      assert.equal(expandClicked, true)
+      assert.equal(scrollClicked, true)
+      assert.equal(scrolledIntoView, 0)
+      assert.equal(transcript.scrollTop, 70)
+      assert.notEqual(document.activeElement?.className, 'browser-url-input')
+    } finally {
+      if (scrollDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollDescriptor)
+      } else {
+        delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView
+      }
+    }
   })
 
   it('does not expand before a preview is ready', async () => {

@@ -1,8 +1,7 @@
 /**
- * electron-builder cross-packs both macOS architectures from one dist tree.
- * The release build therefore starts with a universal gortex, then this hook
- * thins each app before signing so Intel and Apple Silicon packages contain the
- * correct executable without paying the size cost of both slices.
+ * Keep each macOS package architecture-pure before signing. Local builds may
+ * still cross-pack both architectures from a universal gortex, while release
+ * CI supplies one target-specific gortex to each matrix job.
  */
 module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return
@@ -58,6 +57,15 @@ module.exports = async function afterPack(context) {
       `Bundled keyring lacks required ${targetArch} slice (${keyringArchs.join(', ')})`,
     )
   }
+
+  // pnpm installs both optional keyring packages on macOS so either architecture
+  // can be cross-packed. Only one can load in this app, so do not make every
+  // customer carry the other native binary.
+  const unusedKeyringPackageArch = keyringPackageArch === 'x64' ? 'arm64' : 'x64'
+  rmSync(
+    join(resources, 'node_modules', '@napi-rs', `keyring-darwin-${unusedKeyringPackageArch}`),
+    { recursive: true, force: true },
+  )
 
   if (archs.length === 1) return
 

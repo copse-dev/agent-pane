@@ -85,11 +85,6 @@ export function optionalRecord(
   return expectRecord(value, label)
 }
 
-export function nullableRecord(value: unknown, label = 'value'): Record<string, unknown> | null {
-  if (value === null) return null
-  return expectRecord(value, label)
-}
-
 export function parseJsonUnknown(text: string): unknown {
   return JSON.parse(text) as unknown
 }

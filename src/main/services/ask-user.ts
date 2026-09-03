@@ -31,7 +31,7 @@ const ASK_USER_TIMEOUT_MS = 30 * 60 * 1000
  * no handler set, the request resolves to blank answers rather than hanging so
  * the agent loop never deadlocks.
  */
-export type AskUserHandler = (req: AskUserRequest) => Promise<AskUserResult>
+export type AskUserHandler = (req: AskUserRequest, signal?: AbortSignal) => Promise<AskUserResult>
 
 let handler: AskUserHandler | null = null
 const scopedHandler = new AsyncLocalStorage<AskUserHandler>()
@@ -44,10 +44,30 @@ export function setAskUserHandler(next: AskUserHandler | null): void {
   handler = next
 }
 
-export function requestUserAnswers(req: AskUserRequest): Promise<AskUserResult> {
+export function requestUserAnswers(
+  req: AskUserRequest,
+  signal?: AbortSignal,
+): Promise<AskUserResult> {
+  const blank = (): AskUserResult => ({ answers: req.questions.map(() => '') })
   const activeHandler = scopedHandler.getStore() ?? handler
-  if (!activeHandler) return Promise.resolve({ answers: req.questions.map(() => '') })
-  return activeHandler(req)
+  if (!activeHandler || signal?.aborted) return Promise.resolve(blank())
+  if (!signal) return activeHandler(req)
+  return new Promise<AskUserResult>((resolve, reject) => {
+    const onAbort = (): void => {
+      resolve(blank())
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    void activeHandler(req, signal).then(
+      (result) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(result)
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error instanceof Error ? error : new Error(String(error)))
+      },
+    )
+  })
 }
 
 export function initAskUser(
@@ -86,24 +106,35 @@ export function initAskUser(
   })
 
   setAskUserHandler(
-    (req) =>
+    (req, signal) =>
       new Promise<AskUserResult>((resolve) => {
+        const blank = (): AskUserResult => ({ answers: req.questions.map(() => '') })
+        if (signal?.aborted) {
+          resolve(blank())
+          return
+        }
         const id = randomUUID()
         // Attribute to the running thread so a background thread's question
         // surfaces as a sidebar attention indicator instead of interrupting
         // whichever thread the user is currently focused on.
         const threadId = getActiveRunThread() ?? undefined
-        win.webContents.send('agent:ask_user_request', { id, threadId, questions: req.questions })
         const stopAlert = alertUser('interaction', 'An agent has a question.')
+        const cancel = (): void => {
+          win.webContents.send('agent:ask_user_cancelled', { id })
+          settle(id, blank())
+        }
         const timer = setTimeout(() => {
-          settle(id, { answers: req.questions.map(() => '') })
+          cancel()
         }, ASK_USER_TIMEOUT_MS)
         if (typeof timer.unref === 'function') timer.unref()
         pending.set(id, (result) => {
           clearTimeout(timer)
+          signal?.removeEventListener('abort', cancel)
           stopAlert()
           resolve(result)
         })
+        signal?.addEventListener('abort', cancel, { once: true })
+        win.webContents.send('agent:ask_user_request', { id, threadId, questions: req.questions })
       }),
   )
 }

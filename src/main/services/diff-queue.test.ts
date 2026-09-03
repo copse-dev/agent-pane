@@ -16,6 +16,7 @@ import {
   clearDiffQueueForTest,
   getDiffQueueForTest,
   getRecentStagedDiffDecision,
+  getPendingAfterContent,
   getStagedDiffEntry,
   listWorktreeChangesSince,
   runWithStagedDiffResolver,
@@ -366,6 +367,51 @@ describe('applyOrStageDiff direct-apply policy', () => {
     assert.equal(getRecentStagedDiffDecision('a.txt')?.status, 'conflict')
     assert.equal(getStagedDiffEntry('a.txt')?.before, 'current\n')
     assert.equal(getStagedDiffEntry('a.txt')?.after, 'next\n')
+  })
+
+  ownedIt('keeps iterating on a prototype it created without calling it user work', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+
+    const first = await applyOrStageDiff('scratch/demo.html', '', 'v1\n', 'html')
+    assert.match(first, /did not exist, so this created it/)
+
+    // `git status` collapses the brand-new directory into a single `scratch/`
+    // entry, which matches no per-file ownership record — so the second edit
+    // used to read Copse's own prototype as the user's uncommitted work and mint
+    // a full-worktree backup to protect it from itself.
+    const second = await applyOrStageDiff('scratch/demo.html', 'v1\n', 'v2\n', 'html')
+    assert.match(second, /Git was clean except for Copse-applied edits/)
+    assert.equal(await readFile(join(workspaceRoot, 'scratch/demo.html'), 'utf-8'), 'v2\n')
+  })
+
+  ownedIt('backs up a user file dropped into a directory it created', async () => {
+    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+    git(tempRoot, ['add', 'packages/app/a.txt'])
+    git(tempRoot, ['commit', '-m', 'add workspace file'])
+    await applyOrStageDiff('scratch/demo.html', '', 'v1\n', 'html')
+    await applyOrStageDiff('scratch/demo.html', 'v1\n', 'v2\n', 'html')
+
+    // The user adds their own untracked file to that directory. While `scratch/`
+    // was the only path git reported, marking it owned adopted everything the
+    // user later put inside it, and this write applied over the top citing a
+    // snapshot taken before the file existed.
+    await writeFile(join(workspaceRoot, 'scratch/notes.md'), "the user's notes\n", 'utf-8')
+    const result = await applyOrStageDiff(
+      'scratch/notes.md',
+      "the user's notes\n",
+      'rewritten\n',
+      'markdown',
+    )
+
+    const ref = /backed up to (\S+) first/.exec(result)?.[1]
+    assert.ok(ref, `expected a backup ref in: ${result}`)
+    const snapshot = execFileSync('git', ['ls-tree', '-r', '--name-only', ref], {
+      cwd: tempRoot,
+    }).toString()
+    // The restore point must contain the work it claims to protect.
+    assert.match(snapshot, /packages\/app\/scratch\/notes\.md/)
   })
 })
 
@@ -771,6 +817,71 @@ describe('stageDiff same-path coalescing (#118)', () => {
     await stageDiff('b.txt', '', 'b\n', 'plaintext')
     const queue = getDiffQueueForTest()
     assert.equal(queue.length, 2)
+  })
+})
+
+describe('staged diffs are keyed by file, not by spelling', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    clearDiffQueueForTest()
+    tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-spelling-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    restoreWorkspace?.()
+    clearDiffQueueForTest()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  ownedIt('coalesces the spellings the file tools all accept onto one row', async () => {
+    // `resolvePathWithinRoot` takes any of these and reaches the same file, so
+    // the queue must too — a model that copies a path out of a compiler error
+    // gets the absolute form, and `./` prefixes come and go between calls.
+    await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
+    await stageDiff('./a.txt', 'orig\n', 'v2\n', 'plaintext')
+    await stageDiff(join(tempRoot, 'a.txt'), 'orig\n', 'v3\n', 'plaintext')
+
+    const queue = getDiffQueueForTest()
+    assert.equal(
+      queue.length,
+      1,
+      `one file must be one row, saw ${JSON.stringify(queue.map((e) => e.path))}`,
+    )
+    assert.equal(at(queue, 0).path, 'a.txt')
+    // Coalescing keeps the first `before` snapshot and the latest proposal,
+    // exactly as it does for a repeated identical spelling.
+    assert.equal(at(queue, 0).before, 'orig\n')
+    assert.equal(at(queue, 0).after, 'v3\n')
+  })
+
+  ownedIt('finds the pending content under any of those spellings', async () => {
+    // `str_replace` composes onto pending content via this lookup. Missing it
+    // silently reads stale on-disk content instead of the proposed content.
+    await stageDiff('src/a.ts', 'orig\n', 'pending\n', 'typescript')
+    for (const spelling of ['src/a.ts', './src/a.ts', 'src//a.ts', join(tempRoot, 'src/a.ts')]) {
+      assert.equal(getPendingAfterContent(spelling), 'pending\n', spelling)
+      assert.equal(getStagedDiffEntry(spelling)?.after, 'pending\n', spelling)
+    }
+  })
+
+  ownedIt('leaves a `..` segment alone rather than resolving it', async () => {
+    // `sub/../a.txt` is only the same file as `a.txt` when `sub` is not a
+    // symlink. The key is lexical, so it must not merge rows a symlink makes
+    // distinct — staying separate is the safe direction.
+    await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
+    await stageDiff('sub/../a.txt', 'orig\n', 'v2\n', 'plaintext')
+    assert.equal(getDiffQueueForTest().length, 2)
+  })
+
+  ownedIt('does not adopt an absolute path from outside the workspace', async () => {
+    // Escaping the root must keep its own identity rather than colliding with
+    // a workspace-relative row.
+    await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
+    await stageDiff(join(tempRoot, '..', 'elsewhere', 'a.txt'), 'orig\n', 'v2\n', 'plaintext')
+    assert.equal(getDiffQueueForTest().length, 2)
   })
 })
 

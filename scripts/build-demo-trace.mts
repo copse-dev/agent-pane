@@ -411,8 +411,8 @@ const { thread, messages } = parseExport(resolve(input))
 const trace = buildTrace(thread, messages, { id, label, turn })
 mkdirSync(dirname(out), { recursive: true })
 writeFileSync(out, moduleSource(trace))
-// Emitted JSON is valid TS but not prettier-shaped; format it so `npm run check` stays green.
-spawnSync('npx', ['prettier', '--write', out], { stdio: 'inherit' })
+// Emitted JSON is valid TS but not formatter-shaped; format it so `npm run check` stays green.
+spawnSync('npx', ['oxfmt', '--write', out], { stdio: 'inherit' })
 console.log(
   `[demo:trace] wrote ${out} — ${String(trace.steps.length)} steps from "${trace.source?.title ?? ''}".`,
 )

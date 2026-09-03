@@ -28,7 +28,6 @@ export interface SshCapabilityReport {
   shell: string | null
   git: boolean
   rg: boolean
-  inotifywait: boolean
   warnings: string[]
 }
 

@@ -21,7 +21,8 @@ import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
-import { isAcpOverSshEnabled } from './acp-ssh-transport.ts'
+import { acpSshTarget, isAcpOverSshEnabled } from './acp-ssh-transport.ts'
+import { gateRemoteAcpEnvForward, remoteAcpAuthRequiredHint } from './acp-remote-env-gate.ts'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   sleepMs,
@@ -55,6 +56,7 @@ import {
   pendingApprovalCountForThread,
   cancelApprovalsForAcpToolCall,
 } from '../approval.ts'
+import { setRemoteAcpInstallApprover } from './acp-remote-install-approval.ts'
 import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
@@ -103,6 +105,27 @@ import { getThreadExecutionContext } from '../thread-execution-context.ts'
  * (issue #830); history is replayed only into a genuinely fresh session —
  * first turn, config change, or a failed/unavailable resume.
  */
+
+/**
+ * Wire the remote ACP adapter install prompt to the real approval dialog. Done
+ * here because this module is main-process-only, while the transport that asks
+ * is also bundled into the ACP workers and so must not import `approval.ts`
+ * (it would pull Electron/node-pty into those bundles). See
+ * acp-remote-install-approval.ts.
+ */
+setRemoteAcpInstallApprover(async ({ title, body }, signal) => {
+  const { approved } = await requestApproval(
+    {
+      title,
+      body,
+      type: 'shell',
+      cause: 'acp-package-setup',
+      allowRemember: false,
+    },
+    signal,
+  )
+  return approved
+})
 
 export interface RunAcpAgentOptions {
   threadId: string
@@ -399,6 +422,10 @@ export async function runAcpAgentFromSettings(
     ...(permissionMode ? { permissionMode } : {}),
     ...(configOptions ? { configOptions } : {}),
   }
+  // Provider keys configured for this agent cross to a remote SSH host only
+  // with the user's consent; on denial the agent runs with whatever
+  // credentials already live on that host. No-op for local workspaces.
+  await gateRemoteAcpEnvForward(agent.id, spawnConfig, options.signal)
 
   // Accumulate streamed assistant text so the turn contributes to thread history
   // (the external agent owns the model loop, so this is the only transcript we
@@ -482,6 +509,7 @@ export async function runAcpAgentFromSettings(
       threadId: options.threadId,
       config: spawnConfig,
       registry: options.registry,
+      signal: options.signal,
     })
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
@@ -555,7 +583,9 @@ export async function runAcpAgentFromSettings(
     // and a network denial is often WHY it died, so name the blocked hosts.
     emitNetworkDenialAudit(denialMark, options.onChunk)
     await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
-    throw new AcpTurnFailure(err, {
+    // An agent on a remote host answering "Authentication required" needs
+    // remote-side remedies; replace the dead-end message with ones that work.
+    throw new AcpTurnFailure(remoteAcpAuthRequiredHint(err, cwd, options.agentId) ?? err, {
       assistantText,
       usage: turn
         ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
@@ -615,11 +645,16 @@ export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgen
     throw new Error('Open a folder before detecting an ACP agent’s models.')
   }
   const sandbox = resolveAcpSandbox(agent)
+  // A probe only runs `initialize` to enumerate models/modes — it needs no
+  // provider credentials, so the agent's configured env never crosses to a
+  // remote host for a probe (and a settings-triggered consent dialog would be
+  // noise). Local probes keep it: same-machine, nothing crosses a wire.
+  const forwardEnv = agent.env && !acpSshTarget(cwd) ? agent.env : undefined
   return probeAcpAgentIsolated({
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),
-    ...(agent.env ? { env: agent.env } : {}),
+    ...(forwardEnv ? { env: forwardEnv } : {}),
     ...(sandbox ? { sandbox } : {}),
   })
 }
@@ -1017,16 +1052,26 @@ export const ACP_TURN_PROMPT_NOTE =
  * of letting the agent walk into EPERMs that its own approval cannot fix. The
  * appended {@link ACP_SANDBOX_GITHUB_STEER} does the same for the network side,
  * where GitHub is the destination agents reach for unprompted.
+ *
+ * `$TMPDIR` is named rather than a literal path because an agent may export its
+ * own: Claude Code points its shell at `/tmp/claude`, which the catalog's
+ * `scratchPaths` now allow-list precisely so this instruction stays true wherever
+ * the variable ends up (`agent-scratch-roots.ts`). Saying "the system /tmp is
+ * blocked" was the older, blunter wording — it contradicted the very next
+ * sentence for any agent whose `$TMPDIR` lives there, which is how a compliant
+ * agent still ended up at a "Run outside sandbox?" dialog.
  */
 export const ACP_SANDBOX_PROMPT_NOTE =
   'Environment note: this session runs inside a filesystem sandbox. Writes are ' +
-  'allowed only inside the workspace and $TMPDIR; the system /tmp, the rest of ' +
-  'the home directory, and most network destinations are blocked. Approval ' +
+  'allowed inside the workspace and under $TMPDIR — your own scratch directory ' +
+  'is allow-listed, whatever $TMPDIR expands to. Other absolute paths, including ' +
+  'elsewhere in /tmp and the rest of the home directory, and most network ' +
+  'destinations are blocked. Approval ' +
   'cannot unsandbox your own shell. When the "copse" MCP server is available, ' +
   "use its run_shell tool for commands: it applies Copse's normal command " +
   'policy and can ask the user to run approved external work outside this ' +
   'sandbox. Do not retry blocked paths with your own shell. Put scratch files ' +
-  'in $TMPDIR or the workspace.' +
+  'in $TMPDIR or the workspace — never in a hardcoded /tmp path of your own.' +
   '\n\n' +
   ACP_SANDBOX_GITHUB_STEER
 

@@ -74,6 +74,25 @@
       }
     },
     {
+      "id": "deepseek-dsml-plural-wrapper",
+      "description": "DeepSeek DSML full-width sentinels, plural wrapper, and parameter metadata (#1710)",
+      "input": "I need to inspect the footer first.\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"run_shell\">\n<｜DSML｜parameter name=\"command\" string=\"true\">grep -n footer-index src/input-bar.ts</｜DSML｜parameter>\n<｜DSML｜parameter name=\"timeout_ms\" string=\"false\">30000</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>",
+      "expect": {
+        "toolCalls": [
+          {
+            "name": "run_shell",
+            "args": {
+              "command": "grep -n footer-index src/input-bar.ts",
+              "timeout_ms": 30000
+            }
+          }
+        ],
+        "cleanedTextIncludes": ["I need to inspect the footer first."],
+        "cleanedTextExcludes": ["DSML", "<invoke", "<tool_calls>"],
+        "keptRawBlocks": false
+      }
+    },
+    {
       "id": "bare-invoke-no-wrapper",
       "description": "MiniMax dialect: <invoke> with no <tool_call> wrapper and no parameters (#724)",
       "input": "Let me check the status.\n\n<invoke name=\"git_status\">\n</invoke>",
@@ -197,6 +216,12 @@
       "description": "MiniMax token delimiters never reach the transcript (#519)",
       "input": "]<]minimax[>[Hello]<]minimax[>[ world",
       "expected": "Hello world"
+    },
+    {
+      "id": "deepseek-dsml-partial-opener-held-back",
+      "description": "A streaming DeepSeek DSML wrapper is hidden before the full tool call arrives (#1710)",
+      "input": "Working <｜DSML｜tool_ca",
+      "expected": "Working"
     }
   ]
 }

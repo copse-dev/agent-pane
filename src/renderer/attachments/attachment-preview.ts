@@ -50,8 +50,13 @@ function ensureDialog(): HTMLDialogElement {
 
   titleEl = el('div', { class: 'attachment-preview-title' })
   bodyEl = el('div', { class: 'attachment-preview-body' })
-  const closeBtn = el('button', { type: 'button', class: 'attachment-preview-close' }, 'Close')
-  dialog.append(titleEl, bodyEl, closeBtn)
+  const closeBtn = el(
+    'button',
+    { type: 'button', class: 'attachment-preview-close', 'aria-label': 'Close' },
+    '×',
+  )
+  const header = el('div', { class: 'attachment-preview-header' }, titleEl, closeBtn)
+  dialog.append(header, bodyEl)
   document.body.append(dialog)
 
   closeBtn.addEventListener('click', () => dialog?.close())

@@ -142,7 +142,19 @@ export const browserShowTool = defineTool({
     if (title) {
       const threadId = getActiveRunThread()
       getBrowserSession().showArtefact({ title, ...(threadId ? { threadId } : {}) })
-      return `Brought the "${title}" artefact to the front of the Browser panel.`
+      // The artefact tabs live in the renderer and `showArtefact` is a one-way
+      // `webContents.send`, so main cannot see whether a tab actually matched:
+      // the pane promotes nothing when no tab carries this title *for this
+      // thread*, which thread scoping made reachable (a title rendered in
+      // another thread no longer matches). Report the request rather than an
+      // outcome we cannot observe — claiming success for a silent no-op teaches
+      // the model the artefact is on screen when it is not. Asserting the
+      // outcome would need a correlated reply from the renderer; that is worth
+      // adding only if the model ever has to branch on it.
+      return (
+        `Asked the Browser panel to bring the "${title}" artefact to the front. ` +
+        'It changes nothing if this thread never rendered that title.'
+      )
     }
     if (!url) throw new Error('Pass a title (canvas artefact) or a url')
     // Only promote a page this session already has open. `showUrl` puts a URL

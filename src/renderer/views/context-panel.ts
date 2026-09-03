@@ -134,7 +134,15 @@ export function mountContextPanel(
     return md ? 'preview' : 'source'
   }
 
+  // Tracks the content already rendered into previewContainer so unrelated
+  // `panel_changed` events (e.g. an agent staging a diff elsewhere) don't
+  // tear down and rebuild the DOM — including every link — for a file that
+  // hasn't actually changed.
+  let renderedPreviewContent: string | null = null
+
   function renderMarkdownPreview(content: string): void {
+    if (content === renderedPreviewContent) return
+    renderedPreviewContent = content
     previewContainer.innerHTML = renderMarkdown(content)
     attachCodeBlockCopyButtons(previewContainer)
     void annotateFileReferences(previewContainer, api)

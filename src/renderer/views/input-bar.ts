@@ -188,17 +188,13 @@ export function mountInputBar(
       'attach-btn-icon',
     ),
   )
+  // Stop and Send/Queue sit together in a flex row so the Send/Queue button's
+  // width (it grows for "Queue") pushes Stop along with it instead of the two
+  // overlapping at a hardcoded offset.
+  const submitRow = el('div', { class: 'submit-row' }, stopBtn, submitBtn)
   // The Send button is positioned relative to this row (not the whole input
   // bar), so it sits inside the textarea box and never overlaps the footer.
-  const inputRow = el(
-    'div',
-    { class: 'input-row' },
-    composer.el,
-    attachBtn,
-    fileInput,
-    stopBtn,
-    submitBtn,
-  )
+  const inputRow = el('div', { class: 'input-row' }, composer.el, attachBtn, fileInput, submitRow)
   const branchWarningText = el('span', { class: 'composer-branch-warning-text' })
   const checkoutBranchBtn = el(
     'button',
@@ -308,23 +304,11 @@ export function mountInputBar(
   })
   const usagePopover = createFooterUsagePopover()
   const usageGroup = el('div', { class: 'footer-usage-group' })
-  const runningIndicator = el('span', {
-    class: 'footer-running',
-    hidden: '',
-    role: 'status',
-    'aria-live': 'polite',
-  })
   const queueIndicator = el('span', { class: 'footer-queue', hidden: '', 'aria-live': 'polite' })
   const contextWheel = createContextWheel()
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
-  usageGroup.append(
-    contextWheel.root,
-    runningIndicator,
-    queueIndicator,
-    usageBtn,
-    usagePopover.root,
-  )
+  usageGroup.append(contextWheel.root, queueIndicator, usageBtn, usagePopover.root)
   footer.append(modelHost, checkoutHost, branchHost)
   footerOverflow = mountFooterOverflow(footer, [
     {
@@ -577,8 +561,11 @@ export function mountInputBar(
     checkoutErrorText,
     checkoutRetryBtn,
   )
+  // The advisory strips own the top of the card, so whichever one is showing
+  // reads as a banner over the whole composer. Attachments sit under the draft
+  // they belong to instead — see `root.insertBefore(chips, inputRow)` below,
+  // which has to wait for the follow-up row to be mounted first.
   root.append(
-    chips,
     guardedYolo.element,
     branchWarning,
     checkoutError,
@@ -595,6 +582,9 @@ export function mountInputBar(
     void submit()
   })
   root.insertBefore(followUps.root, inputRow)
+  // Directly above the draft, below the suggestions: attachments are part of
+  // the message being composed, not chrome for the whole composer.
+  root.insertBefore(chips, inputRow)
   const defaultPlaceholder = 'Message…'
   const followUpPlaceholder = 'Send follow-up'
 
@@ -1113,10 +1103,10 @@ export function mountInputBar(
   function updateState(): void {
     const running = isRunning()
     stopBtn.hidden = !running
-    runningIndicator.hidden = !running
-    runningIndicator.textContent = running ? 'Agent running · messages queue' : ''
     submitBtn.textContent = running ? 'Queue' : 'Send'
     submitBtn.setAttribute('aria-label', running ? 'Queue message' : 'Send message')
+    // Not styling — the demo autoplay driver and the e2e specs read this class
+    // off `.submit-btn` to tell a run in flight from a finished one.
     submitBtn.classList.toggle('with-stop', running)
     composer.el.classList.toggle('with-stop', running)
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending()
@@ -2254,6 +2244,37 @@ export function mountInputBar(
   })
   observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
 
+  // The advisory strips lead the card, so the first one showing is the first
+  // thing on screen. They are the only children that need the rounded top edge:
+  // everything below them paints on the frosted shell rather than a fill of its
+  // own, and the draft box already rounds itself.
+  const advisoryStrips = [
+    guardedYolo.element,
+    branchWarning,
+    checkoutError,
+    imageCompatibilityWarning,
+    contextFitWarning,
+  ]
+  /**
+   * Tag the topmost visible strip for CSS. `:first-child` cannot express this —
+   * a strip is shown by clearing `hidden`, so the DOM-first one is usually
+   * `display: none` and the radius would land on nothing, leaving the visible
+   * banner's square corners poking through the card's hairline ring.
+   */
+  function markTopEdge(): void {
+    const top = advisoryStrips.find((strip) => !strip.hidden)
+    for (const strip of advisoryStrips) {
+      strip.classList.toggle('is-composer-top', strip === top)
+    }
+  }
+  // Five separate features raise and lower these strips, so watch the attribute
+  // rather than trying to call markTopEdge from every one of them.
+  const topEdgeObserver = new MutationObserver(markTopEdge)
+  for (const strip of advisoryStrips) {
+    topEdgeObserver.observe(strip, { attributes: true, attributeFilter: ['hidden'] })
+  }
+  markTopEdge()
+
   updateFooter()
   void refreshAutomaticCheckoutPreview()
   refreshModelPricing()
@@ -2277,6 +2298,7 @@ export function mountInputBar(
       document.removeEventListener('paste', onPaste)
       document.removeEventListener('click', closeCheckoutMenu)
       observer.disconnect()
+      topEdgeObserver.disconnect()
       followUps.destroy()
       nextStepHint.destroy()
       unbindDrop()

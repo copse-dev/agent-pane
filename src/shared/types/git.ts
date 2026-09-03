@@ -3,6 +3,12 @@ export type GitChangeStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'un
 export interface GitChange {
   path: string
   status: GitChangeStatus
+  /**
+   * A wholly-untracked directory that `git status` collapsed into a single
+   * `?? dir/` record instead of listing its files. `path` carries no trailing
+   * slash.
+   */
+  isDirectory?: boolean
 }
 
 export interface GitStatusResult {
@@ -32,6 +38,14 @@ export interface GitFileDiff {
   beforeImage?: string | null
   /** Data URL for the post-change image, when the file is an image. */
   afterImage?: string | null
+  /**
+   * Present when `path` is an untracked directory: the untracked files inside
+   * it, capped for IPC (a fresh node_modules holds tens of thousands). The
+   * viewer renders these as a file list instead of a text diff.
+   */
+  directoryFiles?: string[]
+  /** Total untracked files in the directory; may exceed `directoryFiles.length`. */
+  directoryFileCount?: number
 }
 
 /**
@@ -160,6 +174,17 @@ export interface PrActionResult {
   rerunCount?: number
 }
 
+/**
+ * Result of opening a pull request. Carries the created PR's coordinates on
+ * success so callers never have to scrape them back out of `message` — that
+ * URL is what links the PR to the thread that opened it.
+ */
+export interface PrCreateResult extends PrActionResult {
+  /** Full `https://github.com/owner/repo/pull/N` URL of the new PR. */
+  url?: string
+  number?: number
+}
+
 export interface GhPrChangedFile {
   path: string
   status: 'added' | 'modified' | 'removed' | 'renamed'
@@ -167,11 +192,7 @@ export interface GhPrChangedFile {
   deletions: number
 }
 
-export interface GhPrFileDiff {
-  path: string
-  before: string
-  after: string
-  language: string
+export interface GhPrFileDiff extends GitFileDiff {
   /** The file was deleted in this PR (no `after` content). */
   deleted?: boolean
 }

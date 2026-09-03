@@ -1,8 +1,8 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Thread } from '@shared/types'
-import { collectThreadPrRefs } from '@shared/git/thread-pr-status.ts'
 import { begin as perfBegin } from '../perf.ts'
+import { hydrateArtefactPreviews } from '../canvas/artefact-previews.ts'
 
 /**
  * On-demand transcripts.
@@ -152,6 +152,12 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
         touch(threadId)
         evict()
         store.emit('threads_changed')
+        // Canvas thumbnails alongside the transcript, not before it: a slow or
+        // unreadable canvas store must never hold up the messages. The cards
+        // that need one repaint on the second emit.
+        void hydrateArtefactPreviews(api, projectId, threadId).then((added) => {
+          if (added) store.emit('threads_changed')
+        })
       })
       .catch((err: unknown) => {
         // Leaving `messagesLoaded` false means selecting the thread again
@@ -214,9 +220,13 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
   const offWorkspace = store.on('workspace_changed', hydrateActive)
   hydrateActive()
 
-  // Batches from the main process's one-time PR-ref backfill. Applied only to
-  // the project they belong to, and never over a thread whose transcript is in
-  // memory — there, the live scrape is authoritative (see `sidebarPrRefs`).
+  // Batches from the main process's one-time PR-ref backfill, and live pushes
+  // from `gh_pr_create` linking the PR it just opened. Applied only to the
+  // project they belong to, but to hydrated threads too: each batch carries the
+  // thread's full merged ref set, and `sidebarPrRefs` unions it with the live
+  // transcript scrape — a tool-recorded PR would otherwise be invisible on
+  // exactly the thread that opened it, since its transcript never mentions the
+  // URL.
   const offPrRefs = api.threads.onPrRefs((projectId, refs): void => {
     const state = store.getState()
     if (state.activeProjectId !== projectId || refs.length === 0) return
@@ -225,7 +235,7 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
     store.setState({
       threads: state.threads.map((t) => {
         const prRefs = byThread.get(t.id)
-        return prRefs && needsHydration(t) ? { ...t, prRefs } : t
+        return prRefs ? { ...t, prRefs } : t
       }),
     })
     store.emit('threads_changed')
@@ -240,21 +250,4 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
     inFlight.clear()
     failedThreadIds.clear()
   }
-}
-
-/**
- * PR refs for a freshly hydrated thread, for persisting back into its metadata.
- *
- * The sidebar chip is derived from PR links in message text, which is precisely
- * what a metadata-only load does not have. Recording the scrape's result on the
- * thread's metadata means the chip survives the next launch without the
- * transcript being read again. Returns null when there is nothing new to store,
- * so the caller can skip a pointless write.
- */
-export function prRefsToPersist(thread: Thread): ReturnType<typeof collectThreadPrRefs> | null {
-  if (!thread.messagesLoaded) return null
-  const refs = collectThreadPrRefs(thread)
-  const current = thread.prRefs ?? []
-  if (refs.length === current.length && refs.every((r, i) => current[i]?.url === r.url)) return null
-  return refs
 }

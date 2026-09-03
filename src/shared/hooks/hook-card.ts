@@ -23,7 +23,14 @@ export type HookCardKind = 'decision' | 'halt' | 'execution'
 
 /** Normalized status the card badges + colours by. */
 export type HookCardStatus =
-  'allow' | 'deny' | 'ask' | 'halted' | 'halt-suppressed' | 'blocked' | 'error' | 'ok'
+  | 'allow'
+  | 'deny'
+  | 'ask'
+  | 'halted'
+  | 'halt-suppressed'
+  | 'blocked'
+  | 'error'
+  | 'ok'
 
 export interface HookCard {
   /** Spine `hook_run` id (stable identity across live/reload). */
@@ -43,6 +50,10 @@ export interface HookCard {
   parseOk: boolean
   /** The hook rewrote the gated tool's input (H1). */
   updatedInput?: boolean
+  /** This nudge is the one the loop pushed, not merely one that was offered. */
+  nudgeApplied?: boolean
+  /** How the applied nudge reached the model. */
+  nudgeMechanism?: 'tool-enabled-message' | 'text-only-turn'
   /** Bounded halt reason (`continue: false` + `stopReason`, decision 12). */
   stopReason?: string
   /** Character count of injected context (blocking hooks, H2). */
@@ -76,6 +87,8 @@ export function hookCardFromSpineLine(line: SpineHookRunLine): HookCard {
     parseOk: line.parseOk,
     ...(line.exitCode !== undefined ? { exitCode: line.exitCode } : {}),
     ...(d.updatedInput !== undefined ? { updatedInput: d.updatedInput } : {}),
+    ...(d.nudgeApplied !== undefined ? { nudgeApplied: d.nudgeApplied } : {}),
+    ...(d.nudgeMechanism !== undefined ? { nudgeMechanism: d.nudgeMechanism } : {}),
     ...(d.stopReason !== undefined ? { stopReason: d.stopReason } : {}),
     ...(d.injectContextChars !== undefined ? { injectContextChars: d.injectContextChars } : {}),
     ...(d.agentMessageChars !== undefined ? { agentMessageChars: d.agentMessageChars } : {}),
@@ -123,6 +136,7 @@ export function hookCardPerformedAction(card: HookCard): boolean {
     card.status === 'ask' ||
     card.status === 'halted' ||
     card.updatedInput === true ||
+    card.nudgeApplied === true ||
     (card.injectContextChars ?? 0) > 0 ||
     (card.agentMessageChars ?? 0) > 0 ||
     (card.userMessageChars ?? 0) > 0 ||
@@ -153,7 +167,10 @@ export function getHookCardStatusLabel(card: HookCard): string {
     card.status === 'ask' ? 'Requested approval' : undefined,
     card.status === 'halted' ? 'Stopped run' : undefined,
     card.updatedInput ? 'Rewrote input' : undefined,
-    (card.injectContextChars ?? 0) > 0 ? 'Added context' : undefined,
+    // Ranked above "Added context" so the line that records the nudge the loop
+    // actually pushed is not read as just another hook that offered one.
+    card.nudgeApplied ? 'Steered the model' : undefined,
+    !card.nudgeApplied && (card.injectContextChars ?? 0) > 0 ? 'Added context' : undefined,
     (card.agentMessageChars ?? 0) > 0 ? 'Guided agent' : undefined,
     (card.userMessageChars ?? 0) > 0 ? 'Notified you' : undefined,
     (card.queuedMessageChars ?? 0) > 0 ? 'Queued follow-up' : undefined,

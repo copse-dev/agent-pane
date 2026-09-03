@@ -50,4 +50,28 @@ describe('extractGithubPrUrls', () => {
     assert.equal(githubPrKey(first), 'org/repo#204')
     assert.equal(githubPrKey(second), 'other/app#9')
   })
+
+  it('finds a PR link wrapped in markdown emphasis', () => {
+    const bold = extractGithubPrUrls(
+      'PR is up: **https://github.com/org/repo/pull/2038** — "Apply the mid-fold".',
+    )
+    assert.equal(bold.length, 1)
+    assert.ok(bold[0])
+    assert.equal(githubPrKey(bold[0]), 'org/repo#2038')
+    assert.equal(bold[0].url, 'https://github.com/org/repo/pull/2038')
+
+    const italic = extractGithubPrUrls('_https://github.com/org/repo/pull/5_')
+    assert.equal(italic.length, 1)
+    assert.ok(italic[0])
+    assert.equal(githubPrKey(italic[0]), 'org/repo#5')
+  })
+
+  it('deduplicates GitHub repository identities regardless of case', () => {
+    const refs = extractGithubPrUrls(
+      'https://github.com/Copse-Dev/Agent-Pane/pull/42 and https://github.com/copse-dev/agent-pane/pull/42',
+    )
+    assert.equal(refs.length, 1)
+    assert.ok(refs[0])
+    assert.equal(githubPrKey(refs[0]), 'copse-dev/agent-pane#42')
+  })
 })

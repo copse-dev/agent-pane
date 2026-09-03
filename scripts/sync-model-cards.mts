@@ -128,7 +128,10 @@ export const PUBLISHERS: Record<string, PublisherConfig> = {
     label: 'Anthropic',
     sitemaps: ['https://www.anthropic.com/sitemap.xml'],
     sitemapPatterns: [/system-card/],
-    seedPages: ['https://www.anthropic.com/transparency'],
+    // The transparency hub links only the older PDFs; the per-model pages
+    // (`/claude-<model>-system-card`, each a stable slug in front of a CDN
+    // PDF) are listed on the system-cards hub and absent from the sitemap.
+    seedPages: ['https://www.anthropic.com/system-cards', 'https://www.anthropic.com/transparency'],
     linkPatterns: [/system-card/, /system[-_ ]?card.*\.pdf$/i],
     allowHosts: [
       'www.anthropic.com',
@@ -350,7 +353,7 @@ async function discoverPublisher(cfg: PublisherConfig, delayMs: number): Promise
 // ---------------------------------------------------------------------------
 
 /**
- * A single-quoted TS string literal. Emitting prettier's own quote style keeps
+ * A single-quoted TS string literal. Emitting the formatter's own quote style keeps
  * `renderFile` output byte-identical to the formatted file, so a re-run with no
  * upstream change is a true no-op for the sync workflow's `git diff --quiet`.
  */

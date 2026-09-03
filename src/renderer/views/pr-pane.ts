@@ -35,6 +35,7 @@ import {
   type GitDiffMonaco,
 } from '../monaco/git-diff-viewer.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
+import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 
 const STATUS_LABEL: Record<string, string> = {
   added: 'A',
@@ -119,8 +120,10 @@ export function mountPrPane(
   })
   const filesHost = el('div', { class: 'pr-viewer-files' })
   const diffWrap = el('div', { class: 'git-diff-editor-wrap' })
+  const imageWrap = el('div', { class: 'git-image-diff-wrap' })
+  imageWrap.hidden = true
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a pull request')
-  viewerRoot.append(metaHost, descriptionHost, filesHost, diffWrap, emptyState)
+  viewerRoot.append(metaHost, descriptionHost, filesHost, diffWrap, imageWrap, emptyState)
 
   let ghStatus: GhCliStatus | null = null
   // Agent-owned PRs in this project (issue #690), keyed by `owner/repo#number`.
@@ -229,6 +232,8 @@ export function mountPrPane(
     descriptionHost.classList.remove('pr-viewer-description-fill')
     clear(filesHost)
     diffWrap.hidden = true
+    imageWrap.hidden = true
+    clear(imageWrap)
     emptyState.hidden = false
     setInlineStatus(emptyState, 'pending', 'Loading pull requests…')
   }
@@ -246,6 +251,8 @@ export function mountPrPane(
     descriptionHost.classList.remove('pr-viewer-description-fill')
     clear(filesHost)
     diffWrap.hidden = true
+    imageWrap.hidden = true
+    clear(imageWrap)
     emptyState.hidden = false
     emptyState.textContent = ghStatus?.installed
       ? 'GitHub CLI is not authenticated'
@@ -700,6 +707,8 @@ export function mountPrPane(
     selectRequestId++
     selectedFile = null
     diffWrap.hidden = true
+    imageWrap.hidden = true
+    clear(imageWrap)
     // With no file selected the diff area is dead space: let the description
     // take the full column instead of showing a "Select a changed file" prompt.
     const descriptionFills = Boolean(prDetails?.body.trim())
@@ -726,6 +735,7 @@ export function mountPrPane(
       emptyState.hidden = false
       emptyState.textContent = 'Could not load diff'
       diffWrap.hidden = true
+      imageWrap.hidden = true
       return
     }
     diffLoadQueue = diffLoadQueue
@@ -733,6 +743,15 @@ export function mountPrPane(
       .then(async () => {
         if (requestId !== selectRequestId || selectedFile !== path) return
         emptyState.hidden = true
+        if (isImageDiff(diff)) {
+          diffWrap.hidden = true
+          imageWrap.hidden = false
+          if (diffEditor) disposeDiffModels(diffEditor)
+          renderImageDiff(imageWrap, diff)
+          return
+        }
+        imageWrap.hidden = true
+        clear(imageWrap)
         diffWrap.hidden = false
         if (diff.deleted) {
           // Show a "deleted" badge instead of an empty diff for deleted files.

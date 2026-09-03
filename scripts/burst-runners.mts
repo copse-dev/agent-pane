@@ -78,7 +78,7 @@ const DEFAULT_RUNNER_GROUP = 'default'
 // single 6 GiB suite the whole 16 GiB box (~10 GiB headroom), so no co-tenant
 // e2e suite can trigger the host OOM-killer. Scale e2e WIDTH with --instances
 // (more hosts), never more runners per host. Default burst labels are e2e-only
-// (no copse-checks): when CHECKS_RUNNER=copse-checks, check jobs on burst boxes
+// (no copse-checks): when SELF_HOSTED_CHECKS=copse-checks, check jobs on burst boxes
 // steal capacity from the 8-shard e2e matrix. For check-tier overflow, run a
 // second `up` with checks-only --runner-labels (see usage()) — the shared fleet
 // tag means status/down cover both. The `burst` marker label stays: it is what

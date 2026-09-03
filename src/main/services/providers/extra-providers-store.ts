@@ -13,7 +13,7 @@ import {
 } from '@copse/llm/extra-providers.ts'
 import { providerSlugFromBaseUrl, uniqueProviderSlug } from '@copse/llm/provider-slug.ts'
 import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
-import { getSetting, setSetting, deleteApiKey, resolveApiKey } from '../storage/settings.ts'
+import { getSetting, updateSetting, deleteApiKey, resolveApiKey } from '../storage/settings.ts'
 import { ensureProviderHostApproved } from './approved-provider-hosts.ts'
 import { fetchHuggingFaceModels } from './huggingface-models.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
@@ -51,30 +51,34 @@ export function getResolvedExtraProvider(slug: string): ExtraProvider | null {
 export async function saveExtraProvider(
   record: Omit<StoredExtraProvider, 'slug'> & { slug?: string },
 ): Promise<ExtraProvider[]> {
-  const current = storedProviders()
   const givenSlug = (record.slug ?? '').trim()
-
-  const slug = givenSlug
-    ? givenSlug
-    : uniqueProviderSlug(
-        providerSlugFromBaseUrl(record.baseUrl ?? ''),
-        current.map((p) => p.slug),
-      )
 
   // Custom (non-builtin) providers: approve the host before it is ever persisted
   // so a disallowed baseUrl cannot land in settings (issue #438). Built-in
   // overrides ignore baseUrl via mergeBuiltin, so they skip this gate.
-  const isBuiltin = BUILTIN_EXTRA_PROVIDER_SLUGS.includes(slug)
+  // A blank slug is always custom: uniqueProviderSlug disambiguates it from all
+  // reserved built-ins once the latest stored list is available below.
+  const isBuiltin = givenSlug !== '' && BUILTIN_EXTRA_PROVIDER_SLUGS.includes(givenSlug)
   const baseUrl = record.baseUrl?.trim()
   if (!isBuiltin && baseUrl) {
     validateCredentialBaseUrl(baseUrl, 'Provider base URL')
     await ensureProviderHostApproved(baseUrl)
   }
 
-  const next: StoredExtraProvider = { ...record, slug }
-  const idx = current.findIndex((p) => p.slug === slug)
-  const list = idx >= 0 ? current.map((p) => (p.slug === slug ? next : p)) : [...current, next]
-  await setSetting('extraProviders', list)
+  const list = await updateSetting<StoredExtraProvider[]>('extraProviders', [], (raw) => {
+    const current = Array.isArray(raw) ? raw : []
+    const slug = givenSlug
+      ? givenSlug
+      : uniqueProviderSlug(
+          providerSlugFromBaseUrl(record.baseUrl ?? ''),
+          current.map((provider) => provider.slug),
+        )
+    const next: StoredExtraProvider = { ...record, slug }
+    const index = current.findIndex((provider) => provider.slug === slug)
+    return index >= 0
+      ? current.map((provider) => (provider.slug === slug ? next : provider))
+      : [...current, next]
+  })
   return resolveExtraProviders(list)
 }
 
@@ -101,9 +105,12 @@ export async function refreshHuggingFaceModels(
 }
 
 export async function deleteExtraProvider(slug: string): Promise<ExtraProvider[]> {
-  const current = storedProviders()
-  const list = current.filter((p) => p.slug !== slug)
-  await setSetting('extraProviders', list)
+  const list = await updateSetting<StoredExtraProvider[]>('extraProviders', [], (raw) =>
+    (Array.isArray(raw) ? raw : []).filter((provider) => provider.slug !== slug),
+  )
+  // Dropping the stored key follows the write rather than sharing its critical
+  // section: it touches the keychain, not settings, and a repeated delete of the
+  // same slug is a no-op.
   if (!BUILTIN_EXTRA_PROVIDER_SLUGS.includes(slug)) deleteApiKey(slug)
   return resolveExtraProviders(list)
 }

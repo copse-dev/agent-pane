@@ -7,9 +7,10 @@ useful only when that workflow needs them.
 ## Runtime and standard scripts
 
 Copse is an Electron desktop app with no backend service. `make run` is the normal entry point: it
-runs `check-node`, reinstalls dependencies only when `pnpm-lock.yaml` changes, rebuilds `dist/` only
-when source changes, and then starts the app — so it is safe to repeat and does the minimum work
-each time. `make build` stops after the rebuild, and `make clean` drops `dist/` and the stamps.
+runs `check-node`, content-addresses dependency and build inputs, verifies the complete `dist/` tree,
+and then starts the app. It is safe to repeat and does the minimum work needed even after branch
+switches or edits with preserved mtimes. `make build` stops after syncing the build, and `make clean`
+drops `dist/` and the dev-sync fingerprints.
 
 The standard scripts live in `package.json`; use `dev`, `build`, `start`, `typecheck`, `lint`,
 `format:check`, `test`, `test:e2e`, and `check` rather than recreating their behavior. Reach for
@@ -114,7 +115,7 @@ thread references. See [`thread-store-format.md`](thread-store-format.md).
 ## Focused validation
 
 The post-edit hook runs `scripts/hook-file-check.mts` through the Copse, Cursor, and Claude hook
-configs. It auto-applies Prettier and reports type-unaware ESLint findings. A reported rewrite makes
+configs. It auto-applies oxfmt and reports type-unaware ESLint findings. A reported rewrite makes
 the agent's prior view stale, so re-read that file. Type-aware rules and `tsc` remain part of
 `npm run check`.
 
@@ -160,7 +161,14 @@ A typical Electron fixture flow is:
    `npm run test:e2e -- --spec tests/e2e/tool-display-live-mock.e2e.ts`.
 5. Inspect the resulting image under `tests/e2e/screenshots/`.
 
-The test oracle defines screenshot ownership. CI writes back only images mapped to the diff (plus
-images deliberately committed on the branch). If a real visual change is not mapped, apply the
-`update-screenshots` label. The policy is implemented by `scripts/lib/screenshot-scope.mts`; fixture
-determinism and tier selection are documented in [`testing-strategy.md`](testing-strategy.md).
+The test oracle defines screenshot ownership. The CI run remains read-only and attaches changed
+renders as an immutable artifact. After a successful same-repository run, a trusted follow-up puts
+those PNGs on a bot-owned branch, opens a child PR into the source branch, and posts its link on the
+parent PR. Review GitHub's image diffs there, then merge that child PR (or enable auto-merge) to apply
+the accepted references. A source-head change supersedes the child PR. Forks and promotion PRs whose
+source is an integration branch use the downloadable artifact and a manual commit because automation
+must not write to those branches. If a real visual change is not mapped, apply the
+`update-screenshots` label to render the complete reference set, then remove the label after the
+review PR is created. Local filtering is implemented by
+`scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
+[`testing-strategy.md`](testing-strategy.md).

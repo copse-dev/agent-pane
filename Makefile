@@ -6,13 +6,12 @@
 #      GitHub Actions runner fleet (`make runners`). One unified image
 #      (ci-runners/) serves both the e2e and check tiers; verifies the required
 #      tooling is installed, that the `.env` is present and filled in, and scales
-#      to however many runners you ask for. The runner image bakes the dependency
-#      tree at build time, so freshly (re)provisioned runners start warm instead
-#      of downloading ~525 MB of node_modules on their first job.
+#      to however many runners you ask for. The image can prefetch lockfile-pinned
+#      package inputs, but every job builds a fresh node_modules tree.
 #
-#   2. App dev loop — keep dependencies and the `dist/` build in sync, then run
-#      the app (`make run`). Dependencies are only reinstalled when
-#      `pnpm-lock.yaml` changes; `dist/` is only rebuilt when source changes.
+#   2. App dev loop — content-address dependencies and the `dist/` build, then
+#      run the app (`make run`). Inputs and the output tree are verified by
+#      bytes, so branch switches and preserved mtimes cannot hide stale state.
 #
 # Run `make` (or `make help`) for the full target list.
 
@@ -62,47 +61,7 @@ NODE_MIN_MINOR := 22
 NVM_DIR ?= $(HOME)/.nvm
 USE_NVM := if [ -s "$(NVM_DIR)/nvm.sh" ]; then set +u; . "$(NVM_DIR)/nvm.sh"; nvm use >/dev/null || true; set -u; fi
 
-# Stamp files record the last successful install/build so we can skip no-op work.
-STAMP_DIR   := .tmp
-DEPS_STAMP  := $(STAMP_DIR)/deps.stamp
-BUILD_STAMP := $(STAMP_DIR)/build.stamp
-
-# Prefix for the superseded dependency trees that `deps` renames out of the way
-# (see the deps rule). Each run appends its own PID, and every run sweeps any
-# leftovers first.
-NM_TRASH := $(STAMP_DIR)/node_modules-old
-
-# A stamp left by an interrupted or previously misdetected install must not
-# hide a broken dependency tree. esbuild is a direct dev dependency required by
-# both build and test entry points, so its package metadata is a cheap install
-# sentinel. Dropping the stamp makes the normal deps rule repair the tree.
-$(shell if [ -f $(DEPS_STAMP) ] && [ ! -f node_modules/esbuild/package.json ]; then rm -f $(DEPS_STAMP); fi)
-
-# Source that, when changed, should trigger a rebuild of `dist/`. Evaluated when
-# the Makefile is parsed; new files are picked up on the next `make` invocation.
-# `assets` is included because scripts/build.mts copies it into dist/ wholesale.
-BUILD_SRC_DIRS := src packages scripts assets
-BUILD_SRC := $(shell find $(BUILD_SRC_DIRS) -type f 2>/dev/null) \
-             package.json tsconfig.json tsconfig.node.json tsconfig.web.json
-
-# find-based prerequisites only notice files that still exist. A branch switch
-# that merely deletes or renames a module leaves every surviving file older
-# than the stamp, so make declares dist/ "up to date" while the bundle still
-# contains the deleted code. Fingerprint the file *list* into a stamp that is
-# refreshed (at parse time) whenever the list changes; ordinary mtime logic
-# then forces the rebuild.
-SRC_LIST_STAMP := $(STAMP_DIR)/src-list.stamp
-SRC_LIST_SUM := $(shell find $(BUILD_SRC_DIRS) -type f 2>/dev/null | sort | cksum | cut -d' ' -f1)
-ifneq ($(SRC_LIST_SUM),$(shell cat $(SRC_LIST_STAMP) 2>/dev/null))
-$(shell mkdir -p $(STAMP_DIR) && echo '$(SRC_LIST_SUM)' > $(SRC_LIST_STAMP))
-endif
-
-# The build stamp only proves a build *ran* — not that dist/ still holds its
-# output. `pnpm run dev` writes watch-mode bundles (a partial set, dev flags)
-# into the same dist/, and a hand-deleted dist/ leaves the stamp behind. If the
-# main bundle is missing or newer than the stamp, dist/ was touched outside
-# make: drop the stamp so the next build re-syncs it.
-$(shell if [ -f $(BUILD_STAMP) ] && { [ ! -f dist/main/index.js ] || [ dist/main/index.js -nt $(BUILD_STAMP) ]; }; then rm -f $(BUILD_STAMP); fi)
+DEV_SYNC := node scripts/sync-dev.mts
 
 # ----------------------------------------------------------------------------
 # Help
@@ -123,10 +82,10 @@ help:
 	@echo "  make runner-env          Check/scaffold the ci-runners/.env file"
 	@echo
 	@echo "App dev loop:"
-	@echo "  make deps              Install deps if pnpm-lock.yaml changed"
-	@echo "  make build             Rebuild dist/ if source changed (deps first)"
+	@echo "  make deps              Sync dependencies to their content fingerprint"
+	@echo "  make build             Sync dependencies and dist/ by content"
 	@echo "  make run               deps -> build (if changed) -> start the app"
-	@echo "  make clean             Remove dist/ and build/deps stamps"
+	@echo "  make clean             Remove dist/ and dev-sync fingerprints"
 	@echo
 	@echo "Diagnostics:"
 	@echo "  make check-tools       Verify docker/compose/git are installed & running"
@@ -141,9 +100,6 @@ help:
 # ============================================================================
 # 1) Docker CI runners
 # ============================================================================
-
-$(STAMP_DIR):
-	@mkdir -p $(STAMP_DIR)
 
 # --- tooling preflight ------------------------------------------------------
 .PHONY: check-tools
@@ -222,7 +178,7 @@ runners-build: check-tools
 	$(COMPOSE_IN_DIR) build --pull
 
 # Clean reprovision: tear the fleet down, rebuild the image from scratch (no
-# layer cache, fresh base) so a new baked dependency layer is picked up, then
+# layer cache, fresh base) so new prefetched package inputs are picked up, then
 # bring it back up. This is the "I just repulled / my runners are stale" button.
 .PHONY: runners-reprovision
 runners-reprovision: check-tools runner-env
@@ -272,8 +228,8 @@ check-node:
 	echo "==> Node $$ver OK."
 
 # --- dependencies -----------------------------------------------------------
-# Reinstall only when the lockfile (or package.json) is newer than the last
-# successful install. `pnpm install --frozen-lockfile` is lockfile-exact.
+# Reinstall only when package inputs or the active Node ABI differ from the
+# last successful install. `pnpm install --frozen-lockfile` is lockfile-exact.
 #
 # Project `.npmrc` sets `ignore-scripts=false`, but an inherited
 # `npm_config_ignore_scripts=true` (Copse agent shells, hardened user npmrc)
@@ -281,61 +237,19 @@ check-node:
 # executable and the integrated terminal fails with posix_spawnp. Force scripts
 # on for this install, matching `.github/actions/setup/action.yml`.
 #
-# On macOS, stale-tree pruning can fail with ENOTEMPTY/EBUSY/EPERM. This target
-# only runs when dependencies need reinstalling, so clear the old tree first and
-# give pnpm an empty destination instead of retrying after a half-pruned
-# node_modules — but clear it by *renaming*, not by deleting in place.
-#
-# `rm -rf` unlinks a directory's entries and then rmdir's it, and macOS
-# recreates a `.DS_Store` inside the directory in the gap between those two
-# steps. The rmdir then fails on a directory rm has just emptied, and the
-# install dies before it starts:
-#
-#   rm: node_modules/.pnpm: Directory not empty
-#   rm: node_modules: Directory not empty
-#
-# (no per-file error — the entries did get deleted; the folders were
-# repopulated underneath.) A second `make run` usually gets through, which is
-# exactly the "just run it again" flakiness this target exists to avoid.
-#
-# A rename within the repo is a single rename(2) that cannot lose that race,
-# whatever is writing inside the tree. Deleting the renamed copy is then pure
-# housekeeping — pnpm already has its empty destination — so a delete that
-# loses the same race prints a note and leaves the leftovers for the next run
-# (or `make clean`) to sweep, instead of failing the build.
-PNPM_I := npm_config_ignore_scripts=false pnpm install --frozen-lockfile
-
+# On macOS, the sync script renames an old node_modules before deleting it so
+# filesystem metadata writers cannot repopulate the install destination while
+# it is being cleared.
 .PHONY: deps
-deps: $(DEPS_STAMP)
-
-$(DEPS_STAMP): pnpm-lock.yaml package.json | $(STAMP_DIR) check-node
-	@echo "==> Dependencies out of date — running 'pnpm install --frozen-lockfile'…"
-	@rm -rf $(NM_TRASH).* 2>/dev/null || true; \
-	if [ -e node_modules ] || [ -L node_modules ]; then \
-	  echo "==> Clearing the previous node_modules…"; \
-	  trash="$(NM_TRASH).$$$$"; \
-	  if mv node_modules "$$trash" 2>/dev/null; then \
-	    if ! rm -rf "$$trash" 2>/dev/null && ! rm -rf "$$trash" 2>/dev/null; then \
-	      echo "==> Note: some of $$trash survived deletion; sweeping it next run."; \
-	    fi; \
-	  else \
-	    echo "==> Note: could not move node_modules aside; letting pnpm prune it."; \
-	  fi; \
-	fi
-	@$(USE_NVM); corepack enable; $(PNPM_I)
-	@touch $(DEPS_STAMP)
+deps: check-node
+	@$(USE_NVM); $(DEV_SYNC) deps
 
 # --- build ------------------------------------------------------------------
-# Rebuild dist/ only when source changed since the last build. A stale dist/ is
-# wiped first so nothing from a prior layout lingers.
+# The sync script hashes every build input and the complete output tree. It writes state
+# atomically only after successful install/build commands.
 .PHONY: build
-build: $(BUILD_STAMP)
-
-$(BUILD_STAMP): $(DEPS_STAMP) $(BUILD_SRC) $(SRC_LIST_STAMP) | $(STAMP_DIR)
-	@echo "==> Source changed — clearing dist/ and rebuilding…"
-	rm -rf dist
-	@$(USE_NVM); pnpm run build
-	touch $(BUILD_STAMP)
+build: check-node
+	@$(USE_NVM); $(DEV_SYNC) build
 
 # --- run --------------------------------------------------------------------
 # Sync deps, rebuild if needed (both via prerequisites), then launch the app.
@@ -347,5 +261,6 @@ run: build
 # --- cleanup ----------------------------------------------------------------
 .PHONY: clean
 clean:
-	@echo "==> Removing dist/ and build/deps stamps…"
-	@rm -rf dist $(DEPS_STAMP) $(BUILD_STAMP) $(SRC_LIST_STAMP) $(NM_TRASH).*
+	@echo "==> Removing dist/ and dev-sync fingerprints…"
+	@rm -rf dist .tmp/dev-dependencies.fingerprint .tmp/dev-build.fingerprint \
+		.tmp/dev-build-outputs.fingerprint .tmp/node_modules-old.*

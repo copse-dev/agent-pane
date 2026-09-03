@@ -41,7 +41,7 @@ cd agent-pane
 make run
 ```
 
-`make run` checks your Node version, installs dependencies, builds `dist/`, and launches the app. It is idempotent and cheap to repeat: dependencies are reinstalled only when `pnpm-lock.yaml` changes and `dist/` is rebuilt only when source changes, so running it again after a `git pull` does the minimum work needed. Run `make` on its own for the full target list.
+`make run` checks your Node version, installs dependencies, builds `dist/`, and launches the app. It is idempotent and cheap to repeat: dependency inputs, build inputs, and the complete build output tree are content-addressed, so running it again after a branch switch or `git pull` does the minimum work needed without trusting filesystem timestamps. Run `make` on its own for the full target list.
 
 `make run` builds once and starts. While actively editing the app, `pnpm run dev` is still the loop you want — it rebuilds and relaunches Electron on save:
 
@@ -101,8 +101,8 @@ Changes to the Electron UI should also be built and covered by a focused end-to-
 | ------------------- | ------------------------------------------------------------ |
 | `make run`          | Sync deps, rebuild if source changed, then launch the app    |
 | `make build`        | Rebuild `dist/` if source changed (deps first)               |
-| `make deps`         | Install deps if `pnpm-lock.yaml` changed                     |
-| `make clean`        | Remove `dist/` and the build and deps stamps                 |
+| `make deps`         | Sync dependencies to their content fingerprint               |
+| `make clean`        | Remove `dist/` and the dev-sync fingerprints                 |
 | `pnpm run dev`      | Build in watch mode and launch Electron                      |
 | `pnpm run build`    | Create the application bundle in `dist/`                     |
 | `pnpm start`        | Launch an existing build                                     |

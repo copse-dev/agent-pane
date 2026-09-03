@@ -16,8 +16,9 @@ import {
   ghRunListTool,
   ghRunViewTool,
 } from '../tools/gh-tools.ts'
-import { ghPrActionTools } from '../tools/gh-pr-action-tools.ts'
+import { ghPrActionTools, registerGhPrActionTools } from '../tools/gh-pr-action-tools.ts'
 import { hasGitHubApiToken } from './github/backend/github-token.ts'
+import { isMockGhEnabled } from './github/gh-pr-mock.ts'
 import { investigateCiTool } from '../tools/investigate-ci-tool.ts'
 import {
   getCiStatusTool,
@@ -320,11 +321,12 @@ export function syncGhTools(registry: ToolRegistry): void {
     registry.unregister('get_ci_failure_logs')
   }
   // PR lifecycle write tools work through the swappable GitHub backend, so they
-  // are available whenever *either* `gh` is usable or an API token is present —
-  // not gated on `gh` alone like the read tools above. They mutate GitHub state,
-  // so they stay out of the read-only allow-list and go through the approval gate.
-  if (ghAvailable || hasGitHubApiToken()) {
-    for (const tool of ghPrActionTools) if (!registry.has(tool.name)) registry.register(tool)
+  // are available whenever `gh`, an API token, or the deterministic mock backend
+  // can service them — not gated on `gh` alone like the read tools above. They
+  // mutate GitHub state, so they stay out of the read-only allow-list and go
+  // through the approval gate.
+  if (ghAvailable || hasGitHubApiToken() || isMockGhEnabled()) {
+    registerGhPrActionTools(registry)
   } else {
     for (const tool of ghPrActionTools) registry.unregister(tool.name)
   }

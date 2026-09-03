@@ -11,7 +11,15 @@ import {
 import { isResolvedPathInsideRoot, resolvePathWithinRoot } from '../services/workspace.ts'
 import { gatewayReadFile } from '../project-sandbox/sandbox-fs-client.ts'
 import { FS_WATCH_MAX_CONTENT_BYTES } from '../services/fs-watch-limits.ts'
-import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
+import {
+  isActiveSshWorkspace,
+  resolveSshExecutionTargetForCwd,
+} from '../services/ssh-workspace/execution-target.ts'
+import {
+  stopRemoteFilePolling,
+  unwatchRemotePath,
+  watchRemotePath,
+} from '../services/ssh-workspace/remote-file-poller.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { z } from 'zod'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
@@ -27,12 +35,24 @@ export function initFsWatcher(win: BrowserWindow): void {
   ipcMain.handle('fs:watch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, rel] = parseIpcArgs(watcherArgs, rawArgs)
-    // Node's fs.watch can only observe the local machine. Remote workspaces do
-    // not claim live external-edit updates until they have a remote watcher.
-    if (isActiveSshWorkspace()) return
     const root = (await resolveThreadExecutionContext(projectId, threadId)).root
     const abs = await resolvePathWithinRoot(rel, root)
     const key = watcherKey(projectId, threadId, rel)
+    // Node's fs.watch can only observe the local machine, so a remote workspace
+    // must never reach the local watcher below — an unresolvable host means no
+    // updates rather than a watch on a same-named local path.
+    if (isActiveSshWorkspace()) {
+      const target = resolveSshExecutionTargetForCwd(root)
+      if (target?.kind !== 'ssh') return
+      watchRemotePath(
+        key,
+        { hostId: target.hostId, remoteRoot: root, absPath: abs },
+        (_k, size) => {
+          void notifyRemoteFileChanged(projectId, threadId, rel, abs, root, size)
+        },
+      )
+      return
+    }
     if (watchers.has(key)) return
     let debounce: ReturnType<typeof setTimeout> | undefined
     let watcher: fs.FSWatcher
@@ -62,8 +82,11 @@ export function initFsWatcher(win: BrowserWindow): void {
   ipcMain.handle('fs:unwatch', (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, rel] = parseIpcArgs(watcherArgs, rawArgs)
-    if (isActiveSshWorkspace()) return
     const key = watcherKey(projectId, threadId, rel)
+    if (isActiveSshWorkspace()) {
+      unwatchRemotePath(key)
+      return
+    }
     watchers.get(key)?.close()
     watchers.delete(key)
   })
@@ -95,9 +118,40 @@ async function notifyFileChanged(
   }
 }
 
+/**
+ * Remote counterpart of {@link notifyFileChanged}.
+ *
+ * Separate because the poll already carries the size, and because the local
+ * version's `fsp.stat` would stat a *local* path that may not exist (or worse,
+ * may exist and be unrelated). The containment re-check is kept: it runs
+ * through the active path backend, so on a remote workspace it re-resolves over
+ * SSH and still catches a symlink swapped to point outside the root.
+ */
+async function notifyRemoteFileChanged(
+  projectId: string,
+  threadId: string,
+  relPath: string,
+  absPath: string,
+  root: string,
+  size: number,
+): Promise<void> {
+  try {
+    if (!(await isResolvedPathInsideRoot(absPath, root))) return
+    if (size > FS_WATCH_MAX_CONTENT_BYTES) {
+      broadcastToAppWindows('fs:changed', projectId, threadId, relPath, null)
+      return
+    }
+    const content = await gatewayReadFile(absPath, root)
+    broadcastToAppWindows('fs:changed', projectId, threadId, relPath, content)
+  } catch {
+    /* ignore unreadable files — the next tick retries */
+  }
+}
+
 export function closeAllWatchers(): void {
   watchers.forEach((w) => {
     w.close()
   })
   watchers.clear()
+  stopRemoteFilePolling()
 }

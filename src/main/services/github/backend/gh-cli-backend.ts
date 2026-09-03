@@ -21,9 +21,16 @@ import type {
   GhPrFileDiff,
   GhPrSummary,
   PrActionResult,
+  PrCreateResult,
 } from '@shared/types/git.ts'
-import type { GitHubBackend, PrRef } from './backend.ts'
+import { extractGithubPrUrls } from '@shared/git/github-pr-url.ts'
+import type { GitHubBackend, PrCreateInput, PrRef } from './backend.ts'
 import { chooseAutoMergeStrategy, type RepoMergeConfig } from './merge-strategy.ts'
+import {
+  decodeGitHubFileContent,
+  emptyGitHubFileContent,
+  type GitHubFileContent,
+} from '../pr-file-content.ts'
 
 interface GhPrViewJson {
   state?: string | undefined
@@ -148,10 +155,6 @@ function formatGhError(stderr: string, code: number): string {
   return `gh exited with code ${String(code)}`
 }
 
-function decodeBase64Content(raw: string): string {
-  return Buffer.from(raw.replace(/\n/g, ''), 'base64').toString('utf8')
-}
-
 function mapFileStatus(raw: string | undefined): GhPrChangedFile['status'] {
   switch ((raw ?? '').toLowerCase()) {
     case 'added':
@@ -254,7 +257,11 @@ async function listPrFiles(ref: PrRef, prView?: GhPrViewJson): Promise<GhPrChang
     .filter((entry): entry is GhPrChangedFile => entry != null)
 }
 
-async function fetchRepoFileAtRef(ref: PrRef, path: string, gitRef: string): Promise<string> {
+async function fetchRepoFileAtRef(
+  ref: PrRef,
+  path: string,
+  gitRef: string,
+): Promise<GitHubFileContent> {
   const encodedPath = path
     .split('/')
     .map((segment) => encodeURIComponent(segment))
@@ -263,10 +270,10 @@ async function fetchRepoFileAtRef(ref: PrRef, path: string, gitRef: string): Pro
     'api',
     `repos/${ref.owner}/${ref.repo}/contents/${encodedPath}?ref=${encodeURIComponent(gitRef)}`,
   ])
-  if (code !== 0) return ''
+  if (code !== 0) return emptyGitHubFileContent()
   const payload = safeJsonParse(stdout.trim(), decodeWithSchema(ghApiContentSchema))
-  if (!payload?.content || payload.encoding !== 'base64') return ''
-  return decodeBase64Content(payload.content)
+  if (!payload?.content || payload.encoding !== 'base64') return emptyGitHubFileContent()
+  return decodeGitHubFileContent(path, payload.content)
 }
 
 /** Read the repo's allowed merge methods so auto-merge picks a permitted one. */
@@ -542,11 +549,23 @@ export const ghCliBackend: GitHubBackend = {
     if (!pr?.baseRefOid || !pr.headRefOid) return null
     const fileMeta = (pr.files ?? []).find((file) => file.path === path)
     const status = mapFileStatus(fileMeta?.changeType)
-    let before = ''
-    let after = ''
-    if (status !== 'added') before = await fetchRepoFileAtRef(ref, path, pr.baseRefOid)
-    if (status !== 'removed') after = await fetchRepoFileAtRef(ref, path, pr.headRefOid)
-    return { path, before, after, language: detectLanguage(path), deleted: status === 'removed' }
+    let beforeContent = emptyGitHubFileContent()
+    let afterContent = emptyGitHubFileContent()
+    if (status !== 'added') {
+      beforeContent = await fetchRepoFileAtRef(ref, path, pr.baseRefOid)
+    }
+    if (status !== 'removed') {
+      afterContent = await fetchRepoFileAtRef(ref, path, pr.headRefOid)
+    }
+    return {
+      path,
+      before: beforeContent.text,
+      after: afterContent.text,
+      language: detectLanguage(path),
+      beforeImage: beforeContent.image,
+      afterImage: afterContent.image,
+      deleted: status === 'removed',
+    }
   },
 
   async getPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
@@ -628,6 +647,57 @@ export const ghCliBackend: GitHubBackend = {
         reran > 0
           ? `Re-ran ${String(reran)} failed run${reran === 1 ? '' : 's'} on ${branch}.`
           : `Found ${String(failed.length)} failed runs but could not re-run them.`,
+    }
+  },
+
+  async createPr(input: PrCreateInput): Promise<PrCreateResult> {
+    const args = [
+      'pr',
+      'create',
+      '-R',
+      `${input.owner}/${input.repo}`,
+      '--base',
+      input.base,
+      '--head',
+      input.head,
+      '--title',
+      input.title,
+      '--body',
+      input.body,
+    ]
+    if (input.draft) args.push('--draft')
+    const { stdout, stderr, code } = await runGh(args)
+    if (code !== 0) {
+      // "a pull request for branch X already exists: <url>" — the desired end
+      // state holds, and gh hands back the URL of the PR that satisfies it.
+      const existing = /already exists/i.test(stderr) ? extractGithubPrUrls(stderr)[0] : undefined
+      if (existing) {
+        return {
+          ok: true,
+          noop: true,
+          backend: 'cli',
+          url: existing.url,
+          number: existing.number,
+          message: `A pull request for ${input.head} already exists: ${existing.url}`,
+        }
+      }
+      return { ok: false, backend: 'cli', message: formatGhError(stderr, code) }
+    }
+    // `gh pr create` has no `--json`; success is a bare URL on stdout.
+    const ref = extractGithubPrUrls(stdout)[0]
+    if (!ref) {
+      return {
+        ok: true,
+        backend: 'cli',
+        message: `Opened the pull request, but gh printed no URL: ${stdout.trim()}`,
+      }
+    }
+    return {
+      ok: true,
+      backend: 'cli',
+      url: ref.url,
+      number: ref.number,
+      message: `Opened PR #${String(ref.number)}: ${ref.url}`,
     }
   },
 

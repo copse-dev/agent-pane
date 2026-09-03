@@ -26,7 +26,12 @@ import { buildBehaviorMatrixJson, renderBehaviorMatrixMarkdown } from './acp-beh
  */
 
 type BehaviorScript =
-  'fs-write' | 'shell-execute' | 'permission-meta' | 'both' | 'prompt-error' | 'generic-mcp-title'
+  | 'fs-write'
+  | 'shell-execute'
+  | 'permission-meta'
+  | 'both'
+  | 'prompt-error'
+  | 'generic-mcp-title'
 
 type TransportFactory = NonNullable<AcpBehaviorProbeOptions['createTransport']>
 

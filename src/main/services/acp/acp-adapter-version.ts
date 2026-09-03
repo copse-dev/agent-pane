@@ -32,19 +32,70 @@ export function resetAcpAdapterLatestCache(): void {
 }
 
 /**
- * Compare two npm versions as dotted numeric tuples (prerelease / build
- * metadata stripped). Returns negative if `a < b`, 0 if equal, positive if
- * `a > b`. Non-parseable inputs compare as equal (not older) so we never
- * prompt an upgrade on garbage.
+ * Compare two npm versions using SemVer precedence. Build metadata is ignored,
+ * while prereleases sort below the corresponding stable release and compare
+ * identifier-by-identifier. Non-parseable inputs compare as equal (not older)
+ * so we never prompt an upgrade on garbage.
  */
 export function compareNpmVersions(a: string, b: string): number {
-  const left = parseNpmVersionTuple(a)
-  const right = parseNpmVersionTuple(b)
+  const left = parseNpmVersion(a)
+  const right = parseNpmVersion(b)
   if (!left || !right) return 0
+  const len = Math.max(left.core.length, right.core.length)
+  for (let i = 0; i < len; i += 1) {
+    const diff = (left.core[i] ?? 0) - (right.core[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  if (left.prerelease.length === 0) return right.prerelease.length === 0 ? 0 : 1
+  if (right.prerelease.length === 0) return -1
+  return comparePrerelease(left.prerelease, right.prerelease)
+}
+
+interface ParsedNpmVersion {
+  core: number[]
+  prerelease: string[]
+}
+
+function parseNpmVersion(version: string): ParsedNpmVersion | null {
+  const normalized = version.trim().replace(/^v/i, '')
+  const withoutBuild = normalized.split('+', 1)[0]
+  if (!withoutBuild) return null
+  const prereleaseSeparator = withoutBuild.indexOf('-')
+  const coreText =
+    prereleaseSeparator < 0 ? withoutBuild : withoutBuild.slice(0, prereleaseSeparator)
+  const core = parseNpmVersionTuple(coreText)
+  if (!core) return null
+  if (prereleaseSeparator < 0) return { core, prerelease: [] }
+  const prereleaseText = withoutBuild.slice(prereleaseSeparator + 1)
+  const prerelease = prereleaseText.split('.')
+  if (
+    prerelease.some(
+      (identifier) =>
+        !/^[0-9A-Za-z-]+$/.test(identifier) ||
+        (/^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith('0')),
+    )
+  ) {
+    return null
+  }
+  return { core, prerelease }
+}
+
+function comparePrerelease(left: string[], right: string[]): number {
   const len = Math.max(left.length, right.length)
   for (let i = 0; i < len; i += 1) {
-    const diff = (left[i] ?? 0) - (right[i] ?? 0)
-    if (diff !== 0) return diff
+    const leftPart = left[i]
+    const rightPart = right[i]
+    if (leftPart === undefined) return -1
+    if (rightPart === undefined) return 1
+    if (leftPart === rightPart) continue
+    const leftNumeric = /^\d+$/.test(leftPart)
+    const rightNumeric = /^\d+$/.test(rightPart)
+    if (leftNumeric && rightNumeric) {
+      if (leftPart.length !== rightPart.length) return leftPart.length - rightPart.length
+      return leftPart < rightPart ? -1 : 1
+    }
+    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1
+    return leftPart < rightPart ? -1 : 1
   }
   return 0
 }

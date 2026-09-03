@@ -24,6 +24,8 @@ interface EmitReq {
   type?: 'shell' | 'mcp' | 'web'
   allowRemember?: boolean
   rememberLabel?: string
+  collapseDetails?: boolean
+  approveOnceLabel?: string
   allowTurnTreeLease?: boolean
   turnTreeLeaseLabel?: string
   turnTreeLeaseDefault?: boolean
@@ -39,13 +41,19 @@ interface Responded {
 function makeApi(): {
   api: ApiClient
   emit: (req: EmitReq) => void
+  cancel: (id: string) => void
   responses: Responded[]
 } {
   let handler: (req: Record<string, unknown>) => void = () => {}
+  let cancelHandler: (req: { id: string }) => void = () => {}
   const responses: Responded[] = []
   const overrides = {
     'agent.onApprovalRequest': (h: (req: Record<string, unknown>) => void): (() => void) => {
       handler = h
+      return () => {}
+    },
+    'agent.onApprovalCancelled': (h: (req: { id: string }) => void): (() => void) => {
+      cancelHandler = h
       return () => {}
     },
     'approval.respond': (
@@ -77,6 +85,8 @@ function makeApi(): {
         type: req.type ?? 'shell',
         allowRemember: req.allowRemember,
         rememberLabel: req.rememberLabel,
+        collapseDetails: req.collapseDetails,
+        approveOnceLabel: req.approveOnceLabel,
         allowTurnTreeLease: req.allowTurnTreeLease,
         turnTreeLeaseLabel:
           req.turnTreeLeaseLabel ??
@@ -88,6 +98,9 @@ function makeApi(): {
         turnTreeLeaseSubject:
           req.turnTreeLeaseSubject ?? (req.allowTurnTreeLease ? 'npm test' : undefined),
       })
+    },
+    cancel: (id): void => {
+      cancelHandler({ id })
     },
     responses,
   }
@@ -124,6 +137,7 @@ describe('approval dialog coalescing', () => {
   let dialog: HTMLDialogElement
   let spy: { showCalls: number }
   let emit: (req: EmitReq) => void
+  let cancel: (id: string) => void
   let responses: Responded[]
   // Scheduled timers, tagged by their delay so a test can fire the coalesce
   // (opening) window and the settle (Approve re-enable) window independently.
@@ -146,6 +160,7 @@ describe('approval dialog coalescing', () => {
     timers = []
     const made = makeApi()
     emit = made.emit
+    cancel = made.cancel
     responses = made.responses
     const store = createStore({ activeThreadId: 'focused' })
     mountSettingsDialog(store, made.api)
@@ -191,14 +206,83 @@ describe('approval dialog coalescing', () => {
   })
 
   it('collapses a repeated header into a single heading', () => {
-    // Both requests ask the same question (parallel fetches) — the header should
-    // appear once, with no noisy per-row title repetition, just the two bodies.
-    emit({ id: 'a', title: 'Fetch from the web? — Claude', body: 'fetch one' })
-    emit({ id: 'b', title: 'Fetch from the web? — Claude', body: 'fetch two' })
+    // Both requests ask the same question (parallel fetches) — the heading and
+    // explanatory copy appear once, with only the two changing bodies listed.
+    emit({
+      id: 'a',
+      title: 'Fetch from the web? — Claude',
+      body: 'fetch one',
+      bodyAdvice: 'Network access is outside the project sandbox.',
+      bodyFooter: 'Allow these requests once?',
+    })
+    emit({
+      id: 'b',
+      title: 'Fetch from the web? — Claude',
+      body: 'fetch two',
+      bodyAdvice: 'Network access is outside the project sandbox.',
+      bodyFooter: 'Allow these requests once?',
+    })
     fireWindow()
     assert.equal(heading(), 'Fetch from the web? — Claude')
     assert.deepEqual(rowTitles(), [])
     assert.deepEqual(bodies(), ['fetch one', 'fetch two'])
+    assert.equal(dialog.querySelectorAll('.approval-item').length, 1)
+    assert.equal(dialog.querySelectorAll('.approval-body-list').length, 1)
+    assert.equal(dialog.querySelectorAll('.approval-advice').length, 1)
+    assert.equal(dialog.querySelectorAll('.approval-footer').length, 1)
+  })
+
+  it('keeps differing explanations attached to their individual requests', () => {
+    emit({
+      id: 'a',
+      title: 'Run outside sandbox?',
+      bodyAdvice: 'Needs package downloads.',
+      bodyFooter: 'Allow this install?',
+    })
+    emit({
+      id: 'b',
+      title: 'Run outside sandbox?',
+      bodyAdvice: 'Needs access to a user directory.',
+      bodyFooter: 'Allow this read?',
+    })
+    fireWindow()
+    assert.equal(dialog.querySelectorAll('.approval-body-list').length, 0)
+    assert.equal(dialog.querySelectorAll('.approval-item').length, 2)
+    assert.deepEqual(
+      [...dialog.querySelectorAll('.approval-advice')].map((node) => node.textContent),
+      ['Needs package downloads.', 'Needs access to a user directory.'],
+    )
+    assert.deepEqual(
+      [...dialog.querySelectorAll('.approval-footer')].map((node) => node.textContent),
+      ['Allow this install?', 'Allow this read?'],
+    )
+  })
+
+  it('settles a reduced batch before a cancelled sibling can broaden approval', () => {
+    emit({
+      id: 'read-access',
+      title: 'Allow read access outside of the project?',
+      collapseDetails: true,
+      approveOnceLabel: 'Approve this command',
+    })
+    emit({ id: 'sibling' })
+    fireWindow()
+    assert.equal(approve().textContent, 'Approve all (2)')
+    assert.equal(approve().disabled, false)
+
+    cancel('sibling')
+
+    // The same primary-button position now grants the remaining request's
+    // broader read-access scope. A click committed against "Approve all" must
+    // not land on the changed action until the user has had time to see it.
+    assert.equal(approve().textContent, 'Approve')
+    assert.equal(approve().disabled, true)
+    approve().click()
+    assert.deepEqual(responses, [])
+
+    fireSettle()
+    approve().click()
+    assert.deepEqual(responses, [{ id: 'read-access', approved: true, remember: true }])
   })
 
   it('renders bodyAdvice and bodyFooter outside the monospaced command block', () => {

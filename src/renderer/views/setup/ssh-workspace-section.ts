@@ -4,6 +4,7 @@ import { el, clear } from '../../dom/helpers.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
 import {
   emptySshHostDraft,
+  importSshConfigHosts,
   parseSshHostDraft,
   parseSshWorkspaceHosts,
   removeHost,
@@ -249,19 +250,17 @@ export function createSshWorkspaceSection(
       }
       const raw = await api.settings.get('sshWorkspaceHosts')
       const existing = parseSshWorkspaceHosts(raw)
-      let next = existing
-      let imported = 0
-      for (const alias of aliases) {
-        if (next.some((h) => h.id === alias.id)) continue
-        next = upsertHost(next, alias)
-        imported += 1
-      }
-      await persistHosts(next)
-      if (imported === 0) {
+      const imported = importSshConfigHosts(existing, aliases)
+      await persistHosts(imported.hosts)
+      if (imported.importedHostIds.length === 0) {
         setInlineStatus(status, 'ok', 'All SSH config aliases are already imported.')
         return
       }
-      setInlineStatus(status, 'ok', `Imported ${String(imported)} alias(es) from SSH config.`)
+      setInlineStatus(
+        status,
+        'ok',
+        `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`,
+      )
     })()
   })
 

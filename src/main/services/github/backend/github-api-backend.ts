@@ -29,8 +29,9 @@ import type {
   GhPrFileDiff,
   GhPrSummary,
   PrActionResult,
+  PrCreateResult,
 } from '@shared/types/git.ts'
-import type { GitHubBackend, PrRef } from './backend.ts'
+import type { GitHubBackend, PrCreateInput, PrRef } from './backend.ts'
 import { resolveGitHubApiToken } from './github-token.ts'
 import {
   chooseAutoMergeStrategy,
@@ -43,6 +44,11 @@ import {
   nonEmptyStringOr,
   recordArrayOrEmpty,
 } from '@shared/unknown-value.ts'
+import {
+  decodeGitHubFileContent,
+  emptyGitHubFileContent,
+  type GitHubFileContent,
+} from '../pr-file-content.ts'
 
 /** REST + GraphQL base URLs, honoring GH_HOST for GitHub Enterprise. */
 function apiRoots(host = process.env['GH_HOST']?.trim()): { rest: string; graphql: string } {
@@ -291,7 +297,7 @@ async function listPullFiles(ref: PrRef): Promise<GhPrChangedFile[]> {
     .filter((entry): entry is GhPrChangedFile => entry != null)
 }
 
-async function fileAtRef(ref: PrRef, path: string, gitRef: string): Promise<string> {
+async function fileAtRef(ref: PrRef, path: string, gitRef: string): Promise<GitHubFileContent> {
   const encoded = path
     .split('/')
     .map((segment) => encodeURIComponent(segment))
@@ -300,11 +306,13 @@ async function fileAtRef(ref: PrRef, path: string, gitRef: string): Promise<stri
     `/repos/${ref.owner}/${ref.repo}/contents/${encoded}?ref=${encodeURIComponent(gitRef)}`,
     { immutable: isGitCommitSha(gitRef) },
   )
-  if (!result.ok) return ''
-  if (!isRecord(result.json)) return ''
+  if (!result.ok) return emptyGitHubFileContent()
+  if (!isRecord(result.json)) return emptyGitHubFileContent()
   const content = result.json['content']
-  if (typeof content !== 'string' || !content || result.json['encoding'] !== 'base64') return ''
-  return Buffer.from(content.replace(/\n/g, ''), 'base64').toString('utf8')
+  if (typeof content !== 'string' || !content || result.json['encoding'] !== 'base64') {
+    return emptyGitHubFileContent()
+  }
+  return decodeGitHubFileContent(path, content)
 }
 
 function restError(response: RestResponse): PrActionResult {
@@ -513,9 +521,19 @@ export const githubApiBackend: GitHubBackend = {
     if (!baseSha || !headSha) return null
     const files = await listPullFiles(ref)
     const status = files.find((file) => file.path === path)?.status ?? 'modified'
-    const before = status === 'added' ? '' : await fileAtRef(ref, path, baseSha)
-    const after = status === 'removed' ? '' : await fileAtRef(ref, path, headSha)
-    return { path, before, after, language: detectLanguage(path), deleted: status === 'removed' }
+    const beforeContent =
+      status === 'added' ? emptyGitHubFileContent() : await fileAtRef(ref, path, baseSha)
+    const afterContent =
+      status === 'removed' ? emptyGitHubFileContent() : await fileAtRef(ref, path, headSha)
+    return {
+      path,
+      before: beforeContent.text,
+      after: afterContent.text,
+      language: detectLanguage(path),
+      beforeImage: beforeContent.image,
+      afterImage: afterContent.image,
+      deleted: status === 'removed',
+    }
   },
 
   async getPrChecksState(ref: PrRef): Promise<GhPrChecksState> {
@@ -580,6 +598,65 @@ export const githubApiBackend: GitHubBackend = {
         reran > 0
           ? `Re-ran ${String(reran)} failed run${reran === 1 ? '' : 's'} on ${branch}.`
           : `Found ${String(failed.length)} failed runs but could not re-run them.`,
+    }
+  },
+
+  async createPr(input: PrCreateInput): Promise<PrCreateResult> {
+    const result = await rest(`/repos/${input.owner}/${input.repo}/pulls`, {
+      method: 'POST',
+      body: {
+        title: input.title,
+        body: input.body,
+        head: input.head,
+        base: input.base,
+        draft: input.draft === true,
+      },
+    })
+    if (!result.ok) {
+      // 422 "A pull request already exists for owner:branch." — the end state
+      // holds, but unlike the CLI the REST error carries no URL, so look the
+      // existing PR up by head branch before giving up. The detail sits in the
+      // 422 body's `errors[].message` (top-level `message` is just "Validation
+      // Failed", which is all `errorMessage` surfaces).
+      const alreadyExists =
+        result.status === 422 &&
+        (isRecord(result.json) ? recordArrayOrEmpty(result.json['errors']) : []).some((error) => {
+          const message = error['message']
+          return typeof message === 'string' && /already exists/i.test(message)
+        })
+      if (alreadyExists) {
+        const lookup = await rest(
+          `/repos/${input.owner}/${input.repo}/pulls?state=open&head=${encodeURIComponent(`${input.owner}:${input.head}`)}`,
+        )
+        const first = lookup.ok ? (recordArrayOrEmpty(lookup.json)[0] ?? null) : null
+        const pull = parseRestPull(first)
+        if (pull.html_url && pull.number !== undefined) {
+          return {
+            ok: true,
+            noop: true,
+            backend: 'api',
+            url: pull.html_url,
+            number: pull.number,
+            message: `A pull request for ${input.head} already exists: ${pull.html_url}`,
+          }
+        }
+      }
+      return restError(result)
+    }
+    const pull = parseRestPull(result.json)
+    if (!pull.html_url || pull.number === undefined) {
+      return {
+        ok: true,
+        backend: 'api',
+        message: 'Opened the pull request, but GitHub returned no URL.',
+      }
+    }
+    return {
+      ok: true,
+      backend: 'api',
+      url: pull.html_url,
+      number: pull.number,
+      message: `Opened PR #${String(pull.number)}: ${pull.html_url}`,
     }
   },
 

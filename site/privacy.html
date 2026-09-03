@@ -1,7 +1,6 @@
 <!doctype html>
-<!-- Pre-launch mode — see the note in index.html and the coming-soon block in
-     styles.css. -->
-<html class="marketing-root" lang="en" data-site-mode="coming-soon">
+<!-- Fully live — see the note in index.html and the mode blocks in styles.css. -->
+<html class="marketing-root" lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -28,7 +27,7 @@
           <a href="architecture.html">Architecture</a>
           <a href="privacy.html" aria-current="page">Privacy</a>
         </div>
-        <a class="nav-cta mode-live-only" href="index.html#download">Download</a>
+        <a class="nav-cta mode-download-live-only" href="index.html#download">Download</a>
       </nav>
     </header>
 
@@ -196,12 +195,12 @@
             share settings, environment dumps, shell startup files, or browser profiles.
           </p>
 
-          <h2 class="mode-live-only">More Detail and Source Code</h2>
-          <p class="mode-live-only">
+          <h2 class="mode-source-live-only">More Detail and Source Code</h2>
+          <p class="mode-source-live-only">
             The complete feature-by-feature data-flow and storage inventory is maintained with the
             source code:
           </p>
-          <p class="mode-live-only">
+          <p class="mode-source-live-only">
             <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/privacy-data-flow.md"
               >Read the data-flow documentation</a
             >
@@ -210,13 +209,13 @@
           </p>
 
           <h2>Contact</h2>
-          <p class="mode-live-only">
+          <p class="mode-source-live-only">
             For privacy questions and ordinary bugs, use
             <a href="https://github.com/copse-dev/agent-pane/issues">GitHub Issues</a> without
             including sensitive data. Report suspected vulnerabilities privately to
             <a href="mailto:security@copse.dev">security@copse.dev</a>.
           </p>
-          <p class="mode-coming-soon-only" hidden>
+          <p class="mode-source-private-only" hidden>
             For privacy questions, ordinary bugs, and suspected vulnerabilities, write to
             <a href="mailto:security@copse.dev">security@copse.dev</a> without including sensitive
             data.
@@ -228,9 +227,14 @@
         <a class="wordmark footer-wordmark" href="index.html" aria-label="Copse home">
           <img class="wordmark-image" src="brand-wordmark.svg" alt="" width="78" height="25" />
         </a>
-        <p>Free &amp; open source · Made for developers who pair with agents every day</p>
+        <p class="mode-source-live-only">
+          Free &amp; open source · Made for developers who pair with agents every day
+        </p>
+        <p class="mode-source-private-only" hidden>
+          Made for developers who pair with agents every day
+        </p>
         <div>
-          <a class="mode-live-only" href="https://github.com/copse-dev/agent-pane">GitHub</a>
+          <a class="mode-source-live-only" href="https://github.com/copse-dev/agent-pane">GitHub</a>
           <a href="architecture.html">Architecture</a>
           <a href="privacy.html" aria-current="page">Privacy</a>
         </div>

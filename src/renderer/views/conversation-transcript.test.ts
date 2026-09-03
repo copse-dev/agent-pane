@@ -2,12 +2,17 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
+import { addMessage, addMessageCanvasArtefact, createThread } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
+import {
+  resetArtefactPreviewsForTest,
+  setArtefactPreview,
+  setArtefactShowHandler,
+} from '../canvas/artefact-previews.ts'
 
 // Renders a sent user message carrying transcript attachments (input-bar.ts
 // builds these on send) and asserts the composer's paste chip appears inline at
@@ -40,8 +45,23 @@ function mountWithUserMessage(
   mountConversation(host, store, fakeApi())
 }
 
+function mountWithAssistantMessage(content: string, canvasTitle?: string): string {
+  const store = createStore()
+  const threadId = createThread(store)
+  const messageId = addMessage(store, threadId, 'assistant', content)
+  if (canvasTitle) {
+    addMessageCanvasArtefact(store, messageId, { title: canvasTitle })
+    setArtefactPreview(threadId, canvasTitle, 'data:image/png;base64,AAAA')
+  }
+  const host = document.createElement('div')
+  document.body.append(host)
+  mountConversation(host, store, fakeApi())
+  return threadId
+}
+
 afterEach(() => {
   document.body.replaceChildren()
+  resetArtefactPreviewsForTest()
 })
 
 describe('user transcript attachment chips', () => {
@@ -174,6 +194,69 @@ describe('user transcript attachment chips', () => {
     assert.equal(textEl.querySelector('placeholder'), null)
   })
 
+  /**
+   * The mid-fold accordion was only wired to the plain-text user branch, so any
+   * prompt carrying an attachment — a dropped file, or even a pasted-text chip —
+   * rendered at full height no matter how long it was.
+   */
+  it('folds a long prompt that carries attachments, keeping the chips visible', () => {
+    const lines = Array.from({ length: 14 }, (_, i) => `line ${String(i + 1)}`).join('\n')
+    mountWithUserMessage(`${lines}\nWhat should we do next?`, [
+      { kind: 'file', label: 'trace.zip', content: 'archive' },
+    ])
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl, 'user message text is rendered')
+    assert.ok(textEl.classList.contains('msg-user-fold'), 'the prompt folds')
+    assert.equal(textEl.classList.contains('is-expanded'), false)
+    assert.match(textEl.querySelector('.msg-user-fold-head')?.textContent ?? '', /line 1/)
+    assert.match(
+      textEl.querySelector('.msg-user-fold-tail')?.textContent ?? '',
+      /What should we do next/,
+    )
+
+    // The attachment row sits outside the fold, so it stays readable collapsed.
+    const row = textEl.querySelector('.transcript-attachment-row')
+    assert.ok(row, 'trailing attachment row renders')
+    assert.equal(row.closest('.msg-user-fold-middle'), null, 'the row is not hidden by the fold')
+    assert.equal(row.querySelector('.transcript-attachment-label')?.textContent, 'trace.zip')
+
+    const toggle = textEl.querySelector<HTMLButtonElement>('.msg-user-fold-toggle')
+    assert.ok(toggle)
+    toggle.click()
+    assert.ok(textEl.classList.contains('is-expanded'))
+  })
+
+  /**
+   * Head/middle/tail are contiguous slices, so a placeholder in the tail must
+   * still resolve to the tail's paste — not restart at the message's first one.
+   */
+  it('binds inline paste chips to the right snapshot on both sides of the fold', () => {
+    const filler = Array.from({ length: 14 }, (_, i) => `line ${String(i + 1)}`).join('\n')
+    mountWithUserMessage(`opening ${CHIP_CHAR} note\n${filler}\nclosing ${CHIP_CHAR} ask`, [
+      { kind: 'paste', label: 'First paste', content: 'one' },
+      { kind: 'paste', label: 'Second paste', content: 'two' },
+    ])
+
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl, 'user message text is rendered')
+    assert.ok(textEl.classList.contains('msg-user-fold'), 'the prompt folds')
+
+    const head = textEl.querySelector('.msg-user-fold-head')
+    const tail = textEl.querySelector('.msg-user-fold-tail')
+    assert.equal(
+      head?.querySelector('.transcript-attachment-label')?.textContent,
+      'First paste',
+      'the head chip keeps the first snapshot',
+    )
+    assert.equal(
+      tail?.querySelector('.transcript-attachment-label')?.textContent,
+      'Second paste',
+      'the tail chip resolves to the second snapshot, not the first',
+    )
+    assert.doesNotMatch(textEl.textContent, new RegExp(CHIP_CHAR))
+  })
+
   it('shows a text-only resend recovery for an image prompt rejected by its model', () => {
     const store = createStore()
     const threadId = createThread(store)
@@ -193,5 +276,38 @@ describe('user transcript attachment chips', () => {
       document.querySelector('.msg-resend-without-images')?.textContent,
       'Resend without image',
     )
+  })
+})
+
+describe('assistant inline visualization references', () => {
+  it('hides provider control data while preserving the surrounding answer', () => {
+    const reference =
+      '\u{e200}visualize\u{e202}{"path":"/workspace/chart.html","title":"Chart"}\u{e201}'
+    mountWithAssistantMessage(`Before\n${reference}\nAfter`)
+
+    const textEl = document.querySelector('.msg-assistant .message-text')
+    assert.ok(textEl, 'assistant message text is rendered')
+    assert.equal(textEl.textContent, 'Before\nAfter')
+    assert.doesNotMatch(textEl.textContent, /visualize|chart\.html/)
+    assert.equal(document.querySelector('.tool-card'), null)
+  })
+
+  it('shows the existing canvas preview card directly beneath an assistant answer', () => {
+    let opened: { threadId: string; title: string } | null = null
+    setArtefactShowHandler((threadId, title) => {
+      opened = { threadId, title }
+    })
+
+    const threadId = mountWithAssistantMessage('Here is the chart.', 'Chart')
+    const card = document.querySelector(
+      '.msg-assistant > .message-body > .message-canvas-previews .canvas-preview-card',
+    )
+    assert.ok(card)
+    assert.equal(card.querySelector('.canvas-preview-title')?.textContent, 'Chart')
+    assert.match(card.querySelector('img')?.getAttribute('src') ?? '', /^data:image\/png/)
+    assert.equal(document.querySelector('.tool-card'), null)
+
+    card.querySelector<HTMLButtonElement>('button')?.click()
+    assert.deepEqual(opened, { threadId, title: 'Chart' })
   })
 })

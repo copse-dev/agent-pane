@@ -164,7 +164,10 @@ revisiting this document, not silently diverging in an implementation PR.
     programmatic stop button — the loop already handles that external signal.
 13. **Per-hook timeouts, vendor defaults.** Claude command hooks default to 600s; our
     fixed 5s would kill real hooks. Blocking-hook wait pauses the idle deadline the same
-    way tool execution does. Async over-cap dispatches (concurrency cap ~8/thread) go
+    way tool execution does. It does **not** pause the absolute hard deadline: the run's
+    abort signal remains threaded through blocking hooks and permission prompts, so a
+    pending gate is dismissed when that hard cap fires. Async over-cap dispatches
+    (concurrency cap ~8/thread) go
     into a pending-dispatch FIFO (deferred spawn, still detached, no ordering promises;
     cap ~100 then drop-with-spine-record). Nothing ever waits on the FIFO.
 14. **Payloads are treated as stable now; stability is _declared_ at publish time.**

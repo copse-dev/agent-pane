@@ -30,11 +30,11 @@ async function waitForWorkspace(): Promise<void> {
 
 /** Real clipboard write + Ctrl+V so the composer's paste handler runs trusted. */
 async function pasteIntoComposer(text: string): Promise<void> {
+  const composer = await $('.prompt-input')
+  await composer.click()
   await browser.execute(async (t) => {
     await navigator.clipboard.writeText(t)
   }, text)
-  const composer = await $('.prompt-input')
-  await composer.click()
   await browser.action('key').down(Key.Ctrl).down('v').up('v').up(Key.Ctrl).perform()
 }
 

@@ -152,7 +152,9 @@ function proposedEdit(
     const oldString = stringArg(args, 'old_string')
     const newString = stringArg(args, 'new_string')
     if (oldString === undefined || newString === undefined) return undefined
-    return { path, before, after: before.replace(oldString, newString) }
+    // Function replacement, so `$&`/`$$` in the new text stay literal — the same
+    // rule the real `str_replace` tool follows.
+    return { path, before, after: before.replace(oldString, () => newString) }
   }
   return undefined
 }
@@ -390,8 +392,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         }
       },
       onApprovalRequest: (handler) => {
-        if (scenario.approvalRequest) {
-          const request = structuredClone(scenario.approvalRequest)
+        for (const approvalRequest of scenario.approvalRequests ?? []) {
+          const request = structuredClone(approvalRequest)
           setTimeout(() => {
             handler(request)
           }, 0)
@@ -400,6 +402,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       },
       onApprovalCancelled: subscribe,
       onAskUserRequest: subscribe,
+      onAskUserCancelled: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
       onHookQueueMessage: subscribe,
@@ -468,7 +471,14 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       setCuratedEnabled: emptyArray,
       onStatusChanged: subscribe,
     },
-    canvas: { onArtefact: subscribe, onShowArtefact: subscribe },
+    canvas: {
+      onArtefact: subscribe,
+      onShowArtefact: subscribe,
+      // The demo has no canvas store behind it: nothing was ever saved, so
+      // nothing can be listed or reopened.
+      listArtefacts: () => resolved([]),
+      reopenArtefact: () => resolved(false),
+    },
     storage: {
       get: (key: string) => resolved(storage.get(key)),
       set: (key: string, value: unknown) => {
@@ -658,6 +668,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           localModels: [],
           totalInputTokens: 0,
           totalOutputTokens: 0,
+          hasUnpricedCloudUsage: false,
         }
         return resolved({
           day: emptyPeriod,

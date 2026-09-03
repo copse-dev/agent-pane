@@ -1,10 +1,10 @@
 /**
  * Test oracle — recommends which tests to run for a set of changes, so you can
- * run the expensive e2e tier (52 specs, sharded 8× in CI) less often.
+ * run the expensive e2e tier (sharded 8× in CI) less often.
  *
- * It is a *local accelerator*, not a CI coverage reducer: it tells you the
- * tests most likely affected by your diff and how confident it is, then leaves
- * the call to you. It never claims a clean bill of health it can't back up.
+ * It is a local accelerator and a CI cost selector: it identifies the tests
+ * most likely affected by a diff. CI trusts a subset only at HIGH confidence;
+ * broad or LOW-confidence changes run the full tier.
  *
  * How it maps changes → tests:
  *   • e2e specs barely import source — they drive the built app through DOM
@@ -36,8 +36,9 @@
  *   node scripts/test-oracle.mts --plan          # CI plan (see .github/workflows/ci.yml)
  *
  * CI gating (.github/workflows/ci.yml `precheck` job): on a pull_request the
- * `--plan` output thins the e2e tier to the affected specs; a push to main
- * always runs the full suite, so main is never gated on a partial map.
+ * `--plan` output thins the e2e tier to the affected specs only when confidence
+ * is HIGH. Broad/LOW-confidence plans run the full suite before merge. A push
+ * to main is cheap because the PR commit was already gated; nightly runs full.
  *
  * `--plan` also emits a UNIT plan (`unit_mode` / `unit_specs`). CI applies it
  * only to a PR that targets another PR's branch — a stacked layer that cannot
@@ -674,9 +675,9 @@ export type ScreenshotGate = {
  * if a diff touches UI that a committed reference screenshot covers (the oracle
  * maps it to a screenshot-producing spec) but the PNG wasn't refreshed in the
  * same diff, the shot is presumed stale. Reference shots are pixel-rendered on
- * the CI runner, so the sanctioned refresh path is letting CI render and commit
- * them: the e2e gate run re-renders the affected shots and the commit-screenshots
- * job commits the diff. The `update-screenshots` label forces a full refresh — a
+ * the CI runner, so the sanctioned refresh path is letting CI render them into an
+ * immutable artifact, reviewing it, and explicitly committing the intended
+ * PNGs. The `update-screenshots` label forces a full refresh — a
  * labeled PR always passes. This static gate never reruns the e2e tier itself.
  *
  * Only files that can influence rendered output drive the gate: shipped source

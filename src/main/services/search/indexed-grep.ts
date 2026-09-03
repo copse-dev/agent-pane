@@ -27,10 +27,7 @@ export interface CodeContentSearchOptions {
 }
 
 let activeBackend: IndexedGrepBackend = 'rg'
-
-export function getIndexedGrepBackend(): IndexedGrepBackend {
-  return activeBackend
-}
+let executeCommand: typeof runCommand = runCommand
 
 export async function probeIndexedGrepBackends(): Promise<IndexedGrepBackend> {
   const candidates: Array<{ cmd: string; backend: IndexedGrepBackend; args: string[] }> = [
@@ -55,9 +52,14 @@ export function setIndexedGrepBackendForTest(backend: IndexedGrepBackend | null)
   activeBackend = backend ?? 'rg'
 }
 
+/** Test hook — stub indexed and fallback command output without depending on host binaries. */
+export function setIndexedGrepCommandRunnerForTest(runner: typeof runCommand | null): void {
+  executeCommand = runner ?? runCommand
+}
+
 async function probe(cmd: string, args: string[]): Promise<boolean> {
   try {
-    await runCommand(cmd, args)
+    await executeCommand(cmd, args)
     return true
   } catch {
     return false
@@ -85,11 +87,15 @@ export async function searchCodeContent(
 
   try {
     const lines = await searchWithIndexedCli(backend, opts)
-    return { lines, backend }
+    if (lines.length > 0) return { lines, backend }
   } catch {
-    const lines = await searchWithRipgrep(opts)
-    return { lines, backend: 'rg' }
+    // Fall through to ripgrep when the indexed backend itself is unavailable.
   }
+
+  // A stale index is a successful empty query, not an exception. Verify empty
+  // indexed results against the checkout before reporting a confident miss.
+  const lines = await searchWithRipgrep(opts)
+  return { lines, backend: 'rg' }
 }
 
 async function searchWithIndexedCli(
@@ -97,7 +103,7 @@ async function searchWithIndexedCli(
   opts: CodeContentSearchOptions,
 ): Promise<string[]> {
   const args = buildIndexedCliArgs(backend, opts)
-  const { stdout } = await runCommand(backend, args, opts.signal ? { signal: opts.signal } : {})
+  const { stdout } = await executeCommand(backend, args, opts.signal ? { signal: opts.signal } : {})
   return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot)
 }
 
@@ -160,7 +166,7 @@ async function searchWithRipgrep(opts: CodeContentSearchOptions): Promise<string
     opts.searchRoot,
   ]
 
-  const { stdout } = await runCommand('rg', args, opts.signal ? { signal: opts.signal } : {})
+  const { stdout } = await executeCommand('rg', args, opts.signal ? { signal: opts.signal } : {})
   return await parseRipgrepJson(stdout, opts.maxResults, opts.displayRoot)
 }
 
@@ -176,7 +182,7 @@ async function searchWithGrepRecursive(opts: CodeContentSearchOptions): Promise<
     opts.pattern,
     opts.searchRoot,
   ]
-  const { stdout } = await runCommand('grep', args, opts.signal ? { signal: opts.signal } : {})
+  const { stdout } = await executeCommand('grep', args, opts.signal ? { signal: opts.signal } : {})
   return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot)
 }
 

@@ -62,6 +62,7 @@ export function threadToJsonl(thread: Thread): string {
         content: msg.content,
         ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
         images: msg.images,
+        ...(msg.canvasArtefacts !== undefined ? { canvasArtefacts: msg.canvasArtefacts } : {}),
         commandSummary: msg.commandSummary,
         ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
         ...(msg.model !== undefined ? { model: msg.model } : {}),

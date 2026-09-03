@@ -1,7 +1,7 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { PREFERRED_MODELS } from '@shared/preferred-models.ts'
 import { at } from '@shared/array-utils.ts'
-import { lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
+import { DEFAULT_SAFETY_MODEL, lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
 import { fetchRoleModelOptions, localModelOptions, type ModelOption } from '../model-options.ts'
 import { mountModelSelectPicker } from '../model-picker.ts'
 import { el } from '../../dom/helpers.ts'
@@ -53,7 +53,7 @@ export function createModelRoutingSection(
       routingField(
         'Instruct / safety model',
         safetyModel,
-        'Classifies shell commands and screens terminal reads. A cloud choice sends that screening content to its provider.',
+        'Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does — a cloud choice sends that screening content to its provider.',
       ),
       routingField('Post-turn review model', reviewModel, 'Reviews the diff after an editing turn'),
     ),
@@ -97,16 +97,25 @@ export function createModelRoutingSection(
             fetchRoleModelOptions(api, current, '(auto: prefer on-device)'),
         }
       : {
-          coder: (): Promise<ModelOption[]> =>
-            Promise.resolve(localModelOptions(availableLocalModels)),
-          research: (): Promise<ModelOption[]> =>
+          // `current` is forwarded so a role pinned to a model the server does
+          // not have keeps a row of its own, flagged as not available, instead
+          // of silently rendering as the auto option.
+          coder: (current: string): Promise<ModelOption[]> =>
             Promise.resolve(
-              localModelOptions(availableLocalModels, '(auto: use default local model)'),
+              localModelOptions(availableLocalModels, '(auto — first loaded model)', current),
             ),
-          safety: (): Promise<ModelOption[]> =>
-            Promise.resolve(localModelOptions(availableLocalModels)),
-          review: (): Promise<ModelOption[]> =>
-            Promise.resolve(localModelOptions(availableLocalModels, '(auto: prefer on-device)')),
+          research: (current: string): Promise<ModelOption[]> =>
+            Promise.resolve(
+              localModelOptions(availableLocalModels, '(auto: use default local model)', current),
+            ),
+          safety: (current: string): Promise<ModelOption[]> =>
+            Promise.resolve(
+              localModelOptions(availableLocalModels, '(auto — first loaded model)', current),
+            ),
+          review: (current: string): Promise<ModelOption[]> =>
+            Promise.resolve(
+              localModelOptions(availableLocalModels, '(auto: prefer on-device)', current),
+            ),
         }
   const modelPickers = {
     coder: mountModelSelectPicker(localDefaultModel, {
@@ -148,11 +157,9 @@ export function createModelRoutingSection(
             : lmStudioChatModelValue(at(PREFERRED_MODELS, 0).id),
         ),
         modelPickers.research.refresh(canonicalRoleSelection(research ?? '')),
-        modelPickers.safety.refresh(
-          safety
-            ? canonicalRoleSelection(safety)
-            : lmStudioChatModelValue(at(PREFERRED_MODELS, 2).id),
-        ),
+        // Unset means the *rule*, not the model we recommend downloading —
+        // showing a concrete local id here would misreport what actually runs.
+        modelPickers.safety.refresh(safety ? canonicalRoleSelection(safety) : DEFAULT_SAFETY_MODEL),
         modelPickers.review.refresh(canonicalRoleSelection(review ?? '')),
       ])
       return
@@ -170,7 +177,7 @@ export function createModelRoutingSection(
         localModel?.replace(/^lmstudio:/, '') ?? at(PREFERRED_MODELS, 0).id,
       ),
       modelPickers.research.refresh(subagent?.replace(/^lmstudio:/, '') ?? ''),
-      modelPickers.safety.refresh(safety?.replace(/^lmstudio:/, '') ?? at(PREFERRED_MODELS, 2).id),
+      modelPickers.safety.refresh(safety?.replace(/^lmstudio:/, '') ?? DEFAULT_SAFETY_MODEL),
       modelPickers.review.refresh(review?.replace(/^lmstudio:/, '') ?? ''),
     ])
   }

@@ -18,10 +18,38 @@ export interface CanvasArtefact {
    * missing preview as normal and simply show no thumbnail.
    */
   preview?: string
+  /**
+   * Workspace-relative path of the file the artefact was rendered from, when it
+   * came from one (`render_html_artefact`'s preferred `path` argument). Absent
+   * for inline HTML and for external MCP servers, which have no such file.
+   *
+   * Provenance, and the reason a restored artefact can show later edits: when
+   * the canvas store reopens a saved artefact it prefers this file over its own
+   * snapshot, so editing the HTML and reopening shows the edit.
+   */
+  sourcePath?: string
 }
 
 /** Identity used when promoting a rendered artefact into the visible pane. */
 export interface CanvasArtefactIdentity {
   title: string
   threadId?: string
+}
+
+/**
+ * A canvas artefact attached to one assistant message for transcript display.
+ * The owning message already supplies the thread scope, so persisting the title
+ * alone avoids baking a stale thread id into forks or imported transcripts.
+ */
+export interface CanvasArtefactReference {
+  title: string
+}
+
+/**
+ * A saved artefact as the transcript needs it: enough to draw the preview card
+ * that offers to reopen it, without reading the (much larger) body back.
+ */
+export interface CanvasArtefactSummary {
+  title: string
+  preview?: string
 }

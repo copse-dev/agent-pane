@@ -62,7 +62,7 @@ jobs:
     # Skip forks entirely (their pushes don't trigger this anyway; explicit for
     # clarity). Prefer the self-hosted check fleet when configured.
     if: github.repository == 'copse-dev/agent-pane'
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     outputs:
       found: ${{ steps.target.outputs.found }}
       pr: ${{ steps.target.outputs.pr }}
@@ -175,18 +175,31 @@ jobs:
           # perfectly valid. Targets never share a directory (main/, release/,
           # pr-<n>/, pr-<n>-preview/), so the loser just needs to re-stack onto
           # the winner's tip: re-fetch, hard-reset onto the new tip, re-apply
-          # this target's build, re-commit, push again.
+          # this target's already-built tree, re-commit, push again.
           published=false
           unchanged=false
-          for attempt in 1 2 3 4 5; do
+          # The first attempt's commit. Later attempts re-apply it onto the tip
+          # that beat them rather than rebuilding the same bytes; empty until the
+          # build below has produced one.
+          restack_from=""
+          attempts=12
+          for attempt in $(seq 1 "$attempts"); do
             if [ "$attempt" -gt 1 ]; then
-              echo "Push rejected; restacking onto the new demo-previews tip (attempt ${attempt})"
-              sleep $(( attempt * 5 ))
+              echo "Push rejected; restacking onto the new demo-previews tip (attempt ${attempt}/${attempts})"
+              # Back off with jitter, capping the base so a dozen attempts stay
+              # bounded. One push to main fans this workflow out into a dozen runs
+              # that all start within seconds of each other, so a fixed backoff
+              # retried the whole herd in lockstep: the losers collided again on
+              # every attempt and ran out of them on contents that were never
+              # wrong (2026-08-29T14:48Z, five straight rejections on an untouched
+              # PR). The random term is what breaks the lockstep; the raised
+              # ceiling covers a herd that can only drain one run per round.
+              sleep $(( (attempt < 6 ? attempt * 5 : 30) + RANDOM % 10 ))
               # The clone is shallow, so refresh it the same way rather than pulling
               # full history. An orphan first publish has no remote branch to fetch;
               # in that case there is nothing to restack onto and the retry is a
               # plain re-push. `clean -fdx` also drops the previous attempt's
-              # untracked bundle dirs so the rebuild below starts from the tip.
+              # untracked bundle dirs so the re-apply below starts from the tip.
               if git -C previews-branch fetch --depth=1 origin demo-previews 2>/dev/null; then
                 git -C previews-branch reset --hard FETCH_HEAD
                 git -C previews-branch clean -fdx
@@ -203,57 +216,80 @@ jobs:
               node scripts/copy-monaco-workers.mts "$monaco_dir"
               git -C previews-branch add "vendor/monaco/${MONACO_VERSION}"
             fi
-            rm -rf "previews-branch/${TARGET}"
-            mkdir -p "previews-branch/${TARGET}"
-            cp -R dist/demo/. "previews-branch/${TARGET}/"
-            # site/index.html links the demo relatively, as `demo/main/`, which is
-            # correct from the site root. A bundle served from a subdirectory used
-            # to satisfy that by nesting a second, identical copy of the whole
-            # demo inside itself — doubling every preview's size and producing the
-            # /demo/pr-<n>-preview/demo/main/ URL. Point those links at the flat
-            # build published beside it instead. Relative rather than
-            # root-relative, so it holds whether Pages serves from the custom
-            # domain root or from an <owner>.github.io/<repo>/ prefix.
-            point_site_at_demo() {
-              local file="previews-branch/$1/index.html"
-              if ! grep -q '"demo/main/' "$file"; then
-                echo "site/index.html no longer links \"demo/main/\" — update this rewrite" >&2
-                exit 1
+            # Build the publishable tree on the first pass only. The monaco
+            # check above still runs every attempt, because a restack can land
+            # on a tip that does not carry this version yet.
+            if [ -z "$restack_from" ]; then
+              rm -rf "previews-branch/${TARGET}"
+              mkdir -p "previews-branch/${TARGET}"
+              cp -R dist/demo/. "previews-branch/${TARGET}/"
+              # site/index.html links the demo relatively, as `demo/main/`, which is
+              # correct from the site root. A bundle served from a subdirectory used
+              # to satisfy that by nesting a second, identical copy of the whole
+              # demo inside itself — doubling every preview's size and producing the
+              # /demo/pr-<n>-preview/demo/main/ URL. Point those links at the flat
+              # build published beside it instead. Relative rather than
+              # root-relative, so it holds whether Pages serves from the custom
+              # domain root or from an <owner>.github.io/<repo>/ prefix.
+              point_site_at_demo() {
+                local file="previews-branch/$1/index.html"
+                if ! grep -q '"demo/main/' "$file"; then
+                  echo "site/index.html no longer links \"demo/main/\" — update this rewrite" >&2
+                  exit 1
+                fi
+                sed -i "s|\"demo/main/|\"$2|g" "$file"
+              }
+              # These bundles are copies of the production marketing site served
+              # under /demo/, so they are near-duplicates of copse.dev/ and of each
+              # other, and they come and go with pull requests. Mark them noindex
+              # here, on the copy — site/ itself stays indexable, and pages.yml
+              # deploys it to the root from main untouched. The flat demo published
+              # beside them is already marked by `build:demo`. GitHub Pages cannot
+              # set an X-Robots-Tag header, hence a meta tag; see
+              # scripts/lib/noindex.mts.
+              mark_bundle_noindex() {
+                node scripts/mark-noindex.mts "previews-branch/$1"
+              }
+              if [[ "$TARGET" == "main" ]]; then
+                mkdir -p "previews-branch/${TARGET}/preview"
+                cp -R site/. "previews-branch/${TARGET}/preview/"
+                # ../ from /demo/main/preview/ is /demo/main/, the flat build above.
+                point_site_at_demo "${TARGET}/preview" "../"
+                mark_bundle_noindex "${TARGET}/preview"
+              elif [[ "$TARGET" =~ ^pr-[0-9]+$ ]]; then
+                bundle_target="${TARGET}-preview"
+                rm -rf "previews-branch/${bundle_target}"
+                mkdir -p "previews-branch/${bundle_target}"
+                cp -R site/. "previews-branch/${bundle_target}/"
+                # ../pr-<n>/ from /demo/pr-<n>-preview/ is the flat build above.
+                point_site_at_demo "$bundle_target" "../${TARGET}/"
+                mark_bundle_noindex "$bundle_target"
+                find "previews-branch/${bundle_target}" -type f -name '*.map' -delete
+                git -C previews-branch add "$bundle_target"
               fi
-              sed -i "s|\"demo/main/|\"$2|g" "$file"
-            }
-            # These bundles are copies of the production marketing site served
-            # under /demo/, so they are near-duplicates of copse.dev/ and of each
-            # other, and they come and go with pull requests. Mark them noindex
-            # here, on the copy — site/ itself stays indexable, and pages.yml
-            # deploys it to the root from main untouched. The flat demo published
-            # beside them is already marked by `build:demo`. GitHub Pages cannot
-            # set an X-Robots-Tag header, hence a meta tag; see
-            # scripts/lib/noindex.mts.
-            mark_bundle_noindex() {
-              node scripts/mark-noindex.mts "previews-branch/$1"
-            }
-            if [[ "$TARGET" == "main" ]]; then
-              mkdir -p "previews-branch/${TARGET}/preview"
-              cp -R site/. "previews-branch/${TARGET}/preview/"
-              # ../ from /demo/main/preview/ is /demo/main/, the flat build above.
-              point_site_at_demo "${TARGET}/preview" "../"
-              mark_bundle_noindex "${TARGET}/preview"
-            elif [[ "$TARGET" =~ ^pr-[0-9]+$ ]]; then
-              bundle_target="${TARGET}-preview"
-              rm -rf "previews-branch/${bundle_target}"
-              mkdir -p "previews-branch/${bundle_target}"
-              cp -R site/. "previews-branch/${bundle_target}/"
-              # ../pr-<n>/ from /demo/pr-<n>-preview/ is the flat build above.
-              point_site_at_demo "$bundle_target" "../${TARGET}/"
-              mark_bundle_noindex "$bundle_target"
-              find "previews-branch/${bundle_target}" -type f -name '*.map' -delete
-              git -C previews-branch add "$bundle_target"
+              # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
+              # and high-entropy map contents fail Secret scan on unrelated tips.
+              find "previews-branch/${TARGET}" -type f -name '*.map' -delete
+              git -C previews-branch add "$TARGET"
+              publish_paths=("$TARGET")
+              if [ -n "${bundle_target:-}" ]; then
+                publish_paths+=("$bundle_target")
+              fi
+            else
+              # A retry changes which tip this target sits on, never what it
+              # publishes, so re-apply the rejected commit's version of these
+              # paths instead of re-copying ~1k files and re-hashing them into
+              # the index. Nothing here reads dist/ or site/ again, and the
+              # narrower the gap between fetching the tip and pushing, the more
+              # likely this run is the one whose push lands. Uncache first, so
+              # that a file the winner's tip carries under these paths which
+              # this build no longer produces is staged as a deletion — which
+              # is what `git add <dir>` does on the first pass.
+              for path in "${publish_paths[@]}"; do
+                git -C previews-branch rm -r -q --cached --ignore-unmatch -- "$path"
+                git -C previews-branch checkout "$restack_from" -- "$path"
+              done
             fi
-            # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
-            # and high-entropy map contents fail Secret scan on unrelated tips.
-            find "previews-branch/${TARGET}" -type f -name '*.map' -delete
-            git -C previews-branch add "$TARGET"
             if git -C previews-branch diff --cached --quiet; then
               # Reached on the first pass when the build is byte-identical to what
               # is already published, and on a retry when the winning push carried
@@ -272,13 +308,14 @@ jobs:
               break
             fi
             git -C previews-branch commit -m "demo preview: ${LABEL} (${SHA})"
+            restack_from="$(git -C previews-branch rev-parse HEAD)"
             if git -C previews-branch push origin demo-previews; then
               published=true
               break
             fi
           done
           if [ "$published" = false ] && [ "$unchanged" = false ]; then
-            echo "Could not publish ${LABEL} to demo-previews after 5 attempts" >&2
+            echo "Could not publish ${LABEL} to demo-previews after ${attempts} attempts" >&2
             exit 1
           fi
           echo "published=${published}" >> "$GITHUB_OUTPUT"
@@ -303,7 +340,7 @@ jobs:
   comment:
     needs: publish
     if: needs.publish.outputs.published == 'true' && needs.publish.outputs.pr != ''
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     permissions:
       pull-requests: write
       pages: read
