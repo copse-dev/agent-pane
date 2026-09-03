@@ -27,6 +27,7 @@ const GENERATED_PATH = resolve('packages/llm/src/model-catalog.generated.ts')
 // comment for why this is duplicated). model-catalog.test.ts enforces parity.
 const TRACKED_MODELS = [
   'claude-sonnet-4-6',
+  'claude-fable-5-1',
   'claude-fable-5',
   'claude-sonnet-5',
   'claude-opus-5',

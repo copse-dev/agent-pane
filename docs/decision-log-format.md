@@ -72,6 +72,15 @@ Optional argv / Guarded-YOLO extras live next to tool results:
   ([`safety-classifier.ts`](../src/main/services/security/safety-classifier.ts))
   is recorded as an `actor: "classifier"`, `verdict: "classified"` event with
   `scope` + `confidence`; it does not claim the classifier authorized execution.
+- **Classifier unavailability** — when the configured safety model cannot run
+  at all (not offered by the local server, or the server is unreachable), that
+  is recorded once per thread
+  ([`safety-model-availability.ts`](../src/main/services/security/safety-model-availability.ts))
+  as an `actor: "system"`, `verdict: "ask"` event whose `subject` is
+  `safety-model`. It is deliberately not `classified` — nothing was classified
+  — and not a user denial: it records that screening was unavailable, so a run
+  of approval prompts is explained rather than looking like a flaky model.
+  Deduped per thread because it is a configuration fault, not a per-call event.
 - **Hook verdicts** — any non-`allow` Cursor hook decision
   ([`cursor-hooks.ts`](../src/shared/types/cursor-hooks.ts)) is recorded
   as an `actor: "hook"` event (`blocked` / `ask`).

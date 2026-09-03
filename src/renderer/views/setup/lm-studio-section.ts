@@ -1,6 +1,5 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { PREFERRED_MODELS } from '@shared/preferred-models.ts'
-import { at } from '@shared/array-utils.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -17,7 +16,7 @@ import {
   isContextWindowLow,
   lowContextAdvice,
 } from '@shared/context-window-advice.ts'
-import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
+import { DEFAULT_LM_STUDIO_URL, DEFAULT_SAFETY_MODEL } from '@shared/lm-studio-defaults.ts'
 import { el } from '../../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 import {
@@ -382,7 +381,7 @@ export function createLmStudioSection(
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,
       safetyExternalDenyThreshold: currentExternalDeny ?? 1,
-      safetyModel: opts?.safetyModel ?? currentSafety ?? at(PREFERRED_MODELS, 2).id,
+      safetyModel: opts?.safetyModel ?? currentSafety ?? DEFAULT_SAFETY_MODEL,
       autoRunSandboxCommands: currentAutoRun ?? true,
       mcpAutoAllowReadOnly: currentMcpAuto ?? false,
       defaultReadonlyMode: currentReadonly ?? false,
