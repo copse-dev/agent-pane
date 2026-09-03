@@ -59,6 +59,14 @@ var init_model_catalog_generated = __esm({
         contextWindow: 1e6,
         maxOutputTokens: 128e3
       },
+      "claude-fable-5-1": {
+        inputPricePerMTok: 10,
+        outputPricePerMTok: 50,
+        cacheReadPricePerMTok: 0.25,
+        cacheCreationPricePerMTok: 12.5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
       "claude-haiku-4-5": {
         inputPricePerMTok: 1,
         outputPricePerMTok: 5,
@@ -445,6 +453,7 @@ var init_model_catalog = __esm({
     DEFAULT_CLOUD_MODEL = "claude-sonnet-4-6";
     TRACKED_MODELS = [
       DEFAULT_CLOUD_MODEL,
+      "claude-fable-5-1",
       "claude-fable-5",
       "claude-sonnet-5",
       "claude-opus-5",
@@ -462,6 +471,7 @@ var init_model_catalog = __esm({
     ];
     CLOUD_MODEL_LABELS = {
       "claude-sonnet-4-6": "Claude Sonnet 4.6",
+      "claude-fable-5-1": "Claude Fable 5.1",
       "claude-fable-5": "Claude Fable 5",
       "claude-sonnet-5": "Claude Sonnet 5",
       "claude-opus-5": "Claude Opus 5",
@@ -52302,7 +52312,7 @@ function isHookCardBlocking(status) {
   return status === "deny" || status === "blocked" || status === "error" || status === "halted";
 }
 function hookCardPerformedAction(card2) {
-  return card2.status === "deny" || card2.status === "ask" || card2.status === "halted" || card2.updatedInput === true || (card2.injectContextChars ?? 0) > 0 || (card2.agentMessageChars ?? 0) > 0 || (card2.userMessageChars ?? 0) > 0 || (card2.queuedMessageChars ?? 0) > 0 || (card2.sessionEnvKeys ?? 0) > 0;
+  return card2.status === "deny" || card2.status === "ask" || card2.status === "halted" || card2.updatedInput === true || card2.nudgeApplied === true || (card2.injectContextChars ?? 0) > 0 || (card2.agentMessageChars ?? 0) > 0 || (card2.userMessageChars ?? 0) > 0 || (card2.queuedMessageChars ?? 0) > 0 || (card2.sessionEnvKeys ?? 0) > 0;
 }
 function hookEventLabel(event3) {
   const spaced = event3.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").trim();
@@ -52318,7 +52328,10 @@ function getHookCardStatusLabel(card2) {
     card2.status === "ask" ? "Requested approval" : void 0,
     card2.status === "halted" ? "Stopped run" : void 0,
     card2.updatedInput ? "Rewrote input" : void 0,
-    (card2.injectContextChars ?? 0) > 0 ? "Added context" : void 0,
+    // Ranked above "Added context" so the line that records the nudge the loop
+    // actually pushed is not read as just another hook that offered one.
+    card2.nudgeApplied ? "Steered the model" : void 0,
+    !card2.nudgeApplied && (card2.injectContextChars ?? 0) > 0 ? "Added context" : void 0,
     (card2.agentMessageChars ?? 0) > 0 ? "Guided agent" : void 0,
     (card2.userMessageChars ?? 0) > 0 ? "Notified you" : void 0,
     (card2.queuedMessageChars ?? 0) > 0 ? "Queued follow-up" : void 0,
@@ -241807,8 +241820,14 @@ function hookCardDetailLines(card2) {
   if (card2.status === "ask") lines.push("Requested approval for the gated action");
   if (card2.status === "halted") lines.push("Stopped the agent run");
   if (card2.updatedInput) lines.push("Rewrote the tool input");
+  if (card2.nudgeApplied) {
+    const via = card2.nudgeMechanism === "text-only-turn" ? "as a forced text-only turn" : "appended to the next turn";
+    lines.push(`Applied this nudge to the conversation \u2014 ${via}`);
+  }
   if (card2.injectContextChars !== void 0 && card2.injectContextChars > 0) {
-    lines.push(`Injected ${String(card2.injectContextChars)} chars of context`);
+    lines.push(
+      card2.nudgeApplied ? `${String(card2.injectContextChars)} chars of nudge text` : `Injected ${String(card2.injectContextChars)} chars of context`
+    );
   }
   if (card2.agentMessageChars !== void 0 && card2.agentMessageChars > 0) {
     lines.push(`Sent ${String(card2.agentMessageChars)} chars of guidance to the agent`);
