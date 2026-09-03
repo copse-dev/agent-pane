@@ -89,6 +89,11 @@ import {
   retryReview,
 } from '../controller/retry-review-comparison.ts'
 import { renderToolArgs } from './tool-args-format.ts'
+import {
+  createThreadProposalToolCard,
+  isThreadProposalCall,
+  threadProposalCardSignature,
+} from './thread-proposal-tool-card.ts'
 import { renderSignature } from './render-signature.ts'
 import {
   drainMessageQueue,
@@ -338,8 +343,16 @@ function createIndividualToolCard(
   label: string,
   api: ApiClient,
   threadId: string,
+  store?: AppStore,
 ): HTMLDetailsElement {
   if (tc.subagent) return createSubagentToolCard(tc, label, api)
+  // A proposed thread is an offer to the user, not a record of work done, so it
+  // gets its own card instead of an args/result disclosure. Falls through to the
+  // ordinary card while the arguments are still streaming.
+  if (store && isThreadProposalCall(tc)) {
+    const proposalCard = createThreadProposalToolCard(tc, store, api, threadId)
+    if (proposalCard) return proposalCard
+  }
 
   const card = el('details', {
     class: 'tool-card',
@@ -810,6 +823,7 @@ function createRollupToolCard(
   item: Extract<ToolCallDisplayItem, { type: 'rollup' }>,
   api: ApiClient,
   threadId: string,
+  store?: AppStore,
 ): HTMLDetailsElement {
   const status = aggregateToolStatus(item.toolCalls)
   const card = el('details', {
@@ -824,7 +838,7 @@ function createRollupToolCard(
       : undefined
   const body = el('div', { class: 'tool-rollup-body' })
   for (const child of item.children) {
-    body.append(createToolCard(child, api, threadId))
+    body.append(createToolCard(child, api, threadId, store))
   }
   card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
   return card
@@ -834,10 +848,11 @@ function createToolCard(
   item: ToolCallDisplayItem,
   api: ApiClient,
   threadId: string,
+  store?: AppStore,
 ): HTMLDetailsElement {
-  if (item.type === 'rollup') return createRollupToolCard(item, api, threadId)
+  if (item.type === 'rollup') return createRollupToolCard(item, api, threadId, store)
   if (item.type === 'group') return createGroupToolCard(item)
-  return createIndividualToolCard(item.toolCall, item.label, api, threadId)
+  return createIndividualToolCard(item.toolCall, item.label, api, threadId, store)
 }
 
 // Stable identity for a tool card across `tool_call_updated` ticks: group cards
@@ -858,8 +873,9 @@ function toolCardKey(item: ToolCallDisplayItem): string {
 // calls are plain JSON, so a stringify captures args/result/status/subagent —
 // digested rather than kept, or the cache would pin a second copy of every tool
 // result for as long as its card is on screen (see {@link renderSignature}).
-function toolCardSignature(item: ToolCallDisplayItem): string {
-  return renderSignature(item)
+function toolCardSignature(item: ToolCallDisplayItem, extra?: string): string {
+  const base = renderSignature(item)
+  return extra === undefined ? base : `${base}|${extra}`
 }
 
 function createMessageImages(images: string[]): HTMLElement {
@@ -1985,6 +2001,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       return
     }
     const tc = item.toolCall
+    // A proposal card decides its own disclosure from the user's answer (open
+    // while the offer stands, one quiet line once it is settled), so the
+    // running/expanded rule for work-record cards does not apply to it.
+    if (card.classList.contains('thread-proposal')) return
     const running = tc.status === 'running' || tc.subagent?.status === 'running'
     card.open = running || userExpandedTools.has(tc.id)
     if (card.open) ensureToolCardBodyRendered(card)
@@ -2022,6 +2042,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       )
       .forEach((node) => {
         const id = node.dataset['toolId']
+        // A proposal card's open state is derived from the answer, not chosen —
+        // capturing it here would pin a dismissed card open on the next tick.
+        if (node.classList.contains('thread-proposal')) return
         // Running tools are auto-expanded so their work is visible as it
         // streams; that is not a user preference. Without this guard the
         // auto-expansion was read back as one on the very next tick and
@@ -2050,7 +2073,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const desired: HTMLDetailsElement[] = []
     for (const item of items) {
       const key = toolCardKey(item)
-      const sig = toolCardSignature(item)
+      // A proposal card also renders the user's answer, which lives on the
+      // thread rather than on the tool call — fold it in so accepting or
+      // dismissing an offer rebuilds the card the way a new result would.
+      const sig = toolCardSignature(
+        item,
+        item.type === 'individual'
+          ? threadProposalCardSignature(item.toolCall, store, threadId)
+          : undefined,
+      )
       let card = existing.get(key) ?? null
       if (card) existing.delete(key)
 
@@ -2071,7 +2102,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         // The stale node was already claimed out of `existing`, so the cleanup
         // below won't drop it — remove it here or the rebuilt card duplicates.
         card?.remove()
-        card = createToolCard(item, api, threadId)
+        card = createToolCard(item, api, threadId, store)
         toolCardKeys.set(card, key)
         toolCardSignatures.set(card, sig)
       }

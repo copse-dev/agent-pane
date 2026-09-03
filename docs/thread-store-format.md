@@ -100,7 +100,9 @@ describes it to the agent, so changing the layout means updating that preamble.
 - **`meta.json`** holds no message bodies — just the mutable fields (title,
   status, usage, todos, review, workingBrief, gitBranch, pendingMessages,
   queuePaused, draftPrompt, model, timestamps, contextTrims, contextSnapshot,
-  optional `archivedAt`). When `archivedAt` is set the thread is soft-hidden
+  `threadProposals` / `proposedBy` (answers to model-proposed threads and the
+  offer a thread was started from — see
+  [`proposed-threads.md`](proposed-threads.md)), optional `archivedAt`). When `archivedAt` is set the thread is soft-hidden
   from the sidebar and dropped from `catalog.jsonl`, but the directory remains.
 - **`agent-history.json`** is a versioned snapshot of the provider-format
   `LLMMessage[]` used to resume the agent loop after a restart (issue #993).

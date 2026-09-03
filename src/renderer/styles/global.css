@@ -33,6 +33,7 @@
 @import './global/keyboard-shortcuts.css';
 @import './global/conversation-search.css';
 @import './global/todo.css';
+@import './global/thread-proposal.css';
 @import './global/toasts.css';
 @import './global/tooltip.css';
 @import './global/ssh-workspace.css';

@@ -4333,3 +4333,71 @@ export function seedForkResendFixture(workspaceRoot: string): {
   writeSettings({ model: 'claude-sonnet-4-6' })
   return { projectId, threadId, title }
 }
+
+/**
+ * Thread whose last turn ends in a model-proposed thread (`propose_thread`)
+ * awaiting an answer. The card is built from the tool call's own arguments, so
+ * seeding the call is all it takes to reach the standing-offer state.
+ */
+export function seedThreadProposalFixture(workspaceRoot: string): {
+  projectId: string
+  threadId: string
+} {
+  const projectId = 'e2e-thread-proposal-project'
+  const threadId = 'e2e-thread-proposal-thread'
+  const now = Date.now()
+  const proposal = {
+    title: 'Retire the legacy settings parser',
+    summary:
+      'Replace the hand-rolled parsing in the settings store with a Zod schema, so a malformed config fails loudly on load instead of silently reading as defaults.',
+    rationale: 'It touches every settings call site, so it should not ride along with this fix.',
+    prompt: [
+      'Replace the hand-rolled parsing in src/main/services/storage/settings.ts with a Zod schema.',
+      '',
+      'Decode on read and fail closed on a malformed file rather than falling back to defaults,',
+      'keep the existing exported types, and add a unit test for a corrupt config.',
+    ].join('\n'),
+    files: ['src/main/services/storage/settings.ts', 'src/shared/types/state.ts'],
+  }
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Config loader guard',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-thread-proposal',
+            role: 'user',
+            content: 'The config loader blows up on an empty file — add a guard and a test.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-thread-proposal',
+            role: 'assistant',
+            content: 'Fixed, and the regression test covers it.',
+            toolCalls: [
+              {
+                id: 'e2e-proposal-call',
+                name: 'propose_thread',
+                args: proposal,
+                status: 'done',
+                result: 'Offered to the user.',
+              },
+            ],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+  return { projectId, threadId }
+}

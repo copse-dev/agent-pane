@@ -420,6 +420,22 @@ describe('tool-display', () => {
     assert.equal(items[1].toolCall.id, '1')
   })
 
+  it('keeps a proposed thread outside the turn rollup', () => {
+    // The offer is addressed to the user, so it cannot be folded into
+    // `Used N tools` where nobody would ever see it.
+    const items = buildToolCallDisplayItems([
+      tc('2', 'read_file'),
+      tc('3', 'list_dir'),
+      tc('4', 'propose_thread'),
+    ])
+    assert.equal(items.length, 2)
+    assert.equal(items[0]?.type, 'rollup')
+    assert.equal(items[0].toolCalls.length, 2)
+    assert.equal(items[1]?.type, 'individual')
+    assert.equal(items[1].toolCall.id, '4')
+    assert.equal(items[1].label, 'Proposed a thread')
+  })
+
   it('aggregateToolStatus prefers running over done', () => {
     assert.equal(
       aggregateToolStatus([tc('1', 'read_file', 'done'), tc('2', 'read_file', 'running')]),

@@ -127,6 +127,28 @@ install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action:
 
 Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`.
 
+### Offers are not approvals
+
+A prompt interrupts because something is _already happening_ and cannot proceed
+without an answer. An **offer** — the model-proposed thread card
+(`.thread-proposal`, see [`docs/proposed-threads.md`](proposed-threads.md)) — is
+the opposite shape: nothing is running, nothing is blocked, and ignoring it
+forever is a valid outcome. Do not reach for the approval chrome for one:
+
+- Offers render **inline in the transcript**, never modal and never over it.
+  Nothing behind them is disabled while they wait.
+- Their verbs are the action, not a verdict: `Start this thread` / `Not now`,
+  never `Approve` / `Reject`.
+- They lead with a **plain-language description of what would happen**. Any raw
+  machine text the offer carries (a prompt, a command) goes behind a disclosure —
+  a card that shows the payload as its description is a JSON dump with rounded
+  corners.
+- An answered offer **settles in place** as one quiet line rather than
+  disappearing, keeping whatever the user will want from it later (a link to the
+  thread it started, an undo) reachable without expanding it.
+
+Visual eval: `tests/e2e/thread-proposal-card.e2e.ts`.
+
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in
