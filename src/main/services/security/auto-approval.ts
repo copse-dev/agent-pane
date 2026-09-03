@@ -9,7 +9,12 @@ import {
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 import { SAFE_PREP_COMMANDS, splitSegments } from './command-routing.ts'
 import { isReadOnlySimpleCommand, READ_ONLY_GIT_SUBCOMMANDS } from './permission-policy.ts'
-import { commandName, shellRedirects, TRUST_TRANSPARENT_WRAPPERS } from './shell-argv.ts'
+import {
+  commandName,
+  hasGitReadEscapeHatch,
+  shellRedirects,
+  TRUST_TRANSPARENT_WRAPPERS,
+} from './shell-argv.ts'
 
 /**
  * Deterministic auto-approval classifier — decide whether a shell command the
@@ -769,6 +774,9 @@ function classifyGitSegment(
   }
 
   if (GIT_READ_SUBCOMMANDS.has(subcommand)) {
+    if (hasGitReadEscapeHatch(subcommand, args)) {
+      return { tier: null, reason: `git read option names a program or output: ${segment}` }
+    }
     return { tier: 'read', reason: `git ${subcommand} reads repository state` }
   }
   if (GIT_MIXED_SUBCOMMANDS.has(subcommand)) {

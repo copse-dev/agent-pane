@@ -197,6 +197,12 @@ describe('read-only classification and its escape hatches', () => {
       'rg --json foo',
       'grep foo data.txt | sort | uniq -c',
       'git log --oneline',
+      'git log -Oorderfile --oneline',
+      'git grep -n needle',
+      // Exact options that merely share a prefix with a launcher stay reads.
+      'git grep --text needle',
+      'git diff --text',
+      'git cat-file --batch-check --filter=blob:none',
     ]) {
       assert.equal(isStructurallyReadOnlyShellCommand(command), true, command)
     }
@@ -215,6 +221,25 @@ describe('read-only classification and its escape hatches', () => {
       'fd . --exec-batch ./tool.sh',
       'rg --pre ./tool.sh foo',
       'rg --hostname-bin=./tool.sh foo',
+      'git grep -O./tool.sh needle',
+      'git grep -nO./tool.sh needle',
+      'git grep --open-files-in-pager=./tool.sh needle',
+      'git grep --open-files-in-pager ./tool.sh needle',
+      'git grep --open-files-in-p=./tool.sh needle',
+      // Git accepts any unique prefix: `--op` is unambiguous among grep's
+      // options, so this runs ./tool.sh too.
+      'git grep --op=./tool.sh needle',
+      'git diff --ext-diff',
+      'git diff --ext-d',
+      'git log -p --ext-diff',
+      'git show --textconv HEAD:file.txt',
+      'git grep --textconv needle',
+      'git cat-file --textconv HEAD:file.txt',
+      'git cat-file --te HEAD:file.txt',
+      'git cat-file --t HEAD:file.txt',
+      'git cat-file --filters HEAD:file.txt',
+      'git cat-file --filt HEAD:file.txt',
+      'git diff --out=out.patch',
     ]) {
       assert.equal(isStructurallyReadOnlyShellCommand(command), false, command)
     }

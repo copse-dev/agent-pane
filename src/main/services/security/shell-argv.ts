@@ -302,17 +302,62 @@ function isEscapeHatchFlag(command: string, arg: string): boolean {
 function isReadOnlyGitCommand(argv: readonly string[]): boolean {
   const subcommand = argv[1]
   if (!subcommand || !READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) return false
-  return !argv
-    .slice(2)
-    .some(
-      (arg) =>
-        arg === '-o' ||
-        arg === '-O' ||
-        arg === '--output' ||
-        arg.startsWith('--output=') ||
-        arg.startsWith('--exec=') ||
-        arg === '--exec',
-    )
+  return !hasGitReadEscapeHatch(subcommand, argv.slice(2))
+}
+
+export function hasGitReadEscapeHatch(subcommand: string, args: readonly string[]): boolean {
+  return args.some((arg) => isGitEscapeHatchFlag(subcommand, arg))
+}
+
+function isGitEscapeHatchFlag(subcommand: string, arg: string): boolean {
+  if (
+    arg === '-o' ||
+    arg === '-O' ||
+    isLongFlagOrAbbreviation(arg, '--output') ||
+    isLongFlagOrAbbreviation(arg, '--exec')
+  ) {
+    return true
+  }
+
+  // `git grep -O<pager>` / `--open-files-in-pager=<pager>` executes the
+  // supplied pager. Short options may be bundled (`-nO./tool`), so inspect
+  // every short-option character just as the simple-command table does above.
+  if (subcommand === 'grep') {
+    if (isLongFlagOrAbbreviation(arg, '--open-files-in-pager')) return true
+    if (/^-[^-]*O/.test(arg)) return true
+  }
+
+  // These opt into repository-configured external diff, text-conversion,
+  // or working-tree filter programs. They are reads only until the helper runs.
+  if (isLongFlagOrAbbreviation(arg, '--ext-diff') || isLongFlagOrAbbreviation(arg, '--textconv')) {
+    return true
+  }
+  if (subcommand === 'cat-file' && isLongFlagOrAbbreviation(arg, '--filters')) return true
+
+  return false
+}
+
+/**
+ * Real Git long options that happen to be a prefix of an escape hatch. Git
+ * resolves these as exact matches, never as an abbreviation of the longer
+ * name, so they stay plain reads: `git grep --text` is `-a`, and
+ * `git cat-file --batch-check --filter=<spec>` narrows the batch.
+ */
+const DISTINCT_PREFIX_OPTIONS = new Set(['--text', '--filter'])
+
+function isLongFlagOrAbbreviation(arg: string, flag: string): boolean {
+  if (!arg.startsWith('--')) return false
+  const equals = arg.indexOf('=')
+  const name = equals === -1 ? arg : arg.slice(0, equals)
+  if (name === flag) return true
+  // Git's option parser accepts any prefix that is unique among the
+  // subcommand's options — there is no minimum length, so `git grep --op=`
+  // runs the pager just as `--open-files-in-pager=` does. Every prefix of a
+  // launcher is therefore treated as the launcher, apart from the handful of
+  // genuine options above: a rejected abbreviation merely prompts, while an
+  // accepted launcher must never inherit read-only classification.
+  if (name.length <= 2 || DISTINCT_PREFIX_OPTIONS.has(name)) return false
+  return flag.startsWith(name)
 }
 
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
