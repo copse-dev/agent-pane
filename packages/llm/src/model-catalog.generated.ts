@@ -20,6 +20,14 @@ export const MODEL_CATALOG: Record<string, CatalogEntry> = {
     contextWindow: 1000000,
     maxOutputTokens: 128000,
   },
+  'claude-fable-5-1': {
+    inputPricePerMTok: 10,
+    outputPricePerMTok: 50,
+    cacheReadPricePerMTok: 0.25,
+    cacheCreationPricePerMTok: 12.5,
+    contextWindow: 1000000,
+    maxOutputTokens: 128000,
+  },
   'claude-haiku-4-5': {
     inputPricePerMTok: 1,
     outputPricePerMTok: 5,
