@@ -30,6 +30,7 @@ import { mountGitChangesPane } from './views/git-changes-pane.ts'
 import { mountPrPane } from './views/pr-pane.ts'
 import { mountMemoriesPane } from './views/memories-pane.ts'
 import { mountPortsSection } from './views/ports-section.ts'
+import { mountTerminalRailResizers } from './views/terminal-rail-resizer.ts'
 import { mountRoadmapPane } from './views/roadmap-pane.ts'
 import { mountBrowserPane } from './views/browser-pane.ts'
 import { mountVncPane } from './views/vnc-pane.ts'
@@ -573,6 +574,7 @@ function mountFullLayout(): void {
   )
   mountSupervisedTasks(requireElement('terminals-list-host'), store, api)
   mountPortsSection(requireElement('terminals-list-host'), store, api)
+  mountTerminalRailResizers(requireElement('terminals-list-host'))
   mountBrowserPane(
     requireElement('browser-tabs-host'),
     requireElement('browser-viewer-host'),
