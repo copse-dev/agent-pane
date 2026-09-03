@@ -21,6 +21,7 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from './web-origin-policy.ts'
 import { detectSandboxFailure } from './sandbox-failure.ts'
+import { REASON_RECURSIVE_DELETE } from './shell-scope.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import {
   ensureShellCommandPermitted,
@@ -1478,19 +1479,21 @@ describe('formatInstallPromptParts', () => {
     assert.ok(!parts.bodyAdvice?.includes('install lifecycle scripts'))
   })
 
-  it('explains the macOS sandbox exit only when running outside it', () => {
+  it('explains the sandbox exit only when running outside it', () => {
     const outside = formatInstallPromptParts('npm install', {
       outsideSandbox: true,
       safeInstall: true,
       jsManager: true,
     })
-    assert.ok(outside.bodyAdvice?.includes('outside the macOS sandbox'))
+    assert.ok(outside.bodyAdvice?.includes('outside the project sandbox'))
+    // No platform in the copy: the sandbox is seatbelt on macOS, bubblewrap on Linux.
+    assert.doesNotMatch(outside.bodyAdvice ?? '', /macOS|Linux/)
     const inside = formatInstallPromptParts('npm install', {
       outsideSandbox: false,
       safeInstall: true,
       jsManager: true,
     })
-    assert.ok(!inside.bodyAdvice?.includes('macOS sandbox'))
+    assert.ok(!inside.bodyAdvice?.includes('project sandbox'))
   })
 
   it('warns when package scanning is disabled in Settings', () => {
@@ -1513,6 +1516,18 @@ describe('formatGuardedYoloHarmPromptAdvice', () => {
     assert.ok(advice.includes('Potential harm: recursive/forced delete'))
     assert.ok(advice.includes('script contents could not be inspected safely: foo.sh'))
     assert.ok(advice.includes('Guarded YOLO cannot skip this confirmation'))
+  })
+
+  it('reads a shared classifier reason the same way the ordinary prompt does', () => {
+    // `REASON_RECURSIVE_DELETE` is shared between the harm gate and the scope
+    // classifier so the two agree on the wording; both dialogs resolve it to the
+    // same sentence. Harm-only reasons have no entry and pass through untouched.
+    const advice = formatGuardedYoloHarmPromptAdvice([
+      REASON_RECURSIVE_DELETE,
+      'script contents could not be inspected safely: foo.sh',
+    ])
+    assert.ok(advice.includes('Potential harm: Deletes files and folders recursively (rm -rf)'))
+    assert.ok(advice.includes('script contents could not be inspected safely: foo.sh'))
   })
 
   it('caps enormous operands and total advice length', () => {

@@ -424,7 +424,12 @@ function truncateGuardedYoloHarmReason(reason: string): string {
 export function formatGuardedYoloHarmPromptAdvice(reasons: string[]): string {
   const footer =
     '\n\nGuarded YOLO cannot skip this confirmation. Approve this bounded destructive action once?'
-  const listed = reasons.map(truncateGuardedYoloHarmReason)
+  // `shell-harm.ts` writes most of its own reasons as readable phrases, but the
+  // few it shares with the classifier (`REASON_RECURSIVE_DELETE`, …) are
+  // identifiers. Resolving them here is what keeps the wording those constants
+  // are shared for from diverging between this dialog and the ordinary prompt;
+  // harm reasons with no entry pass through untouched.
+  const listed = describeShellScopeReasons(reasons).map(truncateGuardedYoloHarmReason)
   let harm = listed.length ? `Potential harm: ${listed.join('; ')}` : 'Potential harm: unknown'
   const maxHarmChars = Math.max(24, MAX_GUARDED_YOLO_HARM_ADVICE_CHARS - footer.length)
   if (harm.length > maxHarmChars) {
@@ -451,7 +456,7 @@ export function formatInstallPromptParts(
   opts: { outsideSandbox: boolean; safeInstall: boolean; jsManager: boolean },
 ): ShellPromptParts {
   const access = opts.outsideSandbox
-    ? 'It runs once outside the macOS sandbox with network access.'
+    ? 'It runs once outside the project sandbox with network access.'
     : 'It fetches packages over the network.'
   const scan = opts.safeInstall
     ? `Socket Firewall (sfw) scans the packages for known-malicious code${
@@ -482,7 +487,7 @@ export function formatEphemeralRunnerPromptParts(
   opts: { outsideSandbox: boolean; safeInstall: boolean },
 ): ShellPromptParts {
   const access = opts.outsideSandbox
-    ? 'It runs once outside the macOS sandbox with network access.'
+    ? 'It runs once outside the project sandbox with network access.'
     : 'It may reach the network.'
   const scan = opts.safeInstall
     ? 'Socket Firewall (sfw) scans packages for known-malicious code.'
