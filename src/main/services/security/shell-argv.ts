@@ -337,14 +337,27 @@ function isGitEscapeHatchFlag(subcommand: string, arg: string): boolean {
   return false
 }
 
+/**
+ * Real Git long options that happen to be a prefix of an escape hatch. Git
+ * resolves these as exact matches, never as an abbreviation of the longer
+ * name, so they stay plain reads: `git grep --text` is `-a`, and
+ * `git cat-file --batch-check --filter=<spec>` narrows the batch.
+ */
+const DISTINCT_PREFIX_OPTIONS = new Set(['--text', '--filter'])
+
 function isLongFlagOrAbbreviation(arg: string, flag: string): boolean {
   if (!arg.startsWith('--')) return false
   const equals = arg.indexOf('=')
   const name = equals === -1 ? arg : arg.slice(0, equals)
-  // Git accepts unambiguous long-option abbreviations. Three name characters
-  // is conservative across versions: a rejected abbreviation merely prompts,
-  // while an accepted launcher must never inherit read-only classification.
-  return name === flag || (name.length >= 5 && flag.startsWith(name))
+  if (name === flag) return true
+  // Git's option parser accepts any prefix that is unique among the
+  // subcommand's options — there is no minimum length, so `git grep --op=`
+  // runs the pager just as `--open-files-in-pager=` does. Every prefix of a
+  // launcher is therefore treated as the launcher, apart from the handful of
+  // genuine options above: a rejected abbreviation merely prompts, while an
+  // accepted launcher must never inherit read-only classification.
+  if (name.length <= 2 || DISTINCT_PREFIX_OPTIONS.has(name)) return false
+  return flag.startsWith(name)
 }
 
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
