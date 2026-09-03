@@ -8398,6 +8398,12 @@ dialog.settings-overlay::backdrop {
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
+.approval-advice-item {
+  display: inline-block;
+  max-width: 100%;
+  padding-left: 1.05em;
+  text-indent: -1.05em;
+}
 .approval-footer {
   margin-top: var(--spacing-sm);
   font-size: var(--font-size-sm);

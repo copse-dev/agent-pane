@@ -52492,7 +52492,7 @@ var init_hook_card2 = __esm({
   }
 });
 
-// src/shared/hooks/hook-run-detail.ts
+// packages/hooks-dialects/src/hook-run-detail.ts
 function hookRunDetailChips(detail) {
   if (!detail.found) return [];
   const chips = [];
@@ -52576,9 +52576,9 @@ function hookRunDetailEmptyReason(detail) {
 }
 var outcomeCaptureSchema;
 var init_hook_run_detail = __esm({
-  "src/shared/hooks/hook-run-detail.ts"() {
+  "packages/hooks-dialects/src/hook-run-detail.ts"() {
     init_zod();
-    init_safe_json2();
+    init_safe_json();
     outcomeCaptureSchema = external_exports.object({
       decision: external_exports.string().optional(),
       haltReason: external_exports.string().optional(),
@@ -52587,6 +52587,13 @@ var init_hook_run_detail = __esm({
       agentMessage: external_exports.string().optional(),
       userMessage: external_exports.string().optional()
     });
+  }
+});
+
+// src/shared/hooks/hook-run-detail.ts
+var init_hook_run_detail2 = __esm({
+  "src/shared/hooks/hook-run-detail.ts"() {
+    init_hook_run_detail();
   }
 });
 
@@ -243294,7 +243301,7 @@ var init_conversation = __esm({
     init_icons();
     init_user_prompt_fold();
     init_hook_card2();
-    init_hook_run_detail();
+    init_hook_run_detail2();
     init_artefact_previews();
     init_artefact();
     init_thread_helpers();
@@ -291509,6 +291516,16 @@ var init_ssh_status_banner = __esm({
 });
 
 // src/renderer/views/approval-dialog.ts
+function adviceElement(advice) {
+  const children2 = [];
+  advice.split("\n").forEach((line2, index) => {
+    if (index > 0) children2.push("\n");
+    children2.push(
+      line2.startsWith(ADVICE_BULLET) ? el("span", { class: "approval-advice-item" }, line2) : line2
+    );
+  });
+  return el("div", { class: "approval-advice" }, ...children2);
+}
 function mountApprovalDialog(api3, store3, options2 = {}) {
   const coalesceMs = options2.coalesceMs ?? APPROVAL_COALESCE_MS;
   const settleMs = options2.settleMs ?? APPROVAL_SETTLE_MS;
@@ -291663,7 +291680,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     if (hasSharedContext) {
       const sharedChildren = [];
       if (firstRequest.bodyAdvice) {
-        sharedChildren.push(el("div", { class: "approval-advice" }, firstRequest.bodyAdvice));
+        sharedChildren.push(adviceElement(firstRequest.bodyAdvice));
       }
       const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
       sharedChildren.push(
@@ -291693,7 +291710,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
             rowChildren.push(pickers.root);
           } else {
             if (req.bodyAdvice) {
-              rowChildren.push(el("div", { class: "approval-advice" }, req.bodyAdvice));
+              rowChildren.push(adviceElement(req.bodyAdvice));
             }
             if (collapseDetails) rowChildren.push(detailsToggle());
             rowChildren.push(requestBody(req));
@@ -291931,7 +291948,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     resolve2(false, false);
   });
 }
-var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, defaultTimer;
+var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, ADVICE_BULLET, defaultTimer;
 var init_approval_dialog = __esm({
   "src/renderer/views/approval-dialog.ts"() {
     init_helpers();
@@ -291941,6 +291958,7 @@ var init_approval_dialog = __esm({
     init_actions();
     APPROVAL_COALESCE_MS = 120;
     APPROVAL_SETTLE_MS = 500;
+    ADVICE_BULLET = "\u2022 ";
     defaultTimer = (fn4, ms4) => {
       const handle = setTimeout(fn4, ms4);
       return () => {
