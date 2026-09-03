@@ -1276,9 +1276,6 @@ if (process.env['COPSE_E2E'] === '1') {
     resumeModelCardResolves() {
       return ipcRenderer.invoke('test:resumeModelCardResolves')
     },
-    setAutomationThreadLoadsPaused(paused: boolean) {
-      return ipcRenderer.invoke('test:setAutomationThreadLoadsPaused', paused)
-    },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
     },

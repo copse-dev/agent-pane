@@ -382,34 +382,12 @@ export function createAutomationService(
 }
 
 let singleton: AutomationService | null = null
-let threadLoadGate: Promise<void> | undefined
-let releaseThreadLoads: (() => void) | undefined
-
-/** Hold or release the singleton's thread scan. E2e-only caller; tests inject their own dependency. */
-export function setAutomationThreadLoadsPausedForTests(paused: boolean): void {
-  if (paused) {
-    if (threadLoadGate) return
-    threadLoadGate = new Promise((resolve) => {
-      releaseThreadLoads = resolve
-    })
-    return
-  }
-  const release = releaseThreadLoads
-  threadLoadGate = undefined
-  releaseThreadLoads = undefined
-  release?.()
-}
-
-async function loadAutomationProjectThreads(projectId: string): Promise<Thread[]> {
-  await threadLoadGate
-  return loadProjectThreads(projectId)
-}
 
 export function getAutomationService(): AutomationService {
   singleton ??= createAutomationService({
     now: () => Date.now(),
     createProjectThread: createThread,
-    loadProjectThreads: loadAutomationProjectThreads,
+    loadProjectThreads,
     releasePreviousRun: releaseCompletedAutomationWorktree,
     isPluginEnabled: () => getPluginService().registry.isEnabled(AUTOMATIONS_PLUGIN_ID),
   })
