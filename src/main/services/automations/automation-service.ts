@@ -107,6 +107,27 @@ export function createAutomationService(
     })
   }
 
+  async function recordScheduleRun(
+    projectId: string,
+    scheduleId: string,
+    triggeredAt: number,
+    threadId: string,
+  ): Promise<void> {
+    await storageUpdate(STORAGE_KEY, (raw) => {
+      const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+      return schedules.map((schedule) =>
+        schedule.projectId === projectId && schedule.id === scheduleId
+          ? {
+              ...schedule,
+              updatedAt: Math.max(schedule.updatedAt, triggeredAt),
+              lastRunAt: triggeredAt,
+              lastCreatedThreadId: threadId,
+            }
+          : schedule,
+      )
+    })
+  }
+
   async function syncSupervisorTask(): Promise<void> {
     const supervisor = (dependencies.supervisor ?? getTaskSupervisor)()
     // The supervisor only holds durable tasks once `start()` has read them back
@@ -237,12 +258,10 @@ export function createAutomationService(
         updatedAt: triggeredAt,
       }
       await dependencies.createProjectThread(schedule.projectId, thread)
-      await replaceSchedule({
-        ...schedule,
-        updatedAt: triggeredAt,
-        lastRunAt: triggeredAt,
-        lastCreatedThreadId: threadId,
-      })
+      // The user may edit or delete the schedule while the filesystem work
+      // above is pending. Merge only the run metadata into the current row;
+      // never restore the stale snapshot that started this run.
+      await recordScheduleRun(schedule.projectId, schedule.id, triggeredAt, threadId)
       const event = {
         projectId: schedule.projectId,
         scheduleId: schedule.id,

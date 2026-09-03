@@ -68,8 +68,8 @@ importers:
         specifier: workspace:*
         version: link:packages/plan-usage
       '@copse/streaming-markdown':
-        specifier: ^1.0.8
-        version: 1.0.8(dompurify@3.4.14)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.2)
+        specifier: ^1.1.0
+        version: 1.1.0(dompurify@3.4.14)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.2)
       '@electron/rebuild':
         specifier: ^4.2.0
         version: 4.2.0
@@ -330,8 +330,8 @@ packages:
   '@chevrotain/types@11.1.2':
     resolution: {integrity: sha512-U+HFai5+zmJCkK86QsaJtoITlboZHBqrVketcO2ROv865xfCMSFpELQoz1GkX5GzME8pTa+3kbKrZHQtI0gdbw==}
 
-  '@copse/streaming-markdown@1.0.8':
-    resolution: {integrity: sha512-ruJ05AViVAlxqkmzg4S1/TnKPGLlOGOx/30grt6ZtH06hLzQHproWL0rc/Q5NVWqXmc1yvolaJZfQ39/Pbj4QA==}
+  '@copse/streaming-markdown@1.1.0':
+    resolution: {integrity: sha512-ysglxy80QbXUX19QHWMiTECY+NO/Ww6/McBPVNhau+QmbgsgTJAXSRFDE4MiIuXxpX2zhdCl6D0jOj7jQ1xmuA==}
     engines: {node: '>=20'}
     peerDependencies:
       dompurify: ^3.4.13
@@ -4867,7 +4867,7 @@ snapshots:
 
   '@chevrotain/types@11.1.2': {}
 
-  '@copse/streaming-markdown@1.0.8(dompurify@3.4.14)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.2)':
+  '@copse/streaming-markdown@1.1.0(dompurify@3.4.14)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.2)':
     optionalDependencies:
       dompurify: 3.4.14
       entities: 8.0.0
