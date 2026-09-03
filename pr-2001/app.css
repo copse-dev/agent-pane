@@ -167,7 +167,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --browser-chrome-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.0.7_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.0/node_modules/@copse/streaming-markdown/styles/core.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
 .streaming-markdown {
   & .stream-pending {
     white-space: pre-wrap;
@@ -238,7 +238,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   }
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.0.7_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.0/node_modules/@copse/streaming-markdown/styles/default.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
 .streaming-markdown {
   line-height: var(--sm-line-height, 1.55);
   word-break: break-word;
@@ -3933,6 +3933,7 @@ label {
   margin-top: 6px;
 }
 .canvas-preview-card {
+  max-width: 1280px;
   margin: 8px 0 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -6203,6 +6204,7 @@ dialog.settings-overlay::backdrop {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  scroll-padding-bottom: calc(var(--action-min-height) + var(--spacing-lg) + var(--spacing-xl) + var(--spacing-lg) + var(--spacing-md));
   padding: calc(var(--spacing-xl) * 2) var(--spacing-xl) 0;
 }
 .settings-section,
@@ -8417,6 +8419,23 @@ dialog.settings-overlay::backdrop {
 }
 .approval-body-code {
   font-family: var(--font-mono);
+}
+.approval-body-list {
+  overflow-y: auto;
+  max-height: 320px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius);
+}
+.approval-body-list .approval-body {
+  overflow: visible;
+  max-height: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.approval-body-list .approval-body + .approval-body {
+  border-top: 1px solid var(--border-subtle, var(--border));
 }
 .approval-buttons {
   margin-top: var(--spacing-sm);
