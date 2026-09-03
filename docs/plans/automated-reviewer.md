@@ -268,9 +268,9 @@ reviewer's rules too, and its GitHub credential broker is the path any forge wri
 
 **Two privilege domains.**
 
-| Domain                              | Holds                                                                      | Runs                                                                                             | Never                                                                                                   |
-| ----------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| Orchestrator (trusted)              | provider keys, forge tokens, the findings store, the suppression store     | the agent loops, model calls, clustering, ranking, rendering, forge writes                        | repo code, build scripts, tests                                                                         |
+| Domain                                | Holds                                                                             | Runs                                                                                         | Never                                                                                          |
+| ------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Orchestrator (trusted)                | provider keys, forge tokens, the findings store, the suppression store            | the agent loops, model calls, clustering, ranking, rendering, forge writes                   | repo code, build scripts, tests                                                                |
 | Execution cell (untrusted, ephemeral) | the two checkouts (merge-base, head), a scratch dir, a read-only dependency cache | build, typecheck, lint, tests, reproducers; the brokered `read_file` / `run` the agents call | secrets, the host filesystem, `~/.copse`, other repositories, any network beyond the allowlist |
 
 The agent loops live in the orchestrator and their tools are **brokered** into the cell over
@@ -309,10 +309,10 @@ still a secret.
 
 **Trust × isolation policy.** Two facts decide whether execution happens at all:
 
-|                                          | Isolation available                                                                                     | No isolation                                                                                          |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **Own diff** (the user's working tree)   | Execute.                                                                                                | Execute only with explicit per-run consent, mirroring the shell gate's "no sandbox, so prompt" rule. |
-| **Foreign diff** (a contributor's PR)    | Execute. Recommendation: a container or VM, not the process-scoped OS sandbox alone (see below).       | **Never execute.** Degrade to read-only lenses plus the challenger pass, and say so in the report.   |
+|                                        | Isolation available                                                                              | No isolation                                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| **Own diff** (the user's working tree) | Execute.                                                                                         | Execute only with explicit per-run consent, mirroring the shell gate's "no sandbox, so prompt" rule. |
+| **Foreign diff** (a contributor's PR)  | Execute. Recommendation: a container or VM, not the process-scoped OS sandbox alone (see below). | **Never execute.** Degrade to read-only lenses plus the challenger pass, and say so in the report.   |
 
 An OS sandbox (macOS ASRT, Linux bubblewrap) and an ephemeral container or VM are not the
 same strength. The process-scoped sandbox is proposed as sufficient for reviewing one's own
@@ -484,28 +484,28 @@ One sharp point: [`competitive-landscape.md`](competitive-landscape.md) lists Co
 two-model comparison as unusual among desktop agents. Against PR reviewers it is commodity.
 The same feature is a differentiator in one category and table stakes in the other.
 
-| Axis                       | Field today                                       | This design                                                    |
-| -------------------------- | ------------------------------------------------- | -------------------------------------------------------------- |
-| Verification by execution  | Codex Security only, security findings            | Every finding, any class                                       |
-| Ensemble                   | Bugbot: 8 passes, one vendor, validator model     | Cross-vendor, challenger scored on refutations                 |
-| Local model, no egress     | PR-Agent, DIY Actions                             | First-class shell                                              |
-| Codebase context           | Greptile's graph, Copilot's agentic explore       | Diff plus neighbourhood; Copse semantic search not yet wired in |
-| Learns from dismissals     | CodeRabbit learnings, Bugbot rules                | Suppression only                                               |
-| Forges                     | CodeRabbit four, Bugbot GitHub only               | GitHub and Forgejo                                             |
-| Setup                      | Two clicks                                        | Isolation backend plus build commands                          |
-| Latency                    | Bugbot about 90 s                                 | Minutes, bounded by the test suite                             |
-| Benchmark presence         | Martian ranks 13–17 tools                         | None                                                           |
+| Axis                      | Field today                                   | This design                                                     |
+| ------------------------- | --------------------------------------------- | --------------------------------------------------------------- |
+| Verification by execution | Codex Security only, security findings        | Every finding, any class                                        |
+| Ensemble                  | Bugbot: 8 passes, one vendor, validator model | Cross-vendor, challenger scored on refutations                  |
+| Local model, no egress    | PR-Agent, DIY Actions                         | First-class shell                                               |
+| Codebase context          | Greptile's graph, Copilot's agentic explore   | Diff plus neighbourhood; Copse semantic search not yet wired in |
+| Learns from dismissals    | CodeRabbit learnings, Bugbot rules            | Suppression only                                                |
+| Forges                    | CodeRabbit four, Bugbot GitHub only           | GitHub and Forgejo                                              |
+| Setup                     | Two clicks                                    | Isolation backend plus build commands                           |
+| Latency                   | Bugbot about 90 s                             | Minutes, bounded by the test suite                              |
+| Benchmark presence        | Martian ranks 13–17 tools                     | None                                                            |
 
 Published numbers, to fix the bar (each vendor claims first on a different date or metric,
 so read them as a range):
 
-| Tool                   | Precision           | Recall | F1              | Source                  |
-| ---------------------- | ------------------- | ------ | --------------- | ----------------------- |
-| Greptile, July 2026    | 76.2                | 50.6   | 60.8            | vendor, citing Martian  |
-| Qodo                   | 62.3                | 66.4   | 64.3            | vendor, citing Martian  |
-| CodeRabbit, Feb 2026   | 49.2                | 53.5   | #1 F1 at launch | vendor, citing Martian  |
-| Cursor Bugbot          | 70%+ resolution     | —      | —               | vendor                  |
-| GitHub Copilot         | 71% actionable      | —      | —               | vendor                  |
+| Tool                 | Precision       | Recall | F1              | Source                 |
+| -------------------- | --------------- | ------ | --------------- | ---------------------- |
+| Greptile, July 2026  | 76.2            | 50.6   | 60.8            | vendor, citing Martian |
+| Qodo                 | 62.3            | 66.4   | 64.3            | vendor, citing Martian |
+| CodeRabbit, Feb 2026 | 49.2            | 53.5   | #1 F1 at launch | vendor, citing Martian |
+| Cursor Bugbot        | 70%+ resolution | —      | —               | vendor                 |
+| GitHub Copilot       | 71% actionable  | —      | —               | vendor                 |
 
 The range says even the leader is wrong or ignored one comment in four. Price floor for
 context: Gemini free, GitLab Duo about $0.25 per MR, Bugbot about $1.20 per review, Anthropic
