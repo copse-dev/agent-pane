@@ -196,7 +196,7 @@ describe('cross-message tool runs (component)', () => {
     const step = qsRequired(run, `.tool-card-step[data-step-message-id="${member}"]`)
     const trail = qsRequired(step, ':scope > .tool-rollup-body > .message-reasoning')
     assert.equal(
-      trail.querySelector('.message-reasoning-text')?.textContent?.trim(),
+      trail.querySelector('.message-reasoning-text')?.textContent.trim(),
       'Checking whether the oracle ran.',
     )
   })
@@ -216,14 +216,17 @@ describe('cross-message tool runs (component)', () => {
       [ids[0], member],
       'the member anchors its own run once it has prose',
     )
+    const [shortened, departed] = runs
+    assert.ok(shortened)
+    assert.ok(departed)
     // The shortened first run no longer claims the departed message's tools.
     assert.equal(
-      runs[0]?.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      shortened.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
       'Read files',
     )
-    assert.equal(runs[0]?.querySelector('.tool-card-step'), null)
+    assert.equal(shortened.querySelector('.tool-card-step'), null)
     assert.equal(
-      runs[1]?.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      departed.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
       'Used 12 tools · 4 steps',
     )
   })

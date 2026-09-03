@@ -49,16 +49,18 @@ describe('tool-runs', () => {
 
     const runs = deriveToolRuns(messages)
     assert.equal(runs.length, 1)
-    assert.equal(runs[0]?.anchorId, 'a1')
-    assert.deepEqual(runs[0]?.memberIds, ['a1', 'a2', 'a3', 'a4', 'a5'])
-    assert.equal(runs[0]?.steps.length, 5)
-    assert.equal(runs[0]?.toolCalls.length, 22)
+    const run = runs[0]
+    assert.ok(run)
+    assert.equal(run.anchorId, 'a1')
+    assert.deepEqual(run.memberIds, ['a1', 'a2', 'a3', 'a4', 'a5'])
+    assert.equal(run.steps.length, 5)
+    assert.equal(run.toolCalls.length, 22)
     // Chronological: every step's calls sit in message order.
     assert.deepEqual(
-      runs[0]?.toolCalls.slice(0, 2).map((call) => call.id),
+      run.toolCalls.slice(0, 2).map((call) => call.id),
       ['a1-0', 'a1-1'],
     )
-    assert.equal(runs[0]?.toolCalls.at(-1)?.id, 'a5-1')
+    assert.equal(run.toolCalls.at(-1)?.id, 'a5-1')
   })
 
   it('ends a run at the next visible assistant response and starts a new one after it', () => {
@@ -153,9 +155,10 @@ describe('tool-runs', () => {
     ]
 
     const run = deriveToolRuns(messages)[0]
-    assert.equal(run?.summary, 'Checked CI, branch state, and test coverage')
+    assert.ok(run)
+    assert.equal(run.summary, 'Checked CI, branch state, and test coverage')
     assert.deepEqual(
-      run?.steps.map((step) => step.summary),
+      run.steps.map((step) => step.summary),
       ['Read the settings UI', 'Inspected the repo layout'],
     )
   })

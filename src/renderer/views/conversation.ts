@@ -2417,6 +2417,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     hydrateRemoteArtifactImages(list, api)
     const run = multiStepRunFor(thread, msgId)
     // Re-render any tool cards this message already carries (restored threads).
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     renderToolCards(msgEl, msg.toolCalls ?? [], {
       ...messageToolCardOpts(msg),
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
