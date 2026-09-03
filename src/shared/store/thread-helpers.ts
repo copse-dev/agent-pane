@@ -570,11 +570,7 @@ export function setMessageToolSummary(
  * Lands on the anchor, which is usually already finalized by the time the
  * summary resolves (see the autosave's empty-tool-call-id path).
  */
-export function setMessageRunSummary(
-  store: AppStore,
-  messageId: string,
-  runSummary: string,
-): void {
+export function setMessageRunSummary(store: AppStore, messageId: string, runSummary: string): void {
   updateMessage(store, messageId, (m) => {
     m.runSummary = runSummary
   })
