@@ -2,8 +2,14 @@
 
 Tracking: [#2303](https://github.com/copse-dev/agent-pane/issues/2303)
 
-Status: **Proposed.** Analysis only; each step has its own sub-issue under #2303. The
-measurements were taken against `main` at `fb887be31` on 2026-09-03.
+Status: **Active.** Steps 2 to 5 of the suggested order are on `main`: `@copse/std`
+([#2315](https://github.com/copse-dev/agent-pane/pull/2315)), `@copse/shell-guard`
+([#2316](https://github.com/copse-dev/agent-pane/pull/2316)), `@copse/thread-store`
+([#2317](https://github.com/copse-dev/agent-pane/pull/2317)), and `@copse/hooks-dialects`
+([#2319](https://github.com/copse-dev/agent-pane/pull/2319)), all as in-repo workspace packages
+with the app importing through re-exports. Each remaining step has its own sub-issue under
+#2303. The measurements below were taken against `main` at `fb887be31` on 2026-09-03, before
+any of those landed.
 
 ## Question
 
@@ -298,10 +304,10 @@ One per step of the suggested order, all children of
 | Step | Issue                                                        | Scope                                                                       |
 | ---: | ------------------------------------------------------------ | --------------------------------------------------------------------------- |
 |    1 | [#2304](https://github.com/copse-dev/agent-pane/issues/2304) | Qwen Code catalog entry and probe run                                       |
-|    2 | [#2305](https://github.com/copse-dev/agent-pane/issues/2305) | `@copse/std` leaf utilities                                                 |
-|    3 | [#2306](https://github.com/copse-dev/agent-pane/issues/2306) | `@copse/shell-guard`                                                        |
-|    4 | [#2307](https://github.com/copse-dev/agent-pane/issues/2307) | `@copse/thread-store`                                                       |
-|    5 | [#2308](https://github.com/copse-dev/agent-pane/issues/2308) | `@copse/hooks-dialects`                                                     |
+|    2 | [#2305](https://github.com/copse-dev/agent-pane/issues/2305) | `@copse/std` leaf utilities — landed in #2315                               |
+|    3 | [#2306](https://github.com/copse-dev/agent-pane/issues/2306) | `@copse/shell-guard` — landed in #2316                                      |
+|    4 | [#2307](https://github.com/copse-dev/agent-pane/issues/2307) | `@copse/thread-store` — landed in #2317                                     |
+|    5 | [#2308](https://github.com/copse-dev/agent-pane/issues/2308) | `@copse/hooks-dialects` — landed in #2319                                   |
 |    6 | [#2309](https://github.com/copse-dev/agent-pane/issues/2309) | `@copse/plugin-sdk`                                                         |
 |    7 | [#2310](https://github.com/copse-dev/agent-pane/issues/2310) | `@copse/acp-host`                                                           |
 |    8 | [#2311](https://github.com/copse-dev/agent-pane/issues/2311) | `copse-bench` as its own repository, after the headless contract (#1079)    |
