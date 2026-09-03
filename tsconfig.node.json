@@ -40,7 +40,8 @@
     "packages/llm/src/**/*",
     "packages/plan-usage/src/**/*",
     "packages/shell-guard/src/**/*",
-    "packages/std/src/**/*"
+    "packages/std/src/**/*",
+    "packages/thread-store/src/**/*"
   ],
   "exclude": ["src/sidecar/ws-bridge"]
 }

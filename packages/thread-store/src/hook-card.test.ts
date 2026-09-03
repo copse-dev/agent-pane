@@ -8,7 +8,7 @@ import {
   hookEventLabel,
   isHookCardBlocking,
 } from './hook-card.ts'
-import { SPINE_SCHEMA_VERSION, type SpineHookRunLine } from '../threads/spine-schema.ts'
+import { SPINE_SCHEMA_VERSION, type SpineHookRunLine } from './spine-schema.ts'
 
 function line(overrides: Partial<SpineHookRunLine> = {}): SpineHookRunLine {
   return {

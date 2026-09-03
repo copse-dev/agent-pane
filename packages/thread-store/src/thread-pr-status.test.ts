@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Thread } from '../types/thread.ts'
+import type { Thread } from './thread-types.ts'
 import {
   collectThreadPrRefs,
   describeThreadPrStatus,
