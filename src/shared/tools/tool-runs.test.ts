@@ -10,7 +10,14 @@ function tc(id: string, name = 'read_file', status: ToolCall['status'] = 'done')
 function subagent(id: string): ToolCall {
   return {
     ...tc(id, 'task'),
-    subagent: { sessionId: `s-${id}`, agentName: 'Explore', status: 'done', messages: [] },
+    subagent: {
+      id: `s-${id}`,
+      kind: 'explore',
+      status: 'done',
+      prompt: 'look around',
+      summary: 'done',
+      messages: [],
+    },
   }
 }
 

@@ -2306,6 +2306,31 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   /**
+   * A bubble that gains visible prose leaves the run it had joined — prose is a
+   * run boundary. Rare (it takes the mid-sentence continuation heuristic landing
+   * on a bubble that so far had only tools), but without this the old anchor
+   * would keep showing a step for a message that has moved on, and the message
+   * itself would show none of its tools.
+   */
+  function resyncRunMembership(thread: Thread | undefined, msgId: string): void {
+    const staleStep = list.querySelector<HTMLElement>(
+      `.tool-card-step[data-step-message-id="${msgId}"]`,
+    )
+    const anchorEl = staleStep?.closest<HTMLElement>('.msg')
+    const anchorId = anchorEl?.dataset['messageId']
+    if (!anchorEl || !anchorId || anchorId === msgId) return
+    const anchorRun = multiStepRunFor(thread, anchorId)
+    if (anchorRun?.memberIds.includes(msgId) === true) return
+    const anchor = thread?.messages.find((m) => m.id === anchorId)
+    if (!anchor) return
+    renderToolCards(anchorEl, anchor.toolCalls, {
+      ...messageToolCardOpts(anchor),
+      ...(anchorRun ? { run: anchorRun, liveStepId: liveStepMessageId(thread) } : {}),
+    })
+    refreshToolCards(msgId)
+  }
+
+  /**
    * Update the run's reasoning trails in place after a reasoning chunk. Falls
    * back to a full anchor repaint only when a step this run now has does not
    * exist in the DOM yet — a member that has streamed reasoning but no tools.
@@ -2864,6 +2889,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           msgEl?.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
             setReasoningDisclosureTitle(details, false)
           })
+        }
+        // Tools with nowhere to render mean this bubble's run membership just
+        // changed under it — the cheap `.some` is false on every ordinary
+        // text-only chunk, so the DOM query stays off the streaming path.
+        if (
+          msgEl &&
+          msg.toolCalls.some((tc) => !tc.subagent) &&
+          !msgEl.querySelector('.tool-card')
+        ) {
+          resyncRunMembership(thread, mid)
         }
         scrollToBottom()
       }

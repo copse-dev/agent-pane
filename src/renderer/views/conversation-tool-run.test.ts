@@ -7,6 +7,7 @@ import {
   addToolCall,
   appendReasoning,
   createThread,
+  setMessageContent,
   setMessageRunSummary,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
@@ -104,7 +105,11 @@ describe('cross-message tool runs (component)', () => {
     )
     for (const id of ids.slice(1)) {
       const memberEl = qsRequired(host, `[data-message-id="${id}"]`)
-      assert.equal(memberEl.querySelector('.tool-card'), null, `${id} must not render its own cards`)
+      assert.equal(
+        memberEl.querySelector('.tool-card'),
+        null,
+        `${id} must not render its own cards`,
+      )
     }
   })
 
@@ -193,6 +198,33 @@ describe('cross-message tool runs (component)', () => {
     assert.equal(
       trail.querySelector('.message-reasoning-text')?.textContent?.trim(),
       'Checking whether the oracle ran.',
+    )
+  })
+
+  it('hands a member its tools back when it gains prose', () => {
+    const { store, ids } = seedRun()
+    const host = mount(store)
+    const member = ids[1] ?? ''
+
+    // The continuation heuristic can resume text on a bubble that so far
+    // carried only tools. Prose is a run boundary, so the member leaves.
+    setMessageContent(store, member, 'Actually, the oracle found nothing.')
+
+    const runs = [...host.querySelectorAll<HTMLElement>('.tool-card-rollup')]
+    assert.deepEqual(
+      runs.map((run) => run.closest('.msg')?.getAttribute('data-message-id')),
+      [ids[0], member],
+      'the member anchors its own run once it has prose',
+    )
+    // The shortened first run no longer claims the departed message's tools.
+    assert.equal(
+      runs[0]?.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      'Read files',
+    )
+    assert.equal(runs[0]?.querySelector('.tool-card-step'), null)
+    assert.equal(
+      runs[1]?.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      'Used 12 tools · 4 steps',
     )
   })
 
