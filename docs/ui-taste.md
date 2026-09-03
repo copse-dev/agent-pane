@@ -110,9 +110,15 @@ Reach for `background-clip: padding-box` on the filled variant rather than trimm
 padding. The clip insets the fill by the shared 1px border, landing every chip's solid
 area in the same inner box; trimming padding does nothing anyway, because the flex row
 stretches all of them back to one height. Keep the border width the filled chip insets
-against — drop it and the fill shrinks instead of matching. Guarded by
+against — drop it and the fill shrinks instead of matching.
+
+Guarded at two levels, because the stylesheet assertion alone is not visual evidence:
 `keeps the filled queued action the same visual size as the outlined ones` in
-[`modern-css.test.ts`](../src/renderer/styles/modern-css.test.ts).
+[`modern-css.test.ts`](../src/renderer/styles/modern-css.test.ts) pins the declaration, and
+[`queued-message-delete.e2e.ts`](../tests/e2e/queued-message-delete.e2e.ts) /
+[`queued-held.e2e.ts`](../tests/e2e/queued-held.e2e.ts) assert the computed clip and equal
+heights on the live rows and capture `.message-queued-actions` on its own — a full-window
+shot cannot resolve a 1px inset.
 
 ### Agent-authored dialog copy and secrets
 

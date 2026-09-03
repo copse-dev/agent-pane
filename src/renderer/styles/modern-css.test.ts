@@ -222,6 +222,10 @@ describe('modern CSS adoptions', () => {
     // box puts every chip's solid area in the same inner box. Chromium has no
     // layout effect to observe here and happy-dom has no paint at all, so pin
     // the declaration on the two filled variants.
+    // `.queued-send` (the editor row's primary) shares the `.queued-send-now`
+    // rule, so it is covered by the same declaration; `declares` scans for a
+    // selector followed by `{`, and `.queued-send` is only ever followed by a
+    // comma, so it cannot be asserted on directly.
     for (const selector of ['.queued-action.queued-send-now', '.queued-action.queued-release']) {
       assert.ok(
         declares(css, selector, /background-clip:\s*padding-box/),

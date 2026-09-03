@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const QUEUED_TEXT = 'Then add unit tests for the parser.'
@@ -43,6 +44,30 @@ describe('queued message delete', function () {
 
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-message-delete-before.png'))
+
+    // The filled "Send now" sits between two outlined chips and must not read
+    // larger than them. All three are the same box, so the compensation is in
+    // paint: the fill is clipped to the padding box instead of spilling into
+    // the border edge (docs/ui-taste.md, input-bar.css). The full-window shot
+    // above cannot show a 1px inset, so capture the row on its own as well.
+    const clips = await browser.execute(() =>
+      [...document.querySelectorAll('.conversation-queued .queued-action')].map((chip) => ({
+        label: chip.textContent,
+        clip: getComputedStyle(chip).backgroundClip,
+        height: chip.getBoundingClientRect().height,
+      })),
+    )
+    await expect(clips.map((chip) => `${chip.label ?? ''}:${chip.clip}`)).toEqual([
+      'Edit:border-box',
+      'Send now:padding-box',
+      'Delete:border-box',
+    ])
+    // The clip only compensates while the boxes really are identical.
+    await expect(new Set(clips.map((chip) => chip.height)).size).toBe(1)
+    await saveElementScreenshot(
+      '.conversation-queued .message-queued-actions',
+      'queued-actions-row.png',
+    )
 
     await $('.queued-delete').click()
 

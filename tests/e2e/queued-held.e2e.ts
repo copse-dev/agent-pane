@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedHeldQueueFixture } from './helpers/seed-config.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -36,5 +37,28 @@ describe('held hook message in the queue', function () {
 
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'queued-held.png'))
+
+    // "Release" is the filled chip in this row, so it carries the same optical
+    // clip as "Send now" does in the plain queued row (docs/ui-taste.md). The
+    // window shot above cannot resolve a 1px inset; capture the row on its own.
+    const clips = await browser.execute(() =>
+      [...document.querySelectorAll('.conversation-queued .msg-held .queued-action')].map(
+        (chip) => ({
+          label: chip.textContent,
+          clip: getComputedStyle(chip).backgroundClip,
+          height: chip.getBoundingClientRect().height,
+        }),
+      ),
+    )
+    await expect(clips.map((chip) => `${chip.label ?? ''}:${chip.clip}`)).toEqual([
+      'Release:padding-box',
+      'Edit:border-box',
+      'Delete:border-box',
+    ])
+    await expect(new Set(clips.map((chip) => chip.height)).size).toBe(1)
+    await saveElementScreenshot(
+      '.conversation-queued .msg-held .message-queued-actions',
+      'queued-held-actions-row.png',
+    )
   })
 })
