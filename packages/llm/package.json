@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
+    "@copse/std": "workspace:*",
     "@lmstudio/sdk": "^1.5.0",
     "openai": "^7.4.0",
     "zod": "^4.4.3"

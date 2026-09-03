@@ -38,7 +38,8 @@
     "packages/agent/src/**/*",
     "packages/extract-zip/**/*",
     "packages/llm/src/**/*",
-    "packages/plan-usage/src/**/*"
+    "packages/plan-usage/src/**/*",
+    "packages/std/src/**/*"
   ],
   "exclude": ["src/sidecar/ws-bridge"]
 }
