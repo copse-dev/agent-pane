@@ -101,6 +101,7 @@ import {
 import { begin as perfBegin, mark as perfMark } from './perf.ts'
 import { startPerfAutopilot } from './perf-autopilot.ts'
 import { attachThreadHydration } from './controller/thread-hydration.ts'
+import { attachPrPanelFollow } from './controller/pr-panel-follow.ts'
 import { startExternalCursorAgentSync } from './controller/external-cursor-agent-sync.ts'
 import { loadStartupSettings } from './controller/startup-settings.ts'
 import {
@@ -335,6 +336,10 @@ async function boot(): Promise<void> {
     attachAutosave(store, api)
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
+    // When `gh_pr_create` turns the diff you're reading into a PR, move the
+    // Changes panel on to it. Only the main window: a pop-out is pinned to the
+    // one pane it was opened for.
+    attachPrPanelFollow(store, api)
     // Outside Cursor cloud agents for the open project — first tick after one
     // interval, never on editor open.
     startExternalCursorAgentSync(store, api)
