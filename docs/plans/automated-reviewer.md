@@ -67,26 +67,26 @@ gesture that invokes it. See below.
 
 ## Current state audit
 
-| Piece                             | Where                                                                                     | State                                                                                                                 |
-| --------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Post-turn review subagent         | `packages/agent/src/review-subagent.ts`, `src/main/services/review-subagent-runner.ts`    | ✅ read-only subagent over the working diff; emits a prose summary + `REVIEW_JSON` verdict                             |
-| Two-reviewer + judge comparison   | `src/main/services/model-comparison.ts`, `model-comparison-runner.ts`                     | ✅ fan-out to two models, judge compares their _prose_; experimental plugin, default off                               |
-| Review / comparison cards         | `src/renderer/views/review-panel.ts`, `comparison-panel.ts`                               | ✅ rendered inline in the conversation; comparison card is the only consumer of the comparison                         |
-| Model selection by rule            | `@copse/llm/dynamic-model.ts`, `resolveDistinctDynamicModelIds`                          | ✅ "best value" / "best intellect" selectors that resolve to _distinct_ concrete models                                |
-| Spend approval                    | `comparisonNeedsApproval`, `requestApproval`                                              | ✅ prompts when any of the three models is billable, with per-thread remember                                          |
-| Electron-free agent core          | `@copse/agent`, `@copse/llm`                                                              | ✅ real package boundary, proven by `scripts/bench-agent-lib.mts` (imports the packages only — no Electron, no `src/main`) |
-| Headless contract                 | `packages/agent/src/headless-contract.ts`                                                 | ✅ v1 request/event/permission/exit-code contract with a published JSON Schema                                         |
-| Worktrees                         | `src/main/services/worktree-manager.ts`, `worktree-inventory.ts`                          | ✅ per-thread worktree lifecycle                                                                                        |
-| Command execution + sandbox       | `src/main/services/exec/command-runner.ts`, `src/main/project-sandbox/`                   | ✅ spawn, network scope, output caps — but **not reachable from a review**                                              |
-| CI investigator subagent          | `src/main/services/github/ci-investigator-service.ts`                                     | ✅ read-only, reads real CI failures — on-demand inside a live turn only                                                |
-| PR context                        | `src/main/services/github/pr-context-service.ts`, `pr-file-content.ts`                    | ✅ PR metadata and file content                                                                                         |
-| Durable notes                     | `src/main/services/storage/knowledge-store.ts`                                            | ✅ typed OKF notes; no new store needed for finding suppression                                                         |
-| Untrusted-content handling        | `packages/agent/src/external-content.ts`                                                  | ✅ exists; not currently applied to review inputs                                                                       |
-| **Structured finding type**       | —                                                                                          | ❌ reviews are prose end-to-end                                                                                          |
-| **Any execution during review**   | —                                                                                          | ❌ `REVIEW_TOOL_NAMES` is strictly read-only                                                                             |
-| **CLI entry point**               | —                                                                                          | ❌ no `bin` in `package.json`; no standalone runner                                                                      |
-| **Finding suppression / memory**  | —                                                                                          | ❌ every run rediscovers everything                                                                                      |
-| **Review quality measurement**    | —                                                                                          | ❌ no eval; no precision number to regress against                                                                       |
+| Piece                            | Where                                                                                  | State                                                                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Post-turn review subagent        | `packages/agent/src/review-subagent.ts`, `src/main/services/review-subagent-runner.ts` | ✅ read-only subagent over the working diff; emits a prose summary + `REVIEW_JSON` verdict                                 |
+| Two-reviewer + judge comparison  | `src/main/services/model-comparison.ts`, `model-comparison-runner.ts`                  | ✅ fan-out to two models, judge compares their _prose_; experimental plugin, default off                                   |
+| Review / comparison cards        | `src/renderer/views/review-panel.ts`, `comparison-panel.ts`                            | ✅ rendered inline in the conversation; comparison card is the only consumer of the comparison                             |
+| Model selection by rule          | `@copse/llm/dynamic-model.ts`, `resolveDistinctDynamicModelIds`                        | ✅ "best value" / "best intellect" selectors that resolve to _distinct_ concrete models                                    |
+| Spend approval                   | `comparisonNeedsApproval`, `requestApproval`                                           | ✅ prompts when any of the three models is billable, with per-thread remember                                              |
+| Electron-free agent core         | `@copse/agent`, `@copse/llm`                                                           | ✅ real package boundary, proven by `scripts/bench-agent-lib.mts` (imports the packages only — no Electron, no `src/main`) |
+| Headless contract                | `packages/agent/src/headless-contract.ts`                                              | ✅ v1 request/event/permission/exit-code contract with a published JSON Schema                                             |
+| Worktrees                        | `src/main/services/worktree-manager.ts`, `worktree-inventory.ts`                       | ✅ per-thread worktree lifecycle                                                                                           |
+| Command execution + sandbox      | `src/main/services/exec/command-runner.ts`, `src/main/project-sandbox/`                | ✅ spawn, network scope, output caps — but **not reachable from a review**                                                 |
+| CI investigator subagent         | `src/main/services/github/ci-investigator-service.ts`                                  | ✅ read-only, reads real CI failures — on-demand inside a live turn only                                                   |
+| PR context                       | `src/main/services/github/pr-context-service.ts`, `pr-file-content.ts`                 | ✅ PR metadata and file content                                                                                            |
+| Durable notes                    | `src/main/services/storage/knowledge-store.ts`                                         | ✅ typed OKF notes; no new store needed for finding suppression                                                            |
+| Untrusted-content handling       | `packages/agent/src/external-content.ts`                                               | ✅ exists; not currently applied to review inputs                                                                          |
+| **Structured finding type**      | —                                                                                      | ❌ reviews are prose end-to-end                                                                                            |
+| **Any execution during review**  | —                                                                                      | ❌ `REVIEW_TOOL_NAMES` is strictly read-only                                                                               |
+| **CLI entry point**              | —                                                                                      | ❌ no `bin` in `package.json`; no standalone runner                                                                        |
+| **Finding suppression / memory** | —                                                                                      | ❌ every run rediscovers everything                                                                                        |
+| **Review quality measurement**   | —                                                                                      | ❌ no eval; no precision number to regress against                                                                         |
 
 ### Problem 1 — it is never surfaced
 
@@ -131,7 +131,7 @@ reviewer is getting better or worse.
 One schema, in a new Electron-free package, is the whole contract. Sketch — the field
 list is the design, the exact encoding is Phase 1's to settle:
 
-- **identity** — a stable id derived from the *content* of the anchored lines plus a
+- **identity** — a stable id derived from the _content_ of the anchored lines plus a
   normalised claim, not from line numbers (so it survives rebase and reformatting).
 - **anchor** — path, line range, and the blob hash it was computed against.
 - **claim** — one sentence, falsifiable.
@@ -143,7 +143,7 @@ list is the design, the exact encoding is Phase 1's to settle:
   challenged it and lost.
 - **evidence** — an ordered list of `{ kind, command, exitCode, excerpt }` or
   `{ kind: 'reproducer', testPath, failsOnHead, passesOnBase }` or `{ kind: 'citation',
-  path, lines }`.
+path, lines }`.
 - **verdict** — `confirmed` | `refuted` | `unverified`, with the reason.
 - **remedy** — optional minimal patch.
 
@@ -313,8 +313,7 @@ Ordered by how likely each is to sink the thing.
 - **Phase 0 — Findings schema + Stage 0.** `@copse/review` with the finding type, and the
   build/test baseline diff. No models at all. Ships value immediately ("this doesn't
   compile / this test regressed") and proves the sandbox story before any model spend.
-- **Phase 1 — CLI shell.** `copse review` over a single model, one lens, Stage 0 + 1 + 2 +
-  5. Dogfood on this repo's own PRs. Settle the sandbox policy here.
+- **Phase 1 — CLI shell.** `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5. Dogfood on this repo's own PRs. Settle the sandbox policy here.
 - **Phase 2 — Multi-model + verification.** Lenses, fan-out, clustering, the challenger
   role, reproducer generation. Retire the comparison judge in favour of per-finding
   verdicts.
