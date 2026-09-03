@@ -9703,6 +9703,7 @@ dialog.settings-overlay::backdrop {
 .plugin-panel-status-icon {
   flex-shrink: 0;
   width: 1rem;
+  height: var(--line-height-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;
