@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { deepStrictEqual, ok, strictEqual, throws } from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Message, Thread } from '@shared/types'
+import type { Message, Thread } from './thread-types.ts'
 import {
   attachHookCards,
   explodeThread,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { Thread } from '@shared/types'
+import type { Thread } from './thread-types.ts'
 import {
   buildDebugTracePrompt,
   debugTraceThreadTitle,
