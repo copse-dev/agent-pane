@@ -529,6 +529,17 @@ export function setMessageContent(store: AppStore, messageId: string, content: s
   store.emit('message_token', messageId, content)
 }
 
+export function addMessageCanvasArtefact(
+  store: AppStore,
+  messageId: string,
+  artefact: import('../types/canvas.ts').CanvasArtefactReference,
+): void {
+  updateMessage(store, messageId, (message) => {
+    message.canvasArtefacts = [...(message.canvasArtefacts ?? []), artefact]
+  })
+  store.emit('message_canvas_artefacts_changed', messageId)
+}
+
 export function setMessageCommandSummary(
   store: AppStore,
   messageId: string,

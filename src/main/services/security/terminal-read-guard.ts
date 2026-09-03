@@ -1,10 +1,20 @@
-import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
-import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
-import { buildProvider, normalizeRoleModelSelection } from '../providers/provider-selection.ts'
+import { getSetting } from '../storage/settings.ts'
+import { buildProvider } from '../providers/provider-selection.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { requestApproval } from '../approval.ts'
 import { completeMessagesWithUsage } from '../providers/llm-complete-text.ts'
+import {
+  findSafetyModelProblem,
+  reportSafetyModelProblem,
+  type SafetyModelProblem,
+} from './safety-model-availability.ts'
+import {
+  isScreeningTimeout,
+  noteSafetyModelAnswered,
+  noteSafetyModelTimeout,
+} from './safety-model-cooldown.ts'
+import { resolveSafetyScreeningModel } from './safety-screening-model.ts'
 import {
   parseTerminalReadVerdict,
   terminalReadNeedsApproval,
@@ -21,6 +31,14 @@ export type { TerminalReadVerdict } from './terminal-read-verdict.ts'
  * agent (prompt injection). Before a snapshot is auto-shared, the local safety
  * model screens it; anything flagged — or any screening failure — falls back to
  * an explicit user approval instead of silently allowing or denying.
+ *
+ * The fallback stays fail-closed either way, but it does not stay silent: a
+ * model that is configured and simply absent is reported as such, because a
+ * prompt on every single read reads as a transient glitch and nobody goes
+ * looking for a setting that is quietly pointing at nothing. A model that is
+ * present but cannot answer inside the budget is reported the same way, and
+ * then routed around for a while (`safety-model-cooldown.ts`) so the next read
+ * screens on something faster instead of buying the same silence again.
  */
 
 const SYSTEM_PROMPT = `You are a security screener for a coding assistant.
@@ -39,16 +57,35 @@ When uncertain, use "risky" with lower confidence.`
 // fallback whenever the classifier cannot vouch for the visible tail.
 const CLASSIFIER_INPUT_MAX_CHARS = 6_000
 
+/**
+ * Outcome of one screening attempt. `problem` separates "the configured model
+ * cannot run" from "screening was attempted and produced nothing usable" —
+ * both fall back to approval, but only one of them is worth telling the user
+ * how to fix.
+ */
+export interface TerminalReadScreening {
+  verdict: TerminalReadVerdict | null
+  problem: SafetyModelProblem | null
+}
+
 export async function classifyTerminalSnapshot(
   text: string,
   signal?: AbortSignal,
-): Promise<TerminalReadVerdict | null> {
-  if (!getSetting<boolean>('safetyClassifierEnabled', true)) return null
+): Promise<TerminalReadScreening> {
+  if (!getSetting<boolean>('safetyClassifierEnabled', true)) return { verdict: null, problem: null }
 
-  const model = normalizeRoleModelSelection(
-    getSettingTrimmed('safetyModel', LM_STUDIO_MODEL_IDS.safety),
-  )
-  if (!model) return null
+  const { model, problem: routing } = await resolveSafetyScreeningModel()
+  if (routing) {
+    reportSafetyModelProblem(routing)
+    return { verdict: null, problem: routing }
+  }
+  if (!model) return { verdict: null, problem: null }
+
+  const problem = await findSafetyModelProblem(model)
+  if (problem) {
+    reportSafetyModelProblem(problem)
+    return { verdict: null, problem }
+  }
 
   try {
     // Screening a terminal read is a one-shot judgement — same cap as the
@@ -63,6 +100,7 @@ export async function classifyTerminalSnapshot(
       FETCH_TIMEOUTS.safetyClassification,
       signal,
     )
+    noteSafetyModelAnswered(model)
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
         model,
@@ -70,9 +108,12 @@ export async function classifyTerminalSnapshot(
         ...usage,
       })
     }
-    return parseTerminalReadVerdict(content)
-  } catch {
-    return null
+    return { verdict: parseTerminalReadVerdict(content), problem: null }
+  } catch (err) {
+    if (!isScreeningTimeout(err, signal)) return { verdict: null, problem: null }
+    const timedOut = noteSafetyModelTimeout(model, FETCH_TIMEOUTS.safetyClassification)
+    reportSafetyModelProblem(timedOut)
+    return { verdict: null, problem: timedOut }
   }
 }
 
@@ -101,12 +142,12 @@ async function gateImpl(
 ): Promise<TerminalReadGateResult> {
   if (threadId && rememberedThreads.has(threadId)) return { allowed: true }
 
-  const verdict = await classifyTerminalSnapshot(text, signal)
+  const { verdict, problem } = await classifyTerminalSnapshot(text, signal)
   if (!terminalReadNeedsApproval(verdict)) return { allowed: true }
 
   const why = verdict
     ? `The safety model flagged it: ${verdict.reason}`
-    : 'The safety model could not screen it.'
+    : (problem?.message ?? 'The safety model could not screen it.')
   const decision = await requestApproval(
     {
       type: 'shell',

@@ -16,13 +16,7 @@
     "resolveJsonModule": true,
     "noEmit": true,
     "paths": {
-      "@shared/*": ["./src/shared/*"],
-      "@copse/agent": ["./packages/agent/src/index.ts"],
-      "@copse/agent/*": ["./packages/agent/src/*"],
-      "@copse/llm": ["./packages/llm/src/index.ts"],
-      "@copse/llm/*": ["./packages/llm/src/*"],
-      "@copse/plan-usage": ["./packages/plan-usage/src/index.ts"],
-      "@copse/plan-usage/*": ["./packages/plan-usage/src/*"]
+      "@shared/*": ["./src/shared/*"]
     },
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
@@ -44,7 +38,8 @@
     "packages/agent/src/**/*",
     "packages/extract-zip/**/*",
     "packages/llm/src/**/*",
-    "packages/plan-usage/src/**/*"
+    "packages/plan-usage/src/**/*",
+    "packages/std/src/**/*"
   ],
   "exclude": ["src/sidecar/ws-bridge"]
 }

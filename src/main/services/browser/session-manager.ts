@@ -8,11 +8,12 @@ import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 
 const MAX_TABS = 8
-// Wide enough to read a prototype's layout in the transcript, small enough
-// that the data URL stays cheap to ship over IPC and hold in a message.
-const PREVIEW_WIDTH = 480
 const DEFAULT_WIDTH = 1280
 const DEFAULT_HEIGHT = 800
+// Keep the preview at the canvas viewport's logical width. The transcript card
+// can occupy this full width; shrinking to 480px made Chromium enlarge the
+// bitmap by 2–3× and blurred every text-heavy prototype.
+const PREVIEW_WIDTH = DEFAULT_WIDTH
 
 interface Tab {
   id: string
@@ -171,7 +172,7 @@ export class BrowserSessionManager {
       const image = await tab.window.webContents.capturePage()
       if (image.isEmpty()) return null
       const { width } = image.getSize()
-      const scaled = width > maxWidth ? image.resize({ width: maxWidth, quality: 'good' }) : image
+      const scaled = width > maxWidth ? image.resize({ width: maxWidth, quality: 'best' }) : image
       return scaled.toDataURL()
     } catch {
       return null

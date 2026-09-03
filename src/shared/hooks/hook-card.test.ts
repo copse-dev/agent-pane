@@ -153,4 +153,53 @@ describe('hook card labels', () => {
     assert.equal(getHookCardStatusLabel(asked), 'Requested approval')
     assert.equal(hookCardPerformedAction(asked), true)
   })
+
+  // Several nudge hooks offer an `injectContext` at the same step boundary and
+  // the loop pushes at most one, so "offered" and "applied" must not read alike.
+  it('distinguishes the applied nudge from the offers it beat', () => {
+    const offered = hookCardFromSpineLine(
+      line({
+        event: 'stepBoundary',
+        hookId: 'truncation-continue',
+        executor: 'function',
+        decision: { injectContextChars: 98 },
+      }),
+    )
+    const applied = hookCardFromSpineLine(
+      line({
+        event: 'stepBoundary',
+        hookId: 'reasoning-runaway',
+        executor: 'function',
+        decision: {
+          nudgeApplied: true,
+          nudgeMechanism: 'tool-enabled-message',
+          injectContextChars: 120,
+        },
+      }),
+    )
+
+    assert.equal(getHookCardStatusLabel(offered), 'Added context')
+    assert.equal(getHookCardStatusLabel(applied), 'Steered the model')
+    assert.equal(applied.nudgeApplied, true)
+    assert.equal(applied.nudgeMechanism, 'tool-enabled-message')
+    assert.equal(hookCardPerformedAction(applied), true)
+  })
+
+  it('treats a loop-owned nudge with no hook execution line as an action', () => {
+    const finalize = hookCardFromSpineLine(
+      line({
+        event: 'stepBoundary',
+        hookId: 'finalize-nudge',
+        executor: 'function',
+        decision: {
+          nudgeApplied: true,
+          nudgeMechanism: 'text-only-turn',
+          injectContextChars: 97,
+        },
+      }),
+    )
+
+    assert.equal(getHookCardStatusLabel(finalize), 'Steered the model')
+    assert.equal(hookCardPerformedAction(finalize), true)
+  })
 })

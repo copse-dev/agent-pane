@@ -5,6 +5,7 @@ import {
   createExtraCloudProvider,
 } from '@copse/llm/create-provider.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
+import { isDynamicModel } from '@copse/llm/dynamic-model.ts'
 import { SERVICE_TIERS, isServiceTier, type ServiceTier } from '@copse/llm/service-tier.ts'
 import { extraProviderForModel, extraProviderModelId } from '@copse/llm/extra-providers.ts'
 import { getApprovedProviderHosts } from './approved-provider-hosts.ts'
@@ -22,6 +23,7 @@ import {
   resolveApiKey,
 } from '../storage/settings.ts'
 import { resolveContextWindow } from './resolve-context-window.ts'
+import { resolveDynamicModelId } from './dynamic-model.ts'
 import { routedModelSetting } from './role-models.ts'
 import {
   fetchLmStudioModelsCached,
@@ -78,6 +80,10 @@ export function normalizeRoleModelSelection(model: string): string {
   if (!value) return ''
   if (
     value === 'lm-studio' ||
+    // An `auto:` rule is not a bare LM Studio id and must survive intact: the
+    // legacy upgrade below would turn `auto:best-local` into
+    // `lmstudio:auto:best-local` and route it to a model that cannot exist.
+    isDynamicModel(value) ||
     value.startsWith('lmstudio:') ||
     isOpenRouterModel(value) ||
     extraProviderForModel(getResolvedExtraProviders(), value) !== null ||
@@ -120,7 +126,12 @@ function routedRoleModelSelection(roleKey: string): string {
   return configured || defaultOnDeviceModelSelection()
 }
 
-async function buildTaskRoleRoute(model: string): Promise<SubagentRoute> {
+async function buildTaskRoleRoute(selection: string): Promise<SubagentRoute> {
+  // A role setting may hold an `auto:` rule (onboarding writes one for every
+  // role it configures). Expand it here, before anything downstream treats the
+  // value as an id — `usageModel` included, so the ledger records the model
+  // that actually ran rather than the rule that chose it.
+  const model = await resolveDynamicModelId(selection)
   const contextWindow = await resolveContextWindow(model)
   return {
     provider: await buildProvider(model),

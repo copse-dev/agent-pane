@@ -33,6 +33,19 @@ export function setCanvasArtefactMirror(next: CanvasArtefactMirror | null): void
   mirror = next
 }
 
+/** Mirror and publish one already-resolved canvas artefact. */
+export async function dispatchCanvasArtefact(artefact: CanvasArtefact): Promise<void> {
+  let preview: string | null = null
+  if (mirror) {
+    try {
+      preview = await mirror(artefact)
+    } catch {
+      preview = null
+    }
+  }
+  sink?.(preview ? { ...artefact, preview } : artefact)
+}
+
 /**
  * Send every UI resource in a tool result to the renderer as a canvas artefact,
  * after mirroring it into the agent browser session.
@@ -52,14 +65,6 @@ export async function dispatchCanvasArtefacts(content: unknown, threadId?: strin
     .map((artefact) => (threadId ? { ...artefact, threadId } : artefact))
   if (artefacts.length === 0) return
   for (const artefact of artefacts) {
-    let preview: string | null = null
-    if (mirror) {
-      try {
-        preview = await mirror(artefact)
-      } catch {
-        preview = null
-      }
-    }
-    sink?.(preview ? { ...artefact, preview } : artefact)
+    await dispatchCanvasArtefact(artefact)
   }
 }

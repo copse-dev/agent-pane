@@ -159,7 +159,6 @@ import {
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import { requestCloseConfirmation } from '../services/close-confirm.ts'
-import { addTrustedShellCommand } from '../services/security/command-routing-config.ts'
 import { setSeededVncNearbyServersForTests } from '../services/vnc/vnc-service.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import {
@@ -415,8 +414,6 @@ you want the coding agent to follow on every turn.
 `
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
-  let modelCardResolveGate: Promise<void> | undefined
-  let releaseModelCardResolves: (() => void) | undefined
   setGitHubListWatchBroadcast(() => {
     broadcastToAppWindows('gh:lists_tick')
   })
@@ -1271,7 +1268,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('modelCards:resolve', async (event, modelIds: unknown) => {
     assertMainFrameSender(event, win)
     const ids = parseIpcArgs(modelCardIdsSchema, [modelIds])
-    await modelCardResolveGate
     const out: Record<string, ResolvedModelCard | null> = {}
     await Promise.all(
       ids.map(async (id) => {
@@ -2540,20 +2536,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       clearMockScript()
     })
-    ipcMain.handle('test:pauseModelCardResolves', (event) => {
-      assertMainFrameSender(event, win)
-      if (modelCardResolveGate) return
-      modelCardResolveGate = new Promise((resolve) => {
-        releaseModelCardResolves = resolve
-      })
-    })
-    ipcMain.handle('test:resumeModelCardResolves', (event) => {
-      assertMainFrameSender(event, win)
-      const release = releaseModelCardResolves
-      modelCardResolveGate = undefined
-      releaseModelCardResolves = undefined
-      release?.()
-    })
     ipcMain.handle('test:emitAgentChunks', (event, rawThreadId: unknown, rawChunks: unknown) => {
       assertMainFrameSender(event, win)
       const [threadId, chunks] = parseIpcArgs(
@@ -2586,13 +2568,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       assertMainFrameSender(event, win)
       return requestCloseConfirmation()
     })
-    ipcMain.handle('test:rememberTrustedCommands', async (event, raw: unknown) => {
-      assertMainFrameSender(event, win)
-      const commands = parseIpcArgs(z.array(z.string().min(1).max(128)).min(1).max(16), [raw])
-      await Promise.all(commands.map((command) => addTrustedShellCommand(command)))
-      return getSetting<unknown>('trustedShellCommands', [])
-    })
-
     ipcMain.handle('test:createMainWindow', (event) => {
       assertMainFrameSender(event, win)
       createMainWindow()

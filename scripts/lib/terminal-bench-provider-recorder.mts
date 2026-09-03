@@ -5,7 +5,7 @@ import type {
   LLMProvider,
   LLMTool,
   ProviderStreamChunk,
-} from '../../packages/llm/src/wire-types.ts'
+} from '@copse/llm/wire-types.ts'
 
 /** Record the exact normalized messages and tools presented to the provider on every call. */
 export function recordTerminalBenchProviderRequests(

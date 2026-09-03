@@ -48,6 +48,7 @@ import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
 import { splitCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
+import { stripInlineVisualizationReferences } from '@shared/inline-visualization.ts'
 import type {
   Message,
   MessageOrigin,
@@ -288,18 +289,11 @@ function appendIfPresent(node: Node | null): Node[] {
 }
 
 /**
- * The thumbnail-and-Open card for a rendered canvas artefact, or null when this
- * tool call did not render one (or rendered before a preview could be captured
- * — a missing thumbnail is normal, see `CanvasArtefact.preview`).
- *
- * Placed after the standard sections so the args and result stay where every
- * other card keeps them; the preview is an addition, not a replacement.
+ * The shared thumbnail-and-Open card for a rendered canvas artefact. Tool calls
+ * and assistant presentation references both reach this constructor; a missing
+ * thumbnail is normal and leaves either surface cardless.
  */
-function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement | null {
-  if (tc.status !== 'done') return null
-  const uri = artefactUriFromToolResult(tc.result)
-  if (!uri) return null
-  const title = artefactTitleFromUri(uri)
+function createCanvasPreviewCard(threadId: string, title: string): HTMLElement | null {
   const preview = getArtefactPreview(threadId, title)
   if (!preview) return null
 
@@ -318,6 +312,25 @@ function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement
       open,
     ),
   )
+}
+
+function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement | null {
+  if (tc.status !== 'done') return null
+  const uri = artefactUriFromToolResult(tc.result)
+  return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null
+}
+
+function syncMessageCanvasPreviews(msgEl: HTMLElement, msg: Message, threadId: string): void {
+  const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
+  if (!body) return
+  body.querySelector(':scope > .message-canvas-previews')?.remove()
+
+  const cards = (msg.canvasArtefacts ?? []).flatMap((artefact) => {
+    const card = createCanvasPreviewCard(threadId, artefact.title)
+    return card ? [card] : []
+  })
+  if (cards.length === 0) return
+  body.append(el('div', { class: 'message-canvas-previews' }, ...cards))
 }
 
 function createIndividualToolCard(
@@ -345,7 +358,7 @@ function assistantDisplayParts(content: string): {
   body: string
   transportNoise: string | null
 } {
-  const stripped = stripTextToolCallBlocks(content)
+  const stripped = stripInlineVisualizationReferences(stripTextToolCallBlocks(content))
   const { body, noise } = splitCursorAcpTransportNoise(stripped)
   return { body, transportNoise: noise }
 }
@@ -884,8 +897,21 @@ function hookCardDetailLines(card: HookCard): string[] {
   if (card.status === 'ask') lines.push('Requested approval for the gated action')
   if (card.status === 'halted') lines.push('Stopped the agent run')
   if (card.updatedInput) lines.push('Rewrote the tool input')
+  // The effect line: this is the nudge the loop pushed, not merely one offered
+  // at a boundary where several hooks offered and only one could win.
+  if (card.nudgeApplied) {
+    const via =
+      card.nudgeMechanism === 'text-only-turn'
+        ? 'as a forced text-only turn'
+        : 'appended to the next turn'
+    lines.push(`Applied this nudge to the conversation — ${via}`)
+  }
   if (card.injectContextChars !== undefined && card.injectContextChars > 0) {
-    lines.push(`Injected ${String(card.injectContextChars)} chars of context`)
+    lines.push(
+      card.nudgeApplied
+        ? `${String(card.injectContextChars)} chars of nudge text`
+        : `Injected ${String(card.injectContextChars)} chars of context`,
+    )
   }
   if (card.agentMessageChars !== undefined && card.agentMessageChars > 0) {
     lines.push(`Sent ${String(card.agentMessageChars)} chars of guidance to the agent`)
@@ -2153,6 +2179,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
       ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
     })
+    syncMessageCanvasPreviews(msgEl, msg, threadId)
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
@@ -2614,6 +2641,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
             setReasoningDisclosureTitle(details, false)
           })
         }
+        scrollToBottom()
+      }
+    }),
+    store.on('message_canvas_artefacts_changed', (mid) => {
+      const thread = getActiveThread(store)
+      const msg = thread?.messages.find((message) => message.id === mid)
+      const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
+      if (thread && msg?.role === 'assistant' && msgEl) {
+        syncMessageCanvasPreviews(msgEl, msg, thread.id)
         scrollToBottom()
       }
     }),

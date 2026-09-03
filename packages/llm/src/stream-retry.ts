@@ -112,11 +112,25 @@ export function isOutputCeilingRejectedError(err: unknown): boolean {
   )
 }
 
+/**
+ * A stream that stopped because something aborted it, rather than because
+ * anything went wrong.
+ *
+ * Worth a named check because the shapes do not agree: the SDKs raise their own
+ * classes, whose `name` is a plain `'Error'`, while the raw-fetch transports
+ * raise a `DOMException` named `AbortError`. Anything matching on `name` alone
+ * silently misses every cloud provider.
+ */
+export function isStreamAbortError(err: unknown): boolean {
+  if (err instanceof Anthropic.APIUserAbortError) return true
+  if (err instanceof OpenAI.APIUserAbortError) return true
+  if (err instanceof DOMException && err.name === 'AbortError') return true
+  if (err instanceof Error && err.name === 'AbortError') return true
+  return false
+}
+
 export function isRetryableStreamError(err: unknown): boolean {
-  if (err instanceof Anthropic.APIUserAbortError) return false
-  if (err instanceof OpenAI.APIUserAbortError) return false
-  if (err instanceof DOMException && err.name === 'AbortError') return false
-  if (err instanceof Error && err.name === 'AbortError') return false
+  if (isStreamAbortError(err)) return false
 
   if (isRoutingPolicyError(err)) return false
 

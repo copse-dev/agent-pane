@@ -5,8 +5,8 @@
 // `schemas/*.schema.json` convention so external (non-TypeScript) adapters have a
 // stable contract file.
 //
-// The module is bundled with esbuild (resolving the `@copse/*` aliases the way
-// the test/bench launchers do) and then required in-process to call its
+// The module is bundled with esbuild (resolving `@copse/*` through the pnpm
+// workspace manifests) and then required in-process to call its
 // `headlessContractJsonSchema()` export — so the emitted schema is generated from
 // exactly the same declaration the TypeScript types are inferred from.
 //
@@ -41,8 +41,6 @@ await esbuild.build({
   sourcemap: false,
   alias: {
     '@shared': resolve('./src/shared'),
-    '@copse/agent': resolve('./packages/agent/src'),
-    '@copse/llm': resolve('./packages/llm/src'),
   },
 })
 

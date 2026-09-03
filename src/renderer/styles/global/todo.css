@@ -75,9 +75,17 @@
 .plugin-panel-tree-node[data-status='in_progress'] .plugin-panel-row-label {
   font-weight: 500;
 }
+/* The row is `align-items: flex-start` so a wrapped label keeps its marker on the
+   first line rather than floating to the middle of the block. That means this box
+   must be as tall as one line of label text, or it collapses to the 12px glyph and
+   its `align-items: center` centres the icon on the top 12px of a 22px line box —
+   the icon then sits ~5px high against the text. Matching the inherited line height
+   (`--line-height-base`, which the panel does not override) puts the two centres on
+   the same axis at every `--ui-scale`. */
 .plugin-panel-status-icon {
   flex-shrink: 0;
   width: 1rem;
+  height: var(--line-height-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;

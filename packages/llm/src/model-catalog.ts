@@ -44,6 +44,7 @@ export const DEFAULT_CLOUD_MODEL = 'claude-sonnet-4-6'
 
 export const TRACKED_MODELS = [
   DEFAULT_CLOUD_MODEL,
+  'claude-fable-5-1',
   'claude-fable-5',
   'claude-sonnet-5',
   'claude-opus-5',
@@ -86,6 +87,7 @@ export function inferCloudModelProvider(model: string): CloudModelProvider {
  */
 export const CLOUD_MODEL_LABELS: { readonly [K in TrackedModel]: string } = {
   'claude-sonnet-4-6': 'Claude Sonnet 4.6',
+  'claude-fable-5-1': 'Claude Fable 5.1',
   'claude-fable-5': 'Claude Fable 5',
   'claude-sonnet-5': 'Claude Sonnet 5',
   'claude-opus-5': 'Claude Opus 5',

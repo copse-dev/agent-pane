@@ -422,16 +422,17 @@ export function fileContainsToken(body: string, tok: Token): boolean {
 const CODE_EXTS = ['.ts', '.mts', '.tsx', '.js', '.mjs']
 
 /**
- * Workspace package aliases, mirroring `tsconfig.json` `paths` (and the esbuild
- * `alias` in `scripts/run-tests.mts`). Without these, every `@copse/agent/…`
- * import is a dead end in the graph, so a change under `packages/` maps to no
- * test and the unit subset silently misses it.
+ * Source locations for the real workspace packages plus the remaining
+ * app-internal `@shared` alias. The oracle resolves imports statically instead
+ * of walking node_modules symlinks; without these mappings, a package import is
+ * a dead end in the graph and a change under `packages/` maps to no test.
  */
 const PACKAGE_ALIASES: [prefix: string, dir: string][] = [
   ['@shared/', 'src/shared/'],
   ['@copse/agent/', 'packages/agent/src/'],
   ['@copse/llm/', 'packages/llm/src/'],
   ['@copse/plan-usage/', 'packages/plan-usage/src/'],
+  ['@copse/std/', 'packages/std/src/'],
 ]
 
 /** Bare package specifiers (no subpath) — resolve to the package entry point. */

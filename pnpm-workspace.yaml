@@ -1,5 +1,8 @@
-# Project-level pnpm config (allowBuilds + overrides). npm's package.json
+# Project-level pnpm workspace and config. npm's package.json
 # "overrides" field is not applied by pnpm — keep security pins here.
+packages:
+  - 'packages/*'
+
 allowBuilds:
   ddg-search: true
   edgedriver: true
@@ -35,7 +38,7 @@ overrides:
   tar: ^7.5.22
   sharp: 0.35.3
   fast-xml-parser: 5.10.1
-  fast-uri: 3.1.5
+  fast-uri: 3.1.6
   hono: 4.12.34
   ip-address: 10.3.1
   extract-zip: file:packages/extract-zip
