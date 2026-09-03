@@ -312,6 +312,14 @@ export interface ThreadCatalogEntry {
   updatedAt: number
   digest: string
   path: string
+  /**
+   * Copy of the thread meta's {@link Thread.prRefs}, so "find the thread that
+   * opened #2262" is answerable from the index alone. Required, not optional:
+   * a line without it is a pre-`prRefs` catalog, and dropping such lines on read
+   * is what makes the whole file rebuild itself (see `readCatalog`). `[]` means
+   * "indexed, no PRs" — the same convention `backfillThreadPrRefs` uses on meta.
+   */
+  prRefs: GithubPrRef[]
 }
 
 /**

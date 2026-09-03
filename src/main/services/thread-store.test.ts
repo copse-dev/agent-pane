@@ -249,6 +249,92 @@ describe('thread-store', () => {
     )
   })
 
+  it('indexes a thread by the PRs it touched, so a PR number finds it', async () => {
+    await saveProjectThreads('proj-1', [
+      thread('t1', {
+        title: 'Auth refactor',
+        updatedAt: 200,
+        prRefs: prRefs('https://github.com/copse-dev/agent-pane/pull/2262'),
+      }),
+      thread('t2', { title: 'Docs update', updatedAt: 100 }),
+    ])
+    const [entry] = await loadProjectCatalog('proj-1')
+    assert.ok(entry)
+    assert.deepEqual(
+      entry.prRefs.map((r) => r.number),
+      [2262],
+    )
+    // A bare number, a `#`-prefixed one, and the full owner/repo key all reach
+    // the same `owner/repo#number` haystack entry.
+    for (const query of ['2262', '#2262', 'copse-dev/agent-pane#2262']) {
+      const hits = await loadProjectCatalog('proj-1', query)
+      assert.deepEqual(
+        hits.map((e) => e.id),
+        ['t1'],
+        `query ${query}`,
+      )
+    }
+    // A thread with no PRs indexes as `[]`, not as "unknown".
+    const [, second] = await loadProjectCatalog('proj-1')
+    assert.ok(second)
+    assert.deepEqual(second.prRefs, [])
+  })
+
+  it('rebuilds a pre-prRefs catalog so old threads become PR-searchable', async () => {
+    await saveProjectThreads('proj-1', [
+      thread('t1', {
+        title: 'Auth refactor',
+        updatedAt: 200,
+        prRefs: prRefs('https://github.com/copse-dev/agent-pane/pull/2262'),
+      }),
+    ])
+    // A catalog written before `prRefs` existed: well-formed, complete, and
+    // silently unsearchable by PR number. Dropping such lines on read is what
+    // triggers the rebuild — otherwise every thread predating this field would
+    // stay invisible to a PR query forever.
+    writeFileSync(
+      join(root, 'proj-1', 'catalog.jsonl'),
+      `${JSON.stringify({
+        id: 't1',
+        title: 'Auth refactor',
+        createdAt: 1,
+        updatedAt: 200,
+        digest: 'Auth refactor',
+        path: 't1',
+      })}\n`,
+    )
+
+    const hits = await loadProjectCatalog('proj-1', '2262')
+    assert.deepEqual(
+      hits.map((e) => e.id),
+      ['t1'],
+    )
+    // The rebuild is persisted, not recomputed on every read.
+    const onDisk = readFileSync(join(root, 'proj-1', 'catalog.jsonl'), 'utf8')
+    assert.match(onDisk, /"number":2262/)
+  })
+
+  it('a catalog refresh against a pre-prRefs file keeps the other threads', async () => {
+    // The write path's hazard: this build rejects every line of an old catalog,
+    // so a refresh that read it directly would write back a one-line index and
+    // lose the rest. Both writers rebuild from dirs first instead.
+    await saveProjectThreads('proj-1', [
+      thread('t1', { title: 'Auth refactor', updatedAt: 200 }),
+      thread('t2', { title: 'Docs update', updatedAt: 100 }),
+    ])
+    const stale = (id: string, title: string, updatedAt: number): string =>
+      JSON.stringify({ id, title, createdAt: 1, updatedAt, digest: title, path: id })
+    writeFileSync(
+      join(root, 'proj-1', 'catalog.jsonl'),
+      `${stale('t1', 'Auth refactor', 200)}\n${stale('t2', 'Docs update', 100)}\n`,
+    )
+
+    await appendMessage('proj-1', 't1', userMsg('u1', 'shipped in #2262'))
+
+    const catalog = await loadProjectCatalog('proj-1')
+    assert.deepEqual(catalog.map((e) => e.id).sort(), ['t1', 't2'])
+  })
+
   it('rebuilds the catalog from thread dirs when it is missing', async () => {
     await saveProjectThreads('proj-1', [thread('t1', { title: 'Kept' })])
     rmSync(join(root, 'proj-1', 'catalog.jsonl'))

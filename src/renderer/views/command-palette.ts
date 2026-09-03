@@ -11,6 +11,7 @@ import { openSettingsDialog } from './settings-dialog.ts'
 import { openKeyboardShortcutsDialog } from './keyboard-shortcuts-dialog.ts'
 import { openFileSearchDialog } from './file-search-dialog.ts'
 import { openConversationSearch } from './conversation-search.ts'
+import { githubPrKey, parseGithubPrUrl, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 
 // Cmd/Ctrl+Shift+K "command palette" — a "filter all the things" overlay that
 // searches across four kinds of destination in one list: open threads (across
@@ -42,6 +43,8 @@ interface ThreadHit {
   projectName: string
   title: string
   updatedAt: number
+  /** GitHub PRs this thread touched, so a PR number finds the thread. */
+  prRefs: GithubPrRef[]
 }
 
 type PaletteEntry =
@@ -56,12 +59,37 @@ type PaletteEntry =
 const THREAD_LIMIT = 25
 const PROJECT_LIMIT = 25
 
+/**
+ * Split a query into lower-cased terms, folding a pasted GitHub PR URL down to
+ * the `owner/repo#number` key the thread haystack carries. Without that, the
+ * link a user just copied out of the PR pane would find nothing, while the bare
+ * number from the same PR would work — the two spellings should agree.
+ */
+function queryTerms(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((term) => {
+      const pr = parseGithubPrUrl(term)
+      return pr ? githubPrKey(pr) : term
+    })
+}
+
 /** Case-insensitive AND-of-terms match, mirroring the file-search palette. */
-function matches(haystack: string, query: string): boolean {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+function matches(haystack: string, terms: readonly string[]): boolean {
   if (terms.length === 0) return true
   const hay = haystack.toLowerCase()
   return terms.every((term) => hay.includes(term))
+}
+
+/**
+ * What a thread row matches on. PR keys are `owner/repo#number`, so a bare
+ * `2262`, a `#2262`, and the full `owner/repo#2262` all hit as substrings — and
+ * {@link queryTerms} has already reduced a pasted PR URL to that same shape.
+ */
+function threadHaystack(hit: ThreadHit): string {
+  return [hit.title, hit.projectName, ...hit.prRefs.map(githubPrKey)].join(' ')
 }
 
 let dialogEl: HTMLDialogElement | null = null
@@ -87,7 +115,7 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
   const input = el('input', {
     type: 'text',
     class: 'command-palette-input',
-    placeholder: 'Search threads, projects, panels, commands…',
+    placeholder: 'Search threads, projects, panels, commands, #PR…',
     'aria-label': 'Command palette',
     spellcheck: 'false',
     autocomplete: 'off',
@@ -156,25 +184,26 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
 
   function computeEntries(query: string): PaletteEntry[] {
     const { projects } = store.getState()
+    const terms = queryTerms(query)
 
     const threads: PaletteEntry[] = threadHits
-      .filter((hit) => matches(`${hit.title} ${hit.projectName}`, query))
+      .filter((hit) => matches(threadHaystack(hit), terms))
       .slice(0, THREAD_LIMIT)
       .map((hit) => ({ kind: 'thread', hit }))
 
     const projectEntries: PaletteEntry[] = projects
       .map((p) => ({ id: p.id, name: projectDisplayName(p) }))
-      .filter((p) => matches(p.name, query))
+      .filter((p) => matches(p.name, terms))
       .slice(0, PROJECT_LIMIT)
       .map((p) => ({ kind: 'project', id: p.id, name: p.name }))
 
-    const panels: PaletteEntry[] = PANEL_ITEMS.filter((p) => matches(p.label, query)).map((p) => ({
+    const panels: PaletteEntry[] = PANEL_ITEMS.filter((p) => matches(p.label, terms)).map((p) => ({
       kind: 'panel',
       mode: p.mode,
       label: p.label,
     }))
 
-    const commands = commandItems().filter((c) => c.kind === 'command' && matches(c.label, query))
+    const commands = commandItems().filter((c) => c.kind === 'command' && matches(c.label, terms))
 
     return [...threads, ...projectEntries, ...panels, ...commands]
   }
@@ -196,11 +225,16 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
     const icon = el('span', { class: 'command-palette-icon' }, searchIcon('ui-icon ui-icon-sm'))
     const cls = `command-palette-item command-palette-item-${entry.kind}${selected ? ' selected' : ''}`
     if (entry.kind === 'thread') {
+      // The PR chip is what makes a bare-number query legible: searching "2262"
+      // otherwise returns a title with no visible reason for the hit.
+      const prLabel = entry.hit.prRefs.map((ref) => `#${String(ref.number)}`).join(' ')
+      const tooltip = [entry.hit.title, prLabel, entry.hit.projectName].filter(Boolean).join(' — ')
       return el(
         'div',
-        { class: cls, role: 'option', title: `${entry.hit.title} — ${entry.hit.projectName}` },
+        { class: cls, role: 'option', title: tooltip },
         icon,
         el('span', { class: 'command-palette-name' }, entry.hit.title || 'New Thread'),
+        ...(prLabel ? [el('span', { class: 'command-palette-pr' }, prLabel)] : []),
         el('span', { class: 'command-palette-context' }, entry.hit.projectName),
       )
     }
@@ -280,6 +314,7 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
       projectName: projectDisplayName(active),
       title: t.title,
       updatedAt: 0,
+      prRefs: t.prRefs ?? [],
     }))
   }
 
@@ -305,6 +340,7 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
           projectName: projectDisplayName(project),
           title: hit.title,
           updatedAt: hit.updatedAt,
+          prRefs: hit.prRefs,
         })),
       )
       .sort((a, b) => b.updatedAt - a.updatedAt)
