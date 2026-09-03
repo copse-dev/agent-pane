@@ -26,14 +26,25 @@ function newThread(id: string, messages: Message[] = []): Thread {
   }
 }
 
+let messageSeq = 0
 function userMessage(content: string): Message {
+  messageSeq += 1
   return {
-    id: 'u1',
+    id: `u${String(messageSeq)}`,
     role: 'user',
     content,
     toolCalls: [],
     createdAt: 1,
   }
+}
+
+function addUserMessages(store: AppStore, threadId: string, contents: string[]): void {
+  const { threads } = store.getState()
+  store.setState({
+    threads: threads.map((t) =>
+      t.id === threadId ? { ...t, messages: [...t.messages, ...contents.map(userMessage)] } : t,
+    ),
+  })
 }
 
 function apiWithTitle(suggest: (text: string) => Promise<string | null>): {
@@ -121,7 +132,7 @@ test('maybeNameThread does not overwrite a rename that lands while suggestTitle 
   assert.equal(requireThread(store, 't-race').title, 'User Renamed')
 })
 
-test('maybeNameThread only attempts once per thread', async () => {
+test('maybeNameThread does not re-name a thread that has not grown', async () => {
   const store = createStore({
     threads: [newThread('t-once', [userMessage('Name me once')])],
     activeThreadId: 't-once',
@@ -130,11 +141,94 @@ test('maybeNameThread only attempts once per thread', async () => {
 
   maybeNameThread(store, api, 't-once')
   await new Promise((r) => setTimeout(r, 0))
-  // Reset title as if a later path tried again; the in-memory guard must hold.
-  setThreadTitle(store, 't-once', 'New Thread')
   maybeNameThread(store, api, 't-once')
   await new Promise((r) => setTimeout(r, 0))
 
   assert.deepEqual(titleCalls, ['Name me once'])
-  assert.equal(requireThread(store, 't-once').title, 'New Thread')
+  assert.equal(requireThread(store, 't-once').title, 'Once')
+})
+
+test('maybeNameThread re-names its own title once the thread has grown', async () => {
+  const store = createStore({
+    threads: [newThread('t-grow', [userMessage('Add a login button')])],
+    activeThreadId: 't-grow',
+  })
+  const { api, titleCalls } = apiWithTitle(async (text) =>
+    text.includes('the whole auth flow') ? 'Rework The Auth Flow' : 'Add Login Button',
+  )
+
+  maybeNameThread(store, api, 't-grow')
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(requireThread(store, 't-grow').title, 'Add Login Button')
+
+  addUserMessages(store, 't-grow', ['Now the signup form', 'Actually rework the whole auth flow'])
+  maybeNameThread(store, api, 't-grow')
+  await new Promise((r) => setTimeout(r, 0))
+
+  // The second pass sees the opening message plus what came after it.
+  assert.equal(
+    titleCalls[1],
+    'Add a login button\n\nNow the signup form\n\nActually rework the whole auth flow',
+  )
+  assert.equal(requireThread(store, 't-grow').title, 'Rework The Auth Flow')
+})
+
+test('maybeNameThread never touches a thread the user renamed', async () => {
+  const store = createStore({
+    threads: [newThread('t-manual', [userMessage('Add a login button')])],
+    activeThreadId: 't-manual',
+  })
+  const { api, titleCalls } = apiWithTitle(async () => 'Auto Title')
+
+  maybeNameThread(store, api, 't-manual')
+  await new Promise((r) => setTimeout(r, 0))
+  setThreadTitle(store, 't-manual', 'Mine')
+
+  addUserMessages(store, 't-manual', ['Second', 'Third', 'Fourth', 'Fifth'])
+  maybeNameThread(store, api, 't-manual')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(titleCalls.length, 1)
+  assert.equal(requireThread(store, 't-manual').title, 'Mine')
+})
+
+test('maybeNameThread stops after its last pass', async () => {
+  const store = createStore({
+    threads: [newThread('t-cap', [userMessage('Start')])],
+    activeThreadId: 't-cap',
+  })
+  let suggestion = 0
+  const { api, titleCalls } = apiWithTitle(async () => {
+    suggestion += 1
+    return `Title ${String(suggestion)}`
+  })
+
+  for (let i = 0; i < 20; i += 1) {
+    maybeNameThread(store, api, 't-cap')
+    await new Promise((r) => setTimeout(r, 0))
+    addUserMessages(store, 't-cap', [`Message ${String(i)}`])
+  }
+
+  assert.equal(titleCalls.length, 3)
+  assert.equal(requireThread(store, 't-cap').title, 'Title 3')
+})
+
+test('a failed re-name keeps the title it already had', async () => {
+  const store = createStore({
+    threads: [newThread('t-keep', [userMessage('Add a login button')])],
+    activeThreadId: 't-keep',
+  })
+  const { api } = apiWithTitle(async (text) => {
+    if (text.includes('Second')) throw new Error('no small-tasks model')
+    return 'Add Login Button'
+  })
+
+  maybeNameThread(store, api, 't-keep')
+  await new Promise((r) => setTimeout(r, 0))
+  addUserMessages(store, 't-keep', ['Second', 'Third'])
+  maybeNameThread(store, api, 't-keep')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(requireThread(store, 't-keep').title, 'Add Login Button')
+  assert.equal(requireThread(store, 't-keep').autoTitleCount, 2)
 })

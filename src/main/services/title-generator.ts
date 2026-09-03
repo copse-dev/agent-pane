@@ -25,9 +25,11 @@ function recordSmallTasksUsage(
   })
 }
 
-// Generate a short thread title from the first user message. Uses the
-// configured small-tasks model; returns null on failure so the caller can
-// fall back to a heuristic.
+// Generate a short thread title from the user's side of the thread — the first
+// message alone on a new thread, or the opening plus recent messages when the
+// caller is re-titling a thread that has moved on. Uses the configured
+// small-tasks model; returns null on failure so the caller can fall back to a
+// heuristic.
 export async function suggestThreadTitle(text: string): Promise<string | null> {
   const provider = await resolveSmallTasksProvider()
   if (!provider) return null
@@ -35,8 +37,10 @@ export async function suggestThreadTitle(text: string): Promise<string | null> {
 
   const prompt =
     'Reply with ONLY a concise 3-5 word title in Title Case for the following request. ' +
+    'If several messages are shown, they are one conversation: title it by its ' +
+    'overall goal, not just the latest message. ' +
     'No quotes, no trailing punctuation.\n\nRequest:\n' +
-    text.slice(0, 500)
+    text.slice(0, 1500)
   try {
     const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
     recordSmallTasksUsage(model, usage)
