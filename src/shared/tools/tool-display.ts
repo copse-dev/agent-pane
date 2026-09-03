@@ -330,11 +330,18 @@ export function getToolGroupLabel(key: string, tense: ToolLabelTense = 'done'): 
   return pickLabel(group.label, tense)
 }
 
+/** Words that read as acronyms and stay fully upper case in tool labels. */
+const TOOL_NAME_ACRONYMS = new Set(['gh', 'pr', 'ci', 'url', 'id'])
+
 function formatToolNameFallback(name: string): string {
   return name
     .split('_')
     .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .map((word) =>
+      TOOL_NAME_ACRONYMS.has(word.toLowerCase())
+        ? word.toUpperCase()
+        : word.charAt(0).toUpperCase() + word.slice(1),
+    )
     .join(' ')
 }
 

@@ -375,6 +375,14 @@ describe('tool-display', () => {
     assert.equal(getToolDisplayName('mcp.copse.run_shell'), 'Run Shell')
   })
 
+  it('keeps acronyms upper case in humanized tool names', () => {
+    assert.equal(getToolDisplayName('mcp__copse__gh_pr_create'), 'GH PR Create')
+    assert.equal(getToolDisplayName('gh_pr_files'), 'GH PR Files')
+    assert.equal(getToolDisplayName('mcp__copse__get_ci_failure_logs'), 'Get CI Failure Logs')
+    assert.equal(getToolDisplayName('resolve_url'), 'Resolve URL')
+    assert.equal(getToolDisplayName('get_thread_id'), 'Get Thread ID')
+  })
+
   it('groups MCP tools by server without exposing an internal MCP marker', () => {
     assert.equal(getToolGroupKey('mcp__github__create_issue'), 'mcp:github')
     assert.equal(getToolGroupLabel('mcp:github'), 'github')
