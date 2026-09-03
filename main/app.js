@@ -52492,7 +52492,7 @@ var init_hook_card2 = __esm({
   }
 });
 
-// src/shared/hooks/hook-run-detail.ts
+// packages/hooks-dialects/src/hook-run-detail.ts
 function hookRunDetailChips(detail) {
   if (!detail.found) return [];
   const chips = [];
@@ -52576,9 +52576,9 @@ function hookRunDetailEmptyReason(detail) {
 }
 var outcomeCaptureSchema;
 var init_hook_run_detail = __esm({
-  "src/shared/hooks/hook-run-detail.ts"() {
+  "packages/hooks-dialects/src/hook-run-detail.ts"() {
     init_zod();
-    init_safe_json2();
+    init_safe_json();
     outcomeCaptureSchema = external_exports.object({
       decision: external_exports.string().optional(),
       haltReason: external_exports.string().optional(),
@@ -52587,6 +52587,13 @@ var init_hook_run_detail = __esm({
       agentMessage: external_exports.string().optional(),
       userMessage: external_exports.string().optional()
     });
+  }
+});
+
+// src/shared/hooks/hook-run-detail.ts
+var init_hook_run_detail2 = __esm({
+  "src/shared/hooks/hook-run-detail.ts"() {
+    init_hook_run_detail();
   }
 });
 
@@ -243294,7 +243301,7 @@ var init_conversation = __esm({
     init_icons();
     init_user_prompt_fold();
     init_hook_card2();
-    init_hook_run_detail();
+    init_hook_run_detail2();
     init_artefact_previews();
     init_artefact();
     init_thread_helpers();
