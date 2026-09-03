@@ -1,4 +1,5 @@
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
+import type { CanvasArtefactReference } from '@shared/types/canvas.ts'
 import type {
   ModelUsage,
   MessageOrigin,
@@ -97,6 +98,8 @@ export interface SpineMessageLine {
   content: ContentRef
   reasoning?: ContentRef
   images?: ImageRef[]
+  /** Canvas artefacts presented inline with this assistant message. */
+  canvasArtefacts?: CanvasArtefactReference[]
   commandSummary?: string
   /** Small-model polish for the turn tool rollup; optional, display-only. */
   toolSummary?: string
@@ -177,6 +180,25 @@ export interface SpineHookRunDecision {
   stopReason?: string
   /** The hook rewrote the gated tool's input. */
   updatedInput?: boolean
+  /**
+   * This nudge was the one the loop actually pushed into the conversation. Set
+   * on the nudge *effect* line the loop records — distinct from a step-boundary
+   * hook's own execution line, which only marks that the hook *offered* an
+   * `injectContext`.
+   *
+   * Several nudge hooks routinely fire at the same step boundary and all return
+   * text, but `runAgentLoop` pushes at most one of them (`reasoning-runaway`
+   * supersedes `truncation-continue` on a cut-off reasoning stream, for
+   * instance). Without this line every offer reads as an applied effect, so a
+   * discarded nudge is indistinguishable from the one that steered the model.
+   */
+  nudgeApplied?: boolean
+  /**
+   * How the applied nudge reached the model: appended to a normal tool-enabled
+   * turn, or used as the prompt for a forced text-only finalization. Carried on
+   * the nudge effect line.
+   */
+  nudgeMechanism?: 'tool-enabled-message' | 'text-only-turn'
   /** Character counts of text channels (full text: stdout blob / applied context). */
   injectContextChars?: number
   agentMessageChars?: number
@@ -419,6 +441,11 @@ function isSpineMessageLine(value: unknown): value is SpineMessageLine {
     typeof value['id'] === 'string' &&
     (role === 'user' || role === 'assistant' || role === 'error') &&
     isContentRef(value['content']) &&
+    (value['canvasArtefacts'] === undefined ||
+      (Array.isArray(value['canvasArtefacts']) &&
+        value['canvasArtefacts'].every(
+          (artefact) => isRecord(artefact) && typeof artefact['title'] === 'string',
+        ))) &&
     (value['toolCalls'] === undefined || Array.isArray(value['toolCalls']))
   )
 }
