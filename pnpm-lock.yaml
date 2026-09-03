@@ -30,15 +30,6 @@ importers:
       '@anthropic-ai/sandbox-runtime':
         specifier: ^0.0.74
         version: 0.0.74
-      '@copse/agent':
-        specifier: workspace:*
-        version: link:packages/agent
-      '@copse/llm':
-        specifier: workspace:*
-        version: link:packages/llm
-      '@copse/plan-usage':
-        specifier: workspace:*
-        version: link:packages/plan-usage
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
@@ -67,6 +58,15 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.121.0
         version: 0.121.0(zod@4.4.3)
+      '@copse/agent':
+        specifier: workspace:*
+        version: link:packages/agent
+      '@copse/llm':
+        specifier: workspace:*
+        version: link:packages/llm
+      '@copse/plan-usage':
+        specifier: workspace:*
+        version: link:packages/plan-usage
       '@copse/streaming-markdown':
         specifier: ^1.0.8
         version: 1.0.8(dompurify@3.4.14)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.2)
