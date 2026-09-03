@@ -422,8 +422,7 @@ export function mountFooterBranchStatus(
 
   return {
     refresh: () => void refresh(),
-    pendingBaseBranch: (threadId: string): string | undefined =>
-      baseBranchByThread.get(threadId),
+    pendingBaseBranch: (threadId: string): string | undefined => baseBranchByThread.get(threadId),
     destroy: (): void => {
       refreshToken += 1
       if (refreshTimer) clearTimeout(refreshTimer)

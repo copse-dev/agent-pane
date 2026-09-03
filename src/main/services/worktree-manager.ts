@@ -706,11 +706,7 @@ export async function restoreRetiredThreadWorktree(
         // A retired thread's branch can be checked out elsewhere by the time it
         // is reopened, and "already checked out at …" is unrecoverable without
         // knowing which checkout to free.
-        throw commandFailure(
-          'Cannot restore retired thread worktree',
-          add,
-          input.worktree.branch,
-        )
+        throw commandFailure('Cannot restore retired thread worktree', add, input.worktree.branch)
       }
     }
     const canonicalPath = await realpath(target)
