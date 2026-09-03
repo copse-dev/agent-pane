@@ -16155,10 +16155,16 @@ var init_array_utils2 = __esm({
   }
 });
 
-// src/shared/store/thread-helpers.ts
+// packages/thread-store/src/thread-sort.ts
 function sortThreadsNewestFirst(threads) {
   return [...threads].sort((a3, b5) => b5.createdAt - a3.createdAt);
 }
+var init_thread_sort = __esm({
+  "packages/thread-store/src/thread-sort.ts"() {
+  }
+});
+
+// src/shared/store/thread-helpers.ts
 function getThreadById(store3, id39) {
   if (!id39) return void 0;
   const { threads, backgroundThreads } = store3.getState();
@@ -16721,6 +16727,7 @@ var randomUUID, messageIndexByStore;
 var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
     init_array_utils2();
+    init_thread_sort();
     randomUUID = () => globalThis.crypto.randomUUID();
     messageIndexByStore = /* @__PURE__ */ new WeakMap();
   }
@@ -18230,7 +18237,7 @@ var init_toast = __esm({
   }
 });
 
-// src/shared/git/github-pr-url.ts
+// packages/thread-store/src/github-pr-url.ts
 function parseGithubPrUrl(rawUrl) {
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;
@@ -18274,14 +18281,21 @@ function githubPrKey(ref) {
 }
 var GITHUB_PR_PATH_RE, GITHUB_PR_URL_RE, URL_TRAILING_PUNCTUATION_RE;
 var init_github_pr_url = __esm({
-  "src/shared/git/github-pr-url.ts"() {
+  "packages/thread-store/src/github-pr-url.ts"() {
     GITHUB_PR_PATH_RE = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/[^?#]*)?$/i;
     GITHUB_PR_URL_RE = /https?:\/\/(?:www\.)?github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+(?:[^\s)\]>]*)/gi;
     URL_TRAILING_PUNCTUATION_RE = /[.,;:)\]>*_~`'"]+$/;
   }
 });
 
-// src/shared/git/thread-pr-status.ts
+// src/shared/git/github-pr-url.ts
+var init_github_pr_url2 = __esm({
+  "src/shared/git/github-pr-url.ts"() {
+    init_github_pr_url();
+  }
+});
+
+// packages/thread-store/src/thread-pr-status.ts
 function collectThreadPrRefs(thread) {
   const seen = /* @__PURE__ */ new Set();
   const refs = [];
@@ -18349,8 +18363,15 @@ function describeThreadPrStatus(rollup) {
   return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
 }
 var init_thread_pr_status = __esm({
-  "src/shared/git/thread-pr-status.ts"() {
+  "packages/thread-store/src/thread-pr-status.ts"() {
     init_github_pr_url();
+  }
+});
+
+// src/shared/git/thread-pr-status.ts
+var init_thread_pr_status2 = __esm({
+  "src/shared/git/thread-pr-status.ts"() {
+    init_thread_pr_status();
   }
 });
 
@@ -18381,8 +18402,8 @@ function compactSidebarThread(thread) {
 }
 var init_sidebar_thread = __esm({
   "src/renderer/controller/sidebar-thread.ts"() {
-    init_github_pr_url();
-    init_thread_pr_status();
+    init_github_pr_url2();
+    init_thread_pr_status2();
   }
 });
 
@@ -22373,9 +22394,16 @@ var init_todo = __esm({
   }
 });
 
+// packages/thread-store/src/thread-types.ts
+var init_thread_types = __esm({
+  "packages/thread-store/src/thread-types.ts"() {
+  }
+});
+
 // src/shared/types/thread.ts
 var init_thread = __esm({
   "src/shared/types/thread.ts"() {
+    init_thread_types();
   }
 });
 
@@ -22385,9 +22413,16 @@ var init_stream = __esm({
   }
 });
 
-// src/shared/types/turn-outcome.ts
+// packages/thread-store/src/turn-outcome.ts
 var init_turn_outcome = __esm({
+  "packages/thread-store/src/turn-outcome.ts"() {
+  }
+});
+
+// src/shared/types/turn-outcome.ts
+var init_turn_outcome2 = __esm({
   "src/shared/types/turn-outcome.ts"() {
+    init_turn_outcome();
   }
 });
 
@@ -22485,9 +22520,16 @@ var init_usage = __esm({
   }
 });
 
+// packages/thread-store/src/worktree-types.ts
+var init_worktree_types = __esm({
+  "packages/thread-store/src/worktree-types.ts"() {
+  }
+});
+
 // src/shared/types/worktree.ts
 var init_worktree = __esm({
   "src/shared/types/worktree.ts"() {
+    init_worktree_types();
   }
 });
 
@@ -22509,7 +22551,7 @@ var init_types = __esm({
     init_todo();
     init_thread();
     init_stream();
-    init_turn_outcome();
+    init_turn_outcome2();
     init_llm();
     init_layout();
     init_state();
@@ -24328,10 +24370,19 @@ var init_managed_agents = __esm({
   }
 });
 
-// src/shared/remote-agent.ts
+// packages/thread-store/src/remote-agent-provider.ts
 function isRemoteAgentProvider(value2) {
   return value2 === REMOTE_AGENT_PROVIDER_CURSOR || value2 === REMOTE_AGENT_PROVIDER_ANTHROPIC;
 }
+var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC;
+var init_remote_agent_provider = __esm({
+  "packages/thread-store/src/remote-agent-provider.ts"() {
+    REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
+    REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
+  }
+});
+
+// src/shared/remote-agent.ts
 function remoteAgentModelValue(provider, model) {
   return model ? `${REMOTE_AGENT_MODEL_PREFIX}${provider}${REMOTE_AGENT_MODEL_SEP}${model}` : `${REMOTE_AGENT_MODEL_PREFIX}${provider}`;
 }
@@ -24353,7 +24404,7 @@ function remoteAgentDisplayLabel(model, catalog = []) {
   const catalogLabel = catalog.find((entry) => entry.id === selection3.model)?.label;
   return `${title2} \u2014 ${catalogLabel ?? cloudModelDisplayLabel(selection3.model)}`;
 }
-var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
+var CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
 var init_remote_agent = __esm({
   "src/shared/remote-agent.ts"() {
     init_reserved_prefixes();
@@ -24362,8 +24413,8 @@ var init_remote_agent = __esm({
     init_model_catalog();
     init_managed_agents();
     init_unknown_value3();
-    REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
-    REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
+    init_remote_agent_provider();
+    init_remote_agent_provider();
     CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
     REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
     REMOTE_AGENT_MODELS = [
@@ -50733,7 +50784,7 @@ var init_settings_dialog = __esm({
   }
 });
 
-// src/shared/store/fork-thread.ts
+// packages/thread-store/src/fork-thread.ts
 function forkThreadTitle(title2) {
   const base = title2.trim() || "New Thread";
   const match3 = /^(.*) \(fork(?: (\d+))?\)$/.exec(base);
@@ -50800,10 +50851,17 @@ function copyMessage(message2) {
 }
 var randomUUID2, MAX_TITLE_LENGTH, FORK_SUFFIX;
 var init_fork_thread = __esm({
-  "src/shared/store/fork-thread.ts"() {
+  "packages/thread-store/src/fork-thread.ts"() {
     randomUUID2 = () => globalThis.crypto.randomUUID();
     MAX_TITLE_LENGTH = 120;
     FORK_SUFFIX = " (fork)";
+  }
+});
+
+// src/shared/store/fork-thread.ts
+var init_fork_thread2 = __esm({
+  "src/shared/store/fork-thread.ts"() {
+    init_fork_thread();
   }
 });
 
@@ -50843,9 +50901,9 @@ async function forkThread(store3, api3, sourceThreadId, options2 = {}) {
     droppedAttachments: history?.source === "rebuilt" && hasAttachments(forked)
   };
 }
-var init_fork_thread2 = __esm({
+var init_fork_thread3 = __esm({
   "src/renderer/controller/fork-thread.ts"() {
-    init_fork_thread();
+    init_fork_thread2();
     init_thread_helpers();
     init_message_queue();
   }
@@ -52216,12 +52274,12 @@ var init_projects_pane = __esm({
     init_rename_blur();
     init_icons();
     init_thread_helpers();
-    init_github_pr_url();
-    init_thread_pr_status();
+    init_github_pr_url2();
+    init_thread_pr_status2();
     init_projects();
     init_settings_dialog();
     init_toast();
-    init_fork_thread2();
+    init_fork_thread3();
     init_sidebar_thread();
     init_attention();
     init_ssh_workspace_ui();
@@ -52369,7 +52427,7 @@ var init_user_prompt_fold = __esm({
   }
 });
 
-// src/shared/hooks/hook-card.ts
+// packages/thread-store/src/hook-card.ts
 function isHookCardBlocking(status) {
   return status === "deny" || status === "blocked" || status === "error" || status === "halted";
 }
@@ -52423,7 +52481,14 @@ function getHookCardStatusLabel(card2) {
   }
 }
 var init_hook_card = __esm({
+  "packages/thread-store/src/hook-card.ts"() {
+  }
+});
+
+// src/shared/hooks/hook-card.ts
+var init_hook_card2 = __esm({
   "src/shared/hooks/hook-card.ts"() {
+    init_hook_card();
   }
 });
 
@@ -239626,7 +239691,7 @@ function bindBrowserLinkClicks(root4, store3, api3) {
 var init_browser_links = __esm({
   "src/renderer/markdown/browser-links.ts"() {
     init_panels();
-    init_github_pr_url();
+    init_github_pr_url2();
   }
 });
 
@@ -241298,15 +241363,22 @@ var init_render_signature = __esm({
   }
 });
 
-// src/shared/threads/prompt-placeholders.ts
+// packages/thread-store/src/prompt-placeholders.ts
 function stripPastePlaceholders(content) {
   if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
   return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
 }
 var PASTE_PLACEHOLDER;
 var init_prompt_placeholders = __esm({
-  "src/shared/threads/prompt-placeholders.ts"() {
+  "packages/thread-store/src/prompt-placeholders.ts"() {
     PASTE_PLACEHOLDER = "\uFFFC";
+  }
+});
+
+// src/shared/threads/prompt-placeholders.ts
+var init_prompt_placeholders2 = __esm({
+  "src/shared/threads/prompt-placeholders.ts"() {
+    init_prompt_placeholders();
   }
 });
 
@@ -241366,7 +241438,7 @@ function resendLastMessage(store3, api3, threadId, options2 = {}) {
 var init_resend_message = __esm({
   "src/renderer/controller/resend-message.ts"() {
     init_thread_helpers();
-    init_prompt_placeholders();
+    init_prompt_placeholders2();
     init_message_queue();
   }
 });
@@ -243228,7 +243300,7 @@ var init_conversation = __esm({
     init_reasoning_activity_icon();
     init_icons();
     init_user_prompt_fold();
-    init_hook_card();
+    init_hook_card2();
     init_hook_run_detail2();
     init_artefact_previews();
     init_artefact();
@@ -243265,7 +243337,7 @@ var init_conversation = __esm({
     init_tool_args_format();
     init_render_signature();
     init_message_queue();
-    init_fork_thread2();
+    init_fork_thread3();
     init_resend_message();
     init_image_input_support();
     init_toast();
@@ -255652,7 +255724,7 @@ var init_footer_overflow = __esm({
   }
 });
 
-// src/shared/threads/export-jsonl.ts
+// packages/thread-store/src/export-jsonl.ts
 function threadHasExportableContent(thread) {
   return (thread?.messages.length ?? 0) > 0;
 }
@@ -255721,8 +255793,15 @@ function threadToJsonl(thread) {
 }
 var THREAD_JSONL_EXPORT_VERSION;
 var init_export_jsonl = __esm({
-  "src/shared/threads/export-jsonl.ts"() {
+  "packages/thread-store/src/export-jsonl.ts"() {
     THREAD_JSONL_EXPORT_VERSION = 7;
+  }
+});
+
+// src/shared/threads/export-jsonl.ts
+var init_export_jsonl2 = __esm({
+  "src/shared/threads/export-jsonl.ts"() {
+    init_export_jsonl();
   }
 });
 
@@ -255749,8 +255828,8 @@ async function downloadThreadArchive(api3, projectId, thread) {
 }
 var init_export_thread = __esm({
   "src/renderer/export-thread.ts"() {
-    init_export_jsonl();
-    init_export_jsonl();
+    init_export_jsonl2();
+    init_export_jsonl2();
   }
 });
 
@@ -255795,7 +255874,7 @@ var init_share_trace_issue = __esm({
   }
 });
 
-// src/shared/threads/debug-trace-prompt.ts
+// packages/thread-store/src/debug-trace-prompt.ts
 function debugTraceThreadTitle(thread) {
   const source = thread.title.trim() || thread.id;
   return `Debug: ${source}`.slice(0, 60);
@@ -255863,8 +255942,15 @@ function buildDebugTracePrompt(thread, archiveName, build) {
 }
 var TRACE_LAYOUT;
 var init_debug_trace_prompt = __esm({
-  "src/shared/threads/debug-trace-prompt.ts"() {
+  "packages/thread-store/src/debug-trace-prompt.ts"() {
     TRACE_LAYOUT = "a snapshot of its persisted thread directory: `meta.json`, the append-only `events.jsonl` spine, message prose under `messages/*.md`, tool arguments and results under `blobs/`, provider history, plans, and any nested subagent runs";
+  }
+});
+
+// src/shared/threads/debug-trace-prompt.ts
+var init_debug_trace_prompt2 = __esm({
+  "src/shared/threads/debug-trace-prompt.ts"() {
+    init_debug_trace_prompt();
   }
 });
 
@@ -258499,7 +258585,7 @@ var init_input_bar = __esm({
     init_footer_overflow();
     init_export_thread();
     init_share_trace_issue();
-    init_debug_trace_prompt();
+    init_debug_trace_prompt2();
     init_footer_usage_summary();
     init_footer_usage_tooltip();
     init_footer_usage_popover();
@@ -270411,14 +270497,21 @@ var init_git_changes_pane = __esm({
   }
 });
 
-// src/shared/remote-agent-link.ts
+// packages/thread-store/src/remote-agent-link.ts
 function remoteAgentPrIndexKey(prUrl) {
   const ref = parseGithubPrUrl(prUrl);
   return ref ? githubPrKey(ref) : null;
 }
 var init_remote_agent_link = __esm({
-  "src/shared/remote-agent-link.ts"() {
+  "packages/thread-store/src/remote-agent-link.ts"() {
     init_github_pr_url();
+  }
+});
+
+// src/shared/remote-agent-link.ts
+var init_remote_agent_link2 = __esm({
+  "src/shared/remote-agent-link.ts"() {
+    init_remote_agent_link();
   }
 });
 
@@ -270462,7 +270555,7 @@ function mergePrLists(linked, pools) {
 }
 var init_pr_pane_list = __esm({
   "src/renderer/views/pr-pane-list.ts"() {
-    init_github_pr_url();
+    init_github_pr_url2();
   }
 });
 
@@ -271340,8 +271433,8 @@ var init_pr_pane = __esm({
     init_thread_helpers();
     init_array_utils2();
     init_confirm_dialog();
-    init_github_pr_url();
-    init_remote_agent_link();
+    init_github_pr_url2();
+    init_remote_agent_link2();
     init_pr_pane_list();
     init_pr_pane_thread();
     init_prompt_attachments();
