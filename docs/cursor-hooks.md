@@ -206,7 +206,7 @@ Cursor is a **dialect adapter** (the [dialect-adapter phase](plans/hooks-and-fea
 [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md), the [dialect-by-source-path decision](plans/hooks-and-feature-packs.md#decisions-log):
 "dialect by source path"). Discovery, parsing, matchers, wire marshalling in both
 directions, and the per-event exit-code table all live in
-[`src/main/services/hooks/cursor-adapter.ts`](../src/main/services/hooks/cursor-adapter.ts):
+[`packages/hooks-dialects/src/cursor-adapter.ts`](../packages/hooks-dialects/src/cursor-adapter.ts):
 
 - `listCursorHooks()` — discovered hooks for the current context (diagnostics / `hooks:list`)
 - `cursorToolGateHooks(payload, opts)` — the Cursor command hooks matching a tool gate,
@@ -215,8 +215,8 @@ directions, and the per-event exit-code table all live in
   the exit-code table)
 
 The shared process spawn (stdin marshalling, stdout/stderr capture, timeout, output cap)
-lives in [`hook-spawn.ts`](../src/main/services/hooks/hook-spawn.ts); the host runner in
-[`command-hook-runner.ts`](../src/main/services/hooks/command-hook-runner.ts) spawns each
+lives in [`hook-spawn.ts`](../packages/hooks-dialects/src/hook-spawn.ts); the host runner in
+[`command-hook-runner.ts`](../packages/hooks-dialects/src/command-hook-runner.ts) spawns each
 hook and applies its dialect's failure semantics.
 
 The permission gate ([`permission-gate.ts`](../src/main/services/security/permission-gate.ts))
@@ -309,10 +309,10 @@ a load gate** (a config that violates an upstream schema still loads):
    published event list to warn when a hooks group targets an event the vendor
    recognises but Copse does not act on yet (vs an outright typo). The valid
    hooks still load; the warning surfaces in Settings → Customise.
-2. **CI drift detector** (`src/main/services/hooks/vendor-schema-drift.test.ts`)
+2. **CI drift detector** (`packages/hooks-dialects/src/vendor-schema-drift.test.ts`)
    diffs each vendored schema's published events against the events our adapters
    wire. Every published event must be either wired or listed in an explicit
-   intentionally-unsupported set (`src/shared/hooks/vendored-hook-schemas.ts`); an
+   intentionally-unsupported set (`packages/hooks-dialects/src/vendored-hook-schemas.ts`); an
    upstream release adding an unaccounted event fails CI until it is wired or
    documented. Copse currently wires Claude `PreToolUse` + `SessionStart` and the
    Cursor events above; the long tail of Claude events (`Notification`,
@@ -358,18 +358,18 @@ UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1 npm test
 
 ## Related files
 
-- `src/main/services/hooks/cursor-adapter.ts` — Cursor dialect adapter: discovery, parsing
+- `packages/hooks-dialects/src/cursor-adapter.ts` — Cursor dialect adapter: discovery, parsing
   (incl. `failClosed`), matchers, wire marshalling, exit-code table
-- `src/main/services/hooks/claude-adapter.ts` — Claude Code PreToolUse dialect adapter (#639)
-- `src/main/services/hooks/hook-spawn.ts` — shared process spawn + stdout/stderr capture
-- `src/main/services/hooks/command-hook-runner.ts` — host runner; applies dialect failure semantics
+- `packages/hooks-dialects/src/claude-adapter.ts` — Claude Code PreToolUse dialect adapter (#639)
+- `packages/hooks-dialects/src/hook-spawn.ts` — shared process spawn + stdout/stderr capture
+- `packages/hooks-dialects/src/command-hook-runner.ts` — host runner; applies dialect failure semantics
 - `src/main/services/hooks/tool-gate.ts` — maps tool calls onto the canonical `toolGate` event
 - `src/main/services/security/permission-gate.ts` — calls the tool-gate hooks
-- `src/shared/types/cursor-hooks.ts` — `CursorHookEvent` / `CursorHookSummary`
-- `src/shared/types/hooks.ts` — shared `HookSummary` for Sources / `hooks:list`
-- `src/shared/hooks/vendored-hook-schemas.ts` — published-event mirrors + intentionally-unsupported sets ([vendored schemas](plans/hooks-and-feature-packs.md#phase-g--validation--tooling))
+- `packages/hooks-dialects/src/cursor-hooks.ts` — `CursorHookEvent` / `CursorHookSummary`
+- `packages/hooks-dialects/src/hooks-types.ts` — shared `HookSummary` for Sources / `hooks:list`
+- `packages/hooks-dialects/src/vendored-hook-schemas.ts` — published-event mirrors + intentionally-unsupported sets ([vendored schemas](plans/hooks-and-feature-packs.md#phase-g--validation--tooling))
 - `schemas/vendor/` — pinned upstream Cursor + Claude hook schemas ([vendored schemas](plans/hooks-and-feature-packs.md#phase-g--validation--tooling)); see its `README.md`
-- `src/main/services/hooks/vendor-schema-drift.test.ts` — CI drift detector ([vendored schemas](plans/hooks-and-feature-packs.md#phase-g--validation--tooling))
+- `packages/hooks-dialects/src/vendor-schema-drift.test.ts` — CI drift detector ([vendored schemas](plans/hooks-and-feature-packs.md#phase-g--validation--tooling))
 - `src/main/services/hooks/payload-snapshots.test.ts` — dialect wire payload snapshot tests ([wire payload snapshots](plans/hooks-and-feature-packs.md#phase-g--validation--tooling))
 - `src/main/services/hooks/__snapshots__/wire-payloads.json` — committed golden wire-payload fixture ([wire payload snapshots](plans/hooks-and-feature-packs.md#phase-g--validation--tooling))
 - `src/main/services/exec/child-process-env.ts` — secret-scrubbed env for hook processes
