@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
-import type { LLMProvider } from '../../packages/llm/src/wire-types.ts'
+import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { recordTerminalBenchProviderRequests } from './terminal-bench-provider-recorder.mts'
 import {
   loadTerminalBenchSteering,

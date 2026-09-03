@@ -8,8 +8,8 @@ import { at } from '../../src/shared/array-utils.ts'
 import { foldThread } from '../../src/shared/threads/fold.ts'
 import { parseSpine } from '../../src/shared/threads/spine-schema.ts'
 import { parseThreadMetaValue } from '../../src/shared/threads/thread-boundary.ts'
-import type { StreamCutRecord } from '../../packages/agent/src/stream-cut-record.ts'
-import type { ReasoningCheckpointRecord } from '../../packages/agent/src/reasoning-circle-detector.ts'
+import type { StreamCutRecord } from '@copse/agent/stream-cut-record.ts'
+import type { ReasoningCheckpointRecord } from '@copse/agent/reasoning-circle-detector.ts'
 import { BenchTranscript } from './bench-transcript.mts'
 
 function readJson(path: string): unknown {

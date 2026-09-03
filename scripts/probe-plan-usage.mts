@@ -39,7 +39,7 @@ import {
   type ProviderPlanResult,
   type SchemaNode,
   type UnknownFieldFinding,
-} from '../packages/plan-usage/src/index.ts'
+} from '@copse/plan-usage'
 import {
   expectRecord,
   firstNonEmptyString,

@@ -12,8 +12,6 @@ await esbuild.build({
   sourcemap: true,
   alias: {
     '@shared': resolve('./src/shared'),
-    '@copse/agent': resolve('./packages/agent/src'),
-    '@copse/llm': resolve('./packages/llm/src'),
   },
 })
 

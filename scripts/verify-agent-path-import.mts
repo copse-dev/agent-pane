@@ -26,9 +26,6 @@ try {
     format: 'cjs',
     alias: {
       '@shared': resolve('src/shared'),
-      '@copse/agent': resolve('packages/agent/src'),
-      '@copse/llm': resolve('packages/llm/src'),
-      '@copse/plan-usage': resolve('packages/plan-usage/src'),
     },
     // Preserve the dependency's real ESM import.meta.url for vendored runtime assets.
     external: [
