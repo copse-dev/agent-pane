@@ -83,6 +83,17 @@ describe('terminalReadScreenWindow', () => {
     assert.doesNotMatch(window.screened, /hunter2|ignore prior/)
   })
 
+  it('counts a line as above when only its newline falls inside the window', () => {
+    // The first screened character is the newline that ends `secret`; the
+    // model saw none of that line's content, so it is not "partly visible".
+    const text = 'tok=abc\nsecret\n' + 'y'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS - 1)
+    const window = terminalReadScreenWindow(text)
+    assert.equal(window.unscreenedChars, 'tok=abc\nsecret'.length)
+    assert.equal(window.unscreenedLines, 2)
+    assert.equal(window.totalLines, 3)
+    assert.doesNotMatch(window.screened, /secret/)
+  })
+
   it('reports an oversized single line by characters, not lines', () => {
     const window = terminalReadScreenWindow('z'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS + 7))
     assert.equal(window.unscreenedChars, 7)

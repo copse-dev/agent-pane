@@ -39,9 +39,11 @@ export interface TerminalReadScreenWindow {
   /** Characters above the window that the model never sees; 0 when it all fits. */
   unscreenedChars: number
   /**
-   * Lines that end above the window. A line cut by the boundary is partly
-   * visible to the model and is not counted; `unscreenedChars` is the gate's
-   * criterion, this is for the user-facing explanation.
+   * Lines whose content lies entirely above the window. A line cut by the
+   * boundary is partly visible to the model and is not counted; one whose only
+   * screened character is its terminating newline showed the model nothing, so
+   * it is. `unscreenedChars` is the gate's criterion, this is for the
+   * user-facing explanation.
    */
   unscreenedLines: number
   /** Lines in the whole snapshot. */
@@ -64,7 +66,7 @@ export function terminalReadScreenWindow(text: string): TerminalReadScreenWindow
   return {
     screened: text.slice(-TERMINAL_READ_SCREEN_MAX_CHARS),
     unscreenedChars,
-    unscreenedLines: countNewlines(text.slice(0, unscreenedChars)),
+    unscreenedLines: countNewlines(text.slice(0, unscreenedChars + 1)),
     totalLines,
   }
 }
