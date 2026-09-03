@@ -53,7 +53,12 @@ export function mountFooterBranchStatus(
   host: HTMLElement,
   store: AppStore,
   api: ApiClient,
-): { destroy: () => void; refresh: () => void; waitForPendingCheckout: () => Promise<void> } {
+): {
+  destroy: () => void
+  refresh: () => void
+  /** The branch a blank thread was told to start from, if the user picked one. */
+  pendingBaseBranch: (threadId: string) => string | undefined
+} {
   const wrap = el('div', { class: 'branch-picker', hidden: '' })
   const trigger = el('button', {
     type: 'button',
@@ -78,10 +83,25 @@ export function mountFooterBranchStatus(
   let defaultBranch: string | null = null
   let open = false
   let refreshToken = 0
-  let pendingCheckout: Promise<void> | null = null
+  /**
+   * Branch selections made in picker mode, per thread. A selection is a
+   * statement about the thread that is about to start, not a command to move
+   * the user's checkout — nothing happens on disk until the first message goes
+   * through `agent:prepareCheckout`, which starts the isolated worktree from
+   * this branch (or switches the shared checkout to it). Keyed by thread so
+   * switching threads mid-compose cannot carry a selection across.
+   */
+  const baseBranchByThread = new Map<string, string>()
 
   function getActiveThread(): Thread | undefined {
     return getThreadById(store, store.getState().activeThreadId)
+  }
+
+  /** The picked base branch for the active thread, while it is still blank. */
+  function activeBaseBranch(): string | undefined {
+    const thread = getActiveThread()
+    if (!thread || !isBlankThread(thread)) return undefined
+    return baseBranchByThread.get(thread.id)
   }
 
   function getActiveThreadBranch(): string | undefined {
@@ -93,19 +113,28 @@ export function mountFooterBranchStatus(
     return thread ? isBlankThread(thread) : false
   }
 
-  /** The branch the widget speaks for: the thread's binding, else the checkout. */
+  /**
+   * The branch the widget speaks for: the branch this thread will start from,
+   * else the thread's binding, else the checkout.
+   */
   function getDisplayBranch(): string | null {
-    return getActiveThreadBranch() ?? status?.currentBranch ?? null
+    return activeBaseBranch() ?? getActiveThreadBranch() ?? status?.currentBranch ?? null
   }
 
   /**
    * The open PR worth surfacing, or null on a trunk branch. Every caller goes
    * through here so the label, the picker row and the click action can't
    * disagree about which branch they are judging.
+   *
+   * `status.pr` describes the branch the checkout is actually on, so a pending
+   * selection that has not been acted on yet retires it rather than advertising
+   * another branch's PR under this one's name.
    */
   function getVisiblePr(): GitOpenPr | null {
     const pr = status?.pr
     if (!pr) return null
+    const pending = activeBaseBranch()
+    if (pending && pending !== status?.currentBranch) return null
     return isTrunkBranch(getDisplayBranch(), defaultBranch) ? null : pr
   }
 
@@ -161,17 +190,16 @@ export function mountFooterBranchStatus(
     } else {
       label.textContent = displayBranch
       if (pickerMode) {
-        trigger.title = mismatch
-          ? `${mismatchMessage} Switch git branch.`
-          : `Switch git branch: ${displayBranch}`
+        // Picker mode names the branch this thread will start from; it is not a
+        // claim about where the checkout is now, and selecting does not move it.
+        const pickerLabel = `Start this thread from: ${displayBranch}`
+        trigger.title = mismatch ? `${mismatchMessage} ${pickerLabel}` : pickerLabel
         trigger.classList.remove('is-link')
         trigger.classList.remove('is-copyable')
         branchToCopy = null
         trigger.setAttribute(
           'aria-label',
-          mismatch
-            ? `${mismatchMessage} Switch git branch.`
-            : `Switch git branch: ${displayBranch}`,
+          mismatch ? `${mismatchMessage} ${pickerLabel}` : pickerLabel,
         )
       } else {
         trigger.title = mismatch
@@ -192,7 +220,7 @@ export function mountFooterBranchStatus(
     clear(menu)
     if (!isPickerMode()) return
 
-    const current = status?.currentBranch ?? null
+    const selected = activeBaseBranch() ?? status?.currentBranch ?? null
     const pr = getVisiblePr()
 
     if (pr) {
@@ -217,40 +245,24 @@ export function mountFooterBranchStatus(
           type: 'button',
           class: 'branch-picker-option',
           role: 'option',
-          'aria-selected': branch.name === current ? 'true' : 'false',
+          'aria-selected': branch.name === selected ? 'true' : 'false',
         },
         nameEl,
       )
       if (branch.name === defaultBranch) {
         item.append(el('span', { class: 'branch-picker-default-badge' }, 'default'))
       }
-      if (branch.name === current) item.classList.add('is-selected')
+      if (branch.name === selected) item.classList.add('is-selected')
       item.addEventListener('click', () => {
-        // Keep branch changes single-flight. Reopening the picker and starting
-        // a second `git switch` would make Send wait only for the newer promise
-        // while the older checkout could still win afterward.
-        if (pendingCheckout) return
-        if (branch.name === current) {
-          setOpen(false)
-          return
-        }
         setOpen(false)
-        const owner = getActiveThreadOwner(store)
-        if (!owner) return
-        const checkout = api.git.checkoutBranch(owner.projectId, owner.threadId, branch.name)
-        pendingCheckout = checkout
-        const observed = checkout.then(
-          () => {
-            showToast(`Checked out ${branch.name}`)
-            store.emit('git_branch_changed')
-          },
-          (error: unknown) => {
-            showErrorToast(`Failed to check out ${branch.name}`, error)
-          },
-        )
-        void observed.finally(() => {
-          if (pendingCheckout === checkout) pendingCheckout = null
-        })
+        const thread = getActiveThread()
+        if (!thread) return
+        // Record the choice only. Checking out here would move the user's
+        // project checkout for a thread they may never send — and, when the
+        // branch is held by another worktree, fail with nothing to show for it.
+        baseBranchByThread.set(thread.id, branch.name)
+        renderTrigger()
+        renderMenu()
       })
       menu.append(item)
     }
@@ -277,8 +289,23 @@ export function mountFooterBranchStatus(
     defaultBranch = defaultName
   }
 
+  /** A selection belongs to a blank thread; a started or deleted one drops it. */
+  function pruneBaseBranches(): void {
+    if (baseBranchByThread.size === 0) return
+    const blank = new Set(
+      store
+        .getState()
+        .threads.filter((thread) => isBlankThread(thread))
+        .map((thread) => thread.id),
+    )
+    for (const threadId of baseBranchByThread.keys()) {
+      if (!blank.has(threadId)) baseBranchByThread.delete(threadId)
+    }
+  }
+
   async function refresh(): Promise<void> {
     const token = ++refreshToken
+    pruneBaseBranches()
     if (!store.getState().workspaceRoot) {
       status = null
       branches = []
@@ -342,9 +369,6 @@ export function mountFooterBranchStatus(
   }
 
   trigger.addEventListener('click', () => {
-    // The menu closes as soon as a branch is selected, but the checkout itself
-    // is asynchronous. Do not let it reopen until that selection has settled.
-    if (pendingCheckout) return
     if (!isPickerMode()) {
       const url = getVisiblePr()?.url
       if (url) {
@@ -398,10 +422,8 @@ export function mountFooterBranchStatus(
 
   return {
     refresh: () => void refresh(),
-    waitForPendingCheckout: async (): Promise<void> => {
-      const pending = pendingCheckout
-      if (pending) await pending
-    },
+    pendingBaseBranch: (threadId: string): string | undefined =>
+      baseBranchByThread.get(threadId),
     destroy: (): void => {
       refreshToken += 1
       if (refreshTimer) clearTimeout(refreshTimer)

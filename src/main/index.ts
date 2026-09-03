@@ -606,6 +606,7 @@ app
         promptArg: unknown,
         choiceArg: unknown,
         modelArg?: unknown,
+        baseBranchArg?: unknown,
       ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
@@ -620,12 +621,21 @@ app
         if (modelArg !== undefined && typeof modelArg !== 'string') {
           throw new Error('Invalid checkout model')
         }
+        if (
+          baseBranchArg !== undefined &&
+          (typeof baseBranchArg !== 'string' ||
+            baseBranchArg.length === 0 ||
+            baseBranchArg.length > 256)
+        ) {
+          throw new Error('Invalid checkout base branch')
+        }
         return prepareThreadCheckout({
           projectId,
           threadId,
           prompt: promptArg,
           choice: choiceArg,
           ...(modelArg !== undefined ? { model: modelArg } : {}),
+          ...(baseBranchArg !== undefined ? { baseBranch: baseBranchArg } : {}),
         })
       },
     )

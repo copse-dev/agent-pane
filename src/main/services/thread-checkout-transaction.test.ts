@@ -48,10 +48,12 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
   preview: ReturnType<typeof createThreadCheckoutPreview>
   getThread: () => Thread
   patches: Array<Partial<Omit<Thread, 'messages'>>>
+  checkouts: Array<{ branch: string; root: string }>
 } {
   const project: Project = { id: 'project-1', name: 'Project', path: '/repo' }
   let thread = blankThread()
   const patches: Array<Partial<Omit<Thread, 'messages'>>> = []
+  const checkouts: Array<{ branch: string; root: string }> = []
   const dependencies: ThreadCheckoutTransactionDependencies = {
     getProject: () => project,
     getThread: async () => thread,
@@ -71,6 +73,9 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
     },
     recoverUnpersisted: async () => null,
     branchExists: async () => true,
+    checkoutBranch: async (branch, root) => {
+      checkouts.push({ branch, root })
+    },
     validate: async ({ worktree }) => ({ branch: worktree.branch }),
     retire: async () => undefined,
     serialize: serial(),
@@ -81,6 +86,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
     preview: createThreadCheckoutPreview(dependencies),
     getThread: () => thread,
     patches,
+    checkouts,
   }
 }
 
@@ -171,11 +177,11 @@ describe('first-message checkout transaction', () => {
     assert.equal(getThread().gitBranch, 'main')
   })
 
-  it('bases an automatic worktree on the branch selected in the blank-thread picker', async () => {
+  it('bases an automatic worktree on the live checkout when the picker went untouched', async () => {
     const allocations: Array<{ baseBranch: string; seedFromDirtyProject: boolean }> = []
     const { prepare } = fixture({
-      // The picker changes the live checkout, so this is the branch the user
-      // sees selected when they send the first message.
+      // No selection was made, so the branch the project checkout is on is the
+      // branch the user sees in the footer when they send the first message.
       inspect: async () => ({
         isGitRepository: true,
         currentBranch: 'copse/previous-thread',
@@ -207,6 +213,150 @@ describe('first-message checkout transaction', () => {
     assert.deepEqual(allocations, [
       { baseBranch: 'copse/previous-thread', seedFromDirtyProject: true },
     ])
+  })
+
+  it('bases an isolated worktree on the picked branch without moving the checkout', async () => {
+    const allocations: string[] = []
+    const { prepare, checkouts } = fixture({
+      allocate: async ({ baseBranch }) => {
+        allocations.push(baseBranch)
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/fresh-thread1',
+          baseBranch,
+          baseCommit: 'e'.repeat(40),
+          createdAt: 5,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Something unrelated',
+      choice: 'automatic',
+      baseBranch: 'release/2026-08',
+    })
+
+    assert.equal(result.checkoutMode, 'worktree')
+    assert.deepEqual(allocations, ['release/2026-08'])
+    // The whole point of picking a base for an isolated thread: the user's own
+    // checkout stays where it is, and the branch is never claimed by a switch.
+    assert.deepEqual(checkouts, [])
+  })
+
+  it('ignores a picked branch the repository no longer holds', async () => {
+    const allocations: string[] = []
+    const { prepare } = fixture({
+      branchExists: async (_root, branch) => branch !== 'deleted-upstream',
+      allocate: async ({ baseBranch }) => {
+        allocations.push(baseBranch)
+        return {
+          path: '/worktrees/thread-1',
+          branch: 'copse/fresh-thread1',
+          baseBranch,
+          baseCommit: 'e'.repeat(40),
+          createdAt: 5,
+          seededFromDirtyProject: false,
+        }
+      },
+    })
+
+    await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Something unrelated',
+      choice: 'automatic',
+      baseBranch: 'deleted-upstream',
+    })
+
+    assert.deepEqual(allocations, ['main'])
+  })
+
+  it('switches the shared checkout to the picked branch at send, not before', async () => {
+    const { prepare, getThread, patches, checkouts } = fixture()
+
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Hello',
+      choice: 'shared',
+      baseBranch: 'release/2026-08',
+    })
+
+    assert.deepEqual(checkouts, [{ branch: 'release/2026-08', root: '/repo' }])
+    assert.deepEqual(result, {
+      checkoutMode: 'shared',
+      choice: 'shared',
+      branch: 'release/2026-08',
+    })
+    assert.equal(patches.length, 1)
+    assert.equal(getThread().gitBranch, 'release/2026-08')
+  })
+
+  it('leaves the shared checkout alone when the picked branch is the current one', async () => {
+    const { prepare, checkouts } = fixture()
+
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Hello',
+      choice: 'shared',
+      baseBranch: 'main',
+    })
+
+    assert.deepEqual(checkouts, [])
+    assert.equal(result.branch, 'main')
+  })
+
+  it('never switches for a shared mode the local repository had no say in', async () => {
+    const { prepare, checkouts } = fixture({
+      // A remote-agent or SSH project: `isLocal` is false, so the inspection
+      // reports no repository even though the footer picker was on screen.
+      inspect: async () => ({
+        isGitRepository: false,
+        currentBranch: null,
+        defaultBranch: null,
+        isDirty: false,
+        hasSubmodules: false,
+      }),
+    })
+
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Hello',
+      choice: 'automatic',
+      baseBranch: 'release/2026-08',
+    })
+
+    assert.equal(result.checkoutMode, 'shared')
+    assert.deepEqual(checkouts, [])
+  })
+
+  it('keeps a shared thread unstarted when the picked branch cannot be checked out', async () => {
+    // Another worktree holding the branch is the reachable case, and the
+    // message carries its own recovery. Persisting a decision here would pin
+    // the thread to a branch its checkout is not on.
+    const { prepare, patches, getThread } = fixture({
+      checkoutBranch: async (branch) => {
+        throw new Error(`Branch "${branch}" is checked out in another worktree`)
+      },
+    })
+
+    await assert.rejects(
+      prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Hello',
+        choice: 'shared',
+        baseBranch: 'release/2026-08',
+      }),
+      /checked out in another worktree/,
+    )
+    assert.deepEqual(patches, [])
+    assert.equal(getThread().worktreeChoice, undefined)
   })
 
   it('falls back to the default branch when the reported current branch is not a ref', async () => {

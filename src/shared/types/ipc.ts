@@ -71,6 +71,7 @@ export interface IpcInvokeMap {
       prompt: string,
       choice: import('./worktree.ts').ThreadWorktreeChoice,
       model?: string,
+      baseBranch?: string,
     ]
     result: import('./worktree.ts').PreparedThreadCheckout
   }

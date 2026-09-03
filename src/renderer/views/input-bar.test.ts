@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
+import { addMessage, getThreadById, setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
@@ -60,7 +60,7 @@ function createApi(options: {
   onAbort?: () => Promise<void>
   onRun?: () => Promise<void>
   onCheckoutBranch?: (branch: string) => Promise<void>
-  onPrepareCheckout?: () => Promise<PreparedThreadCheckout>
+  onPrepareCheckout?: ApiClient['agent']['prepareCheckout']
   onPreviewCheckout?: () => Promise<ThreadCheckoutPreview>
   listSkills?: () => Promise<SkillSummary[]>
   availableProviders?: () => Promise<
@@ -297,28 +297,6 @@ describe('input bar first-message checkout', () => {
     assert.equal(choice.textContent, 'Isolated worktree')
   })
 
-  it('honors composer_checkout_preferred on a blank thread', async () => {
-    const store = createStore({
-      workspaceRoot: '/repo',
-      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
-      activeProjectId: 'project-1',
-      activeThreadId: 'thread-1',
-      threads: [thread()],
-    })
-    const host = document.createElement('div')
-    document.body.append(host)
-    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
-    await settle()
-
-    const choice = host.querySelector<HTMLButtonElement>('.footer-checkout-btn')
-    assert.ok(choice)
-    // Preview may show Isolated when automatic prefers worktree; force shared.
-    store.emit('composer_checkout_preferred', 'shared')
-    assert.equal(choice.textContent, 'Shared checkout')
-    store.emit('composer_checkout_preferred', 'worktree')
-    assert.equal(choice.textContent, 'Isolated worktree')
-  })
-
   it('previews an automatic project opt-in only when Git supports it', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
@@ -449,12 +427,11 @@ describe('input bar first-message checkout', () => {
     assert.equal(composer.textContent, '')
   })
 
-  it('waits for the blank-thread branch selection before preparing its worktree', async () => {
+  it('sends the blank-thread branch selection to prepareCheckout instead of switching', async () => {
     const order: string[] = []
-    let currentBranch = 'main'
-    let releaseCheckout = (): void => {
-      throw new Error('expected branch checkout to be pending')
-    }
+    const currentBranch = 'main'
+    const checkouts: string[] = []
+    const bases: (string | undefined)[] = []
     const store = createStore({
       workspaceRoot: '/repo',
       projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
@@ -474,17 +451,17 @@ describe('input bar first-message checkout', () => {
           { name: 'main', lastCommitDate: '2024-01-01' },
           { name: 'feature/selected', lastCommitDate: '2024-01-02' },
         ],
-        onCheckoutBranch: (branch) =>
-          new Promise<void>((resolve) => {
-            releaseCheckout = (): void => {
-              currentBranch = branch
-              order.push(`checkout:${branch}`)
-              resolve()
-            }
-          }),
-        onPrepareCheckout: async () => {
-          order.push(`prepare:${currentBranch}`)
-          return { checkoutMode: 'shared', choice: 'automatic', branch: currentBranch }
+        onCheckoutBranch: async (branch) => {
+          checkouts.push(branch)
+        },
+        onPrepareCheckout: async (_projectId, _threadId, _prompt, _choice, _model, baseBranch) => {
+          order.push('prepare')
+          bases.push(baseBranch)
+          return {
+            checkoutMode: 'shared',
+            choice: 'automatic',
+            branch: baseBranch ?? currentBranch,
+          }
         },
         onRun: async () => {
           order.push('run')
@@ -506,20 +483,21 @@ describe('input bar first-message checkout', () => {
     )
     assert.ok(selected)
     selected.click()
-    branchTrigger.click()
     await flush()
-    const branchMenu = host.querySelector<HTMLElement>('.branch-picker-menu')
-    assert.ok(branchMenu)
-    assert.equal(branchMenu.hidden, true, 'a pending checkout keeps the branch picker closed')
+
+    // Nothing has happened to the working tree yet — the selection is a
+    // statement about the thread that is about to start.
+    assert.deepEqual(checkouts, [])
+    assert.deepEqual(order, [])
+
     composer.textContent = 'Start from the selected feature'
     submit.click()
-    await settle()
-
-    assert.deepEqual(order, [], 'checkout preparation must wait for the branch switch')
-    releaseCheckout()
     await flush()
 
-    assert.deepEqual(order, ['checkout:feature/selected', 'prepare:feature/selected', 'run'])
+    assert.deepEqual(order, ['prepare', 'run'])
+    assert.deepEqual(bases, ['feature/selected'])
+    assert.deepEqual(checkouts, [], 'the branch is claimed by the transaction, not the picker')
+    assert.equal(getThreadById(store, 'thread-1')?.gitBranch, 'feature/selected')
   })
 })
 

@@ -1542,16 +1542,6 @@ export function mountInputBar(
         return
       }
     }
-    // A blank-thread branch selection checks out through IPC. If the user hits
-    // Send before that promise settles, reading HEAD here can otherwise race
-    // and base the new worktree on the branch that was selected previously.
-    try {
-      await branchControl.waitForPendingCheckout()
-    } catch {
-      // The branch control already surfaced the checkout failure. Keep the
-      // prompt in place rather than silently sending it from the old branch.
-      return
-    }
     const [branchStatus, promptState] = await Promise.all([
       api.git.branchStatus(projectId, id),
       api.git.promptState(projectId, id),
@@ -1671,6 +1661,9 @@ export function mountInputBar(
           rawText,
           checkoutChoice(id),
           thread.model ?? store.getState().settings?.model,
+          // The footer picker only names a branch; this is where that selection
+          // becomes the worktree's base, or the shared checkout's branch.
+          branchControl.pendingBaseBranch(id),
         )
         applyPreparedThreadCheckout(store, id, prepared)
         // The user may switch threads while Git is preparing the checkout. The
@@ -2188,11 +2181,6 @@ export function mountInputBar(
       if (draft === composer.expandedValue()) return
       composer.value = draft
       scheduleContextEstimate(0)
-    }),
-    store.on('composer_checkout_preferred', (choice) => {
-      const thread = getActiveThread(store)
-      if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return
-      selectCheckout(choice)
     }),
     store.on('thread_status_changed', (tid) => {
       if (tid === getActiveThreadId()) {
