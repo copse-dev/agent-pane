@@ -195,6 +195,7 @@ import {
   ACP_UNFINISHED_TURN_FALLBACK,
   ACP_UNFINISHED_TURN_RECOVERY_OPERATION_ID,
   ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
+  acpCancellationSource,
   acpTurnHasFinalResponse,
   EMPTY_ACP_TURN_PROGRESS,
   nextAcpTurnProgress,
@@ -1094,12 +1095,22 @@ export async function runAgent(
       })
 
       const normalized = normalizeStopReason(result.stopReason.toLowerCase())
+      // A cooperative cancel comes back through *this* path, not the `catch`:
+      // the agent honours `session/cancel` and returns cleanly, so nothing
+      // throws and the timeout branch below never runs. Left alone, the run
+      // deadline killing a turn is written to history identically to the user
+      // pressing Stop (#2332). The abort signal still knows which it was.
+      const cancelledBy =
+        normalized === 'cancelled' ? acpCancellationSource(controller.signal) : null
+      // `rawStopReason` keeps the agent's own word either way; only Copse's
+      // reading of it changes, and only when Copse is the one who cancelled.
+      const stopReason = cancelledBy === 'host' ? 'timeout' : normalized
       pendingTurnOutcome = {
         ...terminalContext,
-        status: endedAfterTools && !recoverySucceeded ? 'failed' : terminalStatus(normalized),
-        stopReason: endedAfterTools && !recoverySucceeded ? 'error' : normalized,
+        status: endedAfterTools && !recoverySucceeded ? 'failed' : terminalStatus(stopReason),
+        stopReason: endedAfterTools && !recoverySucceeded ? 'error' : stopReason,
         rawStopReason: result.stopReason,
-        source: endedAfterTools && !recoverySucceeded ? 'host' : 'provider',
+        source: endedAfterTools && !recoverySucceeded ? 'host' : (cancelledBy ?? 'provider'),
         ...(endedAfterTools
           ? {
               recovery: {

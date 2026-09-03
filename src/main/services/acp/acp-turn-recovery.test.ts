@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { AGENT_RUN_ABORT_REASON_TIMEOUT } from '@copse/agent/agent-loop-limits.ts'
 import {
+  acpCancellationSource,
   acpTurnHasFinalResponse,
   EMPTY_ACP_TURN_PROGRESS,
   nextAcpTurnProgress,
@@ -80,5 +82,27 @@ describe('ACP unfinished-turn recovery', () => {
     assert.equal(acpTurnHasFinalResponse('end_turn', answeredThenChecked), true)
     assert.equal(acpTurnHasFinalResponse('end_turn', silent), false)
     assert.equal(acpTurnHasFinalResponse('max_tokens', answeredThenChecked), false)
+  })
+})
+
+// #2332: an ACP cancel is cooperative — the agent returns `stopReason:
+// "cancelled"` through the success path whoever asked for it — so the abort
+// signal is the only surviving evidence of who actually ended the turn.
+describe('ACP cancellation attribution', () => {
+  it('reads the run deadline firing as a host cancellation', () => {
+    const controller = new AbortController()
+    controller.abort(AGENT_RUN_ABORT_REASON_TIMEOUT)
+    assert.equal(acpCancellationSource(controller.signal), 'host')
+  })
+
+  it('reads a plain abort as the user pressing Stop', () => {
+    const controller = new AbortController()
+    controller.abort()
+    assert.equal(acpCancellationSource(controller.signal), 'user')
+  })
+
+  it('leaves an un-aborted turn attributed to the provider', () => {
+    assert.equal(acpCancellationSource(new AbortController().signal), 'provider')
+    assert.equal(acpCancellationSource(undefined), 'provider')
   })
 })

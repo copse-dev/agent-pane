@@ -1,5 +1,6 @@
 import type { StreamChunk } from '@shared/types'
 import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
+import { isAgentRunTimeoutAbort } from '@copse/agent/agent-loop-limits.ts'
 
 export type AcpLastMeaningfulEvent = 'text' | 'reasoning' | 'tool' | null
 
@@ -89,4 +90,26 @@ export function acpTurnHasFinalResponse(
   progress: AcpTurnProgress,
 ): boolean {
   return normalizeStopReason(rawStopReason?.toLowerCase()) === 'end_turn' && progress.sawText
+}
+
+/**
+ * Who actually ended a turn the agent reported as `cancelled`.
+ *
+ * An ACP cancellation is cooperative: the host sends `session/cancel`, the agent
+ * winds down and returns `stopReason: "cancelled"` through the ordinary success
+ * path — nothing throws, so the `catch` branch that stamps a host timeout never
+ * runs. The turn is then recorded with the agent's own word and `source:
+ * 'provider'`, which reads identically whether the user pressed Stop or the run
+ * deadline killed the turn underneath an unanswered approval prompt (#2332).
+ * The abort signal is the only place that distinction survives the round trip,
+ * so consult it before trusting the reported reason.
+ *
+ * `'provider'` covers the genuine case the agent stopped itself, which is why
+ * the un-aborted signal is not simply an error.
+ */
+export function acpCancellationSource(
+  signal: AbortSignal | undefined,
+): 'host' | 'user' | 'provider' {
+  if (isAgentRunTimeoutAbort(signal)) return 'host'
+  return signal?.aborted === true ? 'user' : 'provider'
 }
