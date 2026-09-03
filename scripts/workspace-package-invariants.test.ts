@@ -10,6 +10,7 @@ const WORKSPACE_PACKAGES = [
   ['packages/llm', '@copse/llm'],
   ['packages/plan-usage', '@copse/plan-usage'],
   ['packages/std', '@copse/std'],
+  ['packages/hooks-dialects', '@copse/hooks-dialects'],
 ] as const
 
 function field(source: unknown, name: string): unknown {
@@ -173,13 +174,13 @@ describe('workspace package resolution', () => {
     for (const file of ['tsconfig.json', 'tsconfig.node.json', 'tsconfig.web.json']) {
       assert.doesNotMatch(
         readFileSync(resolve(file), 'utf8'),
-        /"@copse\/(?:agent|llm|plan-usage|std)/,
+        /"@copse\/(?:agent|hooks-dialects|llm|plan-usage|std)/,
       )
     }
     for (const file of sourceFiles('scripts')) {
       assert.doesNotMatch(
         readFileSync(file, 'utf8'),
-        /['"]@copse\/(?:agent|llm|plan-usage|std)['"]\s*:\s*(?:resolve|new URL)/,
+        /['"]@copse\/(?:agent|hooks-dialects|llm|plan-usage|std)['"]\s*:\s*(?:resolve|new URL)/,
         `${file} must resolve workspace packages through their manifests`,
       )
     }
@@ -189,7 +190,7 @@ describe('workspace package resolution', () => {
     for (const file of sourceFiles('scripts')) {
       assert.doesNotMatch(
         readFileSync(file, 'utf8'),
-        /from ['"][^'"]*packages\/(?:agent|llm|plan-usage|std)\/src\//,
+        /from ['"][^'"]*packages\/(?:agent|hooks-dialects|llm|plan-usage|std)\/src\//,
         `${file} bypasses a workspace package boundary`,
       )
     }

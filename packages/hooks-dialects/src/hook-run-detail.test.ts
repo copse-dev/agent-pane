@@ -5,7 +5,7 @@ import {
   hookRunDetailEmptyReason,
   hookRunDetailSections,
 } from './hook-run-detail.ts'
-import type { HookRunDetail } from '../types/hooks.ts'
+import type { HookRunDetail } from './hooks-types.ts'
 
 // The hook-card inspector's presentation model. The point of the inspector is
 // that a card saying "Injected 307 chars of context" can be opened to read those

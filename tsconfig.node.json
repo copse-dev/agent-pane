@@ -36,6 +36,7 @@
     "src/shared/**/*",
     "scripts/**/*",
     "packages/agent/src/**/*",
+    "packages/hooks-dialects/src/**/*",
     "packages/extract-zip/**/*",
     "packages/llm/src/**/*",
     "packages/plan-usage/src/**/*",

@@ -17,7 +17,7 @@
 //
 // Host-side (`src/main/services/hooks/`) — reads/writes process env, so it never
 // belongs in the Electron-free `packages/agent` (execution-guidance rule 4).
-import { envForRendererChildProcess } from '../exec/child-process-env.ts'
+import { hooksDialectsEnvironment } from './environment.ts'
 
 /** Env var carrying the hook nesting depth of the current Copse process. */
 export const HOOK_DEPTH_ENV = 'COPSE_HOOK_DEPTH'
@@ -55,7 +55,7 @@ export function hookRecursionGuardTripped(env: NodeJS.ProcessEnv = process.env):
  */
 export function childHookEnv(base: NodeJS.ProcessEnv = process.env): Record<string, string> {
   return {
-    ...envForRendererChildProcess(base),
+    ...hooksDialectsEnvironment().childEnv(base),
     [HOOK_DEPTH_ENV]: String(currentHookDepth(base) + 1),
   }
 }
