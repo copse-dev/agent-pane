@@ -149,8 +149,10 @@ describe('classifyTerminalSnapshot with an unavailable safety model', () => {
  * verdict can only vouch for that slice. These tests pin the gate's side of
  * that contract: a confident "safe" never auto-shares a snapshot larger than
  * the screened window (#2280), and the explanation the user sees says how much
- * the model actually looked at. The model itself is replaced by a scripted
- * verdict, so the stub server above is not involved.
+ * the model actually looked at. "Always allow for this chat" remembers the
+ * answer to the question the prompt asked — unscreened content, or flagged
+ * content — and never waives the screening itself. The model is replaced by a
+ * scripted verdict, so the stub server above is not involved.
  */
 describe('read_terminal gate', () => {
   const CONFIDENT_SAFE: TerminalReadVerdict = {
@@ -290,13 +292,19 @@ describe('read_terminal gate', () => {
       assert.equal(prompts.length, 1)
     })
 
-    it('honours "Always allow for this chat" for later reads in that chat only', async () => {
+    it('honours "Always allow for this chat" for later oversized reads in that chat only', async () => {
       promptAnswer = { approved: true, remember: true }
       await ensureTerminalReadPermitted('thread-remembered', 'Build', scrollback(200))
       assert.equal(prompts.length, 1)
 
-      await ensureTerminalReadPermitted('thread-remembered', 'Build', scrollback(300))
+      const result = await ensureTerminalReadPermitted(
+        'thread-remembered',
+        'Build',
+        scrollback(300),
+      )
+      assert.deepEqual(result, { allowed: true })
       assert.equal(prompts.length, 1)
+      assert.equal(classifierCalls.length, 0)
 
       await ensureTerminalReadPermitted('thread-other', 'Build', scrollback(300))
       assert.equal(prompts.length, 2)
@@ -310,6 +318,93 @@ describe('read_terminal gate', () => {
       const body = prompts[0]?.body ?? ''
       assert.match(body, /part of it was not screened/)
       assert.doesNotMatch(body, /of its/)
+    })
+  })
+
+  describe('what "Always allow for this chat" covers', () => {
+    const RISKY: TerminalReadVerdict = {
+      risky: true,
+      confidence: 0.8,
+      reason: 'looks like an API token',
+    }
+
+    async function rememberOversized(threadId: string): Promise<void> {
+      promptAnswer = { approved: true, remember: true }
+      await ensureTerminalReadPermitted(threadId, 'Build', scrollback(200))
+      assert.equal(prompts.length, 1)
+      promptAnswer = { approved: false, remember: false }
+    }
+
+    it('still screens a snapshot that fits, and shares it only on a safe verdict', async () => {
+      await rememberOversized('thread-grant-screens')
+      const text = scrollback(40)
+
+      const result = await ensureTerminalReadPermitted('thread-grant-screens', 'Build', text)
+
+      assert.deepEqual(result, { allowed: true })
+      assert.deepEqual(classifierCalls, [text])
+      assert.equal(prompts.length, 1)
+    })
+
+    it('does not cover a fitting snapshot the model flagged: that is a new question', async () => {
+      await rememberOversized('thread-grant-flagged')
+      setTerminalSnapshotClassifierForTest(() => Promise.resolve({ verdict: RISKY, problem: null }))
+
+      const result = await ensureTerminalReadPermitted(
+        'thread-grant-flagged',
+        'Build',
+        scrollback(40),
+      )
+
+      assert.equal(result.allowed, false)
+      assert.equal(prompts.length, 2)
+      assert.match(prompts[1]?.body ?? '', /flagged it: looks like an API token/)
+    })
+
+    it('does cover a later read the model could not screen — the same question, once per chat', async () => {
+      await rememberOversized('thread-grant-unavailable')
+      setTerminalSnapshotClassifierForTest(() => Promise.resolve({ verdict: null, problem: null }))
+
+      const result = await ensureTerminalReadPermitted(
+        'thread-grant-unavailable',
+        'Build',
+        scrollback(40),
+      )
+
+      assert.deepEqual(result, { allowed: true })
+      assert.equal(prompts.length, 1)
+    })
+
+    it('given on a flagged snapshot, does not cover an unscreened one', async () => {
+      setTerminalSnapshotClassifierForTest(() => Promise.resolve({ verdict: RISKY, problem: null }))
+      promptAnswer = { approved: true, remember: true }
+      await ensureTerminalReadPermitted('thread-grant-risky', 'Build', scrollback(40))
+      assert.equal(prompts.length, 1)
+      promptAnswer = { approved: false, remember: false }
+
+      const flaggedAgain = await ensureTerminalReadPermitted(
+        'thread-grant-risky',
+        'Build',
+        scrollback(40),
+      )
+      assert.deepEqual(flaggedAgain, { allowed: true })
+      assert.equal(prompts.length, 1)
+
+      const oversized = await ensureTerminalReadPermitted(
+        'thread-grant-risky',
+        'Build',
+        scrollback(200),
+      )
+      assert.equal(oversized.allowed, false)
+      assert.equal(prompts.length, 2)
+      assert.match(prompts[1]?.body ?? '', /larger than the safety model screens/)
+    })
+
+    it('never applies without a chat to scope it to', async () => {
+      promptAnswer = { approved: true, remember: true }
+      await ensureTerminalReadPermitted(null, 'Build', scrollback(200))
+      await ensureTerminalReadPermitted(null, 'Build', scrollback(200))
+      assert.equal(prompts.length, 2)
     })
   })
 })

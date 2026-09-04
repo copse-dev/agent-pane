@@ -44,6 +44,12 @@ export type { TerminalReadVerdict } from './terminal-read-verdict.ts'
  * snapshot larger than that is treated as unscreened and goes to the user too,
  * however confident the model is about the part it saw (#2280).
  *
+ * The prompt asks one of two questions — share what the model never vouched
+ * for, or share what it positively flagged — and "Always allow for this chat"
+ * remembers the answer to the question that was asked, not to both. A user who
+ * accepted an unscreened tail has not been told about the token the model goes
+ * on to find in a later, smaller read; that read still prompts.
+ *
  * The fallback stays fail-closed either way, but it does not stay silent: a
  * model that is configured and simply absent is reported as such, because a
  * prompt on every single read reads as a transient glitch and nobody goes
@@ -147,9 +153,26 @@ type TerminalSnapshotClassifier = (
   signal?: AbortSignal,
 ) => Promise<TerminalReadScreening>
 
-// "Always allow for this chat" remembers per thread for this app session only —
-// a durable grant would outlive the shell content the user actually looked at.
-const rememberedThreads = new Set<string>()
+/**
+ * What a prompt asked the user to accept: content the model never vouched for
+ * (larger than the window, or no usable verdict), or content it flagged.
+ */
+type TerminalReadPromptCause = 'unscreened' | 'flagged'
+
+// "Always allow for this chat" remembers per thread and per cause, for this app
+// session only — a durable grant would outlive the shell content the user
+// actually looked at.
+const rememberedGrants = new Map<string, Set<TerminalReadPromptCause>>()
+
+function isRemembered(threadId: string | null, cause: TerminalReadPromptCause): boolean {
+  return threadId !== null && (rememberedGrants.get(threadId)?.has(cause) ?? false)
+}
+
+function remember(threadId: string, cause: TerminalReadPromptCause): void {
+  const causes = rememberedGrants.get(threadId) ?? new Set<TerminalReadPromptCause>()
+  causes.add(cause)
+  rememberedGrants.set(threadId, causes)
+}
 
 /**
  * User-facing reason for a snapshot the model was never shown all of. Only
@@ -173,23 +196,27 @@ async function gateImpl(
   text: string,
   signal?: AbortSignal,
 ): Promise<TerminalReadGateResult> {
-  if (threadId && rememberedThreads.has(threadId)) return { allowed: true }
-
   const window = terminalReadScreenWindow(text)
+  let cause: TerminalReadPromptCause
   let why: string
   if (window.unscreenedChars > 0) {
     // No verdict on the tail could vouch for what sits above it, so no verdict
-    // could auto-allow this snapshot. Ask the user straight away rather than
-    // spend a screening call (and its latency) on an answer that cannot change
-    // the outcome.
+    // could auto-allow this snapshot. Ask the user straight away (or honour
+    // their standing answer) rather than spend a screening call, and its
+    // latency, on an answer that cannot change the outcome.
+    cause = 'unscreened'
     why = describeUnscreened(window)
   } else {
+    // A remembered grant waives the prompt, never the screening: the model
+    // still looks, and a flagged read asks its own question.
     const { verdict, problem } = await classifier(text, signal)
     if (!terminalReadNeedsApproval(verdict)) return { allowed: true }
+    cause = verdict ? 'flagged' : 'unscreened'
     why = verdict
       ? `The safety model flagged it: ${verdict.reason}`
       : (problem?.message ?? 'The safety model could not screen it.')
   }
+  if (isRemembered(threadId, cause)) return { allowed: true }
 
   const decision = await requestApproval(
     {
@@ -211,7 +238,7 @@ async function gateImpl(
         'The user declined to share this shell output. Ask them to paste the relevant part instead.',
     }
   }
-  if (decision.remember && threadId) rememberedThreads.add(threadId)
+  if (decision.remember && threadId) remember(threadId, cause)
   return { allowed: true }
 }
 
