@@ -915,9 +915,7 @@ export function seedOpenRouterFixture(
     ...(options?.freeMode ? { openRouterFreeMode: true } : {}),
     ...(options?.apiBase ? { openRouterApiBase: options.apiBase } : {}),
     ...(options?.localServerUrl ? { localServerUrl: options.localServerUrl } : {}),
-    ...(options?.registeredAcpAgents
-      ? { registeredAcpAgents: options.registeredAcpAgents }
-      : {}),
+    ...(options?.registeredAcpAgents ? { registeredAcpAgents: options.registeredAcpAgents } : {}),
     ...(options?.openRouterZdrOnly !== undefined
       ? { openRouterZdrOnly: options.openRouterZdrOnly }
       : {}),
