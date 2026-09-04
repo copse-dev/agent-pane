@@ -17,7 +17,7 @@ describe('browser-hosted grouped shell approval', () => {
     await expect(dialog.$$('.approval-body-list')).toBeElementsArrayOfSize(1)
     await expect(dialog.$$('.approval-body')).toBeElementsArrayOfSize(3)
     await expect(dialog.$('.approval-advice')).toHaveText(
-      'This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).',
+      'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
     )
     await expect(dialog.$('.approval-footer')).toHaveText(
       'Allow running it once outside the sandbox?',

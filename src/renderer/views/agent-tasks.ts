@@ -75,9 +75,17 @@ export function mountAgentTasks(
   api: ApiClient,
 ): () => void {
   // Left-rail section (sits under the shells list in the same host).
-  const section = el('div', { class: 'agent-tasks-section' })
-  const sectionHeader = el('div', { class: 'agent-tasks-section-header' }, 'Agent tasks')
-  const tabList = el('div', { class: 'agent-tasks-tablist' })
+  const section = el('section', {
+    class: 'agent-tasks-section terminal-rail-section',
+  })
+  const sectionHeader = el(
+    'div',
+    { class: 'agent-tasks-section-header terminal-rail-section-header' },
+    'Agent tasks',
+  )
+  const tabList = el('div', {
+    class: 'agent-tasks-tablist terminal-rail-section-list',
+  })
   section.append(sectionHeader, tabList)
   listRoot.append(section)
 
@@ -181,7 +189,12 @@ export function mountAgentTasks(
 
     const dot = el('span', { class: 'agent-task-dot', 'aria-hidden': 'true' })
     const label = el('span', { class: 'agent-task-label', title: command }, command)
-    const tab = el('button', { type: 'button', class: 'agent-task-tab' }, dot, label)
+    const tab = el(
+      'button',
+      { type: 'button', class: 'agent-task-tab', 'data-terminal-rail-row': '' },
+      dot,
+      label,
+    )
     const panel = el('pre', {
       class: 'agent-task-output-panel',
       'data-task-id': id,

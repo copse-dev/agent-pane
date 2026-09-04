@@ -403,6 +403,14 @@ export interface ApiClient {
         }>,
       ) => void,
     ) => () => void
+    /** A PR was just opened by `gh_pr_create` on the named thread. */
+    onPrCreated: (
+      handler: (
+        projectId: string,
+        threadId: string,
+        ref: import('@shared/git/github-pr-url.ts').GithubPrRef,
+      ) => void,
+    ) => () => void
     create: (projectId: string, thread: import('@shared/types').Thread) => Promise<void>
     appendMessage: (
       projectId: string,
