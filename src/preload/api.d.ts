@@ -66,6 +66,7 @@ import type {
   WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
+import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/container-run.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 import type {
@@ -154,6 +155,11 @@ export interface ApiClient {
     enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
     onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
+  }
+  container: {
+    runThread: (request: ContainerRunRequest) => Promise<ContainerRunProgress>
+    getRun: (threadId: string) => Promise<ContainerRunProgress | null>
+    onRunChanged: (handler: (progress: ContainerRunProgress) => void) => () => void
   }
   fs: {
     readFile: (projectId: string, threadId: string, path: string) => Promise<string>

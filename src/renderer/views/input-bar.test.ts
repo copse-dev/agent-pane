@@ -952,7 +952,7 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Debug trace', 'Share trace'],
+      ['Enable Guarded YOLO', 'Run unattended in a container…', 'Debug trace', 'Share trace'],
     )
 
     store.setState({ developerMode: true })
@@ -965,6 +965,7 @@ describe('input bar developer diagnostics', () => {
       ),
       [
         'Enable Guarded YOLO',
+        'Run unattended in a container…',
         'Copy thread ID',
         'Export conversation (JSONL)',
         'Export thread folder (ZIP)',
@@ -981,7 +982,7 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Enable Guarded YOLO', 'Debug trace', 'Share trace'],
+      ['Enable Guarded YOLO', 'Run unattended in a container…', 'Debug trace', 'Share trace'],
     )
   })
 })
@@ -2055,8 +2056,8 @@ describe('input bar footer overflow menu', () => {
       (item) => item.textContent,
     )
     // Developer diagnostics are disabled for this fixture, so only the ordinary
-    // thread action remains visible.
-    assert.deepEqual(labels, ['Enable Guarded YOLO'])
+    // thread actions remain visible, Guarded YOLO leading.
+    assert.deepEqual(labels, ['Enable Guarded YOLO', 'Run unattended in a container…'])
   })
 })
 
@@ -2334,10 +2335,11 @@ describe('input bar stacking order', () => {
     // bar, the mention pickers) are overlays parked on the same host.
     const order = Array.from(host.children)
       .map((child) => child.className.split(' ')[0])
-      .slice(0, 9)
+      .slice(0, 10)
 
     assert.deepEqual(order, [
       'guarded-yolo-banner',
+      'container-run-banner',
       'composer-branch-warning',
       'composer-checkout-error',
       'composer-image-warning',

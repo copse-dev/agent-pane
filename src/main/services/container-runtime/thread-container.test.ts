@@ -17,8 +17,8 @@ import {
   WORKER_UID,
   writeCarryInBundle,
   type DockerRunInput,
-} from './thread-container.mts'
-import { containerAttestationShortfall } from '../../src/main/services/security/runtime-containment.ts'
+} from './thread-container.ts'
+import { containerAttestationShortfall } from '../security/runtime-containment.ts'
 
 function input(overrides: Partial<DockerRunInput> = {}): DockerRunInput {
   return {
