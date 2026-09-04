@@ -10,6 +10,7 @@ describe('usesResponsesApi', () => {
       'gpt-5-mini',
       'gpt-5.5',
       'gpt-5.6-sol',
+      'gpt-6-astra',
       'o1',
       'o3-mini',
       'o4-mini',
@@ -26,6 +27,7 @@ describe('usesResponsesApi', () => {
 
   it('resolves dated snapshots of a routed family', () => {
     assert.equal(usesResponsesApi('gpt-5.6-sol-2026-07-01'), true)
+    assert.equal(usesResponsesApi('gpt-6-astra-2026-09-03'), true)
     assert.equal(usesResponsesApi('gpt-5-2025-08-07'), true)
     assert.equal(usesResponsesApi('o3-2025-04-16'), true)
   })
