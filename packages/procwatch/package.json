@@ -1,0 +1,16 @@
+{
+  "name": "@copse/procwatch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node process health for a long-running host: event-loop watchdog, startup budget, shutdown deadline, stdio guard for wire-protocol children, uncaught-fault handling, and lightweight perf spans and counters",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*.ts": "./src/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@copse/std": "workspace:*"
+  }
+}

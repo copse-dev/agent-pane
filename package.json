@@ -184,6 +184,7 @@
     "@copse/llm": "workspace:*",
     "@copse/plan-usage": "workspace:*",
     "@copse/plugin-sdk": "workspace:*",
+    "@copse/procwatch": "workspace:*",
     "@copse/shell-guard": "workspace:*",
     "@copse/std": "workspace:*",
     "@copse/thread-store": "workspace:*",
