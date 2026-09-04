@@ -457,12 +457,9 @@
   color: white;
   background: var(--warning, #d18616);
 }
-/* Held's primary action is the same filled chip in the same row of outlined
-   ones, so it takes the same optical clip — see `.queued-send-now` below. */
 .queued-action.queued-release {
   color: white;
   background: var(--accent);
-  background-clip: padding-box;
   border-color: transparent;
 }
 .queued-action.queued-release:hover {
@@ -478,11 +475,19 @@
   gap: var(--spacing-xs);
   margin-top: var(--spacing-xs);
 }
+/* `--border-strong`, not `--border`: these chips carry almost no fill contrast
+   (`--bg-hover` is within 1.1:1 of the card behind them), so the border is the
+   only thing marking where the button ends. At `--border` that edge measures
+   1.47:1 against the card in dark and 1.18:1 in light — too faint to locate,
+   which is why the filled "Send now" beside them looked a size larger than it
+   is. Every chip in the row is the same box; only the outlined ones were
+   under-drawing it. See docs/ui-taste.md → "An outlined chip needs an edge you
+   can find". */
 .queued-action {
   font-size: 11px;
   color: var(--text-secondary);
   background: var(--bg-hover);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   padding: 2px 10px;
   cursor: pointer;
@@ -491,14 +496,10 @@
   color: var(--text-primary);
   border-color: var(--text-muted);
 }
-/* The clip is optical, not geometric: these chips are already the same box, but
-   a filled one reads larger than the outlined ones. See docs/ui-taste.md → "A
-   filled action reads larger than the outlined ones beside it". */
 .queued-action.queued-send,
 .queued-action.queued-send-now {
   color: var(--text-on-accent);
   background: var(--accent);
-  background-clip: padding-box;
   border-color: transparent;
 }
 .queued-action.queued-send:hover,

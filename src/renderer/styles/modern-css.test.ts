@@ -212,33 +212,28 @@ describe('modern CSS adoptions', () => {
     )
   })
 
-  it('keeps the filled queued action the same visual size as the outlined ones', () => {
+  it('gives the outlined queued actions an edge that can be located', () => {
     const css = read('input-bar.css')
-    // Every chip in `.message-queued-actions` is already the same box, so no
-    // geometry assertion would have caught the bug this guards: "Send now" only
-    // *looked* a size larger than "Edit"/"Delete" because a saturated fill
-    // painted out to the border edge blooms, while a neutral chip reads as a
-    // hairline around a near-background fill. Clipping the fill to the padding
-    // box puts every chip's solid area in the same inner box. Chromium has no
-    // layout effect to observe here and happy-dom has no paint at all, so pin
-    // the declaration on the two filled variants.
-    // `.queued-send` (the editor row's primary) shares the `.queued-send-now`
-    // rule, so it is covered by the same declaration; `declares` scans for a
-    // selector followed by `{`, and `.queued-send` is only ever followed by a
-    // comma, so it cannot be asserted on directly.
+    // These chips have almost no fill contrast — `--bg-hover` sits within 1.1:1
+    // of the card behind them — so the border is the only thing marking where
+    // the button ends. At `--border` it measures 1.47:1 against the card in
+    // dark and 1.18:1 in light, faint enough that the eye cannot place the edge
+    // and reads the chip as smaller than it is; that is what made the filled
+    // "Send now" beside them look a size larger. happy-dom has no paint and the
+    // boxes are identical either way, so no geometry assertion catches this —
+    // pin the token instead.
+    assert.ok(
+      declares(css, '.queued-action', /border:\s*1px solid var\(--border-strong\)/),
+      '.queued-action must use --border-strong; --border leaves the chip edgeless against the card',
+    )
+    // The filled variants stay borderless on purpose: their fill already marks
+    // the edge, and giving them a rim too would double-draw it.
     for (const selector of ['.queued-action.queued-send-now', '.queued-action.queued-release']) {
       assert.ok(
-        declares(css, selector, /background-clip:\s*padding-box/),
-        `${selector} must clip its fill to the padding box so it does not read larger than the outlined chips beside it`,
+        declares(css, selector, /border-color:\s*transparent/),
+        `${selector} must keep a transparent border so its fill is the only edge`,
       )
     }
-    // The compensation is only sound while the boxes really are identical: it
-    // insets the fill by the border, so a filled chip that dropped the shared
-    // 1px border would shrink instead of matching.
-    assert.ok(
-      declares(css, '.queued-action', /border:\s*1px solid/),
-      '.queued-action must keep the 1px border the padding-box clip insets against',
-    )
   })
 
   it('auto-sizes the composer to its content', () => {
