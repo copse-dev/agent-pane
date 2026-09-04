@@ -270,8 +270,12 @@ export async function saveElementScreenshot(selector: string, filename: string):
  * frame is still the product's own rendering.
  *
  * Only text nodes are rewritten, only where `pattern` matches, so layout and
- * markup are untouched. Returns a restore function; call it once the capture is
- * saved so the spec keeps interacting with the real page.
+ * markup are untouched. The pin is re-applied whenever the page mutates under
+ * `selector` until it is restored: the projects pane rebuilds its rows on
+ * every store change, and a rebuild between the pin and the capture would
+ * otherwise bring the live text straight back. Returns a restore function;
+ * call it once the capture is saved so the spec keeps interacting with the
+ * real page.
  */
 export async function pinTextForCapture(
   selector: string,
@@ -280,22 +284,37 @@ export async function pinTextForCapture(
 ): Promise<() => Promise<void>> {
   const count = await browser.execute(
     (sel: string, source: string, flags: string, next: string) => {
-      const host = document.querySelector(sel)
-      if (!host) return 0
+      type Pin = { observer: MutationObserver; pinned: Map<Text, string> }
+      const win = window as unknown as { __copsePinnedText?: Pin }
       const re = new RegExp(source, flags)
-      const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
-      const pinned: { node: Text; text: string }[] = []
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        const text = node as Text
-        if (!re.test(text.data)) continue
-        pinned.push({ node: text, text: text.data })
-        text.data = text.data.replace(re, next)
+      const pinned = new Map<Text, string>()
+      const apply = (): number => {
+        const host = document.querySelector(sel)
+        if (!host) return 0
+        let applied = 0
+        const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const text = node as Text
+          const replaced = text.data.replace(re, next)
+          // Already pinned (or nothing to pin): leave it, or the observer
+          // would chase its own writes.
+          if (replaced === text.data) continue
+          if (!pinned.has(text)) pinned.set(text, text.data)
+          text.data = replaced
+          applied += 1
+        }
+        return applied
       }
-      const win = window as unknown as {
-        __copsePinnedText?: { node: Text; text: string }[]
-      }
-      win.__copsePinnedText = [...(win.__copsePinnedText ?? []), ...pinned]
-      return pinned.length
+      const first = apply()
+      const observer = new MutationObserver(() => {
+        observer.disconnect()
+        apply()
+        observer.observe(document.body, { subtree: true, childList: true, characterData: true })
+      })
+      observer.observe(document.body, { subtree: true, childList: true, characterData: true })
+      win.__copsePinnedText?.observer.disconnect()
+      win.__copsePinnedText = { observer, pinned }
+      return first
     },
     selector,
     pattern.source,
@@ -309,10 +328,13 @@ export async function pinTextForCapture(
   }
   return async () => {
     await browser.execute(() => {
-      const win = window as unknown as {
-        __copsePinnedText?: { node: Text; text: string }[]
-      }
-      for (const { node, text } of win.__copsePinnedText ?? []) node.data = text
+      type Pin = { observer: MutationObserver; pinned: Map<Text, string> }
+      const win = window as unknown as { __copsePinnedText?: Pin }
+      const pin = win.__copsePinnedText
+      if (!pin) return
+      pin.observer.disconnect()
+      // A node the page has since replaced already shows the live text.
+      for (const [node, text] of pin.pinned) if (node.isConnected) node.data = text
       delete win.__copsePinnedText
     })
   }
