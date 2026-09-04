@@ -9,6 +9,10 @@ const WORKSPACE_PACKAGES = [
   ['packages/extract-zip', 'extract-zip'],
   ['packages/llm', '@copse/llm'],
   ['packages/plan-usage', '@copse/plan-usage'],
+  ['packages/shell-guard', '@copse/shell-guard'],
+  ['packages/std', '@copse/std'],
+  ['packages/thread-store', '@copse/thread-store'],
+  ['packages/hooks-dialects', '@copse/hooks-dialects'],
 ] as const
 
 function field(source: unknown, name: string): unknown {
@@ -60,6 +64,55 @@ function packageName(specifier: string): string | null {
   return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : (segments[0] ?? specifier)
 }
 
+/**
+ * The `require('x')` calls that sit in code. A naive regex also matched the
+ * shell-command fixtures in `@copse/shell-guard`'s tests (`node -e
+ * "require('fs')…"`) and a doc comment quoting one, and reported them as
+ * undeclared dependencies. Strings, template literals, and comments are skipped;
+ * only a `require(` reached in code position yields its specifier.
+ */
+function codeRequires(source: string): string[] {
+  const specifiers: string[] = []
+  let i = 0
+  const skipQuoted = (quote: string): void => {
+    i++
+    while (i < source.length && source[i] !== quote) {
+      if (source[i] === '\\') {
+        i++
+      } else if (quote === '`' && source[i] === '$' && source[i + 1] === '{') {
+        // Template expressions may nest literals; skip to the matching brace.
+        let depth = 0
+        while (i < source.length) {
+          if (source[i] === '{') depth++
+          else if (source[i] === '}' && --depth === 0) break
+          i++
+        }
+      }
+      i++
+    }
+    i++
+  }
+  while (i < source.length) {
+    const ch = source[i] ?? ''
+    const next = source[i + 1] ?? ''
+    if (ch === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i++
+    } else if (ch === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2)
+      i = end === -1 ? source.length : end + 2
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      skipQuoted(ch)
+    } else if (source.startsWith('require(', i) && !/[\w$.]/.test(source[i - 1] ?? '')) {
+      const match = /^require\(\s*(['"])([^'"]+)\1\s*\)/.exec(source.slice(i))
+      if (match?.[2] !== undefined) specifiers.push(match[2])
+      i += 'require('.length
+    } else {
+      i++
+    }
+  }
+  return specifiers
+}
+
 function bareImports(directory: string): string[] {
   const imports = new Set<string>()
   for (const file of sourceFiles(directory)) {
@@ -84,9 +137,7 @@ function bareImports(directory: string): string[] {
       specifiers.push(specifier)
       declaration = ''
     }
-    for (const match of source.matchAll(/require\(['"]([^'"]+)['"]\)/g)) {
-      if (match[1] !== undefined) specifiers.push(match[1])
-    }
+    specifiers.push(...codeRequires(source))
     for (const specifier of specifiers) {
       const name = packageName(specifier)
       if (name !== null) imports.add(name)
@@ -170,12 +221,15 @@ describe('workspace package manifests', () => {
 describe('workspace package resolution', () => {
   it('has no tsconfig or esbuild source aliases for workspace packages', () => {
     for (const file of ['tsconfig.json', 'tsconfig.node.json', 'tsconfig.web.json']) {
-      assert.doesNotMatch(readFileSync(resolve(file), 'utf8'), /"@copse\/(?:agent|llm|plan-usage)/)
+      assert.doesNotMatch(
+        readFileSync(resolve(file), 'utf8'),
+        /"@copse\/(?:agent|hooks-dialects|llm|plan-usage|shell-guard|std|thread-store)/,
+      )
     }
     for (const file of sourceFiles('scripts')) {
       assert.doesNotMatch(
         readFileSync(file, 'utf8'),
-        /['"]@copse\/(?:agent|llm|plan-usage)['"]\s*:\s*(?:resolve|new URL)/,
+        /['"]@copse\/(?:agent|hooks-dialects|llm|plan-usage|shell-guard|std|thread-store)['"]\s*:\s*(?:resolve|new URL)/,
         `${file} must resolve workspace packages through their manifests`,
       )
     }
@@ -185,7 +239,7 @@ describe('workspace package resolution', () => {
     for (const file of sourceFiles('scripts')) {
       assert.doesNotMatch(
         readFileSync(file, 'utf8'),
-        /from ['"][^'"]*packages\/(?:agent|llm|plan-usage)\/src\//,
+        /from ['"][^'"]*packages\/(?:agent|hooks-dialects|llm|plan-usage|shell-guard|std|thread-store)\/src\//,
         `${file} bypasses a workspace package boundary`,
       )
     }

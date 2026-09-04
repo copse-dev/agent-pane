@@ -36,9 +36,13 @@
     "src/shared/**/*",
     "scripts/**/*",
     "packages/agent/src/**/*",
+    "packages/hooks-dialects/src/**/*",
     "packages/extract-zip/**/*",
     "packages/llm/src/**/*",
-    "packages/plan-usage/src/**/*"
+    "packages/plan-usage/src/**/*",
+    "packages/shell-guard/src/**/*",
+    "packages/std/src/**/*",
+    "packages/thread-store/src/**/*"
   ],
   "exclude": ["src/sidecar/ws-bridge"]
 }

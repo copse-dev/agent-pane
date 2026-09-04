@@ -1,0 +1,19 @@
+{
+  "name": "@copse/thread-store",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Copse's filesystem-native thread store and its on-disk format: the append-only spine, OKF message files, fold/explode, decision log, thread and message types, and the per-project store API",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*.ts": "./src/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@copse/agent": "workspace:*",
+    "@copse/llm": "workspace:*",
+    "@copse/std": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}

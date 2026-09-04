@@ -90,8 +90,16 @@ Update this document and the Guarded YOLO / harm / read-outside tests with any i
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
-- `shell-scope.ts`: static `sandbox` / `ambiguous` / `external` analysis and human-readable reasons.
-- `read-outside-project.ts` and `read-outside-grant.ts`: read-shape proof, refusals, and thread grant.
+- `@copse/shell-guard` (`packages/shell-guard/`): the deterministic classifiers, host-free.
+  `shell-argv.ts` (lexing, wrapper unwrapping, read-only tables), `shell-scope.ts` (static
+  `sandbox` / `ambiguous` / `external` analysis and human-readable reasons), `shell-harm.ts`
+  (the Guarded YOLO harm gate), `read-outside-project.ts` (read-shape proof and refusals),
+  `gh-argv.ts` (GitHub CLI shapes), `command-routing.ts` (trusted-command routing). The
+  `src/main/services/security/` files of the same names re-export them and bind the two facts
+  only the app knows through `shell-guard-environment.ts`: the read-only chat-store mount and
+  the scratch directories configured ACP agents declare.
+- `read-outside-grant.ts`: the thread-scoped read grant; the approval-prompt copy for it stays in
+  `read-outside-project.ts` beside the other prompt formatters.
 - `safety-classifier.ts`: optional LM Studio classifier used only when the OS sandbox is unavailable.
 - `auto-approval.ts` / `auto-approval-config.ts`: deterministic shape allow-list; honoured only
   while the project sandbox is active, auto-run is on, and the workspace is trusted. Write tiers
