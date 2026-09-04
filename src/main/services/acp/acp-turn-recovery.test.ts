@@ -88,6 +88,12 @@ describe('ACP unfinished-turn recovery', () => {
 })
 
 describe('ACP in-flight tool calls (#2332)', () => {
+  it('warns that an interrupted call may already have produced effects', () => {
+    assert.match(ACP_CANCELLED_TOOL_CALL_RESULT, /may have partially run or produced effects/)
+    assert.match(ACP_CANCELLED_TOOL_CALL_RESULT, /inspect the current state before retrying/)
+    assert.doesNotMatch(ACP_CANCELLED_TOOL_CALL_RESULT, /did not run|has not happened/)
+  })
+
   it('opens on a tool_call and settles on its result', () => {
     assert.deepEqual(acpToolCallLifecycle(TOOL_CALL), { toolCallId: 'search', state: 'open' })
     assert.deepEqual(

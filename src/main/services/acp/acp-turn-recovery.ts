@@ -24,10 +24,10 @@ export const ACP_UNFINISHED_TURN_FALLBACK =
  * that never stops, and one the agent stamps `completed` — some emit a terminal
  * `tool_call_update` carrying the call's own description where its output should
  * be — reads as a command that ran and printed nothing. Both invite the model to
- * build on work that never happened.
+ * build on an outcome the host cannot actually know.
  */
 export const ACP_CANCELLED_TOOL_CALL_RESULT =
-  'Cancelled before it completed — this tool call did not run, and produced no output. Any effect it would have had has not happened.'
+  'Interrupted before completion — no final output was received. This tool may have partially run or produced effects; inspect the current state before retrying it.'
 
 /**
  * What a turn produced, as opposed to what it happened to end on.

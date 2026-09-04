@@ -27,6 +27,7 @@ import {
   type SpineHookRunLine,
 } from '../../../src/shared/threads/spine-schema.ts'
 import { copseDataRoot, copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
+import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/acp-turn-recovery.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -2356,8 +2357,8 @@ export function seedAcpUnfinishedTurnFixture(workspaceRoot: string): void {
                 id: 'tc-acp-upstream-search',
                 name: 'run_shell',
                 args: { command: 'rg "WebDriver BiDi" docs/' },
-                status: 'done',
-                result: 'docs/adr/selenium.md:WebDriver BiDi migration notes',
+                status: 'error',
+                result: ACP_CANCELLED_TOOL_CALL_RESULT,
                 kind: 'search',
               },
             ],
