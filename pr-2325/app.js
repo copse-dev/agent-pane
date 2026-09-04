@@ -97,7 +97,7 @@ var init_model_catalog_generated = __esm({
         cacheReadPricePerMTok: 0.3,
         cacheCreationPricePerMTok: 3.75,
         contextWindow: 1e6,
-        maxOutputTokens: 64e3
+        maxOutputTokens: 128e3
       },
       "claude-sonnet-5": {
         inputPricePerMTok: 2,
@@ -154,15 +154,15 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 1.2,
         cacheReadPricePerMTok: 0.02,
         cacheCreationPricePerMTok: 0.25,
-        contextWindow: 105e4,
+        contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
       "gpt-5.6-sol": {
-        inputPricePerMTok: 5,
-        outputPricePerMTok: 30,
-        cacheReadPricePerMTok: 0.5,
-        cacheCreationPricePerMTok: 6.25,
-        contextWindow: 105e4,
+        inputPricePerMTok: 4,
+        outputPricePerMTok: 20,
+        cacheReadPricePerMTok: 0.4,
+        cacheCreationPricePerMTok: 5,
+        contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
       "gpt-5.6-terra": {
@@ -170,7 +170,15 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 12,
         cacheReadPricePerMTok: 0.2,
         cacheCreationPricePerMTok: 2.5,
-        contextWindow: 105e4,
+        contextWindow: 922e3,
+        maxOutputTokens: 128e3
+      },
+      "gpt-6-astra": {
+        inputPricePerMTok: 10,
+        outputPricePerMTok: 50,
+        cacheReadPricePerMTok: 1,
+        cacheCreationPricePerMTok: 12.5,
+        contextWindow: 922e3,
         maxOutputTokens: 128e3
       }
     };
@@ -462,6 +470,7 @@ var init_model_catalog = __esm({
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-6-astra",
       "gpt-5.5",
       "gpt-5",
       "gpt-5-mini",
@@ -480,6 +489,7 @@ var init_model_catalog = __esm({
       "gpt-5.6-sol": "GPT-5.6 Sol",
       "gpt-5.6-terra": "GPT-5.6 Terra",
       "gpt-5.6-luna": "GPT-5.6 Luna",
+      "gpt-6-astra": "GPT-6 Astra",
       "gpt-5.5": "GPT-5.5",
       "gpt-5": "GPT-5",
       "gpt-5-mini": "GPT-5 mini",
@@ -530,6 +540,15 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
+  if (matchesFamily(modelId, OPENAI_ASTRA_PREFIXES)) {
+    return {
+      reasoning: OPENAI_ASTRA_LADDER,
+      reasoningWire: "openai-effort",
+      sampling: [],
+      outputCap: false,
+      temperatureMax: 2
+    };
+  }
   if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
@@ -653,7 +672,7 @@ function decodeModelParametersMap(value2) {
   }
   return out;
 }
-var REASONING_LEVELS, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_ASTRA_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_ASTRA_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
@@ -703,6 +722,7 @@ var init_model_parameters = __esm({
       "claude-mythos-preview"
     ];
     OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
+    OPENAI_ASTRA_PREFIXES = ["gpt-6-astra"];
     FULL_EFFORT_LADDER = [
       "off",
       "low",
@@ -714,6 +734,7 @@ var init_model_parameters = __esm({
     CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
     BUDGET_LADDER = ["off", "low", "medium", "high"];
     OPENAI_LADDER = ["minimal", "low", "medium", "high"];
+    OPENAI_ASTRA_LADDER = ["low", "medium", "high", "xhigh", "max"];
     OPENAI_COMPATIBLE_LADDER = [
       "off",
       "minimal",
@@ -15895,12 +15916,69 @@ var init_zod = __esm({
   }
 });
 
-// packages/agent/src/internal-utils.ts
+// packages/std/src/unknown-value.ts
 function isRecord(value2) {
   return typeof value2 === "object" && value2 !== null && !Array.isArray(value2);
 }
-var init_internal_utils = __esm({
-  "packages/agent/src/internal-utils.ts"() {
+function expectRecord(value2, label = "value") {
+  if (!isRecord(value2)) throw new TypeError(`${label} must be an object`);
+  return value2;
+}
+function recordArrayOrEmpty(value2) {
+  return Array.isArray(value2) ? value2.filter(isRecord) : [];
+}
+function expectString(value2, label = "value") {
+  if (typeof value2 !== "string") throw new TypeError(`${label} must be a string`);
+  return value2;
+}
+function expectNumber(value2, label = "value") {
+  if (typeof value2 !== "number") throw new TypeError(`${label} must be a number`);
+  return value2;
+}
+function expectBoolean(value2, label = "value") {
+  if (typeof value2 !== "boolean") throw new TypeError(`${label} must be a boolean`);
+  return value2;
+}
+function expectStringArray(value2, label = "value") {
+  if (!Array.isArray(value2) || !value2.every((item) => typeof item === "string")) {
+    throw new TypeError(`${label} must be an array of strings`);
+  }
+  return value2;
+}
+function stringRecordOrEmpty(value2) {
+  if (!isRecord(value2)) return {};
+  const result = {};
+  for (const [key, entry] of Object.entries(value2)) {
+    if (typeof entry === "string") result[key] = entry;
+  }
+  return result;
+}
+function optionalString(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectString(value2, label);
+}
+function optionalBoolean(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectBoolean(value2, label);
+}
+function optionalNumber(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectNumber(value2, label);
+}
+function optionalStringArray(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectStringArray(value2, label);
+}
+function firstNonEmptyString(...values3) {
+  return values3.find(
+    (value2) => value2 !== void 0 && value2 !== null && value2 !== ""
+  );
+}
+function nonEmptyStringOr(value2, fallback) {
+  return firstNonEmptyString(value2, fallback) ?? fallback;
+}
+var init_unknown_value = __esm({
+  "packages/std/src/unknown-value.ts"() {
   }
 });
 
@@ -15949,7 +16027,7 @@ var init_parse_agent_run_payload = __esm({
   "packages/agent/src/parse-agent-run-payload.ts"() {
     init_model_parameters();
     init_zod();
-    init_internal_utils();
+    init_unknown_value();
     userContentSchema = external_exports.union([
       external_exports.string(),
       external_exports.array(
@@ -16078,7 +16156,7 @@ var init_active_thread_owner = __esm({
   }
 });
 
-// src/shared/array-utils.ts
+// packages/std/src/array-utils.ts
 function at(array5, index) {
   const value2 = array5[index];
   if (value2 === void 0) {
@@ -16087,14 +16165,43 @@ function at(array5, index) {
   return value2;
 }
 var init_array_utils = __esm({
+  "packages/std/src/array-utils.ts"() {
+  }
+});
+
+// src/shared/array-utils.ts
+var init_array_utils2 = __esm({
   "src/shared/array-utils.ts"() {
+    init_array_utils();
+  }
+});
+
+// packages/thread-store/src/thread-sort.ts
+function isHumanUserPrompt(message2) {
+  return message2.role === "user" && (message2.origin === void 0 || message2.editedByUser === true);
+}
+function lastHumanPromptAt(thread) {
+  if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
+  for (let i4 = thread.messages.length - 1; i4 >= 0; i4--) {
+    const message2 = thread.messages[i4];
+    if (message2 !== void 0 && isHumanUserPrompt(message2)) return message2.createdAt;
+  }
+  return void 0;
+}
+function threadSortKey(thread) {
+  return lastHumanPromptAt(thread) ?? thread.createdAt;
+}
+function sortThreadsNewestFirst(threads) {
+  return [...threads].sort(
+    (a3, b5) => threadSortKey(b5) - threadSortKey(a3) || b5.createdAt - a3.createdAt
+  );
+}
+var init_thread_sort = __esm({
+  "packages/thread-store/src/thread-sort.ts"() {
   }
 });
 
 // src/shared/store/thread-helpers.ts
-function sortThreadsNewestFirst(threads) {
-  return [...threads].sort((a3, b5) => b5.createdAt - a3.createdAt);
-}
 function getThreadById(store3, id39) {
   if (!id39) return void 0;
   const { threads, backgroundThreads } = store3.getState();
@@ -16347,6 +16454,9 @@ function addMessage(store3, threadId, role, content = "", images, attachments, o
   patchThreadAnywhere(store3, threadId, (t4) => ({
     ...t4,
     messages: [...t4.messages, message2],
+    // The sidebar sorts on this and never reads transcripts, so it has to be
+    // recorded as the prompt lands rather than derived at display time.
+    ...isHumanUserPrompt(message2) ? { lastPromptAt: message2.createdAt } : {},
     updatedAt: Date.now()
   }));
   store3.emit("message_added", threadId, id39);
@@ -16656,7 +16766,9 @@ function applyPreparedThreadCheckout(store3, threadId, prepared) {
 var randomUUID, messageIndexByStore;
 var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
-    init_array_utils();
+    init_array_utils2();
+    init_thread_sort();
+    init_thread_sort();
     randomUUID = () => globalThis.crypto.randomUUID();
     messageIndexByStore = /* @__PURE__ */ new WeakMap();
   }
@@ -16714,75 +16826,16 @@ var init_background_threads = __esm({
 });
 
 // src/shared/unknown-value.mts
-function isRecord2(value2) {
-  return typeof value2 === "object" && value2 !== null && !Array.isArray(value2);
-}
-function expectRecord(value2, label = "value") {
-  if (!isRecord2(value2)) throw new TypeError(`${label} must be an object`);
-  return value2;
-}
-function recordArrayOrEmpty(value2) {
-  return Array.isArray(value2) ? value2.filter(isRecord2) : [];
-}
-function expectString(value2, label = "value") {
-  if (typeof value2 !== "string") throw new TypeError(`${label} must be a string`);
-  return value2;
-}
-function expectNumber(value2, label = "value") {
-  if (typeof value2 !== "number") throw new TypeError(`${label} must be a number`);
-  return value2;
-}
-function expectBoolean(value2, label = "value") {
-  if (typeof value2 !== "boolean") throw new TypeError(`${label} must be a boolean`);
-  return value2;
-}
-function expectStringArray(value2, label = "value") {
-  if (!Array.isArray(value2) || !value2.every((item) => typeof item === "string")) {
-    throw new TypeError(`${label} must be an array of strings`);
-  }
-  return value2;
-}
-function stringRecordOrEmpty(value2) {
-  if (!isRecord2(value2)) return {};
-  const result = {};
-  for (const [key, entry] of Object.entries(value2)) {
-    if (typeof entry === "string") result[key] = entry;
-  }
-  return result;
-}
-function optionalString(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectString(value2, label);
-}
-function optionalBoolean(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectBoolean(value2, label);
-}
-function optionalNumber(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectNumber(value2, label);
-}
-function optionalStringArray(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectStringArray(value2, label);
-}
-function firstNonEmptyString(...values3) {
-  return values3.find(
-    (value2) => value2 !== void 0 && value2 !== null && value2 !== ""
-  );
-}
-function nonEmptyStringOr(value2, fallback) {
-  return firstNonEmptyString(value2, fallback) ?? fallback;
-}
-var init_unknown_value = __esm({
+var init_unknown_value2 = __esm({
   "src/shared/unknown-value.mts"() {
+    init_unknown_value();
   }
 });
 
 // src/shared/unknown-value.ts
-var init_unknown_value2 = __esm({
+var init_unknown_value3 = __esm({
   "src/shared/unknown-value.ts"() {
-    init_unknown_value();
+    init_unknown_value2();
   }
 });
 
@@ -17100,7 +17153,7 @@ var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
     init_background_threads();
-    init_unknown_value2();
+    init_unknown_value3();
     KEY_PROJECTS = "projects";
     KEY_PROJECT_GROUPS = "projectGroups";
     writeChains = /* @__PURE__ */ new Map();
@@ -17138,7 +17191,7 @@ function getToolDisplayName(name, tense = "done") {
   return formatToolNameFallback(name);
 }
 function stringArg(args, key) {
-  if (!isRecord2(args)) return null;
+  if (!isRecord(args)) return null;
   const value2 = args[key];
   return typeof value2 === "string" && value2.length > 0 ? value2 : null;
 }
@@ -17159,7 +17212,7 @@ function shellCommandLabel(command) {
   return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}\u2026`;
 }
 function shellCommandArg(args) {
-  if (!isRecord2(args)) return null;
+  if (!isRecord(args)) return null;
   const command = args["command"];
   return typeof command === "string" && command.trim() ? command : null;
 }
@@ -17331,7 +17384,7 @@ function buildToolCallDisplayItems(toolCalls, opts) {
 var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
       read_file: { running: "Reading file", done: "Read file" },
@@ -17505,7 +17558,7 @@ function formatTodoProgress(todos) {
 }
 var init_todo_logic = __esm({
   "src/shared/todos/todo-logic.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     init_todo_steering();
   }
 });
@@ -17699,7 +17752,13 @@ function attachThreadHydration(store3, api3) {
           if (t4.id !== threadId) return t4;
           const diskIds = new Set(messages.map((m3) => m3.id));
           const streamedMeanwhile = t4.messages.filter((m3) => !diskIds.has(m3.id));
-          return { ...t4, messages: [...messages, ...streamedMeanwhile], messagesLoaded: true };
+          const hydrated = {
+            ...t4,
+            messages: [...messages, ...streamedMeanwhile],
+            messagesLoaded: true
+          };
+          const promptedAt = lastHumanPromptAt(hydrated);
+          return promptedAt === void 0 ? hydrated : { ...hydrated, lastPromptAt: promptedAt };
         })
       });
       touch(threadId);
@@ -17775,6 +17834,7 @@ var HYDRATED_THREAD_BUDGET, activeHydrator, failedThreadIds;
 var init_thread_hydration = __esm({
   "src/renderer/controller/thread-hydration.ts"() {
     init_perf();
+    init_thread_helpers();
     init_artefact_previews();
     HYDRATED_THREAD_BUDGET = 8;
     activeHydrator = null;
@@ -18225,7 +18285,7 @@ var init_toast = __esm({
   }
 });
 
-// src/shared/git/github-pr-url.ts
+// packages/thread-store/src/github-pr-url.ts
 function parseGithubPrUrl(rawUrl) {
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;
@@ -18247,11 +18307,18 @@ function parseGithubPrUrl(rawUrl) {
     return null;
   }
 }
+function stripUrlTrailingPunctuation(url2) {
+  return url2.replace(URL_TRAILING_PUNCTUATION_RE, "");
+}
+function githubPrKeyMatchesTerm(key, term) {
+  const digits = /^#?(\d+)$/.exec(term)?.[1];
+  return digits === void 0 ? key.includes(term) : key.endsWith(`#${digits}`);
+}
 function extractGithubPrUrls(text4) {
   const seen = /* @__PURE__ */ new Set();
   const refs = [];
   for (const match3 of text4.matchAll(GITHUB_PR_URL_RE)) {
-    const raw = match3[0].replace(URL_TRAILING_PUNCTUATION_RE, "");
+    const raw = stripUrlTrailingPunctuation(match3[0]);
     const parsed2 = parseGithubPrUrl(raw);
     if (!parsed2) continue;
     const key = githubPrKey(parsed2);
@@ -18269,14 +18336,21 @@ function githubPrKey(ref) {
 }
 var GITHUB_PR_PATH_RE, GITHUB_PR_URL_RE, URL_TRAILING_PUNCTUATION_RE;
 var init_github_pr_url = __esm({
-  "src/shared/git/github-pr-url.ts"() {
+  "packages/thread-store/src/github-pr-url.ts"() {
     GITHUB_PR_PATH_RE = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/[^?#]*)?$/i;
     GITHUB_PR_URL_RE = /https?:\/\/(?:www\.)?github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+(?:[^\s)\]>]*)/gi;
     URL_TRAILING_PUNCTUATION_RE = /[.,;:)\]>*_~`'"]+$/;
   }
 });
 
-// src/shared/git/thread-pr-status.ts
+// src/shared/git/github-pr-url.ts
+var init_github_pr_url2 = __esm({
+  "src/shared/git/github-pr-url.ts"() {
+    init_github_pr_url();
+  }
+});
+
+// packages/thread-store/src/thread-pr-status.ts
 function collectThreadPrRefs(thread) {
   const seen = /* @__PURE__ */ new Set();
   const refs = [];
@@ -18344,8 +18418,15 @@ function describeThreadPrStatus(rollup) {
   return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
 }
 var init_thread_pr_status = __esm({
-  "src/shared/git/thread-pr-status.ts"() {
+  "packages/thread-store/src/thread-pr-status.ts"() {
     init_github_pr_url();
+  }
+});
+
+// src/shared/git/thread-pr-status.ts
+var init_thread_pr_status2 = __esm({
+  "src/shared/git/thread-pr-status.ts"() {
+    init_thread_pr_status();
   }
 });
 
@@ -18376,8 +18457,8 @@ function compactSidebarThread(thread) {
 }
 var init_sidebar_thread = __esm({
   "src/renderer/controller/sidebar-thread.ts"() {
-    init_github_pr_url();
-    init_thread_pr_status();
+    init_github_pr_url2();
+    init_thread_pr_status2();
   }
 });
 
@@ -18641,7 +18722,7 @@ function parseSshHostDraft(draft) {
 var SSH_HOST_ID_RE;
 var init_ssh_host_helpers = __esm({
   "src/renderer/views/setup/ssh-host-helpers.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     SSH_HOST_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
   }
 });
@@ -21092,7 +21173,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-light-accent-request",
             title: "Run outside sandbox?",
             body: "npm install",
-            bodyAdvice: "This command needs access the project sandbox blocks.",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Installs or updates packages, which downloads and runs code from the internet",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -21123,7 +21204,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-oracle",
             title: "Run outside sandbox?",
             body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
-            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
@@ -21131,7 +21212,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-syntax",
             title: "Run outside sandbox?",
             body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
-            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
@@ -21139,7 +21220,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-test",
             title: "Run outside sandbox?",
             body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
-            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -21331,7 +21412,7 @@ function providerSlug(model) {
   return void 0;
 }
 function stringArg2(args, key) {
-  if (!isRecord2(args)) return void 0;
+  if (!isRecord(args)) return void 0;
   const value2 = args[key];
   return typeof value2 === "string" ? value2 : void 0;
 }
@@ -21443,6 +21524,7 @@ function createDemoApi(scenario, options2 = {}) {
       onOpenTab: subscribe,
       sharePageText: unsupported,
       shareScreenshot: unsupported,
+      exportPdf: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe
@@ -21650,6 +21732,8 @@ This response is streamed through the real renderer event path.`
       loadMessages: (_projectId, threadId) => scenario.holdThreadHydration === true ? new Promise(() => void 0) : scenario.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t4) => t4.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
       onPrRefs: () => () => void 0,
+      // No demo scenario opens a real PR, so nothing ever announces one.
+      onPrCreated: () => () => void 0,
       create: (_projectId, thread) => {
         threads = [thread, ...threads.filter((candidate) => candidate.id !== thread.id)];
         return resolvedVoid();
@@ -22098,7 +22182,7 @@ var init_demo_api = __esm({
     init_trace_player();
     init_token_estimate();
     init_files();
-    init_unknown_value2();
+    init_unknown_value3();
     init_demo_scenarios();
     init_icons();
     DEMO_MODEL = "mock:demo";
@@ -22368,9 +22452,16 @@ var init_todo = __esm({
   }
 });
 
+// packages/thread-store/src/thread-types.ts
+var init_thread_types = __esm({
+  "packages/thread-store/src/thread-types.ts"() {
+  }
+});
+
 // src/shared/types/thread.ts
 var init_thread = __esm({
   "src/shared/types/thread.ts"() {
+    init_thread_types();
   }
 });
 
@@ -22380,9 +22471,16 @@ var init_stream = __esm({
   }
 });
 
-// src/shared/types/turn-outcome.ts
+// packages/thread-store/src/turn-outcome.ts
 var init_turn_outcome = __esm({
+  "packages/thread-store/src/turn-outcome.ts"() {
+  }
+});
+
+// src/shared/types/turn-outcome.ts
+var init_turn_outcome2 = __esm({
   "src/shared/types/turn-outcome.ts"() {
+    init_turn_outcome();
   }
 });
 
@@ -22468,9 +22566,16 @@ var init_git = __esm({
   }
 });
 
+// packages/plugin-sdk/src/mcp-types.ts
+var init_mcp_types = __esm({
+  "packages/plugin-sdk/src/mcp-types.ts"() {
+  }
+});
+
 // src/shared/types/mcp.ts
 var init_mcp = __esm({
   "src/shared/types/mcp.ts"() {
+    init_mcp_types();
   }
 });
 
@@ -22480,9 +22585,16 @@ var init_usage = __esm({
   }
 });
 
+// packages/thread-store/src/worktree-types.ts
+var init_worktree_types = __esm({
+  "packages/thread-store/src/worktree-types.ts"() {
+  }
+});
+
 // src/shared/types/worktree.ts
 var init_worktree = __esm({
   "src/shared/types/worktree.ts"() {
+    init_worktree_types();
   }
 });
 
@@ -22504,7 +22616,7 @@ var init_types = __esm({
     init_todo();
     init_thread();
     init_stream();
-    init_turn_outcome();
+    init_turn_outcome2();
     init_llm();
     init_layout();
     init_state();
@@ -23869,12 +23981,19 @@ var init_rename_blur = __esm({
   }
 });
 
-// src/shared/errors.ts
+// packages/std/src/errors.ts
 function errorMessage(err2) {
   return err2 instanceof Error ? err2.message : String(err2);
 }
 var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
+  }
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
   "src/shared/errors.ts"() {
+    init_errors3();
   }
 });
 
@@ -24292,7 +24411,7 @@ var DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS, BEST_VALUE_CHAT_MODEL, BEST_VALU
 var init_lm_studio_defaults = __esm({
   "src/shared/lm-studio-defaults.ts"() {
     init_dynamic_model();
-    init_unknown_value2();
+    init_unknown_value3();
     DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234/v1";
     LM_STUDIO_MODEL_IDS = {
       chat: "qwen/qwen3.6-35b-a3b",
@@ -24316,10 +24435,19 @@ var init_managed_agents = __esm({
   }
 });
 
-// src/shared/remote-agent.ts
+// packages/thread-store/src/remote-agent-provider.ts
 function isRemoteAgentProvider(value2) {
   return value2 === REMOTE_AGENT_PROVIDER_CURSOR || value2 === REMOTE_AGENT_PROVIDER_ANTHROPIC;
 }
+var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC;
+var init_remote_agent_provider = __esm({
+  "packages/thread-store/src/remote-agent-provider.ts"() {
+    REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
+    REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
+  }
+});
+
+// src/shared/remote-agent.ts
 function remoteAgentModelValue(provider, model) {
   return model ? `${REMOTE_AGENT_MODEL_PREFIX}${provider}${REMOTE_AGENT_MODEL_SEP}${model}` : `${REMOTE_AGENT_MODEL_PREFIX}${provider}`;
 }
@@ -24341,7 +24469,7 @@ function remoteAgentDisplayLabel(model, catalog = []) {
   const catalogLabel = catalog.find((entry) => entry.id === selection3.model)?.label;
   return `${title2} \u2014 ${catalogLabel ?? cloudModelDisplayLabel(selection3.model)}`;
 }
-var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
+var CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
 var init_remote_agent = __esm({
   "src/shared/remote-agent.ts"() {
     init_reserved_prefixes();
@@ -24349,9 +24477,9 @@ var init_remote_agent = __esm({
     init_model_selection();
     init_model_catalog();
     init_managed_agents();
-    init_unknown_value2();
-    REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
-    REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
+    init_unknown_value3();
+    init_remote_agent_provider();
+    init_remote_agent_provider();
     CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
     REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
     REMOTE_AGENT_MODELS = [
@@ -24648,7 +24776,7 @@ function parseAcpAgentConfigs(value2) {
     if (Array.isArray(entry["args"]) && entry["args"].every((arg) => typeof arg === "string")) {
       agent.args = entry["args"];
     }
-    if (isRecord2(entry["env"])) agent.env = stringRecordOrEmpty(entry["env"]);
+    if (isRecord(entry["env"])) agent.env = stringRecordOrEmpty(entry["env"]);
     if (typeof entry["model"] === "string") agent.model = entry["model"];
     if (Array.isArray(entry["availableModels"])) {
       agent.availableModels = parseChoices(entry["availableModels"], true);
@@ -24658,7 +24786,7 @@ function parseAcpAgentConfigs(value2) {
     if (Array.isArray(entry["availablePermissionModes"])) {
       agent.availablePermissionModes = parseChoices(entry["availablePermissionModes"], true);
     }
-    if (isRecord2(entry["configOptions"])) {
+    if (isRecord(entry["configOptions"])) {
       agent.configOptions = stringRecordOrEmpty(entry["configOptions"]);
     }
     if (Array.isArray(entry["availableConfigOptions"])) {
@@ -24667,7 +24795,7 @@ function parseAcpAgentConfigs(value2) {
     const sandbox = entry["sandbox"];
     if (sandbox === false) {
       agent.sandbox = false;
-    } else if (isRecord2(sandbox) && Array.isArray(sandbox["allowedDomains"]) && sandbox["allowedDomains"].every((domain2) => typeof domain2 === "string")) {
+    } else if (isRecord(sandbox) && Array.isArray(sandbox["allowedDomains"]) && sandbox["allowedDomains"].every((domain2) => typeof domain2 === "string")) {
       agent.sandbox = { allowedDomains: sandbox["allowedDomains"] };
       if (Array.isArray(sandbox["homeDirs"]) && sandbox["homeDirs"].every((dir2) => typeof dir2 === "string")) {
         agent.sandbox.homeDirs = sandbox["homeDirs"];
@@ -24736,7 +24864,7 @@ var KNOWN_CONFIG_CATEGORIES, CLAUDE_ACP_COMMANDS, CODEX_ACP_COMMANDS;
 var init_acp = __esm({
   "src/shared/acp.ts"() {
     init_acp_known_agents();
-    init_unknown_value();
+    init_unknown_value2();
     init_reserved_prefixes();
     init_reserved_prefixes();
     init_model_selection();
@@ -29867,6 +29995,7 @@ var init_model_intellect_generated = __esm({
       "deepseek-coder-v2-lite": "deepseek/deepseek-coder-v2-lite",
       "deepseek-coder-v2-lite-instruct": "deepseek/deepseek-coder-v2-lite",
       "Fable 5": "claude-fable-5",
+      "gemini-2.0-flash-lite": "gemini-2-0-flash-lite-001",
       "Gemma 3 12B": "google/gemma-3-12b",
       "Gemma 4 E4B": "google/gemma-4-e4b",
       "gemma-3-12b": "google/gemma-3-12b",
@@ -30509,7 +30638,7 @@ var init_provider_metadata = __esm({
           envVar: "GEMINI_API_KEY",
           keyLabel: "Google Gemini API key",
           keyPlaceholder: "AIza\u2026",
-          keyHint: "For Gemini Flash models on the free tier (rate-limited, no card). Get a key at aistudio.google.com.",
+          keyHint: "For Gemini Flash models on the free tier (rate-limited, with official model cards). Get a key at aistudio.google.com.",
           keyPrefix: "AIza",
           fallbackContextWindow: 1048576,
           includeUsage: true,
@@ -32134,6 +32263,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
   const cloudGroup = "Cloud models";
   for (const [value2, label, provider] of CLOUD_MODELS) {
     if (!isAvailable(provider)) continue;
+    if (value2 === "gpt-6-astra" && !isAvailable("openai:gpt-6-astra")) continue;
     const hint = cloudModelIntellectHint(value2);
     options2.push({
       value: value2,
@@ -33956,7 +34086,7 @@ var init_custom_providers_section = __esm({
     init_icons();
     init_inline_status();
     init_confirm_dialog();
-    init_unknown_value2();
+    init_unknown_value3();
     FIXED_PROVIDERS = [
       {
         id: "openai",
@@ -35055,7 +35185,7 @@ function lowContextAdvice(contextWindow, opts = {}) {
 var RECOMMENDED_MIN_CONTEXT_WINDOW, VRAM_CALCULATOR_URL, LM_STUDIO_CONTEXT_GUIDE_URL, CONTEXT_NEARLY_FULL_RATIO;
 var init_context_window_advice = __esm({
   "src/shared/context-window-advice.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     RECOMMENDED_MIN_CONTEXT_WINDOW = 16384;
     VRAM_CALCULATOR_URL = "https://apxml.com/tools/vram-calculator";
     LM_STUDIO_CONTEXT_GUIDE_URL = "https://github.com/copse-dev/agent-pane/blob/main/docs/lm-studio-context-persistence.md";
@@ -35414,7 +35544,7 @@ var init_lm_studio_section = __esm({
     init_lm_studio_defaults();
     init_helpers();
     init_inline_status();
-    init_unknown_value2();
+    init_unknown_value3();
   }
 });
 
@@ -43380,7 +43510,7 @@ var BACKEND_OPTIONS;
 var init_gh_cli_section = __esm({
   "src/renderer/views/setup/gh-cli-section.ts"() {
     init_dist();
-    init_errors3();
+    init_errors4();
     init_helpers();
     init_ui();
     BACKEND_OPTIONS = [
@@ -43542,12 +43672,12 @@ function canonicalRoleSelection(value2) {
 var init_model_routing_section = __esm({
   "src/renderer/views/setup/model-routing-section.ts"() {
     init_preferred_models();
-    init_array_utils();
+    init_array_utils2();
     init_lm_studio_defaults();
     init_model_options();
     init_model_picker();
     init_helpers();
-    init_unknown_value2();
+    init_unknown_value3();
     init_ui();
   }
 });
@@ -47256,7 +47386,7 @@ var init_parallel_search_plugin_settings = __esm({
   }
 });
 
-// src/shared/command-routing.ts
+// packages/shell-guard/src/trusted-commands.ts
 function isValidTrustedCommand(name) {
   return VALID_COMMAND.test(name);
 }
@@ -47290,10 +47420,17 @@ function sanitizeTrustedCommands(value2) {
   return out;
 }
 var TRUSTED_COMMANDS_SETTING, VALID_COMMAND;
-var init_command_routing = __esm({
-  "src/shared/command-routing.ts"() {
+var init_trusted_commands = __esm({
+  "packages/shell-guard/src/trusted-commands.ts"() {
     TRUSTED_COMMANDS_SETTING = "trustedShellCommands";
     VALID_COMMAND = /^[A-Za-z0-9._+-]+$/;
+  }
+});
+
+// src/shared/command-routing.ts
+var init_command_routing = __esm({
+  "src/shared/command-routing.ts"() {
+    init_trusted_commands();
   }
 });
 
@@ -50589,7 +50726,7 @@ function mountSettingsDialog(store3, api3) {
 var PLUGIN_NAME_ACRONYMS, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingPluginDetail;
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
-    init_errors3();
+    init_errors4();
     init_auto_approval();
     init_state();
     init_dialog_shell();
@@ -50627,7 +50764,7 @@ var init_settings_dialog = __esm({
     init_web_origins();
     init_provider_hosts();
     init_command_routing();
-    init_unknown_value2();
+    init_unknown_value3();
     init_developer_mode();
     init_appearance();
     init_projects();
@@ -50714,7 +50851,7 @@ var init_settings_dialog = __esm({
   }
 });
 
-// src/shared/store/fork-thread.ts
+// packages/thread-store/src/fork-thread.ts
 function forkThreadTitle(title2) {
   const base = title2.trim() || "New Thread";
   const match3 = /^(.*) \(fork(?: (\d+))?\)$/.exec(base);
@@ -50781,10 +50918,17 @@ function copyMessage(message2) {
 }
 var randomUUID2, MAX_TITLE_LENGTH, FORK_SUFFIX;
 var init_fork_thread = __esm({
-  "src/shared/store/fork-thread.ts"() {
+  "packages/thread-store/src/fork-thread.ts"() {
     randomUUID2 = () => globalThis.crypto.randomUUID();
     MAX_TITLE_LENGTH = 120;
     FORK_SUFFIX = " (fork)";
+  }
+});
+
+// src/shared/store/fork-thread.ts
+var init_fork_thread2 = __esm({
+  "src/shared/store/fork-thread.ts"() {
+    init_fork_thread();
   }
 });
 
@@ -50824,9 +50968,9 @@ async function forkThread(store3, api3, sourceThreadId, options2 = {}) {
     droppedAttachments: history?.source === "rebuilt" && hasAttachments(forked)
   };
 }
-var init_fork_thread2 = __esm({
+var init_fork_thread3 = __esm({
   "src/renderer/controller/fork-thread.ts"() {
-    init_fork_thread();
+    init_fork_thread2();
     init_thread_helpers();
     init_message_queue();
   }
@@ -51094,7 +51238,7 @@ var init_project_groups = __esm({
   }
 });
 
-// src/shared/safe-json.ts
+// packages/std/src/safe-json.ts
 function decodeWithSchema(schema2) {
   return (value2) => {
     const result = schema2.safeParse(value2);
@@ -51116,7 +51260,14 @@ function safeJsonParse(text4, decoder2) {
   }
 }
 var init_safe_json = __esm({
+  "packages/std/src/safe-json.ts"() {
+  }
+});
+
+// src/shared/safe-json.ts
+var init_safe_json2 = __esm({
   "src/shared/safe-json.ts"() {
+    init_safe_json();
   }
 });
 
@@ -51126,7 +51277,7 @@ function serializeSidebarDrag(payload) {
 }
 function parseSidebarDrag(raw) {
   const parsed2 = safeJsonParse(raw);
-  if (!isRecord2(parsed2)) return null;
+  if (!isRecord(parsed2)) return null;
   const kind = parsed2["kind"];
   const id39 = parsed2["id"];
   if (kind !== "project" && kind !== "group") return null;
@@ -51151,8 +51302,8 @@ function isSidebarDrag(types2) {
 var SIDEBAR_DRAG_MIME, GROUP_EDGE_BAND;
 var init_projects_drag = __esm({
   "src/renderer/views/projects-drag.ts"() {
-    init_safe_json();
-    init_unknown_value2();
+    init_safe_json2();
+    init_unknown_value3();
     SIDEBAR_DRAG_MIME = "application/x-copse-panel-sidebar-item";
     GROUP_EDGE_BAND = 0.25;
   }
@@ -52190,12 +52341,12 @@ var init_projects_pane = __esm({
     init_rename_blur();
     init_icons();
     init_thread_helpers();
-    init_github_pr_url();
-    init_thread_pr_status();
+    init_github_pr_url2();
+    init_thread_pr_status2();
     init_projects();
     init_settings_dialog();
     init_toast();
-    init_fork_thread2();
+    init_fork_thread3();
     init_sidebar_thread();
     init_attention();
     init_ssh_workspace_ui();
@@ -52343,7 +52494,7 @@ var init_user_prompt_fold = __esm({
   }
 });
 
-// src/shared/hooks/hook-card.ts
+// packages/thread-store/src/hook-card.ts
 function isHookCardBlocking(status) {
   return status === "deny" || status === "blocked" || status === "error" || status === "halted";
 }
@@ -52397,11 +52548,18 @@ function getHookCardStatusLabel(card2) {
   }
 }
 var init_hook_card = __esm({
-  "src/shared/hooks/hook-card.ts"() {
+  "packages/thread-store/src/hook-card.ts"() {
   }
 });
 
-// src/shared/hooks/hook-run-detail.ts
+// src/shared/hooks/hook-card.ts
+var init_hook_card2 = __esm({
+  "src/shared/hooks/hook-card.ts"() {
+    init_hook_card();
+  }
+});
+
+// packages/hooks-dialects/src/hook-run-detail.ts
 function hookRunDetailChips(detail) {
   if (!detail.found) return [];
   const chips = [];
@@ -52485,7 +52643,7 @@ function hookRunDetailEmptyReason(detail) {
 }
 var outcomeCaptureSchema;
 var init_hook_run_detail = __esm({
-  "src/shared/hooks/hook-run-detail.ts"() {
+  "packages/hooks-dialects/src/hook-run-detail.ts"() {
     init_zod();
     init_safe_json();
     outcomeCaptureSchema = external_exports.object({
@@ -52496,6 +52654,13 @@ var init_hook_run_detail = __esm({
       agentMessage: external_exports.string().optional(),
       userMessage: external_exports.string().optional()
     });
+  }
+});
+
+// src/shared/hooks/hook-run-detail.ts
+var init_hook_run_detail2 = __esm({
+  "src/shared/hooks/hook-run-detail.ts"() {
+    init_hook_run_detail();
   }
 });
 
@@ -239593,7 +239758,7 @@ function bindBrowserLinkClicks(root4, store3, api3) {
 var init_browser_links = __esm({
   "src/renderer/markdown/browser-links.ts"() {
     init_panels();
-    init_github_pr_url();
+    init_github_pr_url2();
   }
 });
 
@@ -239892,7 +240057,7 @@ var FRAME_START, FRAME_SEPARATOR, FRAME_END, VISUALIZE_OPERATOR, MAX_OPERATOR_CH
 var init_inline_visualization = __esm({
   "src/shared/inline-visualization.ts"() {
     init_zod();
-    init_safe_json();
+    init_safe_json2();
     FRAME_START = "\uE200";
     FRAME_SEPARATOR = "\uE202";
     FRAME_END = "\uE201";
@@ -240745,7 +240910,7 @@ function hasOpenTodos(todos) {
 var MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT;
 var init_agent_loop_guards = __esm({
   "packages/agent/src/agent-loop-guards.ts"() {
-    init_internal_utils();
+    init_unknown_value();
     MAX_TODO_CLOSEOUT_ATTEMPTS = 3;
     OPEN_TODOS_FINALIZE_NUDGE = `You still have open todos in the plan. Before finishing:
 1. Call update_todos (merge=true) to mark each finished item completed or cancel items you will not do.
@@ -241012,7 +241177,7 @@ var init_comparison_panel = __esm({
     init_retry_button();
     init_dist();
     init_file_links();
-    init_unknown_value2();
+    init_unknown_value3();
   }
 });
 
@@ -241089,7 +241254,7 @@ var init_retry_review_comparison = __esm({
 });
 
 // src/renderer/views/tool-args-format.ts
-function isRecord3(value2) {
+function isRecord2(value2) {
   return !!value2 && typeof value2 === "object" && !Array.isArray(value2);
 }
 function displayValue(value2) {
@@ -241115,7 +241280,7 @@ function normalizeValue(value2) {
 function normalizeDeep(value2) {
   const normalized = normalizeValue(value2);
   if (Array.isArray(normalized)) return normalized.map(normalizeDeep);
-  if (!isRecord3(normalized)) return normalized;
+  if (!isRecord2(normalized)) return normalized;
   return Object.fromEntries(
     Object.entries(normalized).map(([key, entry]) => [key, normalizeDeep(entry)])
   );
@@ -241129,14 +241294,14 @@ function optionalString2(value2) {
 }
 function terminalPayloadFrom(value2) {
   const normalized = normalizeDeep(value2);
-  if (!isRecord3(normalized)) return null;
+  if (!isRecord2(normalized)) return null;
   const success2 = normalizeValue(normalized["success"]);
-  if (isRecord3(success2)) {
+  if (isRecord2(success2)) {
     const { success: _success2, error: _error, ...meta5 } = normalized;
     return { status: "success", payload: success2, meta: meta5 };
   }
   const error53 = normalizeValue(normalized["error"]);
-  if (isRecord3(error53)) {
+  if (isRecord2(error53)) {
     const { success: _success2, error: _error, ...meta5 } = normalized;
     return { status: "error", payload: error53, meta: meta5 };
   }
@@ -241193,13 +241358,13 @@ function entriesForDisplay(value2) {
 }
 function unwrapResultEnvelope(value2) {
   value2 = normalizeValue(value2);
-  if (!isRecord3(value2)) return value2;
+  if (!isRecord2(value2)) return value2;
   const entries2 = Object.entries(value2);
   const [firstEntry] = entries2;
   if (entries2.length !== 1 || !firstEntry) return value2;
   const [key, rawEntry] = firstEntry;
   const entry = normalizeValue(rawEntry);
-  if ((key === "success" || key === "error") && isRecord3(entry)) return entry;
+  if ((key === "success" || key === "error") && isRecord2(entry)) return entry;
   return value2;
 }
 function formatReadableValue(value2, indent = 0) {
@@ -241211,7 +241376,7 @@ function formatReadableValue(value2, indent = 0) {
 ${rendered}` : ` ${rendered.trim()}`}`;
     }).join("\n");
   }
-  if (!isRecord3(unwrapped)) return `${" ".repeat(indent)}${displayValue(unwrapped)}`;
+  if (!isRecord2(unwrapped)) return `${" ".repeat(indent)}${displayValue(unwrapped)}`;
   return entriesForDisplay(unwrapped).map(([key, rawEntry]) => {
     const entry = normalizeValue(rawEntry);
     const pad3 = " ".repeat(indent);
@@ -241219,7 +241384,7 @@ ${rendered}` : ` ${rendered.trim()}`}`;
       return `${pad3}${key}:
 ${indentLines(entry.replace(/\n+$/, ""), indent + 2)}`;
     }
-    if (isRecord3(entry) || Array.isArray(entry)) {
+    if (isRecord2(entry) || Array.isArray(entry)) {
       return `${pad3}${key}:
 ${formatReadableValue(entry, indent + 2)}`;
     }
@@ -241265,15 +241430,22 @@ var init_render_signature = __esm({
   }
 });
 
-// src/shared/threads/prompt-placeholders.ts
+// packages/thread-store/src/prompt-placeholders.ts
 function stripPastePlaceholders(content) {
   if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
   return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
 }
 var PASTE_PLACEHOLDER;
 var init_prompt_placeholders = __esm({
-  "src/shared/threads/prompt-placeholders.ts"() {
+  "packages/thread-store/src/prompt-placeholders.ts"() {
     PASTE_PLACEHOLDER = "\uFFFC";
+  }
+});
+
+// src/shared/threads/prompt-placeholders.ts
+var init_prompt_placeholders2 = __esm({
+  "src/shared/threads/prompt-placeholders.ts"() {
+    init_prompt_placeholders();
   }
 });
 
@@ -241333,7 +241505,7 @@ function resendLastMessage(store3, api3, threadId, options2 = {}) {
 var init_resend_message = __esm({
   "src/renderer/controller/resend-message.ts"() {
     init_thread_helpers();
-    init_prompt_placeholders();
+    init_prompt_placeholders2();
     init_message_queue();
   }
 });
@@ -243195,8 +243367,8 @@ var init_conversation = __esm({
     init_reasoning_activity_icon();
     init_icons();
     init_user_prompt_fold();
-    init_hook_card();
-    init_hook_run_detail();
+    init_hook_card2();
+    init_hook_run_detail2();
     init_artefact_previews();
     init_artefact();
     init_thread_helpers();
@@ -243232,7 +243404,7 @@ var init_conversation = __esm({
     init_tool_args_format();
     init_render_signature();
     init_message_queue();
-    init_fork_thread2();
+    init_fork_thread3();
     init_resend_message();
     init_image_input_support();
     init_toast();
@@ -253936,7 +254108,7 @@ var init_handle_file_drop = __esm({
   "src/renderer/attachments/handle-file-drop.ts"() {
     init_video_media();
     init_archive_media();
-    init_unknown_value2();
+    init_unknown_value3();
     WORKSPACE_PATH_MIME = "application/x-copse-panel-path";
   }
 });
@@ -255619,7 +255791,7 @@ var init_footer_overflow = __esm({
   }
 });
 
-// src/shared/threads/export-jsonl.ts
+// packages/thread-store/src/export-jsonl.ts
 function threadHasExportableContent(thread) {
   return (thread?.messages.length ?? 0) > 0;
 }
@@ -255688,8 +255860,15 @@ function threadToJsonl(thread) {
 }
 var THREAD_JSONL_EXPORT_VERSION;
 var init_export_jsonl = __esm({
-  "src/shared/threads/export-jsonl.ts"() {
+  "packages/thread-store/src/export-jsonl.ts"() {
     THREAD_JSONL_EXPORT_VERSION = 7;
+  }
+});
+
+// src/shared/threads/export-jsonl.ts
+var init_export_jsonl2 = __esm({
+  "src/shared/threads/export-jsonl.ts"() {
+    init_export_jsonl();
   }
 });
 
@@ -255716,8 +255895,8 @@ async function downloadThreadArchive(api3, projectId, thread) {
 }
 var init_export_thread = __esm({
   "src/renderer/export-thread.ts"() {
-    init_export_jsonl();
-    init_export_jsonl();
+    init_export_jsonl2();
+    init_export_jsonl2();
   }
 });
 
@@ -255762,7 +255941,7 @@ var init_share_trace_issue = __esm({
   }
 });
 
-// src/shared/threads/debug-trace-prompt.ts
+// packages/thread-store/src/debug-trace-prompt.ts
 function debugTraceThreadTitle(thread) {
   const source = thread.title.trim() || thread.id;
   return `Debug: ${source}`.slice(0, 60);
@@ -255830,8 +256009,15 @@ function buildDebugTracePrompt(thread, archiveName, build) {
 }
 var TRACE_LAYOUT;
 var init_debug_trace_prompt = __esm({
-  "src/shared/threads/debug-trace-prompt.ts"() {
+  "packages/thread-store/src/debug-trace-prompt.ts"() {
     TRACE_LAYOUT = "a snapshot of its persisted thread directory: `meta.json`, the append-only `events.jsonl` spine, message prose under `messages/*.md`, tool arguments and results under `blobs/`, provider history, plans, and any nested subagent runs";
+  }
+});
+
+// src/shared/threads/debug-trace-prompt.ts
+var init_debug_trace_prompt2 = __esm({
+  "src/shared/threads/debug-trace-prompt.ts"() {
+    init_debug_trace_prompt();
   }
 });
 
@@ -258466,7 +258652,7 @@ var init_input_bar = __esm({
     init_footer_overflow();
     init_export_thread();
     init_share_trace_issue();
-    init_debug_trace_prompt();
+    init_debug_trace_prompt2();
     init_footer_usage_summary();
     init_footer_usage_tooltip();
     init_footer_usage_popover();
@@ -258482,7 +258668,7 @@ var init_input_bar = __esm({
     init_panel_mode_controls();
     init_guarded_yolo_control();
     init_active_thread_owner();
-    init_unknown_value2();
+    init_unknown_value3();
     init_acp();
     init_model_options();
     init_model_display();
@@ -268520,7 +268706,14 @@ function terminalModeActive(store3) {
   return filesPaneOpen && rightPanelMode === "terminal";
 }
 function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
-  const listHeader = el("div", { class: "terminals-list-header" }, "Shells");
+  const section = el("section", {
+    class: "terminal-rail-section terminal-shells-section"
+  });
+  const listHeader = el(
+    "div",
+    { class: "terminals-list-header terminal-rail-section-header" },
+    "Shells"
+  );
   const newBtn = el(
     "button",
     {
@@ -268536,8 +268729,11 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
     paneMaximizeButton(store3, "terminal"),
     newBtn
   );
-  const tabsWrap = el("div", { class: "terminals-list" });
-  listRoot.append(listHeader, tabsWrap);
+  const tabsWrap = el("div", {
+    class: "terminals-list terminal-rail-section-list"
+  });
+  section.append(listHeader, tabsWrap);
+  listRoot.append(section);
   const body = el("div", { class: "terminals-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
@@ -268808,7 +269004,13 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
     );
     const tabBtn = el(
       "button",
-      { type: "button", class: "terminals-tab", "data-tab-id": id39, title: label },
+      {
+        type: "button",
+        class: "terminals-tab",
+        "data-tab-id": id39,
+        "data-terminal-rail-row": "",
+        title: label
+      },
       labelSpan,
       checkoutBadge,
       closeBtn
@@ -269086,7 +269288,7 @@ var init_terminals_pane = __esm({
     init_selection_to_chat2();
     init_terminal_file_links();
     init_scoped_tabs();
-    init_array_utils();
+    init_array_utils2();
     init_xterm_scrollback();
     init_shell_catalog();
     init_read_terminal();
@@ -269116,7 +269318,7 @@ function stripAnsi(text4) {
   return text4.replace(ANSI_RE, "");
 }
 function shellCommandFromArgs(args) {
-  if (!isRecord2(args)) return null;
+  if (!isRecord(args)) return null;
   const command = args["command"];
   return typeof command === "string" && command.trim() ? command : null;
 }
@@ -269134,9 +269336,17 @@ ${rendered}
   }
 }
 function mountAgentTasks(listRoot, viewerHost, store3, api3) {
-  const section = el("div", { class: "agent-tasks-section" });
-  const sectionHeader = el("div", { class: "agent-tasks-section-header" }, "Agent tasks");
-  const tabList = el("div", { class: "agent-tasks-tablist" });
+  const section = el("section", {
+    class: "agent-tasks-section terminal-rail-section"
+  });
+  const sectionHeader = el(
+    "div",
+    { class: "agent-tasks-section-header terminal-rail-section-header" },
+    "Agent tasks"
+  );
+  const tabList = el("div", {
+    class: "agent-tasks-tablist terminal-rail-section-list"
+  });
   section.append(sectionHeader, tabList);
   listRoot.append(section);
   const viewerParent = viewerHost.parentElement;
@@ -269219,7 +269429,12 @@ function mountAgentTasks(listRoot, viewerHost, store3, api3) {
     const command = shellCommandLabel(rawCommand);
     const dot2 = el("span", { class: "agent-task-dot", "aria-hidden": "true" });
     const label = el("span", { class: "agent-task-label", title: command }, command);
-    const tab = el("button", { type: "button", class: "agent-task-tab" }, dot2, label);
+    const tab = el(
+      "button",
+      { type: "button", class: "agent-task-tab", "data-terminal-rail-row": "" },
+      dot2,
+      label
+    );
     const panel = el("pre", {
       class: "agent-task-output-panel",
       "data-task-id": id39
@@ -269353,9 +269568,9 @@ var init_agent_tasks = __esm({
   "src/renderer/views/agent-tasks.ts"() {
     init_helpers();
     init_tool_display();
-    init_array_utils();
+    init_array_utils2();
     init_scoped_tabs();
-    init_unknown_value2();
+    init_unknown_value3();
     MAX_TASKS = 60;
     MAX_OUTPUT_CHARS = 2e5;
     ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
@@ -269368,9 +269583,18 @@ function taskLabel(handler) {
   return handler.replaceAll("_", " ");
 }
 function mountSupervisedTasks(listRoot, store3, api3) {
-  const section = el("section", { class: "supervised-tasks-section", hidden: true });
-  const header = el("div", { class: "agent-tasks-section-header" }, "Background tasks");
-  const list = el("div", { class: "supervised-tasks-list" });
+  const section = el("section", {
+    class: "supervised-tasks-section terminal-rail-section",
+    hidden: true
+  });
+  const header = el(
+    "div",
+    { class: "agent-tasks-section-header terminal-rail-section-header" },
+    "Background tasks"
+  );
+  const list = el("div", {
+    class: "supervised-tasks-list terminal-rail-section-list"
+  });
   section.append(header, list);
   listRoot.append(section);
   let loadToken = 0;
@@ -269411,6 +269635,7 @@ function mountSupervisedTasks(listRoot, store3, api3) {
           {
             class: "supervised-task-row",
             "data-task-id": task.taskId,
+            "data-terminal-rail-row": "",
             "data-state": task.state
           },
           dot2,
@@ -270359,7 +270584,7 @@ var init_git_changes_pane = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_pane_popout_seed();
-    init_array_utils();
+    init_array_utils2();
     init_toast();
     init_confirm_dialog();
     init_staged_diff_ui();
@@ -270378,14 +270603,21 @@ var init_git_changes_pane = __esm({
   }
 });
 
-// src/shared/remote-agent-link.ts
+// packages/thread-store/src/remote-agent-link.ts
 function remoteAgentPrIndexKey(prUrl) {
   const ref = parseGithubPrUrl(prUrl);
   return ref ? githubPrKey(ref) : null;
 }
 var init_remote_agent_link = __esm({
-  "src/shared/remote-agent-link.ts"() {
+  "packages/thread-store/src/remote-agent-link.ts"() {
     init_github_pr_url();
+  }
+});
+
+// src/shared/remote-agent-link.ts
+var init_remote_agent_link2 = __esm({
+  "src/shared/remote-agent-link.ts"() {
+    init_remote_agent_link();
   }
 });
 
@@ -270429,7 +270661,7 @@ function mergePrLists(linked, pools) {
 }
 var init_pr_pane_list = __esm({
   "src/renderer/views/pr-pane-list.ts"() {
-    init_github_pr_url();
+    init_github_pr_url2();
   }
 });
 
@@ -271305,10 +271537,10 @@ var init_pr_pane = __esm({
     init_pane_popout_button();
     init_pane_popout_seed();
     init_thread_helpers();
-    init_array_utils();
+    init_array_utils2();
     init_confirm_dialog();
-    init_github_pr_url();
-    init_remote_agent_link();
+    init_github_pr_url2();
+    init_remote_agent_link2();
     init_pr_pane_list();
     init_pr_pane_thread();
     init_prompt_attachments();
@@ -271646,7 +271878,7 @@ var init_memories_pane = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_knowledge_date();
-    init_unknown_value2();
+    init_unknown_value3();
     init_icons();
     init_pane_loading();
   }
@@ -271675,9 +271907,16 @@ function mountPortsSection(listRoot, store3, api3) {
   let refreshTail = Promise.resolve();
   let pollRunning = false;
   let pollTimer = null;
-  const section = el("section", { class: "ports-section", hidden: true });
-  const header = el("div", { class: "agent-tasks-section-header" }, "Ports");
-  const list = el("div", { class: "ports-list" });
+  const section = el("section", {
+    class: "ports-section terminal-rail-section",
+    hidden: true
+  });
+  const header = el(
+    "div",
+    { class: "agent-tasks-section-header terminal-rail-section-header" },
+    "Ports"
+  );
+  const list = el("div", { class: "ports-list terminal-rail-section-list" });
   section.append(header, list);
   listRoot.append(section);
   function actionButton(label, className, onClick) {
@@ -271752,6 +271991,7 @@ function mountPortsSection(listRoot, store3, api3) {
         type: "button",
         class: `ports-row${selected ? " is-active" : ""}`,
         "data-port": String(row2.port),
+        "data-terminal-rail-row": "",
         "aria-expanded": String(selected)
       });
       button.append(
@@ -271869,6 +272109,164 @@ var init_ports_section = __esm({
     init_panels();
     init_toast();
     POLL_MS2 = 5e3;
+  }
+});
+
+// src/renderer/views/terminal-rail-resizer.ts
+function visibleSections(root4) {
+  return Array.from(root4.querySelectorAll(SECTION_SELECTOR)).filter(
+    (section) => !section.hidden
+  );
+}
+function cssPixels(value2) {
+  const parsed2 = Number.parseFloat(value2);
+  return Number.isFinite(parsed2) ? parsed2 : 0;
+}
+function measuredRowHeight(section) {
+  const list = section.querySelector(".terminal-rail-section-list");
+  const row2 = section.querySelector("[data-terminal-rail-row]") ?? list?.firstElementChild;
+  return row2?.getBoundingClientRect().height ?? 0;
+}
+function sectionMinimum(root4, section) {
+  const header = section.querySelector(".terminal-rail-section-header");
+  const list = section.querySelector(".terminal-rail-section-list");
+  const listStyle = list?.ownerDocument.defaultView?.getComputedStyle(list) ?? null;
+  const listPadding = listStyle ? cssPixels(listStyle.paddingTop) + cssPixels(listStyle.paddingBottom) : 0;
+  const rowHeight = measuredRowHeight(section);
+  const twoRows = (header?.getBoundingClientRect().height ?? 0) + listPadding + rowHeight * 2;
+  return section.classList.contains("terminal-shells-section") ? Math.max(twoRows, root4.clientHeight * SHELLS_MIN_RATIO) : twoRows;
+}
+function syncMinimums(root4) {
+  if (root4.clientHeight === 0) return;
+  for (const section of visibleSections(root4)) {
+    section.style.minHeight = `${String(Math.ceil(sectionMinimum(root4, section)))}px`;
+  }
+}
+function previousVisibleSection(section) {
+  let candidate = section.previousElementSibling;
+  while (candidate) {
+    if (candidate instanceof HTMLElement && candidate.classList.contains("terminal-rail-section") && !candidate.hidden) {
+      return candidate;
+    }
+    candidate = candidate.previousElementSibling;
+  }
+  return null;
+}
+function minimumHeight(section) {
+  return Number.parseFloat(section.style.minHeight) || 0;
+}
+function assignCurrentWeights(root4) {
+  for (const section of visibleSections(root4)) {
+    section.style.flex = `${String(section.getBoundingClientRect().height)} 1 0px`;
+  }
+}
+function resizePair(before, after, beforeStart, afterStart, delta) {
+  const total = beforeStart + afterStart;
+  const beforeSize = Math.min(
+    total - minimumHeight(after),
+    Math.max(minimumHeight(before), beforeStart + delta)
+  );
+  before.style.flexGrow = String(beforeSize);
+  after.style.flexGrow = String(total - beforeSize);
+}
+function sectionLabel(section) {
+  return section.querySelector(".terminal-rail-section-header")?.textContent.trim() ?? "section";
+}
+function mountTerminalRailResizers(root4) {
+  const sections6 = Array.from(root4.querySelectorAll(SECTION_SELECTOR));
+  const handles = /* @__PURE__ */ new Map();
+  for (const section of sections6.slice(1)) {
+    const handle = el("div", {
+      class: "terminal-rail-resizer",
+      role: "separator",
+      tabindex: "0",
+      "aria-orientation": "horizontal"
+    });
+    root4.insertBefore(handle, section);
+    handles.set(section, handle);
+    const resizeFromStart = (direction2) => {
+      const before = previousVisibleSection(section);
+      if (!before || section.hidden) return;
+      syncMinimums(root4);
+      assignCurrentWeights(root4);
+      resizePair(
+        before,
+        section,
+        before.getBoundingClientRect().height,
+        section.getBoundingClientRect().height,
+        direction2 * Math.max(1, measuredRowHeight(section))
+      );
+    };
+    handle.addEventListener("pointerdown", (event3) => {
+      if (event3.button !== 0) return;
+      const before = previousVisibleSection(section);
+      if (!before || section.hidden) return;
+      event3.preventDefault();
+      handle.setPointerCapture(event3.pointerId);
+      handle.classList.add("is-dragging");
+      syncMinimums(root4);
+      assignCurrentWeights(root4);
+      const startY2 = event3.clientY;
+      const beforeStart = before.getBoundingClientRect().height;
+      const afterStart = section.getBoundingClientRect().height;
+      const onMove = (moveEvent) => {
+        resizePair(before, section, beforeStart, afterStart, moveEvent.clientY - startY2);
+      };
+      const onUp = () => {
+        handle.classList.remove("is-dragging");
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+      };
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+    handle.addEventListener("keydown", (event3) => {
+      if (event3.key !== "ArrowUp" && event3.key !== "ArrowDown") return;
+      event3.preventDefault();
+      resizeFromStart(event3.key === "ArrowUp" ? -1 : 1);
+    });
+  }
+  const sync = () => {
+    syncMinimums(root4);
+    for (const [section, handle] of handles) {
+      const before = previousVisibleSection(section);
+      const hidden = section.hidden || before === null;
+      if (handle.hidden !== hidden) handle.hidden = hidden;
+      if (before) {
+        handle.setAttribute(
+          "aria-label",
+          `Resize ${sectionLabel(before)} and ${sectionLabel(section)}`
+        );
+      }
+    }
+  };
+  const mutationObserver = new MutationObserver(sync);
+  mutationObserver.observe(root4, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["hidden"]
+  });
+  const resizeObserver = new ResizeObserver(sync);
+  resizeObserver.observe(root4);
+  sync();
+  return () => {
+    mutationObserver.disconnect();
+    resizeObserver.disconnect();
+    for (const handle of handles.values()) handle.remove();
+  };
+}
+var SECTION_SELECTOR, SHELLS_MIN_RATIO;
+var init_terminal_rail_resizer = __esm({
+  "src/renderer/views/terminal-rail-resizer.ts"() {
+    init_helpers();
+    SECTION_SELECTOR = ":scope > .terminal-rail-section";
+    SHELLS_MIN_RATIO = 1 / 3;
   }
 });
 
@@ -273846,7 +274244,7 @@ var init_roadmap_pane = __esm({
     init_prompt_attachments();
     init_attachment_icons();
     init_image_expand();
-    init_unknown_value2();
+    init_unknown_value3();
     STATUS_OPTIONS = [
       "ready",
       "blocked",
@@ -274492,6 +274890,12 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       imageIcon("ui-icon ui-icon-sm"),
       el("span", {}, "Share screenshot")
     );
+    const exportPdfItem = el(
+      "button",
+      { type: "button", class: "browser-menu-item", role: "menuitem" },
+      downloadIcon("ui-icon ui-icon-sm"),
+      el("span", {}, "Export PDF")
+    );
     const openExternalItem = el(
       "button",
       { type: "button", class: "browser-menu-item", role: "menuitem" },
@@ -274510,6 +274914,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       shareTextItem,
       shareScreenshotItem,
       el("div", { class: "browser-menu-separator", role: "separator" }),
+      exportPdfItem,
       openExternalItem,
       inspectorItem
     );
@@ -274555,6 +274960,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
         const shareableId = shareableWebContentsId(tab);
         shareTextItem.disabled = shareableId === null || !api3;
         shareScreenshotItem.disabled = shareableId === null || !api3;
+        exportPdfItem.disabled = shareableId === null || !api3?.browser.exportPdf;
         openExternalItem.disabled = !currentHttpUrl(tab) || !api3?.shell;
         inspectorItem.disabled = !tab.webview;
         menu.removeAttribute("hidden");
@@ -274585,6 +274991,17 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       if (id40 === null || !api3) return;
       void api3.browser.shareScreenshot(id40).catch((error53) => {
         showErrorToast("Could not share browser screenshot", error53);
+      });
+    });
+    exportPdfItem.addEventListener("click", () => {
+      setMenuOpen(false);
+      const id40 = shareableWebContentsId(tab);
+      const exportPdf = api3?.browser.exportPdf;
+      if (id40 === null || !exportPdf) return;
+      void exportPdf(id40).then((filePath) => {
+        if (filePath) showToast(`Exported PDF to ${filePath}`);
+      }).catch((error53) => {
+        showErrorToast("Could not export PDF", error53);
       });
     });
     openExternalItem.addEventListener("click", () => {
@@ -274805,7 +275222,7 @@ var init_browser_pane = __esm({
     init_browser_url();
     init_artefact();
     init_browser_session();
-    init_unknown_value2();
+    init_unknown_value3();
     init_panels();
     init_prompt_attachments();
     init_toast();
@@ -291390,6 +291807,16 @@ var init_ssh_status_banner = __esm({
 });
 
 // src/renderer/views/approval-dialog.ts
+function adviceElement(advice) {
+  const children2 = [];
+  advice.split("\n").forEach((line2, index) => {
+    if (index > 0) children2.push("\n");
+    children2.push(
+      line2.startsWith(ADVICE_BULLET) ? el("span", { class: "approval-advice-item" }, line2) : line2
+    );
+  });
+  return el("div", { class: "approval-advice" }, ...children2);
+}
 function mountApprovalDialog(api3, store3, options2 = {}) {
   const coalesceMs = options2.coalesceMs ?? APPROVAL_COALESCE_MS;
   const settleMs = options2.settleMs ?? APPROVAL_SETTLE_MS;
@@ -291544,7 +291971,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     if (hasSharedContext) {
       const sharedChildren = [];
       if (firstRequest.bodyAdvice) {
-        sharedChildren.push(el("div", { class: "approval-advice" }, firstRequest.bodyAdvice));
+        sharedChildren.push(adviceElement(firstRequest.bodyAdvice));
       }
       const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
       sharedChildren.push(
@@ -291574,7 +292001,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
             rowChildren.push(pickers.root);
           } else {
             if (req.bodyAdvice) {
-              rowChildren.push(el("div", { class: "approval-advice" }, req.bodyAdvice));
+              rowChildren.push(adviceElement(req.bodyAdvice));
             }
             if (collapseDetails) rowChildren.push(detailsToggle());
             rowChildren.push(requestBody(req));
@@ -291812,7 +292239,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     resolve2(false, false);
   });
 }
-var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, defaultTimer;
+var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, ADVICE_BULLET, defaultTimer;
 var init_approval_dialog = __esm({
   "src/renderer/views/approval-dialog.ts"() {
     init_helpers();
@@ -291822,6 +292249,7 @@ var init_approval_dialog = __esm({
     init_actions();
     APPROVAL_COALESCE_MS = 120;
     APPROVAL_SETTLE_MS = 500;
+    ADVICE_BULLET = "\u2022 ";
     defaultTimer = (fn4, ms4) => {
       const handle = setTimeout(fn4, ms4);
       return () => {
@@ -292749,11 +293177,24 @@ var init_conversation_search = __esm({
 });
 
 // src/renderer/views/command-palette.ts
-function matches33(haystack, query) {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+function queryTerms(query) {
+  return query.toLowerCase().split(/\s+/).filter(Boolean).map((term) => {
+    const pr2 = parseGithubPrUrl(stripUrlTrailingPunctuation(term));
+    return pr2 ? githubPrKey(pr2) : term;
+  });
+}
+function matches33(haystack, terms) {
   if (terms.length === 0) return true;
   const hay = haystack.toLowerCase();
   return terms.every((term) => hay.includes(term));
+}
+function threadMatches(hit, terms) {
+  if (terms.length === 0) return true;
+  const text4 = `${hit.title} ${hit.projectName}`.toLowerCase();
+  const keys3 = hit.prRefs.map(githubPrKey);
+  return terms.every(
+    (term) => text4.includes(term) || keys3.some((key) => githubPrKeyMatchesTerm(key, term))
+  );
 }
 function openCommandPalette() {
   openImpl3?.();
@@ -292771,7 +293212,7 @@ function mountCommandPalette(store3, api3) {
   const input = el("input", {
     type: "text",
     class: "command-palette-input",
-    placeholder: "Search threads, projects, panels, commands\u2026",
+    placeholder: "Search threads, projects, panels, commands, #PR\u2026",
     "aria-label": "Command palette",
     spellcheck: "false",
     autocomplete: "off"
@@ -292832,14 +293273,15 @@ function mountCommandPalette(store3, api3) {
   }
   function computeEntries(query) {
     const { projects } = store3.getState();
-    const threads = threadHits.filter((hit) => matches33(`${hit.title} ${hit.projectName}`, query)).slice(0, THREAD_LIMIT).map((hit) => ({ kind: "thread", hit }));
-    const projectEntries = projects.map((p3) => ({ id: p3.id, name: projectDisplayName(p3) })).filter((p3) => matches33(p3.name, query)).slice(0, PROJECT_LIMIT).map((p3) => ({ kind: "project", id: p3.id, name: p3.name }));
-    const panels = PANEL_ITEMS.filter((p3) => matches33(p3.label, query)).map((p3) => ({
+    const terms = queryTerms(query);
+    const threads = threadHits.filter((hit) => threadMatches(hit, terms)).slice(0, THREAD_LIMIT).map((hit) => ({ kind: "thread", hit }));
+    const projectEntries = projects.map((p3) => ({ id: p3.id, name: projectDisplayName(p3) })).filter((p3) => matches33(p3.name, terms)).slice(0, PROJECT_LIMIT).map((p3) => ({ kind: "project", id: p3.id, name: p3.name }));
+    const panels = PANEL_ITEMS.filter((p3) => matches33(p3.label, terms)).map((p3) => ({
       kind: "panel",
       mode: p3.mode,
       label: p3.label
     }));
-    const commands = commandItems().filter((c4) => c4.kind === "command" && matches33(c4.label, query));
+    const commands = commandItems().filter((c4) => c4.kind === "command" && matches33(c4.label, terms));
     return [...threads, ...projectEntries, ...panels, ...commands];
   }
   function sectionTitle(entry) {
@@ -292858,11 +293300,14 @@ function mountCommandPalette(store3, api3) {
     const icon2 = el("span", { class: "command-palette-icon" }, searchIcon("ui-icon ui-icon-sm"));
     const cls = `command-palette-item command-palette-item-${entry.kind}${selected ? " selected" : ""}`;
     if (entry.kind === "thread") {
+      const prLabel = entry.hit.prRefs.map((ref) => `#${String(ref.number)}`).join(" ");
+      const tooltip = [entry.hit.title, prLabel, entry.hit.projectName].filter(Boolean).join(" \u2014 ");
       return el(
         "div",
-        { class: cls, role: "option", title: `${entry.hit.title} \u2014 ${entry.hit.projectName}` },
+        { class: cls, role: "option", title: tooltip },
         icon2,
         el("span", { class: "command-palette-name" }, entry.hit.title || "New Thread"),
+        ...prLabel ? [el("span", { class: "command-palette-pr" }, prLabel)] : [],
         el("span", { class: "command-palette-context" }, entry.hit.projectName)
       );
     }
@@ -292930,7 +293375,8 @@ function mountCommandPalette(store3, api3) {
       projectId: active2.id,
       projectName: projectDisplayName(active2),
       title: t4.title,
-      updatedAt: 0
+      updatedAt: 0,
+      prRefs: t4.prRefs ?? []
     }));
   }
   const threadKey = (h3) => `${h3.projectId}\0${h3.threadId}`;
@@ -292949,7 +293395,8 @@ function mountCommandPalette(store3, api3) {
         projectId: project2.id,
         projectName: projectDisplayName(project2),
         title: hit.title,
-        updatedAt: hit.updatedAt
+        updatedAt: hit.updatedAt,
+        prRefs: hit.prRefs
       }))
     ).sort((a3, b5) => b5.updatedAt - a3.updatedAt);
     const seen = new Set(catalogHits.map(threadKey));
@@ -293001,6 +293448,7 @@ var init_command_palette = __esm({
     init_keyboard_shortcuts_dialog();
     init_file_search_dialog();
     init_conversation_search();
+    init_github_pr_url2();
     PANEL_ITEMS = [
       { mode: "explorer", label: "Panel (Explorer)" },
       { mode: "terminal", label: "Terminal" },
@@ -293316,7 +293764,7 @@ var namedThreads;
 var init_thread_naming = __esm({
   "src/renderer/controller/thread-naming.ts"() {
     init_thread_helpers();
-    init_unknown_value2();
+    init_unknown_value3();
     namedThreads = /* @__PURE__ */ new Set();
   }
 });
@@ -293328,8 +293776,8 @@ function userContentToText(content) {
 }
 var init_remote_agent_stream = __esm({
   "src/shared/remote-agent-stream.ts"() {
-    init_array_utils();
-    init_unknown_value2();
+    init_array_utils2();
+    init_unknown_value3();
   }
 });
 
@@ -294323,6 +294771,21 @@ var init_perf_autopilot = __esm({
   }
 });
 
+// src/renderer/controller/pr-panel-follow.ts
+function attachPrPanelFollow(store3, api3) {
+  return api3.threads.onPrCreated((projectId, threadId, ref) => {
+    const { activeProjectId, activeThreadId, filesPaneOpen, rightPanelMode } = store3.getState();
+    if (projectId !== activeProjectId || threadId !== activeThreadId) return;
+    if (!filesPaneOpen || rightPanelMode !== "changes") return;
+    openPullRequest(store3, ref);
+  });
+}
+var init_pr_panel_follow = __esm({
+  "src/renderer/controller/pr-panel-follow.ts"() {
+    init_panels();
+  }
+});
+
 // src/renderer/controller/external-cursor-agent-sync.ts
 function mergeDiskThreadsPreferMemory(memory, disk) {
   const memById = new Map(memory.map((thread) => [thread.id, thread]));
@@ -294742,7 +295205,7 @@ function clampNumber(val, fallback, min10, max10) {
   return clamp5(val, min10, max10);
 }
 function parseSavedLayout(raw) {
-  if (!isRecord2(raw)) return { ...DEFAULT_LAYOUT };
+  if (!isRecord(raw)) return { ...DEFAULT_LAYOUT };
   const saved = raw;
   return {
     projectsPaneWidth: clampNumber(
@@ -294918,7 +295381,7 @@ var init_pane_resizer = __esm({
   "src/renderer/views/pane-resizer.ts"() {
     init_layout();
     init_portrait_right_panel_layout();
-    init_unknown_value2();
+    init_unknown_value3();
   }
 });
 
@@ -302120,6 +302583,7 @@ async function boot() {
     attachAutosave(store2, api2);
     attachBestValueDefaultResolver(store2, api2);
     attachAutomationController(store2, api2);
+    attachPrPanelFollow(store2, api2);
     startExternalCursorAgentSync(store2, api2);
   } else {
     attachDiffState(store2, api2, { revealOnShowDiff: false });
@@ -302271,6 +302735,7 @@ function mountFullLayout() {
   );
   mountSupervisedTasks(requireElement("terminals-list-host"), store2, api2);
   mountPortsSection(requireElement("terminals-list-host"), store2, api2);
+  mountTerminalRailResizers(requireElement("terminals-list-host"));
   mountBrowserPane(
     requireElement("browser-tabs-host"),
     requireElement("browser-viewer-host"),
@@ -302447,6 +302912,7 @@ var init_main2 = __esm({
     init_pr_pane();
     init_memories_pane();
     init_ports_section();
+    init_terminal_rail_resizer();
     init_roadmap_pane();
     init_browser_pane();
     await init_vnc_pane();
@@ -302475,6 +302941,7 @@ var init_main2 = __esm({
     init_perf();
     init_perf_autopilot();
     init_thread_hydration();
+    init_pr_panel_follow();
     init_external_cursor_agent_sync();
     init_startup_settings();
     init_projects();
