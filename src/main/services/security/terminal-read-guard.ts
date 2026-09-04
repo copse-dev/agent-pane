@@ -75,10 +75,10 @@ export interface TerminalReadScreening {
 }
 
 /**
- * Screen the tail of a snapshot with the safety model. Only the trailing
- * {@link TERMINAL_READ_SCREEN_MAX_CHARS} are sent, so the verdict describes
- * that slice and nothing above it; the gate below is what turns a verdict into
- * a sharing decision, and it never auto-allows more than was screened.
+ * Screen a snapshot with the safety model. The model is sent the text as
+ * given, so the verdict describes all of it; the gate below is the only caller
+ * and hands over a snapshot only when it fits {@link TERMINAL_READ_SCREEN_MAX_CHARS}
+ * in full, because a verdict on a slice could never auto-allow what sits above it.
  */
 export async function classifyTerminalSnapshot(
   text: string,
@@ -107,7 +107,7 @@ export async function classifyTerminalSnapshot(
       provider,
       [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: terminalReadScreenWindow(text).screened },
+        { role: 'user', content: text },
       ],
       FETCH_TIMEOUTS.safetyClassification,
       signal,
