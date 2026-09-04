@@ -15,6 +15,7 @@ import { getInAppBrowserSession } from '../windows/browser-web-contents.ts'
 import {
   captureBrowserPageText,
   captureBrowserScreenshot,
+  exportBrowserPagePdf,
 } from '../services/browser/browser-share.ts'
 import { workspacePreviewFileUrl } from '../services/browser/static-preview-server.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
@@ -583,6 +584,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
     const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
     if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
+  })
+
+  ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {
+    const contents = interactiveBrowserContents(event, rawId)
+    return await exportBrowserPagePdf(
+      contents,
+      async (defaultFilename) => {
+        const result = await dialog.showSaveDialog(win, {
+          title: 'Export PDF',
+          defaultPath: defaultFilename,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        })
+        return result.canceled || !result.filePath ? null : result.filePath
+      },
+      async (filePath, data) => {
+        await writeFile(filePath, data)
+      },
+    )
   })
 
   ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {

@@ -1,0 +1,13 @@
+{
+  "name": "@copse/std",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dependency-free leaf utilities shared by the app and every extracted package: unknown-value narrowing, safe JSON, checked array access, error messages",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*.ts": "./src/*.ts",
+    "./*": "./src/*.ts"
+  }
+}

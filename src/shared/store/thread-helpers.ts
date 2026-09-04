@@ -27,9 +27,7 @@ import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 
-export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
-  return [...threads].sort((a, b) => b.createdAt - a.createdAt)
-}
+export { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
 
 /**
  * Look up a thread by id (undefined for null/unknown ids). Finds background

@@ -2,7 +2,7 @@ import type { UserContent } from '@copse/llm/wire-types.ts'
 import { isReasoningLevel, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from './wire-types.ts'
 import { z } from 'zod'
-import { isRecord } from './internal-utils.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 const userContentSchema = z.union([
   z.string(),

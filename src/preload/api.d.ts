@@ -132,6 +132,8 @@ export interface ApiClient {
     onPreviewStale?: (handler: (origin: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
     shareScreenshot: (webContentsId: number) => Promise<void>
+    /** Print the tab to a PDF the user picks; resolves null when cancelled. */
+    exportPdf: (webContentsId: number) => Promise<string | null>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void
     onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
     onPluginTabRequest: (

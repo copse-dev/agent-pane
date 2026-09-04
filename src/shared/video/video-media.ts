@@ -24,14 +24,9 @@ export const SUPPORTED_VIDEO_EXTENSIONS = ['.mp4', '.m4v', '.mov', '.webm', '.mk
  */
 export const MAX_VIDEO_BYTES = 256 * 1024 * 1024
 
-export interface VideoAttachmentRef {
-  /** Absolute path of the stored copy, inside the thread's blobs directory. */
-  path: string
-  /** Original file name, shown on the composer chip and in the prompt note. */
-  name: string
-  sizeBytes: number
-  mimeType: string
-}
+// The ref type is owned by the thread store, which persists it; re-exported here
+// so media handling and its callers keep one import path.
+export type { VideoAttachmentRef } from '@copse/thread-store/attachment-refs.ts'
 
 /**
  * Whether a dropped/picked file should be treated as a video attachment.
