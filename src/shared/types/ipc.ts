@@ -240,7 +240,7 @@ export interface IpcInvokeMap {
   }
 
   // App icon
-  'app-icon:apply': { args: []; result: undefined }
+  'appIcon:apply': { args: []; result: undefined }
 
   // Usage ledger
   'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
@@ -429,16 +429,16 @@ export interface IpcInvokeMap {
   }
 
   // LM Studio
-  'lmstudio:test': {
+  'lmStudio:test': {
     args: [url: string, apiKey?: string]
     result: { ok: boolean; models?: string[]; error?: string }
   }
-  'lmstudio:models': { args: []; result: string[] }
-  'lmstudio:modelInfo': {
+  'lmStudio:models': { args: []; result: string[] }
+  'lmStudio:modelInfo': {
     args: []
     result: Array<{ id: string; supportsImages?: boolean }>
   }
-  'openrouter:models': {
+  'openRouter:models': {
     args: []
     result: Array<{
       id: string
@@ -448,7 +448,7 @@ export interface IpcInvokeMap {
       supportsImages?: boolean
     }>
   }
-  'lmstudio:detect': {
+  'lmStudio:detect': {
     args: [url?: string, apiKey?: string]
     result: {
       serverRunning: boolean
@@ -461,7 +461,7 @@ export interface IpcInvokeMap {
       error?: string
     }
   }
-  'lmstudio:download': {
+  'lmStudio:download': {
     args: [modelId: string, url?: string, apiKey?: string]
     result: {
       ok: boolean
@@ -471,7 +471,7 @@ export interface IpcInvokeMap {
       error?: string
     }
   }
-  'lmstudio:downloadStatus': {
+  'lmStudio:downloadStatus': {
     args: [jobId: string, url?: string, apiKey?: string]
     result: {
       ok: boolean
@@ -496,8 +496,8 @@ export interface IpcEventMap {
     after: string,
     language: string,
   ]
-  'agent:shell_output': [data: string, toolCallId: string | null]
-  'agent:approval_request': [
+  'agent:shellOutput': [data: string, toolCallId: string | null]
+  'agent:approvalRequest': [
     {
       id: string
       /** Thread whose run triggered this request; scopes the prompt in the UI. */
@@ -516,8 +516,8 @@ export interface IpcEventMap {
     },
   ]
   /** Main dismisses an approval the run cancelled (Stop / ACP permission RPC abort). */
-  'agent:approval_cancelled': [{ id: string }]
-  'agent:ask_user_request': [
+  'agent:approvalCancelled': [{ id: string }]
+  'agent:askUserRequest': [
     {
       id: string
       /** Thread whose run asked the question; scopes the prompt in the UI. */
@@ -526,8 +526,8 @@ export interface IpcEventMap {
     },
   ]
   /** Main dismisses an ask_user request when its run stops or the request expires. */
-  'agent:ask_user_cancelled': [{ id: string }]
-  'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
+  'agent:askUserCancelled': [{ id: string }]
+  'agent:hookQueueMessage': [payload: import('./hooks.ts').HookQueueMessagePayload]
   'security:guardedYoloChanged': [state: import('./guarded-yolo.ts').GuardedYoloState]
   'automations:triggered': [event: import('./automations.ts').AutomationTriggerEvent]
   'ssh:prompt_request': [
@@ -552,8 +552,8 @@ export interface IpcEventMap {
   /** Main asks the renderer whether the app may close while threads are working. */
   'app:close_confirm_request': [{ id: string }]
   'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
-  'mcp:status_changed': [statuses: McpServerStatus[]]
-  'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]
+  'mcp:statusChanged': [statuses: McpServerStatus[]]
+  'index:statusChanged': [status: import('./index-status.ts').WorkspaceIndexStatus]
   'diff:queued': [
     projectId: string,
     threadId: string,
@@ -562,7 +562,7 @@ export interface IpcEventMap {
   'diff:conflict': [projectId: string, threadId: string, paths: string[]]
   'fs:changed': [projectId: string, threadId: string, path: string, content: string | null]
   /** A recursive local execution-root watcher observed a possible git change. */
-  'git:working_tree_changed': [root: string]
+  'git:workingTreeChanged': [root: string]
   'menu:settings': []
   'menu:newThread': []
   'menu:togglePanel': []
@@ -576,10 +576,10 @@ export interface IpcEventMap {
   'terminal:output': [sessionId: string, data: string]
   'terminal:exit': [sessionId: string, code: number]
   /** Open a fresh shell in the Shells pane already running this command. */
-  'terminal:run_command': [command: string]
+  'terminal:runCommand': [command: string]
   /**
    * Shared PR-list poll tick. One main-process timer for every window showing
    * the pane; renderers no-op unless that window is actually on PRs.
    */
-  'gh:lists_tick': []
+  'gh:listsTick': []
 }

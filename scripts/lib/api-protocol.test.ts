@@ -27,6 +27,34 @@ import {
 const ROOT = resolve('.')
 const committed = parseApiProtocol(readFileSync(resolve(ROOT, API_PROTOCOL_SCHEMA_PATH), 'utf8'))
 
+/**
+ * The channel a facade member is expected to bind: `namespace:method`, or for
+ * a subscription `namespace:event` with the handler's `on` prefix dropped.
+ */
+function conventionalChannel(ns: string, method: string, kind: string): string {
+  if (kind === 'subscribe' && /^on[A-Z]/.test(method)) {
+    const event = method.slice(2)
+    return `${ns}:${event.charAt(0).toLowerCase()}${event.slice(1)}`
+  }
+  return `${ns}:${method}`
+}
+
+/** Bindings still under a different area than their facade namespace. */
+const CHANNEL_NAME_EXCEPTIONS: Record<string, string> = {
+  'browser.onPluginTabRequest': 'plugins:browser-tab-request',
+  'closeConfirm.onRequest': 'app:close_confirm_request',
+  'diff.onShowDiff': 'agent:show_diff',
+  'panes.onSwitchMode': 'popout:switch-mode',
+  'sshPrompt.onRequest': 'ssh:prompt_request',
+  'sshWorkspace.onConnectionChanged': 'ssh:connection_changed',
+  'updatePrompt.onDevNotice': 'update:dev_notice',
+  'updatePrompt.onRequest': 'update:prompt_request',
+  'windowState.getNavigation': 'mainWindow:getNavigation',
+  'windowState.setNavigation': 'mainWindow:setNavigation',
+  'workspace.createNewProject': 'workspace:createProject',
+  'workspace.unsandboxedProjectHooks': 'hooks:unsandboxedProjectHooks',
+}
+
 function mainProcessSources(): string {
   const chunks: string[] = []
   const walk = (dir: string): void => {
@@ -86,6 +114,36 @@ describe('API protocol schema (schemas/api-protocol.schema.json)', () => {
           `${api} reshapes its arguments in the preload; the wire schema cannot be derived`,
         )
       }
+    }
+  })
+
+  it('names every channel after its ApiClient member', () => {
+    // The convention: `namespace:method` for invokes and sends, and
+    // `namespace:event` (the handler name without its `on` prefix) for
+    // subscriptions. A channel is then derivable from `ApiClient` alone, which
+    // is what lets the preload become generated rather than hand-written.
+    // The exceptions below are the bindings that still live under a different
+    // area than their facade namespace; each is a candidate for a later move,
+    // and the list may only shrink.
+    for (const [ns, methods] of Object.entries(committed.client)) {
+      for (const [name, method] of Object.entries(methods)) {
+        const api = `${ns}.${name}`
+        if (!method.channel) continue
+        const exception = CHANNEL_NAME_EXCEPTIONS[api]
+        if (exception !== undefined) {
+          assert.equal(method.channel, exception, `${api} exception is stale`)
+          continue
+        }
+        assert.equal(
+          method.channel,
+          conventionalChannel(ns, name, method.kind),
+          `${api} is bound to "${method.channel}" instead of the conventional channel name`,
+        )
+      }
+    }
+    for (const api of Object.keys(CHANNEL_NAME_EXCEPTIONS)) {
+      const [ns, name] = api.split('.')
+      assert.ok(committed.client[ns ?? '']?.[name ?? ''], `exception ${api} no longer exists`)
     }
   })
 

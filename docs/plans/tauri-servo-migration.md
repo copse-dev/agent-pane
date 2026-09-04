@@ -77,7 +77,7 @@ in-process channel. Tauri (with the Servo runtime) provides the windows.
   connection ↔ one shim `BrowserWindow` binding established at
   handshake. The shim fabricates `event.senderFrame` as the bound window's
   `mainFrame` so the existing guards keep working unmodified.
-- **Direction-inverted flows** (main pushes `agent:approval_request` then awaits
+- **Direction-inverted flows** (main pushes `agent:approvalRequest` then awaits
   an invoke back; `plugins:browser-tab-request`/`-ready`) work unchanged — both
   legs exist in the transport.
 - **Binary payloads** (`vnc:data`/`vnc:send` `Uint8Array`, attachment `bytes`)

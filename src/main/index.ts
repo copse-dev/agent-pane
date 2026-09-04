@@ -251,7 +251,7 @@ setBrowserSessionPlatform({
   showUrl: (url) => {
     const win = getMainWindow()
     if (!win || win.isDestroyed()) return
-    win.webContents.send('browser:show-tab', url)
+    win.webContents.send('browser:showTab', url)
   },
   showArtefact: (identity) => {
     const win = getMainWindow()
@@ -287,17 +287,17 @@ setCanvasArtefactMirror((artefact) => mirrorArtefactToAgent(artefact, getBrowser
 setContextEstimateRefreshSink(() => {
   const win = getMainWindow()
   if (!win || win.isDestroyed()) return
-  win.webContents.send('agent:refresh_context_estimate')
+  win.webContents.send('agent:refreshContextEstimate')
 })
 
 setWorkspaceChangeSink((root) => {
-  broadcastToAppWindows('git:working_tree_changed', root)
+  broadcastToAppWindows('git:workingTreeChanged', root)
 })
 
 // A preview whose files changed on disk repaints itself. Scoped to files the
 // server actually served, so an ordinary source edit never disturbs a page.
 setPreviewStaleSink((origin) => {
-  broadcastToAppWindows('browser:preview-stale', origin)
+  broadcastToAppWindows('browser:previewStale', origin)
 })
 
 // Prevent multiple instances stacking invisible windows at the same position.
@@ -409,7 +409,7 @@ app
     // Electron (#1313). Read the window per chunk rather than capturing `win`,
     // so output still lands if the window is ever recreated.
     setShellOutputSink((chunk, taskId) => {
-      getMainWindow()?.webContents.send('agent:shell_output', chunk, taskId)
+      getMainWindow()?.webContents.send('agent:shellOutput', chunk, taskId)
     })
     applyAppIcon(windows.length > 0 ? windows : [win])
     const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, false)
@@ -430,7 +430,7 @@ app
     //
     // Started here but NOT awaited until every IPC handler is registered below.
     // `createMainWindow()` has already fired `loadFile`, so the renderer boots
-    // concurrently and invokes `settings:get` / `ssh-workspace:getStates` on
+    // concurrently and invokes `settings:get` / `sshWorkspace:getStates` on
     // first paint — awaiting a multi-second probe before registration left those
     // invokes hitting "No handler registered", which rejects the unguarded
     // `await api.settings.get('model')` in the renderer's boot() and aborts the
@@ -474,7 +474,7 @@ app
     // C2: forward an async hook's queued message to the renderer's pending queue
     // (decision 4). Same window-guarded send as `agent:chunk`.
     setHookQueueMessageSender((payload) => {
-      if (!win.isDestroyed()) win.webContents.send('agent:hook_queue_message', payload)
+      if (!win.isDestroyed()) win.webContents.send('agent:hookQueueMessage', payload)
     })
 
     const alertUser = createElectronUserAlertSender(win, app.dock)
@@ -484,7 +484,7 @@ app
     // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
     // so the request is forwarded rather than spawned here.
     setTerminalCommandLauncher((command) => {
-      if (!win.isDestroyed()) win.webContents.send('terminal:run_command', command)
+      if (!win.isDestroyed()) win.webContents.send('terminal:runCommand', command)
     })
     initSshAskpassServer(app.getPath('userData'))
     initSshPrompt(win, ipcMain)
@@ -525,7 +525,7 @@ app
     })
 
     // Register before async bootstrap so onboarding/settings can query models on first paint.
-    ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
+    ipcMain.handle('lmStudio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
       const [parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioTestSchema, [url, apiKey])
       const result = await testLmStudio(parsedUrl, parsedApiKey)
@@ -533,20 +533,20 @@ app
       return result
     })
 
-    ipcMain.handle('lmstudio:models', () => listLmStudioModels())
+    ipcMain.handle('lmStudio:models', () => listLmStudioModels())
 
-    ipcMain.handle('lmstudio:modelInfo', () => listLmStudioModelInfo())
+    ipcMain.handle('lmStudio:modelInfo', () => listLmStudioModelInfo())
 
-    ipcMain.handle('openrouter:models', () => listFreeOpenRouterModels())
+    ipcMain.handle('openRouter:models', () => listFreeOpenRouterModels())
 
-    ipcMain.handle('lmstudio:detect', async (event, url?: unknown, apiKey?: unknown) => {
+    ipcMain.handle('lmStudio:detect', async (event, url?: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
       const [parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioDetectSchema, [url, apiKey])
       return detectLmStudio(parsedUrl, parsedApiKey)
     })
 
     ipcMain.handle(
-      'lmstudio:download',
+      'lmStudio:download',
       async (event, modelId: unknown, url?: unknown, apiKey?: unknown) => {
         assertMainFrameSender(event, win)
         const [parsedModelId, parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioDownloadSchema, [
@@ -562,7 +562,7 @@ app
     )
 
     ipcMain.handle(
-      'lmstudio:downloadStatus',
+      'lmStudio:downloadStatus',
       async (event, jobId: unknown, url?: unknown, apiKey?: unknown) => {
         assertMainFrameSender(event, win)
         const [parsedJobId, parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioDownloadStatusSchema, [
@@ -895,7 +895,7 @@ app
     // Tools arriving after boot is already a supported mode: `loadMcpServers` is
     // re-run from IPC whenever config or workspace trust changes, and it guards
     // that with a `loadGeneration` counter. The renderer already listens on
-    // `mcp:status_changed`, so the UI fills in as servers land. (Under e2e this
+    // `mcp:statusChanged`, so the UI fills in as servers land. (Under e2e this
     // is a no-op — `loadMcpServers` returns early there and never connects.)
     void loadMcpServers(registry)
       .catch((err: unknown) => {
@@ -903,7 +903,7 @@ app
       })
       .finally(() => {
         if (!win.isDestroyed()) {
-          win.webContents.send('mcp:status_changed', getMcpServerStatuses())
+          win.webContents.send('mcp:statusChanged', getMcpServerStatuses())
         }
       })
     disposeTerminal = disposeTerminalHandlers

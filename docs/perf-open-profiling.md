@@ -149,7 +149,7 @@ change did exactly that; the thread-store tests caught it.
 - **PR chips** come from links in message text, which a metadata-only load never
   reads. `prRefs` is now cached on thread metadata: merged in as each message is
   appended, and backfilled for older threads by a one-pass-per-project background
-  scan behind the load, which pushes batches over `threads:pr_refs` so chips fill
+  scan behind the load, which pushes batches over `threads:prRefs` so chips fill
   in without a relaunch. `sidebarPrRefs` still prefers a transcript that is in
   memory — a streaming thread must re-scrape, since `appendToken` mutates content
   in place.

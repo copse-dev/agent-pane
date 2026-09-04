@@ -104,7 +104,7 @@ describe('github list watch', () => {
   it('fans a tick to every app window on the default broadcast path', (): void => {
     mock.timers.enable({ apis: ['setInterval'] })
     setGitHubListWatchBroadcast((): void => {
-      broadcastToAppWindows('gh:lists_tick')
+      broadcastToAppWindows('gh:listsTick')
     })
     const main = fakeWindow()
     const popout = fakeWindow()
@@ -113,7 +113,7 @@ describe('github list watch', () => {
     setGitHubListWatch(1, true, false)
     notifyGitHubListWatchers()
     for (const win of [main, popout]) {
-      assert.deepEqual(win.sent, [{ channel: 'gh:lists_tick', args: [] }])
+      assert.deepEqual(win.sent, [{ channel: 'gh:listsTick', args: [] }])
     }
   })
 

@@ -416,7 +416,7 @@ you want the coding agent to follow on every turn.
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   setGitHubListWatchBroadcast(() => {
-    broadcastToAppWindows('gh:lists_tick')
+    broadcastToAppWindows('gh:listsTick')
   })
   const alertUser = createElectronUserAlertSender(win, app.dock)
   const pluginService = getPluginService()
@@ -574,17 +574,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return contents
   }
 
-  ipcMain.handle('browser:share-page-text', async (event, rawId: unknown) => {
+  ipcMain.handle('browser:sharePageText', async (event, rawId: unknown) => {
     const share = await captureBrowserPageText(interactiveBrowserContents(event, rawId))
-    if (!win.isDestroyed()) win.webContents.send('browser:share-text', share)
+    if (!win.isDestroyed()) win.webContents.send('browser:shareText', share)
   })
 
-  ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
+  ipcMain.handle('browser:shareScreenshot', async (event, rawId: unknown) => {
     const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
-    if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
+    if (!win.isDestroyed()) win.webContents.send('browser:shareImage', share)
   })
 
-  ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {
+  ipcMain.handle('browser:exportPdf', async (event, rawId: unknown) => {
     const contents = interactiveBrowserContents(event, rawId)
     return await exportBrowserPagePdf(
       contents,
@@ -704,7 +704,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
 
   onWorkspaceIndexStatusChanged((status) => {
-    if (!win.isDestroyed()) win.webContents.send('index:status_changed', status)
+    if (!win.isDestroyed()) win.webContents.send('index:statusChanged', status)
   })
 
   ipcMain.handle('index:resolveFileReferences', async (event, rawCandidates: unknown) => {
@@ -1278,7 +1278,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Live Artificial Analysis feed for the model value map. Key-gated (empty
   // result without a stored 'artificial-analysis' key); the renderer's anchor
   // gate decides whether the returned cohort is on the canonical scale.
-  ipcMain.handle('intellect:live-models', (event) => {
+  ipcMain.handle('intellect:liveModels', (event) => {
     assertMainFrameSender(event, win)
     return fetchLiveIntellectModels()
   })
@@ -1446,7 +1446,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
     return refreshHuggingFaceModels(apiKey)
   })
-  ipcMain.handle('app-icon:apply', () => {
+  ipcMain.handle('appIcon:apply', () => {
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
@@ -1547,7 +1547,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // concurrency, one pass per project ever (the result is recorded on each
     // thread's metadata), pushing batches so the chips appear without a relaunch.
     void backfillThreadPrRefs(id, (refs) => {
-      if (!win.isDestroyed()) win.webContents.send('threads:pr_refs', id, refs)
+      if (!win.isDestroyed()) win.webContents.send('threads:prRefs', id, refs)
     }).catch((err: unknown) => {
       console.warn('[threads] PR-ref backfill failed:', err)
     })
@@ -2446,7 +2446,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('mcp:reload', async (event) => {
     assertMainFrameSender(event, win)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status_changed', statuses)
+    win.webContents.send('mcp:statusChanged', statuses)
     return statuses
   })
   ipcMain.handle('mcp:setEnabled', async (event, name: unknown, enabled: unknown) => {
@@ -2457,7 +2457,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ])
     await setMcpServerUserEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status_changed', statuses)
+    win.webContents.send('mcp:statusChanged', statuses)
     return statuses
   })
   ipcMain.handle('mcp:listCurated', (event) => {
@@ -2476,7 +2476,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ])
     await setCuratedServerEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:status_changed', statuses)
+    win.webContents.send('mcp:statusChanged', statuses)
     return getCuratedServerStatuses(statuses)
   })
   ipcMain.handle('workspace:isTrusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
@@ -2488,7 +2488,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Spawning project MCP servers is the code-execution sink, so trusting a workspace
     // is a privileged action — only the main frame may request it (issue #100).
     const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
-    win.webContents.send('mcp:status_changed', statuses)
+    win.webContents.send('mcp:statusChanged', statuses)
     return statuses
   })
 
@@ -2566,12 +2566,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:emitApprovalRequests', (event, raw: unknown) => {
       assertMainFrameSender(event, win)
       const requests = parseIpcArgs(z.array(testApprovalRequestSchema).min(1).max(16), [raw])
-      for (const request of requests) win.webContents.send('agent:approval_request', request)
+      for (const request of requests) win.webContents.send('agent:approvalRequest', request)
     })
     ipcMain.handle('test:cancelApprovalRequest', (event, rawId: unknown) => {
       assertMainFrameSender(event, win)
       const id = parseIpcArgs(z.string().min(1).max(256), [rawId])
-      win.webContents.send('agent:approval_cancelled', { id })
+      win.webContents.send('agent:approvalCancelled', { id })
     })
     ipcMain.handle('test:requestSshPrompt', (event, prompt: unknown, kind: unknown) => {
       assertMainFrameSender(event, win)

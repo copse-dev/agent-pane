@@ -65,7 +65,7 @@ export function initSshPrompt(win: BrowserWindow, ipcMain: IpcMain): void {
     resolve(result)
   }
 
-  ipcMain.handle('ssh-prompt:respond', (event, ...rawArgs) => {
+  ipcMain.handle('sshPrompt:respond', (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [id, value, remember] = parseIpcArgs(sshPromptRespondSchema, rawArgs)

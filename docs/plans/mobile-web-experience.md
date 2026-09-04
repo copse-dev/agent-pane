@@ -394,7 +394,7 @@ desktop window is closed mid-run and the transcript is complete on disk afterwar
 
 ### L2 — the decision channel
 
-Fan out `agent:approval_request` **and** `agent:approval_cancelled` in the same change —
+Fan out `agent:approvalRequest` **and** `agent:approvalCancelled` in the same change —
 shipping the first without the second leaves a phone showing a live-looking Approve button
 for a settled prompt, which trains users that approvals are unreliable. Add
 `approval:listPending` so a client connecting mid-prompt can discover the open approval

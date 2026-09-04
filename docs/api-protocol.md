@@ -33,6 +33,22 @@ payloads (`Uint8Array`) are published as base64 strings, matching how the
 WebSocket bridge already carries them; `unknown` / `void` positions are marked
 with `x-ts-type` rather than guessed.
 
+## Channel naming
+
+A channel is named after the `ApiClient` member that binds it, so the channel is
+derivable from the contract alone:
+
+| Member kind          | Channel                                 | Example                           |
+| -------------------- | --------------------------------------- | --------------------------------- |
+| invoke / send        | `namespace:method`                      | `workspace.set` → `workspace:set` |
+| subscription (`onX`) | `namespace:x` (the `on` prefix dropped) | `agent.onChunk` → `agent:chunk`   |
+
+Both halves are camelCase; no kebab-case or snake_case. The invariants test
+enforces this for every member except a short exception list of bindings that
+still live under a different area than their facade namespace (for example
+`windowState.getNavigation` on `mainWindow:getNavigation`). That list may only
+shrink: moving one of them is a normal breaking change, handled as below.
+
 ## How the surface changes
 
 1. Edit `ApiClient` and the preload together (the preload's typecheck fails

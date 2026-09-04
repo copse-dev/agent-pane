@@ -43,7 +43,7 @@ export function initUpdatePrompt(win: BrowserWindow): void {
     resolve(buttonIndex)
   }
 
-  ipcMain.handle('update-prompt:respond', (event, ...rawArgs) => {
+  ipcMain.handle('updatePrompt:respond', (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [id, buttonIndex] = parseIpcArgs(updatePromptRespondSchema, rawArgs)

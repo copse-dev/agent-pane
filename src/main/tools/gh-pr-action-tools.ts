@@ -88,7 +88,7 @@ async function linkPrToThread(ref: GithubPrRef, context: ThreadExecutionContext)
   try {
     const refs = await recordThreadPrRefs(context.projectId, context.threadId, [ref])
     if (!refs) return
-    broadcastToAppWindows('threads:pr_refs', context.projectId, [
+    broadcastToAppWindows('threads:prRefs', context.projectId, [
       { threadId: context.threadId, prRefs: refs },
     ])
   } catch (err) {

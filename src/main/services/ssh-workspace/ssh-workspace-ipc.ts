@@ -27,27 +27,27 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
 
   manager.onChange(pushStates)
 
-  ipcMain.handle('ssh-workspace:listHosts', (event) => {
+  ipcMain.handle('sshWorkspace:listHosts', (event) => {
     assertMainFrameSender(event, win)
     return listConfiguredSshHosts()
   })
 
-  ipcMain.handle('ssh-workspace:listConfigAliases', (event) => {
+  ipcMain.handle('sshWorkspace:listConfigAliases', (event) => {
     assertMainFrameSender(event, win)
     return readSshConfigAliases().map(hostFromSshConfigAlias)
   })
 
-  ipcMain.handle('ssh-workspace:getStates', (event) => {
+  ipcMain.handle('sshWorkspace:getStates', (event) => {
     assertMainFrameSender(event, win)
     return manager.listStates()
   })
 
-  ipcMain.handle('ssh-workspace:listCredentialHostIds', (event) => {
+  ipcMain.handle('sshWorkspace:listCredentialHostIds', (event) => {
     assertMainFrameSender(event, win)
     return listStoredSshCredentialHostIds()
   })
 
-  ipcMain.handle('ssh-workspace:forgetCredentials', async (event, ...rawArgs) => {
+  ipcMain.handle('sshWorkspace:forgetCredentials', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const hostId = parseIpcArgs(zSshHostId, rawArgs)
     // End the live ControlMaster too: otherwise OpenSSH would keep using an
@@ -63,7 +63,7 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
     forgetSshCredentials(hostId)
   })
 
-  ipcMain.handle('ssh-workspace:connect', async (event, ...rawArgs) => {
+  ipcMain.handle('sshWorkspace:connect', async (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const hostId = parseIpcArgs(zSshHostId, rawArgs)
@@ -75,7 +75,7 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle('ssh-workspace:disconnect', async (event, ...rawArgs) => {
+  ipcMain.handle('sshWorkspace:disconnect', async (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const hostId = parseIpcArgs(zSshHostId, rawArgs)
@@ -87,7 +87,7 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle('ssh-workspace:reconnect', async (event, ...rawArgs) => {
+  ipcMain.handle('sshWorkspace:reconnect', async (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const hostId = parseIpcArgs(zSshHostId, rawArgs)
@@ -99,7 +99,7 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle('ssh-workspace:listDirectory', async (event, ...rawArgs) => {
+  ipcMain.handle('sshWorkspace:listDirectory', async (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [hostId, dirPath] = parseIpcArgs(sshBrowseSchema, rawArgs)
@@ -110,7 +110,7 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle('ssh-workspace:registerRoot', async (event, ...rawArgs) => {
+  ipcMain.handle('sshWorkspace:registerRoot', async (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [hostId, dirPath] = parseIpcArgs(sshBrowseSchema, rawArgs)

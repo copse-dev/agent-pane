@@ -315,7 +315,7 @@ per-role axes can't provide. Pieces:
   bare. Unit-tested in `model-options.test.ts`. _Remaining:_ "recommended for
   &lt;role&gt;" grouping and badges for cloud models.
 - **Phase 3 — generalized download: _foundation done; UI pending._** The
-  `lmstudio:download` IPC already accepts any model id, so the backend is already
+  `lmStudio:download` IPC already accepts any model id, so the backend is already
   general — only the presentation was pinned to the three preferred ids.
   `recommendedLocalSetup()` turns the catalog into a budget-fitting set of core
   roles to download; each `model.id` feeds the existing download IPC.

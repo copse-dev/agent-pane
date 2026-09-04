@@ -6,7 +6,7 @@ import type {
 
 /**
  * Central status tracker for workspace indexing, feeding the renderer's
- * footer indicator over the `index:status_changed` IPC event.
+ * footer indicator over the `index:statusChanged` IPC event.
  *
  * Builds overlap (the watcher's debounced rebuild can fire while a diff-queue
  * rebuild is in flight, and semantic ensure/update passes coalesce per root),

@@ -7,7 +7,7 @@
  * (or two test main windows) could stagger and double GitHub traffic whenever a
  * TTL expired. Watchers here are keyed by `webContents.id`; one timer runs
  * while any pane is showing PRs. `register-handlers` wires the tick to
- * `broadcastToAppWindows('gh:lists_tick')`.
+ * `broadcastToAppWindows('gh:listsTick')`.
  */
 
 /** Same interval the PR pane used when it polled locally. */

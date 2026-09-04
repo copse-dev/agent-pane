@@ -73,7 +73,7 @@ export function isBrowserWebContents(contents: WebContents): boolean {
 export function attachBrowserGuestWindowOpen(contents: WebContents): void {
   contents.setWindowOpenHandler(({ url }) => {
     const { openTabUrl } = browserGuestWindowOpen(contents.getType(), url)
-    if (openTabUrl) getMainWindow()?.webContents.send('browser:open-tab', openTabUrl)
+    if (openTabUrl) getMainWindow()?.webContents.send('browser:openTab', openTabUrl)
     return { action: 'deny' }
   })
 

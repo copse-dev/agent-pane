@@ -42,35 +42,35 @@ const api: ApiClient = {
     workspaceFileUrl: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('browser:workspaceFileUrl', projectId, threadId, path),
     sharePageText: (webContentsId: number) =>
-      ipcRenderer.invoke('browser:share-page-text', webContentsId),
+      ipcRenderer.invoke('browser:sharePageText', webContentsId),
     shareScreenshot: (webContentsId: number) =>
-      ipcRenderer.invoke('browser:share-screenshot', webContentsId),
-    exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
+      ipcRenderer.invoke('browser:shareScreenshot', webContentsId),
+    exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:exportPdf', webContentsId),
     onOpenTab: (handler: (url: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
         handler(url)
       }
-      ipcRenderer.on('browser:open-tab', listener)
+      ipcRenderer.on('browser:openTab', listener)
       return (): void => {
-        ipcRenderer.off('browser:open-tab', listener)
+        ipcRenderer.off('browser:openTab', listener)
       }
     },
     onShowTab: (handler: (url: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
         handler(url)
       }
-      ipcRenderer.on('browser:show-tab', listener)
+      ipcRenderer.on('browser:showTab', listener)
       return (): void => {
-        ipcRenderer.off('browser:show-tab', listener)
+        ipcRenderer.off('browser:showTab', listener)
       }
     },
     onPreviewStale: (handler: (origin: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, origin: string): void => {
         handler(origin)
       }
-      ipcRenderer.on('browser:preview-stale', listener)
+      ipcRenderer.on('browser:previewStale', listener)
       return (): void => {
-        ipcRenderer.off('browser:preview-stale', listener)
+        ipcRenderer.off('browser:previewStale', listener)
       }
     },
     onShareText: (
@@ -82,9 +82,9 @@ const api: ApiClient = {
       ): void => {
         handler(share)
       }
-      ipcRenderer.on('browser:share-text', listener)
+      ipcRenderer.on('browser:shareText', listener)
       return (): void => {
-        ipcRenderer.off('browser:share-text', listener)
+        ipcRenderer.off('browser:shareText', listener)
       }
     },
     onShareImage: (
@@ -96,9 +96,9 @@ const api: ApiClient = {
       ): void => {
         handler(share)
       }
-      ipcRenderer.on('browser:share-image', listener)
+      ipcRenderer.on('browser:shareImage', listener)
       return (): void => {
-        ipcRenderer.off('browser:share-image', listener)
+        ipcRenderer.off('browser:shareImage', listener)
       }
     },
     onPluginTabRequest: (
@@ -286,18 +286,18 @@ const api: ApiClient = {
       ): void => {
         handler(req)
       }
-      ipcRenderer.on('agent:approval_request', listener)
+      ipcRenderer.on('agent:approvalRequest', listener)
       return (): void => {
-        ipcRenderer.off('agent:approval_request', listener)
+        ipcRenderer.off('agent:approvalRequest', listener)
       }
     },
     onApprovalCancelled: (handler: (req: { id: string }) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
         handler(req)
       }
-      ipcRenderer.on('agent:approval_cancelled', listener)
+      ipcRenderer.on('agent:approvalCancelled', listener)
       return (): void => {
-        ipcRenderer.off('agent:approval_cancelled', listener)
+        ipcRenderer.off('agent:approvalCancelled', listener)
       }
     },
     onAskUserRequest: (
@@ -317,18 +317,18 @@ const api: ApiClient = {
       ): void => {
         handler(req)
       }
-      ipcRenderer.on('agent:ask_user_request', listener)
+      ipcRenderer.on('agent:askUserRequest', listener)
       return (): void => {
-        ipcRenderer.off('agent:ask_user_request', listener)
+        ipcRenderer.off('agent:askUserRequest', listener)
       }
     },
     onAskUserCancelled: (handler: (req: { id: string }) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
         handler(req)
       }
-      ipcRenderer.on('agent:ask_user_cancelled', listener)
+      ipcRenderer.on('agent:askUserCancelled', listener)
       return (): void => {
-        ipcRenderer.off('agent:ask_user_cancelled', listener)
+        ipcRenderer.off('agent:askUserCancelled', listener)
       }
     },
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => {
@@ -339,18 +339,18 @@ const api: ApiClient = {
       ): void => {
         handler(data, toolCallId)
       }
-      ipcRenderer.on('agent:shell_output', listener)
+      ipcRenderer.on('agent:shellOutput', listener)
       return (): void => {
-        ipcRenderer.off('agent:shell_output', listener)
+        ipcRenderer.off('agent:shellOutput', listener)
       }
     },
     onRefreshContextEstimate: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('agent:refresh_context_estimate', listener)
+      ipcRenderer.on('agent:refreshContextEstimate', listener)
       return (): void => {
-        ipcRenderer.off('agent:refresh_context_estimate', listener)
+        ipcRenderer.off('agent:refreshContextEstimate', listener)
       }
     },
     onHookQueueMessage: (
@@ -362,9 +362,9 @@ const api: ApiClient = {
       ): void => {
         handler(payload)
       }
-      ipcRenderer.on('agent:hook_queue_message', listener)
+      ipcRenderer.on('agent:hookQueueMessage', listener)
       return (): void => {
-        ipcRenderer.off('agent:hook_queue_message', listener)
+        ipcRenderer.off('agent:hookQueueMessage', listener)
       }
     },
   },
@@ -461,7 +461,7 @@ const api: ApiClient = {
   },
   sshPrompt: {
     respond: (id: string, value: string, remember = false) =>
-      ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),
+      ipcRenderer.invoke('sshPrompt:respond', id, value, remember),
     onRequest: (
       handler: (req: {
         id: string
@@ -489,7 +489,7 @@ const api: ApiClient = {
   },
   updatePrompt: {
     respond: (id: string, buttonIndex: number) =>
-      ipcRenderer.invoke('update-prompt:respond', id, buttonIndex),
+      ipcRenderer.invoke('updatePrompt:respond', id, buttonIndex),
     onRequest: (
       handler: (req: {
         id: string
@@ -530,7 +530,7 @@ const api: ApiClient = {
   },
   closeConfirm: {
     respond: (id: string, confirmed: boolean) =>
-      ipcRenderer.invoke('close-confirm:respond', id, confirmed),
+      ipcRenderer.invoke('closeConfirm:respond', id, confirmed),
     onRequest: (handler: (req: { id: string }) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
         handler(req)
@@ -542,19 +542,19 @@ const api: ApiClient = {
     },
   },
   sshWorkspace: {
-    listHosts: () => ipcRenderer.invoke('ssh-workspace:listHosts'),
-    listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:listConfigAliases'),
-    getStates: () => ipcRenderer.invoke('ssh-workspace:getStates'),
-    listCredentialHostIds: () => ipcRenderer.invoke('ssh-workspace:listCredentialHostIds'),
+    listHosts: () => ipcRenderer.invoke('sshWorkspace:listHosts'),
+    listConfigAliases: () => ipcRenderer.invoke('sshWorkspace:listConfigAliases'),
+    getStates: () => ipcRenderer.invoke('sshWorkspace:getStates'),
+    listCredentialHostIds: () => ipcRenderer.invoke('sshWorkspace:listCredentialHostIds'),
     forgetCredentials: (hostId: string) =>
-      ipcRenderer.invoke('ssh-workspace:forgetCredentials', hostId),
-    connect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:connect', hostId),
-    disconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:disconnect', hostId),
-    reconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:reconnect', hostId),
+      ipcRenderer.invoke('sshWorkspace:forgetCredentials', hostId),
+    connect: (hostId: string) => ipcRenderer.invoke('sshWorkspace:connect', hostId),
+    disconnect: (hostId: string) => ipcRenderer.invoke('sshWorkspace:disconnect', hostId),
+    reconnect: (hostId: string) => ipcRenderer.invoke('sshWorkspace:reconnect', hostId),
     listDirectory: (hostId: string, dirPath: string) =>
-      ipcRenderer.invoke('ssh-workspace:listDirectory', hostId, dirPath),
+      ipcRenderer.invoke('sshWorkspace:listDirectory', hostId, dirPath),
     registerRoot: (hostId: string, dirPath: string) =>
-      ipcRenderer.invoke('ssh-workspace:registerRoot', hostId, dirPath),
+      ipcRenderer.invoke('sshWorkspace:registerRoot', hostId, dirPath),
     onConnectionChanged: (
       handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
     ) => {
@@ -588,9 +588,9 @@ const api: ApiClient = {
       ): void => {
         handler(statuses)
       }
-      ipcRenderer.on('mcp:status_changed', listener)
+      ipcRenderer.on('mcp:statusChanged', listener)
       return (): void => {
-        ipcRenderer.off('mcp:status_changed', listener)
+        ipcRenderer.off('mcp:statusChanged', listener)
       }
     },
   },
@@ -616,9 +616,9 @@ const api: ApiClient = {
       ): void => {
         handler(identity)
       }
-      ipcRenderer.on('canvas:show-artefact', listener)
+      ipcRenderer.on('canvas:showArtefact', listener)
       return (): void => {
-        ipcRenderer.off('canvas:show-artefact', listener)
+        ipcRenderer.off('canvas:showArtefact', listener)
       }
     },
     listArtefacts: (projectId: string, threadId: string) =>
@@ -653,9 +653,9 @@ const api: ApiClient = {
       ): void => {
         handler(projectId, refs)
       }
-      ipcRenderer.on('threads:pr_refs', listener)
+      ipcRenderer.on('threads:prRefs', listener)
       return (): void => {
-        ipcRenderer.removeListener('threads:pr_refs', listener)
+        ipcRenderer.removeListener('threads:prRefs', listener)
       }
     },
     create: (projectId: string, thread: import('@shared/types').Thread) =>
@@ -714,23 +714,23 @@ const api: ApiClient = {
     read: (path: string) => ipcRenderer.invoke('video:read', path),
   },
   intellect: {
-    liveModels: () => ipcRenderer.invoke('intellect:live-models'),
+    liveModels: () => ipcRenderer.invoke('intellect:liveModels'),
   },
   modelCards: {
     resolve: (modelIds: string[]) => ipcRenderer.invoke('modelCards:resolve', modelIds),
   },
   lmStudio: {
-    test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
-    models: () => ipcRenderer.invoke('lmstudio:models'),
-    modelInfo: () => ipcRenderer.invoke('lmstudio:modelInfo'),
-    detect: (url?: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:detect', url, apiKey),
+    test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmStudio:test', url, apiKey),
+    models: () => ipcRenderer.invoke('lmStudio:models'),
+    modelInfo: () => ipcRenderer.invoke('lmStudio:modelInfo'),
+    detect: (url?: string, apiKey?: string) => ipcRenderer.invoke('lmStudio:detect', url, apiKey),
     download: (modelId: string, url?: string, apiKey?: string) =>
-      ipcRenderer.invoke('lmstudio:download', modelId, url, apiKey),
+      ipcRenderer.invoke('lmStudio:download', modelId, url, apiKey),
     downloadStatus: (jobId: string, url?: string, apiKey?: string) =>
-      ipcRenderer.invoke('lmstudio:downloadStatus', jobId, url, apiKey),
+      ipcRenderer.invoke('lmStudio:downloadStatus', jobId, url, apiKey),
   },
   openRouter: {
-    models: () => ipcRenderer.invoke('openrouter:models'),
+    models: () => ipcRenderer.invoke('openRouter:models'),
   },
   models: {
     bestValueDefault: () => ipcRenderer.invoke('models:bestValueDefault'),
@@ -903,7 +903,7 @@ const api: ApiClient = {
       ipcRenderer.invoke('settings:refreshHuggingFaceModels', apiKey),
   },
   appIcon: {
-    apply: () => ipcRenderer.invoke('app-icon:apply'),
+    apply: () => ipcRenderer.invoke('appIcon:apply'),
   },
   usage: {
     getSummary: () => ipcRenderer.invoke('usage:getSummary'),
@@ -930,9 +930,9 @@ const api: ApiClient = {
       ): void => {
         handler(status)
       }
-      ipcRenderer.on('index:status_changed', listener)
+      ipcRenderer.on('index:statusChanged', listener)
       return (): void => {
-        ipcRenderer.off('index:status_changed', listener)
+        ipcRenderer.off('index:statusChanged', listener)
       }
     },
   },
@@ -946,23 +946,23 @@ const api: ApiClient = {
     list: () => ipcRenderer.invoke('vnc:list'),
     discover: (host: import('@shared/types/vnc.ts').VncDiscoveryHost) =>
       ipcRenderer.invoke('vnc:discover', host),
-    discoverNearby: () => ipcRenderer.invoke('vnc:discover-nearby'),
-    resolveSshHosts: () => ipcRenderer.invoke('vnc:resolve-ssh-hosts'),
+    discoverNearby: () => ipcRenderer.invoke('vnc:discoverNearby'),
+    resolveSshHosts: () => ipcRenderer.invoke('vnc:resolveSshHosts'),
     getUsername: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:get-username', target),
+      ipcRenderer.invoke('vnc:getUsername', target),
     getPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:get-password', target),
+      ipcRenderer.invoke('vnc:getPassword', target),
     hasPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:has-password', target),
-    canStoreCredentials: () => ipcRenderer.invoke('vnc:can-store-credentials'),
+      ipcRenderer.invoke('vnc:hasPassword', target),
+    canStoreCredentials: () => ipcRenderer.invoke('vnc:canStoreCredentials'),
     rememberUsername: (target: import('@shared/types/vnc.ts').VncTarget, username: string) =>
-      ipcRenderer.invoke('vnc:remember-username', target, username),
+      ipcRenderer.invoke('vnc:rememberUsername', target, username),
     rememberPassword: (target: import('@shared/types/vnc.ts').VncTarget, password: string) =>
-      ipcRenderer.invoke('vnc:remember-password', target, password),
+      ipcRenderer.invoke('vnc:rememberPassword', target, password),
     forgetPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:forget-password', target),
+      ipcRenderer.invoke('vnc:forgetPassword', target),
     forgetCredentials: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:forget-credentials', target),
+      ipcRenderer.invoke('vnc:forgetCredentials', target),
     start: (connectionId: string): void => {
       ipcRenderer.send('vnc:start', connectionId)
     },
@@ -1180,9 +1180,9 @@ const api: ApiClient = {
       const listener = (_e: Electron.IpcRendererEvent, command: string): void => {
         handler(command)
       }
-      ipcRenderer.on('terminal:run_command', listener)
+      ipcRenderer.on('terminal:runCommand', listener)
       return (): void => {
-        ipcRenderer.off('terminal:run_command', listener)
+        ipcRenderer.off('terminal:runCommand', listener)
       }
     },
   },
@@ -1219,9 +1219,9 @@ const api: ApiClient = {
       const listener = (_event: Electron.IpcRendererEvent, root: string): void => {
         handler(root)
       }
-      ipcRenderer.on('git:working_tree_changed', listener)
+      ipcRenderer.on('git:workingTreeChanged', listener)
       return (): void => {
-        ipcRenderer.off('git:working_tree_changed', listener)
+        ipcRenderer.off('git:workingTreeChanged', listener)
       }
     },
   },
@@ -1234,9 +1234,9 @@ const api: ApiClient = {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('gh:lists_tick', listener)
+      ipcRenderer.on('gh:listsTick', listener)
       return (): void => {
-        ipcRenderer.off('gh:lists_tick', listener)
+        ipcRenderer.off('gh:listsTick', listener)
       }
     },
     listMyOpenPrs: () => ipcRenderer.invoke('gh:listMyOpenPrs'),

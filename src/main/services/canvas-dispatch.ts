@@ -11,7 +11,7 @@ import type { CanvasArtefact } from '@shared/types/canvas.ts'
 export const CANVAS_ARTEFACT_CHANNEL = 'canvas:artefact'
 
 /** Channel the preload bridge listens on to promote an artefact tab by title. */
-export const CANVAS_ARTEFACT_SHOW_CHANNEL = 'canvas:show-artefact'
+export const CANVAS_ARTEFACT_SHOW_CHANNEL = 'canvas:showArtefact'
 
 export type CanvasArtefactSink = (artefact: CanvasArtefact) => void
 

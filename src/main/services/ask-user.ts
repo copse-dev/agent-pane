@@ -120,7 +120,7 @@ export function initAskUser(
         const threadId = getActiveRunThread() ?? undefined
         const stopAlert = alertUser('interaction', 'An agent has a question.')
         const cancel = (): void => {
-          win.webContents.send('agent:ask_user_cancelled', { id })
+          win.webContents.send('agent:askUserCancelled', { id })
           settle(id, blank())
         }
         const timer = setTimeout(() => {
@@ -134,7 +134,7 @@ export function initAskUser(
           resolve(result)
         })
         signal?.addEventListener('abort', cancel, { once: true })
-        win.webContents.send('agent:ask_user_request', { id, threadId, questions: req.questions })
+        win.webContents.send('agent:askUserRequest', { id, threadId, questions: req.questions })
       }),
   )
 }

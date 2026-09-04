@@ -91,7 +91,7 @@ export function initCloseConfirm(win: BrowserWindow): void {
     resolve(confirmed)
   }
 
-  ipcMain.handle('close-confirm:respond', (event, ...rawArgs) => {
+  ipcMain.handle('closeConfirm:respond', (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [id, confirmed] = parseIpcArgs(closeConfirmRespondSchema, rawArgs)
