@@ -54,7 +54,12 @@ import {
 import type { GithubPrRef } from './github-pr-url.ts'
 import type { ModelSelectionEvent } from './thread-types.ts'
 import { isRemoteAgentProvider } from './remote-agent-provider.ts'
-import { extractGithubPrUrls, githubPrKey, githubRepoKey } from './github-pr-url.ts'
+import {
+  extractGithubPrUrls,
+  githubPrKey,
+  githubPrKeyMatchesTerm,
+  githubRepoKey,
+} from './github-pr-url.ts'
 import { collectThreadPrRefs } from './thread-pr-status.ts'
 import { isRecord, parseJsonUnknown } from '@copse/std/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
@@ -1904,11 +1909,15 @@ export function loadProjectCatalog(projectId: string, query?: string): Promise<T
       terms.length === 0
         ? entries
         : entries.filter((e) => {
-            // PR keys are `owner/repo#number`, which a bare `2262`, a `#2262`,
-            // and a full `owner/repo#2262` all match as substrings.
-            const haystack =
-              `${e.title}\n${e.digest}\n${e.prRefs.map(githubPrKey).join('\n')}`.toLowerCase()
-            return terms.every((term) => haystack.includes(term))
+            const haystack = `${e.title}\n${e.digest}`.toLowerCase()
+            // PR keys are `owner/repo#number`: a bare `2262`, a `#2262`, and a
+            // full `owner/repo#2262` all reach the same key, with a numeric term
+            // pinned to the whole number so `2262` does not also find #22620.
+            const keys = e.prRefs.map(githubPrKey)
+            return terms.every(
+              (term) =>
+                haystack.includes(term) || keys.some((key) => githubPrKeyMatchesTerm(key, term)),
+            )
           })
     return matched.map((e) => ({
       ...e,

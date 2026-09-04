@@ -11,7 +11,13 @@ import { openSettingsDialog } from './settings-dialog.ts'
 import { openKeyboardShortcutsDialog } from './keyboard-shortcuts-dialog.ts'
 import { openFileSearchDialog } from './file-search-dialog.ts'
 import { openConversationSearch } from './conversation-search.ts'
-import { githubPrKey, parseGithubPrUrl, type GithubPrRef } from '@shared/git/github-pr-url.ts'
+import {
+  githubPrKey,
+  githubPrKeyMatchesTerm,
+  parseGithubPrUrl,
+  stripUrlTrailingPunctuation,
+  type GithubPrRef,
+} from '@shared/git/github-pr-url.ts'
 
 // Cmd/Ctrl+Shift+K "command palette" — a "filter all the things" overlay that
 // searches across four kinds of destination in one list: open threads (across
@@ -63,7 +69,9 @@ const PROJECT_LIMIT = 25
  * Split a query into lower-cased terms, folding a pasted GitHub PR URL down to
  * the `owner/repo#number` key the thread haystack carries. Without that, the
  * link a user just copied out of the PR pane would find nothing, while the bare
- * number from the same PR would work — the two spellings should agree.
+ * number from the same PR would work — the two spellings should agree. A URL
+ * lifted from prose keeps its sentence punctuation (`…/pull/2262.`), which is
+ * stripped the same way the transcript scraper strips it before parsing.
  */
 function queryTerms(query: string): string[] {
   return query
@@ -71,7 +79,7 @@ function queryTerms(query: string): string[] {
     .split(/\s+/)
     .filter(Boolean)
     .map((term) => {
-      const pr = parseGithubPrUrl(term)
+      const pr = parseGithubPrUrl(stripUrlTrailingPunctuation(term))
       return pr ? githubPrKey(pr) : term
     })
 }
@@ -84,12 +92,20 @@ function matches(haystack: string, terms: readonly string[]): boolean {
 }
 
 /**
- * What a thread row matches on. PR keys are `owner/repo#number`, so a bare
- * `2262`, a `#2262`, and the full `owner/repo#2262` all hit as substrings — and
- * {@link queryTerms} has already reduced a pasted PR URL to that same shape.
+ * Thread rows match on title and project name as substrings, and on their PR
+ * keys (`owner/repo#number`) via {@link githubPrKeyMatchesTerm}: a bare `2262`,
+ * a `#2262`, and the full `owner/repo#2262` all reach the same key — and
+ * {@link queryTerms} has already reduced a pasted PR URL to that same shape —
+ * while a numeric term is pinned to the whole number so `2262` does not also
+ * surface #22620.
  */
-function threadHaystack(hit: ThreadHit): string {
-  return [hit.title, hit.projectName, ...hit.prRefs.map(githubPrKey)].join(' ')
+function threadMatches(hit: ThreadHit, terms: readonly string[]): boolean {
+  if (terms.length === 0) return true
+  const text = `${hit.title} ${hit.projectName}`.toLowerCase()
+  const keys = hit.prRefs.map(githubPrKey)
+  return terms.every(
+    (term) => text.includes(term) || keys.some((key) => githubPrKeyMatchesTerm(key, term)),
+  )
 }
 
 let dialogEl: HTMLDialogElement | null = null
@@ -187,7 +203,7 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
     const terms = queryTerms(query)
 
     const threads: PaletteEntry[] = threadHits
-      .filter((hit) => matches(threadHaystack(hit), terms))
+      .filter((hit) => threadMatches(hit, terms))
       .slice(0, THREAD_LIMIT)
       .map((hit) => ({ kind: 'thread', hit }))
 

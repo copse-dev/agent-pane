@@ -280,6 +280,27 @@ describe('thread-store', () => {
     assert.deepEqual(second.prRefs, [])
   })
 
+  it('pins a numeric query to the whole PR number, not a longer one containing it', async () => {
+    await saveProjectThreads('proj-1', [
+      thread('t1', {
+        title: 'Auth refactor',
+        updatedAt: 200,
+        prRefs: prRefs('https://github.com/copse-dev/agent-pane/pull/2262'),
+      }),
+      thread('t2', {
+        title: 'Follow-up',
+        updatedAt: 100,
+        prRefs: prRefs('https://github.com/copse-dev/agent-pane/pull/22620'),
+      }),
+    ])
+    const ids = async (query: string): Promise<string[]> =>
+      (await loadProjectCatalog('proj-1', query)).map((e) => e.id)
+    assert.deepEqual(await ids('2262'), ['t1'])
+    assert.deepEqual(await ids('#22620'), ['t2'])
+    // A non-numeric term still narrows the key as a substring (by repository).
+    assert.deepEqual(await ids('agent-pane#2'), ['t1', 't2'])
+  })
+
   it('rebuilds a pre-prRefs catalog so old threads become PR-searchable', async () => {
     await saveProjectThreads('proj-1', [
       thread('t1', {

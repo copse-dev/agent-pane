@@ -202,6 +202,9 @@ describe('command palette (Cmd/Ctrl+Shift+K)', () => {
     '#2262',
     'copse-dev/agent-pane#2262',
     'https://github.com/copse-dev/agent-pane/pull/2262',
+    // Pasted out of prose, with the sentence's punctuation still attached.
+    'https://github.com/copse-dev/agent-pane/pull/2262.',
+    'https://github.com/copse-dev/agent-pane/pull/2262),',
   ]) {
     it(`matches a thread by its PR, queried as "${query}"`, async () => {
       openCommandPalette()
@@ -210,6 +213,24 @@ describe('command palette (Cmd/Ctrl+Shift+K)', () => {
       assert.deepEqual(rowTexts(dialog, 'thread'), ['Fix login bug'])
     })
   }
+
+  it('pins a numeric query to the whole PR number, not a longer one containing it', async () => {
+    mount({
+      app: [
+        hit('t1', 'Fix login bug', 30, [prRef('copse-dev', 'agent-pane', 2262)]),
+        hit('t9', 'Follow-up', 20, [prRef('copse-dev', 'agent-pane', 22620)]),
+      ],
+    })
+    openCommandPalette()
+    await tick(0)
+    type(dialog, '2262')
+    assert.deepEqual(rowTexts(dialog, 'thread'), ['Fix login bug'])
+    type(dialog, '#22620')
+    assert.deepEqual(rowTexts(dialog, 'thread'), ['Follow-up'])
+    // A non-numeric term still narrows the key as a substring (by repository).
+    type(dialog, 'agent-pane#2')
+    assert.deepEqual(rowTexts(dialog, 'thread'), ['Fix login bug', 'Follow-up'])
+  })
 
   it('ignores a PR URL for a PR no thread touched', async () => {
     openCommandPalette()
