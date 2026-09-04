@@ -48,7 +48,7 @@ export function openCreatePrDialog(opts: {
     type: 'text',
     class: 'create-pr-dialog-title-input',
     id: 'create-pr-dialog-title',
-    placeholder: 'Let the agent write one',
+    placeholder: 'Summarise the change',
     value: opts.suggestedTitle?.trim() ?? '',
   })
   // `value` as an attribute only seeds the default; set the property too so a
@@ -120,6 +120,16 @@ export function openCreatePrDialog(opts: {
   syncCreateLabel()
   draftInput.addEventListener('change', syncCreateLabel)
 
+  // A pull request needs a title and nothing here writes one: the create runs
+  // no model, and the IPC guard rejects an empty title with a raw validation
+  // error. Gate the button on the trimmed value instead, so the only way to
+  // press Create is with something `gh` will accept.
+  const syncCreateEnabled = (): void => {
+    createBtn.disabled = titleInput.value.trim().length === 0
+  }
+  syncCreateEnabled()
+  titleInput.addEventListener('input', syncCreateEnabled)
+
   dialog.append(
     el('h3', {}, 'Create pull request'),
     el(
@@ -188,11 +198,11 @@ export function openCreatePrDialog(opts: {
       finish(null)
     })
     createBtn.addEventListener('click', () => {
-      finish({
-        title: titleInput.value.trim(),
-        body: bodyInput.value.trim(),
-        draft: draftInput.checked,
-      })
+      const title = titleInput.value.trim()
+      // Belt and braces with the disabled state: a synthetic click on a
+      // disabled button still must not publish a PR with no title.
+      if (!title) return
+      finish({ title, body: bodyInput.value.trim(), draft: draftInput.checked })
     })
     // Enter in the title advances to the description rather than submitting.
     // Submitting here would publish whatever the description field happened to

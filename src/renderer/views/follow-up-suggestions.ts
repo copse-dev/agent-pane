@@ -129,15 +129,23 @@ function openPrCardInTranscript(
   return { messageId, toolCallId }
 }
 
-/** Close the card out with what `gh` said, and mirror it as the message's prose. */
+/**
+ * Close the card out with what `gh` said, and mirror it as the message's prose.
+ *
+ * Content first, then the tool call: `tool_call_updated` on a settled call is
+ * what persists this synthetic message (persistence.ts), and nothing else
+ * does — the message is never finalized by a turn. Settling the card before
+ * the prose was written persisted a message with empty content, so a reload
+ * showed a bare card with the "Opened PR #N" line missing.
+ */
 function settlePrCard(
   store: AppStore,
   card: { messageId: string; toolCallId: string },
   status: 'done' | 'error',
   message: string,
 ): void {
-  updateToolCall(store, card.messageId, card.toolCallId, { status, result: message })
   setMessageContent(store, card.messageId, message)
+  updateToolCall(store, card.messageId, card.toolCallId, { status, result: message })
 }
 
 export interface FollowUpSuggestionsMount {

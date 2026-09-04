@@ -6,7 +6,7 @@ import { addMessage, createThread, getThreadById } from '@shared/store/thread-he
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import type { Message } from '@shared/types/thread.ts'
-import type { PrCreateRequest, PrCreateResult } from '@shared/types/git.ts'
+import type { PrComposerCreateRequest, PrCreateResult } from '@shared/types/git.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
@@ -21,7 +21,6 @@ const CREATE_PR: FollowUpSuggestion = {
   id: 'create-pr',
   label: 'Create PR',
   action: 'create-pr',
-  prompt: 'fallback prompt',
 }
 
 const OPENED: PrCreateResult = {
@@ -34,7 +33,7 @@ const OPENED: PrCreateResult = {
 
 interface Harness {
   api: ApiClient
-  creates: { projectId: string; threadId: string; request: PrCreateRequest }[]
+  creates: { projectId: string; threadId: string; request: PrComposerCreateRequest }[]
   bodyRequests: string[]
 }
 
@@ -56,7 +55,11 @@ function fakeApi(
     },
     gh: {
       ...base['gh'],
-      createPrForThread: (projectId: string, threadId: string, request: PrCreateRequest) => {
+      createPrForThread: (
+        projectId: string,
+        threadId: string,
+        request: PrComposerCreateRequest,
+      ) => {
         creates.push({ projectId, threadId, request })
         if (opts.createThrows) return Promise.reject(new Error('gh exploded'))
         return Promise.resolve(opts.result ?? OPENED)
@@ -133,6 +136,51 @@ describe('the "Create PR" follow-up bubble', () => {
       'Roll up tool activity',
     )
     assert.match(dialog.textContent, /feature\/x/)
+  })
+
+  it('will not create until the title has something in it', async () => {
+    const { store, threadId } = storeWithFinishedTurn()
+    const { api, creates } = fakeApi()
+    const dialog = await openBubble(store, threadId, api)
+    const title = qsRequired<HTMLInputElement>(dialog, '.create-pr-dialog-title-input')
+    const create = qsRequired<HTMLButtonElement>(dialog, '.create-pr-dialog-create')
+
+    // Prefilled from the thread, so it opens ready to go.
+    assert.equal(create.disabled, false)
+
+    // Nothing here writes a title for the user — the create runs no model — so
+    // a blank field must not be submittable, and whitespace is blank.
+    title.value = '   '
+    title.dispatchEvent(new Event('input'))
+    assert.equal(create.disabled, true)
+    // The placeholder must not promise a title the app will not write.
+    assert.doesNotMatch(title.placeholder, /agent/i)
+    create.click()
+    await flush()
+    assert.equal(creates.length, 0)
+    assert.equal(dialog.open, true)
+
+    title.value = '  Roll up tool activity  '
+    title.dispatchEvent(new Event('input'))
+    assert.equal(create.disabled, false)
+    create.click()
+    await flush()
+
+    // What goes over IPC is the trimmed title, never the padded field value.
+    assert.equal(creates.length, 1)
+    assert.equal(creates[0]?.request.title, 'Roll up tool activity')
+    assert.equal(dialog.open, false)
+  })
+
+  it('opens with Create disabled when the thread has no title to offer', async () => {
+    const { store, threadId } = storeWithFinishedTurn()
+    store.setState({
+      threads: store.getState().threads.map((t) => (t.id === threadId ? { ...t, title: '' } : t)),
+    })
+    const dialog = await openBubble(store, threadId, fakeApi().api)
+
+    assert.equal(qsRequired<HTMLInputElement>(dialog, '.create-pr-dialog-title-input').value, '')
+    assert.equal(qsRequired<HTMLButtonElement>(dialog, '.create-pr-dialog-create').disabled, true)
   })
 
   it('asks for a description while the dialog is open, before any confirmation', async () => {
@@ -223,6 +271,28 @@ describe('the "Create PR" follow-up bubble', () => {
     // The prose carries it too, so the chat reads as something having happened
     // and not just a bare card.
     assert.match(message.content, /Opened PR #7/)
+  })
+
+  it('writes the prose before settling the card, so persistence sees both', async () => {
+    const { store, threadId } = storeWithFinishedTurn()
+    const { api } = fakeApi()
+    const dialog = await openBubble(store, threadId, api)
+
+    // `tool_call_updated` on a settled call is the only event that persists
+    // this synthetic message, so at that moment the content must already be
+    // there — otherwise the stored message is a bare card with no prose.
+    const contentWhenSettled: string[] = []
+    store.on('tool_call_updated', (messageId, toolCallId) => {
+      const message = getThreadById(store, threadId)?.messages.find((m) => m.id === messageId)
+      const call = message?.toolCalls.find((tc) => tc.id === toolCallId)
+      if (call && call.status !== 'running') contentWhenSettled.push(message?.content ?? '')
+    })
+
+    qsRequired(dialog, '.create-pr-dialog-create').click()
+    await flush()
+
+    assert.equal(contentWhenSettled.length, 1)
+    assert.match(contentWhenSettled[0] ?? '', /Opened PR #7/)
   })
 
   it('shows a failed create as an errored card', async () => {
