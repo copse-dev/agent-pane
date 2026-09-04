@@ -666,9 +666,10 @@ function maybeSummarizeToolRun(
   if (!thread) return
   const run = toolRunForMessage(thread.messages, msgId)
   if (!run || run.steps.length < 2 || run.toolCalls.length < 2) return
-  if (st.runSummaryAnchorId === run.anchorId && st.runSummaryCount === run.toolCalls.length) return
+  const requestCount = run.toolCalls.length
+  if (st.runSummaryAnchorId === run.anchorId && st.runSummaryCount === requestCount) return
   st.runSummaryAnchorId = run.anchorId
-  st.runSummaryCount = run.toolCalls.length
+  st.runSummaryCount = requestCount
 
   const actions = run.toolCalls.map((tc) => getToolCallLabel(tc))
   void (async (): Promise<void> => {
@@ -678,6 +679,11 @@ function maybeSummarizeToolRun(
     } catch {
       summary = null
     }
+    // A run only ever grows, so the tool count identifies each request for an
+    // anchor. If a later request for this same anchor has since gone out, its
+    // reply covers more of the run than ours — drop ours rather than let a
+    // slower earlier request overwrite a newer summary.
+    if (st.runSummaryAnchorId === run.anchorId && st.runSummaryCount !== requestCount) return
     if (summary?.trim()) setMessageRunSummary(store, run.anchorId, summary.trim())
   })()
 }
