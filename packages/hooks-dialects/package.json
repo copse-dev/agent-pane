@@ -13,6 +13,7 @@
   "dependencies": {
     "@copse/agent": "workspace:*",
     "@copse/std": "workspace:*",
+    "@copse/store-kit": "workspace:*",
     "micromatch": "^4.0.8",
     "zod": "^4.5.4"
   }

@@ -47,6 +47,7 @@ const ALIASES: readonly (readonly [string, string])[] = [
   ['@copse/procwatch/', 'packages/procwatch/src/'],
   ['@copse/shell-guard/', 'packages/shell-guard/src/'],
   ['@copse/std/', 'packages/std/src/'],
+  ['@copse/store-kit/', 'packages/store-kit/src/'],
   ['@copse/thread-store/', 'packages/thread-store/src/'],
 ]
 
