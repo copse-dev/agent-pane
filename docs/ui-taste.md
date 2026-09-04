@@ -693,8 +693,11 @@ the leaf stays visible; mirror the full path on the row's `title` for the native
 
 Nested instruction rows use the badge as activation state, not origin: **active** uses the existing
 accent outline when the latest turn selected that scope; **scoped** uses the quiet default outline when
-the file is available but unrelated to that turn. Keep the governed directory and the explanatory
-state in the detail line so sibling scopes are understandable without adding another row of chips.
+the file is available but unrelated to that turn; **duplicate** (quiet outline) marks a nested file
+whose text repeats one already listed, so it is loaded once through that one. Keep the governed
+directory and the explanatory state in the detail line so sibling scopes are understandable without
+adding another row of chips. When discovery stopped at its cap, a single `.sources-empty` line under
+the list says the list may be incomplete — a note, not a row.
 Spec: [`tests/e2e/settings-sources-nested-instructions.e2e.ts`](../tests/e2e/settings-sources-nested-instructions.e2e.ts).
 
 ## Prove visual changes with a focused e2e eval

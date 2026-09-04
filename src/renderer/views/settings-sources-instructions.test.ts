@@ -28,7 +28,12 @@ function untrusted(): ProjectInstructionSummary {
   }
 }
 
-function nested(name: string, scopePath: string, active: boolean): ProjectInstructionSummary {
+function nested(
+  name: string,
+  scopePath: string,
+  active: boolean,
+  extra: Partial<ProjectInstructionSummary> = {},
+): ProjectInstructionSummary {
   return {
     path: `/workspace/${name}`,
     name,
@@ -37,6 +42,7 @@ function nested(name: string, scopePath: string, active: boolean): ProjectInstru
     active,
     trusted: true,
     scopePath,
+    ...extra,
   }
 }
 
@@ -140,6 +146,34 @@ describe('settings sources → instructions', () => {
     assert.match(
       web.querySelector('.sources-row-detail')?.textContent ?? '',
       /activates when a path under this directory enters context/,
+    )
+  })
+
+  it('keeps a nested duplicate of the root rules listed, marked rather than hidden', async () => {
+    const list = await openInstructions(
+      stubApi([
+        nested('packages/api/AGENTS.md', 'packages/api', true, { duplicateOf: 'AGENTS.md' }),
+      ]).api,
+    )
+    const row = list.querySelector<HTMLElement>('.sources-row')
+    assert.ok(row)
+    assert.equal(row.querySelector('.sources-badge')?.textContent, 'duplicate')
+    assert.match(
+      row.querySelector('.sources-row-detail')?.textContent ?? '',
+      /identical to AGENTS\.md, loaded once through it/,
+    )
+    assert.equal(list.querySelector('#sources-instructions-truncated'), null)
+  })
+
+  it('says when nested discovery stopped short instead of listing silently', async () => {
+    const list = await openInstructions(
+      stubApi([
+        nested('packages/api/AGENTS.md', 'packages/api', false, { discoveryTruncated: true }),
+      ]).api,
+    )
+    assert.match(
+      list.querySelector('#sources-instructions-truncated')?.textContent ?? '',
+      /this list may be incomplete/,
     )
   })
 
