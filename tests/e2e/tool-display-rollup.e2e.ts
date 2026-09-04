@@ -101,6 +101,10 @@ describe('tool call turn rollup', () => {
     await expect(mixed).toHaveAttribute('open')
     await expect(mixed.$('.tool-rollup-body > .message-reasoning')).toExist()
     await expect(mixed.$('.message-reasoning-title')).toHaveText('Reasoned')
+    // Completed reasoning is a separate, initially closed disclosure inside
+    // the step. Open it before asserting the text a user can actually read.
+    await mixed.$('.message-reasoning-summary').click()
+    await expect(mixed.$('.message-reasoning')).toHaveAttribute('open')
     await expect(mixed.$('.message-reasoning-text')).toHaveText(
       'Reading key files to diagnose the settings flicker and missing button text.',
     )
