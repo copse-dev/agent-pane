@@ -83,16 +83,19 @@ describe('automatic thread re-titling', () => {
     await saveElementScreenshot('#pane-projects', 'thread-auto-retitled.png')
 
     await browser.execute(() => {
-      const title =
-        document.querySelector('.chat-row.active .chat-title') ??
-        document.querySelector('.chat-title')
+      const title = document.querySelector('.chat-row.selected .chat-title')
       if (!title) throw new Error('thread title missing')
       title.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+      // Keep the edit in one browser task: WebDriver can steal focus between
+      // setValue calls on Linux, blurring and committing this transient input.
+      const input = document.querySelector<HTMLInputElement>('.chat-title-rename')
+      if (!input) throw new Error('rename input missing')
+      input.value = 'My Authentication Work'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      )
     })
-    const input = $('.chat-title-rename')
-    await input.waitForExist()
-    await input.setValue('My Authentication Work')
-    await browser.keys('Enter')
     await expect($('.chat-row*=My Authentication Work')).toExist()
 
     // Grow past the final auto-title threshold after a manual rename.
