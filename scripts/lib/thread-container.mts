@@ -1,0 +1,746 @@
+/**
+ * Run one Copse thread inside a disposable, hardened local Docker container
+ * (`docs/plans/thread-in-container.md`).
+ *
+ * The host side owns everything that must not be in the guest: the workspace
+ * snapshot going in, the run record coming out, the only network the guest can
+ * reach (a per-origin broker), and the container's lifecycle. The guest runs
+ * the product's own headless agent host with an unattended run armed, so it
+ * never opens a prompt: contained effects run, outward effects queue for
+ * review, and the host fetches the result as commits it can inspect before
+ * anything is pushed anywhere.
+ *
+ * Pure builders (`dockerRunArgs`, `buildAttestation`, `parseEgressOrigin`, …)
+ * are separated from the orchestration so the exact flags a run uses are unit
+ * tested, not just observed.
+ */
+import { execFile, execFileSync, spawn } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { promisify } from 'node:util'
+import * as esbuild from 'esbuild'
+import { z } from 'zod'
+import type {
+  ContainerRuntimeAttestation,
+  UnattendedRunBudgets,
+} from '../../src/shared/types/unattended-run.ts'
+import { EgressBroker, type EgressLogEntry, type EgressOrigin } from './egress-broker.mts'
+
+const execFileAsync = promisify(execFile)
+
+export const WORKER_IMAGE = 'copse-worker:local'
+export const WORKER_UID = 1001
+export const GUEST_RUN_DIR = '/run/copse'
+export const GUEST_WORKSPACE = '/workspace/repo'
+export const CARRY_IN_REF_PREFIX = 'refs/copse/carry-in/'
+export const CARRY_OUT_REF_PREFIX = 'refs/copse/runs/'
+export const MANAGED_LABEL = 'dev.copse.managed'
+export const RUNTIME_LABEL = 'dev.copse.runtime'
+export const SANDBOX_RUNTIME_VERSION = readSandboxRuntimeVersion()
+
+/** What the CLI or a test asks for. */
+export interface ThreadContainerRequest {
+  /** Local git checkout to carry in. */
+  workspace: string
+  prompt: string
+  /** Product model id as the settings UI would store it, e.g. `local:qwen`. */
+  model: string
+  /**
+   * OpenAI-compatible base URL the guest should talk to, e.g.
+   * `http://model.copse.internal:8080/v1`. Its host:port must be in the
+   * egress allowlist; that is the only route out of the guest.
+   */
+  providerUrl: string
+  /** Environment variable on the host holding the provider key; the value is passed, never the name. */
+  apiKeyEnv?: string
+  budgets: UnattendedRunBudgets
+  /** `host:port` origins the broker forwards to. Nothing else is reachable. */
+  egressAllowlist: string[]
+  /** Guest-facing origin name → address the host dials, for names only the guest knows. */
+  egressResolve?: Record<string, string>
+  image?: string
+  /** Where run directories live; defaults to `<COPSE_DIR>/runtimes`. */
+  runtimesDir?: string
+  maxSteps?: number
+}
+
+/** The spec the guest reads from `run.json`. Contains no secrets. */
+export interface ThreadContainerRunSpec {
+  runtimeId: string
+  threadId: string
+  projectId: string
+  prompt: string
+  model: string
+  providerUrl: string
+  apiKeyEnv: string | null
+  budgets: UnattendedRunBudgets
+  workspace: string
+  carryInRef: string
+  carryInBase: string
+  maxSteps: number | null
+}
+
+/** What the guest writes to `out/result.json`. */
+export interface ThreadContainerResult {
+  threadId: string
+  stopReason: 'completed' | 'budget:wall-clock' | 'budget:tokens' | 'aborted' | 'error'
+  error?: string
+  usage: { inputTokens: number; outputTokens: number }
+  /** Approval prompts the worker's fail-closed handler saw. Must be zero. */
+  promptsAttempted: number
+  deferrals: Array<{ id: string; title: string; subject: string; reasons?: string[] }>
+  commits: string[]
+  containment: {
+    declared: boolean
+    declineReason: string | null
+    projectSandbox: boolean
+  }
+  toolNames: string[]
+  finalText: string
+}
+
+/** The host-written review record (`unattended-runs.md` Decision 8). */
+export interface ThreadContainerRecord {
+  runtimeId: string
+  threadId: string
+  startedAt: number
+  finishedAt: number
+  image: string
+  imageDigest: string | null
+  attestation: ContainerRuntimeAttestation
+  egress: EgressLogEntry[]
+  result: ThreadContainerResult | null
+  carryOutRef: string | null
+  containerExit: number | null
+  teardown: 'removed' | 'already-gone' | 'failed'
+  secretCanary: { present: boolean; detail: string }
+}
+
+function readSandboxRuntimeVersion(): string {
+  const pkg: unknown = JSON.parse(
+    readFileSync(resolve('node_modules/@anthropic-ai/sandbox-runtime/package.json'), 'utf8'),
+  )
+  const version = isRecord(pkg) ? pkg['version'] : undefined
+  if (typeof version !== 'string') throw new Error('sandbox-runtime version unreadable')
+  return version
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * The profile root, resolved here rather than imported: this module runs under
+ * plain Node (the CLI), which cannot load the main process's `.ts` modules. It
+ * mirrors `copseDataRoot()` in `src/main/services/storage/copse-paths.ts`.
+ */
+function copseDataRoot(): string {
+  const configured = process.env['COPSE_DIR']?.trim()
+  return configured && configured.length > 0 ? configured : join(homedir(), '.copse')
+}
+
+export function newRuntimeId(): string {
+  return `run-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`
+}
+
+export function parseEgressOrigin(value: string): EgressOrigin {
+  const match = /^([a-z0-9.-]+):(\d{1,5})$/i.exec(value.trim())
+  if (!match) throw new Error(`Egress origin must be host:port, got "${value}"`)
+  const port = Number(match[2])
+  if (port < 1 || port > 65535) throw new Error(`Egress port out of range: ${value}`)
+  return { host: match[1] ?? '', port }
+}
+
+/** The origin a provider URL resolves to, so it can be checked against the allowlist. */
+export function providerOrigin(url: string): EgressOrigin {
+  const parsed = new URL(url)
+  const port = parsed.port ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80
+  return { host: parsed.hostname, port }
+}
+
+/** Where a run's broker sockets live on the host: short, private to the run. */
+export function egressSocketDir(runtimeId: string): string {
+  return join(tmpdir(), `copse-egress-${runtimeId}`)
+}
+
+export function egressSocketName(origin: EgressOrigin): string {
+  return `${origin.host.replace(/[^a-z0-9.-]/gi, '_')}_${String(origin.port)}.sock`
+}
+
+export interface DockerRunInput {
+  runtimeId: string
+  image: string
+  runDir: string
+  /** Short host path holding the broker sockets; see {@link egressSocketDir}. */
+  egressDir: string
+  egress: EgressOrigin[]
+  apiKeyEnv: string | null
+  memoryLimit: string
+  pidsLimit: number
+  cpus: number
+}
+
+/**
+ * The `docker run` argv for one run. Every hardening flag the attestation
+ * later claims is set here and nowhere else, so the two cannot drift.
+ */
+export function dockerRunArgs(input: DockerRunInput): string[] {
+  const args = [
+    'run',
+    '--detach',
+    '--name',
+    containerName(input.runtimeId),
+    '--label',
+    `${MANAGED_LABEL}=1`,
+    '--label',
+    `${RUNTIME_LABEL}=${input.runtimeId}`,
+    '--init',
+    '--read-only',
+    '--cap-drop=ALL',
+    '--security-opt=no-new-privileges',
+    // bubblewrap inside the guest needs user namespaces, which Docker's default
+    // seccomp profile refuses. The trade is the one the autonomy eval already
+    // makes: the guest keeps namespaces, cap-drop and no-new-privileges; the
+    // syscall filter is what bubblewrap then applies per command.
+    '--security-opt=seccomp=unconfined',
+    '--security-opt=apparmor=unconfined',
+    '--security-opt=systempaths=unconfined',
+    `--pids-limit=${String(input.pidsLimit)}`,
+    `--memory=${input.memoryLimit}`,
+    `--cpus=${String(input.cpus)}`,
+    `--user=${String(WORKER_UID)}:${String(WORKER_UID)}`,
+    // tmpfs mounts are root-owned by default regardless of the image; the
+    // worker uid must own its scratch, workspace and home.
+    '--tmpfs=/tmp:rw,nosuid,nodev,size=1g,mode=1777',
+    `--tmpfs=/workspace:rw,nosuid,nodev,size=2g,uid=${String(WORKER_UID)},gid=${String(WORKER_UID)},mode=0755`,
+    `--tmpfs=/home/copse:rw,nosuid,nodev,size=256m,uid=${String(WORKER_UID)},gid=${String(WORKER_UID)},mode=0750`,
+    '--network=none',
+    '--stop-timeout=30',
+  ]
+  if (input.egress.length > 0) {
+    // Each allowed origin resolves to loopback inside the guest, where the
+    // entrypoint listens and forwards to the host broker's unix socket. The
+    // broker, not the guest, decides where that connection really goes.
+    args.push('--sysctl=net.ipv4.ip_unprivileged_port_start=0')
+    for (const origin of input.egress) args.push('--add-host', `${origin.host}:127.0.0.1`)
+  }
+  args.push(
+    '--volume',
+    `${input.runDir}:${GUEST_RUN_DIR}:ro`,
+    '--volume',
+    `${join(input.runDir, 'state')}:${GUEST_RUN_DIR}/state:rw`,
+    '--volume',
+    `${join(input.runDir, 'out')}:${GUEST_RUN_DIR}/out:rw`,
+    '--volume',
+    `${input.egressDir}:${GUEST_RUN_DIR}/egress:rw`,
+    '--env',
+    `COPSE_DIR=${GUEST_RUN_DIR}/state`,
+    '--env',
+    'HOME=/home/copse',
+    '--env',
+    `COPSE_EGRESS_ORIGINS=${input.egress.map((o) => `${o.host}:${String(o.port)}`).join(',')}`,
+  )
+  // The provider key is the one secret the guest holds, scoped to this run and
+  // passed by value so the *name* of the host variable never leaks either.
+  if (input.apiKeyEnv) args.push('--env', input.apiKeyEnv)
+  args.push(input.image)
+  return args
+}
+
+export function containerName(runtimeId: string): string {
+  return `copse-${runtimeId}`
+}
+
+export function buildAttestation(
+  input: DockerRunInput,
+  imageDigest: string | undefined,
+): ContainerRuntimeAttestation {
+  return {
+    runtimeId: input.runtimeId,
+    image: input.image,
+    ...(imageDigest !== undefined ? { imageDigest } : {}),
+    user: WORKER_UID,
+    readOnlyRootfs: true,
+    capDropAll: true,
+    noNewPrivileges: true,
+    pidsLimit: input.pidsLimit,
+    memoryLimit: input.memoryLimit,
+    network: input.egress.length > 0 ? 'brokered' : 'none',
+    egressAllowlist: input.egress.map((o) => `${o.host}:${String(o.port)}`),
+    hostMounts: [
+      GUEST_RUN_DIR,
+      `${GUEST_RUN_DIR}/state`,
+      `${GUEST_RUN_DIR}/out`,
+      `${GUEST_RUN_DIR}/egress`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Workspace carry-in / carry-out (git-first; no host path enters the guest)
+// ---------------------------------------------------------------------------
+
+function git(cwd: string, args: string[], env?: Record<string, string>): string {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+    maxBuffer: 64 * 1024 * 1024,
+  }).trim()
+}
+
+/**
+ * Snapshot the working tree (staged + unstaged + untracked, .gitignore
+ * respected) into a commit without touching HEAD or the real index — the same
+ * trick `remote-e2e.mts` and the app's worktree backup use. Returns HEAD when
+ * the tree is clean.
+ */
+export function createSnapshotCommit(cwd: string): { sha: string; dirty: boolean } {
+  const headSha = git(cwd, ['rev-parse', 'HEAD'])
+  const tmp = mkdtempSync(join(tmpdir(), 'copse-carry-in-index-'))
+  try {
+    const index = { GIT_INDEX_FILE: join(tmp, 'index') }
+    git(cwd, ['read-tree', 'HEAD'], index)
+    git(cwd, ['add', '-A'], index)
+    const tree = git(cwd, ['write-tree'], index)
+    if (tree === git(cwd, ['rev-parse', 'HEAD^{tree}'])) return { dirty: false, sha: headSha }
+    const sha = git(cwd, [
+      '-c',
+      'user.name=copse',
+      '-c',
+      'user.email=copse@copse.invalid',
+      'commit-tree',
+      tree,
+      '-p',
+      'HEAD',
+      '-m',
+      'copse: working-tree snapshot for a container run',
+    ])
+    return { dirty: true, sha }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+}
+
+/** Bundle the snapshot under a run-scoped ref so the guest can fetch it by name. */
+export function writeCarryInBundle(
+  workspace: string,
+  runtimeId: string,
+  bundlePath: string,
+): { ref: string; sha: string } {
+  const snapshot = createSnapshotCommit(workspace)
+  const ref = `${CARRY_IN_REF_PREFIX}${runtimeId}`
+  git(workspace, ['update-ref', ref, snapshot.sha])
+  try {
+    git(workspace, ['bundle', 'create', bundlePath, ref])
+  } finally {
+    git(workspace, ['update-ref', '-d', ref])
+  }
+  return { ref, sha: snapshot.sha }
+}
+
+/** Fetch the guest's commits back under `refs/copse/runs/<id>`; the host never pushes. */
+export function fetchCarryOut(workspace: string, runtimeId: string, bundlePath: string): string {
+  const ref = `${CARRY_OUT_REF_PREFIX}${runtimeId}`
+  git(workspace, ['fetch', '--no-tags', bundlePath, `refs/heads/work:${ref}`])
+  return ref
+}
+
+// ---------------------------------------------------------------------------
+// Image
+// ---------------------------------------------------------------------------
+
+export interface BuildImageOptions {
+  image?: string
+  baseImage?: string
+  /** Docker build `--network`; some sandboxes need `host` for apt. */
+  buildNetwork?: string
+  contextDir?: string
+}
+
+/** Bundle the guest entry with esbuild; the sandbox runtime stays external. */
+export async function bundleWorker(outfile: string): Promise<void> {
+  await esbuild.build({
+    entryPoints: [resolve('scripts/thread-container-worker.mts')],
+    outfile,
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    sourcemap: false,
+    external: ['@anthropic-ai/sandbox-runtime'],
+    alias: {
+      '@shared': resolve('./src/shared'),
+      // PTY terminals are not offered inside the worker; the stub throws on use.
+      'node-pty': resolve('containers/copse-worker/node-pty-stub.cjs'),
+    },
+    define: { __COPSE_TEST_DIRECTIVES__: 'false' },
+    logLevel: 'warning',
+  })
+}
+
+/**
+ * Assemble the build context and build the worker image. The context carries
+ * only the bundled worker, the pinned sandbox runtime, and the entrypoint —
+ * never the repository, never node_modules, never a credential.
+ */
+export async function buildWorkerImage(options: BuildImageOptions = {}): Promise<string> {
+  const image = options.image ?? WORKER_IMAGE
+  const contextDir = resolve(options.contextDir ?? 'dist-test/copse-worker-context')
+  rmSync(contextDir, { recursive: true, force: true })
+  mkdirSync(contextDir, { recursive: true })
+  await bundleWorker(join(contextDir, 'worker.cjs'))
+  cpSync(resolve('containers/copse-worker/entrypoint.sh'), join(contextDir, 'entrypoint.sh'))
+  cpSync(resolve('containers/copse-worker/Dockerfile'), join(contextDir, 'Dockerfile'))
+  writeFileSync(
+    join(contextDir, 'package.json'),
+    JSON.stringify(
+      {
+        name: 'copse-worker-runtime',
+        private: true,
+        dependencies: { '@anthropic-ai/sandbox-runtime': SANDBOX_RUNTIME_VERSION },
+      },
+      null,
+      2,
+    ),
+  )
+  await execFileAsync(
+    'npm',
+    ['install', '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts'],
+    {
+      cwd: contextDir,
+    },
+  )
+  const args = ['build', '--tag', image]
+  if (options.buildNetwork) args.push('--network', options.buildNetwork)
+  if (options.baseImage) args.push('--build-arg', `BASE_IMAGE=${options.baseImage}`)
+  args.push('--build-arg', `WORKER_UID=${String(WORKER_UID)}`, contextDir)
+  await runDocker(args)
+  return image
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
+
+async function runDocker(args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync('docker', args, { maxBuffer: 64 * 1024 * 1024 })
+  return stdout.trim()
+}
+
+export async function dockerAvailable(): Promise<boolean> {
+  try {
+    await runDocker(['info', '--format', '{{.ServerVersion}}'])
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function imageDigest(image: string): Promise<string | undefined> {
+  try {
+    const out = await runDocker(['image', 'inspect', '--format', '{{.Id}}', image])
+    return out || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Idempotent: removing a container that is already gone is success, reported
+ * distinctly so a reconciliation sweep can tell "I removed it" from "it was
+ * already gone" (`docker rm --force` itself no longer distinguishes the two).
+ */
+export async function teardownRuntime(
+  runtimeId: string,
+): Promise<'removed' | 'already-gone' | 'failed'> {
+  const name = containerName(runtimeId)
+  try {
+    await runDocker(['container', 'inspect', '--format', '{{.Id}}', name])
+  } catch {
+    return 'already-gone'
+  }
+  try {
+    await runDocker(['rm', '--force', name])
+    return 'removed'
+  } catch {
+    return 'failed'
+  }
+}
+
+/** Every container this host started and has not torn down — the orphan sweep. */
+export async function listManagedRuntimes(): Promise<Array<{ runtimeId: string; status: string }>> {
+  const out = await runDocker([
+    'ps',
+    '--all',
+    '--filter',
+    `label=${MANAGED_LABEL}=1`,
+    '--format',
+    `{{.Label "${RUNTIME_LABEL}"}}\t{{.Status}}`,
+  ])
+  return out
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const [runtimeId = '', status = ''] = line.split('\t')
+      return { runtimeId, status }
+    })
+}
+
+/** `docker wait`, bounded: on the wall-clock budget the container is stopped, then removed. */
+function waitForContainer(
+  name: string,
+  wallClockMs: number,
+): Promise<{ exit: number | null; timedOut: boolean }> {
+  return new Promise((resolveWait) => {
+    const child = spawn('docker', ['wait', name], { stdio: ['ignore', 'pipe', 'ignore'] })
+    let out = ''
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      void execFileAsync('docker', ['stop', '--time', '30', name]).catch(() => {
+        // the container may already have exited
+      })
+    }, wallClockMs)
+    child.stdout.on('data', (chunk: Buffer) => {
+      out += chunk.toString()
+    })
+    child.on('close', () => {
+      clearTimeout(timer)
+      const code = Number.parseInt(out.trim(), 10)
+      resolveWait({ exit: Number.isFinite(code) ? code : null, timedOut })
+    })
+  })
+}
+
+function readJsonFile<T>(path: string, decode: (value: unknown) => T | null): T | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+    return decode(parsed)
+  } catch {
+    return null
+  }
+}
+
+const resultSchema = z.object({
+  threadId: z.string(),
+  stopReason: z.enum(['completed', 'budget:wall-clock', 'budget:tokens', 'aborted', 'error']),
+  error: z.string().optional(),
+  usage: z.object({ inputTokens: z.number(), outputTokens: z.number() }),
+  promptsAttempted: z.number(),
+  deferrals: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      subject: z.string(),
+      reasons: z.array(z.string()).optional(),
+    }),
+  ),
+  commits: z.array(z.string()),
+  containment: z.object({
+    declared: z.boolean(),
+    declineReason: z.string().nullable(),
+    projectSandbox: z.boolean(),
+  }),
+  toolNames: z.array(z.string()),
+  finalText: z.string(),
+})
+
+function decodeResult(value: unknown): ThreadContainerResult | null {
+  const parsed = resultSchema.safeParse(value)
+  if (!parsed.success) return null
+  const { error, deferrals, ...rest } = parsed.data
+  return {
+    ...rest,
+    deferrals: deferrals.map(({ reasons, ...entry }) => ({
+      ...entry,
+      ...(reasons !== undefined ? { reasons } : {}),
+    })),
+    ...(error !== undefined ? { error } : {}),
+  }
+}
+
+/**
+ * The secret canary (`unattended-runs.md` U3): a marker value present in the
+ * host environment must be absent from everything the guest could see or wrote.
+ * The guest's own environment is checked from inside by the worker (it reports
+ * it in the result); the host checks the surfaces it owns.
+ */
+export function secretCanaryCheck(
+  runDir: string,
+  canary: string,
+): { present: boolean; detail: string } {
+  const surfaces = [
+    'run.json',
+    'attestation.json',
+    join('out', 'result.json'),
+    join('out', 'messages.json'),
+  ]
+  for (const surface of surfaces) {
+    const path = join(runDir, surface)
+    if (!existsSync(path)) continue
+    if (readFileSync(path, 'utf8').includes(canary)) {
+      return { present: true, detail: `canary found in ${surface}` }
+    }
+  }
+  return { present: false, detail: `canary absent from ${surfaces.join(', ')}` }
+}
+
+export interface RunThreadOptions {
+  /** Injected for tests; defaults to a fresh value. */
+  runtimeId?: string
+  onLog?: (line: string) => void
+  /** Host-side canary value; defaults to a random marker exported to the child env. */
+  canary?: string
+}
+
+/** Provision → carry in → run → carry out → record → tear down. */
+export async function runThreadInContainer(
+  request: ThreadContainerRequest,
+  options: RunThreadOptions = {},
+): Promise<ThreadContainerRecord> {
+  const log =
+    options.onLog ??
+    ((line: string): void => {
+      console.log(line)
+    })
+  const runtimeId = options.runtimeId ?? newRuntimeId()
+  const image = request.image ?? WORKER_IMAGE
+  const workspace = resolve(request.workspace)
+  const runtimesDir = resolve(request.runtimesDir ?? join(copseDataRoot(), 'runtimes'))
+  const runDir = join(runtimesDir, runtimeId)
+  const egress = request.egressAllowlist.map((entry) => {
+    const origin = parseEgressOrigin(entry)
+    const connectHost = request.egressResolve?.[origin.host]
+    return connectHost !== undefined ? { ...origin, connectHost } : origin
+  })
+  const provider = providerOrigin(request.providerUrl)
+  if (!egress.some((o) => o.host === provider.host && o.port === provider.port)) {
+    throw new Error(
+      `Provider origin ${provider.host}:${String(provider.port)} is not in the egress allowlist; the guest could never reach it`,
+    )
+  }
+  const apiKeyEnv = request.apiKeyEnv ?? null
+  if (apiKeyEnv && !process.env[apiKeyEnv]) {
+    throw new Error(`Provider key variable ${apiKeyEnv} is not set on the host`)
+  }
+  const canary = options.canary ?? `copse-canary-${randomBytes(8).toString('hex')}`
+  process.env['COPSE_SECRET_CANARY'] = canary
+
+  // `egress` in the run dir is only the mountpoint: the read-only bind of the
+  // run dir cannot grow one, so it must exist before the container starts.
+  for (const sub of ['', 'state', 'out', 'egress']) {
+    mkdirSync(join(runDir, sub), { recursive: true })
+  }
+  // Unix socket paths are capped at ~104 bytes, and a profile directory (macOS
+  // `Application Support`, a deep checkout) easily exceeds that, so the broker's
+  // sockets live in a short per-run directory under the system temp root and
+  // are mounted into the guest from there.
+  const egressDir = egressSocketDir(runtimeId)
+  mkdirSync(egressDir, { recursive: true })
+  // The guest runs as an unprivileged uid the host does not share; these
+  // directories are its only writable host paths, and they are private to the run.
+  chmodSync(join(runDir, 'state'), 0o777)
+  chmodSync(join(runDir, 'out'), 0o777)
+  chmodSync(egressDir, 0o777)
+
+  const carryIn = writeCarryInBundle(workspace, runtimeId, join(runDir, 'carry-in.bundle'))
+  log(`[thread-container] carry-in ${carryIn.sha.slice(0, 12)} as ${carryIn.ref}`)
+
+  const threadId = `${runtimeId}-thread`
+  const spec: ThreadContainerRunSpec = {
+    runtimeId,
+    threadId,
+    projectId: `${runtimeId}-project`,
+    prompt: request.prompt,
+    model: request.model,
+    providerUrl: request.providerUrl,
+    apiKeyEnv,
+    budgets: request.budgets,
+    workspace: GUEST_WORKSPACE,
+    carryInRef: carryIn.ref,
+    carryInBase: carryIn.sha,
+    maxSteps: request.maxSteps ?? null,
+  }
+  const runInput: DockerRunInput = {
+    runtimeId,
+    image,
+    runDir,
+    egressDir,
+    egress,
+    apiKeyEnv,
+    memoryLimit: '4g',
+    pidsLimit: 512,
+    cpus: 2,
+  }
+  const digest = await imageDigest(image)
+  const attestation = buildAttestation(runInput, digest)
+  writeFileSync(join(runDir, 'run.json'), `${JSON.stringify(spec, null, 2)}\n`)
+  writeFileSync(join(runDir, 'attestation.json'), `${JSON.stringify(attestation, null, 2)}\n`)
+
+  const broker = new EgressBroker(egressDir, egress, egressSocketName)
+  await broker.start()
+  const startedAt = Date.now()
+  let containerExit: number | null
+  let teardown: ThreadContainerRecord['teardown']
+  try {
+    log(`[thread-container] starting ${containerName(runtimeId)} from ${image}`)
+    await runDocker(dockerRunArgs(runInput))
+    const waited = await waitForContainer(containerName(runtimeId), request.budgets.wallClockMs)
+    containerExit = waited.exit
+    if (waited.timedOut) log('[thread-container] wall-clock budget reached; container stopped')
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        'docker',
+        ['logs', '--tail', '60', containerName(runtimeId)],
+        { maxBuffer: 16 * 1024 * 1024 },
+      )
+      for (const line of `${stdout}${stderr}`.split('\n')) log(`[guest] ${line}`)
+    } catch {
+      // logs are a courtesy
+    }
+  } finally {
+    teardown = await teardownRuntime(runtimeId)
+    await broker.stop()
+    rmSync(egressDir, { recursive: true, force: true })
+  }
+
+  const result = readJsonFile(join(runDir, 'out', 'result.json'), decodeResult)
+  let carryOutRef: string | null = null
+  const carryOut = join(runDir, 'out', 'carry-out.bundle')
+  if (existsSync(carryOut)) {
+    try {
+      carryOutRef = fetchCarryOut(workspace, runtimeId, carryOut)
+      log(`[thread-container] carry-out fetched to ${carryOutRef}`)
+    } catch (error) {
+      log(`[thread-container] carry-out fetch failed: ${String(error)}`)
+    }
+  }
+  const record: ThreadContainerRecord = {
+    runtimeId,
+    threadId,
+    startedAt,
+    finishedAt: Date.now(),
+    image,
+    imageDigest: digest ?? null,
+    attestation,
+    egress: broker.log(),
+    result,
+    carryOutRef,
+    containerExit,
+    teardown,
+    secretCanary: secretCanaryCheck(runDir, canary),
+  }
+  writeFileSync(join(runDir, 'record.json'), `${JSON.stringify(record, null, 2)}\n`)
+  return record
+}

@@ -42,6 +42,12 @@ export const PROMPT_CAUSES = [
   'shell-package-install',
   /** Guarded YOLO's harm gate found a destructive or irreversible shape. */
   'shell-guarded-yolo-harm',
+  /**
+   * An unattended run inside a container asked to do something whose effect
+   * leaves the container — `git push`, a GitHub write, a package publish — and
+   * so must wait for a human even though the guest itself is disposable.
+   */
+  'shell-outward-effect',
   /** A background command wants to bind a local port. */
   'shell-port-binding',
   /** A command reads paths outside the project, with every path accounted for. */
@@ -128,6 +134,8 @@ const CONTAINMENT: Readonly<Record<PromptCause, PromptCauseContainment>> = {
   // The harm gate covers both host-destructive shapes (contained) and
   // irreversible outward effects (not contained), so it cannot be settled here.
   'shell-guarded-yolo-harm': 'mixed',
+  // By definition the effect escapes the guest; containment cannot remove it.
+  'shell-outward-effect': 'kept',
   'shell-port-binding': 'removed',
   // The prompt exists because the read reaches the user's own filesystem past
   // the project. A container guest holds only the workspace, so there is no
@@ -173,6 +181,8 @@ const LABELS: Readonly<Record<PromptCause, string>> = {
   'shell-network-scope-overlap': 'Shell: network scope widened elsewhere',
   'shell-package-install': 'Shell: package install',
   'shell-guarded-yolo-harm': 'Shell: Guarded YOLO harm gate',
+  'shell-outward-effect':
+    'Shell: outward effect from a contained run (push, publish, GitHub write)',
   'shell-port-binding': 'Shell: binding a local port',
   'shell-read-outside-project': 'Shell: reads outside the project',
   'terminal-network-widened': 'Terminal: opened with widened network access',
