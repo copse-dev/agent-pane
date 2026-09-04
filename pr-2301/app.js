@@ -271970,6 +271970,7 @@ function sectionMinimum(root4, section) {
   return section.classList.contains("terminal-shells-section") ? Math.max(twoRows, root4.clientHeight * SHELLS_MIN_RATIO) : twoRows;
 }
 function syncMinimums(root4) {
+  if (root4.clientHeight === 0) return;
   for (const section of visibleSections(root4)) {
     section.style.minHeight = `${String(Math.ceil(sectionMinimum(root4, section)))}px`;
   }
@@ -272068,7 +272069,8 @@ function mountTerminalRailResizers(root4) {
     syncMinimums(root4);
     for (const [section, handle] of handles) {
       const before = previousVisibleSection(section);
-      handle.hidden = section.hidden || before === null;
+      const hidden = section.hidden || before === null;
+      if (handle.hidden !== hidden) handle.hidden = hidden;
       if (before) {
         handle.setAttribute(
           "aria-label",
