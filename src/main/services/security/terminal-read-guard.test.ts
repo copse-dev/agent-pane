@@ -239,6 +239,26 @@ describe('read_terminal gate', () => {
       assert.equal(prompts.length, 1)
       assert.match(prompts[0]?.body ?? '', /is not available on the local server/)
     })
+
+    it('treats exactly the window size as fitting: screened whole, then auto-shared', async () => {
+      const text = 'x'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS)
+
+      const result = await ensureTerminalReadPermitted(null, 'Build', text)
+
+      assert.deepEqual(result, { allowed: true })
+      assert.deepEqual(classifierCalls, [text])
+      assert.equal(prompts.length, 0)
+    })
+
+    it('treats one character over the window as unscreened: prompts, no screening call', async () => {
+      const text = 'x'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS + 1)
+
+      await ensureTerminalReadPermitted(null, 'Build', text)
+
+      assert.equal(classifierCalls.length, 0)
+      assert.equal(prompts.length, 1)
+      assert.equal(prompts[0]?.cause, 'terminal-output-share')
+    })
   })
 
   describe('a snapshot larger than the screened window', () => {

@@ -98,6 +98,21 @@ describe('terminalReadScreenWindow', () => {
     assert.doesNotMatch(window.screened, /secret/)
   })
 
+  it('counts a line cut by the boundary as neither above nor screened', () => {
+    // Exactly one character of the first line, `V`, falls inside the window:
+    // the model saw some of it, so it is not "above" — but it never saw the
+    // whole of it, so it is not screened either.
+    const hidden = 'hidden-prefix'
+    const text = hidden + 'V\n' + 'y'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS - 2)
+    const window = terminalReadScreenWindow(text)
+    assert.equal(window.screened, 'V\n' + 'y'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS - 2))
+    assert.equal(window.unscreenedChars, hidden.length)
+    assert.equal(window.unscreenedLines, 0)
+    assert.equal(window.screenedLines, 1)
+    assert.equal(window.totalLines, 2)
+    assert.doesNotMatch(window.screened, /hidden/)
+  })
+
   it('reports an oversized single line by characters, not lines', () => {
     const window = terminalReadScreenWindow('z'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS + 7))
     assert.equal(window.unscreenedChars, 7)
