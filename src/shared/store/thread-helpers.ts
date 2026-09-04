@@ -599,6 +599,33 @@ export function findToolCall(
   return locateMessage(store, messageId)?.message.toolCalls.find((tc) => tc.id === toolCallId)
 }
 
+/**
+ * Which message in `threadId` owns `toolCallId`, searching newest-first.
+ *
+ * `findToolCall` is message-scoped, so a caller that only holds "the message the
+ * current turn is streaming into" cannot tell whether an update belongs to it.
+ * On the ACP path it usually doesn't have to — but the update pump is per
+ * *session*, not per turn, and the session is pooled and reused, so a terminal
+ * `tool_call_update` the agent emits after its turn was cancelled is handed to
+ * whichever turn's handlers are installed when it lands. Without an ownership
+ * check that straggler is appended to the next turn's bubble, below the user's
+ * follow-up (#2332 defect 3). Thread-scoped lookup answers it from state that
+ * already exists, so it survives the per-turn stream state being torn down.
+ */
+export function findToolCallOwner(
+  store: AppStore,
+  threadId: string,
+  toolCallId: string,
+): string | undefined {
+  const messages = getThreadById(store, threadId)?.messages
+  if (!messages) return undefined
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message?.toolCalls.some((tc) => tc.id === toolCallId)) return message.id
+  }
+  return undefined
+}
+
 export function updateToolCall(
   store: AppStore,
   messageId: string,

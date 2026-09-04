@@ -8,6 +8,7 @@ import {
   addToolCall,
   updateToolCall,
   findToolCall,
+  findToolCallOwner,
   setMessageContent,
   setMessageCommandSummary,
   setMessageToolSummary,
@@ -223,6 +224,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'tool_call': {
+        // A pooled ACP session can replay a `tool_call` for an id this thread
+        // already has — a straggler from a turn that has ended. Opening a second
+        // card for it would put the previous turn's work under the new turn's
+        // bubble, below the user's follow-up (#2332).
+        if (findToolCallOwner(store, threadId, chunk.toolCall.id)) break
         st.msgId ??= addAssistantMessage(store, threadId)
         addToolCall(store, st.msgId, {
           id: chunk.toolCall.id,
@@ -240,8 +246,12 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'tool_call_update': {
-        if (st.msgId && findToolCall(store, st.msgId, chunk.toolCallId)) {
-          updateToolCall(store, st.msgId, chunk.toolCallId, {
+        // Route by which message actually holds the call, not by whichever
+        // message happens to be streaming: a straggler from a finished turn
+        // otherwise patches — or silently misses — the wrong bubble (#2332).
+        const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId)
+        if (ownerId) {
+          updateToolCall(store, ownerId, chunk.toolCallId, {
             ...(chunk.name !== undefined ? { name: chunk.name } : {}),
             ...(chunk.args !== undefined ? { args: chunk.args } : {}),
             ...(chunk.status !== undefined ? { status: chunk.status } : {}),
@@ -254,15 +264,18 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'tool_result': {
-        if (st.msgId) {
-          updateToolCall(store, st.msgId, chunk.toolCallId, {
+        // Same ownership rule as `tool_call_update`: the result belongs to the
+        // message that holds the call, which is not always the one streaming.
+        const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId) ?? st.msgId
+        if (ownerId) {
+          updateToolCall(store, ownerId, chunk.toolCallId, {
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
             ...(chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}),
           })
           if (chunk.toolCallId && !chunk.isError) {
-            const toolCall = findToolCall(store, st.msgId, chunk.toolCallId)
+            const toolCall = findToolCall(store, ownerId, chunk.toolCallId)
             // Only the foreground thread may rebind: branch status is global to
             // the working tree, so a background thread reading HEAD would chase a
             // branch the active thread checked out.
