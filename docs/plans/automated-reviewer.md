@@ -116,10 +116,12 @@ the card.
 
 `REVIEW_TOOL_NAMES` is `read_file`, `list_dir`, `search_code`, `git_diff`, `git_status`,
 `git_log`, `staged_diffs`, `read_staged_diff`. There is no shell, no build, no test run.
-Both reviewers start from the same diff, capped at `MAX_DIFF_CHARS = 12_000`, and each
-drives its own read-only tool loop from there. The judge is weaker still: a single
-`completeTextWithUsage` call with no tools at all, fed only the parent goal and the two prose
-reviews, and explicitly told **"Do NOT re-review the code yourself"**.
+Both reviewers start from the same diff, capped at `MAX_DIFF_CHARS = 12_000` in
+`packages/agent/src/review-subagent.ts`, and each drives its own read-only tool loop from
+there (`reviewWith` in `src/main/services/model-comparison-runner.ts` calls
+`runPostTurnReview` once per model). The judge is weaker still: a single
+`completeTextWithUsage` call with no tools at all, fed only the parent goal, the two model
+ids and the two prose reviews, and explicitly told **"Do NOT re-review the code yourself"**.
 
 So the pipeline has no contact with a compiler, a type checker, a linter or a test at any
 point. Two models can agree, fluently and in detail, on a claim that thirty seconds of
@@ -300,7 +302,7 @@ model sees it.
 credentials (App private keys, installation tokens, `GITHUB_TOKEN`, PATs); the profile under
 `~/.copse` (settings, threads, memories, the knowledge store); SSH keys, git credential
 helpers, cloud credentials, keychains; any other repository on the machine; the environment
-at large; and, should anyone run it as a shared service, any other tenant's review. The
+at large; and, if this ever runs hosted, any other tenant's review. The
 diff itself is scrubbed before it reaches a model — `packages/llm/src/redact-secrets.ts`
 plus the repo's `.gitleaks.toml` rules run over every review input — because a secret
 committed in the PR is still a secret.
@@ -462,8 +464,8 @@ Ordered by how likely each is to sink the thing.
 - Not an autofixer in this plan. `remedy` is a suggested patch a human applies; applying
   it automatically is separate work with a separate risk profile.
 - Not a hosted service from us. Local-first, provider-agnostic, runs against a local model.
-  Nothing stops someone else hosting it, which is why §Execution isolation names other
-  tenants' data.
+  If this ever runs hosted, the isolation rules in §Execution isolation already cover the
+  other tenants' data.
 
 ## Competitive position
 
