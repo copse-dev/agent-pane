@@ -14,6 +14,8 @@ function cssPixels(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+// An empty section collapses to header + padding here, which is fine: empty
+// sections are hidden, so the resizer never sizes them.
 function measuredRowHeight(section: HTMLElement): number {
   const list = section.querySelector<HTMLElement>('.terminal-rail-section-list')
   const row =
@@ -36,6 +38,9 @@ function sectionMinimum(root: HTMLElement, section: HTMLElement): number {
 }
 
 function syncMinimums(root: HTMLElement): void {
+  // A hidden host measures every child at 0, so the minimums would be
+  // meaningless; the resize observer re-runs this once it is shown.
+  if (root.clientHeight === 0) return
   for (const section of visibleSections(root)) {
     section.style.minHeight = `${String(Math.ceil(sectionMinimum(root, section)))}px`
   }
@@ -161,7 +166,12 @@ export function mountTerminalRailResizers(root: HTMLElement): () => void {
     syncMinimums(root)
     for (const [section, handle] of handles) {
       const before = previousVisibleSection(section)
-      handle.hidden = section.hidden || before === null
+      // Only write on change: setting `hidden` to its current value still
+      // queues a mutation record, and the observer below watches these handles
+      // too (they are children of root), so an unconditional write re-triggers
+      // sync forever.
+      const hidden = section.hidden || before === null
+      if (handle.hidden !== hidden) handle.hidden = hidden
       if (before) {
         handle.setAttribute(
           'aria-label',

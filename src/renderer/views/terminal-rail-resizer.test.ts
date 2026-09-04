@@ -1,6 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { after, afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { mountTerminalRailResizers } from './terminal-rail-resizer.ts'
 
 class TestResizeObserver {
@@ -120,6 +121,38 @@ describe('terminal rail resizer', () => {
     )
     assert.equal(shells.style.flexGrow, '200')
     assert.equal(background.style.flexGrow, '200')
+  })
+
+  it('does not re-trigger its own hidden observer once a section starts hidden', async () => {
+    const root = document.createElement('div')
+    Object.defineProperty(root, 'clientHeight', { configurable: true, value: 600 })
+    document.body.append(root)
+    addSection(root, 'Shells', 'terminal-shells-section')
+    addSection(root, 'Agent tasks', 'agent-tasks-section', true)
+    addSection(root, 'Background tasks', 'supervised-tasks-section', true)
+    addSection(root, 'Ports', 'ports-section')
+
+    // Mutation records are delivered on a microtask after the mount, so a spy
+    // observer counts the `hidden` writes the resizer makes. A runaway loop
+    // would never settle: cut it off well above the expected count so the test
+    // fails instead of hanging the runner.
+    let hiddenRecords = 0
+    let destroy = (): void => {}
+    const spy = new MutationObserver((records) => {
+      hiddenRecords += records.filter((record) => record.attributeName === 'hidden').length
+      if (hiddenRecords > 50) destroy()
+    })
+    spy.observe(root, { subtree: true, attributes: true, attributeFilter: ['hidden'] })
+
+    destroy = mountTerminalRailResizers(root)
+    await sleep(0)
+    await sleep(0)
+    spy.disconnect()
+    const hiddenHandles = root.querySelectorAll('.terminal-rail-resizer[hidden]').length
+    destroy()
+
+    assert.ok(hiddenRecords <= 2, `expected at most 2 hidden records, saw ${String(hiddenRecords)}`)
+    assert.equal(hiddenHandles, 2)
   })
 })
 
