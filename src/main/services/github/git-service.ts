@@ -9,7 +9,6 @@ import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
-import { withoutGhostMountPoints } from '../../project-sandbox/ghost-mount-points.ts'
 import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { isGitAvailableForTarget } from '../tool-availability.ts'
@@ -704,13 +703,7 @@ export async function getGitStatus(
   if (opts.untrackedFiles === 'all') args.push('-uall')
   const { stdout, code } = await runGitRead(args, root)
   if (code !== 0) return null
-  // `git status` itself ran in the sandbox, and a concurrent sandboxed command
-  // can leave bwrap's zero-byte deny mount points visible as untracked
-  // dotfiles for the duration of the overlap. They are not the user's files.
-  return withoutGhostMountPoints(
-    normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix),
-    root,
-  )
+  return normalizeGitStatusForWorkspace(parsePorcelainV1(stdout), prefix)
 }
 
 /**
