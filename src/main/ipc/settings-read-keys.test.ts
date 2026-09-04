@@ -21,7 +21,7 @@ const ROOTS = ['src/renderer', 'src/preload'].map((dir) => resolve(process.cwd()
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name)
-    if (entry.isDirectory()) return sourceFiles(path)
+    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : sourceFiles(path)
     return entry.isFile() && path.endsWith('.ts') && !path.endsWith('.test.ts') ? [path] : []
   })
 }
@@ -29,11 +29,15 @@ function sourceFiles(dir: string): string[] {
 const sources = new Map(ROOTS.flatMap(sourceFiles).map((p) => [p, readFileSync(p, 'utf8')]))
 const allSource = [...sources.values()].join('\n')
 
-/** `export const FOO_SETTING = 'foo'` across the repo, so a constant read resolves. */
+/**
+ * `export const FOO_SETTING = 'foo'` across the repo, so a constant read resolves. Workspace
+ * packages count as well: renderer-importable constants such as `TRUSTED_COMMANDS_SETTING`
+ * live in `@copse/shell-guard` and reach the renderer through a `src/shared` re-export.
+ */
 function settingConstants(): Map<string, string> {
-  const shared = resolve(process.cwd(), 'src/shared')
+  const roots = ['src/shared', 'packages'].map((dir) => resolve(process.cwd(), dir))
   const out = new Map<string, string>()
-  for (const file of [...sourceFiles(shared), ...sources.keys()]) {
+  for (const file of [...roots.flatMap(sourceFiles), ...sources.keys()]) {
     const text = sources.get(file) ?? readFileSync(file, 'utf8')
     for (const m of text.matchAll(/export const ([A-Z0-9_]+) = '([A-Za-z][\w.]*)'/g)) {
       out.set(m[1] ?? '', m[2] ?? '')

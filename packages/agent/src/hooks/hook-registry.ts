@@ -9,7 +9,8 @@
 //
 // This module lives in `packages/agent` and imports nothing from the host app
 // (execution-guidance rule 4).
-import { errorMessage, isRecord } from '../internal-utils.ts'
+import { errorMessage } from '@copse/std/errors.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 import type {
   AsyncHookOutcome,
   BlockingHookOutcome,

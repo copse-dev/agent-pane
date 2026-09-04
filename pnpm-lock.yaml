@@ -61,15 +61,30 @@ importers:
       '@copse/agent':
         specifier: workspace:*
         version: link:packages/agent
+      '@copse/hooks-dialects':
+        specifier: workspace:*
+        version: link:packages/hooks-dialects
       '@copse/llm':
         specifier: workspace:*
         version: link:packages/llm
       '@copse/plan-usage':
         specifier: workspace:*
         version: link:packages/plan-usage
+      '@copse/plugin-sdk':
+        specifier: workspace:*
+        version: link:packages/plugin-sdk
+      '@copse/shell-guard':
+        specifier: workspace:*
+        version: link:packages/shell-guard
+      '@copse/std':
+        specifier: workspace:*
+        version: link:packages/std
       '@copse/streaming-markdown':
         specifier: ^1.1.0
         version: 1.1.0(dompurify@3.4.14)(entities@8.0.0)(highlight.js@11.12.0)(katex@0.16.47)(mermaid@11.17.2)
+      '@copse/thread-store':
+        specifier: workspace:*
+        version: link:packages/thread-store
       '@electron/rebuild':
         specifier: ^4.2.0
         version: 4.2.0
@@ -236,6 +251,9 @@ importers:
       '@copse/llm':
         specifier: workspace:*
         version: link:../llm
+      '@copse/std':
+        specifier: workspace:*
+        version: link:../std
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -246,11 +264,29 @@ importers:
         specifier: 1.0.4
         version: 1.0.4
 
+  packages/hooks-dialects:
+    dependencies:
+      '@copse/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@copse/std':
+        specifier: workspace:*
+        version: link:../std
+      micromatch:
+        specifier: ^4.0.8
+        version: 4.0.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   packages/llm:
     dependencies:
       '@anthropic-ai/sdk':
         specifier: ^0.117.1
         version: 0.117.1(zod@4.4.3)
+      '@copse/std':
+        specifier: workspace:*
+        version: link:../std
       '@lmstudio/sdk':
         specifier: ^1.5.0
         version: 1.5.0
@@ -261,7 +297,49 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
-  packages/plan-usage: {}
+  packages/plan-usage:
+    dependencies:
+      '@copse/std':
+        specifier: workspace:*
+        version: link:../std
+
+  packages/plugin-sdk:
+    dependencies:
+      '@copse/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@copse/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@copse/std':
+        specifier: workspace:*
+        version: link:../std
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
+  packages/shell-guard:
+    dependencies:
+      shell-quote:
+        specifier: ^1.10.0
+        version: 1.10.0
+
+  packages/std: {}
+
+  packages/thread-store:
+    dependencies:
+      '@copse/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@copse/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@copse/std':
+        specifier: workspace:*
+        version: link:../std
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
 packages:
 

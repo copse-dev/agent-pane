@@ -25,13 +25,9 @@ export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip'] as const
  */
 export const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 
-export interface ArchiveAttachmentRef {
-  /** Absolute path of the stored copy, inside the thread's blobs directory. */
-  path: string
-  /** Original file name, shown on the composer chip and in the prompt note. */
-  name: string
-  sizeBytes: number
-}
+// The ref type is owned by the thread store, which persists it; re-exported here
+// so media handling and its callers keep one import path.
+export type { ArchiveAttachmentRef } from '@copse/thread-store/attachment-refs.ts'
 
 /** MIME types browsers report for a zip; `.zip` files often arrive with none. */
 const ARCHIVE_MIME_TYPES = new Set([

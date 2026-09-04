@@ -25,8 +25,8 @@ through `node_modules` without tsconfig or esbuild aliases. Runtime dependencies
   provider output type `ProviderStreamChunk`. `@shared/types` re-exports every one
   of these, so the 100+ app files importing them from `@shared/types` are
   unchanged.
-- **`internal-utils.ts`** — vendored copies of the app's `at` / `errorMessage`
-  helpers, so the package pulls nothing from `@shared/*`.
+- **Leaf helpers come from `@copse/std`** (`at`, `errorMessage`, `isRecord`), the
+  shared home for the utilities that used to be vendored here as `internal-utils.ts`.
 
 ## Imports: granular subpaths, not the barrel
 

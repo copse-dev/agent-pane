@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('browser:share-page-text', webContentsId),
     shareScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:share-screenshot', webContentsId),
+    exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
     onOpenTab: (handler: (url: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
         handler(url)

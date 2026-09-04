@@ -1,8 +1,7 @@
-/** Package-internal helpers — no host-app imports. */
+/** Package-internal helpers — no host-app imports; leaf primitives come from `@copse/std`. */
 
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
+export { errorMessage } from '@copse/std/errors.ts'
+export { isRecord } from '@copse/std/unknown-value.ts'
 
 export function isAuthRejectionError(message: string): boolean {
   return (
@@ -41,10 +40,6 @@ export function toIsoTimestamp(value: unknown, nowMs: number): string | null {
   }
   void nowMs
   return null
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export async function readJsonBody(

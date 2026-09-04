@@ -466,24 +466,10 @@ export function recordAppliedNudgeRun(
 }
 
 /** One spawned (command) hook execution, as observed by the command runner. */
-export interface CommandHookRunInput {
-  /** Dialect event name (e.g. `beforeShellExecution`). */
-  event: string
-  /** The hook's command string — its stable id in dialect configs. */
-  hookId: string
-  startedAt: number
-  durationMs: number
-  /** Process exit code; null when killed (timeout / output cap) or spawn failed. */
-  exitCode: number | null
-  /** Whether stdout parsed into a response (empty stdout = intentional no-response). */
-  parseOk: boolean
-  decision: SpineHookRunDecision
-  /** The exact JSON written to the hook's stdin, stored verbatim as a blob. */
-  stdin: string
-  /** Raw captured streams, stored verbatim as blobs. */
-  stdout: string
-  stderr: string
-}
+// The per-run input shape is owned by the runner in `@copse/hooks-dialects`; the
+// recorder is one sink for it. Re-exported so existing importers are unchanged.
+import type { CommandHookRunInput } from '@copse/hooks-dialects/command-hook-runner.ts'
+export type { CommandHookRunInput }
 
 /**
  * Record one command-hook execution. The exact stdin bytes, raw stdout **and**
