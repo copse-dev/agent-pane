@@ -8398,6 +8398,12 @@ dialog.settings-overlay::backdrop {
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
+.approval-advice-item {
+  display: inline-block;
+  max-width: 100%;
+  padding-left: 1.05em;
+  text-indent: -1.05em;
+}
 .approval-footer {
   margin-top: var(--spacing-sm);
   font-size: var(--font-size-sm);
@@ -9444,6 +9450,15 @@ dialog.settings-overlay::backdrop {
 .command-palette-item-thread .command-palette-name {
   flex: 1;
   min-width: 0;
+}
+.command-palette-pr {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 30%;
 }
 .command-palette-context {
   flex-shrink: 0;

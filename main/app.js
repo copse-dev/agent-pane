@@ -18286,11 +18286,18 @@ function parseGithubPrUrl(rawUrl) {
     return null;
   }
 }
+function stripUrlTrailingPunctuation(url2) {
+  return url2.replace(URL_TRAILING_PUNCTUATION_RE, "");
+}
+function githubPrKeyMatchesTerm(key, term) {
+  const digits = /^#?(\d+)$/.exec(term)?.[1];
+  return digits === void 0 ? key.includes(term) : key.endsWith(`#${digits}`);
+}
 function extractGithubPrUrls(text4) {
   const seen = /* @__PURE__ */ new Set();
   const refs = [];
   for (const match3 of text4.matchAll(GITHUB_PR_URL_RE)) {
-    const raw = match3[0].replace(URL_TRAILING_PUNCTUATION_RE, "");
+    const raw = stripUrlTrailingPunctuation(match3[0]);
     const parsed2 = parseGithubPrUrl(raw);
     if (!parsed2) continue;
     const key = githubPrKey(parsed2);
@@ -21145,7 +21152,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-light-accent-request",
             title: "Run outside sandbox?",
             body: "npm install",
-            bodyAdvice: "This command needs access the project sandbox blocks.",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Installs or updates packages, which downloads and runs code from the internet",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -21176,7 +21183,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-oracle",
             title: "Run outside sandbox?",
             body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
-            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
@@ -21184,7 +21191,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-syntax",
             title: "Run outside sandbox?",
             body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
-            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
@@ -21192,7 +21199,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-test",
             title: "Run outside sandbox?",
             body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
-            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -21704,6 +21711,8 @@ This response is streamed through the real renderer event path.`
       loadMessages: (_projectId, threadId) => scenario.holdThreadHydration === true ? new Promise(() => void 0) : scenario.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t4) => t4.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
       onPrRefs: () => () => void 0,
+      // No demo scenario opens a real PR, so nothing ever announces one.
+      onPrCreated: () => () => void 0,
       create: (_projectId, thread) => {
         threads = [thread, ...threads.filter((candidate) => candidate.id !== thread.id)];
         return resolvedVoid();
@@ -291570,6 +291579,16 @@ var init_ssh_status_banner = __esm({
 });
 
 // src/renderer/views/approval-dialog.ts
+function adviceElement(advice) {
+  const children2 = [];
+  advice.split("\n").forEach((line2, index) => {
+    if (index > 0) children2.push("\n");
+    children2.push(
+      line2.startsWith(ADVICE_BULLET) ? el("span", { class: "approval-advice-item" }, line2) : line2
+    );
+  });
+  return el("div", { class: "approval-advice" }, ...children2);
+}
 function mountApprovalDialog(api3, store3, options2 = {}) {
   const coalesceMs = options2.coalesceMs ?? APPROVAL_COALESCE_MS;
   const settleMs = options2.settleMs ?? APPROVAL_SETTLE_MS;
@@ -291724,7 +291743,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     if (hasSharedContext) {
       const sharedChildren = [];
       if (firstRequest.bodyAdvice) {
-        sharedChildren.push(el("div", { class: "approval-advice" }, firstRequest.bodyAdvice));
+        sharedChildren.push(adviceElement(firstRequest.bodyAdvice));
       }
       const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
       sharedChildren.push(
@@ -291754,7 +291773,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
             rowChildren.push(pickers.root);
           } else {
             if (req.bodyAdvice) {
-              rowChildren.push(el("div", { class: "approval-advice" }, req.bodyAdvice));
+              rowChildren.push(adviceElement(req.bodyAdvice));
             }
             if (collapseDetails) rowChildren.push(detailsToggle());
             rowChildren.push(requestBody(req));
@@ -291992,7 +292011,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     resolve2(false, false);
   });
 }
-var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, defaultTimer;
+var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, ADVICE_BULLET, defaultTimer;
 var init_approval_dialog = __esm({
   "src/renderer/views/approval-dialog.ts"() {
     init_helpers();
@@ -292002,6 +292021,7 @@ var init_approval_dialog = __esm({
     init_actions();
     APPROVAL_COALESCE_MS = 120;
     APPROVAL_SETTLE_MS = 500;
+    ADVICE_BULLET = "\u2022 ";
     defaultTimer = (fn4, ms4) => {
       const handle = setTimeout(fn4, ms4);
       return () => {
@@ -292929,11 +292949,24 @@ var init_conversation_search = __esm({
 });
 
 // src/renderer/views/command-palette.ts
-function matches33(haystack, query) {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+function queryTerms(query) {
+  return query.toLowerCase().split(/\s+/).filter(Boolean).map((term) => {
+    const pr2 = parseGithubPrUrl(stripUrlTrailingPunctuation(term));
+    return pr2 ? githubPrKey(pr2) : term;
+  });
+}
+function matches33(haystack, terms) {
   if (terms.length === 0) return true;
   const hay = haystack.toLowerCase();
   return terms.every((term) => hay.includes(term));
+}
+function threadMatches(hit, terms) {
+  if (terms.length === 0) return true;
+  const text4 = `${hit.title} ${hit.projectName}`.toLowerCase();
+  const keys3 = hit.prRefs.map(githubPrKey);
+  return terms.every(
+    (term) => text4.includes(term) || keys3.some((key) => githubPrKeyMatchesTerm(key, term))
+  );
 }
 function openCommandPalette() {
   openImpl3?.();
@@ -292951,7 +292984,7 @@ function mountCommandPalette(store3, api3) {
   const input = el("input", {
     type: "text",
     class: "command-palette-input",
-    placeholder: "Search threads, projects, panels, commands\u2026",
+    placeholder: "Search threads, projects, panels, commands, #PR\u2026",
     "aria-label": "Command palette",
     spellcheck: "false",
     autocomplete: "off"
@@ -293012,14 +293045,15 @@ function mountCommandPalette(store3, api3) {
   }
   function computeEntries(query) {
     const { projects } = store3.getState();
-    const threads = threadHits.filter((hit) => matches33(`${hit.title} ${hit.projectName}`, query)).slice(0, THREAD_LIMIT).map((hit) => ({ kind: "thread", hit }));
-    const projectEntries = projects.map((p3) => ({ id: p3.id, name: projectDisplayName(p3) })).filter((p3) => matches33(p3.name, query)).slice(0, PROJECT_LIMIT).map((p3) => ({ kind: "project", id: p3.id, name: p3.name }));
-    const panels = PANEL_ITEMS.filter((p3) => matches33(p3.label, query)).map((p3) => ({
+    const terms = queryTerms(query);
+    const threads = threadHits.filter((hit) => threadMatches(hit, terms)).slice(0, THREAD_LIMIT).map((hit) => ({ kind: "thread", hit }));
+    const projectEntries = projects.map((p3) => ({ id: p3.id, name: projectDisplayName(p3) })).filter((p3) => matches33(p3.name, terms)).slice(0, PROJECT_LIMIT).map((p3) => ({ kind: "project", id: p3.id, name: p3.name }));
+    const panels = PANEL_ITEMS.filter((p3) => matches33(p3.label, terms)).map((p3) => ({
       kind: "panel",
       mode: p3.mode,
       label: p3.label
     }));
-    const commands = commandItems().filter((c4) => c4.kind === "command" && matches33(c4.label, query));
+    const commands = commandItems().filter((c4) => c4.kind === "command" && matches33(c4.label, terms));
     return [...threads, ...projectEntries, ...panels, ...commands];
   }
   function sectionTitle(entry) {
@@ -293038,11 +293072,14 @@ function mountCommandPalette(store3, api3) {
     const icon2 = el("span", { class: "command-palette-icon" }, searchIcon("ui-icon ui-icon-sm"));
     const cls = `command-palette-item command-palette-item-${entry.kind}${selected ? " selected" : ""}`;
     if (entry.kind === "thread") {
+      const prLabel = entry.hit.prRefs.map((ref) => `#${String(ref.number)}`).join(" ");
+      const tooltip = [entry.hit.title, prLabel, entry.hit.projectName].filter(Boolean).join(" \u2014 ");
       return el(
         "div",
-        { class: cls, role: "option", title: `${entry.hit.title} \u2014 ${entry.hit.projectName}` },
+        { class: cls, role: "option", title: tooltip },
         icon2,
         el("span", { class: "command-palette-name" }, entry.hit.title || "New Thread"),
+        ...prLabel ? [el("span", { class: "command-palette-pr" }, prLabel)] : [],
         el("span", { class: "command-palette-context" }, entry.hit.projectName)
       );
     }
@@ -293110,7 +293147,8 @@ function mountCommandPalette(store3, api3) {
       projectId: active2.id,
       projectName: projectDisplayName(active2),
       title: t4.title,
-      updatedAt: 0
+      updatedAt: 0,
+      prRefs: t4.prRefs ?? []
     }));
   }
   const threadKey = (h3) => `${h3.projectId}\0${h3.threadId}`;
@@ -293129,7 +293167,8 @@ function mountCommandPalette(store3, api3) {
         projectId: project2.id,
         projectName: projectDisplayName(project2),
         title: hit.title,
-        updatedAt: hit.updatedAt
+        updatedAt: hit.updatedAt,
+        prRefs: hit.prRefs
       }))
     ).sort((a3, b5) => b5.updatedAt - a3.updatedAt);
     const seen = new Set(catalogHits.map(threadKey));
@@ -293181,6 +293220,7 @@ var init_command_palette = __esm({
     init_keyboard_shortcuts_dialog();
     init_file_search_dialog();
     init_conversation_search();
+    init_github_pr_url2();
     PANEL_ITEMS = [
       { mode: "explorer", label: "Panel (Explorer)" },
       { mode: "terminal", label: "Terminal" },
@@ -294500,6 +294540,21 @@ var init_perf_autopilot = __esm({
       "memories"
     ];
     SWEEP_DWELL_MS = 6e3;
+  }
+});
+
+// src/renderer/controller/pr-panel-follow.ts
+function attachPrPanelFollow(store3, api3) {
+  return api3.threads.onPrCreated((projectId, threadId, ref) => {
+    const { activeProjectId, activeThreadId, filesPaneOpen, rightPanelMode } = store3.getState();
+    if (projectId !== activeProjectId || threadId !== activeThreadId) return;
+    if (!filesPaneOpen || rightPanelMode !== "changes") return;
+    openPullRequest(store3, ref);
+  });
+}
+var init_pr_panel_follow = __esm({
+  "src/renderer/controller/pr-panel-follow.ts"() {
+    init_panels();
   }
 });
 
@@ -302300,6 +302355,7 @@ async function boot() {
     attachAutosave(store2, api2);
     attachBestValueDefaultResolver(store2, api2);
     attachAutomationController(store2, api2);
+    attachPrPanelFollow(store2, api2);
     startExternalCursorAgentSync(store2, api2);
   } else {
     attachDiffState(store2, api2, { revealOnShowDiff: false });
@@ -302655,6 +302711,7 @@ var init_main2 = __esm({
     init_perf();
     init_perf_autopilot();
     init_thread_hydration();
+    init_pr_panel_follow();
     init_external_cursor_agent_sync();
     init_startup_settings();
     init_projects();
