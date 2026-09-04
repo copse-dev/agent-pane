@@ -21469,6 +21469,7 @@ function createDemoApi(scenario, options2 = {}) {
       onOpenTab: subscribe,
       sharePageText: unsupported,
       shareScreenshot: unsupported,
+      exportPdf: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe
@@ -274625,6 +274626,12 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       imageIcon("ui-icon ui-icon-sm"),
       el("span", {}, "Share screenshot")
     );
+    const exportPdfItem = el(
+      "button",
+      { type: "button", class: "browser-menu-item", role: "menuitem" },
+      downloadIcon("ui-icon ui-icon-sm"),
+      el("span", {}, "Export PDF")
+    );
     const openExternalItem = el(
       "button",
       { type: "button", class: "browser-menu-item", role: "menuitem" },
@@ -274643,6 +274650,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       shareTextItem,
       shareScreenshotItem,
       el("div", { class: "browser-menu-separator", role: "separator" }),
+      exportPdfItem,
       openExternalItem,
       inspectorItem
     );
@@ -274688,6 +274696,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
         const shareableId = shareableWebContentsId(tab);
         shareTextItem.disabled = shareableId === null || !api3;
         shareScreenshotItem.disabled = shareableId === null || !api3;
+        exportPdfItem.disabled = shareableId === null || !api3?.browser.exportPdf;
         openExternalItem.disabled = !currentHttpUrl(tab) || !api3?.shell;
         inspectorItem.disabled = !tab.webview;
         menu.removeAttribute("hidden");
@@ -274718,6 +274727,17 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       if (id40 === null || !api3) return;
       void api3.browser.shareScreenshot(id40).catch((error53) => {
         showErrorToast("Could not share browser screenshot", error53);
+      });
+    });
+    exportPdfItem.addEventListener("click", () => {
+      setMenuOpen(false);
+      const id40 = shareableWebContentsId(tab);
+      const exportPdf = api3?.browser.exportPdf;
+      if (id40 === null || !exportPdf) return;
+      void exportPdf(id40).then((filePath) => {
+        if (filePath) showToast(`Exported PDF to ${filePath}`);
+      }).catch((error53) => {
+        showErrorToast("Could not export PDF", error53);
       });
     });
     openExternalItem.addEventListener("click", () => {
