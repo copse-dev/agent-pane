@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at } from '@shared/array-utils.ts'
+import { at } from '@copse/std/array-utils.ts'
 import {
   parseMcpConfig,
   mergeMcpConfigs,
