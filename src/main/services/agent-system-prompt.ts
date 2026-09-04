@@ -2,6 +2,7 @@ import {
   loadAgentRequestedRulesCatalog,
   loadInstructionLayersWithMetadata,
   type InstructionLayerMetadata,
+  type NestedInstructionTurn,
 } from './project-instructions.ts'
 import { getSetting, getSettingTrimmed } from './storage/settings.ts'
 import { getAgentExecutionRoot } from './execution-root.ts'
@@ -93,6 +94,11 @@ export interface BuildSystemPromptOptions {
   model?: string
   /** Persist nested-source activation for Settings; real local turns set this. */
   trackInstructionActivation?: boolean
+  /**
+   * The turn's nested-discovery memo. The build walks the tree once into it so
+   * the turn's tool calls reuse that walk; estimates omit it and share a cache.
+   */
+  nestedInstructionTurn?: NestedInstructionTurn
 }
 
 export interface SystemPromptBuildResult {
@@ -113,7 +119,11 @@ export async function buildSystemPromptWithMetadata(
     userText,
   }
   const instructionLayers = await loadInstructionLayersWithMetadata(
-    { cursorRuleContext, nestedContextPaths: contextPaths },
+    {
+      cursorRuleContext,
+      nestedContextPaths: contextPaths,
+      ...(opts.nestedInstructionTurn ? { nestedInstructionTurn: opts.nestedInstructionTurn } : {}),
+    },
     opts.trackInstructionActivation ?? false,
   )
   const agentRulesCatalog = await loadAgentRequestedRulesCatalog()

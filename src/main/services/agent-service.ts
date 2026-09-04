@@ -41,7 +41,11 @@ import {
 import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPromptWithMetadata } from './agent-system-prompt.ts'
-import { activateNestedInstructionSources } from './project-instructions.ts'
+import {
+  activateNestedInstructionSources,
+  createNestedInstructionTurn,
+  invalidateNestedInstructionDiscoveryForWrite,
+} from './project-instructions.ts'
 import { hasLastUsage } from './providers/provider-usage.ts'
 import {
   clearActiveRunThread,
@@ -409,6 +413,19 @@ function instructionContextPathsForTool(name: string, args: unknown): string[] {
     const value = args[field]
     return typeof value === 'string' && value.trim() ? [value] : []
   })
+}
+
+/**
+ * One transcript line per nested AGENTS.md that joined the prompt mid-turn, in
+ * the same italic-note voice as the model-fallback notice. Emitted as a text
+ * chunk between steps — never between a `tool_call` and its `tool_result`,
+ * where a text chunk would start a new assistant bubble and strand the card.
+ */
+function nestedInstructionsActivatedNotice(names: readonly string[]): string {
+  return (
+    names.map((name) => `_Loaded directory-scoped instructions from \`${name}\`._`).join('\n') +
+    '\n\n'
+  )
 }
 
 /**
@@ -1485,6 +1502,9 @@ export async function runAgent(
         ? options.invokedAgent
         : undefined
 
+    // One nested-AGENTS.md walk per turn: the prompt build below seeds the memo
+    // and every file tool call of this turn reuses it.
+    const nestedInstructionTurn = createNestedInstructionTurn()
     const systemPromptBuild = await buildSystemPromptWithMetadata({
       subagentsEnabled,
       invokedSkills,
@@ -1492,6 +1512,7 @@ export async function runAgent(
       userPrompt: outboundPrompt,
       model,
       trackInstructionActivation: true,
+      nestedInstructionTurn,
     })
     const systemPrompt = systemPromptBuild.prompt
     const activeNestedInstructionPaths = new Set(
@@ -1501,6 +1522,16 @@ export async function runAgent(
       systemPromptBuild.instructionMetadata.activeInstructionContents,
     )
     let activeNestedInstructionBytes = systemPromptBuild.instructionMetadata.activeNestedBytes
+    // Names of nested files activated by a tool call, held until the next step
+    // boundary so the notice lands after that call's tool_result.
+    const pendingNestedInstructionNotices: string[] = []
+    const flushNestedInstructionNotices = (): void => {
+      if (pendingNestedInstructionNotices.length === 0) return
+      sendChunk({
+        type: 'text',
+        text: nestedInstructionsActivatedNotice(pendingNestedInstructionNotices.splice(0)),
+      })
+    }
 
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -1816,6 +1847,7 @@ export async function runAgent(
               activeNestedInstructionPaths,
               activeInstructionContents,
               activeNestedInstructionBytes,
+              nestedInstructionTurn,
             )
             for (const path of activation.activatedPaths) {
               activeNestedInstructionPaths.add(path)
@@ -1824,6 +1856,7 @@ export async function runAgent(
               activeInstructionContents.add(content)
               activeNestedInstructionBytes += Buffer.byteLength(content, 'utf-8')
             }
+            pendingNestedInstructionNotices.push(...activation.injectedNames)
             if (activation.block) {
               const leadingSystem = trimmed.find((message) => message.role === 'system')
               if (leadingSystem?.role === 'system') {
@@ -1955,6 +1988,15 @@ export async function runAgent(
           const startedAt = Date.now()
           try {
             const raw = await runParentTool(name, args, signal, toolCallId)
+            // The agent just wrote, moved, or removed an AGENTS.md: the turn's
+            // discovery memo no longer describes the tree, so the next file tool
+            // call re-walks. `run_shell` writes are not seen here (documented).
+            if (isEditTool(name)) {
+              invalidateNestedInstructionDiscoveryForWrite(
+                instructionContextPathsForTool(name, args),
+                nestedInstructionTurn,
+              )
+            }
             fireAfterToolUseHook({
               threadId,
               turnTreeId,
@@ -2011,6 +2053,9 @@ export async function runAgent(
                 // `messages` above is `trimmed`, mutated in place as turns land, so
                 // this persists everything the previous step produced.
                 checkpointHistory()
+                // The previous step's tool results have been streamed; a notice
+                // here cannot come between a tool call and its result.
+                flushNestedInstructionNotices()
               },
               recordStreamCut: (record) => {
                 recordStreamCut(record, model)
@@ -2040,6 +2085,9 @@ export async function runAgent(
                 }
               },
             })
+            // A loop that stopped on a tool step (step cap, abort) still owes
+            // the notice for what that step activated.
+            flushNestedInstructionNotices()
 
             const subUsage = getAccumulatedSubagentUsage()
             if (subUsage.inputTokens || subUsage.outputTokens) {
@@ -2097,6 +2145,7 @@ export async function runAgent(
           onLlmCall: (count: number): void => {
             setHookRunStep(count)
             checkpointHistory()
+            flushNestedInstructionNotices()
           },
           recordStreamCut: (record) => {
             recordStreamCut(record, model)

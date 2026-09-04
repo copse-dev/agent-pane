@@ -1,6 +1,6 @@
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { InstructionScope } from '@shared/types/instructions.ts'
 import {
   buildAgentRequestedRulesCatalog,
@@ -10,6 +10,7 @@ import {
 } from './skills/cursor-rules.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
 
 /**
  * Project-root instruction files, in precedence order.
@@ -31,7 +32,12 @@ const MAX_NESTED_CONTEXT_PATHS = 64
 const MAX_ACTIVE_NESTED_FILES = 8
 const MAX_NESTED_FILE_BYTES = 32 * 1024
 const MAX_ACTIVE_NESTED_BYTES = 64 * 1024
-const NESTED_DISCOVERY_CACHE_MS = 1_000
+/**
+ * How long a walk serves callers outside a turn (the composer's context
+ * estimate). A turn never relies on this: it walks once at turn start and
+ * memoises the result for its own tool calls (see {@link NestedInstructionTurn}).
+ */
+const NESTED_DISCOVERY_CACHE_MS = 30_000
 
 /** Generated, vendored, or cache directories that cannot own workspace guidance. */
 const NESTED_SKIP_DIRS = new Set([
@@ -71,6 +77,17 @@ export interface ProjectInstructionSource {
   trusted: boolean
   /** Workspace-relative directory governed by a nested AGENTS.md. */
   scopePath?: string
+  /**
+   * Name of the earlier source whose content this nested file repeats. The
+   * content is injected once, through that source; this entry stays listed so
+   * Sources does not silently hide a file the workspace ships.
+   */
+  duplicateOf?: string
+  /**
+   * True on project sources when the nested walk stopped at a directory, file,
+   * or depth cap, so the listed nested files may be incomplete.
+   */
+  discoveryTruncated?: boolean
 }
 
 interface NestedInstructionSource {
@@ -80,23 +97,81 @@ interface NestedInstructionSource {
   scopePath: string
 }
 
+/** One walk of the execution root for nested AGENTS.md files. */
+export interface NestedInstructionDiscovery {
+  sources: NestedInstructionSource[]
+  /** Directories visited. */
+  directories: number
+  /** The walk stopped at a cap before covering the whole tree. */
+  truncated: boolean
+}
+
 interface NestedDiscoveryState {
   directories: number
   sources: NestedInstructionSource[]
+  truncated: boolean
+}
+
+/**
+ * Per-turn discovery memo. The turn walks the tree once — at turn start, when
+ * the system prompt is assembled — and every tool call of that turn reuses the
+ * result instead of re-walking up to {@link MAX_NESTED_DISCOVERY_DIRECTORIES}
+ * directories per call. A write to an AGENTS.md invalidates the memo so the
+ * next call sees the file the agent just created or changed.
+ */
+export interface NestedInstructionTurn {
+  /** Resolved execution root → the walk (shared by concurrent tool calls). */
+  readonly discoveries: Map<string, Promise<NestedInstructionDiscovery>>
+}
+
+export function createNestedInstructionTurn(): NestedInstructionTurn {
+  return { discoveries: new Map() }
+}
+
+interface NestedActivationRecord {
+  names: ReadonlySet<string>
+  at: number
 }
 
 /**
  * Most recently assembled real-turn activation, for Settings → Sources.
  *
- * Store workspace-relative source names under the stable project root. A turn
- * may execute in an isolated worktree while Settings reads the primary project;
- * absolute execution-root paths would never compare equal across that boundary.
+ * Keyed by the stable project root, then by thread: concurrent turns on
+ * different threads of one project must not overwrite each other's record.
+ * Settings has no thread of its own, so it reads the most recently updated
+ * thread. Names are workspace-relative because a turn may execute in an
+ * isolated worktree while Settings reads the primary project; absolute
+ * execution-root paths would never compare equal across that boundary.
  */
-const lastNestedActivationByProjectRoot = new Map<string, ReadonlySet<string>>()
+const lastNestedActivationByProjectRoot = new Map<string, Map<string, NestedActivationRecord>>()
 const nestedDiscoveryCache = new Map<
   string,
-  { expiresAt: number; sources: NestedInstructionSource[] }
+  { expiresAt: number; discovery: NestedInstructionDiscovery }
 >()
+
+function activationThreadKey(): string {
+  return getThreadExecutionContext()?.threadId ?? ''
+}
+
+function latestNestedActivation(projectKey: string): ReadonlySet<string> {
+  const byThread = lastNestedActivationByProjectRoot.get(projectKey)
+  if (!byThread) return new Set()
+  const threadKey = activationThreadKey()
+  const own = threadKey ? byThread.get(threadKey) : undefined
+  if (own) return own.names
+  let latest: NestedActivationRecord | undefined
+  for (const record of byThread.values()) {
+    if (!latest || record.at > latest.at) latest = record
+  }
+  return latest?.names ?? new Set()
+}
+
+function recordNestedActivation(projectKey: string, names: ReadonlySet<string>): void {
+  const byThread =
+    lastNestedActivationByProjectRoot.get(projectKey) ?? new Map<string, NestedActivationRecord>()
+  byThread.set(activationThreadKey(), { names, at: Date.now() })
+  lastNestedActivationByProjectRoot.set(projectKey, byThread)
+}
 
 async function readTrimmed(path: string): Promise<string | null> {
   try {
@@ -167,6 +242,7 @@ async function walkNestedInstructionFiles(
     state.directories >= MAX_NESTED_DISCOVERY_DIRECTORIES ||
     state.sources.length >= MAX_NESTED_DISCOVERED_FILES
   ) {
+    state.truncated = true
     return
   }
   state.directories += 1
@@ -200,32 +276,83 @@ async function walkNestedInstructionFiles(
   }
 
   for (const entry of entries) {
+    if (!entry.isDirectory() || NESTED_SKIP_DIRS.has(entry.name)) continue
     if (
       state.directories >= MAX_NESTED_DISCOVERY_DIRECTORIES ||
       state.sources.length >= MAX_NESTED_DISCOVERED_FILES
     ) {
+      state.truncated = true
       break
     }
-    if (!entry.isDirectory() || NESTED_SKIP_DIRS.has(entry.name)) continue
     await walkNestedInstructionFiles(root, join(dir, entry.name), depth + 1, state)
   }
 }
 
+async function walkNestedInstructionTree(
+  key: string,
+  root: string,
+): Promise<NestedInstructionDiscovery> {
+  const state: NestedDiscoveryState = { directories: 0, sources: [], truncated: false }
+  await walkNestedInstructionFiles(root, root, 0, state)
+  const discovery: NestedInstructionDiscovery = {
+    sources: state.sources.sort((a, b) => a.name.localeCompare(b.name)),
+    directories: state.directories,
+    truncated: state.truncated,
+  }
+  if (discovery.truncated) {
+    console.warn(
+      `[instructions] nested AGENTS.md discovery under ${root} stopped early ` +
+        `(${String(discovery.directories)} directories, ${String(discovery.sources.length)} files): ` +
+        'nested instruction files beyond the cap are not loaded.',
+    )
+  }
+  nestedDiscoveryCache.set(key, { expiresAt: Date.now() + NESTED_DISCOVERY_CACHE_MS, discovery })
+  return discovery
+}
+
+interface NestedDiscoveryOptions {
+  /** Walk once per turn; later calls of the same turn reuse the memo. */
+  turn?: NestedInstructionTurn | undefined
+  /** Explicit reload (Settings → Sources): ignore any cached walk. */
+  refresh?: boolean | undefined
+}
+
 async function discoverNestedInstructionSources(
   root: string,
-  refresh = false,
-): Promise<NestedInstructionSource[]> {
+  opts: NestedDiscoveryOptions = {},
+): Promise<NestedInstructionDiscovery> {
   const key = resolve(root)
+  if (opts.turn) {
+    const memo = opts.turn.discoveries.get(key)
+    if (memo) return memo
+    // The turn's first look is always a fresh walk: an AGENTS.md added between
+    // turns must apply to this one, whatever an estimate cached moments ago.
+    const walk = walkNestedInstructionTree(key, root)
+    opts.turn.discoveries.set(key, walk)
+    return walk
+  }
   const cached = nestedDiscoveryCache.get(key)
-  if (!refresh && cached && cached.expiresAt > Date.now()) return cached.sources
-  const state: NestedDiscoveryState = { directories: 0, sources: [] }
-  await walkNestedInstructionFiles(root, root, 0, state)
-  const sources = state.sources.sort((a, b) => a.name.localeCompare(b.name))
-  nestedDiscoveryCache.set(key, {
-    expiresAt: Date.now() + NESTED_DISCOVERY_CACHE_MS,
-    sources,
-  })
-  return sources
+  if (!opts.refresh && cached && cached.expiresAt > Date.now()) return cached.discovery
+  return walkNestedInstructionTree(key, root)
+}
+
+/**
+ * Forget the current execution root's discovery after the agent wrote, moved,
+ * or removed a nested AGENTS.md, so the next tool call re-walks and sees it.
+ * Only file paths named AGENTS.md count; other writes keep the memo. Returns
+ * whether anything was invalidated.
+ */
+export function invalidateNestedInstructionDiscoveryForWrite(
+  writtenPaths: readonly string[],
+  turn?: NestedInstructionTurn,
+): boolean {
+  if (!writtenPaths.some((path) => basename(path.trim()) === NESTED_INSTRUCTION_FILE)) return false
+  const root = getAgentExecutionRoot()
+  if (!root) return false
+  const key = resolve(root)
+  nestedDiscoveryCache.delete(key)
+  turn?.discoveries.delete(key)
+  return true
 }
 
 /** Resolve a context path without letting a symlinked ancestor escape the workspace. */
@@ -298,19 +425,36 @@ async function selectNestedInstructionSources(
   return retained.sort(instructionPrecedence)
 }
 
+/**
+ * Identical content is injected once, through the earliest source in precedence
+ * order. A root or global duplicate is dropped from the list (the same text is
+ * already listed under its higher-precedence name); a nested duplicate stays
+ * listed and is marked, so Sources shows every directory-scoped file the
+ * workspace ships rather than hiding one because it repeats the root rules.
+ */
 function deduplicateSources(resolved: ProjectInstructionSource[]): ProjectInstructionSource[] {
   const sources: ProjectInstructionSource[] = []
   const contentIndexes = new Map<string, number>()
   for (const source of resolved) {
     const existingIndex = contentIndexes.get(source.content)
-    if (existingIndex === undefined) {
+    const existing = existingIndex === undefined ? undefined : sources[existingIndex]
+    if (existingIndex === undefined || !existing) {
       contentIndexes.set(source.content, sources.length)
       sources.push(source)
       continue
     }
-    const existing = sources[existingIndex]
-    // An inactive nested sibling must not shadow the identical source that matched this turn.
-    if (existing && !existing.active && source.active) sources[existingIndex] = source
+    if (source.scopePath === undefined) continue
+    // An inactive nested sibling must not shadow the identical nested source
+    // that matched this turn: the active copy carries the content, the other
+    // one is the duplicate. (A root or global copy is never inactive while a
+    // nested one is active — both sit behind the same trust gate.)
+    if (existing.scopePath !== undefined && !existing.active && source.active) {
+      sources[existingIndex] = { ...existing, duplicateOf: source.name }
+      contentIndexes.set(source.content, sources.length)
+      sources.push(source)
+      continue
+    }
+    sources.push({ ...source, duplicateOf: existing.name })
   }
   return sources
 }
@@ -322,8 +466,10 @@ export interface ProjectInstructionOptions {
   nestedContextPaths?: readonly string[]
   /** Settings-only: report the most recently assembled real turn's activation. */
   useLatestNestedActivation?: boolean
-  /** Explicit Sources reload bypasses the short prompt-build discovery cache. */
+  /** Explicit Sources reload bypasses the cached discovery. */
   refreshNestedDiscovery?: boolean
+  /** The running turn's discovery memo; the turn-start walk seeds it. */
+  nestedInstructionTurn?: NestedInstructionTurn
 }
 
 /** Discover instruction sources, global layer first then project. */
@@ -367,7 +513,11 @@ export async function loadProjectInstructionSources(
       }
     }
 
-    const nested = await discoverNestedInstructionSources(root, opts.refreshNestedDiscovery)
+    const discovery = await discoverNestedInstructionSources(root, {
+      turn: opts.nestedInstructionTurn,
+      refresh: opts.refreshNestedDiscovery,
+    })
+    const nested = discovery.sources
     const explicitlyActive =
       opts.nestedContextPaths !== undefined
         ? new Set(
@@ -377,8 +527,7 @@ export async function loadProjectInstructionSources(
           )
         : null
     const latestActive = opts.useLatestNestedActivation
-      ? (lastNestedActivationByProjectRoot.get(await canonicalPath(projectRoot)) ??
-        new Set<string>())
+      ? latestNestedActivation(await canonicalPath(projectRoot))
       : new Set<string>()
     for (const source of nested) {
       resolved.push({
@@ -387,6 +536,14 @@ export async function loadProjectInstructionSources(
         active: trusted && (explicitlyActive?.has(source.path) ?? latestActive.has(source.name)),
         trusted,
       })
+    }
+    if (discovery.truncated) {
+      // Every project row carries the flag, root files included: with no nested
+      // file found before the cap, they are the only rows that can say the list
+      // is short.
+      for (const source of resolved) {
+        if (source.scope === 'project') source.discoveryTruncated = true
+      }
     }
 
     // Cursor project rules are applied after AGENTS.md layers.
@@ -467,15 +624,18 @@ export async function loadInstructionLayersWithMetadata(
     .map((source) => source.content)
     .join('\n\n')
   const project = sources.filter((source) => source.scope === 'project')
-  const activeProject = project.filter((source) => source.active)
-  const activeNestedPaths = project
-    .filter((source) => source.active && source.scopePath !== undefined)
-    .map((source) => source.path)
+  // A marked duplicate is listed, not injected: its content already rides on
+  // the source it duplicates.
+  const activeProject = project.filter(
+    (source) => source.active && source.duplicateOf === undefined,
+  )
+  const activeNested = activeProject.filter((source) => source.scopePath !== undefined)
+  const activeNestedPaths = activeNested.map((source) => source.path)
 
   const root = getAgentExecutionRoot()
   const projectRoot = getAgentProjectRoot()
   if (trackActivation && root && projectRoot) {
-    lastNestedActivationByProjectRoot.set(
+    recordNestedActivation(
       await canonicalPath(projectRoot),
       new Set(
         project
@@ -490,9 +650,10 @@ export async function loadInstructionLayersWithMetadata(
     activeInstructionContents: sources
       .filter((source) => source.active)
       .map((source) => source.content),
-    activeNestedBytes: project
-      .filter((source) => source.active && source.scopePath !== undefined)
-      .reduce((total, source) => total + Buffer.byteLength(source.content, 'utf-8'), 0),
+    activeNestedBytes: activeNested.reduce(
+      (total, source) => total + Buffer.byteLength(source.content, 'utf-8'),
+      0,
+    ),
   }
   if (activeProject.length > 0) {
     return { project: buildProjectBlock(activeProject), global, metadata }
@@ -515,25 +676,38 @@ export interface NestedInstructionActivation {
   block: string
   activatedPaths: string[]
   injectedPaths: string[]
+  /** Workspace-relative names of `injectedPaths`, for the transcript notice. */
+  injectedNames: string[]
   injectedContents: string[]
 }
 
-/** Activate instructions for a file tool that introduced a path after turn start. */
+const NO_ACTIVATION: NestedInstructionActivation = {
+  block: '',
+  activatedPaths: [],
+  injectedPaths: [],
+  injectedNames: [],
+  injectedContents: [],
+}
+
+/**
+ * Activate instructions for a file tool that introduced a path after turn
+ * start. Pass the turn's memo so the call reuses the turn-start walk; without
+ * one the shared cache serves the request.
+ */
 export async function activateNestedInstructionSources(
   contextPaths: readonly string[],
   alreadyActivePaths: ReadonlySet<string>,
   alreadyActiveContents: ReadonlySet<string>,
   alreadyActiveNestedBytes: number,
+  turn?: NestedInstructionTurn,
 ): Promise<NestedInstructionActivation> {
   const root = getAgentExecutionRoot()
   const projectRoot = getAgentProjectRoot()
-  if (!root || !projectRoot || !isWorkspaceTrusted(projectRoot)) {
-    return { block: '', activatedPaths: [], injectedPaths: [], injectedContents: [] }
-  }
+  if (!root || !projectRoot || !isWorkspaceTrusted(projectRoot)) return NO_ACTIVATION
 
   const selected = await selectNestedInstructionSources(
     root,
-    await discoverNestedInstructionSources(root),
+    (await discoverNestedInstructionSources(root, { turn })).sources,
     contextPaths,
   )
   const candidates = selected.filter(
@@ -565,15 +739,13 @@ export async function activateNestedInstructionSources(
     .map((source) => source.path)
   const activatedPathSet = new Set(activatedPaths)
   const projectKey = await canonicalPath(projectRoot)
-  const latest = new Set(lastNestedActivationByProjectRoot.get(projectKey) ?? [])
+  const latest = new Set(latestNestedActivation(projectKey))
   for (const source of selected) {
     if (activatedPathSet.has(source.path)) latest.add(source.name)
   }
-  lastNestedActivationByProjectRoot.set(projectKey, latest)
+  recordNestedActivation(projectKey, latest)
 
-  if (fresh.length === 0) {
-    return { block: '', activatedPaths, injectedPaths: [], injectedContents: [] }
-  }
+  if (fresh.length === 0) return { ...NO_ACTIVATION, activatedPaths }
   const promptSources: ProjectInstructionSource[] = fresh.map((source) => ({
     ...source,
     scope: 'project',
@@ -584,6 +756,7 @@ export async function activateNestedInstructionSources(
     block: buildProjectBlock(promptSources),
     activatedPaths,
     injectedPaths,
+    injectedNames: fresh.map((source) => source.name),
     injectedContents: fresh.map((source) => source.content),
   }
 }
