@@ -22,7 +22,9 @@ describe('PR panel new thread (mock gh)', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
     resetUserData()
-    seedPrPanelChatFixture(process.cwd())
+    // The shared seed writer defaults projects to `never` so ordinary specs
+    // cannot create real worktrees. This spec explicitly exercises isolation.
+    seedPrPanelChatFixture(process.cwd(), { worktreeMode: 'always' })
     seedE2eViewport()
     seedE2eThreePaneLayout()
     await browser.reloadSession()

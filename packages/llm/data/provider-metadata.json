@@ -89,7 +89,7 @@
       "envVar": "GEMINI_API_KEY",
       "keyLabel": "Google Gemini API key",
       "keyPlaceholder": "AIza…",
-      "keyHint": "For Gemini Flash models on the free tier (rate-limited, no card). Get a key at aistudio.google.com.",
+      "keyHint": "For Gemini Flash models on the free tier (rate-limited, with official model cards). Get a key at aistudio.google.com.",
       "keyPrefix": "AIza",
       "fallbackContextWindow": 1048576,
       "includeUsage": true,

@@ -161,7 +161,7 @@ const nodeOpts = {
   // installers do not ship them: maps are not consumed by the packaged app and
   // were adding tens of megabytes to every architecture and container format.
   sourcemap: !isRelease,
-  target: 'node22',
+  target: 'node24',
   alias: sharedAlias,
   define,
   minifySyntax: isRelease,

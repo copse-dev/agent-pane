@@ -280,6 +280,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onOpenTab: subscribe,
       sharePageText: unsupported,
       shareScreenshot: unsupported,
+      exportPdf: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe,
@@ -504,6 +505,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
       onPrRefs: () => () => undefined,
+      // No demo scenario opens a real PR, so nothing ever announces one.
+      onPrCreated: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {
         threads = [thread, ...threads.filter((candidate) => candidate.id !== thread.id)]
         return resolvedVoid()

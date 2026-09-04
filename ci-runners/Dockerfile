@@ -34,8 +34,9 @@ FROM ubuntu:24.04
 
 # Pin the runner agent; bump deliberately. https://github.com/actions/runner/releases
 ARG RUNNER_VERSION=2.330.0
-# Node major to match CI's actions/setup-node `node-version: '22'` (>=22.18).
-ARG NODE_MAJOR=22
+# Bootstrap Node major. Each CI job replaces this with the exact version from
+# the checked-out repository's .nvmrc via actions/setup-node.
+ARG NODE_MAJOR=24
 # Supplied automatically by BuildKit (amd64 | arm64).
 ARG TARGETARCH
 # Which consumer repo's dependency tree to bake, and at which ref. Override per
@@ -83,8 +84,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libxrandr2 libxkbcommon0 libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2) Node.js (NodeSource) — the 22.x line that mirrors CI's setup-node; Ubuntu's
-#    archive Node is too old for this repo's >=22.18 engine + .mts scripts.
+# 2) Node.js (NodeSource) — the 24.x LTS line that mirrors CI's setup-node;
+#    Ubuntu's archive Node is too old for this repo's >=24 engine.
 #    Install via the signed NodeSource apt repo (GPG keyring + apt source) rather
 #    than piping `setup_${NODE_MAJOR}.x` to bash as root: apt then verifies every
 #    package against the pinned key, and no remote script executes as root.
