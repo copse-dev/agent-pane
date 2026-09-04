@@ -438,6 +438,14 @@ export function acpAgentSandboxOverlay(
      * MCP bridge (#602), which the agent reaches at `http://127.0.0.1:<port>`.
      */
     allowLocalhost?: boolean
+    /**
+     * Unix sockets the agent may `connect()` to, from
+     * {@link sshAgentSocketAllowList} (#2320). Empty — the default — leaves unix
+     * sockets blocked exactly as before: ASRT only relaxes them when it is handed
+     * `allowUnixSockets` or `allowAllUnixSockets`. Never set from inside this
+     * module: the caller owns the policy read so this stays a pure mapping.
+     */
+    unixSocketPaths?: readonly string[]
   },
 ): Partial<SandboxRuntimeConfig> {
   const base = workspaceSandboxOverlay(workspaceRoot)
@@ -458,12 +466,16 @@ export function acpAgentSandboxOverlay(
     .flatMap(expandScratchPath)
     .flatMap((abs) => [abs, `${abs}/**`])
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
+  const unixSocketPaths = [...new Set(opts?.unixSocketPaths ?? [])]
   return {
     ...base,
     network: {
       allowedDomains: [...sandbox.allowedDomains, ...localDomains],
       deniedDomains: [],
       allowLocalBinding: opts?.allowLocalhost === true,
+      // Omitted entirely when empty so the emitted profile is byte-identical to
+      // the pre-#2320 one for every agent that has not opted in.
+      ...(unixSocketPaths.length > 0 ? { allowUnixSockets: unixSocketPaths } : {}),
     },
     filesystem: {
       ...fs,

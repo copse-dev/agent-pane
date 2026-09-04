@@ -636,3 +636,57 @@ describe('readOnlyWorkspaceSandboxOverlay', () => {
     assert.deepEqual(filesystem.denyWrite, [])
   })
 })
+
+// #2320: the ssh-agent carve-out reaches the seatbelt through the network
+// config's `allowUnixSockets`, which ASRT turns into a `(subpath …)` filter on
+// `network-outbound` plus the `system-socket` grant `socket(AF_UNIX)` needs.
+describe('acpAgentSandboxOverlay ssh-agent socket carve-out', () => {
+  const workspace = '/tmp/acp-sandbox-ssh-agent-workspace'
+  const sandbox = { allowedDomains: ['api.anthropic.com'], homeDirs: ['.claude'] }
+  const sock = '/private/tmp/com.apple.launchd.AbCdEf1234/Listeners'
+
+  it('admits exactly the sockets it is given', () => {
+    const overlay = acpAgentSandboxOverlay(workspace, sandbox, { unixSocketPaths: [sock] })
+    assert.deepEqual(overlay.network, {
+      allowedDomains: ['api.anthropic.com'],
+      deniedDomains: [],
+      allowLocalBinding: false,
+      allowUnixSockets: [sock],
+    })
+  })
+
+  // The key property: an agent that has not opted in must emit the byte-identical
+  // profile it emitted before this feature existed. ASRT leaves unix sockets
+  // blocked only while it is handed neither key, so an empty array would be a
+  // different (still-safe, but not identical) config — omit the key instead.
+  it('omits the key entirely rather than sending an empty list', () => {
+    for (const opts of [undefined, {}, { unixSocketPaths: [] }]) {
+      const overlay = acpAgentSandboxOverlay(workspace, sandbox, opts)
+      assert.equal('allowUnixSockets' in (overlay.network ?? {}), false)
+    }
+  })
+
+  it('never sets the blanket allowAllUnixSockets escape hatch', () => {
+    const overlay = acpAgentSandboxOverlay(workspace, sandbox, { unixSocketPaths: [sock] })
+    assert.equal('allowAllUnixSockets' in (overlay.network ?? {}), false)
+  })
+
+  it('de-duplicates without disturbing the rest of the profile', () => {
+    const overlay = acpAgentSandboxOverlay(workspace, sandbox, {
+      unixSocketPaths: [sock, sock],
+    })
+    assert.deepEqual(overlay.network?.allowUnixSockets, [sock])
+    // The carve-out is a network-only change: filesystem rules are untouched.
+    const plain = acpAgentSandboxOverlay(workspace, sandbox)
+    assert.deepEqual(overlay.filesystem, plain.filesystem)
+  })
+
+  it('leaves the localhost grant independent of the socket grant', () => {
+    const overlay = acpAgentSandboxOverlay(workspace, sandbox, {
+      allowLocalhost: true,
+      unixSocketPaths: [sock],
+    })
+    assert.equal(overlay.network?.allowLocalBinding, true)
+    assert.deepEqual(overlay.network.allowUnixSockets, [sock])
+  })
+})
