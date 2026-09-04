@@ -335,6 +335,31 @@ describe('thread-store', () => {
     assert.deepEqual(catalog.map((e) => e.id).sort(), ['t1', 't2'])
   })
 
+  it('deleting a thread against a pre-prRefs catalog keeps the other threads', async () => {
+    // The third catalog writer. A delete that read the stale file directly
+    // would find nothing to remove and, worse, write back an empty index.
+    await saveProjectThreads('proj-1', [
+      thread('t1', { title: 'Auth refactor', updatedAt: 300 }),
+      thread('t2', { title: 'Docs update', updatedAt: 200 }),
+      thread('t3', { title: 'Flaky test', updatedAt: 100 }),
+    ])
+    const stale = (id: string, title: string, updatedAt: number): string =>
+      JSON.stringify({ id, title, createdAt: 1, updatedAt, digest: title, path: id })
+    writeFileSync(
+      join(root, 'proj-1', 'catalog.jsonl'),
+      `${stale('t1', 'Auth refactor', 300)}\n${stale('t2', 'Docs update', 200)}\n${stale('t3', 'Flaky test', 100)}\n`,
+    )
+
+    await deleteProjectThread('proj-1', 't2')
+
+    const catalog = await loadProjectCatalog('proj-1')
+    assert.deepEqual(catalog.map((e) => e.id).sort(), ['t1', 't3'])
+    // The rebuilt index is the new format, so the survivors are PR-searchable.
+    const onDisk = readFileSync(join(root, 'proj-1', 'catalog.jsonl'), 'utf8')
+    assert.doesNotMatch(onDisk, /"id":"t2"/)
+    assert.match(onDisk, /"prRefs":\[\]/)
+  })
+
   it('rebuilds the catalog from thread dirs when it is missing', async () => {
     await saveProjectThreads('proj-1', [thread('t1', { title: 'Kept' })])
     rmSync(join(root, 'proj-1', 'catalog.jsonl'))

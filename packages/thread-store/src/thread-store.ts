@@ -1634,7 +1634,9 @@ export function deleteProjectThread(projectId: string, threadId: string): Promis
     const dir = threadDir(projectId, threadId)
     rmSync(dir, { recursive: true, force: true })
     invalidateKnownMessageIds(dir)
-    const entries = readCatalog(projectId)
+    // Same rebuild-on-read invariant as the other catalog writers: a stale
+    // (pre-`prRefs`) index read directly would be written back as empty.
+    const entries = ensureCatalogMap(projectId)
     if (entries.delete(threadId)) writeCatalog(projectId, entries)
     // Drop the thread's reverse-index entries too, so a deleted thread can't
     // keep badging a PR / offering an "open thread" jump to a ghost thread.
