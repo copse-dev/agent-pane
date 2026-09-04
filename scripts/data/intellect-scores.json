@@ -2325,7 +2325,8 @@
       "value": 8.6,
       "indexVersion": "v4.1",
       "source": "Artificial Analysis API (index v4.1), model 'gemini-2-0-flash-lite-001', fetched 2026-08-13",
-      "asOf": "2026-08-13"
+      "asOf": "2026-08-13",
+      "aliases": ["gemini-2.0-flash-lite"]
     },
     {
       "modelId": "mistral-small",
