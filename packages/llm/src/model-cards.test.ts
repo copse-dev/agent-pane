@@ -34,6 +34,7 @@ describe('model cards', () => {
     assert.equal(resolveIntellectModelId('anthropic/claude-opus-4-8'), 'claude-opus-4-8')
     assert.equal(resolveModelCardId('anthropic/claude-opus-4-8'), 'claude-opus-4-8')
     assert.equal(resolveModelCardId('openrouter:anthropic/claude-opus-4-8'), 'claude-opus-4-8')
+    assert.equal(resolveModelCardId('gemini:gemini-2.0-flash-lite'), 'gemini-2-0-flash-lite-001')
   })
 })
 

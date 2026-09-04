@@ -130,6 +130,12 @@ export function ensureExecutionRootWatched(root: string): boolean {
   if (watchers.has(root)) return true
   if (watchers.size >= MAX_WATCHED_ROOTS) pruneUnusedWatchers()
   try {
+    // Node 24 on Linux may return an FSWatcher for a missing path and emit
+    // ENOENT asynchronously. By then this function has already returned true
+    // and the caller may cache results without actual invalidation coverage.
+    // Verify the execution root synchronously so the return value keeps its
+    // documented meaning across platforms.
+    if (!fs.statSync(root).isDirectory()) return false
     const watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
       handleExecutionRootEvent(root, filename)
     })

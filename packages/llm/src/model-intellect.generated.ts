@@ -3,7 +3,7 @@
 // cross-version equating maps. Source of truth: scripts/data/intellect-scores.json.
 // Absent models mean "no sourced measurement yet", not zero.
 // Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)
-// Last synced: 2026-09-01
+// Last synced: 2026-09-04
 
 import type { EquatingMap } from './intellect-equating.ts'
 
@@ -5263,6 +5263,7 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'deepseek-coder-v2-lite': 'deepseek/deepseek-coder-v2-lite',
   'deepseek-coder-v2-lite-instruct': 'deepseek/deepseek-coder-v2-lite',
   'Fable 5': 'claude-fable-5',
+  'gemini-2.0-flash-lite': 'gemini-2-0-flash-lite-001',
   'Gemma 3 12B': 'google/gemma-3-12b',
   'Gemma 4 E4B': 'google/gemma-4-e4b',
   'gemma-3-12b': 'google/gemma-3-12b',

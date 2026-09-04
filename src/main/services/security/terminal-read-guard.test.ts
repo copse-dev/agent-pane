@@ -282,16 +282,17 @@ describe('read_terminal gate', () => {
       assert.equal(prompts.length, 1)
     })
 
-    it('tells the user how many lines the model actually saw whole', async () => {
+    it('describes window capacity without claiming the skipped classifier screened anything', async () => {
       // 200 lines of 80 chars + newline: the window holds 74 whole lines plus
-      // six characters of a 75th. The model saw only a scrap of that one, so
-      // it is not reported as screened.
+      // six characters of a 75th. No classifier call is made for this snapshot.
       await ensureTerminalReadPermitted(null, 'Build', scrollback(200))
 
       const body = prompts[0]?.body ?? ''
       assert.match(body, /"Build" shell/)
       assert.match(body, /larger than the safety model screens/)
-      assert.match(body, /only the most recent 74 of its 200 lines were fully screened/)
+      assert.match(body, /only the most recent 74 of its 200 lines would fit in full/)
+      assert.match(body, /This snapshot was not screened/)
+      assert.equal(classifierCalls.length, 0)
     })
 
     it('counts a single whole line in the singular', async () => {
@@ -301,7 +302,7 @@ describe('read_terminal gate', () => {
 
       assert.match(
         prompts[0]?.body ?? '',
-        /only the most recent 1 of its 2 lines was fully screened/,
+        /only the most recent 1 of its 2 lines would fit in full/,
       )
     })
 
@@ -336,7 +337,7 @@ describe('read_terminal gate', () => {
       await ensureTerminalReadPermitted(null, 'Build', text)
 
       const body = prompts[0]?.body ?? ''
-      assert.match(body, /part of it was not screened/)
+      assert.match(body, /this snapshot was not screened/)
       assert.doesNotMatch(body, /of its/)
     })
   })

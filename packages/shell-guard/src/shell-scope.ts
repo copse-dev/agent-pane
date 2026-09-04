@@ -84,7 +84,7 @@ const CMD_POS = String.raw`(?:^|[\n|;&(])\s*`
 // this classifier (and to the file-blind safety classifier) — a hard escape even
 // under the sandbox, exactly like `node ./x.js`. Shared verbatim between the regex
 // entry and the token layer so the two dedupe against each other. (#581)
-const REASON_LOCAL_EXECUTABLE =
+const REASON_LOCAL_EXECUTABLE: ScopeReason =
   'executes an in-workspace file directly (contents opaque to analysis)'
 
 // Commands that clearly reach outside the workspace or network.
@@ -95,7 +95,7 @@ const REASON_LOCAL_EXECUTABLE =
 // boundary, these auto-run *inside* the sandbox and rely on the failure→retry
 // escalation if the OS actually blocks them, instead of prompting upfront on a
 // guess. Without an OS sandbox they still prompt, like any external command.
-const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean }> = [
+const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: boolean }> = [
   { re: /\bcurl\b|\bwget\b/i, reason: 'network download (curl/wget)' },
   // The standalone `fetch` downloader is anchored to a command position so it fires
   // on `fetch <url>` but NOT on `git fetch` (where `fetch` is git's subcommand — a
@@ -252,10 +252,10 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean
 ]
 
 /** Shared so the chat-store waiver below can name the rule it may waive. */
-const REASON_HOME_PATH = 'home directory path (~/)'
+const REASON_HOME_PATH: ScopeReason = 'home directory path (~/)'
 
 // Paths that indicate access outside the workspace.
-const OUTSIDE_PATH_PATTERNS: Array<{ re: RegExp; reason: string }> = [
+const OUTSIDE_PATH_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> = [
   { re: /(?:^|[\s|])~(?:\/|\b)/, reason: REASON_HOME_PATH },
   { re: /\$HOME\b/, reason: '$HOME reference' },
   { re: /(?:^|[\s|])\/etc\//, reason: 'system path (/etc/)' },
@@ -280,7 +280,7 @@ export function normalizeShellCommandForAnalysis(command: string): string {
 // Signals that a package command points at a non-default registry or carries
 // inline credentials — a classic vector for pulling from an attacker-controlled
 // mirror or leaking tokens (#174).
-const REGISTRY_REDIRECT_PATTERNS: Array<{ re: RegExp; reason: string }> = [
+const REGISTRY_REDIRECT_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> = [
   {
     re: /--registry(=|\s)/i,
     reason: 'custom package registry (--registry) — verify it is trusted',
@@ -302,10 +302,10 @@ const REGISTRY_REDIRECT_PATTERNS: Array<{ re: RegExp; reason: string }> = [
 // means it cannot fall behind the regex baseline it is meant to reinforce.
 // Exact reason strings shared with the regex entries above, so token-derived and
 // regex-derived hits dedupe against each other.
-const REASON_INTERPRETER_FILE =
+const REASON_INTERPRETER_FILE: ScopeReason =
   'runs a local script via an interpreter (contents opaque to analysis)'
-const REASON_INTERPRETER_INLINE = 'inline script (interpreter -c/-e/--eval)'
-const REASON_BUILD_DRIVER =
+const REASON_INTERPRETER_INLINE: ScopeReason = 'inline script (interpreter -c/-e/--eval)'
+const REASON_BUILD_DRIVER: ScopeReason =
   'build driver may require host caches or system build services (xcodebuild/gradle/swift/cargo)'
 
 const HEREDOC_INTERPRETER = /\b(?:python3?|node|deno|bun|ruby|perl)\b/
@@ -456,11 +456,14 @@ function isHostDependentBuildDriver(exe: string, args: string[]): boolean {
  * harm gate and trusted-command routing; anything no lexer there can turn into a
  * plain argv is left entirely to the regex fallback.
  */
-function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHard: boolean } {
-  const reasons: string[] = []
+function tokenBasedExternalReasons(command: string): {
+  reasons: ScopeReason[]
+  hasHard: boolean
+} {
+  const reasons: ScopeReason[] = []
   let hasHard = false
 
-  const addReason = (reason: string): void => {
+  const addReason = (reason: ScopeReason): void => {
     if (!reasons.includes(reason)) reasons.push(reason)
   }
 
@@ -501,8 +504,8 @@ function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHar
 // (network download, install, git push, command substitution, …) rather than a
 // fuzzy `ambiguous` matcher. It decides whether the verdict is `external`
 // (prompt + run outside) or merely `ambiguous` (auto-run inside the sandbox).
-function collectExternalReasons(command: string): { reasons: string[]; hasHard: boolean } {
-  const reasons: string[] = []
+function collectExternalReasons(command: string): { reasons: ScopeReason[]; hasHard: boolean } {
+  const reasons: ScopeReason[] = []
   let hasHard = false
   const shellCommand = maskInterpreterHeredocBodies(command)
   const variants = [shellCommand, normalizeShellCommandForAnalysis(shellCommand)]
@@ -668,7 +671,7 @@ export const REASON_RECURSIVE_DELETE = 'recursive/forced delete (rm -rf)'
 export const REASON_FIND_DELETE = 'find -delete bulk removal'
 export const REASON_PIPE_TO_INTERPRETER = 'piping output into an interpreter'
 
-const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: string }> = [
+const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> = [
   { re: /\brm\s+-\S*[rf]/i, reason: REASON_RECURSIVE_DELETE },
   { re: /\bgit\s+clean\s+-\S*[dfx]/i, reason: 'git clean removes untracked files' },
   { re: /\bgit\s+reset\s+--hard\b/i, reason: 'git reset --hard discards changes' },
@@ -691,7 +694,7 @@ const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: string }> = [
 
 /** Destructive/resource-exhausting patterns that warrant a prompt even when sandboxed. */
 export function dangerousInSandboxReasons(command: string): string[] {
-  const reasons: string[] = []
+  const reasons: ScopeReason[] = []
   const variants = [command, normalizeShellCommandForAnalysis(command)]
   for (const text of variants) {
     for (const { re, reason } of DANGEROUS_IN_SANDBOX_PATTERNS) {
@@ -707,10 +710,14 @@ export function analyzeShellCommand(
 ): ShellScopeAnalysis {
   const trimmed = command.trim()
   if (!trimmed) {
-    return { verdict: 'sandbox', reasons: ['empty command'] }
+    return { verdict: 'sandbox', reasons: ['empty command'] satisfies ScopeReason[] }
   }
 
-  const { reasons, hasHard } = collectExternalReasons(trimmed)
+  const { reasons: scopeReasons, hasHard } = collectExternalReasons(trimmed)
+  // Widened here and only here: `referencesOutsideWorkspace` can return the one
+  // runtime-built reason, which by construction is not a `ScopeReason` key. A
+  // copy, so the widened list never writes a plain string back into the typed one.
+  const reasons: string[] = [...scopeReasons]
 
   // Outside-workspace filesystem access is always a hard escape: we want such
   // commands to prompt and run outside the sandbox, not attempt-then-retry.
@@ -722,7 +729,10 @@ export function analyzeShellCommand(
 
   if (reasons.length === 0) {
     // Local-only commands with no escape signals are sandbox-contained.
-    return { verdict: 'sandbox', reasons: ['no network or outside-path signals detected'] }
+    return {
+      verdict: 'sandbox',
+      reasons: ['no network or outside-path signals detected'] satisfies ScopeReason[],
+    }
   }
 
   // Only fuzzy "may reach" matchers fired → ambiguous: safe to auto-run inside an
@@ -783,4 +793,186 @@ export function isReplayableOpaqueLocalExecution(analysis: ShellScopeAnalysis): 
     analysis.reasons.length > 0 &&
     analysis.reasons.every((reason) => REPLAYABLE_OPAQUE_LOCAL_REASONS.has(reason))
   )
+}
+
+/* ---------------------------------------------------------------------------
+ * Presentation: what a person reads
+ *
+ * The `reason` strings above are identifiers, not copy. They are shared verbatim
+ * between the regex and token passes so the two dedupe against each other, and
+ * they are written into the decision spine, so they have to stay stable — which
+ * is exactly why they read like classifier rules ("inline script (interpreter
+ * -c/-e/--eval)") rather than like something a user can act on.
+ *
+ * `SCOPE_REASON_TEXT` is the copy layer over them, resolved by
+ * {@link describeShellScopeReasons} at the moment an approval dialog is built.
+ * Logs and decision records keep the identifiers.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Plain-English text for every deterministic reason this module reports.
+ *
+ * {@link ScopeReason} is derived from these keys and annotates the pattern
+ * tables above, so a new classifier rule whose reason has no entry here fails to
+ * typecheck: a rule cannot ship without copy the person answering the prompt can
+ * understand.
+ *
+ * Some identifiers deliberately map to the SAME sentence, and
+ * `describeShellScopeReasons` dedupes on the resolved text, so the rules that
+ * describe one fact contribute one line: a `-c` body, a heredoc and an `eval`
+ * are all "this runs code I can't see" to whoever is approving, and `~/` and
+ * `$HOME` are both "in your home directory". `node --eval x` trips both the
+ * interpreter rule and the generic dynamic-execution one, and reads as one line.
+ */
+const SCOPE_REASON_TEXT = {
+  // Network reach
+  'network download (curl/wget)': 'Downloads from the internet (curl/wget)',
+  'network download (fetch)': 'Downloads from the internet (fetch)',
+  'remote shell/copy (ssh/scp/rsync)': 'Connects to another machine (ssh/scp/rsync)',
+  'network utility (socat/ftp/lftp)': 'Opens a network connection (socat/ftp/lftp)',
+  'raw network utility': 'Opens a raw network connection (nc/netcat/telnet)',
+  'raw network socket via /dev/tcp|/dev/udp redirect':
+    'Opens a raw network connection through a shell redirect',
+  'command substitution (may hide network or outside-path tools)':
+    'Runs a nested command whose output it substitutes in, which can hide what it reaches',
+
+  // Fetching and running someone else's code
+  'package install/update (may fetch + run code from network)':
+    'Installs or updates packages, which downloads and runs code from the internet',
+  'ephemeral package runner (npx/dlx/bunx/uvx/pipx — may fetch & run unpinned code)':
+    'Runs a package straight from the registry (npx/dlx/bunx/uvx/pipx), which can fetch unpinned code',
+  'corepack (downloads package-manager binaries)': 'Downloads package-manager binaries (corepack)',
+  'pip install (may fetch from network)': 'Installs Python packages from the internet (pip)',
+  'cargo install (may fetch from network)': 'Installs Rust crates from the internet (cargo)',
+  'go install/get (may fetch + run code from network)':
+    'Installs Go packages from the internet, which can run their build code',
+  'gem install (may fetch from network)': 'Installs Ruby gems from the internet',
+  'Homebrew install/update': 'Installs or updates software with Homebrew',
+  'system package manager': 'Installs or updates system packages',
+  'custom package registry (--registry) — verify it is trusted':
+    'Installs from a non-default package registry — check you trust it',
+  'custom pip index URL — verify it is trusted':
+    'Installs from a non-default Python package index — check you trust it',
+  'custom cargo registry — verify it is trusted':
+    'Installs from a non-default Cargo registry — check you trust it',
+  'inline registry credentials/override':
+    'Passes registry credentials or a registry override inline',
+
+  // Services and other machines
+  'git network operation': 'Talks to a git remote (push/pull/clone)',
+  'git network read (fetch)': 'Fetches from a git remote',
+  'git submodule network/checkout operation':
+    'Updates git submodules, which fetches and checks out other repositories',
+  'docker network/container operation': 'Pulls or runs a Docker container',
+  'kubernetes remote operation': 'Talks to a Kubernetes cluster',
+  'cloud CLI (may reach external services)': 'Runs a cloud CLI that may reach external services',
+  'GitHub CLI (may reach GitHub)': 'Runs the GitHub CLI, which may reach GitHub',
+  'launches a host app/file outside the sandbox (open)':
+    'Hands a file or URL to an app outside the sandbox (open)',
+  'launches a host app/file outside the sandbox (xdg-open)':
+    'Hands a file or URL to an app outside the sandbox (xdg-open)',
+
+  // Code this analysis cannot read before it runs. The `-c`, heredoc and
+  // eval/exec/base64 rules share one sentence on purpose: to whoever is
+  // approving, they are the same fact, and a command that trips several of them
+  // (`node --eval` matches the first and the last) should say it once.
+  'inline script (interpreter -c/-e/--eval)':
+    "Runs code written or built inside the command itself, so Copse can't tell what it does",
+  'heredoc script fed to an interpreter':
+    "Runs code written or built inside the command itself, so Copse can't tell what it does",
+  'dynamic execution / encoding':
+    "Runs code written or built inside the command itself, so Copse can't tell what it does",
+  'runs a local script via an interpreter (contents opaque to analysis)':
+    "Runs a script file from the project, so Copse can't tell what it does",
+  'executes an in-workspace file directly (contents opaque to analysis)':
+    "Runs a file from the project directly, so Copse can't tell what it does",
+  'build driver may require host caches or system build services (xcodebuild/gradle/swift/cargo)':
+    'Runs a build tool that needs caches or build services outside the project',
+
+  // Files outside the project
+  'home directory path (~/)': 'Reads or writes in your home directory, outside the project',
+  '$HOME reference': 'Reads or writes in your home directory, outside the project',
+  'system path (/etc/)': 'Touches system files in /etc',
+  'system path (/usr/)': 'Touches system files in /usr',
+  'system path (/var/)': 'Touches system files in /var',
+  'global temp path (/tmp/)': 'Uses the machine-wide temp directory (/tmp)',
+  'parent directory traversal (../)': 'Reaches outside the project with a ../ path',
+
+  // Damage the sandbox cannot prevent, so these are reported even when contained
+  'recursive/forced delete (rm -rf)': 'Deletes files and folders recursively (rm -rf)',
+  'find -delete bulk removal': 'Deletes every file a search matches (find -delete)',
+  'destructive path outside workspace': 'Deletes files outside the project',
+  'piping output into an interpreter':
+    'Pipes output straight into a shell or interpreter to run it',
+  'git clean removes untracked files': 'Removes untracked files (git clean)',
+  'git reset --hard discards changes': 'Discards uncommitted changes (git reset --hard)',
+  'git checkout discards local changes': 'Discards local changes (git checkout)',
+  'file truncation/shredding': 'Empties or shreds files',
+  'raw device write': 'Writes straight to a device',
+  'disk/system modification': 'Writes to a disk or system device',
+  'broad permission change': 'Makes files writable by anyone (chmod)',
+  'process kill (system-wide)': 'Kills processes across the whole machine',
+  'privilege escalation': 'Runs with elevated privileges (sudo)',
+  'fork bomb': 'Spawns processes without limit (fork bomb)',
+  'unbounded loop (CPU exhaustion)': 'Loops forever, which pins a CPU core',
+  'unbounded `yes` output': 'Produces output without limit (yes)',
+
+  // Verdict notes, never shown in an escalation prompt but kept complete so the
+  // union below covers every string `analyzeShellCommand` can return.
+  'empty command': 'The command is empty',
+  'no network or outside-path signals detected':
+    'No network or outside-project access was detected',
+} as const satisfies Record<string, string>
+
+/**
+ * Every fixed reason string the classifiers in this module can report. Pattern
+ * tables are typed against it so copy and rules stay in lockstep.
+ */
+export type ScopeReason = keyof typeof SCOPE_REASON_TEXT
+
+/**
+ * Reasons built at runtime with an operand baked in, so they cannot be keys of
+ * the table above. Matched by prefix, with the operand carried into the copy.
+ */
+const DYNAMIC_SCOPE_REASON_TEXT: ReadonlyArray<{
+  prefix: string
+  text: (operand: string) => string
+}> = [
+  {
+    prefix: 'absolute path outside workspace: ',
+    text: (path) => `Reads or writes ${path}, which is outside the project`,
+  },
+]
+
+/** Lookup over {@link SCOPE_REASON_TEXT} keyed by the plain `string` callers hold. */
+const SCOPE_REASON_TEXT_BY_ID: ReadonlyMap<string, string> = new Map(
+  Object.entries(SCOPE_REASON_TEXT),
+)
+
+/** The user-facing sentence for one reason; the identifier itself if it has none. */
+function describeShellScopeReason(reason: string): string {
+  const known = SCOPE_REASON_TEXT_BY_ID.get(reason)
+  if (known !== undefined) return known
+  for (const { prefix, text } of DYNAMIC_SCOPE_REASON_TEXT) {
+    if (reason.startsWith(prefix)) return text(reason.slice(prefix.length))
+  }
+  // Unknown reason: show it verbatim rather than swallow it. A prompt that reads
+  // awkwardly is recoverable; one missing the reason it is interrupting for is not.
+  return reason
+}
+
+/**
+ * Plain-English sentences for a reason list, in order, with duplicates collapsed.
+ *
+ * Deduping happens on the resolved text, not the identifier, so the several
+ * rules that describe one underlying fact (a heredoc and a `-c` body; `~/` and
+ * `$HOME`) contribute a single line to the prompt.
+ */
+export function describeShellScopeReasons(reasons: readonly string[]): string[] {
+  const described: string[] = []
+  for (const reason of reasons) {
+    const text = describeShellScopeReason(reason)
+    if (!described.includes(text)) described.push(text)
+  }
+  return described
 }

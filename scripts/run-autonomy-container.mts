@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { autonomyContainerRunArgs } from './lib/autonomy-container.mts'
 
 const IMAGE = 'copse-autonomy-eval:local'
+const nodeVersion = readFileSync(resolve('.nvmrc'), 'utf8').trim()
 const rawArgs = process.argv.slice(2)
 const skipBuild = rawArgs.includes('--no-build')
 const unsupported = rawArgs.filter((arg) => arg !== '--no-build')
@@ -23,7 +24,16 @@ function runDocker(args: string[]): number {
 
 if (
   !skipBuild &&
-  runDocker(['build', '--file', 'benchmarks/autonomy/Dockerfile', '--tag', IMAGE, '.']) !== 0
+  runDocker([
+    'build',
+    '--build-arg',
+    `NODE_VERSION=${nodeVersion}`,
+    '--file',
+    'benchmarks/autonomy/Dockerfile',
+    '--tag',
+    IMAGE,
+    '.',
+  ]) !== 0
 ) {
   process.exit(1)
 }

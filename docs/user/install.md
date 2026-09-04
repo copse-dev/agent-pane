@@ -25,7 +25,7 @@ If it does not launch, see [Troubleshooting](troubleshooting.md).
 
 ## From source
 
-You need [Node.js](https://nodejs.org/) 22.22.2 or newer and [pnpm](https://pnpm.io/)
+You need [Node.js](https://nodejs.org/) 24 or newer and [pnpm](https://pnpm.io/)
 10 (`corepack enable`; the repo pins `pnpm@10.34.5`). On macOS, install the
 Xcode command-line tools too.
 

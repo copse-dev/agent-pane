@@ -175,18 +175,17 @@ function remember(threadId: string, cause: TerminalReadPromptCause): void {
 }
 
 /**
- * User-facing reason for a snapshot the model was never shown all of. Only
- * lines the model saw whole are counted as screened: a line cut by the window
- * boundary is neither.
+ * User-facing reason for skipping a snapshot that cannot fit in full. The
+ * window count describes capacity, not a screening call that never happened.
  */
 function describeUnscreened(window: TerminalReadScreenWindow): string {
   const { screenedLines, totalLines } = window
   if (screenedLines === 0) {
-    return 'It is larger than the safety model screens, so part of it was not screened.'
+    return 'It is larger than the safety model screens, so this snapshot was not screened.'
   }
   return (
     `It is larger than the safety model screens: only the most recent ${String(screenedLines)} ` +
-    `of its ${String(totalLines)} lines ${screenedLines === 1 ? 'was' : 'were'} fully screened.`
+    `of its ${String(totalLines)} lines would fit in full. This snapshot was not screened.`
   )
 }
 
