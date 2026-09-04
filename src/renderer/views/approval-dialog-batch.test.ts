@@ -285,6 +285,41 @@ describe('approval dialog coalescing', () => {
     assert.deepEqual(responses, [{ id: 'read-access', approved: true, remember: true }])
   })
 
+  it('keeps a multi-reason advice block on one line per reason', () => {
+    // `formatExternalSandboxPromptParts` sends the reasons as a bulleted block;
+    // `.approval-advice` is `white-space: pre-wrap`, so the newlines survive to
+    // the user as separate lines inside a single advice element.
+    emit({
+      id: 'outside-sandbox',
+      title: 'Run outside sandbox?',
+      body: 'curl -sL https://example.com/x > ~/notes.txt',
+      bodyAdvice:
+        'The project sandbox would block this command:\n' +
+        '• Downloads from the internet (curl/wget)\n' +
+        '• Reads or writes in your home directory, outside the project',
+      bodyFooter: 'Allow running it once outside the sandbox?',
+    })
+    fireWindow()
+    const advice = qsRequired(dialog, '.approval-advice')
+    assert.equal(dialog.querySelectorAll('.approval-advice').length, 1)
+    assert.deepEqual(advice.textContent.split('\n'), [
+      'The project sandbox would block this command:',
+      '• Downloads from the internet (curl/wget)',
+      '• Reads or writes in your home directory, outside the project',
+    ])
+
+    // Each bullet is its own box so a reason too long for the dialog wraps with a
+    // hanging indent; the lead-in line is not one. The newlines live between them,
+    // so the advice element's text is still exactly what the main process sent.
+    assert.deepEqual(
+      [...advice.querySelectorAll('.approval-advice-item')].map((node) => node.textContent),
+      [
+        '• Downloads from the internet (curl/wget)',
+        '• Reads or writes in your home directory, outside the project',
+      ],
+    )
+  })
+
   it('renders bodyAdvice and bodyFooter outside the monospaced command block', () => {
     emit({
       id: 'gy',
