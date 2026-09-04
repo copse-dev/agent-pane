@@ -97,7 +97,7 @@ var init_model_catalog_generated = __esm({
         cacheReadPricePerMTok: 0.3,
         cacheCreationPricePerMTok: 3.75,
         contextWindow: 1e6,
-        maxOutputTokens: 64e3
+        maxOutputTokens: 128e3
       },
       "claude-sonnet-5": {
         inputPricePerMTok: 2,
@@ -154,15 +154,15 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 1.2,
         cacheReadPricePerMTok: 0.02,
         cacheCreationPricePerMTok: 0.25,
-        contextWindow: 105e4,
+        contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
       "gpt-5.6-sol": {
-        inputPricePerMTok: 5,
-        outputPricePerMTok: 30,
-        cacheReadPricePerMTok: 0.5,
-        cacheCreationPricePerMTok: 6.25,
-        contextWindow: 105e4,
+        inputPricePerMTok: 4,
+        outputPricePerMTok: 20,
+        cacheReadPricePerMTok: 0.4,
+        cacheCreationPricePerMTok: 5,
+        contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
       "gpt-5.6-terra": {
@@ -170,7 +170,15 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 12,
         cacheReadPricePerMTok: 0.2,
         cacheCreationPricePerMTok: 2.5,
-        contextWindow: 105e4,
+        contextWindow: 922e3,
+        maxOutputTokens: 128e3
+      },
+      "gpt-6-astra": {
+        inputPricePerMTok: 10,
+        outputPricePerMTok: 50,
+        cacheReadPricePerMTok: 1,
+        cacheCreationPricePerMTok: 12.5,
+        contextWindow: 922e3,
         maxOutputTokens: 128e3
       }
     };
@@ -462,6 +470,7 @@ var init_model_catalog = __esm({
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-6-astra",
       "gpt-5.5",
       "gpt-5",
       "gpt-5-mini",
@@ -480,6 +489,7 @@ var init_model_catalog = __esm({
       "gpt-5.6-sol": "GPT-5.6 Sol",
       "gpt-5.6-terra": "GPT-5.6 Terra",
       "gpt-5.6-luna": "GPT-5.6 Luna",
+      "gpt-6-astra": "GPT-6 Astra",
       "gpt-5.5": "GPT-5.5",
       "gpt-5": "GPT-5",
       "gpt-5-mini": "GPT-5 mini",
@@ -530,6 +540,15 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
+  if (matchesFamily(modelId, OPENAI_ASTRA_PREFIXES)) {
+    return {
+      reasoning: OPENAI_ASTRA_LADDER,
+      reasoningWire: "openai-effort",
+      sampling: [],
+      outputCap: false,
+      temperatureMax: 2
+    };
+  }
   if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
@@ -653,7 +672,7 @@ function decodeModelParametersMap(value2) {
   }
   return out;
 }
-var REASONING_LEVELS, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_ASTRA_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_ASTRA_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
@@ -703,6 +722,7 @@ var init_model_parameters = __esm({
       "claude-mythos-preview"
     ];
     OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
+    OPENAI_ASTRA_PREFIXES = ["gpt-6-astra"];
     FULL_EFFORT_LADDER = [
       "off",
       "low",
@@ -714,6 +734,7 @@ var init_model_parameters = __esm({
     CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
     BUDGET_LADDER = ["off", "low", "medium", "high"];
     OPENAI_LADDER = ["minimal", "low", "medium", "high"];
+    OPENAI_ASTRA_LADDER = ["low", "medium", "high", "xhigh", "max"];
     OPENAI_COMPATIBLE_LADDER = [
       "off",
       "minimal",
@@ -29974,6 +29995,7 @@ var init_model_intellect_generated = __esm({
       "deepseek-coder-v2-lite": "deepseek/deepseek-coder-v2-lite",
       "deepseek-coder-v2-lite-instruct": "deepseek/deepseek-coder-v2-lite",
       "Fable 5": "claude-fable-5",
+      "gemini-2.0-flash-lite": "gemini-2-0-flash-lite-001",
       "Gemma 3 12B": "google/gemma-3-12b",
       "Gemma 4 E4B": "google/gemma-4-e4b",
       "gemma-3-12b": "google/gemma-3-12b",
@@ -30616,7 +30638,7 @@ var init_provider_metadata = __esm({
           envVar: "GEMINI_API_KEY",
           keyLabel: "Google Gemini API key",
           keyPlaceholder: "AIza\u2026",
-          keyHint: "For Gemini Flash models on the free tier (rate-limited, no card). Get a key at aistudio.google.com.",
+          keyHint: "For Gemini Flash models on the free tier (rate-limited, with official model cards). Get a key at aistudio.google.com.",
           keyPrefix: "AIza",
           fallbackContextWindow: 1048576,
           includeUsage: true,
@@ -32241,6 +32263,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
   const cloudGroup = "Cloud models";
   for (const [value2, label, provider] of CLOUD_MODELS) {
     if (!isAvailable(provider)) continue;
+    if (value2 === "gpt-6-astra" && !isAvailable("openai:gpt-6-astra")) continue;
     const hint = cloudModelIntellectHint(value2);
     options2.push({
       value: value2,
