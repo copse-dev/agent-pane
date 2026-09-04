@@ -43,12 +43,42 @@ describe('isGhostMountPoint', () => {
   })
 
   it('keeps a real .vscode directory', () => {
+    // A user's `.vscode` has settings in it; bwrap's is empty.
     withRoot(
       (root) => {
         mkdirSync(join(root, '.vscode'))
+        writeFileSync(join(root, '.vscode', 'settings.json'), '{}\n')
       },
       (root) => {
         assert.equal(isGhostMountPoint(root, '.vscode'), false)
+      },
+    )
+  })
+
+  it('matches an empty directory at a directory-shaped deny path', () => {
+    // bwrap creates `.claude/commands` as an empty directory and ASRT's cleanup
+    // leaves it behind, so the `.claude` record persisted past the file ghosts.
+    withRoot(
+      (root) => {
+        mkdirSync(join(root, '.claude', 'commands'), { recursive: true })
+        mkdirSync(join(root, '.claude', 'agents'), { recursive: true })
+      },
+      (root) => {
+        assert.equal(isGhostMountPoint(root, '.claude/commands'), true)
+        assert.equal(isGhostMountPointEntry(root, '.claude'), true)
+      },
+    )
+  })
+
+  it('keeps a directory-shaped deny path that holds real files', () => {
+    withRoot(
+      (root) => {
+        mkdirSync(join(root, '.claude', 'commands'), { recursive: true })
+        writeFileSync(join(root, '.claude', 'commands', 'review.md'), '# review\n')
+      },
+      (root) => {
+        assert.equal(isGhostMountPoint(root, '.claude/commands'), false)
+        assert.equal(isGhostMountPointEntry(root, '.claude'), false)
       },
     )
   })

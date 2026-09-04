@@ -42,12 +42,28 @@ const GHOST_PARENT_DIRS = new Set(
   GHOST_MOUNT_POINT_PATHS.filter((p) => p.includes('/')).map((p) => p.slice(0, p.indexOf('/'))),
 )
 
-export type GhostFileStat = (absolutePath: string) => { isFile: boolean; size: number } | null
+/**
+ * What the filter needs to know about a path: whether it is a regular file and
+ * its size, or a directory and whether anything is in it. `null` when the path
+ * does not exist. Injectable so the decision logic is unit-testable without a
+ * sandbox.
+ */
+export type GhostFileStat = (
+  absolutePath: string,
+) => { isFile: boolean; size: number; isDirectory: boolean; entries: number } | null
 
-function defaultStat(absolutePath: string): { isFile: boolean; size: number } | null {
+function defaultStat(
+  absolutePath: string,
+): { isFile: boolean; size: number; isDirectory: boolean; entries: number } | null {
   try {
     const stat = statSync(absolutePath)
-    return { isFile: stat.isFile(), size: stat.size }
+    const isDirectory = stat.isDirectory()
+    return {
+      isFile: stat.isFile(),
+      size: stat.size,
+      isDirectory,
+      entries: isDirectory ? readdirSync(absolutePath).length : 0,
+    }
   } catch {
     return null
   }
@@ -55,13 +71,16 @@ function defaultStat(absolutePath: string): { isFile: boolean; size: number } | 
 
 /**
  * True when `relativePath` (workspace-relative, `/`-separated) is a bwrap mount
- * point rather than a file someone created: it is one of the mandatory deny
- * paths and the entry on disk is a zero-byte regular file — or is already gone.
- * A real `.bashrc` has content; a real `.vscode` is a directory. "Gone" counts
- * because ASRT removes the mount points the moment the last sandboxed command
- * exits, which is after `git status` listed them and before this check runs;
- * an untracked record for a file that no longer exists is not the user's file
- * either way.
+ * point rather than something someone created: it is one of the mandatory deny
+ * paths and the entry on disk is a zero-byte regular file, an empty directory,
+ * or already gone. A real `.bashrc` has content; a real `.vscode` or
+ * `.claude/commands` has files in it. bwrap makes the directory-shaped targets
+ * (`.claude/commands`, `.cursor/agents`, …) as empty directories, and ASRT's
+ * cleanup only removes the file-shaped ones, so those empty directories
+ * outlive the command. "Gone" counts because ASRT removes the files the moment
+ * the last sandboxed command exits, which is after `git status` listed them and
+ * before this check runs; an untracked record for a path that no longer exists
+ * is not the user's either way.
  */
 export function isGhostMountPoint(
   root: string,
@@ -70,7 +89,9 @@ export function isGhostMountPoint(
 ): boolean {
   if (!GHOST_PATH_SET.has(relativePath)) return false
   const info = stat(join(root, relativePath))
-  return info === null || (info.isFile && info.size === 0)
+  if (info === null) return true
+  if (info.isFile) return info.size === 0
+  return info.isDirectory && info.entries === 0
 }
 
 /**
