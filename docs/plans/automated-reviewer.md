@@ -3,7 +3,8 @@
 Status: **Proposed** — design only. Nothing in this document is on `main`. It supersedes
 the surfacing and validation gaps in the existing `copse.model-comparison` plugin, which
 stays as-is until Phase 2 retires its judge and Phase 3 replaces it with `copse.review`.
-Binding decision B1 (execution isolation) was recorded on 2026-09-03. Problems are numbered
+Binding decisions B1 (execution isolation, 2026-09-03) and B2–B6 (packaging, backend
+sequencing, scope, ecosystem, customer; 2026-09-04) are recorded. Problems are numbered
 P1–P9 in §What needs to be solved, questions Q1–Q16 in §Competitive position, and the
 remaining decisions D1–D4 in §Open decisions.
 
@@ -327,13 +328,13 @@ committed in the PR is still a secret.
 |                                        | Isolation available                                                                              | No isolation                                                                                         |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | **Own diff** (the user's working tree) | Execute.                                                                                         | Execute only with explicit per-run consent, mirroring the shell gate's "no sandbox, so prompt" rule. |
-| **Foreign diff** (a contributor's PR)  | Execute. Recommendation: a container or VM, not the process-scoped OS sandbox alone (see below). | **Never execute.** Degrade to read-only lenses plus the challenger pass, and say so in the report.   |
+| **Foreign diff** (a contributor's PR)  | Execute in a container or VM only (B3); the process-scoped OS sandbox is not enough. | **Never execute.** Degrade to read-only lenses plus the challenger pass, and say so in the report.   |
 
 An OS sandbox (macOS ASRT, Linux bubblewrap) and an ephemeral container or VM are not the
-same strength. The process-scoped sandbox is proposed as sufficient for reviewing one's own
+same strength. The process-scoped sandbox is sufficient for reviewing one's own
 changes, where the "attacker" already has a shell on the machine; a foreign diff gets a
-throwaway container or VM. Whether the OS sandbox is ever enough for a foreign diff is the one
-sub-question decision 1 leaves open.
+throwaway container or VM. B3 settles the one sub-question B1 left open: the OS sandbox is never enough for a
+foreign diff, and it ships first because own-tree review is Phase 0's whole scope.
 
 **Backend per shell.**
 
@@ -344,9 +345,11 @@ sub-question decision 1 leaves open.
   [`unattended-runs.md`](unattended-runs.md) and
   [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1 (the local-docker provider)
   is the backend; the reviewer is a consumer of that runtime, not a second implementation.
-- **CLI:** an `IsolationBackend` abstraction from day one — OS sandbox, Docker/Podman, or a
-  microVM — detected at start. With none present the CLI runs the read-only pipeline and
-  prints why. There is no flag that executes a foreign diff unisolated.
+- **CLI:** an `IsolationBackend` abstraction from day one — the OS sandbox first (B3), then
+  Docker/Podman or a microVM — detected at start. With none present the CLI runs the
+  read-only pipeline and prints why. Until the container backend lands, the CLI reviews
+  only the user's own working tree. There is no flag that executes a foreign diff
+  unisolated.
 - **CI:** a GitHub-hosted runner is ephemeral but not secret-free, so the workflow is two
   jobs. **Job A** checks out the PR head on the `pull_request` event — never
   `pull_request_target` — with `permissions: {}` and no secrets, runs Stage 0 and the
@@ -385,6 +388,25 @@ Changing one of these requires updating this document in the same change — the
    allowlist. The reviewer agents run outside that cell and reach it only through brokered
    tools. Where no isolation exists, a foreign diff is never executed. Recorded 2026-09-03;
    design in §Execution isolation.
+2. **B2 — A workspace package from day one.** `@copse/review` is an Electron-free workspace
+   package from its first commit, consumed by Copse; never a module under `src/main` that
+   is extracted later. Recorded 2026-09-04; settles D2.
+3. **B3 — OS sandbox first, container later.** Phase 0 ships on the existing
+   `src/main/project-sandbox/` backend (macOS ASRT, Linux bubblewrap) and reviews only the
+   user's own working tree. The container/VM backend arrives later in the plan, and
+   foreign-diff review — and therefore the CI shell — waits for it. A foreign diff requires
+   a container or VM, never the process-scoped OS sandbox alone. Recorded 2026-09-04; closes
+   the sub-question B1 left open.
+4. **B4 — Bugs and regressions first.** Findings are limited to the `build`, `type`, `test`,
+   `contract`, `security`, `concurrency`, `resource` and `api-compat` classes. No PR
+   summaries, no style, and the `docs` class and lens are deferred until precision is
+   measured on the narrow set. Recorded 2026-09-04; answers Q4.
+5. **B5 — TypeScript with pnpm is the only ecosystem for now.** Stage 0's build and test
+   detection targets TypeScript/pnpm repositories only; other ecosystems are unscheduled
+   until there is a consumer for them. Recorded 2026-09-04; answers Q16.
+6. **B6 — OSS maintainers are the main consumer; Copse dogfoods first.** The CLI is the
+   first shell, the first deployment is this repository's own PRs, and the local-model path
+   must carry the reviewer lens. Recorded 2026-09-04; answers Q1.
 
 ## What needs to be solved (P)
 
@@ -392,12 +414,12 @@ Ordered by how likely each is to sink the thing.
 
 1. **P1 — Executing untrusted code — decided.** Binding decision B1 and §Execution isolation
    settle the policy: Stages 0, 2 and 4 run in an ephemeral, secret-free cell, the agents
-   are brokered in, and a foreign diff without isolation is never executed. What stays
-   open underneath it: which isolation backends the CLI supports at launch and how it
-   detects them; whether the process-scoped OS sandbox is ever enough for a foreign diff
-   (recommendation: no); the read-only dependency cache, since "the build cannot fetch" is
-   the common case once the network is closed; and the Forgejo self-hosted runner story,
-   which we cannot enforce and must document as a requirement.
+   are brokered in, and a foreign diff without isolation is never executed. B3 sequences
+   the backends (OS sandbox first, container later) and settles that a foreign diff needs
+   a container or VM. What stays open underneath: how the CLI detects its backend; the
+   read-only dependency cache, since "the build cannot fetch" is the common case once the
+   network is closed; and the Forgejo self-hosted runner story, which we cannot enforce
+   and must document as a requirement.
 2. **P2 — Finding identity.** Clustering across reviewers, and stability across pushes and
    rebases. Naive string similarity will both over- and under-merge. Anchoring to content
    hashes plus overlapping ranges is the starting proposal; it needs a real corpus to
@@ -435,14 +457,16 @@ Ordered by how likely each is to sink the thing.
 
 ## Phases
 
-- **Phase 0 — Findings schema + Stage 0 + isolation.** `@copse/review` with the finding
-  type, the build/test baseline diff, the `IsolationBackend` abstraction with at least one
-  real backend, and the hostile-fixture conformance test. No models at all. Ships value
-  immediately ("this doesn't compile / this test regressed"). Stage 0 _is_ execution, so
-  this is where binding decision B1 is proven, before any model spend.
-- **Phase 1 — CLI shell.** `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5.
-  Dogfood on this repo's own PRs. Extend the isolation backends to what CLI users actually
-  have (Docker/Podman, a microVM).
+- **Phase 0 — Findings schema + Stage 0 + OS-sandbox backend.** `@copse/review` as a
+  workspace package (B2) with the finding type, the build/test baseline diff for
+  TypeScript/pnpm repositories (B5), the `IsolationBackend` abstraction with the existing OS
+  sandbox as its first backend (B3), and the hostile-fixture conformance test. No models at
+  all; the user's own working tree only. Ships value immediately ("this doesn't compile /
+  this test regressed"). Stage 0 _is_ execution, so this is where B1 is proven, before any
+  model spend.
+- **Phase 1 — CLI shell.** `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5,
+  bugs and regressions only (B4). Dogfood on this repository's own PRs (B6), reviewing the
+  author's own tree.
 - **Phase 2 — Multi-model + verification.** Lenses, fan-out, clustering, the challenger
   role, reproducer generation. Retire the comparison judge in favour of per-finding
   verdicts.
@@ -451,7 +475,10 @@ Ordered by how likely each is to sink the thing.
   [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md) P5 extracted, so its decisions
   log binds here: decision 15 for the typed chunk the findings card consumes, decision 5 for
   any machine turn a review starts.
-- **Phase 4 — CI shell.** GitHub Action, inline comments, opt-in by label. Forgejo
+- **Phase 4 — Container backend + foreign diffs + CI shell.** The container/VM
+  `IsolationBackend`, consuming the local-docker runtime proposed in
+  [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md) C1, which unlocks foreign-diff
+  review (B3); then the GitHub Action with inline comments, opt-in by label, and the Forgejo
   equivalent.
 - **Phase 5 — Eval.** `bench:review` and a precision gate. Arguably belongs at Phase 2;
   listed last only because it needs a corpus that Phases 1–2 generate.
@@ -546,13 +573,14 @@ Numbered Q1–Q16 to match the working list; answered ones say so.
 1. **Q1 — Who is the customer?** OSS maintainers with AI policies like FFmpeg's, regulated teams
    that cannot send code out, or Copse users. Each picks a different first shell.
    Recommendation: OSS maintainers and local-first teams — the segment is unoccupied and
-   the Fairy lineage is a story.
+   the Fairy lineage is a story. **Decided (B6):** OSS maintainers are the main consumer;
+   Copse dogfoods first.
 2. **Q2 — Is "only what we proved" the pitch, at the cost of recall?** Recommendation: yes.
    Precision is where the field is weakest and the benchmark rewards it directly.
 3. **Q3 — Opt-in per PR or always-on?** Fairy is opt-in; every incumbent is always-on. Opt-in
    risks recreating Problem 1. Overlaps D3.
 4. **Q4 — Narrow or broad?** Bugbot proves narrow works commercially. Recommendation: bugs and
-   regressions only; defer summaries.
+   regressions only; defer summaries. **Decided (B4):** bugs and regressions first.
 
 **Proof**
 
@@ -589,7 +617,7 @@ Numbered Q1–Q16 to match the working list; answered ones say so.
 15. **Q15 — Interop.** Emit SARIF so findings land in GitHub code scanning and any SAST dashboard.
     Cheap, and no competitor leads with it.
 16. **Q16 — Ecosystems.** Stage 0 needs build and test detection per language. FFmpeg is C and
-    make; Copse is TypeScript. Which first?
+    make; Copse is TypeScript. **Decided (B5):** TypeScript with pnpm only, for now.
 
 Sources: [Martian Code Review Bench](https://codereview.withmartian.com/) ·
 [Greptile on Martian](https://www.greptile.com/content-library/greptile-martian-code-review-benchmark) ·
@@ -611,7 +639,7 @@ Sources: [Martian Code Review Bench](https://codereview.withmartian.com/) ·
    package name, a binary name and a bot identity.
 2. **D2 — Does Phase 0 ship inside Copse or as the standalone package from day one?**
    Recommendation: the package from day one, consumed by Copse — retrofitting the boundary
-   later is how the boundary rots.
+   later is how the boundary rots. **Decided (B2):** the package from day one.
 3. **D3 — Default trigger in the app.** Recommendation: explicit gesture only, no
    automatic-per-turn mode at all. Deleting the auto path is a simplification, not a
    regression, given Problem 1.
