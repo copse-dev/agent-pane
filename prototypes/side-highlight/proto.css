@@ -1,0 +1,1652 @@
+/* ============================================================================
+   Prototype: what replaces the accent rail?
+
+   Four treatments over one identical set of specimens. Switch with the
+   buttons in the top bar; `body` carries `.opt-current | .opt-a | .opt-b | .opt-c`.
+
+   Tokens are lifted verbatim from src/renderer/styles/tokens.css (dark) so the
+   colours, spacing and fonts are the real ones, not approximations.
+   ========================================================================= */
+
+@font-face {
+  font-family: 'Pliant';
+  src: url('../../assets/fonts/Pliant-Variable.ttf') format('truetype-variations');
+  font-weight: 100 900;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Pliant';
+  src: url('../../assets/fonts/Pliant-Italic-Variable.ttf') format('truetype-variations');
+  font-weight: 100 900;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'Averia Serif Libre';
+  src: url('../../assets/fonts/AveriaSerifLibre-Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+
+:root {
+  --tint-hue: #244c25;
+  --tint-amount: 4%;
+  --bg-base: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #1e1e1e);
+  --bg-elevated: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #252526);
+  --bg-hover: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #2a2d2e);
+  --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #2d2d2d);
+  --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount), #232324);
+  --bg-selected: color-mix(in srgb, var(--accent) 20%, var(--bg-elevated));
+  --text-primary: #d4d4d4;
+  --text-secondary: #a6a6a6;
+  --text-muted: #808080;
+  --border: #414141;
+  --border-subtle: #333333;
+  --border-strong: #565656;
+  --accent: #ff93d0;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+  --link: color-mix(in srgb, var(--accent) 65%, white);
+  --error: #f48771;
+  --danger: #f14c4c;
+  --success: #4ec9b0;
+  --warning: #cca700;
+  --info: #6fb3d9;
+  /* Neither of these exists in tokens.css. `--info` backs Note, and
+     `--important` backs the fifth GitHub alert kind, which GitHub renders in
+     purple. Deliberately pushed bluer than a true violet: `--accent` is
+     #ff93d0, and a magenta-leaning purple reads as "accent" at 16px next to
+     the pink Thinking and Comparison labels. See README → Callout icons. */
+  --important: #9d7cf4;
+
+  --font-family: 'Pliant', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Averia Serif Libre', Georgia, serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --line-height-base: 22px;
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+
+  /* Per-callout severity hue; each variant rebinds it and everything below
+     reads --sev, so a treatment never has to know the family. */
+  --sev: var(--text-secondary);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-muted);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+}
+
+/* ---------------------------------------------------------------- chrome -- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--bg-base) 92%, black);
+  border-bottom: 1px solid var(--border-subtle);
+  backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-xl);
+  padding: var(--spacing-md) var(--spacing-xl);
+}
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+}
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 20px;
+}
+.brand-sub {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.switcher {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-sm) var(--spacing-md);
+  margin-left: auto;
+}
+/* Each group wraps as a unit, and the separator is a margin rather than a
+   border so a group that lands first on a new row does not lead with a rule. */
+.sw-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.sw {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+.sw:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.sw-lead {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.sw[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #3a2130;
+  font-weight: 600;
+}
+.blurb {
+  margin: 0;
+  padding: 0 var(--spacing-xl) var(--spacing-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  max-width: 92ch;
+}
+.blurb b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+main {
+  padding: var(--spacing-xl) var(--spacing-xl) 96px;
+}
+.spec {
+  max-width: 900px;
+  margin: 0 auto var(--spacing-xl);
+  padding-bottom: var(--spacing-xl);
+  border-bottom: 1px solid var(--border-subtle);
+  /* The topbar is sticky and tall (title + switcher + blurb), so a bare
+     scrollIntoView parks the section heading behind it. */
+  scroll-margin-top: 260px;
+}
+.spec-cols {
+  max-width: 900px;
+}
+.spec-h {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--font-size-lg);
+  margin: 0 0 var(--spacing-md);
+  color: var(--text-primary);
+}
+.spec-note {
+  display: block;
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 2px;
+}
+.spec-note code {
+  background: none;
+  padding: 0;
+  color: var(--text-secondary);
+}
+
+.chat {
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+}
+.msg {
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+.lead {
+  margin: 0 0 var(--spacing-md);
+}
+.h-sub {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  margin: var(--spacing-lg) 0 var(--spacing-sm);
+}
+.steps {
+  margin: 0 0 var(--spacing-md);
+  padding-left: 22px;
+}
+.steps li {
+  margin-bottom: 2px;
+}
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: 0;
+  overflow-x: auto;
+  color: var(--text-secondary);
+}
+.code code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* --------------------------------------------------------- shared shapes -- */
+
+svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+svg .fill {
+  fill: currentColor;
+  stroke: none;
+}
+
+.cal-warning {
+  --sev: var(--warning);
+}
+.cal-note {
+  --sev: var(--info);
+}
+.cal-tip {
+  --sev: var(--success);
+}
+.cal-important {
+  --sev: var(--important);
+}
+.cal-caution {
+  --sev: var(--danger);
+}
+.bq {
+  --sev: var(--text-muted);
+}
+.panel-review {
+  --sev: var(--text-secondary);
+}
+.panel-compare {
+  --sev: var(--accent);
+}
+.reason {
+  --sev: var(--accent);
+}
+
+.cal,
+.bq,
+.panel {
+  margin: var(--spacing-md) 0;
+}
+/* A plain `>` blockquote carries no label today and must not gain one: the
+   quote glyph is the whole marker. The word stays for screen readers. */
+.bq-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.cal-body p,
+.bq-body p,
+.panel-body p,
+.reason-body p {
+  margin: 0 0 var(--spacing-xs);
+}
+.cal-body p:last-child,
+.bq-body p:last-child,
+.panel-body p:last-child,
+.reason-body p:last-child {
+  margin-bottom: 0;
+}
+.cal-lede {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cal-name,
+.bq-name,
+.panel-name,
+.reason-name {
+  font-weight: 600;
+}
+.panel-meta {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+.cal-head,
+.bq-head,
+.panel-head,
+.reason-sum,
+.sub-head,
+.rollup-sum {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.reason,
+.rollup {
+  margin: var(--spacing-md) 0;
+}
+.reason-sum,
+.rollup-sum {
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-secondary);
+}
+.reason-sum::-webkit-details-marker,
+.rollup-sum::-webkit-details-marker {
+  display: none;
+}
+.rollup-icon {
+  transform: rotate(90deg);
+}
+.tool-row,
+.sub-msg {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0;
+  padding: 2px 0;
+}
+.tool-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  flex: none;
+}
+.tool-dot.run {
+  background: var(--warning);
+}
+.subagent {
+  margin: var(--spacing-md) 0;
+}
+.sub-head {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+
+/* ------------------------------------------------------------- sidebars -- */
+
+.cols {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: var(--spacing-lg);
+  align-items: start;
+}
+.sidebar,
+.settings {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  padding-block: var(--spacing-sm);
+}
+.settings {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  padding: 0;
+}
+.side-h {
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-xs);
+}
+.row {
+  display: flex;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-sm) 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  cursor: default;
+}
+.row-gut {
+  width: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.run {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+.row-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.set-nav {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-subtle);
+  padding-block: var(--spacing-sm);
+}
+.set-btn {
+  font: inherit;
+  font-size: var(--font-size-base);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-secondary);
+  padding: var(--spacing-sm) var(--spacing-md);
+  min-height: 36px;
+  cursor: pointer;
+}
+.set-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.set-body {
+  padding: var(--spacing-lg);
+}
+.set-title {
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  margin: 0 0 var(--spacing-sm);
+}
+.set-copy {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* ------------------------------------------------------------ icon lab -- */
+
+/* One grid for the whole table, not one per row.
+ *
+ * Each `.icon-row` used to be its own grid, so nothing made the columns line up
+ * across rows — and `1fr` is `minmax(auto, 1fr)`, whose auto floor lets a wide
+ * cell push its column out. The long word "Important" did exactly that, so that
+ * row's icon and label both sat left of every other row's. `minmax(0, 1fr)`
+ * removes the floor; `display: contents` on the rows puts every cell in the one
+ * grid so the columns are shared rather than merely equal-in-theory.
+ */
+.icon-lab {
+  display: grid;
+  grid-template-columns: 78px repeat(4, minmax(0, 1fr));
+  align-items: center;
+  gap: var(--spacing-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+}
+.icon-lab-head,
+.icon-row {
+  display: contents;
+}
+.icon-lab-head span {
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.icon-lab-head em {
+  font-style: normal;
+  opacity: 0.65;
+}
+.icon-row-name {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.ico-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--sev);
+  font-weight: 600;
+}
+.ico-thin {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.4;
+}
+.ico-bold {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.9;
+}
+.ico-solid {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  stroke: none;
+}
+/* A tinted disc gives the glyph a footprint without asking the glyph itself to
+   get heavier — the cheapest way to add presence at 16px. */
+.ico-disc {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--sev) 18%, transparent);
+}
+.ico-disc > .ico-solid {
+  width: 13px;
+  height: 13px;
+}
+/* 4x with a crosshair on the true centre of the 16x16 box, so "does this glyph
+   sit centred" is something you can see rather than something you squint at. */
+.icon-align {
+  display: flex;
+  gap: var(--spacing-lg);
+  margin-top: var(--spacing-lg);
+  margin-bottom: 42px;
+}
+.align-cell {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--sev);
+}
+.align-cell::before,
+.align-cell::after {
+  content: '';
+  position: absolute;
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.align-cell::before {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+}
+.align-cell::after {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+}
+.ico-big {
+  width: 72px;
+  height: 72px;
+  fill: currentColor;
+  stroke: none;
+}
+/* Measured ink centroid. The crosshair is the box centre; the gap between the
+   two is exactly the amount the glyph reads off-centre by. */
+.align-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px #000;
+}
+/* Sits under the cell, not over the glyph: "measured offset → applied nudge". */
+.align-read {
+  position: absolute;
+  left: -8px;
+  right: -8px;
+  bottom: -36px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.align-read b {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.icon-note {
+  max-width: 78ch;
+  margin: var(--spacing-md) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* -------------------------------------------------------- icon gallery -- */
+
+/* Mirrors `.ui-icon` in styles/global/icons.css so the gallery shows the real
+   rendering, not an approximation of it. */
+.icon-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--spacing-xs);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+}
+.gallery-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+.gallery-cell:hover {
+  background: var(--bg-hover);
+}
+.gallery-cell svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--text-primary);
+}
+.icon-gallery.is-light svg {
+  stroke-width: 1.75;
+}
+.icon-gallery.is-large svg {
+  width: 24px;
+  height: 24px;
+}
+.gallery-cell figcaption {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gallery-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-md);
+}
+
+/* ------------------------------------------------------------------ vnc -- */
+
+.cols-vnc {
+  grid-template-columns: 1fr;
+}
+.vnc {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.vnc-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.vnc-tab {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-secondary);
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+}
+.vnc-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.vnc-body {
+  padding: var(--spacing-md);
+}
+.vnc-auth {
+  --sev: var(--accent);
+  margin-bottom: var(--spacing-md);
+}
+.vnc-auth-name {
+  font-weight: 600;
+}
+.vnc-auth-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.vnc-auth-body p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.vnc-status {
+  --sev: var(--border-strong);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.vnc-status[data-kind='working'] {
+  --sev: var(--accent);
+}
+.vnc-status[data-kind='ok'] {
+  --sev: var(--success);
+}
+.vnc-status[data-kind='error'] {
+  --sev: var(--error);
+}
+.vnc-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sev);
+  flex: none;
+  /* Today's rail carries the status hue, so the dot only appears once the rail
+     is gone. Each treatment opts it in. */
+  display: none;
+}
+
+/* ============================================================================
+   TREATMENT: TODAY — the rail
+   ========================================================================= */
+
+.opt-current .cal {
+  border-left: 4px solid var(--sev);
+  padding: 2px 0 2px var(--spacing-md);
+}
+.opt-current .cal-head {
+  color: var(--sev);
+}
+.opt-current .bq {
+  border-left: 4px solid var(--border-strong);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--bg-elevated);
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--text-secondary);
+}
+.opt-current .bq-head {
+  display: none;
+}
+.opt-current .reason {
+  border-left: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  padding-left: var(--spacing-sm);
+}
+.opt-current .panel {
+  border-left: 2px solid var(--sev);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--sev) 7%, transparent), transparent 72%);
+}
+.opt-current .rollup-body {
+  padding-left: var(--spacing-sm);
+  margin-left: var(--spacing-xs);
+  border-left: 1px solid var(--border-subtle);
+}
+.opt-current .sub-timeline {
+  padding-left: var(--spacing-sm);
+  margin-left: var(--spacing-xs);
+  border-left: 2px solid var(--border);
+}
+.opt-current .row.selected {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.opt-current .set-btn.active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.opt-current .vnc-tab.is-active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.opt-current .vnc-auth {
+  border-left: 2px solid var(--accent);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+.opt-current .vnc-status {
+  border-left: 2px solid var(--sev);
+  padding: 2px var(--spacing-sm);
+}
+
+/* ============================================================================
+   TREATMENT A — LABEL LINE
+   No box, no bar, no indent. The kind of block is announced by a small caps
+   label sitting on a hairline rule that runs *with* the text, not beside it.
+   Prose keeps its full measure; severity lives entirely in the label + rule.
+   ========================================================================= */
+
+.opt-a .cal,
+.opt-a .bq,
+.opt-a .panel,
+.opt-a .reason {
+  padding: 0;
+  background: none;
+  border: 0;
+  margin: var(--spacing-lg) 0;
+}
+.opt-a .cal-head,
+.opt-a .bq-head,
+.opt-a .panel-head,
+.opt-a .reason-sum {
+  color: var(--sev);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  margin-bottom: var(--spacing-sm);
+}
+.opt-a .cal-name,
+.opt-a .bq-name,
+.opt-a .panel-name,
+.opt-a .reason-name {
+  font-weight: 600;
+}
+.opt-a svg {
+  width: 13px;
+  height: 13px;
+}
+/* The rule is the container. It closes the block off above without enclosing it. */
+.opt-a .cal-head::after,
+.opt-a .bq-head::after,
+.opt-a .panel-head::after,
+.opt-a .reason-sum::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sev) 40%, transparent),
+    color-mix(in srgb, var(--sev) 8%, transparent) 60%,
+    transparent
+  );
+}
+.opt-a .panel-meta {
+  margin-left: 0;
+  order: 3;
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: var(--font-size-xs);
+}
+.opt-a .panel-head::after {
+  order: 2;
+}
+.opt-a .bq-body {
+  color: var(--text-secondary);
+}
+.opt-a .reason-body {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+/* Nesting keeps an indent but loses the bar: children are set in from the
+   parent and the rollup summary's rule already marks where the group starts. */
+.opt-a .rollup-body,
+.opt-a .sub-timeline {
+  padding-left: var(--spacing-lg);
+  padding-top: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+  border-top: 1px solid var(--border-subtle);
+}
+.opt-a .row.selected,
+.opt-a .set-btn.active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.opt-a .vnc-tab.is-active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.opt-a .vnc-auth {
+  --sev: var(--accent);
+}
+.opt-a .vnc-auth-head {
+  color: var(--sev);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  margin-bottom: var(--spacing-xs);
+}
+.opt-a .vnc-auth-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sev) 40%, transparent),
+    transparent
+  );
+}
+.opt-a .vnc-status-dot {
+  display: block;
+}
+
+/* ============================================================================
+   TREATMENT B — QUIET PLATE
+   Containment without direction. A flat, very low-alpha wash of the severity
+   hue with a small radius and no border at all; the hue is carried by the icon
+   and title. A ring has no leading edge, so nothing can bow around a corner.
+   ========================================================================= */
+
+.opt-b .cal,
+.opt-b .bq,
+.opt-b .panel,
+.opt-b .reason[open] {
+  border: 0;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sev) 9%, var(--bg-elevated));
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+.opt-b .cal-head,
+.opt-b .bq-head,
+.opt-b .panel-head {
+  color: var(--sev);
+  margin-bottom: var(--spacing-xs);
+}
+.opt-b .reason {
+  padding: 0;
+  border-radius: var(--radius);
+}
+.opt-b .reason[open] {
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+.opt-b .reason-sum {
+  color: var(--sev);
+}
+.opt-b .reason-body {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  margin-top: var(--spacing-xs);
+}
+.opt-b .bq-body {
+  color: var(--text-secondary);
+}
+.opt-b .rollup-body,
+.opt-b .sub-timeline {
+  background: var(--bg-subtle);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) var(--spacing-md);
+  margin-top: var(--spacing-xs);
+}
+.opt-b .row.selected,
+.opt-b .set-btn.active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.opt-b .vnc-tab.is-active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.opt-b .vnc-auth {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-elevated));
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+.opt-b .vnc-auth-head {
+  color: var(--sev);
+}
+.opt-b .vnc-status {
+  background: color-mix(in srgb, var(--sev) 9%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--spacing-sm);
+}
+.opt-b .vnc-status-dot {
+  display: block;
+}
+
+/* ============================================================================
+   TREATMENT C — GUTTER
+   The marker moves off the edge and into a fixed icon column. Text starts at
+   one consistent inset for every block kind, so stacked callouts line up
+   instead of each drawing its own frame. Nothing is filled and nothing is
+   boxed; the icon is the whole signal.
+   ========================================================================= */
+
+.opt-c .cal,
+.opt-c .bq,
+.opt-c .panel {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  grid-template-areas: 'gut head' '. body';
+  align-items: start;
+  column-gap: var(--spacing-xs);
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: var(--spacing-md) 0;
+}
+.opt-c .cal-head,
+.opt-c .bq-head,
+.opt-c .panel-head {
+  grid-area: head;
+  display: contents;
+  color: var(--sev);
+}
+.opt-c .cal-icon,
+.opt-c .bq-icon,
+.opt-c .panel-icon {
+  grid-area: gut;
+  justify-self: center;
+  margin-top: 3px;
+}
+.opt-c .cal-name,
+.opt-c .bq-name,
+.opt-c .panel-name {
+  grid-area: head;
+  color: var(--sev);
+  font-weight: 600;
+}
+.opt-c .cal-body,
+.opt-c .bq-body,
+.opt-c .panel-body {
+  grid-area: body;
+}
+/* `<details>` cannot take the same grid: Chromium wraps everything after the
+   summary in a `::details-content` box, which auto-places into the 24px gutter
+   column and reflows the body one word per line. Match the gutter with padding
+   instead — same result, no dependence on how the UA boxes the disclosure. */
+.opt-c .reason {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: var(--spacing-md) 0;
+}
+.opt-c .reason-sum {
+  color: var(--sev);
+  gap: var(--spacing-xs);
+}
+.opt-c .reason-icon {
+  width: 24px;
+}
+.opt-c .reason-name {
+  color: var(--sev);
+  font-weight: 600;
+}
+.opt-c .reason-body {
+  padding-left: calc(24px + var(--spacing-xs));
+}
+.opt-c .panel-meta {
+  grid-area: head;
+  justify-self: end;
+}
+.opt-c .bq-body,
+.opt-c .reason-body {
+  color: var(--text-secondary);
+}
+.opt-c .reason-body {
+  font-size: var(--font-size-sm);
+}
+.opt-c .rollup-body,
+.opt-c .sub-timeline {
+  padding-left: 24px;
+  margin-top: var(--spacing-xs);
+}
+/* The thread row already reserves a 28px status gutter. A selected row fills
+   it with an accent pip instead of hanging a bar off the sidebar edge. */
+.opt-c .row.selected {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.opt-c .row.selected .row-gut::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.opt-c .set-btn.active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.opt-c .vnc-tab.is-active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.opt-c .vnc-auth {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  grid-template-areas: 'gut head' '. body';
+  column-gap: var(--spacing-xs);
+  align-items: start;
+}
+.opt-c .vnc-auth-head {
+  display: contents;
+  color: var(--sev);
+}
+.opt-c .vnc-auth-icon {
+  grid-area: gut;
+  justify-self: center;
+  margin-top: 3px;
+}
+.opt-c .vnc-auth-name {
+  grid-area: head;
+  color: var(--sev);
+}
+.opt-c .vnc-auth-body {
+  grid-area: body;
+}
+.opt-c .vnc-status {
+  padding-left: 9px;
+}
+.opt-c .vnc-status-dot {
+  display: block;
+}
+
+/* ============================================================================
+   SURFACE TREATMENTS (D, E, J — depth; G, H, I — quiet)
+
+   Everything from D onward keeps the same content model and changes only what
+   delineates the block. None of them tints a whole block flat the way B does:
+   severity lives in the icon and title, so the surface is free to be neutral.
+
+   (F — "Lit", a radial glow of the severity hue — was cut. At block scale the
+   coloured falloff read as a smudge rather than a light.)
+   ========================================================================= */
+
+:is(.opt-d, .opt-e, .opt-g, .opt-h, .opt-i, .opt-j, .opt-m)
+  :is(.cal-head, .bq-head, .panel-head, .vnc-auth-head) {
+  color: var(--sev);
+  margin-bottom: var(--spacing-xs);
+}
+:is(.opt-d, .opt-e, .opt-g, .opt-h, .opt-i, .opt-j, .opt-m) .reason-sum {
+  color: var(--sev);
+}
+:is(.opt-d, .opt-e, .opt-g, .opt-h, .opt-i, .opt-j, .opt-m) :is(.bq-body, .reason-body) {
+  color: var(--text-secondary);
+}
+:is(.opt-d, .opt-e, .opt-g, .opt-h, .opt-i, .opt-j, .opt-m) .reason-body {
+  font-size: var(--font-size-sm);
+  margin-top: var(--spacing-xs);
+}
+/* Today the rail hue carries VNC status; once it is gone the dot has to. */
+:is(.opt-d, .opt-e, .opt-g, .opt-h, .opt-i, .opt-j, .opt-m) .vnc-status-dot {
+  display: block;
+}
+:is(.opt-d, .opt-e, .opt-g, .opt-h, .opt-i, .opt-j) .vnc-status {
+  padding-left: 2px;
+}
+/* The wash alone says "selected"; the rail was always redundant with it. Each
+   treatment below overrides this only where it has something better to add. */
+:is(.opt-g, .opt-h, .opt-i, .opt-m)
+  :is(.row.selected, .set-btn.active, .vnc-tab.is-active) {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------- D — LIFTED ---
+   A leaf raised a hair off the transcript. No border and no rail: a soft drop
+   shadow reads the edge, and a 1px inner top highlight catches the same light
+   the pane is already lit by. The fill is barely above the page — the shadow,
+   not the tint, is what contains the block.                                */
+
+.opt-d .cal,
+.opt-d .bq,
+.opt-d .panel,
+.opt-d .vnc-auth,
+.opt-d .reason[open] {
+  border: 0;
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: color-mix(in srgb, var(--bg-elevated) 72%, var(--bg-base));
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.26),
+    0 4px 12px -6px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+.opt-d .reason {
+  border-radius: var(--radius);
+}
+/* Nested rows sit on the same leaf rather than hanging off a guide line. */
+.opt-d .rollup-body,
+.opt-d .sub-timeline {
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-elevated) 55%, var(--bg-base));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+/* A selected row lifts toward you: full-bleed, so the shadow spills above and
+   below rather than drawing a detached pill. */
+.opt-d .row.selected,
+.opt-d .set-btn.active,
+.opt-d .vnc-tab.is-active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.opt-d .vnc-status {
+  padding-left: 2px;
+}
+
+/* ------------------------------------------------------------ E — WELL ---
+   The inverse of D: the block is pressed into the surface. An inset shadow
+   under the top lip plus a highlight along the bottom one, which is what a
+   real recess does under a light from above. Recessed reads as subordinate
+   with no hue at all — right for a quote, a thinking block, or raw details. */
+
+.opt-e .cal,
+.opt-e .bq,
+.opt-e .panel,
+.opt-e .vnc-auth,
+.opt-e .reason[open] {
+  border: 0;
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: color-mix(in srgb, #000 14%, var(--bg-base));
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.22),
+    0 1px 0 rgba(255, 255, 255, 0.035);
+}
+.opt-e .reason {
+  border-radius: var(--radius);
+}
+.opt-e .rollup-body,
+.opt-e .sub-timeline {
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, #000 9%, var(--bg-base));
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+/* Selection is the one place the well inverts: a current row is pressed in,
+   which is the same gesture as a held button. */
+.opt-e .row.selected,
+.opt-e .set-btn.active,
+.opt-e .vnc-tab.is-active {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.34),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+.opt-e .vnc-status {
+  padding-left: 2px;
+}
+
+/* ------------------------------------------------------------- J — SOFT ---
+   The chat pane technique with the colour taken out. `.pane-chat` fades a
+   lighter top into the page over a long falloff; a block does the same, at
+   block scale, in neutral. No border, no shadow, no hue — the surface only
+   gets lighter where the title is, then dissolves. This is what F should have
+   been: F tinted the falloff with the severity hue and the result read as a
+   smudge rather than a light.                                               */
+
+.opt-j .cal,
+.opt-j .bq,
+.opt-j .panel,
+.opt-j .vnc-auth,
+.opt-j .reason[open] {
+  border: 0;
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-elevated) 88%, transparent),
+    transparent 94%
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+.opt-j .reason {
+  border-radius: var(--radius);
+}
+.opt-j .rollup-body,
+.opt-j .sub-timeline {
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-elevated) 55%, transparent),
+    transparent 96%
+  );
+}
+/* Selection fades the same way rather than sitting as a flat slab. */
+.opt-j .row.selected,
+.opt-j .set-btn.active,
+.opt-j .vnc-tab.is-active {
+  color: var(--text-primary);
+  font-weight: 600;
+  background: linear-gradient(
+    180deg,
+    var(--bg-selected),
+    color-mix(in srgb, var(--bg-selected) 55%, transparent)
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ------------------------------------------------------------- G — RING ---
+   A hairline all the way round in a low-alpha severity hue. A ring has no
+   leading edge, so it follows a radius evenly on all four corners and the
+   whole "rails never curve" problem stops existing. Nothing is filled: the
+   block is outlined, not shaded, which is the cheapest possible containment
+   in a dense transcript. `.provider-chip.active` already works this way.    */
+
+.opt-g .cal,
+.opt-g .bq,
+.opt-g .panel,
+.opt-g .vnc-auth,
+.opt-g .reason[open] {
+  border: 1px solid color-mix(in srgb, var(--sev) 30%, transparent);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+}
+.opt-g .reason {
+  border-radius: var(--radius);
+}
+/* Nesting stays a ring too, but in the neutral border token — a group of rows
+   is structure, not severity. */
+.opt-g .rollup-body,
+.opt-g .sub-timeline {
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+
+/* ------------------------------------------------------------ H — HATCH ---
+   A texture rather than a tint: a 1px diagonal hatch at very low alpha, so
+   the block reads as a different material without ever becoming a solid
+   coloured slab. Density stays constant, so a tall callout is no heavier
+   than a short one — which a flat wash cannot claim.                        */
+
+.opt-h .cal,
+.opt-h .bq,
+.opt-h .panel,
+.opt-h .vnc-auth,
+.opt-h .reason[open] {
+  border: 0;
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--sev) 11%, transparent) 0 1px,
+      transparent 1px 8px
+    ),
+    color-mix(in srgb, var(--sev) 3%, transparent);
+}
+.opt-h .reason {
+  border-radius: var(--radius);
+}
+.opt-h .rollup-body,
+.opt-h .sub-timeline {
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius);
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--text-muted) 8%, transparent) 0 1px,
+    transparent 1px 8px
+  );
+}
+
+/* ----------------------------------------------------------- I — MARGIN ---
+   No graphic at all. The kind of block is named in a fixed left column,
+   right-aligned so every label ends on the same line the body starts from —
+   the marginal note of a printed page. Stacked callouts share one column, so
+   they line up instead of each drawing its own frame, and the body keeps a
+   single unbroken measure no matter how many blocks precede it.             */
+
+.opt-i .cal,
+.opt-i .bq,
+.opt-i .panel,
+.opt-i .vnc-auth {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  column-gap: var(--spacing-lg);
+  grid-template-areas: 'head body';
+  align-items: start;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: var(--spacing-lg) 0;
+}
+.opt-i :is(.cal-head, .bq-head, .panel-head, .vnc-auth-head) {
+  grid-area: head;
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: var(--line-height-base);
+  text-align: right;
+}
+.opt-i svg {
+  width: 12px;
+  height: 12px;
+}
+.opt-i :is(.cal-body, .bq-body, .panel-body) {
+  grid-area: body;
+}
+.opt-i .panel-meta {
+  grid-area: body;
+  justify-self: end;
+  margin-left: 0;
+}
+/* `<details>` cannot join the grid (Chromium boxes everything after the
+   summary in `::details-content`), so the disclosure matches the column with
+   padding and a negative-indent label instead. */
+.opt-i .reason {
+  padding-left: calc(78px + var(--spacing-lg));
+  margin: var(--spacing-lg) 0;
+}
+.opt-i .reason-sum {
+  margin-left: calc(-78px - var(--spacing-lg));
+  width: 78px;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  float: left;
+}
+.opt-i .reason-body {
+  margin-top: 0;
+}
+.opt-i .rollup-body,
+.opt-i .sub-timeline {
+  padding-left: var(--spacing-lg);
+  margin-top: var(--spacing-xs);
+}
+
+/* ============================================================================
+   M — THE MIX (proposed)
+
+   Not a fourth idea but a composition of three, split by what each block *is*
+   rather than by what it looks like:
+
+   - **Content the agent wrote** — GitHub alerts and blockquotes — takes B's
+     flat plate. It is prose, so it gets a plain surface and no texture.
+   - **Copse's commentary on the turn** — thinking, review, comparison — takes
+     H's hatch. These are not part of the answer; they are the app annotating
+     its own work, and the hatch is what says so without another hue or
+     another shape. Same plate, different material.
+   - **The VNC pane** takes C's gutter. It is a different pane with its own
+     chrome, its status hue has to survive on a single line, and an icon
+     column carries that where a plate would just box three status lines.
+   - **Tool rollups keep today's guide line.** That bar is structure — "these
+     rows are children of that one" — not decoration, and the rollup rework
+     already in flight supersedes anything done here.
+   - **List selection is the fill alone**, everywhere: the full-bleed
+     `--bg-selected` wash already says "selected".
+   ========================================================================= */
+
+/* Content: flat plate (B). */
+.opt-m .cal,
+.opt-m .bq {
+  border: 0;
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: color-mix(in srgb, var(--sev) 9%, var(--bg-elevated));
+}
+
+/* Commentary: hatched plate (H). Same box, different material. */
+.opt-m .panel,
+.opt-m .reason[open] {
+  border: 0;
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--sev) 11%, transparent) 0 1px,
+      transparent 1px 8px
+    ),
+    color-mix(in srgb, var(--sev) 3%, transparent);
+}
+.opt-m .reason {
+  border-radius: var(--radius);
+}
+
+/* VNC: gutter (C). */
+.opt-m .vnc-auth {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  grid-template-areas: 'gut head' '. body';
+  column-gap: var(--spacing-xs);
+  align-items: start;
+}
+.opt-m .vnc-auth-head {
+  display: contents;
+  color: var(--sev);
+}
+.opt-m .vnc-auth-icon {
+  grid-area: gut;
+  justify-self: center;
+  margin-top: 3px;
+}
+.opt-m .vnc-auth-name {
+  grid-area: head;
+  color: var(--sev);
+}
+.opt-m .vnc-auth-body {
+  grid-area: body;
+}
+.opt-m .vnc-status {
+  padding-left: 9px;
+}
+
+/* Tool rollup and subagent timeline: unchanged from today on purpose. */
+.opt-m .rollup-body {
+  padding-left: var(--spacing-sm);
+  margin-left: var(--spacing-xs);
+  border-left: 1px solid var(--border-subtle);
+}
+.opt-m .sub-timeline {
+  padding-left: var(--spacing-sm);
+  margin-left: var(--spacing-xs);
+  border-left: 2px solid var(--border);
+}
+
+/* ============================================================================
+   Compare: four cloned stages side by side.
+   ========================================================================= */
+
+.split-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-lg);
+  align-items: start;
+}
+.split-col {
+  min-width: 0;
+}
+.split-col > h3 {
+  position: sticky;
+  top: 96px;
+  z-index: 5;
+  margin: 0 0 var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  text-align: center;
+}
+.split-col .spec {
+  max-width: none;
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-md);
+}
+/* Headings only need to appear once across the four columns. */
+.split-col:not(:first-child) .spec-h {
+  visibility: hidden;
+}
+.split-grid .spec-note {
+  display: none;
+}
+.split-grid .cols {
+  grid-template-columns: 1fr;
+}
+.split-grid .settings {
+  grid-template-columns: 110px 1fr;
+}
+.split-grid .chat,
+.split-grid .msg {
+  padding: var(--spacing-sm);
+}
+.split-grid .spec-h {
+  font-size: var(--font-size-base);
+  min-height: 44px;
+}
