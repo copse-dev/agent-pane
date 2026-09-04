@@ -5,12 +5,11 @@ in-repo workspace package — the same staging step `@copse/llm` took (PR #715)
 and the markdown renderer took before becoming the standalone
 `@copse/streaming-markdown` git dependency (PR #689).
 
-The module's source lives here (`packages/agent/src/`). App code imports it via
-the `@copse/agent/*` specifier, resolved by a tsconfig path alias + esbuild
-alias (the same mechanism `@shared` and `@copse/llm` use), so no `npm install` /
-workspace symlink is required in-repo. Runtime dependencies: `@copse/llm`
-(provider contract + stop-reason machinery) and `zod` (ask-user option
-schemas). The package imports **nothing** from the host app.
+The module's source lives here (`packages/agent/src/`). pnpm links it as a real
+workspace dependency, and app/build/test code resolves its declared `exports`
+through `node_modules` without tsconfig or esbuild aliases. Runtime dependencies:
+`@copse/llm` (provider contract + stop-reason machinery) and `zod` (ask-user
+option schemas). The package imports **nothing** from the host app.
 
 ## What's in it
 
@@ -39,8 +38,8 @@ schemas). The package imports **nothing** from the host app.
   `github-link-steering`). Pure steering helpers live beside them
   (`todo-steering.ts`, `github-link-steering.ts`); `@shared` re-exports for
   existing app imports.
-- **`internal-utils.ts`** — vendored copies of the app's `at` / `errorMessage`
-  helpers, so the package pulls nothing from `@shared/*`.
+- **Leaf helpers come from `@copse/std`** (`at`, `errorMessage`, `isRecord`), the
+  shared home for the utilities that used to be vendored here as `internal-utils.ts`.
 
 ## Imports: granular subpaths, not the barrel
 
@@ -74,10 +73,8 @@ formatting); the loop itself is main-process-only.
   agent-loop-guards' duplicate-detection set). The barrel explicitly re-exports
   the subagent allowlist — the one app code imports; deep imports see both.
 
-## Remaining step for a true standalone repo
+## Standalone path
 
-Same as `@copse/llm`: lift `packages/agent/` into its own repository and consume
-it as a git/npm dependency, flipping the `@copse/agent/*` tsconfig-path +
-esbuild aliases to a real `node_modules` resolution. The boundary, the
-self-containment, the type ownership, and the bundling story are done and
-enforced by the build.
+The workspace dependency is already resolved through the package manifest. A
+future split into its own repository therefore changes the dependency source,
+not app imports or build configuration.

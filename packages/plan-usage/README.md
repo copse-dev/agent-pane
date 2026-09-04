@@ -2,9 +2,9 @@
 
 Standalone client for **subscription plan usage** (Claude / Codex rolling
 windows, Hugging Face monthly Inference Providers spend, and Cursor included /
-on-demand pools). Extracted as an in-repo workspace package in the same staging
-shape as `@copse/llm` and `@copse/agent`: tsconfig + esbuild aliases, zero
-imports from the host app, and a public surface that **never throws**.
+on-demand pools). It is a real pnpm workspace dependency with manifest-driven
+`node_modules` resolution, zero imports from the host app, and a public surface
+that **never throws**.
 
 If a provider is unsigned-in, the endpoint shape changes, or the network fails,
 callers get a typed `unavailable` / `error` result and keep working. The host
@@ -68,7 +68,7 @@ includes a truncated JSON `sample` of the value at that path (so opaque keys
 like Claude codename buckets are inspectable without dumping the full `--raw`
 payload).
 
-## Remaining step for a true standalone repo
+## Standalone path
 
-Mirror `@copse/llm`: publish as its own package once the surface stabilizes.
-For now the app deep-imports `@copse/plan-usage/*` via path aliases.
+Publish it once the surface stabilizes. The app already consumes only the
+package name and declared exports, so no resolver rewrite is required.

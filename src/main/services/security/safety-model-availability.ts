@@ -9,11 +9,15 @@ import { getActiveRunThread } from '../thread-models.ts'
  *
  * A classifier that returns nothing is fail-closed and safe, but it is also
  * indistinguishable from a slow model or a one-off timeout, so nobody
- * investigates. These two reasons are the ones a user can actually act on, and
- * both are cheap to establish *before* spending a doomed request: the model
- * list is already fetched and cached for the pickers.
+ * investigates. These are the reasons a user can actually act on.
+ *
+ * `not-available` and `server-unreachable` are cheap to establish *before*
+ * spending a doomed request: the model list is already fetched and cached for
+ * the pickers. `timed-out` is the one that can only be learned by trying — the
+ * model is there and answers, just not inside the screening budget — so it is
+ * raised by `safety-model-cooldown.ts` after the request rather than here.
  */
-export type SafetyModelProblemReason = 'not-available' | 'server-unreachable'
+export type SafetyModelProblemReason = 'not-available' | 'server-unreachable' | 'timed-out'
 
 export interface SafetyModelProblem {
   /** The configured selection, e.g. `lmstudio:qwen/qwen3-4b-2507`. */
@@ -24,6 +28,15 @@ export interface SafetyModelProblem {
 }
 
 const LM_STUDIO_PREFIX = 'lmstudio:'
+
+/**
+ * How a selection is named back to the user. Local selections are shown as the
+ * bare id they were downloaded and are listed under; everything else is already
+ * the name the user picked.
+ */
+export function safetyModelDisplayId(model: string): string {
+  return model.startsWith(LM_STUDIO_PREFIX) ? model.slice(LM_STUDIO_PREFIX.length) : model
+}
 
 function localServerUrl(): string {
   return resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
@@ -66,13 +79,14 @@ export async function findSafetyModelProblem(model: string): Promise<SafetyModel
   }
 }
 
-// A missing model is a configuration fault, not a per-call event: it would
-// otherwise write one identical line per shell command and per terminal read.
-// Dedupe per thread so each thread's audit records it once and no more.
+// A missing or too-slow model is a standing fault, not a per-call event: it
+// would otherwise write one identical line per shell command and per terminal
+// read. Dedupe per thread and reason so each thread's audit records it once and
+// no more.
 const reported = new Set<string>()
 
 /**
- * Record the unavailability on the thread's decision log.
+ * Record the fault on the thread's decision log.
  *
  * `verdict: 'ask'` with `actor: 'system'` is the honest reading: the classifier
  * produced no evidence, so the decision falls to the user. It is deliberately

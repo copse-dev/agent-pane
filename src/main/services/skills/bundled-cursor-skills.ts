@@ -2,7 +2,7 @@ import { accessSync, constants, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolvePluginSkillsDir } from './cursor-plugins.ts'
 
-/** Gitignored build artifact — see scripts/fetch-bundled-cursor-skills.mts */
+/** Tracked, hash-verified build input — update only with `pnpm sync:cursor-skills`. */
 export const BUNDLED_CURSOR_SKILLS_VENDOR_DIR = 'vendor/bundled-cursor-skills'
 
 let bundledRootOverride: string | null | undefined
