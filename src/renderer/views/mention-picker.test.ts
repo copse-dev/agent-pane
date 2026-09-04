@@ -43,6 +43,7 @@ function hit(id: string, title: string, updatedAt = Date.now()): ThreadCatalogHi
     digest: title,
     path: id,
     spinePath: `/chat/proj/${id}/events.jsonl`,
+    prRefs: [],
   }
 }
 

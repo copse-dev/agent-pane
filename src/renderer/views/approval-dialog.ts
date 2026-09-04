@@ -31,6 +31,28 @@ export const APPROVAL_COALESCE_MS = 120
  */
 export const APPROVAL_SETTLE_MS = 500
 
+/** Marker `permission-policy.ts` prefixes each reason line with. */
+const ADVICE_BULLET = '\u2022 '
+
+/**
+ * Advice text, with each reason bullet as its own inline-block so a line too long
+ * for the dialog hangs under its own text instead of returning to the left margin,
+ * where it reads as another bullet.
+ *
+ * The newlines stay as text nodes between the spans, so the element's
+ * `textContent` is still exactly the string the main process sent.
+ */
+function adviceElement(advice: string): HTMLElement {
+  const children: (Node | string)[] = []
+  advice.split('\n').forEach((line, index) => {
+    if (index > 0) children.push('\n')
+    children.push(
+      line.startsWith(ADVICE_BULLET) ? el('span', { class: 'approval-advice-item' }, line) : line,
+    )
+  })
+  return el('div', { class: 'approval-advice' }, ...children)
+}
+
 /**
  * Timer factory returning a cancel function. Overridable so tests drive the
  * coalesce/settle windows deterministically instead of waiting on real time.
@@ -318,7 +340,7 @@ export function mountApprovalDialog(
     if (hasSharedContext) {
       const sharedChildren: (Node | string)[] = []
       if (firstRequest.bodyAdvice) {
-        sharedChildren.push(el('div', { class: 'approval-advice' }, firstRequest.bodyAdvice))
+        sharedChildren.push(adviceElement(firstRequest.bodyAdvice))
       }
       const bodyLabel = firstRequest.type === 'shell' ? 'Commands requiring approval' : 'Requests'
       sharedChildren.push(
@@ -348,7 +370,7 @@ export function mountApprovalDialog(
             rowChildren.push(pickers.root)
           } else {
             if (req.bodyAdvice) {
-              rowChildren.push(el('div', { class: 'approval-advice' }, req.bodyAdvice))
+              rowChildren.push(adviceElement(req.bodyAdvice))
             }
             if (collapseDetails) rowChildren.push(detailsToggle())
             rowChildren.push(requestBody(req))

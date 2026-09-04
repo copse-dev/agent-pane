@@ -47,9 +47,9 @@ COMPOSE ?= $(shell \
 # the README documents.
 COMPOSE_IN_DIR := cd $(RUNNER_DIR) && $(COMPOSE)
 
-# Minimum Node major.minor required by package.json `engines` (>=22.22.2).
-NODE_MIN_MAJOR := 22
-NODE_MIN_MINOR := 22
+# Minimum Node major.minor required by package.json `engines` (>=24).
+NODE_MIN_MAJOR := 24
+NODE_MIN_MINOR := 0
 
 # nvm ships as a shell function loaded from nvm.sh, not a binary, so a recipe
 # can't just call `nvm`. Source it (honouring $NVM_DIR, default ~/.nvm) and run

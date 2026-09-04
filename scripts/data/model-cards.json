@@ -72,6 +72,51 @@
       "url": "https://openai.com/index/gpt-4o-system-card/",
       "source": "OpenAI publishes each system card at openai.com/index/<model>-system-card/; this URL is one of the known-card seeds in the model-card collector.",
       "asOf": "2026-08-04"
+    },
+    {
+      "modelId": "gpt-6-astra",
+      "publisher": "OpenAI",
+      "kind": "system-card",
+      "title": "GPT-6 Astra system card",
+      "url": "https://deploymentsafety.openai.com/gpt-6-astra/vision",
+      "source": "OpenAI Deployment Safety Hub's GPT-6 Astra System Card, published 2026-09-03 and verified 2026-09-04.",
+      "asOf": "2026-09-04"
+    },
+    {
+      "modelId": "gemini-2-5-flash",
+      "publisher": "Google DeepMind",
+      "kind": "model-card",
+      "title": "Gemini 2.5 Flash model card",
+      "url": "https://storage.googleapis.com/deepmind-media/Model-Cards/Gemini-2-5-Flash-Model-Card.pdf",
+      "source": "Google DeepMind's model-card hub links this official PDF for Gemini 2.5 Flash; updated 2025-09-26 and verified 2026-09-04.",
+      "asOf": "2026-09-04"
+    },
+    {
+      "modelId": "gemini-2-5-flash-lite",
+      "publisher": "Google DeepMind",
+      "kind": "model-card",
+      "title": "Gemini 2.5 Flash-Lite model card",
+      "url": "https://storage.googleapis.com/deepmind-media/Model-Cards/Gemini-2-5-Flash-Lite-Model-Card.pdf",
+      "source": "Google DeepMind's model-card hub links this official PDF for Gemini 2.5 Flash-Lite; updated 2025-09-26 and verified 2026-09-04.",
+      "asOf": "2026-09-04"
+    },
+    {
+      "modelId": "gemini-2-0-flash",
+      "publisher": "Google DeepMind",
+      "kind": "model-card",
+      "title": "Gemini 2.0 Flash model card",
+      "url": "https://storage.googleapis.com/deepmind-media/Model-Cards/Gemini-2-0-Flash-Model-Card.pdf",
+      "source": "Google DeepMind's model-card hub links this official PDF for Gemini 2.0 Flash; updated 2025-04-15 and verified 2026-09-04.",
+      "asOf": "2026-09-04"
+    },
+    {
+      "modelId": "gemini-2-0-flash-lite-001",
+      "publisher": "Google DeepMind",
+      "kind": "model-card",
+      "title": "Gemini 2.0 Flash-Lite model card",
+      "url": "https://storage.googleapis.com/deepmind-media/Model-Cards/Gemini-2-0-Flash-Lite-Model-Card.pdf",
+      "source": "Google DeepMind's model-card hub links this official PDF for Gemini 2.0 Flash-Lite; updated 2025-04-10 and verified 2026-09-04.",
+      "asOf": "2026-09-04"
     }
   ],
   "wanted": [

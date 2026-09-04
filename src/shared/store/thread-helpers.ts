@@ -27,9 +27,12 @@ import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 
-export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
-  return [...threads].sort((a, b) => b.createdAt - a.createdAt)
-}
+import { isHumanUserPrompt } from '@copse/thread-store/thread-sort.ts'
+export {
+  isHumanUserPrompt,
+  lastHumanPromptAt,
+  sortThreadsNewestFirst,
+} from '@copse/thread-store/thread-sort.ts'
 
 /**
  * Look up a thread by id (undefined for null/unknown ids). Finds background
@@ -402,6 +405,9 @@ export function addMessage(
   patchThreadAnywhere(store, threadId, (t) => ({
     ...t,
     messages: [...t.messages, message],
+    // The sidebar sorts on this and never reads transcripts, so it has to be
+    // recorded as the prompt lands rather than derived at display time.
+    ...(isHumanUserPrompt(message) ? { lastPromptAt: message.createdAt } : {}),
     updatedAt: Date.now(),
   }))
   store.emit('message_added', threadId, id)

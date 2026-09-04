@@ -1034,6 +1034,7 @@ describe('browser pane requested URLs', () => {
     const opened: string[] = []
     const sharedPageIds: number[] = []
     const sharedScreenshotIds: number[] = []
+    const exportedPdfIds: number[] = []
     const attachedText: BrowserTextShare[] = []
     const attachedImages: BrowserImageShare[] = []
     let shareTextHandler: ((share: BrowserTextShare) => void) | undefined
@@ -1047,6 +1048,11 @@ describe('browser pane requested URLs', () => {
       'browser.sharePageText': async (id: number): Promise<void> => void sharedPageIds.push(id),
       'browser.shareScreenshot': async (id: number): Promise<void> =>
         void sharedScreenshotIds.push(id),
+      'browser.exportPdf': async (id: number): Promise<string | null> => {
+        exportedPdfIds.push(id)
+        // Cancelled export: the pane must not toast a path it never wrote.
+        return null
+      },
       'browser.onShareText': (handler: (share: BrowserTextShare) => void): (() => void) => {
         shareTextHandler = handler
         return (): void => {}
@@ -1099,13 +1105,18 @@ describe('browser pane requested URLs', () => {
       const items = menu.querySelectorAll<HTMLButtonElement>('.browser-menu-item')
       const shareTextItem = items[0]
       const shareScreenshotItem = items[1]
-      const openExternalItem = items[2]
-      const inspectorItem = items[3]
-      assert.ok(shareTextItem && shareScreenshotItem && openExternalItem && inspectorItem)
+      const exportPdfItem = items[2]
+      const openExternalItem = items[3]
+      const inspectorItem = items[4]
+      assert.ok(
+        shareTextItem && shareScreenshotItem && exportPdfItem && openExternalItem && inspectorItem,
+      )
       assert.equal(shareTextItem.textContent, 'Share page text')
       assert.equal(shareScreenshotItem.textContent, 'Share screenshot')
+      assert.equal(exportPdfItem.textContent, 'Export PDF')
       assert.equal(shareTextItem.disabled, false)
       assert.equal(shareScreenshotItem.disabled, false)
+      assert.equal(exportPdfItem.disabled, false, 'a live guest enables PDF export')
       assert.equal(openExternalItem.disabled, false, 'a real page enables open-in-default-browser')
 
       shareTextItem.click()
@@ -1132,6 +1143,11 @@ describe('browser pane requested URLs', () => {
         { dataUrl: 'data:image/png;base64,QUJD', mimeType: 'image/png' },
       ])
       assert.equal(composerFocused, true)
+
+      menuBtn.click()
+      exportPdfItem.click()
+      assert.deepEqual(exportedPdfIds, [42])
+      assert.ok(menu.hasAttribute('hidden'), 'exporting a PDF closes the menu')
 
       menuBtn.click()
       openExternalItem.click()

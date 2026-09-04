@@ -5,7 +5,7 @@
 // no input); instead we surface an `error` so the agent loop can return an
 // is_error tool result and let the model retry the call. See #114.
 
-import { errorMessage } from './internal-utils.ts'
+import { errorMessage } from '@copse/std/errors.ts'
 
 export interface ParsedToolArgs {
   /** Parsed args on success; `{}` when there were no args; `{}` on failure. */

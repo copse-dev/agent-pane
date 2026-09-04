@@ -64,6 +64,39 @@ The in-memory grant disappears on restart. The decision record does not: an answ
 `decision` spine event at `scope: external-read`, including the paths and whether the grant was
 remembered. Each later allowed command records a verdict sourced to `read-outside-grant`.
 
+## What an approval prompt says
+
+Classifier reasons are **identifiers, not copy**. The regex pass and the token pass share them
+verbatim so the two dedupe against each other, and every answered prompt writes them into the
+decision spine, so they must stay stable — which is why they read like rules
+(`inline script (interpreter -c/-e/--eval)`) rather than like something a user can act on.
+
+`shell-scope.ts` therefore keeps a second table, `SCOPE_REASON_TEXT`, holding one plain-English
+sentence per reason, and `describeShellScopeReasons` resolves a reason list into sentences at the
+moment a prompt is built. The shell prompt formatters in `permission-policy.ts` render those as a
+bullet per line; the Guarded YOLO harm prompt resolves the same sentences but keeps its existing
+one-paragraph `Potential harm: …` shape, because it is capped by length rather than by line. Logs,
+hooks and the decision spine keep the identifiers.
+
+Two properties this contract depends on:
+
+- **Every rule has copy.** `ScopeReason` is derived from the keys of `SCOPE_REASON_TEXT` and
+  annotates the pattern tables, the shared reason constants, and the accumulators both classifier
+  passes push through, so a new classifier rule whose reason has no sentence fails to typecheck.
+  The one deliberate exception is the runtime-built `absolute path outside workspace: …`, which
+  bakes in an operand and so is matched by prefix instead; anything still unrecognised is shown
+  verbatim rather than dropped.
+- **One concern, one line.** Deduping happens on the resolved sentence, so rules that describe the
+  same underlying fact collapse — a heredoc, a `-c` body and an `eval` are all "runs code written
+  or built inside the command itself" (so `node --eval`, which trips two rules, reads as one line),
+  and `~/` and `$HOME` are both "in your home directory". The Guarded YOLO harm prompt dedupes the
+  same way but joins the result into its one paragraph rather than one bullet per line.
+
+Prompts that offer a sandbox escape name no platform: they appear only while a project sandbox is
+active, which is seatbelt on macOS and bubblewrap on Linux. `permission-policy.ts` owns the
+up-front prompts and `sandbox-failure.ts` the after-a-block retry; the `expects_sandbox_block`
+wording stays an expectation, per the section above.
+
 ## Guarded YOLO
 
 Guarded YOLO is a session-only, thread-scoped mode armed from the composer footer. It becomes
@@ -90,8 +123,16 @@ Update this document and the Guarded YOLO / harm / read-outside tests with any i
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
-- `shell-scope.ts`: static `sandbox` / `ambiguous` / `external` analysis and human-readable reasons.
-- `read-outside-project.ts` and `read-outside-grant.ts`: read-shape proof, refusals, and thread grant.
+- `@copse/shell-guard` (`packages/shell-guard/`): the deterministic classifiers, host-free.
+  `shell-argv.ts` (lexing, wrapper unwrapping, read-only tables), `shell-scope.ts` (static
+  `sandbox` / `ambiguous` / `external` analysis and human-readable reasons), `shell-harm.ts`
+  (the Guarded YOLO harm gate), `read-outside-project.ts` (read-shape proof and refusals),
+  `gh-argv.ts` (GitHub CLI shapes), `command-routing.ts` (trusted-command routing). The
+  `src/main/services/security/` files of the same names re-export them and bind the two facts
+  only the app knows through `shell-guard-environment.ts`: the read-only chat-store mount and
+  the scratch directories configured ACP agents declare.
+- `read-outside-grant.ts`: the thread-scoped read grant; the approval-prompt copy for it stays in
+  `read-outside-project.ts` beside the other prompt formatters.
 - `safety-classifier.ts`: optional LM Studio classifier used only when the OS sandbox is unavailable.
 - `auto-approval.ts` / `auto-approval-config.ts`: deterministic shape allow-list; honoured only
   while the project sandbox is active, auto-run is on, and the workspace is trusted. Write tiers

@@ -12,19 +12,22 @@ import {
 import { DEFAULT_MANAGED_AGENT_MODEL } from './managed-agents.ts'
 import { nonEmptyStringOr } from './unknown-value.ts'
 
-export const REMOTE_AGENT_PROVIDER_CURSOR = 'cursor'
-export const REMOTE_AGENT_PROVIDER_ANTHROPIC = 'anthropic'
-
-export const REMOTE_AGENT_PROVIDERS = [
-  REMOTE_AGENT_PROVIDER_CURSOR,
+// The provider vocabulary is owned by the thread store, which persists and
+// validates `remoteAgentLink.provider`; imported for the helpers below and
+// re-exported so remote-agent consumers keep their existing import path.
+import {
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
-] as const
-
-export type RemoteAgentProvider = (typeof REMOTE_AGENT_PROVIDERS)[number]
-
-export function isRemoteAgentProvider(value: unknown): value is RemoteAgentProvider {
-  return value === REMOTE_AGENT_PROVIDER_CURSOR || value === REMOTE_AGENT_PROVIDER_ANTHROPIC
-}
+  REMOTE_AGENT_PROVIDER_CURSOR,
+  isRemoteAgentProvider,
+  type RemoteAgentProvider,
+} from '@copse/thread-store/remote-agent-provider.ts'
+export {
+  REMOTE_AGENT_PROVIDER_ANTHROPIC,
+  REMOTE_AGENT_PROVIDER_CURSOR,
+  REMOTE_AGENT_PROVIDERS,
+  isRemoteAgentProvider,
+  type RemoteAgentProvider,
+} from '@copse/thread-store/remote-agent-provider.ts'
 
 export const DEFAULT_CURSOR_AGENT_BASE_URL = 'https://api.cursor.com'
 export const DEFAULT_ANTHROPIC_AGENT_BASE_URL = 'https://api.anthropic.com'

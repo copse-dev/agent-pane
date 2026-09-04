@@ -430,8 +430,14 @@ const CODE_EXTS = ['.ts', '.mts', '.tsx', '.js', '.mjs']
 const PACKAGE_ALIASES: [prefix: string, dir: string][] = [
   ['@shared/', 'src/shared/'],
   ['@copse/agent/', 'packages/agent/src/'],
+  ['@copse/hooks-dialects/', 'packages/hooks-dialects/src/'],
   ['@copse/llm/', 'packages/llm/src/'],
   ['@copse/plan-usage/', 'packages/plan-usage/src/'],
+  ['@copse/plugin-sdk/', 'packages/plugin-sdk/src/'],
+  ['@copse/procwatch/', 'packages/procwatch/src/'],
+  ['@copse/shell-guard/', 'packages/shell-guard/src/'],
+  ['@copse/std/', 'packages/std/src/'],
+  ['@copse/thread-store/', 'packages/thread-store/src/'],
 ]
 
 /** Bare package specifiers (no subpath) — resolve to the package entry point. */
