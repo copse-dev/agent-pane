@@ -138,6 +138,7 @@ import {
   lmStudioDownloadStatusSchema,
   lmStudioTestSchema,
   parseIpcArgs,
+  zGitBranchName,
   zProjectId,
   zThreadId,
   describeImagesSchema,
@@ -621,21 +622,17 @@ app
         if (modelArg !== undefined && typeof modelArg !== 'string') {
           throw new Error('Invalid checkout model')
         }
-        if (
-          baseBranchArg !== undefined &&
-          (typeof baseBranchArg !== 'string' ||
-            baseBranchArg.length === 0 ||
-            baseBranchArg.length > 256)
-        ) {
-          throw new Error('Invalid checkout base branch')
-        }
+        // The same shape `git:checkoutBranch` accepts: the picker's selection
+        // ends up in `git switch` or `git worktree add` either way.
+        const baseBranch =
+          baseBranchArg === undefined ? undefined : parseIpcArgs(zGitBranchName, [baseBranchArg])
         return prepareThreadCheckout({
           projectId,
           threadId,
           prompt: promptArg,
           choice: choiceArg,
           ...(modelArg !== undefined ? { model: modelArg } : {}),
-          ...(baseBranchArg !== undefined ? { baseBranch: baseBranchArg } : {}),
+          ...(baseBranch !== undefined ? { baseBranch } : {}),
         })
       },
     )
