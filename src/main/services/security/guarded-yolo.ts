@@ -6,6 +6,19 @@ interface GuardedYoloEntry {
 }
 
 /**
+ * A reason arming must be refused for this thread, or null. Registered by the
+ * unattended-run ledger so the two modes stay mutually exclusive without this
+ * module importing it (`docs/plans/unattended-runs.md` Decision 5).
+ */
+type ArmGuard = (threadId: string) => string | null
+
+let armGuard: ArmGuard = () => null
+
+export function setGuardedYoloArmGuard(guard: ArmGuard): void {
+  armGuard = guard
+}
+
+/**
  * Session-only, thread-scoped Guarded YOLO capability ledger. Nothing is read
  * from or written to settings, so migrations, fallbacks, and app restarts can
  * never enable the mode accidentally.
@@ -15,6 +28,8 @@ export class GuardedYoloRegistry {
   private readonly listeners = new Set<(threadId: string) => void>()
 
   arm(threadId: string): void {
+    const refusal = armGuard(threadId)
+    if (refusal !== null) throw new Error(refusal)
     this.entries.set(threadId, { phase: 'armed' })
     this.emit(threadId)
   }

@@ -1,7 +1,10 @@
 # Unattended runs on a contained runtime
 
-**Status: Proposed.** Nothing here is implemented. This plan proposes an **unattended
-run**: a per-thread container runtime plus its own autonomy mode, so long-horizon work can
+**Status: Proposed.** Nothing here is implemented under these decisions.
+[`thread-in-container.md`](thread-in-container.md) prototypes the unattended-run mode with
+the agent loop **inside** the guest rather than on the desktop, and records where that
+diverges from Decisions 1 and 3 below; if that direction is confirmed, those two decisions
+are revised there and here in one change. This plan proposes an **unattended run**: a per-thread container runtime plus its own autonomy mode, so long-horizon work can
 continue for hours without a human present — and says precisely which prompts containment
 removes and which it must not.
 
