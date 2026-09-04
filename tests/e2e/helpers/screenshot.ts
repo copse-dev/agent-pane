@@ -74,6 +74,7 @@ export async function saveAppScreenshot(
   await prepareE2eScreenshot(size)
   const app = await browser.$('#app')
   await app.waitForDisplayed({ timeout: 15_000 })
+  await waitForSettledLayout('#app')
   await app.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
@@ -180,6 +181,57 @@ export async function waitForImagesSettled(
 }
 
 /**
+ * Wait until nothing under `selector` is still moving: every scroll offset in
+ * the subtree and the element's own box must read the same across consecutive
+ * animation frames. Smooth scrolling is the usual offender — a spec that does
+ * `scrollIntoView({ behavior: 'smooth' })` (or clicks something that does) and
+ * then waits for `scrollTop > 0` captures whatever frame the animation had
+ * reached, which is a different frame on every runner. That is exactly how
+ * `settings-styling-nav-subheadings.png` and `settings-usage-plan-worth-it-inference.png`
+ * came back a few dozen pixels apart with no UI change behind them.
+ *
+ * Bounded: after `timeout` the capture proceeds anyway, so a genuinely animated
+ * surface (a spinner) cannot hang a spec — it just does not get the guarantee.
+ */
+export async function waitForSettledLayout(
+  target: string | WebdriverIO.Element,
+  options: { timeout?: number; stableFrames?: number } = {},
+): Promise<void> {
+  const { timeout = 3_000, stableFrames = 3 } = options
+  const deadline = Date.now() + timeout
+  let previous: string | null = null
+  let stable = 0
+  while (Date.now() < deadline) {
+    // A WDIO element crosses into the page as the DOM node itself; a selector
+    // is looked up there. Specs hand `saveElementScreenshot` either.
+    const snapshot = await browser.execute((subject: string | Element) => {
+      const host = typeof subject === 'string' ? document.querySelector(subject) : subject
+      if (!host) return null
+      const rect = host.getBoundingClientRect()
+      const parts = [rect.top, rect.left, rect.width, rect.height]
+      const nodes = [host, ...host.querySelectorAll('*')]
+      for (const node of nodes) {
+        // Only scrollports carry a meaningful offset; skipping the rest keeps
+        // the walk cheap on a large settings form.
+        if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth) {
+          parts.push(node.scrollTop, node.scrollLeft)
+        }
+      }
+      return parts.join(',')
+    }, target)
+    if (snapshot !== null && snapshot === previous) {
+      stable += 1
+      if (stable >= stableFrames) return
+    } else {
+      stable = 0
+    }
+    previous = snapshot
+    // Two frames at 60Hz, so a smooth scroll still in flight reads differently.
+    await browser.pause(34)
+  }
+}
+
+/**
  * Capture a single element after pinning the viewport (footer, input bar, etc.).
  *
  * The pin happens *after* the caller has scrolled its subject into view, and it
@@ -198,8 +250,70 @@ export async function saveElementScreenshot(selector: string, filename: string):
     // Let the scroll settle before capturing, as the prepare step does.
     await browser.pause(100)
   }
+  await waitForSettledLayout(el)
   await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
   // Hand the page back exactly as the caller left it — the scroll was for the
   // capture, and specs keep interacting with the page afterwards.
   if (saved) await browser.execute(restoreScrollAfterCapture, el, saved)
+}
+
+/**
+ * Replace text that only the wall clock can produce with a fixed stand-in for
+ * the duration of a capture, and put it back afterwards.
+ *
+ * This is the last resort, not the first: the rule (docs/testing-strategy.md,
+ * "Deterministic screenshots") is to seed timestamps and ids through fixtures
+ * or an e2e env override so the product renders the same thing every run. Use
+ * this only for a value no fixture can reach — the trigger time of an
+ * automation run the real scheduler just fired, for instance — and keep the
+ * DOM assertion that proves the real text was there. Everything else in the
+ * frame is still the product's own rendering.
+ *
+ * Only text nodes are rewritten, only where `pattern` matches, so layout and
+ * markup are untouched. Returns a restore function; call it once the capture is
+ * saved so the spec keeps interacting with the real page.
+ */
+export async function pinTextForCapture(
+  selector: string,
+  pattern: RegExp,
+  replacement: string,
+): Promise<() => Promise<void>> {
+  const count = await browser.execute(
+    (sel: string, source: string, flags: string, next: string) => {
+      const host = document.querySelector(sel)
+      if (!host) return 0
+      const re = new RegExp(source, flags)
+      const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
+      const pinned: { node: Text; text: string }[] = []
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node as Text
+        if (!re.test(text.data)) continue
+        pinned.push({ node: text, text: text.data })
+        text.data = text.data.replace(re, next)
+      }
+      const win = window as unknown as {
+        __copsePinnedText?: { node: Text; text: string }[]
+      }
+      win.__copsePinnedText = [...(win.__copsePinnedText ?? []), ...pinned]
+      return pinned.length
+    },
+    selector,
+    pattern.source,
+    pattern.flags,
+    replacement,
+  )
+  if (count === 0) {
+    throw new Error(
+      `pinTextForCapture: nothing under ${selector} matched ${String(pattern)} — the value it exists to hide is not there, so the capture would not be pinning anything`,
+    )
+  }
+  return async () => {
+    await browser.execute(() => {
+      const win = window as unknown as {
+        __copsePinnedText?: { node: Text; text: string }[]
+      }
+      for (const { node, text } of win.__copsePinnedText ?? []) node.data = text
+      delete win.__copsePinnedText
+    })
+  }
 }

@@ -5,7 +5,11 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
-import { resetUserData, seedThreadRenameArchiveFixture } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedStableWorkspace,
+  seedThreadRenameArchiveFixture,
+} from './helpers/seed-config.ts'
 
 describe('thread + terminal rename / archive', () => {
   let keepTitle: string
@@ -14,7 +18,7 @@ describe('thread + terminal rename / archive', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    ;({ keepTitle, archiveTitle } = seedThreadRenameArchiveFixture(process.cwd()))
+    ;({ keepTitle, archiveTitle } = seedThreadRenameArchiveFixture(seedStableWorkspace()))
     await browser.reloadSession()
   })
 
