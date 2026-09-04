@@ -2665,9 +2665,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const nestedStatus =
       file.scopePath === undefined
         ? ''
-        : file.active
-          ? ` · scope: ${file.scopePath}/ · active this turn`
-          : ` · scope: ${file.scopePath}/ · activates when a path under this directory enters context`
+        : file.duplicateOf !== undefined
+          ? ` · scope: ${file.scopePath}/ · identical to ${file.duplicateOf}, loaded once through it`
+          : file.active
+            ? ` · scope: ${file.scopePath}/ · active this turn`
+            : ` · scope: ${file.scopePath}/ · activates when a path under this directory enters context`
     const detail =
       `${file.path} · ${formatByteSize(file.bytes)}` +
       (file.trusted
@@ -2675,16 +2677,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : ' · inert until you trust this workspace — click the badge to trust it')
     const badge = !file.trusted
       ? 'not loaded'
-      : file.scopePath !== undefined
-        ? file.active
-          ? 'active'
-          : 'scoped'
-        : file.scope
+      : file.duplicateOf !== undefined
+        ? 'duplicate'
+        : file.scopePath !== undefined
+          ? file.active
+            ? 'active'
+            : 'scoped'
+          : file.scope
     const row = makeSourceRow(file.name, badge, detail, {
       badgeClass: !file.trusted
         ? 'sources-badge-untrusted'
         : file.scopePath !== undefined
-          ? file.active
+          ? file.active && file.duplicateOf === undefined
             ? 'sources-badge-auto'
             : undefined
           : file.scope === 'project'
@@ -2732,6 +2736,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         instructions.map((f) => makeInstructionRow(f)),
         'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally).',
       )
+      // Discovery is bounded; say so rather than let a missing nested file
+      // look like it was never written.
+      if (instructions.some((f) => f.discoveryTruncated)) {
+        const note = document.createElement('span')
+        note.className = 'sources-empty'
+        note.id = 'sources-instructions-truncated'
+        note.textContent =
+          'Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.'
+        qsRequired(overlay, '#sources-instructions-list').append(note)
+      }
 
       const kindLabel: Record<string, string> = {
         always: 'always',

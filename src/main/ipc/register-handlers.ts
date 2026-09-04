@@ -2147,15 +2147,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         useLatestNestedActivation: true,
         refreshNestedDiscovery: true,
       })
-    ).map(({ path, name, scope, content, active, trusted, scopePath }) => ({
-      path,
-      name,
-      scope,
-      bytes: Buffer.byteLength(content, 'utf-8'),
-      active,
-      trusted,
-      ...(scopePath !== undefined ? { scopePath } : {}),
-    })),
+    ).map(
+      ({
+        path,
+        name,
+        scope,
+        content,
+        active,
+        trusted,
+        scopePath,
+        duplicateOf,
+        discoveryTruncated,
+      }) => ({
+        path,
+        name,
+        scope,
+        bytes: Buffer.byteLength(content, 'utf-8'),
+        active,
+        trusted,
+        ...(scopePath !== undefined ? { scopePath } : {}),
+        ...(duplicateOf !== undefined ? { duplicateOf } : {}),
+        ...(discoveryTruncated ? { discoveryTruncated } : {}),
+      }),
+    ),
   )
   /**
    * Read one instruction file for display (Settings → Sources opens it in the
