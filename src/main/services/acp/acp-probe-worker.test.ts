@@ -37,7 +37,7 @@ function bundleWorker(outDir: string): string {
     bundle: true,
     platform: 'node',
     format: 'cjs',
-    target: 'node22',
+    target: 'node24',
     alias: { '@shared': join(REPO_ROOT, 'src/shared') },
     // Mirror scripts/build.mts `nodeOpts.external`. ASRT in particular must stay
     // external: it evaluates `import.meta.url` at module scope, which is undefined
