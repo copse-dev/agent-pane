@@ -56,8 +56,12 @@ function defaultStat(absolutePath: string): { isFile: boolean; size: number } | 
 /**
  * True when `relativePath` (workspace-relative, `/`-separated) is a bwrap mount
  * point rather than a file someone created: it is one of the mandatory deny
- * paths and the entry on disk is a zero-byte regular file. A real `.bashrc` has
- * content; a real `.vscode` is a directory.
+ * paths and the entry on disk is a zero-byte regular file — or is already gone.
+ * A real `.bashrc` has content; a real `.vscode` is a directory. "Gone" counts
+ * because ASRT removes the mount points the moment the last sandboxed command
+ * exits, which is after `git status` listed them and before this check runs;
+ * an untracked record for a file that no longer exists is not the user's file
+ * either way.
  */
 export function isGhostMountPoint(
   root: string,
@@ -66,7 +70,7 @@ export function isGhostMountPoint(
 ): boolean {
   if (!GHOST_PATH_SET.has(relativePath)) return false
   const info = stat(join(root, relativePath))
-  return info !== null && info.isFile && info.size === 0
+  return info === null || (info.isFile && info.size === 0)
 }
 
 /**
@@ -83,7 +87,10 @@ export function isGhostMountPointEntry(
   if (isGhostMountPoint(root, relativePath, stat)) return true
   if (!GHOST_PARENT_DIRS.has(relativePath)) return false
   const children = listDir(join(root, relativePath))
-  if (!children || children.length === 0) return false
+  // The directory itself was a mount-point parent bwrap created and ASRT has
+  // already removed; nothing of the user's was ever in it.
+  if (children === null) return true
+  if (children.length === 0) return false
   return children.every((child) => isGhostMountPoint(root, `${relativePath}/${child}`, stat))
 }
 

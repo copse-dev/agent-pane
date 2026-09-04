@@ -53,6 +53,18 @@ describe('isGhostMountPoint', () => {
     )
   })
 
+  it('treats a deny path that has already been cleaned up as a ghost', () => {
+    // ASRT deletes the mount points right after the sandboxed `git status`
+    // exits, so by the time the listing is filtered the file is usually gone.
+    withRoot(
+      () => {},
+      (root) => {
+        assert.equal(isGhostMountPoint(root, '.gitconfig'), true)
+        assert.equal(isGhostMountPointEntry(root, '.claude'), true)
+      },
+    )
+  })
+
   it('ignores zero-byte files that are not deny paths', () => {
     withRoot(
       (root) => {
@@ -118,6 +130,16 @@ describe('withoutGhostMountPoints', () => {
         })
         // Only bubblewrap creates mount-point files; elsewhere the record is real.
         assert.equal(withoutGhostMountPoints(status, root, { platform: 'darwin' }), status)
+      },
+    )
+  })
+
+  it('keeps an untracked file that is missing but was never a deny path', () => {
+    const status = { staged: [], unstaged: [{ path: 'gone.ts', status: 'untracked' as const }] }
+    withRoot(
+      () => {},
+      (root) => {
+        assert.equal(withoutGhostMountPoints(status, root, { platform: 'linux' }), status)
       },
     )
   })
