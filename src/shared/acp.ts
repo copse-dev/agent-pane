@@ -4,7 +4,12 @@ import type {
   AcpConfigOption,
   AcpModelChoice,
 } from './types/acp.ts'
-import { canonicalAcpAgentId, KNOWN_ACP_AGENTS, RETIRED_ACP_AGENTS } from './acp-known-agents.ts'
+import {
+  canonicalAcpAgentId,
+  KNOWN_ACP_AGENTS,
+  RETIRED_ACP_AGENTS,
+  type KnownAcpAgent,
+} from './acp-known-agents.ts'
 import { isRecord, recordArrayOrEmpty, stringRecordOrEmpty } from './unknown-value.mts'
 
 /**
@@ -228,63 +233,141 @@ export function acpGroupLabel(title: string): string {
 }
 
 /**
- * Commands whose parent client is Claude. A configured agent that spawns one of
+ * How to recognise a set of catalog adapters from a spawn config: the bare
+ * commands they install, the npm packages that ship those commands (what a
+ * runner such as `npx` names instead), and their canonical ids.
+ */
+interface AcpAdapterSignature {
+  commands: ReadonlySet<string>
+  /** {@link commands} plus each entry's `installPackage`. */
+  names: ReadonlySet<string>
+  ids: ReadonlySet<string>
+}
+
+function adapterSignature(entries: readonly KnownAcpAgent[]): AcpAdapterSignature {
+  const commands = new Set(entries.map((agent) => agent.command))
+  const packages = entries.flatMap((agent) =>
+    agent.installPackage === undefined ? [] : [agent.installPackage],
+  )
+  return {
+    commands,
+    names: new Set([...commands, ...packages]),
+    ids: new Set(entries.map((agent) => canonicalAcpAgentId(agent.id))),
+  }
+}
+
+/**
+ * Retired agents count. Someone who configured `claude-code-acp` before it was
+ * withdrawn still has a working Claude wrapper, and dropping it out of the
+ * catalog scan would silently demote them to the API-billed path in the picker.
+ */
+const ACP_CATALOG: readonly KnownAcpAgent[] = [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS]
+
+/**
+ * Adapters whose parent client is Claude. A configured agent that spawns one of
  * these drives Claude through the user's *own* `claude` login (or ANTHROPIC_API_KEY)
  * over ACP, rather than the API-billed Claude Cloud (managed) agent.
- *
- * Retired agents count. Someone who configured `claude-code-acp` before it was
- * withdrawn still has a working Claude wrapper, and dropping it out of this set
- * would silently demote them to the API-billed path in the picker.
  */
-const CLAUDE_ACP_COMMANDS: ReadonlySet<string> = new Set(
-  [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS]
-    .filter((agent) => agent.requiresClient === 'claude')
-    .map((agent) => agent.command),
+const CLAUDE_ADAPTERS = adapterSignature(
+  ACP_CATALOG.filter((agent) => agent.requiresClient === 'claude'),
 )
 
-/** The catalog ids of those same agents — the second way to recognise one. */
-const CLAUDE_ACP_IDS: ReadonlySet<string> = new Set(
-  [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS]
-    .filter((agent) => agent.requiresClient === 'claude')
-    .map((agent) => canonicalAcpAgentId(agent.id)),
+const CODEX_ADAPTERS = adapterSignature(
+  ACP_CATALOG.filter((agent) => canonicalAcpAgentId(agent.id) === 'codex-acp'),
 )
-
-const CODEX_ACP_COMMANDS: ReadonlySet<string> = new Set(
-  [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS]
-    .filter((agent) => canonicalAcpAgentId(agent.id) === 'codex-acp')
-    .map((agent) => agent.command),
-)
-
-// Codex has one catalog entry, and the command set above is already defined as
-// the entries canonicalising to this id — so the id set is this id, spelled out
-// rather than derived through a filter that can only ever produce it.
-const CODEX_ACP_IDS: ReadonlySet<string> = new Set(['codex-acp'])
 
 /**
  * The bare program a spawn command names. An agent registered by absolute path
- * (`/opt/homebrew/bin/claude-agent-acp`) or through a platform shim
- * (`claude-agent-acp.cmd`) launches the same adapter as the catalog's bare
- * `claude-agent-acp`, and losing the match over that spelling costs the user
- * their plan billing path.
+ * (`/opt/homebrew/bin/claude-agent-acp`), quoted for a space in that path, or
+ * through a platform shim (`claude-agent-acp.cmd`) launches the same adapter as
+ * the catalog's bare `claude-agent-acp`, and losing the match over that
+ * spelling costs the user their plan billing path.
  */
 function commandProgram(command: string): string {
-  const base = command.trim().split(/[\\/]/).pop() ?? ''
+  const unquoted = command.trim().replace(/^"(.*)"$/, '$1')
+  const base = unquoted.split(/[\\/]/).pop() ?? ''
   return base.replace(/\.(?:cmd|bat|exe|ps1)$/i, '')
 }
 
 /**
- * Whether an agent launches one of a known set of adapters. The spawn command
- * is the primary evidence — a custom label or a legacy id can still launch the
- * plan-backed adapter — but an agent wrapped in a runner (`npx …`) hides it,
- * so a canonical id from the catalog counts as well.
+ * Runners that launch a program named in `args` rather than an adapter of their
+ * own, keyed by program with the subcommands that make them one (`pnpm dlx`,
+ * not `pnpm install`). `node` is handled separately: its operand is a script
+ * path, not a package spec.
  */
-function isKnownAcpAgent(
-  agent: AcpAgentIdentity,
-  commands: ReadonlySet<string>,
-  ids: ReadonlySet<string>,
-): boolean {
-  if (commands.has(agent.command) || commands.has(commandProgram(agent.command))) return true
-  return agent.id !== undefined && ids.has(canonicalAcpAgentId(agent.id))
+const PACKAGE_RUNNERS: ReadonlyMap<string, readonly string[]> = new Map([
+  ['npx', []],
+  ['bunx', []],
+  ['pnpm', ['dlx', 'exec']],
+  ['yarn', ['dlx']],
+])
+
+/** The first argument that is not a flag (`-y`, `--yes`, `--package=…`). */
+function firstOperand(args: readonly string[]): string | undefined {
+  return args.find((arg) => !arg.startsWith('-'))
+}
+
+/** The package spec (or bin name) a package runner launches; `undefined` when `program` is not one. */
+function runnerPackage(program: string, args: readonly string[]): string | undefined {
+  const subcommands = PACKAGE_RUNNERS.get(program)
+  if (subcommands === undefined) return undefined
+  if (subcommands.length === 0) return firstOperand(args)
+  const [subcommand, ...rest] = args
+  return subcommand !== undefined && subcommands.includes(subcommand)
+    ? firstOperand(rest)
+    : undefined
+}
+
+/** `@scope/name@1.2.3` → `@scope/name`; a bare name passes through. */
+function packageName(spec: string): string {
+  const version = spec.indexOf('@', 1)
+  return version === -1 ? spec : spec.slice(0, version)
+}
+
+/** Whether a script path has a segment (or scoped pair of segments) naming one of `names`. */
+function scriptPathNames(script: string, names: ReadonlySet<string>): boolean {
+  const path = `/${script.replace(/\\/g, '/')}/`
+  for (const name of names) if (path.includes(`/${name}/`)) return true
+  return false
+}
+
+/**
+ * Whether an agent's spawn command launches one of `adapter`'s programs. The
+ * command itself is the primary evidence, by bare name, path, or platform shim;
+ * an agent wrapped in a runner (`npx -y @agentclientprotocol/claude-agent-acp`,
+ * `node …/claude-agent-acp/dist/index.js`) hides it, so the package or script
+ * the runner names is read as well.
+ */
+function launchesAdapter(agent: AcpAgentIdentity, adapter: AcpAdapterSignature): boolean {
+  const program = commandProgram(agent.command)
+  if (adapter.commands.has(agent.command) || adapter.commands.has(program)) return true
+  const args = agent.args ?? []
+  if (program === 'node') {
+    const script = firstOperand(args)
+    return script !== undefined && scriptPathNames(script, adapter.names)
+  }
+  const spec = runnerPackage(program, args)
+  return spec !== undefined && adapter.names.has(packageName(spec))
+}
+
+/**
+ * Whether an agent launches one of a known set of adapters — see {@link
+ * launchesAdapter}. A custom label or a legacy id can still launch the
+ * plan-backed adapter, so the command is checked first; a canonical id from the
+ * catalog counts as well, for a wrapper the command scan cannot see through.
+ */
+function isKnownAcpAgent(agent: AcpAgentIdentity, adapter: AcpAdapterSignature): boolean {
+  if (launchesAdapter(agent, adapter)) return true
+  return agent.id !== undefined && adapter.ids.has(canonicalAcpAgentId(agent.id))
+}
+
+/**
+ * Whether an agent's spawn command actually launches `entry`'s adapter. Used to
+ * tell a custom agent that borrowed a catalog id from one that runs the real
+ * thing under it; the id itself is deliberately not evidence here.
+ */
+export function launchesAcpCatalogEntry(agent: AcpAgentIdentity, entry: KnownAcpAgent): boolean {
+  return launchesAdapter(agent, adapterSignature([entry]))
 }
 
 export type AcpPlanProvider = 'claude' | 'codex'
@@ -293,11 +376,12 @@ export type AcpPlanProvider = 'claude' | 'codex'
  * What an agent must carry to be recognised. `id` is optional so callers that
  * only hold a command (agent detection, setup probes) keep working.
  */
-type AcpAgentIdentity = Pick<AcpAgentConfig, 'command'> & Partial<Pick<AcpAgentConfig, 'id'>>
+type AcpAgentIdentity = Pick<AcpAgentConfig, 'command' | 'args'> &
+  Partial<Pick<AcpAgentConfig, 'id'>>
 
 /** Whether a configured ACP agent wraps Claude — see {@link isKnownAcpAgent}. */
 export function isClaudeAcpAgent(agent: AcpAgentIdentity): boolean {
-  return isKnownAcpAgent(agent, CLAUDE_ACP_COMMANDS, CLAUDE_ACP_IDS)
+  return isKnownAcpAgent(agent, CLAUDE_ADAPTERS)
 }
 
 /**
@@ -309,7 +393,7 @@ export function isClaudeAcpAgent(agent: AcpAgentIdentity): boolean {
  */
 export function acpPlanProvider(agent: AcpAgentIdentity): AcpPlanProvider | null {
   if (isClaudeAcpAgent(agent)) return 'claude'
-  if (isKnownAcpAgent(agent, CODEX_ACP_COMMANDS, CODEX_ACP_IDS)) return 'codex'
+  if (isKnownAcpAgent(agent, CODEX_ADAPTERS)) return 'codex'
   return null
 }
 
