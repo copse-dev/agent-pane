@@ -16156,8 +16156,24 @@ var init_array_utils2 = __esm({
 });
 
 // packages/thread-store/src/thread-sort.ts
+function isHumanUserPrompt(message2) {
+  return message2.role === "user" && (message2.origin === void 0 || message2.editedByUser === true);
+}
+function lastHumanPromptAt(thread) {
+  if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
+  for (let i4 = thread.messages.length - 1; i4 >= 0; i4--) {
+    const message2 = thread.messages[i4];
+    if (message2 !== void 0 && isHumanUserPrompt(message2)) return message2.createdAt;
+  }
+  return void 0;
+}
+function threadSortKey(thread) {
+  return lastHumanPromptAt(thread) ?? thread.createdAt;
+}
 function sortThreadsNewestFirst(threads) {
-  return [...threads].sort((a3, b5) => b5.createdAt - a3.createdAt);
+  return [...threads].sort(
+    (a3, b5) => threadSortKey(b5) - threadSortKey(a3) || b5.createdAt - a3.createdAt
+  );
 }
 var init_thread_sort = __esm({
   "packages/thread-store/src/thread-sort.ts"() {
@@ -16417,6 +16433,9 @@ function addMessage(store3, threadId, role, content = "", images, attachments, o
   patchThreadAnywhere(store3, threadId, (t4) => ({
     ...t4,
     messages: [...t4.messages, message2],
+    // The sidebar sorts on this and never reads transcripts, so it has to be
+    // recorded as the prompt lands rather than derived at display time.
+    ...isHumanUserPrompt(message2) ? { lastPromptAt: message2.createdAt } : {},
     updatedAt: Date.now()
   }));
   store3.emit("message_added", threadId, id39);
@@ -16727,6 +16746,7 @@ var randomUUID, messageIndexByStore;
 var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
     init_array_utils2();
+    init_thread_sort();
     init_thread_sort();
     randomUUID = () => globalThis.crypto.randomUUID();
     messageIndexByStore = /* @__PURE__ */ new WeakMap();
@@ -17711,7 +17731,13 @@ function attachThreadHydration(store3, api3) {
           if (t4.id !== threadId) return t4;
           const diskIds = new Set(messages.map((m3) => m3.id));
           const streamedMeanwhile = t4.messages.filter((m3) => !diskIds.has(m3.id));
-          return { ...t4, messages: [...messages, ...streamedMeanwhile], messagesLoaded: true };
+          const hydrated = {
+            ...t4,
+            messages: [...messages, ...streamedMeanwhile],
+            messagesLoaded: true
+          };
+          const promptedAt = lastHumanPromptAt(hydrated);
+          return promptedAt === void 0 ? hydrated : { ...hydrated, lastPromptAt: promptedAt };
         })
       });
       touch(threadId);
@@ -17787,6 +17813,7 @@ var HYDRATED_THREAD_BUDGET, activeHydrator, failedThreadIds;
 var init_thread_hydration = __esm({
   "src/renderer/controller/thread-hydration.ts"() {
     init_perf();
+    init_thread_helpers();
     init_artefact_previews();
     HYDRATED_THREAD_BUDGET = 8;
     activeHydrator = null;
