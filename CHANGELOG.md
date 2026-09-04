@@ -8,6 +8,13 @@ every published entry.
 
 ## Unreleased
 
+- The renderer ↔ main API surface (`ApiClient`) is now a versioned protocol:
+  `schemas/api-protocol.schema.json` is generated from the contract and the
+  preload bindings (`pnpm run gen:api-protocol`), a unit test fails when the
+  committed schema drifts from the sources, and the sidecar WebSocket handshake
+  exchanges `API_PROTOCOL_VERSION` and refuses a mismatched peer. The preload is
+  type-checked against `ApiClient` for the first time. First step of the
+  client/server split (#2312); see `docs/api-protocol.md`.
 - This beta advances the permanent public update channel from beta.7 to beta.8
   so the signed, architecture-specific updater can be validated end to end
   before the source repository opens.

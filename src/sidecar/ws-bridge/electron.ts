@@ -26,6 +26,7 @@ import {
   type ClientFrame,
   type ServerFrame,
 } from '@shared/tauri/ws-protocol.ts'
+import { API_PROTOCOL_VERSION } from '@shared/api-protocol.mts'
 
 type Listener = (event: unknown, ...args: unknown[]) => void
 
@@ -101,7 +102,9 @@ function openSocket(): void {
     const ws = new WebSocket(`ws://127.0.0.1:${wsPort}/`, `${WS_AUTH_PROTOCOL_PREFIX}${wsToken}`)
     socket = ws
     ws.addEventListener('open', () => {
-      ws.send(encodeFrame({ t: 'hello', winId, token: wsToken }))
+      ws.send(
+        encodeFrame({ t: 'hello', winId, token: wsToken, protocolVersion: API_PROTOCOL_VERSION }),
+      )
     })
     ws.addEventListener('message', (event: MessageEvent) => {
       if (typeof event.data !== 'string') return

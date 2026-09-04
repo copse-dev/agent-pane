@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
+import type { ApiClient } from './api.d.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
@@ -7,7 +8,10 @@ import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 installPreloadPerfTracing()
 exposePerfBridge()
 
-contextBridge.exposeInMainWorld('api', {
+// Typed against the contract so the facade cannot drift from `ApiClient`: a
+// missing, extra, or mistyped member fails typecheck here, and the API protocol
+// schema (`pnpm run gen:api-protocol`) is generated from this binding.
+const api: ApiClient = {
   windowState: {
     getNavigation: () => ipcRenderer.invoke('mainWindow:getNavigation'),
     setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>
@@ -226,8 +230,12 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('agent:suggestFollowUps', projectId, threadId, contextJson),
     suggestNextStep: (contextJson: string) =>
       ipcRenderer.invoke('agent:suggestNextStep', contextJson),
-    onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, tid: string, chunk: unknown): void => {
+    onChunk: (handler: (threadId: string, chunk: import('@shared/types').StreamChunk) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        tid: string,
+        chunk: import('@shared/types').StreamChunk,
+      ): void => {
         handler(tid, chunk)
       }
       ipcRenderer.on('agent:chunk', listener)
@@ -571,8 +579,13 @@ contextBridge.exposeInMainWorld('api', {
     listDeclared: () => ipcRenderer.invoke('mcp:listDeclared'),
     setCuratedEnabled: (name: string, enabled: boolean) =>
       ipcRenderer.invoke('mcp:setCuratedEnabled', name, enabled),
-    onStatusChanged: (handler: (statuses: unknown) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, statuses: unknown): void => {
+    onStatusChanged: (
+      handler: (statuses: import('@shared/types/mcp.ts').McpServerStatus[]) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        statuses: import('@shared/types/mcp.ts').McpServerStatus[],
+      ): void => {
         handler(statuses)
       }
       ipcRenderer.on('mcp:status_changed', listener)
@@ -622,12 +635,21 @@ contextBridge.exposeInMainWorld('api', {
     loadMessages: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:loadMessages', projectId, threadId),
     onPrRefs: (
-      handler: (projectId: string, refs: Array<{ threadId: string; prRefs: unknown[] }>) => void,
+      handler: (
+        projectId: string,
+        refs: Array<{
+          threadId: string
+          prRefs: import('@shared/git/github-pr-url.ts').GithubPrRef[]
+        }>,
+      ) => void,
     ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
         projectId: string,
-        refs: Array<{ threadId: string; prRefs: unknown[] }>,
+        refs: Array<{
+          threadId: string
+          prRefs: import('@shared/git/github-pr-url.ts').GithubPrRef[]
+        }>,
       ): void => {
         handler(projectId, refs)
       }
@@ -899,8 +921,13 @@ contextBridge.exposeInMainWorld('api', {
     resolveFileReferences: (candidates: string[]) =>
       ipcRenderer.invoke('index:resolveFileReferences', candidates),
     status: () => ipcRenderer.invoke('index:status'),
-    onStatusChanged: (handler: (status: unknown) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, status: unknown): void => {
+    onStatusChanged: (
+      handler: (status: import('@shared/types/index-status.ts').WorkspaceIndexStatus) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        status: import('@shared/types/index-status.ts').WorkspaceIndexStatus,
+      ): void => {
         handler(status)
       }
       ipcRenderer.on('index:status_changed', listener)
@@ -1242,10 +1269,17 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('editors:open', projectId, threadId, editorId),
   },
   panes: {
-    popout: (mode: string, seed?: unknown) => ipcRenderer.invoke('panes:popout', mode, seed),
-    takePopoutSeed: (mode: string) => ipcRenderer.invoke('panes:takePopoutSeed', mode),
-    onSwitchMode: (handler: (mode: string) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, mode: string): void => {
+    popout: (mode: import('@shared/types/state.ts').RightPanelMode, seed?: unknown) =>
+      ipcRenderer.invoke('panes:popout', mode, seed),
+    takePopoutSeed: (mode: import('@shared/types/state.ts').RightPanelMode) =>
+      ipcRenderer.invoke('panes:takePopoutSeed', mode),
+    onSwitchMode: (
+      handler: (mode: import('@shared/types/state.ts').RightPanelMode) => void,
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        mode: import('@shared/types/state.ts').RightPanelMode,
+      ): void => {
         handler(mode)
       }
       ipcRenderer.on('popout:switch-mode', listener)
@@ -1254,7 +1288,8 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
-})
+}
+contextBridge.exposeInMainWorld('api', api)
 
 if (process.env['COPSE_E2E'] === '1') {
   const errorToasts: string[] = []
