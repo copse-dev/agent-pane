@@ -4333,6 +4333,12 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-rollup-body .reasoning-activity-icon {
   color: var(--text-secondary);
 }
+.tool-card-step:not([open]) > .tool-rollup-body {
+  display: none;
+}
+.tool-card-step > .tool-card-header .tool-status-icon {
+  display: none;
+}
 .tool-card-group > .tool-group-items {
   display: flex;
   flex-direction: column;

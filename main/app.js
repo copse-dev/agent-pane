@@ -204,26 +204,26 @@ function titleCaseSegment(segment) {
   }).join(" ");
 }
 function canonicalVendorLabel(labelOrId) {
-  const trimmed = labelOrId.trim();
-  const gemini = GEMINI_NAME.exec(trimmed);
+  const trimmed2 = labelOrId.trim();
+  const gemini = GEMINI_NAME.exec(trimmed2);
   if (gemini) {
     const version4 = gemini[1] ?? "";
     const variant = gemini[2] ?? "";
     return variant ? `Gemini ${version4} ${titleCaseSegment(variant)}` : `Gemini ${version4}`;
   }
-  const glm = GLM_NAME.exec(trimmed);
+  const glm = GLM_NAME.exec(trimmed2);
   if (glm) {
     const version4 = glm[1] ?? "";
     const variant = glm[2] ?? "";
     return variant ? `GLM-${version4} ${titleCaseSegment(variant)}` : `GLM-${version4}`;
   }
-  const deepseek = DEEPSEEK_NAME.exec(trimmed);
+  const deepseek = DEEPSEEK_NAME.exec(trimmed2);
   if (deepseek) {
     const name = titleCaseSegment(deepseek[1] ?? "");
     const version4 = deepseek[2];
     return version4 ? `DeepSeek ${name} V${version4}` : `DeepSeek ${name}`;
   }
-  const mistral = MISTRAL_NAME.exec(trimmed);
+  const mistral = MISTRAL_NAME.exec(trimmed2);
   if (mistral) {
     const tier = titleCaseSegment(mistral[1] ?? "");
     const qualifier = mistral[2] ? ` ${titleCaseSegment(mistral[2])}` : "";
@@ -247,11 +247,11 @@ function spellToken(token2) {
   return `${lower2.charAt(0).toUpperCase()}${lower2.slice(1)}`;
 }
 function humanizeModelName(labelOrId) {
-  const trimmed = labelOrId.trim();
-  if (!trimmed.includes("-")) return labelOrId;
-  if (/\s/.test(trimmed) || trimmed.includes("/")) return labelOrId;
-  if (keepsDeclinedTail(trimmed.toLowerCase())) return labelOrId;
-  const tokens2 = trimmed.split("-").filter((token2) => token2.length > 0);
+  const trimmed2 = labelOrId.trim();
+  if (!trimmed2.includes("-")) return labelOrId;
+  if (/\s/.test(trimmed2) || trimmed2.includes("/")) return labelOrId;
+  if (keepsDeclinedTail(trimmed2.toLowerCase())) return labelOrId;
+  const tokens2 = trimmed2.split("-").filter((token2) => token2.length > 0);
   return tokens2.reduce((acc, token2, i4) => {
     const spelled = spellToken(token2);
     if (i4 === 0) return spelled;
@@ -271,12 +271,12 @@ function claudeName(family, version4, rest) {
   return { family: known, version: version4.replace(/-/g, "."), rest };
 }
 function parseClaudeName(value2) {
-  const trimmed = value2.trim();
-  const versionFirst = VERSION_FIRST.exec(trimmed);
+  const trimmed2 = value2.trim();
+  const versionFirst = VERSION_FIRST.exec(trimmed2);
   if (versionFirst?.[1] && versionFirst[2]) {
     return claudeName(versionFirst[2], versionFirst[1], versionFirst[3] ?? "");
   }
-  const familyFirst = FAMILY_FIRST.exec(trimmed);
+  const familyFirst = FAMILY_FIRST.exec(trimmed2);
   if (familyFirst?.[1] && familyFirst[2]) {
     return claudeName(familyFirst[1], familyFirst[2], familyFirst[3] ?? "");
   }
@@ -3216,9 +3216,9 @@ var init_schemas = __esm({
       $ZodStringFormat.init(inst, def);
       inst._zod.check = (payload) => {
         try {
-          const trimmed = payload.value.trim();
+          const trimmed2 = payload.value.trim();
           if (!def.normalize && def.protocol?.source === httpProtocol.source) {
-            if (!/^https?:\/\//i.test(trimmed)) {
+            if (!/^https?:\/\//i.test(trimmed2)) {
               payload.issues.push({
                 code: "invalid_format",
                 format: "url",
@@ -3230,7 +3230,7 @@ var init_schemas = __esm({
               return;
             }
           }
-          const url2 = new URL(trimmed);
+          const url2 = new URL(trimmed2);
           if (def.hostname) {
             def.hostname.lastIndex = 0;
             if (!def.hostname.test(url2.hostname)) {
@@ -3262,7 +3262,7 @@ var init_schemas = __esm({
           if (def.normalize) {
             payload.value = url2.href;
           } else {
-            payload.value = trimmed;
+            payload.value = trimmed2;
           }
           return;
         } catch (_4) {
@@ -16058,8 +16058,8 @@ var init_parse_agent_run_payload = __esm({
 // packages/agent/src/working-brief.ts
 function workingBriefFromUserContent(content) {
   if (typeof content === "string") {
-    const trimmed = content.trim();
-    return trimmed ? trimmed.slice(0, WORKING_BRIEF_MAX_LEN) : null;
+    const trimmed2 = content.trim();
+    return trimmed2 ? trimmed2.slice(0, WORKING_BRIEF_MAX_LEN) : null;
   }
   const text4 = content.filter((block2) => block2.type === "text").map((block2) => block2.text).join("\n").trim();
   return text4 ? text4.slice(0, WORKING_BRIEF_MAX_LEN) : null;
@@ -16467,11 +16467,11 @@ function addMessage(store3, threadId, role, content = "", images, attachments, o
   return id39;
 }
 function setThreadDraftPrompt(store3, threadId, draftPrompt) {
-  const trimmed = draftPrompt.trim();
+  const trimmed2 = draftPrompt.trim();
   const { threads } = store3.getState();
   const thread = threads.find((t4) => t4.id === threadId);
   if (!thread) return;
-  if (trimmed.length > 0) {
+  if (trimmed2.length > 0) {
     if (thread.draftPrompt === draftPrompt) return;
     const updated2 = threads.map(
       (t4) => t4.id !== threadId ? t4 : { ...t4, draftPrompt, updatedAt: Date.now() }
@@ -16547,6 +16547,12 @@ function setMessageCommandSummary(store3, messageId, commandSummary) {
 function setMessageToolSummary(store3, messageId, toolSummary) {
   updateMessage(store3, messageId, (m3) => {
     m3.toolSummary = toolSummary;
+  });
+  store3.emit("tool_call_updated", messageId, "");
+}
+function setMessageRunSummary(store3, messageId, runSummary) {
+  updateMessage(store3, messageId, (m3) => {
+    m3.runSummary = runSummary;
   });
   store3.emit("tool_call_updated", messageId, "");
 }
@@ -17110,14 +17116,16 @@ function attachAutosave(store3, api3) {
     // carry the latest args/response across an app restart. Do not persist a
     // running tool: the v1 spine deliberately has no running status.
     store3.on("tool_call_updated", (messageId, toolCallId) => {
-      if (!toolCallId) return;
       const threadId = threadIdOfMessage(messageId);
       if (!threadId) return;
       const message2 = getThreadById(store3, threadId)?.messages.find(
         (candidate) => candidate.id === messageId
       );
-      const toolCall = message2?.toolCalls.find((candidate) => candidate.id === toolCallId);
-      if (!toolCall || toolCall.status === "running") return;
+      if (!message2) return;
+      if (toolCallId) {
+        const toolCall = message2.toolCalls.find((candidate) => candidate.id === toolCallId);
+        if (!toolCall || toolCall.status === "running") return;
+      }
       const backgroundProjectId = backgroundProjectOf(store3, threadId);
       if (backgroundProjectId) {
         persistBackgroundMessage(backgroundProjectId, threadId, messageId);
@@ -17285,7 +17293,9 @@ function getToolGroupLabel(key, tense = "done") {
   return pickLabel(group2.label, tense);
 }
 function formatToolNameFallback(name) {
-  return name.split("_").filter(Boolean).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+  return name.split("_").filter(Boolean).map(
+    (word) => TOOL_NAME_ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1)
+  ).join(" ");
 }
 function aggregateToolStatus(toolCalls) {
   if (toolCalls.some((tc2) => tc2.status === "running")) return "running";
@@ -17381,7 +17391,57 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   }
   return result;
 }
-var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
+function buildSubagentDisplayItems(toolCalls) {
+  return toolCalls.filter((tc2) => tc2.subagent).map((tc2) => ({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) }));
+}
+function summarizeToolRun(run6) {
+  const n2 = run6.toolCalls.length;
+  const status = aggregateToolStatus(run6.toolCalls);
+  const failed = run6.toolCalls.filter((tc2) => tc2.status === "error").length;
+  const polished = run6.summary?.trim();
+  const parts = [];
+  if (polished) {
+    parts.push(polished, `${String(n2)} ${n2 === 1 ? "tool" : "tools"}`);
+  } else {
+    parts.push(status === "running" ? `Using ${String(n2)} tools` : `Used ${String(n2)} tools`);
+  }
+  parts.push(`${String(run6.steps.length)} steps`);
+  if (failed > 0 && status !== "running") parts.push(`${String(failed)} failed`);
+  return parts.join(" \xB7 ");
+}
+function summarizeToolRunStep(step3, children2) {
+  const polished = step3.summary?.trim();
+  if (!polished) return summarizeToolTurn(step3.toolCalls, children2) || "Reasoned";
+  const failed = step3.toolCalls.filter((tc2) => tc2.status === "error").length;
+  if (failed > 0 && aggregateToolStatus(step3.toolCalls) !== "running") {
+    return `${polished} \xB7 ${String(failed)} failed`;
+  }
+  return polished;
+}
+function buildToolRunDisplayItems(run6, opts) {
+  if (run6.steps.length < 2) return buildToolCallDisplayItems(run6.toolCalls, opts);
+  const children2 = run6.steps.map((step3) => {
+    const grouped = buildGroupedDisplayItems(step3.toolCalls);
+    return {
+      type: "step",
+      key: `step:${step3.messageId}`,
+      label: summarizeToolRunStep(step3, grouped),
+      messageId: step3.messageId,
+      children: grouped,
+      toolCalls: step3.toolCalls
+    };
+  });
+  return [
+    {
+      type: "rollup",
+      key: RUN_ROLLUP_KEY,
+      label: summarizeToolRun(run6),
+      children: children2,
+      toolCalls: run6.toolCalls
+    }
+  ];
+}
+var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, TOOL_NAME_ACRONYMS, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
     init_unknown_value3();
@@ -17495,6 +17555,7 @@ var init_tool_display = __esm({
     MCP_PREFIX = "mcp__";
     MCP_GROUP_PREFIX = "mcp:";
     TURN_ROLLUP_KEY = "turn";
+    RUN_ROLLUP_KEY = "run";
     FILE_EDIT_PATH_ARG = {
       write_file: "path",
       str_replace: "path",
@@ -17504,6 +17565,7 @@ var init_tool_display = __esm({
     };
     SHELL_CD_PREFIX_RE = /^\s*cd\s+(?:'[^']*'|"[^"]*"|[^\s&|;]+)\s*&&\s*/;
     SHELL_LABEL_MAX = 96;
+    TOOL_NAME_ACRONYMS = /* @__PURE__ */ new Set(["gh", "pr", "ci", "url", "id"]);
     ERROR_BUCKET_SUFFIX = "::errors";
   }
 });
@@ -18287,10 +18349,10 @@ var init_toast = __esm({
 
 // packages/thread-store/src/github-pr-url.ts
 function parseGithubPrUrl(rawUrl) {
-  const trimmed = rawUrl.trim();
-  if (!trimmed) return null;
+  const trimmed2 = rawUrl.trim();
+  if (!trimmed2) return null;
   try {
-    const url2 = new URL(trimmed);
+    const url2 = new URL(trimmed2);
     if (url2.hostname.replace(/^www\./i, "").toLowerCase() !== "github.com") return null;
     const match3 = url2.pathname.match(GITHUB_PR_PATH_RE);
     if (!match3) return null;
@@ -18302,7 +18364,7 @@ function parseGithubPrUrl(rawUrl) {
     const repo = repoGroup.replace(/\.git$/i, "");
     const number10 = Number.parseInt(numberGroup, 10);
     if (!Number.isFinite(number10) || number10 <= 0) return null;
-    return { owner, repo, number: number10, url: trimmed };
+    return { owner, repo, number: number10, url: trimmed2 };
   } catch {
     return null;
   }
@@ -18730,9 +18792,9 @@ var init_ssh_host_helpers = __esm({
 // src/renderer/views/remote-folder-path.ts
 function parentRemotePath(path4) {
   if (path4 === "/" || path4 === "") return "/";
-  const trimmed = path4.replace(/\/+$/, "");
-  const idx = trimmed.lastIndexOf("/");
-  return idx <= 0 ? "/" : trimmed.slice(0, idx);
+  const trimmed2 = path4.replace(/\/+$/, "");
+  const idx = trimmed2.lastIndexOf("/");
+  return idx <= 0 ? "/" : trimmed2.slice(0, idx);
 }
 function remotePathSegments(path4) {
   const normalized = !path4 || path4 === "/" ? "/" : path4.startsWith("/") ? path4.replace(/\/+$/, "") || "/" : `/${path4}`;
@@ -22857,8 +22919,8 @@ function computeTooltipPosition(input) {
   };
 }
 function setTooltip(node2, text4) {
-  const trimmed = text4?.trim();
-  const next3 = trimmed === void 0 || trimmed === "" ? null : trimmed;
+  const trimmed2 = text4?.trim();
+  const next3 = trimmed2 === void 0 || trimmed2 === "" ? null : trimmed2;
   if (next3) node2.setAttribute("data-tooltip", next3);
   else node2.removeAttribute("data-tooltip");
   if (activeAnchor === node2) {
@@ -24834,11 +24896,11 @@ function acpModelVersionName(description) {
   if (description === void 0) return null;
   const [lead = ""] = description.split("\xB7");
   const [name = ""] = lead.split(/\s+with\s+/i);
-  const trimmed = name.trim();
-  if (trimmed.length === 0 || trimmed.length > 40) return null;
-  const words = trimmed.split(/\s+/);
-  if (words.length > 3 || !/\d/.test(trimmed)) return null;
-  return trimmed;
+  const trimmed2 = name.trim();
+  if (trimmed2.length === 0 || trimmed2.length > 40) return null;
+  const words = trimmed2.split(/\s+/);
+  if (words.length > 3 || !/\d/.test(trimmed2)) return null;
+  return trimmed2;
 }
 function acpModelChoiceLabel(choice2) {
   const name = acpModelVersionName(choice2.description);
@@ -34007,11 +34069,11 @@ function createCustomProvidersSection(api3, opts = {}) {
     return providers.find((p3) => p3.id === slug2)?.label ?? nativeById.get(slug2)?.label ?? fixedById.get(slug2)?.label ?? slug2;
   }
   async function persistProviderKey(slug2, key, label) {
-    const trimmed = key.trim();
-    if (!trimmed) return { ok: true };
-    let result = await api3.settings.setKey(slug2, trimmed);
+    const trimmed2 = key.trim();
+    if (!trimmed2) return { ok: true };
+    let result = await api3.settings.setKey(slug2, trimmed2);
     if (!result.ok && result.reason === "plaintext-consent-required" && await confirmPlaintextStorage(label)) {
-      result = await api3.settings.setKey(slug2, trimmed, { allowPlaintext: true });
+      result = await api3.settings.setKey(slug2, trimmed2, { allowPlaintext: true });
     }
     if (result.ok) return result;
     return {
@@ -34037,9 +34099,9 @@ function createCustomProvidersSection(api3, opts = {}) {
       }
     }
     if (pendingOpenRouterModel !== null) {
-      const trimmed = pendingOpenRouterModel.trim();
-      await api3.settings.set("openRouterModel", trimmed);
-      openRouterModelValue = trimmed;
+      const trimmed2 = pendingOpenRouterModel.trim();
+      await api3.settings.set("openRouterModel", trimmed2);
+      openRouterModelValue = trimmed2;
       pendingOpenRouterModel = null;
     }
     if (pendingOpenRouterZdr !== null) {
@@ -34136,11 +34198,11 @@ var init_custom_providers_section = __esm({
 function parseEnvText(text4) {
   const env = {};
   for (const line2 of text4.split("\n")) {
-    const trimmed = line2.trim();
-    if (!trimmed) continue;
-    const eq4 = trimmed.indexOf("=");
+    const trimmed2 = line2.trim();
+    if (!trimmed2) continue;
+    const eq4 = trimmed2.indexOf("=");
     if (eq4 <= 0) continue;
-    env[trimmed.slice(0, eq4).trim()] = trimmed.slice(eq4 + 1).trim();
+    env[trimmed2.slice(0, eq4).trim()] = trimmed2.slice(eq4 + 1).trim();
   }
   return env;
 }
@@ -36684,13 +36746,13 @@ var init_escape = __esm({
 });
 
 // node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
-function onelineMathBody(trimmed, delimiter2) {
+function onelineMathBody(trimmed2, delimiter2) {
   const [open2, close2] = delimiter2 === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
-  if (!trimmed.startsWith(open2) || !trimmed.endsWith(close2))
+  if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close2))
     return null;
-  if (trimmed.length < open2.length + close2.length + 1)
+  if (trimmed2.length < open2.length + close2.length + 1)
     return null;
-  const body = trimmed.slice(open2.length, -close2.length);
+  const body = trimmed2.slice(open2.length, -close2.length);
   return body.trim() === "" ? null : body;
 }
 function mathBlockDelimiterLine(line2) {
@@ -36713,9 +36775,9 @@ function mathBlockOpenCandidate(line2) {
   if (!m3)
     return null;
   const delimiter2 = m3[1] === "$$" ? "dollar" : "bracket";
-  const trimmed = line2.trim();
+  const trimmed2 = line2.trim();
   const close2 = delimiter2 === "dollar" ? "$$" : "\\]";
-  if (trimmed.length >= 4 && trimmed.endsWith(close2) && onelineMathBody(trimmed, delimiter2) === null) {
+  if (trimmed2.length >= 4 && trimmed2.endsWith(close2) && onelineMathBody(trimmed2, delimiter2) === null) {
     return null;
   }
   return { delimiter: delimiter2, oneline: false };
@@ -37018,10 +37080,10 @@ function lineContainsPipeCellDelimiter(line2) {
 function isProseMetadataPipeLine(line2) {
   if (!lineContainsPipeCellDelimiter(line2))
     return false;
-  const trimmed = line2.trimStart();
-  if (/\*\*[^*\n]+:\*\*/.test(trimmed))
+  const trimmed2 = line2.trimStart();
+  if (/\*\*[^*\n]+:\*\*/.test(trimmed2))
     return true;
-  if (/&nbsp;/i.test(trimmed))
+  if (/&nbsp;/i.test(trimmed2))
     return true;
   return false;
 }
@@ -37037,10 +37099,10 @@ function isGfmTableRowLine(line2, nextLine) {
     return false;
   if (isProseMetadataPipeLine(line2) && !hasMatchingDelimiterRow(line2, nextLine))
     return false;
-  const trimmed = line2.trimStart();
-  if (trimmed.startsWith("|"))
+  const trimmed2 = line2.trimStart();
+  if (trimmed2.startsWith("|"))
     return true;
-  return splitTableRow(trimmed).length >= 2;
+  return splitTableRow(trimmed2).length >= 2;
 }
 function isTableRow(line2, nextLine) {
   return isGfmTableRowLine(line2, nextLine);
@@ -37057,10 +37119,10 @@ function endsTableBody(line2) {
   return ATX_HEADING_DETECT_RE.test(line2) || THEMATIC_BREAK_RE.test(line2) || FENCE_OPEN_RE.test(line2) || isMathBlockInterruptLine(line2) || LIST_ITEM_RE.test(line2) || BLOCKQUOTE_RE.test(line2);
 }
 function isPartialTableSeparatorLine(line2) {
-  const trimmed = line2.trim();
-  if (!trimmed.includes("-"))
+  const trimmed2 = line2.trim();
+  if (!trimmed2.includes("-"))
     return false;
-  return /^\|?\s*:?-{1,}/.test(trimmed);
+  return /^\|?\s*:?-{1,}/.test(trimmed2);
 }
 function isPotentialTableStart(lines, i4) {
   const line2 = lines[i4];
@@ -37693,8 +37755,8 @@ function parseTableAlignments(sepLine) {
   });
 }
 function isAmbiguousBlockLine(line2) {
-  const trimmed = line2.trimStart();
-  if (trimmed === "")
+  const trimmed2 = line2.trimStart();
+  if (trimmed2 === "")
     return false;
   if (/^ {4}/.test(line2))
     return true;
@@ -41001,10 +41063,10 @@ var init_mermaid = __esm({
 
 // node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
-  const trimmed = dropTrailingNewline(source);
-  if (trimmed === "")
+  const trimmed2 = dropTrailingNewline(source);
+  if (trimmed2 === "")
     return [];
-  return trimmed.split("\n");
+  return trimmed2.split("\n");
 }
 function renderStreamingTableCell(raw) {
   const visible = renderStreamingInlinePending(raw);
@@ -43144,8 +43206,8 @@ function formingTableSource(complete, content, pending, contentTokens, completeT
   const fromTokens = getIncompleteTableSource(content, contentTokens);
   if (fromTokens)
     return fromTokens;
-  const trimmed = pending.trimStart();
-  if (trimmed.startsWith("|") && trimmed.includes("|", 1))
+  const trimmed2 = pending.trimStart();
+  if (trimmed2.startsWith("|") && trimmed2.includes("|", 1))
     return pending;
   return null;
 }
@@ -43662,12 +43724,12 @@ function createModelRoutingSection(api3, options2 = {}) {
   return { root: root4, refresh, readValues };
 }
 function canonicalRoleSelection(value2) {
-  const trimmed = value2.trim();
-  if (!trimmed) return "";
-  if (trimmed.includes(":") || trimmed.startsWith("claude-") || trimmed.startsWith("gpt-")) {
-    return trimmed;
+  const trimmed2 = value2.trim();
+  if (!trimmed2) return "";
+  if (trimmed2.includes(":") || trimmed2.startsWith("claude-") || trimmed2.startsWith("gpt-")) {
+    return trimmed2;
   }
-  return lmStudioChatModelValue(trimmed);
+  return lmStudioChatModelValue(trimmed2);
 }
 var init_model_routing_section = __esm({
   "src/renderer/views/setup/model-routing-section.ts"() {
@@ -47581,8 +47643,8 @@ async function saveSimpleFields(data6, api3, dirtyFieldNames) {
           await api3.settings.set(field.name, parseNonNegativeInt(value2, field.default));
         } else {
           const value2 = formDataString(data6, field.name);
-          const trimmed = field.name === "customInstructions";
-          await api3.settings.set(field.name, trimmed ? value2.trim() : value2);
+          const trimmed2 = field.name === "customInstructions";
+          await api3.settings.set(field.name, trimmed2 ? value2.trim() : value2);
         }
       }
     )
@@ -51146,13 +51208,13 @@ function removeGroup(order2, groupId) {
   };
 }
 function renameGroup(order2, groupId, name) {
-  const trimmed = name.trim();
-  if (trimmed === "") return order2;
+  const trimmed2 = name.trim();
+  if (trimmed2 === "") return order2;
   const group2 = order2.groups.find((g2) => g2.id === groupId);
-  if (!group2 || group2.name === trimmed) return order2;
+  if (!group2 || group2.name === trimmed2) return order2;
   return {
     projects: order2.projects,
-    groups: order2.groups.map((g2) => g2.id === groupId ? { ...g2, name: trimmed } : g2)
+    groups: order2.groups.map((g2) => g2.id === groupId ? { ...g2, name: trimmed2 } : g2)
   };
 }
 function uniqueGroupName(groups, base = "Group") {
@@ -53520,18 +53582,18 @@ function isNavigableHostname(hostname3) {
   return parsed2.domain != null;
 }
 function normalizeBrowserUrl(input) {
-  const trimmed = input.trim();
-  if (!trimmed) return "about:blank";
-  if (hasExplicitScheme(trimmed)) {
-    const explicit = tryParseHttpUrl(trimmed);
+  const trimmed2 = input.trim();
+  if (!trimmed2) return "about:blank";
+  if (hasExplicitScheme(trimmed2)) {
+    const explicit = tryParseHttpUrl(trimmed2);
     if (explicit) return explicit.href;
   }
-  const candidate = `https://${trimmed}`;
+  const candidate = `https://${trimmed2}`;
   if (URL.canParse(candidate)) {
     const parsed2 = tryParseHttpUrl(candidate);
     if (parsed2 && isNavigableHostname(parsed2.hostname)) return parsed2.href;
   }
-  return duckDuckGoSearchUrl(trimmed);
+  return duckDuckGoSearchUrl(trimmed2);
 }
 function browserTabLabel(url2, title2) {
   const trimmedTitle = title2?.trim();
@@ -159760,14 +159822,14 @@ var init_erDiagram_RLTQ6QDP = __esm({
             if (typeof item !== "string") {
               return false;
             }
-            const trimmed = item.trim();
-            if (!trimmed) {
+            const trimmed2 = item.trim();
+            if (!trimmed2) {
               return false;
             }
-            if (seen.has(trimmed)) {
+            if (seen.has(trimmed2)) {
               return false;
             }
-            seen.add(trimmed);
+            seen.add(trimmed2);
             return true;
           });
           return { nodeList: nodeList2, dir: dir22 };
@@ -191972,16 +192034,16 @@ var init_chunk_IH6LHLGP = __esm({
           return input.replace(/[\t ]+$/, "");
         }
         if (rule.name === "CLASS_ANNOTATION") {
-          const trimmed = input.trim();
-          return trimmed.substring(3).trim();
+          const trimmed2 = input.trim();
+          return trimmed2.substring(3).trim();
         }
         if (rule.name === "ICON_ANNOTATION") {
-          const trimmed = input.trim();
-          return trimmed.substring(5, trimmed.length - 1);
+          const trimmed2 = input.trim();
+          return trimmed2.substring(5, trimmed2.length - 1);
         }
         if (rule.name === "DESC_ANNOTATION") {
-          const trimmed = input.trim();
-          return trimmed.substring(2).trim();
+          const trimmed2 = input.trim();
+          return trimmed2.substring(2).trim();
         }
         return void 0;
       }
@@ -220960,8 +221022,8 @@ function preprocessBoxDrawing(input) {
   const contentLineTexts = [];
   for (let i4 = keywordIdx + 1; i4 < lines.length; i4++) {
     const line2 = lines[i4];
-    const trimmed = line2.trim();
-    if (trimmed === "" || COMMENT_LINE.test(line2) || METADATA_LINE.test(line2)) {
+    const trimmed2 = line2.trim();
+    if (trimmed2 === "" || COMMENT_LINE.test(line2) || METADATA_LINE.test(line2)) {
       continue;
     }
     if (DECORATION_ONLY.test(line2)) {
@@ -220982,9 +221044,9 @@ function preprocessBoxDrawing(input) {
   }
   for (let i4 = keywordIdx + 1; i4 < lines.length; i4++) {
     const line2 = lines[i4];
-    const trimmed = line2.trim();
+    const trimmed2 = line2.trim();
     const origLineNo = i4 + 1;
-    if (trimmed === "") {
+    if (trimmed2 === "") {
       outputLines.push(line2);
       outLineNo++;
       lineMap.set(outLineNo, origLineNo);
@@ -234327,11 +234389,11 @@ var init_vennDiagram_4TSXK5OY = __esm({
       return subsets;
     }, "getSubsetData");
     normalizeText = /* @__PURE__ */ __name((text4) => {
-      const trimmed = text4.trim();
-      if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
-        return trimmed.slice(1, -1);
+      const trimmed2 = text4.trim();
+      if (trimmed2.length >= 2 && trimmed2.startsWith('"') && trimmed2.endsWith('"')) {
+        return trimmed2.slice(1, -1);
       }
-      return trimmed;
+      return trimmed2;
     }, "normalizeText");
     normalizeStyleValue = /* @__PURE__ */ __name((value2) => {
       return value2 ? normalizeText(value2) : value2;
@@ -239555,11 +239617,11 @@ function fileReferenceMatches(text4) {
       });
       continue;
     }
-    const trimmed = path4.replace(TRAILING_PROSE_PUNCTUATION_RE, "");
-    if (trimmed === "") continue;
-    const candidate = trimmed.replace(/\/+$/, "");
+    const trimmed2 = path4.replace(TRAILING_PROSE_PUNCTUATION_RE, "");
+    if (trimmed2 === "") continue;
+    const candidate = trimmed2.replace(/\/+$/, "");
     if (candidate === "") continue;
-    matches34.push({ candidate, text: trimmed, start: start2, end: start2 + trimmed.length });
+    matches34.push({ candidate, text: trimmed2, start: start2, end: start2 + trimmed2.length });
   }
   return matches34;
 }
@@ -240328,10 +240390,10 @@ var init_video_expand = __esm({
 
 // packages/agent/src/build-text-with-attachments.ts
 function isTextBlockAttachment(text4) {
-  const trimmed = text4.trim();
-  if (!trimmed) return false;
-  if (trimmed.length >= TEXT_BLOCK_MIN_CHARS) return true;
-  return countNewlines(trimmed) + 1 >= TEXT_BLOCK_MIN_LINES;
+  const trimmed2 = text4.trim();
+  if (!trimmed2) return false;
+  if (trimmed2.length >= TEXT_BLOCK_MIN_CHARS) return true;
+  return countNewlines(trimmed2) + 1 >= TEXT_BLOCK_MIN_LINES;
 }
 function textBlockLabel(content) {
   const firstLine = content.split("\n").find((line2) => line2.trim() !== "")?.trim() ?? "Pasted text";
@@ -240658,6 +240720,77 @@ var init_composer_editor = __esm({
     init_icons();
     CHIP_CHAR = "\uFFFC";
     CHIP_SELECTOR = ".inline-paste-chip";
+  }
+});
+
+// src/shared/tools/tool-runs.ts
+function regularToolCalls(msg) {
+  return (msg.toolCalls ?? []).filter((tc2) => !tc2.subagent);
+}
+function hasText(value2) {
+  return trimmed(value2) !== null;
+}
+function trimmed(value2) {
+  const text4 = (value2 ?? "").trim();
+  return text4.length > 0 ? text4 : null;
+}
+function isAnchorable(msg) {
+  return msg !== void 0 && msg.role === "assistant" && regularToolCalls(msg).length > 0;
+}
+function isAbsorbable(msg) {
+  if (!msg || msg.role !== "assistant") return false;
+  if (hasText(msg.content)) return false;
+  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning);
+}
+function stepOf(msg) {
+  const reasoning = msg.reasoning;
+  const summary = trimmed(msg.toolSummary);
+  return {
+    messageId: msg.id,
+    toolCalls: regularToolCalls(msg),
+    ...reasoning !== void 0 && hasText(reasoning) ? { reasoning } : {},
+    ...summary !== null ? { summary } : {}
+  };
+}
+function deriveToolRuns(messages) {
+  const runs = [];
+  let i4 = 0;
+  while (i4 < messages.length) {
+    const anchor2 = messages[i4];
+    i4 += 1;
+    if (!isAnchorable(anchor2) || !anchor2) continue;
+    const steps = [stepOf(anchor2)];
+    while (isAbsorbable(messages[i4])) {
+      const member = messages[i4];
+      if (!member) break;
+      steps.push(stepOf(member));
+      i4 += 1;
+    }
+    const summary = trimmed(anchor2.runSummary);
+    runs.push({
+      anchorId: anchor2.id,
+      memberIds: steps.map((step3) => step3.messageId),
+      steps,
+      toolCalls: steps.flatMap((step3) => step3.toolCalls),
+      ...summary !== null ? { summary } : {}
+    });
+  }
+  return runs;
+}
+function toolRunForMessage(messages, messageId) {
+  const index = messages.findIndex((m3) => m3.id === messageId);
+  if (index < 0) return null;
+  let start2 = index;
+  while (start2 > 0 && isAbsorbable(messages[start2])) start2 -= 1;
+  let end = index + 1;
+  while (end < messages.length && isAbsorbable(messages[end])) end += 1;
+  for (const run6 of deriveToolRuns(messages.slice(start2, end))) {
+    if (run6.memberIds.includes(messageId)) return run6;
+  }
+  return null;
+}
+var init_tool_runs = __esm({
+  "src/shared/tools/tool-runs.ts"() {
   }
 });
 
@@ -241265,10 +241398,10 @@ function displayValue(value2) {
   return JSON.stringify(value2);
 }
 function parseJsonString(value2) {
-  const trimmed = value2.trim();
-  if (!trimmed || !/^[{[]/.test(trimmed)) return value2;
+  const trimmed2 = value2.trim();
+  if (!trimmed2 || !/^[{[]/.test(trimmed2)) return value2;
   try {
-    return JSON.parse(trimmed);
+    return JSON.parse(trimmed2);
   } catch {
     return value2;
   }
@@ -241696,9 +241829,9 @@ function assistantDisplayParts(content) {
   return { body, transportNoise: noise };
 }
 function summaryPreview(text4, max10 = 200) {
-  const trimmed = text4.trim();
-  if (trimmed.length <= max10) return trimmed;
-  return `${trimmed.slice(0, max10)}\u2026`;
+  const trimmed2 = text4.trim();
+  if (trimmed2.length <= max10) return trimmed2;
+  return `${trimmed2.slice(0, max10)}\u2026`;
 }
 function createInnerToolCard(tc2, api3) {
   const entry = el("details", {
@@ -241996,13 +242129,31 @@ function createRollupToolCard(item, api3, threadId) {
   card2.append(createToolHeader(item.label, status, "tool-card-header", count2), body);
   return card2;
 }
+function createStepToolCard(item, api3, threadId) {
+  const status = aggregateToolStatus(item.toolCalls);
+  const card2 = el("details", {
+    class: "tool-card tool-card-step",
+    "data-step-key": item.key,
+    "data-step-message-id": item.messageId,
+    "data-status": status,
+    "data-tool-count": String(item.toolCalls.length)
+  });
+  const body = el("div", { class: "tool-rollup-body" });
+  for (const child of item.children) {
+    body.append(createToolCard(child, api3, threadId));
+  }
+  card2.append(createToolHeader(item.label, status, "tool-card-header"), body);
+  return card2;
+}
 function createToolCard(item, api3, threadId) {
   if (item.type === "rollup") return createRollupToolCard(item, api3, threadId);
+  if (item.type === "step") return createStepToolCard(item, api3, threadId);
   if (item.type === "group") return createGroupToolCard(item);
   return createIndividualToolCard(item.toolCall, item.label, api3, threadId);
 }
 function toolCardKey(item) {
   if (item.type === "rollup") return `r:${item.key}`;
+  if (item.type === "step") return `s:${item.key}`;
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
 }
@@ -242262,6 +242413,24 @@ function appendMessageContent(body, msg, api3, opts) {
 function shouldNestReasoningInTools(toolCalls) {
   return toolCalls.some((tc2) => !tc2.subagent);
 }
+function multiStepRunFor(thread, msgId) {
+  if (!thread) return void 0;
+  const run6 = toolRunForMessage(thread.messages, msgId);
+  return run6 && run6.steps.length > 1 ? run6 : void 0;
+}
+function messageToolCardOpts(msg) {
+  return {
+    ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
+    ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
+    ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {}
+  };
+}
+function liveStepMessageId(thread) {
+  if (!thread || thread.status !== "running") return null;
+  const last4 = thread.messages[thread.messages.length - 1];
+  if (!last4 || last4.content.trim()) return null;
+  return last4.id;
+}
 function reasoningDisclosureTitle(live) {
   return live ? "Reasoning\u2026" : "Reasoned";
 }
@@ -242395,6 +242564,28 @@ function syncNestedRollupReasoning(card2, msgEl, reasoning, live) {
   body?.querySelectorAll(":scope > .message-reasoning").forEach((node2) => {
     if (node2 !== details) node2.remove();
   });
+}
+function syncRunStepReasoning(card2, run6, liveStepId) {
+  for (const step3 of run6.steps) {
+    const body = card2.querySelector(
+      `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step3.messageId}"] > .tool-rollup-body`
+    );
+    if (!body) continue;
+    let details = body.querySelector(":scope > .message-reasoning");
+    if (!step3.reasoning?.trim()) {
+      details?.remove();
+      continue;
+    }
+    const live = step3.messageId === liveStepId;
+    if (!details) {
+      details = buildReasoningEl(step3.reasoning, live, live);
+      body.prepend(details);
+      continue;
+    }
+    const textEl = details.querySelector(".message-reasoning-text");
+    if (textEl) renderReasoningText(textEl, step3.reasoning);
+    setReasoningDisclosureTitle(details, live);
+  }
 }
 function hydrationNoticeEl(running) {
   const notice = el(
@@ -242785,7 +242976,7 @@ function mountConversation(root4, store3, api3) {
     }
   }
   function applyToolCardOpenState(card2, item, userExpandedRollups, userExpandedGroups, userExpandedTools) {
-    if (item.type === "rollup") {
+    if (item.type === "rollup" || item.type === "step") {
       const status = aggregateToolStatus(item.toolCalls);
       card2.open = status === "running" || userExpandedRollups.has(item.key);
       const nestedCards = card2.querySelectorAll(
@@ -242825,8 +243016,8 @@ function mountConversation(root4, store3, api3) {
   function renderToolCards(msgEl, toolCalls, opts = {}) {
     const threadId = store3.getState().activeThreadId ?? "";
     const userExpandedRollups = /* @__PURE__ */ new Set();
-    msgEl.querySelectorAll(".tool-card-rollup[open]").forEach((node2) => {
-      const key = node2.dataset["rollupKey"];
+    msgEl.querySelectorAll(".tool-card-rollup[open], .tool-card-step[open]").forEach((node2) => {
+      const key = node2.dataset["rollupKey"] ?? node2.dataset["stepKey"];
       if (key && node2.dataset["status"] !== "running") userExpandedRollups.add(key);
     });
     const userExpandedGroups = /* @__PURE__ */ new Set();
@@ -242841,11 +243032,14 @@ function mountConversation(root4, store3, api3) {
       const id39 = node2.dataset["toolId"];
       if (id39 && node2.dataset["status"] !== "running") userExpandedTools.add(id39);
     });
-    const nestReasoning = Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls);
-    const items = buildToolCallDisplayItems(toolCalls, {
+    const msgId = msgEl.dataset["messageId"] ?? "";
+    const run6 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
+    const isRunMember = run6 !== void 0 && run6.anchorId !== msgId;
+    const nestReasoning = run6 === void 0 && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls);
+    const items = run6 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run6), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
       ...nestReasoning ? { forceRollup: true } : {}
     });
-    for (const item of items) applyRollupSummaries(item, opts);
+    if (!run6) for (const item of items) applyRollupSummaries(item, opts);
     const existing = /* @__PURE__ */ new Map();
     for (const node2 of msgEl.querySelectorAll(":scope > .tool-card")) {
       const key = toolCardKeys.get(node2);
@@ -242871,12 +243065,19 @@ function mountConversation(root4, store3, api3) {
       if (item.type === "rollup" && nestReasoning) {
         syncNestedRollupReasoning(card2, msgEl, opts.reasoning, opts.reasoningLive === true);
       }
+      if (item.type === "rollup" && run6 && item.key === RUN_ROLLUP_KEY) {
+        syncRunStepReasoning(card2, run6, opts.liveStepId ?? null);
+      }
       desired.push(card2);
     }
     existing.forEach((node2) => {
       node2.remove();
     });
-    if (!nestReasoning) {
+    if (run6) {
+      msgEl.querySelectorAll(".message-body > .message-reasoning").forEach((node2) => {
+        node2.remove();
+      });
+    } else if (!nestReasoning) {
       msgEl.querySelectorAll(".tool-card-rollup .message-reasoning").forEach((node2) => {
         node2.remove();
       });
@@ -242893,6 +243094,68 @@ function mountConversation(root4, store3, api3) {
       }
     }
   }
+  function renderRunAnchor(thread, run6) {
+    const anchor2 = thread?.messages.find((m3) => m3.id === run6.anchorId);
+    const anchorEl = list.querySelector(`[data-message-id="${run6.anchorId}"]`);
+    if (!anchor2 || !anchorEl) return;
+    renderToolCards(anchorEl, anchor2.toolCalls ?? [], {
+      ...messageToolCardOpts(anchor2),
+      run: run6,
+      liveStepId: liveStepMessageId(thread)
+    });
+  }
+  function releaseRunMembers(thread, run6) {
+    for (const id39 of run6.memberIds) {
+      if (id39 === run6.anchorId) continue;
+      const memberEl = list.querySelector(`[data-message-id="${id39}"]`);
+      if (!memberEl?.querySelector(":scope > .tool-card-rollup")) continue;
+      const msg = thread?.messages.find((m3) => m3.id === id39);
+      if (!msg) continue;
+      renderToolCards(memberEl, msg.toolCalls ?? [], {
+        ...messageToolCardOpts(msg),
+        run: run6,
+        liveStepId: liveStepMessageId(thread)
+      });
+    }
+  }
+  function syncRunLayout(thread, run6, changedId) {
+    if (changedId === run6.anchorId) releaseRunMembers(thread, run6);
+    else renderRunAnchor(thread, run6);
+  }
+  function resyncRunMembership(thread, msgId) {
+    const staleStep = list.querySelector(
+      `.tool-card-step[data-step-message-id="${msgId}"]`
+    );
+    const anchorEl = staleStep?.closest(".msg");
+    const anchorId = anchorEl?.dataset["messageId"];
+    if (!anchorEl || !anchorId || anchorId === msgId) return;
+    const anchorRun = multiStepRunFor(thread, anchorId);
+    if (anchorRun?.memberIds.includes(msgId) === true) return;
+    const anchor2 = thread?.messages.find((m3) => m3.id === anchorId);
+    if (!anchor2) return;
+    renderToolCards(anchorEl, anchor2.toolCalls, {
+      ...messageToolCardOpts(anchor2),
+      ...anchorRun ? { run: anchorRun, liveStepId: liveStepMessageId(thread) } : {}
+    });
+    refreshToolCards(msgId);
+    const msg = thread?.messages.find((m3) => m3.id === msgId);
+    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
+    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+  }
+  function syncRunStepTrail(thread, run6) {
+    const runCard = list.querySelector(
+      `[data-message-id="${run6.anchorId}"] > .tool-card-rollup[data-rollup-key="${RUN_ROLLUP_KEY}"]`
+    );
+    const complete = runCard !== null && run6.steps.every(
+      (step3) => runCard.querySelector(`.tool-card-step[data-step-message-id="${step3.messageId}"]`)
+    );
+    if (!complete) {
+      renderRunAnchor(thread, run6);
+      return;
+    }
+    syncRunStepReasoning(runCard, run6, liveStepMessageId(thread));
+  }
   function buildMessageEl(threadId, msgId) {
     const thread = getThreadById(store3, threadId);
     const msg = thread?.messages.find((m3) => m3.id === msgId);
@@ -242907,7 +243170,10 @@ function mountConversation(root4, store3, api3) {
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
     if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true));
-    const nestReasoning = shouldNestReasoningInTools(msg.toolCalls ?? []);
+    const nestReasoning = (
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+      shouldNestReasoningInTools(msg.toolCalls ?? []) || multiStepRunFor(thread, msgId) !== void 0
+    );
     appendMessageContent(body, msg, api3, {
       ...nestReasoning ? { nestReasoningInTools: true } : {}
     });
@@ -242924,12 +243190,13 @@ function mountConversation(root4, store3, api3) {
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
     if (!msg || !msgEl) return;
     hydrateRemoteArtifactImages(list, api3);
+    const run6 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls ?? [], {
-      ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
-      ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
-      ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {}
+      ...messageToolCardOpts(msg),
+      ...run6 ? { run: run6, liveStepId: liveStepMessageId(thread) } : {}
     });
     syncMessageCanvasPreviews(msgEl, msg, threadId);
+    if (run6) syncRunLayout(thread, run6, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
   }
@@ -243203,12 +243470,13 @@ function mountConversation(root4, store3, api3) {
     if (!msg || !msgEl) return;
     const prevScrollTop = list.scrollTop;
     const wasPinned = pinnedToBottom;
+    const run6 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls ?? [], {
-      ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
-      ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
-      ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
-      reasoningLive: isReasoningDisclosureLive(thread, msg)
+      ...messageToolCardOpts(msg),
+      reasoningLive: isReasoningDisclosureLive(thread, msg),
+      ...run6 ? { run: run6, liveStepId: liveStepMessageId(thread) } : {}
     });
+    if (run6) syncRunLayout(thread, run6, msgId);
     if (wasPinned) {
       scrollToBottom();
     } else if (list.scrollTop !== prevScrollTop) {
@@ -243229,10 +243497,13 @@ function mountConversation(root4, store3, api3) {
       const textEl = msgEl?.querySelector(".message-text");
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, true, api3);
-        if (msg.content.trim()) {
-          msgEl?.querySelectorAll(".message-reasoning").forEach((details) => {
+        if (msgEl && msg.content.trim()) {
+          const trails = msgEl.querySelectorAll(".message-reasoning");
+          trails.forEach((details) => {
             setReasoningDisclosureTitle(details, false);
           });
+          const absorbed = msg.toolCalls.some((tc2) => !tc2.subagent) && !msgEl.querySelector(".tool-card") || Boolean(msg.reasoning?.trim()) && trails.length === 0;
+          if (absorbed) resyncRunMembership(thread, mid);
         }
         scrollToBottom();
       }
@@ -243251,7 +243522,9 @@ function mountConversation(root4, store3, api3) {
       const msg = thread?.messages.find((m3) => m3.id === mid);
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (msg?.role === "assistant" && msgEl) {
-        syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        const run6 = multiStepRunFor(thread, mid);
+        if (run6) syncRunStepTrail(thread, run6);
+        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
         activityBar.classList.add("agent-activity-clickable");
         setActivity(activityLabel.textContent);
         scrollToBottom();
@@ -243277,6 +243550,7 @@ function mountConversation(root4, store3, api3) {
         });
       }
       if (msg?.role === "assistant" && msg.content.trim()) {
+        resyncRunMembership(thread, mid);
         const body = msgEl?.querySelector(".message-body");
         if (body && !body.querySelector(".msg-copy")) attachCopyButton(body, mid, store3);
         const reasoning = body?.querySelector(":scope > .message-reasoning");
@@ -243393,6 +243667,7 @@ var init_conversation = __esm({
     init_composer_editor();
     init_agent_activity();
     init_tool_display();
+    init_tool_runs();
     init_panels();
     init_thread_hydration();
     init_plugin_panel();
@@ -254867,8 +255142,8 @@ function stripInvocationToken(text4, name) {
   return text4.replace(new RegExp(invocationTokenPattern(name)), "").replace(/\s+/g, " ").trim();
 }
 function parseLeadingInvocation(text4) {
-  const trimmed = text4.trim();
-  const match3 = trimmed.match(LEADING_INVOCATION_RE);
+  const trimmed2 = text4.trim();
+  const match3 = trimmed2.match(LEADING_INVOCATION_RE);
   if (!match3) return null;
   const name = match3[1];
   if (name === void 0) return null;
@@ -254878,13 +255153,13 @@ function resolveInvocation(text4, invocables) {
   const kindOf = (name) => invocables.find((entry) => entry.name === name)?.kind ?? null;
   const leading = parseLeadingInvocation(text4);
   if (leading) return { ...leading, kind: kindOf(leading.name) };
-  const trimmed = text4.trim();
-  if (!trimmed || invocables.length === 0) return null;
+  const trimmed2 = text4.trim();
+  if (!trimmed2 || invocables.length === 0) return null;
   const sorted = [...invocables].sort((a3, b5) => b5.name.length - a3.name.length);
   for (const { name, kind } of sorted) {
     const re4 = new RegExp(`(?:^|\\s)${invocationTokenPattern(name)}`);
-    if (!re4.test(trimmed)) continue;
-    return { name, kind, remainder: stripInvocationToken(trimmed, name) };
+    if (!re4.test(trimmed2)) continue;
+    return { name, kind, remainder: stripInvocationToken(trimmed2, name) };
   }
   return null;
 }
@@ -254912,8 +255187,8 @@ var init_parse_invocation = __esm({
 
 // src/shared/skills/build-skill-user-content.ts
 function buildSkillUserText(skillName, remainder, hasAttachments2) {
-  const trimmed = remainder.trim();
-  if (trimmed) return trimmed;
+  const trimmed2 = remainder.trim();
+  if (trimmed2) return trimmed2;
   if (hasAttachments2) {
     return `The user invoked /${skillName}. Follow the skill instructions and apply them to the attached file(s) below.`;
   }
@@ -255845,6 +256120,7 @@ function threadToJsonl(thread) {
         ...msg.canvasArtefacts !== void 0 ? { canvasArtefacts: msg.canvasArtefacts } : {},
         commandSummary: msg.commandSummary,
         ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
+        ...msg.runSummary !== void 0 ? { runSummary: msg.runSummary } : {},
         ...msg.model !== void 0 ? { model: msg.model } : {},
         ...msg.requestedModel !== void 0 ? { requestedModel: msg.requestedModel } : {},
         ...msg.parameters !== void 0 ? { parameters: msg.parameters } : {},
@@ -269177,10 +269453,10 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
   }
   newBtn.addEventListener("click", () => addTab());
   function runCommandInNewShell(command) {
-    const trimmed = command.trim();
-    if (!trimmed) return;
+    const trimmed2 = command.trim();
+    if (!trimmed2) return;
     const wasActive = terminalModeActive(store3);
-    addTab({ activate: true, initialInput: `${trimmed}\r` });
+    addTab({ activate: true, initialInput: `${trimmed2}\r` });
     if (!wasActive) {
       store3.setState({ filesPaneOpen: true, rightPanelMode: "terminal" });
       store3.emit("files_pane_changed");
@@ -272407,14 +272683,14 @@ function isReviewStale(fields, status, checkpoint) {
   return true;
 }
 function reviewDetailMarkdown(detail) {
-  const trimmed = detail.trim();
-  if (!trimmed) return "";
-  if (/^[-*] /m.test(trimmed) || trimmed.includes("\n")) return trimmed;
-  const parts = trimmed.split(/\s[•·]\s/);
+  const trimmed2 = detail.trim();
+  if (!trimmed2) return "";
+  if (/^[-*] /m.test(trimmed2) || trimmed2.includes("\n")) return trimmed2;
+  const parts = trimmed2.split(/\s[•·]\s/);
   if (parts.length > 1) {
     return parts.map((part) => `- ${part.trim()}`).join("\n");
   }
-  return trimmed;
+  return trimmed2;
 }
 var ROADMAP_REVIEW_VERDICTS;
 var init_review = __esm({
@@ -292586,8 +292862,8 @@ var init_update_prompt_dialog = __esm({
 
 // src/renderer/views/close-confirm.ts
 function threadLabel(title2) {
-  const trimmed = title2.trim();
-  return trimmed === "" ? "Untitled thread" : trimmed;
+  const trimmed2 = title2.trim();
+  return trimmed2 === "" ? "Untitled thread" : trimmed2;
 }
 function workingThreadTitles(store3) {
   return store3.getState().threads.filter((thread) => thread.status === "running").map((thread) => threadLabel(thread.title));
@@ -292730,17 +293006,17 @@ function mountFileSearchDialog(store3, api3) {
   }
   async function runQuery(query) {
     const token2 = ++queryToken;
-    const trimmed = query.trim();
+    const trimmed2 = query.trim();
     let files;
     try {
-      files = await api3.index.query(trimmed);
+      files = await api3.index.query(trimmed2);
     } catch {
       files = [];
     }
     if (token2 !== queryToken) return;
     results = [
       ...files.map((path4) => ({ kind: "file", path: path4 })),
-      ...matchRoadmapItems(roadmapItems, trimmed).map((item) => ({
+      ...matchRoadmapItems(roadmapItems, trimmed2).map((item) => ({
         kind: "roadmap",
         item
       }))
@@ -293805,6 +294081,8 @@ function startAgentController(store3, api3) {
         summaryCount: 0,
         toolSummaryMsgId: null,
         toolSummaryCount: 0,
+        runSummaryAnchorId: null,
+        runSummaryCount: 0,
         lastActivityLabel: null
       };
       state4.set(tid, st3);
@@ -293934,6 +294212,7 @@ function startAgentController(store3, api3) {
           }
           maybeSummarizeCommands(store3, api3, threadId, st3);
           maybeSummarizeToolTurn(store3, api3, threadId, st3);
+          maybeSummarizeToolRun(store3, api3, threadId, st3);
         }
         st3.writing = false;
         activity(threadId);
@@ -294202,6 +294481,29 @@ function maybeSummarizeToolTurn(store3, api3, threadId, st3) {
     if (summary?.trim()) setMessageToolSummary(store3, msgId, summary.trim());
   })();
 }
+function maybeSummarizeToolRun(store3, api3, threadId, st3) {
+  const msgId = st3.msgId;
+  if (!msgId) return;
+  const thread = getThreadById(store3, threadId);
+  if (!thread) return;
+  const run6 = toolRunForMessage(thread.messages, msgId);
+  if (!run6 || run6.steps.length < 2 || run6.toolCalls.length < 2) return;
+  const requestCount = run6.toolCalls.length;
+  if (st3.runSummaryAnchorId === run6.anchorId && st3.runSummaryCount === requestCount) return;
+  st3.runSummaryAnchorId = run6.anchorId;
+  st3.runSummaryCount = requestCount;
+  const actions = run6.toolCalls.map((tc2) => getToolCallLabel(tc2));
+  void (async () => {
+    let summary;
+    try {
+      summary = await api3.agent.suggestToolTurnSummary(actions);
+    } catch {
+      summary = null;
+    }
+    if (st3.runSummaryAnchorId === run6.anchorId && st3.runSummaryCount !== requestCount) return;
+    if (summary?.trim()) setMessageRunSummary(store3, run6.anchorId, summary.trim());
+  })();
+}
 function tryOpenFileFromResult(_store, _result) {
 }
 var pendingTurn;
@@ -294211,6 +294513,7 @@ var init_agent = __esm({
     init_sync_thread_branch_after_shell();
     init_sync_thread_branch();
     init_tool_display();
+    init_tool_runs();
     init_subagent_helpers();
     init_agent_text_chunk();
     init_agent_activity();
