@@ -15895,12 +15895,69 @@ var init_zod = __esm({
   }
 });
 
-// packages/agent/src/internal-utils.ts
+// packages/std/src/unknown-value.ts
 function isRecord(value2) {
   return typeof value2 === "object" && value2 !== null && !Array.isArray(value2);
 }
-var init_internal_utils = __esm({
-  "packages/agent/src/internal-utils.ts"() {
+function expectRecord(value2, label = "value") {
+  if (!isRecord(value2)) throw new TypeError(`${label} must be an object`);
+  return value2;
+}
+function recordArrayOrEmpty(value2) {
+  return Array.isArray(value2) ? value2.filter(isRecord) : [];
+}
+function expectString(value2, label = "value") {
+  if (typeof value2 !== "string") throw new TypeError(`${label} must be a string`);
+  return value2;
+}
+function expectNumber(value2, label = "value") {
+  if (typeof value2 !== "number") throw new TypeError(`${label} must be a number`);
+  return value2;
+}
+function expectBoolean(value2, label = "value") {
+  if (typeof value2 !== "boolean") throw new TypeError(`${label} must be a boolean`);
+  return value2;
+}
+function expectStringArray(value2, label = "value") {
+  if (!Array.isArray(value2) || !value2.every((item) => typeof item === "string")) {
+    throw new TypeError(`${label} must be an array of strings`);
+  }
+  return value2;
+}
+function stringRecordOrEmpty(value2) {
+  if (!isRecord(value2)) return {};
+  const result = {};
+  for (const [key, entry] of Object.entries(value2)) {
+    if (typeof entry === "string") result[key] = entry;
+  }
+  return result;
+}
+function optionalString(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectString(value2, label);
+}
+function optionalBoolean(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectBoolean(value2, label);
+}
+function optionalNumber(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectNumber(value2, label);
+}
+function optionalStringArray(value2, label = "value") {
+  if (value2 === void 0 || value2 === null) return void 0;
+  return expectStringArray(value2, label);
+}
+function firstNonEmptyString(...values3) {
+  return values3.find(
+    (value2) => value2 !== void 0 && value2 !== null && value2 !== ""
+  );
+}
+function nonEmptyStringOr(value2, fallback) {
+  return firstNonEmptyString(value2, fallback) ?? fallback;
+}
+var init_unknown_value = __esm({
+  "packages/std/src/unknown-value.ts"() {
   }
 });
 
@@ -15949,7 +16006,7 @@ var init_parse_agent_run_payload = __esm({
   "packages/agent/src/parse-agent-run-payload.ts"() {
     init_model_parameters();
     init_zod();
-    init_internal_utils();
+    init_unknown_value();
     userContentSchema = external_exports.union([
       external_exports.string(),
       external_exports.array(
@@ -16078,7 +16135,7 @@ var init_active_thread_owner = __esm({
   }
 });
 
-// src/shared/array-utils.ts
+// packages/std/src/array-utils.ts
 function at(array5, index) {
   const value2 = array5[index];
   if (value2 === void 0) {
@@ -16087,14 +16144,27 @@ function at(array5, index) {
   return value2;
 }
 var init_array_utils = __esm({
+  "packages/std/src/array-utils.ts"() {
+  }
+});
+
+// src/shared/array-utils.ts
+var init_array_utils2 = __esm({
   "src/shared/array-utils.ts"() {
+    init_array_utils();
+  }
+});
+
+// packages/thread-store/src/thread-sort.ts
+function sortThreadsNewestFirst(threads) {
+  return [...threads].sort((a3, b5) => b5.createdAt - a3.createdAt);
+}
+var init_thread_sort = __esm({
+  "packages/thread-store/src/thread-sort.ts"() {
   }
 });
 
 // src/shared/store/thread-helpers.ts
-function sortThreadsNewestFirst(threads) {
-  return [...threads].sort((a3, b5) => b5.createdAt - a3.createdAt);
-}
 function getThreadById(store3, id39) {
   if (!id39) return void 0;
   const { threads, backgroundThreads } = store3.getState();
@@ -16662,7 +16732,8 @@ function applyPreparedThreadCheckout(store3, threadId, prepared) {
 var randomUUID, messageIndexByStore;
 var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
-    init_array_utils();
+    init_array_utils2();
+    init_thread_sort();
     randomUUID = () => globalThis.crypto.randomUUID();
     messageIndexByStore = /* @__PURE__ */ new WeakMap();
   }
@@ -16720,75 +16791,16 @@ var init_background_threads = __esm({
 });
 
 // src/shared/unknown-value.mts
-function isRecord2(value2) {
-  return typeof value2 === "object" && value2 !== null && !Array.isArray(value2);
-}
-function expectRecord(value2, label = "value") {
-  if (!isRecord2(value2)) throw new TypeError(`${label} must be an object`);
-  return value2;
-}
-function recordArrayOrEmpty(value2) {
-  return Array.isArray(value2) ? value2.filter(isRecord2) : [];
-}
-function expectString(value2, label = "value") {
-  if (typeof value2 !== "string") throw new TypeError(`${label} must be a string`);
-  return value2;
-}
-function expectNumber(value2, label = "value") {
-  if (typeof value2 !== "number") throw new TypeError(`${label} must be a number`);
-  return value2;
-}
-function expectBoolean(value2, label = "value") {
-  if (typeof value2 !== "boolean") throw new TypeError(`${label} must be a boolean`);
-  return value2;
-}
-function expectStringArray(value2, label = "value") {
-  if (!Array.isArray(value2) || !value2.every((item) => typeof item === "string")) {
-    throw new TypeError(`${label} must be an array of strings`);
-  }
-  return value2;
-}
-function stringRecordOrEmpty(value2) {
-  if (!isRecord2(value2)) return {};
-  const result = {};
-  for (const [key, entry] of Object.entries(value2)) {
-    if (typeof entry === "string") result[key] = entry;
-  }
-  return result;
-}
-function optionalString(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectString(value2, label);
-}
-function optionalBoolean(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectBoolean(value2, label);
-}
-function optionalNumber(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectNumber(value2, label);
-}
-function optionalStringArray(value2, label = "value") {
-  if (value2 === void 0 || value2 === null) return void 0;
-  return expectStringArray(value2, label);
-}
-function firstNonEmptyString(...values3) {
-  return values3.find(
-    (value2) => value2 !== void 0 && value2 !== null && value2 !== ""
-  );
-}
-function nonEmptyStringOr(value2, fallback) {
-  return firstNonEmptyString(value2, fallback) ?? fallback;
-}
-var init_unknown_value = __esm({
+var init_unknown_value2 = __esm({
   "src/shared/unknown-value.mts"() {
+    init_unknown_value();
   }
 });
 
 // src/shared/unknown-value.ts
-var init_unknown_value2 = __esm({
+var init_unknown_value3 = __esm({
   "src/shared/unknown-value.ts"() {
-    init_unknown_value();
+    init_unknown_value2();
   }
 });
 
@@ -17108,7 +17120,7 @@ var init_persistence = __esm({
   "src/renderer/controller/persistence.ts"() {
     init_thread_helpers();
     init_background_threads();
-    init_unknown_value2();
+    init_unknown_value3();
     KEY_PROJECTS = "projects";
     KEY_PROJECT_GROUPS = "projectGroups";
     writeChains = /* @__PURE__ */ new Map();
@@ -17146,7 +17158,7 @@ function getToolDisplayName(name, tense = "done") {
   return formatToolNameFallback(name);
 }
 function stringArg(args, key) {
-  if (!isRecord2(args)) return null;
+  if (!isRecord(args)) return null;
   const value2 = args[key];
   return typeof value2 === "string" && value2.length > 0 ? value2 : null;
 }
@@ -17167,7 +17179,7 @@ function shellCommandLabel(command) {
   return `${cleaned.slice(0, SHELL_LABEL_MAX - 1)}\u2026`;
 }
 function shellCommandArg(args) {
-  if (!isRecord2(args)) return null;
+  if (!isRecord(args)) return null;
   const command = args["command"];
   return typeof command === "string" && command.trim() ? command : null;
 }
@@ -17391,7 +17403,7 @@ function buildToolRunDisplayItems(run6, opts) {
 var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, TOOL_NAME_ACRONYMS, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
       read_file: { running: "Reading file", done: "Read file" },
@@ -17567,7 +17579,7 @@ function formatTodoProgress(todos) {
 }
 var init_todo_logic = __esm({
   "src/shared/todos/todo-logic.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     init_todo_steering();
   }
 });
@@ -18287,7 +18299,7 @@ var init_toast = __esm({
   }
 });
 
-// src/shared/git/github-pr-url.ts
+// packages/thread-store/src/github-pr-url.ts
 function parseGithubPrUrl(rawUrl) {
   const trimmed2 = rawUrl.trim();
   if (!trimmed2) return null;
@@ -18331,14 +18343,21 @@ function githubPrKey(ref) {
 }
 var GITHUB_PR_PATH_RE, GITHUB_PR_URL_RE, URL_TRAILING_PUNCTUATION_RE;
 var init_github_pr_url = __esm({
-  "src/shared/git/github-pr-url.ts"() {
+  "packages/thread-store/src/github-pr-url.ts"() {
     GITHUB_PR_PATH_RE = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/[^?#]*)?$/i;
     GITHUB_PR_URL_RE = /https?:\/\/(?:www\.)?github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+(?:[^\s)\]>]*)/gi;
     URL_TRAILING_PUNCTUATION_RE = /[.,;:)\]>*_~`'"]+$/;
   }
 });
 
-// src/shared/git/thread-pr-status.ts
+// src/shared/git/github-pr-url.ts
+var init_github_pr_url2 = __esm({
+  "src/shared/git/github-pr-url.ts"() {
+    init_github_pr_url();
+  }
+});
+
+// packages/thread-store/src/thread-pr-status.ts
 function collectThreadPrRefs(thread) {
   const seen = /* @__PURE__ */ new Set();
   const refs = [];
@@ -18406,8 +18425,15 @@ function describeThreadPrStatus(rollup) {
   return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
 }
 var init_thread_pr_status = __esm({
-  "src/shared/git/thread-pr-status.ts"() {
+  "packages/thread-store/src/thread-pr-status.ts"() {
     init_github_pr_url();
+  }
+});
+
+// src/shared/git/thread-pr-status.ts
+var init_thread_pr_status2 = __esm({
+  "src/shared/git/thread-pr-status.ts"() {
+    init_thread_pr_status();
   }
 });
 
@@ -18438,8 +18464,8 @@ function compactSidebarThread(thread) {
 }
 var init_sidebar_thread = __esm({
   "src/renderer/controller/sidebar-thread.ts"() {
-    init_github_pr_url();
-    init_thread_pr_status();
+    init_github_pr_url2();
+    init_thread_pr_status2();
   }
 });
 
@@ -18703,7 +18729,7 @@ function parseSshHostDraft(draft) {
 var SSH_HOST_ID_RE;
 var init_ssh_host_helpers = __esm({
   "src/renderer/views/setup/ssh-host-helpers.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     SSH_HOST_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
   }
 });
@@ -21393,7 +21419,7 @@ function providerSlug(model) {
   return void 0;
 }
 function stringArg2(args, key) {
-  if (!isRecord2(args)) return void 0;
+  if (!isRecord(args)) return void 0;
   const value2 = args[key];
   return typeof value2 === "string" ? value2 : void 0;
 }
@@ -22160,7 +22186,7 @@ var init_demo_api = __esm({
     init_trace_player();
     init_token_estimate();
     init_files();
-    init_unknown_value2();
+    init_unknown_value3();
     init_demo_scenarios();
     init_icons();
     DEMO_MODEL = "mock:demo";
@@ -22400,9 +22426,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -22430,9 +22456,16 @@ var init_todo = __esm({
   }
 });
 
+// packages/thread-store/src/thread-types.ts
+var init_thread_types = __esm({
+  "packages/thread-store/src/thread-types.ts"() {
+  }
+});
+
 // src/shared/types/thread.ts
 var init_thread = __esm({
   "src/shared/types/thread.ts"() {
+    init_thread_types();
   }
 });
 
@@ -22442,9 +22475,16 @@ var init_stream = __esm({
   }
 });
 
-// src/shared/types/turn-outcome.ts
+// packages/thread-store/src/turn-outcome.ts
 var init_turn_outcome = __esm({
+  "packages/thread-store/src/turn-outcome.ts"() {
+  }
+});
+
+// src/shared/types/turn-outcome.ts
+var init_turn_outcome2 = __esm({
   "src/shared/types/turn-outcome.ts"() {
+    init_turn_outcome();
   }
 });
 
@@ -22542,9 +22582,16 @@ var init_usage = __esm({
   }
 });
 
+// packages/thread-store/src/worktree-types.ts
+var init_worktree_types = __esm({
+  "packages/thread-store/src/worktree-types.ts"() {
+  }
+});
+
 // src/shared/types/worktree.ts
 var init_worktree = __esm({
   "src/shared/types/worktree.ts"() {
+    init_worktree_types();
   }
 });
 
@@ -22566,7 +22613,7 @@ var init_types = __esm({
     init_todo();
     init_thread();
     init_stream();
-    init_turn_outcome();
+    init_turn_outcome2();
     init_llm();
     init_layout();
     init_state();
@@ -23931,12 +23978,19 @@ var init_rename_blur = __esm({
   }
 });
 
-// src/shared/errors.ts
+// packages/std/src/errors.ts
 function errorMessage(err2) {
   return err2 instanceof Error ? err2.message : String(err2);
 }
 var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
+  }
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
   "src/shared/errors.ts"() {
+    init_errors3();
   }
 });
 
@@ -24354,7 +24408,7 @@ var DEFAULT_LM_STUDIO_URL, LM_STUDIO_MODEL_IDS, BEST_VALUE_CHAT_MODEL, BEST_VALU
 var init_lm_studio_defaults = __esm({
   "src/shared/lm-studio-defaults.ts"() {
     init_dynamic_model();
-    init_unknown_value2();
+    init_unknown_value3();
     DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234/v1";
     LM_STUDIO_MODEL_IDS = {
       chat: "qwen/qwen3.6-35b-a3b",
@@ -24378,10 +24432,19 @@ var init_managed_agents = __esm({
   }
 });
 
-// src/shared/remote-agent.ts
+// packages/thread-store/src/remote-agent-provider.ts
 function isRemoteAgentProvider(value2) {
   return value2 === REMOTE_AGENT_PROVIDER_CURSOR || value2 === REMOTE_AGENT_PROVIDER_ANTHROPIC;
 }
+var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC;
+var init_remote_agent_provider = __esm({
+  "packages/thread-store/src/remote-agent-provider.ts"() {
+    REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
+    REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
+  }
+});
+
+// src/shared/remote-agent.ts
 function remoteAgentModelValue(provider, model) {
   return model ? `${REMOTE_AGENT_MODEL_PREFIX}${provider}${REMOTE_AGENT_MODEL_SEP}${model}` : `${REMOTE_AGENT_MODEL_PREFIX}${provider}`;
 }
@@ -24403,7 +24466,7 @@ function remoteAgentDisplayLabel(model, catalog = []) {
   const catalogLabel = catalog.find((entry) => entry.id === selection3.model)?.label;
   return `${title2} \u2014 ${catalogLabel ?? cloudModelDisplayLabel(selection3.model)}`;
 }
-var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
+var CURSOR_AGENTS_WEB_URL, REMOTE_AGENT_MODEL_SEP, REMOTE_AGENT_MODELS, MANAGED_AGENT_PICKER_MODELS, MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT;
 var init_remote_agent = __esm({
   "src/shared/remote-agent.ts"() {
     init_reserved_prefixes();
@@ -24411,9 +24474,9 @@ var init_remote_agent = __esm({
     init_model_selection();
     init_model_catalog();
     init_managed_agents();
-    init_unknown_value2();
-    REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
-    REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
+    init_unknown_value3();
+    init_remote_agent_provider();
+    init_remote_agent_provider();
     CURSOR_AGENTS_WEB_URL = "https://cursor.com/agents";
     REMOTE_AGENT_MODEL_SEP = AGENT_MODEL_SEP;
     REMOTE_AGENT_MODELS = [
@@ -24710,7 +24773,7 @@ function parseAcpAgentConfigs(value2) {
     if (Array.isArray(entry["args"]) && entry["args"].every((arg) => typeof arg === "string")) {
       agent.args = entry["args"];
     }
-    if (isRecord2(entry["env"])) agent.env = stringRecordOrEmpty(entry["env"]);
+    if (isRecord(entry["env"])) agent.env = stringRecordOrEmpty(entry["env"]);
     if (typeof entry["model"] === "string") agent.model = entry["model"];
     if (Array.isArray(entry["availableModels"])) {
       agent.availableModels = parseChoices(entry["availableModels"], true);
@@ -24720,7 +24783,7 @@ function parseAcpAgentConfigs(value2) {
     if (Array.isArray(entry["availablePermissionModes"])) {
       agent.availablePermissionModes = parseChoices(entry["availablePermissionModes"], true);
     }
-    if (isRecord2(entry["configOptions"])) {
+    if (isRecord(entry["configOptions"])) {
       agent.configOptions = stringRecordOrEmpty(entry["configOptions"]);
     }
     if (Array.isArray(entry["availableConfigOptions"])) {
@@ -24729,7 +24792,7 @@ function parseAcpAgentConfigs(value2) {
     const sandbox = entry["sandbox"];
     if (sandbox === false) {
       agent.sandbox = false;
-    } else if (isRecord2(sandbox) && Array.isArray(sandbox["allowedDomains"]) && sandbox["allowedDomains"].every((domain2) => typeof domain2 === "string")) {
+    } else if (isRecord(sandbox) && Array.isArray(sandbox["allowedDomains"]) && sandbox["allowedDomains"].every((domain2) => typeof domain2 === "string")) {
       agent.sandbox = { allowedDomains: sandbox["allowedDomains"] };
       if (Array.isArray(sandbox["homeDirs"]) && sandbox["homeDirs"].every((dir2) => typeof dir2 === "string")) {
         agent.sandbox.homeDirs = sandbox["homeDirs"];
@@ -24798,7 +24861,7 @@ var KNOWN_CONFIG_CATEGORIES, CLAUDE_ACP_COMMANDS, CODEX_ACP_COMMANDS;
 var init_acp = __esm({
   "src/shared/acp.ts"() {
     init_acp_known_agents();
-    init_unknown_value();
+    init_unknown_value2();
     init_reserved_prefixes();
     init_reserved_prefixes();
     init_model_selection();
@@ -34018,7 +34081,7 @@ var init_custom_providers_section = __esm({
     init_icons();
     init_inline_status();
     init_confirm_dialog();
-    init_unknown_value2();
+    init_unknown_value3();
     FIXED_PROVIDERS = [
       {
         id: "openai",
@@ -35117,7 +35180,7 @@ function lowContextAdvice(contextWindow, opts = {}) {
 var RECOMMENDED_MIN_CONTEXT_WINDOW, VRAM_CALCULATOR_URL, LM_STUDIO_CONTEXT_GUIDE_URL, CONTEXT_NEARLY_FULL_RATIO;
 var init_context_window_advice = __esm({
   "src/shared/context-window-advice.ts"() {
-    init_unknown_value2();
+    init_unknown_value3();
     RECOMMENDED_MIN_CONTEXT_WINDOW = 16384;
     VRAM_CALCULATOR_URL = "https://apxml.com/tools/vram-calculator";
     LM_STUDIO_CONTEXT_GUIDE_URL = "https://github.com/copse-dev/agent-pane/blob/main/docs/lm-studio-context-persistence.md";
@@ -35476,11 +35539,11 @@ var init_lm_studio_section = __esm({
     init_lm_studio_defaults();
     init_helpers();
     init_inline_status();
-    init_unknown_value2();
+    init_unknown_value3();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -35504,14 +35567,14 @@ function withConfig(config4, fn4) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -35551,7 +35614,7 @@ function decodeHtmlEntities(text4) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -35842,7 +35905,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from2) {
   let i4 = from2;
   while (i4 < s16.length && s16[i4] !== "`")
@@ -35923,12 +35986,12 @@ function renderInlineCode(text4) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch2) {
   return /^[!-/:-@[-`{-~]$/.test(ch2);
 }
@@ -36004,7 +36067,7 @@ function canonicalizeEscapedPunctuation(text4) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -36025,7 +36088,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -36303,7 +36366,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -36312,7 +36375,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line2) {
   let col = 0;
   for (let i4 = 0; i4 < line2.length; i4++) {
@@ -36462,7 +36525,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -36473,17 +36536,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text4) {
   return text4.replace(/[&<>"']/g, (ch2) => HTML_ESCAPES[ch2] ?? ch2);
 }
@@ -36496,16 +36559,41 @@ function isSanctionedRendererTag(tag) {
   const url2 = decodeHtmlCharRefs(decodeEscapedPunctuationRaw(decodeEscapedHref(rawUrl))).trim();
   return !DANGEROUS_HREF_SCHEME_RE.test(url2);
 }
-function keepRawTag(part, policy) {
+function narrowAnchor(tag) {
+  const body = ANCHOR_OPEN_TAG_RE.exec(tag)?.[1];
+  if (body === void 0 || !QUOTED_HREF_RE.test(body))
+    return null;
+  if (!isSanctionedRendererTag(tag))
+    return null;
+  const kept = [];
+  let hasHref = false;
+  for (const [, rawName = "", value2] of body.matchAll(TAG_ATTR_RE)) {
+    const name = rawName.toLowerCase();
+    if (!SAFE_ANCHOR_ATTR_NAME_RE.test(name))
+      continue;
+    if (name === "href") {
+      if (value2 === void 0)
+        continue;
+      hasHref = true;
+    }
+    kept.push(value2 === void 0 ? name : `${name}="${value2}"`);
+  }
+  return hasHref ? `<a ${kept.join(" ")}>` : null;
+}
+function safeRawTag(part, policy) {
   if (policy === "passthrough")
-    return PASSTHROUGH_TAG_RE.test(part);
+    return PASSTHROUGH_TAG_RE.test(part) ? part : null;
   if (SAFE_OUTER_TAG_RE.test(part) && isSanctionedRendererTag(part))
-    return true;
-  return policy === "escape-all" ? BR_TAG_RE.test(part) : BENIGN_RAW_INLINE_TAG_RE.test(part);
+    return part;
+  const narrowed = narrowAnchor(part);
+  if (narrowed !== null)
+    return narrowed;
+  const keep = policy === "escape-all" ? BR_TAG_RE.test(part) : BENIGN_RAW_INLINE_TAG_RE.test(part);
+  return keep ? part : null;
 }
 function escapeHtmlOutsideSafeTags(html2) {
   const policy = getHtmlPolicy();
-  return html2.split(/(<[^>]+>)/g).map((part) => part.startsWith("<") && keepRawTag(part, policy) ? part : escapeHtml(part)).join("");
+  return html2.split(/(<[^>]+>)/g).map((part) => part.startsWith("<") ? safeRawTag(part, policy) ?? escapeHtml(part) : escapeHtml(part)).join("");
 }
 function rawHtmlTagHoldStart(s16, mask) {
   for (let i4 = s16.lastIndexOf("<"); i4 >= 0; i4 = s16.lastIndexOf("<", i4 - 1)) {
@@ -36552,9 +36640,9 @@ function decodeSafeMarkdownEntities(text4) {
   const stripped = stripIncompleteSafeEntities(text4);
   return stripped.replace(SAFE_MARKDOWN_ENTITY_RE, () => "\xA0");
 }
-var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
+var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -36565,13 +36653,17 @@ var init_escape = __esm({
       '"': "&quot;",
       "'": "&#39;"
     };
-    SAFE_OUTER_TAG_RE = /^(?:<a(?:\s+href="[^"]*")(?:\s+(?:title|target|rel|class)="[^"]*")*\s*>|<\/(?:a|code|em|strong)>|<(?:code|em|strong)\b[^>]*>|<img\b[^>]*\bdata-md-rendered="1"[^>]*\/?>)$/i;
+    SAFE_OUTER_TAG_RE = /^(?:<a(?:\s+href="[^"]*")(?:\s+(?:(?:title|target|rel|class)="[^"]*"|data-[a-z0-9-]+(?:="[^"]*")?))*\s*>|<\/(?:a|code|em|strong)>|<(?:code|em|strong)\b[^>]*>|<img\b[^>]*\bdata-md-rendered="1"[^>]*\/?>)$/i;
     BENIGN_RAW_INLINE_TAG_RE = /^<\/?(?:b|i|u|s|del|ins|sub|sup|kbd|mark|br)\s*\/?>$/i;
     BR_TAG_RE = /^<br\s*\/?>$/i;
     EVENT_HANDLER_ATTR_RE = /\son[a-z]+\s*=/i;
     URL_ATTR_RE = /\b(?:href|src)\s*=\s*"([^"]*)"/i;
     DANGEROUS_HREF_SCHEME_RE = /^(?:javascript|data|vbscript):/i;
     PASSTHROUGH_TAG_RE = /^<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?\/?>$/;
+    SAFE_ANCHOR_ATTR_NAME_RE = /^(?:href|title|target|rel|class|data-[a-z0-9-]+)$/i;
+    TAG_ATTR_RE = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*"([^"]*)")?/g;
+    ANCHOR_OPEN_TAG_RE = /^<a\s+([^>]*?)\s*>$/i;
+    QUOTED_HREF_RE = /\bhref\s*=\s*"/i;
     SAFE_MARKDOWN_ENTITY_SOURCE = "&(?:amp;)?(?:nbsp|#160|#x0*a0);";
     SAFE_MARKDOWN_ENTITY_RE = new RegExp(SAFE_MARKDOWN_ENTITY_SOURCE, "gi");
     COMPLETE_SAFE_MARKDOWN_ENTITY_RE = new RegExp(`^${SAFE_MARKDOWN_ENTITY_SOURCE}$`, "i");
@@ -36586,7 +36678,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter2) {
   const [open2, close2] = delimiter2 === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close2))
@@ -36681,7 +36773,7 @@ function syncFormingMathBlockDom(container2, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -36695,7 +36787,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -36831,7 +36923,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -36842,17 +36934,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line2) {
   const m3 = line2.match(ORDERED_LIST_MARKER_RE);
   if (!m3?.[1])
@@ -37619,7 +37711,7 @@ function isAmbiguousBlockLine(line2) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -37636,7 +37728,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -37657,7 +37749,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -37670,7 +37762,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -37696,7 +37788,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -37748,7 +37840,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
 function resolveLanguage(lang) {
   const key = lang.trim().toLowerCase();
   if (!key)
@@ -37780,7 +37872,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_ALIASES;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -37819,7 +37911,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line2) {
   return line2.match(/^ */)?.[0].length ?? 0;
 }
@@ -37841,13 +37933,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -37880,7 +37972,7 @@ function restoreRawImages(text4, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -37890,17 +37982,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -37953,13 +38045,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -38162,7 +38254,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -38191,7 +38283,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -38210,7 +38302,7 @@ function restoreInlinePassHtml(text4) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -38229,7 +38321,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text4) {
   const mask = new Array(text4.length).fill(false);
   for (const match3 of text4.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -38427,7 +38519,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -38438,7 +38530,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text4) {
   const mask = new Array(text4.length).fill(false);
   for (const match3 of text4.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -38533,12 +38625,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch2) {
   return ch2 === "" || ch2 === HARD_BREAK_SENTINEL || /\s/.test(ch2);
 }
@@ -38835,7 +38927,7 @@ function renderEmphasisOutsideInlineHtml(text4, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -38852,7 +38944,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -38902,7 +38994,7 @@ function renderAngleAutolinks(text4) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -38912,7 +39004,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t4, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -39131,7 +39223,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -39151,7 +39243,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text4) {
   return text4.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -39247,7 +39339,7 @@ function renderProseBlock(text4, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -39257,7 +39349,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler)
@@ -39706,7 +39798,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -39724,7 +39816,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -39824,7 +39916,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -39832,7 +39924,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
+var init_data_attributes = __esm({
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+    DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
+    DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
+  }
+});
+
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -39859,7 +39960,8 @@ function enforceSanitizerAllowlist(root4, config4) {
       continue;
     }
     for (const attr of Array.from(el3.attributes)) {
-      if (!allowedAttr.has(attr.name.toLowerCase()))
+      const name = attr.name.toLowerCase();
+      if (!allowedAttr.has(name) && !DATA_ATTR_NAME_RE.test(name))
         el3.removeAttribute(attr.name);
     }
     config4.onElement?.(el3, tag);
@@ -39878,7 +39980,8 @@ function sanitizeIntoElement(target, html2, config4) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+    init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
       sanitize(html2, config4) {
@@ -39901,7 +40004,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -39970,7 +40073,7 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -40027,7 +40130,6 @@ var init_sanitize = __esm({
       "target",
       "rel",
       "class",
-      "data-ordered-marker",
       // GFM table column alignment (`<th align>`/`<td align>`) — presentational, no XSS surface.
       "align",
       // Task-list checkbox attributes (#614) — read-only booleans, no XSS surface.
@@ -40041,13 +40143,10 @@ var init_sanitize = __esm({
       "id",
       // GFM footnote / task-list accessibility hooks (#216/#217): `aria-label` on
       // task checkboxes and backrefs, `aria-describedby` linking a ref to the
-      // footnotes heading, and the `data-footnote*` semantic markers GitHub emits.
-      // All presentational/semantic only — no XSS surface.
+      // footnotes heading. (The `data-footnote*` semantic markers GitHub emits need
+      // no entry — see the generic `data-*` note above.)
       "aria-label",
-      "aria-describedby",
-      "data-footnotes",
-      "data-footnote-ref",
-      "data-footnote-backref"
+      "aria-describedby"
     ];
     FOOTNOTE_ID_RE = /^(?:fn(?:ref)?-[A-Za-z0-9_-]+|[A-Za-z0-9_-]*footnote-label)$/;
     DOUBLE_ENCODED_NBSP_RE = /&amp;(?:nbsp|#160|#x0*a0);/gi;
@@ -40056,7 +40155,7 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
 function scopedConfig(options2) {
   const { tokens: tokens2, indentedCode, ...config4 } = options2;
   return config4;
@@ -40094,7 +40193,7 @@ ${section}`;
 }
 var TOP_LEVEL_RENDER_OPTS;
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -40104,7 +40203,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text4) {
   if (!text4.includes("["))
     return text4;
@@ -40278,7 +40377,7 @@ function renderPendingLine(pending, options2 = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -40292,7 +40391,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -40407,14 +40506,14 @@ function splitForStreamingCore(content, blocks2) {
   };
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -40466,7 +40565,7 @@ function advanceSafeBoundary(source, tokens2, fromIdx, fromOffset, lastNonBlankK
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -40651,7 +40750,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -40680,11 +40779,11 @@ function findDescendantByClass(root4, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -40733,13 +40832,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -40783,13 +40882,13 @@ async function hydratePendingMath(root4, options2 = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text4) {
   return text4.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -40834,11 +40933,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container2) {
   return container2.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -40888,14 +40987,14 @@ async function hydratePendingDiagrams(root4, options2 = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -41001,7 +41100,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -41014,7 +41113,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function renderFormingFenceInner(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -41059,7 +41158,7 @@ function clearFormingFenceDom(container2) {
   container2.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -41068,18 +41167,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container2, source) {
   syncFormingMathBlockDom(container2, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a3, b5) {
   const aAttrs = a3.attributes;
   const bAttrs = b5.attributes;
@@ -41181,7 +41280,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_html_sink();
     TEXT_NODE = 3;
     ELEMENT_NODE = 1;
@@ -41189,7 +41288,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -41376,7 +41475,7 @@ function detailsBalance(html2) {
 }
 var RENDER_OPTS, INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -42612,7 +42711,7 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last4 = completedEl.lastElementChild;
   return last4 && last4.tagName === "SECTION" && last4.classList.contains("footnotes") ? last4 : null;
@@ -43054,7 +43153,7 @@ function clearFormingDom(container2) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -43322,9 +43421,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -43406,7 +43505,7 @@ var BACKEND_OPTIONS;
 var init_gh_cli_section = __esm({
   "src/renderer/views/setup/gh-cli-section.ts"() {
     init_dist();
-    init_errors3();
+    init_errors4();
     init_helpers();
     init_ui();
     BACKEND_OPTIONS = [
@@ -43568,12 +43667,12 @@ function canonicalRoleSelection(value2) {
 var init_model_routing_section = __esm({
   "src/renderer/views/setup/model-routing-section.ts"() {
     init_preferred_models();
-    init_array_utils();
+    init_array_utils2();
     init_lm_studio_defaults();
     init_model_options();
     init_model_picker();
     init_helpers();
-    init_unknown_value2();
+    init_unknown_value3();
     init_ui();
   }
 });
@@ -47282,7 +47381,7 @@ var init_parallel_search_plugin_settings = __esm({
   }
 });
 
-// src/shared/command-routing.ts
+// packages/shell-guard/src/trusted-commands.ts
 function isValidTrustedCommand(name) {
   return VALID_COMMAND.test(name);
 }
@@ -47316,10 +47415,17 @@ function sanitizeTrustedCommands(value2) {
   return out;
 }
 var TRUSTED_COMMANDS_SETTING, VALID_COMMAND;
-var init_command_routing = __esm({
-  "src/shared/command-routing.ts"() {
+var init_trusted_commands = __esm({
+  "packages/shell-guard/src/trusted-commands.ts"() {
     TRUSTED_COMMANDS_SETTING = "trustedShellCommands";
     VALID_COMMAND = /^[A-Za-z0-9._+-]+$/;
+  }
+});
+
+// src/shared/command-routing.ts
+var init_command_routing = __esm({
+  "src/shared/command-routing.ts"() {
+    init_trusted_commands();
   }
 });
 
@@ -50615,7 +50721,7 @@ function mountSettingsDialog(store3, api3) {
 var PLUGIN_NAME_ACRONYMS, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingPluginDetail;
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
-    init_errors3();
+    init_errors4();
     init_auto_approval();
     init_state();
     init_dialog_shell();
@@ -50653,7 +50759,7 @@ var init_settings_dialog = __esm({
     init_web_origins();
     init_provider_hosts();
     init_command_routing();
-    init_unknown_value2();
+    init_unknown_value3();
     init_developer_mode();
     init_appearance();
     init_projects();
@@ -50740,7 +50846,7 @@ var init_settings_dialog = __esm({
   }
 });
 
-// src/shared/store/fork-thread.ts
+// packages/thread-store/src/fork-thread.ts
 function forkThreadTitle(title2) {
   const base = title2.trim() || "New Thread";
   const match3 = /^(.*) \(fork(?: (\d+))?\)$/.exec(base);
@@ -50807,10 +50913,17 @@ function copyMessage(message2) {
 }
 var randomUUID2, MAX_TITLE_LENGTH, FORK_SUFFIX;
 var init_fork_thread = __esm({
-  "src/shared/store/fork-thread.ts"() {
+  "packages/thread-store/src/fork-thread.ts"() {
     randomUUID2 = () => globalThis.crypto.randomUUID();
     MAX_TITLE_LENGTH = 120;
     FORK_SUFFIX = " (fork)";
+  }
+});
+
+// src/shared/store/fork-thread.ts
+var init_fork_thread2 = __esm({
+  "src/shared/store/fork-thread.ts"() {
+    init_fork_thread();
   }
 });
 
@@ -50850,9 +50963,9 @@ async function forkThread(store3, api3, sourceThreadId, options2 = {}) {
     droppedAttachments: history?.source === "rebuilt" && hasAttachments(forked)
   };
 }
-var init_fork_thread2 = __esm({
+var init_fork_thread3 = __esm({
   "src/renderer/controller/fork-thread.ts"() {
-    init_fork_thread();
+    init_fork_thread2();
     init_thread_helpers();
     init_message_queue();
   }
@@ -51120,7 +51233,7 @@ var init_project_groups = __esm({
   }
 });
 
-// src/shared/safe-json.ts
+// packages/std/src/safe-json.ts
 function decodeWithSchema(schema2) {
   return (value2) => {
     const result = schema2.safeParse(value2);
@@ -51142,7 +51255,14 @@ function safeJsonParse(text4, decoder2) {
   }
 }
 var init_safe_json = __esm({
+  "packages/std/src/safe-json.ts"() {
+  }
+});
+
+// src/shared/safe-json.ts
+var init_safe_json2 = __esm({
   "src/shared/safe-json.ts"() {
+    init_safe_json();
   }
 });
 
@@ -51152,7 +51272,7 @@ function serializeSidebarDrag(payload) {
 }
 function parseSidebarDrag(raw) {
   const parsed2 = safeJsonParse(raw);
-  if (!isRecord2(parsed2)) return null;
+  if (!isRecord(parsed2)) return null;
   const kind = parsed2["kind"];
   const id39 = parsed2["id"];
   if (kind !== "project" && kind !== "group") return null;
@@ -51177,8 +51297,8 @@ function isSidebarDrag(types2) {
 var SIDEBAR_DRAG_MIME, GROUP_EDGE_BAND;
 var init_projects_drag = __esm({
   "src/renderer/views/projects-drag.ts"() {
-    init_safe_json();
-    init_unknown_value2();
+    init_safe_json2();
+    init_unknown_value3();
     SIDEBAR_DRAG_MIME = "application/x-copse-panel-sidebar-item";
     GROUP_EDGE_BAND = 0.25;
   }
@@ -52216,12 +52336,12 @@ var init_projects_pane = __esm({
     init_rename_blur();
     init_icons();
     init_thread_helpers();
-    init_github_pr_url();
-    init_thread_pr_status();
+    init_github_pr_url2();
+    init_thread_pr_status2();
     init_projects();
     init_settings_dialog();
     init_toast();
-    init_fork_thread2();
+    init_fork_thread3();
     init_sidebar_thread();
     init_attention();
     init_ssh_workspace_ui();
@@ -52369,7 +52489,7 @@ var init_user_prompt_fold = __esm({
   }
 });
 
-// src/shared/hooks/hook-card.ts
+// packages/thread-store/src/hook-card.ts
 function isHookCardBlocking(status) {
   return status === "deny" || status === "blocked" || status === "error" || status === "halted";
 }
@@ -52423,11 +52543,18 @@ function getHookCardStatusLabel(card2) {
   }
 }
 var init_hook_card = __esm({
-  "src/shared/hooks/hook-card.ts"() {
+  "packages/thread-store/src/hook-card.ts"() {
   }
 });
 
-// src/shared/hooks/hook-run-detail.ts
+// src/shared/hooks/hook-card.ts
+var init_hook_card2 = __esm({
+  "src/shared/hooks/hook-card.ts"() {
+    init_hook_card();
+  }
+});
+
+// packages/hooks-dialects/src/hook-run-detail.ts
 function hookRunDetailChips(detail) {
   if (!detail.found) return [];
   const chips = [];
@@ -52511,7 +52638,7 @@ function hookRunDetailEmptyReason(detail) {
 }
 var outcomeCaptureSchema;
 var init_hook_run_detail = __esm({
-  "src/shared/hooks/hook-run-detail.ts"() {
+  "packages/hooks-dialects/src/hook-run-detail.ts"() {
     init_zod();
     init_safe_json();
     outcomeCaptureSchema = external_exports.object({
@@ -52522,6 +52649,13 @@ var init_hook_run_detail = __esm({
       agentMessage: external_exports.string().optional(),
       userMessage: external_exports.string().optional()
     });
+  }
+});
+
+// src/shared/hooks/hook-run-detail.ts
+var init_hook_run_detail2 = __esm({
+  "src/shared/hooks/hook-run-detail.ts"() {
+    init_hook_run_detail();
   }
 });
 
@@ -239619,13 +239753,13 @@ function bindBrowserLinkClicks(root4, store3, api3) {
 var init_browser_links = __esm({
   "src/renderer/markdown/browser-links.ts"() {
     init_panels();
-    init_github_pr_url();
+    init_github_pr_url2();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -239918,7 +240052,7 @@ var FRAME_START, FRAME_SEPARATOR, FRAME_END, VISUALIZE_OPERATOR, MAX_OPERATOR_CH
 var init_inline_visualization = __esm({
   "src/shared/inline-visualization.ts"() {
     init_zod();
-    init_safe_json();
+    init_safe_json2();
     FRAME_START = "\uE200";
     FRAME_SEPARATOR = "\uE202";
     FRAME_END = "\uE201";
@@ -240842,7 +240976,7 @@ function hasOpenTodos(todos) {
 var MAX_TODO_CLOSEOUT_ATTEMPTS, OPEN_TODOS_FINALIZE_NUDGE, OPEN_TODOS_FINALIZE_NUDGE_STRICT;
 var init_agent_loop_guards = __esm({
   "packages/agent/src/agent-loop-guards.ts"() {
-    init_internal_utils();
+    init_unknown_value();
     MAX_TODO_CLOSEOUT_ATTEMPTS = 3;
     OPEN_TODOS_FINALIZE_NUDGE = `You still have open todos in the plan. Before finishing:
 1. Call update_todos (merge=true) to mark each finished item completed or cancel items you will not do.
@@ -241109,7 +241243,7 @@ var init_comparison_panel = __esm({
     init_retry_button();
     init_dist();
     init_file_links();
-    init_unknown_value2();
+    init_unknown_value3();
   }
 });
 
@@ -241186,7 +241320,7 @@ var init_retry_review_comparison = __esm({
 });
 
 // src/renderer/views/tool-args-format.ts
-function isRecord3(value2) {
+function isRecord2(value2) {
   return !!value2 && typeof value2 === "object" && !Array.isArray(value2);
 }
 function displayValue(value2) {
@@ -241212,7 +241346,7 @@ function normalizeValue(value2) {
 function normalizeDeep(value2) {
   const normalized = normalizeValue(value2);
   if (Array.isArray(normalized)) return normalized.map(normalizeDeep);
-  if (!isRecord3(normalized)) return normalized;
+  if (!isRecord2(normalized)) return normalized;
   return Object.fromEntries(
     Object.entries(normalized).map(([key, entry]) => [key, normalizeDeep(entry)])
   );
@@ -241226,14 +241360,14 @@ function optionalString2(value2) {
 }
 function terminalPayloadFrom(value2) {
   const normalized = normalizeDeep(value2);
-  if (!isRecord3(normalized)) return null;
+  if (!isRecord2(normalized)) return null;
   const success2 = normalizeValue(normalized["success"]);
-  if (isRecord3(success2)) {
+  if (isRecord2(success2)) {
     const { success: _success2, error: _error, ...meta5 } = normalized;
     return { status: "success", payload: success2, meta: meta5 };
   }
   const error53 = normalizeValue(normalized["error"]);
-  if (isRecord3(error53)) {
+  if (isRecord2(error53)) {
     const { success: _success2, error: _error, ...meta5 } = normalized;
     return { status: "error", payload: error53, meta: meta5 };
   }
@@ -241290,13 +241424,13 @@ function entriesForDisplay(value2) {
 }
 function unwrapResultEnvelope(value2) {
   value2 = normalizeValue(value2);
-  if (!isRecord3(value2)) return value2;
+  if (!isRecord2(value2)) return value2;
   const entries2 = Object.entries(value2);
   const [firstEntry] = entries2;
   if (entries2.length !== 1 || !firstEntry) return value2;
   const [key, rawEntry] = firstEntry;
   const entry = normalizeValue(rawEntry);
-  if ((key === "success" || key === "error") && isRecord3(entry)) return entry;
+  if ((key === "success" || key === "error") && isRecord2(entry)) return entry;
   return value2;
 }
 function formatReadableValue(value2, indent = 0) {
@@ -241308,7 +241442,7 @@ function formatReadableValue(value2, indent = 0) {
 ${rendered}` : ` ${rendered.trim()}`}`;
     }).join("\n");
   }
-  if (!isRecord3(unwrapped)) return `${" ".repeat(indent)}${displayValue(unwrapped)}`;
+  if (!isRecord2(unwrapped)) return `${" ".repeat(indent)}${displayValue(unwrapped)}`;
   return entriesForDisplay(unwrapped).map(([key, rawEntry]) => {
     const entry = normalizeValue(rawEntry);
     const pad3 = " ".repeat(indent);
@@ -241316,7 +241450,7 @@ ${rendered}` : ` ${rendered.trim()}`}`;
       return `${pad3}${key}:
 ${indentLines(entry.replace(/\n+$/, ""), indent + 2)}`;
     }
-    if (isRecord3(entry) || Array.isArray(entry)) {
+    if (isRecord2(entry) || Array.isArray(entry)) {
       return `${pad3}${key}:
 ${formatReadableValue(entry, indent + 2)}`;
     }
@@ -241362,15 +241496,22 @@ var init_render_signature = __esm({
   }
 });
 
-// src/shared/threads/prompt-placeholders.ts
+// packages/thread-store/src/prompt-placeholders.ts
 function stripPastePlaceholders(content) {
   if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
   return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
 }
 var PASTE_PLACEHOLDER;
 var init_prompt_placeholders = __esm({
-  "src/shared/threads/prompt-placeholders.ts"() {
+  "packages/thread-store/src/prompt-placeholders.ts"() {
     PASTE_PLACEHOLDER = "\uFFFC";
+  }
+});
+
+// src/shared/threads/prompt-placeholders.ts
+var init_prompt_placeholders2 = __esm({
+  "src/shared/threads/prompt-placeholders.ts"() {
+    init_prompt_placeholders();
   }
 });
 
@@ -241430,7 +241571,7 @@ function resendLastMessage(store3, api3, threadId, options2 = {}) {
 var init_resend_message = __esm({
   "src/renderer/controller/resend-message.ts"() {
     init_thread_helpers();
-    init_prompt_placeholders();
+    init_prompt_placeholders2();
     init_message_queue();
   }
 });
@@ -242930,6 +243071,10 @@ function mountConversation(root4, store3, api3) {
       ...anchorRun ? { run: anchorRun, liveStepId: liveStepMessageId(thread) } : {}
     });
     refreshToolCards(msgId);
+    const msg = thread?.messages.find((m3) => m3.id === msgId);
+    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
+    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
   }
   function syncRunStepTrail(thread, run6) {
     const runCard = list.querySelector(
@@ -243285,13 +243430,13 @@ function mountConversation(root4, store3, api3) {
       const textEl = msgEl?.querySelector(".message-text");
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, true, api3);
-        if (msg.content.trim()) {
-          msgEl?.querySelectorAll(".message-reasoning").forEach((details) => {
+        if (msgEl && msg.content.trim()) {
+          const trails = msgEl.querySelectorAll(".message-reasoning");
+          trails.forEach((details) => {
             setReasoningDisclosureTitle(details, false);
           });
-        }
-        if (msgEl && msg.toolCalls.some((tc2) => !tc2.subagent) && !msgEl.querySelector(".tool-card")) {
-          resyncRunMembership(thread, mid);
+          const absorbed = msg.toolCalls.some((tc2) => !tc2.subagent) && !msgEl.querySelector(".tool-card") || Boolean(msg.reasoning?.trim()) && trails.length === 0;
+          if (absorbed) resyncRunMembership(thread, mid);
         }
         scrollToBottom();
       }
@@ -243338,6 +243483,7 @@ function mountConversation(root4, store3, api3) {
         });
       }
       if (msg?.role === "assistant" && msg.content.trim()) {
+        resyncRunMembership(thread, mid);
         const body = msgEl?.querySelector(".message-body");
         if (body && !body.querySelector(".msg-copy")) attachCopyButton(body, mid, store3);
         const reasoning = body?.querySelector(":scope > .message-reasoning");
@@ -243428,8 +243574,8 @@ var init_conversation = __esm({
     init_reasoning_activity_icon();
     init_icons();
     init_user_prompt_fold();
-    init_hook_card();
-    init_hook_run_detail();
+    init_hook_card2();
+    init_hook_run_detail2();
     init_artefact_previews();
     init_artefact();
     init_thread_helpers();
@@ -243466,7 +243612,7 @@ var init_conversation = __esm({
     init_tool_args_format();
     init_render_signature();
     init_message_queue();
-    init_fork_thread2();
+    init_fork_thread3();
     init_resend_message();
     init_image_input_support();
     init_toast();
@@ -254170,7 +254316,7 @@ var init_handle_file_drop = __esm({
   "src/renderer/attachments/handle-file-drop.ts"() {
     init_video_media();
     init_archive_media();
-    init_unknown_value2();
+    init_unknown_value3();
     WORKSPACE_PATH_MIME = "application/x-copse-panel-path";
   }
 });
@@ -255853,7 +255999,7 @@ var init_footer_overflow = __esm({
   }
 });
 
-// src/shared/threads/export-jsonl.ts
+// packages/thread-store/src/export-jsonl.ts
 function threadHasExportableContent(thread) {
   return (thread?.messages.length ?? 0) > 0;
 }
@@ -255923,8 +256069,15 @@ function threadToJsonl(thread) {
 }
 var THREAD_JSONL_EXPORT_VERSION;
 var init_export_jsonl = __esm({
-  "src/shared/threads/export-jsonl.ts"() {
+  "packages/thread-store/src/export-jsonl.ts"() {
     THREAD_JSONL_EXPORT_VERSION = 7;
+  }
+});
+
+// src/shared/threads/export-jsonl.ts
+var init_export_jsonl2 = __esm({
+  "src/shared/threads/export-jsonl.ts"() {
+    init_export_jsonl();
   }
 });
 
@@ -255951,8 +256104,8 @@ async function downloadThreadArchive(api3, projectId, thread) {
 }
 var init_export_thread = __esm({
   "src/renderer/export-thread.ts"() {
-    init_export_jsonl();
-    init_export_jsonl();
+    init_export_jsonl2();
+    init_export_jsonl2();
   }
 });
 
@@ -255997,7 +256150,7 @@ var init_share_trace_issue = __esm({
   }
 });
 
-// src/shared/threads/debug-trace-prompt.ts
+// packages/thread-store/src/debug-trace-prompt.ts
 function debugTraceThreadTitle(thread) {
   const source = thread.title.trim() || thread.id;
   return `Debug: ${source}`.slice(0, 60);
@@ -256065,8 +256218,15 @@ function buildDebugTracePrompt(thread, archiveName, build) {
 }
 var TRACE_LAYOUT;
 var init_debug_trace_prompt = __esm({
-  "src/shared/threads/debug-trace-prompt.ts"() {
+  "packages/thread-store/src/debug-trace-prompt.ts"() {
     TRACE_LAYOUT = "a snapshot of its persisted thread directory: `meta.json`, the append-only `events.jsonl` spine, message prose under `messages/*.md`, tool arguments and results under `blobs/`, provider history, plans, and any nested subagent runs";
+  }
+});
+
+// src/shared/threads/debug-trace-prompt.ts
+var init_debug_trace_prompt2 = __esm({
+  "src/shared/threads/debug-trace-prompt.ts"() {
+    init_debug_trace_prompt();
   }
 });
 
@@ -258701,7 +258861,7 @@ var init_input_bar = __esm({
     init_footer_overflow();
     init_export_thread();
     init_share_trace_issue();
-    init_debug_trace_prompt();
+    init_debug_trace_prompt2();
     init_footer_usage_summary();
     init_footer_usage_tooltip();
     init_footer_usage_popover();
@@ -258717,7 +258877,7 @@ var init_input_bar = __esm({
     init_panel_mode_controls();
     init_guarded_yolo_control();
     init_active_thread_owner();
-    init_unknown_value2();
+    init_unknown_value3();
     init_acp();
     init_model_options();
     init_model_display();
@@ -269321,7 +269481,7 @@ var init_terminals_pane = __esm({
     init_selection_to_chat2();
     init_terminal_file_links();
     init_scoped_tabs();
-    init_array_utils();
+    init_array_utils2();
     init_xterm_scrollback();
     init_shell_catalog();
     init_read_terminal();
@@ -269351,7 +269511,7 @@ function stripAnsi(text4) {
   return text4.replace(ANSI_RE, "");
 }
 function shellCommandFromArgs(args) {
-  if (!isRecord2(args)) return null;
+  if (!isRecord(args)) return null;
   const command = args["command"];
   return typeof command === "string" && command.trim() ? command : null;
 }
@@ -269588,9 +269748,9 @@ var init_agent_tasks = __esm({
   "src/renderer/views/agent-tasks.ts"() {
     init_helpers();
     init_tool_display();
-    init_array_utils();
+    init_array_utils2();
     init_scoped_tabs();
-    init_unknown_value2();
+    init_unknown_value3();
     MAX_TASKS = 60;
     MAX_OUTPUT_CHARS = 2e5;
     ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
@@ -270594,7 +270754,7 @@ var init_git_changes_pane = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_pane_popout_seed();
-    init_array_utils();
+    init_array_utils2();
     init_toast();
     init_confirm_dialog();
     init_staged_diff_ui();
@@ -270613,14 +270773,21 @@ var init_git_changes_pane = __esm({
   }
 });
 
-// src/shared/remote-agent-link.ts
+// packages/thread-store/src/remote-agent-link.ts
 function remoteAgentPrIndexKey(prUrl) {
   const ref = parseGithubPrUrl(prUrl);
   return ref ? githubPrKey(ref) : null;
 }
 var init_remote_agent_link = __esm({
-  "src/shared/remote-agent-link.ts"() {
+  "packages/thread-store/src/remote-agent-link.ts"() {
     init_github_pr_url();
+  }
+});
+
+// src/shared/remote-agent-link.ts
+var init_remote_agent_link2 = __esm({
+  "src/shared/remote-agent-link.ts"() {
+    init_remote_agent_link();
   }
 });
 
@@ -270664,7 +270831,7 @@ function mergePrLists(linked, pools) {
 }
 var init_pr_pane_list = __esm({
   "src/renderer/views/pr-pane-list.ts"() {
-    init_github_pr_url();
+    init_github_pr_url2();
   }
 });
 
@@ -271540,10 +271707,10 @@ var init_pr_pane = __esm({
     init_pane_popout_button();
     init_pane_popout_seed();
     init_thread_helpers();
-    init_array_utils();
+    init_array_utils2();
     init_confirm_dialog();
-    init_github_pr_url();
-    init_remote_agent_link();
+    init_github_pr_url2();
+    init_remote_agent_link2();
     init_pr_pane_list();
     init_pr_pane_thread();
     init_prompt_attachments();
@@ -271881,7 +272048,7 @@ var init_memories_pane = __esm({
     init_pane_maximize_button();
     init_pane_popout_button();
     init_knowledge_date();
-    init_unknown_value2();
+    init_unknown_value3();
     init_icons();
     init_pane_loading();
   }
@@ -274081,7 +274248,7 @@ var init_roadmap_pane = __esm({
     init_prompt_attachments();
     init_attachment_icons();
     init_image_expand();
-    init_unknown_value2();
+    init_unknown_value3();
     STATUS_OPTIONS = [
       "ready",
       "blocked",
@@ -275040,7 +275207,7 @@ var init_browser_pane = __esm({
     init_browser_url();
     init_artefact();
     init_browser_session();
-    init_unknown_value2();
+    init_unknown_value3();
     init_panels();
     init_prompt_attachments();
     init_toast();
@@ -293551,7 +293718,7 @@ var namedThreads;
 var init_thread_naming = __esm({
   "src/renderer/controller/thread-naming.ts"() {
     init_thread_helpers();
-    init_unknown_value2();
+    init_unknown_value3();
     namedThreads = /* @__PURE__ */ new Set();
   }
 });
@@ -293563,8 +293730,8 @@ function userContentToText(content) {
 }
 var init_remote_agent_stream = __esm({
   "src/shared/remote-agent-stream.ts"() {
-    init_array_utils();
-    init_unknown_value2();
+    init_array_utils2();
+    init_unknown_value3();
   }
 });
 
@@ -293999,9 +294166,10 @@ function maybeSummarizeToolRun(store3, api3, threadId, st3) {
   if (!thread) return;
   const run6 = toolRunForMessage(thread.messages, msgId);
   if (!run6 || run6.steps.length < 2 || run6.toolCalls.length < 2) return;
-  if (st3.runSummaryAnchorId === run6.anchorId && st3.runSummaryCount === run6.toolCalls.length) return;
+  const requestCount = run6.toolCalls.length;
+  if (st3.runSummaryAnchorId === run6.anchorId && st3.runSummaryCount === requestCount) return;
   st3.runSummaryAnchorId = run6.anchorId;
-  st3.runSummaryCount = run6.toolCalls.length;
+  st3.runSummaryCount = requestCount;
   const actions = run6.toolCalls.map((tc2) => getToolCallLabel(tc2));
   void (async () => {
     let summary;
@@ -294010,6 +294178,7 @@ function maybeSummarizeToolRun(store3, api3, threadId, st3) {
     } catch {
       summary = null;
     }
+    if (st3.runSummaryAnchorId === run6.anchorId && st3.runSummaryCount !== requestCount) return;
     if (summary?.trim()) setMessageRunSummary(store3, run6.anchorId, summary.trim());
   })();
 }
@@ -295002,7 +295171,7 @@ function clampNumber(val, fallback, min10, max10) {
   return clamp5(val, min10, max10);
 }
 function parseSavedLayout(raw) {
-  if (!isRecord2(raw)) return { ...DEFAULT_LAYOUT };
+  if (!isRecord(raw)) return { ...DEFAULT_LAYOUT };
   const saved = raw;
   return {
     projectsPaneWidth: clampNumber(
@@ -295178,7 +295347,7 @@ var init_pane_resizer = __esm({
   "src/renderer/views/pane-resizer.ts"() {
     init_layout();
     init_portrait_right_panel_layout();
-    init_unknown_value2();
+    init_unknown_value3();
   }
 });
 
@@ -295389,7 +295558,7 @@ var init_artifact_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend
@@ -295413,7 +295582,7 @@ function withGate(config4, run6) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
@@ -302211,7 +302380,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -302222,7 +302391,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.0.8_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
