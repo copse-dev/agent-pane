@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { MAX_STREAM_OUTPUT_TOKENS } from '../packages/agent/src/agent-loop-limits.ts'
-import { detectReasoningCircle } from '../packages/agent/src/reasoning-circle-detector.ts'
+import { MAX_STREAM_OUTPUT_TOKENS } from '@copse/agent/agent-loop-limits.ts'
+import { detectReasoningCircle } from '@copse/agent/reasoning-circle-detector.ts'
 import {
   DEFAULT_SKILLSBENCH_STREAM_OUTPUT_TOKENS,
   skillsBenchReasoningCheckpointPolicy,

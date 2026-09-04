@@ -203,6 +203,83 @@ describe('AutomationService', () => {
     )
   })
 
+  it('does not resurrect a schedule deleted while a run is loading', async () => {
+    let releaseThreads: ((threads: Thread[]) => void) | undefined
+    const pendingThreads = new Promise<Thread[]>((resolve) => {
+      releaseThreads = resolve
+    })
+    const service = createAutomationService({
+      now: () => 1,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreads: () => pendingThreads,
+      releasePreviousRun: () => Promise.resolve(true),
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Review',
+      cron: '* * * * *',
+      prompt: 'Review.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+
+    const run = service.runNow('project-a', schedule.id)
+    await service.remove('project-a', schedule.id)
+    releaseThreads?.([])
+    await run
+
+    assert.deepEqual(service.list('project-a'), [])
+  })
+
+  it('preserves an edit made while a run is loading', async () => {
+    let now = 1
+    let releaseThreads: ((threads: Thread[]) => void) | undefined
+    const pendingThreads = new Promise<Thread[]>((resolve) => {
+      releaseThreads = resolve
+    })
+    const service = createAutomationService({
+      now: () => now,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreads: () => pendingThreads,
+      releasePreviousRun: () => Promise.resolve(true),
+    })
+    const schedule = await service.upsert('project-a', {
+      name: 'Old review',
+      cron: '* * * * *',
+      prompt: 'Old prompt.',
+      model: 'gpt-5.4',
+      enabled: true,
+    })
+
+    const run = service.runNow('project-a', schedule.id)
+    now = 2
+    await service.upsert('project-a', {
+      id: schedule.id,
+      name: 'Updated review',
+      cron: '0 9 * * *',
+      prompt: 'Updated prompt.',
+      model: 'best-value',
+      enabled: false,
+    })
+    releaseThreads?.([])
+    const event = await run
+
+    assert.deepEqual(service.list('project-a'), [
+      {
+        ...schedule,
+        name: 'Updated review',
+        cron: '0 9 * * *',
+        prompt: 'Updated prompt.',
+        model: 'best-value',
+        enabled: false,
+        updatedAt: 2,
+        lastRunAt: 1,
+        lastCreatedThreadId: event.threadId,
+      },
+    ])
+  })
+
   it('isolates a failed schedule and does not retry it within the same minute', async () => {
     let attempts = 0
     const service = createAutomationService({

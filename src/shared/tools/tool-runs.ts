@@ -125,8 +125,10 @@ export function deriveToolRuns(messages: readonly ToolRunMessage[]): ToolRun[] {
  * Derivation is greedy left-to-right, so the answer only depends on the
  * contiguous absorbable stretch around `messageId`: no run can start before the
  * nearest earlier non-absorbable message (it could not have crossed it), and
- * none can continue past the next one. Deriving over just that window keeps
- * this O(run) rather than O(thread) — it runs on every tool-call tick.
+ * none can continue past the next one. Locating the message is still an
+ * O(thread) id scan, but the derivation itself — the part that inspects every
+ * tool call — only covers that window, which matters because this runs on
+ * every tool-call tick.
  */
 export function toolRunForMessage(
   messages: readonly ToolRunMessage[],

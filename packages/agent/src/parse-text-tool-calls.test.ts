@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at } from './internal-utils.ts'
+import { at } from '@copse/std/array-utils.ts'
 import { z } from 'zod'
 import {
   recoverTextToolCalls,
@@ -8,7 +8,7 @@ import {
   coerceStringlyTypedToolArgs,
   hasTextToolCallMarkup,
 } from './parse-text-tool-calls.ts'
-import { isRecord } from './internal-utils.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 type RecoveredToolCalls = ReturnType<typeof recoverTextToolCalls>['toolCalls']
 

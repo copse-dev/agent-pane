@@ -196,7 +196,7 @@ describe('cross-message tool runs (component)', () => {
     const step = qsRequired(run, `.tool-card-step[data-step-message-id="${member}"]`)
     const trail = qsRequired(step, ':scope > .tool-rollup-body > .message-reasoning')
     assert.equal(
-      trail.querySelector('.message-reasoning-text')?.textContent?.trim(),
+      trail.querySelector('.message-reasoning-text')?.textContent.trim(),
       'Checking whether the oracle ran.',
     )
   })
@@ -216,16 +216,65 @@ describe('cross-message tool runs (component)', () => {
       [ids[0], member],
       'the member anchors its own run once it has prose',
     )
+    const [shortened, departed] = runs
+    assert.ok(shortened)
+    assert.ok(departed)
     // The shortened first run no longer claims the departed message's tools.
     assert.equal(
-      runs[0]?.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      shortened.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
       'Read files',
     )
-    assert.equal(runs[0]?.querySelector('.tool-card-step'), null)
+    assert.equal(shortened.querySelector('.tool-card-step'), null)
     assert.equal(
-      runs[1]?.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      departed.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
       'Used 12 tools · 4 steps',
     )
+  })
+
+  it('releases a reasoning-only member when it gains prose', () => {
+    const { store, threadId, ids } = seedRun()
+    const host = mount(store)
+
+    // A bubble that has streamed only reasoning is still absorbed as a step —
+    // its trail hangs on the anchor's rollup, not on its own body.
+    const member = addMessage(store, threadId, 'assistant', '')
+    appendReasoning(store, member, 'Double-checking the oracle output.')
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    assert.equal(
+      run.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      'Used 18 tools · 6 steps',
+    )
+    assert.ok(run.querySelector(`.tool-card-step[data-step-message-id="${member}"]`))
+    const memberEl = qsRequired(host, `[data-message-id="${member}"]`)
+    assert.equal(memberEl.querySelector('.message-reasoning'), null)
+
+    // Prose is a run boundary even for a member that never ran a tool: the
+    // anchor drops the step and the bubble takes its reasoning trail back.
+    setMessageContent(store, member, 'The oracle output is clean.')
+    store.emit('message_done', member)
+
+    const runAfter = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    assert.equal(
+      runAfter.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      'Used 18 tools · 5 steps',
+    )
+    assert.equal(
+      host.querySelector(`.tool-card-step[data-step-message-id="${member}"]`),
+      null,
+      'no stale step for the departed member',
+    )
+    assert.deepEqual(
+      [...runAfter.querySelectorAll<HTMLElement>('.tool-card-step')].map(
+        (step) => step.dataset['stepMessageId'],
+      ),
+      ids,
+    )
+    const trail = qsRequired(memberEl, '.message-body > .message-reasoning')
+    assert.equal(
+      trail.querySelector('.message-reasoning-text')?.textContent.trim(),
+      'Double-checking the oracle output.',
+    )
+    assert.equal(trail.querySelector('.message-reasoning-title')?.textContent, 'Reasoned')
   })
 
   it('leaves an ordinary single-message turn on the per-message rollup', () => {

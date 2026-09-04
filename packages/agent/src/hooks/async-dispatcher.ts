@@ -17,7 +17,7 @@
 // process or a display.
 import type { HookEventName } from './canonical-events.ts'
 import type { TurnTreeId } from './turn-tree.ts'
-import { errorMessage } from '../internal-utils.ts'
+import { errorMessage } from '@copse/std/errors.ts'
 
 /** Default per-thread concurrency cap (decision 13, "~8/thread"). */
 export const DEFAULT_ASYNC_CONCURRENCY_CAP = 8

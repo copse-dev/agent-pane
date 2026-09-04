@@ -247,7 +247,9 @@ export function attachBrowserGuestContextMenu(contents: WebContents): void {
         contents.copyImageAt(x, y)
       },
       writeClipboardText: (text) => {
-        clipboard.writeText(text)
+        // Electron 44 aligned `clipboard` with the W3C Clipboard API: writeText
+        // now returns a Promise. A failed write is not actionable here.
+        void clipboard.writeText(text).catch(() => {})
       },
       openTab: (url) => {
         getMainWindow()?.webContents.send('browser:open-tab', url)

@@ -2308,9 +2308,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   /**
    * A bubble that gains visible prose leaves the run it had joined — prose is a
    * run boundary. Rare (it takes the mid-sentence continuation heuristic landing
-   * on a bubble that so far had only tools), but without this the old anchor
-   * would keep showing a step for a message that has moved on, and the message
-   * itself would show none of its tools.
+   * on a bubble that so far had only tools or reasoning), but without this the
+   * old anchor would keep showing a step for a message that has moved on, and
+   * the message itself would show none of its tools or its reasoning trail.
    */
   function resyncRunMembership(thread: Thread | undefined, msgId: string): void {
     const staleStep = list.querySelector<HTMLElement>(
@@ -2328,6 +2328,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       ...(anchorRun ? { run: anchorRun, liveStepId: liveStepMessageId(thread) } : {}),
     })
     refreshToolCards(msgId)
+    // The step that held this message's reasoning is gone with the repaint
+    // above. Unless the message now anchors a run of its own (where the trail
+    // lives on its step again), hand the trail back to its bubble.
+    const msg = thread?.messages.find((m) => m.id === msgId)
+    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
+    if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return
+    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
   }
 
   /**
@@ -2417,6 +2424,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     hydrateRemoteArtifactImages(list, api)
     const run = multiStepRunFor(thread, msgId)
     // Re-render any tool cards this message already carries (restored threads).
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     renderToolCards(msgEl, msg.toolCalls ?? [], {
       ...messageToolCardOpts(msg),
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
@@ -2885,20 +2893,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl, msg.content, true, api)
         // Answer started — disclosure flips to past tense even while tokens stream.
-        if (msg.content.trim()) {
-          msgEl?.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
+        if (msgEl && msg.content.trim()) {
+          const trails = msgEl.querySelectorAll<HTMLDetailsElement>('.message-reasoning')
+          trails.forEach((details) => {
             setReasoningDisclosureTitle(details, false)
           })
-        }
-        // Tools with nowhere to render mean this bubble's run membership just
-        // changed under it — the cheap `.some` is false on every ordinary
-        // text-only chunk, so the DOM query stays off the streaming path.
-        if (
-          msgEl &&
-          msg.toolCalls.some((tc) => !tc.subagent) &&
-          !msgEl.querySelector('.tool-card')
-        ) {
-          resyncRunMembership(thread, mid)
+          // Tools or reasoning with nowhere to render on this bubble mean it is
+          // still drawn as an absorbed run member — its step lives on the
+          // anchor — and the prose that just landed is a run boundary. The
+          // `.some` is false on every ordinary text-only chunk and the trail
+          // lookup is already paid above, so the extra DOM query stays off the
+          // streaming path.
+          const absorbed =
+            (msg.toolCalls.some((tc) => !tc.subagent) && !msgEl.querySelector('.tool-card')) ||
+            (Boolean(msg.reasoning?.trim()) && trails.length === 0)
+          if (absorbed) resyncRunMembership(thread, mid)
         }
         scrollToBottom()
       }
@@ -2948,6 +2957,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         })
       }
       if (msg?.role === 'assistant' && msg.content.trim()) {
+        // The settled segment has prose, so it cannot still be a run member —
+        // release it from any anchor that absorbed it while it streamed.
+        resyncRunMembership(thread, mid)
         const body = msgEl?.querySelector<HTMLElement>('.message-body')
         if (body && !body.querySelector('.msg-copy')) attachCopyButton(body, mid, store)
         // Answer is in: tuck a body-level reasoning trail away unless the user

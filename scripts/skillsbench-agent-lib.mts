@@ -1,11 +1,11 @@
 import { createInterface } from 'node:readline'
 import { BenchTranscript } from './lib/bench-transcript.mts'
-import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
-import { MAX_STREAM_OUTPUT_TOKENS } from '../packages/agent/src/agent-loop-limits.ts'
+import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
+import { MAX_STREAM_OUTPUT_TOKENS } from '@copse/agent/agent-loop-limits.ts'
 import type {
   ReasoningCheckpointPolicy,
   ReasoningCheckpointRecord,
-} from '../packages/agent/src/reasoning-circle-detector.ts'
+} from '@copse/agent/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import type { LLMTool } from '@copse/llm/wire-types.ts'
