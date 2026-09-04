@@ -1,8 +1,9 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { getThreadById, setThreadTitle } from '@shared/store/thread-helpers.ts'
-import type { Message } from '@shared/types'
+import type { Message, Thread } from '@shared/types'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { queuedMessageIds } from './message-queue.ts'
 
 // Threads with a suggestion in flight, so the two call sites (first text chunk,
 // first tool call) of a turn don't both fire the same pass.
@@ -15,6 +16,21 @@ const inFlight = new Set<string>()
  * so the array length is also the lifetime cap on model calls per thread.
  */
 const PASS_THRESHOLDS = [1, 3, 8]
+
+/**
+ * The messages that count towards naming: what the user actually asked for.
+ * Hook nudges and machine continuations share the `user` role for the LLM's
+ * benefit but carry an `origin`; a "continue" from a stop hook says nothing
+ * about the thread's goal and must not advance a pass. A still-queued follow-up
+ * is likewise not part of the conversation yet — it renders as a user bubble
+ * before it dispatches — so it waits until it leaves the pending queue.
+ */
+function namingMessages(thread: Thread): Message[] {
+  const queued = queuedMessageIds(thread)
+  return thread.messages.filter(
+    (m) => m.role === 'user' && !m.origin && !queued.has(m.id) && m.content.trim(),
+  )
+}
 
 function firstWords(text: string, n = 6): string {
   return text.split(/\s+/).slice(0, n).join(' ').slice(0, 60) || 'New Thread'
@@ -53,7 +69,7 @@ export function maybeNameThread(store: AppStore, api: ApiClient, threadId: strin
   if (passes === 0 && thread.title !== 'New Thread') return
   const threshold = PASS_THRESHOLDS[passes]
   if (threshold === undefined) return
-  const userMessages = thread.messages.filter((m) => m.role === 'user' && m.content.trim())
+  const userMessages = namingMessages(thread)
   const first = userMessages[0]
   if (!first || userMessages.length < threshold) return
   const titleBefore = thread.title

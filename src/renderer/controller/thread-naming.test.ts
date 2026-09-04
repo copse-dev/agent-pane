@@ -232,3 +232,127 @@ test('a failed re-name keeps the title it already had', async () => {
   assert.equal(requireThread(store, 't-keep').title, 'Add Login Button')
   assert.equal(requireThread(store, 't-keep').autoTitleCount, 2)
 })
+
+function hookMessage(content: string): Message {
+  return { ...userMessage(content), origin: { kind: 'hook', hookId: 'stop-nudge', event: 'stop' } }
+}
+
+function addMessages(store: AppStore, threadId: string, messages: Message[]): void {
+  const { threads } = store.getState()
+  store.setState({
+    threads: threads.map((t) =>
+      t.id === threadId ? { ...t, messages: [...t.messages, ...messages] } : t,
+    ),
+  })
+}
+
+function setPendingMessages(store: AppStore, threadId: string, messages: Message[]): void {
+  const { threads } = store.getState()
+  store.setState({
+    threads: threads.map((t) =>
+      t.id === threadId
+        ? {
+            ...t,
+            pendingMessages: messages.map((m) => ({
+              messageId: m.id,
+              payload: { content: m.content },
+              createdAt: 1,
+            })),
+          }
+        : t,
+    ),
+  })
+}
+
+test('the text-chunk and tool-call call sites of one turn fire a single pass', async () => {
+  const store = createStore({
+    threads: [newThread('t-pair', [userMessage('Add a login button')])],
+    activeThreadId: 't-pair',
+  })
+  const { api, titleCalls } = apiWithTitle(async () => 'Add Login Button')
+
+  // agent.ts calls on the first visible text and again on the first tool call;
+  // both can land before the suggestion resolves.
+  maybeNameThread(store, api, 't-pair')
+  maybeNameThread(store, api, 't-pair')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.deepEqual(titleCalls, ['Add a login button'])
+  assert.equal(requireThread(store, 't-pair').autoTitleCount, 1)
+})
+
+test('a thread that jumps past a threshold still runs the pass it skipped over', async () => {
+  const store = createStore({
+    threads: [newThread('t-jump', [userMessage('Start')])],
+    activeThreadId: 't-jump',
+  })
+  let suggestion = 0
+  const { api, titleCalls } = apiWithTitle(async () => {
+    suggestion += 1
+    return `Title ${String(suggestion)}`
+  })
+
+  maybeNameThread(store, api, 't-jump')
+  await new Promise((r) => setTimeout(r, 0))
+  // Five user messages: past the second threshold (3) but short of the third (8).
+  addUserMessages(store, 't-jump', ['Two', 'Three', 'Four', 'Five'])
+  maybeNameThread(store, api, 't-jump')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(titleCalls.length, 2)
+  assert.equal(requireThread(store, 't-jump').autoTitleCount, 2)
+  assert.equal(requireThread(store, 't-jump').title, 'Title 2')
+
+  // The third pass waits for the thread to actually reach its own threshold.
+  maybeNameThread(store, api, 't-jump')
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(titleCalls.length, 2)
+})
+
+test('hook-originated user messages neither advance a pass nor feed the model', async () => {
+  const store = createStore({
+    threads: [newThread('t-hook', [userMessage('Add a login button')])],
+    activeThreadId: 't-hook',
+  })
+  const { api, titleCalls } = apiWithTitle(async () => 'Add Login Button')
+
+  maybeNameThread(store, api, 't-hook')
+  await new Promise((r) => setTimeout(r, 0))
+  // Two stop-hook nudges would make three `user` messages, but say nothing about
+  // the thread's goal.
+  addMessages(store, 't-hook', [hookMessage('continue'), hookMessage('continue')])
+  maybeNameThread(store, api, 't-hook')
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(titleCalls.length, 1)
+
+  addUserMessages(store, 't-hook', ['Now the signup form', 'And password reset'])
+  maybeNameThread(store, api, 't-hook')
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(titleCalls.length, 2)
+  assert.equal(titleCalls[1], 'Add a login button\n\nNow the signup form\n\nAnd password reset')
+})
+
+test('queued follow-ups only count once they leave the pending queue', async () => {
+  const store = createStore({
+    threads: [newThread('t-queued', [userMessage('Add a login button')])],
+    activeThreadId: 't-queued',
+  })
+  const { api, titleCalls } = apiWithTitle(async () => 'Add Login Button')
+
+  maybeNameThread(store, api, 't-queued')
+  await new Promise((r) => setTimeout(r, 0))
+  // Queued follow-ups render as user bubbles before they dispatch.
+  const queued = [userMessage('Then the signup form'), userMessage('Then password reset')]
+  addMessages(store, 't-queued', queued)
+  setPendingMessages(store, 't-queued', queued)
+  maybeNameThread(store, api, 't-queued')
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(titleCalls.length, 1)
+
+  // Dispatched: the same messages now count towards the next pass.
+  setPendingMessages(store, 't-queued', [])
+  maybeNameThread(store, api, 't-queued')
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(titleCalls.length, 2)
+  assert.equal(titleCalls[1], 'Add a login button\n\nThen the signup form\n\nThen password reset')
+})
