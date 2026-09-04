@@ -260,15 +260,27 @@ describe('read_terminal gate', () => {
       assert.equal(prompts.length, 1)
     })
 
-    it('tells the user how much of the snapshot was actually screened', async () => {
+    it('tells the user how many lines the model actually saw whole', async () => {
       // 200 lines of 80 chars + newline: the window holds 74 whole lines plus
-      // the tail of a 75th, which the model partly sees and so counts as screened.
+      // six characters of a 75th. The model saw only a scrap of that one, so
+      // it is not reported as screened.
       await ensureTerminalReadPermitted(null, 'Build', scrollback(200))
 
       const body = prompts[0]?.body ?? ''
       assert.match(body, /"Build" shell/)
       assert.match(body, /larger than the safety model screens/)
-      assert.match(body, /only the most recent 75 of its 200 lines were screened/)
+      assert.match(body, /only the most recent 74 of its 200 lines were fully screened/)
+    })
+
+    it('counts a single whole line in the singular', async () => {
+      const text = 'hidden-prefix' + 'V\n' + 'y'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS - 2)
+
+      await ensureTerminalReadPermitted(null, 'Build', text)
+
+      assert.match(
+        prompts[0]?.body ?? '',
+        /only the most recent 1 of its 2 lines was fully screened/,
+      )
     })
 
     it('shares it once the user approves', async () => {

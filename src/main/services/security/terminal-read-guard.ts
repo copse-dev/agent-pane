@@ -151,15 +151,19 @@ type TerminalSnapshotClassifier = (
 // a durable grant would outlive the shell content the user actually looked at.
 const rememberedThreads = new Set<string>()
 
-/** User-facing reason for a snapshot the model was never shown all of. */
+/**
+ * User-facing reason for a snapshot the model was never shown all of. Only
+ * lines the model saw whole are counted as screened: a line cut by the window
+ * boundary is neither.
+ */
 function describeUnscreened(window: TerminalReadScreenWindow): string {
-  if (window.unscreenedLines === 0) {
+  const { screenedLines, totalLines } = window
+  if (screenedLines === 0) {
     return 'It is larger than the safety model screens, so part of it was not screened.'
   }
-  const screenedLines = window.totalLines - window.unscreenedLines
   return (
     `It is larger than the safety model screens: only the most recent ${String(screenedLines)} ` +
-    `of its ${String(window.totalLines)} lines were screened.`
+    `of its ${String(totalLines)} lines ${screenedLines === 1 ? 'was' : 'were'} fully screened.`
   )
 }
 

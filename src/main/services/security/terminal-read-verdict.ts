@@ -46,6 +46,12 @@ export interface TerminalReadScreenWindow {
    * user-facing explanation.
    */
   unscreenedLines: number
+  /**
+   * Lines whose content lies entirely inside the window — the ones a verdict
+   * covers in full. A line cut by the boundary is in neither count, so
+   * `unscreenedLines + screenedLines` is `totalLines` less that line, if any.
+   */
+  screenedLines: number
   /** Lines in the whole snapshot. */
   totalLines: number
 }
@@ -61,12 +67,23 @@ export function terminalReadScreenWindow(text: string): TerminalReadScreenWindow
   const totalLines = text.length === 0 ? 0 : countNewlines(text) + 1
   const unscreenedChars = Math.max(0, text.length - TERMINAL_READ_SCREEN_MAX_CHARS)
   if (unscreenedChars === 0) {
-    return { screened: text, unscreenedChars: 0, unscreenedLines: 0, totalLines }
+    return {
+      screened: text,
+      unscreenedChars: 0,
+      unscreenedLines: 0,
+      screenedLines: totalLines,
+      totalLines,
+    }
   }
+  const unscreenedLines = countNewlines(text.slice(0, unscreenedChars + 1))
+  // The boundary cuts a line when the first screened character continues a
+  // line that began above the window: content on both sides, whole on neither.
+  const boundaryCutsLine = text[unscreenedChars] !== '\n' && text[unscreenedChars - 1] !== '\n'
   return {
     screened: text.slice(-TERMINAL_READ_SCREEN_MAX_CHARS),
     unscreenedChars,
-    unscreenedLines: countNewlines(text.slice(0, unscreenedChars + 1)),
+    unscreenedLines,
+    screenedLines: totalLines - unscreenedLines - (boundaryCutsLine ? 1 : 0),
     totalLines,
   }
 }
