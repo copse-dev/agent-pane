@@ -9,9 +9,10 @@ every published entry.
 ## Unreleased
 
 - The renderer ↔ main API surface (`ApiClient`) is now a versioned protocol:
-  `schemas/api-protocol.schema.json` is generated from the contract and the
-  preload bindings (`pnpm run gen:api-protocol`), a unit test fails when the
-  committed schema drifts from the sources, and the sidecar WebSocket handshake
+  a channel manifest (`schemas/api-protocol.manifest.json`) is generated from
+  the contract and the preload bindings (`pnpm run gen:api-protocol`) and the
+  full JSON Schema is emitted by the build, a unit test fails when the
+  committed manifest drifts from the sources, and the sidecar WebSocket handshake
   exchanges `API_PROTOCOL_VERSION` and refuses a mismatched peer. The preload is
   type-checked against `ApiClient` for the first time. First step of the
   client/server split (#2312); see `docs/api-protocol.md`.

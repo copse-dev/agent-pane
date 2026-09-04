@@ -4,9 +4,9 @@
  * The renderer only ever talks to the main process through `ApiClient`
  * (`src/preload/api.d.ts`); the preload binds each method to an IPC channel and
  * the sidecar's WebSocket bridge carries the same channels over a socket. That
- * surface is frozen as a generated, published JSON Schema
- * (`schemas/api-protocol.schema.json`, `npm run gen:api-protocol`) and this is
- * the version stamped into it.
+ * surface is frozen as a generated protocol: a committed channel manifest
+ * (`schemas/api-protocol.manifest.json`, `pnpm run gen:api-protocol`) and the
+ * full JSON Schema the build emits; this is the version stamped into both.
  *
  * Bump it only for a backward-incompatible change to the surface: a channel or
  * method removed or renamed, an argument added in a non-trailing position or

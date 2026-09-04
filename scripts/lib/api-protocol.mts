@@ -14,9 +14,12 @@
 //                  send / event channel, the argument tuple and result schema;
 //   - `$defs`    — the named types the surface references, as JSON Schema.
 //
-// The published copy (`schemas/api-protocol.schema.json`) is what a transport
-// or an external client codes against; `scripts/lib/api-protocol.test.ts`
-// pins it so the surface only changes when someone regenerates and commits.
+// Two outputs: the committed manifest (`schemas/api-protocol.manifest.json`,
+// channels + binding member + arity — the reviewable part) and the full JSON
+// Schema emitted by the build (`dist/schemas/api-protocol.schema.json`) for a
+// transport or external client to code against. `scripts/lib/api-protocol.test.ts`
+// pins the manifest so the surface only changes when someone regenerates and
+// commits, and `gen-api-protocol --compare-ref` classifies full-shape changes.
 //
 // Why generate from `api.d.ts` + the preload rather than `src/shared/types/ipc.ts`:
 // the hand-written `IpcInvokeMap` / `IpcEventMap` in `ipc.ts` cover fewer than
@@ -26,8 +29,10 @@
 // a literal `ipcMain.handle` in `src/main` (the test checks both).
 import ts from 'typescript'
 import { z } from 'zod'
-import { readFileSync } from 'node:fs'
-import { basename, dirname, resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join, resolve } from 'node:path'
 import { isRecord } from '../../src/shared/unknown-value.mts'
 
 // ── Public document shape ────────────────────────────────────────────────────
@@ -69,6 +74,24 @@ const apiChannelSchema = z.object({
 })
 export type ApiChannel = z.infer<typeof apiChannelSchema>
 
+const manifestChannelSchema = z.object({
+  /** The `ApiClient` member that binds this channel, as `namespace.method`. */
+  api: z.string(),
+  /** Argument arity as `[min, max]`; `max` is null for a rest parameter. */
+  args: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative().nullable()]),
+})
+
+const apiProtocolManifestSchema = z.object({
+  $comment: z.string(),
+  version: z.number().int().positive(),
+  channels: z.object({
+    invoke: z.record(z.string(), manifestChannelSchema),
+    send: z.record(z.string(), manifestChannelSchema),
+    event: z.record(z.string(), manifestChannelSchema),
+  }),
+})
+export type ApiProtocolManifest = z.infer<typeof apiProtocolManifestSchema>
+
 const apiProtocolDocumentSchema = z.object({
   $schema: z.string(),
   title: z.string(),
@@ -84,7 +107,16 @@ const apiProtocolDocumentSchema = z.object({
 })
 export type ApiProtocolDocument = z.infer<typeof apiProtocolDocumentSchema>
 
-export const API_PROTOCOL_SCHEMA_PATH = 'schemas/api-protocol.schema.json'
+/**
+ * The committed, reviewable form of the protocol: every channel with the facade
+ * member that binds it and its argument arity. Small enough that a rename or
+ * an arity change is a one-line diff. The full JSON Schema (types included) is
+ * a build output, see {@link API_PROTOCOL_SCHEMA_BUILD_PATH}.
+ */
+export const API_PROTOCOL_MANIFEST_PATH = 'schemas/api-protocol.manifest.json'
+
+/** Where `scripts/build.mts` (and `gen-api-protocol --schema`) emit the full schema. */
+export const API_PROTOCOL_SCHEMA_BUILD_PATH = 'dist/schemas/api-protocol.schema.json'
 
 export interface GenerateOptions {
   /** Repository root; defaults to the current working directory. */
@@ -162,7 +194,11 @@ function typeText(ctx: SchemaContext, type: ts.Type): string {
 function isLibDeclaration(ctx: SchemaContext, decl: ts.Declaration): boolean {
   const file = decl.getSourceFile()
   if (ctx.program.isSourceFileDefaultLibrary(file)) return true
-  return !file.fileName.startsWith(ctx.root)
+  // Third-party declarations live under node_modules. Workspace packages
+  // (`@copse/*`) are symlinked there but resolve to their real `packages/`
+  // path, so they count as project types — also when generating from a
+  // temporary worktree whose node_modules is borrowed (generateApiProtocolAtRef).
+  return file.fileName.includes('/node_modules/')
 }
 
 function symbolDescription(symbol: ts.Symbol, checker: ts.TypeChecker): string | undefined {
@@ -856,6 +892,80 @@ export function serializeApiProtocol(doc: ApiProtocolDocument): string {
   return `${JSON.stringify(doc, null, 2)}\n`
 }
 
+/** The committed manifest: channels, binding members, and argument arity only. */
+export function manifestOf(doc: ApiProtocolDocument): ApiProtocolManifest {
+  const arity = (args: JsonSchema): [number, number | null] => {
+    const min = typeof args['minItems'] === 'number' ? args['minItems'] : 0
+    const max = typeof args['maxItems'] === 'number' ? args['maxItems'] : null
+    return [min, max]
+  }
+  const section = (
+    entries: Record<string, ApiChannel>,
+  ): ApiProtocolManifest['channels']['invoke'] =>
+    Object.fromEntries(
+      Object.entries(entries).map(([channel, entry]) => [
+        channel,
+        { api: entry['x-api'], args: arity(entry.args) },
+      ]),
+    )
+  return {
+    $comment:
+      'Generated by scripts/gen-api-protocol.mts from ApiClient (src/preload/api.d.ts) and the ' +
+      'preload bindings; do not edit by hand. The full JSON Schema is a build output ' +
+      `(${API_PROTOCOL_SCHEMA_BUILD_PATH}). See docs/api-protocol.md.`,
+    version: doc.version,
+    channels: {
+      invoke: section(doc.channels.invoke),
+      send: section(doc.channels.send),
+      event: section(doc.channels.event),
+    },
+  }
+}
+
+export function serializeApiProtocolManifest(manifest: ApiProtocolManifest): string {
+  return `${JSON.stringify(manifest, null, 2)}\n`
+}
+
+export function parseApiProtocolManifest(text: string): ApiProtocolManifest {
+  const parsed = apiProtocolManifestSchema.safeParse(JSON.parse(text))
+  if (!parsed.success) throw new Error(`not an API protocol manifest: ${parsed.error.message}`)
+  return parsed.data
+}
+
+/**
+ * Generate the protocol as it was at a git ref, by checking the ref out into a
+ * temporary worktree that borrows this checkout's `node_modules`. Lets the
+ * compatibility check compare full shapes without a committed copy of the
+ * schema. Package types resolve through the borrowed `node_modules`, so a
+ * `@copse/*` type is read from this checkout rather than the ref's; the
+ * classification inlines `$ref`s and compares shapes, so that only matters if
+ * such a type changed between the two, which the diff of that package shows.
+ */
+export function generateApiProtocolAtRef(
+  ref: string,
+  version: number,
+  root = '.',
+): ApiProtocolDocument {
+  const base = resolve(root)
+  const worktree = mkdtempSync(join(tmpdir(), 'copse-api-protocol-'))
+  try {
+    execFileSync('git', ['worktree', 'add', '--detach', '--quiet', worktree, ref], {
+      cwd: base,
+      stdio: 'pipe',
+    })
+    symlinkSync(join(base, 'node_modules'), join(worktree, 'node_modules'), 'dir')
+    return generateApiProtocol({ root: worktree, version })
+  } finally {
+    try {
+      execFileSync('git', ['worktree', 'remove', '--force', worktree], { cwd: base, stdio: 'pipe' })
+    } catch {
+      // The worktree directory is removed below either way; git prunes the
+      // stale registration on its next `worktree prune`.
+    }
+    rmSync(worktree, { recursive: true, force: true })
+  }
+}
+
 /** Parse a serialized document, validating the fields the tooling reads. */
 export function parseApiProtocol(text: string): ApiProtocolDocument {
   const parsed = apiProtocolDocumentSchema.safeParse(JSON.parse(text))
@@ -872,7 +982,10 @@ export interface ApiProtocolDiff {
   additive: string[]
 }
 
-/** Inline every `$ref` so two documents compare by shape, not by def naming. */
+/**
+ * Inline every `$ref` so two documents compare by shape, not by def naming, and
+ * drop `description`s: a doc comment is not part of the wire contract.
+ */
 function resolveRefs(doc: ApiProtocolDocument, value: unknown, seen: string[]): unknown {
   if (Array.isArray(value)) return value.map((entry: unknown) => resolveRefs(doc, entry, seen))
   if (!isRecord(value)) return value
@@ -883,7 +996,9 @@ function resolveRefs(doc: ApiProtocolDocument, value: unknown, seen: string[]): 
     return resolveRefs(doc, doc.$defs[name] ?? { 'x-missing-def': name }, [...seen, name])
   }
   return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [key, resolveRefs(doc, entry, seen)]),
+    Object.entries(value)
+      .filter(([key]) => key !== 'description')
+      .map(([key, entry]) => [key, resolveRefs(doc, entry, seen)]),
   )
 }
 

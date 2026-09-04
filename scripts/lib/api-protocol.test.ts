@@ -4,12 +4,15 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { API_PROTOCOL_VERSION } from '../../src/shared/api-protocol.mts'
 import {
-  API_PROTOCOL_SCHEMA_PATH,
+  API_PROTOCOL_MANIFEST_PATH,
   analyzePreloadSource,
   compareApiProtocol,
   generateApiProtocol,
+  manifestOf,
   parseApiProtocol,
+  parseApiProtocolManifest,
   serializeApiProtocol,
+  serializeApiProtocolManifest,
   type ApiProtocolDocument,
   type JsonSchema,
 } from './api-protocol.mts'
@@ -17,15 +20,19 @@ import {
 /**
  * Invariants for the renderer ↔ main API protocol (issue #2312, step 1).
  *
- * The published `schemas/api-protocol.schema.json` is the frozen surface. These
- * tests make it change only deliberately: the committed file must equal what
- * the sources generate, every facade method must be bound to a channel, every
- * channel must have a real main-process endpoint, and the hand-written
- * `src/shared/types/ipc.ts` maps (a partial, older description of the same
- * surface) must not name channels the protocol does not have.
+ * The committed `schemas/api-protocol.manifest.json` is the frozen surface.
+ * These tests make it change only deliberately: the manifest must equal what
+ * the sources generate, every facade method must be bound to a channel that
+ * follows the naming convention, every channel must have a real main-process
+ * endpoint, and the hand-written `src/shared/types/ipc.ts` maps (a partial,
+ * older description of the same surface) must not name channels the protocol
+ * does not have. The invariants run over the freshly generated document, which
+ * carries the types the manifest leaves out.
  */
 const ROOT = resolve('.')
-const committed = parseApiProtocol(readFileSync(resolve(ROOT, API_PROTOCOL_SCHEMA_PATH), 'utf8'))
+const generated = generateApiProtocol({ version: API_PROTOCOL_VERSION })
+const committed = generated
+const manifestOnDisk = readFileSync(resolve(ROOT, API_PROTOCOL_MANIFEST_PATH), 'utf8')
 
 /**
  * The channel a facade member is expected to bind: `namespace:method`, or for
@@ -70,23 +77,47 @@ function mainProcessSources(): string {
   return chunks.join('\n')
 }
 
-describe('API protocol schema (schemas/api-protocol.schema.json)', () => {
+describe('API protocol manifest (schemas/api-protocol.manifest.json)', () => {
   it('matches what the sources generate (no drift)', () => {
     // Regenerate with `pnpm run gen:api-protocol` after changing ApiClient or
-    // the preload, and read the diff: a removed or retyped entry is a breaking
-    // change and needs API_PROTOCOL_VERSION bumped (docs/api-protocol.md).
-    const generated = serializeApiProtocol(generateApiProtocol({ version: API_PROTOCOL_VERSION }))
-    const onDisk = readFileSync(resolve(ROOT, API_PROTOCOL_SCHEMA_PATH), 'utf8')
+    // the preload, and read the diff: a removed or renamed channel is a
+    // breaking change and needs API_PROTOCOL_VERSION bumped
+    // (docs/api-protocol.md). Shape changes to a channel's types do not show
+    // here; `gen-api-protocol --compare-ref` classifies those.
     assert.equal(
-      onDisk,
-      generated,
-      `${API_PROTOCOL_SCHEMA_PATH} is stale — run \`pnpm run gen:api-protocol\` and commit`,
+      manifestOnDisk,
+      serializeApiProtocolManifest(manifestOf(generated)),
+      `${API_PROTOCOL_MANIFEST_PATH} is stale — run \`pnpm run gen:api-protocol\` and commit`,
     )
   })
 
   it('is stamped with the protocol version the runtime exchanges', () => {
+    assert.equal(parseApiProtocolManifest(manifestOnDisk).version, API_PROTOCOL_VERSION)
     assert.equal(committed.version, API_PROTOCOL_VERSION)
     assert.equal(committed.$schema, 'https://json-schema.org/draft/2020-12/schema')
+  })
+
+  it('carries every channel with its binding member and arity', () => {
+    const manifest = manifestOf(committed)
+    for (const kind of ['invoke', 'send', 'event'] as const) {
+      assert.deepEqual(
+        Object.keys(manifest.channels[kind]),
+        Object.keys(committed.channels[kind]),
+        `${kind} channels differ between the manifest and the schema`,
+      )
+      for (const [channel, entry] of Object.entries(manifest.channels[kind])) {
+        const full = committed.channels[kind][channel]
+        assert.equal(entry.api, full?.['x-api'])
+        assert.equal(entry.args[0], full?.args['minItems'])
+        assert.equal(entry.args[1], full?.args['maxItems'] ?? null)
+      }
+    }
+    assert.deepEqual(
+      parseApiProtocolManifest(serializeApiProtocolManifest(manifest)),
+      manifest,
+      'manifest does not round-trip',
+    )
+    assert.throws(() => parseApiProtocolManifest('{"version":2}'), /not an API protocol manifest/)
   })
 
   it('binds every ApiClient method to exactly one namespaced channel', () => {

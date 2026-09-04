@@ -1,31 +1,36 @@
-// Generate the published JSON Schema for the renderer ↔ main API protocol
-// (issue #2312, step 1) from its sources — the `ApiClient` interface in
-// `src/preload/api.d.ts` and the channel bindings in `src/preload/index.ts` —
-// and write `schemas/api-protocol.schema.json`. See `scripts/lib/api-protocol.mts`
-// for what the document contains and `docs/api-protocol.md` for how to change
-// the surface deliberately.
+// Generate the renderer ↔ main API protocol (issue #2312, step 1) from its
+// sources — the `ApiClient` interface in `src/preload/api.d.ts` and the channel
+// bindings in `src/preload/index.ts`. Writes the committed manifest
+// (`schemas/api-protocol.manifest.json`); the full JSON Schema is a build output.
+// See `scripts/lib/api-protocol.mts` for what the documents contain and
+// `docs/api-protocol.md` for how to change the surface deliberately.
 //
 // Usage:
-//   node scripts/gen-api-protocol.mts                       # write the schema file
-//   node scripts/gen-api-protocol.mts --check               # fail if the file is stale
+//   node scripts/gen-api-protocol.mts                       # write the manifest
+//   node scripts/gen-api-protocol.mts --check               # fail if the manifest is stale
+//   node scripts/gen-api-protocol.mts --schema [path]       # also write the full schema
+//                                                           # (default: dist/schemas/…)
 //   node scripts/gen-api-protocol.mts --compare-ref <ref>   # classify the change from
-//                                                           # the schema at a git ref
+//                                                           # the protocol at a git ref
 import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { API_PROTOCOL_VERSION } from '../src/shared/api-protocol.mts'
 import {
-  API_PROTOCOL_SCHEMA_PATH,
+  API_PROTOCOL_MANIFEST_PATH,
+  API_PROTOCOL_SCHEMA_BUILD_PATH,
   compareApiProtocol,
   generateApiProtocol,
-  parseApiProtocol,
+  generateApiProtocolAtRef,
+  manifestOf,
   serializeApiProtocol,
+  serializeApiProtocolManifest,
 } from './lib/api-protocol.mts'
 
-const schemaPath = resolve(API_PROTOCOL_SCHEMA_PATH)
+const manifestPath = resolve(API_PROTOCOL_MANIFEST_PATH)
 const args = process.argv.slice(2)
 const doc = generateApiProtocol({ version: API_PROTOCOL_VERSION })
-const serialized = serializeApiProtocol(doc)
+const manifest = serializeApiProtocolManifest(manifestOf(doc))
 
 const compareIndex = args.indexOf('--compare-ref')
 if (compareIndex !== -1) {
@@ -34,9 +39,7 @@ if (compareIndex !== -1) {
     console.error('--compare-ref needs a git ref')
     process.exit(2)
   }
-  const previous = parseApiProtocol(
-    execFileSync('git', ['show', `${ref}:${API_PROTOCOL_SCHEMA_PATH}`], { encoding: 'utf8' }),
-  )
+  const previous = generateApiProtocolAtRef(ref, versionAtRef(ref))
   const diff = compareApiProtocol(previous, doc)
   for (const line of diff.additive) console.log(`additive  ${line}`)
   for (const line of diff.breaking) console.log(`BREAKING  ${line}`)
@@ -58,25 +61,43 @@ if (compareIndex !== -1) {
 if (args.includes('--check')) {
   let current: string
   try {
-    current = readFileSync(schemaPath, 'utf8')
+    current = readFileSync(manifestPath, 'utf8')
   } catch {
     current = ''
   }
-  if (current !== serialized) {
+  if (current !== manifest) {
     console.error(
-      `${API_PROTOCOL_SCHEMA_PATH} is stale. Run \`pnpm run gen:api-protocol\` and commit.`,
+      `${API_PROTOCOL_MANIFEST_PATH} is stale. Run \`pnpm run gen:api-protocol\` and commit.`,
     )
     process.exit(1)
   }
-  console.log('api-protocol schema is up to date.')
+  console.log('api-protocol manifest is up to date.')
 } else {
-  writeFileSync(schemaPath, serialized, 'utf8')
+  writeFileSync(manifestPath, manifest, 'utf8')
   const invoke = Object.keys(doc.channels.invoke).length
   const send = Object.keys(doc.channels.send).length
   const event = Object.keys(doc.channels.event).length
-  const defs = Object.keys(doc.$defs).length
   console.log(
-    `Wrote ${schemaPath}: v${String(doc.version)}, ${String(invoke)} invoke + ${String(send)} send + ` +
-      `${String(event)} event channels, ${String(defs)} named types`,
+    `Wrote ${manifestPath}: v${String(doc.version)}, ${String(invoke)} invoke + ${String(send)} send + ` +
+      `${String(event)} event channels`,
   )
+}
+
+const schemaIndex = args.indexOf('--schema')
+if (schemaIndex !== -1) {
+  const next = args[schemaIndex + 1]
+  const out = resolve(next && !next.startsWith('--') ? next : API_PROTOCOL_SCHEMA_BUILD_PATH)
+  mkdirSync(dirname(out), { recursive: true })
+  writeFileSync(out, serializeApiProtocol(doc), 'utf8')
+  console.log(`Wrote ${out}: ${String(Object.keys(doc.$defs).length)} named types`)
+}
+
+/** The protocol version the sources at `ref` declared. */
+function versionAtRef(ref: string): number {
+  const source = execFileSync('git', ['show', `${ref}:src/shared/api-protocol.mts`], {
+    encoding: 'utf8',
+  })
+  const match = /API_PROTOCOL_VERSION = (\d+)/.exec(source)
+  if (!match?.[1]) throw new Error(`${ref}: cannot read API_PROTOCOL_VERSION`)
+  return Number(match[1])
 }
