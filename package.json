@@ -185,6 +185,7 @@
     "@copse/llm": "workspace:*",
     "@copse/plan-usage": "workspace:*",
     "@copse/plugin-sdk": "workspace:*",
+    "@copse/procwatch": "workspace:*",
     "@copse/shell-guard": "workspace:*",
     "@copse/std": "workspace:*",
     "@copse/thread-store": "workspace:*",
@@ -242,6 +243,6 @@
   },
   "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": ">=22.22.2"
+    "node": ">=24"
   }
 }

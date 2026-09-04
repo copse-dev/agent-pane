@@ -96,6 +96,20 @@ async function linkPrToThread(ref: GithubPrRef, context: ThreadExecutionContext)
   }
 }
 
+/**
+ * Tell the renderer a PR was just opened from this thread, so a pane showing
+ * the changes that went into it can follow the work through to the PR view.
+ *
+ * Deliberately not folded into the `threads:pr_refs` push above: that channel
+ * also carries the startup backfill, whose batches are indistinguishable from a
+ * live creation once they arrive, and only a genuinely new PR may be allowed to
+ * move a panel. Announced even when {@link linkPrToThread} failed — the PR pane
+ * loads from these coordinates, not from the thread's recorded refs.
+ */
+function announcePrCreated(ref: GithubPrRef, context: ThreadExecutionContext): void {
+  broadcastToAppWindows('threads:pr-created', context.projectId, context.threadId, ref)
+}
+
 export const ghCreatePrTool = defineTool({
   name: 'gh_pr_create',
   description:
@@ -176,10 +190,9 @@ export const ghCreatePrTool = defineTool({
     })
 
     if (result.ok && result.url && result.number !== undefined && context) {
-      await linkPrToThread(
-        { url: result.url, owner: targetOwner, repo: targetRepo, number: result.number },
-        context,
-      )
+      const ref = { url: result.url, owner: targetOwner, repo: targetRepo, number: result.number }
+      await linkPrToThread(ref, context)
+      announcePrCreated(ref, context)
     }
     return formatResult(result)
   },

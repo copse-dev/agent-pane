@@ -17,7 +17,7 @@ export function formatUnsandboxedPromptParts(command: string, reasons: string[])
   const detail = reasons.length ? reasons.join('; ') : 'sandbox restriction suspected'
   return {
     command,
-    bodyAdvice: `This command failed inside the macOS project sandbox (${detail}).`,
+    bodyAdvice: `This command failed inside the project sandbox (${detail}).`,
     bodyFooter: 'Allow running it once without sandbox restrictions?',
   }
 }

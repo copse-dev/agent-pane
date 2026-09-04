@@ -660,6 +660,26 @@ const api: ApiClient = {
         ipcRenderer.removeListener('threads:pr-refs', listener)
       }
     },
+    onPrCreated: (
+      handler: (
+        projectId: string,
+        threadId: string,
+        ref: import('@shared/git/github-pr-url.ts').GithubPrRef,
+      ) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        projectId: string,
+        threadId: string,
+        ref: import('@shared/git/github-pr-url.ts').GithubPrRef,
+      ): void => {
+        handler(projectId, threadId, ref)
+      }
+      ipcRenderer.on('threads:pr-created', listener)
+      return (): void => {
+        ipcRenderer.removeListener('threads:pr-created', listener)
+      }
+    },
     create: (projectId: string, thread: import('@shared/types').Thread) =>
       ipcRenderer.invoke('threads:create', projectId, thread),
     appendMessage: (

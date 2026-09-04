@@ -103,6 +103,10 @@ import {
   refreshHuggingFaceModels,
   HUGGINGFACE_SLUG,
 } from '../services/providers/extra-providers-store.ts'
+import {
+  invalidateOpenAiModelAvailability,
+  isOpenAiModelAvailable,
+} from '../services/providers/openai-model-availability.ts'
 import { resolveModelPricing } from '../services/providers/model-pricing-store.ts'
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
@@ -1324,6 +1328,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // renderer never offers a retry the process is not allowed to perform.
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
+    if (p === 'openai') invalidateOpenAiModelAvailability()
     if (p === 'cursor') invalidateCursorCloudModelsCache()
     // The live Intelligence Index feed caches its result (successes AND failures)
     // for hours, so a stored 403/empty would otherwise survive the user fixing
@@ -1345,6 +1350,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       cursor: await isProviderKeyUsable('cursor'),
       openrouter: await isProviderKeyUsable('openrouter'),
     }
+    // Astra rolls out by account. Do not offer a static picker row merely
+    // because an OpenAI key works — the account's model list is authoritative.
+    const openAiKey = resolveApiKey('openai')
+    available['openai:gpt-6-astra'] =
+      available['openai'] === true && typeof openAiKey === 'string'
+        ? await isOpenAiModelAvailable(openAiKey, 'gpt-6-astra')
+        : false
     for (const provider of getResolvedExtraProviders()) {
       // Local servers need no API key, so treat them as available; their models
       // only surface in the picker once the user fetches/saves them anyway.

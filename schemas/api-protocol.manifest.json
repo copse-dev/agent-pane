@@ -2009,6 +2009,13 @@
           1
         ]
       },
+      "threads:pr-created": {
+        "api": "threads.onPrCreated",
+        "args": [
+          3,
+          3
+        ]
+      },
       "threads:pr-refs": {
         "api": "threads.onPrRefs",
         "args": [

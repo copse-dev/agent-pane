@@ -597,7 +597,8 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         id: 'demo-approval-light-accent-request',
         title: 'Run outside sandbox?',
         body: 'npm install',
-        bodyAdvice: 'This command needs access the project sandbox blocks.',
+        bodyAdvice:
+          'The project sandbox would block this command:\n• Installs or updates packages, which downloads and runs code from the internet',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -629,7 +630,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
         bodyAdvice:
-          'This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).',
+          'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -638,7 +639,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
         bodyAdvice:
-          'This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).',
+          'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -647,7 +648,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
         bodyAdvice:
-          'This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).',
+          'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
