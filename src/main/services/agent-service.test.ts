@@ -341,6 +341,144 @@ describe('runAgent AgentHost decoupling', () => {
     }
   })
 
+  it('discovers nested instructions once per turn, notices activations, and re-walks after an AGENTS.md write', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-agent-nested-discovery-'))
+    await mkdir(join(root, 'packages', 'api'), { recursive: true })
+    await mkdir(join(root, 'packages', 'web'), { recursive: true })
+    await writeFile(join(root, 'packages', 'api', 'AGENTS.md'), 'API rules here.')
+    const registry = new ToolRegistry()
+    registry.register(
+      defineTool({
+        name: 'read_file',
+        description: 'Test read tool',
+        parameters: z.object({ path: z.string() }),
+        execute: () => Promise.resolve('contents'),
+      }),
+    )
+    registry.register(
+      defineTool({
+        name: 'write_file',
+        description: 'Test write tool',
+        parameters: z.object({ path: z.string(), content: z.string() }),
+        execute: async ({ path, content }) => {
+          await writeFile(join(root, path), content)
+          return 'File written.'
+        },
+      }),
+    )
+
+    const readTool = (
+      id: string,
+      path: string,
+    ): { type: 'tool_call'; toolCall: { id: string; name: string; args: { path: string } } } => ({
+      type: 'tool_call',
+      toolCall: { id, name: 'read_file', args: { path } },
+    })
+    let calls = 0
+    const provider: LLMProvider = {
+      stream: async function* (messages) {
+        calls += 1
+        const system = messages.find((message) => message.role === 'system')
+        assert.ok(system?.role === 'system')
+        switch (calls) {
+          case 1:
+            assert.doesNotMatch(system.content, /API rules here/)
+            yield readTool('read-api', 'packages/api/a.ts')
+            return
+          case 2:
+            assert.match(system.content, /API rules here/)
+            // Appears mid-turn without going through a tool: the turn's memo
+            // does not see it, so the next read must not activate it.
+            await writeFile(join(root, 'packages', 'web', 'AGENTS.md'), 'Web rules here.')
+            yield readTool('read-web-stale', 'packages/web/b.ts')
+            return
+          case 3:
+            assert.doesNotMatch(system.content, /Web rules here/)
+            yield {
+              type: 'tool_call' as const,
+              toolCall: {
+                id: 'write-web-agents',
+                name: 'write_file',
+                args: { path: 'packages/web/AGENTS.md', content: 'Web rules here.' },
+              },
+            }
+            return
+          case 4:
+            assert.doesNotMatch(system.content, /Web rules here/)
+            // A different path than the stale read: the loop skips a repeat of
+            // a recent call's exact arguments.
+            yield readTool('read-web-fresh', 'packages/web/c.ts')
+            return
+          default:
+            assert.match(system.content, /Web rules here/)
+            yield { type: 'text' as const, text: 'Done.' }
+        }
+      },
+    }
+    const received: StreamChunk[] = []
+    setDefaultPluginRegistry(new PluginRegistry())
+    await setSetting('subagentsEnabled', false)
+    await setSetting('skillsEnabled', false)
+
+    try {
+      await runWithWorkspaceTrust(root, true, () =>
+        runWithThreadExecutionContext(
+          {
+            projectId: 'project-nested-discovery',
+            threadId: 'thread-nested-discovery',
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () =>
+            runWithActiveRunIdentity('thread-nested-discovery', () =>
+              agentService.runAgent(
+                'thread-nested-discovery',
+                'Look around.',
+                [],
+                { emit: (_threadId, chunk) => received.push(chunk) },
+                registry,
+                {
+                  provider,
+                  contextWindow: 100_000,
+                  model: 'claude-sonnet-4-6',
+                  maxSteps: 8,
+                  maxLlmCalls: 8,
+                },
+              ),
+            ),
+        ),
+      )
+      assert.equal(calls, 5)
+
+      // One transcript line per activation, landing after that call's result —
+      // never between a tool call and its result, where it would strand the card.
+      const notices = received.flatMap((chunk, index) =>
+        chunk.type === 'text' && chunk.text.includes('Loaded directory-scoped instructions')
+          ? [{ index, text: chunk.text }]
+          : [],
+      )
+      assert.deepEqual(
+        notices.map((notice) => notice.text),
+        [
+          '_Loaded directory-scoped instructions from `packages/api/AGENTS.md`._\n\n',
+          '_Loaded directory-scoped instructions from `packages/web/AGENTS.md`._\n\n',
+        ],
+      )
+      const resultIndex = (toolCallId: string): number =>
+        received.findIndex(
+          (chunk) => chunk.type === 'tool_result' && chunk.toolCallId === toolCallId,
+        )
+      assert.ok(resultIndex('read-api') >= 0)
+      assert.ok(notices[0] && notices[0].index > resultIndex('read-api'))
+      assert.ok(notices[1] && notices[1].index > resultIndex('read-web-fresh'))
+    } finally {
+      setDefaultPluginRegistry(null)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('emits a structured terminal record with raw provider failure details', async () => {
     const received: StreamChunk[] = []
     const host: AgentHost<StreamChunk> = {
