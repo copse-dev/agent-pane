@@ -331,10 +331,11 @@ committed in the PR is still a secret.
 | **Foreign diff** (a contributor's PR)  | Execute in a container or VM only (B3); the process-scoped OS sandbox is not enough. | **Never execute.** Degrade to read-only lenses plus the challenger pass, and say so in the report.   |
 
 An OS sandbox (macOS ASRT, Linux bubblewrap) and an ephemeral container or VM are not the
-same strength. The process-scoped sandbox is sufficient for reviewing one's own
-changes, where the "attacker" already has a shell on the machine; a foreign diff gets a
-throwaway container or VM. B3 settles the one sub-question B1 left open: the OS sandbox is never enough for a
-foreign diff, and it ships first because own-tree review is Phase 0's whole scope.
+same strength. The process-scoped sandbox is sufficient for reviewing one's own changes,
+where the "attacker" already has a shell on the machine; a foreign diff gets a throwaway
+container or VM. B3 settles the one sub-question B1 left open: the OS sandbox is never
+enough for a foreign diff, and it ships first because own-tree review is Phase 0's whole
+scope.
 
 **Backend per shell.**
 
