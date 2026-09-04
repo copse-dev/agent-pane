@@ -99,17 +99,17 @@ would otherwise ask about.
   stream first-party and transcripts trustworthy (the [two-capability-tiers decision](./plans/hooks-and-feature-packs.md#decisions-log),
   `command-hooks-cannot-emit-feature-chunks.test.ts`). The contract lives in
   `packages/agent/src/hooks/command-executor.ts`; the host runner that actually spawns is
-  `src/main/services/hooks/command-hook-runner.ts`.
+  `packages/hooks-dialects/src/command-hook-runner.ts`.
 
 ### Dialects and adapters (source path = format)
 
 Dialect is determined by **source path**, not prefixes or content sniffing (the [dialect-by-source-path decision](./plans/hooks-and-feature-packs.md#decisions-log)):
 
-| Source path                         | Dialect | Adapter                                     |
-| ----------------------------------- | ------- | ------------------------------------------- |
-| `~/.cursor/hooks.json` + project    | Cursor  | `src/main/services/hooks/cursor-adapter.ts` |
-| `~/.claude/settings.json` + project | Claude  | `src/main/services/hooks/claude-adapter.ts` |
-| `~/.copse/hooks.json` + project     | Copse   | `src/main/services/hooks/copse-adapter.ts`  |
+| Source path                         | Dialect | Adapter                                         |
+| ----------------------------------- | ------- | ----------------------------------------------- |
+| `~/.cursor/hooks.json` + project    | Cursor  | `packages/hooks-dialects/src/cursor-adapter.ts` |
+| `~/.claude/settings.json` + project | Claude  | `packages/hooks-dialects/src/claude-adapter.ts` |
+| `~/.copse/hooks.json` + project     | Copse   | `packages/hooks-dialects/src/copse-adapter.ts`  |
 
 Each adapter owns **discovery, parsing, matchers, and wire marshalling both directions**:
 a Cursor hook sees Cursor's stdin shape and permission vocabulary; a Claude hook sees
@@ -119,7 +119,7 @@ layer, and additionally exposes the native knobs (`async`, `onFailure`, `sandbox
 `loop_limit`). Adapters register in `dialect-registry.ts`, so the dialect-agnostic runner
 routes any dialect with no per-dialect branching. Unknown events in a foreign file are
 **warned about, never silently skipped**. The shared process spawn (stdin marshalling,
-stdout/stderr capture, timeout, output cap) is `src/main/services/hooks/hook-spawn.ts`.
+stdout/stderr capture, timeout, output cap) is `packages/hooks-dialects/src/hook-spawn.ts`.
 
 ## Dispatch: blocking vs async
 
@@ -318,7 +318,7 @@ hooks cannot retroactively block work that already completed.
   hook's output. A function hook's outcome blob is re-split into one labeled block per
   channel so injected context reads with real newlines instead of JSON escapes; a command
   hook shows `stdin` / `stdout` / `stderr`. The presentation model is pure and unit-tested
-  (`src/shared/hooks/hook-run-detail.ts`). Distinct from the dry-run tester below: this shows
+  (`packages/hooks-dialects/src/hook-run-detail.ts`). Distinct from the dry-run tester below: this shows
   what **actually ran**, the tester re-runs a hook against a synthetic payload.
 - **Sources panel ([foundations phase](./plans/hooks-and-feature-packs.md#phase-a--foundations)).** Settings → Customise → Hooks lists every discovered hook across all
   three dialects, per-entry validation warnings, unsupported-event badges, the
@@ -344,7 +344,7 @@ hooks cannot retroactively block work that already completed.
   (an event the vendor recognises but Copse doesn't wire yet is distinguished from a typo)
   and (2) a **CI drift detector** (`vendor-schema-drift.test.ts`) that fails when a
   re-vendored schema adds an unaccounted event until it is wired or listed as intentionally
-  unsupported (`src/shared/hooks/vendored-hook-schemas.ts`). Provenance and re-vendoring
+  unsupported (`packages/hooks-dialects/src/vendored-hook-schemas.ts`). Provenance and re-vendoring
   steps: [`schemas/vendor/README.md`](../schemas/vendor/README.md).
 - **Wire payload snapshots ([validation & tooling phase](./plans/hooks-and-feature-packs.md#phase-g--validation--tooling)).** Every dialect wire **request** payload is snapshot-tested
   against a committed golden fixture
@@ -369,14 +369,21 @@ The boundary is fixed (execution-guidance rule 4):
   (`async-dispatcher.ts`), and the first-party function hooks (`turn-start-hooks.ts`,
   `before-finalize-hooks.ts`, `step-boundary-hooks.ts`). Function hooks receive app services
   via context; they never import them.
-- **`src/main/services/hooks/`** (Electron-adjacent): the dialect adapters
+- **`packages/hooks-dialects/src/`** (`@copse/hooks-dialects`, host-free): the dialect adapters
   (`cursor-adapter.ts`, `claude-adapter.ts`, `copse-adapter.ts`), the dialect registry
-  (`dialect-registry.ts`), the process spawn (`hook-spawn.ts`), the host runner
-  (`command-hook-runner.ts`), each canonical event's host orchestrator (`tool-gate.ts`,
+  (`dialect-registry.ts`), the process spawn (`hook-spawn.ts`) with its sandbox seam, the
+  recursion guard (`hook-depth.ts`), the session env store (`session-env.ts`), the command-hook
+  runner (`command-hook-runner.ts`), the vendored schemas and hook types, and the adapter-level
+  tests (matcher, timeout defaults, vendor drift). The host facts it needs — the project sandbox,
+  the scrubbed child env, the agent execution root, the profile root — arrive through
+  `configureHooksDialects` (`environment.ts`).
+- **`src/main/services/hooks/`** (Electron-adjacent): the environment binding
+  (`hooks-dialects-environment.ts`), the runner wrapper that ties recording to the spine
+  recorder (`command-hook-runner.ts`), each canonical event's host orchestrator (`tool-gate.ts`,
   `before-submit-prompt.ts`, `after-file-edit.ts`, `stop.ts`, `after-tool-use.ts`,
   `subagent.ts`, `session-start.ts`, `diff-apply.ts`, `permission-decision.ts`,
   `post-turn-review.ts`), the dry-run tester (`dry-run.ts`), the hook-card inspector's read
-  path (`run-detail.ts`), and the spine/drift/snapshot tests.
+  path (`run-detail.ts`), and the spine/snapshot tests.
 - **`src/renderer/`**: hook cards + held-queue UI.
 
 ## Related
