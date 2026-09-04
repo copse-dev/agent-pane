@@ -8,6 +8,9 @@ import {
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
+  AGENT_RUN_HARD_MAX_MS,
+  AGENT_RUN_IDLE_TIMEOUT_MS,
+  AgentRunDeadline,
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
   isAgentRunTimeoutAbort,
@@ -195,7 +198,9 @@ import {
   ACP_UNFINISHED_TURN_FALLBACK,
   ACP_UNFINISHED_TURN_RECOVERY_OPERATION_ID,
   ACP_UNFINISHED_TURN_RECOVERY_PROMPT,
+  acpAbortedTurnOutcome,
   acpTurnHasFinalResponse,
+  createAcpToolCallTracker,
   EMPTY_ACP_TURN_PROGRESS,
   nextAcpTurnProgress,
   shouldRecoverAcpTurn,
@@ -931,7 +936,18 @@ export async function runAgent(
       sendChunk({ type: 'hook_run', card })
     }
     setHookRunLiveSink(acpHookCardSink)
-    const runAbort = createAgentRunAbortScheduler(controller)
+    // Both deadlines discount host-side waits on the ACP branch (#2332). The
+    // sliding idle clock already did; the wall-clock cap did not, so an hour of
+    // a turn spent sitting on approval modals — this branch raises one per
+    // sandbox escalation — killed the turn underneath a prompt that was still on
+    // screen, and reported it as a plain cancellation. The cap stays armed over
+    // *unpaused* time, so genuine runaway work is bounded exactly as before.
+    const runAbort = createAgentRunAbortScheduler(
+      controller,
+      new AgentRunDeadline(AGENT_RUN_IDLE_TIMEOUT_MS, AGENT_RUN_HARD_MAX_MS, Date.now(), Date.now, {
+        excludePausesFromHardMax: true,
+      }),
+    )
     runAbort.schedule()
     // Same idle-deadline registry as the local loop: pause while approval dialogs
     // (and other host-side waits) are open so a long user think cannot abort the
@@ -974,7 +990,23 @@ export async function runAgent(
       }
       await visualizationDispatch
     }
+    // Tool calls the agent opened but never settled. An interrupted turn leaves
+    // these mid-flight and the host is the only party that knows they were
+    // interrupted, so it settles them itself rather than persisting a spinner
+    // (or the agent's own bogus terminal update) into history (#2332).
+    const toolCalls = createAcpToolCallTracker()
+    const settleOpenToolCalls = (): void => {
+      // sendChunk, not acpChunkSink: these are the host's own bookkeeping, so
+      // they must not record deadline activity or move the turn's `lastEvent`.
+      for (const cancelled of toolCalls.settle()) sendChunk(cancelled)
+    }
+    // Settled at the abort site rather than once the turn has unwound, because
+    // the agent goes on streaming for as long as its own wind-down takes.
+    controller.signal.addEventListener('abort', settleOpenToolCalls, { once: true })
     const acpChunkSink = (chunk: StreamChunk): void => {
+      // Wind-down noise for a call the host already cancelled: it must not revive
+      // the tool card, and it is not progress, so it must not feed the deadline.
+      if (!toolCalls.observe(chunk)) return
       runAbort.deadline.recordActivity()
       runAbort.schedule()
       if (chunk.type === 'text') {
@@ -1094,12 +1126,27 @@ export async function runAgent(
       })
 
       const normalized = normalizeStopReason(result.stopReason.toLowerCase())
+      // Who ended the turn, when the agent settled the cancel cleanly (#2332).
+      // Without this every clean cancel is recorded `source: 'provider'`, so a
+      // run the host killed on its own deadline is indistinguishable in the
+      // transcript from the user pressing Stop — which is why the original
+      // failure went unnoticed for two hours. `rawStopReason` still carries the
+      // agent's own word for it; these fields are the host's verdict.
+      const endedByAbort = acpAbortedTurnOutcome(
+        controller.signal,
+        isAgentRunTimeoutAbort(controller.signal),
+      )
       pendingTurnOutcome = {
         ...terminalContext,
-        status: endedAfterTools && !recoverySucceeded ? 'failed' : terminalStatus(normalized),
-        stopReason: endedAfterTools && !recoverySucceeded ? 'error' : normalized,
+        status:
+          endedByAbort?.status ??
+          (endedAfterTools && !recoverySucceeded ? 'failed' : terminalStatus(normalized)),
+        stopReason:
+          endedByAbort?.stopReason ??
+          (endedAfterTools && !recoverySucceeded ? 'error' : normalized),
         rawStopReason: result.stopReason,
-        source: endedAfterTools && !recoverySucceeded ? 'host' : 'provider',
+        source:
+          endedByAbort?.source ?? (endedAfterTools && !recoverySucceeded ? 'host' : 'provider'),
         ...(endedAfterTools
           ? {
               recovery: {
@@ -1155,6 +1202,10 @@ export async function runAgent(
           })
         }
       }
+      // Nothing more is coming for this turn, so any tool call still open was
+      // interrupted — settle it before the terminal `done` rather than leave a
+      // spinner (and a misleading history entry) behind.
+      settleOpenToolCalls()
       const timedOut = isAgentRunTimeoutAbort(controller.signal)
       recordTurnFailure(err, {
         source: timedOut ? 'host' : aborted ? 'user' : 'provider',

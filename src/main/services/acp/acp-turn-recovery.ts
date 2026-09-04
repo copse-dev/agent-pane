@@ -16,6 +16,20 @@ export const ACP_UNFINISHED_TURN_FALLBACK =
   'The external agent stopped after using its tools without providing a final result. Send “continue” to resume.'
 
 /**
+ * Result written onto a tool call the turn ended on top of (#2332). `ToolCall`
+ * has no `cancelled` status, so this reuses `error` and says so in the payload.
+ *
+ * The text matters as much as the status: the transcript is what the *next*
+ * turn's model reads. An interrupted call left `running` renders as a spinner
+ * that never stops, and one the agent stamps `completed` — some emit a terminal
+ * `tool_call_update` carrying the call's own description where its output should
+ * be — reads as a command that ran and printed nothing. Both invite the model to
+ * build on work that never happened.
+ */
+export const ACP_CANCELLED_TOOL_CALL_RESULT =
+  'Cancelled before it completed — this tool call did not run, and produced no output. Any effect it would have had has not happened.'
+
+/**
  * What a turn produced, as opposed to what it happened to end on.
  *
  * This check used to read a single "last meaningful event" and treat any
@@ -89,4 +103,100 @@ export function acpTurnHasFinalResponse(
   progress: AcpTurnProgress,
 ): boolean {
   return normalizeStopReason(rawStopReason?.toLowerCase()) === 'end_turn' && progress.sawText
+}
+
+/**
+ * Whether a chunk opens a tool call or settles one, so the turn can know which
+ * calls were still in flight if it ends early (#2332). `null` for everything
+ * else. A `tool_call_update` only settles on a terminal status — ACP agents
+ * stream progress through the same chunk.
+ */
+export function acpToolCallLifecycle(
+  chunk: StreamChunk,
+): { toolCallId: string; state: 'open' | 'settled' } | null {
+  switch (chunk.type) {
+    case 'tool_call':
+      return { toolCallId: chunk.toolCall.id, state: 'open' }
+    case 'tool_result':
+      return { toolCallId: chunk.toolCallId, state: 'settled' }
+    case 'tool_call_update':
+      return chunk.status === 'done' || chunk.status === 'error'
+        ? { toolCallId: chunk.toolCallId, state: 'settled' }
+        : null
+    default:
+      return null
+  }
+}
+
+/** A host-authored `tool_call_update`, the only chunk the tracker emits. */
+type ToolCallUpdateChunk = Extract<StreamChunk, { type: 'tool_call_update' }>
+
+/**
+ * Tracks which of a turn's tool calls are in flight so an interrupted turn can
+ * settle them itself (#2332 defect 2).
+ *
+ * Settling has to happen at the *abort* site, not once the turn has unwound: the
+ * agent goes on streaming for as long as its own wind-down takes, and in the
+ * reported trace it stamped the killed call `done` 235ms after the cancel, with
+ * the call's own description where its output should be. So `settle()` also takes
+ * ownership of those ids — every later chunk for one is refused, leaving the
+ * host's verdict as the last word in the transcript the next turn reads.
+ */
+export function createAcpToolCallTracker(): {
+  /**
+   * Fold a streamed chunk in. `false` means drop it: it is wind-down noise for a
+   * call the host has already cancelled, so it is neither renderable nor
+   * progress. Chunks that are not part of a tool call always pass.
+   */
+  observe: (chunk: StreamChunk) => boolean
+  /** Cancel every call still in flight, returning the chunks to emit for them. */
+  settle: () => ToolCallUpdateChunk[]
+} {
+  const open = new Set<string>()
+  const hostSettled = new Set<string>()
+  return {
+    observe(chunk): boolean {
+      const lifecycle = acpToolCallLifecycle(chunk)
+      if (!lifecycle) return true
+      if (hostSettled.has(lifecycle.toolCallId)) return false
+      if (lifecycle.state === 'open') open.add(lifecycle.toolCallId)
+      else open.delete(lifecycle.toolCallId)
+      return true
+    },
+    settle(): ToolCallUpdateChunk[] {
+      const cancelled = [...open].map((toolCallId): ToolCallUpdateChunk => ({
+        type: 'tool_call_update',
+        toolCallId,
+        status: 'error',
+        result: ACP_CANCELLED_TOOL_CALL_RESULT,
+      }))
+      for (const toolCallId of open) hostSettled.add(toolCallId)
+      open.clear()
+      return cancelled
+    },
+  }
+}
+
+/**
+ * The host's own verdict on a turn whose abort the agent honoured cleanly
+ * (#2332 defect 4).
+ *
+ * A well-behaved ACP agent answers `session/cancel` with `stopReason:
+ * "cancelled"` and nothing throws, so the turn lands on the *success* path and
+ * is recorded `source: 'provider'` — leaving nothing in the transcript to
+ * separate "the host killed this on its own deadline" from "the user pressed
+ * Stop". The provider's word is still kept as `rawStopReason`; this is the
+ * host's. `null` when the turn was not aborted, so the normal path decides.
+ */
+export function acpAbortedTurnOutcome(
+  signal: AbortSignal,
+  timedOut: boolean,
+): {
+  status: 'failed' | 'cancelled'
+  stopReason: 'timeout' | 'cancelled'
+  source: 'host' | 'user'
+} | null {
+  if (timedOut) return { status: 'failed', stopReason: 'timeout', source: 'host' }
+  if (signal.aborted) return { status: 'cancelled', stopReason: 'cancelled', source: 'user' }
+  return null
 }
