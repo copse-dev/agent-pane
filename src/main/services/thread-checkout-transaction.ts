@@ -67,15 +67,19 @@ interface CheckoutInspection {
 /**
  * The blank-thread branch picker's selection is the worktree base, and the live
  * checkout's branch is the base when the user never touched it — but either is
- * only usable once the repository is known to hold it. A remote default is the
- * next useful choice, with `main` as the conventional final fallback.
+ * only usable once the repository is known to hold it. A picked branch that
+ * has since been deleted fails the send outright, exactly as the shared path's
+ * `git switch` would: the user named that branch on purpose, and quietly
+ * cutting the worktree from wherever the checkout happens to be would start
+ * the thread somewhere they never asked for. Only the untouched picker falls
+ * through — to a remote default, with `main` as the conventional final fallback.
  *
- * The existence check is load-bearing rather than defensive. `currentBranch`
- * is a *reported* name, and a report is not a ref: the e2e suite replaces it
- * wholesale via `COPSE_PANEL_MOCK_BRANCH` so the branch chip stays stable, and
- * allocation rejects a base that resolves to nothing. Handing that name
- * straight to the allocator turns every isolated checkout into "Base branch
- * … does not exist in this repository" and strands the thread with no
+ * The existence check on `currentBranch` is load-bearing rather than
+ * defensive. It is a *reported* name, and a report is not a ref: the e2e suite
+ * replaces it wholesale via `COPSE_PANEL_MOCK_BRANCH` so the branch chip stays
+ * stable, and allocation rejects a base that resolves to nothing. Handing that
+ * name straight to the allocator turns every isolated checkout into "Base
+ * branch … does not exist in this repository" and strands the thread with no
  * transcript — which is exactly how the automation specs fail. In a real
  * checkout the name always resolves, so this costs one `show-ref` and changes
  * nothing.
@@ -85,7 +89,12 @@ async function checkoutBaseBranch(
   inspection: CheckoutInspection,
   requested: string | undefined,
 ): Promise<string> {
-  if (requested && (await branchExists(requested))) return requested
+  if (requested) {
+    if (await branchExists(requested)) return requested
+    throw new Error(
+      `Branch "${requested}" no longer exists in this repository. Pick another branch to start from.`,
+    )
+  }
   if (inspection.currentBranch && (await branchExists(inspection.currentBranch))) {
     return inspection.currentBranch
   }
@@ -349,10 +358,29 @@ export function createThreadCheckoutTransaction(
             : null
         if (switched) await dependencies.checkoutBranch(switched, project.path)
         const branch = switched ?? inspection.currentBranch
-        await dependencies.updateMeta(input.projectId, input.threadId, {
-          worktreeChoice: input.choice,
-          ...(branch ? { gitBranch: branch } : {}),
-        })
+        try {
+          await dependencies.updateMeta(input.projectId, input.threadId, {
+            worktreeChoice: input.choice,
+            ...(branch ? { gitBranch: branch } : {}),
+          })
+        } catch (error) {
+          // The message never sent, so the checkout must not stay moved for it:
+          // the user would find their project on a branch they picked for a
+          // thread that does not exist. Best effort — the original failure is
+          // the one worth surfacing, and Retry re-runs the switch anyway.
+          const previous = inspection.currentBranch
+          if (switched && previous) {
+            await dependencies
+              .checkoutBranch(previous, project.path)
+              .catch((restoreError: unknown) => {
+                console.warn(
+                  `[thread-checkout] Could not switch back to "${previous}" after persistence failed:`,
+                  restoreError,
+                )
+              })
+          }
+          throw error
+        }
         return persistedResult(input.choice, branch ?? undefined)
       }
 

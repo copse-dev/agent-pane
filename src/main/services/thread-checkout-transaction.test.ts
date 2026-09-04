@@ -246,9 +246,13 @@ describe('first-message checkout transaction', () => {
     assert.deepEqual(checkouts, [])
   })
 
-  it('ignores a picked branch the repository no longer holds', async () => {
+  it('fails the send when the picked branch no longer exists', async () => {
+    // The user named this branch on purpose. Cutting the worktree from the
+    // checkout's branch instead would start the thread somewhere they never
+    // asked for, so the send fails with its own Retry — like the shared path
+    // does when `git switch` cannot find the branch.
     const allocations: string[] = []
-    const { prepare } = fixture({
+    const { prepare, patches, getThread } = fixture({
       branchExists: async (_root, branch) => branch !== 'deleted-upstream',
       allocate: async ({ baseBranch }) => {
         allocations.push(baseBranch)
@@ -263,15 +267,19 @@ describe('first-message checkout transaction', () => {
       },
     })
 
-    await prepare({
-      projectId: 'project-1',
-      threadId: 'thread-1',
-      prompt: 'Something unrelated',
-      choice: 'automatic',
-      baseBranch: 'deleted-upstream',
-    })
-
-    assert.deepEqual(allocations, ['main'])
+    await assert.rejects(
+      prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Something unrelated',
+        choice: 'automatic',
+        baseBranch: 'deleted-upstream',
+      }),
+      /Branch "deleted-upstream" no longer exists in this repository/,
+    )
+    assert.deepEqual(allocations, [])
+    assert.deepEqual(patches, [])
+    assert.equal(getThread().worktreeChoice, undefined)
   })
 
   it('switches the shared checkout to the picked branch at send, not before', async () => {
@@ -357,6 +365,66 @@ describe('first-message checkout transaction', () => {
     )
     assert.deepEqual(patches, [])
     assert.equal(getThread().worktreeChoice, undefined)
+  })
+
+  it('switches the shared checkout back when the decision cannot be persisted', async () => {
+    // The switch precedes persistence so a held branch fails the send cleanly;
+    // the converse failure must not leave the project moved for a message
+    // that never sent.
+    const { prepare, checkouts, getThread } = fixture({
+      updateMeta: async () => {
+        throw new Error('disk full')
+      },
+    })
+
+    await assert.rejects(
+      prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Hello',
+        choice: 'shared',
+        baseBranch: 'release/2026-08',
+      }),
+      /disk full/,
+    )
+    assert.deepEqual(checkouts, [
+      { branch: 'release/2026-08', root: '/repo' },
+      { branch: 'main', root: '/repo' },
+    ])
+    assert.equal(getThread().worktreeChoice, undefined)
+  })
+
+  it('surfaces the persistence failure even when the switch back fails too', async () => {
+    const warnings: unknown[][] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]): void => {
+      warnings.push(args)
+    }
+    try {
+      const { prepare } = fixture({
+        updateMeta: async () => {
+          throw new Error('disk full')
+        },
+        checkoutBranch: async (branch) => {
+          if (branch === 'main') throw new Error('index.lock exists')
+        },
+      })
+
+      await assert.rejects(
+        prepare({
+          projectId: 'project-1',
+          threadId: 'thread-1',
+          prompt: 'Hello',
+          choice: 'shared',
+          baseBranch: 'release/2026-08',
+        }),
+        /disk full/,
+      )
+      assert.equal(warnings.length, 1)
+      assert.match(String(warnings[0]?.[0]), /Could not switch back to "main"/)
+    } finally {
+      console.warn = originalWarn
+    }
   })
 
   it('falls back to the default branch when the reported current branch is not a ref', async () => {
