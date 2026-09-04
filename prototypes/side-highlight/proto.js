@@ -120,12 +120,12 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
  * put four copies of the stage on the page at the same time.
  */
 function renderGalleries() {
-  if (typeof COPSE_ICONS === 'undefined') return
+  if (!globalThis.COPSE_ICONS) return
   for (const host of document.querySelectorAll('.icon-gallery')) {
     if (host.dataset.filled) continue
     host.dataset.filled = '1'
     host.replaceChildren(
-      ...COPSE_ICONS.map(({ name, paths }) => {
+      ...globalThis.COPSE_ICONS.map(({ name, paths }) => {
         const cell = document.createElement('figure')
         cell.className = 'gallery-cell'
         const svg = document.createElementNS(SVG_NS, 'svg')

@@ -1,8 +1,7 @@
 // Extracted from src/renderer/dom/icons.ts — the real registry, not a subset.
 // 28 lucide-style outline icons, 24x24 viewBox, stroked in currentColor.
 // Regenerate by re-parsing `outlineIcon('name', [paths], …)` out of that file.
-// eslint-disable-next-line no-unused-vars -- read by proto.js as a sibling script
-const COPSE_ICONS = [
+globalThis.COPSE_ICONS = [
   { name: 'chevron-right', paths: ['m9 18 6-6-6-6'] },
   { name: 'chevron-down', paths: ['m6 9 6 6 6-6'] },
   { name: 'chevron-up', paths: ['m18 15-6-6-6 6'] },

@@ -310,6 +310,7 @@ export default ts.config(
     // type-check against. Demo sites are copied next to the browser build.
     files: [
       'site/**/*.js',
+      'prototypes/**/*.js',
       'src/shared/demo-sites/**/*.js',
       'benchmarks/benchmark-explorer/**/*.js',
     ],
@@ -325,7 +326,13 @@ export default ts.config(
         Map: 'readonly',
         Set: 'readonly',
         URL: 'readonly',
+        URLSearchParams: 'readonly',
         fetch: 'readonly',
+        addEventListener: 'readonly',
+        getComputedStyle: 'readonly',
+        Image: 'readonly',
+        location: 'readonly',
+        XMLSerializer: 'readonly',
       },
     },
     rules: {
