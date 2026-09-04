@@ -639,6 +639,20 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.removeListener('threads:pr_refs', listener)
       }
     },
+    onPrCreated: (handler: (projectId: string, threadId: string, ref: unknown) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        projectId: string,
+        threadId: string,
+        ref: unknown,
+      ): void => {
+        handler(projectId, threadId, ref)
+      }
+      ipcRenderer.on('threads:pr_created', listener)
+      return (): void => {
+        ipcRenderer.removeListener('threads:pr_created', listener)
+      }
+    },
     create: (projectId: string, thread: import('@shared/types').Thread) =>
       ipcRenderer.invoke('threads:create', projectId, thread),
     appendMessage: (

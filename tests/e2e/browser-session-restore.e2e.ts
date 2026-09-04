@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { setComposerValue } from './helpers/composer.ts'
+import { waitForAgentIdle } from './helpers.ts'
 import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -58,7 +59,10 @@ describe('browser session restore', function () {
   })
 
   it('renders a prototype into the Browser pane', async () => {
-    const html = '<!doctype html><title>Sales Dashboard</title><h1 id="version">restored</h1>'
+    const html =
+      '<!doctype html><title>Sales Dashboard</title>' +
+      '<style>body{margin:24px;background:#fff;color:#222;font:16px system-ui}</style>' +
+      '<h1 id="version">restored</h1><p>Sales Dashboard is ready.</p>'
     await setComposerValue(
       `[[mcp:${CANVAS_TOOL} ${JSON.stringify({ title: 'Sales Dashboard', html })}]]`,
     )
@@ -77,6 +81,7 @@ describe('browser session restore', function () {
       timeoutMsg: 'expected the artefact to render in the canvas',
     })
     expect(await tabLabels()).toContain('Sales Dashboard')
+    await waitForAgentIdle()
     await saveAppScreenshot('browser-session-restore-before-quit.png')
   })
 
