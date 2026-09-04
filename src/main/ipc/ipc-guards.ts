@@ -156,7 +156,7 @@ export const zHookTestRequest = z.object({
 })
 
 /**
- * A spine `hook_run` id (`hooks:runDetail`). Recorded ids are UUIDs, but seeded
+ * A spine `hook_run` id (`hooks:run-detail`). Recorded ids are UUIDs, but seeded
  * fixtures and older records use plain slugs — pin the character class rather
  * than the UUID shape, which is enough to keep an id from becoming a path.
  */

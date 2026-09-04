@@ -43,7 +43,7 @@ grinding out large amounts of work before those PRs merge.
   `roadmap:*` IPC handlers (`register-handlers.ts`) that only touch `Roadmap`-typed
   notes; the pane can be popped out into its own window like the other panes. Each
   list row also carries a one-click mark-done toggle (✓ → `done`, shown struck
-  through; ↺ on a done row → `ready`) over a status-only `roadmap:setStatus` IPC that
+  through; ↺ on a done row → `ready`) over a status-only `roadmap:set-status` IPC that
   mirrors the tool's `set_status` — no prompt round-trip, so the stored complexity
   is never re-classified. Done items are filtered out of the list by default; the
   header **done** toggle reveals them. Archived items keep the editor-only flow.
@@ -94,7 +94,7 @@ grinding out large amounts of work before those PRs merge.
   JSON-encoded in an `attachments` frontmatter field
   (`src/shared/knowledge/attachments.ts`), staying inside the store's string-only
   `fields` model. Edits are staged in the editor and persist on Save
-  (`roadmap:create`/`roadmap:update` carry adds/removals; `roadmap:attachmentData`
+  (`roadmap:create`/`roadmap:update` carry adds/removals; `roadmap:attachment-data`
   hydrates thumbnails lazily). "Start thread" carries them into the composer — images
   as image attachments, UTF-8 files as file chips — and the `roadmap_plan` list output
   names each item's attachments.

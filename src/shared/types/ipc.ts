@@ -32,23 +32,23 @@ export interface IpcInvokeMap {
   'workspace:set': { args: [root: string, sshHost?: string]; result: string }
 
   // Full main-window state (sender-derived; pane popouts cannot mutate it)
-  'mainWindow:getNavigation': {
+  'main-window:get-navigation': {
     args: []
     result: import('./main-window.ts').MainWindowNavigation
   }
-  'mainWindow:setNavigation': {
+  'main-window:set-navigation': {
     args: [navigation: import('./main-window.ts').MainWindowNavigation]
     result: undefined
   }
 
   // File system
-  'fs:readFile': { args: [projectId: string, threadId: string, path: string]; result: string }
-  'fs:writeFile': {
+  'fs:read-file': { args: [projectId: string, threadId: string, path: string]; result: string }
+  'fs:write-file': {
     args: [projectId: string, threadId: string, path: string, content: string]
     result: undefined
   }
   'fs:readdir': { args: [projectId: string, threadId: string, path: string]; result: string[] }
-  'fs:listDir': {
+  'fs:list-dir': {
     args: [projectId: string, threadId: string, path: string]
     result: { name: string; isDir: boolean }[]
   }
@@ -60,11 +60,11 @@ export interface IpcInvokeMap {
     args: [projectId: string, threadId: string, prompt: string]
     result: undefined
   }
-  'agent:describeImages': {
+  'agent:describe-images': {
     args: [projectId: string, threadId: string, model: string, userPrompt: string, images: string[]]
     result: { text: string }
   }
-  'agent:prepareCheckout': {
+  'agent:prepare-checkout': {
     args: [
       projectId: string,
       threadId: string,
@@ -74,42 +74,42 @@ export interface IpcInvokeMap {
     ]
     result: import('./worktree.ts').PreparedThreadCheckout
   }
-  'agent:previewCheckout': {
+  'agent:preview-checkout': {
     args: [projectId: string, choice: import('./worktree.ts').ThreadWorktreeChoice, model?: string]
     result: import('./worktree.ts').ThreadCheckoutPreview
   }
   'agent:abort': { args: [threadId: string]; result: undefined }
-  'agent:estimateContext': {
+  'agent:estimate-context': {
     args: [projectId: string, threadId: string, payloadJson: string]
     result: import('./thread.ts').ContextBreakdown
   }
-  'agent:clearHistory': { args: [projectId: string, threadId: string]; result: undefined }
-  'agent:refreshModelContext': { args: []; result: undefined }
-  'agent:comparisonModels': {
+  'agent:clear-history': { args: [projectId: string, threadId: string]; result: undefined }
+  'agent:refresh-model-context': { args: []; result: undefined }
+  'agent:comparison-models': {
     args: [payload: string]
     result: { a: string; b: string; judge: string }
   }
-  'agent:suggestTitle': { args: [text: string]; result: string | null }
-  'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }
-  'agent:suggestFollowUps': {
+  'agent:suggest-title': { args: [text: string]; result: string | null }
+  'agent:suggest-terminal-title': { args: [text: string]; result: string | null }
+  'agent:suggest-follow-ups': {
     args: [projectId: string, threadId: string, contextJson: string]
     result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
   }
   // The composer's Tab-completable next step (experimental, off by default).
   // Same context shape as suggestFollowUps; null means "no obvious next step",
   // which is the expected answer for most turns.
-  'agent:suggestNextStep': { args: [contextJson: string]; result: string | null }
+  'agent:suggest-next-step': { args: [contextJson: string]; result: string | null }
 
   // Explicit high-risk, session-only shell mode (issue #1249).
-  'security:getGuardedYolo': {
+  'security:get-guarded-yolo': {
     args: [threadId: string]
     result: import('./guarded-yolo.ts').GuardedYoloState
   }
-  'security:enableGuardedYolo': {
+  'security:enable-guarded-yolo': {
     args: [threadId: string]
     result: import('./guarded-yolo.ts').GuardedYoloState
   }
-  'security:disableGuardedYolo': {
+  'security:disable-guarded-yolo': {
     args: [threadId: string]
     result: import('./guarded-yolo.ts').GuardedYoloState
   }
@@ -123,8 +123,8 @@ export interface IpcInvokeMap {
     args: [projectId: string, threadId: string, path: string]
     result: undefined
   }
-  'diff:approveAll': { args: [projectId: string, threadId: string]; result: undefined }
-  'diff:rejectAll': { args: [projectId: string, threadId: string]; result: undefined }
+  'diff:approve-all': { args: [projectId: string, threadId: string]; result: undefined }
+  'diff:reject-all': { args: [projectId: string, threadId: string]; result: undefined }
   'diff:queue': {
     args: [projectId: string, threadId: string]
     result: { path: string; language: string }[]
@@ -147,7 +147,7 @@ export interface IpcInvokeMap {
     args: [id: string, answers: string[]]
     result: undefined
   }
-  'alerts:threadFinished': {
+  'alerts:thread-finished': {
     args: [threadId: string, title: string]
     result: undefined
   }
@@ -155,9 +155,9 @@ export interface IpcInvokeMap {
   // MCP servers
   'mcp:list': { args: []; result: McpServerStatus[] }
   'mcp:reload': { args: []; result: McpServerStatus[] }
-  'mcp:setEnabled': { args: [name: string, enabled: boolean]; result: McpServerStatus[] }
-  'mcp:listCurated': { args: []; result: CuratedMcpServerStatus[] }
-  'mcp:setCuratedEnabled': {
+  'mcp:set-enabled': { args: [name: string, enabled: boolean]; result: McpServerStatus[] }
+  'mcp:list-curated': { args: []; result: CuratedMcpServerStatus[] }
+  'mcp:set-curated-enabled': {
     args: [name: string, enabled: boolean]
     result: CuratedMcpServerStatus[]
   }
@@ -165,7 +165,7 @@ export interface IpcInvokeMap {
   // Settings
   'settings:get': { args: [key: string]; result: unknown }
   'settings:set': { args: [key: string, value: unknown]; result: undefined }
-  'settings:setSecurity': {
+  'settings:set-security': {
     args: [
       prefs: {
         localServerUrl: string
@@ -184,14 +184,14 @@ export interface IpcInvokeMap {
     ]
     result: undefined
   }
-  'settings:getKey': { args: [provider: Provider]; result: boolean }
+  'settings:get-key': { args: [provider: Provider]; result: boolean }
   // At-rest state for a stored key: true = OS-encrypted, false = base64 plaintext
   // (secure-storage fallback), null = no key stored.
-  'settings:getKeyEncrypted': { args: [provider: Provider]; result: boolean | null }
+  'settings:get-key-encrypted': { args: [provider: Provider]; result: boolean | null }
   // Persist a key. When OS secure storage is unavailable, plaintext writes also
   // require COPSE_ALLOW_PLAINTEXT_SECRETS=1. With that process opt-in, the caller
   // must still pass `{ allowPlaintext: true }` after explicit per-save consent.
-  'settings:setKey': {
+  'settings:set-key': {
     args: [provider: Provider, key: string, opts?: { allowPlaintext?: boolean }]
     result:
       | { ok: true }
@@ -200,15 +200,15 @@ export interface IpcInvokeMap {
           reason: 'plaintext-storage-disabled' | 'plaintext-consent-required'
         }
   }
-  'settings:refreshHuggingFaceModels': {
+  'settings:refresh-hugging-face-models': {
     args: [key?: string]
     result: { ok: boolean; count: number; error?: string }
   }
-  'settings:availableProviders': {
+  'settings:available-providers': {
     args: []
     result: AvailableProviders
   }
-  'settings:validateKey': {
+  'settings:validate-key': {
     /**
      * An empty `key` means "test the key this provider would actually use" —
      * the stored one, or its env-var fallback. Settings needs that because the
@@ -221,7 +221,7 @@ export interface IpcInvokeMap {
   }
   // Opt-in environment scan for provider API keys. Scan returns masked previews
   // (never raw secrets); import populates Settings for any not-yet-configured key.
-  'settings:scanEnvKeys': {
+  'settings:scan-env-keys': {
     args: []
     result: {
       provider: string
@@ -231,7 +231,7 @@ export interface IpcInvokeMap {
       alreadyConfigured: boolean
     }[]
   }
-  'settings:importEnvKeys': {
+  'settings:import-env-keys': {
     args: [providers?: string[]]
     result: {
       imported: { provider: string; source: string }[]
@@ -240,25 +240,25 @@ export interface IpcInvokeMap {
   }
 
   // App icon
-  'appIcon:apply': { args: []; result: undefined }
+  'app-icon:apply': { args: []; result: undefined }
 
   // Usage ledger
-  'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
-  'usage:getPlanUsage': {
+  'usage:get-summary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
+  'usage:get-plan-usage': {
     args: []
     result: import('@copse/plan-usage').PlanUsageSnapshot
   }
-  'usage:getPlanWorthIt': {
+  'usage:get-plan-worth-it': {
     args: []
     result: import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload
   }
   // First card URL that resolves for each model id, or null. Probe-cached in
   // the main process, so repeat calls are usually free.
-  'modelCards:resolve': {
+  'model-cards:resolve': {
     args: [modelIds: string[]]
     result: Record<string, import('@copse/llm/model-card-candidates.ts').ModelCardCandidate | null>
   }
-  'usage:setClaudePlanMonthlyFee': {
+  'usage:set-claude-plan-monthly-fee': {
     args: [fee: number | null]
     result: import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload
   }
@@ -270,7 +270,7 @@ export interface IpcInvokeMap {
   // Filesystem-native thread store (issue #644): one directory per thread under
   // ~/.copse/workspace/<projectId>/<threadId>/. The renderer maps store events
   // onto event-level writes instead of rewriting whole threads.
-  'threads:loadProject': {
+  'threads:load-project': {
     args: [projectId: string]
     result: import('./thread.ts').Thread[]
   }
@@ -278,11 +278,11 @@ export interface IpcInvokeMap {
     args: [projectId: string, thread: import('./thread.ts').Thread]
     result: undefined
   }
-  'threads:appendMessage': {
+  'threads:append-message': {
     args: [projectId: string, threadId: string, message: import('./thread.ts').Message]
     result: undefined
   }
-  'threads:updateMeta': {
+  'threads:update-meta': {
     args: [
       projectId: string,
       threadId: string,
@@ -298,7 +298,7 @@ export interface IpcInvokeMap {
     args: [projectId: string, query?: string]
     result: import('./thread.ts').ThreadCatalogHit[]
   }
-  'threads:listOrphans': {
+  'threads:list-orphans': {
     args: []
     result: import('./state.ts').OrphanProjectStore[]
   }
@@ -332,7 +332,7 @@ export interface IpcInvokeMap {
     args: [projectId: string, scheduleId: string]
     result: undefined
   }
-  'automations:runNow': {
+  'automations:run-now': {
     args: [projectId: string, scheduleId: string]
     result: import('./automations.ts').AutomationTriggerEvent
   }
@@ -340,7 +340,7 @@ export interface IpcInvokeMap {
   // Index
   'index:query': { args: [pattern: string]; result: string[] }
   'index:status': { args: []; result: import('./index-status.ts').WorkspaceIndexStatus }
-  'index:resolveFileReferences': {
+  'index:resolve-file-references': {
     args: [candidates: string[]]
     result: { candidate: string; path: string; kind: 'file' | 'directory' }[]
   }
@@ -357,66 +357,66 @@ export interface IpcInvokeMap {
   'terminal:write': { args: [sessionId: string, data: string]; result: undefined }
   'terminal:resize': { args: [sessionId: string, cols: number, rows: number]; result: undefined }
   'terminal:destroy': { args: [sessionId: string]; result: undefined }
-  'terminal:setMeta': {
+  'terminal:set-meta': {
     args: [sessionId: string, meta: { label?: string; threadId?: string | null }]
     result: undefined
   }
-  'terminal:setActive': { args: [sessionId: string]; result: undefined }
+  'terminal:set-active': { args: [sessionId: string]; result: undefined }
 
   // Git
   'git:status': { args: [projectId: string, threadId: string]; result: GitStatusResult | null }
-  'git:fileDiff': {
+  'git:file-diff': {
     args: [projectId: string, threadId: string, path: string, staged: boolean]
     result: GitFileDiff | null
   }
-  'git:isAvailable': { args: [projectId: string, threadId: string]; result: boolean }
-  'git:branchStatus': {
+  'git:is-available': { args: [projectId: string, threadId: string]; result: boolean }
+  'git:branch-status': {
     args: [projectId: string, threadId: string, forBranch?: string]
     result: GitBranchStatus
   }
-  'git:promptState': {
+  'git:prompt-state': {
     args: [projectId: string, threadId: string]
     result: GitPromptState
   }
-  'git:checkoutBranch': {
+  'git:checkout-branch': {
     args: [projectId: string, threadId: string, branch: string]
     result: undefined
   }
 
   // GitHub CLI / pull requests
   'gh:status': { args: []; result: import('./git.ts').GhCliStatus }
-  'gh:invalidateReadCache': { args: []; result: undefined }
-  'gh:setListWatch': { args: [watching: boolean, includeMyPrs: boolean]; result: undefined }
-  'gh:listMyOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] | null }
-  'gh:listWorkspaceOpenPrs': { args: []; result: import('./git.ts').GhPrSummary[] }
-  'gh:prChecks': {
+  'gh:invalidate-read-cache': { args: []; result: undefined }
+  'gh:set-list-watch': { args: [watching: boolean, includeMyPrs: boolean]; result: undefined }
+  'gh:list-my-open-prs': { args: []; result: import('./git.ts').GhPrSummary[] | null }
+  'gh:list-workspace-open-prs': { args: []; result: import('./git.ts').GhPrSummary[] }
+  'gh:pr-checks': {
     args: [owner: string, repo: string, number: number]
     result: import('./git.ts').GhPrChecksState
   }
-  'gh:prDetails': {
+  'gh:pr-details': {
     args: [owner: string, repo: string, number: number]
     result: import('./git.ts').GhPrDetails | null
   }
-  'gh:prFileDiff': {
+  'gh:pr-file-diff': {
     args: [owner: string, repo: string, number: number, path: string]
     result: import('./git.ts').GhPrFileDiff | null
   }
-  'gh:resolvePrUrl': {
+  'gh:resolve-pr-url': {
     args: [url: string]
     result: { owner: string; repo: string; number: number } | null
   }
 
   // Remote agent artifacts
-  'remoteAgent:downloadArtifact': { args: [agentId: string, path: string]; result: string }
-  'remoteAgent:artifactImageDataUrl': { args: [agentId: string, path: string]; result: string }
+  'remote-agent:download-artifact': { args: [agentId: string, path: string]; result: string }
+  'remote-agent:artifact-image-data-url': { args: [agentId: string, path: string]; result: string }
 
   // Shell
-  'shell:openExternal': { args: [url: string]; result: undefined }
-  'shell:openWorkspaceFileInBrowser': {
+  'shell:open-external': { args: [url: string]; result: undefined }
+  'shell:open-workspace-file-in-browser': {
     args: [projectId: string, threadId: string, path: string]
     result: undefined
   }
-  'browser:workspaceFileUrl': {
+  'browser:workspace-file-url': {
     args: [projectId: string, threadId: string, path: string]
     result: string
   }
@@ -429,16 +429,16 @@ export interface IpcInvokeMap {
   }
 
   // LM Studio
-  'lmStudio:test': {
+  'lm-studio:test': {
     args: [url: string, apiKey?: string]
     result: { ok: boolean; models?: string[]; error?: string }
   }
-  'lmStudio:models': { args: []; result: string[] }
-  'lmStudio:modelInfo': {
+  'lm-studio:models': { args: []; result: string[] }
+  'lm-studio:model-info': {
     args: []
     result: Array<{ id: string; supportsImages?: boolean }>
   }
-  'openRouter:models': {
+  'open-router:models': {
     args: []
     result: Array<{
       id: string
@@ -448,7 +448,7 @@ export interface IpcInvokeMap {
       supportsImages?: boolean
     }>
   }
-  'lmStudio:detect': {
+  'lm-studio:detect': {
     args: [url?: string, apiKey?: string]
     result: {
       serverRunning: boolean
@@ -461,7 +461,7 @@ export interface IpcInvokeMap {
       error?: string
     }
   }
-  'lmStudio:download': {
+  'lm-studio:download': {
     args: [modelId: string, url?: string, apiKey?: string]
     result: {
       ok: boolean
@@ -471,7 +471,7 @@ export interface IpcInvokeMap {
       error?: string
     }
   }
-  'lmStudio:downloadStatus': {
+  'lm-studio:download-status': {
     args: [jobId: string, url?: string, apiKey?: string]
     result: {
       ok: boolean
@@ -488,7 +488,7 @@ export interface IpcInvokeMap {
 export interface IpcEventMap {
   'workspace:opened': [root: string]
   'agent:chunk': [threadId: string, chunk: StreamChunk]
-  'agent:show_diff': [
+  'agent:show-diff': [
     projectId: string,
     threadId: string,
     path: string,
@@ -496,8 +496,8 @@ export interface IpcEventMap {
     after: string,
     language: string,
   ]
-  'agent:shellOutput': [data: string, toolCallId: string | null]
-  'agent:approvalRequest': [
+  'agent:shell-output': [data: string, toolCallId: string | null]
+  'agent:approval-request': [
     {
       id: string
       /** Thread whose run triggered this request; scopes the prompt in the UI. */
@@ -516,8 +516,8 @@ export interface IpcEventMap {
     },
   ]
   /** Main dismisses an approval the run cancelled (Stop / ACP permission RPC abort). */
-  'agent:approvalCancelled': [{ id: string }]
-  'agent:askUserRequest': [
+  'agent:approval-cancelled': [{ id: string }]
+  'agent:ask-user-request': [
     {
       id: string
       /** Thread whose run asked the question; scopes the prompt in the UI. */
@@ -526,11 +526,11 @@ export interface IpcEventMap {
     },
   ]
   /** Main dismisses an ask_user request when its run stops or the request expires. */
-  'agent:askUserCancelled': [{ id: string }]
-  'agent:hookQueueMessage': [payload: import('./hooks.ts').HookQueueMessagePayload]
-  'security:guardedYoloChanged': [state: import('./guarded-yolo.ts').GuardedYoloState]
+  'agent:ask-user-cancelled': [{ id: string }]
+  'agent:hook-queue-message': [payload: import('./hooks.ts').HookQueueMessagePayload]
+  'security:guarded-yolo-changed': [state: import('./guarded-yolo.ts').GuardedYoloState]
   'automations:triggered': [event: import('./automations.ts').AutomationTriggerEvent]
-  'ssh:prompt_request': [
+  'ssh:prompt-request': [
     {
       id: string
       prompt: string
@@ -538,7 +538,7 @@ export interface IpcEventMap {
       canRememberOnDevice: boolean
     },
   ]
-  'update:prompt_request': [
+  'update:prompt-request': [
     {
       id: string
       message: string
@@ -548,12 +548,12 @@ export interface IpcEventMap {
       cancelIndex?: number
     },
   ]
-  'update:dev_notice': []
+  'update:dev-notice': []
   /** Main asks the renderer whether the app may close while threads are working. */
-  'app:close_confirm_request': [{ id: string }]
-  'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
-  'mcp:statusChanged': [statuses: McpServerStatus[]]
-  'index:statusChanged': [status: import('./index-status.ts').WorkspaceIndexStatus]
+  'app:close-confirm-request': [{ id: string }]
+  'ssh:connection-changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
+  'mcp:status-changed': [statuses: McpServerStatus[]]
+  'index:status-changed': [status: import('./index-status.ts').WorkspaceIndexStatus]
   'diff:queued': [
     projectId: string,
     threadId: string,
@@ -562,24 +562,24 @@ export interface IpcEventMap {
   'diff:conflict': [projectId: string, threadId: string, paths: string[]]
   'fs:changed': [projectId: string, threadId: string, path: string, content: string | null]
   /** A recursive local execution-root watcher observed a possible git change. */
-  'git:workingTreeChanged': [root: string]
+  'git:working-tree-changed': [root: string]
   'menu:settings': []
-  'menu:newThread': []
-  'menu:togglePanel': []
-  'menu:showExplorer': []
-  'menu:showTerminal': []
-  'menu:showChanges': []
-  'menu:showBrowser': []
-  'menu:uiScaleZoomIn': []
-  'menu:uiScaleZoomOut': []
-  'menu:uiScaleReset': []
+  'menu:new-thread': []
+  'menu:toggle-panel': []
+  'menu:show-explorer': []
+  'menu:show-terminal': []
+  'menu:show-changes': []
+  'menu:show-browser': []
+  'menu:ui-scale-zoom-in': []
+  'menu:ui-scale-zoom-out': []
+  'menu:ui-scale-reset': []
   'terminal:output': [sessionId: string, data: string]
   'terminal:exit': [sessionId: string, code: number]
   /** Open a fresh shell in the Shells pane already running this command. */
-  'terminal:runCommand': [command: string]
+  'terminal:run-command': [command: string]
   /**
    * Shared PR-list poll tick. One main-process timer for every window showing
    * the pane; renderers no-op unless that window is actually on PRs.
    */
-  'gh:listsTick': []
+  'gh:lists-tick': []
 }

@@ -31,7 +31,7 @@ export function requestUpdatePrompt(req: UpdatePromptRequest): Promise<number> {
 /** Dev/e2e "Check for Updates…" when no feed exists — toast in the renderer. */
 export function notifyUpdateDevOnly(win: BrowserWindow): void {
   if (win.isDestroyed()) return
-  win.webContents.send('update:dev_notice')
+  win.webContents.send('update:dev-notice')
 }
 
 export function initUpdatePrompt(win: BrowserWindow): void {
@@ -43,7 +43,7 @@ export function initUpdatePrompt(win: BrowserWindow): void {
     resolve(buttonIndex)
   }
 
-  ipcMain.handle('updatePrompt:respond', (event, ...rawArgs) => {
+  ipcMain.handle('update-prompt:respond', (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [id, buttonIndex] = parseIpcArgs(updatePromptRespondSchema, rawArgs)
@@ -64,7 +64,7 @@ export function initUpdatePrompt(win: BrowserWindow): void {
   requestPrompt = (req: UpdatePromptRequest): Promise<number> =>
     new Promise<number>((resolve) => {
       const id = randomUUID()
-      win.webContents.send('update:prompt_request', {
+      win.webContents.send('update:prompt-request', {
         id,
         message: req.message,
         detail: req.detail,

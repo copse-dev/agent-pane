@@ -159,7 +159,7 @@ export interface PluginContributionsSummary {
 
 /**
  * One plugin row for the Settings list. `enabled` reflects the shared host
- * registry's current flag; toggling it in the UI calls `plugins:setEnabled`,
+ * registry's current flag; toggling it in the UI calls `plugins:set-enabled`,
  * which flips the flag atomically and persists to `electron-store`.
  */
 export interface PluginSummary {

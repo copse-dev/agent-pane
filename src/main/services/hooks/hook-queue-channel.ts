@@ -24,7 +24,7 @@ export type HookQueueMessageSender = (payload: HookQueueMessagePayload) => void
 let sender: HookQueueMessageSender | null = null
 
 /**
- * Register the renderer sender (main → renderer over `agent:hookQueueMessage`).
+ * Register the renderer sender (main → renderer over `agent:hook-queue-message`).
  * Called from window setup; a headless host (unit test) leaves it unset, in which
  * case emitted messages are dropped rather than crashing.
  */

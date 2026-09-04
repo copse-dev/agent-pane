@@ -3,21 +3,21 @@
   "version": 2,
   "channels": {
     "invoke": {
-      "acp:autoSetup": {
+      "acp:auto-setup": {
         "api": "acp.autoSetup",
         "args": [
           0,
           0
         ]
       },
-      "acp:detectAgents": {
+      "acp:detect-agents": {
         "api": "acp.detectAgents",
         "args": [
           0,
           0
         ]
       },
-      "acp:probeAgent": {
+      "acp:probe-agent": {
         "api": "acp.probeAgent",
         "args": [
           1,
@@ -31,70 +31,70 @@
           1
         ]
       },
-      "agent:clearHistory": {
+      "agent:clear-history": {
         "api": "agent.clearHistory",
         "args": [
           2,
           2
         ]
       },
-      "agent:comparisonModels": {
+      "agent:comparison-models": {
         "api": "agent.comparisonModels",
         "args": [
           1,
           1
         ]
       },
-      "agent:describeImages": {
+      "agent:describe-images": {
         "api": "agent.describeImages",
         "args": [
           5,
           5
         ]
       },
-      "agent:estimateContext": {
+      "agent:estimate-context": {
         "api": "agent.estimateContext",
         "args": [
           3,
           3
         ]
       },
-      "agent:prepareCheckout": {
+      "agent:prepare-checkout": {
         "api": "agent.prepareCheckout",
         "args": [
           4,
           5
         ]
       },
-      "agent:previewCheckout": {
+      "agent:preview-checkout": {
         "api": "agent.previewCheckout",
         "args": [
           2,
           3
         ]
       },
-      "agent:refreshModelContext": {
+      "agent:refresh-model-context": {
         "api": "agent.refreshModelContext",
         "args": [
           0,
           0
         ]
       },
-      "agent:resetDefaultBranchCache": {
+      "agent:reset-default-branch-cache": {
         "api": "agent.resetDefaultBranchCache",
         "args": [
           0,
           0
         ]
       },
-      "agent:retryComparison": {
+      "agent:retry-comparison": {
         "api": "agent.retryComparison",
         "args": [
           3,
           3
         ]
       },
-      "agent:retryReview": {
+      "agent:retry-review": {
         "api": "agent.retryReview",
         "args": [
           3,
@@ -108,49 +108,49 @@
           3
         ]
       },
-      "agent:runningThreadIds": {
+      "agent:running-thread-ids": {
         "api": "agent.runningThreadIds",
         "args": [
           0,
           0
         ]
       },
-      "agent:suggestCommandSummary": {
+      "agent:suggest-command-summary": {
         "api": "agent.suggestCommandSummary",
         "args": [
           1,
           1
         ]
       },
-      "agent:suggestFollowUps": {
+      "agent:suggest-follow-ups": {
         "api": "agent.suggestFollowUps",
         "args": [
           3,
           3
         ]
       },
-      "agent:suggestNextStep": {
+      "agent:suggest-next-step": {
         "api": "agent.suggestNextStep",
         "args": [
           1,
           1
         ]
       },
-      "agent:suggestTerminalTitle": {
+      "agent:suggest-terminal-title": {
         "api": "agent.suggestTerminalTitle",
         "args": [
           1,
           1
         ]
       },
-      "agent:suggestTitle": {
+      "agent:suggest-title": {
         "api": "agent.suggestTitle",
         "args": [
           1,
           1
         ]
       },
-      "agent:suggestToolTurnSummary": {
+      "agent:suggest-tool-turn-summary": {
         "api": "agent.suggestToolTurnSummary",
         "args": [
           1,
@@ -164,14 +164,14 @@
           0
         ]
       },
-      "alerts:threadFinished": {
+      "alerts:thread-finished": {
         "api": "alerts.threadFinished",
         "args": [
           2,
           2
         ]
       },
-      "appIcon:apply": {
+      "app-icon:apply": {
         "api": "appIcon.apply",
         "args": [
           0,
@@ -213,7 +213,7 @@
           2
         ]
       },
-      "automations:runNow": {
+      "automations:run-now": {
         "api": "automations.runNow",
         "args": [
           2,
@@ -227,63 +227,63 @@
           2
         ]
       },
-      "browser:exportPdf": {
+      "browser:export-pdf": {
         "api": "browser.exportPdf",
         "args": [
           1,
           1
         ]
       },
-      "browser:sharePageText": {
+      "browser:share-page-text": {
         "api": "browser.sharePageText",
         "args": [
           1,
           1
         ]
       },
-      "browser:shareScreenshot": {
+      "browser:share-screenshot": {
         "api": "browser.shareScreenshot",
         "args": [
           1,
           1
         ]
       },
-      "browser:workspaceFileUrl": {
+      "browser:workspace-file-url": {
         "api": "browser.workspaceFileUrl",
         "args": [
           3,
           3
         ]
       },
-      "canvas:listArtefacts": {
+      "canvas:list-artefacts": {
         "api": "canvas.listArtefacts",
         "args": [
           2,
           2
         ]
       },
-      "canvas:reopenArtefact": {
+      "canvas:reopen-artefact": {
         "api": "canvas.reopenArtefact",
         "args": [
           3,
           3
         ]
       },
-      "closeConfirm:respond": {
+      "close-confirm:respond": {
         "api": "closeConfirm.respond",
         "args": [
           2,
           2
         ]
       },
-      "cursorPlugins:list": {
+      "cursor-plugins:list": {
         "api": "cursorPlugins.list",
         "args": [
           0,
           0
         ]
       },
-      "cursorRules:list": {
+      "cursor-rules:list": {
         "api": "cursorRules.list",
         "args": [
           0,
@@ -311,7 +311,7 @@
           3
         ]
       },
-      "diff:approveAll": {
+      "diff:approve-all": {
         "api": "diff.approveAll",
         "args": [
           2,
@@ -339,7 +339,7 @@
           3
         ]
       },
-      "diff:rejectAll": {
+      "diff:reject-all": {
         "api": "diff.rejectAll",
         "args": [
           2,
@@ -360,14 +360,14 @@
           3
         ]
       },
-      "fs:listDir": {
+      "fs:list-dir": {
         "api": "fs.listDir",
         "args": [
           3,
           3
         ]
       },
-      "fs:readFile": {
+      "fs:read-file": {
         "api": "fs.readFile",
         "args": [
           3,
@@ -395,98 +395,98 @@
           3
         ]
       },
-      "fs:writeFile": {
+      "fs:write-file": {
         "api": "fs.writeFile",
         "args": [
           4,
           4
         ]
       },
-      "gh:agentPrLinks": {
+      "gh:agent-pr-links": {
         "api": "gh.agentPrLinks",
         "args": [
           0,
           0
         ]
       },
-      "gh:approvePr": {
+      "gh:approve-pr": {
         "api": "gh.approvePr",
         "args": [
           3,
           3
         ]
       },
-      "gh:enableAutoMerge": {
+      "gh:enable-auto-merge": {
         "api": "gh.enableAutoMerge",
         "args": [
           3,
           3
         ]
       },
-      "gh:invalidateReadCache": {
+      "gh:invalidate-read-cache": {
         "api": "gh.invalidateReadCache",
         "args": [
           0,
           0
         ]
       },
-      "gh:listMyOpenPrs": {
+      "gh:list-my-open-prs": {
         "api": "gh.listMyOpenPrs",
         "args": [
           0,
           0
         ]
       },
-      "gh:listWorkspaceOpenPrs": {
+      "gh:list-workspace-open-prs": {
         "api": "gh.listWorkspaceOpenPrs",
         "args": [
           0,
           0
         ]
       },
-      "gh:markPrReady": {
+      "gh:mark-pr-ready": {
         "api": "gh.markPrReady",
         "args": [
           3,
           3
         ]
       },
-      "gh:prChecks": {
+      "gh:pr-checks": {
         "api": "gh.prChecks",
         "args": [
           3,
           3
         ]
       },
-      "gh:prDetails": {
+      "gh:pr-details": {
         "api": "gh.prDetails",
         "args": [
           3,
           3
         ]
       },
-      "gh:prFileDiff": {
+      "gh:pr-file-diff": {
         "api": "gh.prFileDiff",
         "args": [
           4,
           4
         ]
       },
-      "gh:rerunFailedRuns": {
+      "gh:rerun-failed-runs": {
         "api": "gh.rerunFailedRuns",
         "args": [
           3,
           3
         ]
       },
-      "gh:resolvePrUrl": {
+      "gh:resolve-pr-url": {
         "api": "gh.resolvePrUrl",
         "args": [
           1,
           1
         ]
       },
-      "gh:setListWatch": {
+      "gh:set-list-watch": {
         "api": "gh.setListWatch",
         "args": [
           2,
@@ -500,84 +500,84 @@
           0
         ]
       },
-      "git:branchStatus": {
+      "git:branch-status": {
         "api": "git.branchStatus",
         "args": [
           2,
           3
         ]
       },
-      "git:changeStats": {
+      "git:change-stats": {
         "api": "git.changeStats",
         "args": [
           2,
           2
         ]
       },
-      "git:checkoutBranch": {
+      "git:checkout-branch": {
         "api": "git.checkoutBranch",
         "args": [
           3,
           3
         ]
       },
-      "git:committedChanges": {
+      "git:committed-changes": {
         "api": "git.committedChanges",
         "args": [
           2,
           2
         ]
       },
-      "git:committedFileDiff": {
+      "git:committed-file-diff": {
         "api": "git.committedFileDiff",
         "args": [
           3,
           3
         ]
       },
-      "git:fileDiff": {
+      "git:file-diff": {
         "api": "git.fileDiff",
         "args": [
           4,
           4
         ]
       },
-      "git:getDefaultBranch": {
+      "git:get-default-branch": {
         "api": "git.getDefaultBranch",
         "args": [
           2,
           2
         ]
       },
-      "git:isAvailable": {
+      "git:is-available": {
         "api": "git.isAvailable",
         "args": [
           2,
           2
         ]
       },
-      "git:listBranches": {
+      "git:list-branches": {
         "api": "git.listBranches",
         "args": [
           2,
           2
         ]
       },
-      "git:promptState": {
+      "git:prompt-state": {
         "api": "git.promptState",
         "args": [
           2,
           2
         ]
       },
-      "git:restoreBackup": {
+      "git:restore-backup": {
         "api": "git.restoreBackup",
         "args": [
           2,
           2
         ]
       },
-      "git:sessionBackup": {
+      "git:session-backup": {
         "api": "git.sessionBackup",
         "args": [
           2,
@@ -591,7 +591,7 @@
           2
         ]
       },
-      "git:workingFileDiff": {
+      "git:working-file-diff": {
         "api": "git.workingFileDiff",
         "args": [
           3,
@@ -605,7 +605,7 @@
           0
         ]
       },
-      "hooks:runDetail": {
+      "hooks:run-detail": {
         "api": "hooks.runDetail",
         "args": [
           3,
@@ -619,7 +619,7 @@
           1
         ]
       },
-      "hooks:unsandboxedProjectHooks": {
+      "hooks:unsandboxed-project-hooks": {
         "api": "workspace.unsandboxedProjectHooks",
         "args": [
           0,
@@ -633,7 +633,7 @@
           1
         ]
       },
-      "index:resolveFileReferences": {
+      "index:resolve-file-references": {
         "api": "index.resolveFileReferences",
         "args": [
           1,
@@ -661,63 +661,63 @@
           1
         ]
       },
-      "intellect:liveModels": {
+      "intellect:live-models": {
         "api": "intellect.liveModels",
         "args": [
           0,
           0
         ]
       },
-      "lmStudio:detect": {
+      "lm-studio:detect": {
         "api": "lmStudio.detect",
         "args": [
           0,
           2
         ]
       },
-      "lmStudio:download": {
+      "lm-studio:download": {
         "api": "lmStudio.download",
         "args": [
           1,
           3
         ]
       },
-      "lmStudio:downloadStatus": {
+      "lm-studio:download-status": {
         "api": "lmStudio.downloadStatus",
         "args": [
           1,
           3
         ]
       },
-      "lmStudio:modelInfo": {
+      "lm-studio:model-info": {
         "api": "lmStudio.modelInfo",
         "args": [
           0,
           0
         ]
       },
-      "lmStudio:models": {
+      "lm-studio:models": {
         "api": "lmStudio.models",
         "args": [
           0,
           0
         ]
       },
-      "lmStudio:test": {
+      "lm-studio:test": {
         "api": "lmStudio.test",
         "args": [
           1,
           2
         ]
       },
-      "mainWindow:getNavigation": {
+      "main-window:get-navigation": {
         "api": "windowState.getNavigation",
         "args": [
           0,
           0
         ]
       },
-      "mainWindow:setNavigation": {
+      "main-window:set-navigation": {
         "api": "windowState.setNavigation",
         "args": [
           1,
@@ -731,14 +731,14 @@
           0
         ]
       },
-      "mcp:listCurated": {
+      "mcp:list-curated": {
         "api": "mcp.listCurated",
         "args": [
           0,
           0
         ]
       },
-      "mcp:listDeclared": {
+      "mcp:list-declared": {
         "api": "mcp.listDeclared",
         "args": [
           0,
@@ -752,14 +752,14 @@
           0
         ]
       },
-      "mcp:setCuratedEnabled": {
+      "mcp:set-curated-enabled": {
         "api": "mcp.setCuratedEnabled",
         "args": [
           2,
           2
         ]
       },
-      "mcp:setEnabled": {
+      "mcp:set-enabled": {
         "api": "mcp.setEnabled",
         "args": [
           2,
@@ -794,28 +794,28 @@
           4
         ]
       },
-      "modelCards:resolve": {
+      "model-cards:resolve": {
         "api": "modelCards.resolve",
         "args": [
           1,
           1
         ]
       },
-      "models:bestValueDefault": {
+      "models:best-value-default": {
         "api": "models.bestValueDefault",
         "args": [
           0,
           0
         ]
       },
-      "models:resolveDynamic": {
+      "models:resolve-dynamic": {
         "api": "models.resolveDynamic",
         "args": [
           1,
           1
         ]
       },
-      "openRouter:models": {
+      "open-router:models": {
         "api": "openRouter.models",
         "args": [
           0,
@@ -829,14 +829,14 @@
           2
         ]
       },
-      "panes:takePopoutSeed": {
+      "panes:take-popout-seed": {
         "api": "panes.takePopoutSeed",
         "args": [
           1,
           1
         ]
       },
-      "plugins:addSource": {
+      "plugins:add-source": {
         "api": "plugins.addSource",
         "args": [
           0,
@@ -850,14 +850,14 @@
           0
         ]
       },
-      "plugins:setEnabled": {
+      "plugins:set-enabled": {
         "api": "plugins.setEnabled",
         "args": [
           2,
           2
         ]
       },
-      "plugins:setSetting": {
+      "plugins:set-setting": {
         "api": "plugins.setSetting",
         "args": [
           3,
@@ -878,56 +878,56 @@
           0
         ]
       },
-      "remoteAgent:artifactImageDataUrl": {
+      "remote-agent:artifact-image-data-url": {
         "api": "remoteAgent.artifactImageDataUrl",
         "args": [
           2,
           2
         ]
       },
-      "remoteAgent:discoverExternal": {
+      "remote-agent:discover-external": {
         "api": "remoteAgent.discoverExternal",
         "args": [
           0,
           1
         ]
       },
-      "remoteAgent:downloadArtifact": {
+      "remote-agent:download-artifact": {
         "api": "remoteAgent.downloadArtifact",
         "args": [
           2,
           2
         ]
       },
-      "remoteAgent:models": {
+      "remote-agent:models": {
         "api": "remoteAgent.models",
         "args": [
           0,
           0
         ]
       },
-      "roadmap:abortReview": {
+      "roadmap:abort-review": {
         "api": "roadmap.abortReview",
         "args": [
           1,
           1
         ]
       },
-      "roadmap:attachmentData": {
+      "roadmap:attachment-data": {
         "api": "roadmap.attachmentData",
         "args": [
           2,
           2
         ]
       },
-      "roadmap:checkFit": {
+      "roadmap:check-fit": {
         "api": "roadmap.checkFit",
         "args": [
           1,
           1
         ]
       },
-      "roadmap:completeReview": {
+      "roadmap:complete-review": {
         "api": "roadmap.completeReview",
         "args": [
           1,
@@ -955,21 +955,21 @@
           1
         ]
       },
-      "roadmap:importIssues": {
+      "roadmap:import-issues": {
         "api": "roadmap.importIssues",
         "args": [
           1,
           1
         ]
       },
-      "roadmap:issueUrl": {
+      "roadmap:issue-url": {
         "api": "roadmap.issueUrl",
         "args": [
           1,
           1
         ]
       },
-      "roadmap:lastReviewAt": {
+      "roadmap:last-review-at": {
         "api": "roadmap.lastReviewAt",
         "args": [
           0,
@@ -983,56 +983,56 @@
           0
         ]
       },
-      "roadmap:matchOpenIssues": {
+      "roadmap:match-open-issues": {
         "api": "roadmap.matchOpenIssues",
         "args": [
           1,
           1
         ]
       },
-      "roadmap:openIssues": {
+      "roadmap:open-issues": {
         "api": "roadmap.openIssues",
         "args": [
           1,
           1
         ]
       },
-      "roadmap:prepareReview": {
+      "roadmap:prepare-review": {
         "api": "roadmap.prepareReview",
         "args": [
           0,
           0
         ]
       },
-      "roadmap:reviewItem": {
+      "roadmap:review-item": {
         "api": "roadmap.reviewItem",
         "args": [
           2,
           3
         ]
       },
-      "roadmap:reviewItemDeep": {
+      "roadmap:review-item-deep": {
         "api": "roadmap.reviewItemDeep",
         "args": [
           1,
           1
         ]
       },
-      "roadmap:setCategory": {
+      "roadmap:set-category": {
         "api": "roadmap.setCategory",
         "args": [
           2,
           2
         ]
       },
-      "roadmap:setStatus": {
+      "roadmap:set-status": {
         "api": "roadmap.setStatus",
         "args": [
           2,
           2
         ]
       },
-      "roadmap:setThread": {
+      "roadmap:set-thread": {
         "api": "roadmap.setThread",
         "args": [
           2,
@@ -1046,49 +1046,49 @@
           7
         ]
       },
-      "security:disableGuardedYolo": {
+      "security:disable-guarded-yolo": {
         "api": "security.disableGuardedYolo",
         "args": [
           1,
           1
         ]
       },
-      "security:enableGuardedYolo": {
+      "security:enable-guarded-yolo": {
         "api": "security.enableGuardedYolo",
         "args": [
           1,
           1
         ]
       },
-      "security:getGuardedYolo": {
+      "security:get-guarded-yolo": {
         "api": "security.getGuardedYolo",
         "args": [
           1,
           1
         ]
       },
-      "settings:availableProviders": {
+      "settings:available-providers": {
         "api": "settings.availableProviders",
         "args": [
           0,
           0
         ]
       },
-      "settings:deleteExtraProvider": {
+      "settings:delete-extra-provider": {
         "api": "settings.deleteExtraProvider",
         "args": [
           1,
           1
         ]
       },
-      "settings:extraProviders": {
+      "settings:extra-providers": {
         "api": "settings.extraProviders",
         "args": [
           0,
           0
         ]
       },
-      "settings:fetchProviderModels": {
+      "settings:fetch-provider-models": {
         "api": "settings.fetchProviderModels",
         "args": [
           1,
@@ -1102,49 +1102,49 @@
           1
         ]
       },
-      "settings:getKey": {
+      "settings:get-key": {
         "api": "settings.getKey",
         "args": [
           1,
           1
         ]
       },
-      "settings:getKeyEncrypted": {
+      "settings:get-key-encrypted": {
         "api": "settings.getKeyEncrypted",
         "args": [
           1,
           1
         ]
       },
-      "settings:importEnvKeys": {
+      "settings:import-env-keys": {
         "api": "settings.importEnvKeys",
         "args": [
           0,
           1
         ]
       },
-      "settings:modelPricing": {
+      "settings:model-pricing": {
         "api": "settings.modelPricing",
         "args": [
           0,
           0
         ]
       },
-      "settings:refreshHuggingFaceModels": {
+      "settings:refresh-hugging-face-models": {
         "api": "settings.refreshHuggingFaceModels",
         "args": [
           0,
           1
         ]
       },
-      "settings:saveExtraProvider": {
+      "settings:save-extra-provider": {
         "api": "settings.saveExtraProvider",
         "args": [
           1,
           1
         ]
       },
-      "settings:scanEnvKeys": {
+      "settings:scan-env-keys": {
         "api": "settings.scanEnvKeys",
         "args": [
           0,
@@ -1158,35 +1158,35 @@
           2
         ]
       },
-      "settings:setKey": {
+      "settings:set-key": {
         "api": "settings.setKey",
         "args": [
           2,
           3
         ]
       },
-      "settings:setSecurity": {
+      "settings:set-security": {
         "api": "settings.setSecurity",
         "args": [
           1,
           1
         ]
       },
-      "settings:validateKey": {
+      "settings:validate-key": {
         "api": "settings.validateKey",
         "args": [
           2,
           2
         ]
       },
-      "shell:openExternal": {
+      "shell:open-external": {
         "api": "shell.openExternal",
         "args": [
           1,
           1
         ]
       },
-      "shell:openWorkspaceFileInBrowser": {
+      "shell:open-workspace-file-in-browser": {
         "api": "shell.openWorkspaceFileInBrowser",
         "args": [
           3,
@@ -1200,77 +1200,77 @@
           0
         ]
       },
-      "sshPrompt:respond": {
+      "ssh-prompt:respond": {
         "api": "sshPrompt.respond",
         "args": [
           2,
           3
         ]
       },
-      "sshWorkspace:connect": {
+      "ssh-workspace:connect": {
         "api": "sshWorkspace.connect",
         "args": [
           1,
           1
         ]
       },
-      "sshWorkspace:disconnect": {
+      "ssh-workspace:disconnect": {
         "api": "sshWorkspace.disconnect",
         "args": [
           1,
           1
         ]
       },
-      "sshWorkspace:forgetCredentials": {
+      "ssh-workspace:forget-credentials": {
         "api": "sshWorkspace.forgetCredentials",
         "args": [
           1,
           1
         ]
       },
-      "sshWorkspace:getStates": {
+      "ssh-workspace:get-states": {
         "api": "sshWorkspace.getStates",
         "args": [
           0,
           0
         ]
       },
-      "sshWorkspace:listConfigAliases": {
+      "ssh-workspace:list-config-aliases": {
         "api": "sshWorkspace.listConfigAliases",
         "args": [
           0,
           0
         ]
       },
-      "sshWorkspace:listCredentialHostIds": {
+      "ssh-workspace:list-credential-host-ids": {
         "api": "sshWorkspace.listCredentialHostIds",
         "args": [
           0,
           0
         ]
       },
-      "sshWorkspace:listDirectory": {
+      "ssh-workspace:list-directory": {
         "api": "sshWorkspace.listDirectory",
         "args": [
           2,
           2
         ]
       },
-      "sshWorkspace:listHosts": {
+      "ssh-workspace:list-hosts": {
         "api": "sshWorkspace.listHosts",
         "args": [
           0,
           0
         ]
       },
-      "sshWorkspace:reconnect": {
+      "ssh-workspace:reconnect": {
         "api": "sshWorkspace.reconnect",
         "args": [
           1,
           1
         ]
       },
-      "sshWorkspace:registerRoot": {
+      "ssh-workspace:register-root": {
         "api": "sshWorkspace.registerRoot",
         "args": [
           2,
@@ -1326,14 +1326,14 @@
           3
         ]
       },
-      "terminal:setActive": {
+      "terminal:set-active": {
         "api": "terminal.setActive",
         "args": [
           1,
           1
         ]
       },
-      "terminal:setMeta": {
+      "terminal:set-meta": {
         "api": "terminal.setMeta",
         "args": [
           2,
@@ -1347,7 +1347,7 @@
           2
         ]
       },
-      "threads:appendMessage": {
+      "threads:append-message": {
         "api": "threads.appendMessage",
         "args": [
           3,
@@ -1375,7 +1375,7 @@
           2
         ]
       },
-      "threads:exportArchive": {
+      "threads:export-archive": {
         "api": "threads.exportArchive",
         "args": [
           2,
@@ -1389,70 +1389,70 @@
           4
         ]
       },
-      "threads:listOrphans": {
+      "threads:list-orphans": {
         "api": "threads.listOrphans",
         "args": [
           0,
           0
         ]
       },
-      "threads:loadMessages": {
+      "threads:load-messages": {
         "api": "threads.loadMessages",
         "args": [
           2,
           2
         ]
       },
-      "threads:loadProject": {
+      "threads:load-project": {
         "api": "threads.loadProject",
         "args": [
           1,
           1
         ]
       },
-      "threads:recordModelSelection": {
+      "threads:record-model-selection": {
         "api": "threads.recordModelSelection",
         "args": [
           5,
           5
         ]
       },
-      "threads:updateMeta": {
+      "threads:update-meta": {
         "api": "threads.updateMeta",
         "args": [
           3,
           3
         ]
       },
-      "updatePrompt:respond": {
+      "update-prompt:respond": {
         "api": "updatePrompt.respond",
         "args": [
           2,
           2
         ]
       },
-      "usage:getPlanUsage": {
+      "usage:get-plan-usage": {
         "api": "usage.getPlanUsage",
         "args": [
           0,
           0
         ]
       },
-      "usage:getPlanWorthIt": {
+      "usage:get-plan-worth-it": {
         "api": "usage.getPlanWorthIt",
         "args": [
           0,
           0
         ]
       },
-      "usage:getSummary": {
+      "usage:get-summary": {
         "api": "usage.getSummary",
         "args": [
           0,
           0
         ]
       },
-      "usage:setClaudePlanMonthlyFee": {
+      "usage:set-claude-plan-monthly-fee": {
         "api": "usage.setClaudePlanMonthlyFee",
         "args": [
           1,
@@ -1473,7 +1473,7 @@
           1
         ]
       },
-      "vnc:canStoreCredentials": {
+      "vnc:can-store-credentials": {
         "api": "vnc.canStoreCredentials",
         "args": [
           0,
@@ -1494,42 +1494,42 @@
           1
         ]
       },
-      "vnc:discoverNearby": {
+      "vnc:discover-nearby": {
         "api": "vnc.discoverNearby",
         "args": [
           0,
           0
         ]
       },
-      "vnc:forgetCredentials": {
+      "vnc:forget-credentials": {
         "api": "vnc.forgetCredentials",
         "args": [
           1,
           1
         ]
       },
-      "vnc:forgetPassword": {
+      "vnc:forget-password": {
         "api": "vnc.forgetPassword",
         "args": [
           1,
           1
         ]
       },
-      "vnc:getPassword": {
+      "vnc:get-password": {
         "api": "vnc.getPassword",
         "args": [
           1,
           1
         ]
       },
-      "vnc:getUsername": {
+      "vnc:get-username": {
         "api": "vnc.getUsername",
         "args": [
           1,
           1
         ]
       },
-      "vnc:hasPassword": {
+      "vnc:has-password": {
         "api": "vnc.hasPassword",
         "args": [
           1,
@@ -1550,28 +1550,28 @@
           1
         ]
       },
-      "vnc:rememberPassword": {
+      "vnc:remember-password": {
         "api": "vnc.rememberPassword",
         "args": [
           2,
           2
         ]
       },
-      "vnc:rememberUsername": {
+      "vnc:remember-username": {
         "api": "vnc.rememberUsername",
         "args": [
           2,
           2
         ]
       },
-      "vnc:resolveSshHosts": {
+      "vnc:resolve-ssh-hosts": {
         "api": "vnc.resolveSshHosts",
         "args": [
           0,
           0
         ]
       },
-      "workspace:createProject": {
+      "workspace:create-project": {
         "api": "workspace.createNewProject",
         "args": [
           2,
@@ -1585,14 +1585,14 @@
           0
         ]
       },
-      "workspace:getHomeDirectory": {
+      "workspace:get-home-directory": {
         "api": "workspace.getHomeDirectory",
         "args": [
           0,
           0
         ]
       },
-      "workspace:isTrusted": {
+      "workspace:is-trusted": {
         "api": "workspace.isTrusted",
         "args": [
           0,
@@ -1606,7 +1606,7 @@
           0
         ]
       },
-      "workspace:pickParentDirectory": {
+      "workspace:pick-parent-directory": {
         "api": "workspace.pickParentDirectory",
         "args": [
           0,
@@ -1620,14 +1620,14 @@
           2
         ]
       },
-      "workspace:setTrusted": {
+      "workspace:set-trusted": {
         "api": "workspace.setTrusted",
         "args": [
           1,
           1
         ]
       },
-      "worktrees:cleanupPackages": {
+      "worktrees:cleanup-packages": {
         "api": "worktrees.cleanupPackages",
         "args": [
           3,
@@ -1641,7 +1641,7 @@
           1
         ]
       },
-      "worktrees:openTerminal": {
+      "worktrees:open-terminal": {
         "api": "worktrees.openTerminal",
         "args": [
           2,
@@ -1680,28 +1680,28 @@
       }
     },
     "event": {
-      "agent:approvalCancelled": {
+      "agent:approval-cancelled": {
         "api": "agent.onApprovalCancelled",
         "args": [
           1,
           1
         ]
       },
-      "agent:approvalRequest": {
+      "agent:approval-request": {
         "api": "agent.onApprovalRequest",
         "args": [
           1,
           1
         ]
       },
-      "agent:askUserCancelled": {
+      "agent:ask-user-cancelled": {
         "api": "agent.onAskUserCancelled",
         "args": [
           1,
           1
         ]
       },
-      "agent:askUserRequest": {
+      "agent:ask-user-request": {
         "api": "agent.onAskUserRequest",
         "args": [
           1,
@@ -1715,35 +1715,35 @@
           2
         ]
       },
-      "agent:hookQueueMessage": {
+      "agent:hook-queue-message": {
         "api": "agent.onHookQueueMessage",
         "args": [
           1,
           1
         ]
       },
-      "agent:refreshContextEstimate": {
+      "agent:refresh-context-estimate": {
         "api": "agent.onRefreshContextEstimate",
         "args": [
           0,
           0
         ]
       },
-      "agent:shellOutput": {
+      "agent:shell-output": {
         "api": "agent.onShellOutput",
         "args": [
           2,
           2
         ]
       },
-      "agent:show_diff": {
+      "agent:show-diff": {
         "api": "diff.onShowDiff",
         "args": [
           6,
           6
         ]
       },
-      "app:close_confirm_request": {
+      "app:close-confirm-request": {
         "api": "closeConfirm.onRequest",
         "args": [
           1,
@@ -1757,35 +1757,35 @@
           1
         ]
       },
-      "browser:openTab": {
+      "browser:open-tab": {
         "api": "browser.onOpenTab",
         "args": [
           1,
           1
         ]
       },
-      "browser:previewStale": {
+      "browser:preview-stale": {
         "api": "browser.onPreviewStale",
         "args": [
           1,
           1
         ]
       },
-      "browser:shareImage": {
+      "browser:share-image": {
         "api": "browser.onShareImage",
         "args": [
           1,
           1
         ]
       },
-      "browser:shareText": {
+      "browser:share-text": {
         "api": "browser.onShareText",
         "args": [
           1,
           1
         ]
       },
-      "browser:showTab": {
+      "browser:show-tab": {
         "api": "browser.onShowTab",
         "args": [
           1,
@@ -1799,7 +1799,7 @@
           1
         ]
       },
-      "canvas:showArtefact": {
+      "canvas:show-artefact": {
         "api": "canvas.onShowArtefact",
         "args": [
           1,
@@ -1827,49 +1827,49 @@
           4
         ]
       },
-      "gh:listsTick": {
+      "gh:lists-tick": {
         "api": "gh.onListsTick",
         "args": [
           0,
           0
         ]
       },
-      "git:workingTreeChanged": {
+      "git:working-tree-changed": {
         "api": "git.onWorkingTreeChanged",
         "args": [
           1,
           1
         ]
       },
-      "index:statusChanged": {
+      "index:status-changed": {
         "api": "index.onStatusChanged",
         "args": [
           1,
           1
         ]
       },
-      "mcp:statusChanged": {
+      "mcp:status-changed": {
         "api": "mcp.onStatusChanged",
         "args": [
           1,
           1
         ]
       },
-      "menu:focusBrowserUrlBar": {
+      "menu:focus-browser-url-bar": {
         "api": "menu.onFocusBrowserUrlBar",
         "args": [
           0,
           0
         ]
       },
-      "menu:keyboardShortcuts": {
+      "menu:keyboard-shortcuts": {
         "api": "menu.onKeyboardShortcuts",
         "args": [
           0,
           0
         ]
       },
-      "menu:newThread": {
+      "menu:new-thread": {
         "api": "menu.onNewThread",
         "args": [
           0,
@@ -1883,56 +1883,56 @@
           0
         ]
       },
-      "menu:showBrowser": {
+      "menu:show-browser": {
         "api": "menu.onShowBrowser",
         "args": [
           0,
           0
         ]
       },
-      "menu:showChanges": {
+      "menu:show-changes": {
         "api": "menu.onShowChanges",
         "args": [
           0,
           0
         ]
       },
-      "menu:showExplorer": {
+      "menu:show-explorer": {
         "api": "menu.onShowExplorer",
         "args": [
           0,
           0
         ]
       },
-      "menu:showTerminal": {
+      "menu:show-terminal": {
         "api": "menu.onShowTerminal",
         "args": [
           0,
           0
         ]
       },
-      "menu:togglePanel": {
+      "menu:toggle-panel": {
         "api": "menu.onTogglePanel",
         "args": [
           0,
           0
         ]
       },
-      "menu:uiScaleReset": {
+      "menu:ui-scale-reset": {
         "api": "menu.onUiScaleReset",
         "args": [
           0,
           0
         ]
       },
-      "menu:uiScaleZoomIn": {
+      "menu:ui-scale-zoom-in": {
         "api": "menu.onUiScaleZoomIn",
         "args": [
           0,
           0
         ]
       },
-      "menu:uiScaleZoomOut": {
+      "menu:ui-scale-zoom-out": {
         "api": "menu.onUiScaleZoomOut",
         "args": [
           0,
@@ -1960,21 +1960,21 @@
           0
         ]
       },
-      "security:guardedYoloChanged": {
+      "security:guarded-yolo-changed": {
         "api": "security.onGuardedYoloChanged",
         "args": [
           1,
           1
         ]
       },
-      "ssh:connection_changed": {
+      "ssh:connection-changed": {
         "api": "sshWorkspace.onConnectionChanged",
         "args": [
           1,
           1
         ]
       },
-      "ssh:prompt_request": {
+      "ssh:prompt-request": {
         "api": "sshPrompt.onRequest",
         "args": [
           1,
@@ -2002,28 +2002,28 @@
           2
         ]
       },
-      "terminal:runCommand": {
+      "terminal:run-command": {
         "api": "terminal.onRunCommand",
         "args": [
           1,
           1
         ]
       },
-      "threads:prRefs": {
+      "threads:pr-refs": {
         "api": "threads.onPrRefs",
         "args": [
           2,
           2
         ]
       },
-      "update:dev_notice": {
+      "update:dev-notice": {
         "api": "updatePrompt.onDevNotice",
         "args": [
           0,
           0
         ]
       },
-      "update:prompt_request": {
+      "update:prompt-request": {
         "api": "updatePrompt.onRequest",
         "args": [
           1,

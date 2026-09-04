@@ -464,7 +464,7 @@ async function prefetchThreadFiles(dir: string, spineRaw: string): Promise<Map<s
  * project load — a heap that only ever grew, holding history no surface could
  * show. `includeArchived` defaults to true so whole-history readers, agent
  * discovery, and metadata-only all-time usage totals remain complete; the
- * renderer's `threads:loadProject` opts out.
+ * renderer's `threads:load-project` opts out.
  */
 export interface ThreadLoadOptions {
   includeArchived?: boolean
@@ -728,7 +728,7 @@ async function readProjectThreads(
   projectId: string,
   options: ThreadLoadOptions = {},
 ): Promise<Thread[]> {
-  // DEBUG BRANCH: this is the whole-project read that `threads:loadProject`
+  // DEBUG BRANCH: this is the whole-project read that `threads:load-project`
   // performs on every open and every switch back. It reads and folds each
   // non-archived thread in full — meta, spine, and every referenced message and
   // blob file — so its cost is a function of the project's entire chat history,
@@ -1095,7 +1095,7 @@ const queueKey = (projectId: string): string => `thread-store:${projectId}`
 
 // --- In-memory per-project meta cache (issue #1872, finding 1) --------------
 //
-// `threads:loadProject` re-reads every thread's `meta.json` on every project
+// `threads:load-project` re-reads every thread's `meta.json` on every project
 // open, so switching back to a large profile costs the same as arriving cold
 // (docs/perf-open-profiling.md). These snapshots survive project switches; the
 // per-project write queue is the invalidation hook: every entry point that

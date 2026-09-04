@@ -91,7 +91,7 @@ export function initCloseConfirm(win: BrowserWindow): void {
     resolve(confirmed)
   }
 
-  ipcMain.handle('closeConfirm:respond', (event, ...rawArgs) => {
+  ipcMain.handle('close-confirm:respond', (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [id, confirmed] = parseIpcArgs(closeConfirmRespondSchema, rawArgs)
@@ -125,7 +125,7 @@ export function initCloseConfirm(win: BrowserWindow): void {
         return
       }
       const id = randomUUID()
-      win.webContents.send('app:close_confirm_request', { id })
+      win.webContents.send('app:close-confirm-request', { id })
       const timer = setTimeout(() => {
         settle(id, true)
       }, CLOSE_CONFIRM_TIMEOUT_MS)

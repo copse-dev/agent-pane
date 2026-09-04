@@ -12,7 +12,7 @@ const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 // Drives a real run_shell tool call through the mock LLM and asserts it surfaces
 // as an "Agent tasks" entry in the Terminal tab's left rail; selecting it shows
 // the command's output as a full panel on the right. Exercises the full path:
-// agent loop → tagged agent:shellOutput IPC → renderer agent-tasks view.
+// agent loop → tagged agent:shell-output IPC → renderer agent-tasks view.
 // Quarantined in CI by #1680 — the third spec sharing that fault, and the one
 // it was originally filed for. See `github-write-approval.e2e.ts` for the
 // evidence. It still runs locally; only the CI gate skips it.

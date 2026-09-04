@@ -13,21 +13,21 @@ exposePerfBridge()
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
   windowState: {
-    getNavigation: () => ipcRenderer.invoke('mainWindow:getNavigation'),
+    getNavigation: () => ipcRenderer.invoke('main-window:get-navigation'),
     setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>
-      ipcRenderer.invoke('mainWindow:setNavigation', navigation),
+      ipcRenderer.invoke('main-window:set-navigation', navigation),
   },
   workspace: {
     open: () => ipcRenderer.invoke('workspace:open'),
     get: () => ipcRenderer.invoke('workspace:get'),
     set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
-    isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
-    setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
+    isTrusted: () => ipcRenderer.invoke('workspace:is-trusted'),
+    setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:set-trusted', trusted),
     createNewProject: (name: string, parentDir: string) =>
-      ipcRenderer.invoke('workspace:createProject', name, parentDir),
-    pickParentDirectory: () => ipcRenderer.invoke('workspace:pickParentDirectory'),
-    getHomeDirectory: () => ipcRenderer.invoke('workspace:getHomeDirectory'),
-    unsandboxedProjectHooks: () => ipcRenderer.invoke('hooks:unsandboxedProjectHooks'),
+      ipcRenderer.invoke('workspace:create-project', name, parentDir),
+    pickParentDirectory: () => ipcRenderer.invoke('workspace:pick-parent-directory'),
+    getHomeDirectory: () => ipcRenderer.invoke('workspace:get-home-directory'),
+    unsandboxedProjectHooks: () => ipcRenderer.invoke('hooks:unsandboxed-project-hooks'),
     onOpened: (handler: (root: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, root: string): void => {
         handler(root)
@@ -40,37 +40,37 @@ const api: ApiClient = {
   },
   browser: {
     workspaceFileUrl: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('browser:workspaceFileUrl', projectId, threadId, path),
+      ipcRenderer.invoke('browser:workspace-file-url', projectId, threadId, path),
     sharePageText: (webContentsId: number) =>
-      ipcRenderer.invoke('browser:sharePageText', webContentsId),
+      ipcRenderer.invoke('browser:share-page-text', webContentsId),
     shareScreenshot: (webContentsId: number) =>
-      ipcRenderer.invoke('browser:shareScreenshot', webContentsId),
-    exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:exportPdf', webContentsId),
+      ipcRenderer.invoke('browser:share-screenshot', webContentsId),
+    exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
     onOpenTab: (handler: (url: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
         handler(url)
       }
-      ipcRenderer.on('browser:openTab', listener)
+      ipcRenderer.on('browser:open-tab', listener)
       return (): void => {
-        ipcRenderer.off('browser:openTab', listener)
+        ipcRenderer.off('browser:open-tab', listener)
       }
     },
     onShowTab: (handler: (url: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
         handler(url)
       }
-      ipcRenderer.on('browser:showTab', listener)
+      ipcRenderer.on('browser:show-tab', listener)
       return (): void => {
-        ipcRenderer.off('browser:showTab', listener)
+        ipcRenderer.off('browser:show-tab', listener)
       }
     },
     onPreviewStale: (handler: (origin: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, origin: string): void => {
         handler(origin)
       }
-      ipcRenderer.on('browser:previewStale', listener)
+      ipcRenderer.on('browser:preview-stale', listener)
       return (): void => {
-        ipcRenderer.off('browser:previewStale', listener)
+        ipcRenderer.off('browser:preview-stale', listener)
       }
     },
     onShareText: (
@@ -82,9 +82,9 @@ const api: ApiClient = {
       ): void => {
         handler(share)
       }
-      ipcRenderer.on('browser:shareText', listener)
+      ipcRenderer.on('browser:share-text', listener)
       return (): void => {
-        ipcRenderer.off('browser:shareText', listener)
+        ipcRenderer.off('browser:share-text', listener)
       }
     },
     onShareImage: (
@@ -96,9 +96,9 @@ const api: ApiClient = {
       ): void => {
         handler(share)
       }
-      ipcRenderer.on('browser:shareImage', listener)
+      ipcRenderer.on('browser:share-image', listener)
       return (): void => {
-        ipcRenderer.off('browser:shareImage', listener)
+        ipcRenderer.off('browser:share-image', listener)
       }
     },
     onPluginTabRequest: (
@@ -134,11 +134,11 @@ const api: ApiClient = {
     },
   },
   security: {
-    getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:getGuardedYolo', threadId),
+    getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:get-guarded-yolo', threadId),
     enableGuardedYolo: (threadId: string) =>
-      ipcRenderer.invoke('security:enableGuardedYolo', threadId),
+      ipcRenderer.invoke('security:enable-guarded-yolo', threadId),
     disableGuardedYolo: (threadId: string) =>
-      ipcRenderer.invoke('security:disableGuardedYolo', threadId),
+      ipcRenderer.invoke('security:disable-guarded-yolo', threadId),
     onGuardedYoloChanged: (
       handler: (state: import('@shared/types/guarded-yolo.ts').GuardedYoloState) => void,
     ) => {
@@ -148,21 +148,21 @@ const api: ApiClient = {
       ): void => {
         handler(state)
       }
-      ipcRenderer.on('security:guardedYoloChanged', listener)
+      ipcRenderer.on('security:guarded-yolo-changed', listener)
       return (): void => {
-        ipcRenderer.off('security:guardedYoloChanged', listener)
+        ipcRenderer.off('security:guarded-yolo-changed', listener)
       }
     },
   },
   fs: {
     readFile: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('fs:readFile', projectId, threadId, path),
+      ipcRenderer.invoke('fs:read-file', projectId, threadId, path),
     writeFile: (projectId: string, threadId: string, path: string, content: string) =>
-      ipcRenderer.invoke('fs:writeFile', projectId, threadId, path, content),
+      ipcRenderer.invoke('fs:write-file', projectId, threadId, path, content),
     readdir: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('fs:readdir', projectId, threadId, path),
     listDir: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('fs:listDir', projectId, threadId, path),
+      ipcRenderer.invoke('fs:list-dir', projectId, threadId, path),
     watch: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('fs:watch', projectId, threadId, path),
     unwatch: (projectId: string, threadId: string, path: string) =>
@@ -194,42 +194,44 @@ const api: ApiClient = {
       model: string,
       userPrompt: string,
       images: string[],
-    ) => ipcRenderer.invoke('agent:describeImages', projectId, threadId, model, userPrompt, images),
+    ) =>
+      ipcRenderer.invoke('agent:describe-images', projectId, threadId, model, userPrompt, images),
     prepareCheckout: (
       projectId: string,
       threadId: string,
       prompt: string,
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
-    ) => ipcRenderer.invoke('agent:prepareCheckout', projectId, threadId, prompt, choice, model),
+    ) => ipcRenderer.invoke('agent:prepare-checkout', projectId, threadId, prompt, choice, model),
     previewCheckout: (
       projectId: string,
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
-    ) => ipcRenderer.invoke('agent:previewCheckout', projectId, choice, model),
-    resetDefaultBranchCache: () => ipcRenderer.invoke('agent:resetDefaultBranchCache'),
+    ) => ipcRenderer.invoke('agent:preview-checkout', projectId, choice, model),
+    resetDefaultBranchCache: () => ipcRenderer.invoke('agent:reset-default-branch-cache'),
     estimateContext: (projectId: string, threadId: string, payload: string) =>
-      ipcRenderer.invoke('agent:estimateContext', projectId, threadId, payload),
+      ipcRenderer.invoke('agent:estimate-context', projectId, threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
-    runningThreadIds: () => ipcRenderer.invoke('agent:runningThreadIds'),
+    runningThreadIds: () => ipcRenderer.invoke('agent:running-thread-ids'),
     retryReview: (projectId: string, threadId: string, payload: string) =>
-      ipcRenderer.invoke('agent:retryReview', projectId, threadId, payload),
+      ipcRenderer.invoke('agent:retry-review', projectId, threadId, payload),
     retryComparison: (projectId: string, threadId: string, payload: string) =>
-      ipcRenderer.invoke('agent:retryComparison', projectId, threadId, payload),
-    comparisonModels: (payload: string) => ipcRenderer.invoke('agent:comparisonModels', payload),
+      ipcRenderer.invoke('agent:retry-comparison', projectId, threadId, payload),
+    comparisonModels: (payload: string) => ipcRenderer.invoke('agent:comparison-models', payload),
     clearHistory: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('agent:clearHistory', projectId, threadId),
-    refreshModelContext: () => ipcRenderer.invoke('agent:refreshModelContext'),
-    suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
-    suggestTerminalTitle: (text: string) => ipcRenderer.invoke('agent:suggestTerminalTitle', text),
+      ipcRenderer.invoke('agent:clear-history', projectId, threadId),
+    refreshModelContext: () => ipcRenderer.invoke('agent:refresh-model-context'),
+    suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggest-title', text),
+    suggestTerminalTitle: (text: string) =>
+      ipcRenderer.invoke('agent:suggest-terminal-title', text),
     suggestCommandSummary: (commands: string[]) =>
-      ipcRenderer.invoke('agent:suggestCommandSummary', commands),
+      ipcRenderer.invoke('agent:suggest-command-summary', commands),
     suggestToolTurnSummary: (actions: string[]) =>
-      ipcRenderer.invoke('agent:suggestToolTurnSummary', actions),
+      ipcRenderer.invoke('agent:suggest-tool-turn-summary', actions),
     suggestFollowUps: (projectId: string, threadId: string, contextJson: string) =>
-      ipcRenderer.invoke('agent:suggestFollowUps', projectId, threadId, contextJson),
+      ipcRenderer.invoke('agent:suggest-follow-ups', projectId, threadId, contextJson),
     suggestNextStep: (contextJson: string) =>
-      ipcRenderer.invoke('agent:suggestNextStep', contextJson),
+      ipcRenderer.invoke('agent:suggest-next-step', contextJson),
     onChunk: (handler: (threadId: string, chunk: import('@shared/types').StreamChunk) => void) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
@@ -286,18 +288,18 @@ const api: ApiClient = {
       ): void => {
         handler(req)
       }
-      ipcRenderer.on('agent:approvalRequest', listener)
+      ipcRenderer.on('agent:approval-request', listener)
       return (): void => {
-        ipcRenderer.off('agent:approvalRequest', listener)
+        ipcRenderer.off('agent:approval-request', listener)
       }
     },
     onApprovalCancelled: (handler: (req: { id: string }) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
         handler(req)
       }
-      ipcRenderer.on('agent:approvalCancelled', listener)
+      ipcRenderer.on('agent:approval-cancelled', listener)
       return (): void => {
-        ipcRenderer.off('agent:approvalCancelled', listener)
+        ipcRenderer.off('agent:approval-cancelled', listener)
       }
     },
     onAskUserRequest: (
@@ -317,18 +319,18 @@ const api: ApiClient = {
       ): void => {
         handler(req)
       }
-      ipcRenderer.on('agent:askUserRequest', listener)
+      ipcRenderer.on('agent:ask-user-request', listener)
       return (): void => {
-        ipcRenderer.off('agent:askUserRequest', listener)
+        ipcRenderer.off('agent:ask-user-request', listener)
       }
     },
     onAskUserCancelled: (handler: (req: { id: string }) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
         handler(req)
       }
-      ipcRenderer.on('agent:askUserCancelled', listener)
+      ipcRenderer.on('agent:ask-user-cancelled', listener)
       return (): void => {
-        ipcRenderer.off('agent:askUserCancelled', listener)
+        ipcRenderer.off('agent:ask-user-cancelled', listener)
       }
     },
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => {
@@ -339,18 +341,18 @@ const api: ApiClient = {
       ): void => {
         handler(data, toolCallId)
       }
-      ipcRenderer.on('agent:shellOutput', listener)
+      ipcRenderer.on('agent:shell-output', listener)
       return (): void => {
-        ipcRenderer.off('agent:shellOutput', listener)
+        ipcRenderer.off('agent:shell-output', listener)
       }
     },
     onRefreshContextEstimate: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('agent:refreshContextEstimate', listener)
+      ipcRenderer.on('agent:refresh-context-estimate', listener)
       return (): void => {
-        ipcRenderer.off('agent:refreshContextEstimate', listener)
+        ipcRenderer.off('agent:refresh-context-estimate', listener)
       }
     },
     onHookQueueMessage: (
@@ -362,9 +364,9 @@ const api: ApiClient = {
       ): void => {
         handler(payload)
       }
-      ipcRenderer.on('agent:hookQueueMessage', listener)
+      ipcRenderer.on('agent:hook-queue-message', listener)
       return (): void => {
-        ipcRenderer.off('agent:hookQueueMessage', listener)
+        ipcRenderer.off('agent:hook-queue-message', listener)
       }
     },
   },
@@ -374,9 +376,9 @@ const api: ApiClient = {
     reject: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('diff:reject', projectId, threadId, path),
     approveAll: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('diff:approveAll', projectId, threadId),
+      ipcRenderer.invoke('diff:approve-all', projectId, threadId),
     rejectAll: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('diff:rejectAll', projectId, threadId),
+      ipcRenderer.invoke('diff:reject-all', projectId, threadId),
     content: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('diff:content', projectId, threadId, path),
     queue: (projectId: string, threadId: string) =>
@@ -402,9 +404,9 @@ const api: ApiClient = {
       ): void => {
         handler(projectId, threadId, p, b, a, l)
       }
-      ipcRenderer.on('agent:show_diff', listener)
+      ipcRenderer.on('agent:show-diff', listener)
       return (): void => {
-        ipcRenderer.off('agent:show_diff', listener)
+        ipcRenderer.off('agent:show-diff', listener)
       }
     },
     onQueued: (
@@ -457,11 +459,11 @@ const api: ApiClient = {
   },
   alerts: {
     threadFinished: (threadId: string, title: string) =>
-      ipcRenderer.invoke('alerts:threadFinished', threadId, title),
+      ipcRenderer.invoke('alerts:thread-finished', threadId, title),
   },
   sshPrompt: {
     respond: (id: string, value: string, remember = false) =>
-      ipcRenderer.invoke('sshPrompt:respond', id, value, remember),
+      ipcRenderer.invoke('ssh-prompt:respond', id, value, remember),
     onRequest: (
       handler: (req: {
         id: string
@@ -481,15 +483,15 @@ const api: ApiClient = {
       ): void => {
         handler(req)
       }
-      ipcRenderer.on('ssh:prompt_request', listener)
+      ipcRenderer.on('ssh:prompt-request', listener)
       return (): void => {
-        ipcRenderer.off('ssh:prompt_request', listener)
+        ipcRenderer.off('ssh:prompt-request', listener)
       }
     },
   },
   updatePrompt: {
     respond: (id: string, buttonIndex: number) =>
-      ipcRenderer.invoke('updatePrompt:respond', id, buttonIndex),
+      ipcRenderer.invoke('update-prompt:respond', id, buttonIndex),
     onRequest: (
       handler: (req: {
         id: string
@@ -513,48 +515,48 @@ const api: ApiClient = {
       ): void => {
         handler(req)
       }
-      ipcRenderer.on('update:prompt_request', listener)
+      ipcRenderer.on('update:prompt-request', listener)
       return (): void => {
-        ipcRenderer.off('update:prompt_request', listener)
+        ipcRenderer.off('update:prompt-request', listener)
       }
     },
     onDevNotice: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('update:dev_notice', listener)
+      ipcRenderer.on('update:dev-notice', listener)
       return (): void => {
-        ipcRenderer.off('update:dev_notice', listener)
+        ipcRenderer.off('update:dev-notice', listener)
       }
     },
   },
   closeConfirm: {
     respond: (id: string, confirmed: boolean) =>
-      ipcRenderer.invoke('closeConfirm:respond', id, confirmed),
+      ipcRenderer.invoke('close-confirm:respond', id, confirmed),
     onRequest: (handler: (req: { id: string }) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
         handler(req)
       }
-      ipcRenderer.on('app:close_confirm_request', listener)
+      ipcRenderer.on('app:close-confirm-request', listener)
       return (): void => {
-        ipcRenderer.off('app:close_confirm_request', listener)
+        ipcRenderer.off('app:close-confirm-request', listener)
       }
     },
   },
   sshWorkspace: {
-    listHosts: () => ipcRenderer.invoke('sshWorkspace:listHosts'),
-    listConfigAliases: () => ipcRenderer.invoke('sshWorkspace:listConfigAliases'),
-    getStates: () => ipcRenderer.invoke('sshWorkspace:getStates'),
-    listCredentialHostIds: () => ipcRenderer.invoke('sshWorkspace:listCredentialHostIds'),
+    listHosts: () => ipcRenderer.invoke('ssh-workspace:list-hosts'),
+    listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:list-config-aliases'),
+    getStates: () => ipcRenderer.invoke('ssh-workspace:get-states'),
+    listCredentialHostIds: () => ipcRenderer.invoke('ssh-workspace:list-credential-host-ids'),
     forgetCredentials: (hostId: string) =>
-      ipcRenderer.invoke('sshWorkspace:forgetCredentials', hostId),
-    connect: (hostId: string) => ipcRenderer.invoke('sshWorkspace:connect', hostId),
-    disconnect: (hostId: string) => ipcRenderer.invoke('sshWorkspace:disconnect', hostId),
-    reconnect: (hostId: string) => ipcRenderer.invoke('sshWorkspace:reconnect', hostId),
+      ipcRenderer.invoke('ssh-workspace:forget-credentials', hostId),
+    connect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:connect', hostId),
+    disconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:disconnect', hostId),
+    reconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:reconnect', hostId),
     listDirectory: (hostId: string, dirPath: string) =>
-      ipcRenderer.invoke('sshWorkspace:listDirectory', hostId, dirPath),
+      ipcRenderer.invoke('ssh-workspace:list-directory', hostId, dirPath),
     registerRoot: (hostId: string, dirPath: string) =>
-      ipcRenderer.invoke('sshWorkspace:registerRoot', hostId, dirPath),
+      ipcRenderer.invoke('ssh-workspace:register-root', hostId, dirPath),
     onConnectionChanged: (
       handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
     ) => {
@@ -564,9 +566,9 @@ const api: ApiClient = {
       ): void => {
         handler(states)
       }
-      ipcRenderer.on('ssh:connection_changed', listener)
+      ipcRenderer.on('ssh:connection-changed', listener)
       return (): void => {
-        ipcRenderer.off('ssh:connection_changed', listener)
+        ipcRenderer.off('ssh:connection-changed', listener)
       }
     },
   },
@@ -574,11 +576,11 @@ const api: ApiClient = {
     list: () => ipcRenderer.invoke('mcp:list'),
     reload: () => ipcRenderer.invoke('mcp:reload'),
     setEnabled: (name: string, enabled: boolean) =>
-      ipcRenderer.invoke('mcp:setEnabled', name, enabled),
-    listCurated: () => ipcRenderer.invoke('mcp:listCurated'),
-    listDeclared: () => ipcRenderer.invoke('mcp:listDeclared'),
+      ipcRenderer.invoke('mcp:set-enabled', name, enabled),
+    listCurated: () => ipcRenderer.invoke('mcp:list-curated'),
+    listDeclared: () => ipcRenderer.invoke('mcp:list-declared'),
     setCuratedEnabled: (name: string, enabled: boolean) =>
-      ipcRenderer.invoke('mcp:setCuratedEnabled', name, enabled),
+      ipcRenderer.invoke('mcp:set-curated-enabled', name, enabled),
     onStatusChanged: (
       handler: (statuses: import('@shared/types/mcp.ts').McpServerStatus[]) => void,
     ) => {
@@ -588,9 +590,9 @@ const api: ApiClient = {
       ): void => {
         handler(statuses)
       }
-      ipcRenderer.on('mcp:statusChanged', listener)
+      ipcRenderer.on('mcp:status-changed', listener)
       return (): void => {
-        ipcRenderer.off('mcp:statusChanged', listener)
+        ipcRenderer.off('mcp:status-changed', listener)
       }
     },
   },
@@ -616,24 +618,24 @@ const api: ApiClient = {
       ): void => {
         handler(identity)
       }
-      ipcRenderer.on('canvas:showArtefact', listener)
+      ipcRenderer.on('canvas:show-artefact', listener)
       return (): void => {
-        ipcRenderer.off('canvas:showArtefact', listener)
+        ipcRenderer.off('canvas:show-artefact', listener)
       }
     },
     listArtefacts: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('canvas:listArtefacts', projectId, threadId),
+      ipcRenderer.invoke('canvas:list-artefacts', projectId, threadId),
     reopenArtefact: (projectId: string, threadId: string, title: string) =>
-      ipcRenderer.invoke('canvas:reopenArtefact', projectId, threadId, title),
+      ipcRenderer.invoke('canvas:reopen-artefact', projectId, threadId, title),
   },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('storage:set', key, value),
   },
   threads: {
-    loadProject: (projectId: string) => ipcRenderer.invoke('threads:loadProject', projectId),
+    loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
     loadMessages: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('threads:loadMessages', projectId, threadId),
+      ipcRenderer.invoke('threads:load-messages', projectId, threadId),
     onPrRefs: (
       handler: (
         projectId: string,
@@ -653,9 +655,9 @@ const api: ApiClient = {
       ): void => {
         handler(projectId, refs)
       }
-      ipcRenderer.on('threads:prRefs', listener)
+      ipcRenderer.on('threads:pr-refs', listener)
       return (): void => {
-        ipcRenderer.removeListener('threads:prRefs', listener)
+        ipcRenderer.removeListener('threads:pr-refs', listener)
       }
     },
     create: (projectId: string, thread: import('@shared/types').Thread) =>
@@ -664,23 +666,23 @@ const api: ApiClient = {
       projectId: string,
       threadId: string,
       message: import('@shared/types').Message,
-    ) => ipcRenderer.invoke('threads:appendMessage', projectId, threadId, message),
+    ) => ipcRenderer.invoke('threads:append-message', projectId, threadId, message),
     updateMeta: (
       projectId: string,
       threadId: string,
       patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
-    ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
+    ) => ipcRenderer.invoke('threads:update-meta', projectId, threadId, patch),
     recordModelSelection: (
       projectId: string,
       threadId: string,
       by: 'user' | 'auto',
       from: string | undefined,
       to: string,
-    ) => ipcRenderer.invoke('threads:recordModelSelection', projectId, threadId, by, from, to),
+    ) => ipcRenderer.invoke('threads:record-model-selection', projectId, threadId, by, from, to),
     delete: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:delete', projectId, threadId),
     exportArchive: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('threads:exportArchive', projectId, threadId),
+      ipcRenderer.invoke('threads:export-archive', projectId, threadId),
     fork: (
       projectId: string,
       sourceThreadId: string,
@@ -696,7 +698,7 @@ const api: ApiClient = {
       ),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
-    listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
+    listOrphans: () => ipcRenderer.invoke('threads:list-orphans'),
   },
   archive: {
     attach: (
@@ -714,27 +716,27 @@ const api: ApiClient = {
     read: (path: string) => ipcRenderer.invoke('video:read', path),
   },
   intellect: {
-    liveModels: () => ipcRenderer.invoke('intellect:liveModels'),
+    liveModels: () => ipcRenderer.invoke('intellect:live-models'),
   },
   modelCards: {
-    resolve: (modelIds: string[]) => ipcRenderer.invoke('modelCards:resolve', modelIds),
+    resolve: (modelIds: string[]) => ipcRenderer.invoke('model-cards:resolve', modelIds),
   },
   lmStudio: {
-    test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmStudio:test', url, apiKey),
-    models: () => ipcRenderer.invoke('lmStudio:models'),
-    modelInfo: () => ipcRenderer.invoke('lmStudio:modelInfo'),
-    detect: (url?: string, apiKey?: string) => ipcRenderer.invoke('lmStudio:detect', url, apiKey),
+    test: (url: string, apiKey?: string) => ipcRenderer.invoke('lm-studio:test', url, apiKey),
+    models: () => ipcRenderer.invoke('lm-studio:models'),
+    modelInfo: () => ipcRenderer.invoke('lm-studio:model-info'),
+    detect: (url?: string, apiKey?: string) => ipcRenderer.invoke('lm-studio:detect', url, apiKey),
     download: (modelId: string, url?: string, apiKey?: string) =>
-      ipcRenderer.invoke('lmStudio:download', modelId, url, apiKey),
+      ipcRenderer.invoke('lm-studio:download', modelId, url, apiKey),
     downloadStatus: (jobId: string, url?: string, apiKey?: string) =>
-      ipcRenderer.invoke('lmStudio:downloadStatus', jobId, url, apiKey),
+      ipcRenderer.invoke('lm-studio:download-status', jobId, url, apiKey),
   },
   openRouter: {
-    models: () => ipcRenderer.invoke('openRouter:models'),
+    models: () => ipcRenderer.invoke('open-router:models'),
   },
   models: {
-    bestValueDefault: () => ipcRenderer.invoke('models:bestValueDefault'),
-    resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolveDynamic', value),
+    bestValueDefault: () => ipcRenderer.invoke('models:best-value-default'),
+    resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolve-dynamic', value),
   },
   menu: {
     onSettings: (handler: () => void) => {
@@ -750,116 +752,116 @@ const api: ApiClient = {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:newThread', listener)
+      ipcRenderer.on('menu:new-thread', listener)
       return (): void => {
-        ipcRenderer.off('menu:newThread', listener)
+        ipcRenderer.off('menu:new-thread', listener)
       }
     },
     onTogglePanel: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:togglePanel', listener)
+      ipcRenderer.on('menu:toggle-panel', listener)
       return (): void => {
-        ipcRenderer.off('menu:togglePanel', listener)
+        ipcRenderer.off('menu:toggle-panel', listener)
       }
     },
     onShowExplorer: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:showExplorer', listener)
+      ipcRenderer.on('menu:show-explorer', listener)
       return (): void => {
-        ipcRenderer.off('menu:showExplorer', listener)
+        ipcRenderer.off('menu:show-explorer', listener)
       }
     },
     onShowTerminal: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:showTerminal', listener)
+      ipcRenderer.on('menu:show-terminal', listener)
       return (): void => {
-        ipcRenderer.off('menu:showTerminal', listener)
+        ipcRenderer.off('menu:show-terminal', listener)
       }
     },
     onShowChanges: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:showChanges', listener)
+      ipcRenderer.on('menu:show-changes', listener)
       return (): void => {
-        ipcRenderer.off('menu:showChanges', listener)
+        ipcRenderer.off('menu:show-changes', listener)
       }
     },
     onShowBrowser: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:showBrowser', listener)
+      ipcRenderer.on('menu:show-browser', listener)
       return (): void => {
-        ipcRenderer.off('menu:showBrowser', listener)
+        ipcRenderer.off('menu:show-browser', listener)
       }
     },
     onFocusBrowserUrlBar: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:focusBrowserUrlBar', listener)
+      ipcRenderer.on('menu:focus-browser-url-bar', listener)
       return (): void => {
-        ipcRenderer.off('menu:focusBrowserUrlBar', listener)
+        ipcRenderer.off('menu:focus-browser-url-bar', listener)
       }
     },
     onKeyboardShortcuts: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:keyboardShortcuts', listener)
+      ipcRenderer.on('menu:keyboard-shortcuts', listener)
       return (): void => {
-        ipcRenderer.off('menu:keyboardShortcuts', listener)
+        ipcRenderer.off('menu:keyboard-shortcuts', listener)
       }
     },
     onUiScaleZoomIn: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:uiScaleZoomIn', listener)
+      ipcRenderer.on('menu:ui-scale-zoom-in', listener)
       return (): void => {
-        ipcRenderer.off('menu:uiScaleZoomIn', listener)
+        ipcRenderer.off('menu:ui-scale-zoom-in', listener)
       }
     },
     onUiScaleZoomOut: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:uiScaleZoomOut', listener)
+      ipcRenderer.on('menu:ui-scale-zoom-out', listener)
       return (): void => {
-        ipcRenderer.off('menu:uiScaleZoomOut', listener)
+        ipcRenderer.off('menu:ui-scale-zoom-out', listener)
       }
     },
     onUiScaleReset: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('menu:uiScaleReset', listener)
+      ipcRenderer.on('menu:ui-scale-reset', listener)
       return (): void => {
-        ipcRenderer.off('menu:uiScaleReset', listener)
+        ipcRenderer.off('menu:ui-scale-reset', listener)
       }
     },
   },
   remoteAgent: {
     downloadArtifact: (agentId: string, path: string) =>
-      ipcRenderer.invoke('remoteAgent:downloadArtifact', agentId, path),
+      ipcRenderer.invoke('remote-agent:download-artifact', agentId, path),
     artifactImageDataUrl: (agentId: string, path: string) =>
-      ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
-    models: () => ipcRenderer.invoke('remoteAgent:models'),
+      ipcRenderer.invoke('remote-agent:artifact-image-data-url', agentId, path),
+    models: () => ipcRenderer.invoke('remote-agent:models'),
     /** Import outside Cursor cloud agents as local thread stubs for a project. */
     discoverExternal: (projectId?: string) =>
-      ipcRenderer.invoke('remoteAgent:discoverExternal', projectId),
+      ipcRenderer.invoke('remote-agent:discover-external', projectId),
   },
   acp: {
-    detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
-    probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probeAgent', agentId),
-    autoSetup: () => ipcRenderer.invoke('acp:autoSetup'),
+    detectAgents: () => ipcRenderer.invoke('acp:detect-agents'),
+    probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probe-agent', agentId),
+    autoSetup: () => ipcRenderer.invoke('acp:auto-setup'),
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
@@ -881,36 +883,38 @@ const api: ApiClient = {
       // Highest auto-approval tier for recognised low-risk shell shapes. Optional so
       // bundles that don't render the picker don't reset the user's choice.
       shellAutoApprovalLevel?: AutoApprovalLevel
-    }) => ipcRenderer.invoke('settings:setSecurity', prefs),
-    getKey: (provider: string) => ipcRenderer.invoke('settings:getKey', provider),
-    getKeyEncrypted: (provider: string) => ipcRenderer.invoke('settings:getKeyEncrypted', provider),
+    }) => ipcRenderer.invoke('settings:set-security', prefs),
+    getKey: (provider: string) => ipcRenderer.invoke('settings:get-key', provider),
+    getKeyEncrypted: (provider: string) =>
+      ipcRenderer.invoke('settings:get-key-encrypted', provider),
     setKey: (provider: string, key: string, opts?: { allowPlaintext?: boolean }) =>
-      ipcRenderer.invoke('settings:setKey', provider, key, opts),
-    availableProviders: () => ipcRenderer.invoke('settings:availableProviders'),
+      ipcRenderer.invoke('settings:set-key', provider, key, opts),
+    availableProviders: () => ipcRenderer.invoke('settings:available-providers'),
     validateKey: (provider: string, key: string) =>
-      ipcRenderer.invoke('settings:validateKey', provider, key),
-    scanEnvKeys: () => ipcRenderer.invoke('settings:scanEnvKeys'),
+      ipcRenderer.invoke('settings:validate-key', provider, key),
+    scanEnvKeys: () => ipcRenderer.invoke('settings:scan-env-keys'),
     importEnvKeys: (providers?: string[]) =>
-      ipcRenderer.invoke('settings:importEnvKeys', providers),
-    extraProviders: () => ipcRenderer.invoke('settings:extraProviders'),
-    modelPricing: () => ipcRenderer.invoke('settings:modelPricing'),
+      ipcRenderer.invoke('settings:import-env-keys', providers),
+    extraProviders: () => ipcRenderer.invoke('settings:extra-providers'),
+    modelPricing: () => ipcRenderer.invoke('settings:model-pricing'),
     saveExtraProvider: (record: unknown) =>
-      ipcRenderer.invoke('settings:saveExtraProvider', record),
-    deleteExtraProvider: (slug: string) => ipcRenderer.invoke('settings:deleteExtraProvider', slug),
+      ipcRenderer.invoke('settings:save-extra-provider', record),
+    deleteExtraProvider: (slug: string) =>
+      ipcRenderer.invoke('settings:delete-extra-provider', slug),
     fetchProviderModels: (baseUrl: string, apiKey?: string) =>
-      ipcRenderer.invoke('settings:fetchProviderModels', baseUrl, apiKey),
+      ipcRenderer.invoke('settings:fetch-provider-models', baseUrl, apiKey),
     refreshHuggingFaceModels: (apiKey?: string) =>
-      ipcRenderer.invoke('settings:refreshHuggingFaceModels', apiKey),
+      ipcRenderer.invoke('settings:refresh-hugging-face-models', apiKey),
   },
   appIcon: {
-    apply: () => ipcRenderer.invoke('appIcon:apply'),
+    apply: () => ipcRenderer.invoke('app-icon:apply'),
   },
   usage: {
-    getSummary: () => ipcRenderer.invoke('usage:getSummary'),
-    getPlanUsage: () => ipcRenderer.invoke('usage:getPlanUsage'),
-    getPlanWorthIt: () => ipcRenderer.invoke('usage:getPlanWorthIt'),
+    getSummary: () => ipcRenderer.invoke('usage:get-summary'),
+    getPlanUsage: () => ipcRenderer.invoke('usage:get-plan-usage'),
+    getPlanWorthIt: () => ipcRenderer.invoke('usage:get-plan-worth-it'),
     setClaudePlanMonthlyFee: (fee: number | null) =>
-      ipcRenderer.invoke('usage:setClaudePlanMonthlyFee', fee),
+      ipcRenderer.invoke('usage:set-claude-plan-monthly-fee', fee),
   },
   decisions: {
     list: (projectId?: string) => ipcRenderer.invoke('decisions:list', projectId),
@@ -919,7 +923,7 @@ const api: ApiClient = {
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
     resolveFileReferences: (candidates: string[]) =>
-      ipcRenderer.invoke('index:resolveFileReferences', candidates),
+      ipcRenderer.invoke('index:resolve-file-references', candidates),
     status: () => ipcRenderer.invoke('index:status'),
     onStatusChanged: (
       handler: (status: import('@shared/types/index-status.ts').WorkspaceIndexStatus) => void,
@@ -930,9 +934,9 @@ const api: ApiClient = {
       ): void => {
         handler(status)
       }
-      ipcRenderer.on('index:statusChanged', listener)
+      ipcRenderer.on('index:status-changed', listener)
       return (): void => {
-        ipcRenderer.off('index:statusChanged', listener)
+        ipcRenderer.off('index:status-changed', listener)
       }
     },
   },
@@ -946,23 +950,23 @@ const api: ApiClient = {
     list: () => ipcRenderer.invoke('vnc:list'),
     discover: (host: import('@shared/types/vnc.ts').VncDiscoveryHost) =>
       ipcRenderer.invoke('vnc:discover', host),
-    discoverNearby: () => ipcRenderer.invoke('vnc:discoverNearby'),
-    resolveSshHosts: () => ipcRenderer.invoke('vnc:resolveSshHosts'),
+    discoverNearby: () => ipcRenderer.invoke('vnc:discover-nearby'),
+    resolveSshHosts: () => ipcRenderer.invoke('vnc:resolve-ssh-hosts'),
     getUsername: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:getUsername', target),
+      ipcRenderer.invoke('vnc:get-username', target),
     getPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:getPassword', target),
+      ipcRenderer.invoke('vnc:get-password', target),
     hasPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:hasPassword', target),
-    canStoreCredentials: () => ipcRenderer.invoke('vnc:canStoreCredentials'),
+      ipcRenderer.invoke('vnc:has-password', target),
+    canStoreCredentials: () => ipcRenderer.invoke('vnc:can-store-credentials'),
     rememberUsername: (target: import('@shared/types/vnc.ts').VncTarget, username: string) =>
-      ipcRenderer.invoke('vnc:rememberUsername', target, username),
+      ipcRenderer.invoke('vnc:remember-username', target, username),
     rememberPassword: (target: import('@shared/types/vnc.ts').VncTarget, password: string) =>
-      ipcRenderer.invoke('vnc:rememberPassword', target, password),
+      ipcRenderer.invoke('vnc:remember-password', target, password),
     forgetPassword: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:forgetPassword', target),
+      ipcRenderer.invoke('vnc:forget-password', target),
     forgetCredentials: (target: import('@shared/types/vnc.ts').VncTarget) =>
-      ipcRenderer.invoke('vnc:forgetCredentials', target),
+      ipcRenderer.invoke('vnc:forget-credentials', target),
     start: (connectionId: string): void => {
       ipcRenderer.send('vnc:start', connectionId)
     },
@@ -1032,26 +1036,26 @@ const api: ApiClient = {
         removeAttachmentIds,
       ),
     attachmentData: (id: string, attachmentId: string) =>
-      ipcRenderer.invoke('roadmap:attachmentData', id, attachmentId),
-    setStatus: (id: string, status: string) => ipcRenderer.invoke('roadmap:setStatus', id, status),
+      ipcRenderer.invoke('roadmap:attachment-data', id, attachmentId),
+    setStatus: (id: string, status: string) => ipcRenderer.invoke('roadmap:set-status', id, status),
     setCategory: (id: string, category: string) =>
-      ipcRenderer.invoke('roadmap:setCategory', id, category),
+      ipcRenderer.invoke('roadmap:set-category', id, category),
     delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
     export: (format: string) => ipcRenderer.invoke('roadmap:export', format),
-    issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issueUrl', ref),
-    openIssues: (page: number) => ipcRenderer.invoke('roadmap:openIssues', page),
+    issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issue-url', ref),
+    openIssues: (page: number) => ipcRenderer.invoke('roadmap:open-issues', page),
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
-      ipcRenderer.invoke('roadmap:importIssues', issues),
+      ipcRenderer.invoke('roadmap:import-issues', issues),
     matchOpenIssues: (issues: { number: number; title: string; body: string }[]) =>
-      ipcRenderer.invoke('roadmap:matchOpenIssues', issues),
-    checkFit: (id: string) => ipcRenderer.invoke('roadmap:checkFit', id),
-    prepareReview: () => ipcRenderer.invoke('roadmap:prepareReview'),
-    lastReviewAt: () => ipcRenderer.invoke('roadmap:lastReviewAt'),
+      ipcRenderer.invoke('roadmap:match-open-issues', issues),
+    checkFit: (id: string) => ipcRenderer.invoke('roadmap:check-fit', id),
+    prepareReview: () => ipcRenderer.invoke('roadmap:prepare-review'),
+    lastReviewAt: () => ipcRenderer.invoke('roadmap:last-review-at'),
     reviewItem: (id: string, commits: string, runId?: string) =>
-      ipcRenderer.invoke('roadmap:reviewItem', id, commits, runId),
-    reviewItemDeep: (id: string) => ipcRenderer.invoke('roadmap:reviewItemDeep', id),
-    completeReview: (runId: string) => ipcRenderer.invoke('roadmap:completeReview', runId),
-    abortReview: (runId: string) => ipcRenderer.invoke('roadmap:abortReview', runId),
+      ipcRenderer.invoke('roadmap:review-item', id, commits, runId),
+    reviewItemDeep: (id: string) => ipcRenderer.invoke('roadmap:review-item-deep', id),
+    completeReview: (runId: string) => ipcRenderer.invoke('roadmap:complete-review', runId),
+    abortReview: (runId: string) => ipcRenderer.invoke('roadmap:abort-review', runId),
     // Fired when a background complexity stamp lands on a saved item.
     onChanged: (handler: () => void) => {
       const listener = (): void => {
@@ -1063,7 +1067,7 @@ const api: ApiClient = {
       }
     },
     setThread: (id: string, threadId: string) =>
-      ipcRenderer.invoke('roadmap:setThread', id, threadId),
+      ipcRenderer.invoke('roadmap:set-thread', id, threadId),
   },
   supervisor: {
     list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),
@@ -1084,9 +1088,9 @@ const api: ApiClient = {
     size: (projectId: string, path: string) =>
       ipcRenderer.invoke('worktrees:size', projectId, path),
     cleanupPackages: (projectId: string, path: string, remove: boolean) =>
-      ipcRenderer.invoke('worktrees:cleanupPackages', projectId, path, remove),
+      ipcRenderer.invoke('worktrees:cleanup-packages', projectId, path, remove),
     openTerminal: (projectId: string, path: string) =>
-      ipcRenderer.invoke('worktrees:openTerminal', projectId, path),
+      ipcRenderer.invoke('worktrees:open-terminal', projectId, path),
     remove: (projectId: string, path: string, force: boolean) =>
       ipcRenderer.invoke('worktrees:remove', projectId, path, force),
   },
@@ -1100,21 +1104,21 @@ const api: ApiClient = {
   // registry) until C1 merges the two Settings surfaces; the channel is named
   // for its source so the two cannot collide in the meantime.
   cursorPlugins: {
-    list: () => ipcRenderer.invoke('cursorPlugins:list'),
+    list: () => ipcRenderer.invoke('cursor-plugins:list'),
   },
   hooks: {
     list: () => ipcRenderer.invoke('hooks:list'),
     test: (req: unknown) => ipcRenderer.invoke('hooks:test', req),
     runDetail: (projectId: string, threadId: string, runId: string) =>
-      ipcRenderer.invoke('hooks:runDetail', projectId, threadId, runId),
+      ipcRenderer.invoke('hooks:run-detail', projectId, threadId, runId),
   },
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),
     setEnabled: (id: string, enabled: boolean) =>
-      ipcRenderer.invoke('plugins:setEnabled', id, enabled),
+      ipcRenderer.invoke('plugins:set-enabled', id, enabled),
     setSetting: (id: string, key: string, value: unknown) =>
-      ipcRenderer.invoke('plugins:setSetting', id, key, value),
-    addSource: () => ipcRenderer.invoke('plugins:addSource'),
+      ipcRenderer.invoke('plugins:set-setting', id, key, value),
+    addSource: () => ipcRenderer.invoke('plugins:add-source'),
   },
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
@@ -1123,7 +1127,7 @@ const api: ApiClient = {
     remove: (projectId: string, scheduleId: string) =>
       ipcRenderer.invoke('automations:remove', projectId, scheduleId),
     runNow: (projectId: string, scheduleId: string) =>
-      ipcRenderer.invoke('automations:runNow', projectId, scheduleId),
+      ipcRenderer.invoke('automations:run-now', projectId, scheduleId),
     onTriggered: (handler: (event: import('@shared/types').AutomationTriggerEvent) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
@@ -1142,7 +1146,7 @@ const api: ApiClient = {
     read: (path: string) => ipcRenderer.invoke('instructions:read', path),
   },
   cursorRules: {
-    list: () => ipcRenderer.invoke('cursorRules:list'),
+    list: () => ipcRenderer.invoke('cursor-rules:list'),
   },
   terminal: {
     create: (
@@ -1156,8 +1160,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
     destroy: (sessionId: string) => ipcRenderer.invoke('terminal:destroy', sessionId),
     setMeta: (sessionId: string, meta: { label?: string; threadId?: string | null }) =>
-      ipcRenderer.invoke('terminal:setMeta', sessionId, meta),
-    setActive: (sessionId: string) => ipcRenderer.invoke('terminal:setActive', sessionId),
+      ipcRenderer.invoke('terminal:set-meta', sessionId, meta),
+    setActive: (sessionId: string) => ipcRenderer.invoke('terminal:set-active', sessionId),
     onOutput: (handler: (sessionId: string, data: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, id: string, data: string): void => {
         handler(id, data)
@@ -1180,88 +1184,88 @@ const api: ApiClient = {
       const listener = (_e: Electron.IpcRendererEvent, command: string): void => {
         handler(command)
       }
-      ipcRenderer.on('terminal:runCommand', listener)
+      ipcRenderer.on('terminal:run-command', listener)
       return (): void => {
-        ipcRenderer.off('terminal:runCommand', listener)
+        ipcRenderer.off('terminal:run-command', listener)
       }
     },
   },
   git: {
     isAvailable: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('git:isAvailable', projectId, threadId),
+      ipcRenderer.invoke('git:is-available', projectId, threadId),
     status: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:status', projectId, threadId),
     changeStats: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('git:changeStats', projectId, threadId),
+      ipcRenderer.invoke('git:change-stats', projectId, threadId),
     fileDiff: (projectId: string, threadId: string, path: string, staged: boolean) =>
-      ipcRenderer.invoke('git:fileDiff', projectId, threadId, path, staged),
+      ipcRenderer.invoke('git:file-diff', projectId, threadId, path, staged),
     workingFileDiff: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('git:workingFileDiff', projectId, threadId, path),
+      ipcRenderer.invoke('git:working-file-diff', projectId, threadId, path),
     committedChanges: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('git:committedChanges', projectId, threadId),
+      ipcRenderer.invoke('git:committed-changes', projectId, threadId),
     committedFileDiff: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('git:committedFileDiff', projectId, threadId, path),
+      ipcRenderer.invoke('git:committed-file-diff', projectId, threadId, path),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
-      ipcRenderer.invoke('git:branchStatus', projectId, threadId, forBranch),
+      ipcRenderer.invoke('git:branch-status', projectId, threadId, forBranch),
     promptState: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('git:promptState', projectId, threadId),
+      ipcRenderer.invoke('git:prompt-state', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>
-      ipcRenderer.invoke('git:checkoutBranch', projectId, threadId, branch),
+      ipcRenderer.invoke('git:checkout-branch', projectId, threadId, branch),
     listBranches: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('git:listBranches', projectId, threadId),
+      ipcRenderer.invoke('git:list-branches', projectId, threadId),
     getDefaultBranch: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('git:getDefaultBranch', projectId, threadId),
+      ipcRenderer.invoke('git:get-default-branch', projectId, threadId),
     sessionBackup: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('git:sessionBackup', projectId, threadId),
+      ipcRenderer.invoke('git:session-backup', projectId, threadId),
     restoreBackup: (projectId: string, threadId: string) =>
-      ipcRenderer.invoke('git:restoreBackup', projectId, threadId),
+      ipcRenderer.invoke('git:restore-backup', projectId, threadId),
     onWorkingTreeChanged: (handler: (root: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, root: string): void => {
         handler(root)
       }
-      ipcRenderer.on('git:workingTreeChanged', listener)
+      ipcRenderer.on('git:working-tree-changed', listener)
       return (): void => {
-        ipcRenderer.off('git:workingTreeChanged', listener)
+        ipcRenderer.off('git:working-tree-changed', listener)
       }
     },
   },
   gh: {
     status: () => ipcRenderer.invoke('gh:status'),
-    invalidateReadCache: () => ipcRenderer.invoke('gh:invalidateReadCache'),
+    invalidateReadCache: () => ipcRenderer.invoke('gh:invalidate-read-cache'),
     setListWatch: (watching: boolean, includeMyPrs: boolean) =>
-      ipcRenderer.invoke('gh:setListWatch', watching, includeMyPrs),
+      ipcRenderer.invoke('gh:set-list-watch', watching, includeMyPrs),
     onListsTick: (handler: () => void) => {
       const listener = (): void => {
         handler()
       }
-      ipcRenderer.on('gh:listsTick', listener)
+      ipcRenderer.on('gh:lists-tick', listener)
       return (): void => {
-        ipcRenderer.off('gh:listsTick', listener)
+        ipcRenderer.off('gh:lists-tick', listener)
       }
     },
-    listMyOpenPrs: () => ipcRenderer.invoke('gh:listMyOpenPrs'),
-    listWorkspaceOpenPrs: () => ipcRenderer.invoke('gh:listWorkspaceOpenPrs'),
+    listMyOpenPrs: () => ipcRenderer.invoke('gh:list-my-open-prs'),
+    listWorkspaceOpenPrs: () => ipcRenderer.invoke('gh:list-workspace-open-prs'),
     prChecks: (owner: string, repo: string, number: number) =>
-      ipcRenderer.invoke('gh:prChecks', owner, repo, number),
+      ipcRenderer.invoke('gh:pr-checks', owner, repo, number),
     prDetails: (owner: string, repo: string, number: number) =>
-      ipcRenderer.invoke('gh:prDetails', owner, repo, number),
+      ipcRenderer.invoke('gh:pr-details', owner, repo, number),
     prFileDiff: (owner: string, repo: string, number: number, path: string) =>
-      ipcRenderer.invoke('gh:prFileDiff', owner, repo, number, path),
-    resolvePrUrl: (url: string) => ipcRenderer.invoke('gh:resolvePrUrl', url),
-    agentPrLinks: () => ipcRenderer.invoke('gh:agentPrLinks'),
+      ipcRenderer.invoke('gh:pr-file-diff', owner, repo, number, path),
+    resolvePrUrl: (url: string) => ipcRenderer.invoke('gh:resolve-pr-url', url),
+    agentPrLinks: () => ipcRenderer.invoke('gh:agent-pr-links'),
     rerunFailedRuns: (owner: string, repo: string, number: number) =>
-      ipcRenderer.invoke('gh:rerunFailedRuns', owner, repo, number),
+      ipcRenderer.invoke('gh:rerun-failed-runs', owner, repo, number),
     approvePr: (owner: string, repo: string, number: number) =>
-      ipcRenderer.invoke('gh:approvePr', owner, repo, number),
+      ipcRenderer.invoke('gh:approve-pr', owner, repo, number),
     markPrReady: (owner: string, repo: string, number: number) =>
-      ipcRenderer.invoke('gh:markPrReady', owner, repo, number),
+      ipcRenderer.invoke('gh:mark-pr-ready', owner, repo, number),
     enableAutoMerge: (owner: string, repo: string, number: number) =>
-      ipcRenderer.invoke('gh:enableAutoMerge', owner, repo, number),
+      ipcRenderer.invoke('gh:enable-auto-merge', owner, repo, number),
   },
   shell: {
-    openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+    openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
     openWorkspaceFileInBrowser: (projectId: string, threadId: string, path: string) =>
-      ipcRenderer.invoke('shell:openWorkspaceFileInBrowser', projectId, threadId, path),
+      ipcRenderer.invoke('shell:open-workspace-file-in-browser', projectId, threadId, path),
   },
   editors: {
     list: () => ipcRenderer.invoke('editors:list'),
@@ -1272,7 +1276,7 @@ const api: ApiClient = {
     popout: (mode: import('@shared/types/state.ts').RightPanelMode, seed?: unknown) =>
       ipcRenderer.invoke('panes:popout', mode, seed),
     takePopoutSeed: (mode: import('@shared/types/state.ts').RightPanelMode) =>
-      ipcRenderer.invoke('panes:takePopoutSeed', mode),
+      ipcRenderer.invoke('panes:take-popout-seed', mode),
     onSwitchMode: (
       handler: (mode: import('@shared/types/state.ts').RightPanelMode) => void,
     ): (() => void) => {

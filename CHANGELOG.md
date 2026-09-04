@@ -16,10 +16,10 @@ every published entry.
   exchanges `API_PROTOCOL_VERSION` and refuses a mismatched peer. The preload is
   type-checked against `ApiClient` for the first time. First step of the
   client/server split (#2312); see `docs/api-protocol.md`.
-- IPC channel names now follow one convention (`namespace:method`, camelCase;
-  subscriptions drop their `on` prefix). 54 channels that differed only in
-  style were renamed on both sides of the bridge, which is protocol version 2.
-  Nothing outside the app spoke version 1.
+- IPC channel names now follow one convention (`namespace:method`, kebab-case
+  on both halves; subscriptions drop their `on` prefix). Every channel that
+  differed was renamed on both sides of the bridge, which is protocol
+  version 2. Nothing outside the app spoke version 1.
 - This beta advances the permanent public update channel from beta.7 to beta.8
   so the signed, architecture-specific updater can be validated end to end
   before the source repository opens.

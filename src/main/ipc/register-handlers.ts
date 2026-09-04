@@ -416,7 +416,7 @@ you want the coding agent to follow on every turn.
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   setGitHubListWatchBroadcast(() => {
-    broadcastToAppWindows('gh:listsTick')
+    broadcastToAppWindows('gh:lists-tick')
   })
   const alertUser = createElectronUserAlertSender(win, app.dock)
   const pluginService = getPluginService()
@@ -432,7 +432,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   syncDevtoolsShortcut()
   const stopGuardedYoloEvents = onGuardedYoloChanged((threadId) => {
     if (!win.isDestroyed()) {
-      win.webContents.send('security:guardedYoloChanged', getGuardedYoloState(threadId))
+      win.webContents.send('security:guarded-yolo-changed', getGuardedYoloState(threadId))
     }
   })
   win.once('closed', stopGuardedYoloEvents)
@@ -450,12 +450,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
   })
 
-  ipcMain.handle('mainWindow:getNavigation', (event) => {
+  ipcMain.handle('main-window:get-navigation', (event) => {
     assertMainFrameSender(event, win)
     return getMainWindowNavigation(event.sender)
   })
 
-  ipcMain.handle('mainWindow:setNavigation', (event, rawNavigation: unknown) => {
+  ipcMain.handle('main-window:set-navigation', (event, rawNavigation: unknown) => {
     assertMainFrameSender(event, win)
     const navigation = parseIpcArgs(mainWindowNavigationSchema, [rawNavigation])
     setMainWindowNavigation(event.sender, navigation)
@@ -482,15 +482,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // The user's home directory, used to default the New project dialog's parent
   // when no prior local project gives a better guess. Treated as a data value
   // (not a workspace root), so it is never registered as allowed.
-  ipcMain.handle('workspace:getHomeDirectory', (event) => {
+  ipcMain.handle('workspace:get-home-directory', (event) => {
     assertMainFrameSender(event, win)
     return homedir()
   })
 
   // Parent-directory picker for the "New project" dialog's Browse button. This
   // is a bare pick — it does NOT register the chosen folder as a workspace root
-  // (the project folder created under it is registered by `workspace:createProject`).
-  ipcMain.handle('workspace:pickParentDirectory', async (event) => {
+  // (the project folder created under it is registered by `workspace:create-project`).
+  ipcMain.handle('workspace:pick-parent-directory', async (event) => {
     assertMainFrameSender(event, win)
     const result = await dialog.showOpenDialog(win, {
       title: 'Choose a parent directory for the new project',
@@ -503,61 +503,66 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Create a brand-new project folder under a caller-chosen parent directory:
   // mkdir the folder, write starter AGENT.md + README.md, `git init` it, and
   // register it through the same allowed-root trust boundary as Open Folder.
-  ipcMain.handle('workspace:createProject', async (event, rawName: unknown, rawParent: unknown) => {
-    assertMainFrameSender(event, win)
-    const name = parseIpcArgs(z.string().trim().min(1).max(200), [rawName])
-    const parentDir = parseIpcArgs(zPathString, [rawParent])
-    const projectPath = join(parentDir, name)
-    // Never escape the chosen parent (a crafted name like `..` must not climb).
-    if (resolve(parentDir, name) !== projectPath || basename(projectPath) !== name) {
-      throw new IpcValidationError('Invalid project name')
-    }
-    let projectMissing = false
-    try {
-      const existing = await stat(projectPath)
-      if (!existing.isDirectory()) throw new IpcValidationError('Target exists and is not a folder')
-      const entries = await readdir(projectPath)
-      if (entries.length > 0) throw new IpcValidationError('Folder already exists and is not empty')
-    } catch (err) {
-      // ENOENT means the folder does not exist yet — scaffolding proceeds below.
-      if (!(err instanceof Error) || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
-      projectMissing = true
-    }
-    if (projectMissing) await mkdir(projectPath, { recursive: true })
-    await writeFile(join(projectPath, 'AGENT.md'), STARTER_AGENT_MD, 'utf8')
-    await writeFile(join(projectPath, 'README.md'), `# ${name}\n\n`, 'utf8')
-    // git init -b main keeps the initial branch name stable regardless of the
-    // user's global init.defaultBranch / git template config.
-    //
-    // Unsandboxed, like `runWorktreeGit`: the new project sits outside the
-    // *current* workspace's sandbox until `registerAllowedWorkspaceRoot` below
-    // moves the boundary, so a sandboxed spawn cannot write `.git/` there. The
-    // scaffolding above is main-process `fs` and never hit that wall, which is
-    // why the failure only surfaced once the exit code was checked.
-    const init = await runCommand('git', ['init', '-b', 'main'], {
-      cwd: projectPath,
-      timeout_ms: 0,
-      unsandboxed: true,
-    })
-    // `runCommand` resolves with the exit code rather than rejecting, so an
-    // unchecked call silently accepts a failed `git init`: the folder scaffolds,
-    // the project registers, and the user gets a "project" that is not a
-    // repository — with the reason discarded at the only point that had it.
-    // Everything downstream (branch chip, Changes, worktrees) then fails in ways
-    // that never mention Git.
-    if (init.code !== 0) {
-      // A folder we created ourselves is ours to remove. Leaving it behind would
-      // trap the retry: the emptiness check above rejects the same name on the
-      // second attempt. A pre-existing (empty) folder is the user's, so it stays.
-      if (projectMissing) await rm(projectPath, { recursive: true, force: true })
-      const detail = (init.stderr || init.stdout).trim()
-      throw new Error(
-        `Could not initialise a Git repository in ${projectPath}${detail ? `: ${detail}` : ''}`,
-      )
-    }
-    const root = await registerAllowedWorkspaceRoot(projectPath)
-    return root
-  })
+  ipcMain.handle(
+    'workspace:create-project',
+    async (event, rawName: unknown, rawParent: unknown) => {
+      assertMainFrameSender(event, win)
+      const name = parseIpcArgs(z.string().trim().min(1).max(200), [rawName])
+      const parentDir = parseIpcArgs(zPathString, [rawParent])
+      const projectPath = join(parentDir, name)
+      // Never escape the chosen parent (a crafted name like `..` must not climb).
+      if (resolve(parentDir, name) !== projectPath || basename(projectPath) !== name) {
+        throw new IpcValidationError('Invalid project name')
+      }
+      let projectMissing = false
+      try {
+        const existing = await stat(projectPath)
+        if (!existing.isDirectory())
+          throw new IpcValidationError('Target exists and is not a folder')
+        const entries = await readdir(projectPath)
+        if (entries.length > 0)
+          throw new IpcValidationError('Folder already exists and is not empty')
+      } catch (err) {
+        // ENOENT means the folder does not exist yet — scaffolding proceeds below.
+        if (!(err instanceof Error) || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+        projectMissing = true
+      }
+      if (projectMissing) await mkdir(projectPath, { recursive: true })
+      await writeFile(join(projectPath, 'AGENT.md'), STARTER_AGENT_MD, 'utf8')
+      await writeFile(join(projectPath, 'README.md'), `# ${name}\n\n`, 'utf8')
+      // git init -b main keeps the initial branch name stable regardless of the
+      // user's global init.defaultBranch / git template config.
+      //
+      // Unsandboxed, like `runWorktreeGit`: the new project sits outside the
+      // *current* workspace's sandbox until `registerAllowedWorkspaceRoot` below
+      // moves the boundary, so a sandboxed spawn cannot write `.git/` there. The
+      // scaffolding above is main-process `fs` and never hit that wall, which is
+      // why the failure only surfaced once the exit code was checked.
+      const init = await runCommand('git', ['init', '-b', 'main'], {
+        cwd: projectPath,
+        timeout_ms: 0,
+        unsandboxed: true,
+      })
+      // `runCommand` resolves with the exit code rather than rejecting, so an
+      // unchecked call silently accepts a failed `git init`: the folder scaffolds,
+      // the project registers, and the user gets a "project" that is not a
+      // repository — with the reason discarded at the only point that had it.
+      // Everything downstream (branch chip, Changes, worktrees) then fails in ways
+      // that never mention Git.
+      if (init.code !== 0) {
+        // A folder we created ourselves is ours to remove. Leaving it behind would
+        // trap the retry: the emptiness check above rejects the same name on the
+        // second attempt. A pre-existing (empty) folder is the user's, so it stays.
+        if (projectMissing) await rm(projectPath, { recursive: true, force: true })
+        const detail = (init.stderr || init.stdout).trim()
+        throw new Error(
+          `Could not initialise a Git repository in ${projectPath}${detail ? `: ${detail}` : ''}`,
+        )
+      }
+      const root = await registerAllowedWorkspaceRoot(projectPath)
+      return root
+    },
+  )
 
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
 
@@ -574,17 +579,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return contents
   }
 
-  ipcMain.handle('browser:sharePageText', async (event, rawId: unknown) => {
+  ipcMain.handle('browser:share-page-text', async (event, rawId: unknown) => {
     const share = await captureBrowserPageText(interactiveBrowserContents(event, rawId))
-    if (!win.isDestroyed()) win.webContents.send('browser:shareText', share)
+    if (!win.isDestroyed()) win.webContents.send('browser:share-text', share)
   })
 
-  ipcMain.handle('browser:shareScreenshot', async (event, rawId: unknown) => {
+  ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
     const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
-    if (!win.isDestroyed()) win.webContents.send('browser:shareImage', share)
+    if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
   })
 
-  ipcMain.handle('browser:exportPdf', async (event, rawId: unknown) => {
+  ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {
     const contents = interactiveBrowserContents(event, rawId)
     return await exportBrowserPagePdf(
       contents,
@@ -638,7 +643,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   const threadPathArgs = z.tuple([zProjectId, zThreadId, zPathString])
 
-  ipcMain.handle('fs:readFile', async (event, ...rawArgs) => {
+  ipcMain.handle('fs:read-file', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
@@ -646,7 +651,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return gatewayReadFile(abs, root)
   })
 
-  ipcMain.handle('fs:writeFile', async (event, ...rawArgs) => {
+  ipcMain.handle('fs:write-file', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, relPath, content] = parseIpcArgs(
       z.tuple([zProjectId, zThreadId, zPathString, z.string()]),
@@ -667,7 +672,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return gatewayReaddir(abs, root)
   })
 
-  ipcMain.handle('fs:listDir', async (event, projectIdArg, threadIdArg, pathArg) => {
+  ipcMain.handle('fs:list-dir', async (event, projectIdArg, threadIdArg, pathArg) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, relPath] = parseIpcArgs(
       z.tuple([zProjectId, zThreadId, zPathString.optional()]),
@@ -704,10 +709,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
 
   onWorkspaceIndexStatusChanged((status) => {
-    if (!win.isDestroyed()) win.webContents.send('index:statusChanged', status)
+    if (!win.isDestroyed()) win.webContents.send('index:status-changed', status)
   })
 
-  ipcMain.handle('index:resolveFileReferences', async (event, rawCandidates: unknown) => {
+  ipcMain.handle('index:resolve-file-references', async (event, rawCandidates: unknown) => {
     assertMainFrameSender(event, win)
     const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
     const root = getWorkspaceRoot()
@@ -978,7 +983,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   // An attachment's payload as a data URL, fetched lazily for thumbnails and
   // for carrying attachments into a new thread's composer.
-  ipcMain.handle('roadmap:attachmentData', (event, rawId: unknown, rawAttachmentId: unknown) => {
+  ipcMain.handle('roadmap:attachment-data', (event, rawId: unknown, rawAttachmentId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
     const attachmentId = parseIpcArgs(zNonEmptyString.max(128), [rawAttachmentId])
@@ -994,7 +999,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // the roadmap_plan tool's set_status action: no prompt/notes/issue
   // round-trip, so complexity is never re-classified. Re-reading the store
   // avoids overwriting a prompt/notes edit made while a model review ran.
-  ipcMain.handle('roadmap:setStatus', (event, rawId: unknown, rawStatus: unknown) => {
+  ipcMain.handle('roadmap:set-status', (event, rawId: unknown, rawStatus: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
     const status = parseIpcArgs(zRoadmapStatus, [rawStatus])
@@ -1013,7 +1018,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // until I next edit the prompt", since the update path stamps on a prompt
   // change alone. The schema admits '' or a category word and nothing else, so
   // the two branches below are total.
-  ipcMain.handle('roadmap:setCategory', (event, rawId: unknown, rawCategory: unknown) => {
+  ipcMain.handle('roadmap:set-category', (event, rawId: unknown, rawCategory: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
     const input = parseIpcArgs(zRoadmapCategory.optional(), [rawCategory]) ?? ''
@@ -1036,7 +1041,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   // Resolve a stored issue ref to a URL at click time, so short `#123` refs
   // always follow the workspace's *current* origin remote.
-  ipcMain.handle('roadmap:issueUrl', async (event, rawRef: unknown) => {
+  ipcMain.handle('roadmap:issue-url', async (event, rawRef: unknown) => {
     assertMainFrameSender(event, win)
     const ref = parseIpcArgs(zRoadmapIssue, [rawRef]).trim()
     return issueRefToUrl(ref, await getGithubRepoSlug())
@@ -1052,7 +1057,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   const roadmapIssuePageSize = 20
 
-  ipcMain.handle('roadmap:openIssues', async (event, rawPage: unknown) => {
+  ipcMain.handle('roadmap:open-issues', async (event, rawPage: unknown) => {
     assertMainFrameSender(event, win)
     const page = parseIpcArgs(z.number().int().positive(), [rawPage])
     // The backend impls return [] for "gh missing", "not authenticated", and
@@ -1082,7 +1087,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   const zRoadmapImportIssues = z.array(roadmapIssueSchema).max(roadmapIssuePageSize)
 
-  ipcMain.handle('roadmap:importIssues', (event, rawIssues: unknown) => {
+  ipcMain.handle('roadmap:import-issues', (event, rawIssues: unknown) => {
     assertMainFrameSender(event, win)
     const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
     return importIssuesAsRoadmapItems(issues, undefined, undefined, undefined, notifyRoadmapChanged)
@@ -1091,7 +1096,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Semantic coverage for the import picker: which open issues already have a
   // roadmap prompt (even without a pin)? Pin matches stay client-side; this
   // only asks the small-tasks model about the unpinned remainder.
-  ipcMain.handle('roadmap:matchOpenIssues', async (event, rawIssues: unknown) => {
+  ipcMain.handle('roadmap:match-open-issues', async (event, rawIssues: unknown) => {
     assertMainFrameSender(event, win)
     const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
     return matchOpenIssuesToRoadmapItems(issues)
@@ -1101,7 +1106,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // a `thread` frontmatter field, so the pane can offer reopening it later.
   // Restamping is deliberate: starting a fresh thread from the same item points
   // the field at the newest one. An empty threadId clears the tracking.
-  ipcMain.handle('roadmap:setThread', (event, rawId: unknown, rawThreadId: unknown) => {
+  ipcMain.handle('roadmap:set-thread', (event, rawId: unknown, rawThreadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
     const threadId = parseIpcArgs(z.string().max(128).optional(), [rawThreadId])?.trim() ?? ''
@@ -1115,24 +1120,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   // Advisory fit check of an item's prompt against its pinned issue,
   // explicitly triggered from the pane (see roadmap-fit-check.ts).
-  ipcMain.handle('roadmap:checkFit', (event, rawId: unknown) => {
+  ipcMain.handle('roadmap:check-fit', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
     return checkRoadmapFit(id)
   })
 
-  ipcMain.handle('roadmap:prepareReview', (event) => {
+  ipcMain.handle('roadmap:prepare-review', (event) => {
     assertMainFrameSender(event, win)
     return prepareRoadmapReview()
   })
 
-  ipcMain.handle('roadmap:lastReviewAt', (event) => {
+  ipcMain.handle('roadmap:last-review-at', (event) => {
     assertMainFrameSender(event, win)
     return readRoadmapReviewCheckpointForRenderer()
   })
 
   ipcMain.handle(
-    'roadmap:reviewItem',
+    'roadmap:review-item',
     async (event, rawId: unknown, rawCommits: unknown, rawRunId: unknown) => {
       assertMainFrameSender(event, win)
       const id = parseIpcArgs(zRoadmapId, [rawId])
@@ -1145,7 +1150,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
 
-  ipcMain.handle('roadmap:reviewItemDeep', async (event, rawId: unknown) => {
+  ipcMain.handle('roadmap:review-item-deep', async (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
     const result = await reviewRoadmapItemDeep(id)
@@ -1153,7 +1158,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return result
   })
 
-  ipcMain.handle('roadmap:completeReview', (event, rawRunId: unknown) => {
+  ipcMain.handle('roadmap:complete-review', (event, rawRunId: unknown) => {
     assertMainFrameSender(event, win)
     const runId = parseIpcArgs(z.uuid(), [rawRunId])
     const completed = completeRoadmapReview(runId)
@@ -1161,7 +1166,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return completed
   })
 
-  ipcMain.handle('roadmap:abortReview', (event, rawRunId: unknown) => {
+  ipcMain.handle('roadmap:abort-review', (event, rawRunId: unknown) => {
     assertMainFrameSender(event, win)
     const runId = parseIpcArgs(z.uuid(), [rawRunId])
     const aborted = abortRoadmapReview(runId)
@@ -1204,7 +1209,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
     // Never hand stored API-key records back to the renderer — it only needs the
-    // boolean `settings:getKey`. Reading `apiKey.*` here would expose the key
+    // boolean `settings:get-key`. Reading `apiKey.*` here would expose the key
     // (base64 plaintext when the OS keyring is unavailable).
     if (isSecretSettingKey(k)) {
       throw new IpcValidationError(`Setting key not readable from renderer: ${k}`)
@@ -1223,7 +1228,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return getSetting(k, null)
   })
-  ipcMain.handle('alerts:threadFinished', (event, rawThreadId: unknown, rawTitle: unknown) => {
+  ipcMain.handle('alerts:thread-finished', (event, rawThreadId: unknown, rawTitle: unknown) => {
     assertMainFrameSender(event, win)
     const [, title] = parseIpcArgs(z.tuple([zThreadId, z.string().trim().min(1).max(512)]), [
       rawThreadId,
@@ -1261,7 +1266,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       }
     }
   })
-  ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
+  ipcMain.handle('settings:set-security', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     const prefs = securitySettingsSchema.parse(raw)
     await Promise.all(
@@ -1270,7 +1275,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         .map(([k, v]) => setSetting(k, v)),
     )
   })
-  ipcMain.handle('settings:getKey', (event, provider: unknown) => {
+  ipcMain.handle('settings:get-key', (event, provider: unknown) => {
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     return hasApiKey(p)
@@ -1278,13 +1283,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Live Artificial Analysis feed for the model value map. Key-gated (empty
   // result without a stored 'artificial-analysis' key); the renderer's anchor
   // gate decides whether the returned cohort is on the canonical scale.
-  ipcMain.handle('intellect:liveModels', (event) => {
+  ipcMain.handle('intellect:live-models', (event) => {
     assertMainFrameSender(event, win)
     return fetchLiveIntellectModels()
   })
   // Model-card links for the value map. Batched because the panel warms every
   // plotted model at once; the resolver's URL cache makes repeat calls free.
-  ipcMain.handle('modelCards:resolve', async (event, modelIds: unknown) => {
+  ipcMain.handle('model-cards:resolve', async (event, modelIds: unknown) => {
     assertMainFrameSender(event, win)
     const ids = parseIpcArgs(modelCardIdsSchema, [modelIds])
     const out: Record<string, ResolvedModelCard | null> = {}
@@ -1303,12 +1308,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
   // plaintext fallback, null = no key stored. Lets the Settings UI flag the
   // plaintext-at-rest condition instead of leaving it to a console.warn.
-  ipcMain.handle('settings:getKeyEncrypted', (event, provider: unknown) => {
+  ipcMain.handle('settings:get-key-encrypted', (event, provider: unknown) => {
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     return isApiKeyEncrypted(p)
   })
-  ipcMain.handle('settings:setKey', (event, provider: unknown, key: unknown, opts: unknown) => {
+  ipcMain.handle('settings:set-key', (event, provider: unknown, key: unknown, opts: unknown) => {
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
@@ -1333,7 +1338,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return result
   })
-  ipcMain.handle('settings:availableProviders', async () => {
+  ipcMain.handle('settings:available-providers', async () => {
     const available: Record<string, boolean> = {
       anthropic: await isProviderKeyUsable('anthropic'),
       openai: await isProviderKeyUsable('openai'),
@@ -1347,11 +1352,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return available
   })
-  ipcMain.handle('settings:validateKey', async (event, provider: unknown, key: unknown) => {
+  ipcMain.handle('settings:validate-key', async (event, provider: unknown, key: unknown) => {
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     const apiKey = parseIpcArgs(z.string().max(8192), [key])
-    // Empty means "the key already in use" (see the `settings:validateKey`
+    // Empty means "the key already in use" (see the `settings:validate-key`
     // contract): resolve it here so the stored secret never crosses to the
     // renderer just to be handed straight back.
     const candidate = apiKey.trim() ? apiKey : (resolveApiKey(p) ?? '')
@@ -1365,7 +1370,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Raw secrets stay in the main process — the renderer only sees the masked
   // preview. Both handlers re-scan on each call and both are gated on the
   // persisted consent flag set when the user approves the scan.
-  ipcMain.handle('settings:scanEnvKeys', (event) => {
+  ipcMain.handle('settings:scan-env-keys', (event) => {
     assertMainFrameSender(event, win)
     try {
       assertEnvKeyDetectionConsent()
@@ -1381,7 +1386,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       alreadyConfigured: hasApiKey(d.provider),
     }))
   })
-  ipcMain.handle('settings:importEnvKeys', (event, rawProviders?: unknown) => {
+  ipcMain.handle('settings:import-env-keys', (event, rawProviders?: unknown) => {
     assertMainFrameSender(event, win)
     const providers = parseIpcArgs(z.array(z.string().max(64)).max(32).optional(), [rawProviders])
     try {
@@ -1391,16 +1396,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       throw err
     }
   })
-  ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
+  ipcMain.handle('models:best-value-default', () => resolveBestValueChatModel())
   // What a dynamic selection (`auto:…`) resolves to right now. Settings uses it
   // to show the concrete model behind a rule; a pinned id round-trips unchanged.
-  ipcMain.handle('models:resolveDynamic', (_event, rawValue: unknown) => {
+  ipcMain.handle('models:resolve-dynamic', (_event, rawValue: unknown) => {
     const value = parseIpcArgs(z.string().trim().max(256), [rawValue])
     return resolveDynamicModelId(value)
   })
-  ipcMain.handle('settings:extraProviders', () => getResolvedExtraProviders())
-  ipcMain.handle('settings:modelPricing', () => resolveModelPricing())
-  ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
+  ipcMain.handle('settings:extra-providers', () => getResolvedExtraProviders())
+  ipcMain.handle('settings:model-pricing', () => resolveModelPricing())
+  ipcMain.handle('settings:save-extra-provider', async (event, record: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(storedExtraProviderSchema.partial({ slug: true }), [record])
     const provider: Parameters<typeof saveExtraProvider>[0] = {}
@@ -1430,30 +1435,33 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (parsed.extraBody !== undefined) provider.extraBody = parsed.extraBody
     return saveExtraProvider(provider)
   })
-  ipcMain.handle('settings:deleteExtraProvider', async (event, slug: unknown) => {
+  ipcMain.handle('settings:delete-extra-provider', async (event, slug: unknown) => {
     assertMainFrameSender(event, win)
     const s = parseIpcArgs(keyProviderSchema, [slug])
     return deleteExtraProvider(s)
   })
-  ipcMain.handle('settings:fetchProviderModels', async (event, baseUrl: unknown, key: unknown) => {
-    assertMainFrameSender(event, win)
-    const url = parseIpcArgs(z.string().max(2048), [baseUrl])
-    const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
-    return fetchOpenAiCompatibleModelsForSettings(url, apiKey)
-  })
-  ipcMain.handle('settings:refreshHuggingFaceModels', async (event, key: unknown) => {
+  ipcMain.handle(
+    'settings:fetch-provider-models',
+    async (event, baseUrl: unknown, key: unknown) => {
+      assertMainFrameSender(event, win)
+      const url = parseIpcArgs(z.string().max(2048), [baseUrl])
+      const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
+      return fetchOpenAiCompatibleModelsForSettings(url, apiKey)
+    },
+  )
+  ipcMain.handle('settings:refresh-hugging-face-models', async (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
     return refreshHuggingFaceModels(apiKey)
   })
-  ipcMain.handle('appIcon:apply', () => {
+  ipcMain.handle('app-icon:apply', () => {
     const mainWin = getMainWindow()
     applyAppIcon(mainWin && !mainWin.isDestroyed() ? [mainWin] : [])
   })
-  ipcMain.handle('usage:getSummary', () => getUsageSummary())
-  ipcMain.handle('usage:getPlanUsage', async () => loadPlanUsageSnapshotAndSample())
-  ipcMain.handle('usage:getPlanWorthIt', () => getPlanWorthItPayload())
-  ipcMain.handle('usage:setClaudePlanMonthlyFee', async (event, fee: unknown) => {
+  ipcMain.handle('usage:get-summary', () => getUsageSummary())
+  ipcMain.handle('usage:get-plan-usage', async () => loadPlanUsageSnapshotAndSample())
+  ipcMain.handle('usage:get-plan-worth-it', () => getPlanWorthItPayload())
+  ipcMain.handle('usage:set-claude-plan-monthly-fee', async (event, fee: unknown) => {
     assertMainFrameSender(event, win)
     if (fee === null || fee === undefined || fee === '') {
       await setClaudePlanMonthlyFeeUsd(null)
@@ -1495,12 +1503,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
 
   const zGuardedYoloThreadId = zNonEmptyString.max(256)
-  ipcMain.handle('security:getGuardedYolo', (event, threadId: unknown) => {
+  ipcMain.handle('security:get-guarded-yolo', (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     return getGuardedYoloState(id)
   })
-  ipcMain.handle('security:enableGuardedYolo', async (event, threadId: unknown) => {
+  ipcMain.handle('security:enable-guarded-yolo', async (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     const current = getGuardedYoloState(id)
@@ -1529,13 +1537,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (approved) armGuardedYolo(id)
     return getGuardedYoloState(id)
   })
-  ipcMain.handle('security:disableGuardedYolo', (event, threadId: unknown) => {
+  ipcMain.handle('security:disable-guarded-yolo', (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     disableGuardedYolo(id)
     return getGuardedYoloState(id)
   })
-  ipcMain.handle('threads:loadProject', (event, projectId: unknown) => {
+  ipcMain.handle('threads:load-project', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
     // Archived threads are hidden from every renderer surface (sidebar and
@@ -1547,7 +1555,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // concurrency, one pass per project ever (the result is recorded on each
     // thread's metadata), pushing batches so the chips appear without a relaunch.
     void backfillThreadPrRefs(id, (refs) => {
-      if (!win.isDestroyed()) win.webContents.send('threads:prRefs', id, refs)
+      if (!win.isDestroyed()) win.webContents.send('threads:pr-refs', id, refs)
     }).catch((err: unknown) => {
       console.warn('[threads] PR-ref backfill failed:', err)
     })
@@ -1555,7 +1563,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   // PROTOTYPE (lazy thread loading): fetch one thread's transcript on demand,
   // when the user actually opens it.
-  ipcMain.handle('threads:loadMessages', (event, projectId: unknown, threadId: unknown) => {
+  ipcMain.handle('threads:load-messages', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return loadThreadMessages(id, thread)
@@ -1563,13 +1571,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Canvas artefacts saved by earlier sessions. The renderer holds artefacts
   // only as live tabs and an in-memory thumbnail map, so after a restart these
   // two are the only way back to something the agent rendered yesterday.
-  ipcMain.handle('canvas:listArtefacts', (event, projectId: unknown, threadId: unknown) => {
+  ipcMain.handle('canvas:list-artefacts', (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [id, thread] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return loadCanvasArtefactSummaries(id, thread)
   })
   ipcMain.handle(
-    'canvas:reopenArtefact',
+    'canvas:reopen-artefact',
     async (event, projectId: unknown, threadId: unknown, title: unknown) => {
       assertMainFrameSender(event, win)
       const [id, thread, name] = parseIpcArgs(
@@ -1595,7 +1603,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return createThread(id, parsed)
   })
   ipcMain.handle(
-    'threads:appendMessage',
+    'threads:append-message',
     (event, projectId: unknown, threadId: unknown, message: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, payload] = parseIpcArgs(
@@ -1608,7 +1616,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
   ipcMain.handle(
-    'threads:updateMeta',
+    'threads:update-meta',
     (event, projectId: unknown, threadId: unknown, patch: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, payload] = parseIpcArgs(
@@ -1619,7 +1627,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
   ipcMain.handle(
-    'threads:recordModelSelection',
+    'threads:record-model-selection',
     (event, projectId: unknown, threadId: unknown, by: unknown, from: unknown, to: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, actor, previous, selected] = parseIpcArgs(
@@ -1669,7 +1677,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // The whole thread directory, zipped — the archive counterpart to the
   // renderer-side JSONL export. Bytes go back over IPC; the renderer names the
   // download and saves it, exactly as it does for the `.jsonl`.
-  ipcMain.handle('threads:exportArchive', async (event, projectId: unknown, threadId: unknown) => {
+  ipcMain.handle('threads:export-archive', async (event, projectId: unknown, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return {
@@ -1761,7 +1769,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return readVideoForPlayback(videoPath)
   })
 
-  ipcMain.handle('threads:listOrphans', (event) => {
+  ipcMain.handle('threads:list-orphans', (event) => {
     assertMainFrameSender(event, win)
     const projectIds = recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
       const id = project['id']
@@ -1800,7 +1808,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
 
   ipcMain.handle(
-    'worktrees:cleanupPackages',
+    'worktrees:cleanup-packages',
     async (event, rawProjectId: unknown, rawPath: unknown, rawRemove: unknown) => {
       assertMainFrameSender(event, win)
       const [, path, remove] = parseIpcArgs(z.tuple([zProjectId, zPathString, z.boolean()]), [
@@ -1820,7 +1828,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   )
 
   ipcMain.handle(
-    'worktrees:openTerminal',
+    'worktrees:open-terminal',
     async (event, rawProjectId: unknown, rawPath: unknown) => {
       assertMainFrameSender(event, win)
       const [, path] = parseIpcArgs(z.tuple([zProjectId, zPathString]), [rawProjectId, rawPath])
@@ -1859,7 +1867,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     await waitForAgentsRegistryRefresh()
     return listAgents()
   })
-  ipcMain.handle('cursorPlugins:list', () => listCursorPlugins())
+  ipcMain.handle('cursor-plugins:list', () => listCursorPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
@@ -1897,7 +1905,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Read-only: it never re-runs anything (that is `hooks:test`), and the ids are
   // validated so a compromised renderer cannot walk out of the chat store.
   ipcMain.handle(
-    'hooks:runDetail',
+    'hooks:run-detail',
     (event, rawProjectId: unknown, rawThreadId: unknown, rawRunId: unknown) => {
       assertMainFrameSender(event, win)
       const [projectId, threadId, runId] = parseIpcArgs(
@@ -1950,7 +1958,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       : null
     return { task: summary }
   })
-  ipcMain.handle('plugins:addSource', async (event) => {
+  ipcMain.handle('plugins:add-source', async (event) => {
     assertMainFrameSender(event, win)
     const result = await dialog.showOpenDialog(win, {
       title: 'Add plugin',
@@ -1962,7 +1970,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return { plugins: getPluginService().list() }
   })
-  ipcMain.handle('plugins:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
+  ipcMain.handle('plugins:set-enabled', async (event, rawId: unknown, rawEnabled: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
@@ -2029,7 +2037,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return { plugins: getPluginService().list() }
   })
   ipcMain.handle(
-    'plugins:setSetting',
+    'plugins:set-setting',
     async (event, rawId: unknown, rawKey: unknown, rawValue: unknown) => {
       assertMainFrameSender(event, win)
       const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
@@ -2079,7 +2087,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
   ipcMain.handle(
-    'automations:runNow',
+    'automations:run-now',
     async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
       assertMainFrameSender(event, win)
       const [projectId, scheduleId] = parseIpcArgs(
@@ -2093,7 +2101,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Decision 7 / F3: the workspace-trust prompt surfaces project hooks that
   // declare `sandbox: false` at the consent moment. Read-only display parsing —
   // trust-independent by design (the whole point is showing this BEFORE trust).
-  ipcMain.handle('hooks:unsandboxedProjectHooks', async () => {
+  ipcMain.handle('hooks:unsandboxed-project-hooks', async () => {
     const root = getWorkspaceRoot()
     if (!root) return []
     return listUnsandboxedProjectHooks(root)
@@ -2122,7 +2130,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (!source) throw new IpcValidationError('Not a discovered instruction file')
     return source.content
   })
-  ipcMain.handle('cursorRules:list', async () => {
+  ipcMain.handle('cursor-rules:list', async () => {
     const root = getWorkspaceRoot()
     if (!root) return []
     return toCursorRuleSummaries(await discoverCursorRules(root))
@@ -2138,7 +2146,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return root
   }
 
-  ipcMain.handle('git:isAvailable', async (event, ...rawArgs) => {
+  ipcMain.handle('git:is-available', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     const root = await resolveWatchedGitRoot(projectId, threadId)
@@ -2149,12 +2157,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getGitStatus(await resolveWatchedGitRoot(projectId, threadId))
   })
-  ipcMain.handle('git:changeStats', async (event, ...rawArgs) => {
+  ipcMain.handle('git:change-stats', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getGitChangeStats(await resolveWatchedGitRoot(projectId, threadId))
   })
-  ipcMain.handle('git:fileDiff', async (event, ...rawArgs) => {
+  ipcMain.handle('git:file-diff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, filePath, isStaged] = parseIpcArgs(
       z.tuple([zProjectId, zThreadId, zPathString, z.boolean()]),
@@ -2163,7 +2171,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitFileDiff(filePath, isStaged, root)
   })
-  ipcMain.handle('git:committedChanges', async (event, ...rawArgs) => {
+  ipcMain.handle('git:committed-changes', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     const root = await resolveWatchedGitRoot(projectId, threadId)
@@ -2171,7 +2179,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
     })
   })
-  ipcMain.handle('git:committedFileDiff', async (event, ...rawArgs) => {
+  ipcMain.handle('git:committed-file-diff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
     const root = await resolveWatchedGitRoot(projectId, threadId)
@@ -2179,13 +2187,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       hasOpenPr: (branch) => branchHasOpenPr(projectId, branch, root),
     })
   })
-  ipcMain.handle('git:workingFileDiff', async (event, ...rawArgs) => {
+  ipcMain.handle('git:working-file-diff', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, filePath] = parseIpcArgs(threadPathArgs, rawArgs)
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitWorkingFileDiff(filePath, root)
   })
-  ipcMain.handle('git:branchStatus', async (event, ...rawArgs) => {
+  ipcMain.handle('git:branch-status', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     // Git-ref charset only, no leading dash: the branch reaches `gh pr list
     // --head <branch>` and must never be option-shaped (#580).
@@ -2204,12 +2212,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitBranchStatus(projectId, branch, root)
   })
-  ipcMain.handle('git:promptState', async (event, ...rawArgs) => {
+  ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getGitPromptState(await resolveWatchedGitRoot(projectId, threadId))
   })
-  ipcMain.handle('git:checkoutBranch', async (event, ...rawArgs) => {
+  ipcMain.handle('git:checkout-branch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, targetBranch] = parseIpcArgs(
       z.tuple([zProjectId, zThreadId, z.string().min(1).max(256)]),
@@ -2218,28 +2226,28 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = await resolveWatchedGitRoot(projectId, threadId)
     await checkoutGitBranch(targetBranch, root)
   })
-  ipcMain.handle('git:listBranches', async (event, ...rawArgs) => {
+  ipcMain.handle('git:list-branches', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getBranches(await resolveWatchedGitRoot(projectId, threadId))
   })
-  ipcMain.handle('agent:resetDefaultBranchCache', (event) => {
+  ipcMain.handle('agent:reset-default-branch-cache', (event) => {
     assertMainFrameSender(event, win)
     resetDefaultBranchCache()
   })
-  ipcMain.handle('git:getDefaultBranch', async (event, ...rawArgs) => {
+  ipcMain.handle('git:get-default-branch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
     return getDefaultBranch(await resolveWatchedGitRoot(projectId, threadId))
   })
-  ipcMain.handle('git:sessionBackup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
+  ipcMain.handle('git:session-backup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [projectIdArg])
     const threadId = parseIpcArgs(zThreadId, [threadIdArg])
     return getSessionBackup({ projectId, threadId })
   })
   ipcMain.handle(
-    'git:restoreBackup',
+    'git:restore-backup',
     async (event, projectIdArg: unknown, threadIdArg: unknown) => {
       assertMainFrameSender(event, win)
       const projectId = parseIpcArgs(zProjectId, [projectIdArg])
@@ -2249,14 +2257,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   )
 
   ipcMain.handle('gh:status', () => getGhCliStatus())
-  ipcMain.handle('gh:invalidateReadCache', () => {
+  ipcMain.handle('gh:invalidate-read-cache', () => {
     invalidateGithubReadCache()
     // Other windows re-read through the now-empty TTL cache instead of waiting
     // up to 30s for the next shared tick.
     notifyGitHubListWatchers()
   })
   const listWatchTeardown = new WeakSet<WebContents>()
-  ipcMain.handle('gh:setListWatch', (event, ...rawArgs) => {
+  ipcMain.handle('gh:set-list-watch', (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [watching, includeMyPrs] = parseIpcArgs(z.tuple([z.boolean(), z.boolean()]), rawArgs)
     if (!listWatchTeardown.has(event.sender)) {
@@ -2268,16 +2276,16 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     setGitHubListWatch(event.sender.id, watching, includeMyPrs)
   })
-  ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
-  ipcMain.handle('gh:listWorkspaceOpenPrs', () => listWorkspaceOpenPrs())
-  ipcMain.handle('gh:prChecks', (event, owner: unknown, repo: unknown, number: unknown) => {
+  ipcMain.handle('gh:list-my-open-prs', () => listMyOpenPrs())
+  ipcMain.handle('gh:list-workspace-open-prs', () => listWorkspaceOpenPrs())
+  ipcMain.handle('gh:pr-checks', (event, owner: unknown, repo: unknown, number: unknown) => {
     assertMainFrameSender(event, win)
     const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
     const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
     const parsedNumber = parseIpcArgs(z.number().int().positive(), [number])
     return getGhPrChecksState({ owner: parsedOwner, repo: parsedRepo, number: parsedNumber })
   })
-  ipcMain.handle('gh:prDetails', (event, owner: unknown, repo: unknown, number: unknown) => {
+  ipcMain.handle('gh:pr-details', (event, owner: unknown, repo: unknown, number: unknown) => {
     assertMainFrameSender(event, win)
     const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
     const parsedRepo = parseIpcArgs(z.string().min(1).max(128), [repo])
@@ -2285,7 +2293,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return getGhPrDetails({ owner: parsedOwner, repo: parsedRepo, number: parsedNumber })
   })
   ipcMain.handle(
-    'gh:prFileDiff',
+    'gh:pr-file-diff',
     (event, owner: unknown, repo: unknown, number: unknown, path: unknown) => {
       assertMainFrameSender(event, win)
       const parsedOwner = parseIpcArgs(z.string().min(1).max(128), [owner])
@@ -2298,14 +2306,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       )
     },
   )
-  ipcMain.handle('gh:resolvePrUrl', (event, url: unknown) => {
+  ipcMain.handle('gh:resolve-pr-url', (event, url: unknown) => {
     assertMainFrameSender(event, win)
     const parsedUrl = parseIpcArgs(z.url().max(2048), [url])
     return resolveGithubPrRef(parsedUrl)
   })
   // Local-only: which PRs in the active project were opened by an agent this app
   // launched (issue #690, Q6). No network, no user input — reads the thread metas.
-  ipcMain.handle('gh:agentPrLinks', () => listActiveProjectAgentPrLinks())
+  ipcMain.handle('gh:agent-pr-links', () => listActiveProjectAgentPrLinks())
   // PR lifecycle write actions. Unlike the read handlers above, these mutate
   // GitHub state, so each asserts a main-frame sender before acting.
   const parsePrRef = (
@@ -2317,30 +2325,39 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     repo: parseIpcArgs(z.string().min(1).max(128), [repo]),
     number: parseIpcArgs(z.number().int().positive(), [number]),
   })
-  ipcMain.handle('gh:rerunFailedRuns', (event, owner: unknown, repo: unknown, number: unknown) => {
-    assertMainFrameSender(event, win)
-    return rerunFailedPrRuns(parsePrRef(owner, repo, number))
-  })
-  ipcMain.handle('gh:approvePr', (event, owner: unknown, repo: unknown, number: unknown) => {
+  ipcMain.handle(
+    'gh:rerun-failed-runs',
+    (event, owner: unknown, repo: unknown, number: unknown) => {
+      assertMainFrameSender(event, win)
+      return rerunFailedPrRuns(parsePrRef(owner, repo, number))
+    },
+  )
+  ipcMain.handle('gh:approve-pr', (event, owner: unknown, repo: unknown, number: unknown) => {
     assertMainFrameSender(event, win)
     return approvePr(parsePrRef(owner, repo, number))
   })
-  ipcMain.handle('gh:markPrReady', (event, owner: unknown, repo: unknown, number: unknown) => {
+  ipcMain.handle('gh:mark-pr-ready', (event, owner: unknown, repo: unknown, number: unknown) => {
     assertMainFrameSender(event, win)
     return markPrReady(parsePrRef(owner, repo, number))
   })
-  ipcMain.handle('gh:enableAutoMerge', (event, owner: unknown, repo: unknown, number: unknown) => {
-    assertMainFrameSender(event, win)
-    return enablePrAutoMerge(parsePrRef(owner, repo, number))
-  })
-  ipcMain.handle('remoteAgent:downloadArtifact', async (event, agentId: unknown, path: unknown) => {
-    assertMainFrameSender(event, win)
-    const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
-    const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
-    return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
-  })
   ipcMain.handle(
-    'remoteAgent:artifactImageDataUrl',
+    'gh:enable-auto-merge',
+    (event, owner: unknown, repo: unknown, number: unknown) => {
+      assertMainFrameSender(event, win)
+      return enablePrAutoMerge(parsePrRef(owner, repo, number))
+    },
+  )
+  ipcMain.handle(
+    'remote-agent:download-artifact',
+    async (event, agentId: unknown, path: unknown) => {
+      assertMainFrameSender(event, win)
+      const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
+      const parsedPath = parseIpcArgs(z.string().min(1).max(4096), [path])
+      return resolveRemoteArtifactDownloadUrl({ agentId: parsedAgentId, path: parsedPath })
+    },
+  )
+  ipcMain.handle(
+    'remote-agent:artifact-image-data-url',
     async (event, agentId: unknown, path: unknown) => {
       assertMainFrameSender(event, win)
       const parsedAgentId = parseIpcArgs(z.string().min(1).max(128), [agentId])
@@ -2348,7 +2365,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return fetchRemoteArtifactImageDataUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )
-  ipcMain.handle('remoteAgent:models', (event) => {
+  ipcMain.handle('remote-agent:models', (event) => {
     assertMainFrameSender(event, win)
     return listCursorCloudModels()
   })
@@ -2357,7 +2374,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
    * Prefer passing the renderer’s active `projectId` so sync stays scoped to the
    * open project. Caller should reload/merge project threads after imports.
    */
-  ipcMain.handle('remoteAgent:discoverExternal', (event, projectId: unknown) => {
+  ipcMain.handle('remote-agent:discover-external', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     if (projectId === undefined || projectId === null) {
       return discoverExternalCursorAgents()
@@ -2365,20 +2382,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zProjectId, [projectId])
     return discoverExternalCursorAgents({ projectId: id })
   })
-  ipcMain.handle('acp:detectAgents', (event) => {
+  ipcMain.handle('acp:detect-agents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()
   })
-  ipcMain.handle('acp:probeAgent', (event, agentId: unknown) => {
+  ipcMain.handle('acp:probe-agent', (event, agentId: unknown) => {
     assertMainFrameSender(event, win)
-    if (typeof agentId !== 'string') throw new Error('acp:probeAgent requires an agent id')
+    if (typeof agentId !== 'string') throw new Error('acp:probe-agent requires an agent id')
     return probeAcpAgentForSettings(agentId)
   })
-  ipcMain.handle('acp:autoSetup', (event) => {
+  ipcMain.handle('acp:auto-setup', (event) => {
     assertMainFrameSender(event, win)
     return runAcpAutoSetup(new AbortController().signal)
   })
-  ipcMain.handle('shell:openExternal', (event, url: unknown) => {
+  ipcMain.handle('shell:open-external', (event, url: unknown) => {
     assertMainFrameSender(event, win)
     const href = parseIpcArgs(z.url().max(2048), [url])
     if (!href.startsWith('http://') && !href.startsWith('https://')) {
@@ -2386,7 +2403,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     return shell.openExternal(href)
   })
-  ipcMain.handle('shell:openWorkspaceFileInBrowser', async (event, ...rawArgs) => {
+  ipcMain.handle('shell:open-workspace-file-in-browser', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
     const { root, projectRoot } = await resolveThreadExecutionContext(projectId, threadId)
@@ -2396,7 +2413,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const abs = await resolvePathWithinRoot(relPath, root)
     return shell.openExternal(await workspacePreviewFileUrl(root, abs))
   })
-  ipcMain.handle('browser:workspaceFileUrl', async (event, ...rawArgs) => {
+  ipcMain.handle('browser:workspace-file-url', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, relPath] = parseIpcArgs(threadPathArgs, rawArgs)
     const { root, projectRoot } = await resolveThreadExecutionContext(projectId, threadId)
@@ -2430,7 +2447,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     createPanePopoutWindow(parsed, seed)
   })
 
-  ipcMain.handle('panes:takePopoutSeed', (event, mode: unknown) => {
+  ipcMain.handle('panes:take-popout-seed', (event, mode: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
       z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser', 'vnc']),
@@ -2446,10 +2463,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('mcp:reload', async (event) => {
     assertMainFrameSender(event, win)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:statusChanged', statuses)
+    win.webContents.send('mcp:status-changed', statuses)
     return statuses
   })
-  ipcMain.handle('mcp:setEnabled', async (event, name: unknown, enabled: unknown) => {
+  ipcMain.handle('mcp:set-enabled', async (event, name: unknown, enabled: unknown) => {
     assertMainFrameSender(event, win)
     const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [
       name,
@@ -2457,18 +2474,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ])
     await setMcpServerUserEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:statusChanged', statuses)
+    win.webContents.send('mcp:status-changed', statuses)
     return statuses
   })
-  ipcMain.handle('mcp:listCurated', (event) => {
+  ipcMain.handle('mcp:list-curated', (event) => {
     assertMainFrameSender(event, win)
     return getCuratedServerStatuses(getMcpServerStatuses())
   })
-  ipcMain.handle('mcp:listDeclared', (event) => {
+  ipcMain.handle('mcp:list-declared', (event) => {
     assertMainFrameSender(event, win)
     return getPluginService().declaredMcpServers()
   })
-  ipcMain.handle('mcp:setCuratedEnabled', async (event, name: unknown, enabled: unknown) => {
+  ipcMain.handle('mcp:set-curated-enabled', async (event, name: unknown, enabled: unknown) => {
     assertMainFrameSender(event, win)
     const [parsedName, parsedEnabled] = parseIpcArgs(z.tuple([zMcpServerName, z.boolean()]), [
       name,
@@ -2476,11 +2493,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ])
     await setCuratedServerEnabled(parsedName, parsedEnabled)
     const statuses = await reloadMcpServers(registry)
-    win.webContents.send('mcp:statusChanged', statuses)
+    win.webContents.send('mcp:status-changed', statuses)
     return getCuratedServerStatuses(statuses)
   })
-  ipcMain.handle('workspace:isTrusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
-  ipcMain.handle('workspace:setTrusted', async (event, trusted: unknown) => {
+  ipcMain.handle('workspace:is-trusted', () => isWorkspaceTrusted(getWorkspaceRoot()))
+  ipcMain.handle('workspace:set-trusted', async (event, trusted: unknown) => {
     assertMainFrameSender(event, win)
     const root = getWorkspaceRoot()
     if (!root) throw new IpcValidationError('No workspace open')
@@ -2488,7 +2505,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Spawning project MCP servers is the code-execution sink, so trusting a workspace
     // is a privileged action — only the main frame may request it (issue #100).
     const statuses = await setWorkspaceTrustAndReload(registry, root, trusted)
-    win.webContents.send('mcp:statusChanged', statuses)
+    win.webContents.send('mcp:status-changed', statuses)
     return statuses
   })
 
@@ -2566,12 +2583,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:emitApprovalRequests', (event, raw: unknown) => {
       assertMainFrameSender(event, win)
       const requests = parseIpcArgs(z.array(testApprovalRequestSchema).min(1).max(16), [raw])
-      for (const request of requests) win.webContents.send('agent:approvalRequest', request)
+      for (const request of requests) win.webContents.send('agent:approval-request', request)
     })
     ipcMain.handle('test:cancelApprovalRequest', (event, rawId: unknown) => {
       assertMainFrameSender(event, win)
       const id = parseIpcArgs(z.string().min(1).max(256), [rawId])
-      win.webContents.send('agent:approvalCancelled', { id })
+      win.webContents.send('agent:approval-cancelled', { id })
     })
     ipcMain.handle('test:requestSshPrompt', (event, prompt: unknown, kind: unknown) => {
       assertMainFrameSender(event, win)

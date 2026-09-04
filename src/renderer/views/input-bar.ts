@@ -865,7 +865,7 @@ export function mountInputBar(
 
   function checkoutErrorMessage(error: unknown): string {
     const message = error instanceof Error ? error.message : 'Could not prepare the checkout'
-    return message.replace(/^Error invoking remote method 'agent:prepareCheckout': Error:\s*/, '')
+    return message.replace(/^Error invoking remote method 'agent:prepare-checkout': Error:\s*/, '')
   }
 
   function selectCheckout(choice: ThreadWorktreeChoice): void {

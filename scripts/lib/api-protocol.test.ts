@@ -34,32 +34,35 @@ const generated = generateApiProtocol({ version: API_PROTOCOL_VERSION })
 const committed = generated
 const manifestOnDisk = readFileSync(resolve(ROOT, API_PROTOCOL_MANIFEST_PATH), 'utf8')
 
+/** `suggestFollowUps` → `suggest-follow-ups`. */
+function kebab(name: string): string {
+  return name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
+}
+
 /**
  * The channel a facade member is expected to bind: `namespace:method`, or for
- * a subscription `namespace:event` with the handler's `on` prefix dropped.
+ * a subscription `namespace:event` with the handler's `on` prefix dropped,
+ * both halves kebab-cased.
  */
 function conventionalChannel(ns: string, method: string, kind: string): string {
-  if (kind === 'subscribe' && /^on[A-Z]/.test(method)) {
-    const event = method.slice(2)
-    return `${ns}:${event.charAt(0).toLowerCase()}${event.slice(1)}`
-  }
-  return `${ns}:${method}`
+  const name = kind === 'subscribe' && /^on[A-Z]/.test(method) ? method.slice(2) : method
+  return `${kebab(ns)}:${kebab(name)}`
 }
 
 /** Bindings still under a different area than their facade namespace. */
 const CHANNEL_NAME_EXCEPTIONS: Record<string, string> = {
   'browser.onPluginTabRequest': 'plugins:browser-tab-request',
-  'closeConfirm.onRequest': 'app:close_confirm_request',
-  'diff.onShowDiff': 'agent:show_diff',
+  'closeConfirm.onRequest': 'app:close-confirm-request',
+  'diff.onShowDiff': 'agent:show-diff',
   'panes.onSwitchMode': 'popout:switch-mode',
-  'sshPrompt.onRequest': 'ssh:prompt_request',
-  'sshWorkspace.onConnectionChanged': 'ssh:connection_changed',
-  'updatePrompt.onDevNotice': 'update:dev_notice',
-  'updatePrompt.onRequest': 'update:prompt_request',
-  'windowState.getNavigation': 'mainWindow:getNavigation',
-  'windowState.setNavigation': 'mainWindow:setNavigation',
-  'workspace.createNewProject': 'workspace:createProject',
-  'workspace.unsandboxedProjectHooks': 'hooks:unsandboxedProjectHooks',
+  'sshPrompt.onRequest': 'ssh:prompt-request',
+  'sshWorkspace.onConnectionChanged': 'ssh:connection-changed',
+  'updatePrompt.onDevNotice': 'update:dev-notice',
+  'updatePrompt.onRequest': 'update:prompt-request',
+  'windowState.getNavigation': 'main-window:get-navigation',
+  'windowState.setNavigation': 'main-window:set-navigation',
+  'workspace.createNewProject': 'workspace:create-project',
+  'workspace.unsandboxedProjectHooks': 'hooks:unsandboxed-project-hooks',
 }
 
 function mainProcessSources(): string {
@@ -128,8 +131,8 @@ describe('API protocol manifest (schemas/api-protocol.manifest.json)', () => {
         assert.ok(method.channel, `${api} is not bound to an IPC channel in the preload`)
         assert.match(
           method.channel,
-          /^[a-z][A-Za-z0-9-]*:[A-Za-z][A-Za-z0-9_-]*$/,
-          `${api} channel "${method.channel}" is not "<area>:<name>"`,
+          /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/,
+          `${api} channel "${method.channel}" is not kebab-case "<area>:<name>"`,
         )
         // Subscriptions may share an event channel only if they are the same
         // member; two invoke methods on one channel would be an ambiguity the
@@ -151,7 +154,7 @@ describe('API protocol manifest (schemas/api-protocol.manifest.json)', () => {
   it('names every channel after its ApiClient member', () => {
     // The convention: `namespace:method` for invokes and sends, and
     // `namespace:event` (the handler name without its `on` prefix) for
-    // subscriptions. A channel is then derivable from `ApiClient` alone, which
+    // subscriptions, kebab-cased. A channel is then derivable from `ApiClient` alone, which
     // is what lets the preload become generated rather than hand-written.
     // The exceptions below are the bindings that still live under a different
     // area than their facade namespace; each is a candidate for a later move,
@@ -265,9 +268,9 @@ describe('analyzePreloadSource', () => {
     const api = analyzePreloadSource(
       source(`
   fs: {
-    readFile: (projectId: string, path: string) => ipcRenderer.invoke('fs:readFile', projectId, path),
+    readFile: (projectId: string, path: string) => ipcRenderer.invoke('fs:read-file', projectId, path),
     write(projectId: string, path: string) {
-      return ipcRenderer.invoke('fs:writeFile', path, projectId)
+      return ipcRenderer.invoke('fs:write-file', path, projectId)
     },
     ping: (id: string) => ipcRenderer.send('fs:ping', id),
     onChanged: (handler: (path: string, content: string | null) => void) => {
@@ -291,11 +294,11 @@ describe('analyzePreloadSource', () => {
   },`),
     )
     assert.deepEqual(api.get('fs.readFile')?.bindings, [
-      { op: 'invoke', channel: 'fs:readFile', passThrough: true },
+      { op: 'invoke', channel: 'fs:read-file', passThrough: true },
     ])
     // Arguments reordered: the wire tuple is not the facade's parameter list.
     assert.deepEqual(api.get('fs.write')?.bindings, [
-      { op: 'invoke', channel: 'fs:writeFile', passThrough: false },
+      { op: 'invoke', channel: 'fs:write-file', passThrough: false },
     ])
     assert.deepEqual(api.get('fs.ping')?.bindings, [
       { op: 'send', channel: 'fs:ping', passThrough: true },

@@ -56,9 +56,9 @@ invariants test, so the surface changes only deliberately. Delivered:
   `string` where the contract has precise types, and are now aligned.
 - Contract doc: [`../api-protocol.md`](../api-protocol.md).
 - Channel names follow one convention (`namespace:method`, subscriptions drop
-  the `on` prefix, camelCase throughout). 54 channels that differed only in
-  style (`agent:approval_request`, `browser:open-tab`, `ssh-workspace:connect`,
-  `lmstudio:models`) were renamed on both sides; that is protocol version 2.
+  the `on` prefix, kebab-case on both halves). Every channel that differed
+  (camelCase, snake_case, or a differently styled namespace token) was renamed
+  on both sides; that is protocol version 2.
   Twelve bindings still sit under a different area than their facade namespace
   and are listed as exceptions in the invariants test, which forbids new ones.
   With the convention in place the preload is derivable from `ApiClient`, so

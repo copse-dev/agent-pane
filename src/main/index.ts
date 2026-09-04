@@ -251,7 +251,7 @@ setBrowserSessionPlatform({
   showUrl: (url) => {
     const win = getMainWindow()
     if (!win || win.isDestroyed()) return
-    win.webContents.send('browser:showTab', url)
+    win.webContents.send('browser:show-tab', url)
   },
   showArtefact: (identity) => {
     const win = getMainWindow()
@@ -287,17 +287,17 @@ setCanvasArtefactMirror((artefact) => mirrorArtefactToAgent(artefact, getBrowser
 setContextEstimateRefreshSink(() => {
   const win = getMainWindow()
   if (!win || win.isDestroyed()) return
-  win.webContents.send('agent:refreshContextEstimate')
+  win.webContents.send('agent:refresh-context-estimate')
 })
 
 setWorkspaceChangeSink((root) => {
-  broadcastToAppWindows('git:workingTreeChanged', root)
+  broadcastToAppWindows('git:working-tree-changed', root)
 })
 
 // A preview whose files changed on disk repaints itself. Scoped to files the
 // server actually served, so an ordinary source edit never disturbs a page.
 setPreviewStaleSink((origin) => {
-  broadcastToAppWindows('browser:previewStale', origin)
+  broadcastToAppWindows('browser:preview-stale', origin)
 })
 
 // Prevent multiple instances stacking invisible windows at the same position.
@@ -409,7 +409,7 @@ app
     // Electron (#1313). Read the window per chunk rather than capturing `win`,
     // so output still lands if the window is ever recreated.
     setShellOutputSink((chunk, taskId) => {
-      getMainWindow()?.webContents.send('agent:shellOutput', chunk, taskId)
+      getMainWindow()?.webContents.send('agent:shell-output', chunk, taskId)
     })
     applyAppIcon(windows.length > 0 ? windows : [win])
     const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, false)
@@ -430,7 +430,7 @@ app
     //
     // Started here but NOT awaited until every IPC handler is registered below.
     // `createMainWindow()` has already fired `loadFile`, so the renderer boots
-    // concurrently and invokes `settings:get` / `sshWorkspace:getStates` on
+    // concurrently and invokes `settings:get` / `ssh-workspace:get-states` on
     // first paint — awaiting a multi-second probe before registration left those
     // invokes hitting "No handler registered", which rejects the unguarded
     // `await api.settings.get('model')` in the renderer's boot() and aborts the
@@ -474,7 +474,7 @@ app
     // C2: forward an async hook's queued message to the renderer's pending queue
     // (decision 4). Same window-guarded send as `agent:chunk`.
     setHookQueueMessageSender((payload) => {
-      if (!win.isDestroyed()) win.webContents.send('agent:hookQueueMessage', payload)
+      if (!win.isDestroyed()) win.webContents.send('agent:hook-queue-message', payload)
     })
 
     const alertUser = createElectronUserAlertSender(win, app.dock)
@@ -484,7 +484,7 @@ app
     // (the ACP re-authentication offer). The renderer owns the PTY's xterm tab,
     // so the request is forwarded rather than spawned here.
     setTerminalCommandLauncher((command) => {
-      if (!win.isDestroyed()) win.webContents.send('terminal:runCommand', command)
+      if (!win.isDestroyed()) win.webContents.send('terminal:run-command', command)
     })
     initSshAskpassServer(app.getPath('userData'))
     initSshPrompt(win, ipcMain)
@@ -525,7 +525,7 @@ app
     })
 
     // Register before async bootstrap so onboarding/settings can query models on first paint.
-    ipcMain.handle('lmStudio:test', async (event, url: unknown, apiKey?: unknown) => {
+    ipcMain.handle('lm-studio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
       const [parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioTestSchema, [url, apiKey])
       const result = await testLmStudio(parsedUrl, parsedApiKey)
@@ -533,20 +533,20 @@ app
       return result
     })
 
-    ipcMain.handle('lmStudio:models', () => listLmStudioModels())
+    ipcMain.handle('lm-studio:models', () => listLmStudioModels())
 
-    ipcMain.handle('lmStudio:modelInfo', () => listLmStudioModelInfo())
+    ipcMain.handle('lm-studio:model-info', () => listLmStudioModelInfo())
 
-    ipcMain.handle('openRouter:models', () => listFreeOpenRouterModels())
+    ipcMain.handle('open-router:models', () => listFreeOpenRouterModels())
 
-    ipcMain.handle('lmStudio:detect', async (event, url?: unknown, apiKey?: unknown) => {
+    ipcMain.handle('lm-studio:detect', async (event, url?: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
       const [parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioDetectSchema, [url, apiKey])
       return detectLmStudio(parsedUrl, parsedApiKey)
     })
 
     ipcMain.handle(
-      'lmStudio:download',
+      'lm-studio:download',
       async (event, modelId: unknown, url?: unknown, apiKey?: unknown) => {
         assertMainFrameSender(event, win)
         const [parsedModelId, parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioDownloadSchema, [
@@ -562,7 +562,7 @@ app
     )
 
     ipcMain.handle(
-      'lmStudio:downloadStatus',
+      'lm-studio:download-status',
       async (event, jobId: unknown, url?: unknown, apiKey?: unknown) => {
         assertMainFrameSender(event, win)
         const [parsedJobId, parsedUrl, parsedApiKey] = parseIpcArgs(lmStudioDownloadStatusSchema, [
@@ -579,7 +579,7 @@ app
     // concurrently and fires a context estimate on first paint, never races a
     // missing handler. The registry these close over is populated lazily below.
     ipcMain.handle(
-      'agent:previewCheckout',
+      'agent:preview-checkout',
       async (event, projectIdArg: unknown, choiceArg: unknown, modelArg?: unknown) => {
         assertMainFrameSender(event, win)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
@@ -598,7 +598,7 @@ app
     )
 
     ipcMain.handle(
-      'agent:prepareCheckout',
+      'agent:prepare-checkout',
       async (
         event,
         projectIdArg: unknown,
@@ -648,7 +648,7 @@ app
       },
     )
 
-    ipcMain.handle('agent:describeImages', async (event, ...rawArgs: unknown[]) => {
+    ipcMain.handle('agent:describe-images', async (event, ...rawArgs: unknown[]) => {
       assertMainFrameSender(event, win)
       const [projectId, threadId, model, userPrompt, images] = parseIpcArgs(
         describeImagesSchema,
@@ -658,7 +658,7 @@ app
     })
 
     ipcMain.handle(
-      'agent:estimateContext',
+      'agent:estimate-context',
       async (event, projectIdArg: unknown, threadIdArg: unknown, payloadJson: string) => {
         assertMainFrameSender(event, win)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
@@ -667,11 +667,11 @@ app
         try {
           rawPayload = JSON.parse(payloadJson)
         } catch {
-          throw new Error('agent:estimateContext: payload is not valid JSON')
+          throw new Error('agent:estimate-context: payload is not valid JSON')
         }
         const parsed = estimateContextPayloadSchema.safeParse(rawPayload)
         if (!parsed.success) {
-          throw new Error('agent:estimateContext: payload failed validation')
+          throw new Error('agent:estimate-context: payload failed validation')
         }
         const { draftText = '', invokedSkills = [], imageCount = 0, model } = parsed.data
         const priorMessages = await agentDispatcher.history(projectId, threadId)
@@ -686,7 +686,7 @@ app
     )
 
     ipcMain.handle(
-      'agent:clearHistory',
+      'agent:clear-history',
       async (event, projectIdArg: unknown, threadIdArg: unknown) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
@@ -701,7 +701,7 @@ app
     // Opening a new chat drops the cached model catalogs so the next context
     // estimate re-fetches the provider's current window (e.g. an LM Studio model
     // reloaded with a different length, or an updated OpenRouter context limit).
-    ipcMain.handle('agent:refreshModelContext', (event) => {
+    ipcMain.handle('agent:refresh-model-context', (event) => {
       assertMainFrameSender(event, win)
       invalidateLmStudioModelsCache()
       invalidateOpenRouterModelsCache()
@@ -718,7 +718,7 @@ app
     // Thread ids with a live in-process run, so a renderer that's just loaded a
     // project's threads can tell a genuinely still-running turn apart from a
     // persisted `status: 'running'` left over from a crash (#1406).
-    ipcMain.handle('agent:runningThreadIds', (event) => {
+    ipcMain.handle('agent:running-thread-ids', (event) => {
       assertMainFrameSender(event, win)
       return listRunningThreadIds()
     })
@@ -753,7 +753,7 @@ app
       agentDispatcher.history(projectId, threadId)
 
     ipcMain.handle(
-      'agent:retryReview',
+      'agent:retry-review',
       async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
@@ -771,7 +771,7 @@ app
     )
 
     ipcMain.handle(
-      'agent:retryComparison',
+      'agent:retry-comparison',
       async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
@@ -791,33 +791,33 @@ app
     // Defaults for the "Compare models" bubble's picker. Read-only: it resolves
     // the pack's own settings and starts nothing, so unlike the run below it
     // needs no execution context.
-    ipcMain.handle('agent:comparisonModels', async (event, payload: unknown) => {
+    ipcMain.handle('agent:comparison-models', async (event, payload: unknown) => {
       assertMainFrameSender(event, win)
       return resolveComparisonModelChoices(parseRetryPayload(payload))
     })
 
-    ipcMain.handle('agent:suggestTitle', (event, text: string) => {
+    ipcMain.handle('agent:suggest-title', (event, text: string) => {
       assertMainFrameSender(event, win)
       return suggestThreadTitle(text)
     })
 
-    ipcMain.handle('agent:suggestTerminalTitle', (event, text: string) => {
+    ipcMain.handle('agent:suggest-terminal-title', (event, text: string) => {
       assertMainFrameSender(event, win)
       return suggestTerminalTitle(text)
     })
 
-    ipcMain.handle('agent:suggestCommandSummary', (event, commands: string[]) => {
+    ipcMain.handle('agent:suggest-command-summary', (event, commands: string[]) => {
       assertMainFrameSender(event, win)
       return suggestCommandSummary(commands)
     })
 
-    ipcMain.handle('agent:suggestToolTurnSummary', (event, actions: string[]) => {
+    ipcMain.handle('agent:suggest-tool-turn-summary', (event, actions: string[]) => {
       assertMainFrameSender(event, win)
       return suggestToolTurnSummary(actions)
     })
 
     ipcMain.handle(
-      'agent:suggestFollowUps',
+      'agent:suggest-follow-ups',
       async (event, projectIdArg: unknown, threadIdArg: unknown, contextJson: string) => {
         assertMainFrameSender(event, win)
         const projectId = parseIpcArgs(zProjectId, [projectIdArg])
@@ -826,28 +826,28 @@ app
         try {
           rawContext = JSON.parse(contextJson)
         } catch {
-          throw new Error('agent:suggestFollowUps: context is not valid JSON')
+          throw new Error('agent:suggest-follow-ups: context is not valid JSON')
         }
         const parsed = followUpContextSchema.safeParse(rawContext)
         if (!parsed.success) {
-          throw new Error('agent:suggestFollowUps: context failed validation')
+          throw new Error('agent:suggest-follow-ups: context failed validation')
         }
         const { root } = await resolveThreadExecutionContext(projectId, threadId)
         return suggestFollowUps(parsed.data, root)
       },
     )
 
-    ipcMain.handle('agent:suggestNextStep', (event, contextJson: string) => {
+    ipcMain.handle('agent:suggest-next-step', (event, contextJson: string) => {
       assertMainFrameSender(event, win)
       let rawContext: unknown
       try {
         rawContext = JSON.parse(contextJson)
       } catch {
-        throw new Error('agent:suggestNextStep: context is not valid JSON')
+        throw new Error('agent:suggest-next-step: context is not valid JSON')
       }
       const parsed = followUpContextSchema.safeParse(rawContext)
       if (!parsed.success) {
-        throw new Error('agent:suggestNextStep: context failed validation')
+        throw new Error('agent:suggest-next-step: context failed validation')
       }
       return suggestNextStep(parsed.data)
     })
@@ -895,7 +895,7 @@ app
     // Tools arriving after boot is already a supported mode: `loadMcpServers` is
     // re-run from IPC whenever config or workspace trust changes, and it guards
     // that with a `loadGeneration` counter. The renderer already listens on
-    // `mcp:statusChanged`, so the UI fills in as servers land. (Under e2e this
+    // `mcp:status-changed`, so the UI fills in as servers land. (Under e2e this
     // is a no-op — `loadMcpServers` returns early there and never connects.)
     void loadMcpServers(registry)
       .catch((err: unknown) => {
@@ -903,7 +903,7 @@ app
       })
       .finally(() => {
         if (!win.isDestroyed()) {
-          win.webContents.send('mcp:statusChanged', getMcpServerStatuses())
+          win.webContents.send('mcp:status-changed', getMcpServerStatuses())
         }
       })
     disposeTerminal = disposeTerminalHandlers

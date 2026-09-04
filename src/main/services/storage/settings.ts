@@ -263,7 +263,7 @@ export function deleteApiKey(provider: KeyProvider): void {
  * Whether the stored key for a provider is OS-encrypted (`true`) vs persisted as
  * base64 plaintext (`false`). Returns `null` when no key is stored.
  *
- * Surfaced to the renderer over the `settings:getKeyEncrypted` IPC channel so the
+ * Surfaced to the renderer over the `settings:get-key-encrypted` IPC channel so the
  * Settings UI can show a per-provider at-rest badge (and warn on the plaintext
  * fallback), alongside the `console.warn` emitted in `setApiKey` and the README's
  * "How API keys are stored" section.

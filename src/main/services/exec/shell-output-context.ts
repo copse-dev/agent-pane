@@ -1,5 +1,5 @@
 // The shell tool streams its child-process output to the renderer over the
-// global `agent:shellOutput` channel, which historically carried no indication
+// global `agent:shell-output` channel, which historically carried no indication
 // of *which* run_shell call produced it. The terminal pane's "Agent tasks" view
 // needs that attribution so each command's output lands in its own card.
 //

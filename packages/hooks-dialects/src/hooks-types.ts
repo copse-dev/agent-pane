@@ -132,7 +132,7 @@ export interface HookTestResult {
 }
 
 /**
- * `hooks:runDetail` result — the raw record behind one hook card, fetched on
+ * `hooks:run-detail` result — the raw record behind one hook card, fetched on
  * demand when the user opens a card's inspector. The transcript holds only the
  * compact card (decision 10); the bodies live in the thread's blobs, so this is
  * read straight back off the spine rather than kept in renderer state. Every
@@ -177,7 +177,7 @@ export interface HookRunDetail {
 /**
  * Main → renderer bridge payload for an async hook's `queueMessage` output — the
  * only async output channel (decision 4). The host translates an async outcome
- * into this and sends it over `agent:hookQueueMessage`; the renderer lands it
+ * into this and sends it over `agent:hook-queue-message`; the renderer lands it
  * in the thread's pending-message queue with origin attribution (decision 10)
  * and epoch (decision 16). `sendNow` carries byte-for-byte the user's send-now
  * semantics for a **current** epoch; a stale send-now is downgraded to held on

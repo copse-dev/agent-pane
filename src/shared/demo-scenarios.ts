@@ -46,14 +46,14 @@ export interface DemoScenario {
    */
   revealFinalPreview?: boolean
   /**
-   * Never answer transcript hydration (`threads:loadMessages`), freezing an
+   * Never answer transcript hydration (`threads:load-messages`), freezing an
    * unhydrated thread in its mid-switch state. The conversation's hydration
    * notice is only ever on screen for the moment a transcript takes to read;
    * this holds that moment open so the visual spec can assert and capture it.
    */
   holdThreadHydration?: boolean
   /**
-   * Reject transcript hydration (`threads:loadMessages`), leaving an
+   * Reject transcript hydration (`threads:load-messages`), leaving an
    * unhydrated thread in its failed state: the conversation must own up with
    * a failure line — and keep the live activity row — instead of a
    * "Loading…" notice that never finishes.
@@ -257,7 +257,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   {
     // Exercises the proposed-diff path end to end: the replayed `write_file`
-    // calls travel the same route a real edit does (demo-api → `agent:show_diff`
+    // calls travel the same route a real edit does (demo-api → `agent:show-diff`
     // → Changes panel), so this fixture fails if that wiring breaks.
     //
     // Hand-written, unlike `landing`: it is a fixture for a panel state, not a

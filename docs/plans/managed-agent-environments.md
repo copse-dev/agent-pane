@@ -164,7 +164,7 @@ A value set for this project overrides the all-projects value.
   supplies the effective value, so the field always shows what is actually in force.
 - Check reuses the button + status-span idiom already in the dialog
   (`lmstudio-test-row` / `lmstudio-test-status`). It needs a main-process IPC modelled on
-  `settings:validateKey`, because the renderer never holds the Anthropic key.
+  `settings:validate-key`, because the renderer never holds the Anthropic key.
 
 ## Phases
 

@@ -640,5 +640,5 @@ function maybeSummarizeToolTurn(
 function tryOpenFileFromResult(_store: AppStore, _result: string): void {
   // If tool result is file content (read_file), open it in the panel
   // Convention: read_file returns the content directly; we use the store's pending openFile
-  // The main process sends agent:show_diff for write_file — handled separately
+  // The main process sends agent:show-diff for write_file — handled separately
 }

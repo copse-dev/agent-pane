@@ -48,15 +48,16 @@ with `x-ts-type` rather than guessed.
 A channel is named after the `ApiClient` member that binds it, so the channel is
 derivable from the contract alone:
 
-| Member kind          | Channel                                 | Example                           |
-| -------------------- | --------------------------------------- | --------------------------------- |
-| invoke / send        | `namespace:method`                      | `workspace.set` → `workspace:set` |
-| subscription (`onX`) | `namespace:x` (the `on` prefix dropped) | `agent.onChunk` → `agent:chunk`   |
+| Member kind          | Channel                                 | Example                                               |
+| -------------------- | --------------------------------------- | ----------------------------------------------------- |
+| invoke / send        | `namespace:method`                      | `agent.suggestFollowUps` → `agent:suggest-follow-ups` |
+| subscription (`onX`) | `namespace:x` (the `on` prefix dropped) | `agent.onApprovalRequest` → `agent:approval-request`  |
 
-Both halves are camelCase; no kebab-case or snake_case. The invariants test
-enforces this for every member except a short exception list of bindings that
-still live under a different area than their facade namespace (for example
-`windowState.getNavigation` on `mainWindow:getNavigation`). That list may only
+Both halves are kebab-case (`sshWorkspace.listHosts` → `ssh-workspace:list-hosts`);
+no camelCase or snake_case on the wire. The invariants test enforces this for
+every member except a short exception list of bindings that still live under a
+different area than their facade namespace (for example
+`windowState.getNavigation` on `main-window:get-navigation`). That list may only
 shrink: moving one of them is a normal breaking change, handled as below.
 
 ## How the surface changes

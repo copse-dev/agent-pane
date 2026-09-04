@@ -1,4 +1,4 @@
-// Contract tests for the hook-card inspector's read path (`hooks:runDetail`).
+// Contract tests for the hook-card inspector's read path (`hooks:run-detail`).
 //
 // Decision 6 says every hook execution is recorded; decision 10 renders that as
 // a compact card. The gap this closes is *between* them: a card that says
@@ -58,7 +58,7 @@ function recordedRunId(root: string): string {
   return id
 }
 
-describe('hooks:runDetail — the raw record behind a hook card', () => {
+describe('hooks:run-detail — the raw record behind a hook card', () => {
   let root: string
   let previousRoot: string | undefined
 

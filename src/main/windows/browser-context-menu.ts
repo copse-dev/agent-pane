@@ -252,12 +252,12 @@ export function attachBrowserGuestContextMenu(contents: WebContents): void {
         void clipboard.writeText(text).catch(() => {})
       },
       openTab: (url) => {
-        getMainWindow()?.webContents.send('browser:openTab', url)
+        getMainWindow()?.webContents.send('browser:open-tab', url)
       },
       shareSelection: (text, pageUrl) => {
         const win = getMainWindow()
         if (!win || win.isDestroyed()) return
-        win.webContents.send('browser:shareText', browserSelectionShare(contents, text, pageUrl))
+        win.webContents.send('browser:share-text', browserSelectionShare(contents, text, pageUrl))
       },
       saveImageAs: (srcURL) => saveImageAs(contents, srcURL),
       inspectElement: (x, y) => {

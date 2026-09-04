@@ -78,7 +78,7 @@ describe('hook cards in the transcript', function () {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'hook-cards.png'))
 
-    // The inspector reads the recorded bodies back through `hooks:runDetail` —
+    // The inspector reads the recorded bodies back through `hooks:run-detail` —
     // the real main-process path over the seeded thread's blobs, not a stub. A
     // card that only counts characters ("Injected 57 chars of context") opens to
     // the context the model actually received.

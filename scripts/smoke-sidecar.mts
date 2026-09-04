@@ -214,22 +214,22 @@ function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
   })
 }
 
-const home = await invoke('workspace:getHomeDirectory')
+const home = await invoke('workspace:get-home-directory')
 if (typeof home !== 'string' || home.length === 0)
-  fail(`workspace:getHomeDirectory → ${String(home)}`)
-console.log(`workspace:getHomeDirectory → ${home}`)
+  fail(`workspace:get-home-directory → ${String(home)}`)
+console.log(`workspace:get-home-directory → ${home}`)
 
 const model = await invoke('settings:get', 'model')
 console.log(`settings:get model → ${JSON.stringify(model)}`)
 
-const trusted = await invoke('workspace:isTrusted')
-console.log(`workspace:isTrusted → ${JSON.stringify(trusted)}`)
+const trusted = await invoke('workspace:is-trusted')
+console.log(`workspace:is-trusted → ${JSON.stringify(trusted)}`)
 
 // A guarded channel must also work (assertMainFrameSender against the shim's
 // fabricated senderFrame) — settings:get above is already guarded in
 // register-handlers, but hit a second cluster for good measure.
-const navigation = await invoke('mainWindow:getNavigation')
-console.log(`mainWindow:getNavigation → ${JSON.stringify(navigation)}`)
+const navigation = await invoke('main-window:get-navigation')
+console.log(`main-window:get-navigation → ${JSON.stringify(navigation)}`)
 
 // Attachment-scale traffic must survive the frame bound: the product permits
 // 256 MiB videos over `video:attach`, which ride base64-encoded (×4/3) in a

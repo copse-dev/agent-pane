@@ -31,7 +31,7 @@ function loadedThread(id: string, overrides: Partial<Thread> = {}): Thread {
   }
 }
 
-/** A thread as `threads:loadProject` returns it: metadata, no transcript. */
+/** A thread as `threads:load-project` returns it: metadata, no transcript. */
 function unloadedThread(id: string, overrides: Partial<Thread> = {}): Thread {
   return loadedThread(id, { messagesLoaded: false, ...overrides })
 }

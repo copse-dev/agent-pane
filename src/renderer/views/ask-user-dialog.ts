@@ -30,7 +30,7 @@ function setControlMarkdown(target: HTMLButtonElement, source: string): void {
 
 /**
  * Mounts the dialog that the `ask_user` agent tool drives: when the agent asks
- * one or more clarifying questions it sends an `agent:askUserRequest`, the
+ * one or more clarifying questions it sends an `agent:ask-user-request`, the
  * agent loop blocks, and the user's answers are returned via `ask.respond`.
  *
  * Requests are queued and shown one at a time so a second ask that arrives while

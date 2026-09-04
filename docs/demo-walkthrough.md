@@ -64,7 +64,7 @@ open by themselves, because the demo feeds the same events the main process
 sends rather than driving the panel directly.
 
 **Changes.** Any `write_file` or `str_replace` in a trace is turned into the
-`diff:queued` + `agent:show_diff` pair a real edit produces (`demo/demo-api.ts`),
+`diff:queued` + `agent:show-diff` pair a real edit produces (`demo/demo-api.ts`),
 which is what opens the Changes panel and reveals the file — see
 `controller/agent.ts` and `views/git-changes-pane.ts`. Nothing in the demo
 touches `rightPanelMode`. A file the same turn wrote earlier is the base for its
