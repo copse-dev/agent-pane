@@ -3173,8 +3173,13 @@ export function seedMachineTurnAttributionFixture(workspaceRoot: string): void {
 
 /**
  * Multi-segment tool-display fixture: a user bug report followed by several
- * assistant bubbles (text-after-tools splits), each with Reasoning + a rolled-up
- * tool burst — the shape Cursor cloud agent turns take in Copse.
+ * assistant bubbles (text-after-tools splits), each with Reasoning + a tool
+ * burst — the shape Cursor cloud agent turns take in Copse.
+ *
+ * The three tool-only segments carry no prose, so they are one presentation
+ * *run* (one summary, three steps). The prose answer ends it, and the segment
+ * after that answer is a plain per-message rollup — both presentations in one
+ * thread. See src/shared/tools/tool-runs.ts.
  */
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
@@ -3315,10 +3320,36 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 4,
           },
+          {
+            // A lone tool-bearing segment after the answer. Its prose ends the
+            // run above, so this one stays a plain per-message rollup — the two
+            // presentations sit in one thread and one screenshot.
+            id: 'msg-assistant-verify',
+            role: 'assistant',
+            content: 'Re-ran the focused checks against the patched settings dialog.',
+            toolSummary: 'Verified the settings fix',
+            toolCalls: [
+              {
+                id: 'tc-verify-1',
+                name: 'run_shell',
+                args: { command: 'npm test -- settings-dialog' },
+                status: 'done',
+                result: 'ok 12 passed',
+              },
+              {
+                id: 'tc-verify-2',
+                name: 'run_shell',
+                args: { command: 'npm run lint' },
+                status: 'done',
+                result: 'no problems',
+              },
+            ],
+            createdAt: now + 5,
+          },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 4,
+        updatedAt: now + 5,
       },
     ],
   })

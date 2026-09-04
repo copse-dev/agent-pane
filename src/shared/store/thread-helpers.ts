@@ -570,6 +570,20 @@ export function setMessageToolSummary(
   store.emit('tool_call_updated', messageId, '')
 }
 
+/**
+ * Record the small-model polish for the run anchored at `messageId` — the
+ * rollup spanning this message and the tool-only assistant messages after it.
+ * Lands on the anchor, which is usually already finalized by the time the
+ * summary resolves (see the autosave's empty-tool-call-id path).
+ */
+export function setMessageRunSummary(store: AppStore, messageId: string, runSummary: string): void {
+  updateMessage(store, messageId, (m) => {
+    m.runSummary = runSummary
+  })
+  // Re-uses the tool-card refresh path so the run rollup label updates in place.
+  store.emit('tool_call_updated', messageId, '')
+}
+
 export function addToolCall(store: AppStore, messageId: string, toolCall: ToolCall): void {
   updateMessage(store, messageId, (m) => {
     m.toolCalls.push(toolCall)
