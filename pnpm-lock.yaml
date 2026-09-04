@@ -70,6 +70,9 @@ importers:
       '@copse/plan-usage':
         specifier: workspace:*
         version: link:packages/plan-usage
+      '@copse/plugin-sdk':
+        specifier: workspace:*
+        version: link:packages/plugin-sdk
       '@copse/shell-guard':
         specifier: workspace:*
         version: link:packages/shell-guard
@@ -299,6 +302,21 @@ importers:
       '@copse/std':
         specifier: workspace:*
         version: link:../std
+
+  packages/plugin-sdk:
+    dependencies:
+      '@copse/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@copse/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@copse/std':
+        specifier: workspace:*
+        version: link:../std
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/shell-guard:
     dependencies:

@@ -60,6 +60,7 @@ const ALIASES: readonly (readonly [string, string])[] = [
   ['@copse/agent/', 'packages/agent/src/'],
   ['@copse/llm/', 'packages/llm/src/'],
   ['@copse/plan-usage/', 'packages/plan-usage/src/'],
+  ['@copse/plugin-sdk/', 'packages/plugin-sdk/src/'],
   ['@copse/shell-guard/', 'packages/shell-guard/src/'],
   ['@copse/std/', 'packages/std/src/'],
   ['@copse/thread-store/', 'packages/thread-store/src/'],
