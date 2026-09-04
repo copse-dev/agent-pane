@@ -1,12 +1,13 @@
-# Automated reviewer
+# Copse Reviewer
 
 Status: **Proposed** — design only. Nothing in this document is on `main`. It supersedes
 the surfacing and validation gaps in the existing `copse.model-comparison` plugin, which
 stays as-is until Phase 2 retires its judge and Phase 3 replaces it with `copse.review`.
-Binding decisions B1 (execution isolation, 2026-09-03) and B2–B6 (packaging, backend
-sequencing, scope, ecosystem, customer; 2026-09-04) are recorded. Problems are numbered
-P1–P9 in §What needs to be solved, questions Q1–Q16 in §Competitive position, and the
-remaining decisions D1–D4 in §Open decisions.
+Binding decisions B1 (execution isolation, 2026-09-03), B2–B6 (packaging, backend
+sequencing, scope, ecosystem, customer; 2026-09-04) and B7–B9 (name, precision aim, SARIF
+export; 2026-09-04) are recorded. Problems are numbered P1–P9 in §What needs to be solved,
+questions Q1–Q16 in §Competitive position, and the remaining decisions D3–D4 in §Open
+decisions.
 
 Prior art that prompted this: FFmpeg's **Forgejo Fairy**, the opt-in LLM reviewer a
 contributor adds to a pull request by hand ([`doc/developer.texi`](https://ffmpeg.org/developer.html):
@@ -264,9 +265,10 @@ decision rather than a rewrite.
   stays dismissed. Invoked by a **"Review" action in the Changes view**, which is the
   missing gesture from Problem 1.
 - **Shell C — CI / forge.** A GitHub Action (and a Forgejo equivalent, honouring the
-  lineage) that runs the CLI and posts findings as inline comments. Opt-in per PR — a
-  label, or adding the reviewer, exactly as Fairy is invited — never automatic on every
-  push, and never a required check.
+  lineage) that runs the CLI, posts findings as inline comments and uploads the SARIF
+  export to code scanning where the forge has one (B9). Opt-in per PR — a label, or
+  adding the reviewer, exactly as Fairy is invited — never automatic on every push, and
+  never a required check.
 
 ### Execution isolation
 
@@ -408,6 +410,27 @@ Changing one of these requires updating this document in the same change — the
 6. **B6 — OSS maintainers are the main consumer; Copse dogfoods first.** The CLI is the
    first shell, the first deployment is this repository's own PRs, and the local-model path
    must carry the reviewer lens. Recorded 2026-09-04; answers Q1.
+7. **B7 — The name is Copse Reviewer.** The product name on the CLI, the app card and the
+   CI bot. The package stays `@copse/review` and the plugin id `copse.review`, so nothing in
+   B2 moves. Renaming is cheap until something ships, so the name is not revisited before
+   Phase 1. Recorded 2026-09-04; settles D1.
+8. **B8 — The precision aim is 85%, provisional until measured.** 85% precision on surfaced
+   findings, on Martian's offline track, is the bar for any public claim; the best published
+   number is about 76%. Nobody has measured this pipeline yet, so the first `bench:review`
+   run (P6) sets the baseline and the number is revisited then, not before. Until that run
+   exists the bar is the qualitative one in §The quality bar: no finding reaches a human
+   without evidence. Recorded 2026-09-04; answers Q5.
+9. **B9 — SARIF is the interchange export.** The findings JSON (P2) stays the canonical
+   contract; the CLI and the CI shell also emit SARIF 2.1.0, carrying the finding identity in
+   `partialFingerprints` and the evidence, provenance and verdict in each result's
+   `properties` bag. Two consumers come free: GitHub code scanning, which this repository
+   already feeds from CodeQL, and reviewdog, which re-posts SARIF as review comments on
+   GitHub, GitLab, Bitbucket, Gerrit and Gitea; Forgejo is Gitea-API-compatible but not
+   documented there, so that one is an inference. Alternatives considered and held back:
+   reviewdog's own rdjson, only if the SARIF route proves lossy; GitLab's Code Quality
+   report, only if a GitLab consumer appears; GitHub workflow-command annotations, capped
+   at ten per step and not persisted, so a fallback at most. Recorded 2026-09-04; answers
+   Q15.
 
 ## What needs to be solved (P)
 
@@ -466,8 +489,8 @@ Ordered by how likely each is to sink the thing.
   this test regressed"). Stage 0 _is_ execution, so this is where B1 is proven, before any
   model spend.
 - **Phase 1 — CLI shell.** `copse review` over a single model, one lens, Stage 0 + 1 + 2 + 5,
-  bugs and regressions only (B4). Dogfood on this repository's own PRs (B6), reviewing the
-  author's own tree.
+  bugs and regressions only (B4), findings JSON and SARIF out (B9). Dogfood on this
+  repository's own PRs (B6), reviewing the author's own tree.
 - **Phase 2 — Multi-model + verification.** Lenses, fan-out, clustering, the challenger
   role, reproducer generation. Retire the comparison judge in favour of per-finding
   verdicts.
@@ -587,6 +610,7 @@ Numbered Q1–Q16 to match the working list; answered ones say so.
 
 5. **Q5 — What precision makes us credible?** Recommendation: above 85% on Martian's offline
    track before any public claim. The pipeline is open source, so we can run it ourselves.
+   **Decided (B8):** 85% is the aim, revisited after the first `bench:review` measurement.
 6. **Q6 — Does cross-vendor ensembling beat single-vendor multi-pass?** Unknown and testable;
    the first ablation for `bench:review`.
 7. **Q7 — What fraction of findings can execution settle?** If under half, the challenger pass
@@ -605,9 +629,9 @@ Numbered Q1–Q16 to match the working list; answered ones say so.
 **Security**
 
 12. **Q12 — The sandbox for untrusted PRs — decided.** Binding decision B1: isolated and
-    ephemeral, agents never touch sensitive data. Design in §Execution isolation. The CodeRabbit RCE
-    (an unsandboxed RuboCop, a malicious config, the App key, a million repositories) is the
-    reference incident.
+    ephemeral, agents never touch sensitive data. Design in §Execution isolation. The
+    CodeRabbit RCE (an unsandboxed RuboCop, a malicious config, the App key, a million
+    repositories) is the reference incident.
 
 **Product gaps**
 
@@ -615,8 +639,9 @@ Numbered Q1–Q16 to match the working list; answered ones say so.
     large repos?
 14. **Q14 — Learnings.** CodeRabbit-style prompt learning from dismissals, or suppression only?
     Privacy implications for the local-first customer.
-15. **Q15 — Interop.** Emit SARIF so findings land in GitHub code scanning and any SAST dashboard.
-    Cheap, and no competitor leads with it.
+15. **Q15 — Interop.** Emit SARIF so findings land in GitHub code scanning and any SAST
+    dashboard. Cheap, and no competitor leads with it. **Decided (B9):** SARIF, with the
+    alternatives weighed there.
 16. **Q16 — Ecosystems.** Stage 0 needs build and test detection per language. FFmpeg is C and
     make; Copse is TypeScript. **Decided (B5):** TypeScript with pnpm only, for now.
 
@@ -637,7 +662,7 @@ Sources: [Martian Code Review Bench](https://codereview.withmartian.com/) ·
 ## Open decisions (D)
 
 1. **D1 — Name.** Working title only. It wants a real one before Phase 1, since it becomes a
-   package name, a binary name and a bot identity.
+   package name, a binary name and a bot identity. **Decided (B7):** Copse Reviewer.
 2. **D2 — Does Phase 0 ship inside Copse or as the standalone package from day one?**
    Recommendation: the package from day one, consumed by Copse — retrofitting the boundary
    later is how the boundary rots. **Decided (B2):** the package from day one.
