@@ -7,10 +7,12 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./*.ts": "./src/*.ts",
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@copse/llm": "0.1.0",
+    "@copse/llm": "workspace:*",
+    "@copse/std": "workspace:*",
     "zod": "^4.4.3"
   }
 }

@@ -11,8 +11,6 @@ await esbuild.build({
   format: 'cjs',
   alias: {
     '@shared': resolve('./src/shared'),
-    '@copse/agent': resolve('./packages/agent/src'),
-    '@copse/llm': resolve('./packages/llm/src'),
   },
 })
 

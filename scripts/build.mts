@@ -16,6 +16,10 @@ import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.
 import { markTreeNoindex } from './lib/noindex.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 import { MAIN_EXTERNALS } from './main-externals.mts'
+import {
+  BUNDLED_CURSOR_SKILLS_VENDOR_DIR,
+  assertBundledCursorSkillsSnapshot,
+} from './bundled-cursor-skills-sync.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
@@ -35,9 +39,6 @@ if (isServo && isDemo) {
 
 const sharedAlias = {
   '@shared': resolve('./src/shared'),
-  '@copse/agent': resolve('./packages/agent/src'),
-  '@copse/llm': resolve('./packages/llm/src'),
-  '@copse/plan-usage': resolve('./packages/plan-usage/src'),
 }
 
 // Emit a scenario manifest (id + label) alongside the demo build so the per-PR
@@ -77,15 +78,6 @@ async function writeDemoScenarioManifest(outPath: string): Promise<void> {
     writeFileSync(outPath, '[]\n')
   } finally {
     rmSync(tempModule, { force: true })
-  }
-}
-
-function fetchBundledCursorSkillsForBuild(): void {
-  if (process.env['SKIP_BUNDLED_CURSOR_SKILLS_FETCH'] === '1') return
-  try {
-    execSync('node scripts/fetch-bundled-cursor-skills.mts', { stdio: 'inherit' })
-  } catch {
-    console.warn('[build] bundled Cursor skills fetch failed — continuing without bundled skills')
   }
 }
 
@@ -176,7 +168,11 @@ const nodeOpts = {
 }
 
 if (!isDemo) {
-  fetchBundledCursorSkillsForBuild()
+  const bundledCursorSkills = await assertBundledCursorSkillsSnapshot()
+  console.log(
+    `[build] bundled Cursor skills verified @ ${bundledCursorSkills.commit.slice(0, 12)} ` +
+      `(${bundledCursorSkills.contentSha256.slice(0, 12)})`,
+  )
   await esbuild.build({
     ...nodeOpts,
     entryPoints: ['src/main/index.ts'],
@@ -325,14 +321,9 @@ try {
   // Optional — postinstall may be skipped on unsupported platforms.
 }
 
-try {
-  accessSync(resolve('vendor/bundled-cursor-skills'))
-  cpSync('vendor/bundled-cursor-skills', 'dist/resources/bundled-cursor-skills', {
-    recursive: true,
-  })
-} catch {
-  // Optional — fetch-bundled-cursor-skills.mts may be skipped offline.
-}
+cpSync(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist/resources/bundled-cursor-skills', {
+  recursive: true,
+})
 
 // Fail fast if a release build ever ships the MockLLMProvider test directives:
 // the `__COPSE_TEST_DIRECTIVES__` guard + minifySyntax must have eliminated them.

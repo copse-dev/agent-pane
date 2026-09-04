@@ -408,25 +408,68 @@ export function recordHaltRun(
   persist(ctx, line, toolsetBlobs(ctx))
 }
 
-/** One spawned (command) hook execution, as observed by the command runner. */
-export interface CommandHookRunInput {
-  /** Dialect event name (e.g. `beforeShellExecution`). */
-  event: string
-  /** The hook's command string — its stable id in dialect configs. */
-  hookId: string
-  startedAt: number
-  durationMs: number
-  /** Process exit code; null when killed (timeout / output cap) or spawn failed. */
-  exitCode: number | null
-  /** Whether stdout parsed into a response (empty stdout = intentional no-response). */
-  parseOk: boolean
-  decision: SpineHookRunDecision
-  /** The exact JSON written to the hook's stdin, stored verbatim as a blob. */
-  stdin: string
-  /** Raw captured streams, stored verbatim as blobs. */
-  stdout: string
-  stderr: string
+/**
+ * Record which step-boundary nudge the loop **applied** as its own `hook_run`
+ * line, mirroring {@link recordHaltRun}'s applied/suppressed effect line.
+ *
+ * A nudge hook's own execution line says it *offered* an `injectContext`;
+ * `runAgentLoop` then pushes at most one of the offers at that boundary. Across
+ * this workspace's threads 16 of 27 nudging boundaries had two hooks offer at
+ * once (`reasoning-runaway` + `truncation-continue`), so without this line the
+ * transcript claims more steering than happened and the discarded nudge is
+ * indistinguishable from the applied one.
+ *
+ * The applied text is captured in an outcome blob so the card's inspector shows
+ * the exact words that reached the model, the same as any other hook outcome.
+ * `hookId` is the offering hook's id, or a synthetic id for a nudge the loop
+ * owns outright (the finalize nudge is not a registry hook and would otherwise
+ * leave no trace at all).
+ */
+export function recordAppliedNudgeRun(
+  input: {
+    hookId: string
+    mechanism: 'tool-enabled-message' | 'text-only-turn'
+    text: string
+  },
+  snapshot: HookRunRecordingSnapshot | null = current,
+): void {
+  const ctx = snapshot
+  if (!ctx) return
+  const id = randomUUID()
+  const blobs: FileToWrite[] = []
+  const refs: Pick<SpineHookRunLine, 'outcome'> = {}
+  const captured = captureJson({ injectContext: input.text })
+  if (captured !== null) {
+    const ref = outcomeBlobRef(id)
+    refs.outcome = blobRef(ref, captured)
+    blobs.push({ ref, contents: captured })
+  }
+  const line: SpineHookRunLine = {
+    v: SPINE_SCHEMA_VERSION,
+    type: 'hook_run',
+    id,
+    event: 'stepBoundary',
+    hookId: input.hookId,
+    executor: 'function',
+    ...attributionFields(ctx),
+    startedAt: Date.now(),
+    durationMs: 0,
+    parseOk: true,
+    decision: {
+      nudgeApplied: true,
+      nudgeMechanism: input.mechanism,
+      injectContextChars: input.text.length,
+    },
+    ...refs,
+  }
+  persist(ctx, line, [...blobs, ...toolsetBlobs(ctx)])
 }
+
+/** One spawned (command) hook execution, as observed by the command runner. */
+// The per-run input shape is owned by the runner in `@copse/hooks-dialects`; the
+// recorder is one sink for it. Re-exported so existing importers are unchanged.
+import type { CommandHookRunInput } from '@copse/hooks-dialects/command-hook-runner.ts'
+export type { CommandHookRunInput }
 
 /**
  * Record one command-hook execution. The exact stdin bytes, raw stdout **and**

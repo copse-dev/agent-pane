@@ -1,4 +1,4 @@
-import { errorMessage } from './internal-utils.ts'
+import { errorMessage } from '@copse/std/errors.ts'
 import type {
   LLMProvider,
   LLMMessage,
@@ -241,6 +241,14 @@ export interface AgentLoopOptions {
 
 const FINALIZE_NUDGE =
   'Based on your exploration so far, write a clear final answer for the user. Do not call any tools.'
+
+/**
+ * Synthetic id for {@link FINALIZE_NUDGE} in the applied-nudge record. The loop
+ * owns this nudge outright — unlike its siblings it never migrated to the
+ * stepBoundary registry (#939), so it has no hook execution line, and without an
+ * applied-nudge record it steers the model with no trace anywhere.
+ */
+const FINALIZE_NUDGE_ID = 'finalize-nudge'
 
 const INCOMPLETE_RUN_MESSAGE =
   'The agent stopped before producing a final answer. Try a shorter question, reduce tool use, or switch models.'
@@ -592,6 +600,7 @@ type AgentStepContext = {
   toolSchemaReserveTokens: number
   onHistoryTrimmed?: () => void
   recordHookRun?: HookContext['recordHookRun']
+  recordAppliedNudge?: (record: AppliedNudgeRecord) => void
   continuationBudget?: ContinuationGrant
 }
 
@@ -717,6 +726,20 @@ async function closeOpenTodosBeforeFinalize(
     const result = await registry.emit('beforeFinalize', { openTodos, attempt }, hookContext)
     const nudge = mergeBlockingOutcomes(result.outcomes).injectContext
     if (!nudge) break
+    // `beforeFinalize` outcomes are *concatenated* rather than one winning, so
+    // the applied text can span several hooks and matches no single execution
+    // line. Attribute it to every hook that contributed, and record it before
+    // the turn runs: closeout is the highest-volume injector in a real thread
+    // and each attempt is a machine-initiated turn (decision 5).
+    const contributors = result.outcomes
+      .filter((record) => record.outcome.injectContext)
+      .map((record) => record.hookId)
+    recordAppliedNudge(ctx.recordAppliedNudge, {
+      step: ctx.budget.llmCalls,
+      hookId: contributors.length > 0 ? contributors.join(', ') : 'beforeFinalize',
+      mechanism: 'tool-enabled-message',
+      text: nudge,
+    })
     // A closeout turn is a machine-initiated new turn (decision 5): consume one
     // grant from the shared budget before running it, so closeout is bounded by
     // `min(MAX_TODO_CLOSEOUT_ATTEMPTS, remaining)` — the local cap tightens
@@ -1693,6 +1716,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       toolSchemaReserveTokens,
       ...(onHistoryTrimmed !== undefined ? { onHistoryTrimmed } : {}),
       ...(recordHookRun !== undefined ? { recordHookRun } : {}),
+      ...(appliedNudgeSink !== undefined ? { recordAppliedNudge: appliedNudgeSink } : {}),
       ...(opts.continuationBudget !== undefined
         ? { continuationBudget: opts.continuationBudget }
         : {}),
@@ -1707,6 +1731,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
 
     if (!hasOpenTodos(getOpenTodos?.() ?? [])) {
+      recordAppliedNudge(appliedNudgeSink, {
+        step: budget.llmCalls,
+        hookId: FINALIZE_NUDGE_ID,
+        mechanism: 'text-only-turn',
+        text: FINALIZE_NUDGE,
+      })
       let finalResult = await streamTextOnlyTurn(
         provider,
         messages,
@@ -1734,6 +1764,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
             recentFingerprints,
             recentToolProgress,
             budget,
+          })
+        }
+        // A truncation retry already ends in its own nudge (recorded when the
+        // hook applied it); anything else re-applies the finalize nudge.
+        if (!retryingTruncation) {
+          recordAppliedNudge(appliedNudgeSink, {
+            step: budget.llmCalls,
+            hookId: FINALIZE_NUDGE_ID,
+            mechanism: 'text-only-turn',
+            text: FINALIZE_NUDGE,
           })
         }
         finalResult = await streamTextOnlyTurn(

@@ -92,7 +92,7 @@ describes it to the agent, so changing the layout means updating that preamble.
 - **`catalog.jsonl` and `meta.json`** are mutable indexes/snapshots, not append
   logs. They may be atomically replaced after a thread metadata change and can
   be rebuilt from thread directories where documented.
-- **`messages/*.md`** are [OKF](../src/shared/threads/okf-message.ts) files: a
+- **`messages/*.md`** are [OKF](../packages/thread-store/src/okf-message.ts) files: a
   leading `---` YAML frontmatter fence (`type`, `role`, `id`, `createdAt`,
   `threadId`) then the **verbatim** content body. Only a _leading_ fence is
   treated as frontmatter, so bodies that contain `---` or YAML-shaped code
@@ -122,7 +122,7 @@ describes it to the agent, so changing the layout means updating that preamble.
 ## Spine line schema
 
 One line per finalized `Message`, written **after** its OKF/blob files (the
-append is the commit point). See [`spine-schema.ts`](../src/shared/threads/spine-schema.ts).
+append is the commit point). See [`spine-schema.ts`](../packages/thread-store/src/spine-schema.ts).
 
 ```jsonc
 {
@@ -279,7 +279,7 @@ contract in [`plans/plan-mode-and-rewind.md`](./plans/plan-mode-and-rewind.md))
 are thread-owned under `plans/<planId>/`. Each lifecycle transition appends one
 spine line after the referenced files exist (same commit-point rule as messages
 and hook runs). Zod source of truth:
-[`plan-schema.ts`](../src/shared/threads/plan-schema.ts); published mirror:
+[`plan-schema.ts`](../packages/thread-store/src/plan-schema.ts); published mirror:
 [`schemas/copse-plan.schema.json`](../schemas/copse-plan.schema.json).
 
 ```jsonc

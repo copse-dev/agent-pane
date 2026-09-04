@@ -897,8 +897,21 @@ function hookCardDetailLines(card: HookCard): string[] {
   if (card.status === 'ask') lines.push('Requested approval for the gated action')
   if (card.status === 'halted') lines.push('Stopped the agent run')
   if (card.updatedInput) lines.push('Rewrote the tool input')
+  // The effect line: this is the nudge the loop pushed, not merely one offered
+  // at a boundary where several hooks offered and only one could win.
+  if (card.nudgeApplied) {
+    const via =
+      card.nudgeMechanism === 'text-only-turn'
+        ? 'as a forced text-only turn'
+        : 'appended to the next turn'
+    lines.push(`Applied this nudge to the conversation — ${via}`)
+  }
   if (card.injectContextChars !== undefined && card.injectContextChars > 0) {
-    lines.push(`Injected ${String(card.injectContextChars)} chars of context`)
+    lines.push(
+      card.nudgeApplied
+        ? `${String(card.injectContextChars)} chars of nudge text`
+        : `Injected ${String(card.injectContextChars)} chars of context`,
+    )
   }
   if (card.agentMessageChars !== undefined && card.agentMessageChars > 0) {
     lines.push(`Sent ${String(card.agentMessageChars)} chars of guidance to the agent`)
