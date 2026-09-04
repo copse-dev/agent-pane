@@ -44,6 +44,7 @@
     "packages/procwatch/src/**/*",
     "packages/shell-guard/src/**/*",
     "packages/std/src/**/*",
+    "packages/store-kit/src/**/*",
     "packages/thread-store/src/**/*"
   ],
   "exclude": ["src/sidecar/ws-bridge"]

@@ -1,0 +1,15 @@
+// `exports["."]` entry (bare `@copse/store-kit`). App code deep-imports the
+// granular subpaths through its `src/main/services/storage/*` re-exports.
+export * from './copse-paths.ts'
+export * from './cached-store.ts'
+export * from './persistent-store.ts'
+export * from './secret-cipher.ts'
+export * from './keyring-cipher.ts'
+export * from './os-keyring.ts'
+export * from './secret-migration.ts'
+export * from './secret-write-policy.ts'
+export * from './api-key-readability.ts'
+export * from './storage-schema.ts'
+export * from './user-data-migration.ts'
+export * from './zip-reader.ts'
+export * from './zip-archive.ts'
