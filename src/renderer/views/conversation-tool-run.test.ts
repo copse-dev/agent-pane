@@ -231,6 +231,52 @@ describe('cross-message tool runs (component)', () => {
     )
   })
 
+  it('releases a reasoning-only member when it gains prose', () => {
+    const { store, threadId, ids } = seedRun()
+    const host = mount(store)
+
+    // A bubble that has streamed only reasoning is still absorbed as a step —
+    // its trail hangs on the anchor's rollup, not on its own body.
+    const member = addMessage(store, threadId, 'assistant', '')
+    appendReasoning(store, member, 'Double-checking the oracle output.')
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    assert.equal(
+      run.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      'Used 18 tools · 6 steps',
+    )
+    assert.ok(run.querySelector(`.tool-card-step[data-step-message-id="${member}"]`))
+    const memberEl = qsRequired(host, `[data-message-id="${member}"]`)
+    assert.equal(memberEl.querySelector('.message-reasoning'), null)
+
+    // Prose is a run boundary even for a member that never ran a tool: the
+    // anchor drops the step and the bubble takes its reasoning trail back.
+    setMessageContent(store, member, 'The oracle output is clean.')
+    store.emit('message_done', member)
+
+    const runAfter = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    assert.equal(
+      runAfter.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      'Used 18 tools · 5 steps',
+    )
+    assert.equal(
+      host.querySelector(`.tool-card-step[data-step-message-id="${member}"]`),
+      null,
+      'no stale step for the departed member',
+    )
+    assert.deepEqual(
+      [...runAfter.querySelectorAll<HTMLElement>('.tool-card-step')].map(
+        (step) => step.dataset['stepMessageId'],
+      ),
+      ids,
+    )
+    const trail = qsRequired(memberEl, '.message-body > .message-reasoning')
+    assert.equal(
+      trail.querySelector('.message-reasoning-text')?.textContent.trim(),
+      'Double-checking the oracle output.',
+    )
+    assert.equal(trail.querySelector('.message-reasoning-title')?.textContent, 'Reasoned')
+  })
+
   it('leaves an ordinary single-message turn on the per-message rollup', () => {
     const store = createStore()
     const threadId = createThread(store)
