@@ -38,8 +38,8 @@ option schemas). The package imports **nothing** from the host app.
   `github-link-steering`). Pure steering helpers live beside them
   (`todo-steering.ts`, `github-link-steering.ts`); `@shared` re-exports for
   existing app imports.
-- **`internal-utils.ts`** — vendored copies of the app's `at` / `errorMessage`
-  helpers, so the package pulls nothing from `@shared/*`.
+- **Leaf helpers come from `@copse/std`** (`at`, `errorMessage`, `isRecord`), the
+  shared home for the utilities that used to be vendored here as `internal-utils.ts`.
 
 ## Imports: granular subpaths, not the barrel
 

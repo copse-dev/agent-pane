@@ -32,7 +32,7 @@ wrong. Prefer the typed alternative:
 - a **zod-validated boundary** — use `defineTool()` so tool args are inferred from the schema, not
   cast;
 - **`satisfies T`** to check a value against a type without widening it;
-- the **`at()` helper** in `src/shared/array-utils.ts` for safe indexed access;
+- the **`at()` helper** in `packages/std/src/array-utils.ts` (`@copse/std`, re-exported as `@shared/array-utils.ts`) for safe indexed access;
 - the typed **`qs<E>()` / `qsRequired<E>()`** helpers in `src/renderer/dom/helpers.ts` instead of
   `root.querySelector(sel) as E` — they type the result via the DOM lib's own `querySelector<E>`
   signature, and `qsRequired` throws a clear error on a miss rather than returning a silent
@@ -142,7 +142,7 @@ failing check.
 ## Boundary parsing: decoders, not type arguments
 
 `JSON.parse` returns `any`, so every parse is a trust boundary. The contract in
-`src/shared/safe-json.ts`:
+`packages/std/src/safe-json.ts` (`@copse/std`, re-exported as `@shared/safe-json.ts`):
 
 ```ts
 safeJsonParse(text) // → unknown. You must narrow it.

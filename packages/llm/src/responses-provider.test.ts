@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at } from './internal-utils.ts'
+import { at } from '@copse/std/array-utils.ts'
 import { ResponsesProvider, toResponsesInput } from './responses-provider.ts'
 import type { LLMMessage, ProviderStreamChunk } from './wire-types.ts'
 

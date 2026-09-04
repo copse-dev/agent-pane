@@ -432,6 +432,10 @@ const PACKAGE_ALIASES: [prefix: string, dir: string][] = [
   ['@copse/agent/', 'packages/agent/src/'],
   ['@copse/llm/', 'packages/llm/src/'],
   ['@copse/plan-usage/', 'packages/plan-usage/src/'],
+  ['@copse/shell-guard/', 'packages/shell-guard/src/'],
+  ['@copse/std/', 'packages/std/src/'],
+  ['@copse/thread-store/', 'packages/thread-store/src/'],
+  ['@copse/hooks-dialects/', 'packages/hooks-dialects/src/'],
 ]
 
 /** Bare package specifiers (no subpath) — resolve to the package entry point. */

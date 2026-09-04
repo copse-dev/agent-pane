@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at, isRecord } from './internal-utils.ts'
+import { at } from '@copse/std/array-utils.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import {
   AGENT_RUN_ABORT_REASON_TIMEOUT,

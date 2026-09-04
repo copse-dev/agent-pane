@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@copse/llm": "workspace:*",
+    "@copse/std": "workspace:*",
     "zod": "^4.4.3"
   }
 }
