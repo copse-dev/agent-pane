@@ -58,12 +58,14 @@ const ALLOWED_TARGETS: Readonly<Record<Zone, readonly Zone[]>> = {
 const ALIASES: readonly (readonly [string, string])[] = [
   ['@shared/', 'src/shared/'],
   ['@copse/agent/', 'packages/agent/src/'],
+  ['@copse/hooks-dialects/', 'packages/hooks-dialects/src/'],
   ['@copse/llm/', 'packages/llm/src/'],
   ['@copse/plan-usage/', 'packages/plan-usage/src/'],
+  ['@copse/plugin-sdk/', 'packages/plugin-sdk/src/'],
+  ['@copse/procwatch/', 'packages/procwatch/src/'],
   ['@copse/shell-guard/', 'packages/shell-guard/src/'],
   ['@copse/std/', 'packages/std/src/'],
   ['@copse/thread-store/', 'packages/thread-store/src/'],
-  ['@copse/hooks-dialects/', 'packages/hooks-dialects/src/'],
 ]
 
 /**

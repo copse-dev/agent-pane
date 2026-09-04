@@ -93,7 +93,14 @@ export function mountTerminalsPane(
   store: AppStore,
   api: ApiClient,
 ): () => void {
-  const listHeader = el('div', { class: 'terminals-list-header' }, 'Shells')
+  const section = el('section', {
+    class: 'terminal-rail-section terminal-shells-section',
+  })
+  const listHeader = el(
+    'div',
+    { class: 'terminals-list-header terminal-rail-section-header' },
+    'Shells',
+  )
   const newBtn = el(
     'button',
     {
@@ -110,8 +117,11 @@ export function mountTerminalsPane(
     newBtn,
   )
 
-  const tabsWrap = el('div', { class: 'terminals-list' })
-  listRoot.append(listHeader, tabsWrap)
+  const tabsWrap = el('div', {
+    class: 'terminals-list terminal-rail-section-list',
+  })
+  section.append(listHeader, tabsWrap)
+  listRoot.append(section)
 
   const body = el('div', { class: 'terminals-body' })
   viewerRoot.append(body)
@@ -425,7 +435,13 @@ export function mountTerminalsPane(
     )
     const tabBtn = el(
       'button',
-      { type: 'button', class: 'terminals-tab', 'data-tab-id': id, title: label },
+      {
+        type: 'button',
+        class: 'terminals-tab',
+        'data-tab-id': id,
+        'data-terminal-rail-row': '',
+        title: label,
+      },
       labelSpan,
       checkoutBadge,
       closeBtn,

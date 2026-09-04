@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Project, Thread, ThreadCatalogHit } from '@shared/types'
+import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import {
   mountCommandPalette,
@@ -31,7 +32,12 @@ function shimModal(dialog: HTMLDialogElement): void {
 // The real catalog type, not a hand-rolled subset. The previous local interface
 // omitted `spinePath` and only compiled because the ApiClient double was cast;
 // using ThreadCatalogHit keeps the double honest about what the API returns.
-function hit(id: string, title: string, updatedAt: number): ThreadCatalogHit {
+function hit(
+  id: string,
+  title: string,
+  updatedAt: number,
+  prRefs: GithubPrRef[] = [],
+): ThreadCatalogHit {
   return {
     id,
     title,
@@ -40,7 +46,12 @@ function hit(id: string, title: string, updatedAt: number): ThreadCatalogHit {
     digest: '',
     path: `/tmp/${id}`,
     spinePath: `/tmp/${id}/spine.json`,
+    prRefs,
   }
+}
+
+function prRef(owner: string, repo: string, number: number): GithubPrRef {
+  return { owner, repo, number, url: `https://github.com/${owner}/${repo}/pull/${String(number)}` }
 }
 
 // Per-project thread catalog keyed by project id; api.threads.catalog reads it.
@@ -119,7 +130,10 @@ describe('command palette (Cmd/Ctrl+Shift+K)', () => {
 
   beforeEach(() => {
     mount({
-      app: [hit('t1', 'Fix login bug', 30), hit('t2', 'Refactor sidebar', 10)],
+      app: [
+        hit('t1', 'Fix login bug', 30, [prRef('copse-dev', 'agent-pane', 2262)]),
+        hit('t2', 'Refactor sidebar', 10),
+      ],
       site: [hit('t3', 'Landing page copy', 20)],
     })
   })
@@ -178,6 +192,62 @@ describe('command palette (Cmd/Ctrl+Shift+K)', () => {
     // The 'site' thread matches on project name; the 'site' project matches too.
     assert.deepEqual(rowTexts(dialog, 'thread'), ['Landing page copy'])
     assert.deepEqual(rowTexts(dialog, 'project'), ['site'])
+  })
+
+  // Finding a thread by the PR it opened. The catalog carries `prRefs`, and the
+  // haystack holds the `owner/repo#number` key — so every spelling of the same
+  // PR narrows to the same row.
+  for (const query of [
+    '2262',
+    '#2262',
+    'copse-dev/agent-pane#2262',
+    'https://github.com/copse-dev/agent-pane/pull/2262',
+    // Pasted out of prose, with the sentence's punctuation still attached.
+    'https://github.com/copse-dev/agent-pane/pull/2262.',
+    'https://github.com/copse-dev/agent-pane/pull/2262),',
+  ]) {
+    it(`matches a thread by its PR, queried as "${query}"`, async () => {
+      openCommandPalette()
+      await tick(0)
+      type(dialog, query)
+      assert.deepEqual(rowTexts(dialog, 'thread'), ['Fix login bug'])
+    })
+  }
+
+  it('pins a numeric query to the whole PR number, not a longer one containing it', async () => {
+    mount({
+      app: [
+        hit('t1', 'Fix login bug', 30, [prRef('copse-dev', 'agent-pane', 2262)]),
+        hit('t9', 'Follow-up', 20, [prRef('copse-dev', 'agent-pane', 22620)]),
+      ],
+    })
+    openCommandPalette()
+    await tick(0)
+    type(dialog, '2262')
+    assert.deepEqual(rowTexts(dialog, 'thread'), ['Fix login bug'])
+    type(dialog, '#22620')
+    assert.deepEqual(rowTexts(dialog, 'thread'), ['Follow-up'])
+    // A non-numeric term still narrows the key as a substring (by repository).
+    type(dialog, 'agent-pane#2')
+    assert.deepEqual(rowTexts(dialog, 'thread'), ['Fix login bug', 'Follow-up'])
+  })
+
+  it('ignores a PR URL for a PR no thread touched', async () => {
+    openCommandPalette()
+    await tick(0)
+    type(dialog, 'https://github.com/copse-dev/agent-pane/pull/9999')
+    assert.deepEqual(rowTexts(dialog, 'thread'), [])
+  })
+
+  it('shows the PR number on the row so a bare-number match is legible', async () => {
+    openCommandPalette()
+    await tick(0)
+    type(dialog, '2262')
+    const prs = [...dialog.querySelectorAll('.command-palette-pr')].map((n) => n.textContent)
+    assert.deepEqual(prs, ['#2262'])
+    // Threads without a PR render no chip at all.
+    type(dialog, 'sidebar')
+    assert.equal(dialog.querySelectorAll('.command-palette-pr').length, 0)
   })
 
   it('shows an empty state when nothing matches', async () => {

@@ -5,8 +5,8 @@ is the full contributor contract.
 
 ## Before you open a PR
 
-1. Use Node **22.22.2 or newer** and **pnpm** (via Corepack). The repo pins both
-   in `.nvmrc` and `packageManager`.
+1. Use Node **24 or newer** and **pnpm** (via Corepack). The repo pins both in
+   `.nvmrc` and `packageManager`; `nvm use` and `fnm use` both honor `.nvmrc`.
 2. Run **`pnpm run check`**. It covers typecheck, ESLint, oxfmt, dead-code
    detection, and unit tests. A green subset is not a substitute.
 3. If the change is visible in the Electron app, add or update the smallest

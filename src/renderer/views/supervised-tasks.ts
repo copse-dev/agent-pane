@@ -14,9 +14,18 @@ export function mountSupervisedTasks(
   store: AppStore,
   api: ApiClient,
 ): () => void {
-  const section = el('section', { class: 'supervised-tasks-section', hidden: true })
-  const header = el('div', { class: 'agent-tasks-section-header' }, 'Background tasks')
-  const list = el('div', { class: 'supervised-tasks-list' })
+  const section = el('section', {
+    class: 'supervised-tasks-section terminal-rail-section',
+    hidden: true,
+  })
+  const header = el(
+    'div',
+    { class: 'agent-tasks-section-header terminal-rail-section-header' },
+    'Background tasks',
+  )
+  const list = el('div', {
+    class: 'supervised-tasks-list terminal-rail-section-list',
+  })
   section.append(header, list)
   listRoot.append(section)
   let loadToken = 0
@@ -61,6 +70,7 @@ export function mountSupervisedTasks(
           {
             class: 'supervised-task-row',
             'data-task-id': task.taskId,
+            'data-terminal-rail-row': '',
             'data-state': task.state,
           },
           dot,

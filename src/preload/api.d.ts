@@ -130,6 +130,8 @@ export interface ApiClient {
     onPreviewStale?: (handler: (origin: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
     shareScreenshot: (webContentsId: number) => Promise<void>
+    /** Print the tab to a PDF the user picks; resolves null when cancelled. */
+    exportPdf: (webContentsId: number) => Promise<string | null>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void
     onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
     onPluginTabRequest: (
@@ -386,6 +388,14 @@ export interface ApiClient {
           threadId: string
           prRefs: import('@shared/git/github-pr-url.ts').GithubPrRef[]
         }>,
+      ) => void,
+    ) => () => void
+    /** A PR was just opened by `gh_pr_create` on the named thread. */
+    onPrCreated: (
+      handler: (
+        projectId: string,
+        threadId: string,
+        ref: import('@shared/git/github-pr-url.ts').GithubPrRef,
       ) => void,
     ) => () => void
     create: (projectId: string, thread: import('@shared/types').Thread) => Promise<void>

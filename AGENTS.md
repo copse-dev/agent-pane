@@ -9,8 +9,9 @@ outputs, and then starts the app. For everything else prefer the scripts in
 `package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`, `test:e2e`,
 `check`) rather than inventing parallel commands.
 
-Use Node **22.22.2 or newer** and **pnpm** (via Corepack). The repo pins `22.22.2` in
-`.nvmrc` and `pnpm@10.34.5` via `packageManager`. Installs use pnpm’s isolated
+Use Node **24 or newer** and **pnpm** (via Corepack). The repo pins the Node 24 LTS
+release in `.nvmrc` and `pnpm@10.34.5` via `packageManager`; both nvm and fnm read
+`.nvmrc`. Installs use pnpm’s isolated
 `node_modules` (package symlinks into `.pnpm`) with `package-import-method=auto`
 so worktrees share store bytes on APFS. Electron’s extracted `dist/` and the
 vendored gortex binary are shared under `~/.copse/cache/electron-dist/` and

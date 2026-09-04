@@ -14,6 +14,12 @@ interface BrowserSelectionContents {
   getURL(): string
 }
 
+interface BrowserPdfContents {
+  getTitle(): string
+  getURL(): string
+  printToPDF(options: { printBackground: boolean }): Promise<Uint8Array>
+}
+
 const MAX_PAGE_TEXT_CHARS = 64_000
 
 const zPageText = z.strictObject({
@@ -79,6 +85,34 @@ export async function captureBrowserScreenshot(
 ): Promise<BrowserImageShare> {
   const image = await contents.capturePage()
   return { dataUrl: image.toDataURL(), mimeType: 'image/png' }
+}
+
+/** Filename hint for Export PDF — the page title, else its hostname. */
+export function suggestedPdfFilename(title: string, url: string): string {
+  // Strip separators and characters Windows rejects in filenames; the identity
+  // comes from page-controlled text, so it cannot be trusted as a path part.
+  const base = pageIdentity(title, url)
+    .replace(/[/\\?%*:|"<>]/g, '-')
+    .replace(/^\.+/, '')
+    .trim()
+  return `${base || 'Browser page'}.pdf`
+}
+
+/**
+ * Render the current browser page to a PDF at a user-chosen path. `saveAs`
+ * resolves to null when the user cancels, in which case nothing is printed.
+ * Returns the written path, or null if the export was cancelled.
+ */
+export async function exportBrowserPagePdf(
+  contents: BrowserPdfContents,
+  saveAs: (defaultFilename: string) => Promise<string | null>,
+  writePdf: (filePath: string, data: Uint8Array) => Promise<void>,
+): Promise<string | null> {
+  const filePath = await saveAs(suggestedPdfFilename(contents.getTitle(), contents.getURL()))
+  if (!filePath) return null
+  const data = await contents.printToPDF({ printBackground: true })
+  await writePdf(filePath, data)
+  return filePath
 }
 
 /** Build a source-labelled attachment from the native guest context-menu selection. */
