@@ -813,7 +813,11 @@ svg .fill {
 .opt-current .panel {
   border-left: 2px solid var(--sev);
   padding: var(--spacing-sm) var(--spacing-lg);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--sev) 7%, transparent), transparent 72%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sev) 7%, transparent),
+    transparent 72%
+  );
 }
 .opt-current .rollup-body {
   padding-left: var(--spacing-sm);
@@ -953,11 +957,7 @@ svg .fill {
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--sev) 40%, transparent),
-    transparent
-  );
+  background: linear-gradient(90deg, color-mix(in srgb, var(--sev) 40%, transparent), transparent);
 }
 .opt-a .vnc-status-dot {
   display: block;
@@ -1214,8 +1214,7 @@ svg .fill {
 }
 /* The wash alone says "selected"; the rail was always redundant with it. Each
    treatment below overrides this only where it has something better to add. */
-:is(.opt-g, .opt-h, .opt-i, .opt-m)
-  :is(.row.selected, .set-btn.active, .vnc-tab.is-active) {
+:is(.opt-g, .opt-h, .opt-i, .opt-m) :is(.row.selected, .set-btn.active, .vnc-tab.is-active) {
   background: var(--bg-selected);
   color: var(--text-primary);
   font-weight: 600;

@@ -7,17 +7,17 @@ Open `index.html` through Copse's Browser pane preview (it needs to be served ov
 are loaded from `../../assets/fonts`). Switch treatments with the top-bar buttons, or link straight
 to one:
 
-| URL | View |
-| --- | --- |
-| `#current` | today's rails |
-| **`#m`** | **the mix — the proposed direction** |
-| `#mix` | today + B + H + M, side by side |
+| URL            | View                                   |
+| -------------- | -------------------------------------- |
+| `#current`     | today's rails                          |
+| **`#m`**       | **the mix — the proposed direction**   |
+| `#mix`         | today + B + H + M, side by side        |
 | `#a` `#b` `#c` | line — label line, quiet plate, gutter |
-| `#split` | today + A/B/C, side by side |
-| `#d` `#e` `#j` | depth — lifted, well, soft |
-| `#material` | today + D/E/J, side by side |
-| `#g` `#h` `#i` | low ink — ring, hatch, margin |
-| `#quiet` | today + G/H/I, side by side |
+| `#split`       | today + A/B/C, side by side            |
+| `#d` `#e` `#j` | depth — lifted, well, soft             |
+| `#material`    | today + D/E/J, side by side            |
+| `#g` `#h` `#i` | low ink — ring, hatch, margin          |
+| `#quiet`       | today + G/H/I, side by side            |
 
 `?at=<n>` scrolls to the nth specimen, so any part of any treatment is one URL.
 
@@ -28,32 +28,32 @@ neutrally, which is what survived.
 ## What the rail is actually doing
 
 Ten rails across six stylesheets, serving three unrelated jobs. That is why one visual device feels
-repetitive: the transcript uses it for *containment* while the sidebar uses it for *selection*.
+repetitive: the transcript uses it for _containment_ while the sidebar uses it for _selection_.
 
 **Containment / subordination** — "this block is a different kind of content"
 
-| Where | Source |
-| --- | --- |
+| Where                                                           | Source                                             |
+| --------------------------------------------------------------- | -------------------------------------------------- |
 | Blockquotes, GitHub alerts (Note/Tip/Important/Warning/Caution) | `@copse/streaming-markdown` → `styles/default.css` |
-| `.message-reasoning` | `conversation.css:200` |
-| `.review-panel`, `.review-panel-error` | `todo.css:135`, `:150` |
-| `.comparison-panel`, `.comparison-panel-error` | `todo.css:246`, `:261` |
-| `.vnc-auth-panel` | `vnc.css:365` |
+| `.message-reasoning`                                            | `conversation.css:200`                             |
+| `.review-panel`, `.review-panel-error`                          | `todo.css:135`, `:150`                             |
+| `.comparison-panel`, `.comparison-panel-error`                  | `todo.css:246`, `:261`                             |
+| `.vnc-auth-panel`                                               | `vnc.css:365`                                      |
 
 **Selection / state on a list row** — "this one is current"
 
-| Where | Source |
-| --- | --- |
-| `.chat-row.selected` (trailing edge) | `layout.css:458` |
-| `.settings-nav-btn.active` (leading edge) | `settings.css:120` |
-| `.vnc-tab.is-active` | `vnc.css:60` |
-| `.vnc-status[data-kind=…]` — the rail hue *is* the status | `vnc.css:499`–`515` |
+| Where                                                     | Source              |
+| --------------------------------------------------------- | ------------------- |
+| `.chat-row.selected` (trailing edge)                      | `layout.css:458`    |
+| `.settings-nav-btn.active` (leading edge)                 | `settings.css:120`  |
+| `.vnc-tab.is-active`                                      | `vnc.css:60`        |
+| `.vnc-status[data-kind=…]` — the rail hue _is_ the status | `vnc.css:499`–`515` |
 
 **Structural nesting** — "these rows are children of that one"
 
-| Where | Source |
-| --- | --- |
-| `.tool-rollup-body` | `tool-cards.css:161` |
+| Where                                    | Source               |
+| ---------------------------------------- | -------------------- |
+| `.tool-rollup-body`                      | `tool-cards.css:161` |
 | `.tool-card-subagent .subagent-timeline` | `tool-cards.css:319` |
 
 Not rails, despite matching the grep: `.message-reasoning-icon::before` and the `perf-autopilot.ts`
@@ -67,13 +67,13 @@ Not a fourth idea but a composition, split by **what each block is** rather than
 like. That split is the point: it gives the two plate styles a meaning they have to earn, instead
 of being two arbitrary looks.
 
-| Block | Treatment | Why |
-| --- | --- | --- |
-| GitHub alerts, blockquotes | **B — flat plate** | Prose the agent wrote. It is part of the answer, so it gets a plain surface. |
-| Thinking, review, comparison | **H — hatched plate** | Not part of the answer: Copse annotating its own turn. Same box, different material. |
-| VNC pane | **C — gutter** | A separate pane with its own chrome, and its status hue has to survive on a single line where a plate would just box three of them. |
-| Tool rollup, subagent timeline | **unchanged** | That bar is structure — "these rows are children" — not decoration, and the rollup rework already in flight supersedes anything done here. |
-| Thread rows, settings nav, VNC tabs | **fill alone** | The full-bleed `--bg-selected` wash already says "selected"; the rail was always redundant with it. |
+| Block                               | Treatment             | Why                                                                                                                                        |
+| ----------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| GitHub alerts, blockquotes          | **B — flat plate**    | Prose the agent wrote. It is part of the answer, so it gets a plain surface.                                                               |
+| Thinking, review, comparison        | **H — hatched plate** | Not part of the answer: Copse annotating its own turn. Same box, different material.                                                       |
+| VNC pane                            | **C — gutter**        | A separate pane with its own chrome, and its status hue has to survive on a single line where a plate would just box three of them.        |
+| Tool rollup, subagent timeline      | **unchanged**         | That bar is structure — "these rows are children" — not decoration, and the rollup rework already in flight supersedes anything done here. |
+| Thread rows, settings nav, VNC tabs | **fill alone**        | The full-bleed `--bg-selected` wash already says "selected"; the rail was always redundant with it.                                        |
 
 The content/commentary distinction is the part worth defending in review. Everything else in the
 transcript is the agent's output; thinking, review and comparison are the app talking about that
@@ -87,7 +87,7 @@ Open questions before this ships:
   fractional device pixel ratios, and Copse ships on mixed-DPI Windows. Test at 1.25×/1.5× before
   committing to the pitch; a coarser pitch or a `device-pixel-ratio` media query may be needed.
 - **Accent load.** `.message-reasoning` and `.comparison-panel` both key off `--accent`, so a turn
-  with thinking *and* a comparison shows two pink hatches. Not a regression — both already use the
+  with thinking _and_ a comparison shows two pink hatches. Not a regression — both already use the
   accent today — but the texture makes the hue more present than a 2px bar did.
 - **Reduced transparency / high contrast.** A decorative texture needs a degradation path; the
   hatch should fall back to B's flat plate rather than disappearing into the page.
@@ -113,7 +113,7 @@ Findings, in order of how much they buy:
    so at small size they differ only by the mark within — and, for anyone who cannot separate the
    red from the blue, only by the mark within. Caution takes an octagon in the solid columns: the
    stop-sign outline reads before the glyph does and before the colour does. Honest caveat: at
-   16px an octagon is only *somewhat* distinct from a circle. The gain is real but modest, and it
+   16px an octagon is only _somewhat_ distinct from a circle. The gain is real but modest, and it
    would be larger at 18px.
 3. **The disc is optional.** A tinted disc behind the glyph adds a footprint without asking the
    glyph to get heavier. It reads slightly more badge-like, and the lightbulb sits awkwardly in a
@@ -153,7 +153,7 @@ silhouettes those are nowhere near each other:
 
 `proto.js` measures this rather than eyeballing it: each glyph is rasterised to a 128×128 canvas and
 the alpha-weighted centroid computed, then every icon is translated so that centroid lands on the
-optical line. The align strip keeps showing the *uncorrected* glyph with its measured centroid
+optical line. The align strip keeps showing the _uncorrected_ glyph with its measured centroid
 marked, so the problem stays visible next to the fix.
 
 All four workshop columns are corrected, not just the solid pair. Leaving the outline columns raw
@@ -164,13 +164,13 @@ would silently reuse the wrong centroid.
 
 Measured, in viewBox units (negative = sits high):
 
-| Kind | Centroid offset | Applied nudge |
-| --- | --- | --- |
-| Note | −0.02 | +0.01 |
-| Tip | −1.46 | +0.78 |
-| Important | −1.36 | +0.84 |
-| Warning | +1.61 | −1.00 |
-| Caution | −0.00 | +0.00 |
+| Kind      | Centroid offset | Applied nudge |
+| --------- | --------------- | ------------- |
+| Note      | −0.02           | +0.01         |
+| Tip       | −1.46           | +0.78         |
+| Important | −1.36           | +0.84         |
+| Warning   | +1.61           | −1.00         |
+| Caution   | −0.00           | +0.00         |
 
 Three things stop this being a naive "move the centroid to the middle":
 
@@ -181,7 +181,7 @@ Three things stop this being a naive "move the centroid to the middle":
   sitting proud of the column the others line up in. It is visible as a wobble in the workshop
   table between Tip and Important. Horizontal alignment is the box's job.
 
-- **Damping (0.62).** Correcting a triangle *fully* would drive its apex through the top of the box
+- **Damping (0.62).** Correcting a triangle _fully_ would drive its apex through the top of the box
   and leave a third of the box empty underneath — the glyph stops reading low and starts reading
   shoved. Icon families take out most of the error, not all of it.
 - **An edge clamp.** Ink may not come within 0.35u of the box edge. This is what holds `Tip` back
@@ -195,7 +195,7 @@ the measurement pass exists to derive the numbers once, not to ship as behaviour
 **The dominant one was a grid bug, not an icon problem.** Every `.icon-row` in the workshop was its
 own independent grid, so nothing actually made the columns line up across rows — they were only
 equal by coincidence of content. And `1fr` means `minmax(auto, 1fr)`, whose `auto` floor lets a wide
-cell push its own column out. The long word "Important" did exactly that, so that row's icon *and*
+cell push its own column out. The long word "Important" did exactly that, so that row's icon _and_
 label both sat left of every other row's, by around 8px.
 
 The fix is one grid for the whole table: `minmax(0, 1fr)` to remove the floor, and
@@ -206,13 +206,13 @@ until one cell's content outgrows its share.
 **The secondary one was real but smaller: uneven ink widths.** The glyphs were centred correctly,
 but they did not fill a common live area, so left edges sat at different insets:
 
-| Kind | ink w × h, before | after |
-| --- | --- | --- |
-| Note | 13.4 × 13.4 | 13.4 × 13.4 |
-| Tip | **9.1** × 13.9 | **10.1** × 13.8 |
-| Important | 13.4 × 12.1 | 13.4 × 12.1 |
-| Warning | **14.6** × 12.5 | **13.4** × 12.4 |
-| Caution | 13.4 × 13.4 | 13.4 × 13.4 |
+| Kind      | ink w × h, before | after           |
+| --------- | ----------------- | --------------- |
+| Note      | 13.4 × 13.4       | 13.4 × 13.4     |
+| Tip       | **9.1** × 13.9    | **10.1** × 13.8 |
+| Important | 13.4 × 12.1       | 13.4 × 12.1     |
+| Warning   | **14.6** × 12.5   | **13.4** × 12.4 |
+| Caution   | 13.4 × 13.4       | 13.4 × 13.4     |
 
 The triangle was 5.5u wider than the bulb, so at a 16px icon their left edges sat ~2.7px apart —
 about a third of the grid bug above, which is why fixing only this did not make the table look
@@ -227,7 +227,7 @@ Two ways to close the residual, if 1.65px of inset on one glyph matters:
 
 - **Put every glyph on a disc** (the fourth workshop column). The disc gives all five an identical
   circular footprint, so left edges and label gaps become exactly uniform regardless of the glyph
-  inside. This is the only *structural* fix — everything else is per-glyph tuning.
+  inside. This is the only _structural_ fix — everything else is per-glyph tuning.
 - **Change the Tip glyph** to something with a wider natural footprint. A bulb is the conventional
   "tip" mark though, so this trades recognisability for alignment.
 
@@ -236,13 +236,13 @@ Two ways to close the residual, if 1.65px of inset on one glyph matters:
 All five GitHub alert kinds are now specimened, and each has a shape of its own rather than a
 shared circle with a different mark inside:
 
-| Kind | Silhouette | Hue |
-| --- | --- | --- |
-| Note | circle | `--info` |
-| Tip | lightbulb | `--success` |
+| Kind      | Silhouette    | Hue           |
+| --------- | ------------- | ------------- |
+| Note      | circle        | `--info`      |
+| Tip       | lightbulb     | `--success`   |
 | Important | speech bubble | `--important` |
-| Warning | triangle | `--warning` |
-| Caution | octagon | `--danger` |
+| Warning   | triangle      | `--warning`   |
+| Caution   | octagon       | `--danger`    |
 
 **Two of those hues do not exist in `tokens.css`.** `--info` (Note) and `--important` are invented
 here, and adding them is a real decision rather than a detail:
@@ -263,7 +263,7 @@ let the speech-bubble silhouette carry the distinction alone — weaker, but it 
 
 ## The three treatments
 
-**A — Label line.** The bar becomes a small-caps label sitting on a hairline rule that runs *with*
+**A — Label line.** The bar becomes a small-caps label sitting on a hairline rule that runs _with_
 the text. Nothing is boxed, nothing is indented, and the severity hue is spent on the one word that
 carries it. Stacked callouts read as sections of one document instead of three pasted-in cards, and
 prose keeps its full measure. Weakest signal of the three: a single `Caution` in a long transcript
@@ -294,7 +294,7 @@ drop shadow plus a 1px inner top highlight catching the same light the pane is l
 barely above the page — the shadow, not the tint, is what contains the block. Selection lifts the
 row toward you, full-bleed so the shadow spills above and below rather than drawing a pill.
 
-**E — Well.** The inverse: the block is pressed *into* the surface, with an inset shadow under the
+**E — Well.** The inverse: the block is pressed _into_ the surface, with an inset shadow under the
 top lip and a highlight along the bottom one. Recessed reads as subordinate with no hue at all,
 which is semantically right for a quote, a thinking block, or raw technical details. Selection
 inverts to the same gesture as a held button.
@@ -347,6 +347,6 @@ callout bodies sit at 94px while ordinary prose sits at 0.
 - None of these has been checked against the strong-tint interface setting, which shifts
   `--bg-base` far enough that D's 72% `--bg-elevated` fill and J's falloff both need re-deriving.
 - Adopting any of these means rewriting `src/renderer/styles/accent-rails.test.ts` (it pins the
-  rail's *shape*, not its existence) and the "Accent rails never curve" / "Sidebar selections"
+  rail's _shape_, not its existence) and the "Accent rails never curve" / "Sidebar selections"
   sections of `docs/ui-taste.md`.
 - Light theme is not covered here; the severity hues need re-deriving for contrast.
