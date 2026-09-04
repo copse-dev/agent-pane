@@ -270,6 +270,22 @@ export interface Thread {
    * Soft-hide (not a delete) — restore is a later UI concern.
    */
   archivedAt?: number
+  /**
+   * When a human last prompted this thread — the sidebar's default sort key.
+   *
+   * Metadata rather than something read off the transcript, for the same reason
+   * {@link prRefs} is: the sidebar loads threads metadata-only, so a key derived
+   * from `messages` would be unavailable for exactly the threads it has to
+   * order. Set as each human prompt lands; absent on threads written before this
+   * existed, which fall back to `createdAt` until their transcript is next read
+   * (see `lastHumanPromptAt`).
+   *
+   * Only human prompts count — a hook or machine continuation carries a
+   * {@link MessageOrigin} and does not move the thread up the sidebar, so an
+   * overnight automation cannot reorder the list under the user. Agent activity
+   * on an unselected thread is surfaced by {@link unreadAt} instead.
+   */
+  lastPromptAt?: number
   createdAt: number
   updatedAt: number
 }
