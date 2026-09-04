@@ -735,7 +735,18 @@ describe('describeShellScopeReasons', () => {
     ).reasons
     assert.equal(reasons.length, 2)
     assert.deepEqual(describeShellScopeReasons(reasons), [
-      "Runs a script written inside the command itself, so Copse can't tell what it does",
+      "Runs code written or built inside the command itself, so Copse can't tell what it does",
+    ])
+  })
+
+  it('reports an --eval body once although two rules match it', () => {
+    // `--eval` trips the interpreter rule and the generic eval/exec/base64 one.
+    // Both identifiers stay on the record; the person approving reads one line.
+    const reasons = analyzeShellCommand('node --eval "x"', root).reasons
+    assert.ok(reasons.includes('inline script (interpreter -c/-e/--eval)'))
+    assert.ok(reasons.includes('dynamic execution / encoding'))
+    assert.deepEqual(describeShellScopeReasons(reasons), [
+      "Runs code written or built inside the command itself, so Copse can't tell what it does",
     ])
   })
 

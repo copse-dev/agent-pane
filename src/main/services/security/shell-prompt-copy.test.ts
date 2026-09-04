@@ -28,7 +28,7 @@ describe('outside-sandbox approval copy', () => {
     assert.equal(
       bodyAdvice,
       'The project sandbox would block this command:\n' +
-        "• Runs a script written inside the command itself, so Copse can't tell what it does",
+        "• Runs code written or built inside the command itself, so Copse can't tell what it does",
     )
     assert.equal(bodyFooter, 'Allow running it once outside the sandbox?')
   })

@@ -715,8 +715,9 @@ export function analyzeShellCommand(
 
   const { reasons: scopeReasons, hasHard } = collectExternalReasons(trimmed)
   // Widened here and only here: `referencesOutsideWorkspace` can return the one
-  // runtime-built reason, which by construction is not a `ScopeReason` key.
-  const reasons: string[] = scopeReasons
+  // runtime-built reason, which by construction is not a `ScopeReason` key. A
+  // copy, so the widened list never writes a plain string back into the typed one.
+  const reasons: string[] = [...scopeReasons]
 
   // Outside-workspace filesystem access is always a hard escape: we want such
   // commands to prompt and run outside the sandbox, not attempt-then-retry.
@@ -818,14 +819,10 @@ export function isReplayableOpaqueLocalExecution(analysis: ShellScopeAnalysis): 
  *
  * Some identifiers deliberately map to the SAME sentence, and
  * `describeShellScopeReasons` dedupes on the resolved text, so the rules that
- * describe one fact contribute one line: a `-c` body and a heredoc are both
- * "this runs code I can't see" to whoever is approving, and `~/` and `$HOME`
- * are both "in your home directory".
- *
- * Rules describing DIFFERENT facts keep different sentences even when they fire
- * together. `node --eval x` reports both the interpreter rule and the generic
- * dynamic-execution one, because `--eval` matches both; the two sentences are
- * worded so the second adds something rather than restating the first.
+ * describe one fact contribute one line: a `-c` body, a heredoc and an `eval`
+ * are all "this runs code I can't see" to whoever is approving, and `~/` and
+ * `$HOME` are both "in your home directory". `node --eval x` trips both the
+ * interpreter rule and the generic dynamic-execution one, and reads as one line.
  */
 const SCOPE_REASON_TEXT = {
   // Network reach
@@ -875,14 +872,16 @@ const SCOPE_REASON_TEXT = {
   'launches a host app/file outside the sandbox (xdg-open)':
     'Hands a file or URL to an app outside the sandbox (xdg-open)',
 
-  // Code this analysis cannot read before it runs. The heredoc and `-c` rules
-  // share one sentence on purpose: to whoever is approving, they are the same
-  // fact, and a command that does both should say it once.
+  // Code this analysis cannot read before it runs. The `-c`, heredoc and
+  // eval/exec/base64 rules share one sentence on purpose: to whoever is
+  // approving, they are the same fact, and a command that trips several of them
+  // (`node --eval` matches the first and the last) should say it once.
   'inline script (interpreter -c/-e/--eval)':
-    "Runs a script written inside the command itself, so Copse can't tell what it does",
+    "Runs code written or built inside the command itself, so Copse can't tell what it does",
   'heredoc script fed to an interpreter':
-    "Runs a script written inside the command itself, so Copse can't tell what it does",
-  'dynamic execution / encoding': 'Builds and runs code as it goes (eval/exec/base64)',
+    "Runs code written or built inside the command itself, so Copse can't tell what it does",
+  'dynamic execution / encoding':
+    "Runs code written or built inside the command itself, so Copse can't tell what it does",
   'runs a local script via an interpreter (contents opaque to analysis)':
     "Runs a script file from the project, so Copse can't tell what it does",
   'executes an in-workspace file directly (contents opaque to analysis)':

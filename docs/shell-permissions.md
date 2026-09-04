@@ -87,8 +87,10 @@ Two properties this contract depends on:
   bakes in an operand and so is matched by prefix instead; anything still unrecognised is shown
   verbatim rather than dropped.
 - **One concern, one line.** Deduping happens on the resolved sentence, so rules that describe the
-  same underlying fact collapse — a heredoc and a `-c` body are both "runs a script written inside
-  the command itself", and `~/` and `$HOME` are both "in your home directory".
+  same underlying fact collapse — a heredoc, a `-c` body and an `eval` are all "runs code written
+  or built inside the command itself" (so `node --eval`, which trips two rules, reads as one line),
+  and `~/` and `$HOME` are both "in your home directory". The Guarded YOLO harm prompt dedupes the
+  same way but joins the result into its one paragraph rather than one bullet per line.
 
 Prompts that offer a sandbox escape name no platform: they appear only while a project sandbox is
 active, which is seatbelt on macOS and bubblewrap on Linux. `permission-policy.ts` owns the
