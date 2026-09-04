@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
-import type { PrCreateRequest } from '@shared/types/git.ts'
+import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
@@ -1226,7 +1226,7 @@ contextBridge.exposeInMainWorld('api', {
     agentPrLinks: () => ipcRenderer.invoke('gh:agentPrLinks'),
     rerunFailedRuns: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:rerunFailedRuns', owner, repo, number),
-    createPrForThread: (projectId: string, threadId: string, request: PrCreateRequest) =>
+    createPrForThread: (projectId: string, threadId: string, request: PrComposerCreateRequest) =>
       ipcRenderer.invoke('gh:createPrForThread', projectId, threadId, request),
     approvePr: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:approvePr', owner, repo, number),

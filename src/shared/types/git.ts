@@ -207,6 +207,16 @@ export interface PrCreateRequest {
   repo?: string | undefined
 }
 
+/**
+ * What the "Create PR" dialog sends over `gh:createPrForThread`: the three
+ * things the user settled in the form. Target and branches are deliberately
+ * absent — the main process resolves them from the thread's own checkout, so
+ * the renderer cannot aim a create at another repository or branch through a
+ * channel that has no approval gate. The agent tool keeps the wider
+ * {@link PrCreateRequest} because it carries explicit targets on purpose.
+ */
+export type PrComposerCreateRequest = Pick<PrCreateRequest, 'title' | 'body' | 'draft'>
+
 export interface GhPrChangedFile {
   path: string
   status: 'added' | 'modified' | 'removed' | 'renamed'

@@ -13,6 +13,7 @@ import {
   vncTargetSchema,
   zHttpUrl,
   zModelId,
+  zPrComposerCreateRequest,
   zProjectId,
   zThreadId,
 } from './ipc-guards.ts'
@@ -188,6 +189,52 @@ describe('ipc-guards agent payload schemas', () => {
         toolNames: [],
         openTodos: Array.from({ length: 21 }, () => 'item'),
       }).success,
+      false,
+    )
+  })
+})
+
+describe('ipc-guards gh:createPrForThread request', () => {
+  it("accepts the dialog's title, body and draft flag", () => {
+    const parsed = zPrComposerCreateRequest.safeParse({
+      title: 'Roll up tool activity',
+      body: 'Groups a run under its anchor message.',
+      draft: true,
+    })
+    assert.equal(parsed.success, true)
+    assert.deepEqual(parsed.data, {
+      title: 'Roll up tool activity',
+      body: 'Groups a run under its anchor message.',
+      draft: true,
+    })
+    assert.equal(zPrComposerCreateRequest.safeParse({ title: 'Just a title' }).success, true)
+  })
+
+  it('never lets an empty or whitespace title through', () => {
+    assert.equal(zPrComposerCreateRequest.safeParse({ title: '' }).success, false)
+    assert.equal(zPrComposerCreateRequest.safeParse({ title: '   ' }).success, false)
+    assert.equal(zPrComposerCreateRequest.safeParse({}).success, false)
+  })
+
+  it('drops the target and branch fields the renderer must not choose', () => {
+    // The channel has no approval gate, so the main process resolves the
+    // repository and branches from the thread's checkout. Anything a renderer
+    // sends for them is stripped rather than forwarded to `gh pr create`.
+    const parsed = zPrComposerCreateRequest.safeParse({
+      title: 'Fix the footer',
+      owner: 'someone-else',
+      repo: 'their-repo',
+      head: 'evil',
+      base: 'main',
+    })
+    assert.equal(parsed.success, true)
+    assert.deepEqual(parsed.data, { title: 'Fix the footer' })
+  })
+
+  it('bounds the title and body', () => {
+    assert.equal(zPrComposerCreateRequest.safeParse({ title: 'x'.repeat(301) }).success, false)
+    assert.equal(
+      zPrComposerCreateRequest.safeParse({ title: 't', body: 'x'.repeat(20_001) }).success,
       false,
     )
   })

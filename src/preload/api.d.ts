@@ -33,7 +33,7 @@ import type {
   GhPrFileDiff,
   GhPrSummary,
   PrActionResult,
-  PrCreateRequest,
+  PrComposerCreateRequest,
   PrCreateResult,
 } from '@shared/types/git.ts'
 import type {
@@ -1028,7 +1028,7 @@ export interface ApiClient {
     createPrForThread: (
       projectId: string,
       threadId: string,
-      request: PrCreateRequest,
+      request: PrComposerCreateRequest,
     ) => Promise<PrCreateResult>
     /** Re-run the failed workflow runs on the PR's head branch. */
     rerunFailedRuns: (owner: string, repo: string, number: number) => Promise<PrActionResult>

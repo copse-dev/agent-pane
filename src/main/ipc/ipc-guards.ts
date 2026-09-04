@@ -141,18 +141,19 @@ export const followUpContextSchema = z.object({
 })
 
 /**
- * `gh:createPrForThread` request. Every field reaches `gh pr create` as an
- * argument, so the shape is pinned and bounded rather than forwarded. Branch
- * bounds match `git:checkoutBranch`; owner/repo match the PR-ref handlers.
+ * `gh:createPrForThread` request: the "Create PR" dialog's title, body and
+ * draft flag, nothing more. Every field reaches `gh pr create` as an argument,
+ * so the shape is pinned and bounded rather than forwarded — and the target
+ * (owner/repo) and branches (head/base) are not accepted at all. The channel
+ * has no approval gate, so the main process resolves those from the thread's
+ * own checkout; a compromised renderer must not be able to point a create at a
+ * different repository. The agent tool's wider `PrCreateRequest` stays on the
+ * tool path, where explicit targets are the point.
  */
-export const zPrCreateRequest = z.object({
-  title: z.string().min(1).max(300),
+export const zPrComposerCreateRequest = z.object({
+  title: z.string().trim().min(1).max(300),
   body: z.string().max(20_000).optional(),
-  base: z.string().min(1).max(256).optional(),
-  head: z.string().min(1).max(256).optional(),
   draft: z.boolean().optional(),
-  owner: z.string().min(1).max(128).optional(),
-  repo: z.string().min(1).max(128).optional(),
 })
 
 /**

@@ -55,7 +55,7 @@ import {
   zPathString,
   zProjectId,
   zThreadId,
-  zPrCreateRequest,
+  zPrComposerCreateRequest,
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
@@ -2305,13 +2305,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // included — so a PR opened from the dialog is indistinguishable from one the
   // agent opened. No model call: by this point the user has settled every
   // argument, and the dialog they just confirmed is the decision to publish.
+  // The decoder admits only title/body/draft; head, base, owner and repo come
+  // from the thread's checkout inside `createPrForThread`, never the renderer.
   ipcMain.handle(
     'gh:createPrForThread',
     async (event, projectIdArg: unknown, threadIdArg: unknown, requestArg: unknown) => {
       assertMainFrameSender(event, win)
       const projectId = parseIpcArgs(zProjectId, [projectIdArg])
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      const request = parseIpcArgs(zPrCreateRequest, [requestArg])
+      const request = parseIpcArgs(zPrComposerCreateRequest, [requestArg])
       const context = await resolveThreadExecutionContext(projectId, threadId)
       return createPrForThread(request, context)
     },
