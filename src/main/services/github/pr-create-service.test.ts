@@ -5,8 +5,9 @@ import type { PrCreateInput } from './backend/backend.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 
 // The one create path, shared by the `gh_pr_create` tool and the "Create PR"
-// dialog. What matters here is that both get the same three things: the right
-// checkout's branches, the attribution trailer, and the draft flag as asked.
+// dialog. What matters here is that both get the same four things: the right
+// checkout's branches, the attribution trailer, the draft flag as asked, and
+// the `threads:pr_created` announce the Changes panel follows.
 
 const WORKTREE_CONTEXT: ThreadExecutionContext = {
   projectId: 'project-1',
@@ -17,17 +18,24 @@ const WORKTREE_CONTEXT: ThreadExecutionContext = {
   branch: 'feature/x',
 }
 
+interface Broadcast {
+  channel: string
+  args: unknown[]
+}
+
 interface Recorded {
   deps: PrCreateDependencies
   created: PrCreateInput[]
   slugRoots: (string | null | undefined)[]
   branchRoots: (string | null | undefined)[]
+  broadcasts: Broadcast[]
 }
 
 function deps(over: Partial<PrCreateDependencies> = {}): Recorded {
   const created: PrCreateInput[] = []
   const slugRoots: (string | null | undefined)[] = []
   const branchRoots: (string | null | undefined)[] = []
+  const broadcasts: Broadcast[] = []
   const base: PrCreateDependencies = {
     getGithubRepoSlug: (root) => {
       slugRoots.push(root)
@@ -50,9 +58,17 @@ function deps(over: Partial<PrCreateDependencies> = {}): Recorded {
     },
     getThreadModels: () => ['claude-opus-5'],
     backendKind: () => 'cli',
+    broadcast: (channel, ...args) => {
+      broadcasts.push({ channel, args })
+    },
     ...over,
   }
-  return { deps: base, created, slugRoots, branchRoots }
+  return { deps: base, created, slugRoots, branchRoots, broadcasts }
+}
+
+/** The `threads:pr_created` pushes a run made, in order. */
+function announcements(recorded: Recorded): unknown[][] {
+  return recorded.broadcasts.filter((b) => b.channel === 'threads:pr_created').map((b) => b.args)
 }
 
 describe('createPrForThread', () => {
@@ -148,6 +164,47 @@ describe('createPrForThread', () => {
     assert.equal(result.backend, 'api')
   })
 
+  it('announces the created PR so a Changes panel can follow it', async () => {
+    // #2297 taught the Changes panel to follow a PR the agent opened; the
+    // announce lives here rather than in the tool so the composer's dialog —
+    // the other door onto this function — moves the panel the same way.
+    const recorded = deps()
+    const result = await createPrForThread({ title: 'T' }, WORKTREE_CONTEXT, recorded.deps)
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(announcements(recorded), [
+      [
+        'project-1',
+        'thread-1',
+        {
+          url: 'https://github.com/copse-dev/agent-pane/pull/7',
+          owner: 'copse-dev',
+          repo: 'agent-pane',
+          number: 7,
+        },
+      ],
+    ])
+  })
+
+  it('announces nothing when the PR did not open', async () => {
+    // A panel that jumped to a PR view on a failed create would be showing
+    // coordinates no PR ever had.
+    const recorded = deps({
+      createPullRequest: () =>
+        Promise.resolve({ ok: false, backend: 'cli' as const, message: 'gh: not authenticated' }),
+    })
+    const result = await createPrForThread({ title: 'T' }, WORKTREE_CONTEXT, recorded.deps)
+
+    assert.equal(result.ok, false)
+    assert.deepEqual(announcements(recorded), [])
+  })
+
+  it('announces nothing when a pre-flight check rejected the request', async () => {
+    const recorded = deps({ getCurrentBranchName: () => Promise.resolve('main') })
+    await createPrForThread({ title: 'T' }, WORKTREE_CONTEXT, recorded.deps)
+    assert.deepEqual(announcements(recorded), [])
+  })
+
   it('creates without a thread context, skipping the link', async () => {
     // A tool call outside any thread: the PR still opens, and nothing tries to
     // record it against a thread that does not exist.
@@ -157,5 +214,7 @@ describe('createPrForThread', () => {
     assert.equal(result.ok, true)
     assert.equal(recorded.created.length, 1)
     assert.deepEqual(recorded.created[0]?.body.includes('Co-Authored-By'), true)
+    // Nothing to announce it against: the announce is addressed to a thread.
+    assert.deepEqual(recorded.broadcasts, [])
   })
 })

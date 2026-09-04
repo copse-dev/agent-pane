@@ -23,6 +23,13 @@ export interface PrCreateDependencies {
   createPullRequest: typeof createPullRequest
   getThreadModels: (threadId: string) => string[]
   backendKind: () => PrCreateResult['backend']
+  /**
+   * Push a renderer event. Injected alongside the lookups because the pushes a
+   * successful create makes are its only effect outside the returned result —
+   * a test that cannot see them cannot tell the composer's door apart from one
+   * that opens a PR and tells nobody.
+   */
+  broadcast: typeof broadcastToAppWindows
 }
 
 const defaultDependencies: PrCreateDependencies = {
@@ -34,11 +41,13 @@ const defaultDependencies: PrCreateDependencies = {
   createPullRequest,
   getThreadModels,
   backendKind: () => resolveGitHubBackend().kind,
+  broadcast: broadcastToAppWindows,
 }
 
 /**
  * Open a pull request for a thread's checkout: resolve the target, append the
- * attribution trailer, create the PR, and link it back to the thread.
+ * attribution trailer, create the PR, link it back to the thread and announce
+ * it to the renderer.
  *
  * The single create path, shared by the `gh_pr_create` agent tool and the
  * "Create PR" composer chip's dialog. Both need the identical sequence — and in
@@ -123,10 +132,9 @@ export async function createPrForThread(
   })
 
   if (result.ok && result.url && result.number !== undefined && context) {
-    await linkPrToThread(
-      { url: result.url, owner: targetOwner, repo: targetRepo, number: result.number },
-      context,
-    )
+    const ref = { url: result.url, owner: targetOwner, repo: targetRepo, number: result.number }
+    await linkPrToThread(ref, context, deps.broadcast)
+    announcePrCreated(ref, context, deps.broadcast)
   }
 
   return result
@@ -143,14 +151,36 @@ export async function createPrForThread(
 async function linkPrToThread(
   ref: GithubPrRef,
   context: Pick<ThreadExecutionContext, 'projectId' | 'threadId'>,
+  broadcast: typeof broadcastToAppWindows,
 ): Promise<void> {
   try {
     const refs = await recordThreadPrRefs(context.projectId, context.threadId, [ref])
     if (!refs) return
-    broadcastToAppWindows('threads:pr_refs', context.projectId, [
-      { threadId: context.threadId, prRefs: refs },
-    ])
+    broadcast('threads:pr_refs', context.projectId, [{ threadId: context.threadId, prRefs: refs }])
   } catch (err) {
     console.warn('[pr-create] linking the PR to its thread failed:', err)
   }
+}
+
+/**
+ * Tell the renderer a PR was just opened from this thread, so a pane showing
+ * the changes that went into it can follow the work through to the PR view.
+ *
+ * Deliberately not folded into the `threads:pr_refs` push above: that channel
+ * also carries the startup backfill, whose batches are indistinguishable from a
+ * live creation once they arrive, and only a genuinely new PR may be allowed to
+ * move a panel. Announced even when {@link linkPrToThread} failed — the PR pane
+ * loads from these coordinates, not from the thread's recorded refs.
+ *
+ * Lives here, not in the `gh_pr_create` tool that first sent it (#2297), so
+ * that the composer's "Create PR" dialog announces too: a panel that follows a
+ * PR the agent opened but not one the user opened is the kind of split the
+ * shared create path exists to prevent.
+ */
+function announcePrCreated(
+  ref: GithubPrRef,
+  context: Pick<ThreadExecutionContext, 'projectId' | 'threadId'>,
+  broadcast: typeof broadcastToAppWindows,
+): void {
+  broadcast('threads:pr_created', context.projectId, context.threadId, ref)
 }
