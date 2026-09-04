@@ -15,7 +15,7 @@ import {
   pluginFollowUpConditionMet,
   parseModelFollowUpIds,
 } from './follow-up-service.ts'
-import { buildContinuePlanSuggestion, buildCreatePrPrompt } from '@shared/follow-ups/presets.ts'
+import { buildContinuePlanSuggestion } from '@shared/follow-ups/presets.ts'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import { definePlugin, type RegisteredPlugin } from '@copse/agent/plugins/plugin-manifest.ts'
 import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
@@ -288,9 +288,13 @@ describe('create-pr deterministic bubble', () => {
     )
   })
 
-  it('opens the dialog rather than sending its prompt', () => {
+  it('opens the dialog rather than sending a prompt', () => {
     const pr = buildDeterministicFollowUps(base, turn).find((s) => s.id === 'create-pr')
-    assert.equal(pr?.action, 'create-pr')
+    assert.ok(pr, 'the create-pr bubble should be offered')
+    assert.equal(pr.action, 'create-pr')
+    // The create runs with no model in the loop, so there is no prompt for a
+    // caller to fall back to sending.
+    assert.equal(pr.prompt, undefined)
   })
 
   it('stays offered once the agent has committed and git status is clean', () => {
@@ -312,27 +316,6 @@ describe('create-pr deterministic bubble', () => {
       suggestions.some((s) => s.id === 'create-pr'),
       false,
     )
-  })
-})
-
-describe('buildCreatePrPrompt', () => {
-  it('carries the title and asks for a draft', () => {
-    const prompt = buildCreatePrPrompt({ title: 'Roll up tool activity', draft: true })
-    assert.match(prompt, /Use this title: Roll up tool activity/)
-    assert.match(prompt, /--draft/)
-  })
-
-  it('states "not a draft" explicitly rather than staying silent', () => {
-    // Omitting the draft line would let the agent pick, and the checkbox the
-    // user just left unticked is a decision, not an absence.
-    const prompt = buildCreatePrPrompt({ title: 'Fix the footer', draft: false })
-    assert.match(prompt, /ready for review, not as a draft/)
-    assert.equal(prompt.includes('--draft'), false)
-  })
-
-  it('omits the title line when the field was left blank', () => {
-    const prompt = buildCreatePrPrompt({ title: '   ', draft: false })
-    assert.equal(prompt.includes('Use this title'), false)
   })
 })
 

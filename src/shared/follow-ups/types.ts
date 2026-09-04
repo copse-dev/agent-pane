@@ -8,8 +8,9 @@ export type FollowUpVariant = 'default' | 'changes'
  *  - `open-changes` — open the changeset reviewer pane.
  *  - `model-compare` — open the comparison model picker, then run a comparison
  *    of the working diff with the models chosen there.
- *  - `create-pr` — open the pull-request dialog (title + draft), then hand the
- *    agent the instruction it composed.
+ *  - `create-pr` — open the pull-request dialog (title, description, draft),
+ *    then open the PR through the same `createPrForThread` path the
+ *    `gh_pr_create` tool uses. No prompt is sent and no model runs.
  */
 export type FollowUpAction = 'prompt' | 'open-changes' | 'model-compare' | 'create-pr'
 

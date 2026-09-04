@@ -33,39 +33,17 @@ export const DETERMINISTIC_FOLLOW_UP_IDS = {
 
 /**
  * The "Create PR" chip, offered when the branch holds work no pull request
- * carries yet. Clicking opens the PR dialog rather than sending this prompt —
- * the title and the draft toggle are decisions the user makes before anything
- * is published, and a canned sentence cannot carry them. The prompt below is
- * the fallback (and the shape {@link buildCreatePrPrompt} elaborates) for any
- * caller that treats every bubble as a prompt.
+ * carries yet. Clicking opens the PR dialog (title, description, draft toggle)
+ * and, once confirmed, runs `createPrForThread` directly — no prompt is sent
+ * and no model is involved in the create, so unlike the prompt presets this
+ * carries no `prompt`. The shape matches the other action-only bubble
+ * (`model-compare`): an id and a label, with the renderer keyed on `action`.
  */
-export function buildCreatePrSuggestion(): { id: string; label: string; prompt: string } {
+export function buildCreatePrSuggestion(): { id: string; label: string } {
   return {
     id: DETERMINISTIC_FOLLOW_UP_IDS.createPr,
     label: 'Create PR',
-    prompt: buildCreatePrPrompt({ title: '', draft: false }),
   }
-}
-
-/**
- * The instruction the PR dialog hands to the agent. Publishing is left to the
- * agent rather than run behind the dialog: committing, choosing a base and
- * filling in the repo's PR template are judgement calls it already makes on
- * "make a pr", and the dialog's job is to pin down the two things the user
- * cares about — the title, and whether this goes up as a draft.
- */
-export function buildCreatePrPrompt(opts: { title: string; draft: boolean }): string {
-  const title = opts.title.trim()
-  const lines = [
-    'Open a pull request for this branch.',
-    ...(title ? [`Use this title: ${title}`] : []),
-    opts.draft
-      ? 'Open it as a draft (`gh pr create --draft`).'
-      : 'Open it ready for review, not as a draft.',
-    'Commit anything still uncommitted with a clear message, push the branch, ' +
-      "and fill in the repository's PR template if it has one. Reply with the PR link.",
-  ]
-  return lines.join('\n')
 }
 
 /**

@@ -174,12 +174,7 @@ export function buildDeterministicFollowUps(
   // review" is the order the work actually happens in.
   if (ctx.canOpenPr) {
     const createPr = buildCreatePrSuggestion()
-    out.push({
-      id: createPr.id,
-      label: createPr.label,
-      prompt: createPr.prompt,
-      action: 'create-pr',
-    })
+    out.push({ id: createPr.id, label: createPr.label, action: 'create-pr' })
   }
 
   if (ctx.hasOpenPr && ctx.hasCiFailures) {
@@ -221,7 +216,7 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
       additions: changes.additions,
       deletions: changes.deletions,
     },
-    { id: createPr.id, label: createPr.label, prompt: createPr.prompt, action: 'create-pr' },
+    { id: createPr.id, label: createPr.label, action: 'create-pr' },
     { id: ci.id, label: ci.label, prompt: ci.prompt },
     { id: MODEL_COMPARISON_FOLLOW_UP_ID, label: 'Compare models', action: 'model-compare' },
     // Present so the continue-plan bubble kind is drivable headlessly; the real
