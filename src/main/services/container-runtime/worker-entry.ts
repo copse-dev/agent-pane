@@ -1,8 +1,8 @@
 /**
  * The guest side of a container run (`docs/plans/thread-in-container.md`).
  *
- * Bundled by `scripts/lib/thread-container.mts` and started by the image's
- * entrypoint as an unprivileged user inside a hardened container. It reads the
+ * Bundled as a standalone main bundle (`scripts/main-bundles.mts`) and started
+ * by the image's entrypoint as an unprivileged user inside a hardened container. It reads the
  * spec and the host's attestation from the read-only run directory, carries the
  * workspace in from the bundle, arms an unattended run on the thread, and drives
  * the product's own headless agent host. It never opens a prompt: the approval
@@ -15,24 +15,21 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { createLocalOpenAIProvider } from '@copse/llm/create-provider.ts'
-import { runHeadlessAgent } from '../src/main/services/headless-agent-host.ts'
+import { runHeadlessAgent } from '../headless-agent-host.ts'
 import {
   initProjectSandbox,
   isProjectSandboxEnabled,
   shutdownProjectSandbox,
-} from '../src/main/project-sandbox/index.ts'
+} from '../../project-sandbox/index.ts'
 import {
   declareContainerRuntime,
   parseContainerRuntimeAttestation,
-} from '../src/main/services/security/runtime-containment.ts'
-import {
-  armUnattendedRun,
-  disarmUnattendedRun,
-} from '../src/main/services/security/unattended-run.ts'
-import { readPendingDeferrals } from '../src/main/services/security/deferred-approval-store.ts'
-import { storageSet } from '../src/main/services/storage/storage.ts'
-import { decodeWithSchema, safeJsonParse } from '../src/shared/safe-json.ts'
-import type { LLMMessage } from '../src/shared/types/index.ts'
+} from '../security/runtime-containment.ts'
+import { armUnattendedRun, disarmUnattendedRun } from '../security/unattended-run.ts'
+import { readPendingDeferrals } from '../security/deferred-approval-store.ts'
+import { storageSet } from '../storage/storage.ts'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import type { LLMMessage } from '@shared/types/index.ts'
 
 const RUN_DIR = '/run/copse'
 
@@ -42,7 +39,8 @@ const specSchema = z.object({
   projectId: z.string().min(1),
   prompt: z.string().min(1),
   model: z.string().min(1),
-  providerUrl: z.url(),
+  providerUrl: z.url().nullable(),
+  productProvider: z.object({ apiKeySlug: z.string().min(1) }).nullable(),
   apiKeyEnv: z.string().min(1).nullable(),
   budgets: z.object({
     wallClockMs: z.number().positive(),
@@ -193,6 +191,11 @@ async function main(): Promise<void> {
           safetyClassifierEnabled: false,
           safeInstallEnabled: false,
         },
+        // Product-resolved providers (Anthropic) find their key here; nothing
+        // else from the host's settings or environment is in the guest.
+        ...(spec.productProvider !== null
+          ? { apiKeys: { [spec.productProvider.apiKeySlug]: apiKey } }
+          : {}),
         enabledPluginIds: [],
         toolAvailability: { rg: true, git: true, gh: false },
         loadMcpServers: false,
@@ -235,10 +238,12 @@ async function main(): Promise<void> {
           }
         },
       },
-      {
-        provider: createLocalOpenAIProvider(spec.providerUrl, spec.model, apiKey || 'copse'),
-        contextWindow: 128_000,
-      },
+      spec.providerUrl !== null
+        ? {
+            provider: createLocalOpenAIProvider(spec.providerUrl, spec.model, apiKey || 'copse'),
+            contextWindow: 128_000,
+          }
+        : {},
     )
     messages = result.messages
     toolNames = result.toolNames

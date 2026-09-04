@@ -41,6 +41,24 @@ const sharedAlias = {
   '@shared': resolve('./src/shared'),
 }
 
+/**
+ * A standalone bundle's own `external`/`alias` on top of the shared options,
+ * with repo-relative alias targets made absolute for esbuild.
+ */
+function standaloneOverrides(entry: string): {
+  external?: string[]
+  alias: Record<string, string>
+} {
+  const bundle = STANDALONE_MAIN_BUNDLES.find((candidate) => candidate.entry === entry)
+  const alias = Object.fromEntries(
+    Object.entries(bundle?.alias ?? {}).map(([from, to]) => [from, resolve(to)]),
+  )
+  return {
+    ...(bundle?.external ? { external: bundle.external } : {}),
+    alias: { ...sharedAlias, ...alias },
+  }
+}
+
 // Emit a scenario manifest (id + label) alongside the demo build so the per-PR
 // demo-preview PR comment can link each selectable `?scenario=` state without
 // hard-coding the list. `demo-scenarios.ts` has only a type-only import, so
@@ -181,7 +199,12 @@ if (!isDemo) {
   // Every standalone main-process bundle, from the list `dev.mts` also builds
   // (see main-bundles.mts for why they are enumerated in one place).
   for (const { entry, outfile } of STANDALONE_MAIN_BUNDLES) {
-    await esbuild.build({ ...nodeOpts, entryPoints: [entry], outfile })
+    await esbuild.build({
+      ...nodeOpts,
+      entryPoints: [entry],
+      outfile,
+      ...standaloneOverrides(entry),
+    })
     assertParses(outfile)
   }
   await esbuild.build({

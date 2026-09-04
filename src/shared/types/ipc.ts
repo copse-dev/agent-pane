@@ -114,6 +114,16 @@ export interface IpcInvokeMap {
     result: import('./guarded-yolo.ts').GuardedYoloState
   }
 
+  // Unattended container runs (docs/plans/thread-in-container.md).
+  'container:runThread': {
+    args: [request: import('./container-run.ts').ContainerRunRequest]
+    result: import('./container-run.ts').ContainerRunProgress
+  }
+  'container:getRun': {
+    args: [threadId: string]
+    result: import('./container-run.ts').ContainerRunProgress | null
+  }
+
   // Diff approval
   'diff:approve': {
     args: [projectId: string, threadId: string, path: string]
@@ -529,6 +539,7 @@ export interface IpcEventMap {
   'agent:ask_user_cancelled': [{ id: string }]
   'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
   'security:guardedYoloChanged': [state: import('./guarded-yolo.ts').GuardedYoloState]
+  'container:runChanged': [progress: import('./container-run.ts').ContainerRunProgress]
   'automations:triggered': [event: import('./automations.ts').AutomationTriggerEvent]
   'ssh:prompt_request': [
     {

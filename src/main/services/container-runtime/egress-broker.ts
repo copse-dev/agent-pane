@@ -25,14 +25,8 @@ export interface EgressOrigin {
   connectHost?: string
 }
 
-export interface EgressLogEntry {
-  at: number
-  origin: string
-  event: 'connect' | 'close' | 'error'
-  bytesToOrigin?: number
-  bytesFromOrigin?: number
-  detail?: string
-}
+export type { EgressLogEntry } from '@shared/types/container-run.ts'
+import type { EgressLogEntry } from '@shared/types/container-run.ts'
 
 /** The portable ceiling (Linux allows 108, macOS 104, both counting the NUL). */
 const MAX_SOCKET_PATH_BYTES = 100

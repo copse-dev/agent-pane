@@ -27,15 +27,17 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
-import * as esbuild from 'esbuild'
+import { createRequire } from 'node:module'
 import { z } from 'zod'
 import type {
   ContainerRuntimeAttestation,
   UnattendedRunBudgets,
-} from '../../src/shared/types/unattended-run.ts'
-import { EgressBroker, type EgressLogEntry, type EgressOrigin } from './egress-broker.mts'
+} from '@shared/types/unattended-run.ts'
+import type { ThreadContainerRecord, ThreadContainerResult } from '@shared/types/container-run.ts'
+import { EgressBroker, type EgressOrigin } from './egress-broker.ts'
+import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -47,9 +49,11 @@ export const CARRY_IN_REF_PREFIX = 'refs/copse/carry-in/'
 export const CARRY_OUT_REF_PREFIX = 'refs/copse/runs/'
 export const MANAGED_LABEL = 'dev.copse.managed'
 export const RUNTIME_LABEL = 'dev.copse.runtime'
-export const SANDBOX_RUNTIME_VERSION = readSandboxRuntimeVersion()
+export const SANDBOX_RUNTIME_PACKAGE = '@anthropic-ai/sandbox-runtime'
 
 /** What the CLI or a test asks for. */
+export type { ThreadContainerRecord, ThreadContainerResult } from '@shared/types/container-run.ts'
+
 export interface ThreadContainerRequest {
   /** Local git checkout to carry in. */
   workspace: string
@@ -59,9 +63,16 @@ export interface ThreadContainerRequest {
   /**
    * OpenAI-compatible base URL the guest should talk to, e.g.
    * `http://model.copse.internal:8080/v1`. Its host:port must be in the
-   * egress allowlist; that is the only route out of the guest.
+   * egress allowlist; that is the only route out of the guest. Omit for a
+   * provider the product resolves itself in the guest (`productProvider`).
    */
-  providerUrl: string
+  providerUrl?: string
+  /**
+   * Let the guest build the provider through the product's own resolver from
+   * the model id and this one API key (Anthropic today). The key's origin must
+   * still be in the egress allowlist.
+   */
+  productProvider?: { apiKeySlug: string }
   /** Environment variable on the host holding the provider key; the value is passed, never the name. */
   apiKeyEnv?: string
   budgets: UnattendedRunBudgets
@@ -82,58 +93,14 @@ export interface ThreadContainerRunSpec {
   projectId: string
   prompt: string
   model: string
-  providerUrl: string
+  providerUrl: string | null
+  productProvider: { apiKeySlug: string } | null
   apiKeyEnv: string | null
   budgets: UnattendedRunBudgets
   workspace: string
   carryInRef: string
   carryInBase: string
   maxSteps: number | null
-}
-
-/** What the guest writes to `out/result.json`. */
-export interface ThreadContainerResult {
-  threadId: string
-  stopReason: 'completed' | 'budget:wall-clock' | 'budget:tokens' | 'aborted' | 'error'
-  error?: string
-  usage: { inputTokens: number; outputTokens: number }
-  /** Approval prompts the worker's fail-closed handler saw. Must be zero. */
-  promptsAttempted: number
-  deferrals: Array<{ id: string; title: string; subject: string; reasons?: string[] }>
-  commits: string[]
-  containment: {
-    declared: boolean
-    declineReason: string | null
-    projectSandbox: boolean
-  }
-  toolNames: string[]
-  finalText: string
-}
-
-/** The host-written review record (`unattended-runs.md` Decision 8). */
-export interface ThreadContainerRecord {
-  runtimeId: string
-  threadId: string
-  startedAt: number
-  finishedAt: number
-  image: string
-  imageDigest: string | null
-  attestation: ContainerRuntimeAttestation
-  egress: EgressLogEntry[]
-  result: ThreadContainerResult | null
-  carryOutRef: string | null
-  containerExit: number | null
-  teardown: 'removed' | 'already-gone' | 'failed'
-  secretCanary: { present: boolean; detail: string }
-}
-
-function readSandboxRuntimeVersion(): string {
-  const pkg: unknown = JSON.parse(
-    readFileSync(resolve('node_modules/@anthropic-ai/sandbox-runtime/package.json'), 'utf8'),
-  )
-  const version = isRecord(pkg) ? pkg['version'] : undefined
-  if (typeof version !== 'string') throw new Error('sandbox-runtime version unreadable')
-  return version
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -233,7 +200,11 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     // entrypoint listens and forwards to the host broker's unix socket. The
     // broker, not the guest, decides where that connection really goes.
     args.push('--sysctl=net.ipv4.ip_unprivileged_port_start=0')
-    for (const origin of input.egress) args.push('--add-host', `${origin.host}:127.0.0.1`)
+    for (const origin of input.egress) {
+      // A loopback literal already points at the guest's own listener.
+      if (origin.host === '127.0.0.1' || origin.host === 'localhost') continue
+      args.push('--add-host', `${origin.host}:127.0.0.1`)
+    }
   }
   args.push(
     '--volume',
@@ -367,60 +338,102 @@ export interface BuildImageOptions {
   /** Docker build `--network`; some sandboxes need `host` for apt. */
   buildNetwork?: string
   contextDir?: string
+  /**
+   * The bundled guest entry. Defaults to the standalone bundle the build emits
+   * beside the main bundle (`dist/main/thread-container-worker.cjs`); the CLI
+   * and the integration test bundle their own and pass the path.
+   */
+  workerBundle?: string
 }
 
-/** Bundle the guest entry with esbuild; the sandbox runtime stays external. */
-export async function bundleWorker(outfile: string): Promise<void> {
-  await esbuild.build({
-    entryPoints: [resolve('scripts/thread-container-worker.mts')],
-    outfile,
-    bundle: true,
-    platform: 'node',
-    format: 'cjs',
-    sourcemap: false,
-    external: ['@anthropic-ai/sandbox-runtime'],
-    alias: {
-      '@shared': resolve('./src/shared'),
-      // PTY terminals are not offered inside the worker; the stub throws on use.
-      'node-pty': resolve('containers/copse-worker/node-pty-stub.cjs'),
-    },
-    define: { __COPSE_TEST_DIRECTIVES__: 'false' },
-    logLevel: 'warning',
-  })
+/** Where the build leaves the guest bundle; see `scripts/main-bundles.mts`. */
+export function defaultWorkerBundlePath(): string {
+  return join(__dirname, 'thread-container-worker.cjs')
+}
+
+/**
+ * The directory of an installed package, found from its resolvable entry
+ * rather than `<name>/package.json` (which a package's `exports` map may not
+ * expose). Walks up from the entry to the nearest `package.json` of that name.
+ */
+function installedPackageDir(fromDir: string, name: string): string {
+  const req = createRequire(join(fromDir, 'noop.js'))
+  let dir = dirname(req.resolve(name))
+  for (let depth = 0; depth < 12; depth++) {
+    const manifest = join(dir, 'package.json')
+    if (existsSync(manifest)) {
+      const parsed: unknown = JSON.parse(readFileSync(manifest, 'utf8'))
+      if (isRecord(parsed) && parsed['name'] === name) return dir
+    }
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  throw new Error(`Cannot locate the installed package ${name} from ${fromDir}`)
+}
+
+/**
+ * Copy the sandbox runtime and its transitive dependencies from the app's own
+ * `node_modules` into the image context. The guest needs no other package: the
+ * worker bundle carries everything else, and the runtime stays external only
+ * because it locates helper files by path at run time. No package manager runs
+ * here, so a packaged app with no `npm` on the host builds the image too.
+ */
+export function stageSandboxRuntime(contextDir: string, fromDir = __dirname): string[] {
+  const staged: string[] = []
+  const queue: Array<{ name: string; fromDir: string }> = [
+    { name: SANDBOX_RUNTIME_PACKAGE, fromDir },
+  ]
+  while (queue.length > 0) {
+    const next = queue.shift()
+    if (!next || staged.includes(next.name)) continue
+    const dir = installedPackageDir(next.fromDir, next.name)
+    const target = join(contextDir, 'node_modules', ...next.name.split('/'))
+    mkdirSync(dirname(target), { recursive: true })
+    cpSync(dir, target, {
+      recursive: true,
+      dereference: true,
+      // A package's own nested node_modules are copied by the dependency walk
+      // below from wherever they really resolve; only look *below* the package
+      // (its own path is inside a node_modules tree).
+      filter: (source) => !relative(dir, source).split(sep).includes('node_modules'),
+    })
+    staged.push(next.name)
+    const manifest: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    const dependencies = isRecord(manifest) ? manifest['dependencies'] : undefined
+    if (isRecord(dependencies)) {
+      for (const dependency of Object.keys(dependencies)) {
+        queue.push({ name: dependency, fromDir: dir })
+      }
+    }
+  }
+  return staged
 }
 
 /**
  * Assemble the build context and build the worker image. The context carries
- * only the bundled worker, the pinned sandbox runtime, and the entrypoint —
- * never the repository, never node_modules, never a credential.
+ * only the bundled worker, the sandbox runtime, and the entrypoint — never the
+ * repository, never the app's node_modules, never a credential.
  */
 export async function buildWorkerImage(options: BuildImageOptions = {}): Promise<string> {
   const image = options.image ?? WORKER_IMAGE
-  const contextDir = resolve(options.contextDir ?? 'dist-test/copse-worker-context')
+  const workerBundle = options.workerBundle ?? defaultWorkerBundlePath()
+  if (!existsSync(workerBundle)) {
+    throw new Error(
+      `Container worker bundle missing at ${workerBundle}; run \`pnpm run build\` (it is a standalone main bundle)`,
+    )
+  }
+  const contextDir = resolve(options.contextDir ?? join(tmpdir(), 'copse-worker-context'))
   rmSync(contextDir, { recursive: true, force: true })
   mkdirSync(contextDir, { recursive: true })
-  await bundleWorker(join(contextDir, 'worker.cjs'))
-  cpSync(resolve('containers/copse-worker/entrypoint.sh'), join(contextDir, 'entrypoint.sh'))
-  cpSync(resolve('containers/copse-worker/Dockerfile'), join(contextDir, 'Dockerfile'))
+  cpSync(workerBundle, join(contextDir, 'worker.cjs'))
+  writeFileSync(join(contextDir, 'entrypoint.sh'), WORKER_ENTRYPOINT_SH, { mode: 0o755 })
+  writeFileSync(join(contextDir, 'Dockerfile'), WORKER_DOCKERFILE)
   writeFileSync(
     join(contextDir, 'package.json'),
-    JSON.stringify(
-      {
-        name: 'copse-worker-runtime',
-        private: true,
-        dependencies: { '@anthropic-ai/sandbox-runtime': SANDBOX_RUNTIME_VERSION },
-      },
-      null,
-      2,
-    ),
+    `${JSON.stringify({ name: 'copse-worker-runtime', private: true }, null, 2)}\n`,
   )
-  await execFileAsync(
-    'npm',
-    ['install', '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts'],
-    {
-      cwd: contextDir,
-    },
-  )
+  stageSandboxRuntime(contextDir)
   const args = ['build', '--tag', image]
   if (options.buildNetwork) args.push('--network', options.buildNetwork)
   if (options.baseImage) args.push('--build-arg', `BASE_IMAGE=${options.baseImage}`)
@@ -445,6 +458,11 @@ export async function dockerAvailable(): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/** Whether the worker image is present locally (no pull is ever attempted). */
+export async function workerImageExists(image: string): Promise<boolean> {
+  return (await imageDigest(image)) !== undefined
 }
 
 async function imageDigest(image: string): Promise<string | undefined> {
@@ -600,6 +618,8 @@ export interface RunThreadOptions {
   /** Injected for tests; defaults to a fresh value. */
   runtimeId?: string
   onLog?: (line: string) => void
+  /** Called once `docker run` has returned, i.e. the guest holds its environment. */
+  onStarted?: () => void
   /** Host-side canary value; defaults to a random marker exported to the child env. */
   canary?: string
 }
@@ -624,11 +644,16 @@ export async function runThreadInContainer(
     const connectHost = request.egressResolve?.[origin.host]
     return connectHost !== undefined ? { ...origin, connectHost } : origin
   })
-  const provider = providerOrigin(request.providerUrl)
-  if (!egress.some((o) => o.host === provider.host && o.port === provider.port)) {
-    throw new Error(
-      `Provider origin ${provider.host}:${String(provider.port)} is not in the egress allowlist; the guest could never reach it`,
-    )
+  if (request.providerUrl === undefined && request.productProvider === undefined) {
+    throw new Error('A run needs either a provider URL or a product-resolved provider')
+  }
+  if (request.providerUrl !== undefined) {
+    const provider = providerOrigin(request.providerUrl)
+    if (!egress.some((o) => o.host === provider.host && o.port === provider.port)) {
+      throw new Error(
+        `Provider origin ${provider.host}:${String(provider.port)} is not in the egress allowlist; the guest could never reach it`,
+      )
+    }
   }
   const apiKeyEnv = request.apiKeyEnv ?? null
   if (apiKeyEnv && !process.env[apiKeyEnv]) {
@@ -664,7 +689,8 @@ export async function runThreadInContainer(
     projectId: `${runtimeId}-project`,
     prompt: request.prompt,
     model: request.model,
-    providerUrl: request.providerUrl,
+    providerUrl: request.providerUrl ?? null,
+    productProvider: request.productProvider ?? null,
     apiKeyEnv,
     budgets: request.budgets,
     workspace: GUEST_WORKSPACE,
@@ -696,6 +722,7 @@ export async function runThreadInContainer(
   try {
     log(`[thread-container] starting ${containerName(runtimeId)} from ${image}`)
     await runDocker(dockerRunArgs(runInput))
+    options.onStarted?.()
     const waited = await waitForContainer(containerName(runtimeId), request.budgets.wallClockMs)
     containerExit = waited.exit
     if (waited.timedOut) log('[thread-container] wall-clock budget reached; container stopped')

@@ -141,8 +141,22 @@ buildContexts.push(mainCtx)
 // for them would only add startup churn (`watch()` runs its own initial build,
 // which would fire the hook again once restarts are armed).
 const standaloneCtxs = await Promise.all(
-  STANDALONE_MAIN_BUNDLES.map(({ entry, outfile }) =>
-    esbuild.context({ ...nodeOpts, entryPoints: [entry], outfile, alias: sharedAlias }),
+  STANDALONE_MAIN_BUNDLES.map(({ entry, outfile, external, alias }) =>
+    esbuild.context({
+      ...nodeOpts,
+      entryPoints: [entry],
+      outfile,
+      ...(external ? { external } : {}),
+      alias: {
+        ...sharedAlias,
+        ...Object.fromEntries(
+          Object.entries(alias ?? {}).map(([from, to]) => [
+            from,
+            new URL(`../${to}`, import.meta.url).pathname,
+          ]),
+        ),
+      },
+    }),
   ),
 )
 buildContexts.push(...standaloneCtxs)

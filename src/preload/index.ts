@@ -149,6 +149,25 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  container: {
+    runThread: (request: import('@shared/types/container-run.ts').ContainerRunRequest) =>
+      ipcRenderer.invoke('container:runThread', request),
+    getRun: (threadId: string) => ipcRenderer.invoke('container:getRun', threadId),
+    onRunChanged: (
+      handler: (progress: import('@shared/types/container-run.ts').ContainerRunProgress) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        progress: import('@shared/types/container-run.ts').ContainerRunProgress,
+      ): void => {
+        handler(progress)
+      }
+      ipcRenderer.on('container:runChanged', listener)
+      return (): void => {
+        ipcRenderer.off('container:runChanged', listener)
+      }
+    },
+  },
   fs: {
     readFile: (projectId: string, threadId: string, path: string) =>
       ipcRenderer.invoke('fs:readFile', projectId, threadId, path),

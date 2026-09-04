@@ -4,8 +4,10 @@
 disposable, hardened local Docker container with no user prompts: the product's own headless
 agent loop runs in the guest, contained effects run without asking, outward effects are queued
 for review, and the result comes back to the host as commits under `refs/copse/runs/<id>`.
-The prototype is exercised end to end by `scripts/lib/thread-container.integration.test.ts`
-(opt-in, needs Docker) and driven by `pnpm run thread:container`. What it does **not** yet do
+The prototype is exercised end to end by
+`src/main/services/container-runtime/thread-container.integration.test.ts` (opt-in, needs
+Docker), driven by `pnpm run thread:container`, and started from the app through the composer
+footer ("Run unattended in a container…"). What it does **not** yet do
 is listed under [What the prototype proves, and what it does not](#what-the-prototype-proves-and-what-it-does-not).
 
 This plan is the executable slice of two documents that were design-only:
@@ -52,14 +54,15 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
                                                          + armUnattendedRun(thread, budgets)
 ```
 
-- **The guest runs the loop.** `scripts/thread-container-worker.mts` is bundled by esbuild
-  and started by the image entrypoint as an unprivileged user. It carries the workspace in,
+- **The guest runs the loop.** `src/main/services/container-runtime/worker-entry.ts` is
+  bundled as a standalone main bundle (`dist/main/thread-container-worker.cjs`) and started
+  by the image entrypoint as an unprivileged user. It carries the workspace in,
   declares its containment from the host's attestation, arms an unattended run on the thread,
   and calls `runHeadlessAgent` with a fail-closed approval handler that counts every prompt
   it sees. The count is part of the result and the end-to-end test asserts it is zero.
 - **The host attests; the guest declares.** A guest cannot verify its own boundary. The host
   writes `attestation.json` from the same `dockerRunArgs` it starts the container with
-  (`scripts/lib/thread-container.mts`), and `declareContainerRuntime`
+  (`src/main/services/container-runtime/thread-container.ts`), and `declareContainerRuntime`
   (`security/runtime-containment.ts`) refuses anything short of the bar: unprivileged uid,
   read-only rootfs, `cap-drop=ALL`, `no-new-privileges`, no network beyond the broker, no
   host mount outside `/run/copse`. A refused declaration leaves the worker on the desktop
@@ -106,6 +109,27 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   the egress log, the guest's result (stop reason, prompts attempted, deferrals, commits,
   containment actually achieved, tokens), the carry-out ref, the container exit code, the
   teardown outcome and the canary check.
+
+## From the app
+
+The composer footer's overflow menu has **Run unattended in a container…**
+(`src/renderer/views/container-run-control.ts`). The dialog it opens has two faces: before a
+run it is the arming form — the composer draft as the task, the wall-clock and token budgets,
+and a note of the model and the single origin the guest will be able to reach — and during
+and after a run it is the status view: phase, log tail, and the review record (what was
+deferred, what was committed and on which ref, what the guest could reach, the canary check,
+the teardown). A banner over the composer mirrors the phase while the dialog is closed, and a
+toast announces the end of the run.
+
+The renderer sends a prompt, a model id and two numbers over `container:runThread`; the main
+process (`container-runtime/container-run-service.ts`) resolves the checkout, the provider
+(`providers/container-provider.ts`: local servers, OpenAI, OpenRouter and extra providers
+through the guest's OpenAI-compatible client; Anthropic through the product's own resolver
+inside the guest) and the key, builds the worker image on first use from the bundle the
+build emits and the sandbox runtime copied from the app's own `node_modules`, and pushes
+`ContainerRunProgress` snapshots over `container:runChanged`. Arming is written to the
+thread's decision log under `mode-arming`, like Guarded YOLO, and a thread can have only one
+live run.
 
 ## Where this diverges from `unattended-runs.md`
 
@@ -160,6 +184,8 @@ dispatch, gate, deferral queue and carry-out):
   here — this sandbox has no provider credential. The broker forwards raw TCP so TLS is
   end-to-end; the guest needs the origin's port bound on loopback, which
   `--sysctl net.ipv4.ip_unprivileged_port_start=0` provides for 443.
+- **Replaying a deferral from the dialog.** The record lists what is waiting, but approving
+  it (the host-side push) still needs deferred-approvals D2.
 - **Attaching from the desktop.** The run is fire-and-collect. The assessment's route —
   Copse's ACP agent role in the guest, the desktop attaching over ACP with session resume,
   a fenced per-thread lease — is the next slice, not this one. Until then the desktop
@@ -242,15 +268,19 @@ Recorded because each cost time and will again.
 
 ## Test plan
 
-| Area                   | Tier        | What it proves                                                                                               | Where                                                |
-| ---------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| Effect classification  | unit        | Host escapes deny; outward effects defer; in-guest destruction allows; harm denies stay denies               | `packages/shell-guard/src/container-effects.test.ts` |
-| Attestation            | unit        | Every shortfall (root, writable rootfs, caps, privileges, foreign mount) refuses the declaration             | `security/unattended-run.test.ts`                    |
-| Ledger                 | unit        | Arming implies deferral mode; mutually exclusive with Guarded YOLO both ways; budgets required               | `security/unattended-run.test.ts`                    |
-| Gate matrix            | unit        | Command class × containment tier × unattended → exact outcome, including the desktop-tier and not-armed rows | `security/unattended-run.test.ts`                    |
-| Docker argv and record | unit        | The flags the attestation claims are the flags used; only the run dir is mounted; key passed by name         | `scripts/lib/thread-container.test.ts`               |
-| Carry-in / carry-out   | unit (git)  | Dirty tree snapshots without moving HEAD; guest commits round-trip to `refs/copse/runs/<id>`                 | `scripts/lib/thread-container.test.ts`               |
-| End to end             | integration | The eight properties listed above, against a real daemon, opt-in via `COPSE_THREAD_CONTAINER_E2E=1`          | `scripts/lib/thread-container.integration.test.ts`   |
+| Area                   | Tier        | What it proves                                                                                               | Where                                                    |
+| ---------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| Effect classification  | unit        | Host escapes deny; outward effects defer; in-guest destruction allows; harm denies stay denies               | `packages/shell-guard/src/container-effects.test.ts`     |
+| Attestation            | unit        | Every shortfall (root, writable rootfs, caps, privileges, foreign mount) refuses the declaration             | `security/unattended-run.test.ts`                        |
+| Ledger                 | unit        | Arming implies deferral mode; mutually exclusive with Guarded YOLO both ways; budgets required               | `security/unattended-run.test.ts`                        |
+| Gate matrix            | unit        | Command class × containment tier × unattended → exact outcome, including the desktop-tier and not-armed rows | `security/unattended-run.test.ts`                        |
+| Docker argv and record | unit        | The flags the attestation claims are the flags used; only the run dir is mounted; key passed by name         | `container-runtime/thread-container.test.ts`             |
+| Carry-in / carry-out   | unit (git)  | Dirty tree snapshots without moving HEAD; guest commits round-trip to `refs/copse/runs/<id>`                 | `container-runtime/thread-container.test.ts`             |
+| End to end             | integration | The eight properties listed above, against a real daemon, opt-in via `COPSE_THREAD_CONTAINER_E2E=1`          | `container-runtime/thread-container.integration.test.ts` |
+| Provider plan          | unit        | Model id → endpoint, key and the one egress origin; cloud models without a key are refused before Docker     | `providers/container-provider.test.ts`                   |
+| Run service            | unit        | Provider resolved, key passed by env var and blanked once the guest holds it, phases published, refusals     | `container-runtime/container-run-service.test.ts`        |
+| UI (browser tier)      | demo        | Footer action, arming form with the draft prefilled, banner and review record for a finished run             | `tests/demo/container-run.demo.ts`                       |
+| UI (Electron)          | e2e         | Real IPC: the dialog opens from the footer and a model without a key is refused with a readable error        | `tests/e2e/container-run-dialog.e2e.ts`                  |
 
 ## Non-goals
 

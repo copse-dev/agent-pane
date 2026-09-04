@@ -10,8 +10,9 @@ import {
   listManagedRuntimes,
   runThreadInContainer,
   teardownRuntime,
-} from './thread-container.mts'
-import { startScriptedModelServer } from './scripted-model-server.mts'
+} from './thread-container.ts'
+import { startScriptedModelServer } from './scripted-model-server.ts'
+import { bundleThreadContainerWorker } from '../../../../scripts/lib/thread-container-worker-bundle.mts'
 
 /**
  * The whole loop, for real: a scripted model behind the egress broker drives
@@ -51,8 +52,12 @@ describe('thread in a container (end to end)', { skip: !ENABLED }, () => {
     assert.equal(await dockerAvailable(), true, 'docker daemon required')
     const baseImage = process.env['COPSE_WORKER_BASE_IMAGE']
     const buildNetwork = process.env['COPSE_WORKER_BUILD_NETWORK']
+    const workerBundle = await bundleThreadContainerWorker(
+      join(tmpdir(), 'copse-thread-container-worker.e2e.cjs'),
+    )
     await buildWorkerImage({
       image: IMAGE,
+      workerBundle,
       ...(baseImage ? { baseImage } : {}),
       ...(buildNetwork ? { buildNetwork } : {}),
     })

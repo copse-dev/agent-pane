@@ -110,7 +110,15 @@ export const config: Options.Testrunner = {
           '--no-sandbox',
           '--disable-dev-shm-usage',
         ],
+        // A sandbox without access to the Chrome-for-Testing downloads can
+        // point at a Chromium and a matching chromedriver it already has.
+        ...(process.env['COPSE_DEMO_CHROME_BINARY']
+          ? { binary: process.env['COPSE_DEMO_CHROME_BINARY'] }
+          : {}),
       },
+      ...(process.env['COPSE_DEMO_CHROMEDRIVER_BINARY']
+        ? { 'wdio:chromedriverOptions': { binary: process.env['COPSE_DEMO_CHROMEDRIVER_BINARY'] } }
+        : {}),
     },
   ],
   framework: 'mocha',
