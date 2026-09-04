@@ -16,9 +16,10 @@ The standard scripts live in `package.json`; use `dev`, `build`, `start`, `typec
 `format:check`, `test`, `test:e2e`, and `check` rather than recreating their behavior. Reach for
 `dev` over `make run` when you want watch mode rather than a single build.
 
-The repo pins Node `22.22.2` in `.nvmrc` and requires Node `>=22.22.2` plus pnpm
-(`packageManager`: `pnpm@10.34.5`; enable with `corepack enable`). Tooling under
-`scripts/*.mts` uses native TypeScript type stripping.
+The repo pins the Node 24 LTS release in `.nvmrc` and requires Node `>=24` plus
+pnpm (`packageManager`: `pnpm@10.34.5`; enable with `corepack enable`). Both nvm
+and fnm read `.nvmrc`. Tooling under `scripts/*.mts` uses native TypeScript type
+stripping.
 
 Installs use pnpm’s default isolated linker with `package-import-method=auto`
 (`.npmrc`: prefer clone, then hardlink, then copy) so packages are symlinked
@@ -39,6 +40,8 @@ nvm install
 nvm use
 export PATH="$HOME/.nvm/versions/node/v$(cat .nvmrc)/bin:$PATH"
 ```
+
+With fnm, run `fnm install && fnm use` from the repository root instead.
 
 Confirm with `node -v` before debugging a tooling failure.
 

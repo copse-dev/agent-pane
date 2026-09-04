@@ -3,14 +3,10 @@
    one of them. Selecting a row expands it in place: the rail is ~200px, so the
    detail is two lines and a compact action row rather than a viewer takeover. */
 .ports-section {
-  flex-shrink: 0;
-  max-height: 40%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-top: 1px solid var(--border);
+  min-height: 0;
 }
 .ports-list {
+  flex: 1;
   overflow-y: auto;
   min-height: 0;
   padding: var(--spacing-xs) 0;

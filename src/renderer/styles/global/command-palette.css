@@ -68,6 +68,16 @@
   flex: 1;
   min-width: 0;
 }
+/* PR numbers a thread touched, between the title and the project name. */
+.command-palette-pr {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 30%;
+}
 .command-palette-context {
   flex-shrink: 0;
   color: var(--text-muted);

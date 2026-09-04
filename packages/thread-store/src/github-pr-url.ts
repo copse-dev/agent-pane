@@ -42,12 +42,33 @@ const GITHUB_PR_URL_RE =
 // PR chip from the sidebar.
 const URL_TRAILING_PUNCTUATION_RE = /[.,;:)\]>*_~`'"]+$/
 
+/**
+ * Drop sentence/markdown punctuation glued to the end of a URL. Shared by the
+ * transcript scraper and the command palette, so a link pasted straight from
+ * prose (`…/pull/2262.`) resolves to the same PR the scraper recorded.
+ */
+export function stripUrlTrailingPunctuation(url: string): string {
+  return url.replace(URL_TRAILING_PUNCTUATION_RE, '')
+}
+
+/**
+ * Whether one lower-cased query term hits a PR key (`owner/repo#number`).
+ * A numeric term (`2262`, `#2262`) has to match the whole number, so it does
+ * not also surface #22620; any other term matches as a substring, which is what
+ * lets `owner/repo#2262` (the shape a pasted URL folds to) and `agent-pane#`
+ * narrow by repository.
+ */
+export function githubPrKeyMatchesTerm(key: string, term: string): boolean {
+  const digits = /^#?(\d+)$/.exec(term)?.[1]
+  return digits === undefined ? key.includes(term) : key.endsWith(`#${digits}`)
+}
+
 /** Collect unique GitHub PR URLs from free-form text (e.g. chat messages). */
 export function extractGithubPrUrls(text: string): GithubPrRef[] {
   const seen = new Set<string>()
   const refs: GithubPrRef[] = []
   for (const match of text.matchAll(GITHUB_PR_URL_RE)) {
-    const raw = match[0].replace(URL_TRAILING_PUNCTUATION_RE, '')
+    const raw = stripUrlTrailingPunctuation(match[0])
     const parsed = parseGithubPrUrl(raw)
     if (!parsed) continue
     const key = githubPrKey(parsed)

@@ -54,7 +54,12 @@ import {
 import type { GithubPrRef } from './github-pr-url.ts'
 import type { ModelSelectionEvent } from './thread-types.ts'
 import { isRemoteAgentProvider } from './remote-agent-provider.ts'
-import { extractGithubPrUrls, githubPrKey, githubRepoKey } from './github-pr-url.ts'
+import {
+  extractGithubPrUrls,
+  githubPrKey,
+  githubPrKeyMatchesTerm,
+  githubRepoKey,
+} from './github-pr-url.ts'
 import { collectThreadPrRefs } from './thread-pr-status.ts'
 import { isRecord, parseJsonUnknown } from '@copse/std/unknown-value.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
@@ -825,7 +830,37 @@ function catalogEntryOf(thread: Thread): CatalogEntry | null {
     updatedAt: thread.updatedAt,
     digest: digestOf(thread),
     path: thread.id,
+    prRefs: thread.prRefs ?? [],
   }
+}
+
+/**
+ * Validate a catalog line's `prRefs`. Null (not `[]`) when the field is absent
+ * or malformed, so the caller drops the line rather than indexing it as "this
+ * thread has no PRs" — a line written before `prRefs` existed is stale, not
+ * PR-free, and must be rebuilt from meta to become searchable by PR number.
+ */
+function parseCatalogPrRefs(value: unknown): GithubPrRef[] | null {
+  if (!Array.isArray(value)) return null
+  const refs: GithubPrRef[] = []
+  for (const item of value) {
+    if (
+      !isRecord(item) ||
+      typeof item['owner'] !== 'string' ||
+      typeof item['repo'] !== 'string' ||
+      typeof item['number'] !== 'number' ||
+      typeof item['url'] !== 'string'
+    ) {
+      return null
+    }
+    refs.push({
+      owner: item['owner'],
+      repo: item['repo'],
+      number: item['number'],
+      url: item['url'],
+    })
+  }
+  return refs
 }
 
 function readCatalog(projectId: string): Map<string, CatalogEntry> {
@@ -847,6 +882,8 @@ function readCatalog(projectId: string): Map<string, CatalogEntry> {
       ) {
         continue
       }
+      const prRefs = parseCatalogPrRefs(value['prRefs'])
+      if (prRefs === null) continue
       const entry: CatalogEntry = {
         id: value['id'],
         title: value['title'],
@@ -854,6 +891,7 @@ function readCatalog(projectId: string): Map<string, CatalogEntry> {
         updatedAt: value['updatedAt'],
         digest: value['digest'],
         path: value['path'],
+        prRefs,
       }
       map.set(entry.id, entry)
     } catch {
@@ -870,12 +908,11 @@ function writeCatalog(projectId: string, entries: Map<string, CatalogEntry>): vo
 }
 
 function upsertCatalogEntry(projectId: string, thread: Thread): void {
-  // If the index file is missing, rebuild from dirs first so an external seed
-  // (thread dirs without catalog.jsonl) is not collapsed to this one entry.
-  // Incomplete-but-present files are healed on read via {@link ensureCatalogMap}.
-  const entries = existsSync(catalogPath(projectId))
-    ? readCatalog(projectId)
-    : rebuildCatalogFromDisk(projectId)
+  // Read through {@link ensureCatalogMap}, not `readCatalog`: a missing file
+  // (external seed — thread dirs without catalog.jsonl) or one whose lines this
+  // build rejects wholesale (a pre-`prRefs` catalog) must rebuild from dirs
+  // first, or writing back would collapse the index to this one entry.
+  const entries = ensureCatalogMap(projectId)
   const entry = catalogEntryOf(thread)
   if (entry === null) entries.delete(thread.id)
   else entries.set(thread.id, entry)
@@ -916,13 +953,13 @@ function catalogEntryFromDisk(projectId: string, threadId: string): CatalogEntry
     updatedAt: meta.updatedAt,
     digest,
     path: meta.id,
+    prRefs: meta.prRefs ?? [],
   }
 }
 
 function refreshCatalogLine(projectId: string, threadId: string): void {
-  const entries = existsSync(catalogPath(projectId))
-    ? readCatalog(projectId)
-    : rebuildCatalogFromDisk(projectId)
+  // Rebuild-on-read for the same reason as {@link upsertCatalogEntry}.
+  const entries = ensureCatalogMap(projectId)
   const entry = catalogEntryFromDisk(projectId, threadId)
   if (entry === null) {
     // Missing meta or archived — drop any stale catalog line.
@@ -1602,7 +1639,9 @@ export function deleteProjectThread(projectId: string, threadId: string): Promis
     const dir = threadDir(projectId, threadId)
     rmSync(dir, { recursive: true, force: true })
     invalidateKnownMessageIds(dir)
-    const entries = readCatalog(projectId)
+    // Same rebuild-on-read invariant as the other catalog writers: a stale
+    // (pre-`prRefs`) index read directly would be written back as empty.
+    const entries = ensureCatalogMap(projectId)
     if (entries.delete(threadId)) writeCatalog(projectId, entries)
     // Drop the thread's reverse-index entries too, so a deleted thread can't
     // keep badging a PR / offering an "open thread" jump to a ghost thread.
@@ -1871,7 +1910,14 @@ export function loadProjectCatalog(projectId: string, query?: string): Promise<T
         ? entries
         : entries.filter((e) => {
             const haystack = `${e.title}\n${e.digest}`.toLowerCase()
-            return terms.every((term) => haystack.includes(term))
+            // PR keys are `owner/repo#number`: a bare `2262`, a `#2262`, and a
+            // full `owner/repo#2262` all reach the same key, with a numeric term
+            // pinned to the whole number so `2262` does not also find #22620.
+            const keys = e.prRefs.map(githubPrKey)
+            return terms.every(
+              (term) =>
+                haystack.includes(term) || keys.some((key) => githubPrKeyMatchesTerm(key, term)),
+            )
           })
     return matched.map((e) => ({
       ...e,

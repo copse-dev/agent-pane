@@ -33,6 +33,7 @@ interface MockOpts {
 const ALL_UNCONFIGURED = {
   anthropic: false,
   openai: false,
+  'openai:gpt-6-astra': false,
   cursor: false,
   openrouter: false,
   perplexity: false,
@@ -674,7 +675,7 @@ describe('fetchModelOptions visibility', () => {
 
   it('annotates scored cloud models with intellect, blended price, and frontier', async () => {
     const options = await fetchModelOptions(
-      mockApi({ available: { anthropic: true, openai: true } }),
+      mockApi({ available: { anthropic: true, openai: true, 'openai:gpt-6-astra': true } }),
       '',
     )
     // Opus 5 joins the frontier at the same $9/MTok as Opus 4.8 but higher
@@ -692,6 +693,23 @@ describe('fetchModelOptions visibility', () => {
     const gpt4o = options.find((o) => o.value === 'gpt-4o')
     assert.ok(gpt4o)
     assert.equal(gpt4o.label, `GPT-4o — ${currentCloudIntellectHint('gpt-4o')}`)
+  })
+
+  it('only shows GPT-6 Astra when the OpenAI account advertises it', async () => {
+    const unavailable = await fetchModelOptions(mockApi({ available: { openai: true } }), '')
+    assert.equal(
+      unavailable.some((option) => option.value === 'gpt-6-astra'),
+      false,
+    )
+
+    const available = await fetchModelOptions(
+      mockApi({ available: { openai: true, 'openai:gpt-6-astra': true } }),
+      '',
+    )
+    assert.equal(
+      available.some((option) => option.value === 'gpt-6-astra'),
+      true,
+    )
   })
 
   it('keeps the current selection selectable even with no key', async () => {

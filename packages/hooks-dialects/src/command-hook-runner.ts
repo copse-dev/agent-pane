@@ -210,7 +210,7 @@ export function applySandboxBlock(
     parseOk: false,
     spineEvent: interpretation.spineEvent,
     spineDecision: { ...interpretation.spineDecision, sandboxBlocked: true },
-    runtimeError: `blocked by the macOS project sandbox (${detection.reasons.join('; ')})`,
+    runtimeError: `blocked by the project sandbox (${detection.reasons.join('; ')})`,
   }
 }
 

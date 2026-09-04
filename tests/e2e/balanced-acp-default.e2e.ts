@@ -75,16 +75,13 @@ describe('balanced new-thread default with subscription ACP agents', function ()
           command: 'claude-agent-acp',
           enabled: true,
           modelsProbedAt: Date.now(),
+          // Match the unit regression's Opus-versus-paid-route scenario. Other
+          // Claude candidates can legitimately win Balanced's price ranking.
           availableModels: [
             {
               value: 'opus[1m]',
               label: 'Opus (1M context)',
               description: 'Opus 5 with 1M context · Best for everyday, complex tasks',
-            },
-            {
-              value: 'sonnet',
-              label: 'Sonnet',
-              description: 'Sonnet 5 · Efficient for routine tasks',
             },
           ],
         },
@@ -105,7 +102,10 @@ describe('balanced new-thread default with subscription ACP agents', function ()
     // Dynamic selectors short-circuit under the mock LLM. This spec never sends
     // a prompt, so exercise the production resolver while keeping every network
     // dependency on the local OpenRouter server and deterministic plan mock.
-    writeE2eEnv({ COPSE_PANEL_MOCK_LLM: undefined, COPSE_PLAN_USAGE_MOCK: '1' })
+    // ChromeDriver inherits the worker's original environment. Removing the
+    // key here cannot unset that inherited value in the relaunched app; an
+    // explicit zero overrides it in electron-shell's bootstrap.
+    writeE2eEnv({ COPSE_PANEL_MOCK_LLM: '0', COPSE_PLAN_USAGE_MOCK: '1' })
     await browser.reloadSession()
   })
 
@@ -130,6 +130,8 @@ describe('balanced new-thread default with subscription ACP agents', function ()
     assert.ok((await trigger.getText()).includes('Claude Opus 5'))
 
     await trigger.click()
+    await $('.model-picker-browse').click()
+    await $('.model-picker-filter').waitForDisplayed()
     const claude = $(`.model-picker-option[data-value="${CLAUDE_ROUTE}"]`)
     const paidSol = $(`.model-picker-option[data-value="${OPENROUTER_ROUTE}"]`)
     await expect(claude).toBeDisplayed()
