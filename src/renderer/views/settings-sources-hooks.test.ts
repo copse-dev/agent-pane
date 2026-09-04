@@ -19,7 +19,7 @@ import { createPendingApi } from '../fake-api.test-support.ts'
 let lastTestRequest: unknown
 
 /**
- * Recursive never-settling stub (as in settings-dialog.test.ts) with the five
+ * Recursive never-settling stub (as in settings-dialog.test.ts) with the six
  * Sources list endpoints overridden so `refreshSources` can actually complete.
  * `hooks.test` (G2 dry-run) resolves to `testResult` and records its request.
  */
@@ -28,6 +28,7 @@ function stubApi(hooksResult: HooksListResult, testResult?: HookTestResult): Api
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
     'skills.list': () => Promise.resolve([]),
+    'agents.list': () => Promise.resolve({ agents: [], skipped: [], shadowed: [] }),
     'cursorPlugins.list': () => Promise.resolve([]),
     'hooks.list': () => Promise.resolve(hooksResult),
     'hooks.test': (req: unknown) => {

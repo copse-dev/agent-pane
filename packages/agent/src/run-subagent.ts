@@ -1,4 +1,4 @@
-import { errorMessage } from './internal-utils.ts'
+import { errorMessage } from '@copse/std/errors.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import { defaultMaxLlmCallsForSteps } from './agent-loop-limits.ts'
 import {
@@ -110,6 +110,10 @@ export interface RunSubagentOptions {
   localFallback?: boolean
   /** Session kind reported to the renderer (drives the tool card label). */
   kind?: SubagentSession['kind']
+  /** For `kind: 'custom'`, the definition's name — the card is labelled from it. */
+  agentName?: string
+  /** For `kind: 'custom'`, the definition's `color` frontmatter. */
+  agentColor?: string
   /**
    * Blocking `subagentStart` gate fired **before** the subagent spawns (D1).
    * Host-injected so `packages/agent` stays Electron-free (execution-guidance
@@ -142,6 +146,7 @@ const NO_SUMMARY_FALLBACK: Record<SubagentSession['kind'], string> = {
   explore: 'Exploration completed with no summary.',
   investigate_ci: 'Investigation completed with no findings report.',
   delegate: 'Worker finished with no report.',
+  custom: 'The agent finished without reporting anything back.',
 }
 
 function buildUserTask(prompt: string, parentGoal: string, paths?: string[]): string {
@@ -172,6 +177,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     usageModel,
     localFallback,
     kind = 'explore',
+    agentName,
+    agentColor,
     onSubagentStart,
     onSubagentStop,
   } = opts
@@ -186,6 +193,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     messages: [],
     ...(usageModel !== undefined ? { model: usageModel } : {}),
     ...(localFallback ? { localFallback: true } : {}),
+    ...(agentName !== undefined ? { agentName } : {}),
+    ...(agentColor !== undefined ? { agentColor } : {}),
   }
 
   // `subagentStart` gate (D1): fire the blocking hook **before** the spawn. A

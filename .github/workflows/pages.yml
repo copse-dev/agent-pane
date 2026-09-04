@@ -70,10 +70,10 @@ concurrency:
 
 jobs:
   deploy:
-    # CHECKS_RUNNER routes to the self-hosted check fleet when set (see
+    # SELF_HOSTED_CHECKS routes to the self-hosted check fleet when set (see
     # ci.yml's routing note); hosted otherwise. Trusted main-branch content
     # only, and deploy-pages/OIDC work fine from self-hosted runners.
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -146,8 +146,9 @@ jobs:
       # npm rather than pnpm because the scratch directory is not the project —
       # it has no lockfile and no workspace to honour, npm ships with the Node
       # that setup-node just installed, and this needs no corepack activation on
-      # the deploy path. `--ignore-scripts` runs no install hooks; all four are
-      # pure JS. The scratch prefix is what keeps the install from reconciling
+      # the deploy path. `--ignore-scripts` runs no install hooks; none of the four
+      # declares any (oxfmt ships its binary as a platform optionalDependency, not
+      # a postinstall download). The scratch prefix is what keeps the install from reconciling
       # against the repo's own manifest and pulling the whole tree in anyway.
       - name: Generate the site's Markdown twins
         run: |
@@ -157,7 +158,7 @@ jobs:
           mkdir -p "$deps"
           node -e '
             const manifest = require("./package.json")
-            const need = ["jsdom", "turndown", "zod", "prettier"]
+            const need = ["jsdom", "turndown", "zod", "oxfmt"]
             const dependencies = Object.fromEntries(need.map((name) => {
               const range = manifest.devDependencies?.[name] ?? manifest.dependencies?.[name]
               if (!range) throw new Error(name + " is not a dependency of this repo")

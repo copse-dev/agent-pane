@@ -10,7 +10,11 @@ import {
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
 
 export type PlanWorthItVerdictKind =
-  'worth_it' | 'borderline' | 'not_worth_it' | 'insufficient_history' | 'needs_fee'
+  | 'worth_it'
+  | 'borderline'
+  | 'not_worth_it'
+  | 'insufficient_history'
+  | 'needs_fee'
 
 /** Minimum completed weekly windows before a hard burn-vs-fee verdict. */
 export const PLAN_WORTH_IT_MIN_WEEKLY_SAMPLES = 2

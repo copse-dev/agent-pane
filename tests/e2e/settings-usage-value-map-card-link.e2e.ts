@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
@@ -98,13 +97,11 @@ describe('settings usage value map model card link', function () {
             : 'every pointer move landed but the card stayed hidden'),
       )
     }
-    // The card section arrives with the resolver's answer, one round-trip after
-    // the hover card itself opens.
     const link = tooltip.$('a.tt-card-link')
     await link.waitForDisplayed({ timeout: 5000, timeoutMsg: 'model-card link never resolved' })
-    assert.match(await link.getAttribute('href'), /^https:\/\//)
+    await expect(link).toHaveAttribute('href', expect.stringMatching(/^https:\/\//))
     // Opened by the shell, not navigated in-renderer.
-    assert.equal(await link.getAttribute('target'), '_blank')
+    await expect(link).toHaveAttribute('target', '_blank')
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-card-link.png')

@@ -2,6 +2,7 @@ import type { StreamChunk, ContextBreakdown } from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
+import type { AgentsListResult } from '@shared/types/agents.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type {
   HooksListResult,
@@ -39,7 +40,11 @@ import type {
   DeclaredMcpServer,
 } from '@shared/types/mcp.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
-import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
+import type {
+  CanvasArtefact,
+  CanvasArtefactIdentity,
+  CanvasArtefactSummary,
+} from '@shared/types/canvas.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import type {
   ExtraProvider,
@@ -74,7 +79,13 @@ export type { DetectedAcpAgent }
 
 /** Fixed cloud providers with a user-supplied API key (presets/customs use slugs). */
 export type ApiKeyProvider =
-  'anthropic' | 'openai' | 'cursor' | 'openrouter' | 'mistral' | 'gemini' | 'deepseek'
+  | 'anthropic'
+  | 'openai'
+  | 'cursor'
+  | 'openrouter'
+  | 'mistral'
+  | 'gemini'
+  | 'deepseek'
 
 export type { ExtraProvider, ExtraProviderModel, StoredExtraProvider }
 
@@ -115,6 +126,8 @@ export interface ApiClient {
     workspaceFileUrl: (projectId: string, threadId: string, path: string) => Promise<string>
     onOpenTab: (handler: (url: string) => void) => () => void
     onShowTab?: (handler: (url: string) => void) => () => void
+    /** A preview server served a file that just changed on disk. */
+    onPreviewStale?: (handler: (origin: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
     shareScreenshot: (webContentsId: number) => Promise<void>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void
@@ -223,6 +236,7 @@ export interface ApiClient {
         questions: { question: string; options?: string[] }[]
       }) => void,
     ) => () => void
+    onAskUserCancelled: (handler: (req: { id: string }) => void) => () => void
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => () => void
     onRefreshContextEstimate: (handler: () => void) => () => void
     /**
@@ -347,6 +361,13 @@ export interface ApiClient {
   canvas: {
     onArtefact: (handler: (artefact: CanvasArtefact) => void) => () => void
     onShowArtefact: (handler: (identity: CanvasArtefactIdentity) => void) => () => void
+    /** Artefacts this thread saved in any session, newest last. */
+    listArtefacts: (projectId: string, threadId: string) => Promise<CanvasArtefactSummary[]>
+    /**
+     * Render a saved artefact again; it arrives on {@link onArtefact} like a
+     * fresh one. False when nothing is stored under that title any more.
+     */
+    reopenArtefact: (projectId: string, threadId: string, title: string) => Promise<boolean>
   }
   storage: {
     get: (key: string) => Promise<unknown>
@@ -846,6 +867,10 @@ export interface ApiClient {
      * caller can show what would be destroyed and ask again.
      */
     remove: (projectId: string, path: string, force: boolean) => Promise<WorktreeRemovalResult>
+  }
+  /** Discovered subagent definitions, plus what was skipped or shadowed. */
+  agents: {
+    list: () => Promise<AgentsListResult>
   }
   skills: {
     list: () => Promise<SkillSummary[]>

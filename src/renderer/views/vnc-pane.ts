@@ -1,8 +1,8 @@
 import RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
-import { el, qsRequired } from '../dom/helpers.ts'
-import { closeIcon, plusIcon } from '../dom/icons.ts'
+import { el } from '../dom/helpers.ts'
+import { closeIcon, monitorIcon, plusIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
@@ -101,8 +101,15 @@ function mountVncSession(
   const machineSelect = el('select', {
     class: 'vnc-machine-select',
     'aria-label': 'Desktop machine',
+    hidden: true,
   })
   machineSelect.append(el('option', { value: LOCAL_MACHINE }, 'This machine'))
+  const devicesHeading = el('div', { class: 'vnc-devices-heading' }, 'Nearby and saved')
+  const deviceList = el('div', {
+    class: 'vnc-device-list',
+    role: 'list',
+    'aria-label': 'Desktop devices',
+  })
   const nearbyButton = el(
     'button',
     {
@@ -201,6 +208,42 @@ function mountVncSession(
     { class: 'vnc-network-warning', role: 'note', hidden: true },
     'Direct screen sharing is unencrypted. Only connect on a network you trust.',
   )
+  const setupUsernameInput = el('input', {
+    type: 'text',
+    class: 'vnc-auth-input vnc-setup-username-input',
+    autocomplete: 'username',
+    spellcheck: 'false',
+    placeholder: 'Username',
+    'aria-label': 'Username',
+  })
+  const setupUsernameField = el(
+    'label',
+    { class: 'vnc-field-label vnc-setup-username-field' },
+    'Username',
+    setupUsernameInput,
+  )
+  const setupPasswordInput = el('input', {
+    type: 'password',
+    class: 'vnc-auth-input vnc-setup-password-input',
+    maxlength: '4096',
+    autocomplete: 'current-password',
+    placeholder: 'Password',
+    'aria-label': 'Password',
+  })
+  const setupPasswordField = el(
+    'label',
+    { class: 'vnc-field-label vnc-setup-password-field' },
+    'Password',
+    setupPasswordInput,
+  )
+  const setupCredentialHint = el('p', { class: 'vnc-credential-hint' })
+  const setupCredentials = el(
+    'div',
+    { class: 'vnc-setup-credentials' },
+    setupUsernameField,
+    setupPasswordField,
+    setupCredentialHint,
+  )
   const usernameInput = el('input', {
     type: 'text',
     class: 'vnc-auth-input vnc-username-input',
@@ -276,23 +319,52 @@ function mountVncSession(
     },
     'Forget saved login',
   )
-  const statusTitle = el('div', { class: 'vnc-status-title' }, 'Not connected')
-  const statusDetail = el('div', { class: 'vnc-status-detail', hidden: true })
-  const status = el('div', { class: 'vnc-status', role: 'status' }, statusTitle, statusDetail)
-  const setupFields = el(
+  const setupForgetLoginButton = el(
+    'button',
+    {
+      type: 'button',
+      class: 'vnc-setup-forget-login',
+    },
+    'Forget login',
+  )
+  const savedLoginCopy = el('span', { class: 'vnc-saved-login-copy' })
+  const savedLoginDetails = el(
     'div',
-    { class: 'vnc-setup-fields' },
-    el('label', { class: 'vnc-field-label' }, 'Machine', machineSelect),
-    nearbyStatus,
-    nearbyButton,
+    { class: 'vnc-saved-login', hidden: true },
+    savedLoginCopy,
+    setupForgetLoginButton,
+  )
+  const selectedDetails = el(
+    'div',
+    { class: 'vnc-device-details' },
     addressField,
     discoveryStatus,
     discoverButton,
     discoveredPorts,
+    savedLoginDetails,
+    setupCredentials,
     advancedSettings,
     networkWarning,
+    connectButton,
   )
-  const form = el('div', { class: 'vnc-connect-form' }, setupFields, authPanel, connectButton)
+  const statusTitle = el('div', { class: 'vnc-status-title' })
+  const statusDetail = el('div', { class: 'vnc-status-detail', hidden: true })
+  const status = el(
+    'div',
+    { class: 'vnc-status', role: 'status', hidden: true },
+    statusTitle,
+    statusDetail,
+  )
+  const nearbyFeedback = el('div', { class: 'vnc-nearby-feedback' }, nearbyStatus, nearbyButton)
+  const setupFields = el(
+    'div',
+    { class: 'vnc-setup-fields' },
+    devicesHeading,
+    nearbyFeedback,
+    deviceList,
+    machineSelect,
+  )
+  const form = el('div', { class: 'vnc-connect-form' }, setupFields, authPanel)
   const note = el(
     'p',
     { class: 'vnc-view-only-note' },
@@ -335,6 +407,7 @@ function mountVncSession(
   let activeTarget: VncTarget | null = null
   let authenticationUsername = ''
   let authenticationPassword = ''
+  let authenticationPasswordWasRemembered = false
   let submittedUsername: string | null = null
   let submittedPassword: string | null = null
   let usedRememberedPassword = false
@@ -343,6 +416,94 @@ function mountVncSession(
   let connectedMachineName: string | null = null
   let controlEnabled = false
   let usernameSaveDetail = ''
+  let selectedHasSavedPassword = false
+  let selectedSavedUsername = ''
+
+  function machinePresentation(value: string): { name: string; meta: string } {
+    if (value === LOCAL_MACHINE) return { name: 'This machine', meta: 'This device' }
+    if (value === MANUAL_MACHINE) {
+      return { name: 'Add device', meta: 'Connect with an address' }
+    }
+    if (value.startsWith(NEARBY_MACHINE_PREFIX)) {
+      const index = Number.parseInt(value.slice(NEARBY_MACHINE_PREFIX.length), 10)
+      const server = nearbyServers[index]
+      return server
+        ? { name: server.name, meta: `Nearby · ${server.host}:${String(server.port)}` }
+        : { name: 'Nearby device', meta: 'Nearby' }
+    }
+    if (value.startsWith(SSH_MACHINE_PREFIX)) {
+      const hostId = value.slice(SSH_MACHINE_PREFIX.length)
+      const host = sshHosts.find((candidate) => candidate.id === hostId)
+      if (host) {
+        const address = host.user ? `${host.user}@${host.host}` : host.host
+        return { name: host.label, meta: `Saved SSH · ${address}` }
+      }
+    }
+    return { name: 'Desktop', meta: 'Saved device' }
+  }
+
+  function renderSelectedLogin(): void {
+    savedLoginDetails.hidden = !selectedHasSavedPassword
+    setupCredentials.hidden = selectedHasSavedPassword
+    connectButton.textContent = selectedHasSavedPassword ? 'Connect' : 'Sign in & connect'
+    setupCredentialHint.textContent = secureCredentialStorage
+      ? 'Your login is stored securely after a successful connection.'
+      : 'Your login is used for this connection only.'
+    if (!selectedHasSavedPassword) return
+    savedLoginCopy.replaceChildren(
+      selectedSavedUsername
+        ? el('span', {}, 'Signed in as ', el('strong', {}, selectedSavedUsername))
+        : el('span', {}, 'Saved login'),
+    )
+  }
+
+  function renderDeviceList(): void {
+    deviceList.replaceChildren()
+    for (const option of machineSelect.options) {
+      const value = option.value
+      const selected = value === machineSelect.value
+      const { name, meta } = machinePresentation(value)
+      const icon = el(
+        'span',
+        { class: 'vnc-device-icon', 'aria-hidden': 'true' },
+        value === MANUAL_MACHINE
+          ? plusIcon('ui-icon ui-icon-sm')
+          : monitorIcon('ui-icon ui-icon-sm'),
+      )
+      const header = el(
+        'button',
+        {
+          type: 'button',
+          class: 'vnc-device-header',
+          'aria-expanded': String(selected),
+          'data-machine': value,
+        },
+        icon,
+        el(
+          'span',
+          { class: 'vnc-device-copy' },
+          el('span', { class: 'vnc-device-name' }, name),
+          el('span', { class: 'vnc-device-meta' }, meta),
+        ),
+      )
+      const item = el(
+        'article',
+        { class: `vnc-device${selected ? ' is-selected' : ''}`, role: 'listitem' },
+        header,
+      )
+      if (selected) item.append(selectedDetails)
+      header.addEventListener('click', () => {
+        machineSelect.value = value
+        machineSelect.dispatchEvent(new Event('change', { bubbles: true }))
+        if (value === MANUAL_MACHINE) {
+          queueMicrotask(() => {
+            addressInput.focus({ preventScroll: true })
+          })
+        }
+      })
+      deviceList.append(item)
+    }
+  }
 
   function setSessionUi(active: boolean, connected = false): void {
     controlsRoot.scrollTop = 0
@@ -355,9 +516,14 @@ function mountVncSession(
     disconnectButton.textContent = connected ? 'Disconnect' : 'Cancel'
     portInput.disabled = active
     addressInput.disabled = active
+    setupUsernameInput.disabled = active
+    setupPasswordInput.disabled = active
     machineSelect.disabled = active
     discoverButton.disabled = active
     nearbyButton.disabled = active
+    for (const button of deviceList.querySelectorAll<HTMLButtonElement>('.vnc-device-header')) {
+      button.disabled = active
+    }
     for (const button of discoveredPorts.querySelectorAll<HTMLButtonElement>('button')) {
       button.disabled = active
     }
@@ -441,6 +607,7 @@ function mountVncSession(
     activeTarget = null
     authenticationUsername = ''
     authenticationPassword = ''
+    authenticationPasswordWasRemembered = false
     submittedUsername = null
     submittedPassword = null
     usedRememberedPassword = false
@@ -493,7 +660,7 @@ function mountVncSession(
       if (requiredCredentials.has('username')) credentials.username = authenticationUsername
       if (requiredCredentials.has('password')) {
         credentials.password = authenticationPassword
-        usedRememberedPassword = true
+        usedRememberedPassword = authenticationPasswordWasRemembered
       }
       sendCredentials(credentials)
       return true
@@ -554,7 +721,9 @@ function mountVncSession(
       }
       credentials.password = password
       usedRememberedPassword =
-        authenticationPassword.length > 0 && password === authenticationPassword
+        authenticationPasswordWasRemembered &&
+        authenticationPassword.length > 0 &&
+        password === authenticationPassword
       submittedPassword = rememberPasswordInput.checked ? password : null
       if (authenticationPassword && password !== authenticationPassword && activeTarget) {
         void api.vnc.forgetPassword(activeTarget)
@@ -617,6 +786,7 @@ function mountVncSession(
     if ([...machineSelect.options].some((option) => option.value === preferred)) {
       machineSelect.value = preferred
     }
+    renderDeviceList()
   }
 
   function applyNearbyDedupe(): void {
@@ -624,19 +794,10 @@ function mountVncSession(
   }
 
   function updateNearbyStatus(): void {
-    const hiddenBySsh = allNearbyServers.length - nearbyServers.length
-    nearbyStatus.dataset['kind'] = nearbyServers.length > 0 ? 'ok' : 'idle'
-    if (allNearbyServers.length === 0) {
-      nearbyStatus.textContent = 'No nearby desktops found. Use Other address if you know its IP.'
-    } else if (nearbyServers.length === 0) {
-      nearbyStatus.textContent = 'Nearby desktops are already listed as saved SSH machines.'
-    } else {
-      const nearby = `${String(nearbyServers.length)} nearby ${nearbyServers.length === 1 ? 'device' : 'devices'} found.`
-      nearbyStatus.replaceChildren(el('div', {}, nearby))
-      if (hiddenBySsh > 0) {
-        nearbyStatus.append(el('div', {}, `${String(hiddenBySsh)} matched to saved SSH.`))
-      }
-    }
+    nearbyFeedback.hidden = allNearbyServers.length > 0
+    nearbyStatus.dataset['kind'] = 'idle'
+    nearbyStatus.textContent =
+      'No nearby desktops found. Add a device if you know its hostname or IP address.'
   }
 
   function preferredMachineAfterDedupe(
@@ -687,10 +848,16 @@ function mountVncSession(
     const machineChanged = machine !== displayedMachine
     displayedMachine = machine
     const network = isNetworkMachine(machine)
-    addressField.hidden = !network
+    addressField.hidden = machine !== MANUAL_MACHINE
     networkWarning.hidden = !network
     discoverButton.hidden = true
     discoveryStatus.hidden = network
+    if (machineChanged) {
+      setupUsernameInput.value = ''
+      setupPasswordInput.value = ''
+      selectedHasSavedPassword = false
+      selectedSavedUsername = ''
+    }
     if (network) {
       discoveryGeneration++
       renderDiscoveredPorts([])
@@ -702,6 +869,8 @@ function mountVncSession(
     } else if (machineChanged) {
       portInput.value = '5900'
     }
+    renderSelectedLogin()
+    renderDeviceList()
     void refreshSavedLogin()
   }
 
@@ -733,14 +902,30 @@ function mountVncSession(
       activeTarget ??
       (Number.isInteger(port) && port >= 1 && port <= 65_535 ? selectedTarget(port) : null)
     if (!target) {
+      selectedHasSavedPassword = false
+      selectedSavedUsername = ''
       forgetLoginButton.hidden = true
+      renderSelectedLogin()
       return
     }
     try {
-      const saved = await api.vnc.hasPassword(target)
-      if (generation === savedLoginGeneration) forgetLoginButton.hidden = !saved
+      const [saved, rememberedUsername] = await Promise.all([
+        api.vnc.hasPassword(target),
+        api.vnc.getUsername(target).catch(() => null),
+      ])
+      if (generation !== savedLoginGeneration) return
+      const username = preferredVncUsername(target, sshHosts, rememberedUsername)
+      selectedHasSavedPassword = saved
+      selectedSavedUsername = username
+      if (!saved && !setupUsernameInput.value) setupUsernameInput.value = username
+      forgetLoginButton.hidden = !saved
+      renderSelectedLogin()
     } catch {
-      if (generation === savedLoginGeneration) forgetLoginButton.hidden = true
+      if (generation !== savedLoginGeneration) return
+      selectedHasSavedPassword = false
+      selectedSavedUsername = ''
+      forgetLoginButton.hidden = true
+      renderSelectedLogin()
     }
   }
 
@@ -818,6 +1003,7 @@ function mountVncSession(
     const generation = ++nearbyGeneration
     const previous = machineSelect.value
     const previousNearby = selectedNearbyServer()
+    nearbyFeedback.hidden = false
     nearbyButton.hidden = true
     nearbyButton.disabled = true
     nearbyStatus.dataset['kind'] = 'working'
@@ -891,10 +1077,16 @@ function mountVncSession(
         api.vnc.getUsername(target).catch(() => null),
         api.vnc.getPassword(target).catch(() => null),
       ])
-      authenticationUsername = preferredVncUsername(target, sshHosts, rememberedUsername)
-      authenticationPassword = rememberedPassword ?? ''
-      submittedUsername = null
-      submittedPassword = null
+      const enteredUsername = setupUsernameInput.value.trim()
+      const enteredPassword = setupPasswordInput.value
+      setupPasswordInput.value = ''
+      authenticationUsername =
+        (rememberedUsername?.trim() ?? enteredUsername) ||
+        preferredVncUsername(target, sshHosts, null)
+      authenticationPassword = rememberedPassword ?? enteredPassword
+      authenticationPasswordWasRemembered = rememberedPassword !== null
+      submittedUsername = rememberedUsername === null && enteredUsername ? enteredUsername : null
+      submittedPassword = rememberedPassword === null && enteredPassword ? enteredPassword : null
       usedRememberedPassword = false
       forgetLoginButton.hidden = rememberedPassword === null
       const connection = await api.vnc.open(target)
@@ -946,6 +1138,7 @@ function mountVncSession(
         const password = submittedPassword
         submittedPassword = null
         authenticationPassword = ''
+        authenticationPasswordWasRemembered = false
         usedRememberedPassword = false
         if (password) {
           void api.vnc
@@ -1010,6 +1203,7 @@ function mountVncSession(
           forgetLoginButton.hidden = true
         }
         authenticationPassword = ''
+        authenticationPasswordWasRemembered = false
         submittedPassword = null
         usedRememberedPassword = false
         hideAuthentication()
@@ -1085,7 +1279,7 @@ function mountVncSession(
     setControlEnabled(!controlEnabled)
   })
   authenticateButton.addEventListener('click', submitCredentials)
-  forgetLoginButton.addEventListener('click', () => {
+  const forgetLogin = (): void => {
     const port = Number.parseInt(portInput.value, 10)
     const target =
       activeTarget ??
@@ -1097,15 +1291,21 @@ function mountVncSession(
         savedLoginGeneration++
         authenticationUsername = ''
         authenticationPassword = ''
+        authenticationPasswordWasRemembered = false
         submittedUsername = null
         submittedPassword = null
+        selectedHasSavedPassword = false
+        selectedSavedUsername = ''
         forgetLoginButton.hidden = true
+        renderSelectedLogin()
         showToast('Forgot the saved desktop login.', { durationMs: 2_000 })
       })
       .catch(() => {
         showToast('Could not forget the saved desktop login.', { variant: 'error' })
       })
-  })
+  }
+  forgetLoginButton.addEventListener('click', forgetLogin)
+  setupForgetLoginButton.addEventListener('click', forgetLogin)
   discoverButton.addEventListener('click', () => {
     void discoverSelectedMachine()
   })
@@ -1130,6 +1330,11 @@ function mountVncSession(
   addressInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') void connect()
   })
+  for (const input of [setupUsernameInput, setupPasswordInput]) {
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') void connect()
+    })
+  }
   for (const input of [usernameInput, passwordInput, targetInput]) {
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') submitCredentials()
@@ -1172,7 +1377,7 @@ function mountVncSession(
   })
 
   setSessionUi(false)
-  qsRequired<HTMLInputElement>(form, '.vnc-port-input').value = '5901'
+  portInput.value = '5901'
   void loadMachines()
 
   return {

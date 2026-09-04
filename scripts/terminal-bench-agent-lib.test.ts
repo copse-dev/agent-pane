@@ -10,6 +10,7 @@ import {
   TERMINAL_STUCK_TOOL_RECOVERY_NUDGE,
   terminalCommandTimeoutParameter,
   terminalBenchProfileToolNames,
+  terminalBenchSystemPrompt,
   terminalReasoningRunawayRecoveryNudge,
   terminalReasoningCheckpointPolicy,
   terminalRecoveryWriteBlockReason,
@@ -23,7 +24,7 @@ import {
   terminalWorkspaceWriteFileCommand,
 } from './terminal-bench-agent-lib.mts'
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
-import { MAX_STREAM_OUTPUT_TOKENS } from '../packages/agent/src/agent-loop-limits.ts'
+import { MAX_STREAM_OUTPUT_TOKENS } from '@copse/agent/agent-loop-limits.ts'
 
 describe('terminal benchmark bridge', () => {
   it('keeps versioned profiles isolated and content-addressed', () => {
@@ -65,6 +66,20 @@ describe('terminal benchmark bridge', () => {
       terminalBenchProfile('product-aligned@1').contentHash,
       '9880c6ed0d8fac7b93eb5a8d842ce813ae1aeaa430110dc2eb394ab482774aaa',
     )
+  })
+
+  it('writes workspace paths containing replacement tokens literally', () => {
+    const profile = terminalBenchProfile('product-aligned')
+    for (const workspace of [
+      '/tmp/work$&space',
+      '/tmp/work$$space',
+      String.raw`/tmp/work$\`space`,
+      String.raw`/tmp/work$'space`,
+    ]) {
+      const prompt = terminalBenchSystemPrompt(profile, workspace)
+      assert.ok(prompt.includes(`Working directory: ${workspace}`))
+      assert.doesNotMatch(prompt, /\{WORKSPACE_ROOT\}/)
+    }
   })
 
   it('marks nonzero shell exits as errors only in the product-aligned profile', () => {

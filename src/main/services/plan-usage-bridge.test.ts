@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { readFileSync } from 'node:fs'
+import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import {
   discoverPlanUsageCredentials,
@@ -11,6 +12,7 @@ import {
   loadPlanUsageSnapshot,
   PLAN_USAGE_CACHE_TTL_MS,
   persistRefreshedClaudeToken,
+  setPlanUsageSnapshotFetcherForTest,
   updateClaudeOAuthJson,
 } from './plan-usage-bridge.ts'
 
@@ -312,6 +314,25 @@ describe('persistRefreshedClaudeToken', () => {
 })
 
 describe('loadPlanUsageSnapshot', () => {
+  const snapshot = (checkedAt: string): PlanUsageSnapshot => ({ checkedAt, providers: [] })
+
+  const deferredSnapshot = (): {
+    promise: Promise<PlanUsageSnapshot>
+    resolve: (snapshot: PlanUsageSnapshot) => void
+  } => {
+    let resolvePromise: ((snapshot: PlanUsageSnapshot) => void) | undefined
+    const promise = new Promise<PlanUsageSnapshot>((resolve) => {
+      resolvePromise = resolve
+    })
+    return {
+      promise,
+      resolve: (value): void => {
+        if (!resolvePromise) assert.fail('Deferred snapshot resolver was not initialized')
+        resolvePromise(value)
+      },
+    }
+  }
+
   it('returns the mock fixture when COPSE_PLAN_USAGE_MOCK=1', async () => {
     const prev = process.env['COPSE_PLAN_USAGE_MOCK']
     process.env['COPSE_PLAN_USAGE_MOCK'] = '1'
@@ -386,6 +407,73 @@ describe('loadPlanUsageSnapshot', () => {
       if (prev === undefined) delete process.env['COPSE_PLAN_USAGE_MOCK']
       else process.env['COPSE_PLAN_USAGE_MOCK'] = prev
       invalidatePlanUsageCache()
+    }
+  })
+
+  it('keeps an older request from replacing a newer forced refresh', async () => {
+    const older = deferredSnapshot()
+    const newer = deferredSnapshot()
+    let calls = 0
+    setPlanUsageSnapshotFetcherForTest(() => {
+      calls += 1
+      return calls === 1 ? older.promise : newer.promise
+    })
+    try {
+      const olderLoad = loadPlanUsageSnapshot()
+      const newerLoad = loadPlanUsageSnapshot({ force: true })
+      newer.resolve(snapshot('newer'))
+      assert.equal((await newerLoad).checkedAt, 'newer')
+      older.resolve(snapshot('older'))
+      assert.equal((await olderLoad).checkedAt, 'older')
+
+      assert.equal((await loadPlanUsageSnapshot()).checkedAt, 'newer')
+      assert.equal(calls, 2)
+    } finally {
+      setPlanUsageSnapshotFetcherForTest(null)
+    }
+  })
+
+  it('keeps newer refresh ownership when an older request finishes first', async () => {
+    const older = deferredSnapshot()
+    const newer = deferredSnapshot()
+    let calls = 0
+    setPlanUsageSnapshotFetcherForTest(() => {
+      calls += 1
+      return calls === 1 ? older.promise : newer.promise
+    })
+    try {
+      const olderLoad = loadPlanUsageSnapshot()
+      const newerLoad = loadPlanUsageSnapshot({ force: true })
+      older.resolve(snapshot('older'))
+      assert.equal((await olderLoad).checkedAt, 'older')
+
+      const joinedLoad = loadPlanUsageSnapshot()
+      assert.equal(calls, 2)
+      newer.resolve(snapshot('newer'))
+      assert.equal((await newerLoad).checkedAt, 'newer')
+      assert.equal((await joinedLoad).checkedAt, 'newer')
+    } finally {
+      setPlanUsageSnapshotFetcherForTest(null)
+    }
+  })
+
+  it('does not let an invalidated request repopulate the cache', async () => {
+    const stale = deferredSnapshot()
+    let calls = 0
+    setPlanUsageSnapshotFetcherForTest(() => {
+      calls += 1
+      return calls === 1 ? stale.promise : Promise.resolve(snapshot('fresh'))
+    })
+    try {
+      const staleLoad = loadPlanUsageSnapshot()
+      invalidatePlanUsageCache()
+      stale.resolve(snapshot('stale'))
+      assert.equal((await staleLoad).checkedAt, 'stale')
+
+      assert.equal((await loadPlanUsageSnapshot()).checkedAt, 'fresh')
+      assert.equal(calls, 2)
+    } finally {
+      setPlanUsageSnapshotFetcherForTest(null)
     }
   })
 })

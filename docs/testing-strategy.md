@@ -45,8 +45,8 @@ that call—checking only `src/` can hide a test-only field rather than validate
 
 ## Run the smallest set of tests
 
-Steering for _how much to run, and when_. A full `npm test` is ~3 minutes over
-530 files; the tests that can actually fail on a given change are usually a
+Steering for _how much to run, and when_. A full `npm test` is a few minutes over
+800+ files; the tests that can actually fail on a given change are usually a
 handful. Running the whole suite after every edit is the slow way to be wrong
 about the same three assertions.
 
@@ -64,10 +64,10 @@ The loop, cheapest first:
 `.copse/hooks.json`, `.cursor/hooks.json` and `.claude/settings.json` wire
 `scripts/hook-file-check.mts` to the post-edit hook, so **every file you edit is
 already reformatted and lint-checked** before you read the tool result. Don't
-spend a turn running Prettier on a file you just touched — and if the hook said
+spend a turn running the formatter on a file you just touched — and if the hook said
 nothing at all, it is clean.
 
-**Prettier is auto-applied; ESLint is not.** Formatting is deterministic and
+**Formatting is auto-applied; ESLint is not.** Formatting is deterministic and
 semantically neutral, so fixing it costs an agent turn and buys nothing —
 `afterFileEdit` is the formatter event, and `after-file-edit.ts` awaits blocking
 hooks precisely so a formatter lands before the agent proceeds. `eslint --fix`
@@ -79,7 +79,7 @@ A rewrite is **always** reported, even when there is nothing else to say, becaus
 it makes your copy of the file stale — a later edit matching against remembered
 text would fail against content you never saw. Re-read the file when you see it.
 
-Coverage is a fast subset by construction: Prettier plus the **type-unaware**
+Coverage is a fast subset by construction: oxfmt plus the **type-unaware**
 ESLint rules (`eslint.hook.config.mjs`). Type-aware rules and `tsc` need the whole
 TypeScript program — ~10s for a single file — which is too slow to run per edit,
 so they stay in `npm run check`. The hook says so in its own output; treat a
@@ -99,6 +99,11 @@ npm test -- 'src/main/services/hooks/**'  # glob
 A filter that matches nothing is an **error**, not an empty pass — otherwise a
 typo reads as "0 tests, all green". The runner prints what it selected and
 suggests near misses.
+
+Each selected file remains an independent Node test entry/process. esbuild emits
+their common application graph once as split ESM chunks rather than inlining it
+into every entry, and the runner caps file concurrency at four so subprocess-heavy
+suites do not miss fixed safety deadlines under host load.
 
 ### Before believing it works: the oracle
 
@@ -354,13 +359,13 @@ When you add an e2e screenshot, ask: _if I rebuild this on a different branch,
 on a different day, on a different machine — does any pixel move?_ If yes, pin
 the source through a fixture or an e2e env override before committing the PNG.
 
-CI's `commit-screenshots` job auto-commits re-rendered shots **only when the
-write is uncontested**: the baseline is brand new or inherited untouched from
-main. A shot deliberately committed on the PR branch (by any non-bot author),
-or one main has changed since the merge-base, is never overridden — the
-branch's committed version stands, and the PR comment shows a base-vs-branch
-comparison instead. Add the `update-screenshots` label to explicitly regenerate
-and take CI's render (`scripts/filter-screenshots.mts` implements the policy).
+CI never writes rendered PNGs back to a PR branch. Successful e2e shards upload
+their changed shots, and `screenshot-artifacts` combines them into the immutable
+`reference-screenshot-candidates-<run-id>` artifact. Download that artifact,
+copy its `tests/e2e/screenshots/` contents into the checkout, review the image
+diff, and commit only the intentional updates. `pnpm run filter:screenshots` is
+available locally after copying the candidates to discard known render noise
+and shots outside the diff's ownership map; it is an aid, not an author.
 
 ## Where each tier runs: `main` and `release`
 
@@ -371,47 +376,51 @@ cut from.
 | Event                                     | Tier                                           |
 | ----------------------------------------- | ---------------------------------------------- |
 | PR into `main`, oracle thinned it         | light **plus the e2e subset the oracle chose** |
-| PR into `main`, oracle says `full`        | light — precheck, check, build (no e2e/bench)  |
+| PR into `main`, oracle says `full`        | light **plus full e2e** (8 shards; no bench)   |
 | Push to `main` (a merge landed)           | light                                          |
 | PR from `main` into `release` (promotion) | **full** — adds e2e (8 shards) and bench       |
 | Push to `release` (a promotion landed)    | **full**                                       |
 | Nightly `schedule`, release tags          | **full**, on GitHub-hosted runners             |
 
-The point is that bench, and the _whole_ e2e suite, are paid once per
-_promotion_ rather than once per PR. At ~20 merges a day that is the difference
-between ~20 heavy runs and a handful.
+The semantic and agent benchmark tier is paid once per _promotion_ rather than
+once per PR. Full e2e is also repeated at promotion, but it first runs on any PR
+whose change cannot be bounded safely to a subset.
 
-A PR the oracle can thin is the exception, and a deliberately cheap one. `subset`
-is only emitted when the change is not broad, confidence is not `low`, and the
-selection is **at most half the suite** (`computePlan` in `scripts/test-oracle.mts`)
-— so those PRs get their own specs back without anyone paying for a full run, and
-the shard matrix is already sized to the plan. Everything the oracle refuses to
-thin still comes back as `full` and still waits for the promotion, the nightly, or
-a label.
+A PR the oracle can thin is the deliberately cheap path. `subset` is only emitted
+when the change is not broad, confidence is not `low`, and the selection is **at
+most half the suite** (`computePlan` in `scripts/test-oracle.mts`) — so those PRs
+get their own specs back without anyone paying for a full run, and the shard
+matrix is already sized to the plan. Everything the oracle refuses to thin comes
+back as `full` and runs all eight shards before merge. Uncertainty increases the
+gate; it never suppresses it.
 
 Two consequences of running e2e on those PRs, both intended:
 
 - a failing subset turns `CI Passed` red on an ordinary `main` PR, where before
   e2e could not fail one at all; and
-- `commit-screenshots` now runs there too, so reference shots touched by the
-  specs that ran are refreshed automatically. It only copies shots the shards
-  actually produced and still reverts sub-threshold noise and contested
-  baselines, so a subset run cannot prune or overwrite shots it never rendered.
+- `screenshot-artifacts` preserves reference shots touched by the specs that ran
+  as immutable review evidence. It only includes shots the shards actually
+  produced, and never edits the branch. A separate trusted `workflow_run`
+  publishes same-repository candidates on a bot-owned branch, opens a child PR
+  into the source branch, and links that review PR from the parent. Merging the
+  child applies the reviewed PNGs without granting write credentials to the job
+  that executed PR code. Forks and promotion PRs sourced from an integration
+  branch keep the downloadable-artifact/manual path.
 
 Two escape hatches on a `main`-targeted PR, both labels:
 
-- `ci-full` — run the whole heavy tier now, for a change that genuinely needs
-  the signal before it merges (also forces the tier on a draft).
-- `update-screenshots` — run e2e specifically, because the screenshot commit is
-  produced by the e2e run. Without this the label would be inert on a
-  `main` PR.
+- `ci-full` — override a subset plan and run the whole heavy tier now, for a
+  change that genuinely needs the signal before it merges (also forces the tier
+  on a draft).
+- `update-screenshots` — run e2e specifically and render the complete reference
+  set into a candidate artifact and screenshot review PR. Remove the label after
+  the review PR is created.
 
-**What this costs.** GitHub's merge queue would bisect a failing batch
-automatically; a red promotion names a batch, not a commit. Keep promotions
-frequent enough that the batch stays small, and read the failing e2e spec name
-first — it usually identifies its own owner. There is no merge queue to fall
-back on: it requires GitHub Enterprise Cloud for private repositories and this
-org is on Team.
+**What this costs.** Broad and LOW-confidence PRs pay for the complete Electron
+suite. That is intentional: those are the changes for which a selector-derived
+subset has the weakest evidence. Promotion still repeats the full suite as a
+release-branch/environment gate, but a red promotion should no longer be the
+first time an ordinary merged change meets e2e.
 
 **Hotfixes.** A commit pushed straight to `release` must be merged back into
 `main` immediately, or the branches drift and the next promotion carries a

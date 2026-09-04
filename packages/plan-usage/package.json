@@ -7,6 +7,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./*.ts": "./src/*.ts",
     "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@copse/std": "workspace:*"
   }
 }

@@ -84,9 +84,16 @@ let cache: {
   at: number
   models: CursorCloudModelOption[]
 } | null = null
+let cacheGeneration = 0
+const inflight = new Map<
+  string,
+  { generation: number; token: symbol; promise: Promise<CursorCloudModelOption[]> }
+>()
 
 export function invalidateCursorCloudModelsCache(): void {
+  cacheGeneration += 1
   cache = null
+  inflight.clear()
 }
 
 /** Recommended Cursor Cloud Agent models for the picker (cached). */
@@ -100,17 +107,27 @@ export async function listCursorCloudModels(options?: {
   const cacheKey = `${baseUrl}\0${apiKey}`
   const now = Date.now()
   if (cache && cache.key === cacheKey && now - cache.at < MODELS_TTL_MS) return cache.models
+  const existing = inflight.get(cacheKey)
+  if (existing?.generation === cacheGeneration) return existing.promise
 
-  try {
-    const models = await fetchCursorCloudModels({
-      baseUrl,
-      apiKey,
-      ...(options?.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
-    })
-    cache = { key: cacheKey, at: now, models }
-    return models
-  } catch (err) {
-    console.warn('[cursor-cloud-models] catalog fetch failed:', err)
-    return []
-  }
+  const generation = cacheGeneration
+  const token = Symbol(cacheKey)
+  const promise = (async (): Promise<CursorCloudModelOption[]> => {
+    try {
+      const models = await fetchCursorCloudModels({
+        baseUrl,
+        apiKey,
+        ...(options?.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+      })
+      if (generation === cacheGeneration) cache = { key: cacheKey, at: now, models }
+      return models
+    } catch (err) {
+      console.warn('[cursor-cloud-models] catalog fetch failed:', err)
+      return []
+    } finally {
+      if (inflight.get(cacheKey)?.token === token) inflight.delete(cacheKey)
+    }
+  })()
+  inflight.set(cacheKey, { generation, token, promise })
+  return promise
 }

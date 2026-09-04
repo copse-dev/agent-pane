@@ -92,6 +92,205 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('loads a fresh tab once instead of reloading the page it just committed', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    const api = createPendingApi({
+      'fs.readFile': async (): Promise<string> => '',
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      // Count reloads from before the first `dom-ready`: two handlers wait on
+      // that event, and the bug was the second one reloading what the first had
+      // just committed — a double load of every freshly opened page.
+      const webview = qsRequired<FakeWebview>(viewer, '.browser-webview')
+      let reloads = 0
+      webview.reload = (): void => {
+        reloads += 1
+      }
+
+      openBrowserUrl(store, 'https://example.com/docs')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      assert.equal(reloads, 0)
+      assert.equal(webview.getAttribute('src'), 'https://example.com/docs')
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
+  it('reuses the tab already showing a URL the agent asks to show again', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'browser',
+    })
+    let showTab: ((url: string) => void) | undefined
+    const api = createPendingApi({
+      'browser.onShowTab': (handler: (url: string) => void): (() => void) => {
+        showTab = handler
+        return (): void => {}
+      },
+      'fs.readFile': async (): Promise<string> => '',
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      assert.ok(showTab)
+      showTab('http://localhost:4321/demo.html')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      // Land the first load so the tab reports the URL the way a real webview
+      // does — committed on the element, with nothing left queued.
+      const webview = qsRequired<FakeWebview>(
+        viewer,
+        '.browser-tab-panel.is-active .browser-webview',
+      )
+      stubWebviewMethods(webview)
+      let reloads = 0
+      webview.getURL = (): string => webview.src || 'about:blank'
+      webview.reload = (): void => {
+        reloads += 1
+      }
+      webview.dispatchEvent(new Event('dom-ready'))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 2)
+
+      // The agent re-serves the same URL after editing the page. That is a new
+      // version of what the user is already looking at, not a second thing.
+      showTab('http://localhost:4321/demo.html')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 2)
+      assert.equal(reloads, 1)
+      const input = qsRequired<HTMLInputElement>(
+        viewer,
+        '.browser-tab-panel.is-active .browser-url-input',
+      )
+      assert.equal(input.value, 'http://localhost:4321/demo.html')
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
+  it('reloads a stale preview in place without pulling its tab forward', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    let previewStale: ((origin: string) => void) | undefined
+    const api = createPendingApi({
+      'browser.onPreviewStale': (handler: (origin: string) => void): (() => void) => {
+        previewStale = handler
+        return (): void => {}
+      },
+      'fs.readFile': async (): Promise<string> => '',
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      openBrowserUrl(store, 'http://localhost:4321/scratch/demo.html')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const preview = qsRequired<FakeWebview>(
+        viewer,
+        '.browser-tab-panel.is-active .browser-webview',
+      )
+      stubWebviewMethods(preview)
+      let reloads = 0
+      preview.getURL = (): string => preview.src || 'about:blank'
+      preview.reload = (): void => {
+        reloads += 1
+      }
+      preview.dispatchEvent(new Event('dom-ready'))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      // Move to a second tab, so the preview is now in the background.
+      const newTabBtn = qsRequired(list, '.browser-tabs-new-btn')
+      newTabBtn.click()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      const activeBefore = list.querySelector('.browser-tabs-tab.is-active')
+
+      assert.ok(previewStale)
+      previewStale('http://localhost:4321/')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      // The background tab silently holds the new bytes; the agent editing the
+      // workspace is not a request to be looked at, so focus must not move.
+      assert.equal(reloads, 1)
+      assert.equal(list.querySelector('.browser-tabs-tab.is-active'), activeBefore)
+
+      // A different origin's edit leaves it alone.
+      previewStale('http://localhost:9999/')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      assert.equal(reloads, 1)
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
   it('renders proposed workspace files for a localhost URL in the browser demo', async () => {
     const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
     const ResizeObserverCtor = globalThis.ResizeObserver
@@ -410,6 +609,69 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('reuses the tab already showing a re-opened URL instead of stacking one', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    const hadDomParser = Object.prototype.hasOwnProperty.call(globalThis, 'DOMParser')
+    const DomParserCtor = globalThis.DOMParser
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+    globalThis.DOMParser = window.DOMParser
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    const api = createPendingApi({
+      'fs.readFile': async (): Promise<string> => '',
+      'panes.popout': async (): Promise<void> => {},
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      // A workspace file opened from the Files pane arrives on this channel, as
+      // do transcript links, forwarded ports and PR links.
+      const fileUrl = 'http://127.0.0.1:4321/scratch/demo.html'
+      openBrowserUrl(store, fileUrl)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const webview = qsRequired<FakeWebview>(
+        viewer,
+        '.browser-tab-panel.is-active .browser-webview',
+      )
+      stubWebviewMethods(webview)
+      let reloads = 0
+      webview.getURL = (): string => webview.src || 'about:blank'
+      webview.reload = (): void => {
+        reloads += 1
+      }
+      webview.dispatchEvent(new Event('dom-ready'))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 1)
+
+      // Re-opening the same file after editing it must refresh what the user is
+      // already looking at, not leave it stale behind a duplicate.
+      openBrowserUrl(store, fileUrl)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 1)
+      assert.equal(reloads, 1)
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      if (hadDomParser) globalThis.DOMParser = DomParserCtor
+      else Reflect.deleteProperty(globalThis, 'DOMParser')
+      unmount()
+    }
+  })
+
   it('focuses and selects the address bar on a url-bar focus request', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
@@ -663,6 +925,87 @@ describe('browser pane requested URLs', () => {
         list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
         'Sales Dashboard',
       )
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
+      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
+      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      unmount()
+    }
+  })
+
+  it('reopens a saved artefact when no tab survived the last session', async () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    // A window that just launched: the transcript still has the preview card,
+    // but the tab that used to render the artefact died with the last session.
+    const store = createStore({
+      activeProjectId: 'project-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
+    const asked: Array<[string, string, string]> = []
+    const api = createPendingApi({
+      'canvas.reopenArtefact': (
+        projectId: string,
+        threadId: string,
+        title: string,
+      ): Promise<boolean> => {
+        asked.push([projectId, threadId, title])
+        // Main answers on the ordinary artefact channel, which the renderer
+        // hands straight to `openCanvasArtefact` (see `main.ts`).
+        openCanvasArtefact(store, {
+          title,
+          mimeType: 'text/html',
+          body: '<!doctype html><h1>restored</h1>',
+          threadId,
+        })
+        return Promise.resolve(true)
+      },
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      const labels = (): (string | null)[] =>
+        Array.from(list.querySelectorAll('.browser-tabs-tab-label')).map((el) => el.textContent)
+      assert.ok(!labels().includes('Sales Dashboard'), 'nothing is showing the artefact yet')
+
+      // The user clicks Open on the preview card.
+      showCanvasArtefact(store, { title: 'Sales Dashboard', threadId: 'thread-a' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      assert.deepEqual(asked, [['project-1', 'thread-a', 'Sales Dashboard']])
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      const activePanel = viewer.querySelector('.browser-tab-panel.is-active')
+      assert.ok(activePanel, 'the restored artefact opens in an active tab')
+      const webview = activePanel.querySelector<FakeWebview>('.browser-webview')
+      assert.ok(webview)
+      const decoded = Buffer.from(webview.src.split('base64,')[1] ?? '', 'base64').toString('utf8')
+      assert.match(decoded, /<h1>restored<\/h1>/)
+      assert.equal(
+        list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
+        'Sales Dashboard',
+      )
+
+      // Now that a tab holds it, promoting it again is a plain tab switch.
+      asked.length = 0
+      store.setState({ rightPanelMode: 'explorer' })
+      showCanvasArtefact(store, { title: 'Sales Dashboard', threadId: 'thread-a' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual(asked, [], 'a live tab is never re-read from disk')
+      assert.equal(store.getState().rightPanelMode, 'browser')
     } finally {
       globalThis.requestAnimationFrame = raf
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed

@@ -80,7 +80,53 @@ function formatReset(resetsAt: string | null): string {
 }
 
 function formatCreditCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`
+  return '$' + (cents / 100).toFixed(2)
+}
+
+function formatCreditAmount(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
+
+function formatUsdAmount(n: number): string {
+  return '$' + (Number.isInteger(n) ? String(n) : n.toFixed(2))
+}
+
+/** Exported for unit tests. */
+export function formatPlanWindowStats(window: {
+  usedPercent: number
+  resetsAt: string | null
+  severity?: string | null
+  unit?: string | null
+  usedCredits?: number
+  limitCredits?: number
+  usedDollars?: number
+  limitDollars?: number
+}): string {
+  const used = Math.round(window.usedPercent)
+  const severity =
+    typeof window.severity === 'string' && window.severity.trim()
+      ? window.severity.trim().toLowerCase()
+      : null
+  const parts: string[] = []
+  if (
+    window.unit === 'credits' &&
+    typeof window.usedCredits === 'number' &&
+    typeof window.limitCredits === 'number'
+  ) {
+    parts.push(
+      `${formatCreditAmount(window.usedCredits)} / ${formatCreditAmount(window.limitCredits)} credits`,
+    )
+  } else if (
+    window.unit === 'usd' &&
+    typeof window.usedDollars === 'number' &&
+    typeof window.limitDollars === 'number'
+  ) {
+    parts.push(`${formatUsdAmount(window.usedDollars)} / ${formatUsdAmount(window.limitDollars)}`)
+  }
+  parts.push(`${String(used)}% used`)
+  parts.push(formatReset(window.resetsAt))
+  if (severity && severity !== 'normal') parts.push(severity)
+  return parts.join(' · ')
 }
 
 /** Exported for unit tests. */
@@ -163,14 +209,15 @@ export function renderPlanProvider(
       typeof window.severity === 'string' && window.severity.trim()
         ? window.severity.trim().toLowerCase()
         : null
-    const severitySuffix = severity && severity !== 'normal' ? ` · ${severity}` : ''
     if (severity) row.dataset['severity'] = severity
+    if (window.unit) row.dataset['unit'] = window.unit
+    const stats = formatPlanWindowStats(window)
     row.innerHTML = `
       <div class="usage-plan-window-meta">
         <span class="usage-plan-window-label">${escapeHtml(window.label)}</span>
-        <span class="usage-plan-window-stats">${String(used)}% used · ${formatReset(window.resetsAt)}${escapeHtml(severitySuffix)}</span>
+        <span class="usage-plan-window-stats">${escapeHtml(stats)}</span>
       </div>
-      <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(used)}" aria-label="${escapeHtml(window.label)} ${String(used)} percent used">
+      <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(used)}" aria-label="${escapeHtml(window.label)} ${escapeHtml(stats)}">
         <div class="usage-plan-bar-fill" style="width: ${String(Math.min(100, used))}%"></div>
       </div>
     `
@@ -424,7 +471,15 @@ export function renderModelTable(
       <td>${approx}${formatTokenCount(row.outputTokens)}</td>
       <td>${row.cacheReadTokens ? formatTokenCount(row.cacheReadTokens) : '-'}</td>
       <td>${row.cacheCreationTokens ? formatTokenCount(row.cacheCreationTokens) : '-'}</td>
-      <td>${row.isLocal ? 'free (local)' : formatUsd(row.estimatedCostUsd)}</td>
+      <td>${
+        row.isLocal
+          ? 'free (local)'
+          : !row.pricingKnown
+            ? 'unpriced'
+            : row.estimatedCostUsd === 0
+              ? 'free'
+              : formatUsd(row.estimatedCostUsd)
+      }</td>
     `
     tbody.append(tr)
   }

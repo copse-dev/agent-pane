@@ -85,6 +85,7 @@ import { initTerminal } from './ipc/terminal.ts'
 import { initVnc } from './ipc/vnc.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
+import { initAgentsRegistry } from './services/agents/agents-registry.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import {
@@ -165,6 +166,7 @@ import {
 } from './services/exec/background-completion-wake.ts'
 import { closeVideoDecoder, setVideoDecoderPlatform } from './services/video/video-decoder.ts'
 import {
+  getThreadExecutionContext,
   prepareThreadExecutionContext,
   resolveThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -187,9 +189,12 @@ import {
   setCanvasArtefactSink,
 } from './services/canvas-dispatch.ts'
 import { mirrorArtefactToAgent } from './services/canvas-agent-mirror.ts'
+import { rememberCanvasArtefact } from './services/canvas-store.ts'
+import { getActiveProjectId } from './services/workspace.ts'
 import { getBrowserSession } from './services/browser/session-manager.ts'
 import { setContextEstimateRefreshSink } from './services/context-estimate-notify.ts'
 import { setWorkspaceChangeSink } from './services/search/workspace-change-notify.ts'
+import { setPreviewStaleSink } from './services/browser/static-preview-server.ts'
 import { broadcastToAppWindows } from './windows/app-window-broadcast.ts'
 
 // Settings encrypts API keys through whichever cipher is installed rather than
@@ -263,8 +268,16 @@ setVideoDecoderPlatform({
 
 setCanvasArtefactSink((artefact) => {
   const win = getMainWindow()
-  if (!win || win.isDestroyed()) return
-  win.webContents.send(CANVAS_ARTEFACT_CHANNEL, artefact)
+  if (win && !win.isDestroyed()) win.webContents.send(CANVAS_ARTEFACT_CHANNEL, artefact)
+  // Save a copy so the artefact outlives this window. Unconditionally, not only
+  // when a window took delivery: an artefact rendered while the UI was gone is
+  // exactly the one the user will come back looking for. Failures are swallowed
+  // — losing the ability to restore an artefact must not break rendering it.
+  const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+  if (!projectId || !artefact.threadId) return
+  void rememberCanvasArtefact(projectId, artefact.threadId, artefact).catch((err: unknown) => {
+    console.warn('[canvas] could not save artefact:', err)
+  })
 })
 
 // Load every artefact into the headless agent session as well, so the model can
@@ -279,6 +292,12 @@ setContextEstimateRefreshSink(() => {
 
 setWorkspaceChangeSink((root) => {
   broadcastToAppWindows('git:working_tree_changed', root)
+})
+
+// A preview whose files changed on disk repaints itself. Scoped to files the
+// server actually served, so an ordinary source edit never disturbs a page.
+setPreviewStaleSink((origin) => {
+  broadcastToAppWindows('browser:preview-stale', origin)
 })
 
 // Prevent multiple instances stacking invisible windows at the same position.
@@ -430,6 +449,19 @@ app
     // plugin the user turned off in a previous session.
     getPluginService()
     const registry = createRegistry()
+    // Start skill discovery while the rest of main-process boot and the tool
+    // availability probe continue. The renderer can become interactive before
+    // that probe finishes; skills:list waits for this in-flight scan so the
+    // first slash-picker open cannot observe the initial empty cache.
+    const skillsReady = initSkillsRegistry()
+    // Same for agents: `agents:list` is registered with the other handlers well
+    // before the gate below, so the scan has to be in flight by then for the
+    // handler's wait to have anything to join.
+    const agentsReady = initAgentsRegistry()
+    // Keep a rejection handled while boot awaits the tool probe, then surface it
+    // at the existing skills-mcp gate below.
+    void skillsReady.catch(() => undefined)
+    void agentsReady.catch(() => undefined)
     // The only Electron-specific seam the agent run needs: forward stream chunks
     // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.
     // Guard against a window destroyed mid-run (e.g. closed while the agent streams).
@@ -835,7 +867,8 @@ app
     syncCiInvestigatorTools(registry)
 
     recordStartupPhase('skills-mcp')
-    await initSkillsRegistry()
+    await skillsReady
+    await agentsReady
     registerSkillTools(registry)
     await loadCustomTools(registry)
 

@@ -614,7 +614,7 @@ export async function repairCorruptGortexConfig(): Promise<boolean> {
     }
     if (!reloaded) {
       try {
-        const pid = await readGortexDaemonPid()
+        const pid = await verifiedGortexDaemonPid()
         if (pid !== null) process.kill(pid, 'SIGTERM')
       } catch {
         // Best-effort — ensureGortexDaemon will spawn a fresh process.
@@ -857,16 +857,26 @@ async function scopeGortexToActiveRepo(activeRoot: string): Promise<void> {
 const GORTEX_ORPHAN_REAP_RSS_MB = 4096
 
 /** Whether a boot-time process (by RSS + command) is an oversized gortex daemon worth reaping. */
+export function isGortexDaemonCommand(command: string): boolean {
+  return /(?:^|[/\\])gortex(?:\.exe)?(?:\s|$)/i.test(command.trim())
+}
+
 export function isOversizedGortexDaemon(rssMb: number, command: string): boolean {
-  return /gortex/i.test(command) && rssMb >= GORTEX_ORPHAN_REAP_RSS_MB
+  return isGortexDaemonCommand(command) && rssMb >= GORTEX_ORPHAN_REAP_RSS_MB
 }
 
 /** The detached daemon's pid, from the pidfile it writes under {@link gortexHomeDir}. */
+export function parseGortexDaemonPid(raw: string): number | null {
+  const trimmed = raw.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+  const pid = Number(trimmed)
+  return Number.isSafeInteger(pid) && pid > 1 ? pid : null
+}
+
 async function readGortexDaemonPid(): Promise<number | null> {
   try {
     const raw = await readFile(join(gortexHomeDir(), '.gortex', 'cache', 'daemon.pid'), 'utf8')
-    const pid = Number.parseInt(raw.trim(), 10)
-    return Number.isInteger(pid) && pid > 1 ? pid : null
+    return parseGortexDaemonPid(raw)
   } catch {
     return null // no pidfile → nothing running from a prior session
   }
@@ -882,13 +892,43 @@ function pidIsAlive(pid: number): boolean {
   }
 }
 
+export function parseWindowsTasklistProcess(
+  raw: string,
+  expectedPid: number,
+): { rssMb: number; command: string } | null {
+  const fields = [...raw.matchAll(/"([^"]*)"(?:,|$)/g)].map((match) => match[1] ?? '')
+  if (fields.length < 5 || Number(fields[1]) !== expectedPid) return null
+  const memoryKiB = Number((fields.at(-1) ?? '').replace(/\D/g, ''))
+  return {
+    rssMb: Number.isFinite(memoryKiB) ? memoryKiB / 1024 : 0,
+    command: fields[0] ?? '',
+  }
+}
+
 function pidRssAndCommand(pid: number): Promise<{ rssMb: number; command: string } | null> {
   return new Promise((resolve_) => {
+    if (process.platform === 'win32') {
+      execFile('tasklist', ['/FI', `PID eq ${String(pid)}`, '/FO', 'CSV', '/NH'], (err, stdout) => {
+        resolve_(err ? null : parseWindowsTasklistProcess(stdout, pid))
+      })
+      return
+    }
     execFile('ps', ['-p', String(pid), '-o', 'rss=,command='], (err, stdout) => {
       const match = err ? null : stdout.trim().match(/^(\d+)\s+(.*)$/)
       resolve_(match ? { rssMb: Number(match[1]) / 1024, command: match[2] ?? '' } : null)
     })
   })
+}
+
+async function verifiedGortexDaemonPid(): Promise<number | null> {
+  const pid = await readGortexDaemonPid()
+  if (pid === null || !pidIsAlive(pid)) return null
+  return (await pidBelongsToGortex(pid)) ? pid : null
+}
+
+async function pidBelongsToGortex(pid: number): Promise<boolean> {
+  const info = await pidRssAndCommand(pid)
+  return info !== null && isGortexDaemonCommand(info.command)
 }
 
 /**
@@ -921,7 +961,9 @@ export async function reapOversizedGortexDaemon(): Promise<void> {
       await delay(100)
       if (!pidIsAlive(pid)) return
     }
-    process.kill(pid, 'SIGKILL')
+    // Re-check after the grace window: the old daemon may have exited and its
+    // numeric PID may already belong to another process.
+    if (await pidBelongsToGortex(pid)) process.kill(pid, 'SIGKILL')
   } catch {
     // Best-effort — a leftover daemon is preferable to a failed boot.
   }
@@ -940,10 +982,11 @@ export async function stopGortexDaemon(): Promise<void> {
   // subprocess spawn + graceful wait can hold app quit for many seconds —
   // observed as wdio session-DELETE timeouts cascading through an e2e shard
   // (the lingering app also blocks the next launch via the single-instance
-  // lock). SIGTERM is immediate; the daemon flushes what it can on its way
-  // down, and the index is derived data — rebuilt on next open if needed.
+  // lock). Verify the process identity first because a stale pidfile can point
+  // at a reused PID. SIGTERM is immediate; the daemon flushes what it can on
+  // its way down, and the index is derived data — rebuilt on next open if needed.
   try {
-    const pid = await readGortexDaemonPid()
+    const pid = await verifiedGortexDaemonPid()
     if (pid !== null) process.kill(pid, 'SIGTERM')
   } catch {
     // No pidfile / daemon already gone / not signal-able — nothing to reap.
@@ -1003,9 +1046,11 @@ export async function reclaimBloatedGortexStore(): Promise<boolean> {
 
     const pid = await readGortexDaemonPid()
     if (pid !== null && pidIsAlive(pid)) {
+      const info = await pidRssAndCommand(pid)
+      if (!info || !isGortexDaemonCommand(info.command)) return false
       process.kill(pid, 'SIGTERM')
       for (let i = 0; i < 30 && pidIsAlive(pid); i++) await delay(100)
-      if (pidIsAlive(pid)) process.kill(pid, 'SIGKILL')
+      if (pidIsAlive(pid) && (await pidBelongsToGortex(pid))) process.kill(pid, 'SIGKILL')
     }
     await rm(storeDir, { recursive: true, force: true })
     // A rebuilt store re-tracks from config, so the MRU stays meaningful.

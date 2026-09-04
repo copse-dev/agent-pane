@@ -6,7 +6,10 @@
 export const ALLOW_PLAINTEXT_SECRETS_ENV = 'COPSE_ALLOW_PLAINTEXT_SECRETS'
 
 export type SecretWritePolicy =
-  'encrypted' | 'plaintext-disabled' | 'plaintext-consent-required' | 'plaintext-approved'
+  | 'encrypted'
+  | 'plaintext-disabled'
+  | 'plaintext-consent-required'
+  | 'plaintext-approved'
 
 export function resolveSecretWritePolicy(
   encryptionAvailable: boolean,

@@ -11,7 +11,14 @@ import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plug
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 
 export type PanelControlId =
-  'explorer' | 'terminal' | 'changes' | 'prs' | 'memories' | 'roadmap' | 'browser' | 'vnc'
+  | 'explorer'
+  | 'terminal'
+  | 'changes'
+  | 'prs'
+  | 'memories'
+  | 'roadmap'
+  | 'browser'
+  | 'vnc'
 
 interface PanelControlDef {
   id: PanelControlId
@@ -164,6 +171,11 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     enabledSetting: 'vncEnabled',
   },
 ]
+
+/** Display name for a panel mode — the pop-out titlebar names its detached pane. */
+export function panelModeLabel(mode: RightPanelMode): string {
+  return PANEL_CONTROL_DEFS.find((def) => def.mode === mode)?.label ?? 'Panel'
+}
 
 export interface MountPanelModeControlsOptions {
   /** Container class (defaults to titlebar-panel-controls). */

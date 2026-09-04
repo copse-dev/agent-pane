@@ -4,8 +4,8 @@
 
 `copse-panel` (branded **Copse**) is one product: an Electron desktop AI coding assistant. There is
 no backend service; the main process talks directly to LLM providers. Launch it with `make run`,
-which verifies Node, reinstalls dependencies only when `pnpm-lock.yaml` changes, rebuilds `dist/`
-only when source changes, and then starts the app. For everything else prefer the scripts in
+which verifies Node, content-addresses dependency and build inputs, validates the complete `dist/`
+outputs, and then starts the app. For everything else prefer the scripts in
 `package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`, `test:e2e`,
 `check`) rather than inventing parallel commands.
 
@@ -104,15 +104,15 @@ green subset is never a substitute for the pre-commit gate. Full guidance is in
 ### Let the post-edit hook do its job
 
 `.copse/hooks.json`, `.cursor/hooks.json`, and `.claude/settings.json` run
-`scripts/hook-file-check.mts` after edits. It applies Prettier and reports type-unaware ESLint issues;
-do not rerun Prettier after every edit. If it rewrites a file, re-read it before editing again. The
+`scripts/hook-file-check.mts` after edits. It applies oxfmt and reports type-unaware ESLint issues;
+do not rerun the formatter after every edit. If it rewrites a file, re-read it before editing again. The
 hook does not replace type-aware lint, TypeScript, or the full gate.
 
 ### Before committing
 
 Rebase onto the PR's current base (normally `origin/main`) before opening the PR; GitHub tests the
 merged base and head, not an isolated branch tip. Run **`pnpm run check`** before committing. It covers
-typecheck, ESLint, Prettier, dead-code detection, and unit tests. If a source file is intentionally
+typecheck, ESLint, oxfmt, dead-code detection, and unit tests. If a source file is intentionally
 unlinked, add it to `ALLOWED_UNLINKED` in `scripts/check-dead-code.mts` with a reason.
 
 For renderer UI or e2e fixture changes, also run the focused visual workflow selected by the test

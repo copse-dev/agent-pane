@@ -1,3 +1,8 @@
+# The formatter's ignore list. Still named `.prettierignore` after the move to
+# oxfmt: oxfmt reads `.gitignore` and `.prettierignore` by default and has no
+# ignore file of its own, so renaming this would silently un-ignore every path
+# below — including the byte-exact ones a test compares against.
+
 dist/
 dist-test/
 dist-types/
@@ -14,6 +19,9 @@ tests/fixtures/job-description-metadata.md
 # Vendored upstream hook schemas (G3) — pinned byte-identical to upstream; never
 # reformatted so the drift detector compares against exactly what was published.
 schemas/vendor/*.json
+# Pinned Cursor plugin snapshot — upstream manifests, licenses, and skills are
+# content-addressed and must remain byte-identical to the downloaded commit.
+vendor/bundled-cursor-skills/plugins/
 # Hook wire-payload snapshots (G4) — a generated artifact written byte-exact by
 # payload-snapshots.test.ts (UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1); the test compares
 # against these bytes, so prettier must not reformat them (decision 14).

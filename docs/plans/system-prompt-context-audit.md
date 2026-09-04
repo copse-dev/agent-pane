@@ -410,9 +410,9 @@ answers this properly, in the same shape as the evidence already cited above.
 
 ## Appendix: measurement
 
-Section sizes were measured by importing the prompt module directly. `agent-prompt.ts` re-exports
-two pack constants through the `@copse/agent` path alias, which bare Node cannot resolve, so the
-copy strips those two lines:
+Section sizes were measured before `@copse/agent` became a real pnpm workspace dependency.
+At the time, `agent-prompt.ts` re-exported two pack constants through a tsconfig-only path alias,
+which bare Node could not resolve, so the copy stripped those two lines:
 
 ```bash
 grep -v "^export { MEMORY_TOOLS_BLOCK" src/main/services/agent-prompt.ts \

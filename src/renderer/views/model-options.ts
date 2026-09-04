@@ -61,7 +61,11 @@ import {
   BEST_VALUE_CHAT_MODEL_LABEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
-import { AUTO_MODEL_PREFIX, dynamicModelChoices } from '@copse/llm/dynamic-model.ts'
+import {
+  AUTO_MODEL_PREFIX,
+  dynamicModelChoices,
+  dynamicModelLabel,
+} from '@copse/llm/dynamic-model.ts'
 import {
   canonicalModelLabel,
   claudeModelIdFromLabel,
@@ -553,11 +557,17 @@ export async function fetchModelOptions(
   // Local models: only listed when a local server is reachable and exposes some.
   const lmGroup = 'Local models'
   let models: Array<{ id: string; supportsImages?: boolean }>
+  // Whether the catalogue below is trustworthy as a *complete* list. A reachable
+  // server that simply lacks the pinned model is a different fault from one we
+  // could not ask, and only the first tells the user to install something.
+  let localCatalogueKnown: boolean
   try {
     const modelInfo = api.lmStudio.modelInfo ? await api.lmStudio.modelInfo() : []
     models = modelInfo.length > 0 ? modelInfo : (await api.lmStudio.models()).map((id) => ({ id }))
+    localCatalogueKnown = models.length > 0
   } catch {
     models = []
+    localCatalogueKnown = false
   }
   for (const model of models) {
     const { id } = model
@@ -580,7 +590,7 @@ export async function fetchModelOptions(
     if (current.startsWith('lmstudio:')) {
       options.push({
         value: current,
-        label: `${modelDisplayLabel(current)} (offline)`,
+        label: `${modelDisplayLabel(current)} ${localCatalogueKnown ? '(not available)' : '(offline)'}`,
         group: lmGroup,
       })
     } else if (includeAgentModels && current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
@@ -667,16 +677,58 @@ export async function fetchRoleModelOptions(
 ): Promise<ModelOption[]> {
   return [
     autoModelOption(autoLabel),
+    // A role may hold a *rule* rather than an id — the instruct/safety role
+    // defaults to one, and onboarding writes one for research. Offer the rules
+    // alongside the concrete models, or the stored value matches no option and
+    // renders through the pinned-id fallback as "auto:best-local (no key)".
+    // Role selectors are excluded: pointing a role at a role is circular.
+    ...automaticModelChoices(),
     ...(await fetchModelOptions(api, current, { includeAgentModels: false })),
   ]
 }
 
-/** Local-only routing options used by onboarding before cloud setup is complete. */
+/**
+ * The `auto:` rules that resolve without reference to another role — the
+ * automatic pickers and the intelligence floors. Role rules are excluded:
+ * pointing a role at a role is circular.
+ *
+ * The intelligence floors have to be here, not just the Automatic group: the
+ * safety role defaults to one, and a stored value with no matching option falls
+ * through to the pinned-id branch and renders as "auto:min-intellect:20 (no key)".
+ */
+function automaticModelChoices(): ModelOption[] {
+  return dynamicModelChoices()
+    .filter((choice) => choice.group !== 'By role')
+    .map((choice) => ({
+      value: choice.value,
+      label: `${choice.label} — ${choice.description}`,
+      group: choice.group,
+    }))
+}
+
+/**
+ * Local-only routing options used by onboarding before cloud setup is complete.
+ *
+ * `current` is kept as its own row when the server does not list it. Without
+ * that row the `<select>` matches nothing and falls back to displaying the
+ * first option — so a role pinned to a model that was never downloaded reads
+ * as "auto", which is the one thing it is not. Same reasoning as the pinned
+ * row in {@link dynamicModelOptions}.
+ */
 export function localModelOptions(
   models: readonly string[],
   autoLabel = '(auto — first loaded model)',
+  current = '',
 ): ModelOption[] {
-  return [autoModelOption(autoLabel), ...models.map((id) => ({ value: id, label: id }))]
+  const options = [autoModelOption(autoLabel), ...models.map((id) => ({ value: id, label: id }))]
+  const pinned = current.trim()
+  if (pinned && !options.some((option) => option.value === pinned)) {
+    // A rule is not a missing model: it has no id to install, and resolves to
+    // whatever fits this machine. Label it as the rule it is.
+    const rule = dynamicModelLabel(pinned)
+    options.push({ value: pinned, label: rule ?? `${pinned} (not available)` })
+  }
+  return options
 }
 
 /** Group heading for a pinned model kept selectable in a dynamic-only picker. */

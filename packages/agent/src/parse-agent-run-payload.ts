@@ -2,7 +2,7 @@ import type { UserContent } from '@copse/llm/wire-types.ts'
 import { isReasoningLevel, type ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from './wire-types.ts'
 import { z } from 'zod'
-import { isRecord } from './internal-utils.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 const userContentSchema = z.union([
   z.string(),
@@ -35,6 +35,8 @@ const todoSchema = z.object({
 export function parseAgentRunPayload(rawPrompt: string): {
   userContent: UserContent
   invokedSkills: string[]
+  /** Subagent the user invoked with `/name` this turn, if any. */
+  invokedAgent?: string
   priorTodos: TodoItem[]
   workingBrief?: string
   model?: string
@@ -65,6 +67,9 @@ export function parseAgentRunPayload(rawPrompt: string): {
         userContent: content.data,
         invokedSkills: invokedSkills.success ? invokedSkills.data : [],
         priorTodos: normalizedTodos,
+        ...(typeof parsed['invokedAgent'] === 'string' && parsed['invokedAgent']
+          ? { invokedAgent: parsed['invokedAgent'] }
+          : {}),
         ...(typeof parsed['workingBrief'] === 'string'
           ? { workingBrief: parsed['workingBrief'] }
           : {}),

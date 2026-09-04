@@ -5,7 +5,7 @@ A single self-hosted GitHub Actions runner image that **both** `agent-pane` and
 per-repo, per-tier fleets that previously lived in `agent-pane/.github/runner`
 (e2e) and `agent-pane/.github/runner-checks` (checks).
 
-It folds three changes into one image:
+It folds four changes into one image:
 
 1. **One superset image, one pool.** The check tier's image is a strict subset
    of the e2e image, so this image carries the full e2e stack and runs _both_
@@ -18,34 +18,19 @@ It folds three changes into one image:
    already picks the org vs repo registration endpoint automatically, so the
    same image registers an org-shared pool with no code change.
 
-3. **Repo-agnostic dep baking ("thread in main").** The old images baked _their
-   own_ repo's `node_modules` by using the repo root as the Docker build
-   context. That couples the image to one repo. This image instead **clones the
-   target repo's branch at build time** and bakes its deps — so the image can
-   live in its own repo and be pointed at any consumer.
+3. **Store-only dependency warming.** The image may clone one target lockfile
+   and run `pnpm fetch`, but it never runs package lifecycle scripts and never
+   contains `node_modules`. Each job copies or restores package inputs into its
+   own temp directory, removes any existing installed tree, and runs
+   `pnpm install --frozen-lockfile`. Native binaries therefore belong to one
+   checkout and cannot poison a later job.
 
-4. **Host-local dependency store (`deps-cache` volume).** The baked layer above
-   is keyed by the lockfile hash _at image-build time_, so any dependency bump
-   makes it stale fleet-wide until the images are rebuilt. Runners are ephemeral
-   (one job each), so before this volume existed a stale bake meant every job
-   independently restored ~590 MB from the Actions cache service — 2.5–3.5 min
-   apiece, ~16 jobs per CI run, all in parallel and contending for the same
-   egress (which is what pinned the observed transfer rate near 1 MB/s).
-
-   The volume is a persistent, host-local store keyed by the **current**
-   lockfile hash and shared by every runner container on the host.
-   `.github/actions/setup` reads it before falling back to the network, and
-   republishes into it on a miss — so after a lockfile bump the first job on a
-   host still pays the network restore and every job after it copies from local
-   disk. Entries are published via an atomic rename (concurrent shards racing on
-   the same hash is normal and safe) and pruned to the 3 most recent hashes, so
-   budget roughly 3× the installed tree (~5 GB) per host.
-
-   It is pure cache: `docker volume rm ci-runners_deps-cache` is always safe and
-   it rebuilds itself on the next job. Only first-party code ever writes to it —
-   `ci.yml` guards every self-hosted job on
-   `pull_request.head.repo.full_name == github.repository`, so fork PRs run on
-   GitHub-hosted runners and never touch a host that mounts this.
+4. **Real restart isolation.** `--ephemeral` limits the runner to one GitHub job,
+   but Docker's `restart: always` restarts the same writable container. The
+   entrypoint now lives in a root-owned image template; before registration it
+   rebuilds the runner runtime and clears the runner home, work tree, and temp
+   directories. A prior job cannot replace the next run's agent or leave files
+   for it to consume.
 
 > **Status: prototype — not yet live.** This directory replaces the two old
 > runner dirs (`.github/runner`, `.github/runner-checks`), which are **removed in
@@ -63,11 +48,11 @@ It folds three changes into one image:
 
 ```bash
 cd ci-runners
-cp .env.example .env     # GITHUB_URL (org), ACCESS_TOKEN, BUILD_GH_TOKEN
+cp .env.example .env     # GITHUB_URL (org), ACCESS_TOKEN; optional BUILD_GH_TOKEN
 DOCKER_BUILDKIT=1 docker compose up -d --build --scale runner=3
 ```
 
-That builds the image (cloning + baking `TARGET_REPO`) and registers three
+That builds the image (optionally prefetching `TARGET_REPO`) and registers three
 ephemeral runners labelled `self-hosted,linux,docker,copse-e2e,copse-checks`.
 
 ```bash
@@ -81,7 +66,7 @@ docker compose down      # tear down
 Scaleway is the cheapest/easiest burst path when AWS billing or capacity is in
 the way. It uses the same runner image as the local/AWS flows. **Default burst
 registers e2e-only labels** (`copse-e2e`, not `copse-checks`) so check jobs
-routed via `CHECKS_RUNNER` do not compete with the e2e shard matrix; spin up a
+routed via `SELF_HOSTED_CHECKS` do not compete with the e2e shard matrix; spin up a
 separate checks-only burst when the check tier also queues (below).
 
 Prerequisites:
@@ -310,8 +295,9 @@ pull + `docker save|load` over SSH).
 
 Each run pushes a snapshot commit (staged + unstaged + untracked) to a bare
 repo on the host and starts a fresh one-shot container from this image with
-[`exec-run.sh`](exec-run.sh) as the entrypoint override: checkout → seed the
-baked deps (same `.lockhash` contract as the setup action) → build → wdio
+[`exec-run.sh`](exec-run.sh) as the entrypoint override: checkout → copy baked
+package inputs and perform a clean install (the setup action's `.lockhash`
+contract) → build → wdio
 under Xvfb → collect logs + changed reference screenshots. Results land in
 `.tmp/remote-e2e/runs/<run-id>/` locally; the exit code mirrors wdio's.
 
@@ -328,57 +314,49 @@ A spare machine with Docker + passwordless sudo works too:
 
 ## Do we need new PAT tokens?
 
-There are **two distinct token roles**. You do **not** need two separate
-tokens — one org-scoped fine-grained (or classic) PAT can cover both — but
-they are separate _permissions_, and one of them (the build-time clone) is
-genuinely new versus today.
+There are **two distinct token roles**. The build-time token is optional: it
+only warms package inputs and never affects correctness.
 
-| Role                                    | Used when                                                                                                                   | Needs                                                                                                                                                                           | New?                                                                             |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| **Registration** (`ACCESS_TOKEN`)       | container start, to register the runner                                                                                     | **Org:** classic `admin:org` or fine-grained org **Self-hosted runners: Read & write**. (Repo-level: repository Administration R/W — repos have no separate runner permission.) | Existing token, but scope **widens repo→org** if you go org-level                |
-| **Build-time clone** (`BUILD_GH_TOKEN`) | `docker build`, to clone `TARGET_REPO` and let its `pnpm install` fetch the **private** `@copse/streaming-markdown` git dep | **Contents: Read** on **both** `agent-pane` **and** `streaming-markdown` (classic `repo`, or a fine-grained token scoped to both)                                               | **NEW** — the old images had the repo in the build context, so they never cloned |
+| Role                                       | Used when                                                                                                            | Needs                                                                                                                                                                           | New?                                                              |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Registration** (`ACCESS_TOKEN`)          | container start, to register the runner                                                                              | **Org:** classic `admin:org` or fine-grained org **Self-hosted runners: Read & write**. (Repo-level: repository Administration R/W — repos have no separate runner permission.) | Existing token, but scope **widens repo→org** if you go org-level |
+| **Build-time prefetch** (`BUILD_GH_TOKEN`) | `docker build`, to clone `TARGET_REPO` and let `pnpm fetch` read the **private** `@copse/streaming-markdown` git dep | **Contents: Read** on **both** `agent-pane` **and** `streaming-markdown` (classic `repo`, or a fine-grained token scoped to both)                                               | Optional performance input                                        |
 
 **Runner routing needs no token.** The old `pick-runner` probe job — which used
 a `RUNNERS_PAT` secret (org **Self-hosted runners: Read**) to enumerate online
 runners on every run — was removed in #740. Check-tier jobs now read the
-`CHECKS_RUNNER` Actions **variable** directly
-(`runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}`): set it to
-`copse-checks` when the fleet is up, clear it (or leave it empty) to fall back
-to GitHub-hosted. Do **not** re-create a `RUNNERS_PAT` — no workflow reads it,
-and the org runner-read scope it carried is not needed for routing.
+`SELF_HOSTED_CHECKS` Actions **variable** directly
+(`runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}`): **GitHub-hosted
+is the default**, and setting the variable to `copse-checks` opts the tier onto
+this fleet. Clear it to go back to hosted. Do **not** re-create a `RUNNERS_PAT`
+— no workflow reads it, and the org runner-read scope it carried is not needed
+for routing.
 
-**Why the clone token is unavoidable:** baking `agent-pane` runs `pnpm install`, which
-pulls `@copse/streaming-markdown` — a **private** git dependency. So even the
-build needs read access to _both_ repos. That's the same cross-repo access the
-`setup` action's `github-pat` input already handles at job time; here it moves
-to build time. (This is also an argument _for_ one org-scoped token: a single
-fine-grained PAT with **Contents: Read on all repos** + org **Self-hosted
-runners: Read & write** covers both registration and baking in one
-credential.)
+> **Set these at repo scope, not org scope.** Both variables are read as
+> `vars.X`, which resolves repo-then-org, so an org-level value silently
+> applies to every repo that reads the name. That is why the names changed from
+> `CHECKS_RUNNER` / `E2E_RUNNER` when `agent-pane` went public — see
+> [`docs/ci-runner-security.md`](../docs/ci-runner-security.md).
+
+The prefetch token needs both repositories because the lockfile contains the
+private `@copse/streaming-markdown` source. Leave it empty to build a cold image;
+the setup action restores the same pnpm content store per job.
 
 The clone token is passed as a **BuildKit secret** (`--secret`), mounted on
 tmpfs and consumed only inside the bake `RUN` via `GIT_CONFIG_*` env vars — it is
 **never written into an image layer**. Build with `DOCKER_BUILDKIT=1`.
 
-If you point `TARGET_REPO` at a repo with a trivial, fully-public install, you
-can leave `BUILD_GH_TOKEN` empty — the bake step no-ops and jobs fall back to
-`pnpm install`. But agent-pane's private git dep means its bake needs the token.
+If you point `TARGET_REPO` at a fully public repo, prefetch can work without a
+token. With no token or a failed fetch, jobs simply restore package inputs from
+Actions and run the same clean install.
 
-## How baking stays compatible
+## How package prefetch stays compatible
 
-The bake writes exactly what `agent-pane/.github/actions/setup` already consumes:
-`/opt/deps/tree/{node_modules,vendor/gortex,.lockhash,.ready}` with
-`COPSE_BAKED_DEPS=/opt/deps/tree`. On a job, setup seeds the workspace from that
-layer **iff** the checked-out `pnpm-lock.yaml` hash matches `.lockhash`, else
-falls back to the Actions cache / `pnpm install`. So a lockfile bump is never served
-stale — rebuild the image to re-bake.
-
-**One-repo bake, shared pool:** the image bakes ONE repo's tree (default
-`agent-pane`, the heavy consumer). `streaming-markdown` jobs land on the same
-runners but get a cold `pnpm install` — which is cheap there (small, pure-TS, no
-native rebuild). If you later want warm starts for both, bake into
-per-repo `/opt/deps/tree-<slug>` dirs and have the setup action pick by lockhash
-— noted as a future enhancement, out of scope for this prototype.
+The image writes `/opt/deps/{store,.lockhash,.ready}` and exposes it through
+`COPSE_BAKED_STORE`. The setup action copies that content-addressed store only
+when the checked-out lockfile hash matches, then performs a clean offline
+install. A mismatch restores the remote store cache instead. Installed package
+trees and lifecycle outputs are never shared between jobs.
 
 ## Sizing
 
@@ -393,10 +371,11 @@ runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
 
 - Removed the two old runner dirs; repointed the `Makefile` (`make runners*`) at
   this unified fleet.
-- `agent-pane` check jobs route via the `CHECKS_RUNNER` Actions variable
-  (`runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}`); the old
-  `pick-runner` probe job was removed in #740. The e2e job is unchanged — it
-  already targets `["self-hosted","copse-e2e"]`, which these runners carry.
+- `agent-pane` check jobs route via the `SELF_HOSTED_CHECKS` Actions variable
+  (`runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}`); the old
+  `pick-runner` probe job was removed in #740. The e2e job targets
+  `["self-hosted","copse-e2e"]`, which these runners carry, but only when
+  `SELF_HOSTED_E2E=copse-e2e` — hosted is otherwise the default.
 - `streaming-markdown/.github/workflows/ci.yml` routes its check job the same
   way, so it lands on the shared `copse-checks` pool when the variable is set
   (fork PRs stay on hosted).
@@ -408,13 +387,14 @@ runner**. `docker-compose.yml` caps each at `mem_limit: 6g` with a 2 GB
    org default group grants all repos). Build + register with
    `make runners` — or `make runners-reprovision` to **replace the containers
    built from the now-deleted dirs**.
-2. **Set the `CHECKS_RUNNER` variable** so check jobs route to the fleet:
-   `gh variable set CHECKS_RUNNER --org copse-dev --body copse-checks --visibility all`
-   (or Settings → Secrets and variables → Actions → Variables; a repo-level
-   variable overrides the org one). Unset or empty means hosted — CI still
-   works, it just never uses self-hosted. Nothing auto-detects an offline
-   fleet, so clear the variable when taking the fleet down or routed jobs
-   will queue. No PAT is involved.
+2. **Set the opt-in variables** so jobs route to the fleet, per repo:
+   `gh variable set SELF_HOSTED_CHECKS --repo copse-dev/agent-pane --body copse-checks`
+   and, for the e2e tier,
+   `gh variable set SELF_HOSTED_E2E --repo copse-dev/agent-pane --body copse-e2e`
+   (or Settings → Secrets and variables → Actions → Variables). Unset means
+   hosted — CI still works, it just never uses self-hosted. Nothing
+   auto-detects an offline fleet, so clear the variables when taking the fleet
+   down or routed jobs will queue. No PAT is involved.
 3. **Confirm one green run** lands on the pool (an e2e job and a check job in
    agent-pane, a check job in streaming-markdown), then **merge**.
 

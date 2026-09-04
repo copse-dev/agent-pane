@@ -59,6 +59,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('browser:show-tab', listener)
       }
     },
+    onPreviewStale: (handler: (origin: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, origin: string): void => {
+        handler(origin)
+      }
+      ipcRenderer.on('browser:preview-stale', listener)
+      return (): void => {
+        ipcRenderer.off('browser:preview-stale', listener)
+      }
+    },
     onShareText: (
       handler: (share: import('@shared/types/browser-share.ts').BrowserTextShare) => void,
     ) => {
@@ -302,6 +311,15 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('agent:ask_user_request', listener)
       return (): void => {
         ipcRenderer.off('agent:ask_user_request', listener)
+      }
+    },
+    onAskUserCancelled: (handler: (req: { id: string }) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+        handler(req)
+      }
+      ipcRenderer.on('agent:ask_user_cancelled', listener)
+      return (): void => {
+        ipcRenderer.off('agent:ask_user_cancelled', listener)
       }
     },
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => {
@@ -589,6 +607,10 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('canvas:show-artefact', listener)
       }
     },
+    listArtefacts: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('canvas:listArtefacts', projectId, threadId),
+    reopenArtefact: (projectId: string, threadId: string, title: string) =>
+      ipcRenderer.invoke('canvas:reopenArtefact', projectId, threadId, title),
   },
   storage: {
     get: (key: string) => ipcRenderer.invoke('storage:get', key),
@@ -1040,6 +1062,9 @@ contextBridge.exposeInMainWorld('api', {
     remove: (projectId: string, path: string, force: boolean) =>
       ipcRenderer.invoke('worktrees:remove', projectId, path, force),
   },
+  agents: {
+    list: () => ipcRenderer.invoke('agents:list'),
+  },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
   },
@@ -1268,6 +1293,12 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)
+    },
+    emitApprovalRequests(requests: unknown) {
+      return ipcRenderer.invoke('test:emitApprovalRequests', requests)
+    },
+    cancelApprovalRequest(id: string) {
+      return ipcRenderer.invoke('test:cancelApprovalRequest', id)
     },
     setSemanticIndexScaleGuard(phase: 'limited' | 'skipped', reason: string) {
       return ipcRenderer.invoke('test:setSemanticIndexScaleGuard', phase, reason)

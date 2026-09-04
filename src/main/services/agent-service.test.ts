@@ -391,4 +391,45 @@ describe('runAgent AgentHost decoupling', () => {
     assert.match(terminal.outcome.error.message, /Internal error during token generation/)
     assert.ok(received.at(-1)?.type === 'done')
   })
+
+  it('persists an exhausted loop call budget as a failed max-steps outcome', async () => {
+    const received: StreamChunk[] = []
+    const host: AgentHost<StreamChunk> = {
+      emit: (_threadId, chunk) => received.push(chunk),
+    }
+    const provider: LLMProvider = {
+      stream: async function* () {
+        yield { type: 'done' as const }
+      },
+    }
+
+    await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId: 'thread-run-limit',
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity('thread-run-limit', () =>
+          agentService.runAgent('thread-run-limit', 'keep working', [], host, new ToolRegistry(), {
+            model: 'claude-sonnet-4-6',
+            provider,
+            contextWindow: 100_000,
+            maxSteps: 10,
+            maxLlmCalls: 1,
+            adaptiveExtensions: false,
+          }),
+        ),
+    )
+
+    const terminal = received.find((chunk) => chunk.type === 'turn_outcome')
+    assert.ok(terminal?.type === 'turn_outcome')
+    assert.equal(terminal.outcome.status, 'failed')
+    assert.equal(terminal.outcome.stopReason, 'max_steps')
+    assert.equal(terminal.outcome.rawStopReason, 'max_steps')
+    assert.deepEqual(received.at(-1), { type: 'done', stopReason: 'max_steps' })
+  })
 })

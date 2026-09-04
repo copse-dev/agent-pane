@@ -27,9 +27,7 @@ import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 
-export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
-  return [...threads].sort((a, b) => b.createdAt - a.createdAt)
-}
+export { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
 
 /**
  * Look up a thread by id (undefined for null/unknown ids). Finds background
@@ -527,6 +525,17 @@ export function setMessageContent(store: AppStore, messageId: string, content: s
     m.content = content
   })
   store.emit('message_token', messageId, content)
+}
+
+export function addMessageCanvasArtefact(
+  store: AppStore,
+  messageId: string,
+  artefact: import('../types/canvas.ts').CanvasArtefactReference,
+): void {
+  updateMessage(store, messageId, (message) => {
+    message.canvasArtefacts = [...(message.canvasArtefacts ?? []), artefact]
+  })
+  store.emit('message_canvas_artefacts_changed', messageId)
 }
 
 export function setMessageCommandSummary(

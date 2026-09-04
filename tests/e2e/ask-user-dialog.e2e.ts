@@ -1,7 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 // Visual eval for #515: the ask_user tool blocks the agent loop on a modal dialog
 // until the user answers. Component tests cover DOM behaviour; this spec exercises
@@ -49,5 +49,29 @@ describe('ask_user dialog', () => {
       timeout: 30_000,
       timeoutMsg: 'expected assistant reply after ask_user answer',
     })
+  })
+
+  it('dismisses the modal when the originating run is stopped', async () => {
+    await setComposerValue(
+      '[[mcp:ask_user {"questions":[{"question":"Should this run keep waiting?"}]}]]',
+    )
+    await $('.submit-btn').click()
+
+    const dialog = await $('#ask-user-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(async () => await $('.stop-btn').isDisplayed(), {
+      timeout: 10_000,
+      timeoutMsg: 'expected Stop while ask_user blocks the run',
+    })
+
+    await browser.execute(async () => {
+      const [threadId] = await window.api.agent.runningThreadIds()
+      if (!threadId) throw new Error('expected a running ask_user thread')
+      await window.api.agent.abort(threadId)
+    })
+
+    await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await expect(dialog).not.toBeDisplayed()
+    await saveAppScreenshot('ask-user-dialog-cancelled.png')
   })
 })

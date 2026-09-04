@@ -1,10 +1,10 @@
 /**
  * Test oracle — recommends which tests to run for a set of changes, so you can
- * run the expensive e2e tier (52 specs, sharded 8× in CI) less often.
+ * run the expensive e2e tier (sharded 8× in CI) less often.
  *
- * It is a *local accelerator*, not a CI coverage reducer: it tells you the
- * tests most likely affected by your diff and how confident it is, then leaves
- * the call to you. It never claims a clean bill of health it can't back up.
+ * It is a local accelerator and a CI cost selector: it identifies the tests
+ * most likely affected by a diff. CI trusts a subset only at HIGH confidence;
+ * broad or LOW-confidence changes run the full tier.
  *
  * How it maps changes → tests:
  *   • e2e specs barely import source — they drive the built app through DOM
@@ -36,8 +36,9 @@
  *   node scripts/test-oracle.mts --plan          # CI plan (see .github/workflows/ci.yml)
  *
  * CI gating (.github/workflows/ci.yml `precheck` job): on a pull_request the
- * `--plan` output thins the e2e tier to the affected specs; a push to main
- * always runs the full suite, so main is never gated on a partial map.
+ * `--plan` output thins the e2e tier to the affected specs only when confidence
+ * is HIGH. Broad/LOW-confidence plans run the full suite before merge. A push
+ * to main is cheap because the PR commit was already gated; nightly runs full.
  *
  * `--plan` also emits a UNIT plan (`unit_mode` / `unit_specs`). CI applies it
  * only to a PR that targets another PR's branch — a stacked layer that cannot
@@ -421,16 +422,21 @@ export function fileContainsToken(body: string, tok: Token): boolean {
 const CODE_EXTS = ['.ts', '.mts', '.tsx', '.js', '.mjs']
 
 /**
- * Workspace package aliases, mirroring `tsconfig.json` `paths` (and the esbuild
- * `alias` in `scripts/run-tests.mts`). Without these, every `@copse/agent/…`
- * import is a dead end in the graph, so a change under `packages/` maps to no
- * test and the unit subset silently misses it.
+ * Source locations for the real workspace packages plus the remaining
+ * app-internal `@shared` alias. The oracle resolves imports statically instead
+ * of walking node_modules symlinks; without these mappings, a package import is
+ * a dead end in the graph and a change under `packages/` maps to no test.
  */
 const PACKAGE_ALIASES: [prefix: string, dir: string][] = [
   ['@shared/', 'src/shared/'],
   ['@copse/agent/', 'packages/agent/src/'],
   ['@copse/llm/', 'packages/llm/src/'],
   ['@copse/plan-usage/', 'packages/plan-usage/src/'],
+  ['@copse/plugin-sdk/', 'packages/plugin-sdk/src/'],
+  ['@copse/shell-guard/', 'packages/shell-guard/src/'],
+  ['@copse/std/', 'packages/std/src/'],
+  ['@copse/thread-store/', 'packages/thread-store/src/'],
+  ['@copse/hooks-dialects/', 'packages/hooks-dialects/src/'],
 ]
 
 /** Bare package specifiers (no subpath) — resolve to the package entry point. */
@@ -674,9 +680,9 @@ export type ScreenshotGate = {
  * if a diff touches UI that a committed reference screenshot covers (the oracle
  * maps it to a screenshot-producing spec) but the PNG wasn't refreshed in the
  * same diff, the shot is presumed stale. Reference shots are pixel-rendered on
- * the CI runner, so the sanctioned refresh path is letting CI render and commit
- * them: the e2e gate run re-renders the affected shots and the commit-screenshots
- * job commits the diff. The `update-screenshots` label forces a full refresh — a
+ * the CI runner, so the sanctioned refresh path is letting CI render them into an
+ * immutable artifact, reviewing it, and explicitly committing the intended
+ * PNGs. The `update-screenshots` label forces a full refresh — a
  * labeled PR always passes. This static gate never reruns the e2e tier itself.
  *
  * Only files that can influence rendered output drive the gate: shipped source

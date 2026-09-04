@@ -17,14 +17,22 @@ function activeSshHostId(store: AppStore): string | null {
   return project?.sshHost ?? null
 }
 
-/** One user-facing line per missing remote capability (plus any probe failures). */
+/**
+ * One user-facing line per missing remote capability (plus any probe failures).
+ *
+ * The external-edit line is unconditional: no remote watcher exists yet, so
+ * edits made outside Copse are not detected on any SSH host regardless of what
+ * tools it has installed. Copse's own writes still refresh normally.
+ */
 export function capabilityWarnings(state: SshConnectionState): string[] {
   const caps = state.capabilities
   if (!caps) return []
   const warnings: string[] = []
   if (!caps.git) warnings.push('git not found — git pane and backups will not work remotely')
   if (!caps.rg) warnings.push('ripgrep (rg) not found — search will use grep fallback')
-  if (!caps.inotifywait) warnings.push('inotifywait not found — file watching is disabled')
+  warnings.push(
+    'external file edits may not appear immediately — remote file watching is not yet supported',
+  )
   warnings.push(...caps.warnings)
   return warnings
 }

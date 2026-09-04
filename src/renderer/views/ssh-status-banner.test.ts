@@ -20,12 +20,11 @@ describe('capabilityWarnings', () => {
         shell: '/bin/bash',
         git: true,
         rg: true,
-        inotifywait: false,
         warnings: ['Capability probe command failed — remote tooling may be unavailable.'],
       },
     })
     assert.deepEqual(warnings, [
-      'inotifywait not found — file watching is disabled',
+      'external file edits may not appear immediately — remote file watching is not yet supported',
       'Capability probe command failed — remote tooling may be unavailable.',
     ])
   })
@@ -101,7 +100,6 @@ describe('mountSshStatusBanner', () => {
         shell: '/bin/bash',
         git: true,
         rg: true,
-        inotifywait: false,
         warnings: [],
       },
     }
@@ -131,7 +129,10 @@ describe('mountSshStatusBanner', () => {
     const el = document.getElementById('ssh-status-banner')
     assert.ok(el)
     const text = el.textContent
-    assert.equal(text, 'inotifywait not found — file watching is disabled')
+    assert.equal(
+      text,
+      'external file edits may not appear immediately — remote file watching is not yet supported',
+    )
     assert.doesNotMatch(text, /⚠|⚡/)
     assert.equal(el.querySelectorAll('.ssh-status-icon').length, 0)
     banner.destroy()

@@ -144,11 +144,11 @@ describe('testOutputPath', () => {
   it('mirrors the source tree under dist-test so a subset lands where a full run put it', () => {
     assert.equal(
       testOutputPath('src/shared/threads/thread-store.test.ts'),
-      'dist-test/src/shared/threads/thread-store.test.js',
+      'dist-test/src/shared/threads/thread-store.test.mjs',
     )
     assert.equal(
       testOutputPath('packages/agent/src/agent-loop-limits.test.ts'),
-      'dist-test/packages/agent/src/agent-loop-limits.test.js',
+      'dist-test/packages/agent/src/agent-loop-limits.test.mjs',
     )
   })
 })

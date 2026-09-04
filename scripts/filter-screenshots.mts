@@ -5,26 +5,23 @@
  * Reference PNGs are pixel-rendered on the CI runner (see check-screenshots.mts).
  * Even with a pinned viewport and fonts, a re-render of an *unchanged* screen can
  * differ from the committed PNG by a handful of pixels: sub-pixel font hinting and
- * anti-aliasing wobble on text edges. The `commit-screenshots` job used to commit
- * any PNG whose bytes changed (`git diff --name-only`), so this micro-noise churned
- * the reference shots on every run — a meaningless diff a human still has to review.
+ * anti-aliasing wobble on text edges. Blindly accepting any PNG whose bytes changed
+ * (`git diff --name-only`) churns the reference shots with meaningless review noise.
  *
- * This script runs in the working tree AFTER the e2e gate re-rendered the shots
- * (the rendered PNGs have overwritten the committed ones) and BEFORE the job stages
- * the diff. For each changed PNG it pixel-compares the re-render against the
- * committed baseline (`git show HEAD:<path>`) and decides:
+ * Run this script locally after copying CI's immutable candidate artifact into
+ * the working tree. For each changed PNG it pixel-compares the re-render against
+ * the committed baseline (`git show HEAD:<path>`) and decides:
  *
  *   keep    The change is clearly real (new/moved UI, different text, resized
- *           shot, or a brand-new screenshot) → leave the re-render in place so the
- *           job commits it.
+ *           shot, or a brand-new screenshot) → leave the re-render for review.
  *   ignore  The change is below the noise threshold (only anti-aliased / a few
  *           stray pixels differ) → `git checkout HEAD -- <path>` to restore the
- *           committed PNG, so the job never commits it.
+ *           committed PNG.
  *   flap    The change is above the noise threshold vs HEAD, but it matches a
  *           RECENT COMMITTED render of the same shot (a prior bot refresh on this
  *           PR). That means the runner fleet is alternating between two render
- *           states for this shot: committing again just re-triggers CI and the
- *           other state comes back next run — an unbounded ping-pong (#609). We
+ *           states for this shot: accepting it again would bring the other state
+ *           back on a later run — a ping-pong (#609). We
  *           restore HEAD (do not commit) and surface the shot for human review.
  *   contested
  *           The committed baseline is DELIBERATE: the file was modified on this
@@ -32,9 +29,8 @@
  *           or agent hand-committed a specific reference shot), and/or main has
  *           modified it since the merge-base. CI must not override deliberate
  *           work with its own render — restore HEAD (the branch's committed
- *           version always wins) and surface the shot in the PR comment with a
- *           base-vs-branch comparison. The `update-screenshots` label is the
- *           explicit "regenerate and take CI's render" escape hatch.
+ *           version always wins) for deliberate local review. Set
+ *           UPDATE_SCREENSHOTS_LABEL=true to keep every candidate explicitly.
  *   out-of-scope
  *           The shot is not one this diff can legitimately move: the oracle maps
  *           no selected spec to it and nobody committed it on this branch. The
@@ -48,15 +44,12 @@
  * margin on top. It is deliberately tiny — a real change moves thousands of pixels,
  * far above any hinting noise — so a genuine but small visual change still commits.
  *
- * Flap detection bounds the loop: a shot that oscillates between two states A and B
- * commits at most once per distinct state (A, then B), and every subsequent render
- * matches one of those committed states, so it is held instead of re-committed. The
- * head therefore stops moving and `CI Passed` can settle.
+ * Flap detection stops a reviewer from repeatedly accepting a shot that oscillates
+ * between two known runner states.
  *
  * Escape hatch: when UPDATE_SCREENSHOTS_LABEL=true (the PR carries the
  * `update-screenshots` label) all filtering is disabled — noise AND flap — and
- * every changed shot is kept, so a maintainer who deliberately wants even the
- * micro-diffs / a specific flapping state committed can force it.
+ * every changed shot is kept for deliberate review.
  *
  * Tunables (env):
  *   SCREENSHOT_DIFF_COLOR_THRESHOLD  per-pixel color delta, 0..1 (pixelmatch
@@ -88,8 +81,7 @@
  * `flapping-json`, `contested-json`, `out-of-scope-json` (JSON arrays of
  * { name, path, diffPixels, ratioPct, ... }; flap items carry `matchedSha`,
  * contested items carry `branchTouched` / `mainTouched`) and `main-sha` (tip of
- * SCREENSHOT_MAIN_REF, for blob-URL image links) so the commit job's PR comment
- * can show the held shots for a human.
+ * SCREENSHOT_MAIN_REF, for callers that present base comparisons).
  *
  * Run: node scripts/filter-screenshots.mts [--dir tests/e2e/screenshots] [--dry-run]
  */

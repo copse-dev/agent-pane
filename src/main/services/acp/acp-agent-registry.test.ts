@@ -1,6 +1,7 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { setSetting } from '../storage/settings.ts'
+import { runSerialized } from '../storage/write-queue.ts'
 import { KNOWN_ACP_AGENTS, RETIRED_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   getAcpAgent,
@@ -8,6 +9,7 @@ import {
   listEnabledAcpAgents,
   resolveAcpPermissionMode,
   resolveAcpSandbox,
+  upsertAcpAgent,
 } from './acp-agent-registry.ts'
 
 describe('acp agent registry', () => {
@@ -43,6 +45,52 @@ describe('acp agent registry', () => {
     assert.deepEqual(listAcpAgents(), [])
     assert.deepEqual(listEnabledAcpAgents(), [])
     assert.equal(getAcpAgent('anything'), null)
+  })
+
+  it('keeps different agents registered when two registrations overlap', async () => {
+    await setSetting('registeredAcpAgents', [])
+
+    await Promise.all([
+      upsertAcpAgent({ id: 'first', title: 'First', command: 'first', enabled: true }),
+      upsertAcpAgent({ id: 'second', title: 'Second', command: 'second', enabled: true }),
+    ])
+
+    assert.deepEqual(
+      listAcpAgents().map((agent) => agent.id),
+      ['first', 'second'],
+    )
+  })
+
+  it('reads inside the settings queue for its own key, not a private one', async () => {
+    // A private queue cannot see any other writer of `registeredAcpAgents`, so
+    // the read has to sit on `settings:<key>` alongside every other write to it.
+    await setSetting('registeredAcpAgents', [])
+
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    void runSerialized('settings:registeredAcpAgents', () => blocked)
+
+    let settled = false
+    const registering = upsertAcpAgent({
+      id: 'first',
+      title: 'First',
+      command: 'first',
+      enabled: true,
+    }).then(() => {
+      settled = true
+    })
+    for (let i = 0; i < 15; i++) await new Promise((resolve) => setTimeout(resolve, 1))
+
+    assert.equal(settled, false, 'the registration must wait behind the queued settings write')
+
+    release()
+    await registering
+    assert.deepEqual(
+      listAcpAgents().map((agent) => agent.id),
+      ['first'],
+    )
   })
 })
 

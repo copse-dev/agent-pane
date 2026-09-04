@@ -1,5 +1,5 @@
 import type { ModelUsage, Thread } from '@shared/types'
-import { isLocalModel, costForModelUsage } from '@copse/llm/estimate-cost.ts'
+import { isLocalModel, costForModelUsage, hasModelPricing } from '@copse/llm/estimate-cost.ts'
 import type { ModelPricingMap } from '@copse/llm/model-pricing.ts'
 import type { UsageEvent } from './usage-event.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -16,6 +16,8 @@ export interface ModelUsageBreakdown {
   cacheCreationTokens?: number
   estimatedCostUsd: number
   isLocal: boolean
+  /** True for catalogued routes, including routes whose published rate is zero. */
+  pricingKnown: boolean
   /** Some contributing events used estimated (not agent-reported) token counts. */
   estimatedTokens?: boolean
 }
@@ -26,6 +28,8 @@ export interface UsagePeriodSummary {
   localModels: ModelUsageBreakdown[]
   totalInputTokens: number
   totalOutputTokens: number
+  /** At least one cloud model in this period has usage but no known rate. */
+  hasUnpricedCloudUsage: boolean
 }
 
 export interface UsageSummary {
@@ -109,6 +113,7 @@ function toBreakdown(
   estimatedTokens = false,
 ): ModelUsageBreakdown {
   const isLocal = isLocalModel(model)
+  const pricingKnown = isLocal || hasModelPricing(model, pricing)
   return {
     model,
     inputTokens: usage.inputTokens,
@@ -119,6 +124,7 @@ function toBreakdown(
       : {}),
     estimatedCostUsd: isLocal ? 0 : costForModelUsage(model, usage, pricing),
     isLocal,
+    pricingKnown,
     ...(estimatedTokens ? { estimatedTokens: true } : {}),
   }
 }
@@ -133,6 +139,7 @@ function summarizeByModel(
   let totalCostUsd = 0
   let totalInputTokens = 0
   let totalOutputTokens = 0
+  let hasUnpricedCloudUsage = false
 
   for (const [model, usage] of Object.entries(byModel)) {
     if (!usage.inputTokens && !usage.outputTokens) continue
@@ -140,6 +147,7 @@ function summarizeByModel(
     totalInputTokens += usage.inputTokens
     totalOutputTokens += usage.outputTokens
     totalCostUsd += row.estimatedCostUsd
+    if (!row.isLocal && !row.pricingKnown) hasUnpricedCloudUsage = true
     if (row.isLocal) localModels.push(row)
     else cloudModels.push(row)
   }
@@ -150,14 +158,14 @@ function summarizeByModel(
   cloudModels.sort(byTokens)
   localModels.sort(byTokens)
 
-  return { totalCostUsd, cloudModels, localModels, totalInputTokens, totalOutputTokens }
-}
-
-export function summarizeUsageByModel(
-  byModel: Record<string, ModelUsage>,
-  pricing?: ModelPricingMap,
-): UsagePeriodSummary {
-  return summarizeByModel(byModel, pricing)
+  return {
+    totalCostUsd,
+    cloudModels,
+    localModels,
+    totalInputTokens,
+    totalOutputTokens,
+    hasUnpricedCloudUsage,
+  }
 }
 
 export function buildUsageSummary(

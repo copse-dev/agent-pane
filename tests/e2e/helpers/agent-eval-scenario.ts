@@ -76,6 +76,20 @@ const evalScenarioSchema = z.object({
       armGuardedYolo: z.boolean().optional(),
     })
     .optional(),
+  assertSubagents: z
+    .object({
+      require: z
+        .array(
+          z.object({
+            kind: z.enum(['explore', 'investigate_ci', 'delegate', 'custom']).optional(),
+            agentName: z.string().optional(),
+            status: z.enum(['running', 'done', 'error']).optional(),
+            summaryContains: z.string().optional(),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
   assertWorkspace: z
     .object({
       git: z

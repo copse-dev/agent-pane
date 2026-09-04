@@ -1,0 +1,123 @@
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { runSerialized, runSerializedUpdate, drainWriteQueue } from './write-queue.ts'
+
+const tick = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
+
+describe('write-queue', () => {
+  it('serializes ops on the same key (no lost concurrent updates)', async () => {
+    // Simulate the read-modify-write race: two callers each read the shared
+    // value, append, and write back. Without serialization one update is lost.
+    let store: string[] = []
+    const slowAppend = (item: string): Promise<void> =>
+      runSerialized('k', async () => {
+        const current = store // read
+        await tick() // yield: lets a concurrent caller interleave if unserialized
+        store = [...current, item] // write
+      })
+
+    await Promise.all([slowAppend('a'), slowAppend('b')])
+    assert.deepEqual([...store].sort(), ['a', 'b'])
+  })
+
+  it('runs ops on the same key in submission order', async () => {
+    const order: number[] = []
+    const mk = (n: number): Promise<void> =>
+      runSerialized('order', async () => {
+        await tick()
+        order.push(n)
+      })
+    await Promise.all([mk(1), mk(2), mk(3)])
+    assert.deepEqual(order, [1, 2, 3])
+  })
+
+  it('re-reads the latest value before each serialized update', async () => {
+    let stored: readonly string[] = []
+    let releaseFirstWrite: (() => void) | undefined
+    let markFirstWriteStarted: (() => void) | undefined
+    const firstWriteStarted = new Promise<void>((resolve) => {
+      markFirstWriteStarted = resolve
+    })
+    const firstWriteReleased = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve
+    })
+    let writeCount = 0
+    const append = (value: string): Promise<readonly string[]> =>
+      runSerializedUpdate(
+        'update',
+        () => stored,
+        (current) => [...current, value],
+        async (next) => {
+          writeCount += 1
+          if (writeCount === 1) {
+            markFirstWriteStarted?.()
+            await firstWriteReleased
+          }
+          stored = next
+        },
+      )
+
+    const appendA = append('a')
+    await firstWriteStarted
+    const appendB = append('b')
+    releaseFirstWrite?.()
+    await Promise.all([appendA, appendB])
+
+    assert.deepEqual(stored, ['a', 'b'])
+  })
+
+  it('does not serialize across different keys', async () => {
+    let bStarted = false
+    const a = runSerialized('a', async () => {
+      // a stays pending until b has had a chance to start
+      await tick()
+      assert.equal(bStarted, true)
+    })
+    const b = runSerialized('b', () => {
+      bStarted = true
+    })
+    await Promise.all([a, b])
+  })
+
+  it('a rejecting op does not poison later submissions for the key', async () => {
+    await assert.rejects(runSerialized('p', () => Promise.reject(new Error('boom'))))
+    const ok = await runSerialized('p', () => 'recovered')
+    assert.equal(ok, 'recovered')
+  })
+
+  it('drainWriteQueue resolves after queued writes settle', async () => {
+    let done = false
+    void runSerialized('drain', async () => {
+      await tick()
+      done = true
+    })
+    await drainWriteQueue()
+    assert.equal(done, true)
+  })
+
+  it('drains follow-up writes enqueued while the first snapshot settles', async () => {
+    let releaseLate!: () => void
+    const lateGate = new Promise<void>((resolve) => {
+      releaseLate = resolve
+    })
+    let lateDone = false
+    const first = runSerialized('drain-first', () => {
+      void runSerialized('drain-late', async () => {
+        await lateGate
+        lateDone = true
+      })
+    })
+
+    let drained = false
+    const drain = drainWriteQueue().then(() => {
+      drained = true
+    })
+    await first
+    await tick()
+    assert.equal(drained, false, 'a newer queue tail must keep the drain pending')
+
+    releaseLate()
+    await drain
+    assert.equal(lateDone, true)
+  })
+})

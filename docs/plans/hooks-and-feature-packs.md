@@ -164,7 +164,10 @@ revisiting this document, not silently diverging in an implementation PR.
     programmatic stop button — the loop already handles that external signal.
 13. **Per-hook timeouts, vendor defaults.** Claude command hooks default to 600s; our
     fixed 5s would kill real hooks. Blocking-hook wait pauses the idle deadline the same
-    way tool execution does. Async over-cap dispatches (concurrency cap ~8/thread) go
+    way tool execution does. It does **not** pause the absolute hard deadline: the run's
+    abort signal remains threaded through blocking hooks and permission prompts, so a
+    pending gate is dismissed when that hard cap fires. Async over-cap dispatches
+    (concurrency cap ~8/thread) go
     into a pending-dispatch FIFO (deferred spawn, still detached, no ordering promises;
     cap ~100 then drop-with-spine-record). Nothing ever waits on the FIFO.
 14. **Payloads are treated as stable now; stability is _declared_ at publish time.**
@@ -303,6 +306,22 @@ revisiting this document, not silently diverging in an implementation PR.
     the compact event. Thread metadata mirrors the ordered selection history for sidebar
     loads and portable export. This is an observation event: it cannot rewrite routing or
     block the user-selected model.
+
+25. **Dialect adapters are a workspace package.** `cursor-adapter`, `claude-adapter`,
+    `copse-adapter`, `dialect-registry`, `command-hook-runner`, `hook-spawn`, `hook-depth`,
+    `session-env`, the vendored vendor schemas, and the hook types moved from
+    `src/main/services/hooks/` and `src/shared/` into `packages/hooks-dialects`
+    (`@copse/hooks-dialects`, the library-splits plan). The package imports nothing from the
+    host: the four host facts it needs (the project sandbox runtime, the scrubbed child env,
+    the agent execution root, the profile root) are installed once through
+    `configureHooksDialects`, and the runner reports each execution to a caller-supplied
+    `record` sink rather than importing the spine recorder — the app's
+    `command-hook-runner.ts` wrapper binds that sink to `recordCommandHookRun` with the
+    fire site's snapshot, so decisions 3 and 6 are unchanged. Defaults are the conservative
+    reading (no sandbox, no recording), the same "a default, not a guarantee" stance as F3.
+    `SpineHookRunDecision` is now `HookRunDecision` in `packages/agent`'s outcome
+    vocabulary, re-exported by the spine under its old name. Rule 4 of the execution guidance
+    names the new layout.
 
 ## Target architecture
 
@@ -724,10 +743,13 @@ exists because it converts a class of likely mistake into a mechanical failure:
    error over a review comment over a runtime check, in that order.
 4. **Module layout is fixed.** Registry + canonical events + first-party hooks live in
    `packages/agent` (Electron-free — function hooks receive app services via context,
-   never import them). Command executor, dialect adapters, spawning, and sandbox live in
-   `src/main/services/hooks/`. Renderer hook cards / held-queue UI in
-   `src/renderer/views/`. Anything that violates the `packages/agent` purity boundary is
-   wrong even if it works.
+   never import them). Dialect adapters, the command-hook runner, hook spawning, and the
+   vendored schemas live in `packages/hooks-dialects` (host-free — decision 25: the
+   sandbox, child env, execution root, and profile root arrive through
+   `configureHooksDialects`). The event fire sites, the environment binding, recording,
+   and the sandbox itself live in `src/main/services/hooks/` and `src/main/project-sandbox/`.
+   Renderer hook cards / held-queue UI in `src/renderer/views/`. Anything that violates the
+   `packages/agent` or `packages/hooks-dialects` purity boundary is wrong even if it works.
 5. **Test tiers per [`docs/testing-strategy.md`](../testing-strategy.md):** unit tests
    for policy, adapters (against the golden vendor fixtures from G4), budget, epoch;
    component tests for renderer queue/held/card states; e2e only for gate wiring

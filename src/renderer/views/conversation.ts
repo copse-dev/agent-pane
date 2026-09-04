@@ -8,7 +8,11 @@ import {
   warningIcon,
   zapIcon,
 } from '../dom/icons.ts'
-import { fillUserPromptFold, splitUserPromptForFold } from './user-prompt-fold.ts'
+import {
+  fillUserPromptFold,
+  splitUserPromptForFold,
+  type UserPromptFoldRegion,
+} from './user-prompt-fold.ts'
 import {
   getHookCardStatusLabel,
   getHookCardTitle,
@@ -44,6 +48,7 @@ import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
 import { splitCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
+import { stripInlineVisualizationReferences } from '@shared/inline-visualization.ts'
 import type {
   Message,
   MessageOrigin,
@@ -284,18 +289,11 @@ function appendIfPresent(node: Node | null): Node[] {
 }
 
 /**
- * The thumbnail-and-Open card for a rendered canvas artefact, or null when this
- * tool call did not render one (or rendered before a preview could be captured
- * — a missing thumbnail is normal, see `CanvasArtefact.preview`).
- *
- * Placed after the standard sections so the args and result stay where every
- * other card keeps them; the preview is an addition, not a replacement.
+ * The shared thumbnail-and-Open card for a rendered canvas artefact. Tool calls
+ * and assistant presentation references both reach this constructor; a missing
+ * thumbnail is normal and leaves either surface cardless.
  */
-function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement | null {
-  if (tc.status !== 'done') return null
-  const uri = artefactUriFromToolResult(tc.result)
-  if (!uri) return null
-  const title = artefactTitleFromUri(uri)
+function createCanvasPreviewCard(threadId: string, title: string): HTMLElement | null {
   const preview = getArtefactPreview(threadId, title)
   if (!preview) return null
 
@@ -314,6 +312,25 @@ function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement
       open,
     ),
   )
+}
+
+function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement | null {
+  if (tc.status !== 'done') return null
+  const uri = artefactUriFromToolResult(tc.result)
+  return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null
+}
+
+function syncMessageCanvasPreviews(msgEl: HTMLElement, msg: Message, threadId: string): void {
+  const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
+  if (!body) return
+  body.querySelector(':scope > .message-canvas-previews')?.remove()
+
+  const cards = (msg.canvasArtefacts ?? []).flatMap((artefact) => {
+    const card = createCanvasPreviewCard(threadId, artefact.title)
+    return card ? [card] : []
+  })
+  if (cards.length === 0) return
+  body.append(el('div', { class: 'message-canvas-previews' }, ...cards))
 }
 
 function createIndividualToolCard(
@@ -341,7 +358,7 @@ function assistantDisplayParts(content: string): {
   body: string
   transportNoise: string | null
 } {
-  const stripped = stripTextToolCallBlocks(content)
+  const stripped = stripInlineVisualizationReferences(stripTextToolCallBlocks(content))
   const { body, noise } = splitCursorAcpTransportNoise(stripped)
   return { body, transportNoise: noise }
 }
@@ -880,8 +897,21 @@ function hookCardDetailLines(card: HookCard): string[] {
   if (card.status === 'ask') lines.push('Requested approval for the gated action')
   if (card.status === 'halted') lines.push('Stopped the agent run')
   if (card.updatedInput) lines.push('Rewrote the tool input')
+  // The effect line: this is the nudge the loop pushed, not merely one offered
+  // at a boundary where several hooks offered and only one could win.
+  if (card.nudgeApplied) {
+    const via =
+      card.nudgeMechanism === 'text-only-turn'
+        ? 'as a forced text-only turn'
+        : 'appended to the next turn'
+    lines.push(`Applied this nudge to the conversation — ${via}`)
+  }
   if (card.injectContextChars !== undefined && card.injectContextChars > 0) {
-    lines.push(`Injected ${String(card.injectContextChars)} chars of context`)
+    lines.push(
+      card.nudgeApplied
+        ? `${String(card.injectContextChars)} chars of nudge text`
+        : `Injected ${String(card.injectContextChars)} chars of context`,
+    )
   }
   if (card.agentMessageChars !== undefined && card.agentMessageChars > 0) {
     lines.push(`Sent ${String(card.agentMessageChars)} chars of guidance to the agent`)
@@ -1229,22 +1259,55 @@ function renderUserTranscript(
   const pastes = attachments.filter((a) => a.kind === 'paste')
   const trailing = attachments.filter((a) => a.kind !== 'paste')
 
-  const parts = content.split(CHIP_CHAR)
-  parts.forEach((part, i) => {
-    if (part) host.append(document.createTextNode(part))
-    if (i < parts.length - 1) {
-      // Pass the whole attachment, not just its label: the snapshot behind a
-      // paste is what makes its chip openable in the preview modal. A
-      // placeholder with no attachment left to match stays display-only.
-      host.append(transcriptChip(pastes[i] ?? { kind: 'paste', label: 'Pasted text' }, api))
-    }
-  })
+  // Text with its inline paste chips restored at each placeholder. `firstChip`
+  // is where this run of placeholders starts in the message's paste list, so a
+  // region painted on its own — one bookend of a fold — still binds its chips to
+  // the right snapshots instead of restarting from the first paste.
+  const paintRegion = (sink: HTMLElement, text: string, firstChip: number): void => {
+    const parts = text.split(CHIP_CHAR)
+    parts.forEach((part, i) => {
+      if (part) sink.append(document.createTextNode(part))
+      if (i < parts.length - 1) {
+        // Pass the whole attachment, not just its label: the snapshot behind a
+        // paste is what makes its chip openable in the preview modal. A
+        // placeholder with no attachment left to match stays display-only.
+        sink.append(
+          transcriptChip(pastes[firstChip + i] ?? { kind: 'paste', label: 'Pasted text' }, api),
+        )
+      }
+    })
+  }
 
+  // A prompt carrying attachments is still a prompt: fold its middle when it is
+  // long, exactly as the plain-text path does. The head/middle/tail are
+  // contiguous slices of `content`, so counting placeholders in the earlier
+  // regions gives each one its offset into `pastes`.
+  const fold = splitUserPromptForFold(content)
+  if (fold) {
+    const headChips = countChipPlaceholders(fold.head)
+    const firstChip: Record<UserPromptFoldRegion, number> = {
+      head: 0,
+      middle: headChips,
+      tail: headChips + countChipPlaceholders(fold.middle),
+    }
+    fillUserPromptFold(host, fold, (sink, text, region) => {
+      paintRegion(sink, text, firstChip[region])
+    })
+  } else {
+    paintRegion(host, content, 0)
+  }
+
+  // Outside the fold: file/thread chips stay visible while the middle is
+  // collapsed, so a folded prompt still shows what was attached to it.
   if (trailing.length) {
     const row = el('div', { class: 'transcript-attachment-row' })
     for (const a of trailing) row.append(transcriptChip(a, api))
     host.append(row)
   }
+}
+
+function countChipPlaceholders(text: string): number {
+  return text.split(CHIP_CHAR).length - 1
 }
 
 /**
@@ -1692,6 +1755,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // (especially scrolling up mid-stream) is never mistaken for autoscroll (#468).
   let lastProgrammaticScrollTop = -1
   let userScrolledUpAt = 0
+  let renderedThreadId: string | null = null
   // Bumped on every rebuildForThread (and on unmount) so a backward-fill step
   // scheduled by a since-superseded rebuild recognizes it's stale and bails
   // instead of touching a list that has since been cleared/rebuilt again.
@@ -1755,7 +1819,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       activityBar.hidden = true
       return
     }
-    activityLabel.textContent = label
+    // Assigning textContent replaces the text node even when the string is
+    // identical, and the row is aria-live, so an unconditional write re-announces
+    // the same label. Emitters outside the agent controller (message queue,
+    // retry/review) do not share its dedupe key, so guard here too.
+    if (activityLabel.textContent !== label) activityLabel.textContent = label
     // Once reasoning tokens exist, the disclosure title is the activity row.
     // Keep the standalone row for the initial wait before the first token, but
     // never show two live "Reasoning…" labels in the transcript.
@@ -2111,6 +2179,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
       ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
     })
+    syncMessageCanvasPreviews(msgEl, msg, threadId)
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
@@ -2464,12 +2533,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function rebuildForThread(): void {
-    pinnedToBottom = true
-    userScrolledUpAt = 0
-    lastScrollTop = 0
+    const thread = getActiveThread(store)
+    const rebuildingSameThread = thread !== undefined && thread.id === renderedThreadId
+    const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null
+    if (!rebuildingSameThread) {
+      pinnedToBottom = true
+      userScrolledUpAt = 0
+      lastScrollTop = 0
+    }
     clear(list)
     backfillGeneration++
-    const thread = getActiveThread(store)
+    renderedThreadId = thread?.id ?? null
     if (!thread) {
       finishThreadChrome(null)
       return
@@ -2505,7 +2579,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // the view lands at the bottom before the chrome is inserted around it.
     syncModelLabels()
     syncUserActions()
-    scrollToBottom(true)
+    if (preservedScrollTop === null) {
+      scrollToBottom(true)
+    } else {
+      setScrollTopProgrammatically(preservedScrollTop)
+    }
     finishThreadChrome(thread)
     if (initialStart > 0) {
       const generation = backfillGeneration
@@ -2563,6 +2641,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
             setReasoningDisclosureTitle(details, false)
           })
         }
+        scrollToBottom()
+      }
+    }),
+    store.on('message_canvas_artefacts_changed', (mid) => {
+      const thread = getActiveThread(store)
+      const msg = thread?.messages.find((message) => message.id === mid)
+      const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
+      if (thread && msg?.role === 'assistant' && msgEl) {
+        syncMessageCanvasPreviews(msgEl, msg, thread.id)
         scrollToBottom()
       }
     }),

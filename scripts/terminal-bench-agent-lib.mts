@@ -1,13 +1,13 @@
 import { createInterface } from 'node:readline'
 import { copyFileSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
-import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
+import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
 import {
   PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS,
   PRODUCT_REASONING_CHECKPOINT_POLICY,
   PRODUCT_REASONING_RECOVERY_MAX_TOKENS,
-} from '../packages/agent/src/reasoning-checkpoint-policy.ts'
-import type { ReasoningCheckpointPolicy } from '../packages/agent/src/reasoning-circle-detector.ts'
+} from '@copse/agent/reasoning-checkpoint-policy.ts'
+import type { ReasoningCheckpointPolicy } from '@copse/agent/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import { OpenAIProvider } from '@copse/llm/openai-provider.ts'
@@ -292,6 +292,15 @@ export function terminalBenchProfileToolNames(profile: TerminalBenchProfile): st
   return profile.exposesWriteFile ? ['run_shell', 'write_file'] : ['run_shell']
 }
 
+export function terminalBenchSystemPrompt(
+  profile: TerminalBenchProfile,
+  workspaceRoot: string,
+): string {
+  // The root is literal prompt data. Replacement strings expand `$$`, `$&`,
+  // `` $` ``, and `$'`, corrupting valid workspace paths containing them.
+  return profile.systemPrompt.replaceAll('{WORKSPACE_ROOT}', () => workspaceRoot)
+}
+
 export function terminalShellResultIsError(
   profile: TerminalBenchProfile,
   result: TerminalToolResult,
@@ -392,7 +401,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
   const messages = [
     {
       role: 'system' as const,
-      content: profile.systemPrompt.replaceAll('{WORKSPACE_ROOT}', parsed.workspaceRoot),
+      content: terminalBenchSystemPrompt(profile, parsed.workspaceRoot),
     },
     ...(steering
       ? [

@@ -1,4 +1,4 @@
-import { createReadStream } from 'node:fs'
+import { createReadStream, watch, type FSWatcher } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -46,6 +46,28 @@ interface PreviewServerEntry {
   root: string
   server: Server
   url: string
+  /** Recursive watch on `root`, so an edit to a served file reaches the pane. */
+  watcher: FSWatcher | null
+  /** Armed reload for this origin, coalescing a burst of writes into one. */
+  staleTimer: ReturnType<typeof setTimeout> | null
+  /**
+   * Every spelling of this root a caller has used, canonical form included.
+   * `/tmp` and `/var` are symlinks on macOS, so the path the workspace watcher
+   * reports a change under is routinely not the realpath the server keyed
+   * itself by; matching on either spelling avoids a silently missed reload
+   * without an fs round-trip on every change burst.
+   */
+  roots: Set<string>
+  /**
+   * Root-relative paths this server has actually served, so a workspace edit
+   * can be matched against what a preview is showing. Populated by real
+   * requests, which is the only source that knows a page's sub-resources: the
+   * entry document alone would miss the stylesheet and script edits that make up
+   * most of an iteration. Stored relative because that is the shape the
+   * recursive workspace watcher reports a change in. Bounded by the files a page
+   * requests.
+   */
+  served: Set<string>
 }
 
 export interface StaticPreviewServer {
@@ -88,6 +110,7 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
   const rootStat = await stat(canonicalRoot)
   if (!rootStat.isDirectory()) throw new Error('The preview root is not a directory.')
 
+  const served = new Set<string>()
   const server = createServer((request, response) => {
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       response.writeHead(405, { Allow: 'GET, HEAD' }).end()
@@ -99,6 +122,7 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
           response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found')
           return
         }
+        served.add(servedKey(canonicalRoot, file))
         response.writeHead(200, {
           'Cache-Control': 'no-store',
           'Content-Security-Policy': PREVIEW_CONTENT_SECURITY_POLICY,
@@ -140,7 +164,84 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
     })
   })
   server.unref()
-  return { root: canonicalRoot, server, url: `http://localhost:${String(port)}/` }
+  const entry: PreviewServerEntry = {
+    root: canonicalRoot,
+    server,
+    url: `http://localhost:${String(port)}/`,
+    served,
+    roots: new Set([resolve(canonicalRoot)]),
+    watcher: null,
+    staleTimer: null,
+  }
+  // The preview owns its own watch rather than borrowing the workspace index
+  // watcher: that one is a single-root singleton started by the workspace-open
+  // paths, so it never sees a thread worktree (#1400) — exactly where an agent
+  // iterating on a prototype does its work. Its rebuild coalescing is also
+  // load-bearing (#517), so grafting a second consumer onto it would be the
+  // wrong seam even where the roots did line up.
+  try {
+    const watcher = watch(canonicalRoot, { recursive: true, persistent: false }, (_e, filename) => {
+      if (filename !== null) handlePreviewWatchEvent(canonicalRoot, filename)
+    })
+    // An `error` with no listener is an uncaught exception that kills the main
+    // process. A deleted or unmounted preview root must drop the watch instead.
+    watcher.on('error', (err: unknown) => {
+      console.warn('[copse-panel] preview watcher failed for', canonicalRoot, err)
+      entry.watcher?.close()
+      entry.watcher = null
+    })
+    entry.watcher = watcher
+  } catch {
+    // A root that cannot be watched still previews; it just will not self-refresh.
+    entry.watcher = null
+  }
+  return entry
+}
+
+/**
+ * Coalescing window for reload notifications. An agent rewriting a page's HTML,
+ * CSS and script in one turn should repaint the preview once, not three times.
+ */
+export const PREVIEW_STALE_DEBOUNCE_MS = 200
+
+type PreviewStaleSink = (origin: string) => void
+
+let staleSink: PreviewStaleSink | null = null
+
+/** Install the Electron-facing delivery boundary for "this preview is stale". */
+export function setPreviewStaleSink(next: PreviewStaleSink | null): void {
+  staleSink = next
+}
+
+/**
+ * Route one recursive watch event. Exported for tests so the matching and
+ * coalescing can be exercised without depending on `fs.watch` timing.
+ */
+export function handlePreviewWatchEvent(root: string, filename: string): void {
+  for (const entry of servers.values()) {
+    if (!entry.roots.has(resolve(root))) continue
+    if (!entry.served.has(filename.split(sep).join('/'))) continue
+    if (entry.staleTimer) clearTimeout(entry.staleTimer)
+    entry.staleTimer = setTimeout(() => {
+      entry.staleTimer = null
+      staleSink?.(entry.url)
+    }, PREVIEW_STALE_DEBOUNCE_MS)
+  }
+}
+
+/** Test hook — deliver every armed reload immediately. */
+export function flushPreviewStaleForTest(): void {
+  for (const entry of servers.values()) {
+    if (!entry.staleTimer) continue
+    clearTimeout(entry.staleTimer)
+    entry.staleTimer = null
+    staleSink?.(entry.url)
+  }
+}
+
+/** One comparable key for a served file: root-relative, forward slashes. */
+function servedKey(root: string, absolutePath: string): string {
+  return relative(root, absolutePath).split(sep).join('/')
 }
 
 /**
@@ -152,8 +253,12 @@ async function createPreviewServer(root: string): Promise<PreviewServerEntry> {
 export async function getStaticPreviewServer(root: string): Promise<StaticPreviewServer> {
   const canonicalRoot = await realpath(root)
   const existing = servers.get(canonicalRoot)
-  if (existing) return { root: existing.root, url: existing.url }
+  if (existing) {
+    existing.roots.add(resolve(root))
+    return { root: existing.root, url: existing.url }
+  }
   const created = await createPreviewServer(canonicalRoot)
+  created.roots.add(resolve(root))
   servers.set(canonicalRoot, created)
   return { root: created.root, url: created.url }
 }
@@ -193,6 +298,10 @@ export function staticPreviewUrl(baseUrl: string, entryPath = '/'): string {
 export async function shutdownStaticPreviewServers(): Promise<void> {
   const active = [...servers.values()]
   servers.clear()
+  for (const entry of active) {
+    entry.watcher?.close()
+    if (entry.staleTimer) clearTimeout(entry.staleTimer)
+  }
   await Promise.all(
     active.map(
       ({ server }) =>

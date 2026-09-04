@@ -5,6 +5,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import { discoverCursorPluginRoots, resolvePluginSkillsDir } from './cursor-plugins.ts'
 import { listBundledCursorPluginRoots } from './bundled-cursor-skills.ts'
 import { getBuiltinSkillsRoot } from './builtin-skills.ts'
+import { pathExists, walkForContainerRoots, walkForFiles } from '../discovery/container-scan.ts'
 import { getSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import {
@@ -22,55 +23,12 @@ import type {
 import { READ_FILE_LIMITS_CEILING } from '@copse/agent/read-file-limits.ts'
 import { extractExternalLinkHosts } from '@shared/skills/extract-skill-links.ts'
 import { notifyRefreshContextEstimate } from '../context-estimate-notify.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /** Max bytes read from a skill file (auto-approved, outside workspace). */
 export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
 
 const SKILL_CONTAINER_DIRS = new Set(['.cursor', '.agents', '.claude'])
-
-/**
- * Directories the project skill scan never descends into.
- *
- * The scan looks for `<.cursor|.agents|.claude>/skills` anywhere under the
- * workspace, so with only `node_modules`/`.git` excluded it walked build output,
- * vendored trees and virtualenvs too — thousands of directories that cannot
- * contain a hand-authored skill. Worse, Copse's own `dist/` holds the bundled
- * Cursor skills, so a checkout of this repo re-scanned them as "project" skills
- * and logged duplicate-skill warnings against its own build artifacts.
- *
- * Everything here is either generated, vendored, or a package/tool cache. A skill
- * authored inside one would not survive a clean build anyway.
- */
-const SKIP_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'dist-test',
-  'out',
-  'build',
-  'target',
-  'vendor',
-  'coverage',
-  '.next',
-  '.nuxt',
-  '.svelte-kit',
-  '.turbo',
-  '.cache',
-  '.venv',
-  'venv',
-  '__pycache__',
-])
-
-/**
- * How deep below the workspace root the project skill scan descends.
- *
- * Skill containers live near a package root by convention — `.cursor/skills` at
- * the workspace root, or one per package in a monorepo (`packages/x/.cursor/…`).
- * Six levels covers both with room to spare, and bounds the walk on a workspace
- * whose tree is unexpectedly deep (a nested checkout, a huge data directory)
- * rather than letting boot pay for the full traversal.
- */
-const MAX_SKILL_ROOT_DEPTH = 6
 
 let cachedSkills: SkillMetadata[] = []
 let refreshPromise: Promise<void> | null = null
@@ -87,70 +45,6 @@ function skillsEnabled(): boolean {
 function userSkillRoots(): string[] {
   const home = homedir()
   return ['.cursor', '.agents', '.claude'].map((dir) => join(home, dir, 'skills'))
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await fsp.access(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function walkForSkillRoots(dir: string, out: Set<string>, depth = 0): Promise<void> {
-  if (depth >= MAX_SKILL_ROOT_DEPTH) return
-  let entries
-  try {
-    entries = await fsp.readdir(dir, { withFileTypes: true })
-  } catch {
-    return
-  }
-
-  // A nested repository — a git worktree, a submodule, a vendored clone — is a
-  // separate project that happens to live inside this one. Its skills are not
-  // this workspace's, and for a worktree they are literally the same files on
-  // another branch: scanning `.claude/worktrees/*` found every skill again and
-  // logged a duplicate warning for each. `.git` is a directory in a clone and a
-  // *file* in a worktree, so match on the name and not on its type.
-  if (depth > 0 && entries.some((entry) => entry.name === '.git')) return
-
-  for (const entry of entries) {
-    if (!entry.isDirectory() || SKIP_DIRS.has(entry.name)) continue
-    const full = join(dir, entry.name)
-    if (entry.name === 'skills') {
-      const parent = basename(dirname(full))
-      // A container's own `skills/` dir is the root itself — its subtree holds
-      // the skills, not more containers, so there is nothing below to look for.
-      if (SKILL_CONTAINER_DIRS.has(parent)) {
-        out.add(full)
-        continue
-      }
-    }
-    await walkForSkillRoots(full, out, depth + 1)
-  }
-}
-
-async function walkForSkillFiles(
-  root: string,
-  onFound: (path: string) => Promise<void>,
-): Promise<void> {
-  let entries
-  try {
-    entries = await fsp.readdir(root, { withFileTypes: true })
-  } catch {
-    return
-  }
-
-  for (const entry of entries) {
-    const full = join(root, entry.name)
-    if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue
-      await walkForSkillFiles(full, onFound)
-      continue
-    }
-    if (entry.name === 'SKILL.md') await onFound(full)
-  }
 }
 
 async function loadSkillFromFile(
@@ -215,7 +109,11 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
   const workspace = getWorkspaceRoot()
   if (workspace) {
     const projectRoots = new Set<string>()
-    await walkForSkillRoots(workspace, projectRoots)
+    await walkForContainerRoots(
+      workspace,
+      { containerDirs: SKILL_CONTAINER_DIRS, leafName: 'skills' },
+      projectRoots,
+    )
     for (const root of projectRoots) roots.push({ root, source: 'project' })
   }
 
@@ -257,9 +155,13 @@ async function discoverSkillsRegistry(): Promise<SkillMetadata[]> {
   const discoveryRoots = await collectDiscoveryRoots()
 
   for (const { root, source } of discoveryRoots) {
-    await walkForSkillFiles(root, async (skillPath) => {
-      await loadSkillFromFile(skillPath, source, skills)
-    })
+    await walkForFiles(
+      root,
+      (fileName) => fileName === 'SKILL.md',
+      async (skillPath) => {
+        await loadSkillFromFile(skillPath, source, skills)
+      },
+    )
   }
 
   return [...skills.values()].sort((a, b) => a.name.localeCompare(b.name))
@@ -275,6 +177,11 @@ export async function initSkillsRegistry(): Promise<void> {
   await refreshPromise
   refreshPromise = null
   notifyRefreshContextEstimate()
+}
+
+/** Wait until an already-started discovery pass has populated the shared cache. */
+export async function waitForSkillsRegistryRefresh(): Promise<void> {
+  if (refreshPromise) await refreshPromise
 }
 
 /** Discover and scope the product skill catalog to one explicit headless run. */
@@ -316,9 +223,25 @@ export function getSkill(name: string): SkillMetadata | null {
   return activeSkills().find((skill) => skill.name === name) ?? null
 }
 
+function unknownSkillError(name: string): Error {
+  const available = activeSkills().map((skill) => skill.name)
+  if (available.length === 0) {
+    return new Error(`Unknown skill "${name}". No skills are currently available.`)
+  }
+  const shown = available.slice(0, 10)
+  const remaining = available.length - shown.length
+  const more = remaining > 0 ? ` (+${String(remaining)} more; see the Skills catalog)` : ''
+  return new Error(`Unknown skill "${name}". Available skills: ${shown.join(', ')}${more}.`)
+}
+
+function isNotFoundError(error: unknown): boolean {
+  if (!isRecord(error)) return false
+  return error['code'] === 'ENOENT' || error['code'] === 'ENOTDIR'
+}
+
 export async function readSkill(name: string, relativePath = 'SKILL.md'): Promise<SkillReadResult> {
   const skill = getSkill(name)
-  if (!skill) throw new Error(`Unknown skill: ${name}`)
+  if (!skill) throw unknownSkillError(name)
 
   const normalized = relativePath.replace(/^\/+/, '')
   const target = resolve(skill.skillRoot, normalized)
@@ -327,7 +250,19 @@ export async function readSkill(name: string, relativePath = 'SKILL.md'): Promis
     throw new Error(`Path outside skill root: ${relativePath}`)
   }
 
-  const stat = await fsp.stat(target)
+  let stat: Awaited<ReturnType<typeof fsp.stat>>
+  try {
+    stat = await fsp.stat(target)
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      throw new Error(
+        `Skill file not found: ${normalized} in "${skill.name}". ` +
+          'The installed skill references a file that is missing; continue without it and report the broken reference.',
+        { cause: error },
+      )
+    }
+    throw error
+  }
   if (stat.size > SKILL_READ_MAX_BYTES) {
     throw new Error(
       `Skill file too large (${String(stat.size)} bytes; max ${String(SKILL_READ_MAX_BYTES)}): ${relativePath}`,

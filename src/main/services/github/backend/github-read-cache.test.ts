@@ -53,6 +53,7 @@ function emptyBackend(calls: { status: number; details: number; approve: number 
     listWorkspaceOpenIssues: async () => ({ issues: [], hasMore: false }),
     getIssue: async (): Promise<GhIssueSummary | null> => null,
     searchWorkspaceIssues: async () => [],
+    createPr: async () => ok,
     rerunFailedRuns: async () => ok,
     approvePr: async (): Promise<PrActionResult> => {
       calls.approve++
@@ -83,6 +84,39 @@ describe('cachingGitHubBackend', () => {
     invalidateGitHubReadCache()
     await backend.getStatus()
     assert.equal(calls.status, 2)
+  })
+
+  it('refetches when the refresh lands while a read is in flight', async () => {
+    // `clear` used to drop only the stored entry, so a refresh during a read was
+    // handed that same pre-refresh promise — and its answer then filled the slot
+    // for the whole 60s TTL, with GitHub never asked again.
+    const calls = { status: 0, details: 0, approve: 0 }
+    let release = (): void => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const inner = emptyBackend(calls)
+    const backend = cachingGitHubBackend({
+      ...inner,
+      getStatus: async (): Promise<GhCliStatus> => {
+        calls.status++
+        if (calls.status === 1) await gate
+        return status
+      },
+    })
+
+    const inFlight = backend.getStatus()
+    await Promise.resolve()
+    invalidateGitHubReadCache()
+
+    const afterRefresh = backend.getStatus()
+    release()
+    await Promise.all([inFlight, afterRefresh])
+
+    assert.equal(calls.status, 2, 'the refresh must issue its own read')
+    // And the first read's late answer must not have re-filled the cleared slot.
+    await backend.getStatus()
+    assert.equal(calls.status, 2, 'the refreshed value is what stays cached')
   })
 
   it('drops PR details after a write', async () => {

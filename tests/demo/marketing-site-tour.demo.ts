@@ -30,6 +30,75 @@ async function measureTour(): Promise<TourGeometry | null> {
 }
 
 describe('marketing site Tour anchor', () => {
+  it('publishes the source repo, and still hides it in the downloads-live stage', async () => {
+    await browser.setWindowSize(1280, 800)
+    await browser.url('/marketing/index.html')
+    await $('.hero-copy').waitForDisplayed()
+    await browser.waitUntil(() => browser.execute(() => document.fonts.status === 'loaded'))
+
+    // As published: no `data-site-mode`, so the repo links are live.
+    await expect($('.hero-copy a[href="https://github.com/copse-dev/agent-pane"]')).toBeDisplayed()
+    await expect($('footer a[href="https://github.com/copse-dev/agent-pane"]')).toBeDisplayed()
+    await expect($('.hero-badges .mode-source-live-only')).toHaveText('Free & open source')
+
+    // The pre-launch stages stay wired, so putting the attribute back still
+    // withholds every source link.
+    await browser.execute(() => {
+      document.documentElement.setAttribute('data-site-mode', 'downloads-live')
+    })
+
+    await expect($('.hero-badges .mode-source-private-only')).toBeDisplayed()
+    await expect($('.hero-badges .mode-source-private-only')).toHaveText('Free public beta')
+    await expect($('.hero-badges .mode-source-live-only')).not.toBeDisplayed()
+    const badgeLayout = await browser.execute(() => {
+      const badge = document.querySelector<HTMLElement>('.hero-badges .mode-source-private-only')
+      const icon = badge?.querySelector<SVGElement>('.badge-icon')
+      if (!badge || !icon) return null
+
+      const badgeRect = badge.getBoundingClientRect()
+      const iconRect = icon.getBoundingClientRect()
+      return {
+        display: getComputedStyle(badge).display,
+        height: badgeRect.height,
+        centerOffset: iconRect.top + iconRect.height / 2 - (badgeRect.top + badgeRect.height / 2),
+      }
+    })
+    expect(badgeLayout).not.toBeNull()
+    // An inline-flex child is blockified to `flex` when it participates as a
+    // flex item in .hero-badges. The broken publication override computed to
+    // `block` and stacked the icon above the label.
+    expect(badgeLayout?.display).toBe('flex')
+    expect(badgeLayout?.height).toBeLessThanOrEqual(32)
+    expect(Math.abs(badgeLayout?.centerOffset ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(1)
+    await browser.saveScreenshot(
+      join(E2E_SCREENSHOT_DIR, 'marketing-site-downloads-live-source-private-hero.png'),
+    )
+
+    const download = $(
+      '.download-panel .pill-pink[href="https://github.com/copse-dev/copse-releases/releases"]',
+    )
+    await expect(download).toBeDisplayed()
+    await expect(download).toHaveText('Download for macOS')
+    await expect($('.download-panel')).toHaveText(expect.stringContaining('Apple Silicon or Intel'))
+    await expect($('.download-panel .mode-source-live-only')).not.toBeDisplayed()
+    await expect($('.download-pending')).not.toBeDisplayed()
+    await expect($('footer a[href="https://github.com/copse-dev/agent-pane"]')).not.toBeDisplayed()
+
+    const panel = $('.download-panel')
+    await panel.scrollIntoView({ block: 'center' })
+    await browser.waitUntil(async () => {
+      const position = await browser.execute(() => {
+        const rect = document.getElementById('download')?.getBoundingClientRect()
+        return rect ? { bottom: rect.bottom, top: rect.top } : null
+      })
+      return position !== null && position.top >= 0 && position.bottom <= 800
+    })
+
+    await browser.saveScreenshot(
+      join(E2E_SCREENSHOT_DIR, 'marketing-site-downloads-live-source-private.png'),
+    )
+  })
+
   it('places the floating nav just above the demo with the hero copy out of view', async () => {
     await browser.setWindowSize(1450, 940)
     await browser.url('/marketing/index.html')
@@ -63,6 +132,16 @@ describe('marketing site Tour anchor', () => {
     await browser.url('/marketing/index.html')
     await $('.hero-copy').waitForDisplayed()
     await browser.waitUntil(() => browser.execute(() => document.fonts.status === 'loaded'))
+
+    const openSourceBadge = $('.hero-badges .mode-source-live-only')
+    await expect(openSourceBadge).toBeDisplayed()
+    await expect(openSourceBadge).toHaveText('Free & open source')
+    expect(
+      (await openSourceBadge.getSize('height')) ?? Number.POSITIVE_INFINITY,
+    ).toBeLessThanOrEqual(32)
+    await browser.saveScreenshot(
+      join(E2E_SCREENSHOT_DIR, 'marketing-site-mobile-open-source-badge.png'),
+    )
 
     await expect($('.hero-visual')).not.toBeDisplayed()
     await expect($('.hero-demo')).not.toBeDisplayed()

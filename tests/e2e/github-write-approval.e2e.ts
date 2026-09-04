@@ -54,4 +54,25 @@ describeSkipInCi('GitHub write approval', () => {
     await dialog.$('.approval-reject').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
   })
+
+  it('prompts before gh_pr_create opens a pull request, showing the PR title', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+
+    await setComposerValue('[[mcp:gh_pr_create {"title":"Fix the parser"}]]')
+    await $('.submit-btn').click()
+
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+
+    await expect(dialog.$('.approval-heading')).toHaveText('Open pull request on GitHub?')
+
+    const body = await dialog.$('.approval-body').getText()
+    expect(body).toBe('“Fix the parser”')
+    expect(body).not.toContain('gh_pr_create')
+
+    await saveElementScreenshot('#approval-dialog', 'github-write-approval-create-dialog.png')
+
+    await dialog.$('.approval-reject').click()
+    await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
+  })
 })

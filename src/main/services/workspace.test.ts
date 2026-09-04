@@ -11,6 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { setSetting } from './storage/settings.ts'
 import { storageSet } from './storage/storage.ts'
 import {
@@ -18,6 +19,7 @@ import {
   assertWorkspaceWriteTarget,
   clearAllowedWorkspaceRootsForTest,
   getChatStoreRoot,
+  getInternalWorkspaceRootRegistration,
   getProjectRoot,
   isResolvedPathInsideWorkspace,
   registerAllowedWorkspaceRoot,
@@ -319,6 +321,31 @@ describe('allowed workspace roots', () => {
       await seedAllowedWorkspaceRoots([{ path: allowed }])
     })
     await assert.doesNotReject(() => assertAllowedWorkspaceRoot(allowed))
+  })
+
+  it('registers sandbox metadata for a project inside a linked worktree', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'copse-allowed-linked-worktree-'))
+    const repo = join(root, 'repo')
+    const worktree = join(root, 'worktree')
+    const project = join(worktree, 'packages', 'app')
+    mkdirSync(repo)
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo })
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repo })
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo })
+    execFileSync('git', ['commit', '--allow-empty', '-m', 'initial'], { cwd: repo })
+    execFileSync('git', ['worktree', 'add', '-q', '-b', 'feature', worktree], { cwd: repo })
+    mkdirSync(project, { recursive: true })
+
+    try {
+      const registered = await registerAllowedWorkspaceRoot(project)
+      const linked = getInternalWorkspaceRootRegistration(registered)
+      assert.ok(linked)
+      assert.equal(linked.root, realpathSync.native(project))
+      assert.equal(linked.checkoutRoot, realpathSync.native(worktree))
+      assert.equal(linked.commonGitDir, realpathSync.native(join(repo, '.git')))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('tracks SSH project roots by host id and path', async () => {

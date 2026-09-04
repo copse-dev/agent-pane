@@ -156,6 +156,9 @@ describe('assessAutoApproval — git option injection', () => {
 
   it('accepts the inert global options', () => {
     assert.equal(approved('git --no-pager log --oneline -5', 'read'), 'read')
+    // A real option that only shares a prefix with a launcher is still a read.
+    assert.equal(approved('git grep --text needle', 'read'), 'read')
+    assert.equal(approved('git cat-file --batch-check --filter=blob:none', 'read'), 'read')
   })
 })
 
@@ -367,6 +370,13 @@ describe('assessAutoApproval — must never auto-approve', () => {
     ['git config write (core.pager is executable)', 'git config core.pager "sh -c id"'],
     ['git config read is still not enumerated', 'git config --get remote.origin.url'],
     ['git option injection', 'git -c core.pager=sh log'],
+    ['git grep pager execution', 'git grep --open-files-in-pager=./tool.sh needle'],
+    ['git abbreviated pager execution', 'git grep --open-files-in-p=./tool.sh needle'],
+    ['git shortest unique pager abbreviation', 'git grep --op=./tool.sh needle'],
+    ['git abbreviated textconv execution', 'git cat-file --te HEAD:file.txt'],
+    ['git external diff execution', 'git diff --ext-diff'],
+    ['git textconv execution', 'git show --textconv HEAD:file.txt'],
+    ['git working-tree filter execution', 'git cat-file --filters HEAD:file.txt'],
     ['env-var execution channel', "GIT_SSH_COMMAND='curl x.example' git fetch origin"],
     ['submodule update runs repo-controlled config', 'git submodule update --init'],
     ['credential exfiltration via gh', 'gh auth token'],

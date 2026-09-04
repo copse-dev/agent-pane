@@ -4,7 +4,14 @@ import type { ProjectWorktreeMode } from './worktree.ts'
 
 export type PanelTab = 'file' | 'diff'
 export type RightPanelMode =
-  'explorer' | 'terminal' | 'changes' | 'browser' | 'prs' | 'memories' | 'roadmap' | 'vnc'
+  | 'explorer'
+  | 'terminal'
+  | 'changes'
+  | 'browser'
+  | 'prs'
+  | 'memories'
+  | 'roadmap'
+  | 'vnc'
 // Where the right panel sits relative to chat. `auto` keeps the legacy behaviour
 // (vertical/side, auto-stacking on tall portrait windows); `side` and `bottom`
 // pin the panel so users can force a readable terminal on any screen.
@@ -76,17 +83,9 @@ export interface ProjectGroup {
   collapsed?: boolean
 }
 
-/**
- * A thread-store directory under `~/.copse/workspace/<id>/` that has no matching
- * project entry in config — threads that would otherwise be invisible. Surfaced
- * so they can be re-attached to a folder rather than recovered by hand (#997).
- */
-export interface OrphanProjectStore {
-  /** The store directory id (also the project id it would re-attach under). */
-  id: string
-  /** How many thread directories the store holds. */
-  threadCount: number
-}
+// Owned by the thread store, which discovers orphaned project directories;
+// re-exported so `@shared/types` consumers are unchanged.
+export type { OrphanProjectStore } from '@copse/thread-store/thread-types.ts'
 
 /**
  * A thread carried across a project switch because its agent run is still

@@ -354,6 +354,16 @@ disable is pinned by
   panel data model + seed transforms live in `packages/agent/src/plugins/`
   (Electron-free — first-party function hooks receive app services via context,
   never import them).
+- The plugin runtime SDK and host protocol live in `packages/plugin-sdk/src/`
+  (`@copse/plugin-sdk`, host-free): the plugin-tool wire protocol
+  (`plugin-tool-protocol.ts`), the author-facing SDK (`plugin-tool-sdk.ts`), the isolated
+  worker entry (`plugin-tool-worker.ts`), runtime source discovery and reviewed snapshots
+  (`plugin-tool-source.ts`, `plugin-tool-snapshot.ts`), the browser-service and model-turn
+  adapters, and the MCP server configuration schema and types (`mcp-schema.ts`,
+  `mcp-config.ts`, `mcp-types.ts`). The profile root the snapshots live under arrives through
+  `configurePluginSdk`; `src/main/services/plugins/` and `src/main/services/mcp/` re-export
+  the package and keep the host: the registry service, the sandboxed tool host and controller,
+  disk discovery, the browser panel, the MCP registry, and custom tools.
 - The generic list/tree panel renderer lives in `src/renderer/views/plugin-panel.ts`
   and consumes the Electron-free `PanelData` types across the package boundary.
 - Host persistence of the enable/disable set + plugin-scoped settings values

@@ -157,4 +157,43 @@ describe('approval dialog model comparison pickers', () => {
       },
     })
   })
+
+  it('keeps a model comparison separate from a later approval', () => {
+    const { api, emit } = makeApi()
+    const store = createStore()
+    mountSettingsDialog(store, api)
+    mountApprovalDialog(api, store, {
+      setTimer: (fn): (() => void) => {
+        fn()
+        return () => {}
+      },
+    })
+    const dialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
+    shimDialog(dialog)
+
+    emit({ id: 'cmp-1' })
+    emit({
+      id: 'shell-1',
+      title: 'Install ACP adapters globally?',
+      body: 'Install @zed-industries/codex-acp',
+      type: 'shell',
+      comparisonModels: undefined,
+      allowRemember: false,
+      rememberLabel: undefined,
+    })
+
+    assert.equal(
+      dialog.querySelector('.approval-heading')?.textContent,
+      'Compare models on this diff?',
+    )
+    assert.equal(dialog.querySelectorAll('.approval-model-picker').length, 3)
+    assert.equal(dialog.querySelector('.approval-approve')?.textContent, 'Approve')
+
+    dialog.querySelector<HTMLButtonElement>('.approval-reject')?.click()
+    assert.equal(
+      dialog.querySelector('.approval-heading')?.textContent,
+      'Install ACP adapters globally?',
+    )
+    assert.equal(dialog.querySelectorAll('.approval-model-picker').length, 0)
+  })
 })

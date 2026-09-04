@@ -91,7 +91,7 @@ cannot be aggregated. `ci.yml` writes one step summary.
 **Change.** Two pieces, both cheap:
 
 1. Every job writes to `$GITHUB_STEP_SUMMARY` — the oracle's mode and chosen spec count,
-   which dependency source the setup action hit (`baked` / `deps-cache` / `network`), each
+   which package-input source the setup action hit (`baked-store` / `actions-cache`), each
    shard's outcome and duration. Free, appears on the run page, and turns "why was this 54
    minutes" into something readable without the API.
 2. A final `ci-record` job (`if: always()`, after `ci-passed`) appends one JSON line per
@@ -149,22 +149,17 @@ is the cheapest item in the plan and the only one that is unambiguously a bug.
 
 **Today.** The pipeline is a serial chain — `precheck` → `check`/`build`/`bench` → `e2e` →
 `ci-passed` — and every stage re-runs `.github/actions/setup`. On the sampled run that was
-4:31, 4:54 and 4:43 in three jobs against 0:24 in a fourth. The bimodality is the design
-working as documented: the `deps-cache` volume is host-local, runners are ephemeral, so
-the first job to land on a cold host pays the network restore and later jobs on that host
-do not. The cost is that the _critical path_ keeps hitting cold hosts, serially.
+4:31, 4:54 and 4:43 in three jobs against 0:24 in a fourth. Setup now restores only
+content-addressed package/download inputs and deliberately performs a clean locked install
+per job. That removes cross-job native-tree corruption, but the _critical path_ still pays
+materialization and lifecycle cost at every serial stage.
 
-**Change.** Two options, not exclusive:
-
-- **Prime the fleet.** A `push`-triggered workflow on `package-lock.json` changes that
-  fans one trivial job out across the pool purely to populate every host's `deps-cache`
-  for the new lockfile hash. It converts "every stage of the next N runs may pay the
-  restore" into "one cheap run pays it once per host."
-- **Shorten the chain.** `build` does not need `precheck`'s lint result to be correct — it
-  needs it to be _worth running_. Letting `build` start in parallel with `precheck` and
-  relying on `cancel-in-progress` plus the aggregate gate removes one full setup from the
-  critical path, at the cost of some wasted builds on lint failures. C1's record tells you
-  the real ratio.
+**Change.** Shorten the chain. `build` does not need `precheck`'s lint result to be correct — it
+needs it to be _worth running_. Letting `build` start in parallel with `precheck` and
+relying on `cancel-in-progress` plus the aggregate gate removes one full setup from the
+critical path, at the cost of some wasted builds on lint failures. C1's record tells you
+the real ratio. Do not reintroduce host priming with writable installed trees; that makes
+speed depend on whichever prior job last mutated the host.
 
 ### C5 — Size the e2e fan-out to the pool, not to a constant
 

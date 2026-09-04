@@ -71,7 +71,7 @@ export async function ensureSessionBackup(
   if (state.current) return state.current
   if (state.inFlight) return state.inFlight
   state.inFlight = (async (): Promise<SessionBackup | null> => {
-    const status = await getGitStatus(root)
+    const status = await getGitStatus(root, { untrackedFiles: 'all' })
     if (!status) return null
     const paths = [...new Set([...status.staged, ...status.unstaged].map((c) => c.path))]
     if (paths.length === 0) return null
@@ -109,7 +109,7 @@ export async function ensureWorktreeRecoverable(
   const state = stateFor()
   if (root) state.root = root
   if (state.current) return true
-  const status = await getGitStatus(root)
+  const status = await getGitStatus(root, { untrackedFiles: 'all' })
   if (!status) return false
   const dirty = status.staged.length > 0 || status.unstaged.length > 0
   if (!dirty) return true

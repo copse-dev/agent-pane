@@ -1,13 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { at } from './internal-utils.ts'
+import { at } from '@copse/std/array-utils.ts'
 import { z } from 'zod'
 import {
   recoverTextToolCalls,
   stripTextToolCallBlocks,
   coerceStringlyTypedToolArgs,
+  hasTextToolCallMarkup,
 } from './parse-text-tool-calls.ts'
-import { isRecord } from './internal-utils.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 type RecoveredToolCalls = ReturnType<typeof recoverTextToolCalls>['toolCalls']
 
@@ -154,6 +155,32 @@ src/renderer/views/projects-pane.ts
     assert.equal(toolCalls.length, 1)
     assert.equal(at(toolCalls, 0).name, 'run_shell')
     assert.equal(toolArg(toolCalls, 0, 'command'), 'echo hi')
+  })
+
+  it('recovers DeepSeek DSML invoke blocks without leaking their markup (#1710)', () => {
+    const text = `I need to inspect the footer first.
+
+<｜DSML｜tool_calls>
+<｜DSML｜invoke name="run_shell">
+<｜DSML｜parameter name="command" string="true">grep -n "footer-index\\|context-wheel" src/renderer/views/input-bar.ts | head -60</｜DSML｜parameter>
+<｜DSML｜parameter name="timeout_ms" string="false">30000</｜DSML｜parameter>
+</｜DSML｜invoke>
+</｜DSML｜tool_calls>`
+
+    const { cleanedText, toolCalls, keptRawBlocks } = recoverTextToolCalls(text)
+
+    assert.equal(hasTextToolCallMarkup(text), true)
+    assert.equal(keptRawBlocks, false)
+    assert.equal(toolCalls.length, 1)
+    assert.equal(at(toolCalls, 0).name, 'run_shell')
+    assert.equal(
+      toolArg(toolCalls, 0, 'command'),
+      'grep -n "footer-index\\|context-wheel" src/renderer/views/input-bar.ts | head -60',
+    )
+    assert.equal(toolArg(toolCalls, 0, 'timeout_ms'), 30000)
+    assert.equal(cleanedText, 'I need to inspect the footer first.')
+    assert.ok(!cleanedText.includes('DSML'))
+    assert.ok(!cleanedText.includes('tool_calls'))
   })
 
   it('stripTextToolCallBlocks removes MiniMax delimiters and invoke blocks', () => {

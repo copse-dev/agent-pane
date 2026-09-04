@@ -99,18 +99,22 @@ describe('resolveModelCard', () => {
     assert.equal(calls.length, before, 'a cached failure must not be refetched')
   })
 
-  it('shares the cache across models that point at one URL', async () => {
+  it('shares the cache across model ids that point at one URL', async () => {
     const { calls } = stubFetch(() => 200)
     await resolveModelCard('claude-opus-4-8')
     const before = calls.length
-    // Every Claude id resolves to the same Anthropic hub.
-    await resolveModelCard('claude-sonnet-5')
-    assert.equal(calls.length, before, 'the shared hub must be probed once, not per model')
+    // The OpenRouter spelling of the same weights files under the same card, so
+    // the cache — keyed by URL, not by model id — already has the answer.
+    await resolveModelCard('openrouter:anthropic/claude-opus-4-8')
+    assert.equal(calls.length, before, 'one card URL must be probed once, not per id')
   })
 
   it('collapses concurrent resolves of the same URL into one probe', async () => {
     const { calls } = stubFetch(() => 200)
-    await Promise.all([resolveModelCard('claude-opus-4-8'), resolveModelCard('claude-sonnet-5')])
+    await Promise.all([
+      resolveModelCard('claude-opus-4-8'),
+      resolveModelCard('openrouter:anthropic/claude-opus-4-8'),
+    ])
     assert.equal(calls.length, 1)
   })
 
