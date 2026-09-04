@@ -13,6 +13,16 @@ import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.t
 const PROJECT_ID = 'e2e-command-palette'
 const TARGET_TITLE = 'Fix login bug'
 const OTHER_TITLES = ['Refactor sidebar', 'Landing page copy', 'Investigate flake']
+// The PR the target thread opened, in the shape `gh_pr_create` records on the
+// thread's `meta.json` (`recordThreadPrRefs` → `Thread.prRefs`). Only the
+// target carries one, so its number is a discriminating query.
+const TARGET_PR_NUMBER = 2262
+const TARGET_PR_REF = {
+  owner: 'copse-dev',
+  repo: 'agent-pane',
+  number: TARGET_PR_NUMBER,
+  url: `https://github.com/copse-dev/agent-pane/pull/${String(TARGET_PR_NUMBER)}`,
+}
 
 function seedThreads(): void {
   const now = Date.now()
@@ -23,6 +33,7 @@ function seedThreads(): void {
       id,
       title,
       status: 'idle',
+      ...(title === TARGET_TITLE ? { prRefs: [TARGET_PR_REF] } : {}),
       messages: [
         {
           id: `msg-${id}`,
@@ -62,9 +73,8 @@ describe('command palette and sidebar thread filter', () => {
     resetUserData()
   })
 
-  it('opens on Cmd/Ctrl+Shift+K, filters threads, and jumps to the chosen one', async () => {
+  async function openPalette(): Promise<WebdriverIO.Element> {
     const dialog = await $('#command-palette-dialog')
-
     // metaKey covers macOS, ctrlKey the rest — the handler accepts either.
     await browser.execute(() => {
       document.dispatchEvent(
@@ -78,6 +88,11 @@ describe('command palette and sidebar thread filter', () => {
       )
     })
     await dialog.waitForDisplayed({ timeout: 10_000 })
+    return dialog
+  }
+
+  it('opens on Cmd/Ctrl+Shift+K, filters threads, and jumps to the chosen one', async () => {
+    const dialog = await openPalette()
 
     const input = await $('.command-palette-input')
     await input.setValue('login')
@@ -92,6 +107,32 @@ describe('command palette and sidebar thread filter', () => {
     await saveAppScreenshot('command-palette.png')
 
     // Choosing the thread closes the palette and selects it in the sidebar.
+    const chosen = await $('.command-palette-item-thread')
+    await chosen.click()
+    await dialog.waitForDisplayed({ timeout: 10_000, reverse: true })
+    await expect($('.chat-row.selected .chat-title')).toHaveText(TARGET_TITLE)
+  })
+
+  it('finds a thread by the bare number of the PR it opened', async () => {
+    const dialog = await openPalette()
+
+    const input = await $('.command-palette-input')
+    await input.setValue(String(TARGET_PR_NUMBER))
+
+    // Only the thread that opened #2262 survives, and its row explains the hit
+    // with a PR chip — a bare number is otherwise an opaque match on a title.
+    const threadName = await $('.command-palette-item-thread .command-palette-name')
+    await threadName.waitForDisplayed({ timeout: 10_000 })
+    await expect(threadName).toHaveText(expect.stringContaining(TARGET_TITLE))
+    const threadRows = await $$('.command-palette-item-thread')
+    await expect(threadRows).toBeElementsArrayOfSize(1)
+    await expect($('.command-palette-item-thread .command-palette-pr')).toHaveText(
+      `#${String(TARGET_PR_NUMBER)}`,
+    )
+
+    await saveAppScreenshot('command-palette-pr-number.png')
+
+    // Choose it so the palette is closed before the sidebar spec below.
     const chosen = await $('.command-palette-item-thread')
     await chosen.click()
     await dialog.waitForDisplayed({ timeout: 10_000, reverse: true })
