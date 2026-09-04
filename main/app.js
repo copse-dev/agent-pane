@@ -22508,9 +22508,16 @@ var init_git = __esm({
   }
 });
 
+// packages/plugin-sdk/src/mcp-types.ts
+var init_mcp_types = __esm({
+  "packages/plugin-sdk/src/mcp-types.ts"() {
+  }
+});
+
 // src/shared/types/mcp.ts
 var init_mcp = __esm({
   "src/shared/types/mcp.ts"() {
+    init_mcp_types();
   }
 });
 
