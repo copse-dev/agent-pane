@@ -325,9 +325,9 @@ committed in the PR is still a secret.
 
 **Trust × isolation policy.** Two facts decide whether execution happens at all:
 
-|                                        | Isolation available                                                                              | No isolation                                                                                         |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| **Own diff** (the user's working tree) | Execute.                                                                                         | Execute only with explicit per-run consent, mirroring the shell gate's "no sandbox, so prompt" rule. |
+|                                        | Isolation available                                                                  | No isolation                                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| **Own diff** (the user's working tree) | Execute.                                                                             | Execute only with explicit per-run consent, mirroring the shell gate's "no sandbox, so prompt" rule. |
 | **Foreign diff** (a contributor's PR)  | Execute in a container or VM only (B3); the process-scoped OS sandbox is not enough. | **Never execute.** Degrade to read-only lenses plus the challenger pass, and say so in the report.   |
 
 An OS sandbox (macOS ASRT, Linux bubblewrap) and an ephemeral container or VM are not the
