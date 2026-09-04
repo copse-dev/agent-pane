@@ -1541,10 +1541,10 @@ describe('formatGuardedYoloHarmPromptAdvice', () => {
     assert.ok(one.includes('…'))
     assert.ok(one.length < 400)
 
-    // Enough distinct reasons to overrun the total budget as well.
+    // Enough distinct reasons to overrun the total budget as well: the advice
+    // lands exactly on `MAX_GUARDED_YOLO_HARM_ADVICE_CHARS`, footer included.
     const many = formatGuardedYoloHarmPromptAdvice(Array.from({ length: 12 }, (_, i) => huge(i)))
-    assert.ok(many.length <= 1300)
-    assert.ok(many.length > 400)
+    assert.equal(many.length, 1200)
     assert.ok(many.includes('…'))
     assert.ok(many.endsWith('Approve this bounded destructive action once?'))
   })
