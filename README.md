@@ -9,7 +9,7 @@ Electron desktop app (`copse-panel`): an AI coding assistant that chats with LLM
 The supported general-availability build requires **macOS 26 or newer** on an
 Apple Silicon (`arm64`) or Intel (`x64`) Mac. Linux and Windows may be useful for
 source development, but they are not supported GA targets. Building from source
-requires Node ≥ 22.18.
+requires Node ≥ 24. The pinned `.nvmrc` works with both `nvm` and `fnm`.
 
 ## Quick start
 

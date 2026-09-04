@@ -50,7 +50,7 @@ const nodeOpts = {
     'electron-updater',
   ],
   sourcemap: true,
-  target: 'node22',
+  target: 'node24',
   alias: sharedAlias,
   define,
   minifySyntax: isRelease,

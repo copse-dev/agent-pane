@@ -158,7 +158,7 @@ jobs:
       - uses: actions/setup-node@v7
         if: steps.pr.outputs.open == 'true'
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
       - name: Merge main, auto-resolving screenshot-only conflicts
         if: steps.pr.outputs.open == 'true'
         id: merge

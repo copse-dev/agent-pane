@@ -814,7 +814,7 @@ jobs:
       - uses: actions/setup-node@v7
         if: steps.head.outputs.exists == 'true'
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
       - name: Filter sub-threshold screenshot noise
         if: steps.head.outputs.exists == 'true'
         id: filter

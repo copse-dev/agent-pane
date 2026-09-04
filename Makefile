@@ -48,9 +48,9 @@ COMPOSE ?= $(shell \
 # the README documents.
 COMPOSE_IN_DIR := cd $(RUNNER_DIR) && $(COMPOSE)
 
-# Minimum Node major.minor required by package.json `engines` (>=22.18).
-NODE_MIN_MAJOR := 22
-NODE_MIN_MINOR := 18
+# Minimum Node major.minor required by package.json `engines` (>=24).
+NODE_MIN_MAJOR := 24
+NODE_MIN_MINOR := 0
 
 # nvm ships as a shell function loaded from nvm.sh, not a binary, so a recipe
 # can't just call `nvm`. Source it (honouring $NVM_DIR, default ~/.nvm) and run
@@ -261,7 +261,7 @@ check-node:
 	ver="$$(node -p 'process.versions.node')"; \
 	major="$${ver%%.*}"; rest="$${ver#*.}"; minor="$${rest%%.*}"; \
 	if [ "$$major" -lt "$(NODE_MIN_MAJOR)" ] || { [ "$$major" -eq "$(NODE_MIN_MAJOR)" ] && [ "$$minor" -lt "$(NODE_MIN_MINOR)" ]; }; then \
-	  echo "ERROR: Node $$ver is too old — need >=$(NODE_MIN_MAJOR).$(NODE_MIN_MINOR) (see .nvmrc). Try 'nvm use'." >&2; \
+	  echo "ERROR: Node $$ver is too old — need >=$(NODE_MIN_MAJOR).$(NODE_MIN_MINOR) (see .nvmrc). Try 'nvm use' or 'fnm use'." >&2; \
 	  exit 1; \
 	fi; \
 	echo "==> Node $$ver OK."

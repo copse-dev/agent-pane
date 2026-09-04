@@ -38,7 +38,8 @@ capsule as `reasoning-checkpoints.jsonl` and summarised under `manifest.json` â†
 Build the same amd64 worker used by the workflow:
 
 ```sh
-docker build --platform linux/amd64 -f benchmarks/skillsbench/Dockerfile.worker -t copse-skillsbench-spike .
+docker build --platform linux/amd64 --build-arg NODE_VERSION="$(cat .nvmrc)" \
+  -f benchmarks/skillsbench/Dockerfile.worker -t copse-skillsbench-spike .
 ```
 
 Run it with the Docker socket, model credentials, and S3-compatible capsule destination supplied

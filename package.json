@@ -174,7 +174,7 @@
     "@resvg/resvg-js": "^2.6.2",
     "@types/jsdom": "^28.0.3",
     "@types/micromatch": "^4.0.9",
-    "@types/node": "^26.1.1",
+    "@types/node": "^24.13.3",
     "@types/pngjs": "^6.0.5",
     "@types/shell-quote": "^1.7.5",
     "@types/turndown": "^5.0.5",
@@ -202,6 +202,6 @@
     "webdriverio": "^9.29.0"
   },
   "engines": {
-    "node": ">=22.18"
+    "node": ">=24"
   }
 }

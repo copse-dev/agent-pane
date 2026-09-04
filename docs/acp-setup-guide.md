@@ -157,10 +157,10 @@ different `authMethods` — that difference is the whole point:
 
 ## Common failures
 
-| Symptom                                             | Cause                                                      | Fix                                              |
-| --------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------ |
-| Validator hangs / "could not find port"             | Treating ACP as HTTP/TCP; scanning `lsof`                  | ACP is stdio JSON-RPC — use `validate-acp.mjs`   |
-| `401` / `invalid x-api-key` from the agent          | Passed an `sk-ant-oat…` OAuth token as `ANTHROPIC_API_KEY` | Use Option A/C, or a real `sk-ant-api…` key      |
-| Works in your shell, fails when launched from Copse | Copse scrubs `ANTHROPIC_*` from inherited env              | Put the key in the agent's `env`, not `~/.zshrc` |
-| `spawn … ENOENT`                                    | Adapter not on `PATH`                                      | `npm install -g` the adapter; check `which`      |
-| Node warnings / version errors                      | App wants Node ≥ 22; adapters here are under nvm Node 20   | `nvm use 22` (or match `.nvmrc`) before launch   |
+| Symptom                                             | Cause                                                      | Fix                                                      |
+| --------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------- |
+| Validator hangs / "could not find port"             | Treating ACP as HTTP/TCP; scanning `lsof`                  | ACP is stdio JSON-RPC — use `validate-acp.mjs`           |
+| `401` / `invalid x-api-key` from the agent          | Passed an `sk-ant-oat…` OAuth token as `ANTHROPIC_API_KEY` | Use Option A/C, or a real `sk-ant-api…` key              |
+| Works in your shell, fails when launched from Copse | Copse scrubs `ANTHROPIC_*` from inherited env              | Put the key in the agent's `env`, not `~/.zshrc`         |
+| `spawn … ENOENT`                                    | Adapter not on `PATH`                                      | `npm install -g` the adapter; check `which`              |
+| Node warnings / version errors                      | App wants Node ≥ 24; adapters here are under nvm Node 20   | `nvm use` or `fnm use` (matching `.nvmrc`) before launch |
