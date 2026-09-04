@@ -81,6 +81,11 @@ shrink: moving one of them is a normal breaking change, handled as below.
    node scripts/gen-api-protocol.mts --compare-ref origin/main
    ```
 
+   CI runs exactly this against the PR base in the `precheck` job, so the rule
+   is enforced rather than advisory. The freshness test alone would not be
+   enough: regenerating the manifest after a breaking change satisfies it
+   without bumping anything.
+
 The same test also pins that every facade method is bound to exactly one
 namespaced channel, that every invoke/send channel has a literal
 `ipcMain.handle` and every event channel a literal sender under `src/main`, and
@@ -89,12 +94,17 @@ channels the protocol lacks.
 
 ## Version negotiation at runtime
 
-The sidecar's WebSocket handshake carries the version: the renderer's `hello`
-frame states the `protocolVersion` its bundle was built against and the server
-answers `hello-ok` with its own, closing the socket (`4008 protocol version
-mismatch`) when they differ. Both ends ship from one build today, so the check
-never trips; it exists so a client and server built separately — the daemon
-split — fail fast instead of exchanging shapes neither side validates.
+The sidecar's WebSocket handshake carries the version, and **both ends check**:
+the renderer's `hello` frame states the `protocolVersion` its bundle was built
+against and the server closes the socket (`4008 protocol version mismatch`) if
+it does not speak it; the server's `hello-ok` states its own and the client
+closes with the same code rather than marking itself ready. Checking one
+direction only would leave the client trusting whatever answers the socket.
+Both ends ship from one build today, so neither check trips; they exist so a
+client and server built separately — the daemon split — fail fast instead of
+exchanging shapes neither side validates. `smoke-sidecar.mts` covers the server
+direction against the real sidecar; `ws-bridge/protocol-version.test.ts` covers
+the client direction.
 
 ## Relationship to the headless contract
 

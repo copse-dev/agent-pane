@@ -45,7 +45,10 @@ invariants test, so the surface changes only deliberately. Delivered:
   git ref when it needs to compare shapes.
 - `API_PROTOCOL_VERSION` (`src/shared/api-protocol.mts`) stamped into the
   schema and exchanged in the sidecar WebSocket handshake (`hello` /
-  `hello-ok` carry `protocolVersion`; mismatch closes with 4008).
+  `hello-ok` carry `protocolVersion`; either end closes with 4008 on a
+  mismatch — the server on the client's `hello`, the client on the server's
+  `hello-ok`), and the compatibility comparison runs in CI's `precheck`
+  against the PR base, so a breaking change without a version bump fails.
 - `scripts/lib/api-protocol.test.ts`: drift (committed manifest equals generated),
   every method bound to one namespaced channel, every channel has a literal
   main-process endpoint, `ipc.ts` names only real channels, no dangling
