@@ -16565,6 +16565,15 @@ function addToolCall(store3, messageId, toolCall) {
 function findToolCall(store3, messageId, toolCallId) {
   return locateMessage(store3, messageId)?.message.toolCalls.find((tc2) => tc2.id === toolCallId);
 }
+function findToolCallOwner(store3, threadId, toolCallId) {
+  const messages = getThreadById(store3, threadId)?.messages;
+  if (!messages) return void 0;
+  for (let i4 = messages.length - 1; i4 >= 0; i4--) {
+    const message2 = messages[i4];
+    if (message2?.toolCalls.some((tc2) => tc2.id === toolCallId)) return message2.id;
+  }
+  return void 0;
+}
 function updateToolCall(store3, messageId, toolCallId, patch) {
   updateMessage(store3, messageId, (m3) => {
     const toolCall = m3.toolCalls.find((tc2) => tc2.id === toolCallId);
@@ -294166,6 +294175,7 @@ function startAgentController(store3, api3) {
         break;
       }
       case "tool_call": {
+        if (findToolCallOwner(store3, threadId, chunk.toolCall.id)) break;
         st3.msgId ??= addAssistantMessage(store3, threadId);
         addToolCall(store3, st3.msgId, {
           id: chunk.toolCall.id,
@@ -294182,8 +294192,9 @@ function startAgentController(store3, api3) {
         break;
       }
       case "tool_call_update": {
-        if (st3.msgId && findToolCall(store3, st3.msgId, chunk.toolCallId)) {
-          updateToolCall(store3, st3.msgId, chunk.toolCallId, {
+        const ownerId = findToolCallOwner(store3, threadId, chunk.toolCallId);
+        if (ownerId) {
+          updateToolCall(store3, ownerId, chunk.toolCallId, {
             ...chunk.name !== void 0 ? { name: chunk.name } : {},
             ...chunk.args !== void 0 ? { args: chunk.args } : {},
             ...chunk.status !== void 0 ? { status: chunk.status } : {},
@@ -294196,15 +294207,16 @@ function startAgentController(store3, api3) {
         break;
       }
       case "tool_result": {
-        if (st3.msgId) {
-          updateToolCall(store3, st3.msgId, chunk.toolCallId, {
+        const ownerId = findToolCallOwner(store3, threadId, chunk.toolCallId) ?? st3.msgId;
+        if (ownerId) {
+          updateToolCall(store3, ownerId, chunk.toolCallId, {
             status: chunk.isError ? "error" : "done",
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
             ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}
           });
           if (chunk.toolCallId && !chunk.isError) {
-            const toolCall = findToolCall(store3, st3.msgId, chunk.toolCallId);
+            const toolCall = findToolCall(store3, ownerId, chunk.toolCallId);
             if (toolCall?.name === "run_shell" && threadId === store3.getState().activeThreadId && shellCommandMayChangeBranch(toolCall.args)) {
               void syncThreadGitBranchAfterShell(store3, api3, threadId);
             }
