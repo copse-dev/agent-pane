@@ -71,6 +71,8 @@ function createApi(options: {
   onDescribeImages?: ApiClient['agent']['describeImages']
   estimateContext?: ApiClient['agent']['estimateContext']
   promptState?: { startingCommit: string | null; dirty: boolean }
+  /** Live prompt state, for flows where the checkout moves mid-send. */
+  getPromptState?: () => { startingCommit: string | null; dirty: boolean }
   onExportArchive?: (projectId: string, threadId: string) => void
   onAttachArchive?: (projectId: string, threadId: string, name: string, bytes?: Uint8Array) => void
   onRecordModelSelection?: ApiClient['threads']['recordModelSelection']
@@ -132,7 +134,9 @@ function createApi(options: {
           currentBranch: options.getCurrentBranch?.() ?? options.currentBranch,
           pr: null,
         }),
-        promptState: async () => options.promptState ?? { startingCommit: null, dirty: false },
+        promptState: async () =>
+          options.getPromptState?.() ??
+          options.promptState ?? { startingCommit: null, dirty: false },
         checkoutBranch: async (
           _projectId: string,
           _threadId: string,
@@ -534,6 +538,48 @@ describe('input bar prompt git-state capture', () => {
     assert.ok(message)
     assert.equal(message.startingCommit, 'a'.repeat(40))
     assert.equal(message.dirty, true)
+  })
+
+  it('stamps a blank thread with the commit of the checkout the transaction prepared', async () => {
+    // A picked branch is switched to (or a worktree cut from it) inside
+    // prepareCheckout, so the HEAD read before the transaction is the wrong one.
+    const beforeSwitch = 'a'.repeat(40)
+    const afterSwitch = 'b'.repeat(40)
+    let head = beforeSwitch
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        getPromptState: () => ({ startingCommit: head, dirty: false }),
+        onPrepareCheckout: async () => {
+          head = afterSwitch
+          return { checkoutMode: 'shared', choice: 'automatic', branch: 'release/2026-08' }
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Start from the release branch'
+    submit.click()
+    await flush()
+
+    const message = store.getState().threads[0]?.messages[0]
+    assert.ok(message)
+    assert.equal(message.startingCommit, afterSwitch)
   })
 
   it('omits startingCommit and leaves dirty false outside a git repository', async () => {

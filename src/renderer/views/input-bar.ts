@@ -1542,10 +1542,7 @@ export function mountInputBar(
         return
       }
     }
-    const [branchStatus, promptState] = await Promise.all([
-      api.git.branchStatus(projectId, id),
-      api.git.promptState(projectId, id),
-    ])
+    const branchStatus = await api.git.branchStatus(projectId, id)
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
     const threadBranch = thread?.gitBranch
@@ -1681,6 +1678,12 @@ export function mountInputBar(
         updateCheckoutControl()
       }
     }
+
+    // Read after the checkout transaction, not alongside the branch check: for
+    // a blank thread the transaction may have just switched the shared checkout
+    // to the picked branch, or cut a worktree from it, and the message records
+    // the commit the turn actually starts from — not the HEAD before the move.
+    const promptState = await api.git.promptState(projectId, id)
 
     const priorTodos = thread?.todos ?? []
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent)
