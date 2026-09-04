@@ -268683,7 +268683,14 @@ function terminalModeActive(store3) {
   return filesPaneOpen && rightPanelMode === "terminal";
 }
 function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
-  const listHeader = el("div", { class: "terminals-list-header" }, "Shells");
+  const section = el("section", {
+    class: "terminal-rail-section terminal-shells-section"
+  });
+  const listHeader = el(
+    "div",
+    { class: "terminals-list-header terminal-rail-section-header" },
+    "Shells"
+  );
   const newBtn = el(
     "button",
     {
@@ -268699,8 +268706,11 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
     paneMaximizeButton(store3, "terminal"),
     newBtn
   );
-  const tabsWrap = el("div", { class: "terminals-list" });
-  listRoot.append(listHeader, tabsWrap);
+  const tabsWrap = el("div", {
+    class: "terminals-list terminal-rail-section-list"
+  });
+  section.append(listHeader, tabsWrap);
+  listRoot.append(section);
   const body = el("div", { class: "terminals-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
@@ -268971,7 +268981,13 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
     );
     const tabBtn = el(
       "button",
-      { type: "button", class: "terminals-tab", "data-tab-id": id39, title: label },
+      {
+        type: "button",
+        class: "terminals-tab",
+        "data-tab-id": id39,
+        "data-terminal-rail-row": "",
+        title: label
+      },
       labelSpan,
       checkoutBadge,
       closeBtn
@@ -269297,9 +269313,17 @@ ${rendered}
   }
 }
 function mountAgentTasks(listRoot, viewerHost, store3, api3) {
-  const section = el("div", { class: "agent-tasks-section" });
-  const sectionHeader = el("div", { class: "agent-tasks-section-header" }, "Agent tasks");
-  const tabList = el("div", { class: "agent-tasks-tablist" });
+  const section = el("section", {
+    class: "agent-tasks-section terminal-rail-section"
+  });
+  const sectionHeader = el(
+    "div",
+    { class: "agent-tasks-section-header terminal-rail-section-header" },
+    "Agent tasks"
+  );
+  const tabList = el("div", {
+    class: "agent-tasks-tablist terminal-rail-section-list"
+  });
   section.append(sectionHeader, tabList);
   listRoot.append(section);
   const viewerParent = viewerHost.parentElement;
@@ -269382,7 +269406,12 @@ function mountAgentTasks(listRoot, viewerHost, store3, api3) {
     const command = shellCommandLabel(rawCommand);
     const dot2 = el("span", { class: "agent-task-dot", "aria-hidden": "true" });
     const label = el("span", { class: "agent-task-label", title: command }, command);
-    const tab = el("button", { type: "button", class: "agent-task-tab" }, dot2, label);
+    const tab = el(
+      "button",
+      { type: "button", class: "agent-task-tab", "data-terminal-rail-row": "" },
+      dot2,
+      label
+    );
     const panel = el("pre", {
       class: "agent-task-output-panel",
       "data-task-id": id39
@@ -269531,9 +269560,18 @@ function taskLabel(handler) {
   return handler.replaceAll("_", " ");
 }
 function mountSupervisedTasks(listRoot, store3, api3) {
-  const section = el("section", { class: "supervised-tasks-section", hidden: true });
-  const header = el("div", { class: "agent-tasks-section-header" }, "Background tasks");
-  const list = el("div", { class: "supervised-tasks-list" });
+  const section = el("section", {
+    class: "supervised-tasks-section terminal-rail-section",
+    hidden: true
+  });
+  const header = el(
+    "div",
+    { class: "agent-tasks-section-header terminal-rail-section-header" },
+    "Background tasks"
+  );
+  const list = el("div", {
+    class: "supervised-tasks-list terminal-rail-section-list"
+  });
   section.append(header, list);
   listRoot.append(section);
   let loadToken = 0;
@@ -269574,6 +269612,7 @@ function mountSupervisedTasks(listRoot, store3, api3) {
           {
             class: "supervised-task-row",
             "data-task-id": task.taskId,
+            "data-terminal-rail-row": "",
             "data-state": task.state
           },
           dot2,
@@ -271845,9 +271884,16 @@ function mountPortsSection(listRoot, store3, api3) {
   let refreshTail = Promise.resolve();
   let pollRunning = false;
   let pollTimer = null;
-  const section = el("section", { class: "ports-section", hidden: true });
-  const header = el("div", { class: "agent-tasks-section-header" }, "Ports");
-  const list = el("div", { class: "ports-list" });
+  const section = el("section", {
+    class: "ports-section terminal-rail-section",
+    hidden: true
+  });
+  const header = el(
+    "div",
+    { class: "agent-tasks-section-header terminal-rail-section-header" },
+    "Ports"
+  );
+  const list = el("div", { class: "ports-list terminal-rail-section-list" });
   section.append(header, list);
   listRoot.append(section);
   function actionButton(label, className, onClick) {
@@ -271922,6 +271968,7 @@ function mountPortsSection(listRoot, store3, api3) {
         type: "button",
         class: `ports-row${selected ? " is-active" : ""}`,
         "data-port": String(row2.port),
+        "data-terminal-rail-row": "",
         "aria-expanded": String(selected)
       });
       button.append(
@@ -272039,6 +272086,164 @@ var init_ports_section = __esm({
     init_panels();
     init_toast();
     POLL_MS2 = 5e3;
+  }
+});
+
+// src/renderer/views/terminal-rail-resizer.ts
+function visibleSections(root4) {
+  return Array.from(root4.querySelectorAll(SECTION_SELECTOR)).filter(
+    (section) => !section.hidden
+  );
+}
+function cssPixels(value2) {
+  const parsed2 = Number.parseFloat(value2);
+  return Number.isFinite(parsed2) ? parsed2 : 0;
+}
+function measuredRowHeight(section) {
+  const list = section.querySelector(".terminal-rail-section-list");
+  const row2 = section.querySelector("[data-terminal-rail-row]") ?? list?.firstElementChild;
+  return row2?.getBoundingClientRect().height ?? 0;
+}
+function sectionMinimum(root4, section) {
+  const header = section.querySelector(".terminal-rail-section-header");
+  const list = section.querySelector(".terminal-rail-section-list");
+  const listStyle = list?.ownerDocument.defaultView?.getComputedStyle(list) ?? null;
+  const listPadding = listStyle ? cssPixels(listStyle.paddingTop) + cssPixels(listStyle.paddingBottom) : 0;
+  const rowHeight = measuredRowHeight(section);
+  const twoRows = (header?.getBoundingClientRect().height ?? 0) + listPadding + rowHeight * 2;
+  return section.classList.contains("terminal-shells-section") ? Math.max(twoRows, root4.clientHeight * SHELLS_MIN_RATIO) : twoRows;
+}
+function syncMinimums(root4) {
+  if (root4.clientHeight === 0) return;
+  for (const section of visibleSections(root4)) {
+    section.style.minHeight = `${String(Math.ceil(sectionMinimum(root4, section)))}px`;
+  }
+}
+function previousVisibleSection(section) {
+  let candidate = section.previousElementSibling;
+  while (candidate) {
+    if (candidate instanceof HTMLElement && candidate.classList.contains("terminal-rail-section") && !candidate.hidden) {
+      return candidate;
+    }
+    candidate = candidate.previousElementSibling;
+  }
+  return null;
+}
+function minimumHeight(section) {
+  return Number.parseFloat(section.style.minHeight) || 0;
+}
+function assignCurrentWeights(root4) {
+  for (const section of visibleSections(root4)) {
+    section.style.flex = `${String(section.getBoundingClientRect().height)} 1 0px`;
+  }
+}
+function resizePair(before, after, beforeStart, afterStart, delta) {
+  const total = beforeStart + afterStart;
+  const beforeSize = Math.min(
+    total - minimumHeight(after),
+    Math.max(minimumHeight(before), beforeStart + delta)
+  );
+  before.style.flexGrow = String(beforeSize);
+  after.style.flexGrow = String(total - beforeSize);
+}
+function sectionLabel(section) {
+  return section.querySelector(".terminal-rail-section-header")?.textContent.trim() ?? "section";
+}
+function mountTerminalRailResizers(root4) {
+  const sections6 = Array.from(root4.querySelectorAll(SECTION_SELECTOR));
+  const handles = /* @__PURE__ */ new Map();
+  for (const section of sections6.slice(1)) {
+    const handle = el("div", {
+      class: "terminal-rail-resizer",
+      role: "separator",
+      tabindex: "0",
+      "aria-orientation": "horizontal"
+    });
+    root4.insertBefore(handle, section);
+    handles.set(section, handle);
+    const resizeFromStart = (direction2) => {
+      const before = previousVisibleSection(section);
+      if (!before || section.hidden) return;
+      syncMinimums(root4);
+      assignCurrentWeights(root4);
+      resizePair(
+        before,
+        section,
+        before.getBoundingClientRect().height,
+        section.getBoundingClientRect().height,
+        direction2 * Math.max(1, measuredRowHeight(section))
+      );
+    };
+    handle.addEventListener("pointerdown", (event3) => {
+      if (event3.button !== 0) return;
+      const before = previousVisibleSection(section);
+      if (!before || section.hidden) return;
+      event3.preventDefault();
+      handle.setPointerCapture(event3.pointerId);
+      handle.classList.add("is-dragging");
+      syncMinimums(root4);
+      assignCurrentWeights(root4);
+      const startY2 = event3.clientY;
+      const beforeStart = before.getBoundingClientRect().height;
+      const afterStart = section.getBoundingClientRect().height;
+      const onMove = (moveEvent) => {
+        resizePair(before, section, beforeStart, afterStart, moveEvent.clientY - startY2);
+      };
+      const onUp = () => {
+        handle.classList.remove("is-dragging");
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+      };
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+    handle.addEventListener("keydown", (event3) => {
+      if (event3.key !== "ArrowUp" && event3.key !== "ArrowDown") return;
+      event3.preventDefault();
+      resizeFromStart(event3.key === "ArrowUp" ? -1 : 1);
+    });
+  }
+  const sync = () => {
+    syncMinimums(root4);
+    for (const [section, handle] of handles) {
+      const before = previousVisibleSection(section);
+      const hidden = section.hidden || before === null;
+      if (handle.hidden !== hidden) handle.hidden = hidden;
+      if (before) {
+        handle.setAttribute(
+          "aria-label",
+          `Resize ${sectionLabel(before)} and ${sectionLabel(section)}`
+        );
+      }
+    }
+  };
+  const mutationObserver = new MutationObserver(sync);
+  mutationObserver.observe(root4, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["hidden"]
+  });
+  const resizeObserver = new ResizeObserver(sync);
+  resizeObserver.observe(root4);
+  sync();
+  return () => {
+    mutationObserver.disconnect();
+    resizeObserver.disconnect();
+    for (const handle of handles.values()) handle.remove();
+  };
+}
+var SECTION_SELECTOR, SHELLS_MIN_RATIO;
+var init_terminal_rail_resizer = __esm({
+  "src/renderer/views/terminal-rail-resizer.ts"() {
+    init_helpers();
+    SECTION_SELECTOR = ":scope > .terminal-rail-section";
+    SHELLS_MIN_RATIO = 1 / 3;
   }
 });
 
@@ -302507,6 +302712,7 @@ function mountFullLayout() {
   );
   mountSupervisedTasks(requireElement("terminals-list-host"), store2, api2);
   mountPortsSection(requireElement("terminals-list-host"), store2, api2);
+  mountTerminalRailResizers(requireElement("terminals-list-host"));
   mountBrowserPane(
     requireElement("browser-tabs-host"),
     requireElement("browser-viewer-host"),
@@ -302683,6 +302889,7 @@ var init_main2 = __esm({
     init_pr_pane();
     init_memories_pane();
     init_ports_section();
+    init_terminal_rail_resizer();
     init_roadmap_pane();
     init_browser_pane();
     await init_vnc_pane();
