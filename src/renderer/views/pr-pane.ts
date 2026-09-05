@@ -518,14 +518,14 @@ export function mountPrPane(
       })
     }
 
-    // Spin off a fresh local thread about this PR (shared checkout + PR URL in
+    // Spin off a fresh local thread about this PR (default checkout + PR URL in
     // the composer), distinct from jumping to an existing agent-owned thread.
     const newThreadBtn = el(
       'button',
       {
         type: 'button',
         class: 'pr-new-thread-btn',
-        'data-tooltip': 'Open a new thread about this pull request (shared checkout)',
+        'data-tooltip': 'Open a new thread about this pull request',
       },
       el('span', {}, 'New thread'),
     )

@@ -52,6 +52,7 @@ import {
   zModelId,
   zHookRunId,
   zHookTestRequest,
+  zGitBranchName,
   zNonEmptyString,
   zPathString,
   zProjectId,
@@ -2224,7 +2225,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('git:checkoutBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, targetBranch] = parseIpcArgs(
-      z.tuple([zProjectId, zThreadId, z.string().min(1).max(256)]),
+      z.tuple([zProjectId, zThreadId, zGitBranchName]),
       rawArgs,
     )
     const root = await resolveWatchedGitRoot(projectId, threadId)

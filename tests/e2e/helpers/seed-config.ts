@@ -1278,13 +1278,16 @@ export function seedRemoteArtifactFilenameFixture(workspaceRoot: string, summary
 }
 
 /** Thread with a GitHub PR markdown link for PR panel e2e. */
-export function seedPrPanelChatFixture(workspaceRoot: string): void {
+export function seedPrPanelChatFixture(
+  workspaceRoot: string,
+  options?: { worktreeMode?: 'always' | 'never' },
+): void {
   const projectId = 'e2e-pr-panel-project'
   const threadId = 'e2e-pr-panel-thread'
   const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace', ...options }],
     activeProjectId: projectId,
     [`threads:${projectId}`]: [
       {

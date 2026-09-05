@@ -197,7 +197,17 @@ contextBridge.exposeInMainWorld('api', {
       prompt: string,
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
-    ) => ipcRenderer.invoke('agent:prepareCheckout', projectId, threadId, prompt, choice, model),
+      baseBranch?: string,
+    ) =>
+      ipcRenderer.invoke(
+        'agent:prepareCheckout',
+        projectId,
+        threadId,
+        prompt,
+        choice,
+        model,
+        baseBranch,
+      ),
     previewCheckout: (
       projectId: string,
       choice: 'automatic' | 'shared' | 'worktree',

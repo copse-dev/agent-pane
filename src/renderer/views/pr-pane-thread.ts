@@ -16,9 +16,10 @@ export function prNewThreadTitle(pr: Pick<GhPrSummary, 'number' | 'title'>): str
 
 /**
  * Spin off a fresh local chat about `pr`: flush the current composer, open a
- * new thread with a PR-linked draft, prefer shared checkout (matching a
- * Cursor-style "Shared checkout PR #N" handoff), and leave the user in the
- * composer to edit before sending.
+ * new thread with a PR-linked draft, and leave the user in the composer to edit
+ * before sending. The checkout is left unset so the thread follows the regular
+ * automatic policy (an isolated worktree unless the project opts out) — the
+ * user can still switch it to shared from the composer footer.
  *
  * Association is via the PR URL in the draft (picked up by `collectLinkedPrs`
  * once sent) — not `remoteAgentLink`, which is reserved for agent-launched PRs.
@@ -31,6 +32,5 @@ export function startPrDiscussThread(store: AppStore, pr: PrDiscussRef): string 
     threads: store.getState().threads.map((t) => (t.id === threadId ? { ...t, title } : t)),
   })
   store.emit('threads_changed')
-  store.emit('composer_checkout_preferred', 'shared')
   return threadId
 }

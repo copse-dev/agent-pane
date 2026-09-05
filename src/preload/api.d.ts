@@ -176,6 +176,8 @@ export interface ApiClient {
       prompt: string,
       choice: ThreadWorktreeChoice,
       model?: string,
+      /** Branch the blank-thread footer picker selected to start from. */
+      baseBranch?: string,
     ) => Promise<PreparedThreadCheckout>
     previewCheckout: (
       projectId: string,
