@@ -256685,6 +256685,13 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
   let changesRefreshTimer = null;
   let displayedThreadId = null;
   const suggestionsByThread = /* @__PURE__ */ new Map();
+  const consumedThreads = /* @__PURE__ */ new Set();
+  function consumeSuggestions(threadId) {
+    consumedThreads.add(threadId);
+    suggestionsByThread.delete(threadId);
+    nextFetchToken(threadId);
+    if (store3.getState().activeThreadId === threadId) clearSuggestions();
+  }
   function clearSuggestions() {
     clear(root4);
     root4.hidden = true;
@@ -256736,7 +256743,9 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
           return;
         }
         if (suggestion.action === "create-pr") {
-          void createPrFromBubble(store3, api3, sourceThreadId, clearSuggestions);
+          void createPrFromBubble(store3, api3, sourceThreadId, () => {
+            consumeSuggestions(sourceThreadId);
+          });
           return;
         }
         clearSuggestions();
@@ -256748,6 +256757,7 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
     displayedThreadId = threadId;
   }
   async function maybeFetchSuggestions(threadId) {
+    if (consumedThreads.has(threadId)) return;
     const exchange = lastExchange(store3, threadId);
     if (!exchange) {
       suggestionsByThread.delete(threadId);
@@ -256808,6 +256818,10 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
       clearSuggestions();
       return;
     }
+    if (consumedThreads.has(activeId)) {
+      clearSuggestions();
+      return;
+    }
     if (displayedThreadId === activeId) return;
     const exchange = lastExchange(store3, activeId);
     if (!exchange) {
@@ -256824,6 +256838,7 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
   const unsubs = [
     store3.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
+        consumedThreads.delete(tid);
         suggestionsByThread.delete(tid);
         if (tid === store3.getState().activeThreadId) {
           nextFetchToken(tid);
