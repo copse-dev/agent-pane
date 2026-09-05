@@ -261,6 +261,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
   { name: 'preferAcpOverCloudAgent', kind: 'checkbox', default: true, save: true },
+  { name: 'agentSshAgentSocketAccess', kind: 'checkbox', default: false, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   {
     name: 'subagentsEnabled',
@@ -922,6 +923,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   you to approve its address while this is on.
                 </span>
               </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Commit signing</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="agentSshAgentSocketAccess" />
+                Let sandboxed agents use your ssh-agent to sign commits (macOS)
+              </label>
+              <p class="field-hint">
+                Off by default. A passphrase-protected SSH signing key only works through
+                <code>ssh-agent</code>, so without this an agent's commits land unsigned even with
+                <code>commit.gpgsign=true</code>. Turning it on lets an agent ask ssh-agent to use
+                <strong>any key it holds, for anything</strong> — the agent protocol has no
+                &ldquo;signing only&rdquo; scope — so it can also authenticate as you wherever those
+                keys are trusted. It never gains read access to the key itself. Pair it with
+                <code>ssh-add -c</code> to confirm every use. macOS only: on Linux the sandbox
+                cannot admit one socket without admitting them all, so this does nothing there.
+              </p>
             </fieldset>
           </section>
 
