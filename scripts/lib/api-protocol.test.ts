@@ -457,15 +457,23 @@ describe('gen-api-protocol --compare-ref', () => {
     // that does not exist there exits 128 — which failed the whole job rather
     // than reporting "nothing to compare". There is no previous surface, so
     // every channel is new and nothing can be breaking.
-    // The repo's own first commit predates the protocol module.
-    const firstCommit = spawnSync('git', ['rev-list', '--max-parents=0', 'HEAD'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-    })
-      .stdout.split('\n')[0]
-      ?.trim()
-    assert.ok(firstCommit, 'expected a root commit to compare against')
-    const { status, out } = run(firstCommit)
+    //
+    // The ref is built rather than found. Using the repository's own root
+    // commit reads a fact about history that is not true everywhere: under a
+    // shallow checkout (`actions/checkout` defaults to depth 1)
+    // `rev-list --max-parents=0` returns the graft boundary — a recent commit
+    // that does have the module — so the assertion passed locally on a full
+    // clone and failed in CI. An empty-tree commit has no files by
+    // construction, at any clone depth. It is dangling: no branch moves, the
+    // working tree is untouched, and git collects it later.
+    const git = (...args: string[]): string => {
+      const result = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' })
+      assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`)
+      return result.stdout.trim()
+    }
+    const emptyTree = git('hash-object', '-t', 'tree', '/dev/null')
+    const preProtocol = git('commit-tree', emptyTree, '-m', 'pre-protocol fixture')
+    const { status, out } = run(preProtocol)
     assert.equal(status, 0, out)
     assert.match(out, /no API protocol to compare against/)
   })
