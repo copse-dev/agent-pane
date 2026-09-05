@@ -890,7 +890,7 @@ export async function runThreadInContainer(
   const result = readJsonFile(join(runDir, 'out', 'result.json'), decodeResult)
   const carryOutBundle = join(runDir, 'out', 'carry-out.bundle')
   const carryOut: ThreadContainerRecord['carryOut'] = {
-    expected: existsSync(carryOutBundle),
+    expected: existsSync(carryOutBundle) || (result?.commits.length ?? 0) > 0,
     ref: null,
     error: null,
   }

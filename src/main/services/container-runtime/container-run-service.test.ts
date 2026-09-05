@@ -332,6 +332,22 @@ describe('judgeRun', () => {
       secretCanary: { present: true, detail: 'canary found in out/result.json' },
     })
     assert.match(verdict.warnings.join(' '), /canary/i)
+    assert.match(verdict.failure ?? '', /canary/i)
+  })
+
+  it('fails when the guest reports commits but its bundle is missing', () => {
+    const verdict = judgeRun({
+      ...fakeRecord(THREAD),
+      carryOut: { expected: false, ref: null, error: null },
+    })
+    assert.match(verdict.failure ?? '', /could not be fetched/)
+  })
+
+  it('rejects nonzero and unknown container exit status despite a completed result', () => {
+    for (const containerExit of [1, 137, null]) {
+      const verdict = judgeRun({ ...fakeRecord(THREAD), containerExit })
+      assert.match(verdict.failure ?? '', /exit status/)
+    }
   })
 
   it("carries the guest's own error through", () => {

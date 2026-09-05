@@ -309,7 +309,10 @@ export function judgeRun(record: ThreadContainerRecord): {
   if (record.result.stopReason === 'error') {
     return { failure: record.result.error ?? 'The run ended with an error', warnings }
   }
-  if (record.carryOut.expected && record.carryOut.ref === null) {
+  if (
+    (record.carryOut.expected || record.result.commits.length > 0) &&
+    record.carryOut.ref === null
+  ) {
     return {
       failure: `The guest's commits could not be fetched: ${record.carryOut.error ?? 'unknown error'}`,
       warnings,
@@ -319,6 +322,15 @@ export function judgeRun(record: ThreadContainerRecord): {
   // clean finish, because a container left running is the user's problem now.
   if (warnings.length > 0 && (record.cleanupError !== null || record.teardown === 'failed')) {
     return { failure: warnings[0] ?? 'Cleanup failed', warnings }
+  }
+  if (record.secretCanary.present) {
+    return { failure: `Secret canary leaked into the run: ${record.secretCanary.detail}`, warnings }
+  }
+  if (record.containerExit !== 0) {
+    return {
+      failure: `The container ended with ${record.containerExit === null ? 'unknown' : String(record.containerExit)} exit status`,
+      warnings,
+    }
   }
   return { failure: null, warnings }
 }
