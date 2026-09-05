@@ -22773,7 +22773,6 @@ function createStore(initial2) {
     git_branch_changed: /* @__PURE__ */ new Set(),
     thread_checkout_changed: /* @__PURE__ */ new Set(),
     composer_draft_flush: /* @__PURE__ */ new Set(),
-    composer_checkout_preferred: /* @__PURE__ */ new Set(),
     agent_task_selected: /* @__PURE__ */ new Set(),
     shell_tab_activated: /* @__PURE__ */ new Set(),
     request_terminal_command: /* @__PURE__ */ new Set(),
@@ -24581,6 +24580,10 @@ var init_remote_agent = __esm({
 function canonicalAcpAgentId(id39) {
   return LEGACY_ACP_AGENT_IDS[id39] ?? id39;
 }
+function findAcpCatalogEntry(id39) {
+  const canonical = canonicalAcpAgentId(id39);
+  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical);
+}
 var LEGACY_ACP_AGENT_IDS, RETIRED_ACP_AGENTS, KNOWN_ACP_AGENTS;
 var init_acp_known_agents = __esm({
   "src/shared/acp-known-agents.ts"() {
@@ -24895,8 +24898,61 @@ function isAcpModel(model) {
 function acpGroupLabel(title2) {
   return `${title2} on this device`;
 }
+function adapterSignature(entries2) {
+  const commands = new Set(entries2.map((agent) => agent.command));
+  const packages = entries2.flatMap(
+    (agent) => agent.installPackage === void 0 ? [] : [agent.installPackage]
+  );
+  return {
+    commands,
+    names: /* @__PURE__ */ new Set([...commands, ...packages]),
+    ids: new Set(entries2.map((agent) => canonicalAcpAgentId(agent.id)))
+  };
+}
+function commandProgram(command) {
+  const unquoted = command.trim().replace(/^"(.*)"$/, "$1");
+  const base = unquoted.split(/[\\/]/).pop() ?? "";
+  return base.replace(/\.(?:cmd|bat|exe|ps1)$/i, "");
+}
+function firstOperand(args) {
+  return args.find((arg) => !arg.startsWith("-"));
+}
+function runnerPackage(program, args) {
+  const subcommands = PACKAGE_RUNNERS.get(program);
+  if (subcommands === void 0) return void 0;
+  if (subcommands.length === 0) return firstOperand(args);
+  const [subcommand, ...rest] = args;
+  return subcommand !== void 0 && subcommands.includes(subcommand) ? firstOperand(rest) : void 0;
+}
+function packageName(spec) {
+  const version4 = spec.indexOf("@", 1);
+  return version4 === -1 ? spec : spec.slice(0, version4);
+}
+function scriptPathNames(script2, names) {
+  const path4 = `/${script2.replace(/\\/g, "/")}/`;
+  for (const name of names) if (path4.includes(`/${name}/`)) return true;
+  return false;
+}
+function launchesAdapter(agent, adapter) {
+  const program = commandProgram(agent.command);
+  if (adapter.commands.has(agent.command) || adapter.commands.has(program)) return true;
+  const args = agent.args ?? [];
+  if (program === "node") {
+    const script2 = firstOperand(args);
+    return script2 !== void 0 && scriptPathNames(script2, adapter.names);
+  }
+  const spec = runnerPackage(program, args);
+  return spec !== void 0 && adapter.names.has(packageName(spec));
+}
+function isKnownAcpAgent(agent, adapter) {
+  if (launchesAdapter(agent, adapter)) return true;
+  return agent.id !== void 0 && adapter.ids.has(canonicalAcpAgentId(agent.id));
+}
+function launchesAcpCatalogEntry(agent, entry) {
+  return launchesAdapter(agent, adapterSignature([entry]));
+}
 function isClaudeAcpAgent(agent) {
-  return CLAUDE_ACP_COMMANDS.has(agent.command);
+  return isKnownAcpAgent(agent, CLAUDE_ADAPTERS);
 }
 function enabledClaudeAcpAgent(agents) {
   return agents.find((agent) => agent.enabled && isClaudeAcpAgent(agent));
@@ -24931,7 +24987,7 @@ function acpModelDisplayLabel(model, agents) {
   const choice2 = agent?.availableModels?.find((m3) => m3.value === selection3.model);
   return `${title2} \u2014 ${choice2 ? acpModelChoiceLabel(choice2) : canonicalModelLabel(selection3.model)}`;
 }
-var KNOWN_CONFIG_CATEGORIES, CLAUDE_ACP_COMMANDS, CODEX_ACP_COMMANDS;
+var KNOWN_CONFIG_CATEGORIES, ACP_CATALOG, CLAUDE_ADAPTERS, CODEX_ADAPTERS, PACKAGE_RUNNERS;
 var init_acp = __esm({
   "src/shared/acp.ts"() {
     init_acp_known_agents();
@@ -24946,12 +25002,19 @@ var init_acp = __esm({
       "model_config",
       "thought_level"
     ]);
-    CLAUDE_ACP_COMMANDS = new Set(
-      [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS].filter((agent) => agent.requiresClient === "claude").map((agent) => agent.command)
+    ACP_CATALOG = [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS];
+    CLAUDE_ADAPTERS = adapterSignature(
+      ACP_CATALOG.filter((agent) => agent.requiresClient === "claude")
     );
-    CODEX_ACP_COMMANDS = new Set(
-      [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS].filter((agent) => canonicalAcpAgentId(agent.id) === "codex-acp").map((agent) => agent.command)
+    CODEX_ADAPTERS = adapterSignature(
+      ACP_CATALOG.filter((agent) => canonicalAcpAgentId(agent.id) === "codex-acp")
     );
+    PACKAGE_RUNNERS = /* @__PURE__ */ new Map([
+      ["npx", []],
+      ["bunx", []],
+      ["pnpm", ["dlx", "exec"]],
+      ["yarn", ["dlx"]]
+    ]);
   }
 });
 
@@ -32095,22 +32158,34 @@ var init_data_policies = __esm({
   }
 });
 
+// packages/llm/src/agent-model-identity.ts
+function resolveAgentModelIdentity(...forms) {
+  const named2 = forms.filter((form) => Boolean(form));
+  for (const form of named2) {
+    const id39 = resolveIntellectModelId(form);
+    if (id39 !== null && getIntellectScore(id39)) return id39;
+  }
+  for (const form of named2) {
+    const labelled = claudeModelIdFromLabel(form);
+    const id39 = labelled === null ? null : resolveIntellectModelId(labelled);
+    if (id39 !== null && getIntellectScore(id39)) return id39;
+  }
+  return null;
+}
+var init_agent_model_identity = __esm({
+  "packages/llm/src/agent-model-identity.ts"() {
+    init_model_intellect();
+    init_model_label();
+  }
+});
+
 // src/renderer/views/model-options.ts
 function modelDisplayLabel(model) {
   return displayModelLabel(model);
 }
 function agentModelIntellectHint(...forms) {
-  const named2 = forms.filter((form) => Boolean(form));
-  for (const form of named2) {
-    const hint = modelIntellectHint(form);
-    if (hint) return hint;
-  }
-  for (const form of named2) {
-    const id39 = claudeModelIdFromLabel(form);
-    const hint = id39 === null ? null : modelIntellectHint(id39);
-    if (hint) return hint;
-  }
-  return null;
+  const id39 = resolveAgentModelIdentity(...forms);
+  return id39 === null ? null : modelIntellectHint(id39);
 }
 async function pluginModelOptions(api3, includeAgentModels, current) {
   if (!includeAgentModels) return [];
@@ -32514,6 +32589,7 @@ var init_model_options = __esm({
     init_lm_studio_defaults();
     init_dynamic_model();
     init_model_label();
+    init_agent_model_identity();
     init_model_display();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
@@ -34257,6 +34333,10 @@ function validateDraft(draft, existingIds) {
   if (existingIds.includes(draft.id)) return `An agent with id "${draft.id}" already exists.`;
   if (!draft.title.trim()) return "Title is required.";
   if (!draft.command.trim()) return "Command is required.";
+  const catalog = findAcpCatalogEntry(draft.id);
+  if (catalog && !launchesAcpCatalogEntry(draft, catalog)) {
+    return `Id "${draft.id}" belongs to ${catalog.title} (${catalog.command}); a custom agent needs its own id.`;
+  }
   return null;
 }
 function commandRow(label, command) {
@@ -34513,7 +34593,8 @@ function createAcpAgentsSection(api3, opts = {}) {
     const submit = el("button", { type: "button", class: "provider-save" }, options2.submitLabel);
     submit.addEventListener("click", () => {
       const id39 = idInput.value.trim();
-      const draft = { id: id39, title: titleInput.value.trim(), command: commandInput.value.trim() };
+      const args = parseArgsText(argsArea.value);
+      const draft = { id: id39, title: titleInput.value.trim(), command: commandInput.value.trim(), args };
       const existingIds = isEdit ? [] : agents.map((a3) => a3.id);
       const error53 = validateDraft(draft, existingIds);
       if (error53) {
@@ -34522,7 +34603,6 @@ function createAcpAgentsSection(api3, opts = {}) {
         return;
       }
       const env = parseEnvText(envArea.value);
-      const args = parseArgsText(argsArea.value);
       const model = modelSelect.value.trim();
       const permissionMode = modeSelect.value.trim();
       options2.onSubmit({
@@ -255438,9 +255518,14 @@ function mountFooterBranchStatus(host, store3, api3) {
   let defaultBranch = null;
   let open2 = false;
   let refreshToken = 0;
-  let pendingCheckout = null;
+  const baseBranchByThread = /* @__PURE__ */ new Map();
   function getActiveThread2() {
     return getThreadById(store3, store3.getState().activeThreadId);
+  }
+  function activeBaseBranch() {
+    const thread = getActiveThread2();
+    if (!thread || !isBlankThread(thread)) return void 0;
+    return baseBranchByThread.get(thread.id);
   }
   function getActiveThreadBranch() {
     return getActiveThread2()?.gitBranch;
@@ -255450,11 +255535,13 @@ function mountFooterBranchStatus(host, store3, api3) {
     return thread ? isBlankThread(thread) : false;
   }
   function getDisplayBranch() {
-    return getActiveThreadBranch() ?? status?.currentBranch ?? null;
+    return activeBaseBranch() ?? getActiveThreadBranch() ?? status?.currentBranch ?? null;
   }
   function getVisiblePr() {
     const pr2 = status?.pr;
     if (!pr2) return null;
+    const pending = activeBaseBranch();
+    if (pending && pending !== status?.currentBranch) return null;
     return isTrunkBranch(getDisplayBranch(), defaultBranch) ? null : pr2;
   }
   function setOpen(next3) {
@@ -255501,13 +255588,14 @@ function mountFooterBranchStatus(host, store3, api3) {
     } else {
       label.textContent = displayBranch;
       if (pickerMode) {
-        trigger.title = mismatch ? `${mismatchMessage} Switch git branch.` : `Switch git branch: ${displayBranch}`;
+        const pickerLabel = `Start this thread from: ${displayBranch}`;
+        trigger.title = mismatch ? `${mismatchMessage} ${pickerLabel}` : pickerLabel;
         trigger.classList.remove("is-link");
         trigger.classList.remove("is-copyable");
         branchToCopy = null;
         trigger.setAttribute(
           "aria-label",
-          mismatch ? `${mismatchMessage} Switch git branch.` : `Switch git branch: ${displayBranch}`
+          mismatch ? `${mismatchMessage} ${pickerLabel}` : pickerLabel
         );
       } else {
         trigger.title = mismatch ? `${mismatchMessage} Click to copy branch name.` : `Click to copy branch name: ${displayBranch}`;
@@ -255524,7 +255612,7 @@ function mountFooterBranchStatus(host, store3, api3) {
   function renderMenu() {
     clear(menu);
     if (!isPickerMode()) return;
-    const current = status?.currentBranch ?? null;
+    const selected = activeBaseBranch() ?? status?.currentBranch ?? null;
     const pr2 = getVisiblePr();
     if (pr2) {
       const prItem = el(
@@ -255547,37 +255635,21 @@ function mountFooterBranchStatus(host, store3, api3) {
           type: "button",
           class: "branch-picker-option",
           role: "option",
-          "aria-selected": branch2.name === current ? "true" : "false"
+          "aria-selected": branch2.name === selected ? "true" : "false"
         },
         nameEl
       );
       if (branch2.name === defaultBranch) {
         item.append(el("span", { class: "branch-picker-default-badge" }, "default"));
       }
-      if (branch2.name === current) item.classList.add("is-selected");
+      if (branch2.name === selected) item.classList.add("is-selected");
       item.addEventListener("click", () => {
-        if (pendingCheckout) return;
-        if (branch2.name === current) {
-          setOpen(false);
-          return;
-        }
         setOpen(false);
-        const owner = getActiveThreadOwner(store3);
-        if (!owner) return;
-        const checkout2 = api3.git.checkoutBranch(owner.projectId, owner.threadId, branch2.name);
-        pendingCheckout = checkout2;
-        const observed = checkout2.then(
-          () => {
-            showToast(`Checked out ${branch2.name}`);
-            store3.emit("git_branch_changed");
-          },
-          (error53) => {
-            showErrorToast(`Failed to check out ${branch2.name}`, error53);
-          }
-        );
-        void observed.finally(() => {
-          if (pendingCheckout === checkout2) pendingCheckout = null;
-        });
+        const thread = getActiveThread2();
+        if (!thread) return;
+        baseBranchByThread.set(thread.id, branch2.name);
+        renderTrigger();
+        renderMenu();
       });
       menu.append(item);
     }
@@ -255596,8 +255668,18 @@ function mountFooterBranchStatus(host, store3, api3) {
     branches = listed;
     defaultBranch = defaultName;
   }
+  function pruneBaseBranches() {
+    if (baseBranchByThread.size === 0) return;
+    const blank = new Set(
+      store3.getState().threads.filter((thread) => isBlankThread(thread)).map((thread) => thread.id)
+    );
+    for (const threadId of baseBranchByThread.keys()) {
+      if (!blank.has(threadId)) baseBranchByThread.delete(threadId);
+    }
+  }
   async function refresh() {
     const token2 = ++refreshToken;
+    pruneBaseBranches();
     if (!store3.getState().workspaceRoot) {
       status = null;
       branches = [];
@@ -255651,7 +255733,6 @@ function mountFooterBranchStatus(host, store3, api3) {
     });
   }
   trigger.addEventListener("click", () => {
-    if (pendingCheckout) return;
     if (!isPickerMode()) {
       const url2 = getVisiblePr()?.url;
       if (url2) {
@@ -255701,10 +255782,7 @@ function mountFooterBranchStatus(host, store3, api3) {
   void refresh();
   return {
     refresh: () => void refresh(),
-    waitForPendingCheckout: async () => {
-      const pending = pendingCheckout;
-      if (pending) await pending;
-    },
+    pendingBaseBranch: (threadId) => baseBranchByThread.get(threadId),
     destroy: () => {
       refreshToken += 1;
       if (refreshTimer) clearTimeout(refreshTimer);
@@ -258274,15 +258352,7 @@ ${description}
         return;
       }
     }
-    try {
-      await branchControl.waitForPendingCheckout();
-    } catch {
-      return;
-    }
-    const [branchStatus, promptState] = await Promise.all([
-      api3.git.branchStatus(projectId, id39),
-      api3.git.promptState(projectId, id39)
-    ]);
+    const branchStatus = await api3.git.branchStatus(projectId, id39);
     const currentBranch = branchStatus.currentBranch;
     const thread = getThreadById(store3, id39);
     const threadBranch = thread?.gitBranch;
@@ -258360,7 +258430,10 @@ ${description}
           id39,
           rawText,
           checkoutChoice(id39),
-          thread.model ?? store3.getState().settings?.model
+          thread.model ?? store3.getState().settings?.model,
+          // The footer picker only names a branch; this is where that selection
+          // becomes the worktree's base, or the shared checkout's branch.
+          branchControl.pendingBaseBranch(id39)
         );
         applyPreparedThreadCheckout(store3, id39, prepared);
         if (getActiveThreadId() !== id39) return;
@@ -258374,6 +258447,7 @@ ${description}
         updateCheckoutControl();
       }
     }
+    const promptState = await api3.git.promptState(projectId, id39);
     const priorTodos = thread?.todos ?? [];
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent);
     if (workingBrief && workingBrief !== thread?.workingBrief) {
@@ -258798,11 +258872,6 @@ ${description}
       if (draft === composer.expandedValue()) return;
       composer.value = draft;
       scheduleContextEstimate(0);
-    }),
-    store3.on("composer_checkout_preferred", (choice2) => {
-      const thread = getActiveThread(store3);
-      if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return;
-      selectCheckout(choice2);
     }),
     store3.on("thread_status_changed", (tid) => {
       if (tid === getActiveThreadId()) {
@@ -270965,7 +271034,6 @@ function startPrDiscussThread(store3, pr2) {
     threads: store3.getState().threads.map((t4) => t4.id === threadId ? { ...t4, title: title2 } : t4)
   });
   store3.emit("threads_changed");
-  store3.emit("composer_checkout_preferred", "shared");
   return threadId;
 }
 var init_pr_pane_thread = __esm({
@@ -271342,7 +271410,7 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
       {
         type: "button",
         class: "pr-new-thread-btn",
-        "data-tooltip": "Open a new thread about this pull request (shared checkout)"
+        "data-tooltip": "Open a new thread about this pull request"
       },
       el("span", {}, "New thread")
     );
