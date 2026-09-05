@@ -10,10 +10,12 @@ import {
   enabledClaudeAcpAgent,
   isAcpModel,
   isClaudeAcpAgent,
+  launchesAcpCatalogEntry,
   parseAcpAgentConfigs,
   parseAcpModel,
   parseAcpModelSelection,
 } from './acp.ts'
+import { KNOWN_ACP_AGENTS } from './acp-known-agents.ts'
 import type { AcpAgentConfig } from './types/acp.ts'
 
 describe('acp model values', () => {
@@ -181,6 +183,76 @@ describe('ACP plan provider', () => {
     assert.equal(acpPlanProvider({ command: 'gemini' }), null)
     assert.equal(acpPlanProvider({ command: 'cursor-agent' }), null)
     assert.equal(acpPlanProvider({ command: 'my-agent' }), null)
+  })
+
+  it('recognizes the same adapter spawned by path or through a platform shim', () => {
+    // Registering an agent by absolute path is the same binary; losing the
+    // match costs the user the plan route in every `auto:` selection.
+    assert.equal(acpPlanProvider({ command: '/opt/homebrew/bin/claude-agent-acp' }), 'claude')
+    assert.equal(acpPlanProvider({ command: 'C:\\tools\\claude-agent-acp.cmd' }), 'claude')
+    assert.equal(acpPlanProvider({ command: '/usr/local/bin/codex-acp' }), 'codex')
+    // A path is not a licence to guess: an unrelated program stays unknown.
+    assert.equal(acpPlanProvider({ command: '/usr/local/bin/my-agent' }), null)
+  })
+
+  it('recognizes a catalog agent wrapped in a runner by its canonical id', () => {
+    // `npx @agentclientprotocol/claude-agent-acp` hides the adapter behind the
+    // runner, but the registered agent still carries the catalog id.
+    assert.equal(acpPlanProvider({ id: 'claude-acp', command: 'npx' }), 'claude')
+    assert.equal(acpPlanProvider({ id: 'codex-acp', command: 'npx' }), 'codex')
+    assert.equal(isClaudeAcpAgent({ id: 'claude-acp', command: 'npx' }), true)
+    // A custom agent under its own id gets no plan claim from its runner.
+    assert.equal(acpPlanProvider({ id: 'my-agent', command: 'npx' }), null)
+  })
+
+  it('recognizes a catalog agent by the package or script a runner launches', () => {
+    // The runner is not the adapter; the package it names is. Flags such as
+    // `-y` sit in front of that name and must not be mistaken for it.
+    const claude = '@agentclientprotocol/claude-agent-acp'
+    assert.equal(acpPlanProvider({ command: 'npx', args: ['-y', claude] }), 'claude')
+    assert.equal(acpPlanProvider({ command: 'pnpm', args: ['dlx', claude] }), 'claude')
+    assert.equal(acpPlanProvider({ command: 'bunx', args: [`${claude}@latest`] }), 'claude')
+    assert.equal(acpPlanProvider({ command: 'pnpm', args: ['exec', 'codex-acp'] }), 'codex')
+    assert.equal(
+      acpPlanProvider({ command: 'node', args: ['/opt/x/claude-agent-acp/dist/index.js'] }),
+      'claude',
+    )
+    // Only the adapter packages count, and only under a runner subcommand that launches.
+    assert.equal(acpPlanProvider({ command: 'npx', args: ['some-other-tool'] }), null)
+    assert.equal(acpPlanProvider({ command: 'pnpm', args: ['install', claude] }), null)
+    assert.equal(
+      acpPlanProvider({ command: 'node', args: ['/opt/x/some-other-tool/cli.js'] }),
+      null,
+    )
+  })
+
+  it('reads through a quoted command path', () => {
+    assert.equal(
+      acpPlanProvider({ command: '"C:\\Program Files\\claude\\claude-agent-acp.cmd"' }),
+      'claude',
+    )
+  })
+})
+
+describe('launchesAcpCatalogEntry', () => {
+  const claude = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'claude-acp')
+  assert.ok(claude)
+
+  it('accepts the catalog command bare, by path, or runner-wrapped', () => {
+    assert.equal(launchesAcpCatalogEntry({ command: 'claude-agent-acp' }, claude), true)
+    assert.equal(
+      launchesAcpCatalogEntry({ command: '/usr/local/bin/claude-agent-acp' }, claude),
+      true,
+    )
+    assert.equal(
+      launchesAcpCatalogEntry({ command: 'npx', args: [claude.installPackage ?? ''] }, claude),
+      true,
+    )
+  })
+
+  it('does not take a catalog id as evidence the command launches that entry', () => {
+    assert.equal(launchesAcpCatalogEntry({ id: 'claude-acp', command: 'my-agent' }, claude), false)
+    assert.equal(launchesAcpCatalogEntry({ id: 'claude-acp', command: 'npx' }, claude), false)
   })
 })
 

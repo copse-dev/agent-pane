@@ -15,6 +15,7 @@ import { getInAppBrowserSession } from '../windows/browser-web-contents.ts'
 import {
   captureBrowserPageText,
   captureBrowserScreenshot,
+  exportBrowserPagePdf,
 } from '../services/browser/browser-share.ts'
 import { workspacePreviewFileUrl } from '../services/browser/static-preview-server.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
@@ -51,6 +52,7 @@ import {
   zModelId,
   zHookRunId,
   zHookTestRequest,
+  zGitBranchName,
   zNonEmptyString,
   zPathString,
   zProjectId,
@@ -102,12 +104,22 @@ import {
   refreshHuggingFaceModels,
   HUGGINGFACE_SLUG,
 } from '../services/providers/extra-providers-store.ts'
+import {
+  invalidateOpenAiModelAvailability,
+  isOpenAiModelAvailable,
+} from '../services/providers/openai-model-availability.ts'
 import { resolveModelPricing } from '../services/providers/model-pricing-store.ts'
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
-import { getMainWindowNavigation, setMainWindowNavigation } from '../windows/create-main-window.ts'
+import {
+  getMainWindowBrowserSession,
+  getMainWindowNavigation,
+  setMainWindowBrowserSession,
+  setMainWindowNavigation,
+} from '../windows/create-main-window.ts'
+import { browserPaneSessionSchema, decodeBrowserPaneSession } from '../windows/main-window-state.ts'
 import {
   backfillThreadPrRefs,
   loadProjectThreadMetas,
@@ -460,6 +472,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     setMainWindowNavigation(event.sender, navigation)
   })
 
+  // The Browser pane's tabs, so quitting no longer throws away the canvas the
+  // agent rendered. Stored per window beside its navigation and bounded by the
+  // same schema the launch-time decode uses.
+  ipcMain.handle('mainWindow:getBrowserSession', (event) => {
+    assertMainFrameSender(event, win)
+    return getMainWindowBrowserSession(event.sender)
+  })
+
+  ipcMain.handle('mainWindow:setBrowserSession', (event, rawSession: unknown) => {
+    assertMainFrameSender(event, win)
+    const session = parseIpcArgs(browserPaneSessionSchema, [rawSession])
+    setMainWindowBrowserSession(event.sender, decodeBrowserPaneSession(session))
+  })
+
   ipcMain.handle('workspace:open', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
@@ -581,6 +607,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('browser:share-screenshot', async (event, rawId: unknown) => {
     const share = await captureBrowserScreenshot(interactiveBrowserContents(event, rawId))
     if (!win.isDestroyed()) win.webContents.send('browser:share-image', share)
+  })
+
+  ipcMain.handle('browser:export-pdf', async (event, rawId: unknown) => {
+    const contents = interactiveBrowserContents(event, rawId)
+    return await exportBrowserPagePdf(
+      contents,
+      async (defaultFilename) => {
+        const result = await dialog.showSaveDialog(win, {
+          title: 'Export PDF',
+          defaultPath: defaultFilename,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        })
+        return result.canceled || !result.filePath ? null : result.filePath
+      },
+      async (filePath, data) => {
+        await writeFile(filePath, data)
+      },
+    )
   })
 
   ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
@@ -1300,6 +1344,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // renderer never offers a retry the process is not allowed to perform.
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
+    if (p === 'openai') invalidateOpenAiModelAvailability()
     if (p === 'cursor') invalidateCursorCloudModelsCache()
     // The live Intelligence Index feed caches its result (successes AND failures)
     // for hours, so a stored 403/empty would otherwise survive the user fixing
@@ -1321,6 +1366,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       cursor: await isProviderKeyUsable('cursor'),
       openrouter: await isProviderKeyUsable('openrouter'),
     }
+    // Astra rolls out by account. Do not offer a static picker row merely
+    // because an OpenAI key works — the account's model list is authoritative.
+    const openAiKey = resolveApiKey('openai')
+    available['openai:gpt-6-astra'] =
+      available['openai'] === true && typeof openAiKey === 'string'
+        ? await isOpenAiModelAvailable(openAiKey, 'gpt-6-astra')
+        : false
     for (const provider of getResolvedExtraProviders()) {
       // Local servers need no API key, so treat them as available; their models
       // only surface in the picker once the user fetches/saves them anyway.
@@ -2193,7 +2245,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('git:checkoutBranch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, targetBranch] = parseIpcArgs(
-      z.tuple([zProjectId, zThreadId, z.string().min(1).max(256)]),
+      z.tuple([zProjectId, zThreadId, zGitBranchName]),
       rawArgs,
     )
     const root = await resolveWatchedGitRoot(projectId, threadId)

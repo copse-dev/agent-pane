@@ -63,9 +63,16 @@ export function mountPortsSection(
   let pollRunning = false
   let pollTimer: ReturnType<typeof setTimeout> | null = null
 
-  const section = el('section', { class: 'ports-section', hidden: true })
-  const header = el('div', { class: 'agent-tasks-section-header' }, 'Ports')
-  const list = el('div', { class: 'ports-list' })
+  const section = el('section', {
+    class: 'ports-section terminal-rail-section',
+    hidden: true,
+  })
+  const header = el(
+    'div',
+    { class: 'agent-tasks-section-header terminal-rail-section-header' },
+    'Ports',
+  )
+  const list = el('div', { class: 'ports-list terminal-rail-section-list' })
   section.append(header, list)
   listRoot.append(section)
 
@@ -151,6 +158,7 @@ export function mountPortsSection(
         type: 'button',
         class: `ports-row${selected ? ' is-active' : ''}`,
         'data-port': String(row.port),
+        'data-terminal-rail-row': '',
         'aria-expanded': String(selected),
       })
       button.append(

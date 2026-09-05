@@ -189,6 +189,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     activeProjectId: scenario.project.id,
     activeThreadId: threads[0]?.id ?? null,
   }
+  // The demo runs one page load at a time, so the session it hands back is the
+  // one this page recorded — nothing outlives a reload, exactly as in the app
+  // when a window is opened for the first time.
+  let browserSession: import('@shared/types/main-window.ts').BrowserPaneSession | null = null
   let currentBranch = threads[0]?.gitBranch ?? 'demo/browser-renderer'
   const chunkHandlers = new Set<(threadId: string, chunk: StreamChunk) => void>()
   const showDiffHandlers = new Set<ShowDiffHandler>()
@@ -255,6 +259,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         navigation = structuredClone(next)
         return resolvedVoid()
       },
+      getBrowserSession: () => resolved(browserSession ? structuredClone(browserSession) : null),
+      setBrowserSession: (next) => {
+        browserSession = structuredClone(next)
+        return resolvedVoid()
+      },
     },
     workspace: {
       open: () => resolved(workspaceRoot),
@@ -280,6 +289,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       onOpenTab: subscribe,
       sharePageText: unsupported,
       shareScreenshot: unsupported,
+      exportPdf: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe,
@@ -504,6 +514,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
       onPrRefs: () => () => undefined,
+      // No demo scenario opens a real PR, so nothing ever announces one.
+      onPrCreated: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {
         threads = [thread, ...threads.filter((candidate) => candidate.id !== thread.id)]
         return resolvedVoid()

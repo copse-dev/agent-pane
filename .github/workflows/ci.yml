@@ -211,7 +211,26 @@ jobs:
       - run: npm run check:dead-code
       # Fail closed on high/critical dependency advisories. This runs after the
       # lockfile-exact setup, so it audits precisely the tree CI will execute.
-      - run: pnpm audit --audit-level=high
+      # The registry's audit endpoint intermittently times out from hosted
+      # runners (2026-09-04: three attempts in a row here while unrelated
+      # branches passed either side of them), and pnpm's own two retries span
+      # too short a window. Retry only when the registry could not be reached,
+      # so a real advisory still fails on the first attempt.
+      - run: |
+          attempt=1
+          while true; do
+            set +e
+            pnpm audit --audit-level=high 2>&1 | tee "$RUNNER_TEMP/pnpm-audit.log"
+            status=${PIPESTATUS[0]}
+            set -e
+            if [ "$status" -eq 0 ]; then exit 0; fi
+            if ! grep -qE 'ERR_SOCKET_TIMEOUT|FetchError|ECONNRESET|ETIMEDOUT' "$RUNNER_TEMP/pnpm-audit.log" || [ "$attempt" -ge 3 ]; then
+              exit "$status"
+            fi
+            echo "::warning::pnpm audit could not reach the registry; retry $attempt/3"
+            attempt=$((attempt + 1))
+            sleep 60
+          done
       # Guard the e2e oracle that gates the `e2e` job: every spec must stay
       # selectable (liveness) and the mapping invariants must hold, so the gate
       # can't silently start skipping specs it should run.

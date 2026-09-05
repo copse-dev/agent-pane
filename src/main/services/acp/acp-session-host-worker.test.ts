@@ -29,7 +29,7 @@ function bundleWorker(outDir: string, sandboxRuntimeAlias?: string): string {
     bundle: true,
     platform: 'node',
     format: 'cjs',
-    target: 'node22',
+    target: 'node24',
     alias: {
       '@shared': join(REPO_ROOT, 'src/shared'),
       ...(sandboxRuntimeAlias

@@ -1,8 +1,16 @@
-import { describe, it, before, after, beforeEach } from 'node:test'
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
 import { setSetting, setApiKey } from '../storage/settings.ts'
-import { classifyTerminalSnapshot, terminalReadNeedsApproval } from './terminal-read-guard.ts'
+import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
+import {
+  TERMINAL_READ_SCREEN_MAX_CHARS,
+  classifyTerminalSnapshot,
+  ensureTerminalReadPermitted,
+  setTerminalSnapshotClassifierForTest,
+  terminalReadNeedsApproval,
+  type TerminalReadVerdict,
+} from './terminal-read-guard.ts'
 import { resetSafetyModelProblemReportsForTest } from './safety-model-availability.ts'
 import { invalidateLmStudioModelsCache } from '../providers/provider-selection.ts'
 
@@ -133,5 +141,291 @@ describe('classifyTerminalSnapshot with an unavailable safety model', () => {
     assert.deepEqual(result, { verdict: null, problem: null })
     assert.equal(completionCalls, 0)
     await setSetting('safetyClassifierEnabled', true)
+  })
+})
+
+/**
+ * The safety model is shown only the trailing slice of a snapshot, so its
+ * verdict can only vouch for that slice. These tests pin the gate's side of
+ * that contract: a confident "safe" never auto-shares a snapshot larger than
+ * the screened window (#2280), and the explanation the user sees says how much
+ * the model actually looked at. "Always allow for this chat" remembers the
+ * answer to the question the prompt asked — unscreened content, or flagged
+ * content — and never waives the screening itself. The model is replaced by a
+ * scripted verdict, so the stub server above is not involved.
+ */
+describe('read_terminal gate', () => {
+  const CONFIDENT_SAFE: TerminalReadVerdict = {
+    risky: false,
+    confidence: 0.95,
+    reason: 'ordinary build output',
+  }
+
+  /** `count` numbered lines of roughly `width` characters each. */
+  function scrollback(count: number, width = 80): string {
+    const lines: string[] = []
+    for (let i = 1; i <= count; i++) {
+      lines.push(`[${String(i).padStart(5, '0')}] ${'build output '.repeat(width)}`.slice(0, width))
+    }
+    return lines.join('\n')
+  }
+
+  let classifierCalls: string[] = []
+  let prompts: ApprovalRequest[] = []
+  let promptAnswer: { approved: boolean; remember: boolean } = { approved: true, remember: false }
+
+  beforeEach(() => {
+    classifierCalls = []
+    prompts = []
+    promptAnswer = { approved: true, remember: false }
+    setTerminalSnapshotClassifierForTest((text) => {
+      classifierCalls.push(text)
+      return Promise.resolve({ verdict: CONFIDENT_SAFE, problem: null })
+    })
+    setApprovalHandler((req) => {
+      prompts.push(req)
+      return Promise.resolve(promptAnswer)
+    })
+  })
+
+  afterEach(() => {
+    setTerminalSnapshotClassifierForTest(null)
+    setApprovalHandler(null)
+  })
+
+  describe('a snapshot that fits the screened window', () => {
+    it('auto-shares on a confident safe verdict, having screened the whole snapshot', async () => {
+      const text = scrollback(40)
+      assert.ok(text.length <= TERMINAL_READ_SCREEN_MAX_CHARS)
+
+      const result = await ensureTerminalReadPermitted(null, 'Build', text)
+
+      assert.deepEqual(result, { allowed: true })
+      assert.deepEqual(classifierCalls, [text])
+      assert.equal(prompts.length, 0)
+    })
+
+    it('still asks the user when the verdict is risky, naming the reason', async () => {
+      setTerminalSnapshotClassifierForTest(() =>
+        Promise.resolve({
+          verdict: { risky: true, confidence: 0.8, reason: 'looks like an API token' },
+          problem: null,
+        }),
+      )
+      promptAnswer = { approved: false, remember: false }
+
+      const result = await ensureTerminalReadPermitted(null, 'Build', scrollback(40))
+
+      assert.equal(result.allowed, false)
+      assert.match(result.deniedMessage ?? '', /declined to share/)
+      assert.equal(prompts.length, 1)
+      assert.match(prompts[0]?.body ?? '', /flagged it: looks like an API token/)
+    })
+
+    it('names a reported model problem rather than a generic failure', async () => {
+      setTerminalSnapshotClassifierForTest(() =>
+        Promise.resolve({
+          verdict: null,
+          problem: {
+            reason: 'not-available',
+            model: `lmstudio:${MISSING}`,
+            message: `The safety model ${MISSING} is not available on the local server.`,
+          },
+        }),
+      )
+
+      await ensureTerminalReadPermitted(null, 'Build', scrollback(40))
+
+      assert.equal(prompts.length, 1)
+      assert.match(prompts[0]?.body ?? '', /is not available on the local server/)
+    })
+
+    it('treats exactly the window size as fitting: screened whole, then auto-shared', async () => {
+      const text = 'x'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS)
+
+      const result = await ensureTerminalReadPermitted(null, 'Build', text)
+
+      assert.deepEqual(result, { allowed: true })
+      assert.deepEqual(classifierCalls, [text])
+      assert.equal(prompts.length, 0)
+    })
+
+    it('treats one character over the window as unscreened: prompts, no screening call', async () => {
+      const text = 'x'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS + 1)
+
+      await ensureTerminalReadPermitted(null, 'Build', text)
+
+      assert.equal(classifierCalls.length, 0)
+      assert.equal(prompts.length, 1)
+      assert.equal(prompts[0]?.cause, 'terminal-output-share')
+    })
+  })
+
+  describe('a snapshot larger than the screened window', () => {
+    it('never auto-shares on a safe verdict — the model did not see all of it', async () => {
+      const text = scrollback(200)
+      assert.ok(text.length > TERMINAL_READ_SCREEN_MAX_CHARS)
+      promptAnswer = { approved: false, remember: false }
+
+      const result = await ensureTerminalReadPermitted(null, 'Build', text)
+
+      assert.equal(result.allowed, false)
+      assert.match(result.deniedMessage ?? '', /declined to share/)
+      assert.equal(prompts.length, 1)
+      assert.equal(prompts[0]?.cause, 'terminal-output-share')
+    })
+
+    it('goes to the user without spending a screening call that could not change the outcome', async () => {
+      await ensureTerminalReadPermitted(null, 'Build', scrollback(200))
+
+      assert.equal(classifierCalls.length, 0)
+      assert.equal(prompts.length, 1)
+    })
+
+    it('describes window capacity without claiming the skipped classifier screened anything', async () => {
+      // 200 lines of 80 chars + newline: the window holds 74 whole lines plus
+      // six characters of a 75th. No classifier call is made for this snapshot.
+      await ensureTerminalReadPermitted(null, 'Build', scrollback(200))
+
+      const body = prompts[0]?.body ?? ''
+      assert.match(body, /"Build" shell/)
+      assert.match(body, /larger than the safety model screens/)
+      assert.match(body, /only the most recent 74 of its 200 lines would fit in full/)
+      assert.match(body, /This snapshot was not screened/)
+      assert.equal(classifierCalls.length, 0)
+    })
+
+    it('counts a single whole line in the singular', async () => {
+      const text = 'hidden-prefix' + 'V\n' + 'y'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS - 2)
+
+      await ensureTerminalReadPermitted(null, 'Build', text)
+
+      assert.match(
+        prompts[0]?.body ?? '',
+        /only the most recent 1 of its 2 lines would fit in full/,
+      )
+    })
+
+    it('shares it once the user approves', async () => {
+      const result = await ensureTerminalReadPermitted(null, 'Build', scrollback(200))
+
+      assert.deepEqual(result, { allowed: true })
+      assert.equal(prompts.length, 1)
+    })
+
+    it('honours "Always allow for this chat" for later oversized reads in that chat only', async () => {
+      promptAnswer = { approved: true, remember: true }
+      await ensureTerminalReadPermitted('thread-remembered', 'Build', scrollback(200))
+      assert.equal(prompts.length, 1)
+
+      const result = await ensureTerminalReadPermitted(
+        'thread-remembered',
+        'Build',
+        scrollback(300),
+      )
+      assert.deepEqual(result, { allowed: true })
+      assert.equal(prompts.length, 1)
+      assert.equal(classifierCalls.length, 0)
+
+      await ensureTerminalReadPermitted('thread-other', 'Build', scrollback(300))
+      assert.equal(prompts.length, 2)
+    })
+
+    it('explains an oversized snapshot with no line breaks without a bogus line count', async () => {
+      const text = 'x'.repeat(TERMINAL_READ_SCREEN_MAX_CHARS + 1)
+
+      await ensureTerminalReadPermitted(null, 'Build', text)
+
+      const body = prompts[0]?.body ?? ''
+      assert.match(body, /this snapshot was not screened/)
+      assert.doesNotMatch(body, /of its/)
+    })
+  })
+
+  describe('what "Always allow for this chat" covers', () => {
+    const RISKY: TerminalReadVerdict = {
+      risky: true,
+      confidence: 0.8,
+      reason: 'looks like an API token',
+    }
+
+    async function rememberOversized(threadId: string): Promise<void> {
+      promptAnswer = { approved: true, remember: true }
+      await ensureTerminalReadPermitted(threadId, 'Build', scrollback(200))
+      assert.equal(prompts.length, 1)
+      promptAnswer = { approved: false, remember: false }
+    }
+
+    it('still screens a snapshot that fits, and shares it only on a safe verdict', async () => {
+      await rememberOversized('thread-grant-screens')
+      const text = scrollback(40)
+
+      const result = await ensureTerminalReadPermitted('thread-grant-screens', 'Build', text)
+
+      assert.deepEqual(result, { allowed: true })
+      assert.deepEqual(classifierCalls, [text])
+      assert.equal(prompts.length, 1)
+    })
+
+    it('does not cover a fitting snapshot the model flagged: that is a new question', async () => {
+      await rememberOversized('thread-grant-flagged')
+      setTerminalSnapshotClassifierForTest(() => Promise.resolve({ verdict: RISKY, problem: null }))
+
+      const result = await ensureTerminalReadPermitted(
+        'thread-grant-flagged',
+        'Build',
+        scrollback(40),
+      )
+
+      assert.equal(result.allowed, false)
+      assert.equal(prompts.length, 2)
+      assert.match(prompts[1]?.body ?? '', /flagged it: looks like an API token/)
+    })
+
+    it('does cover a later read the model could not screen — the same question, once per chat', async () => {
+      await rememberOversized('thread-grant-unavailable')
+      setTerminalSnapshotClassifierForTest(() => Promise.resolve({ verdict: null, problem: null }))
+
+      const result = await ensureTerminalReadPermitted(
+        'thread-grant-unavailable',
+        'Build',
+        scrollback(40),
+      )
+
+      assert.deepEqual(result, { allowed: true })
+      assert.equal(prompts.length, 1)
+    })
+
+    it('given on a flagged snapshot, does not cover an unscreened one', async () => {
+      setTerminalSnapshotClassifierForTest(() => Promise.resolve({ verdict: RISKY, problem: null }))
+      promptAnswer = { approved: true, remember: true }
+      await ensureTerminalReadPermitted('thread-grant-risky', 'Build', scrollback(40))
+      assert.equal(prompts.length, 1)
+      promptAnswer = { approved: false, remember: false }
+
+      const flaggedAgain = await ensureTerminalReadPermitted(
+        'thread-grant-risky',
+        'Build',
+        scrollback(40),
+      )
+      assert.deepEqual(flaggedAgain, { allowed: true })
+      assert.equal(prompts.length, 1)
+
+      const oversized = await ensureTerminalReadPermitted(
+        'thread-grant-risky',
+        'Build',
+        scrollback(200),
+      )
+      assert.equal(oversized.allowed, false)
+      assert.equal(prompts.length, 2)
+      assert.match(prompts[1]?.body ?? '', /larger than the safety model screens/)
+    })
+
+    it('never applies without a chat to scope it to', async () => {
+      promptAnswer = { approved: true, remember: true }
+      await ensureTerminalReadPermitted(null, 'Build', scrollback(200))
+      await ensureTerminalReadPermitted(null, 'Build', scrollback(200))
+      assert.equal(prompts.length, 2)
+    })
   })
 })

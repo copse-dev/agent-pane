@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse — beyond the side highlight</title>
+    <link rel="stylesheet" href="proto.css" />
+  </head>
+  <body class="opt-current">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="brand-name">Copse</span>
+          <span class="brand-sub">accent&nbsp;rails &rarr; what&nbsp;else?</span>
+        </div>
+        <nav class="switcher" role="radiogroup" aria-label="Treatment">
+          <button class="sw" data-opt="current" aria-pressed="true">Today</button>
+          <span class="sw-group">
+            <button class="sw sw-lead" data-opt="m" aria-pressed="false">M · The mix</button>
+            <button class="sw sw-split" data-opt="mix" aria-pressed="false">Compare</button>
+          </span>
+          <span class="sw-group">
+            <button class="sw" data-opt="a" aria-pressed="false">A · Label line</button>
+            <button class="sw" data-opt="b" aria-pressed="false">B · Quiet plate</button>
+            <button class="sw" data-opt="c" aria-pressed="false">C · Gutter</button>
+            <button class="sw sw-split" data-opt="split" aria-pressed="false">Compare</button>
+          </span>
+          <span class="sw-group">
+            <button class="sw" data-opt="d" aria-pressed="false">D · Lifted</button>
+            <button class="sw" data-opt="e" aria-pressed="false">E · Well</button>
+            <button class="sw" data-opt="j" aria-pressed="false">J · Soft</button>
+            <button class="sw sw-split" data-opt="material" aria-pressed="false">Compare</button>
+          </span>
+          <span class="sw-group">
+            <button class="sw" data-opt="g" aria-pressed="false">G · Ring</button>
+            <button class="sw" data-opt="h" aria-pressed="false">H · Hatch</button>
+            <button class="sw" data-opt="i" aria-pressed="false">I · Margin</button>
+            <button class="sw sw-split" data-opt="quiet" aria-pressed="false">Compare</button>
+          </span>
+        </nav>
+      </div>
+      <p class="blurb" id="blurb"></p>
+    </header>
+
+    <main id="stage">
+      <!-- ================= 1. TRANSCRIPT: the screenshot ================= -->
+      <section class="spec">
+        <h2 class="spec-h">
+          Transcript &mdash; agent error message
+          <span class="spec-note">The reported case: three stacked bars inside one message.</span>
+        </h2>
+
+        <div class="chat">
+          <div class="msg msg-assistant">
+            <p class="lead">
+              Failed to authenticate. API Error: 401 OAuth access token has been revoked.
+            </p>
+
+            <!-- GitHub-style alert -->
+            <div class="cal cal-warning">
+              <div class="cal-head">
+                <svg class="cal-icon ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M8.62 1.9a.72.72 0 0 0-1.24 0L1.4 12.9a.72.72 0 0 0 .62 1.08h11.96a.72.72 0 0 0 .62-1.08L8.62 1.9ZM7.25 6h1.5v4h-1.5V6Zm0 5.1h1.5v1.45h-1.5V11.1Z"
+                  />
+                </svg>
+                <span class="cal-name">Warning</span>
+              </div>
+              <div class="cal-body">
+                <p class="cal-lede">Claude sign-in expired</p>
+                <p>
+                  This turn couldn&rsquo;t run because Claude&rsquo;s saved credentials are no
+                  longer valid.
+                </p>
+              </div>
+            </div>
+
+            <h4 class="h-sub">To continue</h4>
+            <ol class="steps">
+              <li>Run <code>claude /login</code> in a terminal.</li>
+              <li>Finish signing in, then re-send your message.</li>
+            </ol>
+
+            <!-- blockquote -->
+            <blockquote class="bq">
+              <div class="bq-head">
+                <svg class="bq-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M6.4 4.2C4.4 5 3.2 6.6 3.2 8.6v3.2h3.6V8.4H5.1c.1-1.1.7-1.9 1.9-2.5l-.6-1.7Z"
+                    class="fill"
+                  />
+                  <path
+                    d="M12.3 4.2c-2 .8-3.2 2.4-3.2 4.4v3.2h3.6V8.4H11c.1-1.1.7-1.9 1.9-2.5l-.6-1.7Z"
+                    class="fill"
+                  />
+                </svg>
+                <span class="bq-name">Note</span>
+              </div>
+              <div class="bq-body">
+                <p>
+                  Copse&rsquo;s built-in provider credentials are not automatically shared with
+                  external agents. Configure credentials for the agent itself.
+                </p>
+              </div>
+            </blockquote>
+
+            <h4 class="h-sub">Technical details</h4>
+            <pre
+              class="code"
+            ><code>ACP error &minus;32603 (Internal error): Internal error: Failed to
+authenticate. API Details: {"errorKind":"authentication_failed"}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 2. OTHER CALLOUT SEVERITIES ================= -->
+      <section class="spec">
+        <h2 class="spec-h">
+          Transcript &mdash; the rest of the callout family
+          <span class="spec-note">Severity has to survive without the bar.</span>
+        </h2>
+        <div class="chat">
+          <div class="msg msg-assistant">
+            <div class="cal cal-note">
+              <div class="cal-head">
+                <svg class="cal-icon ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M8 1.35a6.65 6.65 0 1 0 0 13.3 6.65 6.65 0 0 0 0-13.3ZM7.25 6.85h1.5v5h-1.5v-5Zm0-2.9h1.5v1.6h-1.5v-1.6Z"
+                  />
+                </svg>
+                <span class="cal-name">Note</span>
+              </div>
+              <div class="cal-body">
+                <p>The worktree is created from <code>origin/main</code>, not your local branch.</p>
+              </div>
+            </div>
+            <div class="cal cal-tip">
+              <div class="cal-head">
+                <svg class="cal-icon ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M8 .9a5.1 5.1 0 0 0-3.05 9.19c.38.29.6.72.66 1.19h4.78c.06-.47.28-.9.66-1.19A5.1 5.1 0 0 0 8 .9ZM5.55 11.9h4.9v1.15h-4.9zM6.4 13.65h3.2v1.05H6.4z"
+                  />
+                </svg>
+                <span class="cal-name">Tip</span>
+              </div>
+              <div class="cal-body">
+                <p>
+                  Press <code>&#8984;K</code> to re-run the last tool call with the same arguments.
+                </p>
+              </div>
+            </div>
+            <div class="cal cal-important">
+              <div class="cal-head">
+                <svg class="cal-icon ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M2.6 1.8h10.8a1.3 1.3 0 0 1 1.3 1.3v6.6a1.3 1.3 0 0 1-1.3 1.3H8.2l-3.3 3v-3H2.6a1.3 1.3 0 0 1-1.3-1.3V3.1a1.3 1.3 0 0 1 1.3-1.3ZM7.25 3.6h1.5v3.5h-1.5V3.6Zm0 4.5h1.5v1.5h-1.5V8.1Z"
+                  />
+                </svg>
+                <span class="cal-name">Important</span>
+              </div>
+              <div class="cal-body">
+                <p>Approving this permission applies it to every future turn in the thread.</p>
+              </div>
+            </div>
+            <div class="cal cal-caution">
+              <div class="cal-head">
+                <svg class="cal-icon ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M5.75 1.3h4.5L14.7 5.75v4.5L10.25 14.7h-4.5L1.3 10.25v-4.5L5.75 1.3ZM7.25 4.6h1.5v4.6h-1.5V4.6Zm0 5.8h1.5v1.6h-1.5v-1.6Z"
+                  />
+                </svg>
+                <span class="cal-name">Caution</span>
+              </div>
+              <div class="cal-body">
+                <p>This rewrites history on a branch other people have already pulled.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 2b. ICON WORKSHOP ================= -->
+      <section class="spec">
+        <h2 class="spec-h">
+          Callout icons
+          <span class="spec-note"
+            >A 1.4 stroke goes optically thinner against a dark surface, so the coloured title ends
+            up carrying the block alone. Weight, fill, and silhouette, compared.</span
+          >
+        </h2>
+        <div class="icon-lab">
+          <div class="icon-lab-head">
+            <span></span>
+            <span>Outline 1.4 <em>&mdash; today</em></span>
+            <span>Outline 1.9</span>
+            <span>Solid</span>
+            <span>Solid on disc</span>
+          </div>
+
+          <!-- NOTE -->
+          <div class="icon-row cal-note">
+            <span class="icon-row-name">Note</span>
+            <span class="ico-cell">
+              <svg class="ico-thin" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.4" />
+                <path d="M8 7.2v4M8 4.9v.1" />
+              </svg>
+              <span>Note</span>
+            </span>
+            <span class="ico-cell">
+              <svg class="ico-bold" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.4" />
+                <path d="M8 7.2v4M8 4.9v.1" />
+              </svg>
+              <span>Note</span>
+            </span>
+            <span class="ico-cell">
+              <svg class="ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill-rule="evenodd"
+                  d="M8 1.35a6.65 6.65 0 1 0 0 13.3 6.65 6.65 0 0 0 0-13.3ZM7.25 6.85h1.5v5h-1.5v-5Zm0-2.9h1.5v1.6h-1.5v-1.6Z"
+                />
+              </svg>
+              <span>Note</span>
+            </span>
+            <span class="ico-cell">
+              <span class="ico-disc"
+                ><svg class="ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M8 1.35a6.65 6.65 0 1 0 0 13.3 6.65 6.65 0 0 0 0-13.3ZM7.25 6.85h1.5v5h-1.5v-5Zm0-2.9h1.5v1.6h-1.5v-1.6Z"
+                  /></svg
+              ></span>
+              <span>Note</span>
+            </span>
+          </div>
+
+          <!-- TIP -->
+          <div class="icon-row cal-tip">
+            <span class="icon-row-name">Tip</span>
+            <span class="ico-cell">
+              <svg class="ico-thin" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M6.1 12.2h3.8M6.6 14h2.8" />
+                <path d="M8 1.9a4.3 4.3 0 0 0-2.5 7.8v1.3h5V9.7A4.3 4.3 0 0 0 8 1.9Z" />
+              </svg>
+              <span>Tip</span>
+            </span>
+            <span class="ico-cell">
+              <svg class="ico-bold" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M6.1 12.2h3.8M6.6 14h2.8" />
+                <path d="M8 1.9a4.3 4.3 0 0 0-2.5 7.8v1.3h5V9.7A4.3 4.3 0 0 0 8 1.9Z" />
+              </svg>
+              <span>Tip</span>
+            </span>
+            <span class="ico-cell">
+              <svg class="ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M8 .9a5.1 5.1 0 0 0-3.05 9.19c.38.29.6.72.66 1.19h4.78c.06-.47.28-.9.66-1.19A5.1 5.1 0 0 0 8 .9ZM5.55 11.9h4.9v1.15h-4.9zM6.4 13.65h3.2v1.05H6.4z"
+                />
+              </svg>
+              <span>Tip</span>
+            </span>
+            <span class="ico-cell">
+              <span class="ico-disc"
+                ><svg class="ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M8 .9a5.1 5.1 0 0 0-3.05 9.19c.38.29.6.72.66 1.19h4.78c.06-.47.28-.9.66-1.19A5.1 5.1 0 0 0 8 .9ZM5.55 11.9h4.9v1.15h-4.9zM6.4 13.65h3.2v1.05H6.4z"
+                  /></svg
+              ></span>
+              <span>Tip</span>
+            </span>
+          </div>
+
+          <!-- IMPORTANT -->
+          <div class="icon-row cal-important">
+            <span class="icon-row-name">Important</span>
+            <span class="ico-cell">
+              <svg class="ico-thin" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M2.6 2.4h10.8a1.3 1.3 0 0 1 1.3 1.3v5.8a1.3 1.3 0 0 1-1.3 1.3H8.4l-3.1 2.8v-2.8H2.6a1.3 1.3 0 0 1-1.3-1.3V3.7a1.3 1.3 0 0 1 1.3-1.3Z"
+                />
+                <path d="M8 4.4v2.6M8 8.6v.1" />
+              </svg>
+              <span>Important</span>
+            </span>
+            <span class="ico-cell">
+              <svg class="ico-bold" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M2.6 2.4h10.8a1.3 1.3 0 0 1 1.3 1.3v5.8a1.3 1.3 0 0 1-1.3 1.3H8.4l-3.1 2.8v-2.8H2.6a1.3 1.3 0 0 1-1.3-1.3V3.7a1.3 1.3 0 0 1 1.3-1.3Z"
+                />
+                <path d="M8 4.4v2.6M8 8.6v.1" />
+              </svg>
+              <span>Important</span>
+            </span>
+            <span class="ico-cell">
+              <svg class="ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill-rule="evenodd"
+                  d="M2.6 1.8h10.8a1.3 1.3 0 0 1 1.3 1.3v6.6a1.3 1.3 0 0 1-1.3 1.3H8.2l-3.3 3v-3H2.6a1.3 1.3 0 0 1-1.3-1.3V3.1a1.3 1.3 0 0 1 1.3-1.3ZM7.25 3.6h1.5v3.5h-1.5V3.6Zm0 4.5h1.5v1.5h-1.5V8.1Z"
+                />
+              </svg>
+              <span>Important</span>
+            </span>
+            <span class="ico-cell">
+              <span class="ico-disc"
+                ><svg class="ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M2.6 1.8h10.8a1.3 1.3 0 0 1 1.3 1.3v6.6a1.3 1.3 0 0 1-1.3 1.3H8.2l-3.3 3v-3H2.6a1.3 1.3 0 0 1-1.3-1.3V3.1a1.3 1.3 0 0 1 1.3-1.3ZM7.25 3.6h1.5v3.5h-1.5V3.6Zm0 4.5h1.5v1.5h-1.5V8.1Z"
+                  /></svg
+              ></span>
+              <span>Important</span>
+            </span>
+          </div>
+
+          <!-- WARNING -->
+          <div class="icon-row cal-warning">
+            <span class="icon-row-name">Warning</span>
+            <span class="ico-cell">
+              <svg class="ico-thin" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 1.6 15 14H1L8 1.6Z" />
+                <path d="M8 6.2v3.4" />
+                <circle cx="8" cy="11.7" r=".85" class="fill" />
+              </svg>
+              <span>Warning</span>
+            </span>
+            <span class="ico-cell">
+              <svg class="ico-bold" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 1.6 15 14H1L8 1.6Z" />
+                <path d="M8 6.2v3.4" />
+                <circle cx="8" cy="11.7" r=".85" class="fill" />
+              </svg>
+              <span>Warning</span>
+            </span>
+            <span class="ico-cell">
+              <svg class="ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill-rule="evenodd"
+                  d="M8.62 1.9a.72.72 0 0 0-1.24 0L1.4 12.9a.72.72 0 0 0 .62 1.08h11.96a.72.72 0 0 0 .62-1.08L8.62 1.9ZM7.25 6h1.5v4h-1.5V6Zm0 5.1h1.5v1.45h-1.5V11.1Z"
+                />
+              </svg>
+              <span>Warning</span>
+            </span>
+            <span class="ico-cell">
+              <span class="ico-disc"
+                ><svg class="ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M8.62 1.9a.72.72 0 0 0-1.24 0L1.4 12.9a.72.72 0 0 0 .62 1.08h11.96a.72.72 0 0 0 .62-1.08L8.62 1.9ZM7.25 6h1.5v4h-1.5V6Zm0 5.1h1.5v1.45h-1.5V11.1Z"
+                  /></svg
+              ></span>
+              <span>Warning</span>
+            </span>
+          </div>
+
+          <!-- CAUTION -->
+          <div class="icon-row cal-caution">
+            <span class="icon-row-name">Caution</span>
+            <span class="ico-cell">
+              <svg class="ico-thin" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.4" />
+                <path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" />
+              </svg>
+              <span>Caution</span>
+            </span>
+            <span class="ico-cell">
+              <svg class="ico-bold" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.4" />
+                <path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" />
+              </svg>
+              <span>Caution</span>
+            </span>
+            <span class="ico-cell">
+              <svg class="ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill-rule="evenodd"
+                  d="M5.75 1.3h4.5L14.7 5.75v4.5L10.25 14.7h-4.5L1.3 10.25v-4.5L5.75 1.3ZM7.25 4.6h1.5v4.6h-1.5V4.6Zm0 5.8h1.5v1.6h-1.5v-1.6Z"
+                />
+              </svg>
+              <span>Caution</span>
+            </span>
+            <span class="ico-cell">
+              <span class="ico-disc"
+                ><svg class="ico-solid" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M5.75 1.3h4.5L14.7 5.75v4.5L10.25 14.7h-4.5L1.3 10.25v-4.5L5.75 1.3ZM7.25 4.6h1.5v4.6h-1.5V4.6Zm0 5.8h1.5v1.6h-1.5v-1.6Z"
+                  /></svg
+              ></span>
+              <span>Caution</span>
+            </span>
+          </div>
+        </div>
+        <div class="icon-align">
+          <span class="align-cell cal-note"
+            ><svg class="ico-big" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M8 1.35a6.65 6.65 0 1 0 0 13.3 6.65 6.65 0 0 0 0-13.3ZM7.25 6.85h1.5v5h-1.5v-5Zm0-2.9h1.5v1.6h-1.5v-1.6Z"
+              /></svg
+          ></span>
+          <span class="align-cell cal-tip"
+            ><svg class="ico-big" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M8 .9a5.1 5.1 0 0 0-3.05 9.19c.38.29.6.72.66 1.19h4.78c.06-.47.28-.9.66-1.19A5.1 5.1 0 0 0 8 .9ZM5.55 11.9h4.9v1.15h-4.9zM6.4 13.65h3.2v1.05H6.4z"
+              /></svg
+          ></span>
+          <span class="align-cell cal-important"
+            ><svg class="ico-big" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M2.6 1.8h10.8a1.3 1.3 0 0 1 1.3 1.3v6.6a1.3 1.3 0 0 1-1.3 1.3H8.2l-3.3 3v-3H2.6a1.3 1.3 0 0 1-1.3-1.3V3.1a1.3 1.3 0 0 1 1.3-1.3ZM7.25 3.6h1.5v3.5h-1.5V3.6Zm0 4.5h1.5v1.5h-1.5V8.1Z"
+              /></svg
+          ></span>
+          <span class="align-cell cal-warning"
+            ><svg class="ico-big" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M8.62 1.9a.72.72 0 0 0-1.24 0L1.4 12.9a.72.72 0 0 0 .62 1.08h11.96a.72.72 0 0 0 .62-1.08L8.62 1.9ZM7.25 6h1.5v4h-1.5V6Zm0 5.1h1.5v1.45h-1.5V11.1Z"
+              /></svg
+          ></span>
+          <span class="align-cell cal-caution"
+            ><svg class="ico-big" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M5.75 1.3h4.5L14.7 5.75v4.5L10.25 14.7h-4.5L1.3 10.25v-4.5L5.75 1.3ZM7.25 4.6h1.5v4.6h-1.5V4.6Zm0 5.8h1.5v1.6h-1.5v-1.6Z"
+              /></svg
+          ></span>
+        </div>
+        <p class="icon-note">
+          Note and Caution are both circles today, so at a glance they differ only by the mark
+          inside. The solid columns give Caution an octagon &mdash; the stop-sign silhouette reads
+          before the glyph does, and before the colour does for anyone who cannot separate red from
+          blue.
+        </p>
+      </section>
+
+      <!-- ================= 2c. THE COPSE ICON SET ================= -->
+      <section class="spec">
+        <h2 class="spec-h">
+          The Copse icon set
+          <span class="spec-note"
+            >All 28 from <code>src/renderer/dom/icons.ts</code> — lucide-style outlines on a
+            24&times;24 grid, stroked in <code>currentColor</code>. The callout glyphs above have to
+            sit beside these without looking like a different family.</span
+          >
+        </h2>
+        <div class="icon-gallery"></div>
+        <p class="icon-note">
+          The set is <em>entirely</em> outline at stroke 2 (<code>.ui-icon</code>), which is the
+          tension in going solid for callouts: solid is right where a 16px glyph is the sole carrier
+          of severity, but it makes the five alert marks the only filled shapes in the app. Two ways
+          to keep one family &mdash; treat filled-vs-outline as meaningful (status marks are filled,
+          chrome is outline), or drop back to outline for callouts and accept the weaker signal. The
+          toggle below shows the whole set at the callout weight so the two can be compared honestly
+          rather than argued about.
+        </p>
+        <div class="gallery-actions">
+          <button
+            class="sw"
+            data-gallery="is-light"
+            data-off="Show at stroke 1.75"
+            data-on="Show at stroke 2"
+            aria-pressed="false"
+          >
+            Show at stroke 1.75
+          </button>
+          <button
+            class="sw"
+            data-gallery="is-large"
+            data-off="Show at 24px"
+            data-on="Show at 16px"
+            aria-pressed="false"
+          >
+            Show at 24px
+          </button>
+        </div>
+      </section>
+
+      <!-- ================= 3. REASONING + REVIEW ================= -->
+      <section class="spec">
+        <h2 class="spec-h">
+          Transcript &mdash; thinking &amp; review annotations
+          <span class="spec-note"
+            ><code>.message-reasoning</code>, <code>.review-panel</code>,
+            <code>.comparison-panel</code></span
+          >
+        </h2>
+        <div class="chat">
+          <div class="msg msg-assistant">
+            <details class="reason" open>
+              <summary class="reason-sum">
+                <svg class="reason-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M3.9 3.9l1.1 1.1M11 11l1.1 1.1M12.1 3.9 11 5M5 11l-1.1 1.1"
+                  />
+                  <circle cx="8" cy="8" r="2.1" />
+                </svg>
+                <span class="reason-name">Thinking</span>
+              </summary>
+              <div class="reason-body">
+                <p>
+                  The 401 comes back from the ACP bridge, not from our own token store &mdash; so
+                  re-running <code>claude /login</code> is the fix rather than clearing
+                  Copse&rsquo;s keychain entry.
+                </p>
+              </div>
+            </details>
+
+            <div class="panel panel-review">
+              <div class="panel-head">
+                <svg class="panel-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M3.4 8.4 6.6 11.6l6-6.6" />
+                </svg>
+                <span class="panel-name">Review</span>
+                <span class="panel-meta">2 findings &middot; $0.04</span>
+              </div>
+              <div class="panel-body">
+                <p>
+                  Auth-failure copy is duplicated between <code>agent-errors.ts</code> and the ACP
+                  steer path.
+                </p>
+              </div>
+            </div>
+
+            <div class="panel panel-compare">
+              <div class="panel-head">
+                <svg class="panel-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M8 2.6v10.8M4.2 5.4 2.2 9.6h4L4.2 5.4ZM11.8 5.4 9.8 9.6h4l-2-4.2Z" />
+                </svg>
+                <span class="panel-name">Comparison</span>
+                <span class="panel-meta">Opus vs Sonnet</span>
+              </div>
+              <div class="panel-body">
+                <p>
+                  Both models reach the same diagnosis; the judge prefers the shorter recovery
+                  instructions.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 4. SIDEBAR THREADS ================= -->
+      <section class="spec spec-cols">
+        <h2 class="spec-h">
+          Sidebar &mdash; thread selection
+          <span class="spec-note"
+            >Today: full-bleed fill <em>plus</em> a trailing rail (<code>inset -2px 0 0</code>). The
+            fill already says &ldquo;selected&rdquo;.</span
+          >
+        </h2>
+        <div class="cols">
+          <div class="sidebar">
+            <div class="side-h">e2e-mermaid-project</div>
+            <div class="row">
+              <span class="row-gut"></span><span class="row-t">Harden Git read auto-approval</span>
+            </div>
+            <div class="row selected">
+              <span class="row-gut"></span><span class="row-t">Remove the side highlight</span>
+            </div>
+            <div class="row">
+              <span class="row-gut"><span class="run"></span></span
+              ><span class="row-t">Extract @copse/shell-guard</span>
+            </div>
+            <div class="row">
+              <span class="row-gut"></span><span class="row-t">Screenshot PRs are stacked</span>
+            </div>
+            <div class="side-h">copse-panel</div>
+            <div class="row">
+              <span class="row-gut"></span><span class="row-t">Accent rails never curve</span>
+            </div>
+            <div class="row">
+              <span class="row-gut"></span><span class="row-t">Pages deploy workflow-ref skew</span>
+            </div>
+          </div>
+
+          <div class="settings">
+            <div class="set-nav">
+              <button class="set-btn">General</button>
+              <button class="set-btn active">Appearance</button>
+              <button class="set-btn">Packs</button>
+              <button class="set-btn">Permissions</button>
+              <button class="set-btn">Automations</button>
+            </div>
+            <div class="set-body">
+              <p class="set-title">Appearance</p>
+              <p class="set-copy">
+                Settings nav keeps a <em>leading</em> rail today, because the list sits on the
+                dialog&rsquo;s left edge.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 5. NESTING GUIDES ================= -->
+      <section class="spec">
+        <h2 class="spec-h">
+          Tool rollup &amp; subagent timeline
+          <span class="spec-note"
+            >These bars are structural, not decorative &mdash; they say &ldquo;these rows are
+            children&rdquo;.</span
+          >
+        </h2>
+        <div class="chat">
+          <div class="msg msg-assistant">
+            <details class="rollup" open>
+              <summary class="rollup-sum">
+                <svg class="rollup-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M6 3.5 10.5 8 6 12.5" />
+                </svg>
+                <span>Read 4 files</span>
+              </summary>
+              <div class="rollup-body">
+                <div class="tool-row">
+                  <span class="tool-dot ok"></span><code>conversation.css</code>
+                </div>
+                <div class="tool-row">
+                  <span class="tool-dot ok"></span><code>tool-cards.css</code>
+                </div>
+                <div class="tool-row"><span class="tool-dot ok"></span><code>layout.css</code></div>
+                <div class="tool-row"><span class="tool-dot run"></span><code>vnc.css</code></div>
+              </div>
+            </details>
+
+            <div class="subagent">
+              <div class="sub-head">
+                <svg class="sub-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <circle cx="8" cy="5.4" r="2.6" />
+                  <path d="M2.9 13.4a5.1 5.1 0 0 1 10.2 0" />
+                </svg>
+                <span>Explore &mdash; find every accent rail</span>
+              </div>
+              <div class="sub-timeline">
+                <p class="sub-msg">Scanning <code>src/renderer/styles</code>&hellip;</p>
+                <p class="sub-msg">10 rails across 6 stylesheets.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 6. VNC PANE ================= -->
+      <section class="spec">
+        <h2 class="spec-h">
+          Browser / VNC pane
+          <span class="spec-note"
+            >Four more rails: an active tab (<code>inset 2px 0 0</code>), the auth panel, and
+            <code>.vnc-status</code>, whose rail hue <em>is</em> the status.</span
+          >
+        </h2>
+        <div class="cols cols-vnc">
+          <div class="vnc">
+            <div class="vnc-tabs">
+              <button class="vnc-tab">localhost:5900</button>
+              <button class="vnc-tab is-active">build-runner</button>
+              <button class="vnc-tab">staging-box</button>
+            </div>
+            <div class="vnc-body">
+              <div class="vnc-auth">
+                <div class="vnc-auth-head">
+                  <svg class="vnc-auth-icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <rect x="3.2" y="7" width="9.6" height="6.4" rx="1.2" />
+                    <path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7" />
+                  </svg>
+                  <span class="vnc-auth-name">Password required</span>
+                </div>
+                <div class="vnc-auth-body">
+                  <p>This VNC server asked for a password before the session can start.</p>
+                </div>
+              </div>
+              <p class="vnc-status" data-kind="working">
+                <span class="vnc-status-dot"></span>Connecting to build-runner&hellip;
+              </p>
+              <p class="vnc-status" data-kind="ok">
+                <span class="vnc-status-dot"></span>Connected &mdash; 1920&times;1080
+              </p>
+              <p class="vnc-status" data-kind="error">
+                <span class="vnc-status-dot"></span>Connection refused
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="copse-icons.js"></script>
+    <script src="proto.js"></script>
+  </body>
+</html>

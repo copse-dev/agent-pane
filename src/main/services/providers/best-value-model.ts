@@ -18,11 +18,17 @@ import {
 import { CLOUD_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
 import { isNoTrainingModelPath, isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
 import { LMSTUDIO_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
-import { getIntellectScore, resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
+import { getIntellectScore } from '@copse/llm/model-intellect.ts'
+import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
 import { FALLBACK_APP_CHAT_MODEL, resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
-import { acpModelValue, acpModelVersionName, acpPlanProvider } from '@shared/acp.ts'
+import {
+  acpModelChoiceLabel,
+  acpModelValue,
+  acpModelVersionName,
+  acpPlanProvider,
+} from '@shared/acp.ts'
 import type { AcpAgentConfig, AcpModelChoice } from '@shared/types/acp.ts'
 import { listEnabledAcpAgents } from '../acp/acp-agent-registry.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
@@ -125,11 +131,16 @@ export function planAcpFrontierCandidates(agents: readonly AcpAgentConfig[]): Fr
     for (const choice of advertised) choices.set(choice.value, choice)
 
     for (const choice of choices.values()) {
-      const described = acpModelVersionName(choice.description)
-      const resolved =
-        resolveIntellectModelId(choice.value) ??
-        (described ? resolveIntellectModelId(described) : null) ??
-        resolveIntellectModelId(choice.label)
+      // The same forms, in the same order, the picker resolves its intellect
+      // hint from — including the finished label. A model the picker can name
+      // must be one a selector can pick, or the plan route quietly loses to a
+      // paid API route that the frontier *can* see.
+      const resolved = resolveAgentModelIdentity(
+        choice.value,
+        acpModelVersionName(choice.description),
+        choice.label,
+        acpModelChoiceLabel(choice),
+      )
       if (!resolved) continue
       const score = getIntellectScore(resolved)
       const info = getModelInfo(resolved)

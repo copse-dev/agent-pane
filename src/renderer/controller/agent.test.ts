@@ -393,6 +393,53 @@ test('tool_call_update patches ACP arguments, output, and status in place', () =
   assert.equal(tc.result, 'starting')
 })
 
+// #2332 defect 3. The ACP update pump is per *session*, not per turn, and the
+// session is pooled: a terminal update the agent emits after `session/cancel`
+// can land during the next turn, which has already installed its own handlers.
+// Ownership is a property of the thread's transcript, so it has to be resolved
+// from there rather than from whichever message is currently streaming.
+test('a straggler tool_call_update patches the turn that owns the call, not the live one', () => {
+  const { send, messages } = setup()
+  send({ type: 'text', text: 'first turn' })
+  send({ type: 'tool_call', toolCall: { id: 'tc1', name: 'run_shell', args: {} } })
+  send({ type: 'done' })
+
+  // Next turn: the user's follow-up has already produced a fresh bubble.
+  send({ type: 'text', text: 'second turn' })
+  send({ type: 'tool_call_update', toolCallId: 'tc1', status: 'error', result: 'cancelled' })
+
+  const [first, second] = [at(messages(), 0), at(messages(), 1)]
+  assert.equal(second.content, 'second turn')
+  assert.equal(second.toolCalls.length, 0, 'the straggler must not touch the new turn')
+  const tc = at(first.toolCalls, 0)
+  assert.equal(tc.status, 'error')
+  assert.equal(tc.result, 'cancelled')
+})
+
+test('a replayed tool_call for a known id does not open a second card', () => {
+  const { send, messages } = setup()
+  send({ type: 'tool_call', toolCall: { id: 'tc1', name: 'run_shell', args: { a: 1 } } })
+  send({ type: 'done' })
+  send({ type: 'text', text: 'next turn' })
+  send({ type: 'tool_call', toolCall: { id: 'tc1', name: 'run_shell', args: { a: 1 } } })
+
+  assert.equal(at(messages(), 0).toolCalls.length, 1)
+  assert.equal(at(messages(), 1).toolCalls.length, 0)
+})
+
+test('a straggler tool_result settles the owning turn s card', () => {
+  const { send, messages } = setup()
+  send({ type: 'tool_call', toolCall: { id: 'tc1', name: 'read_file', args: {} } })
+  send({ type: 'done' })
+  send({ type: 'text', text: 'next turn' })
+  send({ type: 'tool_result', toolCallId: 'tc1', result: 'late body', isError: false })
+
+  const tc = at(at(messages(), 0).toolCalls, 0)
+  assert.equal(tc.status, 'done')
+  assert.equal(tc.result, 'late body')
+  assert.equal(at(messages(), 1).toolCalls.length, 0)
+})
+
 test('tool_result with isError marks the tool card as error', () => {
   const { send, messages } = setup()
   send({ type: 'tool_call', toolCall: { id: 'tc1', name: 'read_file', args: {} } })

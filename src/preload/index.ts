@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('api', {
     getNavigation: () => ipcRenderer.invoke('mainWindow:getNavigation'),
     setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>
       ipcRenderer.invoke('mainWindow:setNavigation', navigation),
+    getBrowserSession: () => ipcRenderer.invoke('mainWindow:getBrowserSession'),
+    setBrowserSession: (session: import('@shared/types/main-window.ts').BrowserPaneSession) =>
+      ipcRenderer.invoke('mainWindow:setBrowserSession', session),
   },
   workspace: {
     open: () => ipcRenderer.invoke('workspace:open'),
@@ -41,6 +44,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('browser:share-page-text', webContentsId),
     shareScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:share-screenshot', webContentsId),
+    exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
     onOpenTab: (handler: (url: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
         handler(url)
@@ -196,7 +200,17 @@ contextBridge.exposeInMainWorld('api', {
       prompt: string,
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
-    ) => ipcRenderer.invoke('agent:prepareCheckout', projectId, threadId, prompt, choice, model),
+      baseBranch?: string,
+    ) =>
+      ipcRenderer.invoke(
+        'agent:prepareCheckout',
+        projectId,
+        threadId,
+        prompt,
+        choice,
+        model,
+        baseBranch,
+      ),
     previewCheckout: (
       projectId: string,
       choice: 'automatic' | 'shared' | 'worktree',
@@ -633,6 +647,20 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('threads:pr_refs', listener)
       return (): void => {
         ipcRenderer.removeListener('threads:pr_refs', listener)
+      }
+    },
+    onPrCreated: (handler: (projectId: string, threadId: string, ref: unknown) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        projectId: string,
+        threadId: string,
+        ref: unknown,
+      ): void => {
+        handler(projectId, threadId, ref)
+      }
+      ipcRenderer.on('threads:pr_created', listener)
+      return (): void => {
+        ipcRenderer.removeListener('threads:pr_created', listener)
       }
     },
     create: (projectId: string, thread: import('@shared/types').Thread) =>

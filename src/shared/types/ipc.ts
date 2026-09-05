@@ -40,6 +40,14 @@ export interface IpcInvokeMap {
     args: [navigation: import('./main-window.ts').MainWindowNavigation]
     result: undefined
   }
+  'mainWindow:getBrowserSession': {
+    args: []
+    result: import('./main-window.ts').BrowserPaneSession | null
+  }
+  'mainWindow:setBrowserSession': {
+    args: [session: import('./main-window.ts').BrowserPaneSession]
+    result: undefined
+  }
 
   // File system
   'fs:readFile': { args: [projectId: string, threadId: string, path: string]; result: string }
@@ -71,6 +79,7 @@ export interface IpcInvokeMap {
       prompt: string,
       choice: import('./worktree.ts').ThreadWorktreeChoice,
       model?: string,
+      baseBranch?: string,
     ]
     result: import('./worktree.ts').PreparedThreadCheckout
   }

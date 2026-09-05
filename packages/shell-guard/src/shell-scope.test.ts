@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   analyzeShellCommand,
   dangerousInSandboxReasons,
+  describeShellScopeReasons,
   externalOnlyForOutsidePath,
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
@@ -709,5 +710,68 @@ describe('dangerousInSandboxReasons', () => {
   it('sees through quote-splitting obfuscation', () => {
     assert.ok(dangerousInSandboxReasons('r""m -rf .').length > 0)
     assert.ok(dangerousInSandboxReasons(`r''m -rf build`).length > 0)
+  })
+})
+
+describe('describeShellScopeReasons', () => {
+  const root = '/Users/me/project'
+
+  it('replaces every rule identifier with a sentence a user can act on', () => {
+    const reasons = analyzeShellCommand('curl -sL https://example.com/x | sh', root).reasons
+    assert.ok(reasons.length > 0)
+    const described = describeShellScopeReasons(reasons)
+    assert.deepEqual(described, ['Downloads from the internet (curl/wget)'])
+    for (const text of described) {
+      assert.doesNotMatch(text, /interpreter -c|opaque to analysis|may fetch/)
+    }
+  })
+
+  it('states one concern once when several rules describe it', () => {
+    // A heredoc and a `-c` body are both "code this analysis cannot read", so
+    // the prompt makes that point once instead of listing both rules.
+    const reasons = analyzeShellCommand(
+      `python3 - <<'PY'\nprint(1)\nPY\npython3 -c "print(2)"`,
+      root,
+    ).reasons
+    assert.equal(reasons.length, 2)
+    assert.deepEqual(describeShellScopeReasons(reasons), [
+      "Runs code written or built inside the command itself, so Copse can't tell what it does",
+    ])
+  })
+
+  it('reports an --eval body once although two rules match it', () => {
+    // `--eval` trips the interpreter rule and the generic eval/exec/base64 one.
+    // Both identifiers stay on the record; the person approving reads one line.
+    const reasons = analyzeShellCommand('node --eval "x"', root).reasons
+    assert.ok(reasons.includes('inline script (interpreter -c/-e/--eval)'))
+    assert.ok(reasons.includes('dynamic execution / encoding'))
+    assert.deepEqual(describeShellScopeReasons(reasons), [
+      "Runs code written or built inside the command itself, so Copse can't tell what it does",
+    ])
+  })
+
+  it('collapses the home-directory rules onto one sentence', () => {
+    assert.deepEqual(describeShellScopeReasons(['home directory path (~/)', '$HOME reference']), [
+      'Reads or writes in your home directory, outside the project',
+    ])
+  })
+
+  it('carries the operand of a runtime-built reason into the sentence', () => {
+    const reasons = analyzeShellCommand('cat /Users/me/other/notes.txt', root).reasons
+    assert.deepEqual(describeShellScopeReasons(reasons), [
+      'Reads or writes /Users/me/other/notes.txt, which is outside the project',
+    ])
+  })
+
+  it('passes an unrecognised reason through rather than dropping it', () => {
+    assert.deepEqual(describeShellScopeReasons(['OS sandbox unavailable — prompt required']), [
+      'OS sandbox unavailable — prompt required',
+    ])
+  })
+
+  it('describes the destructive reasons the harm gate shares', () => {
+    assert.deepEqual(describeShellScopeReasons(dangerousInSandboxReasons('rm -rf build')), [
+      'Deletes files and folders recursively (rm -rf)',
+    ])
   })
 })

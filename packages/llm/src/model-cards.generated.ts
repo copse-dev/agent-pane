@@ -2,7 +2,7 @@
 // Vendor-published model cards / system cards, keyed by canonical model id.
 // Source of truth: scripts/data/model-cards.json.
 // Absent models mean "no sourced card yet", and the UI shows no link.
-// Last synced: 2026-09-02
+// Last synced: 2026-09-04
 
 /** Whether a link is a card about this model, or a vendor hub listing cards. */
 export type ModelCardKind = 'system-card' | 'model-card' | 'index'
@@ -73,11 +73,46 @@ export const MODEL_CARDS: Record<string, ModelCard> = {
     kind: 'system-card',
     asOf: '2026-09-02',
   },
+  'gemini-2-0-flash': {
+    url: 'https://storage.googleapis.com/deepmind-media/Model-Cards/Gemini-2-0-Flash-Model-Card.pdf',
+    title: 'Gemini 2.0 Flash model card',
+    publisher: 'Google DeepMind',
+    kind: 'model-card',
+    asOf: '2026-09-04',
+  },
+  'gemini-2-0-flash-lite-001': {
+    url: 'https://storage.googleapis.com/deepmind-media/Model-Cards/Gemini-2-0-Flash-Lite-Model-Card.pdf',
+    title: 'Gemini 2.0 Flash-Lite model card',
+    publisher: 'Google DeepMind',
+    kind: 'model-card',
+    asOf: '2026-09-04',
+  },
+  'gemini-2-5-flash': {
+    url: 'https://storage.googleapis.com/deepmind-media/Model-Cards/Gemini-2-5-Flash-Model-Card.pdf',
+    title: 'Gemini 2.5 Flash model card',
+    publisher: 'Google DeepMind',
+    kind: 'model-card',
+    asOf: '2026-09-04',
+  },
+  'gemini-2-5-flash-lite': {
+    url: 'https://storage.googleapis.com/deepmind-media/Model-Cards/Gemini-2-5-Flash-Lite-Model-Card.pdf',
+    title: 'Gemini 2.5 Flash-Lite model card',
+    publisher: 'Google DeepMind',
+    kind: 'model-card',
+    asOf: '2026-09-04',
+  },
   'gpt-4o': {
     url: 'https://openai.com/index/gpt-4o-system-card/',
     title: 'GPT-4o system card',
     publisher: 'OpenAI',
     kind: 'system-card',
     asOf: '2026-08-04',
+  },
+  'gpt-6-astra': {
+    url: 'https://deploymentsafety.openai.com/gpt-6-astra/vision',
+    title: 'GPT-6 Astra system card',
+    publisher: 'OpenAI',
+    kind: 'system-card',
+    asOf: '2026-09-04',
   },
 }

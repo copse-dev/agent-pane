@@ -27,6 +27,7 @@ import {
   type SpineHookRunLine,
 } from '../../../src/shared/threads/spine-schema.ts'
 import { copseDataRoot, copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
+import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/acp-turn-recovery.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -856,7 +857,14 @@ export function seedProjectGroupsFixture(
  */
 export function seedOpenRouterFixture(
   workspaceRoot: string,
-  options?: { apiBase?: string; freeMode?: boolean; localServerUrl?: string },
+  options?: {
+    apiBase?: string
+    freeMode?: boolean
+    localServerUrl?: string
+    model?: string
+    registeredAcpAgents?: AcpAgentConfig[]
+    openRouterZdrOnly?: boolean
+  },
 ): void {
   const projectId = 'e2e-openrouter-project'
   const now = Date.parse('2026-07-28T10:00:00.000Z')
@@ -903,11 +911,15 @@ export function seedOpenRouterFixture(
     ],
   })
   writeSettings({
-    model: 'openrouter:qwen/qwen3-235b-a22b:free',
+    model: options?.model ?? 'openrouter:qwen/qwen3-235b-a22b:free',
     openRouterModel: 'anthropic/claude-3.5-sonnet',
     ...(options?.freeMode ? { openRouterFreeMode: true } : {}),
     ...(options?.apiBase ? { openRouterApiBase: options.apiBase } : {}),
     ...(options?.localServerUrl ? { localServerUrl: options.localServerUrl } : {}),
+    ...(options?.registeredAcpAgents ? { registeredAcpAgents: options.registeredAcpAgents } : {}),
+    ...(options?.openRouterZdrOnly !== undefined
+      ? { openRouterZdrOnly: options.openRouterZdrOnly }
+      : {}),
     apiKey: {
       openrouter: {
         v: 1,
@@ -1266,13 +1278,16 @@ export function seedRemoteArtifactFilenameFixture(workspaceRoot: string, summary
 }
 
 /** Thread with a GitHub PR markdown link for PR panel e2e. */
-export function seedPrPanelChatFixture(workspaceRoot: string): void {
+export function seedPrPanelChatFixture(
+  workspaceRoot: string,
+  options?: { worktreeMode?: 'always' | 'never' },
+): void {
   const projectId = 'e2e-pr-panel-project'
   const threadId = 'e2e-pr-panel-thread'
   const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace', ...options }],
     activeProjectId: projectId,
     [`threads:${projectId}`]: [
       {
@@ -2356,8 +2371,8 @@ export function seedAcpUnfinishedTurnFixture(workspaceRoot: string): void {
                 id: 'tc-acp-upstream-search',
                 name: 'run_shell',
                 args: { command: 'rg "WebDriver BiDi" docs/' },
-                status: 'done',
-                result: 'docs/adr/selenium.md:WebDriver BiDi migration notes',
+                status: 'error',
+                result: ACP_CANCELLED_TOOL_CALL_RESULT,
                 kind: 'search',
               },
             ],
@@ -3173,8 +3188,13 @@ export function seedMachineTurnAttributionFixture(workspaceRoot: string): void {
 
 /**
  * Multi-segment tool-display fixture: a user bug report followed by several
- * assistant bubbles (text-after-tools splits), each with Reasoning + a rolled-up
- * tool burst — the shape Cursor cloud agent turns take in Copse.
+ * assistant bubbles (text-after-tools splits), each with Reasoning + a tool
+ * burst — the shape Cursor cloud agent turns take in Copse.
+ *
+ * The three tool-only segments carry no prose, so they are one presentation
+ * *run* (one summary, three steps). The prose answer ends it, and the segment
+ * after that answer is a plain per-message rollup — both presentations in one
+ * thread. See src/shared/tools/tool-runs.ts.
  */
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
@@ -3315,10 +3335,36 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 4,
           },
+          {
+            // A lone tool-bearing segment after the answer. Its prose ends the
+            // run above, so this one stays a plain per-message rollup — the two
+            // presentations sit in one thread and one screenshot.
+            id: 'msg-assistant-verify',
+            role: 'assistant',
+            content: 'Re-ran the focused checks against the patched settings dialog.',
+            toolSummary: 'Verified the settings fix',
+            toolCalls: [
+              {
+                id: 'tc-verify-1',
+                name: 'run_shell',
+                args: { command: 'npm test -- settings-dialog' },
+                status: 'done',
+                result: 'ok 12 passed',
+              },
+              {
+                id: 'tc-verify-2',
+                name: 'run_shell',
+                args: { command: 'npm run lint' },
+                status: 'done',
+                result: 'no problems',
+              },
+            ],
+            createdAt: now + 5,
+          },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 4,
+        updatedAt: now + 5,
       },
     ],
   })
