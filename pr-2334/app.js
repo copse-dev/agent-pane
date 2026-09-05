@@ -241472,11 +241472,12 @@ async function startProposedThread(store3, api3, sourceThreadId, proposal) {
     id: proposal.id,
     status: "started",
     decidedAt: Date.now(),
-    threadId
+    threadId,
+    checkoutMode: prepared.checkoutMode
   });
   startHumanTurnTree(store3, threadId);
   dispatchAgentRun(store3, api3, threadId, { content: proposal.prompt });
-  return threadId;
+  return { threadId, checkoutMode: prepared.checkoutMode };
 }
 var init_thread_proposals = __esm({
   "src/renderer/controller/thread-proposals.ts"() {
@@ -241489,13 +241490,19 @@ var init_thread_proposals = __esm({
 function chip(kind, ...children2) {
   return el("span", { class: "thread-proposal-chip", "data-chip": kind }, ...children2);
 }
-function statePill(status) {
+function statePill(state4) {
+  const { status } = state4;
   if (status === "started") {
+    const shared = state4.checkoutMode === "shared";
     return el(
       "span",
-      { class: "thread-proposal-state", "data-state": "started" },
+      {
+        class: "thread-proposal-state",
+        "data-state": "started",
+        ...shared ? { "data-checkout": "shared" } : {}
+      },
       checkIcon("ui-icon ui-icon-sm"),
-      "Thread started"
+      shared ? "Started in the shared checkout" : "Thread started"
     );
   }
   if (status === "dismissed") {
@@ -241611,7 +241618,7 @@ function createThreadProposalCard(proposal, state4, handlers3) {
       el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
       el("span", { class: "thread-proposal-header-title" }, proposal.title)
     );
-    const pill = statePill(next3.status);
+    const pill = statePill(next3);
     if (pill) header.append(pill);
     if (next3.status === "started" && next3.threadId) {
       header.append(buildOpenThreadButton(next3.threadId, handlers3));
@@ -241636,21 +241643,33 @@ function isThreadProposalCall(tc2) {
 function cardState(store3, sourceThreadId, proposalId) {
   const decisions = getThreadById(store3, sourceThreadId)?.threadProposals;
   const status = threadProposalStatus(decisions, proposalId);
-  const startedId = findThreadProposalDecision(decisions, proposalId)?.threadId;
+  const decision = findThreadProposalDecision(decisions, proposalId);
+  const startedId = decision?.threadId;
   const threadId = startedId && getThreadById(store3, startedId) ? startedId : void 0;
-  return { status, ...threadId ? { threadId } : {} };
+  return {
+    status,
+    ...threadId ? { threadId } : {},
+    ...decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}
+  };
+}
+function warnSharedCheckout() {
+  showToast(
+    "This project cannot give the thread its own checkout, so it started in the shared one \u2014 its changes land in the working tree you already have open.",
+    { variant: "info", durationMs: 12e3 }
+  );
 }
 function threadProposalCardSignature(tc2, store3, sourceThreadId) {
   if (!isThreadProposalCall(tc2)) return void 0;
   const state4 = cardState(store3, sourceThreadId, tc2.id);
-  return `${state4.status}:${state4.threadId ?? ""}`;
+  return `${state4.status}:${state4.threadId ?? ""}:${state4.checkoutMode ?? ""}`;
 }
 function createThreadProposalToolCard(tc2, store3, api3, sourceThreadId) {
   const proposal = parseThreadProposal(tc2.id, tc2.args);
   if (!proposal) return null;
   return createThreadProposalCard(proposal, cardState(store3, sourceThreadId, tc2.id), {
     onStart: async (accepted) => {
-      await startProposedThread(store3, api3, sourceThreadId, accepted);
+      const started = await startProposedThread(store3, api3, sourceThreadId, accepted);
+      if (started.checkoutMode !== "worktree") warnSharedCheckout();
     },
     onDismiss: (dismissed) => {
       setThreadProposalDecision(store3, sourceThreadId, {
@@ -241672,6 +241691,7 @@ var init_thread_proposal_tool_card = __esm({
     init_thread_proposal2();
     init_thread_helpers();
     init_thread_proposals();
+    init_toast();
     init_thread_proposal_card();
   }
 });
