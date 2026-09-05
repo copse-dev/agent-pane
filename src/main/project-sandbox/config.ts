@@ -5,7 +5,10 @@ import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { getApplySeccompBinaryPath } from '@anthropic-ai/sandbox-runtime/dist/sandbox/generate-seccomp-filter.js'
 import { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 import { getSetting } from '../services/storage/settings.ts'
-import { copseWorkspaceTmpDir } from '../services/storage/copse-paths.ts'
+import {
+  copseManagedPreparationCacheDirs,
+  copseWorkspaceTmpDir,
+} from '../services/storage/copse-paths.ts'
 import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
 import {
   getChatStoreRootSync,
@@ -610,6 +613,13 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   const internalRoot = getInternalWorkspaceRootRegistration(root)
   const toolchainRead = resolveNodeToolchainAllowRead()
   const sandboxRuntimeRead = sandboxRuntimeHelperAllowReadPaths()
+  // Prepared worktrees link dependencies and native runtimes into these fixed,
+  // Copse-owned caches. Routine tests/builds need only read them; preparation is
+  // the sole path that receives write access after one explicit approval.
+  const preparationCacheRead = copseManagedPreparationCacheDirs().flatMap((path) => [
+    path,
+    `${path}/**`,
+  ])
   // A workspace-owned scratch dir so commands writing to $TMPDIR stay on the
   // allow-list instead of hitting the system /tmp deny (issue #481). Created
   // here (best-effort) so the path the seatbelt allows actually exists; spawn
@@ -716,6 +726,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         `${tmpDir}/**`,
         ...toolchainRead,
         ...sandboxRuntimeRead,
+        ...preparationCacheRead,
         ...gitConfigReadPaths(),
         ...chatStoreRead,
         ...worktreeDiscoveryRead,
