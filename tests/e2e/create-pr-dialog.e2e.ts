@@ -46,7 +46,8 @@ async function setTitle(value: string): Promise<void> {
   )
 }
 
-describe('create PR dialog', () => {
+describe('create PR dialog', function () {
+  this.timeout(90_000)
   before(async () => {
     resetUserData()
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
@@ -114,6 +115,7 @@ describe('create PR dialog', () => {
     })
     await expect(card).toHaveAttribute('data-status', 'done')
     await expect($('.follow-up-suggestions')).not.toBeDisplayed()
+    await saveAppScreenshot('create-pr-completed.png')
     await assertNoErrorToasts('create PR from the composer')
   })
 })

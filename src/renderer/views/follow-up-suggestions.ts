@@ -183,6 +183,17 @@ export function mountFollowUpSuggestions(
   let changesRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let displayedThreadId: string | null = null
   const suggestionsByThread = new Map<string, CachedSuggestions>()
+  const consumedThreads = new Set<string>()
+
+  function consumeSuggestions(threadId: string): void {
+    // Creating a PR appends a synthetic assistant card, not a new user turn.
+    // Its store events must not re-fetch the offer we just accepted. Invalidate
+    // pending fetches too, and allow suggestions again when a real run starts.
+    consumedThreads.add(threadId)
+    suggestionsByThread.delete(threadId)
+    nextFetchToken(threadId)
+    if (store.getState().activeThreadId === threadId) clearSuggestions()
+  }
 
   function clearSuggestions(): void {
     clear(root)
@@ -250,7 +261,9 @@ export function mountFollowUpSuggestions(
           return
         }
         if (suggestion.action === 'create-pr') {
-          void createPrFromBubble(store, api, sourceThreadId, clearSuggestions)
+          void createPrFromBubble(store, api, sourceThreadId, () => {
+            consumeSuggestions(sourceThreadId)
+          })
           return
         }
         clearSuggestions()
@@ -263,6 +276,7 @@ export function mountFollowUpSuggestions(
   }
 
   async function maybeFetchSuggestions(threadId: string): Promise<void> {
+    if (consumedThreads.has(threadId)) return
     const exchange = lastExchange(store, threadId)
     if (!exchange) {
       suggestionsByThread.delete(threadId)
@@ -339,6 +353,10 @@ export function mountFollowUpSuggestions(
       clearSuggestions()
       return
     }
+    if (consumedThreads.has(activeId)) {
+      clearSuggestions()
+      return
+    }
     if (displayedThreadId === activeId) return
 
     const exchange = lastExchange(store, activeId)
@@ -359,6 +377,7 @@ export function mountFollowUpSuggestions(
   const unsubs = [
     store.on('thread_status_changed', (tid, status) => {
       if (status === 'running') {
+        consumedThreads.delete(tid)
         suggestionsByThread.delete(tid)
         if (tid === store.getState().activeThreadId) {
           nextFetchToken(tid)

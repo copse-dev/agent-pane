@@ -94,9 +94,10 @@ async function openBubble(
   store: ReturnType<typeof createStore>,
   threadId: string,
   api: ApiClient,
+  host: HTMLElement = document.body,
 ): Promise<HTMLDialogElement> {
   const mount = mountFollowUpSuggestions(store, api, () => {})
-  document.body.append(mount.root)
+  host.append(mount.root)
   store.emit('thread_status_changed', threadId, 'idle')
   await flush()
 
@@ -293,6 +294,28 @@ describe('the "Create PR" follow-up bubble', () => {
 
     assert.equal(contentWhenSettled.length, 1)
     assert.match(contentWhenSettled[0] ?? '', /Opened PR #7/)
+  })
+
+  it('keeps the accepted offer consumed across card updates until the next run', async () => {
+    const { store, threadId } = storeWithFinishedTurn()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const dialog = await openBubble(store, threadId, fakeApi().api, host)
+    qsRequired(dialog, '.create-pr-dialog-create').click()
+    await flush()
+
+    store.emit('threads_changed')
+    store.emit('thread_status_changed', threadId, 'idle')
+    await flush()
+    const suggestions = qsRequired(host, '.follow-up-suggestions')
+    assert.equal(suggestions.hidden, true)
+
+    store.emit('thread_status_changed', threadId, 'running')
+    addMessage(store, threadId, 'user', 'review the next change')
+    addMessage(store, threadId, 'assistant', 'reviewed')
+    store.emit('thread_status_changed', threadId, 'idle')
+    await flush()
+    assert.equal(suggestions.hidden, false)
   })
 
   it('shows a failed create as an errored card', async () => {
