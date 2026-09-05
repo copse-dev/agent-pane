@@ -292,6 +292,14 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // so a working Cloud Agent selection is never redirected behind the user's
   // back. Off means the turn falls back to a local chat model instead.
   preferAcpOverCloudAgent: z.boolean(),
+  // Let a sandboxed ACP agent reach the user's ssh-agent socket (#2320). Off by
+  // default and deliberately not inferred: a passphrase-protected signing key is
+  // unusable without the agent, so commits land unsigned until this is on — but
+  // the socket lets the agent process *use* every key the agent holds, for
+  // anything, since the ssh-agent protocol has no "commit signing only" scope.
+  // That is the user's call to make knowingly, not a default. macOS only; see
+  // `project-sandbox/ssh-agent-socket.ts` for why Linux cannot scope it.
+  agentSshAgentSocketAccess: z.boolean(),
   // External ACP agents Copse drives as a client (model value `acp:<id>`).
   registeredAcpAgents: registeredAcpAgentsSchema,
   browserToolsEnabled: z.boolean(),

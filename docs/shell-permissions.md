@@ -119,6 +119,49 @@ While active:
 
 Update this document and the Guarded YOLO / harm / read-outside tests with any intentional change.
 
+## ssh-agent access for sandboxed agents
+
+Off by default, per-user, macOS only. `agentSshAgentSocketAccess` (default `false`) lets a
+sandboxed ACP agent `connect()` to the socket `SSH_AUTH_SOCK` names, and nothing else.
+
+The default costs something real, so it is a deliberate choice rather than an oversight. A
+passphrase-protected SSH signing key is only usable through `ssh-agent`: with the socket denied,
+`ssh-keygen -Y sign` falls back to the key file and needs a passphrase it cannot ask for, so the
+commit **fails** — git stops rather than quietly writing an unsigned commit. The history ends up
+unsigned because agents work around the failure with `--no-gpg-sign`, not because signing was
+skipped silently. The same commit signs fine from an unsandboxed shell (#2320).
+
+The reason it is still off by default: an agent socket is a confused-deputy channel. The sandbox
+keeps preventing the agent process from _reading_ the private key, but the socket lets it ask
+ssh-agent to _use_ that key, and the ssh-agent protocol has no "commit signing only" scope.
+Whoever reaches the socket can sign arbitrary data and authenticate anywhere those keys are
+trusted — and unlike the auto-run profile, an ACP agent's profile is not network-denied
+(`acpAgentSandboxOverlay` admits the agent's own endpoints). `ssh-add -c` makes each use require
+confirmation and is the recommended pairing.
+
+Prefer this to a passphrase-less signing key. That alternative is the broader weakening: it leaves
+a directly usable key on disk for every process on the machine, sandboxed or not, permanently,
+and every contributor has to repeat the setup. This grant is scoped to processes Copse spawns and
+leaves the key's passphrase protection intact.
+
+**Scope of the grant.** Exactly the one path from `SSH_AUTH_SOCK`, and only when that path is a
+unix socket right now. This is load-bearing rather than a sanity check: ASRT emits
+`(subpath "<path>")` per entry, and a subpath rule over a _directory_ admits every socket
+beneath it — `/` would admit all of them — so a `SSH_AUTH_SOCK` naming a directory would widen
+the grant far past the one agent socket. Narrowing to a socket node keeps `subpath` and
+`literal` equivalent, because a socket has nothing beneath it. A value that is empty,
+relative, not already normalised (`/a/../b` pins one string while the kernel resolves
+another), missing, or not a socket grants nothing. `allowAllUnixSockets` is never set. An agent that has not opted in gets a byte-identical profile to the
+one it got before the setting existed.
+
+**macOS only.** ASRT expresses the boundary differently per platform. The macOS seatbelt takes a
+path allow-list (`network.allowUnixSockets`) and emits one `(subpath …)` filter per entry, so the
+grant can name a single socket. Linux enforces it with a seccomp-bpf filter on
+`socket(AF_UNIX, …)`, and seccomp cannot inspect user-space memory to read a socket path — its
+only knob is `allowAllUnixSockets`, which would open every unix socket in the sandbox (Docker,
+Gradle, the display server) to buy one. Copse does not make that trade, so Linux keeps its current
+profile and the setting has no effect there. Windows has no sandbox at all.
+
 ## Implementation map
 
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
@@ -138,7 +181,9 @@ Update this document and the Guarded YOLO / harm / read-outside tests with any i
   while the project sandbox is active, auto-run is on, and the workspace is trusted. Write tiers
   are additionally capped at `read` if a caller reaches the level helper without a sandbox.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
-  on Windows and after init failure.
+  on Windows and after init failure. `ssh-agent-socket.ts` holds the ssh-agent carve-out policy
+  as a pure function; `config.ts` maps its result onto the overlay's `allowUnixSockets` and
+  `acp-client.ts` reads the setting and the spawned child's own `SSH_AUTH_SOCK`.
 
 `permission-platform.test.ts` pins the platform matrix; `permission-gate.test.ts` and
 `auto-approval-config.test.ts` pin gate wiring, the sandbox auto-approval gate, and MCP decisions.
