@@ -97,7 +97,7 @@ var init_model_catalog_generated = __esm({
         cacheReadPricePerMTok: 0.3,
         cacheCreationPricePerMTok: 3.75,
         contextWindow: 1e6,
-        maxOutputTokens: 64e3
+        maxOutputTokens: 128e3
       },
       "claude-sonnet-5": {
         inputPricePerMTok: 2,
@@ -154,15 +154,15 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 1.2,
         cacheReadPricePerMTok: 0.02,
         cacheCreationPricePerMTok: 0.25,
-        contextWindow: 105e4,
+        contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
       "gpt-5.6-sol": {
-        inputPricePerMTok: 5,
-        outputPricePerMTok: 30,
-        cacheReadPricePerMTok: 0.5,
-        cacheCreationPricePerMTok: 6.25,
-        contextWindow: 105e4,
+        inputPricePerMTok: 4,
+        outputPricePerMTok: 20,
+        cacheReadPricePerMTok: 0.4,
+        cacheCreationPricePerMTok: 5,
+        contextWindow: 922e3,
         maxOutputTokens: 128e3
       },
       "gpt-5.6-terra": {
@@ -170,7 +170,15 @@ var init_model_catalog_generated = __esm({
         outputPricePerMTok: 12,
         cacheReadPricePerMTok: 0.2,
         cacheCreationPricePerMTok: 2.5,
-        contextWindow: 105e4,
+        contextWindow: 922e3,
+        maxOutputTokens: 128e3
+      },
+      "gpt-6-astra": {
+        inputPricePerMTok: 10,
+        outputPricePerMTok: 50,
+        cacheReadPricePerMTok: 1,
+        cacheCreationPricePerMTok: 12.5,
+        contextWindow: 922e3,
         maxOutputTokens: 128e3
       }
     };
@@ -196,26 +204,26 @@ function titleCaseSegment(segment) {
   }).join(" ");
 }
 function canonicalVendorLabel(labelOrId) {
-  const trimmed = labelOrId.trim();
-  const gemini = GEMINI_NAME.exec(trimmed);
+  const trimmed2 = labelOrId.trim();
+  const gemini = GEMINI_NAME.exec(trimmed2);
   if (gemini) {
     const version4 = gemini[1] ?? "";
     const variant = gemini[2] ?? "";
     return variant ? `Gemini ${version4} ${titleCaseSegment(variant)}` : `Gemini ${version4}`;
   }
-  const glm = GLM_NAME.exec(trimmed);
+  const glm = GLM_NAME.exec(trimmed2);
   if (glm) {
     const version4 = glm[1] ?? "";
     const variant = glm[2] ?? "";
     return variant ? `GLM-${version4} ${titleCaseSegment(variant)}` : `GLM-${version4}`;
   }
-  const deepseek = DEEPSEEK_NAME.exec(trimmed);
+  const deepseek = DEEPSEEK_NAME.exec(trimmed2);
   if (deepseek) {
     const name = titleCaseSegment(deepseek[1] ?? "");
     const version4 = deepseek[2];
     return version4 ? `DeepSeek ${name} V${version4}` : `DeepSeek ${name}`;
   }
-  const mistral = MISTRAL_NAME.exec(trimmed);
+  const mistral = MISTRAL_NAME.exec(trimmed2);
   if (mistral) {
     const tier = titleCaseSegment(mistral[1] ?? "");
     const qualifier = mistral[2] ? ` ${titleCaseSegment(mistral[2])}` : "";
@@ -239,11 +247,11 @@ function spellToken(token2) {
   return `${lower2.charAt(0).toUpperCase()}${lower2.slice(1)}`;
 }
 function humanizeModelName(labelOrId) {
-  const trimmed = labelOrId.trim();
-  if (!trimmed.includes("-")) return labelOrId;
-  if (/\s/.test(trimmed) || trimmed.includes("/")) return labelOrId;
-  if (keepsDeclinedTail(trimmed.toLowerCase())) return labelOrId;
-  const tokens2 = trimmed.split("-").filter((token2) => token2.length > 0);
+  const trimmed2 = labelOrId.trim();
+  if (!trimmed2.includes("-")) return labelOrId;
+  if (/\s/.test(trimmed2) || trimmed2.includes("/")) return labelOrId;
+  if (keepsDeclinedTail(trimmed2.toLowerCase())) return labelOrId;
+  const tokens2 = trimmed2.split("-").filter((token2) => token2.length > 0);
   return tokens2.reduce((acc, token2, i4) => {
     const spelled = spellToken(token2);
     if (i4 === 0) return spelled;
@@ -263,12 +271,12 @@ function claudeName(family, version4, rest) {
   return { family: known, version: version4.replace(/-/g, "."), rest };
 }
 function parseClaudeName(value2) {
-  const trimmed = value2.trim();
-  const versionFirst = VERSION_FIRST.exec(trimmed);
+  const trimmed2 = value2.trim();
+  const versionFirst = VERSION_FIRST.exec(trimmed2);
   if (versionFirst?.[1] && versionFirst[2]) {
     return claudeName(versionFirst[2], versionFirst[1], versionFirst[3] ?? "");
   }
-  const familyFirst = FAMILY_FIRST.exec(trimmed);
+  const familyFirst = FAMILY_FIRST.exec(trimmed2);
   if (familyFirst?.[1] && familyFirst[2]) {
     return claudeName(familyFirst[1], familyFirst[2], familyFirst[3] ?? "");
   }
@@ -462,6 +470,7 @@ var init_model_catalog = __esm({
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-6-astra",
       "gpt-5.5",
       "gpt-5",
       "gpt-5-mini",
@@ -480,6 +489,7 @@ var init_model_catalog = __esm({
       "gpt-5.6-sol": "GPT-5.6 Sol",
       "gpt-5.6-terra": "GPT-5.6 Terra",
       "gpt-5.6-luna": "GPT-5.6 Luna",
+      "gpt-6-astra": "GPT-6 Astra",
       "gpt-5.5": "GPT-5.5",
       "gpt-5": "GPT-5",
       "gpt-5-mini": "GPT-5 mini",
@@ -530,6 +540,15 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
+  if (matchesFamily(modelId, OPENAI_ASTRA_PREFIXES)) {
+    return {
+      reasoning: OPENAI_ASTRA_LADDER,
+      reasoningWire: "openai-effort",
+      sampling: [],
+      outputCap: false,
+      temperatureMax: 2
+    };
+  }
   if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
@@ -653,7 +672,7 @@ function decodeModelParametersMap(value2) {
   }
   return out;
 }
-var REASONING_LEVELS, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_ASTRA_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_ASTRA_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
@@ -703,6 +722,7 @@ var init_model_parameters = __esm({
       "claude-mythos-preview"
     ];
     OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
+    OPENAI_ASTRA_PREFIXES = ["gpt-6-astra"];
     FULL_EFFORT_LADDER = [
       "off",
       "low",
@@ -714,6 +734,7 @@ var init_model_parameters = __esm({
     CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
     BUDGET_LADDER = ["off", "low", "medium", "high"];
     OPENAI_LADDER = ["minimal", "low", "medium", "high"];
+    OPENAI_ASTRA_LADDER = ["low", "medium", "high", "xhigh", "max"];
     OPENAI_COMPATIBLE_LADDER = [
       "off",
       "minimal",
@@ -3195,9 +3216,9 @@ var init_schemas = __esm({
       $ZodStringFormat.init(inst, def);
       inst._zod.check = (payload) => {
         try {
-          const trimmed = payload.value.trim();
+          const trimmed2 = payload.value.trim();
           if (!def.normalize && def.protocol?.source === httpProtocol.source) {
-            if (!/^https?:\/\//i.test(trimmed)) {
+            if (!/^https?:\/\//i.test(trimmed2)) {
               payload.issues.push({
                 code: "invalid_format",
                 format: "url",
@@ -3209,7 +3230,7 @@ var init_schemas = __esm({
               return;
             }
           }
-          const url2 = new URL(trimmed);
+          const url2 = new URL(trimmed2);
           if (def.hostname) {
             def.hostname.lastIndex = 0;
             if (!def.hostname.test(url2.hostname)) {
@@ -3241,7 +3262,7 @@ var init_schemas = __esm({
           if (def.normalize) {
             payload.value = url2.href;
           } else {
-            payload.value = trimmed;
+            payload.value = trimmed2;
           }
           return;
         } catch (_4) {
@@ -16037,8 +16058,8 @@ var init_parse_agent_run_payload = __esm({
 // packages/agent/src/working-brief.ts
 function workingBriefFromUserContent(content) {
   if (typeof content === "string") {
-    const trimmed = content.trim();
-    return trimmed ? trimmed.slice(0, WORKING_BRIEF_MAX_LEN) : null;
+    const trimmed2 = content.trim();
+    return trimmed2 ? trimmed2.slice(0, WORKING_BRIEF_MAX_LEN) : null;
   }
   const text4 = content.filter((block2) => block2.type === "text").map((block2) => block2.text).join("\n").trim();
   return text4 ? text4.slice(0, WORKING_BRIEF_MAX_LEN) : null;
@@ -16155,9 +16176,93 @@ var init_array_utils2 = __esm({
   }
 });
 
+// packages/thread-store/src/thread-proposal.ts
+function trimTo(value2, max10) {
+  const trimmed2 = value2.trim();
+  return trimmed2.length <= max10 ? trimmed2 : `${trimmed2.slice(0, max10 - 1).trimEnd()}\u2026`;
+}
+function stringField(args, key) {
+  const value2 = args[key];
+  return typeof value2 === "string" && value2.trim() !== "" ? value2.trim() : null;
+}
+function stringListField(args, key) {
+  const value2 = args[key];
+  if (!Array.isArray(value2)) return [];
+  return value2.filter((entry) => typeof entry === "string" && entry.trim() !== "").map((entry) => entry.trim());
+}
+function parseThreadProposal(id39, args) {
+  if (id39 === "" || !isRecord(args)) return null;
+  const title2 = stringField(args, "title");
+  const summary = stringField(args, "summary");
+  const prompt = stringField(args, "prompt");
+  if (!title2 || !summary || !prompt) return null;
+  const rationale = stringField(args, "rationale");
+  const files = stringListField(args, "files");
+  return {
+    id: id39,
+    title: trimTo(title2, THREAD_PROPOSAL_TITLE_MAX),
+    summary: trimTo(summary, THREAD_PROPOSAL_SUMMARY_MAX),
+    ...rationale ? { rationale: trimTo(rationale, THREAD_PROPOSAL_SUMMARY_MAX) } : {},
+    prompt,
+    ...files.length > 0 ? { files } : {}
+  };
+}
+function threadProposalStatus(decisions, id39) {
+  return findThreadProposalDecision(decisions, id39)?.status ?? "pending";
+}
+function findThreadProposalDecision(decisions, id39) {
+  return decisions?.find((decision) => decision.id === id39);
+}
+function recordThreadProposalDecision(decisions, decision) {
+  const rest = (decisions ?? []).filter((entry) => entry.id !== decision.id);
+  return [...rest, decision];
+}
+function clearThreadProposalDecision(decisions, id39) {
+  return (decisions ?? []).filter((entry) => entry.id !== id39);
+}
+function threadProposalFileSummary(files) {
+  if (!files || files.length === 0) return null;
+  if (files.length <= THREAD_PROPOSAL_FILES_SHOWN) return files.join(", ");
+  const shown = files.slice(0, THREAD_PROPOSAL_FILES_SHOWN).join(", ");
+  return `${shown} +${String(files.length - THREAD_PROPOSAL_FILES_SHOWN)} more`;
+}
+var THREAD_PROPOSAL_TOOL, THREAD_PROPOSAL_TITLE_MAX, THREAD_PROPOSAL_SUMMARY_MAX, THREAD_PROPOSAL_FILES_SHOWN;
+var init_thread_proposal = __esm({
+  "packages/thread-store/src/thread-proposal.ts"() {
+    init_unknown_value();
+    THREAD_PROPOSAL_TOOL = "propose_thread";
+    THREAD_PROPOSAL_TITLE_MAX = 80;
+    THREAD_PROPOSAL_SUMMARY_MAX = 400;
+    THREAD_PROPOSAL_FILES_SHOWN = 4;
+  }
+});
+
+// src/shared/threads/thread-proposal.ts
+var init_thread_proposal2 = __esm({
+  "src/shared/threads/thread-proposal.ts"() {
+    init_thread_proposal();
+  }
+});
+
 // packages/thread-store/src/thread-sort.ts
+function isHumanUserPrompt(message2) {
+  return message2.role === "user" && (message2.origin === void 0 || message2.editedByUser === true);
+}
+function lastHumanPromptAt(thread) {
+  if (thread.lastPromptAt !== void 0) return thread.lastPromptAt;
+  for (let i4 = thread.messages.length - 1; i4 >= 0; i4--) {
+    const message2 = thread.messages[i4];
+    if (message2 !== void 0 && isHumanUserPrompt(message2)) return message2.createdAt;
+  }
+  return void 0;
+}
+function threadSortKey(thread) {
+  return lastHumanPromptAt(thread) ?? thread.createdAt;
+}
 function sortThreadsNewestFirst(threads) {
-  return [...threads].sort((a3, b5) => b5.createdAt - a3.createdAt);
+  return [...threads].sort(
+    (a3, b5) => threadSortKey(b5) - threadSortKey(a3) || b5.createdAt - a3.createdAt
+  );
 }
 var init_thread_sort = __esm({
   "packages/thread-store/src/thread-sort.ts"() {
@@ -16417,6 +16522,9 @@ function addMessage(store3, threadId, role, content = "", images, attachments, o
   patchThreadAnywhere(store3, threadId, (t4) => ({
     ...t4,
     messages: [...t4.messages, message2],
+    // The sidebar sorts on this and never reads transcripts, so it has to be
+    // recorded as the prompt lands rather than derived at display time.
+    ...isHumanUserPrompt(message2) ? { lastPromptAt: message2.createdAt } : {},
     updatedAt: Date.now()
   }));
   store3.emit("message_added", threadId, id39);
@@ -16427,11 +16535,11 @@ function addMessage(store3, threadId, role, content = "", images, attachments, o
   return id39;
 }
 function setThreadDraftPrompt(store3, threadId, draftPrompt) {
-  const trimmed = draftPrompt.trim();
+  const trimmed2 = draftPrompt.trim();
   const { threads } = store3.getState();
   const thread = threads.find((t4) => t4.id === threadId);
   if (!thread) return;
-  if (trimmed.length > 0) {
+  if (trimmed2.length > 0) {
     if (thread.draftPrompt === draftPrompt) return;
     const updated2 = threads.map(
       (t4) => t4.id !== threadId ? t4 : { ...t4, draftPrompt, updatedAt: Date.now() }
@@ -16510,6 +16618,12 @@ function setMessageToolSummary(store3, messageId, toolSummary) {
   });
   store3.emit("tool_call_updated", messageId, "");
 }
+function setMessageRunSummary(store3, messageId, runSummary) {
+  updateMessage(store3, messageId, (m3) => {
+    m3.runSummary = runSummary;
+  });
+  store3.emit("tool_call_updated", messageId, "");
+}
 function addToolCall(store3, messageId, toolCall) {
   updateMessage(store3, messageId, (m3) => {
     m3.toolCalls.push(toolCall);
@@ -16518,6 +16632,15 @@ function addToolCall(store3, messageId, toolCall) {
 }
 function findToolCall(store3, messageId, toolCallId) {
   return locateMessage(store3, messageId)?.message.toolCalls.find((tc2) => tc2.id === toolCallId);
+}
+function findToolCallOwner(store3, threadId, toolCallId) {
+  const messages = getThreadById(store3, threadId)?.messages;
+  if (!messages) return void 0;
+  for (let i4 = messages.length - 1; i4 >= 0; i4--) {
+    const message2 = messages[i4];
+    if (message2?.toolCalls.some((tc2) => tc2.id === toolCallId)) return message2.id;
+  }
+  return void 0;
 }
 function updateToolCall(store3, messageId, toolCallId, patch) {
   updateMessage(store3, messageId, (m3) => {
@@ -16650,8 +16773,11 @@ function setThreadStatus(store3, threadId, status) {
   patchThreadAnywhere(store3, threadId, (t4) => ({ ...t4, status }));
   store3.emit("thread_status_changed", threadId, status);
 }
-function setThreadTitle(store3, threadId, title2) {
-  patchThreadAnywhere(store3, threadId, (t4) => ({ ...t4, title: title2 }));
+function setThreadTitle(store3, threadId, title2, options2) {
+  patchThreadAnywhere(store3, threadId, (t4) => {
+    const { autoTitleCount: _previous, ...rest } = t4;
+    return options2 ? { ...rest, title: title2, autoTitleCount: options2.autoTitleCount } : { ...rest, title: title2 };
+  });
   store3.emit("threads_changed");
 }
 function setThreadWorkingBrief(store3, threadId, workingBrief) {
@@ -16698,6 +16824,23 @@ function recordThreadArchives(store3, threadId, archives) {
   store3.setState({ threads: updated });
   store3.emit("threads_changed");
 }
+function setThreadProposalDecision(store3, threadId, decision) {
+  patchThreadAnywhere(store3, threadId, (t4) => ({
+    ...t4,
+    threadProposals: recordThreadProposalDecision(t4.threadProposals, decision),
+    updatedAt: Date.now()
+  }));
+  store3.emit("threads_changed");
+}
+function clearThreadProposalDecisionFor(store3, threadId, proposalId) {
+  patchThreadAnywhere(store3, threadId, (t4) => {
+    const remaining = clearThreadProposalDecision(t4.threadProposals, proposalId);
+    if (remaining.length > 0) return { ...t4, threadProposals: remaining, updatedAt: Date.now() };
+    const { threadProposals: _cleared, ...rest } = t4;
+    return { ...rest, updatedAt: Date.now() };
+  });
+  store3.emit("threads_changed");
+}
 function bindThreadGitBranchIfUnset(store3, threadId, branch2) {
   const thread = getThreadById(store3, threadId);
   if (!thread || thread.gitBranch) return;
@@ -16727,6 +16870,8 @@ var randomUUID, messageIndexByStore;
 var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
     init_array_utils2();
+    init_thread_proposal2();
+    init_thread_sort();
     init_thread_sort();
     randomUUID = () => globalThis.crypto.randomUUID();
     messageIndexByStore = /* @__PURE__ */ new WeakMap();
@@ -16828,6 +16973,9 @@ function serializedWrite(key, write) {
 }
 function setNavigationOwnership(owns) {
   ownsNavigation = owns;
+}
+function ownsWindowSession() {
+  return ownsNavigation;
 }
 function suspendNavigationWrites() {
   navigationRestored = false;
@@ -17069,14 +17217,16 @@ function attachAutosave(store3, api3) {
     // carry the latest args/response across an app restart. Do not persist a
     // running tool: the v1 spine deliberately has no running status.
     store3.on("tool_call_updated", (messageId, toolCallId) => {
-      if (!toolCallId) return;
       const threadId = threadIdOfMessage(messageId);
       if (!threadId) return;
       const message2 = getThreadById(store3, threadId)?.messages.find(
         (candidate) => candidate.id === messageId
       );
-      const toolCall = message2?.toolCalls.find((candidate) => candidate.id === toolCallId);
-      if (!toolCall || toolCall.status === "running") return;
+      if (!message2) return;
+      if (toolCallId) {
+        const toolCall = message2.toolCalls.find((candidate) => candidate.id === toolCallId);
+        if (!toolCall || toolCall.status === "running") return;
+      }
       const backgroundProjectId = backgroundProjectOf(store3, threadId);
       if (backgroundProjectId) {
         persistBackgroundMessage(backgroundProjectId, threadId, messageId);
@@ -17244,7 +17394,9 @@ function getToolGroupLabel(key, tense = "done") {
   return pickLabel(group2.label, tense);
 }
 function formatToolNameFallback(name) {
-  return name.split("_").filter(Boolean).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+  return name.split("_").filter(Boolean).map(
+    (word) => TOOL_NAME_ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1)
+  ).join(" ");
 }
 function aggregateToolStatus(toolCalls) {
   if (toolCalls.some((tc2) => tc2.status === "running")) return "running";
@@ -17317,9 +17469,11 @@ function summarizeToolTurn(toolCalls, items) {
 function buildToolCallDisplayItems(toolCalls, opts) {
   if (toolCalls.length === 0) return [];
   const subagents = [];
+  const proposals = [];
   const regular = [];
   for (const tc2 of toolCalls) {
     if (tc2.subagent) subagents.push(tc2);
+    else if (tc2.name === THREAD_PROPOSAL_TOOL) proposals.push(tc2);
     else regular.push(tc2);
   }
   const result = [];
@@ -17335,15 +17489,66 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   } else {
     result.push(...grouped);
   }
-  for (const tc2 of subagents) {
+  for (const tc2 of [...subagents, ...proposals]) {
     result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
   }
   return result;
 }
-var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
+function buildSubagentDisplayItems(toolCalls) {
+  return toolCalls.filter((tc2) => tc2.subagent).map((tc2) => ({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) }));
+}
+function summarizeToolRun(run6) {
+  const n2 = run6.toolCalls.length;
+  const status = aggregateToolStatus(run6.toolCalls);
+  const failed = run6.toolCalls.filter((tc2) => tc2.status === "error").length;
+  const polished = run6.summary?.trim();
+  const parts = [];
+  if (polished) {
+    parts.push(polished, `${String(n2)} ${n2 === 1 ? "tool" : "tools"}`);
+  } else {
+    parts.push(status === "running" ? `Using ${String(n2)} tools` : `Used ${String(n2)} tools`);
+  }
+  parts.push(`${String(run6.steps.length)} steps`);
+  if (failed > 0 && status !== "running") parts.push(`${String(failed)} failed`);
+  return parts.join(" \xB7 ");
+}
+function summarizeToolRunStep(step3, children2) {
+  const polished = step3.summary?.trim();
+  if (!polished) return summarizeToolTurn(step3.toolCalls, children2) || "Reasoned";
+  const failed = step3.toolCalls.filter((tc2) => tc2.status === "error").length;
+  if (failed > 0 && aggregateToolStatus(step3.toolCalls) !== "running") {
+    return `${polished} \xB7 ${String(failed)} failed`;
+  }
+  return polished;
+}
+function buildToolRunDisplayItems(run6, opts) {
+  if (run6.steps.length < 2) return buildToolCallDisplayItems(run6.toolCalls, opts);
+  const children2 = run6.steps.map((step3) => {
+    const grouped = buildGroupedDisplayItems(step3.toolCalls);
+    return {
+      type: "step",
+      key: `step:${step3.messageId}`,
+      label: summarizeToolRunStep(step3, grouped),
+      messageId: step3.messageId,
+      children: grouped,
+      toolCalls: step3.toolCalls
+    };
+  });
+  return [
+    {
+      type: "rollup",
+      key: RUN_ROLLUP_KEY,
+      label: summarizeToolRun(run6),
+      children: children2,
+      toolCalls: run6.toolCalls
+    }
+  ];
+}
+var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, TOOL_NAME_ACRONYMS, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
     init_unknown_value3();
+    init_thread_proposal2();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
       read_file: { running: "Reading file", done: "Read file" },
@@ -17386,6 +17591,7 @@ var init_tool_display = __esm({
       read_terminal: { running: "Reading shell", done: "Read shell" },
       video_frames: { running: "Reading video", done: "Read video" },
       ask_user: { running: "Asking user", done: "Asked user" },
+      propose_thread: { running: "Proposing a thread", done: "Proposed a thread" },
       update_todos: { running: "Updating plan", done: "Updated plan" },
       run_checkup: { running: "Running checkup", done: "Ran checkup" }
     };
@@ -17454,6 +17660,7 @@ var init_tool_display = __esm({
     MCP_PREFIX = "mcp__";
     MCP_GROUP_PREFIX = "mcp:";
     TURN_ROLLUP_KEY = "turn";
+    RUN_ROLLUP_KEY = "run";
     FILE_EDIT_PATH_ARG = {
       write_file: "path",
       str_replace: "path",
@@ -17463,6 +17670,7 @@ var init_tool_display = __esm({
     };
     SHELL_CD_PREFIX_RE = /^\s*cd\s+(?:'[^']*'|"[^"]*"|[^\s&|;]+)\s*&&\s*/;
     SHELL_LABEL_MAX = 96;
+    TOOL_NAME_ACRONYMS = /* @__PURE__ */ new Set(["gh", "pr", "ci", "url", "id"]);
     ERROR_BUCKET_SUFFIX = "::errors";
   }
 });
@@ -17673,7 +17881,7 @@ function isPinned(thread, activeThreadId) {
   return (thread.pendingMessages?.length ?? 0) > 0;
 }
 function attachThreadHydration(store3, api3) {
-  const inFlight2 = /* @__PURE__ */ new Map();
+  const inFlight3 = /* @__PURE__ */ new Map();
   let recency = [];
   const touch = (threadId) => {
     recency = [...recency.filter((id39) => id39 !== threadId), threadId];
@@ -17697,7 +17905,7 @@ function attachThreadHydration(store3, api3) {
   };
   const fetchInto = (projectId, threadId) => {
     const key = `${projectId}:${threadId}`;
-    const existing = inFlight2.get(key);
+    const existing = inFlight3.get(key);
     if (existing) return existing;
     failedThreadIds.delete(threadId);
     const endHydrate = begin("thread:hydrate");
@@ -17711,7 +17919,13 @@ function attachThreadHydration(store3, api3) {
           if (t4.id !== threadId) return t4;
           const diskIds = new Set(messages.map((m3) => m3.id));
           const streamedMeanwhile = t4.messages.filter((m3) => !diskIds.has(m3.id));
-          return { ...t4, messages: [...messages, ...streamedMeanwhile], messagesLoaded: true };
+          const hydrated = {
+            ...t4,
+            messages: [...messages, ...streamedMeanwhile],
+            messagesLoaded: true
+          };
+          const promptedAt = lastHumanPromptAt(hydrated);
+          return promptedAt === void 0 ? hydrated : { ...hydrated, lastPromptAt: promptedAt };
         })
       });
       touch(threadId);
@@ -17725,9 +17939,9 @@ function attachThreadHydration(store3, api3) {
       failedThreadIds.add(threadId);
       store3.emit("threads_changed");
     }).finally(() => {
-      inFlight2.delete(key);
+      inFlight3.delete(key);
     });
-    inFlight2.set(key, request);
+    inFlight3.set(key, request);
     return request;
   };
   activeHydrator = {
@@ -17779,7 +17993,7 @@ function attachThreadHydration(store3, api3) {
     offPrRefs();
     activeHydrator = null;
     recency = [];
-    inFlight2.clear();
+    inFlight3.clear();
     failedThreadIds.clear();
   };
 }
@@ -17787,6 +18001,7 @@ var HYDRATED_THREAD_BUDGET, activeHydrator, failedThreadIds;
 var init_thread_hydration = __esm({
   "src/renderer/controller/thread-hydration.ts"() {
     init_perf();
+    init_thread_helpers();
     init_artefact_previews();
     HYDRATED_THREAD_BUDGET = 8;
     activeHydrator = null;
@@ -18239,10 +18454,10 @@ var init_toast = __esm({
 
 // packages/thread-store/src/github-pr-url.ts
 function parseGithubPrUrl(rawUrl) {
-  const trimmed = rawUrl.trim();
-  if (!trimmed) return null;
+  const trimmed2 = rawUrl.trim();
+  if (!trimmed2) return null;
   try {
-    const url2 = new URL(trimmed);
+    const url2 = new URL(trimmed2);
     if (url2.hostname.replace(/^www\./i, "").toLowerCase() !== "github.com") return null;
     const match3 = url2.pathname.match(GITHUB_PR_PATH_RE);
     if (!match3) return null;
@@ -18254,16 +18469,23 @@ function parseGithubPrUrl(rawUrl) {
     const repo = repoGroup.replace(/\.git$/i, "");
     const number10 = Number.parseInt(numberGroup, 10);
     if (!Number.isFinite(number10) || number10 <= 0) return null;
-    return { owner, repo, number: number10, url: trimmed };
+    return { owner, repo, number: number10, url: trimmed2 };
   } catch {
     return null;
   }
+}
+function stripUrlTrailingPunctuation(url2) {
+  return url2.replace(URL_TRAILING_PUNCTUATION_RE, "");
+}
+function githubPrKeyMatchesTerm(key, term) {
+  const digits = /^#?(\d+)$/.exec(term)?.[1];
+  return digits === void 0 ? key.includes(term) : key.endsWith(`#${digits}`);
 }
 function extractGithubPrUrls(text4) {
   const seen = /* @__PURE__ */ new Set();
   const refs = [];
   for (const match3 of text4.matchAll(GITHUB_PR_URL_RE)) {
-    const raw = match3[0].replace(URL_TRAILING_PUNCTUATION_RE, "");
+    const raw = stripUrlTrailingPunctuation(match3[0]);
     const parsed2 = parseGithubPrUrl(raw);
     if (!parsed2) continue;
     const key = githubPrKey(parsed2);
@@ -18675,9 +18897,9 @@ var init_ssh_host_helpers = __esm({
 // src/renderer/views/remote-folder-path.ts
 function parentRemotePath(path4) {
   if (path4 === "/" || path4 === "") return "/";
-  const trimmed = path4.replace(/\/+$/, "");
-  const idx = trimmed.lastIndexOf("/");
-  return idx <= 0 ? "/" : trimmed.slice(0, idx);
+  const trimmed2 = path4.replace(/\/+$/, "");
+  const idx = trimmed2.lastIndexOf("/");
+  return idx <= 0 ? "/" : trimmed2.slice(0, idx);
 }
 function remotePathSegments(path4) {
   const normalized = !path4 || path4 === "/" ? "/" : path4.startsWith("/") ? path4.replace(/\/+$/, "") || "/" : `/${path4}`;
@@ -18903,6 +19125,18 @@ function zapIcon(className = DEFAULT) {
     "zap",
     [
       "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
+    ],
+    className
+  );
+}
+function gitBranchIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-branch",
+    [
+      "M6 3v12",
+      "M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M15 6a9 9 0 0 0-9 9"
     ],
     className
   );
@@ -20779,7 +21013,7 @@ var init_demo_scenarios = __esm({
       },
       {
         // Exercises the proposed-diff path end to end: the replayed `write_file`
-        // calls travel the same route a real edit does (demo-api → `agent:show_diff`
+        // calls travel the same route a real edit does (demo-api → `agent:show-diff`
         // → Changes panel), so this fixture fails if that wiring breaks.
         //
         // Hand-written, unlike `landing`: it is a fixture for a panel state, not a
@@ -21221,7 +21455,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-light-accent-request",
             title: "Run outside sandbox?",
             body: "npm install",
-            bodyAdvice: "This command needs access the project sandbox blocks.",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Installs or updates packages, which downloads and runs code from the internet",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -21252,7 +21486,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-oracle",
             title: "Run outside sandbox?",
             body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
-            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
@@ -21260,7 +21494,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-syntax",
             title: "Run outside sandbox?",
             body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
-            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           },
@@ -21268,7 +21502,7 @@ var init_demo_scenarios = __esm({
             id: "demo-approval-grouped-shell-commands-test",
             title: "Run outside sandbox?",
             body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
-            bodyAdvice: "This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).",
+            bodyAdvice: "The project sandbox would block this command:\n\u2022 Downloads package-manager binaries (corepack)",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
           }
@@ -21504,6 +21738,7 @@ function createDemoApi(scenario, options2 = {}) {
     activeProjectId: scenario.project.id,
     activeThreadId: threads[0]?.id ?? null
   };
+  let browserSession = null;
   let currentBranch = threads[0]?.gitBranch ?? "demo/browser-renderer";
   const chunkHandlers = /* @__PURE__ */ new Set();
   const showDiffHandlers = /* @__PURE__ */ new Set();
@@ -21548,6 +21783,11 @@ function createDemoApi(scenario, options2 = {}) {
       setNavigation: (next3) => {
         navigation = structuredClone(next3);
         return resolvedVoid();
+      },
+      getBrowserSession: () => resolved(browserSession ? structuredClone(browserSession) : null),
+      setBrowserSession: (next3) => {
+        browserSession = structuredClone(next3);
+        return resolvedVoid();
       }
     },
     workspace: {
@@ -21572,6 +21812,7 @@ function createDemoApi(scenario, options2 = {}) {
       onOpenTab: subscribe,
       sharePageText: unsupported,
       shareScreenshot: unsupported,
+      exportPdf: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe
@@ -21687,6 +21928,7 @@ This response is streamed through the real renderer event path.`
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
       suggestFollowUps: emptyArray,
+      suggestPrBody: () => resolved(null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler) => {
         chunkHandlers.add(handler);
@@ -21799,6 +22041,8 @@ This response is streamed through the real renderer event path.`
       loadMessages: (_projectId, threadId) => scenario.holdThreadHydration === true ? new Promise(() => void 0) : scenario.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t4) => t4.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
       onPrRefs: () => () => void 0,
+      // No demo scenario opens a real PR, so nothing ever announces one.
+      onPrCreated: () => () => void 0,
       create: (_projectId, thread) => {
         threads = [thread, ...threads.filter((candidate) => candidate.id !== thread.id)];
         return resolvedVoid();
@@ -22171,6 +22415,7 @@ This response is streamed through the real renderer event path.`
       prFileDiff: () => resolved(null),
       resolvePrUrl: () => resolved(null),
       agentPrLinks: emptyArray,
+      createPrForThread: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       rerunFailedRuns: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       approvePr: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       markPrReady: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
@@ -22767,7 +23012,6 @@ function createStore(initial2) {
     git_branch_changed: /* @__PURE__ */ new Set(),
     thread_checkout_changed: /* @__PURE__ */ new Set(),
     composer_draft_flush: /* @__PURE__ */ new Set(),
-    composer_checkout_preferred: /* @__PURE__ */ new Set(),
     agent_task_selected: /* @__PURE__ */ new Set(),
     shell_tab_activated: /* @__PURE__ */ new Set(),
     request_terminal_command: /* @__PURE__ */ new Set(),
@@ -22922,8 +23166,8 @@ function computeTooltipPosition(input) {
   };
 }
 function setTooltip(node2, text4) {
-  const trimmed = text4?.trim();
-  const next3 = trimmed === void 0 || trimmed === "" ? null : trimmed;
+  const trimmed2 = text4?.trim();
+  const next3 = trimmed2 === void 0 || trimmed2 === "" ? null : trimmed2;
   if (next3) node2.setAttribute("data-tooltip", next3);
   else node2.removeAttribute("data-tooltip");
   if (activeAnchor === node2) {
@@ -24575,6 +24819,10 @@ var init_remote_agent = __esm({
 function canonicalAcpAgentId(id39) {
   return LEGACY_ACP_AGENT_IDS[id39] ?? id39;
 }
+function findAcpCatalogEntry(id39) {
+  const canonical = canonicalAcpAgentId(id39);
+  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical);
+}
 var LEGACY_ACP_AGENT_IDS, RETIRED_ACP_AGENTS, KNOWN_ACP_AGENTS;
 var init_acp_known_agents = __esm({
   "src/shared/acp-known-agents.ts"() {
@@ -24889,8 +25137,61 @@ function isAcpModel(model) {
 function acpGroupLabel(title2) {
   return `${title2} on this device`;
 }
+function adapterSignature(entries2) {
+  const commands = new Set(entries2.map((agent) => agent.command));
+  const packages = entries2.flatMap(
+    (agent) => agent.installPackage === void 0 ? [] : [agent.installPackage]
+  );
+  return {
+    commands,
+    names: /* @__PURE__ */ new Set([...commands, ...packages]),
+    ids: new Set(entries2.map((agent) => canonicalAcpAgentId(agent.id)))
+  };
+}
+function commandProgram(command) {
+  const unquoted = command.trim().replace(/^"(.*)"$/, "$1");
+  const base = unquoted.split(/[\\/]/).pop() ?? "";
+  return base.replace(/\.(?:cmd|bat|exe|ps1)$/i, "");
+}
+function firstOperand(args) {
+  return args.find((arg) => !arg.startsWith("-"));
+}
+function runnerPackage(program, args) {
+  const subcommands = PACKAGE_RUNNERS.get(program);
+  if (subcommands === void 0) return void 0;
+  if (subcommands.length === 0) return firstOperand(args);
+  const [subcommand, ...rest] = args;
+  return subcommand !== void 0 && subcommands.includes(subcommand) ? firstOperand(rest) : void 0;
+}
+function packageName(spec) {
+  const version4 = spec.indexOf("@", 1);
+  return version4 === -1 ? spec : spec.slice(0, version4);
+}
+function scriptPathNames(script2, names) {
+  const path4 = `/${script2.replace(/\\/g, "/")}/`;
+  for (const name of names) if (path4.includes(`/${name}/`)) return true;
+  return false;
+}
+function launchesAdapter(agent, adapter) {
+  const program = commandProgram(agent.command);
+  if (adapter.commands.has(agent.command) || adapter.commands.has(program)) return true;
+  const args = agent.args ?? [];
+  if (program === "node") {
+    const script2 = firstOperand(args);
+    return script2 !== void 0 && scriptPathNames(script2, adapter.names);
+  }
+  const spec = runnerPackage(program, args);
+  return spec !== void 0 && adapter.names.has(packageName(spec));
+}
+function isKnownAcpAgent(agent, adapter) {
+  if (launchesAdapter(agent, adapter)) return true;
+  return agent.id !== void 0 && adapter.ids.has(canonicalAcpAgentId(agent.id));
+}
+function launchesAcpCatalogEntry(agent, entry) {
+  return launchesAdapter(agent, adapterSignature([entry]));
+}
 function isClaudeAcpAgent(agent) {
-  return CLAUDE_ACP_COMMANDS.has(agent.command);
+  return isKnownAcpAgent(agent, CLAUDE_ADAPTERS);
 }
 function enabledClaudeAcpAgent(agents) {
   return agents.find((agent) => agent.enabled && isClaudeAcpAgent(agent));
@@ -24899,11 +25200,11 @@ function acpModelVersionName(description) {
   if (description === void 0) return null;
   const [lead = ""] = description.split("\xB7");
   const [name = ""] = lead.split(/\s+with\s+/i);
-  const trimmed = name.trim();
-  if (trimmed.length === 0 || trimmed.length > 40) return null;
-  const words = trimmed.split(/\s+/);
-  if (words.length > 3 || !/\d/.test(trimmed)) return null;
-  return trimmed;
+  const trimmed2 = name.trim();
+  if (trimmed2.length === 0 || trimmed2.length > 40) return null;
+  const words = trimmed2.split(/\s+/);
+  if (words.length > 3 || !/\d/.test(trimmed2)) return null;
+  return trimmed2;
 }
 function acpModelChoiceLabel(choice2) {
   const name = acpModelVersionName(choice2.description);
@@ -24925,7 +25226,7 @@ function acpModelDisplayLabel(model, agents) {
   const choice2 = agent?.availableModels?.find((m3) => m3.value === selection3.model);
   return `${title2} \u2014 ${choice2 ? acpModelChoiceLabel(choice2) : canonicalModelLabel(selection3.model)}`;
 }
-var KNOWN_CONFIG_CATEGORIES, CLAUDE_ACP_COMMANDS, CODEX_ACP_COMMANDS;
+var KNOWN_CONFIG_CATEGORIES, ACP_CATALOG, CLAUDE_ADAPTERS, CODEX_ADAPTERS, PACKAGE_RUNNERS;
 var init_acp = __esm({
   "src/shared/acp.ts"() {
     init_acp_known_agents();
@@ -24940,12 +25241,19 @@ var init_acp = __esm({
       "model_config",
       "thought_level"
     ]);
-    CLAUDE_ACP_COMMANDS = new Set(
-      [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS].filter((agent) => agent.requiresClient === "claude").map((agent) => agent.command)
+    ACP_CATALOG = [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS];
+    CLAUDE_ADAPTERS = adapterSignature(
+      ACP_CATALOG.filter((agent) => agent.requiresClient === "claude")
     );
-    CODEX_ACP_COMMANDS = new Set(
-      [...KNOWN_ACP_AGENTS, ...RETIRED_ACP_AGENTS].filter((agent) => canonicalAcpAgentId(agent.id) === "codex-acp").map((agent) => agent.command)
+    CODEX_ADAPTERS = adapterSignature(
+      ACP_CATALOG.filter((agent) => canonicalAcpAgentId(agent.id) === "codex-acp")
     );
+    PACKAGE_RUNNERS = /* @__PURE__ */ new Map([
+      ["npx", []],
+      ["bunx", []],
+      ["pnpm", ["dlx", "exec"]],
+      ["yarn", ["dlx"]]
+    ]);
   }
 });
 
@@ -30060,6 +30368,7 @@ var init_model_intellect_generated = __esm({
       "deepseek-coder-v2-lite": "deepseek/deepseek-coder-v2-lite",
       "deepseek-coder-v2-lite-instruct": "deepseek/deepseek-coder-v2-lite",
       "Fable 5": "claude-fable-5",
+      "gemini-2.0-flash-lite": "gemini-2-0-flash-lite-001",
       "Gemma 3 12B": "google/gemma-3-12b",
       "Gemma 4 E4B": "google/gemma-4-e4b",
       "gemma-3-12b": "google/gemma-3-12b",
@@ -30702,7 +31011,7 @@ var init_provider_metadata = __esm({
           envVar: "GEMINI_API_KEY",
           keyLabel: "Google Gemini API key",
           keyPlaceholder: "AIza\u2026",
-          keyHint: "For Gemini Flash models on the free tier (rate-limited, no card). Get a key at aistudio.google.com.",
+          keyHint: "For Gemini Flash models on the free tier (rate-limited, with official model cards). Get a key at aistudio.google.com.",
           keyPrefix: "AIza",
           fallbackContextWindow: 1048576,
           includeUsage: true,
@@ -32088,22 +32397,34 @@ var init_data_policies = __esm({
   }
 });
 
+// packages/llm/src/agent-model-identity.ts
+function resolveAgentModelIdentity(...forms) {
+  const named2 = forms.filter((form) => Boolean(form));
+  for (const form of named2) {
+    const id39 = resolveIntellectModelId(form);
+    if (id39 !== null && getIntellectScore(id39)) return id39;
+  }
+  for (const form of named2) {
+    const labelled = claudeModelIdFromLabel(form);
+    const id39 = labelled === null ? null : resolveIntellectModelId(labelled);
+    if (id39 !== null && getIntellectScore(id39)) return id39;
+  }
+  return null;
+}
+var init_agent_model_identity = __esm({
+  "packages/llm/src/agent-model-identity.ts"() {
+    init_model_intellect();
+    init_model_label();
+  }
+});
+
 // src/renderer/views/model-options.ts
 function modelDisplayLabel(model) {
   return displayModelLabel(model);
 }
 function agentModelIntellectHint(...forms) {
-  const named2 = forms.filter((form) => Boolean(form));
-  for (const form of named2) {
-    const hint = modelIntellectHint(form);
-    if (hint) return hint;
-  }
-  for (const form of named2) {
-    const id39 = claudeModelIdFromLabel(form);
-    const hint = id39 === null ? null : modelIntellectHint(id39);
-    if (hint) return hint;
-  }
-  return null;
+  const id39 = resolveAgentModelIdentity(...forms);
+  return id39 === null ? null : modelIntellectHint(id39);
 }
 async function pluginModelOptions(api3, includeAgentModels, current) {
   if (!includeAgentModels) return [];
@@ -32327,6 +32648,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
   const cloudGroup = "Cloud models";
   for (const [value2, label, provider] of CLOUD_MODELS) {
     if (!isAvailable(provider)) continue;
+    if (value2 === "gpt-6-astra" && !isAvailable("openai:gpt-6-astra")) continue;
     const hint = cloudModelIntellectHint(value2);
     options2.push({
       value: value2,
@@ -32506,6 +32828,7 @@ var init_model_options = __esm({
     init_lm_studio_defaults();
     init_dynamic_model();
     init_model_label();
+    init_agent_model_identity();
     init_model_display();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
@@ -33526,7 +33849,7 @@ function createCustomProvidersSection(api3, opts = {}) {
     if (embedded) return;
     clear(chipRow);
     for (const key of chipKeys()) {
-      const chip = el(
+      const chip2 = el(
         "button",
         {
           type: "button",
@@ -33535,16 +33858,16 @@ function createCustomProvidersSection(api3, opts = {}) {
         },
         chipLabel(key)
       );
-      chip.classList.toggle("active", key === selected);
+      chip2.classList.toggle("active", key === selected);
       if (key !== "other" && configured.has(key)) {
-        chip.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
       }
-      chip.addEventListener("click", () => {
+      chip2.addEventListener("click", () => {
         selected = key;
         renderChips();
         renderForm();
       });
-      chipRow.append(chip);
+      chipRow.append(chip2);
     }
   }
   function keyField(slug2, label, placeholder, hint) {
@@ -34070,11 +34393,11 @@ function createCustomProvidersSection(api3, opts = {}) {
     return providers.find((p3) => p3.id === slug2)?.label ?? nativeById.get(slug2)?.label ?? fixedById.get(slug2)?.label ?? slug2;
   }
   async function persistProviderKey(slug2, key, label) {
-    const trimmed = key.trim();
-    if (!trimmed) return { ok: true };
-    let result = await api3.settings.setKey(slug2, trimmed);
+    const trimmed2 = key.trim();
+    if (!trimmed2) return { ok: true };
+    let result = await api3.settings.setKey(slug2, trimmed2);
     if (!result.ok && result.reason === "plaintext-consent-required" && await confirmPlaintextStorage(label)) {
-      result = await api3.settings.setKey(slug2, trimmed, { allowPlaintext: true });
+      result = await api3.settings.setKey(slug2, trimmed2, { allowPlaintext: true });
     }
     if (result.ok) return result;
     return {
@@ -34100,9 +34423,9 @@ function createCustomProvidersSection(api3, opts = {}) {
       }
     }
     if (pendingOpenRouterModel !== null) {
-      const trimmed = pendingOpenRouterModel.trim();
-      await api3.settings.set("openRouterModel", trimmed);
-      openRouterModelValue = trimmed;
+      const trimmed2 = pendingOpenRouterModel.trim();
+      await api3.settings.set("openRouterModel", trimmed2);
+      openRouterModelValue = trimmed2;
       pendingOpenRouterModel = null;
     }
     if (pendingOpenRouterZdr !== null) {
@@ -34199,11 +34522,11 @@ var init_custom_providers_section = __esm({
 function parseEnvText(text4) {
   const env = {};
   for (const line2 of text4.split("\n")) {
-    const trimmed = line2.trim();
-    if (!trimmed) continue;
-    const eq4 = trimmed.indexOf("=");
+    const trimmed2 = line2.trim();
+    if (!trimmed2) continue;
+    const eq4 = trimmed2.indexOf("=");
     if (eq4 <= 0) continue;
-    env[trimmed.slice(0, eq4).trim()] = trimmed.slice(eq4 + 1).trim();
+    env[trimmed2.slice(0, eq4).trim()] = trimmed2.slice(eq4 + 1).trim();
   }
   return env;
 }
@@ -34249,6 +34572,10 @@ function validateDraft(draft, existingIds) {
   if (existingIds.includes(draft.id)) return `An agent with id "${draft.id}" already exists.`;
   if (!draft.title.trim()) return "Title is required.";
   if (!draft.command.trim()) return "Command is required.";
+  const catalog = findAcpCatalogEntry(draft.id);
+  if (catalog && !launchesAcpCatalogEntry(draft, catalog)) {
+    return `Id "${draft.id}" belongs to ${catalog.title} (${catalog.command}); a custom agent needs its own id.`;
+  }
   return null;
 }
 function commandRow(label, command) {
@@ -34350,22 +34677,22 @@ function createAcpAgentsSection(api3, opts = {}) {
     if (embedded) return;
     clear(chipRow);
     for (const key of chipKeys()) {
-      const chip = el(
+      const chip2 = el(
         "button",
         { type: "button", class: "provider-chip", role: "tab" },
         chipLabel(key)
       );
-      chip.dataset["agent"] = key;
-      chip.classList.toggle("active", key === selected);
+      chip2.dataset["agent"] = key;
+      chip2.classList.toggle("active", key === selected);
       if (key !== "other" && agents.some((a3) => a3.id === key)) {
-        chip.append(el("span", { class: "provider-chip-dot", title: "Added" }));
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Added" }));
       }
-      chip.addEventListener("click", () => {
+      chip2.addEventListener("click", () => {
         selected = key;
         renderChips();
         renderForm();
       });
-      chipRow.append(chip);
+      chipRow.append(chip2);
     }
   }
   function agentForm(options2) {
@@ -34505,7 +34832,8 @@ function createAcpAgentsSection(api3, opts = {}) {
     const submit = el("button", { type: "button", class: "provider-save" }, options2.submitLabel);
     submit.addEventListener("click", () => {
       const id39 = idInput.value.trim();
-      const draft = { id: id39, title: titleInput.value.trim(), command: commandInput.value.trim() };
+      const args = parseArgsText(argsArea.value);
+      const draft = { id: id39, title: titleInput.value.trim(), command: commandInput.value.trim(), args };
       const existingIds = isEdit ? [] : agents.map((a3) => a3.id);
       const error53 = validateDraft(draft, existingIds);
       if (error53) {
@@ -34514,7 +34842,6 @@ function createAcpAgentsSection(api3, opts = {}) {
         return;
       }
       const env = parseEnvText(envArea.value);
-      const args = parseArgsText(argsArea.value);
       const model = modelSelect.value.trim();
       const permissionMode = modeSelect.value.trim();
       options2.onSubmit({
@@ -34830,24 +35157,24 @@ function createProvidersPanel(api3, opts = {}) {
   function renderChips() {
     clear(chipRow);
     for (const vendor of [...vendors(), { id: ADD_KEY, label: "Add" }]) {
-      const chip = el(
+      const chip2 = el(
         "button",
         { type: "button", class: "provider-chip", role: "tab" },
         vendor.label
       );
-      chip.dataset["provider"] = vendor.id;
-      chip.classList.toggle("active", vendor.id === selected);
+      chip2.dataset["provider"] = vendor.id;
+      chip2.classList.toggle("active", vendor.id === selected);
       if (vendor.id !== ADD_KEY && isConfigured(vendor)) {
-        chip.append(el("span", { class: "provider-chip-dot", title: "Set up" }));
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Set up" }));
       }
-      chip.addEventListener("click", () => {
+      chip2.addEventListener("click", () => {
         selected = vendor.id;
         selectedAgentId = "";
         providerPicked = true;
         renderChips();
         renderForm();
       });
-      chipRow.append(chip);
+      chipRow.append(chip2);
     }
   }
   function block2(title2, ...children2) {
@@ -36747,13 +37074,13 @@ var init_escape = __esm({
 });
 
 // node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
-function onelineMathBody(trimmed, delimiter2) {
+function onelineMathBody(trimmed2, delimiter2) {
   const [open2, close2] = delimiter2 === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
-  if (!trimmed.startsWith(open2) || !trimmed.endsWith(close2))
+  if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close2))
     return null;
-  if (trimmed.length < open2.length + close2.length + 1)
+  if (trimmed2.length < open2.length + close2.length + 1)
     return null;
-  const body = trimmed.slice(open2.length, -close2.length);
+  const body = trimmed2.slice(open2.length, -close2.length);
   return body.trim() === "" ? null : body;
 }
 function mathBlockDelimiterLine(line2) {
@@ -36776,9 +37103,9 @@ function mathBlockOpenCandidate(line2) {
   if (!m3)
     return null;
   const delimiter2 = m3[1] === "$$" ? "dollar" : "bracket";
-  const trimmed = line2.trim();
+  const trimmed2 = line2.trim();
   const close2 = delimiter2 === "dollar" ? "$$" : "\\]";
-  if (trimmed.length >= 4 && trimmed.endsWith(close2) && onelineMathBody(trimmed, delimiter2) === null) {
+  if (trimmed2.length >= 4 && trimmed2.endsWith(close2) && onelineMathBody(trimmed2, delimiter2) === null) {
     return null;
   }
   return { delimiter: delimiter2, oneline: false };
@@ -37081,10 +37408,10 @@ function lineContainsPipeCellDelimiter(line2) {
 function isProseMetadataPipeLine(line2) {
   if (!lineContainsPipeCellDelimiter(line2))
     return false;
-  const trimmed = line2.trimStart();
-  if (/\*\*[^*\n]+:\*\*/.test(trimmed))
+  const trimmed2 = line2.trimStart();
+  if (/\*\*[^*\n]+:\*\*/.test(trimmed2))
     return true;
-  if (/&nbsp;/i.test(trimmed))
+  if (/&nbsp;/i.test(trimmed2))
     return true;
   return false;
 }
@@ -37100,10 +37427,10 @@ function isGfmTableRowLine(line2, nextLine) {
     return false;
   if (isProseMetadataPipeLine(line2) && !hasMatchingDelimiterRow(line2, nextLine))
     return false;
-  const trimmed = line2.trimStart();
-  if (trimmed.startsWith("|"))
+  const trimmed2 = line2.trimStart();
+  if (trimmed2.startsWith("|"))
     return true;
-  return splitTableRow(trimmed).length >= 2;
+  return splitTableRow(trimmed2).length >= 2;
 }
 function isTableRow(line2, nextLine) {
   return isGfmTableRowLine(line2, nextLine);
@@ -37120,10 +37447,10 @@ function endsTableBody(line2) {
   return ATX_HEADING_DETECT_RE.test(line2) || THEMATIC_BREAK_RE.test(line2) || FENCE_OPEN_RE.test(line2) || isMathBlockInterruptLine(line2) || LIST_ITEM_RE.test(line2) || BLOCKQUOTE_RE.test(line2);
 }
 function isPartialTableSeparatorLine(line2) {
-  const trimmed = line2.trim();
-  if (!trimmed.includes("-"))
+  const trimmed2 = line2.trim();
+  if (!trimmed2.includes("-"))
     return false;
-  return /^\|?\s*:?-{1,}/.test(trimmed);
+  return /^\|?\s*:?-{1,}/.test(trimmed2);
 }
 function isPotentialTableStart(lines, i4) {
   const line2 = lines[i4];
@@ -37756,8 +38083,8 @@ function parseTableAlignments(sepLine) {
   });
 }
 function isAmbiguousBlockLine(line2) {
-  const trimmed = line2.trimStart();
-  if (trimmed === "")
+  const trimmed2 = line2.trimStart();
+  if (trimmed2 === "")
     return false;
   if (/^ {4}/.test(line2))
     return true;
@@ -41064,10 +41391,10 @@ var init_mermaid = __esm({
 
 // node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.14_entities@8.0.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
-  const trimmed = dropTrailingNewline(source);
-  if (trimmed === "")
+  const trimmed2 = dropTrailingNewline(source);
+  if (trimmed2 === "")
     return [];
-  return trimmed.split("\n");
+  return trimmed2.split("\n");
 }
 function renderStreamingTableCell(raw) {
   const visible = renderStreamingInlinePending(raw);
@@ -43207,8 +43534,8 @@ function formingTableSource(complete, content, pending, contentTokens, completeT
   const fromTokens = getIncompleteTableSource(content, contentTokens);
   if (fromTokens)
     return fromTokens;
-  const trimmed = pending.trimStart();
-  if (trimmed.startsWith("|") && trimmed.includes("|", 1))
+  const trimmed2 = pending.trimStart();
+  if (trimmed2.startsWith("|") && trimmed2.includes("|", 1))
     return pending;
   return null;
 }
@@ -43725,12 +44052,12 @@ function createModelRoutingSection(api3, options2 = {}) {
   return { root: root4, refresh, readValues };
 }
 function canonicalRoleSelection(value2) {
-  const trimmed = value2.trim();
-  if (!trimmed) return "";
-  if (trimmed.includes(":") || trimmed.startsWith("claude-") || trimmed.startsWith("gpt-")) {
-    return trimmed;
+  const trimmed2 = value2.trim();
+  if (!trimmed2) return "";
+  if (trimmed2.includes(":") || trimmed2.startsWith("claude-") || trimmed2.startsWith("gpt-")) {
+    return trimmed2;
   }
-  return lmStudioChatModelValue(trimmed);
+  return lmStudioChatModelValue(trimmed2);
 }
 var init_model_routing_section = __esm({
   "src/renderer/views/setup/model-routing-section.ts"() {
@@ -47644,8 +47971,8 @@ async function saveSimpleFields(data6, api3, dirtyFieldNames) {
           await api3.settings.set(field.name, parseNonNegativeInt(value2, field.default));
         } else {
           const value2 = formDataString(data6, field.name);
-          const trimmed = field.name === "customInstructions";
-          await api3.settings.set(field.name, trimmed ? value2.trim() : value2);
+          const trimmed2 = field.name === "customInstructions";
+          await api3.settings.set(field.name, trimmed2 ? value2.trim() : value2);
         }
       }
     )
@@ -49157,10 +49484,10 @@ function mountSettingsDialog(store3, api3) {
     chips.push(res.parseOk ? "parsed ok" : "parse failed");
     if (res.sandboxed) chips.push("sandboxed");
     for (const text4 of chips) {
-      const chip = document.createElement("span");
-      chip.className = "hook-test-chip";
-      chip.textContent = text4;
-      summary.append(chip);
+      const chip2 = document.createElement("span");
+      chip2.className = "hook-test-chip";
+      chip2.textContent = text4;
+      summary.append(chip2);
     }
     container2.append(summary);
     if (res.outcomeSummary) {
@@ -49826,11 +50153,11 @@ function mountSettingsDialog(store3, api3) {
     if (chips.length > 0) {
       const chipRow = document.createElement("div");
       chipRow.className = "plugin-chips";
-      for (const chip of chips) {
+      for (const chip2 of chips) {
         const el3 = document.createElement("span");
         el3.className = "plugin-chip";
-        el3.textContent = `${chip.label} \xD7 ${String(chip.count)}`;
-        if (chip.title) el3.title = chip.title;
+        el3.textContent = `${chip2.label} \xD7 ${String(chip2.count)}`;
+        if (chip2.title) el3.title = chip2.title;
         chipRow.append(el3);
       }
       row2.append(chipRow);
@@ -50145,10 +50472,10 @@ function mountSettingsDialog(store3, api3) {
       chips.append(none2);
     } else {
       for (const label of contributes) {
-        const chip = document.createElement("span");
-        chip.className = "plugin-chip";
-        chip.textContent = label;
-        chips.append(chip);
+        const chip2 = document.createElement("span");
+        chip2.className = "plugin-chip";
+        chip2.textContent = label;
+        chips.append(chip2);
       }
     }
     row2.append(chips);
@@ -50166,12 +50493,12 @@ function mountSettingsDialog(store3, api3) {
       curated: "Copse reviewed",
       "built-in": "Built in"
     };
-    const chip = document.createElement("span");
-    chip.className = `mcp-origin-chip mcp-origin-${s16.origin}`;
-    chip.dataset["mcpOrigin"] = s16.origin;
-    chip.textContent = s16.originDetail && s16.origin === "plugin" ? s16.originDetail : labels[s16.origin];
-    chip.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
-    return chip;
+    const chip2 = document.createElement("span");
+    chip2.className = `mcp-origin-chip mcp-origin-${s16.origin}`;
+    chip2.dataset["mcpOrigin"] = s16.origin;
+    chip2.textContent = s16.originDetail && s16.origin === "plugin" ? s16.originDetail : labels[s16.origin];
+    chip2.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
+    return chip2;
   }
   async function revealPluginDetail() {
     const target = pluginDetail;
@@ -50313,12 +50640,12 @@ function mountSettingsDialog(store3, api3) {
       const title2 = document.createElement("div");
       title2.className = "mcp-server-summary";
       title2.append(`${s16.name} (${s16.transport}): `, inlineStatus("idle", "not running"));
-      const chip = document.createElement("span");
-      chip.className = "mcp-origin-chip mcp-origin-plugin";
-      chip.dataset["mcpOrigin"] = "plugin";
-      chip.textContent = s16.pluginId;
-      chip.title = `Declared by the plugin ${s16.pluginId}`;
-      header.append(title2, chip);
+      const chip2 = document.createElement("span");
+      chip2.className = "mcp-origin-chip mcp-origin-plugin";
+      chip2.dataset["mcpOrigin"] = "plugin";
+      chip2.textContent = s16.pluginId;
+      chip2.title = `Declared by the plugin ${s16.pluginId}`;
+      header.append(title2, chip2);
       row2.append(
         header,
         Object.assign(document.createElement("div"), {
@@ -51209,13 +51536,13 @@ function removeGroup(order2, groupId) {
   };
 }
 function renameGroup(order2, groupId, name) {
-  const trimmed = name.trim();
-  if (trimmed === "") return order2;
+  const trimmed2 = name.trim();
+  if (trimmed2 === "") return order2;
   const group2 = order2.groups.find((g2) => g2.id === groupId);
-  if (!group2 || group2.name === trimmed) return order2;
+  if (!group2 || group2.name === trimmed2) return order2;
   return {
     projects: order2.projects,
-    groups: order2.groups.map((g2) => g2.id === groupId ? { ...g2, name: trimmed } : g2)
+    groups: order2.groups.map((g2) => g2.id === groupId ? { ...g2, name: trimmed2 } : g2)
   };
 }
 function uniqueGroupName(groups, base = "Group") {
@@ -53583,18 +53910,18 @@ function isNavigableHostname(hostname3) {
   return parsed2.domain != null;
 }
 function normalizeBrowserUrl(input) {
-  const trimmed = input.trim();
-  if (!trimmed) return "about:blank";
-  if (hasExplicitScheme(trimmed)) {
-    const explicit = tryParseHttpUrl(trimmed);
+  const trimmed2 = input.trim();
+  if (!trimmed2) return "about:blank";
+  if (hasExplicitScheme(trimmed2)) {
+    const explicit = tryParseHttpUrl(trimmed2);
     if (explicit) return explicit.href;
   }
-  const candidate = `https://${trimmed}`;
+  const candidate = `https://${trimmed2}`;
   if (URL.canParse(candidate)) {
     const parsed2 = tryParseHttpUrl(candidate);
     if (parsed2 && isNavigableHostname(parsed2.hostname)) return parsed2.href;
   }
-  return duckDuckGoSearchUrl(trimmed);
+  return duckDuckGoSearchUrl(trimmed2);
 }
 function browserTabLabel(url2, title2) {
   const trimmedTitle = title2?.trim();
@@ -159823,14 +160150,14 @@ var init_erDiagram_RLTQ6QDP = __esm({
             if (typeof item !== "string") {
               return false;
             }
-            const trimmed = item.trim();
-            if (!trimmed) {
+            const trimmed2 = item.trim();
+            if (!trimmed2) {
               return false;
             }
-            if (seen.has(trimmed)) {
+            if (seen.has(trimmed2)) {
               return false;
             }
-            seen.add(trimmed);
+            seen.add(trimmed2);
             return true;
           });
           return { nodeList: nodeList2, dir: dir22 };
@@ -192035,16 +192362,16 @@ var init_chunk_IH6LHLGP = __esm({
           return input.replace(/[\t ]+$/, "");
         }
         if (rule.name === "CLASS_ANNOTATION") {
-          const trimmed = input.trim();
-          return trimmed.substring(3).trim();
+          const trimmed2 = input.trim();
+          return trimmed2.substring(3).trim();
         }
         if (rule.name === "ICON_ANNOTATION") {
-          const trimmed = input.trim();
-          return trimmed.substring(5, trimmed.length - 1);
+          const trimmed2 = input.trim();
+          return trimmed2.substring(5, trimmed2.length - 1);
         }
         if (rule.name === "DESC_ANNOTATION") {
-          const trimmed = input.trim();
-          return trimmed.substring(2).trim();
+          const trimmed2 = input.trim();
+          return trimmed2.substring(2).trim();
         }
         return void 0;
       }
@@ -221023,8 +221350,8 @@ function preprocessBoxDrawing(input) {
   const contentLineTexts = [];
   for (let i4 = keywordIdx + 1; i4 < lines.length; i4++) {
     const line2 = lines[i4];
-    const trimmed = line2.trim();
-    if (trimmed === "" || COMMENT_LINE.test(line2) || METADATA_LINE.test(line2)) {
+    const trimmed2 = line2.trim();
+    if (trimmed2 === "" || COMMENT_LINE.test(line2) || METADATA_LINE.test(line2)) {
       continue;
     }
     if (DECORATION_ONLY.test(line2)) {
@@ -221045,9 +221372,9 @@ function preprocessBoxDrawing(input) {
   }
   for (let i4 = keywordIdx + 1; i4 < lines.length; i4++) {
     const line2 = lines[i4];
-    const trimmed = line2.trim();
+    const trimmed2 = line2.trim();
     const origLineNo = i4 + 1;
-    if (trimmed === "") {
+    if (trimmed2 === "") {
       outputLines.push(line2);
       outLineNo++;
       lineMap.set(outLineNo, origLineNo);
@@ -234390,11 +234717,11 @@ var init_vennDiagram_4TSXK5OY = __esm({
       return subsets;
     }, "getSubsetData");
     normalizeText = /* @__PURE__ */ __name((text4) => {
-      const trimmed = text4.trim();
-      if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
-        return trimmed.slice(1, -1);
+      const trimmed2 = text4.trim();
+      if (trimmed2.length >= 2 && trimmed2.startsWith('"') && trimmed2.endsWith('"')) {
+        return trimmed2.slice(1, -1);
       }
-      return trimmed;
+      return trimmed2;
     }, "normalizeText");
     normalizeStyleValue = /* @__PURE__ */ __name((value2) => {
       return value2 ? normalizeText(value2) : value2;
@@ -239618,11 +239945,11 @@ function fileReferenceMatches(text4) {
       });
       continue;
     }
-    const trimmed = path4.replace(TRAILING_PROSE_PUNCTUATION_RE, "");
-    if (trimmed === "") continue;
-    const candidate = trimmed.replace(/\/+$/, "");
+    const trimmed2 = path4.replace(TRAILING_PROSE_PUNCTUATION_RE, "");
+    if (trimmed2 === "") continue;
+    const candidate = trimmed2.replace(/\/+$/, "");
     if (candidate === "") continue;
-    matches34.push({ candidate, text: trimmed, start: start2, end: start2 + trimmed.length });
+    matches34.push({ candidate, text: trimmed2, start: start2, end: start2 + trimmed2.length });
   }
   return matches34;
 }
@@ -240309,20 +240636,20 @@ function openTextExpand(content, name) {
     content: text4
   });
 }
-function attachTextExpand(chip, content, name) {
-  if (chip.dataset["textExpand"] === "true") return;
-  chip.dataset["textExpand"] = "true";
-  chip.classList.add("text-expandable");
-  chip.setAttribute("role", "button");
-  chip.setAttribute("tabindex", "0");
-  chip.setAttribute("aria-label", `Preview ${name}`);
+function attachTextExpand(chip2, content, name) {
+  if (chip2.dataset["textExpand"] === "true") return;
+  chip2.dataset["textExpand"] = "true";
+  chip2.classList.add("text-expandable");
+  chip2.setAttribute("role", "button");
+  chip2.setAttribute("tabindex", "0");
+  chip2.setAttribute("aria-label", `Preview ${name}`);
   const open2 = (event3) => {
     event3.preventDefault();
     event3.stopPropagation();
     openTextExpand(content, name);
   };
-  chip.addEventListener("click", open2);
-  chip.addEventListener("keydown", (event3) => {
+  chip2.addEventListener("click", open2);
+  chip2.addEventListener("keydown", (event3) => {
     if (event3.key !== "Enter" && event3.key !== " ") return;
     open2(event3);
   });
@@ -240364,20 +240691,20 @@ async function openVideoExpand(api3, path4, name) {
     session.setStatus(err2 instanceof Error ? err2.message : `Could not play ${name}.`);
   }
 }
-function attachVideoExpand(chip, api3, path4, name) {
-  if (chip.dataset["videoExpand"] === "true") return;
-  chip.dataset["videoExpand"] = "true";
-  chip.classList.add("video-expandable");
-  chip.setAttribute("role", "button");
-  chip.setAttribute("tabindex", "0");
-  chip.setAttribute("aria-label", `Play ${name}`);
+function attachVideoExpand(chip2, api3, path4, name) {
+  if (chip2.dataset["videoExpand"] === "true") return;
+  chip2.dataset["videoExpand"] = "true";
+  chip2.classList.add("video-expandable");
+  chip2.setAttribute("role", "button");
+  chip2.setAttribute("tabindex", "0");
+  chip2.setAttribute("aria-label", `Play ${name}`);
   const open2 = (event3) => {
     event3.preventDefault();
     event3.stopPropagation();
     void openVideoExpand(api3, path4, name);
   };
-  chip.addEventListener("click", open2);
-  chip.addEventListener("keydown", (event3) => {
+  chip2.addEventListener("click", open2);
+  chip2.addEventListener("keydown", (event3) => {
     if (event3.key !== "Enter" && event3.key !== " ") return;
     open2(event3);
   });
@@ -240391,10 +240718,10 @@ var init_video_expand = __esm({
 
 // packages/agent/src/build-text-with-attachments.ts
 function isTextBlockAttachment(text4) {
-  const trimmed = text4.trim();
-  if (!trimmed) return false;
-  if (trimmed.length >= TEXT_BLOCK_MIN_CHARS) return true;
-  return countNewlines(trimmed) + 1 >= TEXT_BLOCK_MIN_LINES;
+  const trimmed2 = text4.trim();
+  if (!trimmed2) return false;
+  if (trimmed2.length >= TEXT_BLOCK_MIN_CHARS) return true;
+  return countNewlines(trimmed2) + 1 >= TEXT_BLOCK_MIN_LINES;
 }
 function textBlockLabel(content) {
   const firstLine = content.split("\n").find((line2) => line2.trim() !== "")?.trim() ?? "Pasted text";
@@ -240539,11 +240866,11 @@ function mountComposerEditor() {
     for (const id39 of blocks2.keys()) if (!present.has(id39)) blocks2.delete(id39);
   }
   function makeChip(block2) {
-    const chip = document.createElement("span");
-    chip.className = "inline-paste-chip";
-    chip.setAttribute("contenteditable", "false");
-    chip.dataset["blockId"] = block2.id;
-    chip.title = block2.label;
+    const chip2 = document.createElement("span");
+    chip2.className = "inline-paste-chip";
+    chip2.setAttribute("contenteditable", "false");
+    chip2.dataset["blockId"] = block2.id;
+    chip2.title = block2.label;
     const label = document.createElement("span");
     label.className = "inline-paste-chip-label";
     label.textContent = block2.label;
@@ -240555,13 +240882,13 @@ function mountComposerEditor() {
     remove3.setAttribute("aria-label", `Remove pasted text: ${block2.label}`);
     remove3.addEventListener("click", (e4) => {
       e4.preventDefault();
-      chip.remove();
+      chip2.remove();
       blocks2.delete(block2.id);
       root4.focus();
       emitInput();
     });
-    chip.append(label, remove3);
-    return chip;
+    chip2.append(label, remove3);
+    return chip2;
   }
   function offsetOfPoint(node2, offset) {
     const range3 = document.createRange();
@@ -240627,8 +240954,8 @@ function mountComposerEditor() {
       parts.forEach((part, i4) => {
         if (part) frag.append(document.createTextNode(part));
         if (i4 < parts.length - 1) {
-          const chip = existing[i4];
-          if (chip) frag.append(chip);
+          const chip2 = existing[i4];
+          if (chip2) frag.append(chip2);
         }
       });
       root4.replaceChildren(frag);
@@ -240672,18 +240999,18 @@ function mountComposerEditor() {
         content
       };
       blocks2.set(block2.id, block2);
-      const chip = makeChip(block2);
+      const chip2 = makeChip(block2);
       const sel = editor.isFocused() ? selectionInRoot() : null;
       if (sel) {
         const range3 = sel.getRangeAt(0);
         range3.deleteContents();
-        range3.insertNode(chip);
-        range3.setStartAfter(chip);
+        range3.insertNode(chip2);
+        range3.setStartAfter(chip2);
         range3.collapse(true);
         sel.removeAllRanges();
         sel.addRange(range3);
       } else {
-        root4.append(chip);
+        root4.append(chip2);
       }
       emitInput();
     },
@@ -240721,6 +241048,77 @@ var init_composer_editor = __esm({
     init_icons();
     CHIP_CHAR = "\uFFFC";
     CHIP_SELECTOR = ".inline-paste-chip";
+  }
+});
+
+// src/shared/tools/tool-runs.ts
+function regularToolCalls(msg) {
+  return (msg.toolCalls ?? []).filter((tc2) => !tc2.subagent);
+}
+function hasText(value2) {
+  return trimmed(value2) !== null;
+}
+function trimmed(value2) {
+  const text4 = (value2 ?? "").trim();
+  return text4.length > 0 ? text4 : null;
+}
+function isAnchorable(msg) {
+  return msg !== void 0 && msg.role === "assistant" && regularToolCalls(msg).length > 0;
+}
+function isAbsorbable(msg) {
+  if (!msg || msg.role !== "assistant") return false;
+  if (hasText(msg.content)) return false;
+  return regularToolCalls(msg).length > 0 || hasText(msg.reasoning);
+}
+function stepOf(msg) {
+  const reasoning = msg.reasoning;
+  const summary = trimmed(msg.toolSummary);
+  return {
+    messageId: msg.id,
+    toolCalls: regularToolCalls(msg),
+    ...reasoning !== void 0 && hasText(reasoning) ? { reasoning } : {},
+    ...summary !== null ? { summary } : {}
+  };
+}
+function deriveToolRuns(messages) {
+  const runs = [];
+  let i4 = 0;
+  while (i4 < messages.length) {
+    const anchor2 = messages[i4];
+    i4 += 1;
+    if (!isAnchorable(anchor2) || !anchor2) continue;
+    const steps = [stepOf(anchor2)];
+    while (isAbsorbable(messages[i4])) {
+      const member = messages[i4];
+      if (!member) break;
+      steps.push(stepOf(member));
+      i4 += 1;
+    }
+    const summary = trimmed(anchor2.runSummary);
+    runs.push({
+      anchorId: anchor2.id,
+      memberIds: steps.map((step3) => step3.messageId),
+      steps,
+      toolCalls: steps.flatMap((step3) => step3.toolCalls),
+      ...summary !== null ? { summary } : {}
+    });
+  }
+  return runs;
+}
+function toolRunForMessage(messages, messageId) {
+  const index = messages.findIndex((m3) => m3.id === messageId);
+  if (index < 0) return null;
+  let start2 = index;
+  while (start2 > 0 && isAbsorbable(messages[start2])) start2 -= 1;
+  let end = index + 1;
+  while (end < messages.length && isAbsorbable(messages[end])) end += 1;
+  for (const run6 of deriveToolRuns(messages.slice(start2, end))) {
+    if (run6.memberIds.includes(messageId)) return run6;
+  }
+  return null;
+}
+var init_tool_runs = __esm({
+  "src/shared/tools/tool-runs.ts"() {
   }
 });
 
@@ -241328,10 +241726,10 @@ function displayValue(value2) {
   return JSON.stringify(value2);
 }
 function parseJsonString(value2) {
-  const trimmed = value2.trim();
-  if (!trimmed || !/^[{[]/.test(trimmed)) return value2;
+  const trimmed2 = value2.trim();
+  if (!trimmed2 || !/^[{[]/.test(trimmed2)) return value2;
   try {
-    return JSON.parse(trimmed);
+    return JSON.parse(trimmed2);
   } catch {
     return value2;
   }
@@ -241465,6 +241863,280 @@ function renderToolArgs(args) {
 var init_tool_args_format = __esm({
   "src/renderer/views/tool-args-format.ts"() {
     init_tool_display();
+  }
+});
+
+// src/renderer/controller/thread-proposals.ts
+async function startProposedThread(store3, api3, sourceThreadId, proposal, options2) {
+  const projectId = store3.getState().activeProjectId;
+  if (!projectId) throw new Error("Open a project before starting a proposed thread");
+  store3.emit("composer_draft_flush");
+  const threadId = createThread(store3);
+  setThreadTitle(store3, threadId, proposal.title);
+  patchThreadAnywhere(store3, threadId, (t4) => ({
+    ...t4,
+    proposedBy: { threadId: sourceThreadId, proposalId: proposal.id }
+  }));
+  await awaitPendingThreadPersistence();
+  const model = getThreadById(store3, threadId)?.model ?? store3.getState().settings?.model;
+  const prepared = await api3.agent.prepareCheckout(
+    projectId,
+    threadId,
+    proposal.prompt,
+    "worktree",
+    model
+  );
+  applyPreparedThreadCheckout(store3, threadId, prepared);
+  if (prepared.checkoutMode !== "worktree" && !await options2.confirmSharedCheckout(proposal)) {
+    setThreadDraftPrompt(store3, threadId, proposal.prompt);
+    return { started: false, threadId, reason: "shared-checkout-declined" };
+  }
+  addMessage(store3, threadId, "user", proposal.prompt);
+  setThreadProposalDecision(store3, sourceThreadId, {
+    id: proposal.id,
+    status: "started",
+    decidedAt: Date.now(),
+    threadId,
+    checkoutMode: prepared.checkoutMode
+  });
+  startHumanTurnTree(store3, threadId);
+  dispatchAgentRun(store3, api3, threadId, { content: proposal.prompt });
+  return { started: true, threadId, checkoutMode: prepared.checkoutMode };
+}
+var init_thread_proposals = __esm({
+  "src/renderer/controller/thread-proposals.ts"() {
+    init_thread_helpers();
+    init_message_queue();
+    init_persistence();
+  }
+});
+
+// src/renderer/views/thread-proposal-card.ts
+function chip(kind, ...children2) {
+  return el("span", { class: "thread-proposal-chip", "data-chip": kind }, ...children2);
+}
+function statePill(state4) {
+  const { status } = state4;
+  if (status === "started") {
+    const shared = state4.checkoutMode === "shared";
+    return el(
+      "span",
+      {
+        class: "thread-proposal-state",
+        "data-state": "started",
+        ...shared ? { "data-checkout": "shared" } : {}
+      },
+      checkIcon("ui-icon ui-icon-sm"),
+      shared ? "Started in the shared checkout" : "Thread started"
+    );
+  }
+  if (status === "dismissed") {
+    return el(
+      "span",
+      { class: "thread-proposal-state", "data-state": "dismissed" },
+      closeIcon("ui-icon ui-icon-sm"),
+      "Dismissed"
+    );
+  }
+  return null;
+}
+function buildOpenThreadButton(threadId, handlers3) {
+  const open2 = el(
+    "button",
+    { type: "button", class: "thread-proposal-open" },
+    "Open thread",
+    arrowRightIcon("ui-icon ui-icon-sm")
+  );
+  open2.addEventListener("click", (event3) => {
+    event3.preventDefault();
+    event3.stopPropagation();
+    handlers3.onOpenThread(threadId);
+  });
+  return open2;
+}
+function buildPendingActions(proposal, handlers3, rerender) {
+  const start2 = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary thread-proposal-start" },
+    "Start this thread"
+  );
+  const dismiss = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary thread-proposal-dismiss" },
+    "Not now"
+  );
+  const error53 = el("span", { class: "thread-proposal-error", role: "alert", hidden: "" });
+  start2.addEventListener("click", () => {
+    start2.disabled = true;
+    dismiss.disabled = true;
+    start2.textContent = "Starting\u2026";
+    error53.hidden = true;
+    void handlers3.onStart(proposal).catch((cause) => {
+      start2.disabled = false;
+      dismiss.disabled = false;
+      start2.textContent = "Start this thread";
+      error53.textContent = cause instanceof Error ? `Could not start the thread: ${cause.message}` : "Could not start the thread.";
+      error53.hidden = false;
+    });
+  });
+  dismiss.addEventListener("click", () => {
+    handlers3.onDismiss(proposal);
+    rerender({ status: "dismissed" });
+  });
+  return el("div", { class: "thread-proposal-actions" }, start2, dismiss, error53);
+}
+function buildDismissedActions(proposal, handlers3, rerender) {
+  const restore = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost thread-proposal-restore" },
+    "Bring it back"
+  );
+  restore.addEventListener("click", () => {
+    handlers3.onRestore(proposal);
+    rerender({ status: "pending" });
+  });
+  return el("div", { class: "thread-proposal-actions" }, restore);
+}
+function buildBody(proposal, state4, handlers3, rerender) {
+  const body = el("div", { class: "thread-proposal-body" });
+  body.append(el("h4", { class: "thread-proposal-title" }, proposal.title));
+  body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
+  if (proposal.rationale) {
+    body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
+  }
+  const chips = el("div", { class: "thread-proposal-chips" });
+  chips.append(chip("worktree", gitBranchIcon("ui-icon ui-icon-sm"), "Its own checkout"));
+  const files = threadProposalFileSummary(proposal.files);
+  if (files) chips.append(chip("files", files));
+  body.append(chips);
+  const prompt = el("details", { class: "thread-proposal-prompt" });
+  prompt.append(
+    el("summary", { class: "thread-proposal-prompt-summary" }, "The prompt it would start with"),
+    el("pre", { class: "thread-proposal-prompt-text" }, proposal.prompt)
+  );
+  body.append(prompt);
+  if (state4.status === "pending") {
+    body.append(buildPendingActions(proposal, handlers3, rerender));
+  } else if (state4.status === "dismissed") {
+    body.append(buildDismissedActions(proposal, handlers3, rerender));
+  }
+  return body;
+}
+function createThreadProposalCard(proposal, state4, handlers3) {
+  const card2 = el("details", {
+    class: "tool-card thread-proposal",
+    "data-tool-id": proposal.id,
+    "data-status": "done"
+  });
+  const render8 = (next3) => {
+    while (card2.firstChild) card2.firstChild.remove();
+    card2.dataset["proposalStatus"] = next3.status;
+    card2.open = next3.status === "pending";
+    const header = el(
+      "summary",
+      { class: "tool-card-header thread-proposal-header" },
+      el(
+        "span",
+        { class: "thread-proposal-icon", "aria-hidden": "true" },
+        gitBranchIcon("ui-icon ui-icon-sm")
+      ),
+      el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
+      el("span", { class: "thread-proposal-header-title" }, proposal.title)
+    );
+    const pill = statePill(next3);
+    if (pill) header.append(pill);
+    if (next3.status === "started" && next3.threadId) {
+      header.append(buildOpenThreadButton(next3.threadId, handlers3));
+    }
+    card2.append(header, buildBody(proposal, next3, handlers3, render8));
+  };
+  render8(state4);
+  return card2;
+}
+var init_thread_proposal_card = __esm({
+  "src/renderer/views/thread-proposal-card.ts"() {
+    init_helpers();
+    init_icons();
+    init_thread_proposal2();
+  }
+});
+
+// src/renderer/views/thread-proposal-tool-card.ts
+function isThreadProposalCall(tc2) {
+  return tc2.name === THREAD_PROPOSAL_TOOL;
+}
+function cardState(store3, sourceThreadId, proposalId) {
+  const decisions = getThreadById(store3, sourceThreadId)?.threadProposals;
+  const status = threadProposalStatus(decisions, proposalId);
+  const decision = findThreadProposalDecision(decisions, proposalId);
+  const startedId = decision?.threadId;
+  const threadId = startedId && getThreadById(store3, startedId) ? startedId : void 0;
+  return {
+    status,
+    ...threadId ? { threadId } : {},
+    ...decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}
+  };
+}
+function confirmSharedCheckout(proposal) {
+  return showConfirmDialog({
+    message: "Run this in your current checkout?",
+    detail: `This project cannot give "${proposal.title}" its own checkout, so the work would run in the one you already have open \u2014 its edits would land alongside your current changes. The offer stays on the card if you would rather not.`,
+    confirmLabel: "Run it here",
+    cancelLabel: "Leave it"
+  });
+}
+function noteDeclined() {
+  showToast("Not started. The prompt is waiting as a draft in the new thread.", {
+    variant: "info",
+    durationMs: 8e3
+  });
+}
+function threadProposalCardSignature(tc2, store3, sourceThreadId) {
+  if (!isThreadProposalCall(tc2)) return void 0;
+  const state4 = cardState(store3, sourceThreadId, tc2.id);
+  return `${state4.status}:${state4.threadId ?? ""}:${state4.checkoutMode ?? ""}`;
+}
+function createThreadProposalToolCard(tc2, store3, api3, sourceThreadId) {
+  const proposal = parseThreadProposal(tc2.id, tc2.args);
+  if (!proposal) return null;
+  return createThreadProposalCard(proposal, cardState(store3, sourceThreadId, tc2.id), {
+    onStart: async (accepted) => {
+      try {
+        const result = await startProposedThread(store3, api3, sourceThreadId, accepted, {
+          confirmSharedCheckout
+        });
+        if (!result.started) noteDeclined();
+      } catch (cause) {
+        showToast(cause instanceof Error ? cause.message : "Could not start the proposed thread.", {
+          variant: "error",
+          durationMs: 15e3
+        });
+        throw cause;
+      }
+    },
+    onDismiss: (dismissed) => {
+      setThreadProposalDecision(store3, sourceThreadId, {
+        id: dismissed.id,
+        status: "dismissed",
+        decidedAt: Date.now()
+      });
+    },
+    onRestore: (restored) => {
+      clearThreadProposalDecisionFor(store3, sourceThreadId, restored.id);
+    },
+    onOpenThread: (threadId) => {
+      switchThread(store3, threadId);
+    }
+  });
+}
+var init_thread_proposal_tool_card = __esm({
+  "src/renderer/views/thread-proposal-tool-card.ts"() {
+    init_thread_proposal2();
+    init_thread_helpers();
+    init_thread_proposals();
+    init_confirm_dialog();
+    init_toast();
+    init_thread_proposal_card();
   }
 });
 
@@ -241677,7 +242349,7 @@ function appendStandardToolSections(card2, tc2, label, summaryClass, count2) {
     getToolEditPath(tc2)
   );
   card2.append(header);
-  const buildBody = () => {
+  const buildBody2 = () => {
     const argsSection = createToolArgsSection(tc2.args);
     card2.append(
       ...appendIfPresent(argsSection),
@@ -241689,9 +242361,9 @@ function appendStandardToolSections(card2, tc2, label, summaryClass, count2) {
     );
   };
   if (card2.open) {
-    buildBody();
+    buildBody2();
   } else {
-    lazyToolCardBodies.set(card2, buildBody);
+    lazyToolCardBodies.set(card2, buildBody2);
     header.addEventListener(
       "click",
       () => {
@@ -241728,6 +242400,18 @@ function createCanvasPreviewSection(tc2, threadId) {
   const uri = artefactUriFromToolResult(tc2.result);
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null;
 }
+function syncToolRunMemberVisibility(msgEl) {
+  if (!msgEl.classList.contains("msg-tool-run-member")) {
+    msgEl.hidden = false;
+    return;
+  }
+  const body = msgEl.querySelector(":scope > .message-body");
+  const hasVisibleBodyChild = [...body?.children ?? []].some(
+    (child) => !child.classList.contains("message-text") || child.hasChildNodes()
+  );
+  const hasVisibleDirectChild = [...msgEl.children].some((child) => child !== body);
+  msgEl.hidden = !hasVisibleBodyChild && !hasVisibleDirectChild;
+}
 function syncMessageCanvasPreviews(msgEl, msg, threadId) {
   const body = msgEl.querySelector(":scope > .message-body");
   if (!body) return;
@@ -241736,11 +242420,17 @@ function syncMessageCanvasPreviews(msgEl, msg, threadId) {
     const card2 = createCanvasPreviewCard(threadId, artefact.title);
     return card2 ? [card2] : [];
   });
-  if (cards.length === 0) return;
-  body.append(el("div", { class: "message-canvas-previews" }, ...cards));
+  if (cards.length > 0) {
+    body.append(el("div", { class: "message-canvas-previews" }, ...cards));
+  }
+  syncToolRunMemberVisibility(msgEl);
 }
-function createIndividualToolCard(tc2, label, api3, threadId) {
+function createIndividualToolCard(tc2, label, api3, threadId, store3) {
   if (tc2.subagent) return createSubagentToolCard(tc2, label, api3);
+  if (store3 && isThreadProposalCall(tc2)) {
+    const proposalCard = createThreadProposalToolCard(tc2, store3, api3, threadId);
+    if (proposalCard) return proposalCard;
+  }
   const card2 = el("details", {
     class: "tool-card",
     "data-tool-id": tc2.id,
@@ -241759,9 +242449,9 @@ function assistantDisplayParts(content) {
   return { body, transportNoise: noise };
 }
 function summaryPreview(text4, max10 = 200) {
-  const trimmed = text4.trim();
-  if (trimmed.length <= max10) return trimmed;
-  return `${trimmed.slice(0, max10)}\u2026`;
+  const trimmed2 = text4.trim();
+  if (trimmed2.length <= max10) return trimmed2;
+  return `${trimmed2.slice(0, max10)}\u2026`;
 }
 function createInnerToolCard(tc2, api3) {
   const entry = el("details", {
@@ -242043,7 +242733,7 @@ function createGroupToolCard(item) {
   }
   return card2;
 }
-function createRollupToolCard(item, api3, threadId) {
+function createRollupToolCard(item, api3, threadId, store3) {
   const status = aggregateToolStatus(item.toolCalls);
   const card2 = el("details", {
     class: "tool-card tool-card-rollup",
@@ -242054,23 +242744,42 @@ function createRollupToolCard(item, api3, threadId) {
   const count2 = item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
-    body.append(createToolCard(child, api3, threadId));
+    body.append(createToolCard(child, api3, threadId, store3));
   }
   card2.append(createToolHeader(item.label, status, "tool-card-header", count2), body);
   return card2;
 }
-function createToolCard(item, api3, threadId) {
-  if (item.type === "rollup") return createRollupToolCard(item, api3, threadId);
+function createStepToolCard(item, api3, threadId) {
+  const status = aggregateToolStatus(item.toolCalls);
+  const card2 = el("details", {
+    class: "tool-card tool-card-step",
+    "data-step-key": item.key,
+    "data-step-message-id": item.messageId,
+    "data-status": status,
+    "data-tool-count": String(item.toolCalls.length)
+  });
+  const body = el("div", { class: "tool-rollup-body" });
+  for (const child of item.children) {
+    body.append(createToolCard(child, api3, threadId));
+  }
+  card2.append(createToolHeader(item.label, status, "tool-card-header"), body);
+  return card2;
+}
+function createToolCard(item, api3, threadId, store3) {
+  if (item.type === "rollup") return createRollupToolCard(item, api3, threadId, store3);
+  if (item.type === "step") return createStepToolCard(item, api3, threadId);
   if (item.type === "group") return createGroupToolCard(item);
-  return createIndividualToolCard(item.toolCall, item.label, api3, threadId);
+  return createIndividualToolCard(item.toolCall, item.label, api3, threadId, store3);
 }
 function toolCardKey(item) {
   if (item.type === "rollup") return `r:${item.key}`;
+  if (item.type === "step") return `s:${item.key}`;
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
 }
-function toolCardSignature(item) {
-  return renderSignature(item);
+function toolCardSignature(item, extra) {
+  const base = renderSignature(item);
+  return extra === void 0 ? base : `${base}|${extra}`;
 }
 function createMessageImages(images) {
   const wrap3 = el("div", { class: "message-images" });
@@ -242161,7 +242870,7 @@ function fillHookInspector(body, detail) {
   const chips = hookRunDetailChips(detail);
   if (chips.length > 0) {
     const row2 = el("div", { class: "hook-card-raw-chips" });
-    for (const chip of chips) row2.append(el("span", { class: "hook-card-raw-chip" }, chip));
+    for (const chip2 of chips) row2.append(el("span", { class: "hook-card-raw-chip" }, chip2));
     body.append(row2);
   }
   for (const section of hookRunDetailSections(detail)) {
@@ -242325,6 +243034,24 @@ function appendMessageContent(body, msg, api3, opts) {
 function shouldNestReasoningInTools(toolCalls) {
   return toolCalls.some((tc2) => !tc2.subagent);
 }
+function multiStepRunFor(thread, msgId) {
+  if (!thread) return void 0;
+  const run6 = toolRunForMessage(thread.messages, msgId);
+  return run6 && run6.steps.length > 1 ? run6 : void 0;
+}
+function messageToolCardOpts(msg) {
+  return {
+    ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
+    ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
+    ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {}
+  };
+}
+function liveStepMessageId(thread) {
+  if (!thread || thread.status !== "running") return null;
+  const last4 = thread.messages[thread.messages.length - 1];
+  if (!last4 || last4.content.trim()) return null;
+  return last4.id;
+}
 function reasoningDisclosureTitle(live) {
   return live ? "Reasoning\u2026" : "Reasoned";
 }
@@ -242340,17 +243067,17 @@ function isReasoningDisclosureLive(thread, msg) {
 }
 function transcriptChip(attachment, api3) {
   const { kind, label } = attachment;
-  const chip = el("span", { class: `transcript-attachment-chip transcript-attachment-${kind}` });
-  chip.append(
+  const chip2 = el("span", { class: `transcript-attachment-chip transcript-attachment-${kind}` });
+  chip2.append(
     attachmentIcon(kind, "transcript-attachment-icon"),
     el("span", { class: "transcript-attachment-label" }, label)
   );
   if (kind === "video" && attachment.path) {
-    attachVideoExpand(chip, api3, attachment.path, label);
+    attachVideoExpand(chip2, api3, attachment.path, label);
   } else if (attachment.content !== void 0) {
-    attachTextExpand(chip, attachment.content, label);
+    attachTextExpand(chip2, attachment.content, label);
   }
-  return chip;
+  return chip2;
 }
 function renderUserTranscript(host, content, attachments, api3) {
   const pastes = attachments.filter((a3) => a3.kind === "paste");
@@ -242458,6 +243185,28 @@ function syncNestedRollupReasoning(card2, msgEl, reasoning, live) {
   body?.querySelectorAll(":scope > .message-reasoning").forEach((node2) => {
     if (node2 !== details) node2.remove();
   });
+}
+function syncRunStepReasoning(card2, run6, liveStepId) {
+  for (const step3 of run6.steps) {
+    const body = card2.querySelector(
+      `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step3.messageId}"] > .tool-rollup-body`
+    );
+    if (!body) continue;
+    let details = body.querySelector(":scope > .message-reasoning");
+    if (!step3.reasoning?.trim()) {
+      details?.remove();
+      continue;
+    }
+    const live = step3.messageId === liveStepId;
+    if (!details) {
+      details = buildReasoningEl(step3.reasoning, live, live);
+      body.prepend(details);
+      continue;
+    }
+    const textEl = details.querySelector(".message-reasoning-text");
+    if (textEl) renderReasoningText(textEl, step3.reasoning);
+    setReasoningDisclosureTitle(details, live);
+  }
 }
 function hydrationNoticeEl(running) {
   const notice = el(
@@ -242848,7 +243597,7 @@ function mountConversation(root4, store3, api3) {
     }
   }
   function applyToolCardOpenState(card2, item, userExpandedRollups, userExpandedGroups, userExpandedTools) {
-    if (item.type === "rollup") {
+    if (item.type === "rollup" || item.type === "step") {
       const status = aggregateToolStatus(item.toolCalls);
       card2.open = status === "running" || userExpandedRollups.has(item.key);
       const nestedCards = card2.querySelectorAll(
@@ -242881,6 +243630,7 @@ function mountConversation(root4, store3, api3) {
       return;
     }
     const tc2 = item.toolCall;
+    if (card2.classList.contains("thread-proposal")) return;
     const running = tc2.status === "running" || tc2.subagent?.status === "running";
     card2.open = running || userExpandedTools.has(tc2.id);
     if (card2.open) ensureToolCardBodyRendered(card2);
@@ -242888,8 +243638,8 @@ function mountConversation(root4, store3, api3) {
   function renderToolCards(msgEl, toolCalls, opts = {}) {
     const threadId = store3.getState().activeThreadId ?? "";
     const userExpandedRollups = /* @__PURE__ */ new Set();
-    msgEl.querySelectorAll(".tool-card-rollup[open]").forEach((node2) => {
-      const key = node2.dataset["rollupKey"];
+    msgEl.querySelectorAll(".tool-card-rollup[open], .tool-card-step[open]").forEach((node2) => {
+      const key = node2.dataset["rollupKey"] ?? node2.dataset["stepKey"];
       if (key && node2.dataset["status"] !== "running") userExpandedRollups.add(key);
     });
     const userExpandedGroups = /* @__PURE__ */ new Set();
@@ -242902,13 +243652,18 @@ function mountConversation(root4, store3, api3) {
       ".tool-card[data-tool-id][open], .tool-group-item[open], .tool-card-subagent[open]"
     ).forEach((node2) => {
       const id39 = node2.dataset["toolId"];
+      if (node2.classList.contains("thread-proposal")) return;
       if (id39 && node2.dataset["status"] !== "running") userExpandedTools.add(id39);
     });
-    const nestReasoning = Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls);
-    const items = buildToolCallDisplayItems(toolCalls, {
+    const msgId = msgEl.dataset["messageId"] ?? "";
+    const run6 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
+    const isRunMember = run6 !== void 0 && run6.anchorId !== msgId;
+    msgEl.classList.toggle("msg-tool-run-member", isRunMember);
+    const nestReasoning = run6 === void 0 && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls);
+    const items = run6 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run6), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
       ...nestReasoning ? { forceRollup: true } : {}
     });
-    for (const item of items) applyRollupSummaries(item, opts);
+    if (!run6) for (const item of items) applyRollupSummaries(item, opts);
     const existing = /* @__PURE__ */ new Map();
     for (const node2 of msgEl.querySelectorAll(":scope > .tool-card")) {
       const key = toolCardKeys.get(node2);
@@ -242917,7 +243672,10 @@ function mountConversation(root4, store3, api3) {
     const desired = [];
     for (const item of items) {
       const key = toolCardKey(item);
-      const sig = toolCardSignature(item);
+      const sig = toolCardSignature(
+        item,
+        item.type === "individual" ? threadProposalCardSignature(item.toolCall, store3, threadId) : void 0
+      );
       let card2 = existing.get(key) ?? null;
       if (card2) existing.delete(key);
       if (card2 && toolCardSignatures.get(card2) === sig) {
@@ -242926,7 +243684,7 @@ function mountConversation(root4, store3, api3) {
         toolCardSignatures.set(card2, sig);
       } else {
         card2?.remove();
-        card2 = createToolCard(item, api3, threadId);
+        card2 = createToolCard(item, api3, threadId, store3);
         toolCardKeys.set(card2, key);
         toolCardSignatures.set(card2, sig);
       }
@@ -242934,12 +243692,19 @@ function mountConversation(root4, store3, api3) {
       if (item.type === "rollup" && nestReasoning) {
         syncNestedRollupReasoning(card2, msgEl, opts.reasoning, opts.reasoningLive === true);
       }
+      if (item.type === "rollup" && run6 && item.key === RUN_ROLLUP_KEY) {
+        syncRunStepReasoning(card2, run6, opts.liveStepId ?? null);
+      }
       desired.push(card2);
     }
     existing.forEach((node2) => {
       node2.remove();
     });
-    if (!nestReasoning) {
+    if (run6) {
+      msgEl.querySelectorAll(".message-body > .message-reasoning").forEach((node2) => {
+        node2.remove();
+      });
+    } else if (!nestReasoning) {
       msgEl.querySelectorAll(".tool-card-rollup .message-reasoning").forEach((node2) => {
         node2.remove();
       });
@@ -242955,6 +243720,69 @@ function mountConversation(root4, store3, api3) {
         msgEl.insertBefore(node2, msgEl.children[base + i4] ?? null);
       }
     }
+    syncToolRunMemberVisibility(msgEl);
+  }
+  function renderRunAnchor(thread, run6) {
+    const anchor2 = thread?.messages.find((m3) => m3.id === run6.anchorId);
+    const anchorEl = list.querySelector(`[data-message-id="${run6.anchorId}"]`);
+    if (!anchor2 || !anchorEl) return;
+    renderToolCards(anchorEl, anchor2.toolCalls ?? [], {
+      ...messageToolCardOpts(anchor2),
+      run: run6,
+      liveStepId: liveStepMessageId(thread)
+    });
+  }
+  function releaseRunMembers(thread, run6) {
+    for (const id39 of run6.memberIds) {
+      if (id39 === run6.anchorId) continue;
+      const memberEl = list.querySelector(`[data-message-id="${id39}"]`);
+      if (!memberEl?.querySelector(":scope > .tool-card-rollup")) continue;
+      const msg = thread?.messages.find((m3) => m3.id === id39);
+      if (!msg) continue;
+      renderToolCards(memberEl, msg.toolCalls ?? [], {
+        ...messageToolCardOpts(msg),
+        run: run6,
+        liveStepId: liveStepMessageId(thread)
+      });
+    }
+  }
+  function syncRunLayout(thread, run6, changedId) {
+    if (changedId === run6.anchorId) releaseRunMembers(thread, run6);
+    else renderRunAnchor(thread, run6);
+  }
+  function resyncRunMembership(thread, msgId) {
+    const staleStep = list.querySelector(
+      `.tool-card-step[data-step-message-id="${msgId}"]`
+    );
+    const anchorEl = staleStep?.closest(".msg");
+    const anchorId = anchorEl?.dataset["messageId"];
+    if (!anchorEl || !anchorId || anchorId === msgId) return;
+    const anchorRun = multiStepRunFor(thread, anchorId);
+    if (anchorRun?.memberIds.includes(msgId) === true) return;
+    const anchor2 = thread?.messages.find((m3) => m3.id === anchorId);
+    if (!anchor2) return;
+    renderToolCards(anchorEl, anchor2.toolCalls, {
+      ...messageToolCardOpts(anchor2),
+      ...anchorRun ? { run: anchorRun, liveStepId: liveStepMessageId(thread) } : {}
+    });
+    refreshToolCards(msgId);
+    const msg = thread?.messages.find((m3) => m3.id === msgId);
+    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
+    if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
+    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+  }
+  function syncRunStepTrail(thread, run6) {
+    const runCard = list.querySelector(
+      `[data-message-id="${run6.anchorId}"] > .tool-card-rollup[data-rollup-key="${RUN_ROLLUP_KEY}"]`
+    );
+    const complete = runCard !== null && run6.steps.every(
+      (step3) => runCard.querySelector(`.tool-card-step[data-step-message-id="${step3.messageId}"]`)
+    );
+    if (!complete) {
+      renderRunAnchor(thread, run6);
+      return;
+    }
+    syncRunStepReasoning(runCard, run6, liveStepMessageId(thread));
   }
   function buildMessageEl(threadId, msgId) {
     const thread = getThreadById(store3, threadId);
@@ -242970,7 +243798,10 @@ function mountConversation(root4, store3, api3) {
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
     if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true));
-    const nestReasoning = shouldNestReasoningInTools(msg.toolCalls ?? []);
+    const nestReasoning = (
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+      shouldNestReasoningInTools(msg.toolCalls ?? []) || multiStepRunFor(thread, msgId) !== void 0
+    );
     appendMessageContent(body, msg, api3, {
       ...nestReasoning ? { nestReasoningInTools: true } : {}
     });
@@ -242987,12 +243818,13 @@ function mountConversation(root4, store3, api3) {
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
     if (!msg || !msgEl) return;
     hydrateRemoteArtifactImages(list, api3);
+    const run6 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls ?? [], {
-      ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
-      ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
-      ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {}
+      ...messageToolCardOpts(msg),
+      ...run6 ? { run: run6, liveStepId: liveStepMessageId(thread) } : {}
     });
     syncMessageCanvasPreviews(msgEl, msg, threadId);
+    if (run6) syncRunLayout(thread, run6, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
   }
@@ -243118,6 +243950,7 @@ function mountConversation(root4, store3, api3) {
       } else {
         existing?.remove();
       }
+      syncToolRunMemberVisibility(msgEl);
       prevLabel = text4;
     }
   }
@@ -243266,12 +244099,13 @@ function mountConversation(root4, store3, api3) {
     if (!msg || !msgEl) return;
     const prevScrollTop = list.scrollTop;
     const wasPinned = pinnedToBottom;
+    const run6 = multiStepRunFor(thread, msgId);
     renderToolCards(msgEl, msg.toolCalls ?? [], {
-      ...msg.commandSummary !== void 0 ? { commandSummary: msg.commandSummary } : {},
-      ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
-      ...msg.reasoning !== void 0 ? { reasoning: msg.reasoning } : {},
-      reasoningLive: isReasoningDisclosureLive(thread, msg)
+      ...messageToolCardOpts(msg),
+      reasoningLive: isReasoningDisclosureLive(thread, msg),
+      ...run6 ? { run: run6, liveStepId: liveStepMessageId(thread) } : {}
     });
+    if (run6) syncRunLayout(thread, run6, msgId);
     if (wasPinned) {
       scrollToBottom();
     } else if (list.scrollTop !== prevScrollTop) {
@@ -243292,10 +244126,13 @@ function mountConversation(root4, store3, api3) {
       const textEl = msgEl?.querySelector(".message-text");
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, true, api3);
-        if (msg.content.trim()) {
-          msgEl?.querySelectorAll(".message-reasoning").forEach((details) => {
+        if (msgEl && msg.content.trim()) {
+          const trails = msgEl.querySelectorAll(".message-reasoning");
+          trails.forEach((details) => {
             setReasoningDisclosureTitle(details, false);
           });
+          const absorbed = msg.toolCalls.some((tc2) => !tc2.subagent) && !msgEl.querySelector(".tool-card") || Boolean(msg.reasoning?.trim()) && trails.length === 0;
+          if (absorbed) resyncRunMembership(thread, mid);
         }
         scrollToBottom();
       }
@@ -243314,7 +244151,9 @@ function mountConversation(root4, store3, api3) {
       const msg = thread?.messages.find((m3) => m3.id === mid);
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (msg?.role === "assistant" && msgEl) {
-        syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        const run6 = multiStepRunFor(thread, mid);
+        if (run6) syncRunStepTrail(thread, run6);
+        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
         activityBar.classList.add("agent-activity-clickable");
         setActivity(activityLabel.textContent);
         scrollToBottom();
@@ -243340,6 +244179,7 @@ function mountConversation(root4, store3, api3) {
         });
       }
       if (msg?.role === "assistant" && msg.content.trim()) {
+        resyncRunMembership(thread, mid);
         const body = msgEl?.querySelector(".message-body");
         if (body && !body.querySelector(".msg-copy")) attachCopyButton(body, mid, store3);
         const reasoning = body?.querySelector(":scope > .message-reasoning");
@@ -243456,6 +244296,7 @@ var init_conversation = __esm({
     init_composer_editor();
     init_agent_activity();
     init_tool_display();
+    init_tool_runs();
     init_panels();
     init_thread_hydration();
     init_plugin_panel();
@@ -243465,6 +244306,7 @@ var init_conversation = __esm({
     init_comparison_panel();
     init_retry_review_comparison();
     init_tool_args_format();
+    init_thread_proposal_tool_card();
     init_render_signature();
     init_message_queue();
     init_fork_thread3();
@@ -254834,8 +255676,8 @@ function scaleGuardChip(status) {
   return null;
 }
 function mountFooterIndexStatus(host, api3) {
-  const chip = el("span", { class: "footer-indexing", hidden: "", role: "status" });
-  host.append(chip);
+  const chip2 = el("span", { class: "footer-indexing", hidden: "", role: "status" });
+  host.append(chip2);
   let status = null;
   let timer3 = null;
   let destroyed2 = false;
@@ -254848,10 +255690,10 @@ function mountFooterIndexStatus(host, api3) {
     }
   }
   function hide3() {
-    chip.hidden = true;
-    chip.textContent = "";
-    chip.removeAttribute("data-state");
-    chip.removeAttribute("title");
+    chip2.hidden = true;
+    chip2.textContent = "";
+    chip2.removeAttribute("data-state");
+    chip2.removeAttribute("title");
   }
   function render8() {
     if (!status) {
@@ -254867,26 +255709,26 @@ function mountFooterIndexStatus(host, api3) {
         hide3();
         return;
       }
-      chip.hidden = false;
-      chip.textContent = buildingChipText(status, formatElapsed(elapsed));
-      chip.dataset["state"] = "building";
-      chip.title = describe3(status);
+      chip2.hidden = false;
+      chip2.textContent = buildingChipText(status, formatElapsed(elapsed));
+      chip2.dataset["state"] = "building";
+      chip2.title = describe3(status);
       return;
     }
     setTicking(false);
     if (status.fileIndex.phase === "error" || status.semantic.phase === "error") {
-      chip.hidden = false;
-      chip.textContent = "Indexing failed";
-      chip.dataset["state"] = "error";
-      chip.title = describe3(status);
+      chip2.hidden = false;
+      chip2.textContent = "Indexing failed";
+      chip2.dataset["state"] = "error";
+      chip2.title = describe3(status);
       return;
     }
     const guarded = scaleGuardChip(status);
     if (guarded) {
-      chip.hidden = false;
-      chip.textContent = guarded.text;
-      chip.dataset["state"] = guarded.state;
-      chip.title = describe3(status);
+      chip2.hidden = false;
+      chip2.textContent = guarded.text;
+      chip2.dataset["state"] = guarded.state;
+      chip2.title = describe3(status);
       return;
     }
     hide3();
@@ -254906,7 +255748,7 @@ function mountFooterIndexStatus(host, api3) {
       destroyed2 = true;
       unsubscribe();
       setTicking(false);
-      chip.remove();
+      chip2.remove();
     }
   };
 }
@@ -254930,8 +255772,8 @@ function stripInvocationToken(text4, name) {
   return text4.replace(new RegExp(invocationTokenPattern(name)), "").replace(/\s+/g, " ").trim();
 }
 function parseLeadingInvocation(text4) {
-  const trimmed = text4.trim();
-  const match3 = trimmed.match(LEADING_INVOCATION_RE);
+  const trimmed2 = text4.trim();
+  const match3 = trimmed2.match(LEADING_INVOCATION_RE);
   if (!match3) return null;
   const name = match3[1];
   if (name === void 0) return null;
@@ -254941,13 +255783,13 @@ function resolveInvocation(text4, invocables) {
   const kindOf = (name) => invocables.find((entry) => entry.name === name)?.kind ?? null;
   const leading = parseLeadingInvocation(text4);
   if (leading) return { ...leading, kind: kindOf(leading.name) };
-  const trimmed = text4.trim();
-  if (!trimmed || invocables.length === 0) return null;
+  const trimmed2 = text4.trim();
+  if (!trimmed2 || invocables.length === 0) return null;
   const sorted = [...invocables].sort((a3, b5) => b5.name.length - a3.name.length);
   for (const { name, kind } of sorted) {
     const re4 = new RegExp(`(?:^|\\s)${invocationTokenPattern(name)}`);
-    if (!re4.test(trimmed)) continue;
-    return { name, kind, remainder: stripInvocationToken(trimmed, name) };
+    if (!re4.test(trimmed2)) continue;
+    return { name, kind, remainder: stripInvocationToken(trimmed2, name) };
   }
   return null;
 }
@@ -254975,8 +255817,8 @@ var init_parse_invocation = __esm({
 
 // src/shared/skills/build-skill-user-content.ts
 function buildSkillUserText(skillName, remainder, hasAttachments2) {
-  const trimmed = remainder.trim();
-  if (trimmed) return trimmed;
+  const trimmed2 = remainder.trim();
+  if (trimmed2) return trimmed2;
   if (hasAttachments2) {
     return `The user invoked /${skillName}. Follow the skill instructions and apply them to the attached file(s) below.`;
   }
@@ -255217,9 +256059,14 @@ function mountFooterBranchStatus(host, store3, api3) {
   let defaultBranch = null;
   let open2 = false;
   let refreshToken = 0;
-  let pendingCheckout = null;
+  const baseBranchByThread = /* @__PURE__ */ new Map();
   function getActiveThread2() {
     return getThreadById(store3, store3.getState().activeThreadId);
+  }
+  function activeBaseBranch() {
+    const thread = getActiveThread2();
+    if (!thread || !isBlankThread(thread)) return void 0;
+    return baseBranchByThread.get(thread.id);
   }
   function getActiveThreadBranch() {
     return getActiveThread2()?.gitBranch;
@@ -255229,11 +256076,13 @@ function mountFooterBranchStatus(host, store3, api3) {
     return thread ? isBlankThread(thread) : false;
   }
   function getDisplayBranch() {
-    return getActiveThreadBranch() ?? status?.currentBranch ?? null;
+    return activeBaseBranch() ?? getActiveThreadBranch() ?? status?.currentBranch ?? null;
   }
   function getVisiblePr() {
     const pr2 = status?.pr;
     if (!pr2) return null;
+    const pending = activeBaseBranch();
+    if (pending && pending !== status?.currentBranch) return null;
     return isTrunkBranch(getDisplayBranch(), defaultBranch) ? null : pr2;
   }
   function setOpen(next3) {
@@ -255280,13 +256129,14 @@ function mountFooterBranchStatus(host, store3, api3) {
     } else {
       label.textContent = displayBranch;
       if (pickerMode) {
-        trigger.title = mismatch ? `${mismatchMessage} Switch git branch.` : `Switch git branch: ${displayBranch}`;
+        const pickerLabel = `Start this thread from: ${displayBranch}`;
+        trigger.title = mismatch ? `${mismatchMessage} ${pickerLabel}` : pickerLabel;
         trigger.classList.remove("is-link");
         trigger.classList.remove("is-copyable");
         branchToCopy = null;
         trigger.setAttribute(
           "aria-label",
-          mismatch ? `${mismatchMessage} Switch git branch.` : `Switch git branch: ${displayBranch}`
+          mismatch ? `${mismatchMessage} ${pickerLabel}` : pickerLabel
         );
       } else {
         trigger.title = mismatch ? `${mismatchMessage} Click to copy branch name.` : `Click to copy branch name: ${displayBranch}`;
@@ -255303,7 +256153,7 @@ function mountFooterBranchStatus(host, store3, api3) {
   function renderMenu() {
     clear(menu);
     if (!isPickerMode()) return;
-    const current = status?.currentBranch ?? null;
+    const selected = activeBaseBranch() ?? status?.currentBranch ?? null;
     const pr2 = getVisiblePr();
     if (pr2) {
       const prItem = el(
@@ -255326,37 +256176,21 @@ function mountFooterBranchStatus(host, store3, api3) {
           type: "button",
           class: "branch-picker-option",
           role: "option",
-          "aria-selected": branch2.name === current ? "true" : "false"
+          "aria-selected": branch2.name === selected ? "true" : "false"
         },
         nameEl
       );
       if (branch2.name === defaultBranch) {
         item.append(el("span", { class: "branch-picker-default-badge" }, "default"));
       }
-      if (branch2.name === current) item.classList.add("is-selected");
+      if (branch2.name === selected) item.classList.add("is-selected");
       item.addEventListener("click", () => {
-        if (pendingCheckout) return;
-        if (branch2.name === current) {
-          setOpen(false);
-          return;
-        }
         setOpen(false);
-        const owner = getActiveThreadOwner(store3);
-        if (!owner) return;
-        const checkout2 = api3.git.checkoutBranch(owner.projectId, owner.threadId, branch2.name);
-        pendingCheckout = checkout2;
-        const observed = checkout2.then(
-          () => {
-            showToast(`Checked out ${branch2.name}`);
-            store3.emit("git_branch_changed");
-          },
-          (error53) => {
-            showErrorToast(`Failed to check out ${branch2.name}`, error53);
-          }
-        );
-        void observed.finally(() => {
-          if (pendingCheckout === checkout2) pendingCheckout = null;
-        });
+        const thread = getActiveThread2();
+        if (!thread) return;
+        baseBranchByThread.set(thread.id, branch2.name);
+        renderTrigger();
+        renderMenu();
       });
       menu.append(item);
     }
@@ -255375,8 +256209,18 @@ function mountFooterBranchStatus(host, store3, api3) {
     branches = listed;
     defaultBranch = defaultName;
   }
+  function pruneBaseBranches() {
+    if (baseBranchByThread.size === 0) return;
+    const blank = new Set(
+      store3.getState().threads.filter((thread) => isBlankThread(thread)).map((thread) => thread.id)
+    );
+    for (const threadId of baseBranchByThread.keys()) {
+      if (!blank.has(threadId)) baseBranchByThread.delete(threadId);
+    }
+  }
   async function refresh() {
     const token2 = ++refreshToken;
+    pruneBaseBranches();
     if (!store3.getState().workspaceRoot) {
       status = null;
       branches = [];
@@ -255430,7 +256274,6 @@ function mountFooterBranchStatus(host, store3, api3) {
     });
   }
   trigger.addEventListener("click", () => {
-    if (pendingCheckout) return;
     if (!isPickerMode()) {
       const url2 = getVisiblePr()?.url;
       if (url2) {
@@ -255480,10 +256323,7 @@ function mountFooterBranchStatus(host, store3, api3) {
   void refresh();
   return {
     refresh: () => void refresh(),
-    waitForPendingCheckout: async () => {
-      const pending = pendingCheckout;
-      if (pending) await pending;
-    },
+    pendingBaseBranch: (threadId) => baseBranchByThread.get(threadId),
     destroy: () => {
       refreshToken += 1;
       if (refreshTimer) clearTimeout(refreshTimer);
@@ -255908,6 +256748,7 @@ function threadToJsonl(thread) {
         ...msg.canvasArtefacts !== void 0 ? { canvasArtefacts: msg.canvasArtefacts } : {},
         commandSummary: msg.commandSummary,
         ...msg.toolSummary !== void 0 ? { toolSummary: msg.toolSummary } : {},
+        ...msg.runSummary !== void 0 ? { runSummary: msg.runSummary } : {},
         ...msg.model !== void 0 ? { model: msg.model } : {},
         ...msg.requestedModel !== void 0 ? { requestedModel: msg.requestedModel } : {},
         ...msg.parameters !== void 0 ? { parameters: msg.parameters } : {},
@@ -256275,6 +257116,7 @@ var init_presets = __esm({
   "src/shared/follow-ups/presets.ts"() {
     DETERMINISTIC_FOLLOW_UP_IDS = {
       changes: "changes",
+      createPr: "create-pr",
       debugCi: "debug-ci",
       fixMergeConflicts: "fix-merge-conflicts",
       continuePlan: "continue-plan"
@@ -256293,7 +257135,7 @@ function reconcileChangesSuggestion(suggestions, stats, maxSuggestions = DEFAULT
     return suggestions.filter((s16) => !isChangesBubble(s16));
   }
   const built = buildChangesSuggestion(stats);
-  const chip = {
+  const chip2 = {
     id: built.id,
     label: built.label,
     prompt: built.prompt,
@@ -256304,20 +257146,177 @@ function reconcileChangesSuggestion(suggestions, stats, maxSuggestions = DEFAULT
   };
   if (existingIndex !== -1) {
     const current = suggestions[existingIndex];
-    if (current && current.additions === chip.additions && current.deletions === chip.deletions) {
+    if (current && current.additions === chip2.additions && current.deletions === chip2.deletions) {
       return suggestions;
     }
     const next3 = suggestions.slice();
-    next3[existingIndex] = chip;
+    next3[existingIndex] = chip2;
     return next3;
   }
-  return [chip, ...suggestions].slice(0, maxSuggestions);
+  return [chip2, ...suggestions].slice(0, maxSuggestions);
 }
 var DEFAULT_MAX_SUGGESTIONS;
 var init_changes_stat = __esm({
   "src/shared/follow-ups/changes-stat.ts"() {
     init_presets();
     DEFAULT_MAX_SUGGESTIONS = 3;
+  }
+});
+
+// src/renderer/views/create-pr-dialog.ts
+function ensureDialog4() {
+  if (dialogEl3) return dialogEl3;
+  dialogEl3 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
+  document.body.append(dialogEl3);
+  return dialogEl3;
+}
+function openCreatePrDialog(opts) {
+  const dialog2 = ensureDialog4();
+  clear(dialog2);
+  const titleInput = el("input", {
+    type: "text",
+    class: "create-pr-dialog-title-input",
+    id: "create-pr-dialog-title",
+    placeholder: "Summarise the change",
+    value: opts.suggestedTitle?.trim() ?? ""
+  });
+  titleInput.value = opts.suggestedTitle?.trim() ?? "";
+  const bodyInput = el("textarea", {
+    class: "create-pr-dialog-body-input",
+    id: "create-pr-dialog-body",
+    rows: "6",
+    placeholder: opts.bodyPromise ? "Writing a description\u2026" : "Optional"
+  });
+  bodyInput.value = "";
+  let bodyIsUsers = false;
+  bodyInput.addEventListener("input", () => {
+    bodyIsUsers = true;
+  });
+  if (opts.bodyPromise) {
+    bodyInput.classList.add("is-pending");
+    void opts.bodyPromise.then((suggested) => {
+      bodyInput.classList.remove("is-pending");
+      bodyInput.placeholder = "Optional";
+      if (bodyIsUsers || !suggested) return;
+      bodyInput.value = suggested;
+    }).catch(() => {
+      bodyInput.classList.remove("is-pending");
+      bodyInput.placeholder = "Optional";
+    });
+  }
+  const draftInput = el("input", {
+    type: "checkbox",
+    class: "create-pr-dialog-draft-input",
+    id: "create-pr-dialog-draft",
+    "aria-label": "Create as draft"
+  });
+  draftInput.checked = opts.draft ?? false;
+  const draftToggle = el(
+    "label",
+    { class: "toggle-switch create-pr-dialog-draft-toggle" },
+    draftInput,
+    el("span", { class: "toggle-switch-track", "aria-hidden": "true" })
+  );
+  const createBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary create-pr-dialog-create" },
+    "Create pull request"
+  );
+  const cancelBtn = el(
+    "button",
+    { type: "button", class: "ui-btn create-pr-dialog-cancel" },
+    "Cancel"
+  );
+  const syncCreateLabel = () => {
+    createBtn.textContent = draftInput.checked ? "Create draft PR" : "Create pull request";
+  };
+  syncCreateLabel();
+  draftInput.addEventListener("change", syncCreateLabel);
+  const syncCreateEnabled = () => {
+    createBtn.disabled = titleInput.value.trim().length === 0;
+  };
+  syncCreateEnabled();
+  titleInput.addEventListener("input", syncCreateEnabled);
+  dialog2.append(
+    el("h3", {}, "Create pull request"),
+    el(
+      "div",
+      { class: "create-pr-dialog-field" },
+      el("label", { for: "create-pr-dialog-title" }, "Title"),
+      titleInput
+    ),
+    el(
+      "div",
+      { class: "create-pr-dialog-field" },
+      el("label", { for: "create-pr-dialog-body" }, "Description"),
+      bodyInput
+    ),
+    el(
+      "div",
+      { class: "create-pr-dialog-draft" },
+      draftToggle,
+      el(
+        "div",
+        { class: "create-pr-dialog-draft-text" },
+        el("label", { for: "create-pr-dialog-draft" }, "Create as draft"),
+        el(
+          "span",
+          { class: "create-pr-dialog-draft-hint" },
+          "Opens without requesting review or notifying reviewers."
+        )
+      )
+    ),
+    // Says what this actually does, which is not everything: the create path
+    // opens the PR and nothing else. `gh pr create` needs the head branch
+    // already on the remote, so an unpushed branch is a failure the user should
+    // see coming rather than read in an error toast.
+    el(
+      "p",
+      { class: "field-hint create-pr-dialog-hint" },
+      opts.branch ? `Opens a pull request from ${opts.branch} into the default branch. Push it first if you have not.` : "Opens a pull request from this branch into the default branch. Push it first if you have not."
+    ),
+    el("div", { class: "create-pr-dialog-actions" }, cancelBtn, createBtn)
+  );
+  return new Promise((resolve2) => {
+    let settled = false;
+    const perOpen = new AbortController();
+    const finish = (value2) => {
+      if (settled) return;
+      settled = true;
+      perOpen.abort();
+      dialog2.close();
+      resolve2(value2);
+    };
+    dialog2.addEventListener(
+      "cancel",
+      () => {
+        finish(null);
+      },
+      { signal: perOpen.signal }
+    );
+    cancelBtn.addEventListener("click", () => {
+      finish(null);
+    });
+    createBtn.addEventListener("click", () => {
+      const title2 = titleInput.value.trim();
+      if (!title2) return;
+      finish({ title: title2, body: bodyInput.value.trim(), draft: draftInput.checked });
+    });
+    titleInput.addEventListener("keydown", (e4) => {
+      if (e4.key !== "Enter") return;
+      e4.preventDefault();
+      bodyInput.focus();
+    });
+    dialog2.showModal();
+    titleInput.focus();
+    titleInput.select();
+  });
+}
+var dialogEl3;
+var init_create_pr_dialog = __esm({
+  "src/renderer/views/create-pr-dialog.ts"() {
+    init_helpers();
+    dialogEl3 = null;
   }
 });
 
@@ -256435,17 +257434,17 @@ var init_approval_comparison_pickers = __esm({
 });
 
 // src/renderer/views/comparison-model-dialog.ts
-function ensureDialog4() {
-  if (dialogEl3) return dialogEl3;
-  dialogEl3 = el("dialog", {
+function ensureDialog5() {
+  if (dialogEl4) return dialogEl4;
+  dialogEl4 = el("dialog", {
     id: "comparison-model-dialog",
     class: "comparison-model-dialog"
   });
-  document.body.append(dialogEl3);
-  return dialogEl3;
+  document.body.append(dialogEl4);
+  return dialogEl4;
 }
 function openComparisonModelDialog(api3, models) {
-  const dialog2 = ensureDialog4();
+  const dialog2 = ensureDialog5();
   clear(dialog2);
   const pickers = createComparisonModelPickers(
     api3,
@@ -256503,12 +257502,12 @@ function openComparisonModelDialog(api3, models) {
     runBtn.focus();
   });
 }
-var dialogEl3;
+var dialogEl4;
 var init_comparison_model_dialog = __esm({
   "src/renderer/views/comparison-model-dialog.ts"() {
     init_helpers();
     init_approval_comparison_pickers();
-    dialogEl3 = null;
+    dialogEl4 = null;
   }
 });
 
@@ -256531,6 +257530,47 @@ async function runComparisonFromBubble(store3, api3, threadId, onStarted) {
   onStarted();
   startComparison(store3, api3, threadId, picked);
 }
+async function createPrFromBubble(store3, api3, threadId, onConfirmed) {
+  const { activeProjectId } = store3.getState();
+  const thread = store3.getState().threads.find((t4) => t4.id === threadId);
+  if (!activeProjectId) return;
+  const exchange = lastExchange(store3, threadId);
+  const bodyPromise = exchange ? api3.agent.suggestPrBody(activeProjectId, threadId, JSON.stringify(exchange.context)).catch(() => null) : void 0;
+  const picked = await openCreatePrDialog({
+    suggestedTitle: thread?.title ?? "",
+    branch: thread?.gitBranch ?? null,
+    ...bodyPromise ? { bodyPromise } : {}
+  });
+  if (!picked) return;
+  onConfirmed();
+  const request = { title: picked.title, body: picked.body, draft: picked.draft };
+  const card2 = openPrCardInTranscript(store3, threadId, request);
+  try {
+    const result = await api3.gh.createPrForThread(activeProjectId, threadId, request);
+    settlePrCard(store3, card2, result.ok ? "done" : "error", result.message);
+    if (!result.ok)
+      showToast(`Could not open the pull request: ${result.message}`, { variant: "error" });
+  } catch (err2) {
+    settlePrCard(store3, card2, "error", err2 instanceof Error ? err2.message : String(err2));
+    showErrorToast("Could not open the pull request", err2);
+  }
+}
+function openPrCardInTranscript(store3, threadId, request) {
+  const messageId = addMessage(store3, threadId, "assistant");
+  const toolCallId = `create-pr-${messageId}`;
+  addToolCall(store3, messageId, {
+    id: toolCallId,
+    name: "gh_pr_create",
+    args: { title: request.title, draft: request.draft },
+    status: "running",
+    result: null
+  });
+  return { messageId, toolCallId };
+}
+function settlePrCard(store3, card2, status, message2) {
+  setMessageContent(store3, card2.messageId, message2);
+  updateToolCall(store3, card2.messageId, card2.toolCallId, { status, result: message2 });
+}
 function mountFollowUpSuggestions(store3, api3, onSelect) {
   const root4 = el("div", {
     class: "follow-up-suggestions",
@@ -256547,6 +257587,13 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
   let changesRefreshTimer = null;
   let displayedThreadId = null;
   const suggestionsByThread = /* @__PURE__ */ new Map();
+  const consumedThreads = /* @__PURE__ */ new Set();
+  function consumeSuggestions(threadId) {
+    consumedThreads.add(threadId);
+    suggestionsByThread.delete(threadId);
+    nextFetchToken(threadId);
+    if (store3.getState().activeThreadId === threadId) clearSuggestions();
+  }
   function clearSuggestions() {
     clear(root4);
     root4.hidden = true;
@@ -256583,6 +257630,7 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
       } else {
         btn.textContent = suggestion.label;
       }
+      if (suggestion.action === "create-pr") btn.classList.add("follow-up-bubble-create-pr");
       btn.addEventListener("click", () => {
         if (suggestion.action === "open-changes") {
           openChangesReviewer(store3);
@@ -256596,6 +257644,12 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
           void runComparisonFromBubble(store3, api3, sourceThreadId, clearSuggestions);
           return;
         }
+        if (suggestion.action === "create-pr") {
+          void createPrFromBubble(store3, api3, sourceThreadId, () => {
+            consumeSuggestions(sourceThreadId);
+          });
+          return;
+        }
         clearSuggestions();
         if (suggestion.prompt) onSelect(suggestion.prompt);
       });
@@ -256605,6 +257659,7 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
     displayedThreadId = threadId;
   }
   async function maybeFetchSuggestions(threadId) {
+    if (consumedThreads.has(threadId)) return;
     const exchange = lastExchange(store3, threadId);
     if (!exchange) {
       suggestionsByThread.delete(threadId);
@@ -256665,6 +257720,10 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
       clearSuggestions();
       return;
     }
+    if (consumedThreads.has(activeId)) {
+      clearSuggestions();
+      return;
+    }
     if (displayedThreadId === activeId) return;
     const exchange = lastExchange(store3, activeId);
     if (!exchange) {
@@ -256681,6 +257740,7 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
   const unsubs = [
     store3.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
+        consumedThreads.delete(tid);
         suggestionsByThread.delete(tid);
         if (tid === store3.getState().activeThreadId) {
           nextFetchToken(tid);
@@ -256718,6 +257778,7 @@ var init_follow_up_suggestions = __esm({
   "src/renderer/views/follow-up-suggestions.ts"() {
     init_helpers();
     init_changes_stat();
+    init_create_pr_dialog();
     init_thread_helpers();
     init_last_exchange();
     init_comparison_model_dialog();
@@ -257014,7 +258075,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     text4.textContent = `Container run: ${PHASE_LABEL[run6.phase].toLowerCase()}. ${summary}`;
     onStateChanged();
   }
-  function ensureDialog5() {
+  function ensureDialog6() {
     overlay ??= createOverlayDialog({
       id: "container-run-dialog",
       className: "container-run-dialog"
@@ -257282,7 +258343,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
   }
   function open2() {
     if (!context.getActiveThreadId()) return;
-    const dialog2 = ensureDialog5();
+    const dialog2 = ensureDialog6();
     dialog2.open();
     renderDialog();
   }
@@ -257845,8 +258906,8 @@ ${description}
   });
   function removeAttachedImages() {
     attachedImages = [];
-    chips.querySelectorAll(".image-chip").forEach((chip) => {
-      chip.remove();
+    chips.querySelectorAll(".image-chip").forEach((chip2) => {
+      chip2.remove();
     });
   }
   function setImageDescriptionBusy(busy, label) {
@@ -257940,7 +259001,7 @@ ${description}
   }
   function checkoutErrorMessage(error53) {
     const message2 = error53 instanceof Error ? error53.message : "Could not prepare the checkout";
-    return message2.replace(/^Error invoking remote method 'agent:prepareCheckout': Error:\s*/, "");
+    return message2.replace(/^Error invoking remote method 'agent:prepare-checkout': Error:\s*/, "");
   }
   function selectCheckout(choice2) {
     const id39 = getActiveThreadId();
@@ -258424,15 +259485,7 @@ ${description}
         return;
       }
     }
-    try {
-      await branchControl.waitForPendingCheckout();
-    } catch {
-      return;
-    }
-    const [branchStatus, promptState] = await Promise.all([
-      api3.git.branchStatus(projectId, id39),
-      api3.git.promptState(projectId, id39)
-    ]);
+    const branchStatus = await api3.git.branchStatus(projectId, id39);
     const currentBranch = branchStatus.currentBranch;
     const thread = getThreadById(store3, id39);
     const threadBranch = thread?.gitBranch;
@@ -258510,7 +259563,10 @@ ${description}
           id39,
           rawText,
           checkoutChoice(id39),
-          thread.model ?? store3.getState().settings?.model
+          thread.model ?? store3.getState().settings?.model,
+          // The footer picker only names a branch; this is where that selection
+          // becomes the worktree's base, or the shared checkout's branch.
+          branchControl.pendingBaseBranch(id39)
         );
         applyPreparedThreadCheckout(store3, id39, prepared);
         if (getActiveThreadId() !== id39) return;
@@ -258524,6 +259580,7 @@ ${description}
         updateCheckoutControl();
       }
     }
+    const promptState = await api3.git.promptState(projectId, id39);
     const priorTodos = thread?.todos ?? [];
     const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent);
     if (workingBrief && workingBrief !== thread?.workingBrief) {
@@ -258599,89 +259656,89 @@ ${description}
   }
   function addChip(file2) {
     attachedFiles.push(file2);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip";
     const name = document.createElement("span");
     name.className = "attachment-chip-label";
     const label = file2.path.split("/").pop() ?? file2.path;
     name.textContent = label;
     attachTextExpand(name, file2.content, label);
-    chip.append(name);
+    chip2.append(name);
     const remove3 = document.createElement("button");
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedFiles = attachedFiles.filter((f3) => f3.path !== file2.path);
-      chip.remove();
+      chip2.remove();
       scheduleContextEstimate();
     });
-    chip.append(remove3);
-    chips.append(chip);
+    chip2.append(remove3);
+    chips.append(chip2);
     scheduleContextEstimate();
   }
   function addThreadChip(ref) {
     if (attachedThreads.some((t4) => t4.threadId === ref.threadId)) return;
     attachedThreads.push(ref);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip thread-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip thread-chip";
     const title2 = document.createElement("span");
     title2.className = "attachment-chip-label";
     title2.textContent = ref.title || "Untitled thread";
-    chip.append(threadIcon("thread-chip-icon"), title2);
+    chip2.append(threadIcon("thread-chip-icon"), title2);
     const remove3 = document.createElement("button");
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedThreads = attachedThreads.filter((t4) => t4.threadId !== ref.threadId);
-      chip.remove();
+      chip2.remove();
       scheduleContextEstimate();
     });
-    chip.append(remove3);
-    chips.append(chip);
+    chip2.append(remove3);
+    chips.append(chip2);
     scheduleContextEstimate();
   }
   function addShellChip(ref) {
     if (attachedShells.some((s16) => s16.tabId === ref.tabId)) return;
     attachedShells.push(ref);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip shell-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip shell-chip";
     const title2 = document.createElement("span");
     title2.className = "attachment-chip-label";
     title2.textContent = ref.label;
     attachTextExpand(title2, ref.content, ref.label);
-    chip.append(shellIcon("shell-chip-icon"), title2);
+    chip2.append(shellIcon("shell-chip-icon"), title2);
     const remove3 = document.createElement("button");
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedShells = attachedShells.filter((s16) => s16.tabId !== ref.tabId);
-      chip.remove();
+      chip2.remove();
       scheduleContextEstimate();
     });
-    chip.append(remove3);
-    chips.append(chip);
+    chip2.append(remove3);
+    chips.append(chip2);
     scheduleContextEstimate();
   }
   function renderVideoChip(ref) {
     if (attachedVideos.some((v5) => v5.path === ref.path)) return;
     attachedVideos.push(ref);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip video-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip video-chip";
     const label = document.createElement("span");
     label.className = "attachment-chip-label";
     label.textContent = ref.name;
     const meta5 = document.createElement("span");
     meta5.className = "attachment-chip-meta";
     meta5.textContent = formatByteSize(ref.sizeBytes);
-    chip.title = `${ref.name} \u2014 read as stills by the agent, not sent as video`;
+    chip2.title = `${ref.name} \u2014 read as stills by the agent, not sent as video`;
     attachVideoExpand(label, api3, ref.path, ref.name);
-    chip.append(attachmentIcon("video", "video-chip-icon"), label, meta5);
+    chip2.append(attachmentIcon("video", "video-chip-icon"), label, meta5);
     const remove3 = document.createElement("button");
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedVideos = attachedVideos.filter((v5) => v5.path !== ref.path);
-      chip.remove();
+      chip2.remove();
       scheduleContextEstimate();
     });
-    chip.append(remove3);
-    chips.append(chip);
+    chip2.append(remove3);
+    chips.append(chip2);
     scheduleContextEstimate();
   }
   async function addVideoChip(video) {
@@ -258705,25 +259762,25 @@ ${description}
   function renderArchiveChip(ref) {
     if (attachedArchives.some((a3) => a3.path === ref.path)) return;
     attachedArchives.push(ref);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip archive-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip archive-chip";
     const label = document.createElement("span");
     label.className = "attachment-chip-label";
     label.textContent = ref.name;
     const meta5 = document.createElement("span");
     meta5.className = "attachment-chip-meta";
     meta5.textContent = formatByteSize(ref.sizeBytes);
-    chip.title = `${ref.name} \u2014 unpacked and read as files by the agent, not sent as an archive`;
-    chip.append(attachmentIcon("archive", "archive-chip-icon"), label, meta5);
+    chip2.title = `${ref.name} \u2014 unpacked and read as files by the agent, not sent as an archive`;
+    chip2.append(attachmentIcon("archive", "archive-chip-icon"), label, meta5);
     const remove3 = document.createElement("button");
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedArchives = attachedArchives.filter((a3) => a3.path !== ref.path);
-      chip.remove();
+      chip2.remove();
       scheduleContextEstimate();
     });
-    chip.append(remove3);
-    chips.append(chip);
+    chip2.append(remove3);
+    chips.append(chip2);
     scheduleContextEstimate();
   }
   async function addArchiveChip(archive) {
@@ -258746,8 +259803,8 @@ ${description}
   function addImageChip(dataUrl, mimeType, detail = "auto") {
     const entry = { dataUrl, mimeType };
     attachedImages.push(entry);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip image-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip image-chip";
     const thumb = document.createElement("img");
     thumb.src = dataUrl;
     thumb.width = 40;
@@ -258757,18 +259814,18 @@ ${description}
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedImages = attachedImages.filter((i4) => i4 !== entry);
-      chip.remove();
+      chip2.remove();
       void refreshImageCompatibilityWarning();
       scheduleContextEstimate();
     });
     const applyDetail = (next3) => {
       entry.detail = next3;
-      chip.dataset["detail"] = next3;
-      chip.title = IMAGE_DETAIL_LABELS[next3];
+      chip2.dataset["detail"] = next3;
+      chip2.title = IMAGE_DETAIL_LABELS[next3];
       scheduleContextEstimate();
     };
     applyDetail(detail);
-    chip.addEventListener("contextmenu", (e4) => {
+    chip2.addEventListener("contextmenu", (e4) => {
       e4.preventDefault();
       e4.stopPropagation();
       showContextMenu(
@@ -258784,8 +259841,8 @@ ${description}
         }))
       );
     });
-    chip.append(thumb, remove3);
-    chips.append(chip);
+    chip2.append(thumb, remove3);
+    chips.append(chip2);
     void refreshImageCompatibilityWarning();
     scheduleContextEstimate();
   }
@@ -258948,11 +260005,6 @@ ${description}
       if (draft === composer.expandedValue()) return;
       composer.value = draft;
       scheduleContextEstimate(0);
-    }),
-    store3.on("composer_checkout_preferred", (choice2) => {
-      const thread = getActiveThread(store3);
-      if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return;
-      selectCheckout(choice2);
     }),
     store3.on("thread_status_changed", (tid) => {
       if (tid === getActiveThreadId()) {
@@ -269144,7 +270196,14 @@ function terminalModeActive(store3) {
   return filesPaneOpen && rightPanelMode === "terminal";
 }
 function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
-  const listHeader = el("div", { class: "terminals-list-header" }, "Shells");
+  const section = el("section", {
+    class: "terminal-rail-section terminal-shells-section"
+  });
+  const listHeader = el(
+    "div",
+    { class: "terminals-list-header terminal-rail-section-header" },
+    "Shells"
+  );
   const newBtn = el(
     "button",
     {
@@ -269160,8 +270219,11 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
     paneMaximizeButton(store3, "terminal"),
     newBtn
   );
-  const tabsWrap = el("div", { class: "terminals-list" });
-  listRoot.append(listHeader, tabsWrap);
+  const tabsWrap = el("div", {
+    class: "terminals-list terminal-rail-section-list"
+  });
+  section.append(listHeader, tabsWrap);
+  listRoot.append(section);
   const body = el("div", { class: "terminals-body" });
   viewerRoot.append(body);
   const tabs = /* @__PURE__ */ new Map();
@@ -269432,7 +270494,13 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
     );
     const tabBtn = el(
       "button",
-      { type: "button", class: "terminals-tab", "data-tab-id": id39, title: label },
+      {
+        type: "button",
+        class: "terminals-tab",
+        "data-tab-id": id39,
+        "data-terminal-rail-row": "",
+        title: label
+      },
       labelSpan,
       checkoutBadge,
       closeBtn
@@ -269599,10 +270667,10 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
   }
   newBtn.addEventListener("click", () => addTab());
   function runCommandInNewShell(command) {
-    const trimmed = command.trim();
-    if (!trimmed) return;
+    const trimmed2 = command.trim();
+    if (!trimmed2) return;
     const wasActive = terminalModeActive(store3);
-    addTab({ activate: true, initialInput: `${trimmed}\r` });
+    addTab({ activate: true, initialInput: `${trimmed2}\r` });
     if (!wasActive) {
       store3.setState({ filesPaneOpen: true, rightPanelMode: "terminal" });
       store3.emit("files_pane_changed");
@@ -269758,9 +270826,17 @@ ${rendered}
   }
 }
 function mountAgentTasks(listRoot, viewerHost, store3, api3) {
-  const section = el("div", { class: "agent-tasks-section" });
-  const sectionHeader = el("div", { class: "agent-tasks-section-header" }, "Agent tasks");
-  const tabList = el("div", { class: "agent-tasks-tablist" });
+  const section = el("section", {
+    class: "agent-tasks-section terminal-rail-section"
+  });
+  const sectionHeader = el(
+    "div",
+    { class: "agent-tasks-section-header terminal-rail-section-header" },
+    "Agent tasks"
+  );
+  const tabList = el("div", {
+    class: "agent-tasks-tablist terminal-rail-section-list"
+  });
   section.append(sectionHeader, tabList);
   listRoot.append(section);
   const viewerParent = viewerHost.parentElement;
@@ -269843,7 +270919,12 @@ function mountAgentTasks(listRoot, viewerHost, store3, api3) {
     const command = shellCommandLabel(rawCommand);
     const dot2 = el("span", { class: "agent-task-dot", "aria-hidden": "true" });
     const label = el("span", { class: "agent-task-label", title: command }, command);
-    const tab = el("button", { type: "button", class: "agent-task-tab" }, dot2, label);
+    const tab = el(
+      "button",
+      { type: "button", class: "agent-task-tab", "data-terminal-rail-row": "" },
+      dot2,
+      label
+    );
     const panel = el("pre", {
       class: "agent-task-output-panel",
       "data-task-id": id39
@@ -269992,9 +271073,18 @@ function taskLabel(handler) {
   return handler.replaceAll("_", " ");
 }
 function mountSupervisedTasks(listRoot, store3, api3) {
-  const section = el("section", { class: "supervised-tasks-section", hidden: true });
-  const header = el("div", { class: "agent-tasks-section-header" }, "Background tasks");
-  const list = el("div", { class: "supervised-tasks-list" });
+  const section = el("section", {
+    class: "supervised-tasks-section terminal-rail-section",
+    hidden: true
+  });
+  const header = el(
+    "div",
+    { class: "agent-tasks-section-header terminal-rail-section-header" },
+    "Background tasks"
+  );
+  const list = el("div", {
+    class: "supervised-tasks-list terminal-rail-section-list"
+  });
   section.append(header, list);
   listRoot.append(section);
   let loadToken = 0;
@@ -270035,6 +271125,7 @@ function mountSupervisedTasks(listRoot, store3, api3) {
           {
             class: "supervised-task-row",
             "data-task-id": task.taskId,
+            "data-terminal-rail-row": "",
             "data-state": task.state
           },
           dot2,
@@ -271079,7 +272170,6 @@ function startPrDiscussThread(store3, pr2) {
     threads: store3.getState().threads.map((t4) => t4.id === threadId ? { ...t4, title: title2 } : t4)
   });
   store3.emit("threads_changed");
-  store3.emit("composer_checkout_preferred", "shared");
   return threadId;
 }
 var init_pr_pane_thread = __esm({
@@ -271456,7 +272546,7 @@ function mountPrPane(listRoot, viewerRoot, store3, api3, monaco) {
       {
         type: "button",
         class: "pr-new-thread-btn",
-        "data-tooltip": "Open a new thread about this pull request (shared checkout)"
+        "data-tooltip": "Open a new thread about this pull request"
       },
       el("span", {}, "New thread")
     );
@@ -272306,9 +273396,16 @@ function mountPortsSection(listRoot, store3, api3) {
   let refreshTail = Promise.resolve();
   let pollRunning = false;
   let pollTimer = null;
-  const section = el("section", { class: "ports-section", hidden: true });
-  const header = el("div", { class: "agent-tasks-section-header" }, "Ports");
-  const list = el("div", { class: "ports-list" });
+  const section = el("section", {
+    class: "ports-section terminal-rail-section",
+    hidden: true
+  });
+  const header = el(
+    "div",
+    { class: "agent-tasks-section-header terminal-rail-section-header" },
+    "Ports"
+  );
+  const list = el("div", { class: "ports-list terminal-rail-section-list" });
   section.append(header, list);
   listRoot.append(section);
   function actionButton(label, className, onClick) {
@@ -272383,6 +273480,7 @@ function mountPortsSection(listRoot, store3, api3) {
         type: "button",
         class: `ports-row${selected ? " is-active" : ""}`,
         "data-port": String(row2.port),
+        "data-terminal-rail-row": "",
         "aria-expanded": String(selected)
       });
       button.append(
@@ -272500,6 +273598,164 @@ var init_ports_section = __esm({
     init_panels();
     init_toast();
     POLL_MS2 = 5e3;
+  }
+});
+
+// src/renderer/views/terminal-rail-resizer.ts
+function visibleSections(root4) {
+  return Array.from(root4.querySelectorAll(SECTION_SELECTOR)).filter(
+    (section) => !section.hidden
+  );
+}
+function cssPixels(value2) {
+  const parsed2 = Number.parseFloat(value2);
+  return Number.isFinite(parsed2) ? parsed2 : 0;
+}
+function measuredRowHeight(section) {
+  const list = section.querySelector(".terminal-rail-section-list");
+  const row2 = section.querySelector("[data-terminal-rail-row]") ?? list?.firstElementChild;
+  return row2?.getBoundingClientRect().height ?? 0;
+}
+function sectionMinimum(root4, section) {
+  const header = section.querySelector(".terminal-rail-section-header");
+  const list = section.querySelector(".terminal-rail-section-list");
+  const listStyle = list?.ownerDocument.defaultView?.getComputedStyle(list) ?? null;
+  const listPadding = listStyle ? cssPixels(listStyle.paddingTop) + cssPixels(listStyle.paddingBottom) : 0;
+  const rowHeight = measuredRowHeight(section);
+  const twoRows = (header?.getBoundingClientRect().height ?? 0) + listPadding + rowHeight * 2;
+  return section.classList.contains("terminal-shells-section") ? Math.max(twoRows, root4.clientHeight * SHELLS_MIN_RATIO) : twoRows;
+}
+function syncMinimums(root4) {
+  if (root4.clientHeight === 0) return;
+  for (const section of visibleSections(root4)) {
+    section.style.minHeight = `${String(Math.ceil(sectionMinimum(root4, section)))}px`;
+  }
+}
+function previousVisibleSection(section) {
+  let candidate = section.previousElementSibling;
+  while (candidate) {
+    if (candidate instanceof HTMLElement && candidate.classList.contains("terminal-rail-section") && !candidate.hidden) {
+      return candidate;
+    }
+    candidate = candidate.previousElementSibling;
+  }
+  return null;
+}
+function minimumHeight(section) {
+  return Number.parseFloat(section.style.minHeight) || 0;
+}
+function assignCurrentWeights(root4) {
+  for (const section of visibleSections(root4)) {
+    section.style.flex = `${String(section.getBoundingClientRect().height)} 1 0px`;
+  }
+}
+function resizePair(before, after, beforeStart, afterStart, delta) {
+  const total = beforeStart + afterStart;
+  const beforeSize = Math.min(
+    total - minimumHeight(after),
+    Math.max(minimumHeight(before), beforeStart + delta)
+  );
+  before.style.flexGrow = String(beforeSize);
+  after.style.flexGrow = String(total - beforeSize);
+}
+function sectionLabel(section) {
+  return section.querySelector(".terminal-rail-section-header")?.textContent.trim() ?? "section";
+}
+function mountTerminalRailResizers(root4) {
+  const sections6 = Array.from(root4.querySelectorAll(SECTION_SELECTOR));
+  const handles = /* @__PURE__ */ new Map();
+  for (const section of sections6.slice(1)) {
+    const handle = el("div", {
+      class: "terminal-rail-resizer",
+      role: "separator",
+      tabindex: "0",
+      "aria-orientation": "horizontal"
+    });
+    root4.insertBefore(handle, section);
+    handles.set(section, handle);
+    const resizeFromStart = (direction2) => {
+      const before = previousVisibleSection(section);
+      if (!before || section.hidden) return;
+      syncMinimums(root4);
+      assignCurrentWeights(root4);
+      resizePair(
+        before,
+        section,
+        before.getBoundingClientRect().height,
+        section.getBoundingClientRect().height,
+        direction2 * Math.max(1, measuredRowHeight(section))
+      );
+    };
+    handle.addEventListener("pointerdown", (event3) => {
+      if (event3.button !== 0) return;
+      const before = previousVisibleSection(section);
+      if (!before || section.hidden) return;
+      event3.preventDefault();
+      handle.setPointerCapture(event3.pointerId);
+      handle.classList.add("is-dragging");
+      syncMinimums(root4);
+      assignCurrentWeights(root4);
+      const startY2 = event3.clientY;
+      const beforeStart = before.getBoundingClientRect().height;
+      const afterStart = section.getBoundingClientRect().height;
+      const onMove = (moveEvent) => {
+        resizePair(before, section, beforeStart, afterStart, moveEvent.clientY - startY2);
+      };
+      const onUp = () => {
+        handle.classList.remove("is-dragging");
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+      };
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+    handle.addEventListener("keydown", (event3) => {
+      if (event3.key !== "ArrowUp" && event3.key !== "ArrowDown") return;
+      event3.preventDefault();
+      resizeFromStart(event3.key === "ArrowUp" ? -1 : 1);
+    });
+  }
+  const sync = () => {
+    syncMinimums(root4);
+    for (const [section, handle] of handles) {
+      const before = previousVisibleSection(section);
+      const hidden = section.hidden || before === null;
+      if (handle.hidden !== hidden) handle.hidden = hidden;
+      if (before) {
+        handle.setAttribute(
+          "aria-label",
+          `Resize ${sectionLabel(before)} and ${sectionLabel(section)}`
+        );
+      }
+    }
+  };
+  const mutationObserver = new MutationObserver(sync);
+  mutationObserver.observe(root4, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["hidden"]
+  });
+  const resizeObserver = new ResizeObserver(sync);
+  resizeObserver.observe(root4);
+  sync();
+  return () => {
+    mutationObserver.disconnect();
+    resizeObserver.disconnect();
+    for (const handle of handles.values()) handle.remove();
+  };
+}
+var SECTION_SELECTOR, SHELLS_MIN_RATIO;
+var init_terminal_rail_resizer = __esm({
+  "src/renderer/views/terminal-rail-resizer.ts"() {
+    init_helpers();
+    SECTION_SELECTOR = ":scope > .terminal-rail-section";
+    SHELLS_MIN_RATIO = 1 / 3;
   }
 });
 
@@ -272640,14 +273896,14 @@ function isReviewStale(fields, status, checkpoint) {
   return true;
 }
 function reviewDetailMarkdown(detail) {
-  const trimmed = detail.trim();
-  if (!trimmed) return "";
-  if (/^[-*] /m.test(trimmed) || trimmed.includes("\n")) return trimmed;
-  const parts = trimmed.split(/\s[•·]\s/);
+  const trimmed2 = detail.trim();
+  if (!trimmed2) return "";
+  if (/^[-*] /m.test(trimmed2) || trimmed2.includes("\n")) return trimmed2;
+  const parts = trimmed2.split(/\s[•·]\s/);
   if (parts.length > 1) {
     return parts.map((part) => `- ${part.trim()}`).join("\n");
   }
-  return trimmed;
+  return trimmed2;
 }
 var ROADMAP_REVIEW_VERDICTS;
 var init_review = __esm({
@@ -273250,12 +274506,12 @@ function mountRoadmapPane(listRoot, viewerRoot, store3, api3) {
     return cached2;
   }
   function attachmentChip(att, thumbSrc, onRemove2) {
-    const chip = el("span", { class: "roadmap-attachment-chip", title: att.name });
+    const chip2 = el("span", { class: "roadmap-attachment-chip", title: att.name });
     if (isImageAttachment(att)) {
       const thumb = el("img", { class: "roadmap-attachment-thumb", alt: att.name });
       if (thumbSrc) thumb.src = thumbSrc;
       attachImageExpand(thumb, att.name);
-      chip.append(thumb);
+      chip2.append(thumb);
     }
     const remove4 = el(
       "button",
@@ -273268,24 +274524,24 @@ function mountRoadmapPane(listRoot, viewerRoot, store3, api3) {
       closeIcon("ui-icon ui-icon-sm")
     );
     remove4.addEventListener("click", onRemove2);
-    chip.append(el("span", { class: "roadmap-attachment-name" }, att.name), remove4);
-    return chip;
+    chip2.append(el("span", { class: "roadmap-attachment-name" }, att.name), remove4);
+    return chip2;
   }
   function renderAttachments() {
     clear(attachmentList);
     const item = currentItem();
     for (const att of itemAttachments(item).filter((a3) => !removedAttachmentIds.has(a3.id))) {
-      const chip = attachmentChip(att, null, () => {
+      const chip2 = attachmentChip(att, null, () => {
         removedAttachmentIds.add(att.id);
         renderAttachments();
       });
       if (item && isImageAttachment(att)) {
-        const thumb = chip.querySelector("img");
+        const thumb = chip2.querySelector("img");
         void attachmentDataUrl(item.id, att.id).then((url2) => {
           if (url2 && thumb) thumb.src = url2;
         });
       }
-      attachmentList.append(chip);
+      attachmentList.append(chip2);
     }
     for (const pending of pendingAttachments) {
       attachmentList.append(
@@ -273552,7 +274808,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store3, api3) {
         }
         const issue2 = itemIssue(item);
         if (issue2) {
-          const chip = el(
+          const chip2 = el(
             "span",
             {
               class: "roadmap-issue-chip",
@@ -273561,13 +274817,13 @@ function mountRoadmapPane(listRoot, viewerRoot, store3, api3) {
             },
             issue2
           );
-          chip.addEventListener("click", (e4) => {
+          chip2.addEventListener("click", (e4) => {
             e4.stopPropagation();
             void api3.roadmap.issueUrl(issue2).then((url2) => {
               if (url2) void api3.shell.openExternal(url2);
             });
           });
-          meta5.append(chip);
+          meta5.append(chip2);
         }
         const attachmentCount = itemAttachments(item).length;
         if (attachmentCount > 0) {
@@ -274498,6 +275754,121 @@ var init_browser_session = __esm({
   }
 });
 
+// src/shared/types/main-window.ts
+var MAX_RESTORED_BROWSER_TABS;
+var init_main_window = __esm({
+  "src/shared/types/main-window.ts"() {
+    MAX_RESTORED_BROWSER_TABS = 24;
+  }
+});
+
+// src/renderer/controller/browser-pane-session.ts
+function isBlankUrl(url2) {
+  const trimmed2 = url2.trim();
+  return trimmed2 === "" || trimmed2 === "about:blank";
+}
+function isStorableUrl(url2) {
+  if (isBlankUrl(url2) || url2.length > MAX_STORED_URL_LENGTH) return false;
+  return !/^data:/i.test(url2.trim());
+}
+function toStoredTab(tab) {
+  const label = tab.label && tab.label.length <= 256 ? tab.label : void 0;
+  if (tab.artefactTitle) {
+    if (!tab.artefactThreadId) return null;
+    if (tab.artefactTitle.length > 200) return null;
+    return {
+      url: "",
+      ...label ? { label } : {},
+      artefactTitle: tab.artefactTitle,
+      artefactThreadId: tab.artefactThreadId,
+      ...tab.artefactProjectId ? { artefactProjectId: tab.artefactProjectId } : {}
+    };
+  }
+  if (!isStorableUrl(tab.url)) return null;
+  return { url: tab.url, ...label ? { label } : {} };
+}
+function toBrowserPaneSession(tabs, activeTabIndex, paneOpen) {
+  const kept = [];
+  let activeIndex = -1;
+  for (const [index, tab] of tabs.entries()) {
+    const stored = toStoredTab(tab);
+    if (!stored) continue;
+    if (index === activeTabIndex) activeIndex = kept.length;
+    kept.push(stored);
+  }
+  if (kept.length === 0) return null;
+  const overflow = Math.max(0, kept.length - MAX_RESTORED_BROWSER_TABS);
+  const trimmed2 = kept.slice(overflow);
+  const shifted = activeIndex < 0 ? 0 : Math.max(0, activeIndex - overflow);
+  return {
+    tabs: trimmed2,
+    activeTabIndex: Math.min(shifted, trimmed2.length - 1),
+    paneOpen
+  };
+}
+function restorableBrowserPaneSession(session) {
+  if (!session || session.tabs.length === 0) return null;
+  return toBrowserPaneSession(session.tabs, session.activeTabIndex, session.paneOpen);
+}
+async function loadBrowserPaneSession(api3) {
+  if (!ownsWindowSession()) return null;
+  return restorableBrowserPaneSession(await api3.windowState.getBrowserSession());
+}
+function createBrowserSessionWriter(api3, capture) {
+  let timer3 = null;
+  let enabled = false;
+  let chain = Promise.resolve();
+  const write = () => {
+    if (!enabled || !ownsWindowSession()) return Promise.resolve();
+    const session = capture() ?? { tabs: [], activeTabIndex: 0, paneOpen: false };
+    chain = chain.catch(() => void 0).then(() => api3.windowState.setBrowserSession(session)).catch(() => {
+    });
+    return chain;
+  };
+  const cancelTimer = () => {
+    if (timer3 === null) return;
+    clearTimeout(timer3);
+    timer3 = null;
+  };
+  const flush = () => {
+    cancelTimer();
+    return write();
+  };
+  const onPagehide = () => {
+    void flush();
+  };
+  if (typeof window !== "undefined") window.addEventListener("pagehide", onPagehide);
+  return {
+    schedule() {
+      if (!enabled || timer3 !== null) return;
+      timer3 = setTimeout(() => {
+        timer3 = null;
+        void write();
+      }, BROWSER_SESSION_SAVE_DEBOUNCE_MS);
+    },
+    enable() {
+      if (enabled) return;
+      enabled = true;
+      void write();
+    },
+    flush,
+    dispose() {
+      cancelTimer();
+      enabled = false;
+      if (typeof window !== "undefined") window.removeEventListener("pagehide", onPagehide);
+    }
+  };
+}
+var MAX_STORED_URL_LENGTH, BROWSER_SESSION_SAVE_DEBOUNCE_MS;
+var init_browser_pane_session = __esm({
+  "src/renderer/controller/browser-pane-session.ts"() {
+    init_main_window();
+    init_persistence();
+    MAX_STORED_URL_LENGTH = 4096;
+    BROWSER_SESSION_SAVE_DEBOUNCE_MS = 500;
+  }
+});
+
 // src/renderer/views/browser-pane.ts
 function currentHttpUrl(tab) {
   if (tab.artefactTitle) return null;
@@ -274737,6 +276108,11 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   const resolveWorkspacePreview = api3 ? (url2) => workspacePreviewHtml(url2, store3, api3) : void 0;
   let activeTabId = null;
   let resizeObserver = null;
+  const sessionWriter = api3 ? createBrowserSessionWriter(api3, captureSession) : null;
+  function scheduleSessionSave() {
+    sessionWriter?.schedule();
+  }
+  const pendingProjectWaits = /* @__PURE__ */ new Set();
   function closeAllMenus() {
     for (const tab of tabs.values()) tab.closeMenu();
   }
@@ -274855,6 +276231,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     tab.webview = webview;
     const onNavigate = () => {
       if (activeTabId === tab.id) syncAddressBar(tab);
+      scheduleSessionSave();
     };
     webview.addEventListener("did-navigate", onNavigate);
     webview.addEventListener("did-navigate-in-page", onNavigate);
@@ -274887,6 +276264,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       navigateWebview(tab, url2);
     }
     syncTabLabel(tab);
+    scheduleSessionSave();
   }
   function wireToolbar(tab) {
     tab.backBtn.addEventListener("click", () => {
@@ -274918,6 +276296,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   function setActiveTab(tabId) {
     if (activeTabId === tabId) return;
     activeTabId = tabId;
+    scheduleSessionSave();
     for (const tab2 of tabs.values()) {
       const active2 = tab2.id === tabId;
       tab2.panel.classList.toggle("is-active", active2);
@@ -275026,9 +276405,11 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     if (!tab) return;
     tab.artefactTitle = artefact.title;
     tab.artefactThreadId = artefact.threadId ?? null;
+    tab.artefactProjectId = store3.getState().activeProjectId;
     tab.urlInput.value = "";
     tab.urlInput.placeholder = artefact.title;
     syncTabLabel(tab);
+    scheduleSessionSave();
     if (browserModeActive(store3)) {
       ensureWebview(tab);
       navigateWebview(tab, target);
@@ -275123,6 +276504,12 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       imageIcon("ui-icon ui-icon-sm"),
       el("span", {}, "Share screenshot")
     );
+    const exportPdfItem = el(
+      "button",
+      { type: "button", class: "browser-menu-item", role: "menuitem" },
+      downloadIcon("ui-icon ui-icon-sm"),
+      el("span", {}, "Export PDF")
+    );
     const openExternalItem = el(
       "button",
       { type: "button", class: "browser-menu-item", role: "menuitem" },
@@ -275141,6 +276528,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       shareTextItem,
       shareScreenshotItem,
       el("div", { class: "browser-menu-separator", role: "separator" }),
+      exportPdfItem,
       openExternalItem,
       inspectorItem
     );
@@ -275174,6 +276562,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       loadError: null,
       artefactTitle: null,
       artefactThreadId: null,
+      artefactProjectId: null,
       closeMenu: () => {
         setMenuOpen(false);
       }
@@ -275186,6 +276575,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
         const shareableId = shareableWebContentsId(tab);
         shareTextItem.disabled = shareableId === null || !api3;
         shareScreenshotItem.disabled = shareableId === null || !api3;
+        exportPdfItem.disabled = shareableId === null || !api3?.browser.exportPdf;
         openExternalItem.disabled = !currentHttpUrl(tab) || !api3?.shell;
         inspectorItem.disabled = !tab.webview;
         menu.removeAttribute("hidden");
@@ -275218,6 +276608,17 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
         showErrorToast("Could not share browser screenshot", error53);
       });
     });
+    exportPdfItem.addEventListener("click", () => {
+      setMenuOpen(false);
+      const id40 = shareableWebContentsId(tab);
+      const exportPdf = api3?.browser.exportPdf;
+      if (id40 === null || !exportPdf) return;
+      void exportPdf(id40).then((filePath) => {
+        if (filePath) showToast(`Exported PDF to ${filePath}`);
+      }).catch((error53) => {
+        showErrorToast("Could not export PDF", error53);
+      });
+    });
     openExternalItem.addEventListener("click", () => {
       setMenuOpen(false);
       const url2 = currentHttpUrl(tab);
@@ -275247,6 +276648,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     body.append(panel);
     if (options2?.activate !== false || !activeTabId) setActiveTab(id39);
     if (options2?.url) navigateTab(tab, options2.url);
+    scheduleSessionSave();
     return id39;
   }
   function removeTab(tabId) {
@@ -275256,6 +276658,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     tab.tabBtn.remove();
     tab.panel.remove();
     tabs.delete(tabId);
+    scheduleSessionSave();
     if (activeTabId !== tabId) return;
     const remaining = [...tabs.keys()];
     const last4 = remaining[remaining.length - 1];
@@ -275268,6 +276671,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   function onBrowserModeChange() {
     const active2 = browserModeActive(store3);
+    scheduleSessionSave();
     if (active2) {
       if (tabs.size === 0) addTab();
       const tab = activeTabId ? tabs.get(activeTabId) : null;
@@ -275294,6 +276698,9 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   newBtn.addEventListener("click", () => addTab());
   onBrowserModeChange();
+  void restoreStoredSession().finally(() => {
+    sessionWriter?.enable();
+  });
   const onDocumentClick = () => {
     closeAllMenus();
   };
@@ -275311,24 +276718,50 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     tabs.clear();
     activeTabId = null;
   }
-  function captureBrowserSeed() {
-    const ordered = [...tabs.values()];
-    const activeIndex = activeTabId ? Math.max(
+  function tabSnapshot(tab) {
+    return {
+      // `.find` + `??` rather than a `||` chain: prefer-nullish-coalescing
+      // (#508) rejects `||`, but `??` alone would change behaviour — these
+      // fall back on EMPTY strings, not just null/undefined.
+      url: [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value2) => value2) ?? "about:blank",
+      label: tab.label,
+      artefactTitle: tab.artefactTitle,
+      artefactThreadId: tab.artefactThreadId,
+      artefactProjectId: tab.artefactProjectId
+    };
+  }
+  function orderedTabs() {
+    return [...tabs.values()];
+  }
+  function activeIndexOf(ordered) {
+    if (!activeTabId) return 0;
+    return Math.max(
       0,
       ordered.findIndex((tab) => tab.id === activeTabId)
-    ) : 0;
+    );
+  }
+  function captureBrowserSeed() {
+    const ordered = orderedTabs();
     return {
-      tabs: ordered.map((tab) => ({
-        // `.find` + `??` rather than a `||` chain: prefer-nullish-coalescing
-        // (#508) rejects `||`, but `??` alone would change behaviour — these
-        // fall back on EMPTY strings, not just null/undefined.
-        url: [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value2) => value2) ?? "about:blank",
-        label: tab.label,
-        artefactTitle: tab.artefactTitle,
-        artefactThreadId: tab.artefactThreadId
-      })),
-      activeTabIndex: activeIndex
+      tabs: ordered.map((tab) => {
+        const snapshot = tabSnapshot(tab);
+        return {
+          url: snapshot.url,
+          ...snapshot.label !== void 0 ? { label: snapshot.label } : {},
+          artefactTitle: tab.artefactTitle,
+          artefactThreadId: tab.artefactThreadId
+        };
+      }),
+      activeTabIndex: activeIndexOf(ordered)
     };
+  }
+  function captureSession() {
+    const ordered = orderedTabs();
+    return toBrowserPaneSession(
+      ordered.map(tabSnapshot),
+      activeIndexOf(ordered),
+      browserModeActive(store3)
+    );
   }
   function applyBrowserSeed(raw) {
     if (!isBrowserPopoutSeed(raw) || raw.tabs.length === 0) return;
@@ -275359,6 +276792,78 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     const index = Math.min(Math.max(raw.activeTabIndex, 0), createdIds.length - 1);
     const target = createdIds[index];
     if (target) setActiveTab(target);
+  }
+  function isPristinePane() {
+    if (tabs.size === 0) return true;
+    if (tabs.size > 1) return false;
+    const [only] = tabs.values();
+    return only !== void 0 && !only.artefactTitle && !only.pendingUrl && only.urlInput.value === "" && isIdleBrowserTab(only);
+  }
+  function whenProjectActive() {
+    if (store3.getState().activeProjectId) return Promise.resolve(true);
+    return new Promise((resolve2) => {
+      const settle = (active2) => {
+        stop5();
+        pendingProjectWaits.delete(cancel);
+        resolve2(active2);
+      };
+      const cancel = () => {
+        settle(false);
+      };
+      const stop5 = store3.on("workspace_changed", () => {
+        if (store3.getState().activeProjectId) settle(true);
+      });
+      pendingProjectWaits.add(cancel);
+    });
+  }
+  async function restoreArtefactTab(tabId, entry) {
+    const { artefactTitle: title2, artefactThreadId: threadId } = entry;
+    if (!api3 || !title2 || !threadId) {
+      removeTab(tabId);
+      return;
+    }
+    if (!await whenProjectActive()) return;
+    const projectId = entry.artefactProjectId ?? store3.getState().activeProjectId;
+    const reopened = projectId ? await api3.canvas.reopenArtefact(projectId, threadId, title2).catch(() => false) : false;
+    if (!reopened) removeTab(tabId);
+  }
+  function applyStoredSession(session) {
+    purgeAllTabs();
+    const restored = [];
+    for (const entry of session.tabs) {
+      const id39 = addTab({ activate: false });
+      const tab = tabs.get(id39);
+      if (!tab) continue;
+      if (entry.artefactTitle) {
+        tab.artefactTitle = entry.artefactTitle;
+        tab.artefactThreadId = entry.artefactThreadId ?? null;
+        tab.artefactProjectId = entry.artefactProjectId ?? null;
+        tab.urlInput.placeholder = entry.artefactTitle;
+      } else if (entry.url) {
+        tab.pendingUrl = entry.url;
+        tab.urlInput.value = entry.url;
+      }
+      if (entry.label) {
+        tab.label = entry.label;
+        tab.tabLabelEl.textContent = entry.label;
+      } else {
+        syncTabLabel(tab);
+      }
+      restored.push({ id: id39, entry });
+    }
+    if (restored.length === 0) return;
+    const index = Math.min(Math.max(session.activeTabIndex, 0), restored.length - 1);
+    const target = restored[index];
+    if (target) setActiveTab(target.id);
+    if (session.paneOpen) openRightPanel(store3, "browser");
+    for (const { id: id39, entry } of restored) {
+      if (entry.artefactTitle) void restoreArtefactTab(id39, entry);
+    }
+  }
+  async function restoreStoredSession() {
+    if (!api3) return;
+    const session = await loadBrowserPaneSession(api3).catch(() => null);
+    if (session && isPristinePane()) applyStoredSession(session);
   }
   async function ensurePluginBrowserTab(request) {
     const hadTabs = tabs.size > 0;
@@ -275413,6 +276918,9 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   ];
   return () => {
     unregisterPopoutSeed();
+    void sessionWriter?.flush();
+    sessionWriter?.dispose();
+    for (const cancel of [...pendingProjectWaits]) cancel();
     unsubs.forEach((unsubscribe) => {
       if (typeof unsubscribe === "function") unsubscribe();
     });
@@ -275438,6 +276946,7 @@ var init_browser_pane = __esm({
     init_browser_session();
     init_unknown_value3();
     init_panels();
+    init_browser_pane_session();
     init_prompt_attachments();
     init_toast();
     WEBVIEW_PREFS = "contextIsolation=true";
@@ -292021,6 +293530,16 @@ var init_ssh_status_banner = __esm({
 });
 
 // src/renderer/views/approval-dialog.ts
+function adviceElement(advice) {
+  const children2 = [];
+  advice.split("\n").forEach((line2, index) => {
+    if (index > 0) children2.push("\n");
+    children2.push(
+      line2.startsWith(ADVICE_BULLET) ? el("span", { class: "approval-advice-item" }, line2) : line2
+    );
+  });
+  return el("div", { class: "approval-advice" }, ...children2);
+}
 function mountApprovalDialog(api3, store3, options2 = {}) {
   const coalesceMs = options2.coalesceMs ?? APPROVAL_COALESCE_MS;
   const settleMs = options2.settleMs ?? APPROVAL_SETTLE_MS;
@@ -292175,7 +293694,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     if (hasSharedContext) {
       const sharedChildren = [];
       if (firstRequest.bodyAdvice) {
-        sharedChildren.push(el("div", { class: "approval-advice" }, firstRequest.bodyAdvice));
+        sharedChildren.push(adviceElement(firstRequest.bodyAdvice));
       }
       const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
       sharedChildren.push(
@@ -292205,7 +293724,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
             rowChildren.push(pickers.root);
           } else {
             if (req.bodyAdvice) {
-              rowChildren.push(el("div", { class: "approval-advice" }, req.bodyAdvice));
+              rowChildren.push(adviceElement(req.bodyAdvice));
             }
             if (collapseDetails) rowChildren.push(detailsToggle());
             rowChildren.push(requestBody(req));
@@ -292443,7 +293962,7 @@ function mountApprovalDialog(api3, store3, options2 = {}) {
     resolve2(false, false);
   });
 }
-var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, defaultTimer;
+var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, ADVICE_BULLET, defaultTimer;
 var init_approval_dialog = __esm({
   "src/renderer/views/approval-dialog.ts"() {
     init_helpers();
@@ -292453,6 +293972,7 @@ var init_approval_dialog = __esm({
     init_actions();
     APPROVAL_COALESCE_MS = 120;
     APPROVAL_SETTLE_MS = 500;
+    ADVICE_BULLET = "\u2022 ";
     defaultTimer = (fn4, ms4) => {
       const handle = setTimeout(fn4, ms4);
       return () => {
@@ -292789,8 +294309,8 @@ var init_update_prompt_dialog = __esm({
 
 // src/renderer/views/close-confirm.ts
 function threadLabel(title2) {
-  const trimmed = title2.trim();
-  return trimmed === "" ? "Untitled thread" : trimmed;
+  const trimmed2 = title2.trim();
+  return trimmed2 === "" ? "Untitled thread" : trimmed2;
 }
 function workingThreadTitles(store3) {
   return store3.getState().threads.filter((thread) => thread.status === "running").map((thread) => threadLabel(thread.title));
@@ -292842,10 +294362,10 @@ function openFileSearchDialog() {
   openImpl?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl4?.open) dialogEl4.close();
+  if (dialogEl5?.open) dialogEl5.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl4?.open;
+  return !!dialogEl5?.open;
 }
 function mountFileSearchDialog(store3, api3) {
   const dialog2 = document.createElement("dialog");
@@ -292865,7 +294385,7 @@ function mountFileSearchDialog(store3, api3) {
   const shell3 = el("div", { class: "file-search-shell" }, input, list, empty3);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl4 = dialog2;
+  dialogEl5 = dialog2;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -292933,17 +294453,17 @@ function mountFileSearchDialog(store3, api3) {
   }
   async function runQuery(query) {
     const token2 = ++queryToken;
-    const trimmed = query.trim();
+    const trimmed2 = query.trim();
     let files;
     try {
-      files = await api3.index.query(trimmed);
+      files = await api3.index.query(trimmed2);
     } catch {
       files = [];
     }
     if (token2 !== queryToken) return;
     results = [
       ...files.map((path4) => ({ kind: "file", path: path4 })),
-      ...matchRoadmapItems(roadmapItems, trimmed).map((item) => ({
+      ...matchRoadmapItems(roadmapItems, trimmed2).map((item) => ({
         kind: "roadmap",
         item
       }))
@@ -293015,7 +294535,7 @@ function mountFileSearchDialog(store3, api3) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl5, openImpl;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -293026,7 +294546,7 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl4 = null;
+    dialogEl5 = null;
     openImpl = null;
   }
 });
@@ -293049,14 +294569,14 @@ function keyLabel(token2, isMac2) {
   }
 }
 function openKeyboardShortcutsDialog() {
-  if (!dialogEl5 || dialogEl5.open) return;
-  dialogEl5.showModal();
+  if (!dialogEl6 || dialogEl6.open) return;
+  dialogEl6.showModal();
 }
 function closeKeyboardShortcutsDialog() {
-  if (dialogEl5?.open) dialogEl5.close();
+  if (dialogEl6?.open) dialogEl6.close();
 }
 function isKeyboardShortcutsDialogOpen() {
-  return !!dialogEl5?.open;
+  return !!dialogEl6?.open;
 }
 function mountKeyboardShortcutsDialog() {
   const dialog2 = document.createElement("dialog");
@@ -293092,12 +294612,12 @@ function mountKeyboardShortcutsDialog() {
   clear(dialog2);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl5 = dialog2;
+  dialogEl6 = dialog2;
   dialog2.addEventListener("mousedown", (e4) => {
     if (e4.target === dialog2) closeKeyboardShortcutsDialog();
   });
 }
-var SECTIONS, dialogEl5;
+var SECTIONS, dialogEl6;
 var init_keyboard_shortcuts_dialog = __esm({
   "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
     init_helpers();
@@ -293139,7 +294659,7 @@ var init_keyboard_shortcuts_dialog = __esm({
         ]
       }
     ];
-    dialogEl5 = null;
+    dialogEl6 = null;
   }
 });
 
@@ -293380,20 +294900,33 @@ var init_conversation_search = __esm({
 });
 
 // src/renderer/views/command-palette.ts
-function matches33(haystack, query) {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+function queryTerms(query) {
+  return query.toLowerCase().split(/\s+/).filter(Boolean).map((term) => {
+    const pr2 = parseGithubPrUrl(stripUrlTrailingPunctuation(term));
+    return pr2 ? githubPrKey(pr2) : term;
+  });
+}
+function matches33(haystack, terms) {
   if (terms.length === 0) return true;
   const hay = haystack.toLowerCase();
   return terms.every((term) => hay.includes(term));
+}
+function threadMatches(hit, terms) {
+  if (terms.length === 0) return true;
+  const text4 = `${hit.title} ${hit.projectName}`.toLowerCase();
+  const keys3 = hit.prRefs.map(githubPrKey);
+  return terms.every(
+    (term) => text4.includes(term) || keys3.some((key) => githubPrKeyMatchesTerm(key, term))
+  );
 }
 function openCommandPalette() {
   openImpl3?.();
 }
 function closeCommandPalette() {
-  if (dialogEl6?.open) dialogEl6.close();
+  if (dialogEl7?.open) dialogEl7.close();
 }
 function isCommandPaletteOpen() {
-  return !!dialogEl6?.open;
+  return !!dialogEl7?.open;
 }
 function mountCommandPalette(store3, api3) {
   const dialog2 = document.createElement("dialog");
@@ -293402,7 +294935,7 @@ function mountCommandPalette(store3, api3) {
   const input = el("input", {
     type: "text",
     class: "command-palette-input",
-    placeholder: "Search threads, projects, panels, commands\u2026",
+    placeholder: "Search threads, projects, panels, commands, #PR\u2026",
     "aria-label": "Command palette",
     spellcheck: "false",
     autocomplete: "off"
@@ -293413,7 +294946,7 @@ function mountCommandPalette(store3, api3) {
   const shell3 = el("div", { class: "command-palette-shell" }, input, list, empty3);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl6 = dialog2;
+  dialogEl7 = dialog2;
   let entries2 = [];
   let selectedIdx = 0;
   let threadHits = [];
@@ -293463,14 +294996,15 @@ function mountCommandPalette(store3, api3) {
   }
   function computeEntries(query) {
     const { projects } = store3.getState();
-    const threads = threadHits.filter((hit) => matches33(`${hit.title} ${hit.projectName}`, query)).slice(0, THREAD_LIMIT).map((hit) => ({ kind: "thread", hit }));
-    const projectEntries = projects.map((p3) => ({ id: p3.id, name: projectDisplayName(p3) })).filter((p3) => matches33(p3.name, query)).slice(0, PROJECT_LIMIT).map((p3) => ({ kind: "project", id: p3.id, name: p3.name }));
-    const panels = PANEL_ITEMS.filter((p3) => matches33(p3.label, query)).map((p3) => ({
+    const terms = queryTerms(query);
+    const threads = threadHits.filter((hit) => threadMatches(hit, terms)).slice(0, THREAD_LIMIT).map((hit) => ({ kind: "thread", hit }));
+    const projectEntries = projects.map((p3) => ({ id: p3.id, name: projectDisplayName(p3) })).filter((p3) => matches33(p3.name, terms)).slice(0, PROJECT_LIMIT).map((p3) => ({ kind: "project", id: p3.id, name: p3.name }));
+    const panels = PANEL_ITEMS.filter((p3) => matches33(p3.label, terms)).map((p3) => ({
       kind: "panel",
       mode: p3.mode,
       label: p3.label
     }));
-    const commands = commandItems().filter((c4) => c4.kind === "command" && matches33(c4.label, query));
+    const commands = commandItems().filter((c4) => c4.kind === "command" && matches33(c4.label, terms));
     return [...threads, ...projectEntries, ...panels, ...commands];
   }
   function sectionTitle(entry) {
@@ -293489,11 +295023,14 @@ function mountCommandPalette(store3, api3) {
     const icon2 = el("span", { class: "command-palette-icon" }, searchIcon("ui-icon ui-icon-sm"));
     const cls = `command-palette-item command-palette-item-${entry.kind}${selected ? " selected" : ""}`;
     if (entry.kind === "thread") {
+      const prLabel = entry.hit.prRefs.map((ref) => `#${String(ref.number)}`).join(" ");
+      const tooltip = [entry.hit.title, prLabel, entry.hit.projectName].filter(Boolean).join(" \u2014 ");
       return el(
         "div",
-        { class: cls, role: "option", title: `${entry.hit.title} \u2014 ${entry.hit.projectName}` },
+        { class: cls, role: "option", title: tooltip },
         icon2,
         el("span", { class: "command-palette-name" }, entry.hit.title || "New Thread"),
+        ...prLabel ? [el("span", { class: "command-palette-pr" }, prLabel)] : [],
         el("span", { class: "command-palette-context" }, entry.hit.projectName)
       );
     }
@@ -293561,7 +295098,8 @@ function mountCommandPalette(store3, api3) {
       projectId: active2.id,
       projectName: projectDisplayName(active2),
       title: t4.title,
-      updatedAt: 0
+      updatedAt: 0,
+      prRefs: t4.prRefs ?? []
     }));
   }
   const threadKey = (h3) => `${h3.projectId}\0${h3.threadId}`;
@@ -293580,7 +295118,8 @@ function mountCommandPalette(store3, api3) {
         projectId: project2.id,
         projectName: projectDisplayName(project2),
         title: hit.title,
-        updatedAt: hit.updatedAt
+        updatedAt: hit.updatedAt,
+        prRefs: hit.prRefs
       }))
     ).sort((a3, b5) => b5.updatedAt - a3.updatedAt);
     const seen = new Set(catalogHits.map(threadKey));
@@ -293619,7 +295158,7 @@ function mountCommandPalette(store3, api3) {
     void loadThreads2();
   };
 }
-var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl6, openImpl3;
+var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl7, openImpl3;
 var init_command_palette = __esm({
   "src/renderer/views/command-palette.ts"() {
     init_helpers();
@@ -293632,6 +295171,7 @@ var init_command_palette = __esm({
     init_keyboard_shortcuts_dialog();
     init_file_search_dialog();
     init_conversation_search();
+    init_github_pr_url2();
     PANEL_ITEMS = [
       { mode: "explorer", label: "Panel (Explorer)" },
       { mode: "terminal", label: "Terminal" },
@@ -293641,7 +295181,7 @@ var init_command_palette = __esm({
     ];
     THREAD_LIMIT = 25;
     PROJECT_LIMIT = 25;
-    dialogEl6 = null;
+    dialogEl7 = null;
     openImpl3 = null;
   }
 });
@@ -293921,34 +295461,61 @@ var init_diff_state = __esm({
 });
 
 // src/renderer/controller/thread-naming.ts
+function namingMessages(thread) {
+  const queued = queuedMessageIds(thread);
+  return thread.messages.filter(
+    (m3) => m3.role === "user" && !m3.origin && !queued.has(m3.id) && m3.content.trim()
+  );
+}
 function firstWords(text4, n2 = 6) {
   return text4.split(/\s+/).slice(0, n2).join(" ").slice(0, 60) || "New Thread";
 }
+function namingInput(userMessages) {
+  const first3 = userMessages[0];
+  if (!first3) return "";
+  const recent = userMessages.slice(1).slice(-3);
+  return [first3, ...recent].map((m3) => m3.content.trim().slice(0, 300)).join("\n\n");
+}
 function maybeNameThread(store3, api3, threadId) {
-  if (namedThreads.has(threadId)) return;
+  if (inFlight2.has(threadId)) return;
   const thread = getThreadById(store3, threadId);
-  if (!thread || thread.title !== "New Thread") return;
-  const firstUser = thread.messages.find((m3) => m3.role === "user");
-  if (!firstUser || !firstUser.content.trim()) return;
-  namedThreads.add(threadId);
+  if (!thread) return;
+  const passes = thread.autoTitleCount ?? 0;
+  if (passes === 0 && thread.title !== "New Thread") return;
+  const threshold = PASS_THRESHOLDS[passes];
+  if (threshold === void 0) return;
+  const userMessages = namingMessages(thread);
+  const first3 = userMessages[0];
+  if (!first3 || userMessages.length < threshold) return;
+  const titleBefore = thread.title;
+  const input = namingInput(userMessages);
+  inFlight2.add(threadId);
   void (async () => {
     let title2;
     try {
-      title2 = await api3.agent.suggestTitle(firstUser.content);
+      title2 = await api3.agent.suggestTitle(input);
     } catch {
       title2 = null;
+    } finally {
+      inFlight2.delete(threadId);
     }
     const current = getThreadById(store3, threadId);
-    if (!current || current.title !== "New Thread") return;
-    setThreadTitle(store3, threadId, nonEmptyStringOr(title2?.trim(), firstWords(firstUser.content)));
+    if (!current) return;
+    if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
+    const fallback = passes === 0 ? firstWords(first3.content) : current.title;
+    setThreadTitle(store3, threadId, nonEmptyStringOr(title2?.trim(), fallback), {
+      autoTitleCount: passes + 1
+    });
   })();
 }
-var namedThreads;
+var inFlight2, PASS_THRESHOLDS;
 var init_thread_naming = __esm({
   "src/renderer/controller/thread-naming.ts"() {
     init_thread_helpers();
     init_unknown_value3();
-    namedThreads = /* @__PURE__ */ new Set();
+    init_message_queue();
+    inFlight2 = /* @__PURE__ */ new Set();
+    PASS_THRESHOLDS = [1, 3, 8];
   }
 });
 
@@ -293988,6 +295555,8 @@ function startAgentController(store3, api3) {
         summaryCount: 0,
         toolSummaryMsgId: null,
         toolSummaryCount: 0,
+        runSummaryAnchorId: null,
+        runSummaryCount: 0,
         lastActivityLabel: null
       };
       state4.set(tid, st3);
@@ -294071,6 +295640,7 @@ function startAgentController(store3, api3) {
         break;
       }
       case "tool_call": {
+        if (findToolCallOwner(store3, threadId, chunk.toolCall.id)) break;
         st3.msgId ??= addAssistantMessage(store3, threadId);
         addToolCall(store3, st3.msgId, {
           id: chunk.toolCall.id,
@@ -294087,8 +295657,9 @@ function startAgentController(store3, api3) {
         break;
       }
       case "tool_call_update": {
-        if (st3.msgId && findToolCall(store3, st3.msgId, chunk.toolCallId)) {
-          updateToolCall(store3, st3.msgId, chunk.toolCallId, {
+        const ownerId = findToolCallOwner(store3, threadId, chunk.toolCallId);
+        if (ownerId) {
+          updateToolCall(store3, ownerId, chunk.toolCallId, {
             ...chunk.name !== void 0 ? { name: chunk.name } : {},
             ...chunk.args !== void 0 ? { args: chunk.args } : {},
             ...chunk.status !== void 0 ? { status: chunk.status } : {},
@@ -294101,15 +295672,16 @@ function startAgentController(store3, api3) {
         break;
       }
       case "tool_result": {
-        if (st3.msgId) {
-          updateToolCall(store3, st3.msgId, chunk.toolCallId, {
+        const ownerId = findToolCallOwner(store3, threadId, chunk.toolCallId) ?? st3.msgId;
+        if (ownerId) {
+          updateToolCall(store3, ownerId, chunk.toolCallId, {
             status: chunk.isError ? "error" : "done",
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
             ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}
           });
           if (chunk.toolCallId && !chunk.isError) {
-            const toolCall = findToolCall(store3, st3.msgId, chunk.toolCallId);
+            const toolCall = findToolCall(store3, ownerId, chunk.toolCallId);
             if (toolCall?.name === "run_shell" && threadId === store3.getState().activeThreadId && shellCommandMayChangeBranch(toolCall.args)) {
               void syncThreadGitBranchAfterShell(store3, api3, threadId);
             }
@@ -294117,6 +295689,7 @@ function startAgentController(store3, api3) {
           }
           maybeSummarizeCommands(store3, api3, threadId, st3);
           maybeSummarizeToolTurn(store3, api3, threadId, st3);
+          maybeSummarizeToolRun(store3, api3, threadId, st3);
         }
         st3.writing = false;
         activity(threadId);
@@ -294385,6 +295958,29 @@ function maybeSummarizeToolTurn(store3, api3, threadId, st3) {
     if (summary?.trim()) setMessageToolSummary(store3, msgId, summary.trim());
   })();
 }
+function maybeSummarizeToolRun(store3, api3, threadId, st3) {
+  const msgId = st3.msgId;
+  if (!msgId) return;
+  const thread = getThreadById(store3, threadId);
+  if (!thread) return;
+  const run6 = toolRunForMessage(thread.messages, msgId);
+  if (!run6 || run6.steps.length < 2 || run6.toolCalls.length < 2) return;
+  const requestCount = run6.toolCalls.length;
+  if (st3.runSummaryAnchorId === run6.anchorId && st3.runSummaryCount === requestCount) return;
+  st3.runSummaryAnchorId = run6.anchorId;
+  st3.runSummaryCount = requestCount;
+  const actions = run6.toolCalls.map((tc2) => getToolCallLabel(tc2));
+  void (async () => {
+    let summary;
+    try {
+      summary = await api3.agent.suggestToolTurnSummary(actions);
+    } catch {
+      summary = null;
+    }
+    if (st3.runSummaryAnchorId === run6.anchorId && st3.runSummaryCount !== requestCount) return;
+    if (summary?.trim()) setMessageRunSummary(store3, run6.anchorId, summary.trim());
+  })();
+}
 function tryOpenFileFromResult(_store, _result) {
 }
 var pendingTurn;
@@ -294394,6 +295990,7 @@ var init_agent = __esm({
     init_sync_thread_branch_after_shell();
     init_sync_thread_branch();
     init_tool_display();
+    init_tool_runs();
     init_subagent_helpers();
     init_agent_text_chunk();
     init_agent_activity();
@@ -294951,6 +296548,21 @@ var init_perf_autopilot = __esm({
       "memories"
     ];
     SWEEP_DWELL_MS = 6e3;
+  }
+});
+
+// src/renderer/controller/pr-panel-follow.ts
+function attachPrPanelFollow(store3, api3) {
+  return api3.threads.onPrCreated((projectId, threadId, ref) => {
+    const { activeProjectId, activeThreadId, filesPaneOpen, rightPanelMode } = store3.getState();
+    if (projectId !== activeProjectId || threadId !== activeThreadId) return;
+    if (!filesPaneOpen || rightPanelMode !== "changes") return;
+    openPullRequest(store3, ref);
+  });
+}
+var init_pr_panel_follow = __esm({
+  "src/renderer/controller/pr-panel-follow.ts"() {
+    init_panels();
   }
 });
 
@@ -302751,6 +304363,7 @@ async function boot() {
     attachAutosave(store2, api2);
     attachBestValueDefaultResolver(store2, api2);
     attachAutomationController(store2, api2);
+    attachPrPanelFollow(store2, api2);
     startExternalCursorAgentSync(store2, api2);
   } else {
     attachDiffState(store2, api2, { revealOnShowDiff: false });
@@ -302902,6 +304515,7 @@ function mountFullLayout() {
   );
   mountSupervisedTasks(requireElement("terminals-list-host"), store2, api2);
   mountPortsSection(requireElement("terminals-list-host"), store2, api2);
+  mountTerminalRailResizers(requireElement("terminals-list-host"));
   mountBrowserPane(
     requireElement("browser-tabs-host"),
     requireElement("browser-viewer-host"),
@@ -303078,6 +304692,7 @@ var init_main2 = __esm({
     init_pr_pane();
     init_memories_pane();
     init_ports_section();
+    init_terminal_rail_resizer();
     init_roadmap_pane();
     init_browser_pane();
     await init_vnc_pane();
@@ -303106,6 +304721,7 @@ var init_main2 = __esm({
     init_perf();
     init_perf_autopilot();
     init_thread_hydration();
+    init_pr_panel_follow();
     init_external_cursor_agent_sync();
     init_startup_settings();
     init_projects();
