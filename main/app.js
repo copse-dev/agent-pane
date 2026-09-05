@@ -16885,6 +16885,9 @@ function serializedWrite(key, write) {
 function setNavigationOwnership(owns) {
   ownsNavigation = owns;
 }
+function ownsWindowSession() {
+  return ownsNavigation;
+}
 function suspendNavigationWrites() {
   navigationRestored = false;
 }
@@ -21527,6 +21530,7 @@ function createDemoApi(scenario, options2 = {}) {
     activeProjectId: scenario.project.id,
     activeThreadId: threads[0]?.id ?? null
   };
+  let browserSession = null;
   let currentBranch = threads[0]?.gitBranch ?? "demo/browser-renderer";
   const chunkHandlers = /* @__PURE__ */ new Set();
   const showDiffHandlers = /* @__PURE__ */ new Set();
@@ -21570,6 +21574,11 @@ function createDemoApi(scenario, options2 = {}) {
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next3) => {
         navigation = structuredClone(next3);
+        return resolvedVoid();
+      },
+      getBrowserSession: () => resolved(browserSession ? structuredClone(browserSession) : null),
+      setBrowserSession: (next3) => {
+        browserSession = structuredClone(next3);
         return resolvedVoid();
       }
     },
@@ -274618,6 +274627,121 @@ var init_browser_session = __esm({
   }
 });
 
+// src/shared/types/main-window.ts
+var MAX_RESTORED_BROWSER_TABS;
+var init_main_window = __esm({
+  "src/shared/types/main-window.ts"() {
+    MAX_RESTORED_BROWSER_TABS = 24;
+  }
+});
+
+// src/renderer/controller/browser-pane-session.ts
+function isBlankUrl(url2) {
+  const trimmed2 = url2.trim();
+  return trimmed2 === "" || trimmed2 === "about:blank";
+}
+function isStorableUrl(url2) {
+  if (isBlankUrl(url2) || url2.length > MAX_STORED_URL_LENGTH) return false;
+  return !/^data:/i.test(url2.trim());
+}
+function toStoredTab(tab) {
+  const label = tab.label && tab.label.length <= 256 ? tab.label : void 0;
+  if (tab.artefactTitle) {
+    if (!tab.artefactThreadId) return null;
+    if (tab.artefactTitle.length > 200) return null;
+    return {
+      url: "",
+      ...label ? { label } : {},
+      artefactTitle: tab.artefactTitle,
+      artefactThreadId: tab.artefactThreadId,
+      ...tab.artefactProjectId ? { artefactProjectId: tab.artefactProjectId } : {}
+    };
+  }
+  if (!isStorableUrl(tab.url)) return null;
+  return { url: tab.url, ...label ? { label } : {} };
+}
+function toBrowserPaneSession(tabs, activeTabIndex, paneOpen) {
+  const kept = [];
+  let activeIndex = -1;
+  for (const [index, tab] of tabs.entries()) {
+    const stored = toStoredTab(tab);
+    if (!stored) continue;
+    if (index === activeTabIndex) activeIndex = kept.length;
+    kept.push(stored);
+  }
+  if (kept.length === 0) return null;
+  const overflow = Math.max(0, kept.length - MAX_RESTORED_BROWSER_TABS);
+  const trimmed2 = kept.slice(overflow);
+  const shifted = activeIndex < 0 ? 0 : Math.max(0, activeIndex - overflow);
+  return {
+    tabs: trimmed2,
+    activeTabIndex: Math.min(shifted, trimmed2.length - 1),
+    paneOpen
+  };
+}
+function restorableBrowserPaneSession(session) {
+  if (!session || session.tabs.length === 0) return null;
+  return toBrowserPaneSession(session.tabs, session.activeTabIndex, session.paneOpen);
+}
+async function loadBrowserPaneSession(api3) {
+  if (!ownsWindowSession()) return null;
+  return restorableBrowserPaneSession(await api3.windowState.getBrowserSession());
+}
+function createBrowserSessionWriter(api3, capture) {
+  let timer3 = null;
+  let enabled = false;
+  let chain = Promise.resolve();
+  const write = () => {
+    if (!enabled || !ownsWindowSession()) return Promise.resolve();
+    const session = capture() ?? { tabs: [], activeTabIndex: 0, paneOpen: false };
+    chain = chain.catch(() => void 0).then(() => api3.windowState.setBrowserSession(session)).catch(() => {
+    });
+    return chain;
+  };
+  const cancelTimer = () => {
+    if (timer3 === null) return;
+    clearTimeout(timer3);
+    timer3 = null;
+  };
+  const flush = () => {
+    cancelTimer();
+    return write();
+  };
+  const onPagehide = () => {
+    void flush();
+  };
+  if (typeof window !== "undefined") window.addEventListener("pagehide", onPagehide);
+  return {
+    schedule() {
+      if (!enabled || timer3 !== null) return;
+      timer3 = setTimeout(() => {
+        timer3 = null;
+        void write();
+      }, BROWSER_SESSION_SAVE_DEBOUNCE_MS);
+    },
+    enable() {
+      if (enabled) return;
+      enabled = true;
+      void write();
+    },
+    flush,
+    dispose() {
+      cancelTimer();
+      enabled = false;
+      if (typeof window !== "undefined") window.removeEventListener("pagehide", onPagehide);
+    }
+  };
+}
+var MAX_STORED_URL_LENGTH, BROWSER_SESSION_SAVE_DEBOUNCE_MS;
+var init_browser_pane_session = __esm({
+  "src/renderer/controller/browser-pane-session.ts"() {
+    init_main_window();
+    init_persistence();
+    MAX_STORED_URL_LENGTH = 4096;
+    BROWSER_SESSION_SAVE_DEBOUNCE_MS = 500;
+  }
+});
+
 // src/renderer/views/browser-pane.ts
 function currentHttpUrl(tab) {
   if (tab.artefactTitle) return null;
@@ -274857,6 +274981,11 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   const resolveWorkspacePreview = api3 ? (url2) => workspacePreviewHtml(url2, store3, api3) : void 0;
   let activeTabId = null;
   let resizeObserver = null;
+  const sessionWriter = api3 ? createBrowserSessionWriter(api3, captureSession) : null;
+  function scheduleSessionSave() {
+    sessionWriter?.schedule();
+  }
+  const pendingProjectWaits = /* @__PURE__ */ new Set();
   function closeAllMenus() {
     for (const tab of tabs.values()) tab.closeMenu();
   }
@@ -274975,6 +275104,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     tab.webview = webview;
     const onNavigate = () => {
       if (activeTabId === tab.id) syncAddressBar(tab);
+      scheduleSessionSave();
     };
     webview.addEventListener("did-navigate", onNavigate);
     webview.addEventListener("did-navigate-in-page", onNavigate);
@@ -275007,6 +275137,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       navigateWebview(tab, url2);
     }
     syncTabLabel(tab);
+    scheduleSessionSave();
   }
   function wireToolbar(tab) {
     tab.backBtn.addEventListener("click", () => {
@@ -275038,6 +275169,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   function setActiveTab(tabId) {
     if (activeTabId === tabId) return;
     activeTabId = tabId;
+    scheduleSessionSave();
     for (const tab2 of tabs.values()) {
       const active2 = tab2.id === tabId;
       tab2.panel.classList.toggle("is-active", active2);
@@ -275146,9 +275278,11 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     if (!tab) return;
     tab.artefactTitle = artefact.title;
     tab.artefactThreadId = artefact.threadId ?? null;
+    tab.artefactProjectId = store3.getState().activeProjectId;
     tab.urlInput.value = "";
     tab.urlInput.placeholder = artefact.title;
     syncTabLabel(tab);
+    scheduleSessionSave();
     if (browserModeActive(store3)) {
       ensureWebview(tab);
       navigateWebview(tab, target);
@@ -275301,6 +275435,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
       loadError: null,
       artefactTitle: null,
       artefactThreadId: null,
+      artefactProjectId: null,
       closeMenu: () => {
         setMenuOpen(false);
       }
@@ -275386,6 +275521,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     body.append(panel);
     if (options2?.activate !== false || !activeTabId) setActiveTab(id39);
     if (options2?.url) navigateTab(tab, options2.url);
+    scheduleSessionSave();
     return id39;
   }
   function removeTab(tabId) {
@@ -275395,6 +275531,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     tab.tabBtn.remove();
     tab.panel.remove();
     tabs.delete(tabId);
+    scheduleSessionSave();
     if (activeTabId !== tabId) return;
     const remaining = [...tabs.keys()];
     const last4 = remaining[remaining.length - 1];
@@ -275407,6 +275544,7 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   function onBrowserModeChange() {
     const active2 = browserModeActive(store3);
+    scheduleSessionSave();
     if (active2) {
       if (tabs.size === 0) addTab();
       const tab = activeTabId ? tabs.get(activeTabId) : null;
@@ -275433,6 +275571,9 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   }
   newBtn.addEventListener("click", () => addTab());
   onBrowserModeChange();
+  void restoreStoredSession().finally(() => {
+    sessionWriter?.enable();
+  });
   const onDocumentClick = () => {
     closeAllMenus();
   };
@@ -275450,24 +275591,50 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     tabs.clear();
     activeTabId = null;
   }
-  function captureBrowserSeed() {
-    const ordered = [...tabs.values()];
-    const activeIndex = activeTabId ? Math.max(
+  function tabSnapshot(tab) {
+    return {
+      // `.find` + `??` rather than a `||` chain: prefer-nullish-coalescing
+      // (#508) rejects `||`, but `??` alone would change behaviour — these
+      // fall back on EMPTY strings, not just null/undefined.
+      url: [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value2) => value2) ?? "about:blank",
+      label: tab.label,
+      artefactTitle: tab.artefactTitle,
+      artefactThreadId: tab.artefactThreadId,
+      artefactProjectId: tab.artefactProjectId
+    };
+  }
+  function orderedTabs() {
+    return [...tabs.values()];
+  }
+  function activeIndexOf(ordered) {
+    if (!activeTabId) return 0;
+    return Math.max(
       0,
       ordered.findIndex((tab) => tab.id === activeTabId)
-    ) : 0;
+    );
+  }
+  function captureBrowserSeed() {
+    const ordered = orderedTabs();
     return {
-      tabs: ordered.map((tab) => ({
-        // `.find` + `??` rather than a `||` chain: prefer-nullish-coalescing
-        // (#508) rejects `||`, but `??` alone would change behaviour — these
-        // fall back on EMPTY strings, not just null/undefined.
-        url: [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value2) => value2) ?? "about:blank",
-        label: tab.label,
-        artefactTitle: tab.artefactTitle,
-        artefactThreadId: tab.artefactThreadId
-      })),
-      activeTabIndex: activeIndex
+      tabs: ordered.map((tab) => {
+        const snapshot = tabSnapshot(tab);
+        return {
+          url: snapshot.url,
+          ...snapshot.label !== void 0 ? { label: snapshot.label } : {},
+          artefactTitle: tab.artefactTitle,
+          artefactThreadId: tab.artefactThreadId
+        };
+      }),
+      activeTabIndex: activeIndexOf(ordered)
     };
+  }
+  function captureSession() {
+    const ordered = orderedTabs();
+    return toBrowserPaneSession(
+      ordered.map(tabSnapshot),
+      activeIndexOf(ordered),
+      browserModeActive(store3)
+    );
   }
   function applyBrowserSeed(raw) {
     if (!isBrowserPopoutSeed(raw) || raw.tabs.length === 0) return;
@@ -275498,6 +275665,78 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
     const index = Math.min(Math.max(raw.activeTabIndex, 0), createdIds.length - 1);
     const target = createdIds[index];
     if (target) setActiveTab(target);
+  }
+  function isPristinePane() {
+    if (tabs.size === 0) return true;
+    if (tabs.size > 1) return false;
+    const [only] = tabs.values();
+    return only !== void 0 && !only.artefactTitle && !only.pendingUrl && only.urlInput.value === "" && isIdleBrowserTab(only);
+  }
+  function whenProjectActive() {
+    if (store3.getState().activeProjectId) return Promise.resolve(true);
+    return new Promise((resolve2) => {
+      const settle = (active2) => {
+        stop5();
+        pendingProjectWaits.delete(cancel);
+        resolve2(active2);
+      };
+      const cancel = () => {
+        settle(false);
+      };
+      const stop5 = store3.on("workspace_changed", () => {
+        if (store3.getState().activeProjectId) settle(true);
+      });
+      pendingProjectWaits.add(cancel);
+    });
+  }
+  async function restoreArtefactTab(tabId, entry) {
+    const { artefactTitle: title2, artefactThreadId: threadId } = entry;
+    if (!api3 || !title2 || !threadId) {
+      removeTab(tabId);
+      return;
+    }
+    if (!await whenProjectActive()) return;
+    const projectId = entry.artefactProjectId ?? store3.getState().activeProjectId;
+    const reopened = projectId ? await api3.canvas.reopenArtefact(projectId, threadId, title2).catch(() => false) : false;
+    if (!reopened) removeTab(tabId);
+  }
+  function applyStoredSession(session) {
+    purgeAllTabs();
+    const restored = [];
+    for (const entry of session.tabs) {
+      const id39 = addTab({ activate: false });
+      const tab = tabs.get(id39);
+      if (!tab) continue;
+      if (entry.artefactTitle) {
+        tab.artefactTitle = entry.artefactTitle;
+        tab.artefactThreadId = entry.artefactThreadId ?? null;
+        tab.artefactProjectId = entry.artefactProjectId ?? null;
+        tab.urlInput.placeholder = entry.artefactTitle;
+      } else if (entry.url) {
+        tab.pendingUrl = entry.url;
+        tab.urlInput.value = entry.url;
+      }
+      if (entry.label) {
+        tab.label = entry.label;
+        tab.tabLabelEl.textContent = entry.label;
+      } else {
+        syncTabLabel(tab);
+      }
+      restored.push({ id: id39, entry });
+    }
+    if (restored.length === 0) return;
+    const index = Math.min(Math.max(session.activeTabIndex, 0), restored.length - 1);
+    const target = restored[index];
+    if (target) setActiveTab(target.id);
+    if (session.paneOpen) openRightPanel(store3, "browser");
+    for (const { id: id39, entry } of restored) {
+      if (entry.artefactTitle) void restoreArtefactTab(id39, entry);
+    }
+  }
+  async function restoreStoredSession() {
+    if (!api3) return;
+    const session = await loadBrowserPaneSession(api3).catch(() => null);
+    if (session && isPristinePane()) applyStoredSession(session);
   }
   async function ensurePluginBrowserTab(request) {
     const hadTabs = tabs.size > 0;
@@ -275552,6 +275791,9 @@ function mountBrowserPane(listRoot, viewerRoot, store3, api3) {
   ];
   return () => {
     unregisterPopoutSeed();
+    void sessionWriter?.flush();
+    sessionWriter?.dispose();
+    for (const cancel of [...pendingProjectWaits]) cancel();
     unsubs.forEach((unsubscribe) => {
       if (typeof unsubscribe === "function") unsubscribe();
     });
@@ -275577,6 +275819,7 @@ var init_browser_pane = __esm({
     init_browser_session();
     init_unknown_value3();
     init_panels();
+    init_browser_pane_session();
     init_prompt_attachments();
     init_toast();
     WEBVIEW_PREFS = "contextIsolation=true";
