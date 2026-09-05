@@ -28,7 +28,6 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
-  renameSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -37,6 +36,7 @@ import {
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { expectRecord, expectString, parseJsonUnknown } from '../src/shared/unknown-value.mts'
+import { moveDirectory } from './lib/move-directory.mts'
 import { resolveDepRoot } from './resolve-dep.mts'
 
 const APP_BUNDLE = 'Copse.app'
@@ -100,7 +100,7 @@ function linkDistToShared(sharedDist: string): void {
     if (existsSync(sharedDist)) {
       rmSync(sharedDist, { recursive: true, force: true })
     }
-    renameSync(ELECTRON_DIST, sharedDist)
+    moveDirectory(ELECTRON_DIST, sharedDist)
     console.log(`[patch-dev-name] promoted Electron dist → ${sharedDist}`)
   }
 
