@@ -1,6 +1,5 @@
 import type { HookSandboxRuntime } from './hook-spawn.ts'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { copseDataRoot } from '@copse/store-kit/copse-paths.ts'
 
 /**
  * Facts the dialect adapters and the hook runner cannot know on their own and
@@ -43,8 +42,7 @@ export function passthroughChildEnv(base: NodeJS.ProcessEnv = process.env): Reco
 }
 
 export function defaultDataRoot(env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env['COPSE_DIR']
-  return configured !== undefined && configured.length > 0 ? configured : join(homedir(), '.copse')
+  return copseDataRoot(env)
 }
 
 const DEFAULTS: HooksDialectsEnvironment = {
