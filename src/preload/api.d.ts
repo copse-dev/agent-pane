@@ -33,6 +33,8 @@ import type {
   GhPrFileDiff,
   GhPrSummary,
   PrActionResult,
+  PrComposerCreateRequest,
+  PrCreateResult,
 } from '@shared/types/git.ts'
 import type {
   McpServerStatus,
@@ -215,6 +217,17 @@ export interface ApiClient {
       threadId: string,
       contextJson: string,
     ) => Promise<FollowUpSuggestion[]>
+    /**
+     * Proposed pull-request body for the "Create PR" dialog, so the description
+     * is written while the user reads the dialog rather than after they confirm.
+     * Null when no small-tasks model is configured — the field stays empty and
+     * the PR is not blocked on it.
+     */
+    suggestPrBody: (
+      projectId: string,
+      threadId: string,
+      contextJson: string,
+    ) => Promise<string | null>
     /** Tab-completable next step for the composer placeholder; null = no obvious step. */
     suggestNextStep: (contextJson: string) => Promise<string | null>
     onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => () => void
@@ -1026,6 +1039,16 @@ export interface ApiClient {
     resolvePrUrl: (url: string) => Promise<{ owner: string; repo: string; number: number } | null>
     /** PRs in the active project opened by an agent this app launched (issue #690). */
     agentPrLinks: () => Promise<RemoteAgentPrIndexEntry[]>
+    /**
+     * Open a pull request for a thread's checkout, through the same path the
+     * `gh_pr_create` agent tool uses: attribution trailer, target resolution
+     * and thread linking (the sidebar PR chip) included.
+     */
+    createPrForThread: (
+      projectId: string,
+      threadId: string,
+      request: PrComposerCreateRequest,
+    ) => Promise<PrCreateResult>
     /** Re-run the failed workflow runs on the PR's head branch. */
     rerunFailedRuns: (owner: string, repo: string, number: number) => Promise<PrActionResult>
     /** Approve the pull request. */

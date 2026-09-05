@@ -394,6 +394,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
       suggestFollowUps: emptyArray,
+      suggestPrBody: () => resolved(null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => {
         chunkHandlers.add(handler)
@@ -915,6 +916,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       prFileDiff: () => resolved(null),
       resolvePrUrl: () => resolved(null),
       agentPrLinks: emptyArray,
+      createPrForThread: () =>
+        resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       rerunFailedRuns: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       approvePr: () => resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),

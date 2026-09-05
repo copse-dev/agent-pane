@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
+import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
@@ -237,6 +238,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('agent:suggestToolTurnSummary', actions),
     suggestFollowUps: (projectId: string, threadId: string, contextJson: string) =>
       ipcRenderer.invoke('agent:suggestFollowUps', projectId, threadId, contextJson),
+    suggestPrBody: (projectId: string, threadId: string, contextJson: string) =>
+      ipcRenderer.invoke('agent:suggestPrBody', projectId, threadId, contextJson),
     suggestNextStep: (contextJson: string) =>
       ipcRenderer.invoke('agent:suggestNextStep', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
@@ -1251,6 +1254,8 @@ contextBridge.exposeInMainWorld('api', {
     agentPrLinks: () => ipcRenderer.invoke('gh:agentPrLinks'),
     rerunFailedRuns: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:rerunFailedRuns', owner, repo, number),
+    createPrForThread: (projectId: string, threadId: string, request: PrComposerCreateRequest) =>
+      ipcRenderer.invoke('gh:createPrForThread', projectId, threadId, request),
     approvePr: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:approvePr', owner, repo, number),
     markPrReady: (owner: string, repo: string, number: number) =>

@@ -37,8 +37,13 @@ describe('follow-up suggestion bubbles', () => {
 
     it('shows demo bubbles after a turn completes', async () => {
       await completeMockTurn()
-      await expect($$('.follow-up-bubble')).toBeElementsArrayOfSize(3)
+      await expect($$('.follow-up-bubble')).toBeElementsArrayOfSize(4)
       await expect($('.follow-up-bubble-changes')).not.toExist()
+
+      // The accented "publish it" offer sits first, before the prompt chips.
+      const createPrBubble = await $('.follow-up-bubble[data-id="create-pr"]')
+      await expect(createPrBubble).toHaveText('Create PR')
+      await expect(createPrBubble).toHaveElementClass('follow-up-bubble-create-pr')
 
       const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
       await expect(ciBubble).toHaveText('Debug CI Failure')

@@ -8,8 +8,11 @@ export type FollowUpVariant = 'default' | 'changes'
  *  - `open-changes` — open the changeset reviewer pane.
  *  - `model-compare` — open the comparison model picker, then run a comparison
  *    of the working diff with the models chosen there.
+ *  - `create-pr` — open the pull-request dialog (title, description, draft),
+ *    then open the PR through the same `createPrForThread` path the
+ *    `gh_pr_create` tool uses. No prompt is sent and no model runs.
  */
-export type FollowUpAction = 'prompt' | 'open-changes' | 'model-compare'
+export type FollowUpAction = 'prompt' | 'open-changes' | 'model-compare' | 'create-pr'
 
 /** A clickable follow-up bubble shown above the input bar. */
 export interface FollowUpSuggestion {
@@ -64,4 +67,10 @@ export interface PrWorkspaceContext {
   hasMergeConflicts: boolean
   hasCiFailures: boolean
   changeStats: { additions: number; deletions: number } | null
+  /**
+   * True when this branch has work that no pull request carries yet and `gh`
+   * could open one: a side branch, no open PR, and something to publish
+   * (uncommitted edits or commits the base branch does not have).
+   */
+  canOpenPr: boolean
 }

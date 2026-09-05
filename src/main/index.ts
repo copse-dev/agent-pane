@@ -116,6 +116,7 @@ import {
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
+import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import { clearAgentHistory } from './services/thread-store.ts'
 import { AgentDispatcher } from './services/agent-dispatcher.ts'
@@ -841,6 +842,31 @@ app
         }
         const { root } = await resolveThreadExecutionContext(projectId, threadId)
         return suggestFollowUps(parsed.data, root)
+      },
+    )
+
+    // The "Create PR" chip's first half: propose a body while the dialog is
+    // open. Same guarded context shape as the follow-up bubbles above — it is
+    // the same last-exchange payload, so it reuses the same schema rather than
+    // opening a second, differently-bounded door for the same data.
+    ipcMain.handle(
+      'agent:suggestPrBody',
+      async (event, projectIdArg: unknown, threadIdArg: unknown, contextJson: string) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        let rawContext: unknown
+        try {
+          rawContext = JSON.parse(contextJson)
+        } catch {
+          throw new Error('agent:suggestPrBody: context is not valid JSON')
+        }
+        const parsed = followUpContextSchema.safeParse(rawContext)
+        if (!parsed.success) {
+          throw new Error('agent:suggestPrBody: context failed validation')
+        }
+        const { root } = await resolveThreadExecutionContext(projectId, threadId)
+        return suggestPrBody(parsed.data, root)
       },
     )
 

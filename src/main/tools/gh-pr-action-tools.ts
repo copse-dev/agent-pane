@@ -1,27 +1,17 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import {
-  getCurrentBranchName,
-  getDefaultBranch,
-  getGithubRepoSlug,
-} from '../services/github/git-service.ts'
+import { getGithubRepoSlug } from '../services/github/git-service.ts'
 import {
   approvePr,
-  createPullRequest,
   enablePrAutoMerge,
   markPrReady,
   rerunFailedPrRuns,
 } from '../services/github/gh-pr-actions-service.ts'
-import { appendPrBodyAttribution } from '@shared/git/commit-attribution.ts'
+import { createPrForThread } from '../services/github/pr-create-service.ts'
 import { getThreadExecutionContext } from '../services/thread-execution-context.ts'
-import { getThreadModels } from '../services/thread-models.ts'
-import { recordThreadPrRefs } from '../services/thread-store.ts'
-import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
-import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import type { PrActionResult } from '@shared/types/git.ts'
 import type { PrRef } from '../services/github/backend/backend.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
-import type { ThreadExecutionContext } from '../services/thread-execution-context.ts'
 
 const prActionParams = z.object({
   number: z.number().int().positive().describe('Pull request number.'),
@@ -76,40 +66,6 @@ async function runAction(
   return formatResult(await action(ref))
 }
 
-/**
- * Link a freshly created (or rediscovered) PR to the thread that opened it, and
- * push the sidebar update so the chip appears without a relaunch. The ref is
- * built from the coordinates the backend returned — never re-parsed out of the
- * URL, which would silently drop GitHub Enterprise hosts. Best-effort: a PR
- * that opened successfully must not be reported as failed because bookkeeping
- * did not land.
- */
-async function linkPrToThread(ref: GithubPrRef, context: ThreadExecutionContext): Promise<void> {
-  try {
-    const refs = await recordThreadPrRefs(context.projectId, context.threadId, [ref])
-    if (!refs) return
-    broadcastToAppWindows('threads:pr_refs', context.projectId, [
-      { threadId: context.threadId, prRefs: refs },
-    ])
-  } catch (err) {
-    console.warn('[gh_pr_create] linking the PR to its thread failed:', err)
-  }
-}
-
-/**
- * Tell the renderer a PR was just opened from this thread, so a pane showing
- * the changes that went into it can follow the work through to the PR view.
- *
- * Deliberately not folded into the `threads:pr_refs` push above: that channel
- * also carries the startup backfill, whose batches are indistinguishable from a
- * live creation once they arrive, and only a genuinely new PR may be allowed to
- * move a panel. Announced even when {@link linkPrToThread} failed — the PR pane
- * loads from these coordinates, not from the thread's recorded refs.
- */
-function announcePrCreated(ref: GithubPrRef, context: ThreadExecutionContext): void {
-  broadcastToAppWindows('threads:pr_created', context.projectId, context.threadId, ref)
-}
-
 export const ghCreatePrTool = defineTool({
   name: 'gh_pr_create',
   description:
@@ -144,57 +100,15 @@ export const ghCreatePrTool = defineTool({
       ),
   }),
   execute: async ({ title, body, base, head, draft, owner, repo }) => {
-    // Half a target is never what the caller meant: splicing one explicit half
-    // with the workspace slug's other half would silently aim at a mixed repo.
-    if (!owner !== !repo) {
-      return 'Failed: pass owner and repo together, or omit both to use the workspace repository.'
-    }
-    const workspaceSlug = await getGithubRepoSlug()
-    const [slugOwner, slugRepo] = workspaceSlug?.split('/') ?? []
-    const targetOwner = owner ?? slugOwner
-    const targetRepo = repo ?? slugRepo
-    if (!targetOwner || !targetRepo) {
-      return 'Failed: could not resolve the repository. Pass owner and repo, or open a GitHub workspace.'
-    }
-
-    // Branch defaults come from the local checkout, which only describes the
-    // workspace repo. For an explicit different target, require both branches
-    // rather than guessing from the wrong repository.
-    const crossRepo = workspaceSlug !== `${targetOwner}/${targetRepo}`
-    if (crossRepo && (!head || !base)) {
-      return `Failed: ${targetOwner}/${targetRepo} is not the workspace repository, so pass head and base explicitly — the local checkout cannot supply defaults for another repo.`
-    }
-
-    const headBranch = head ?? (await getCurrentBranchName())
-    if (!headBranch) {
-      return 'Failed: could not resolve the current branch. Pass head with the branch to open the PR from.'
-    }
-    const baseBranch = base ?? (await getDefaultBranch())
-    if (!baseBranch) {
-      return "Failed: could not resolve the repository's default branch. Pass base with the branch to merge into."
-    }
-    if (headBranch === baseBranch) {
-      return `Failed: head and base are both ${headBranch}. Commit the work to its own branch first.`
-    }
-
-    const context = getThreadExecutionContext()
-    const models = context ? getThreadModels(context.threadId) : []
-    const result = await createPullRequest({
-      owner: targetOwner,
-      repo: targetRepo,
-      head: headBranch,
-      base: baseBranch,
-      title,
-      body: appendPrBodyAttribution(body, models),
-      draft,
-    })
-
-    if (result.ok && result.url && result.number !== undefined && context) {
-      const ref = { url: result.url, owner: targetOwner, repo: targetRepo, number: result.number }
-      await linkPrToThread(ref, context)
-      announcePrCreated(ref, context)
-    }
-    return formatResult(result)
+    // The create sequence itself lives in pr-create-service so the composer's
+    // "Create PR" dialog runs the identical path — attribution trailer, target
+    // resolution and thread linking included. This tool is now just the model's
+    // door onto it.
+    const outcome = await createPrForThread(
+      { title, body, base, head, draft, owner, repo },
+      getThreadExecutionContext(),
+    )
+    return formatResult(outcome)
   },
 })
 
