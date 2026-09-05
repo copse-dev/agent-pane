@@ -24,11 +24,13 @@ stripping.
 Installs use pnpm’s default isolated linker with `package-import-method=auto`
 (`.npmrc`: prefer clone, then hardlink, then copy) so packages are symlinked
 through `node_modules/.pnpm` while store bytes are shared when the filesystem
-allows. Electron’s macOS `dist/` is shared under `~/.copse/cache/electron-dist/`
-(see `scripts/patch-dev-name.mts`); gortex is shared under
-`~/.copse/cache/gortex/` (see `scripts/fetch-gortex.mts`). Each worktree still
-runs its own install — `make run` or `pnpm install` — to link its own `node_modules`
-and symlink those caches.
+allows. Agent-prepared worktrees route Corepack, the pnpm store, Electron downloads and extracted
+runtime, and gortex through fixed directories under `~/.copse/cache/`. The read-only
+`preflight_worktree` tool reports readiness; one approved `prepare_worktree` call installs
+lockfile-pinned dependencies through Socket Firewall with lifecycle scripts disabled and then runs
+the repository-declared `prepare:native` entry point for pinned native artifacts. Each worktree
+still gets its own `node_modules` links and preparation fingerprint. `make run` remains the ordinary
+human-facing setup path.
 
 Cursor Cloud setup normally installs the pinned version through `.cursor/cloud-setup.sh`. If an
 older executable still shadows it, activate the repo version:

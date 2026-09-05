@@ -51,6 +51,7 @@ import { currentRunUsesGuardedYolo } from '../services/security/guarded-yolo.ts'
 import { recordDecision } from '../services/security/decision-log-store.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { recordCreatedPullRequest } from '../services/worktree-parking.ts'
+import { worktreePreparationShellEnvironment } from '../services/worktree-preparation.ts'
 
 /** Shortest foreground timeout a caller may request. */
 export const RUN_SHELL_MIN_TIMEOUT_MS = 1_000
@@ -416,7 +417,7 @@ export const runShellTool = defineTool({
     // are preserved on top. Git-over-SSH askpass vars are merged so `sh -c "git push"`
     // can prompt for passphrases / host keys instead of failing in BatchMode.
     const gitSsh = leaseGitSshEnv(envForRendererChildProcess(env))
-    const childEnv = gitSsh.env
+    const childEnv = worktreePreparationShellEnvironment(cwd, gitSsh.env)
 
     // Bracket the run so any file this agent-triggered command changes (e.g. a
     // formatter rewriting a file Copse just edited) is adopted as Copse-owned —
