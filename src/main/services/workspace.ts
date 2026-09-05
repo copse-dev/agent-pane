@@ -12,6 +12,7 @@ import { isRecord } from '@shared/unknown-value.ts'
 const WORKSPACE_KEY = 'workspaceRoot'
 const PROJECTS_KEY = 'projects'
 const ACTIVE_PROJECT_KEY = 'activeProjectId'
+const LINKED_WORKTREE_REGISTRATION_TIMEOUT_MS = 2_000
 
 const storedWorkspaceRoot = storageGet(WORKSPACE_KEY)
 let workspaceRoot: string | null =
@@ -128,6 +129,32 @@ export async function seedAllowedWorkspaceRoots(
 }
 
 /**
+ * Run best-effort linked-worktree discovery without letting slow or blocked Git
+ * metadata prevent an otherwise valid project folder from opening.
+ */
+export async function runOptionalLinkedWorktreeRegistration(
+  register: (signal: AbortSignal) => Promise<void>,
+): Promise<void> {
+  const controller = new AbortController()
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<void>((resolve) => {
+    timeout = setTimeout(() => {
+      controller.abort()
+      resolve()
+    }, LINKED_WORKTREE_REGISTRATION_TIMEOUT_MS)
+  })
+  const registration = Promise.resolve()
+    .then(() => register(controller.signal))
+    .catch(() => undefined)
+
+  try {
+    await Promise.race([registration, timedOut])
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
+  }
+}
+
+/**
  * Register sandbox metadata when an allowed project lives inside an existing
  * linked Git worktree. The `.git` file points outside the selected project, so
  * a plain workspace allow-list entry is not enough for sandboxed Git commands
@@ -139,12 +166,12 @@ async function registerAllowedLinkedWorktree(root: string): Promise<void> {
     try {
       const dotGit = await stat(join(cursor, '.git'))
       if (dotGit.isFile()) {
-        try {
-          await registerInternalWorkspaceRoot(cursor, root)
-        } catch {
-          // Gitfiles also represent submodules and may be malformed. Neither
-          // grants linked-worktree authority; the project remains allowlisted.
-        }
+        await runOptionalLinkedWorktreeRegistration(async (signal) => {
+          await registerInternalWorkspaceRoot(cursor, root, signal)
+        })
+        // Gitfiles also represent submodules and may be malformed. Neither a
+        // failed nor a timed-out probe grants linked-worktree authority; the
+        // project remains allowlisted.
         return
       }
       if (dotGit.isDirectory()) return
@@ -211,6 +238,7 @@ export async function assertAllowedWorkspaceRoot(root: string, sshHost?: string)
 export async function registerInternalWorkspaceRoot(
   checkoutRoot: string,
   executionRoot: string = checkoutRoot,
+  signal?: AbortSignal,
 ): Promise<InternalWorkspaceRootRegistration> {
   const canonicalCheckoutRoot = await canonicalWorkspaceRoot(checkoutRoot, localWorkspaceFs)
   const canonicalExecutionRoot = await canonicalWorkspaceRoot(executionRoot, localWorkspaceFs)
@@ -219,12 +247,14 @@ export async function registerInternalWorkspaceRoot(
     throw new Error('Internal execution root is outside its linked Git worktree')
   }
   const dotGitPath = join(canonicalCheckoutRoot, '.git')
-  const dotGit = await readFile(dotGitPath, 'utf-8')
+  const dotGit = await readFile(dotGitPath, { encoding: 'utf-8', signal })
   const match = /^gitdir:\s*(.+?)\s*$/i.exec(dotGit.trim())
   if (!match?.[1]) throw new Error('Internal workspace root is not a linked Git worktree')
 
   const gitDir = realpathSync.native(resolve(canonicalCheckoutRoot, match[1]))
-  const commonRelative = (await readFile(join(gitDir, 'commondir'), 'utf-8')).trim()
+  const commonRelative = (
+    await readFile(join(gitDir, 'commondir'), { encoding: 'utf-8', signal })
+  ).trim()
   if (!commonRelative) throw new Error('Linked worktree has no common Git directory')
   const commonGitDir = realpathSync.native(resolve(gitDir, commonRelative))
   if (dirname(gitDir) !== join(commonGitDir, 'worktrees')) {
@@ -236,7 +266,10 @@ export async function registerInternalWorkspaceRoot(
     if (!entry.isDirectory() || entry.name === basename(gitDir)) continue
     try {
       const siblingGitFile = (
-        await readFile(join(dirname(gitDir), entry.name, 'gitdir'), 'utf-8')
+        await readFile(join(dirname(gitDir), entry.name, 'gitdir'), {
+          encoding: 'utf-8',
+          signal,
+        })
       ).trim()
       if (!siblingGitFile) continue
       const siblingDotGit = realpathSync.native(
