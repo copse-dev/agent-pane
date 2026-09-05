@@ -16176,6 +16176,74 @@ var init_array_utils2 = __esm({
   }
 });
 
+// packages/thread-store/src/thread-proposal.ts
+function trimTo(value2, max10) {
+  const trimmed2 = value2.trim();
+  return trimmed2.length <= max10 ? trimmed2 : `${trimmed2.slice(0, max10 - 1).trimEnd()}\u2026`;
+}
+function stringField(args, key) {
+  const value2 = args[key];
+  return typeof value2 === "string" && value2.trim() !== "" ? value2.trim() : null;
+}
+function stringListField(args, key) {
+  const value2 = args[key];
+  if (!Array.isArray(value2)) return [];
+  return value2.filter((entry) => typeof entry === "string" && entry.trim() !== "").map((entry) => entry.trim());
+}
+function parseThreadProposal(id39, args) {
+  if (id39 === "" || !isRecord(args)) return null;
+  const title2 = stringField(args, "title");
+  const summary = stringField(args, "summary");
+  const prompt = stringField(args, "prompt");
+  if (!title2 || !summary || !prompt) return null;
+  const rationale = stringField(args, "rationale");
+  const files = stringListField(args, "files");
+  return {
+    id: id39,
+    title: trimTo(title2, THREAD_PROPOSAL_TITLE_MAX),
+    summary: trimTo(summary, THREAD_PROPOSAL_SUMMARY_MAX),
+    ...rationale ? { rationale: trimTo(rationale, THREAD_PROPOSAL_SUMMARY_MAX) } : {},
+    prompt,
+    ...files.length > 0 ? { files } : {}
+  };
+}
+function threadProposalStatus(decisions, id39) {
+  return findThreadProposalDecision(decisions, id39)?.status ?? "pending";
+}
+function findThreadProposalDecision(decisions, id39) {
+  return decisions?.find((decision) => decision.id === id39);
+}
+function recordThreadProposalDecision(decisions, decision) {
+  const rest = (decisions ?? []).filter((entry) => entry.id !== decision.id);
+  return [...rest, decision];
+}
+function clearThreadProposalDecision(decisions, id39) {
+  return (decisions ?? []).filter((entry) => entry.id !== id39);
+}
+function threadProposalFileSummary(files) {
+  if (!files || files.length === 0) return null;
+  if (files.length <= THREAD_PROPOSAL_FILES_SHOWN) return files.join(", ");
+  const shown = files.slice(0, THREAD_PROPOSAL_FILES_SHOWN).join(", ");
+  return `${shown} +${String(files.length - THREAD_PROPOSAL_FILES_SHOWN)} more`;
+}
+var THREAD_PROPOSAL_TOOL, THREAD_PROPOSAL_TITLE_MAX, THREAD_PROPOSAL_SUMMARY_MAX, THREAD_PROPOSAL_FILES_SHOWN;
+var init_thread_proposal = __esm({
+  "packages/thread-store/src/thread-proposal.ts"() {
+    init_unknown_value();
+    THREAD_PROPOSAL_TOOL = "propose_thread";
+    THREAD_PROPOSAL_TITLE_MAX = 80;
+    THREAD_PROPOSAL_SUMMARY_MAX = 400;
+    THREAD_PROPOSAL_FILES_SHOWN = 4;
+  }
+});
+
+// src/shared/threads/thread-proposal.ts
+var init_thread_proposal2 = __esm({
+  "src/shared/threads/thread-proposal.ts"() {
+    init_thread_proposal();
+  }
+});
+
 // packages/thread-store/src/thread-sort.ts
 function isHumanUserPrompt(message2) {
   return message2.role === "user" && (message2.origin === void 0 || message2.editedByUser === true);
@@ -16756,6 +16824,23 @@ function recordThreadArchives(store3, threadId, archives) {
   store3.setState({ threads: updated });
   store3.emit("threads_changed");
 }
+function setThreadProposalDecision(store3, threadId, decision) {
+  patchThreadAnywhere(store3, threadId, (t4) => ({
+    ...t4,
+    threadProposals: recordThreadProposalDecision(t4.threadProposals, decision),
+    updatedAt: Date.now()
+  }));
+  store3.emit("threads_changed");
+}
+function clearThreadProposalDecisionFor(store3, threadId, proposalId) {
+  patchThreadAnywhere(store3, threadId, (t4) => {
+    const remaining = clearThreadProposalDecision(t4.threadProposals, proposalId);
+    if (remaining.length > 0) return { ...t4, threadProposals: remaining, updatedAt: Date.now() };
+    const { threadProposals: _cleared, ...rest } = t4;
+    return { ...rest, updatedAt: Date.now() };
+  });
+  store3.emit("threads_changed");
+}
 function bindThreadGitBranchIfUnset(store3, threadId, branch2) {
   const thread = getThreadById(store3, threadId);
   if (!thread || thread.gitBranch) return;
@@ -16785,6 +16870,7 @@ var randomUUID, messageIndexByStore;
 var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
     init_array_utils2();
+    init_thread_proposal2();
     init_thread_sort();
     init_thread_sort();
     randomUUID = () => globalThis.crypto.randomUUID();
@@ -17383,9 +17469,11 @@ function summarizeToolTurn(toolCalls, items) {
 function buildToolCallDisplayItems(toolCalls, opts) {
   if (toolCalls.length === 0) return [];
   const subagents = [];
+  const proposals = [];
   const regular = [];
   for (const tc2 of toolCalls) {
     if (tc2.subagent) subagents.push(tc2);
+    else if (tc2.name === THREAD_PROPOSAL_TOOL) proposals.push(tc2);
     else regular.push(tc2);
   }
   const result = [];
@@ -17401,7 +17489,7 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   } else {
     result.push(...grouped);
   }
-  for (const tc2 of subagents) {
+  for (const tc2 of [...subagents, ...proposals]) {
     result.push({ type: "individual", toolCall: tc2, label: getToolCallLabel(tc2) });
   }
   return result;
@@ -17460,6 +17548,7 @@ var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFI
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
     init_unknown_value3();
+    init_thread_proposal2();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
       read_file: { running: "Reading file", done: "Read file" },
@@ -17502,6 +17591,7 @@ var init_tool_display = __esm({
       read_terminal: { running: "Reading shell", done: "Read shell" },
       video_frames: { running: "Reading video", done: "Read video" },
       ask_user: { running: "Asking user", done: "Asked user" },
+      propose_thread: { running: "Proposing a thread", done: "Proposed a thread" },
       update_todos: { running: "Updating plan", done: "Updated plan" },
       run_checkup: { running: "Running checkup", done: "Ran checkup" }
     };
@@ -19035,6 +19125,18 @@ function zapIcon(className = DEFAULT) {
     "zap",
     [
       "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
+    ],
+    className
+  );
+}
+function gitBranchIcon(className = DEFAULT) {
+  return outlineIcon(
+    "git-branch",
+    [
+      "M6 3v12",
+      "M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+      "M15 6a9 9 0 0 0-9 9"
     ],
     className
   );
@@ -33624,7 +33726,7 @@ function createCustomProvidersSection(api3, opts = {}) {
     if (embedded) return;
     clear(chipRow);
     for (const key of chipKeys()) {
-      const chip = el(
+      const chip2 = el(
         "button",
         {
           type: "button",
@@ -33633,16 +33735,16 @@ function createCustomProvidersSection(api3, opts = {}) {
         },
         chipLabel(key)
       );
-      chip.classList.toggle("active", key === selected);
+      chip2.classList.toggle("active", key === selected);
       if (key !== "other" && configured.has(key)) {
-        chip.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
       }
-      chip.addEventListener("click", () => {
+      chip2.addEventListener("click", () => {
         selected = key;
         renderChips();
         renderForm();
       });
-      chipRow.append(chip);
+      chipRow.append(chip2);
     }
   }
   function keyField(slug2, label, placeholder, hint) {
@@ -34452,22 +34554,22 @@ function createAcpAgentsSection(api3, opts = {}) {
     if (embedded) return;
     clear(chipRow);
     for (const key of chipKeys()) {
-      const chip = el(
+      const chip2 = el(
         "button",
         { type: "button", class: "provider-chip", role: "tab" },
         chipLabel(key)
       );
-      chip.dataset["agent"] = key;
-      chip.classList.toggle("active", key === selected);
+      chip2.dataset["agent"] = key;
+      chip2.classList.toggle("active", key === selected);
       if (key !== "other" && agents.some((a3) => a3.id === key)) {
-        chip.append(el("span", { class: "provider-chip-dot", title: "Added" }));
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Added" }));
       }
-      chip.addEventListener("click", () => {
+      chip2.addEventListener("click", () => {
         selected = key;
         renderChips();
         renderForm();
       });
-      chipRow.append(chip);
+      chipRow.append(chip2);
     }
   }
   function agentForm(options2) {
@@ -34932,24 +35034,24 @@ function createProvidersPanel(api3, opts = {}) {
   function renderChips() {
     clear(chipRow);
     for (const vendor of [...vendors(), { id: ADD_KEY, label: "Add" }]) {
-      const chip = el(
+      const chip2 = el(
         "button",
         { type: "button", class: "provider-chip", role: "tab" },
         vendor.label
       );
-      chip.dataset["provider"] = vendor.id;
-      chip.classList.toggle("active", vendor.id === selected);
+      chip2.dataset["provider"] = vendor.id;
+      chip2.classList.toggle("active", vendor.id === selected);
       if (vendor.id !== ADD_KEY && isConfigured(vendor)) {
-        chip.append(el("span", { class: "provider-chip-dot", title: "Set up" }));
+        chip2.append(el("span", { class: "provider-chip-dot", title: "Set up" }));
       }
-      chip.addEventListener("click", () => {
+      chip2.addEventListener("click", () => {
         selected = vendor.id;
         selectedAgentId = "";
         providerPicked = true;
         renderChips();
         renderForm();
       });
-      chipRow.append(chip);
+      chipRow.append(chip2);
     }
   }
   function block2(title2, ...children2) {
@@ -49259,10 +49361,10 @@ function mountSettingsDialog(store3, api3) {
     chips.push(res.parseOk ? "parsed ok" : "parse failed");
     if (res.sandboxed) chips.push("sandboxed");
     for (const text4 of chips) {
-      const chip = document.createElement("span");
-      chip.className = "hook-test-chip";
-      chip.textContent = text4;
-      summary.append(chip);
+      const chip2 = document.createElement("span");
+      chip2.className = "hook-test-chip";
+      chip2.textContent = text4;
+      summary.append(chip2);
     }
     container2.append(summary);
     if (res.outcomeSummary) {
@@ -49928,11 +50030,11 @@ function mountSettingsDialog(store3, api3) {
     if (chips.length > 0) {
       const chipRow = document.createElement("div");
       chipRow.className = "plugin-chips";
-      for (const chip of chips) {
+      for (const chip2 of chips) {
         const el3 = document.createElement("span");
         el3.className = "plugin-chip";
-        el3.textContent = `${chip.label} \xD7 ${String(chip.count)}`;
-        if (chip.title) el3.title = chip.title;
+        el3.textContent = `${chip2.label} \xD7 ${String(chip2.count)}`;
+        if (chip2.title) el3.title = chip2.title;
         chipRow.append(el3);
       }
       row2.append(chipRow);
@@ -50247,10 +50349,10 @@ function mountSettingsDialog(store3, api3) {
       chips.append(none2);
     } else {
       for (const label of contributes) {
-        const chip = document.createElement("span");
-        chip.className = "plugin-chip";
-        chip.textContent = label;
-        chips.append(chip);
+        const chip2 = document.createElement("span");
+        chip2.className = "plugin-chip";
+        chip2.textContent = label;
+        chips.append(chip2);
       }
     }
     row2.append(chips);
@@ -50268,12 +50370,12 @@ function mountSettingsDialog(store3, api3) {
       curated: "Copse reviewed",
       "built-in": "Built in"
     };
-    const chip = document.createElement("span");
-    chip.className = `mcp-origin-chip mcp-origin-${s16.origin}`;
-    chip.dataset["mcpOrigin"] = s16.origin;
-    chip.textContent = s16.originDetail && s16.origin === "plugin" ? s16.originDetail : labels[s16.origin];
-    chip.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
-    return chip;
+    const chip2 = document.createElement("span");
+    chip2.className = `mcp-origin-chip mcp-origin-${s16.origin}`;
+    chip2.dataset["mcpOrigin"] = s16.origin;
+    chip2.textContent = s16.originDetail && s16.origin === "plugin" ? s16.originDetail : labels[s16.origin];
+    chip2.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
+    return chip2;
   }
   async function revealPluginDetail() {
     const target = pluginDetail;
@@ -50415,12 +50517,12 @@ function mountSettingsDialog(store3, api3) {
       const title2 = document.createElement("div");
       title2.className = "mcp-server-summary";
       title2.append(`${s16.name} (${s16.transport}): `, inlineStatus("idle", "not running"));
-      const chip = document.createElement("span");
-      chip.className = "mcp-origin-chip mcp-origin-plugin";
-      chip.dataset["mcpOrigin"] = "plugin";
-      chip.textContent = s16.pluginId;
-      chip.title = `Declared by the plugin ${s16.pluginId}`;
-      header.append(title2, chip);
+      const chip2 = document.createElement("span");
+      chip2.className = "mcp-origin-chip mcp-origin-plugin";
+      chip2.dataset["mcpOrigin"] = "plugin";
+      chip2.textContent = s16.pluginId;
+      chip2.title = `Declared by the plugin ${s16.pluginId}`;
+      header.append(title2, chip2);
       row2.append(
         header,
         Object.assign(document.createElement("div"), {
@@ -240411,20 +240513,20 @@ function openTextExpand(content, name) {
     content: text4
   });
 }
-function attachTextExpand(chip, content, name) {
-  if (chip.dataset["textExpand"] === "true") return;
-  chip.dataset["textExpand"] = "true";
-  chip.classList.add("text-expandable");
-  chip.setAttribute("role", "button");
-  chip.setAttribute("tabindex", "0");
-  chip.setAttribute("aria-label", `Preview ${name}`);
+function attachTextExpand(chip2, content, name) {
+  if (chip2.dataset["textExpand"] === "true") return;
+  chip2.dataset["textExpand"] = "true";
+  chip2.classList.add("text-expandable");
+  chip2.setAttribute("role", "button");
+  chip2.setAttribute("tabindex", "0");
+  chip2.setAttribute("aria-label", `Preview ${name}`);
   const open2 = (event3) => {
     event3.preventDefault();
     event3.stopPropagation();
     openTextExpand(content, name);
   };
-  chip.addEventListener("click", open2);
-  chip.addEventListener("keydown", (event3) => {
+  chip2.addEventListener("click", open2);
+  chip2.addEventListener("keydown", (event3) => {
     if (event3.key !== "Enter" && event3.key !== " ") return;
     open2(event3);
   });
@@ -240466,20 +240568,20 @@ async function openVideoExpand(api3, path4, name) {
     session.setStatus(err2 instanceof Error ? err2.message : `Could not play ${name}.`);
   }
 }
-function attachVideoExpand(chip, api3, path4, name) {
-  if (chip.dataset["videoExpand"] === "true") return;
-  chip.dataset["videoExpand"] = "true";
-  chip.classList.add("video-expandable");
-  chip.setAttribute("role", "button");
-  chip.setAttribute("tabindex", "0");
-  chip.setAttribute("aria-label", `Play ${name}`);
+function attachVideoExpand(chip2, api3, path4, name) {
+  if (chip2.dataset["videoExpand"] === "true") return;
+  chip2.dataset["videoExpand"] = "true";
+  chip2.classList.add("video-expandable");
+  chip2.setAttribute("role", "button");
+  chip2.setAttribute("tabindex", "0");
+  chip2.setAttribute("aria-label", `Play ${name}`);
   const open2 = (event3) => {
     event3.preventDefault();
     event3.stopPropagation();
     void openVideoExpand(api3, path4, name);
   };
-  chip.addEventListener("click", open2);
-  chip.addEventListener("keydown", (event3) => {
+  chip2.addEventListener("click", open2);
+  chip2.addEventListener("keydown", (event3) => {
     if (event3.key !== "Enter" && event3.key !== " ") return;
     open2(event3);
   });
@@ -240641,11 +240743,11 @@ function mountComposerEditor() {
     for (const id39 of blocks2.keys()) if (!present.has(id39)) blocks2.delete(id39);
   }
   function makeChip(block2) {
-    const chip = document.createElement("span");
-    chip.className = "inline-paste-chip";
-    chip.setAttribute("contenteditable", "false");
-    chip.dataset["blockId"] = block2.id;
-    chip.title = block2.label;
+    const chip2 = document.createElement("span");
+    chip2.className = "inline-paste-chip";
+    chip2.setAttribute("contenteditable", "false");
+    chip2.dataset["blockId"] = block2.id;
+    chip2.title = block2.label;
     const label = document.createElement("span");
     label.className = "inline-paste-chip-label";
     label.textContent = block2.label;
@@ -240657,13 +240759,13 @@ function mountComposerEditor() {
     remove3.setAttribute("aria-label", `Remove pasted text: ${block2.label}`);
     remove3.addEventListener("click", (e4) => {
       e4.preventDefault();
-      chip.remove();
+      chip2.remove();
       blocks2.delete(block2.id);
       root4.focus();
       emitInput();
     });
-    chip.append(label, remove3);
-    return chip;
+    chip2.append(label, remove3);
+    return chip2;
   }
   function offsetOfPoint(node2, offset) {
     const range3 = document.createRange();
@@ -240729,8 +240831,8 @@ function mountComposerEditor() {
       parts.forEach((part, i4) => {
         if (part) frag.append(document.createTextNode(part));
         if (i4 < parts.length - 1) {
-          const chip = existing[i4];
-          if (chip) frag.append(chip);
+          const chip2 = existing[i4];
+          if (chip2) frag.append(chip2);
         }
       });
       root4.replaceChildren(frag);
@@ -240774,18 +240876,18 @@ function mountComposerEditor() {
         content
       };
       blocks2.set(block2.id, block2);
-      const chip = makeChip(block2);
+      const chip2 = makeChip(block2);
       const sel = editor.isFocused() ? selectionInRoot() : null;
       if (sel) {
         const range3 = sel.getRangeAt(0);
         range3.deleteContents();
-        range3.insertNode(chip);
-        range3.setStartAfter(chip);
+        range3.insertNode(chip2);
+        range3.setStartAfter(chip2);
         range3.collapse(true);
         sel.removeAllRanges();
         sel.addRange(range3);
       } else {
-        root4.append(chip);
+        root4.append(chip2);
       }
       emitInput();
     },
@@ -241641,6 +241743,280 @@ var init_tool_args_format = __esm({
   }
 });
 
+// src/renderer/controller/thread-proposals.ts
+async function startProposedThread(store3, api3, sourceThreadId, proposal, options2) {
+  const projectId = store3.getState().activeProjectId;
+  if (!projectId) throw new Error("Open a project before starting a proposed thread");
+  store3.emit("composer_draft_flush");
+  const threadId = createThread(store3);
+  setThreadTitle(store3, threadId, proposal.title);
+  patchThreadAnywhere(store3, threadId, (t4) => ({
+    ...t4,
+    proposedBy: { threadId: sourceThreadId, proposalId: proposal.id }
+  }));
+  await awaitPendingThreadPersistence();
+  const model = getThreadById(store3, threadId)?.model ?? store3.getState().settings?.model;
+  const prepared = await api3.agent.prepareCheckout(
+    projectId,
+    threadId,
+    proposal.prompt,
+    "worktree",
+    model
+  );
+  applyPreparedThreadCheckout(store3, threadId, prepared);
+  if (prepared.checkoutMode !== "worktree" && !await options2.confirmSharedCheckout(proposal)) {
+    setThreadDraftPrompt(store3, threadId, proposal.prompt);
+    return { started: false, threadId, reason: "shared-checkout-declined" };
+  }
+  addMessage(store3, threadId, "user", proposal.prompt);
+  setThreadProposalDecision(store3, sourceThreadId, {
+    id: proposal.id,
+    status: "started",
+    decidedAt: Date.now(),
+    threadId,
+    checkoutMode: prepared.checkoutMode
+  });
+  startHumanTurnTree(store3, threadId);
+  dispatchAgentRun(store3, api3, threadId, { content: proposal.prompt });
+  return { started: true, threadId, checkoutMode: prepared.checkoutMode };
+}
+var init_thread_proposals = __esm({
+  "src/renderer/controller/thread-proposals.ts"() {
+    init_thread_helpers();
+    init_message_queue();
+    init_persistence();
+  }
+});
+
+// src/renderer/views/thread-proposal-card.ts
+function chip(kind, ...children2) {
+  return el("span", { class: "thread-proposal-chip", "data-chip": kind }, ...children2);
+}
+function statePill(state4) {
+  const { status } = state4;
+  if (status === "started") {
+    const shared = state4.checkoutMode === "shared";
+    return el(
+      "span",
+      {
+        class: "thread-proposal-state",
+        "data-state": "started",
+        ...shared ? { "data-checkout": "shared" } : {}
+      },
+      checkIcon("ui-icon ui-icon-sm"),
+      shared ? "Started in the shared checkout" : "Thread started"
+    );
+  }
+  if (status === "dismissed") {
+    return el(
+      "span",
+      { class: "thread-proposal-state", "data-state": "dismissed" },
+      closeIcon("ui-icon ui-icon-sm"),
+      "Dismissed"
+    );
+  }
+  return null;
+}
+function buildOpenThreadButton(threadId, handlers3) {
+  const open2 = el(
+    "button",
+    { type: "button", class: "thread-proposal-open" },
+    "Open thread",
+    arrowRightIcon("ui-icon ui-icon-sm")
+  );
+  open2.addEventListener("click", (event3) => {
+    event3.preventDefault();
+    event3.stopPropagation();
+    handlers3.onOpenThread(threadId);
+  });
+  return open2;
+}
+function buildPendingActions(proposal, handlers3, rerender) {
+  const start2 = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary thread-proposal-start" },
+    "Start this thread"
+  );
+  const dismiss = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary thread-proposal-dismiss" },
+    "Not now"
+  );
+  const error53 = el("span", { class: "thread-proposal-error", role: "alert", hidden: "" });
+  start2.addEventListener("click", () => {
+    start2.disabled = true;
+    dismiss.disabled = true;
+    start2.textContent = "Starting\u2026";
+    error53.hidden = true;
+    void handlers3.onStart(proposal).catch((cause) => {
+      start2.disabled = false;
+      dismiss.disabled = false;
+      start2.textContent = "Start this thread";
+      error53.textContent = cause instanceof Error ? `Could not start the thread: ${cause.message}` : "Could not start the thread.";
+      error53.hidden = false;
+    });
+  });
+  dismiss.addEventListener("click", () => {
+    handlers3.onDismiss(proposal);
+    rerender({ status: "dismissed" });
+  });
+  return el("div", { class: "thread-proposal-actions" }, start2, dismiss, error53);
+}
+function buildDismissedActions(proposal, handlers3, rerender) {
+  const restore = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost thread-proposal-restore" },
+    "Bring it back"
+  );
+  restore.addEventListener("click", () => {
+    handlers3.onRestore(proposal);
+    rerender({ status: "pending" });
+  });
+  return el("div", { class: "thread-proposal-actions" }, restore);
+}
+function buildBody(proposal, state4, handlers3, rerender) {
+  const body = el("div", { class: "thread-proposal-body" });
+  body.append(el("h4", { class: "thread-proposal-title" }, proposal.title));
+  body.append(el("p", { class: "thread-proposal-summary" }, proposal.summary));
+  if (proposal.rationale) {
+    body.append(el("p", { class: "thread-proposal-rationale" }, proposal.rationale));
+  }
+  const chips = el("div", { class: "thread-proposal-chips" });
+  chips.append(chip("worktree", gitBranchIcon("ui-icon ui-icon-sm"), "Its own checkout"));
+  const files = threadProposalFileSummary(proposal.files);
+  if (files) chips.append(chip("files", files));
+  body.append(chips);
+  const prompt = el("details", { class: "thread-proposal-prompt" });
+  prompt.append(
+    el("summary", { class: "thread-proposal-prompt-summary" }, "The prompt it would start with"),
+    el("pre", { class: "thread-proposal-prompt-text" }, proposal.prompt)
+  );
+  body.append(prompt);
+  if (state4.status === "pending") {
+    body.append(buildPendingActions(proposal, handlers3, rerender));
+  } else if (state4.status === "dismissed") {
+    body.append(buildDismissedActions(proposal, handlers3, rerender));
+  }
+  return body;
+}
+function createThreadProposalCard(proposal, state4, handlers3) {
+  const card2 = el("details", {
+    class: "tool-card thread-proposal",
+    "data-tool-id": proposal.id,
+    "data-status": "done"
+  });
+  const render8 = (next3) => {
+    while (card2.firstChild) card2.firstChild.remove();
+    card2.dataset["proposalStatus"] = next3.status;
+    card2.open = next3.status === "pending";
+    const header = el(
+      "summary",
+      { class: "tool-card-header thread-proposal-header" },
+      el(
+        "span",
+        { class: "thread-proposal-icon", "aria-hidden": "true" },
+        gitBranchIcon("ui-icon ui-icon-sm")
+      ),
+      el("span", { class: "thread-proposal-eyebrow" }, "Proposed thread"),
+      el("span", { class: "thread-proposal-header-title" }, proposal.title)
+    );
+    const pill = statePill(next3);
+    if (pill) header.append(pill);
+    if (next3.status === "started" && next3.threadId) {
+      header.append(buildOpenThreadButton(next3.threadId, handlers3));
+    }
+    card2.append(header, buildBody(proposal, next3, handlers3, render8));
+  };
+  render8(state4);
+  return card2;
+}
+var init_thread_proposal_card = __esm({
+  "src/renderer/views/thread-proposal-card.ts"() {
+    init_helpers();
+    init_icons();
+    init_thread_proposal2();
+  }
+});
+
+// src/renderer/views/thread-proposal-tool-card.ts
+function isThreadProposalCall(tc2) {
+  return tc2.name === THREAD_PROPOSAL_TOOL;
+}
+function cardState(store3, sourceThreadId, proposalId) {
+  const decisions = getThreadById(store3, sourceThreadId)?.threadProposals;
+  const status = threadProposalStatus(decisions, proposalId);
+  const decision = findThreadProposalDecision(decisions, proposalId);
+  const startedId = decision?.threadId;
+  const threadId = startedId && getThreadById(store3, startedId) ? startedId : void 0;
+  return {
+    status,
+    ...threadId ? { threadId } : {},
+    ...decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}
+  };
+}
+function confirmSharedCheckout(proposal) {
+  return showConfirmDialog({
+    message: "Run this in your current checkout?",
+    detail: `This project cannot give "${proposal.title}" its own checkout, so the work would run in the one you already have open \u2014 its edits would land alongside your current changes. The offer stays on the card if you would rather not.`,
+    confirmLabel: "Run it here",
+    cancelLabel: "Leave it"
+  });
+}
+function noteDeclined() {
+  showToast("Not started. The prompt is waiting as a draft in the new thread.", {
+    variant: "info",
+    durationMs: 8e3
+  });
+}
+function threadProposalCardSignature(tc2, store3, sourceThreadId) {
+  if (!isThreadProposalCall(tc2)) return void 0;
+  const state4 = cardState(store3, sourceThreadId, tc2.id);
+  return `${state4.status}:${state4.threadId ?? ""}:${state4.checkoutMode ?? ""}`;
+}
+function createThreadProposalToolCard(tc2, store3, api3, sourceThreadId) {
+  const proposal = parseThreadProposal(tc2.id, tc2.args);
+  if (!proposal) return null;
+  return createThreadProposalCard(proposal, cardState(store3, sourceThreadId, tc2.id), {
+    onStart: async (accepted) => {
+      try {
+        const result = await startProposedThread(store3, api3, sourceThreadId, accepted, {
+          confirmSharedCheckout
+        });
+        if (!result.started) noteDeclined();
+      } catch (cause) {
+        showToast(cause instanceof Error ? cause.message : "Could not start the proposed thread.", {
+          variant: "error",
+          durationMs: 15e3
+        });
+        throw cause;
+      }
+    },
+    onDismiss: (dismissed) => {
+      setThreadProposalDecision(store3, sourceThreadId, {
+        id: dismissed.id,
+        status: "dismissed",
+        decidedAt: Date.now()
+      });
+    },
+    onRestore: (restored) => {
+      clearThreadProposalDecisionFor(store3, sourceThreadId, restored.id);
+    },
+    onOpenThread: (threadId) => {
+      switchThread(store3, threadId);
+    }
+  });
+}
+var init_thread_proposal_tool_card = __esm({
+  "src/renderer/views/thread-proposal-tool-card.ts"() {
+    init_thread_proposal2();
+    init_thread_helpers();
+    init_thread_proposals();
+    init_confirm_dialog();
+    init_toast();
+    init_thread_proposal_card();
+  }
+});
+
 // src/renderer/views/render-signature.ts
 function digestString(text4) {
   let a3 = FNV_OFFSET;
@@ -241850,7 +242226,7 @@ function appendStandardToolSections(card2, tc2, label, summaryClass, count2) {
     getToolEditPath(tc2)
   );
   card2.append(header);
-  const buildBody = () => {
+  const buildBody2 = () => {
     const argsSection = createToolArgsSection(tc2.args);
     card2.append(
       ...appendIfPresent(argsSection),
@@ -241862,9 +242238,9 @@ function appendStandardToolSections(card2, tc2, label, summaryClass, count2) {
     );
   };
   if (card2.open) {
-    buildBody();
+    buildBody2();
   } else {
-    lazyToolCardBodies.set(card2, buildBody);
+    lazyToolCardBodies.set(card2, buildBody2);
     header.addEventListener(
       "click",
       () => {
@@ -241912,8 +242288,12 @@ function syncMessageCanvasPreviews(msgEl, msg, threadId) {
   if (cards.length === 0) return;
   body.append(el("div", { class: "message-canvas-previews" }, ...cards));
 }
-function createIndividualToolCard(tc2, label, api3, threadId) {
+function createIndividualToolCard(tc2, label, api3, threadId, store3) {
   if (tc2.subagent) return createSubagentToolCard(tc2, label, api3);
+  if (store3 && isThreadProposalCall(tc2)) {
+    const proposalCard = createThreadProposalToolCard(tc2, store3, api3, threadId);
+    if (proposalCard) return proposalCard;
+  }
   const card2 = el("details", {
     class: "tool-card",
     "data-tool-id": tc2.id,
@@ -242216,7 +242596,7 @@ function createGroupToolCard(item) {
   }
   return card2;
 }
-function createRollupToolCard(item, api3, threadId) {
+function createRollupToolCard(item, api3, threadId, store3) {
   const status = aggregateToolStatus(item.toolCalls);
   const card2 = el("details", {
     class: "tool-card tool-card-rollup",
@@ -242227,7 +242607,7 @@ function createRollupToolCard(item, api3, threadId) {
   const count2 = item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
-    body.append(createToolCard(child, api3, threadId));
+    body.append(createToolCard(child, api3, threadId, store3));
   }
   card2.append(createToolHeader(item.label, status, "tool-card-header", count2), body);
   return card2;
@@ -242248,11 +242628,11 @@ function createStepToolCard(item, api3, threadId) {
   card2.append(createToolHeader(item.label, status, "tool-card-header"), body);
   return card2;
 }
-function createToolCard(item, api3, threadId) {
-  if (item.type === "rollup") return createRollupToolCard(item, api3, threadId);
+function createToolCard(item, api3, threadId, store3) {
+  if (item.type === "rollup") return createRollupToolCard(item, api3, threadId, store3);
   if (item.type === "step") return createStepToolCard(item, api3, threadId);
   if (item.type === "group") return createGroupToolCard(item);
-  return createIndividualToolCard(item.toolCall, item.label, api3, threadId);
+  return createIndividualToolCard(item.toolCall, item.label, api3, threadId, store3);
 }
 function toolCardKey(item) {
   if (item.type === "rollup") return `r:${item.key}`;
@@ -242260,8 +242640,9 @@ function toolCardKey(item) {
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
 }
-function toolCardSignature(item) {
-  return renderSignature(item);
+function toolCardSignature(item, extra) {
+  const base = renderSignature(item);
+  return extra === void 0 ? base : `${base}|${extra}`;
 }
 function createMessageImages(images) {
   const wrap3 = el("div", { class: "message-images" });
@@ -242352,7 +242733,7 @@ function fillHookInspector(body, detail) {
   const chips = hookRunDetailChips(detail);
   if (chips.length > 0) {
     const row2 = el("div", { class: "hook-card-raw-chips" });
-    for (const chip of chips) row2.append(el("span", { class: "hook-card-raw-chip" }, chip));
+    for (const chip2 of chips) row2.append(el("span", { class: "hook-card-raw-chip" }, chip2));
     body.append(row2);
   }
   for (const section of hookRunDetailSections(detail)) {
@@ -242549,17 +242930,17 @@ function isReasoningDisclosureLive(thread, msg) {
 }
 function transcriptChip(attachment, api3) {
   const { kind, label } = attachment;
-  const chip = el("span", { class: `transcript-attachment-chip transcript-attachment-${kind}` });
-  chip.append(
+  const chip2 = el("span", { class: `transcript-attachment-chip transcript-attachment-${kind}` });
+  chip2.append(
     attachmentIcon(kind, "transcript-attachment-icon"),
     el("span", { class: "transcript-attachment-label" }, label)
   );
   if (kind === "video" && attachment.path) {
-    attachVideoExpand(chip, api3, attachment.path, label);
+    attachVideoExpand(chip2, api3, attachment.path, label);
   } else if (attachment.content !== void 0) {
-    attachTextExpand(chip, attachment.content, label);
+    attachTextExpand(chip2, attachment.content, label);
   }
-  return chip;
+  return chip2;
 }
 function renderUserTranscript(host, content, attachments, api3) {
   const pastes = attachments.filter((a3) => a3.kind === "paste");
@@ -243112,6 +243493,7 @@ function mountConversation(root4, store3, api3) {
       return;
     }
     const tc2 = item.toolCall;
+    if (card2.classList.contains("thread-proposal")) return;
     const running = tc2.status === "running" || tc2.subagent?.status === "running";
     card2.open = running || userExpandedTools.has(tc2.id);
     if (card2.open) ensureToolCardBodyRendered(card2);
@@ -243133,6 +243515,7 @@ function mountConversation(root4, store3, api3) {
       ".tool-card[data-tool-id][open], .tool-group-item[open], .tool-card-subagent[open]"
     ).forEach((node2) => {
       const id39 = node2.dataset["toolId"];
+      if (node2.classList.contains("thread-proposal")) return;
       if (id39 && node2.dataset["status"] !== "running") userExpandedTools.add(id39);
     });
     const msgId = msgEl.dataset["messageId"] ?? "";
@@ -243151,7 +243534,10 @@ function mountConversation(root4, store3, api3) {
     const desired = [];
     for (const item of items) {
       const key = toolCardKey(item);
-      const sig = toolCardSignature(item);
+      const sig = toolCardSignature(
+        item,
+        item.type === "individual" ? threadProposalCardSignature(item.toolCall, store3, threadId) : void 0
+      );
       let card2 = existing.get(key) ?? null;
       if (card2) existing.delete(key);
       if (card2 && toolCardSignatures.get(card2) === sig) {
@@ -243160,7 +243546,7 @@ function mountConversation(root4, store3, api3) {
         toolCardSignatures.set(card2, sig);
       } else {
         card2?.remove();
-        card2 = createToolCard(item, api3, threadId);
+        card2 = createToolCard(item, api3, threadId, store3);
         toolCardKeys.set(card2, key);
         toolCardSignatures.set(card2, sig);
       }
@@ -243780,6 +244166,7 @@ var init_conversation = __esm({
     init_comparison_panel();
     init_retry_review_comparison();
     init_tool_args_format();
+    init_thread_proposal_tool_card();
     init_render_signature();
     init_message_queue();
     init_fork_thread3();
@@ -255149,8 +255536,8 @@ function scaleGuardChip(status) {
   return null;
 }
 function mountFooterIndexStatus(host, api3) {
-  const chip = el("span", { class: "footer-indexing", hidden: "", role: "status" });
-  host.append(chip);
+  const chip2 = el("span", { class: "footer-indexing", hidden: "", role: "status" });
+  host.append(chip2);
   let status = null;
   let timer3 = null;
   let destroyed2 = false;
@@ -255163,10 +255550,10 @@ function mountFooterIndexStatus(host, api3) {
     }
   }
   function hide3() {
-    chip.hidden = true;
-    chip.textContent = "";
-    chip.removeAttribute("data-state");
-    chip.removeAttribute("title");
+    chip2.hidden = true;
+    chip2.textContent = "";
+    chip2.removeAttribute("data-state");
+    chip2.removeAttribute("title");
   }
   function render8() {
     if (!status) {
@@ -255182,26 +255569,26 @@ function mountFooterIndexStatus(host, api3) {
         hide3();
         return;
       }
-      chip.hidden = false;
-      chip.textContent = buildingChipText(status, formatElapsed(elapsed));
-      chip.dataset["state"] = "building";
-      chip.title = describe3(status);
+      chip2.hidden = false;
+      chip2.textContent = buildingChipText(status, formatElapsed(elapsed));
+      chip2.dataset["state"] = "building";
+      chip2.title = describe3(status);
       return;
     }
     setTicking(false);
     if (status.fileIndex.phase === "error" || status.semantic.phase === "error") {
-      chip.hidden = false;
-      chip.textContent = "Indexing failed";
-      chip.dataset["state"] = "error";
-      chip.title = describe3(status);
+      chip2.hidden = false;
+      chip2.textContent = "Indexing failed";
+      chip2.dataset["state"] = "error";
+      chip2.title = describe3(status);
       return;
     }
     const guarded = scaleGuardChip(status);
     if (guarded) {
-      chip.hidden = false;
-      chip.textContent = guarded.text;
-      chip.dataset["state"] = guarded.state;
-      chip.title = describe3(status);
+      chip2.hidden = false;
+      chip2.textContent = guarded.text;
+      chip2.dataset["state"] = guarded.state;
+      chip2.title = describe3(status);
       return;
     }
     hide3();
@@ -255221,7 +255608,7 @@ function mountFooterIndexStatus(host, api3) {
       destroyed2 = true;
       unsubscribe();
       setTicking(false);
-      chip.remove();
+      chip2.remove();
     }
   };
 }
@@ -256608,7 +256995,7 @@ function reconcileChangesSuggestion(suggestions, stats, maxSuggestions = DEFAULT
     return suggestions.filter((s16) => !isChangesBubble(s16));
   }
   const built = buildChangesSuggestion(stats);
-  const chip = {
+  const chip2 = {
     id: built.id,
     label: built.label,
     prompt: built.prompt,
@@ -256619,14 +257006,14 @@ function reconcileChangesSuggestion(suggestions, stats, maxSuggestions = DEFAULT
   };
   if (existingIndex !== -1) {
     const current = suggestions[existingIndex];
-    if (current && current.additions === chip.additions && current.deletions === chip.deletions) {
+    if (current && current.additions === chip2.additions && current.deletions === chip2.deletions) {
       return suggestions;
     }
     const next3 = suggestions.slice();
-    next3[existingIndex] = chip;
+    next3[existingIndex] = chip2;
     return next3;
   }
-  return [chip, ...suggestions].slice(0, maxSuggestions);
+  return [chip2, ...suggestions].slice(0, maxSuggestions);
 }
 var DEFAULT_MAX_SUGGESTIONS;
 var init_changes_stat = __esm({
@@ -258007,8 +258394,8 @@ ${description}
   });
   function removeAttachedImages() {
     attachedImages = [];
-    chips.querySelectorAll(".image-chip").forEach((chip) => {
-      chip.remove();
+    chips.querySelectorAll(".image-chip").forEach((chip2) => {
+      chip2.remove();
     });
   }
   function setImageDescriptionBusy(busy, label) {
@@ -258757,89 +259144,89 @@ ${description}
   }
   function addChip(file2) {
     attachedFiles.push(file2);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip";
     const name = document.createElement("span");
     name.className = "attachment-chip-label";
     const label = file2.path.split("/").pop() ?? file2.path;
     name.textContent = label;
     attachTextExpand(name, file2.content, label);
-    chip.append(name);
+    chip2.append(name);
     const remove3 = document.createElement("button");
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedFiles = attachedFiles.filter((f3) => f3.path !== file2.path);
-      chip.remove();
+      chip2.remove();
       scheduleContextEstimate();
     });
-    chip.append(remove3);
-    chips.append(chip);
+    chip2.append(remove3);
+    chips.append(chip2);
     scheduleContextEstimate();
   }
   function addThreadChip(ref) {
     if (attachedThreads.some((t4) => t4.threadId === ref.threadId)) return;
     attachedThreads.push(ref);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip thread-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip thread-chip";
     const title2 = document.createElement("span");
     title2.className = "attachment-chip-label";
     title2.textContent = ref.title || "Untitled thread";
-    chip.append(threadIcon("thread-chip-icon"), title2);
+    chip2.append(threadIcon("thread-chip-icon"), title2);
     const remove3 = document.createElement("button");
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedThreads = attachedThreads.filter((t4) => t4.threadId !== ref.threadId);
-      chip.remove();
+      chip2.remove();
       scheduleContextEstimate();
     });
-    chip.append(remove3);
-    chips.append(chip);
+    chip2.append(remove3);
+    chips.append(chip2);
     scheduleContextEstimate();
   }
   function addShellChip(ref) {
     if (attachedShells.some((s16) => s16.tabId === ref.tabId)) return;
     attachedShells.push(ref);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip shell-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip shell-chip";
     const title2 = document.createElement("span");
     title2.className = "attachment-chip-label";
     title2.textContent = ref.label;
     attachTextExpand(title2, ref.content, ref.label);
-    chip.append(shellIcon("shell-chip-icon"), title2);
+    chip2.append(shellIcon("shell-chip-icon"), title2);
     const remove3 = document.createElement("button");
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedShells = attachedShells.filter((s16) => s16.tabId !== ref.tabId);
-      chip.remove();
+      chip2.remove();
       scheduleContextEstimate();
     });
-    chip.append(remove3);
-    chips.append(chip);
+    chip2.append(remove3);
+    chips.append(chip2);
     scheduleContextEstimate();
   }
   function renderVideoChip(ref) {
     if (attachedVideos.some((v5) => v5.path === ref.path)) return;
     attachedVideos.push(ref);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip video-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip video-chip";
     const label = document.createElement("span");
     label.className = "attachment-chip-label";
     label.textContent = ref.name;
     const meta5 = document.createElement("span");
     meta5.className = "attachment-chip-meta";
     meta5.textContent = formatByteSize(ref.sizeBytes);
-    chip.title = `${ref.name} \u2014 read as stills by the agent, not sent as video`;
+    chip2.title = `${ref.name} \u2014 read as stills by the agent, not sent as video`;
     attachVideoExpand(label, api3, ref.path, ref.name);
-    chip.append(attachmentIcon("video", "video-chip-icon"), label, meta5);
+    chip2.append(attachmentIcon("video", "video-chip-icon"), label, meta5);
     const remove3 = document.createElement("button");
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedVideos = attachedVideos.filter((v5) => v5.path !== ref.path);
-      chip.remove();
+      chip2.remove();
       scheduleContextEstimate();
     });
-    chip.append(remove3);
-    chips.append(chip);
+    chip2.append(remove3);
+    chips.append(chip2);
     scheduleContextEstimate();
   }
   async function addVideoChip(video) {
@@ -258863,25 +259250,25 @@ ${description}
   function renderArchiveChip(ref) {
     if (attachedArchives.some((a3) => a3.path === ref.path)) return;
     attachedArchives.push(ref);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip archive-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip archive-chip";
     const label = document.createElement("span");
     label.className = "attachment-chip-label";
     label.textContent = ref.name;
     const meta5 = document.createElement("span");
     meta5.className = "attachment-chip-meta";
     meta5.textContent = formatByteSize(ref.sizeBytes);
-    chip.title = `${ref.name} \u2014 unpacked and read as files by the agent, not sent as an archive`;
-    chip.append(attachmentIcon("archive", "archive-chip-icon"), label, meta5);
+    chip2.title = `${ref.name} \u2014 unpacked and read as files by the agent, not sent as an archive`;
+    chip2.append(attachmentIcon("archive", "archive-chip-icon"), label, meta5);
     const remove3 = document.createElement("button");
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedArchives = attachedArchives.filter((a3) => a3.path !== ref.path);
-      chip.remove();
+      chip2.remove();
       scheduleContextEstimate();
     });
-    chip.append(remove3);
-    chips.append(chip);
+    chip2.append(remove3);
+    chips.append(chip2);
     scheduleContextEstimate();
   }
   async function addArchiveChip(archive) {
@@ -258904,8 +259291,8 @@ ${description}
   function addImageChip(dataUrl, mimeType, detail = "auto") {
     const entry = { dataUrl, mimeType };
     attachedImages.push(entry);
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip image-chip";
+    const chip2 = document.createElement("span");
+    chip2.className = "attachment-chip image-chip";
     const thumb = document.createElement("img");
     thumb.src = dataUrl;
     thumb.width = 40;
@@ -258915,18 +259302,18 @@ ${description}
     remove3.append(closeIcon("ui-icon ui-icon-sm"));
     remove3.addEventListener("click", () => {
       attachedImages = attachedImages.filter((i4) => i4 !== entry);
-      chip.remove();
+      chip2.remove();
       void refreshImageCompatibilityWarning();
       scheduleContextEstimate();
     });
     const applyDetail = (next3) => {
       entry.detail = next3;
-      chip.dataset["detail"] = next3;
-      chip.title = IMAGE_DETAIL_LABELS[next3];
+      chip2.dataset["detail"] = next3;
+      chip2.title = IMAGE_DETAIL_LABELS[next3];
       scheduleContextEstimate();
     };
     applyDetail(detail);
-    chip.addEventListener("contextmenu", (e4) => {
+    chip2.addEventListener("contextmenu", (e4) => {
       e4.preventDefault();
       e4.stopPropagation();
       showContextMenu(
@@ -258942,8 +259329,8 @@ ${description}
         }))
       );
     });
-    chip.append(thumb, remove3);
-    chips.append(chip);
+    chip2.append(thumb, remove3);
+    chips.append(chip2);
     void refreshImageCompatibilityWarning();
     scheduleContextEstimate();
   }
@@ -273604,12 +273991,12 @@ function mountRoadmapPane(listRoot, viewerRoot, store3, api3) {
     return cached2;
   }
   function attachmentChip(att, thumbSrc, onRemove2) {
-    const chip = el("span", { class: "roadmap-attachment-chip", title: att.name });
+    const chip2 = el("span", { class: "roadmap-attachment-chip", title: att.name });
     if (isImageAttachment(att)) {
       const thumb = el("img", { class: "roadmap-attachment-thumb", alt: att.name });
       if (thumbSrc) thumb.src = thumbSrc;
       attachImageExpand(thumb, att.name);
-      chip.append(thumb);
+      chip2.append(thumb);
     }
     const remove4 = el(
       "button",
@@ -273622,24 +274009,24 @@ function mountRoadmapPane(listRoot, viewerRoot, store3, api3) {
       closeIcon("ui-icon ui-icon-sm")
     );
     remove4.addEventListener("click", onRemove2);
-    chip.append(el("span", { class: "roadmap-attachment-name" }, att.name), remove4);
-    return chip;
+    chip2.append(el("span", { class: "roadmap-attachment-name" }, att.name), remove4);
+    return chip2;
   }
   function renderAttachments() {
     clear(attachmentList);
     const item = currentItem();
     for (const att of itemAttachments(item).filter((a3) => !removedAttachmentIds.has(a3.id))) {
-      const chip = attachmentChip(att, null, () => {
+      const chip2 = attachmentChip(att, null, () => {
         removedAttachmentIds.add(att.id);
         renderAttachments();
       });
       if (item && isImageAttachment(att)) {
-        const thumb = chip.querySelector("img");
+        const thumb = chip2.querySelector("img");
         void attachmentDataUrl(item.id, att.id).then((url2) => {
           if (url2 && thumb) thumb.src = url2;
         });
       }
-      attachmentList.append(chip);
+      attachmentList.append(chip2);
     }
     for (const pending of pendingAttachments) {
       attachmentList.append(
@@ -273906,7 +274293,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store3, api3) {
         }
         const issue2 = itemIssue(item);
         if (issue2) {
-          const chip = el(
+          const chip2 = el(
             "span",
             {
               class: "roadmap-issue-chip",
@@ -273915,13 +274302,13 @@ function mountRoadmapPane(listRoot, viewerRoot, store3, api3) {
             },
             issue2
           );
-          chip.addEventListener("click", (e4) => {
+          chip2.addEventListener("click", (e4) => {
             e4.stopPropagation();
             void api3.roadmap.issueUrl(issue2).then((url2) => {
               if (url2) void api3.shell.openExternal(url2);
             });
           });
-          meta5.append(chip);
+          meta5.append(chip2);
         }
         const attachmentCount = itemAttachments(item).length;
         if (attachmentCount > 0) {
