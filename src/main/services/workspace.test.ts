@@ -26,6 +26,7 @@ import {
   resolveReadablePath,
   resolveSshHostForWorkspaceRoot,
   resolveWorkspacePath,
+  runOptionalLinkedWorktreeRegistration,
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
   setWorkspaceRootForTest,
@@ -346,6 +347,30 @@ describe('allowed workspace roots', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  it('does not let optional linked-worktree metadata block opening a project', async () => {
+    const controller = new AbortController()
+    let aborted = false
+    const registration = runOptionalLinkedWorktreeRegistration(
+      (signal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              aborted = true
+              reject(new Error('linked-worktree registration aborted'))
+            },
+            { once: true },
+          )
+        }),
+      controller.signal,
+    )
+    await Promise.resolve()
+    controller.abort()
+    await registration
+
+    assert.equal(aborted, true)
   })
 
   it('tracks SSH project roots by host id and path', async () => {
