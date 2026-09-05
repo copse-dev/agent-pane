@@ -975,7 +975,7 @@ function hookCardDetailLines(card: HookCard): string[] {
 }
 
 /**
- * Fetch the raw record behind one card (`hooks:runDetail`). Injected rather than
+ * Fetch the raw record behind one card (`hooks:run-detail`). Injected rather than
  * reached for, so the card family stays a pure rendering concern and component
  * tests can drive the inspector without an IPC bridge.
  */

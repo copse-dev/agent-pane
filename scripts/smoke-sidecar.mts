@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { API_PROTOCOL_VERSION } from '../src/shared/api-protocol.mts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'copse-sidecar-smoke-'))
 const endpointFile = join(scratch, 'endpoint.json')
@@ -114,6 +115,31 @@ if (malformedCloseCode !== 4002) {
 if (sidecar.exitCode !== null) fail(`malformed pre-hello frame crashed the sidecar`)
 console.log('malformed pre-hello frame rejected without crashing sidecar')
 
+// A renderer built against another API protocol version must be refused at
+// the handshake (4008), before the server looks the window up — the failure
+// mode a client and server built separately (docs/api-protocol.md) can hit.
+const mismatchSocket = new WebSocket(`ws://127.0.0.1:${String(endpoint.port)}/`, authProtocol)
+const mismatchCloseCode = await new Promise<number>((resolve) => {
+  mismatchSocket.addEventListener('open', () => {
+    mismatchSocket.send(
+      JSON.stringify({
+        t: 'hello',
+        winId: 1,
+        token: endpoint.token,
+        protocolVersion: API_PROTOCOL_VERSION + 1,
+      }),
+    )
+  })
+  mismatchSocket.addEventListener('close', (event) => {
+    resolve(event.code)
+  })
+})
+if (mismatchCloseCode !== 4008) {
+  fail(`protocol version mismatch closed with ${String(mismatchCloseCode)}, expected 4008`)
+}
+if (sidecarExited()) fail('protocol version mismatch crashed the sidecar')
+console.log('mismatched API protocol version refused at the handshake')
+
 // The primary window is the shim's first BrowserWindow; its id is 1. Give the
 // boot chain time to create it (sandbox init and gortex reaping come first).
 const socket = await (async (): Promise<WebSocket> => {
@@ -122,12 +148,27 @@ const socket = await (async (): Promise<WebSocket> => {
     const ws = new WebSocket(`ws://127.0.0.1:${String(endpoint.port)}/`, authProtocol)
     const outcome = await new Promise<'ok' | 'closed'>((resolve) => {
       ws.addEventListener('open', () => {
-        ws.send(JSON.stringify({ t: 'hello', winId: 1, token: endpoint.token }))
+        ws.send(
+          JSON.stringify({
+            t: 'hello',
+            winId: 1,
+            token: endpoint.token,
+            protocolVersion: API_PROTOCOL_VERSION,
+          }),
+        )
       })
       ws.addEventListener('message', (event) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
-        const frame = JSON.parse(String(event.data)) as { t: string }
-        if (frame.t === 'hello-ok') resolve('ok')
+        const frame = JSON.parse(String(event.data)) as { t: string; protocolVersion?: number }
+        if (frame.t === 'hello-ok') {
+          if (frame.protocolVersion !== API_PROTOCOL_VERSION) {
+            fail(
+              `hello-ok reported protocol version ${String(frame.protocolVersion)}, ` +
+                `expected ${String(API_PROTOCOL_VERSION)}`,
+            )
+          }
+          resolve('ok')
+        }
       })
       ws.addEventListener('close', () => {
         resolve('closed')
@@ -173,22 +214,22 @@ function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
   })
 }
 
-const home = await invoke('workspace:getHomeDirectory')
+const home = await invoke('workspace:get-home-directory')
 if (typeof home !== 'string' || home.length === 0)
-  fail(`workspace:getHomeDirectory → ${String(home)}`)
-console.log(`workspace:getHomeDirectory → ${home}`)
+  fail(`workspace:get-home-directory → ${String(home)}`)
+console.log(`workspace:get-home-directory → ${home}`)
 
 const model = await invoke('settings:get', 'model')
 console.log(`settings:get model → ${JSON.stringify(model)}`)
 
-const trusted = await invoke('workspace:isTrusted')
-console.log(`workspace:isTrusted → ${JSON.stringify(trusted)}`)
+const trusted = await invoke('workspace:is-trusted')
+console.log(`workspace:is-trusted → ${JSON.stringify(trusted)}`)
 
 // A guarded channel must also work (assertMainFrameSender against the shim's
 // fabricated senderFrame) — settings:get above is already guarded in
 // register-handlers, but hit a second cluster for good measure.
-const navigation = await invoke('mainWindow:getNavigation')
-console.log(`mainWindow:getNavigation → ${JSON.stringify(navigation)}`)
+const navigation = await invoke('main-window:get-navigation')
+console.log(`main-window:get-navigation → ${JSON.stringify(navigation)}`)
 
 // Attachment-scale traffic must survive the frame bound: the product permits
 // 256 MiB videos over `video:attach`, which ride base64-encoded (×4/3) in a

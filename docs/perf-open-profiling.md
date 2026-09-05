@@ -12,7 +12,7 @@ Everything here is inert unless `COPSE_PERF=1` is set.
 `boot-complete`, which is roughly "the window exists and handlers are
 registered". The cost the user feels lands _after_ that, in three places at once:
 
-- renderer IPC (`workspace:set`, `threads:loadProject`, git and file-tree calls),
+- renderer IPC (`workspace:set`, `threads:load-project`, git and file-tree calls),
 - main-process disk work (the thread-store fold, file indexing),
 - and contention between them on main's single event loop.
 
@@ -81,14 +81,14 @@ switches driven as real sidebar clicks via `scripts/perf-switch.mts`.
 
 ### Cold open
 
-|                                           | streaming-markdown (17 threads) | Copse (363 threads)        |
-| ----------------------------------------- | ------------------------------- | -------------------------- |
-| `renderer:boot` (end to end)              | **637 ms**                      | **7,695 – 9,471 ms**       |
-| `renderer:restore-project`                | 483 ms                          | 7,586 – 9,358 ms           |
-| `threads:loadProject` (renderer-observed) | 431 ms                          | 6,950 – 8,638 ms           |
-| `store:read-project-threads` (main-side)  | 394 ms                          | 6,451 – 8,021 ms           |
-| `store:thread-prefetch`                   | 17 calls, 4.9 MB                | 363 calls, **210.8 MB**    |
-| `index:build`                             | 77 ms (224 paths)               | 122 – 147 ms (2,981 paths) |
+|                                            | streaming-markdown (17 threads) | Copse (363 threads)        |
+| ------------------------------------------ | ------------------------------- | -------------------------- |
+| `renderer:boot` (end to end)               | **637 ms**                      | **7,695 – 9,471 ms**       |
+| `renderer:restore-project`                 | 483 ms                          | 7,586 – 9,358 ms           |
+| `threads:load-project` (renderer-observed) | 431 ms                          | 6,950 – 8,638 ms           |
+| `store:read-project-threads` (main-side)   | 394 ms                          | 6,451 – 8,021 ms           |
+| `store:thread-prefetch`                    | 17 calls, 4.9 MB                | 363 calls, **210.8 MB**    |
+| `index:build`                              | 77 ms (224 paths)               | 122 – 147 ms (2,981 paths) |
 
 ### Switch (real clicks)
 
@@ -100,7 +100,7 @@ switches driven as real sidebar clicks via `scripts/perf-switch.mts`.
 
 ### Conclusions
 
-1. **One cause, ~94–98 % of it.** `threads:loadProject` → `readProjectThreads`
+1. **One cause, ~94–98 % of it.** `threads:load-project` → `readProjectThreads`
    reads and folds _every_ non-archived thread in full — meta, spine, and every
    referenced message and blob file — then structured-clones the result to the
    renderer. For this profile that is 363 threads, 210.8 MB, ~50,600 files.
@@ -119,9 +119,9 @@ switches driven as real sidebar clicks via `scripts/perf-switch.mts`.
 
 ## Lazy thread loading (shipped path)
 
-`threads:loadProject` returns metadata only — `meta.json` plus a `stat` of the
+`threads:load-project` returns metadata only — `meta.json` plus a `stat` of the
 spine — and a thread's transcript is read when that thread is opened
-(`threads:loadMessages`). There is no flag: this is the only path.
+(`threads:load-messages`). There is no flag: this is the only path.
 
 ### The trap this had to avoid
 
@@ -149,7 +149,7 @@ change did exactly that; the thread-store tests caught it.
 - **PR chips** come from links in message text, which a metadata-only load never
   reads. `prRefs` is now cached on thread metadata: merged in as each message is
   appended, and backfilled for older threads by a one-pass-per-project background
-  scan behind the load, which pushes batches over `threads:pr_refs` so chips fill
+  scan behind the load, which pushes batches over `threads:pr-refs` so chips fill
   in without a relaunch. `sidebarPrRefs` still prefers a transcript that is in
   memory — a streaming thread must re-scrape, since `appendToken` mutates content
   in place.
@@ -173,9 +173,9 @@ catalog to cover them is a real option if this ever becomes the bottleneck; at
 
 ## Measured A/B (flag build, retained for the record)
 
-`threads:loadProject` returns metadata only — `meta.json` plus a `stat` of the
+`threads:load-project` returns metadata only — `meta.json` plus a `stat` of the
 spine — and the active thread's transcript is fetched on demand via a new
-`threads:loadMessages`. One flag on one build, so the A/B is honest: with it off,
+`threads:load-messages`. One flag on one build, so the A/B is honest: with it off,
 `messagesLoaded` stays `undefined`, the hydration listener never fires, and the
 old path runs unchanged.
 
@@ -196,7 +196,7 @@ and blank-thread pruning keeps working for new threads.
 | -------------------------------- | ------------------- | -------------------------- | --------- |
 | `renderer:boot` (end to end)     | 8,393 / 7,511 ms    | **430 / 428 ms**           | **~18×**  |
 | `renderer:restore-project`       | 8,278 / 7,408 ms    | 325 / 322 ms               |           |
-| `threads:loadProject`            | 7,547 / 6,772 ms    | 211 / 279 ms               |           |
+| `threads:load-project`           | 7,547 / 6,772 ms    | 211 / 279 ms               |           |
 | main-side read                   | 6,960 / 6,254 ms    | 119 / 226 ms               |           |
 | bytes read                       | 363 calls, 210.8 MB | **1 call, 1.6 MB**         | **~130×** |
 | `thread:hydrate` (active thread) | —                   | 298 / 158 ms (85 messages) |           |
@@ -242,7 +242,7 @@ landed — i.e. with all the extra background work in play:
 | ------------------------------ | -------- | ------------ |
 | `renderer:boot`, backfill pass | 8,393 ms | **655 ms**   |
 | `renderer:boot`, steady state  | 7,511 ms | **491 ms**   |
-| `threads:loadProject`          | 7,547 ms | 369–519 ms   |
+| `threads:load-project`         | 7,547 ms | 369–519 ms   |
 | active-thread hydrate          | —        | 203–298 ms   |
 
 The backfill read 334 threads / 186 MB in the background during that first run

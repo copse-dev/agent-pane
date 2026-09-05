@@ -322,7 +322,7 @@ export function validateAdvisorPair(
   }
   // A dynamic selection names a *rule*, not a model, so there is nothing to
   // grade until it resolves. Settings expands both sides through
-  // `models:resolveDynamic` before calling this; the branch covers callers that
+  // `models:resolve-dynamic` before calling this; the branch covers callers that
   // cannot (and a selector nobody has resolved yet).
   if (isDynamicModel(advisorModel) || isDynamicModel(executorModel)) {
     return {

@@ -8,7 +8,7 @@
  * Why this exists. The existing startup diagnostics (`event-loop-watchdog`,
  * `startup-budget`) measure boot *phases before the window exists*. The cost the
  * user actually feels — opening or switching to a large project — happens after
- * that, spread across renderer IPC (`workspace:set`, `threads:loadProject`),
+ * that, spread across renderer IPC (`workspace:set`, `threads:load-project`),
  * main-process disk work (the thread store fold), and background indexing. None
  * of it is attributable from a phase timeline, so this module adds:
  *

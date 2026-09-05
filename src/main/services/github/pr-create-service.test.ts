@@ -7,7 +7,7 @@ import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 // The one create path, shared by the `gh_pr_create` tool and the "Create PR"
 // dialog. What matters here is that both get the same four things: the right
 // checkout's branches, the attribution trailer, the draft flag as asked, and
-// the `threads:pr_created` announce the Changes panel follows.
+// the `threads:pr-created` announce the Changes panel follows.
 
 const WORKTREE_CONTEXT: ThreadExecutionContext = {
   projectId: 'project-1',
@@ -66,9 +66,9 @@ function deps(over: Partial<PrCreateDependencies> = {}): Recorded {
   return { deps: base, created, slugRoots, branchRoots, broadcasts }
 }
 
-/** The `threads:pr_created` pushes a run made, in order. */
+/** The `threads:pr-created` pushes a run made, in order. */
 function announcements(recorded: Recorded): unknown[][] {
-  return recorded.broadcasts.filter((b) => b.channel === 'threads:pr_created').map((b) => b.args)
+  return recorded.broadcasts.filter((b) => b.channel === 'threads:pr-created').map((b) => b.args)
 }
 
 describe('createPrForThread', () => {

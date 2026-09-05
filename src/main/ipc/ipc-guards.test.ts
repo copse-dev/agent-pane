@@ -194,7 +194,7 @@ describe('ipc-guards agent payload schemas', () => {
   })
 })
 
-describe('ipc-guards gh:createPrForThread request', () => {
+describe('ipc-guards gh:create-pr-for-thread request', () => {
   it("accepts the dialog's title, body and draft flag", () => {
     const parsed = zPrComposerCreateRequest.safeParse({
       title: 'Roll up tool activity',

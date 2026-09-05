@@ -29,6 +29,21 @@ describe('Tauri WebSocket protocol', () => {
     assert.deepEqual(event.args[0], { keep: 1, gone: undefined })
   })
 
+  it('carries the API protocol version through the hello handshake', () => {
+    const token = 'a'.repeat(64)
+    const hello: ClientFrame = { t: 'hello', winId: 1, token, protocolVersion: 1 }
+    assert.deepEqual(decodeClientFrame(encodeFrame(hello)), hello)
+    const ok: ServerFrame = { t: 'hello-ok', protocolVersion: 1 }
+    assert.deepEqual(decodeServerFrame(encodeFrame(ok)), ok)
+    // A hello without a version is a peer from before the field existed —
+    // refuse it rather than guess which surface it speaks.
+    assert.throws(
+      () => decodeClientFrame(JSON.stringify({ t: 'hello', winId: 1, token })),
+      /invalid client frame/,
+    )
+    assert.throws(() => decodeServerFrame('{"t":"hello-ok"}'), /invalid server frame/)
+  })
+
   it('round-trips client frames and nested binary values', () => {
     const frame: ClientFrame = {
       t: 'invoke',

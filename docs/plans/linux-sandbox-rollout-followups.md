@@ -55,7 +55,7 @@ For **item 1 it remains a candidate**, and only for half of that item — see be
 
 One cost worth knowing about: `invokeWorker` now calls `shutdownSandboxFsServer()` before
 every write, so a save costs a worker spawn and the next read pays a respawn. The only
-caller is the `fs:writeFile` IPC, reached solely from the editor's explicit Ctrl+S
+caller is the `fs:write-file` IPC, reached solely from the editor's explicit Ctrl+S
 (`context-panel.ts:267`) — one deliberate action, not autosave — so this is bounded. It
 would stop being bounded if anything batched (a diff-queue apply, a multi-file refactor)
 were ever routed through `gatewayWriteFile`.

@@ -113,6 +113,9 @@ describe('create PR dialog', function () {
       timeout: 15_000,
       timeoutMsg: 'the create card did not settle',
     })
+    if ((await card.getAttribute('data-status')) === 'error') {
+      throw new Error(`PR creation failed: ${await card.getHTML()}`)
+    }
     await expect(card).toHaveAttribute('data-status', 'done')
     await expect($('.follow-up-suggestions')).not.toBeDisplayed()
     await saveAppScreenshot('create-pr-completed.png')

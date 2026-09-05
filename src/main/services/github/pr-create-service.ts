@@ -156,7 +156,7 @@ async function linkPrToThread(
   try {
     const refs = await recordThreadPrRefs(context.projectId, context.threadId, [ref])
     if (!refs) return
-    broadcast('threads:pr_refs', context.projectId, [{ threadId: context.threadId, prRefs: refs }])
+    broadcast('threads:pr-refs', context.projectId, [{ threadId: context.threadId, prRefs: refs }])
   } catch (err) {
     console.warn('[pr-create] linking the PR to its thread failed:', err)
   }
@@ -166,7 +166,7 @@ async function linkPrToThread(
  * Tell the renderer a PR was just opened from this thread, so a pane showing
  * the changes that went into it can follow the work through to the PR view.
  *
- * Deliberately not folded into the `threads:pr_refs` push above: that channel
+ * Deliberately not folded into the `threads:pr-refs` push above: that channel
  * also carries the startup backfill, whose batches are indistinguishable from a
  * live creation once they arrive, and only a genuinely new PR may be allowed to
  * move a panel. Announced even when {@link linkPrToThread} failed — the PR pane
@@ -182,5 +182,5 @@ function announcePrCreated(
   context: Pick<ThreadExecutionContext, 'projectId' | 'threadId'>,
   broadcast: typeof broadcastToAppWindows,
 ): void {
-  broadcast('threads:pr_created', context.projectId, context.threadId, ref)
+  broadcast('threads:pr-created', context.projectId, context.threadId, ref)
 }

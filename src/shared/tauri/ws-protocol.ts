@@ -19,13 +19,20 @@ import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { isRecord } from '@shared/unknown-value.mts'
 import { z } from 'zod'
 
+/**
+ * The `hello` frame carries the API protocol version the renderer bundle was
+ * built against (`@shared/api-protocol.mts`), and `hello-ok` echoes the
+ * server's. Today both ends ship from one build so they always agree; the
+ * field exists so a client and server built separately (the daemon split,
+ * #2312) fail the handshake instead of exchanging mismatched channel shapes.
+ */
 export type ClientFrame =
-  | { t: 'hello'; winId: number; token: string }
+  | { t: 'hello'; winId: number; token: string; protocolVersion: number }
   | { t: 'invoke'; id: number; channel: string; args: unknown[] }
   | { t: 'send'; channel: string; args: unknown[] }
 
 export type ServerFrame =
-  | { t: 'hello-ok' }
+  | { t: 'hello-ok'; protocolVersion: number }
   | { t: 'result'; id: number; ok: boolean; value?: unknown; error?: string }
   | { t: 'event'; channel: string; args: unknown[] }
 
@@ -126,6 +133,7 @@ const clientFrameSchema = z.discriminatedUnion('t', [
     t: z.literal('hello'),
     winId: z.number().int().positive(),
     token: z.string().length(64),
+    protocolVersion: z.number().int().positive(),
   }),
   z.object({
     t: z.literal('invoke'),
@@ -137,7 +145,7 @@ const clientFrameSchema = z.discriminatedUnion('t', [
 ])
 
 const serverFrameSchema = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('hello-ok') }),
+  z.object({ t: z.literal('hello-ok'), protocolVersion: z.number().int().positive() }),
   z.object({
     t: z.literal('result'),
     id: z.number().int().nonnegative(),

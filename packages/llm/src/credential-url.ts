@@ -1,6 +1,6 @@
 // Validation for base URLs that carry a secret credential (an Authorization
 // header). Shared between the main-process settings schema (the write path,
-// settings:saveExtraProvider) and the shared provider resolver (the read path,
+// settings:save-extra-provider) and the shared provider resolver (the read path,
 // which sees a tampered or synced settings.json), so both enforce the identical
 // rule. Requires https:, except http: is allowed only for loopback hosts;
 // rejects embedded userinfo (user:pass@host); and rejects any non-loopback

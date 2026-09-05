@@ -10,7 +10,7 @@ import type { GitDiffEditor, GitDiffMonaco } from '../monaco/git-diff-viewer.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Regression: a proposed diff must render even when this pane never received the
-// `agent:show_diff` push carrying its content. The pane mounts a turn after the
+// `agent:show-diff` push carrying its content. The pane mounts a turn after the
 // agent proposes (Monaco loads async, #459) or is remounted on popout/workspace
 // switch, so the push can be missed and the in-memory cache stays empty. The pane
 // then falls back to fetching the content the main-process queue still holds via

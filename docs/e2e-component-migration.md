@@ -53,7 +53,7 @@ real runtime:
 - **Monaco** editor (diff, selection, language workers).
 - **xterm / node-pty** terminal.
 - **webview / browser** panel (Electron webContents).
-- **Real IPC to main** — `fs:listDir`, git status/diff, sandbox, project load.
+- **Real IPC to main** — `fs:list-dir`, git status/diff, sandbox, project load.
 
 Everything else (DOM structure, classes, text, `data-*` attrs, store wiring,
 event handlers, markdown render output) is component-testable.

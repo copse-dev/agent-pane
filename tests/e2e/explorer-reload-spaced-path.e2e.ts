@@ -5,10 +5,10 @@ import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
-// This guards #268: on macOS with ASRT active, `fs:listDir` routes through the
+// This guards #268: on macOS with ASRT active, `fs:list-dir` routes through the
 // seatbelt-wrapped `sandbox-fs-worker`, whose spawn broke when the workspace
 // path contained spaces. That sandbox path is darwin-only
-// (`isProjectSandboxEnabled`); on other platforms `fs:listDir` is a plain
+// (`isProjectSandboxEnabled`); on other platforms `fs:list-dir` is a plain
 // `readdir`, so the spaced-path scenario exercises nothing it can regress and
 // only adds noise to the (Linux) CI e2e shard. Scope the suite to where the
 // behaviour under test actually runs.
@@ -38,7 +38,7 @@ describeSpacedExplorer('explorer reload with spaced workspace path', () => {
     rmSync(workspaceParent, { recursive: true, force: true })
   })
 
-  it('reloads the file tree without fs:listDir errors', async () => {
+  it('reloads the file tree without fs:list-dir errors', async () => {
     // Click the toggle until the files pane actually shows (only when it isn't
     // already open, so we never toggle it back shut) — a single click can still
     // land a beat before the workspace is ready on a constrained runner.
