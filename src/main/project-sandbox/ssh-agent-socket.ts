@@ -1,4 +1,5 @@
-import { isAbsolute } from 'node:path'
+import { statSync } from 'node:fs'
+import { isAbsolute, normalize } from 'node:path'
 
 /**
  * Unix-socket carve-out for the user's `ssh-agent` (issue #2320).
@@ -48,9 +49,11 @@ import { isAbsolute } from 'node:path'
  * always the safe answer: ASRT leaves unix sockets blocked when it is given
  * neither `allowUnixSockets` nor `allowAllUnixSockets`.
  *
- * `authSock` and `platform` are parameters rather than reads of `process.env` /
- * `process.platform` so the policy is a pure function the tests can drive
- * directly, without a test-only settings path into the product.
+ * `authSock`, `platform` and `isSocket` are parameters rather than reads of
+ * `process.env` / `process.platform` / the filesystem, so the policy is a pure
+ * function the tests can drive directly, without a test-only settings path into
+ * the product. {@link resolveSshAgentSocketAllowList} is the caller-facing
+ * wrapper that supplies the filesystem answer.
  */
 export function sshAgentSocketAllowList(input: {
   /** Whether the user has opted this on; `false` short-circuits everything. */
@@ -59,6 +62,17 @@ export function sshAgentSocketAllowList(input: {
   readonly authSock: string | undefined
   /** `process.platform` of the host. */
   readonly platform: NodeJS.Platform
+  /**
+   * Whether the path is, right now, a unix socket. **Load-bearing, not a
+   * sanity check.** ASRT emits `(subpath "<path>")` per entry, and a subpath
+   * rule over a *directory* grants every socket beneath it — so a
+   * `SSH_AUTH_SOCK` that names a directory (a misconfiguration, or an
+   * environment an attacker influenced) would silently widen the grant far
+   * past the one agent socket this feature exists to admit. `/` would admit
+   * all of them. Narrowing to a real socket node keeps `subpath` and `literal`
+   * equivalent, because a socket has nothing beneath it.
+   */
+  readonly isSocket: boolean
 }): string[] {
   if (!input.enabled) return []
   // See "Why macOS only" above: on Linux the equivalent grant is all-or-nothing.
@@ -69,5 +83,34 @@ export function sshAgentSocketAllowList(input: {
   // the seatbelt profile pins, so the grant and the connect could disagree.
   // Refuse rather than emit a rule that does not mean what it says.
   if (!isAbsolute(sock)) return []
+  // Likewise for a path that is not already normalised: `/a/../b` pins one
+  // string in the profile while the kernel resolves another.
+  if (normalize(sock) !== sock) return []
+  if (!input.isSocket) return []
   return [sock]
+}
+
+/**
+ * {@link sshAgentSocketAllowList} with the filesystem question answered.
+ *
+ * `statSync` follows symlinks deliberately: the seatbelt matches the vnode the
+ * path resolves to, so what matters is what is at the end of the link, not the
+ * link itself. A missing or unreadable path throws and is treated as "not a
+ * socket" — the safe reading, since the grant is only ever narrowed by it.
+ */
+export function resolveSshAgentSocketAllowList(input: {
+  readonly enabled: boolean
+  readonly authSock: string | undefined
+  readonly platform: NodeJS.Platform
+}): string[] {
+  const sock = input.authSock?.trim()
+  let isSocket = false
+  if (sock) {
+    try {
+      isSocket = statSync(sock).isSocket()
+    } catch {
+      isSocket = false
+    }
+  }
+  return sshAgentSocketAllowList({ ...input, isSocket })
 }

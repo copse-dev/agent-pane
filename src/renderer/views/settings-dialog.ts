@@ -933,8 +933,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
               <p class="field-hint">
                 Off by default. A passphrase-protected SSH signing key only works through
-                <code>ssh-agent</code>, so without this an agent's commits land unsigned even with
-                <code>commit.gpgsign=true</code>. Turning it on lets an agent ask ssh-agent to use
+                <code>ssh-agent</code>, so without this an agent's signed commits fail outright —
+                git stops rather than quietly writing an unsigned commit, and an agent that works
+                around it with <code>--no-gpg-sign</code> leaves the history unsigned instead.
+                Turning it on lets an agent ask ssh-agent to use
                 <strong>any key it holds, for anything</strong> — the agent protocol has no
                 &ldquo;signing only&rdquo; scope — so it can also authenticate as you wherever those
                 keys are trusted. It never gains read access to the key itself. Pair it with

@@ -93,9 +93,10 @@ sandboxed ACP agent `connect()` to the socket `SSH_AUTH_SOCK` names, and nothing
 
 The default costs something real, so it is a deliberate choice rather than an oversight. A
 passphrase-protected SSH signing key is only usable through `ssh-agent`: with the socket denied,
-`ssh-keygen -Y sign` falls back to the key file and needs a passphrase it cannot ask for, so every
-agent-authored commit lands unsigned even where `commit.gpgsign=true` and the same commit signs
-fine from an unsandboxed shell (#2320).
+`ssh-keygen -Y sign` falls back to the key file and needs a passphrase it cannot ask for, so the
+commit **fails** — git stops rather than quietly writing an unsigned commit. The history ends up
+unsigned because agents work around the failure with `--no-gpg-sign`, not because signing was
+skipped silently. The same commit signs fine from an unsandboxed shell (#2320).
 
 The reason it is still off by default: an agent socket is a confused-deputy channel. The sandbox
 keeps preventing the agent process from _reading_ the private key, but the socket lets it ask
@@ -110,9 +111,14 @@ a directly usable key on disk for every process on the machine, sandboxed or not
 and every contributor has to repeat the setup. This grant is scoped to processes Copse spawns and
 leaves the key's passphrase protection intact.
 
-**Scope of the grant.** Exactly the one path from `SSH_AUTH_SOCK` — never a directory, never
-`allowAllUnixSockets`. A relative or empty value grants nothing rather than emitting a rule that
-does not mean what it says. An agent that has not opted in gets a byte-identical profile to the
+**Scope of the grant.** Exactly the one path from `SSH_AUTH_SOCK`, and only when that path is a
+unix socket right now. This is load-bearing rather than a sanity check: ASRT emits
+`(subpath "<path>")` per entry, and a subpath rule over a _directory_ admits every socket
+beneath it — `/` would admit all of them — so a `SSH_AUTH_SOCK` naming a directory would widen
+the grant far past the one agent socket. Narrowing to a socket node keeps `subpath` and
+`literal` equivalent, because a socket has nothing beneath it. A value that is empty,
+relative, not already normalised (`/a/../b` pins one string while the kernel resolves
+another), missing, or not a socket grants nothing. `allowAllUnixSockets` is never set. An agent that has not opted in gets a byte-identical profile to the
 one it got before the setting existed.
 
 **macOS only.** ASRT expresses the boundary differently per platform. The macOS seatbelt takes a

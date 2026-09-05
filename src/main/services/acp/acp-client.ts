@@ -59,7 +59,7 @@ import {
   withSandboxShellPath,
 } from '../../project-sandbox/sandbox-argv.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
-import { sshAgentSocketAllowList } from '../../project-sandbox/ssh-agent-socket.ts'
+import { resolveSshAgentSocketAllowList } from '../../project-sandbox/ssh-agent-socket.ts'
 import { getSetting } from '../storage/settings.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
@@ -472,7 +472,7 @@ export async function spawnAcpAgentProcess(
       // Read from `env` — the environment this child actually gets — rather than
       // `process.env`, so the socket named in the profile is the one the agent
       // will connect to. Off unless the user turned it on (#2320).
-      unixSocketPaths: sshAgentSocketAllowList({
+      unixSocketPaths: resolveSshAgentSocketAllowList({
         enabled: getSetting<boolean>('agentSshAgentSocketAccess', false),
         authSock: env['SSH_AUTH_SOCK'],
         platform: process.platform,
