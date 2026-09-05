@@ -17,6 +17,7 @@ import {
 import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
 import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
 import { notifyThreadResourceFinished } from '../worktree-parking-events.ts'
+import { worktreePreparationShellEnvironment } from '../worktree-preparation.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
 // plugin (Settings > Plugins), which also DECLARES the `loopback-bind` sandbox
@@ -235,7 +236,7 @@ export async function startBackgroundProcess(
 
   const proc = await spawnBackgroundProcess(command, {
     cwd,
-    env: envForRendererChildProcess(),
+    env: worktreePreparationShellEnvironment(cwd, envForRendererChildProcess()),
     allowPortBinding: portBinding,
     unsandboxed,
   })
