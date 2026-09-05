@@ -24,6 +24,7 @@
  */
 
 import { isRecord } from '@copse/std/unknown-value.ts'
+import type { ThreadCheckoutMode } from './worktree-types.ts'
 
 /** The tool the agent calls to offer one. */
 export const THREAD_PROPOSAL_TOOL = 'propose_thread'
@@ -69,6 +70,18 @@ export interface ThreadProposalDecision {
   decidedAt: number
   /** Thread the `started` decision created; absent for `dismissed`. */
   threadId?: string
+  /**
+   * The checkout the started thread actually got — **the outcome, not the ask**.
+   *
+   * The card offers work "in its own checkout", but that is a request the
+   * repository can refuse: `decideThreadWorktreePolicy` degrades to `shared`
+   * for a non-git folder, a remote project, a detached HEAD, or a project with
+   * worktrees disabled. Recording what was granted is what lets the settled
+   * card say so instead of leaving a promise it did not keep standing as the
+   * last word. Absent on decisions written before this was captured, which
+   * read as "not known" rather than as isolated.
+   */
+  checkoutMode?: ThreadCheckoutMode
 }
 
 function trimTo(value: string, max: number): string {

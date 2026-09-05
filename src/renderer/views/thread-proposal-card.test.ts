@@ -240,6 +240,68 @@ describe('model-proposed thread card', () => {
     unmount()
   })
 
+  it('says so when the repository could not give the thread its own checkout', () => {
+    // The pending card offers "its own checkout"; when the policy degraded to
+    // shared, the settled row is where that promise gets corrected.
+    const { root, store, threadId, unmount } = mount()
+    store.setState({
+      threads: store.getState().threads.map((t) =>
+        t.id !== threadId
+          ? t
+          : {
+              ...t,
+              threadProposals: [
+                {
+                  id: 'call-1',
+                  status: 'started' as const,
+                  decidedAt: 1,
+                  threadId,
+                  checkoutMode: 'shared' as const,
+                },
+              ],
+            },
+      ),
+    })
+    store.emit('threads_changed')
+
+    const settled = card(root)
+    assert.equal(settled.dataset['proposalStatus'], 'started')
+    const state = settled.querySelector<HTMLElement>('.thread-proposal-state')
+    assert.ok(state)
+    assert.equal(state.dataset['checkout'], 'shared')
+    assert.match(state.textContent, /shared checkout/i)
+    unmount()
+  })
+
+  it('keeps the plain started row when isolation was granted', () => {
+    const { root, store, threadId, unmount } = mount()
+    store.setState({
+      threads: store.getState().threads.map((t) =>
+        t.id !== threadId
+          ? t
+          : {
+              ...t,
+              threadProposals: [
+                {
+                  id: 'call-1',
+                  status: 'started' as const,
+                  decidedAt: 1,
+                  threadId,
+                  checkoutMode: 'worktree' as const,
+                },
+              ],
+            },
+      ),
+    })
+    store.emit('threads_changed')
+
+    const state = card(root).querySelector<HTMLElement>('.thread-proposal-state')
+    assert.ok(state)
+    assert.equal(state.dataset['checkout'], undefined)
+    assert.doesNotMatch(state.textContent, /shared/i)
+    unmount()
+  })
+
   it('drops the link when the started thread has since been deleted', () => {
     const { root, store, threadId, unmount } = mount()
     store.setState({

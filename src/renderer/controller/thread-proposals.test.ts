@@ -23,10 +23,17 @@ interface Harness {
   runs: Array<{ threadId: string; payload: string }>
 }
 
-function harness(options: { prepareFails?: Error } = {}): Harness {
+/** What the repository grants when it cannot give the thread its own checkout. */
+const SHARED_CHECKOUT: PreparedThreadCheckout = {
+  checkoutMode: 'shared',
+  choice: 'worktree',
+  branch: 'main',
+}
+
+function harness(options: { prepareFails?: Error; grants?: PreparedThreadCheckout } = {}): Harness {
   const prepared: Harness['prepared'] = []
   const runs: Harness['runs'] = []
-  const checkout: PreparedThreadCheckout = {
+  const checkout: PreparedThreadCheckout = options.grants ?? {
     checkoutMode: 'worktree',
     choice: 'worktree',
     branch: 'copse/migrate-settings',
@@ -106,8 +113,9 @@ test('accepting a proposal starts an isolated thread seeded with the prompt', as
   const store = storeWithSource()
   const h = harness()
 
-  const threadId = await startProposedThread(store, h.api, 'source', proposal)
+  const { threadId, checkoutMode } = await startProposedThread(store, h.api, 'source', proposal)
 
+  assert.equal(checkoutMode, 'worktree')
   const created = getThreadById(store, threadId)
   assert.ok(created)
   assert.equal(created.title, proposal.title)
@@ -138,18 +146,53 @@ test('the offering thread records the answer and the thread it created', async (
   const store = storeWithSource()
   const h = harness()
 
-  const threadId = await startProposedThread(store, h.api, 'source', proposal)
+  const { threadId } = await startProposedThread(store, h.api, 'source', proposal)
 
   const source = getThreadById(store, 'source')
   assert.ok(source)
   assert.equal(threadProposalStatus(source.threadProposals, 'call-1'), 'started')
   assert.equal(source.threadProposals?.[0]?.threadId, threadId)
+  // `assert.equal` from node:assert/strict narrows, so the row is defined here.
+  assert.equal(source.threadProposals[0].checkoutMode, 'worktree')
 })
 
 test('the new thread becomes the active one', async () => {
   const store = storeWithSource()
-  const threadId = await startProposedThread(store, harness().api, 'source', proposal)
+  const { threadId } = await startProposedThread(store, harness().api, 'source', proposal)
   assert.equal(store.getState().activeThreadId, threadId)
+})
+
+// The card offers work "in its own checkout", but `decideThreadWorktreePolicy`
+// degrades to a shared checkout for a non-git folder, a remote project, a
+// detached HEAD, or a project with worktrees off. The run still goes ahead —
+// refusing would make the feature unusable exactly where the composer works
+// fine — but the broken promise must not pass unremarked.
+test('a repository that cannot isolate still runs the work, and says so', async () => {
+  const store = storeWithSource()
+  const h = harness({ grants: SHARED_CHECKOUT })
+
+  const started = await startProposedThread(store, h.api, 'source', proposal)
+
+  // Isolation was still what was asked for; only the grant differs.
+  assert.deepEqual(h.prepared, [
+    { threadId: started.threadId, prompt: proposal.prompt, choice: 'worktree' },
+  ])
+  // Reported back to the caller, which is what drives the notice to the user.
+  assert.equal(started.checkoutMode, 'shared')
+
+  // The work is not refused: the prompt is in the transcript and dispatched.
+  const created = getThreadById(store, started.threadId)
+  assert.deepEqual(
+    created?.messages.map((m) => m.content),
+    [proposal.prompt],
+  )
+  assert.equal(created.status, 'running')
+  assert.equal(h.runs.length, 1)
+
+  // And the record is honest, so the settled card stops claiming isolation.
+  const decision = getThreadById(store, 'source')?.threadProposals?.[0]
+  assert.equal(decision?.status, 'started')
+  assert.equal(decision.checkoutMode, 'shared')
 })
 
 test('a failed checkout leaves the offer standing and dispatches nothing', async () => {

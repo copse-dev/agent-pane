@@ -5,6 +5,7 @@ import {
   type ThreadProposal,
   type ThreadProposalStatus,
 } from '@shared/threads/thread-proposal.ts'
+import type { ThreadCheckoutMode } from '@shared/types/worktree.ts'
 
 /**
  * The card for a model-proposed thread.
@@ -37,19 +38,34 @@ export interface ThreadProposalCardState {
   status: ThreadProposalStatus
   /** Thread created by a `started` proposal, when it still exists. */
   threadId?: string
+  /**
+   * The checkout the started thread actually got. `'shared'` means the
+   * repository could not give it the isolation this card offered, and the
+   * settled row says so rather than leaving the offer's wording as the last
+   * word. Absent on decisions recorded before this was captured.
+   */
+  checkoutMode?: ThreadCheckoutMode
 }
 
 function chip(kind: string, ...children: (Node | string)[]): HTMLElement {
   return el('span', { class: 'thread-proposal-chip', 'data-chip': kind }, ...children)
 }
 
-function statePill(status: ThreadProposalStatus): HTMLElement | null {
+function statePill(state: ThreadProposalCardState): HTMLElement | null {
+  const { status } = state
   if (status === 'started') {
+    // The card offered "its own checkout"; when the repository could not give
+    // it one, the settled row is the only place that promise gets corrected.
+    const shared = state.checkoutMode === 'shared'
     return el(
       'span',
-      { class: 'thread-proposal-state', 'data-state': 'started' },
+      {
+        class: 'thread-proposal-state',
+        'data-state': 'started',
+        ...(shared ? { 'data-checkout': 'shared' } : {}),
+      },
       checkIcon('ui-icon ui-icon-sm'),
-      'Thread started',
+      shared ? 'Started in the shared checkout' : 'Thread started',
     )
   }
   if (status === 'dismissed') {
@@ -221,7 +237,7 @@ export function createThreadProposalCard(
       el('span', { class: 'thread-proposal-eyebrow' }, 'Proposed thread'),
       el('span', { class: 'thread-proposal-header-title' }, proposal.title),
     )
-    const pill = statePill(next.status)
+    const pill = statePill(next)
     if (pill) header.append(pill)
     if (next.status === 'started' && next.threadId) {
       header.append(buildOpenThreadButton(next.threadId, handlers))

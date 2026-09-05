@@ -77,15 +77,39 @@ committed in main, then the prompt into the transcript, then a fresh human turn
 tree, then dispatch (`src/renderer/controller/thread-proposals.ts`). What it adds
 is the isolation the card promised: the checkout is requested as `'worktree'`, so
 the proposed work gets its own branch and directory instead of landing on top of
-whatever the user has open. The repository has the last word — a project with
-worktrees disabled, a non-git folder or a detached HEAD degrades to the shared
-checkout through the ordinary policy in
-[`worktree-policy.ts`](../src/shared/git/worktree-policy.ts).
+whatever the user has open.
 
 Order matters: the thread is created first (so autosave writes it before the
 checkout IPC needs it), and a failed checkout leaves nothing but an empty thread
 — no user message, no dispatch, and the offer still standing on the card that
 made it.
+
+### When isolation is not available
+
+The repository has the last word. A project with worktrees disabled, a non-git
+folder, a remote project or a detached HEAD degrades to the shared checkout
+through the ordinary policy in
+[`worktree-policy.ts`](../src/shared/git/worktree-policy.ts).
+
+The run still goes ahead. The user asked for the work, and a shared checkout is
+how every ordinary thread runs in such a project — refusing here would make the
+feature unusable in exactly the projects where typing the same prompt into the
+composer works fine.
+
+What must not happen is the promise going unremarked, so the granted mode
+travels in two directions:
+
+- **Now.** `startProposedThread` returns the granted `checkoutMode`, and the
+  card's adapter shows a notice naming the consequence: the run's changes land in
+  the working tree the user already has open. The controller cannot say this
+  itself — it would have to import a view.
+- **Later.** The mode is recorded on the decision, so the settled card reads
+  _Started in the shared checkout_ rather than _Thread started_. The card made
+  the promise, so the card is where it gets corrected — and unlike a notice, that
+  correction is still there tomorrow.
+
+A decision written before this was captured carries no `checkoutMode` and reads
+as "not known" rather than as isolated.
 
 ## Where the answer lives
 

@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ThreadProposal } from '@shared/threads/thread-proposal.ts'
+import type { ThreadCheckoutMode } from '@shared/types/worktree.ts'
 import {
   addMessage,
   applyPreparedThreadCheckout,
@@ -14,6 +15,17 @@ import { dispatchAgentRun, startHumanTurnTree } from './message-queue.ts'
 
 export interface ThreadProposalControllerApi {
   agent: Pick<ApiClient['agent'], 'prepareCheckout' | 'run'>
+}
+
+export interface StartedProposedThread {
+  threadId: string
+  /**
+   * What the repository actually granted. `'shared'` means the isolation the
+   * card offered was not available — the caller is responsible for saying so,
+   * since only it knows how to reach the user (a controller must not import a
+   * view).
+   */
+  checkoutMode: ThreadCheckoutMode
 }
 
 /**
@@ -32,13 +44,23 @@ export interface ThreadProposalControllerApi {
  * because a failure there must leave nothing but an empty thread the user can
  * ignore — no user bubble, no dispatch, and the offer still standing on the
  * card that made it.
+ *
+ * Isolation is requested, not guaranteed. `decideThreadWorktreePolicy` degrades
+ * to a shared checkout for a non-git folder, a remote project, a detached HEAD,
+ * or a project with worktrees turned off. The run still goes ahead in that case
+ * — the user asked for the work, and a shared checkout is how every ordinary
+ * thread runs in such a project, so refusing here would make the feature
+ * unusable exactly where the composer itself works fine. What must not happen
+ * is the promise going unremarked: the granted mode is recorded on the decision
+ * (so the settled card stops claiming isolation) and returned to the caller
+ * (so it can tell the user now).
  */
 export async function startProposedThread(
   store: AppStore,
   api: ThreadProposalControllerApi,
   sourceThreadId: string,
   proposal: ThreadProposal,
-): Promise<string> {
+): Promise<StartedProposedThread> {
   const projectId = store.getState().activeProjectId
   if (!projectId) throw new Error('Open a project before starting a proposed thread')
 
@@ -68,8 +90,9 @@ export async function startProposedThread(
     status: 'started',
     decidedAt: Date.now(),
     threadId,
+    checkoutMode: prepared.checkoutMode,
   })
   startHumanTurnTree(store, threadId)
   dispatchAgentRun(store, api, threadId, { content: proposal.prompt })
-  return threadId
+  return { threadId, checkoutMode: prepared.checkoutMode }
 }

@@ -15,6 +15,7 @@ import {
   switchThread,
 } from '@shared/store/thread-helpers.ts'
 import { startProposedThread } from '../controller/thread-proposals.ts'
+import { showToast } from './toast.ts'
 import { createThreadProposalCard, type ThreadProposalCardState } from './thread-proposal-card.ts'
 
 /**
@@ -39,11 +40,32 @@ function cardState(
 ): ThreadProposalCardState {
   const decisions = getThreadById(store, sourceThreadId)?.threadProposals
   const status = threadProposalStatus(decisions, proposalId)
-  const startedId = findThreadProposalDecision(decisions, proposalId)?.threadId
+  const decision = findThreadProposalDecision(decisions, proposalId)
+  const startedId = decision?.threadId
   // A started thread the user has since deleted leaves the card truthful but
   // without a destination: still "started", no dead "Open" button.
   const threadId = startedId && getThreadById(store, startedId) ? startedId : undefined
-  return { status, ...(threadId ? { threadId } : {}) }
+  return {
+    status,
+    ...(threadId ? { threadId } : {}),
+    ...(decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}),
+  }
+}
+
+/**
+ * Said the moment the isolation the card offered turns out to be unavailable.
+ *
+ * Starting a proposal navigates to the new thread, so the corrected settled row
+ * is behind the user by the time it exists — durable, but not in front of them.
+ * This is the half that is: one quiet notice, at the moment the promise breaks,
+ * naming the consequence rather than the policy.
+ */
+function warnSharedCheckout(): void {
+  showToast(
+    'This project cannot give the thread its own checkout, so it started in the ' +
+      'shared one — its changes land in the working tree you already have open.',
+    { variant: 'info', durationMs: 12_000 },
+  )
 }
 
 /**
@@ -58,7 +80,7 @@ export function threadProposalCardSignature(
 ): string | undefined {
   if (!isThreadProposalCall(tc)) return undefined
   const state = cardState(store, sourceThreadId, tc.id)
-  return `${state.status}:${state.threadId ?? ''}`
+  return `${state.status}:${state.threadId ?? ''}:${state.checkoutMode ?? ''}`
 }
 
 export function createThreadProposalToolCard(
@@ -74,7 +96,8 @@ export function createThreadProposalToolCard(
 
   return createThreadProposalCard(proposal, cardState(store, sourceThreadId, tc.id), {
     onStart: async (accepted: ThreadProposal) => {
-      await startProposedThread(store, api, sourceThreadId, accepted)
+      const started = await startProposedThread(store, api, sourceThreadId, accepted)
+      if (started.checkoutMode !== 'worktree') warnSharedCheckout()
     },
     onDismiss: (dismissed: ThreadProposal) => {
       setThreadProposalDecision(store, sourceThreadId, {
