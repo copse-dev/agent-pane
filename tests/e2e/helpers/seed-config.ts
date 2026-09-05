@@ -32,6 +32,10 @@ import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/a
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
+// A developer may have LM Studio listening on the product's default port. E2E
+// must not discover or query that real service unless a fixture explicitly
+// supplies its own localServerUrl through the supported settings surface.
+const E2E_UNREACHABLE_LM_STUDIO_URL = 'http://127.0.0.1:1/v1'
 
 /**
  * Plugins the host turns off on a profile with no `pluginDisabled` list — mirrors
@@ -317,6 +321,7 @@ function writeSettings(settings: Record<string, unknown>): void {
       onboardingCompleted: true,
       theme: 'dark',
       uiTintStrength: 'off',
+      localServerUrl: E2E_UNREACHABLE_LM_STUDIO_URL,
       ...settings,
     }),
     'utf8',
