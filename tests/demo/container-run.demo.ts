@@ -90,4 +90,40 @@ describe('unattended container run (browser-hosted)', () => {
     const labels = await (await $$('.footer-overflow-item')).map((item) => item.getText())
     expect(labels).toContain('Run unattended in a container…')
   })
+
+  it('shows a failed run without claiming its unfetched commits are back', async () => {
+    await browser.url('/?scenario=container-run')
+    await $('.container-run-banner').waitForDisplayed()
+    await $('.container-run-details').click()
+    await $('.container-run-again').click()
+
+    // Inject at the demo API boundary, not through a product-only test flag.
+    // judgeRun unit tests prove these records become failed progress; this
+    // geometry eval proves the same progress remains honest in the real view.
+    await browser.execute(async () => {
+      const run = await window.api.container.getRun('demo-container-thread')
+      if (!run?.record) throw new Error('Expected the container demo record')
+      const failed = {
+        ...run,
+        phase: 'failed' as const,
+        error: "The guest's commits could not be fetched: missing carry-out bundle",
+        record: {
+          ...run.record,
+          carryOut: { expected: true, ref: null, error: 'missing carry-out bundle' },
+        },
+      }
+      window.api.container.runThread = () => Promise.resolve(failed)
+    })
+    await $('.container-run-start').click()
+    await expect($('.container-run-banner')).toHaveAttribute('data-phase', 'failed')
+    expect(await $('.container-run-banner').getText()).not.toContain('commits back')
+    const dialog = await $('#container-run-dialog')
+    await expect(dialog.$('.container-run-status')).toHaveAttribute('data-phase', 'failed')
+    expect(await dialog.$('.container-run-summary').getText()).toContain('missing carry-out bundle')
+    await expect(dialog.$('.container-run-commits h3')).toHaveText(
+      'Commits the guest made (not fetched)',
+      { ignoreCase: true },
+    )
+    await saveElementScreenshot('#container-run-dialog', 'container-run-failed-result.png')
+  })
 })
