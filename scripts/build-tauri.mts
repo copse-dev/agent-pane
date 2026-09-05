@@ -99,7 +99,7 @@ const nodeOpts = {
   // to its shim instead of leaving external.
   external: MAIN_EXTERNALS.filter((name) => name !== 'electron'),
   sourcemap: true,
-  target: 'node22',
+  target: 'node24',
   define,
 }
 

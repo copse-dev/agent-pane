@@ -11,7 +11,7 @@ import { getModelComparisonRunner } from '../services/model-comparison-runner.ts
  *
  * P5: registered only while the `copse.model-comparison` first-party plugin is
  * enabled — the tool registration in `registry-bootstrap.ts` reads the plugin
- * registry via `syncModelComparisonTools`, and the `plugins:setEnabled` IPC
+ * registry via `syncModelComparisonTools`, and the `plugins:set-enabled` IPC
  * handler re-syncs on toggle so the atomic plugin disable drops the tool live.
  */
 export const compareModelsTool = defineTool({

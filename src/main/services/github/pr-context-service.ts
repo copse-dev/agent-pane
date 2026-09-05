@@ -2,7 +2,13 @@ import { runCommand } from '../exec/command-runner.ts'
 import { runGh, parseGhJson } from './gh-service.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isGitAvailableForTarget, isGhAvailable } from '../tool-availability.ts'
-import { isInsideGitWorkTree, getCurrentBranchName, getGitChangeStats } from './git-service.ts'
+import {
+  isInsideGitWorkTree,
+  getCurrentBranchName,
+  getGitChangeStats,
+  getDefaultBranch,
+  getCommittedChanges,
+} from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
 import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
@@ -162,6 +168,7 @@ export async function getPrWorkspaceContext(
     hasMergeConflicts: false,
     hasCiFailures: false,
     changeStats: null,
+    canOpenPr: false,
   }
 
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) {
@@ -200,7 +207,36 @@ export async function getPrWorkspaceContext(
     hasMergeConflicts,
     hasCiFailures,
     changeStats,
+    canOpenPr: await canOpenPrForBranch(root, branch, hasOpenPr, changeStats !== null),
   }
+}
+
+/**
+ * Whether offering "Create PR" makes sense here.
+ *
+ * Deliberately conservative — the offer is only shown when every part of it is
+ * true, because a chip that opens a dialog and then fails at `gh pr create` is
+ * worse than no chip. In particular the branch must not be the default one
+ * (there is nothing to open a PR *from*), and committed work counts as well as
+ * uncommitted: an agent that ends its turn with a commit empties `git status`,
+ * which is exactly the moment the user wants this button.
+ */
+async function canOpenPrForBranch(
+  root: string,
+  branch: string | null,
+  hasOpenPr: boolean,
+  hasWorkingChanges: boolean,
+): Promise<boolean> {
+  // No `gh` means "we cannot tell whether a PR exists" as much as "we cannot
+  // open one" — either way, do not offer.
+  if (hasOpenPr || !branch || branch === 'HEAD' || !isGhAvailable()) return false
+  const defaultBranch = await getDefaultBranch(root)
+  if (defaultBranch && branch === defaultBranch) return false
+  if (hasWorkingChanges) return true
+  // `hasOpenPr` is false here, so getCommittedChanges compares against the
+  // default branch — commits this branch has and the base does not.
+  const committed = await getCommittedChanges(root, { hasOpenPr: () => Promise.resolve(false) })
+  return (committed?.changes.length ?? 0) > 0
 }
 
 /** Branch name and open PR (when `gh` is available) for the status bar. */

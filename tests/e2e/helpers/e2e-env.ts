@@ -20,6 +20,13 @@ export function e2eGitBranch(): string {
   return process.env['COPSE_PANEL_MOCK_BRANCH'] || E2E_GIT_BRANCH
 }
 
+/**
+ * Interactive shell the app spawns for Shells tabs under e2e. Runs bash with no
+ * rc files and a fixed `$ ` prompt (see the script), so a terminal capture shows
+ * the same prompt on every runner. Set in `wdio.conf.ts` `beforeSession`.
+ */
+export const E2E_SHELL = join(process.cwd(), 'tests/e2e/fixtures/e2e-shell.sh')
+
 /** Patch electron-shell env before `browser.reloadSession()` (see bootstrap.cjs). */
 export function writeE2eEnv(overrides: Record<string, string | undefined>): void {
   const env: Record<string, string> = {

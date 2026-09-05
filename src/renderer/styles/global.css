@@ -24,6 +24,7 @@
 @import './global/container-run.css';
 @import './global/new-project-dialog.css';
 @import './global/comparison-model-dialog.css';
+@import './global/create-pr-dialog.css';
 @import './global/mcp.css';
 @import './global/composer-extras.css';
 @import './global/attachment-preview.css';
@@ -34,6 +35,7 @@
 @import './global/keyboard-shortcuts.css';
 @import './global/conversation-search.css';
 @import './global/todo.css';
+@import './global/thread-proposal.css';
 @import './global/toasts.css';
 @import './global/tooltip.css';
 @import './global/ssh-workspace.css';

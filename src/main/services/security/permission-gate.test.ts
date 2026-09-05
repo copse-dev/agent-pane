@@ -21,6 +21,7 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from './web-origin-policy.ts'
 import { detectSandboxFailure } from './sandbox-failure.ts'
+import { REASON_RECURSIVE_DELETE } from './shell-scope.ts'
 import { setPermissionGateForTests } from '../tool-registry.ts'
 import {
   ensureShellCommandPermitted,
@@ -1478,19 +1479,21 @@ describe('formatInstallPromptParts', () => {
     assert.ok(!parts.bodyAdvice?.includes('install lifecycle scripts'))
   })
 
-  it('explains the macOS sandbox exit only when running outside it', () => {
+  it('explains the sandbox exit only when running outside it', () => {
     const outside = formatInstallPromptParts('npm install', {
       outsideSandbox: true,
       safeInstall: true,
       jsManager: true,
     })
-    assert.ok(outside.bodyAdvice?.includes('outside the macOS sandbox'))
+    assert.ok(outside.bodyAdvice?.includes('outside the project sandbox'))
+    // No platform in the copy: the sandbox is seatbelt on macOS, bubblewrap on Linux.
+    assert.doesNotMatch(outside.bodyAdvice ?? '', /macOS|Linux/)
     const inside = formatInstallPromptParts('npm install', {
       outsideSandbox: false,
       safeInstall: true,
       jsManager: true,
     })
-    assert.ok(!inside.bodyAdvice?.includes('macOS sandbox'))
+    assert.ok(!inside.bodyAdvice?.includes('project sandbox'))
   })
 
   it('warns when package scanning is disabled in Settings', () => {
@@ -1515,12 +1518,35 @@ describe('formatGuardedYoloHarmPromptAdvice', () => {
     assert.ok(advice.includes('Guarded YOLO cannot skip this confirmation'))
   })
 
+  it('reads a shared classifier reason the same way the ordinary prompt does', () => {
+    // `REASON_RECURSIVE_DELETE` is shared between the harm gate and the scope
+    // classifier so the two agree on the wording; both dialogs resolve it to the
+    // same sentence. Harm-only reasons have no entry and pass through untouched.
+    const advice = formatGuardedYoloHarmPromptAdvice([
+      REASON_RECURSIVE_DELETE,
+      'script contents could not be inspected safely: foo.sh',
+    ])
+    assert.ok(advice.includes('Potential harm: Deletes files and folders recursively (rm -rf)'))
+    assert.ok(advice.includes('script contents could not be inspected safely: foo.sh'))
+  })
+
   it('caps enormous operands and total advice length', () => {
-    const hugeOperand = `script contents could not be inspected safely: ${'a/'.repeat(500)}z`
-    const advice = formatGuardedYoloHarmPromptAdvice([hugeOperand, hugeOperand, hugeOperand])
-    assert.ok(advice.length <= 1300)
-    assert.ok(advice.includes('…'))
-    assert.ok(advice.endsWith('Approve this bounded destructive action once?'))
+    // Operands must differ: reasons are deduped on their resolved text, so
+    // repeating one collapses to a single line and exercises neither cap.
+    const huge = (n: number): string =>
+      `script contents could not be inspected safely: ${'a/'.repeat(500)}${String(n)}`
+
+    // Per-reason cap, well inside the total budget.
+    const one = formatGuardedYoloHarmPromptAdvice([huge(0)])
+    assert.ok(one.includes('…'))
+    assert.ok(one.length < 400)
+
+    // Enough distinct reasons to overrun the total budget as well: the advice
+    // lands exactly on `MAX_GUARDED_YOLO_HARM_ADVICE_CHARS`, footer included.
+    const many = formatGuardedYoloHarmPromptAdvice(Array.from({ length: 12 }, (_, i) => huge(i)))
+    assert.equal(many.length, 1200)
+    assert.ok(many.includes('…'))
+    assert.ok(many.endsWith('Approve this bounded destructive action once?'))
   })
 })
 

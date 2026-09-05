@@ -8,6 +8,25 @@ every published entry.
 
 ## Unreleased
 
+- The Browser pane now restores its tabs when Copse is reopened. A window
+  remembers the pages it had open and the canvas artefacts it was showing, and
+  brings them back on the next launch — a prototype the agent rendered
+  yesterday is re-read from the thread it belongs to, so it reflects any edits
+  made to its source in the meantime. A window that quit with the pane closed
+  reopens with it closed; the tabs are simply there when it is next opened.
+  Stored tabs record addresses and artefact titles, not page content.
+- The renderer ↔ main API surface (`ApiClient`) is now a versioned protocol:
+  a channel manifest (`schemas/api-protocol.manifest.json`) is generated from
+  the contract and the preload bindings (`pnpm run gen:api-protocol`) and the
+  full JSON Schema is emitted by the build, a unit test fails when the
+  committed manifest drifts from the sources, and the sidecar WebSocket handshake
+  exchanges `API_PROTOCOL_VERSION` and refuses a mismatched peer. The preload is
+  type-checked against `ApiClient` for the first time. First step of the
+  client/server split (#2312); see `docs/api-protocol.md`.
+- IPC channel names now follow one convention (`namespace:method`, kebab-case
+  on both halves; subscriptions drop their `on` prefix). Every channel that
+  differed was renamed on both sides of the bridge, which is protocol
+  version 2. Nothing outside the app spoke version 1.
 - This beta advances the permanent public update channel from beta.7 to beta.8
   so the signed, architecture-specific updater can be validated end to end
   before the source repository opens.

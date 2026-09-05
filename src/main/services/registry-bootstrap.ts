@@ -34,6 +34,7 @@ import { exploreTool } from '../tools/explore-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
+import { proposeThreadTool } from '../tools/propose-thread-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { registerBrowserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
@@ -185,6 +186,10 @@ export function createRegistry(): ToolRegistry {
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
   registry.register(askUserTool)
+  // Model-proposed threads. Always registered: an agent can spot work worth
+  // splitting out in any project, and the card it draws is inert until clicked
+  // (see `propose-thread-tool.ts`), so there is nothing to gate.
+  registry.register(proposeThreadTool)
   // Always-on setup health check ("doctor"). Read-only — gathers diagnostics and
   // returns a report; the agent proposes any fixes for the user to approve.
   registry.register(runCheckupTool)

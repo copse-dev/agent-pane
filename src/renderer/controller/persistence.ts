@@ -83,6 +83,16 @@ export function setNavigationOwnership(owns: boolean): void {
 }
 
 /**
+ * Whether this window owns the per-window session record at all — navigation,
+ * and the Browser pane's restorable tabs, which `setBrowserSession` rejects
+ * from a pop-out for exactly the reason above. Exposed so the pane can decline
+ * to write rather than firing IPC main is bound to refuse.
+ */
+export function ownsWindowSession(): boolean {
+  return ownsNavigation
+}
+
+/**
  * Whether boot has restored the stored navigation yet.
  *
  * `attachAutosave` is attached well before `loadProjects` resolves, and
@@ -464,7 +474,7 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
         schedule()
         return
       }
-      // Blank-thread first send calls `agent:prepareCheckout` before any
+      // Blank-thread first send calls `agent:prepare-checkout` before any
       // `message_added` reconcile. Debouncing that create leaves a race that
       // surfaces as "Thread is not persisted yet; retry sending the message".
       // The integrated terminal has the same race on `terminal:create` when a
@@ -545,14 +555,20 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     // carry the latest args/response across an app restart. Do not persist a
     // running tool: the v1 spine deliberately has no running status.
     store.on('tool_call_updated', (messageId, toolCallId) => {
-      if (!toolCallId) return
       const threadId = threadIdOfMessage(messageId)
       if (!threadId) return
       const message = getThreadById(store, threadId)?.messages.find(
         (candidate) => candidate.id === messageId,
       )
-      const toolCall = message?.toolCalls.find((candidate) => candidate.id === toolCallId)
-      if (!toolCall || toolCall.status === 'running') return
+      if (!message) return
+      if (toolCallId) {
+        const toolCall = message.toolCalls.find((candidate) => candidate.id === toolCallId)
+        if (!toolCall || toolCall.status === 'running') return
+      }
+      // An empty tool-call id is a small-model rollup label landing on the
+      // message (command / turn / run summary). A run summary in particular
+      // resolves against its *anchor*, whose `message_done` fired turns ago, so
+      // without this the polished label never reached disk.
       const backgroundProjectId = backgroundProjectOf(store, threadId)
       if (backgroundProjectId) {
         persistBackgroundMessage(backgroundProjectId, threadId, messageId)

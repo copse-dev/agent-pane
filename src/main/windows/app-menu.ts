@@ -81,7 +81,7 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
             windows.createWindow()
           },
           createThread: () => {
-            sendToFocused('menu:newThread')
+            sendToFocused('menu:new-thread')
           },
           openFolder: () => {
             void openFolder()
@@ -112,35 +112,35 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
           label: 'Toggle Panel',
           accelerator: 'CmdOrCtrl+B',
           click: (): void => {
-            sendToFocused('menu:togglePanel')
+            sendToFocused('menu:toggle-panel')
           },
         },
         {
           label: 'Explorer',
           accelerator: 'CmdOrCtrl+Shift+E',
           click: (): void => {
-            sendToFocused('menu:showExplorer')
+            sendToFocused('menu:show-explorer')
           },
         },
         {
           label: 'Terminal',
           accelerator: 'CmdOrCtrl+`',
           click: (): void => {
-            sendToFocused('menu:showTerminal')
+            sendToFocused('menu:show-terminal')
           },
         },
         {
           label: 'Changes',
           accelerator: 'CmdOrCtrl+Shift+G',
           click: (): void => {
-            sendToFocused('menu:showChanges')
+            sendToFocused('menu:show-changes')
           },
         },
         {
           label: 'Browser',
           accelerator: 'CmdOrCtrl+Shift+B',
           click: (): void => {
-            sendToFocused('menu:showBrowser')
+            sendToFocused('menu:show-browser')
           },
         },
         // Cmd/Ctrl+L must reach us even while the browser's <webview> has focus.
@@ -153,7 +153,7 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
           label: 'Focus Address Bar',
           accelerator: 'CmdOrCtrl+L',
           click: (): void => {
-            sendToFocused('menu:focusBrowserUrlBar')
+            sendToFocused('menu:focus-browser-url-bar')
           },
         },
         { type: 'separator' as const },
@@ -187,21 +187,21 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
           label: 'Actual Size',
           accelerator: 'CmdOrCtrl+0',
           click: (): void => {
-            sendToFocused('menu:uiScaleReset')
+            sendToFocused('menu:ui-scale-reset')
           },
         },
         {
           label: 'Zoom In',
           accelerator: 'CmdOrCtrl+=',
           click: (): void => {
-            sendToFocused('menu:uiScaleZoomIn')
+            sendToFocused('menu:ui-scale-zoom-in')
           },
         },
         {
           label: 'Zoom Out',
           accelerator: 'CmdOrCtrl+-',
           click: (): void => {
-            sendToFocused('menu:uiScaleZoomOut')
+            sendToFocused('menu:ui-scale-zoom-out')
           },
         },
         { type: 'separator' as const },
@@ -223,7 +223,7 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
           label: 'Keyboard Shortcuts',
           accelerator: 'CmdOrCtrl+/',
           click: (): void => {
-            sendToFocused('menu:keyboardShortcuts')
+            sendToFocused('menu:keyboard-shortcuts')
           },
         },
       ],

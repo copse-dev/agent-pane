@@ -185,6 +185,38 @@ export interface PrCreateResult extends PrActionResult {
   number?: number
 }
 
+/**
+ * What a caller asks for when opening a pull request, before any of it has been
+ * resolved: only the title is required, and everything else is inferred from
+ * the thread's checkout (see `createPrForThread`). Distinct from
+ * `PrCreateInput`, which is the fully-resolved argument set handed to a backend.
+ *
+ * Shared rather than main-only because both entry points name it — the
+ * `gh_pr_create` tool's parameters and the "Create PR" dialog's IPC payload.
+ */
+export interface PrCreateRequest {
+  title: string
+  /** Body markdown. The attribution trailer is appended downstream, not here. */
+  body?: string | undefined
+  /** Branch to merge into. Omit for the repository's default branch. */
+  base?: string | undefined
+  /** Branch holding the changes. Omit for the checkout's current branch. Must be pushed. */
+  head?: string | undefined
+  draft?: boolean | undefined
+  owner?: string | undefined
+  repo?: string | undefined
+}
+
+/**
+ * What the "Create PR" dialog sends over `gh:create-pr-for-thread`: the three
+ * things the user settled in the form. Target and branches are deliberately
+ * absent — the main process resolves them from the thread's own checkout, so
+ * the renderer cannot aim a create at another repository or branch through a
+ * channel that has no approval gate. The agent tool keeps the wider
+ * {@link PrCreateRequest} because it carries explicit targets on purpose.
+ */
+export type PrComposerCreateRequest = Pick<PrCreateRequest, 'title' | 'body' | 'draft'>
+
 export interface GhPrChangedFile {
   path: string
   status: 'added' | 'modified' | 'removed' | 'renamed'

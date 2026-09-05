@@ -18,22 +18,74 @@ describe('tool call turn rollup', () => {
     resetUserData()
   })
 
-  it('nests Reasoning inside italic tool rollups across a multi-segment turn', async () => {
+  it('rolls three tool-only segments into one run and keeps the lone segment per-message', async () => {
     await $('.tool-card-rollup').waitForExist({ timeout: 30_000 })
 
+    // Two summaries, not four: the three prose-less segments are one run, and
+    // the segment after the prose answer stands on its own.
     const rollups = await $$('.tool-card-rollup')
-    await expect(rollups).toBeElementsArrayOfSize(3)
+    await expect(rollups).toBeElementsArrayOfSize(2)
+    await expect(rollups[0]!).toHaveAttribute('data-rollup-key', 'run')
+    await expect(rollups[1]!).toHaveAttribute('data-rollup-key', 'turn')
 
-    // Each tool segment collapses to one italic heading — no standalone Reasoning above.
+    // The run's summary counts every member's operations and carries the
+    // failure; the per-message rollup keeps its own polished label.
     await expect(rollups[0]!.$('.tool-card-header .tool-name')).toHaveText(
-      'Searched the settings UI',
+      'Used 10 tools · 3 steps · 1 failed',
     )
     await expect(rollups[1]!.$('.tool-card-header .tool-name')).toHaveText(
-      'Inspected the repo layout · 1 failed',
+      'Verified the settings fix',
     )
-    await expect(rollups[2]!.$('.tool-card-header .tool-name')).toHaveText(
-      'Read settings template paths',
+
+    // The run renders on its anchor — the first segment of the burst — and the
+    // members it absorbed render no cards of their own.
+    await expect(
+      $('[data-message-id="msg-assistant-search"] > .tool-card-rollup[data-rollup-key="run"]'),
+    ).toExist()
+    await expect($$('[data-message-id="msg-assistant-reads"] .tool-card')).toBeElementsArrayOfSize(
+      0,
     )
+    await expect($$('[data-message-id="msg-assistant-html"] .tool-card')).toBeElementsArrayOfSize(0)
+
+    // Absorbed messages remain addressable DOM nodes, but must not stack empty
+    // `.msg` padding and row gaps between the run summary and the prose answer.
+    const collapsedMemberLayout = await browser.execute(() => {
+      const ids = ['msg-assistant-reads', 'msg-assistant-html']
+      const members = ids.map((id) => {
+        const member = document.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+        return member
+          ? {
+              id,
+              display: getComputedStyle(member).display,
+              height: member.getBoundingClientRect().height,
+            }
+          : null
+      })
+      const anchor = document.querySelector<HTMLElement>('[data-message-id="msg-assistant-search"]')
+      const answer = document.querySelector<HTMLElement>('[data-message-id="msg-assistant-answer"]')
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      return {
+        members,
+        gap:
+          anchor && answer
+            ? answer.getBoundingClientRect().top - anchor.getBoundingClientRect().bottom
+            : null,
+        rowGap: list ? Number.parseFloat(getComputedStyle(list).rowGap) : null,
+        answerMargin: answer ? Number.parseFloat(getComputedStyle(answer).marginTop) : null,
+      }
+    })
+    expect(collapsedMemberLayout.members).toEqual([
+      { id: 'msg-assistant-reads', display: 'none', height: 0 },
+      { id: 'msg-assistant-html', display: 'none', height: 0 },
+    ])
+    const { gap, rowGap, answerMargin } = collapsedMemberLayout
+    if (gap === null || rowGap === null || answerMargin === null) {
+      throw new Error('Expected the run anchor, prose answer, and message list to render')
+    }
+    expect(gap).toBeLessThanOrEqual(rowGap + answerMargin + 1)
+
+    // Reasoning lives on each step, so no member keeps a standalone trail; only
+    // the prose answer (which ran no tools) still has a body-level one.
     await expect($$('.msg-assistant .message-body > .message-reasoning')).toBeElementsArrayOfSize(1)
 
     const italicFont = await browser.execute(async () => {
@@ -55,14 +107,41 @@ describe('tool call turn rollup', () => {
       if (list) list.scrollTop = 0
     })
     await saveAppScreenshot('tool-display-rollup-collapsed.png')
+  })
 
-    // Expand the mixed-success segment: Reasoning + flat tool rows live inside.
-    const mixed = rollups[1]!
+  it('expands the run into one step per message, each with its own reasoning and tools', async () => {
+    const run = await $('.tool-card-rollup[data-rollup-key="run"]')
+    await run.scrollIntoView()
+    await run.$('summary.tool-card-header').click()
+    await expect(run).toHaveAttribute('open')
+
+    // One step per persisted message, in the order they streamed, each headed
+    // by that message's own polished label.
+    const steps = await run.$$('.tool-card-step')
+    await expect(steps).toBeElementsArrayOfSize(3)
+    await expect(steps[0]!).toHaveAttribute('data-step-message-id', 'msg-assistant-search')
+    await expect(steps[1]!).toHaveAttribute('data-step-message-id', 'msg-assistant-reads')
+    await expect(steps[2]!).toHaveAttribute('data-step-message-id', 'msg-assistant-html')
+    await expect(steps[0]!.$('.tool-card-header .tool-name')).toHaveText('Searched the settings UI')
+    await expect(steps[1]!.$('.tool-card-header .tool-name')).toHaveText(
+      'Inspected the repo layout · 1 failed',
+    )
+    await expect(steps[2]!.$('.tool-card-header .tool-name')).toHaveText(
+      'Read settings template paths',
+    )
+
+    // Expand the mixed-success step: its reasoning and tool rows live inside it,
+    // not on the run and not on the message bubble.
+    const mixed = steps[1]!
     await mixed.scrollIntoView()
     await mixed.$('summary.tool-card-header').click()
     await expect(mixed).toHaveAttribute('open')
     await expect(mixed.$('.tool-rollup-body > .message-reasoning')).toExist()
     await expect(mixed.$('.message-reasoning-title')).toHaveText('Reasoned')
+    // Completed reasoning is a separate, initially closed disclosure inside
+    // the step. Open it before asserting the text a user can actually read.
+    await mixed.$('.message-reasoning-summary').click()
+    await expect(mixed.$('.message-reasoning')).toHaveAttribute('open')
     await expect(mixed.$('.message-reasoning-text')).toHaveText(
       'Reading key files to diagnose the settings flicker and missing button text.',
     )
@@ -74,21 +153,31 @@ describe('tool call turn rollup', () => {
       'error',
     )
 
-    // Nested success rows keep their own color even when the rollup is mixed.
+    // The run adds exactly one rail: the run body, then the step body. Groups
+    // below a step inset without a rule of their own.
+    const railDepth = await browser.execute(() => {
+      const errored = document.querySelector('.tool-card[data-tool-id="tc-read-2"]')
+      if (!errored) return null
+      let rails = 0
+      for (let el = errored.parentElement; el; el = el.parentElement) {
+        if (el.classList.contains('msg')) break
+        if (getComputedStyle(el).borderLeftStyle !== 'none') rails += 1
+      }
+      return rails
+    })
+    expect(railDepth).toBe(2)
+
+    // Nested success rows keep their own color even when the step is mixed.
     const iconColors = await browser.execute(() => {
       const success = document.querySelector(
-        '.tool-card-rollup[data-status="error"] .tool-card-group[data-status="done"] > .tool-card-header > .tool-status-icon',
+        '.tool-card-step[data-status="error"] .tool-card-group[data-status="done"] > .tool-card-header > .tool-status-icon',
       )
       const failure = document.querySelector(
-        '.tool-card-rollup[data-status="error"] .tool-card[data-status="error"] > .tool-card-header > .tool-status-icon',
+        '.tool-card-step[data-status="error"] .tool-card[data-status="error"] > .tool-card-header > .tool-status-icon',
       )
       return {
         success: success ? getComputedStyle(success).color : null,
         failure: failure ? getComputedStyle(failure).color : null,
-        successToken: getComputedStyle(document.documentElement)
-          .getPropertyValue('--success')
-          .trim(),
-        errorToken: getComputedStyle(document.documentElement).getPropertyValue('--error').trim(),
       }
     })
     expect(iconColors.success).toBeTruthy()

@@ -126,13 +126,13 @@ export function initTerminal(win: BrowserWindow): () => void {
     destroyTerminalSession(id, event.sender.id)
   })
 
-  ipcMain.handle('terminal:setMeta', (event, ...rawArgs) => {
+  ipcMain.handle('terminal:set-meta', (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [id, meta] = parseIpcArgs(terminalMetaSchema, rawArgs)
     setTerminalSessionMeta(id, event.sender.id, normalizeMeta(meta))
   })
 
-  ipcMain.handle('terminal:setActive', (event, sessionId: unknown) => {
+  ipcMain.handle('terminal:set-active', (event, sessionId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zSessionId, [sessionId])
     setActiveTerminalSession(id, event.sender.id)
@@ -149,8 +149,8 @@ export function initTerminal(win: BrowserWindow): () => void {
     ipcMain.removeHandler('terminal:write')
     ipcMain.removeHandler('terminal:resize')
     ipcMain.removeHandler('terminal:destroy')
-    ipcMain.removeHandler('terminal:setMeta')
-    ipcMain.removeHandler('terminal:setActive')
+    ipcMain.removeHandler('terminal:set-meta')
+    ipcMain.removeHandler('terminal:set-active')
     destroyAllTerminalSessions()
   }
 }

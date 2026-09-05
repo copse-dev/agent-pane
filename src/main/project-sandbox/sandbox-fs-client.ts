@@ -34,7 +34,7 @@ let workerBundleVerified = false
  * child process: when the bundle was missing (a `dist/` built only by
  * `npm run dev`, which until recently never emitted it) the sole evidence was a
  * `MODULE_NOT_FOUND` stack printed by a spawned Electron, arriving as the
- * *message* of an `fs:listDir` rejection with nothing naming the build. Worse,
+ * *message* of an `fs:list-dir` rejection with nothing naming the build. Worse,
  * every call paid for it twice — the persistent server's worker, then the
  * one-shot fallback — so a single file-tree walk launched dozens of processes
  * that each died on startup, stalling the main loop. Failing here costs one
@@ -218,7 +218,7 @@ export async function gatewayWriteFile(
   // follows it (#578). `resolveWorkspacePath` only realpaths a path's existing
   // prefix, so a repo shipping a *dangling* symlink (target not yet on disk) is
   // treated as a plain new file and a write would follow it outside the root.
-  // The diff-queue write path already asserts this; the `fs:writeFile` IPC path
+  // The diff-queue write path already asserts this; the `fs:write-file` IPC path
   // reaches the filesystem through here, so guarding at this chokepoint covers
   // both the direct-fs and sandbox-worker branches below.
   if (root) await assertWriteTargetWithinRoot(absPath, root)

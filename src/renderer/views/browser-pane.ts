@@ -3,6 +3,7 @@ import {
   arrowLeftIcon,
   arrowRightIcon,
   closeIcon,
+  downloadIcon,
   externalLinkIcon,
   fileTextIcon,
   imageIcon,
@@ -23,6 +24,13 @@ import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import { openRightPanel } from '../controller/panels.ts'
+import {
+  createBrowserSessionWriter,
+  loadBrowserPaneSession,
+  toBrowserPaneSession,
+  type BrowserTabSnapshot,
+} from '../controller/browser-pane-session.ts'
+import type { BrowserPaneSession, BrowserPaneSessionTab } from '@shared/types/main-window.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
@@ -63,6 +71,8 @@ interface BrowserTab {
   artefactTitle: string | null
   /** Thread that owns the artefact, so equal titles cannot overwrite each other. */
   artefactThreadId: string | null
+  /** Project the artefact was rendered under, so a restore reads the right store. */
+  artefactProjectId: string | null
   /** Collapse this tab's overflow ("…") menu, if open. */
   closeMenu: () => void
 }
@@ -405,6 +415,17 @@ export function mountBrowserPane(
     : undefined
   let activeTabId: string | null = null
   let resizeObserver: ResizeObserver | null = null
+  // The tabs this window had open when it was last closed. Writes stay held
+  // back until the stored session has been replayed (or ruled out), so the
+  // blank tab a fresh pane mounts with never lands on top of it.
+  const sessionWriter = api ? createBrowserSessionWriter(api, captureSession) : null
+
+  function scheduleSessionSave(): void {
+    sessionWriter?.schedule()
+  }
+
+  /** Cancels for artefact restores still waiting on a project; run at unmount. */
+  const pendingProjectWaits = new Set<() => void>()
 
   function closeAllMenus(): void {
     for (const tab of tabs.values()) tab.closeMenu()
@@ -558,6 +579,9 @@ export function mountBrowserPane(
 
     const onNavigate = (): void => {
       if (activeTabId === tab.id) syncAddressBar(tab)
+      // A link followed inside the page changes what this tab would restore to,
+      // and nothing else in the pane hears about it.
+      scheduleSessionSave()
     }
 
     webview.addEventListener('did-navigate', onNavigate)
@@ -595,6 +619,7 @@ export function mountBrowserPane(
       navigateWebview(tab, url)
     }
     syncTabLabel(tab)
+    scheduleSessionSave()
   }
 
   function wireToolbar(tab: BrowserTab): void {
@@ -639,6 +664,7 @@ export function mountBrowserPane(
   function setActiveTab(tabId: string): void {
     if (activeTabId === tabId) return
     activeTabId = tabId
+    scheduleSessionSave()
     for (const tab of tabs.values()) {
       const active = tab.id === tabId
       tab.panel.classList.toggle('is-active', active)
@@ -835,9 +861,15 @@ export function mountBrowserPane(
     if (!tab) return
     tab.artefactTitle = artefact.title
     tab.artefactThreadId = artefact.threadId ?? null
+    // The canvas store is keyed by project, and a tab outlives a project
+    // switch — so the tab remembers which one rendered it (see
+    // `browser-pane-session.ts`), rather than assuming whatever is active when
+    // the window is next opened.
+    tab.artefactProjectId = store.getState().activeProjectId
     tab.urlInput.value = ''
     tab.urlInput.placeholder = artefact.title
     syncTabLabel(tab)
+    scheduleSessionSave()
     if (browserModeActive(store)) {
       ensureWebview(tab)
       navigateWebview(tab, target)
@@ -936,6 +968,12 @@ export function mountBrowserPane(
       imageIcon('ui-icon ui-icon-sm'),
       el('span', {}, 'Share screenshot'),
     )
+    const exportPdfItem = el(
+      'button',
+      { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
+      downloadIcon('ui-icon ui-icon-sm'),
+      el('span', {}, 'Export PDF'),
+    )
     const openExternalItem = el(
       'button',
       { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
@@ -954,6 +992,7 @@ export function mountBrowserPane(
       shareTextItem,
       shareScreenshotItem,
       el('div', { class: 'browser-menu-separator', role: 'separator' }),
+      exportPdfItem,
       openExternalItem,
       inspectorItem,
     )
@@ -989,6 +1028,7 @@ export function mountBrowserPane(
       loadError: null,
       artefactTitle: null,
       artefactThreadId: null,
+      artefactProjectId: null,
       closeMenu: () => {
         setMenuOpen(false)
       },
@@ -1002,6 +1042,9 @@ export function mountBrowserPane(
         const shareableId = shareableWebContentsId(tab)
         shareTextItem.disabled = shareableId === null || !api
         shareScreenshotItem.disabled = shareableId === null || !api
+        // Printing needs a main-process guest; the demo/site iframe host has no
+        // `exportPdf`, so leave the item visible but inert there.
+        exportPdfItem.disabled = shareableId === null || !api?.browser.exportPdf
         // "Open in default browser" only makes sense for a real web page.
         openExternalItem.disabled = !currentHttpUrl(tab) || !api?.shell
         inspectorItem.disabled = !tab.webview
@@ -1035,6 +1078,20 @@ export function mountBrowserPane(
       void api.browser.shareScreenshot(id).catch((error: unknown) => {
         showErrorToast('Could not share browser screenshot', error)
       })
+    })
+    exportPdfItem.addEventListener('click', () => {
+      setMenuOpen(false)
+      const id = shareableWebContentsId(tab)
+      const exportPdf = api?.browser.exportPdf
+      if (id === null || !exportPdf) return
+      void exportPdf(id)
+        .then((filePath) => {
+          // Null means the user cancelled the save dialog — stay quiet.
+          if (filePath) showToast(`Exported PDF to ${filePath}`)
+        })
+        .catch((error: unknown) => {
+          showErrorToast('Could not export PDF', error)
+        })
     })
     openExternalItem.addEventListener('click', () => {
       setMenuOpen(false)
@@ -1070,6 +1127,7 @@ export function mountBrowserPane(
 
     if (options?.activate !== false || !activeTabId) setActiveTab(id)
     if (options?.url) navigateTab(tab, options.url)
+    scheduleSessionSave()
     return id
   }
 
@@ -1080,6 +1138,7 @@ export function mountBrowserPane(
     tab.tabBtn.remove()
     tab.panel.remove()
     tabs.delete(tabId)
+    scheduleSessionSave()
 
     if (activeTabId !== tabId) return
     const remaining = [...tabs.keys()]
@@ -1094,6 +1153,9 @@ export function mountBrowserPane(
 
   function onBrowserModeChange(): void {
     const active = browserModeActive(store)
+    // Whether the pane was open is part of the session: a window that quit
+    // showing the canvas comes back showing it.
+    scheduleSessionSave()
     if (active) {
       if (tabs.size === 0) addTab()
       const tab = activeTabId ? tabs.get(activeTabId) : null
@@ -1126,6 +1188,13 @@ export function mountBrowserPane(
 
   onBrowserModeChange()
 
+  // Replay last session's tabs, then start recording this one. The writer stays
+  // silent until this settles either way, so a launch that restores nothing
+  // still starts saving rather than staying mute for the rest of the session.
+  void restoreStoredSession().finally(() => {
+    sessionWriter?.enable()
+  })
+
   // Dismiss any open overflow menu on an outside click or Escape.
   const onDocumentClick = (): void => {
     closeAllMenus()
@@ -1146,28 +1215,63 @@ export function mountBrowserPane(
     activeTabId = null
   }
 
-  function captureBrowserSeed(): BrowserPopoutSeed {
-    const ordered = [...tabs.values()]
-    const activeIndex = activeTabId
-      ? Math.max(
-          0,
-          ordered.findIndex((tab) => tab.id === activeTabId),
-        )
-      : 0
+  /**
+   * What one tab is pointed at and showing. Shared by the pop-out seed and the
+   * persisted session so a tab is described the same way either time; the two
+   * differ only in what they then keep (see `browser-pane-session.ts`, which
+   * drops an artefact's `data:` address in favour of its title).
+   */
+  function tabSnapshot(tab: BrowserTab): BrowserTabSnapshot {
     return {
-      tabs: ordered.map((tab) => ({
-        // `.find` + `??` rather than a `||` chain: prefer-nullish-coalescing
-        // (#508) rejects `||`, but `??` alone would change behaviour — these
-        // fall back on EMPTY strings, not just null/undefined.
-        url:
-          [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value) => value) ??
-          'about:blank',
-        label: tab.label,
-        artefactTitle: tab.artefactTitle,
-        artefactThreadId: tab.artefactThreadId,
-      })),
-      activeTabIndex: activeIndex,
+      // `.find` + `??` rather than a `||` chain: prefer-nullish-coalescing
+      // (#508) rejects `||`, but `??` alone would change behaviour — these
+      // fall back on EMPTY strings, not just null/undefined.
+      url:
+        [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value) => value) ??
+        'about:blank',
+      label: tab.label,
+      artefactTitle: tab.artefactTitle,
+      artefactThreadId: tab.artefactThreadId,
+      artefactProjectId: tab.artefactProjectId,
     }
+  }
+
+  function orderedTabs(): BrowserTab[] {
+    return [...tabs.values()]
+  }
+
+  function activeIndexOf(ordered: readonly BrowserTab[]): number {
+    if (!activeTabId) return 0
+    return Math.max(
+      0,
+      ordered.findIndex((tab) => tab.id === activeTabId),
+    )
+  }
+
+  function captureBrowserSeed(): BrowserPopoutSeed {
+    const ordered = orderedTabs()
+    return {
+      tabs: ordered.map((tab) => {
+        const snapshot = tabSnapshot(tab)
+        return {
+          url: snapshot.url,
+          ...(snapshot.label !== undefined ? { label: snapshot.label } : {}),
+          artefactTitle: tab.artefactTitle,
+          artefactThreadId: tab.artefactThreadId,
+        }
+      }),
+      activeTabIndex: activeIndexOf(ordered),
+    }
+  }
+
+  /** The pane as it stands now, reduced to what a next launch can rebuild. */
+  function captureSession(): BrowserPaneSession | null {
+    const ordered = orderedTabs()
+    return toBrowserPaneSession(
+      ordered.map(tabSnapshot),
+      activeIndexOf(ordered),
+      browserModeActive(store),
+    )
   }
 
   function applyBrowserSeed(raw: unknown): void {
@@ -1199,6 +1303,124 @@ export function mountBrowserPane(
     const index = Math.min(Math.max(raw.activeTabIndex, 0), createdIds.length - 1)
     const target = createdIds[index]
     if (target) setActiveTab(target)
+  }
+
+  /**
+   * Whether the pane is still exactly as it mounted — empty, or holding only
+   * the untouched blank tab it opens for itself. Reading the pane rather than
+   * tracking a "dirty" flag keeps the restore honest about the race it is in:
+   * the stored session arrives an IPC round trip after mount, and anything the
+   * user, the agent or a plugin opened in the meantime is the live pane and
+   * outranks a record of yesterday's.
+   */
+  function isPristinePane(): boolean {
+    if (tabs.size === 0) return true
+    if (tabs.size > 1) return false
+    const [only] = tabs.values()
+    return (
+      only !== undefined &&
+      !only.artefactTitle &&
+      !only.pendingUrl &&
+      only.urlInput.value === '' &&
+      isIdleBrowserTab(only)
+    )
+  }
+
+  /**
+   * Resolve once a project is active, or false if the pane is torn down first.
+   *
+   * Saved artefacts are read back per project, and on a cold launch this pane
+   * mounts while the workspace is still being restored — asking for one before
+   * then would look under no project at all and lose the tab.
+   */
+  function whenProjectActive(): Promise<boolean> {
+    if (store.getState().activeProjectId) return Promise.resolve(true)
+    return new Promise((resolve) => {
+      const settle = (active: boolean): void => {
+        stop()
+        pendingProjectWaits.delete(cancel)
+        resolve(active)
+      }
+      const cancel = (): void => {
+        settle(false)
+      }
+      const stop = store.on('workspace_changed', () => {
+        if (store.getState().activeProjectId) settle(true)
+      })
+      pendingProjectWaits.add(cancel)
+    })
+  }
+
+  /**
+   * Ask the canvas store for a restored tab's artefact. It comes back on the
+   * ordinary artefact channel and lands in the tab already carrying its title,
+   * so a restore renders through exactly the path a fresh render takes.
+   *
+   * A title the store can no longer produce — the thread was deleted, the
+   * artefact pruned — takes its tab with it. A tab that can never show anything
+   * is worse than one tab fewer, and this is launch: there is no user action to
+   * explain a toast about it.
+   */
+  async function restoreArtefactTab(tabId: string, entry: BrowserPaneSessionTab): Promise<void> {
+    const { artefactTitle: title, artefactThreadId: threadId } = entry
+    if (!api || !title || !threadId) {
+      removeTab(tabId)
+      return
+    }
+    if (!(await whenProjectActive())) return
+    const projectId = entry.artefactProjectId ?? store.getState().activeProjectId
+    const reopened = projectId
+      ? await api.canvas.reopenArtefact(projectId, threadId, title).catch(() => false)
+      : false
+    if (!reopened) removeTab(tabId)
+  }
+
+  /** Rebuild the pane from a stored session. */
+  function applyStoredSession(session: BrowserPaneSession): void {
+    purgeAllTabs()
+    const restored: Array<{ id: string; entry: BrowserPaneSessionTab }> = []
+    for (const entry of session.tabs) {
+      const id = addTab({ activate: false })
+      const tab = tabs.get(id)
+      if (!tab) continue
+      if (entry.artefactTitle) {
+        tab.artefactTitle = entry.artefactTitle
+        tab.artefactThreadId = entry.artefactThreadId ?? null
+        tab.artefactProjectId = entry.artefactProjectId ?? null
+        tab.urlInput.placeholder = entry.artefactTitle
+      } else if (entry.url) {
+        // Queued, not navigated: a closed pane has no webview to load into, and
+        // `setActiveTab` / `onBrowserModeChange` already flush a pending URL
+        // when the tab is next shown.
+        tab.pendingUrl = entry.url
+        tab.urlInput.value = entry.url
+      }
+      if (entry.label) {
+        tab.label = entry.label
+        tab.tabLabelEl.textContent = entry.label
+      } else {
+        syncTabLabel(tab)
+      }
+      restored.push({ id, entry })
+    }
+    if (restored.length === 0) return
+    const index = Math.min(Math.max(session.activeTabIndex, 0), restored.length - 1)
+    const target = restored[index]
+    if (target) setActiveTab(target.id)
+    // A window that quit with the canvas in front comes back with it in front;
+    // one that quit with the pane closed keeps its tabs out of the way until
+    // the user opens it.
+    if (session.paneOpen) openRightPanel(store, 'browser')
+    for (const { id, entry } of restored) {
+      if (entry.artefactTitle) void restoreArtefactTab(id, entry)
+    }
+  }
+
+  /** Replay the tabs this window last had open, once, at mount. */
+  async function restoreStoredSession(): Promise<void> {
+    if (!api) return
+    const session = await loadBrowserPaneSession(api).catch(() => null)
+    if (session && isPristinePane()) applyStoredSession(session)
   }
 
   async function ensurePluginBrowserTab(
@@ -1262,6 +1484,11 @@ export function mountBrowserPane(
 
   return () => {
     unregisterPopoutSeed()
+    // Last chance to record the tabs: a pop-out closing, or a window being torn
+    // down before `pagehide`.
+    void sessionWriter?.flush()
+    sessionWriter?.dispose()
+    for (const cancel of [...pendingProjectWaits]) cancel()
     unsubs.forEach((unsubscribe) => {
       if (typeof unsubscribe === 'function') unsubscribe()
     })

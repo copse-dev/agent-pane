@@ -30,7 +30,7 @@ function ensureDialog(): HTMLDialogElement {
 
 /**
  * Minimal remote directory browser: pick or add an SSH host, browse folders
- * over `ssh-workspace:listDirectory`, then register + return the chosen path.
+ * over `ssh-workspace:list-directory`, then register + return the chosen path.
  */
 export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick | null> {
   const dialog = ensureDialog()

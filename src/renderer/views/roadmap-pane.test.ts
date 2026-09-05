@@ -1510,7 +1510,7 @@ describe('roadmap pane', () => {
       (): Promise<unknown> =>
         Promise.reject(
           new Error(
-            "Error invoking remote method 'roadmap:openIssues': Error: GitHub CLI (gh) is not installed or not on PATH.",
+            "Error invoking remote method 'roadmap:open-issues': Error: GitHub CLI (gh) is not installed or not on PATH.",
           ),
         )
     const { list, viewer } = mountHosts()

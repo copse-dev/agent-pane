@@ -1,4 +1,4 @@
-const MIN_NODE = [22, 22, 2]
+const MIN_NODE = [24, 0, 0]
 
 function parseVersion(version) {
   return version.split('.').map((part) => Number.parseInt(part, 10))
@@ -21,8 +21,8 @@ if (!isAtLeast(current, MIN_NODE)) {
     [
       `Node ${MIN_NODE.join('.')} or newer is required; current Node is ${process.versions.node}.`,
       '',
-      'This project runs TypeScript .mts scripts directly during install, which requires Node 22.22.2+.',
-      'Run `nvm install` / `nvm use` from the repo root, then rerun `pnpm install`.',
+      'This project targets the Node 24 LTS line.',
+      'Run `nvm install` / `nvm use` or `fnm install` / `fnm use` from the repo root, then rerun `pnpm install`.',
     ].join('\n'),
   )
   process.exit(1)

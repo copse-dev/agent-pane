@@ -183,9 +183,9 @@ awkward).
 - `src/shared/types/ipc.ts`, `src/main/ipc/register-handlers.ts`,
   `src/preload/index.ts`, `src/preload/api.d.ts`: replace
   `threads:saveOne`/`threads:saveProject` with
-  `threads:appendMessage(projectId, threadId, message)`,
-  `threads:updateMeta(projectId, threadId, metaPatch)`,
-  `threads:create`, `threads:delete`, keep `threads:loadProject`, add
+  `threads:append-message(projectId, threadId, message)`,
+  `threads:update-meta(projectId, threadId, metaPatch)`,
+  `threads:create`, `threads:delete`, keep `threads:load-project`, add
   `threads:catalog(projectId, query)`.
 - `src/renderer/controller/persistence.ts` (`attachAutosave`):
   - `message_done` → `appendMessage` with the finalized message (immediate,

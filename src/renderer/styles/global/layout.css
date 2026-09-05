@@ -836,8 +836,36 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
+}
+.terminal-rail-section {
+  flex: 1 1 33.333%;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   min-height: 0;
+}
+.terminal-rail-resizer {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 var(--pane-divider-width, 1px);
+  height: var(--pane-divider-width, 1px);
+  background: var(--border);
+  cursor: row-resize;
+  touch-action: none;
+}
+.terminal-rail-resizer::after {
+  content: '';
+  position: absolute;
+  inset: -3px 0;
+}
+.terminal-rail-resizer:hover,
+.terminal-rail-resizer:focus-visible,
+.terminal-rail-resizer.is-dragging {
+  background: var(--accent);
+  outline: none;
 }
 .terminals-list-header {
   display: flex;
@@ -1502,12 +1530,7 @@
    in the Terminal tab's left rail (under the shells); selecting one shows its
    full output as a panel on the right, swapping out the live terminal. */
 .agent-tasks-section {
-  flex-shrink: 0;
-  max-height: 50%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-top: 1px solid var(--border);
+  min-height: 0;
 }
 .agent-tasks-section-header {
   padding: var(--spacing-sm);
@@ -1579,13 +1602,12 @@
   font-family: var(--font-mono);
 }
 .supervised-tasks-section {
-  flex-shrink: 0;
-  max-height: 40%;
-  overflow: hidden;
-  border-top: 1px solid var(--border);
+  min-height: 0;
 }
 .supervised-tasks-list {
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
   padding: var(--spacing-xs) 0;
 }
 .supervised-task-row {

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { waitForActiveThreadTitle } from './helpers.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
 const PROJECT_ID = 'e2e-approval-chat-scope'
@@ -18,7 +19,7 @@ describe('chat-scoped approval', () => {
     this.timeout(90_000)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID, {
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
     })
@@ -88,6 +89,8 @@ describe('chat-scoped approval', () => {
     await expect(dialog).toBeDisplayed()
     await browser.keys('\uE003')
 
+    // The sidebar is in frame; its auto-title lands asynchronously.
+    await waitForActiveThreadTitle()
     await saveAppScreenshot('approval-chat-scoped.png')
     await dialog.$('.approval-reject').click()
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })

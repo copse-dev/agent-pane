@@ -24,6 +24,7 @@ import {
   validateThreadWorktree,
 } from './worktree-manager.ts'
 import {
+  checkoutGitBranch,
   getCurrentBranchName,
   getDefaultBranch,
   getGitStatus,
@@ -38,6 +39,13 @@ export interface PrepareThreadCheckoutInput {
   prompt: string
   choice: ThreadWorktreeChoice
   model?: string
+  /**
+   * Branch the blank-thread footer picker selected to start from. The picker
+   * only ever *names* it — nothing is checked out while the user is still
+   * composing — so this transaction is where the selection takes effect: as the
+   * base of the new worktree, or as a switch of the shared checkout.
+   */
+  baseBranch?: string
 }
 
 export interface PreviewThreadCheckoutInput {
@@ -57,17 +65,21 @@ interface CheckoutInspection {
 }
 
 /**
- * The blank-thread branch picker speaks for the live local checkout, so its
- * selected branch is the worktree base — but only once the repository is known
- * to hold it. A remote default is the next useful choice, with `main` as the
- * conventional final fallback.
+ * The blank-thread branch picker's selection is the worktree base, and the live
+ * checkout's branch is the base when the user never touched it — but either is
+ * only usable once the repository is known to hold it. A picked branch that
+ * has since been deleted fails the send outright, exactly as the shared path's
+ * `git switch` would: the user named that branch on purpose, and quietly
+ * cutting the worktree from wherever the checkout happens to be would start
+ * the thread somewhere they never asked for. Only the untouched picker falls
+ * through — to a remote default, with `main` as the conventional final fallback.
  *
- * The existence check is load-bearing rather than defensive. `currentBranch`
- * is a *reported* name, and a report is not a ref: the e2e suite replaces it
- * wholesale via `COPSE_PANEL_MOCK_BRANCH` so the branch chip stays stable, and
- * allocation rejects a base that resolves to nothing. Handing that name
- * straight to the allocator turns every isolated checkout into "Base branch
- * … does not exist in this repository" and strands the thread with no
+ * The existence check on `currentBranch` is load-bearing rather than
+ * defensive. It is a *reported* name, and a report is not a ref: the e2e suite
+ * replaces it wholesale via `COPSE_PANEL_MOCK_BRANCH` so the branch chip stays
+ * stable, and allocation rejects a base that resolves to nothing. Handing that
+ * name straight to the allocator turns every isolated checkout into "Base
+ * branch … does not exist in this repository" and strands the thread with no
  * transcript — which is exactly how the automation specs fail. In a real
  * checkout the name always resolves, so this costs one `show-ref` and changes
  * nothing.
@@ -75,7 +87,14 @@ interface CheckoutInspection {
 async function checkoutBaseBranch(
   branchExists: (branch: string) => Promise<boolean>,
   inspection: CheckoutInspection,
+  requested: string | undefined,
 ): Promise<string> {
+  if (requested) {
+    if (await branchExists(requested)) return requested
+    throw new Error(
+      `Branch "${requested}" no longer exists in this repository. Pick another branch to start from.`,
+    )
+  }
   if (inspection.currentBranch && (await branchExists(inspection.currentBranch))) {
     return inspection.currentBranch
   }
@@ -112,6 +131,8 @@ export interface ThreadCheckoutTransactionDependencies {
   }) => Promise<ThreadWorktree | null>
   /** Whether the repository holds this branch, checked against its refs. */
   branchExists: (projectRoot: string, branch: string) => Promise<boolean>
+  /** Switch the shared checkout, for a shared thread that picked a branch. */
+  checkoutBranch: (branch: string, projectRoot: string) => Promise<void>
   validate: (input: {
     projectId: string
     threadId: string
@@ -220,6 +241,7 @@ const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   allocate: allocateThreadWorktree,
   recoverUnpersisted: recoverUnpersistedWorktree,
   branchExists: localBranchExists,
+  checkoutBranch: checkoutGitBranch,
   validate: validateThreadWorktree,
   retire: retireThreadWorktree,
   serialize: runSerialized,
@@ -319,20 +341,56 @@ export function createThreadCheckoutTransaction(
         )
       }
       if (decision.checkoutMode === 'shared') {
-        await dependencies.updateMeta(input.projectId, input.threadId, {
-          worktreeChoice: input.choice,
-          ...(inspection.currentBranch ? { gitBranch: inspection.currentBranch } : {}),
-        })
-        return persistedResult(input.choice, inspection.currentBranch ?? undefined)
+        // A shared thread runs in the project checkout itself, so a picked
+        // branch has to become the checked-out one — and this is the first
+        // moment it may: the picker deliberately did not touch the working tree
+        // while the user was still composing. Failing here (a dirty tree, or a
+        // branch another worktree holds) leaves the prompt in the composer with
+        // its own retry, which is why the switch precedes any persistence.
+        // Not for a shared mode the repository never had a say in: a remote
+        // agent, or an SSH/non-Git project, has no local branch to switch even
+        // though the footer picker was on screen when the user chose one.
+        const switched =
+          inspection.isGitRepository &&
+          input.baseBranch &&
+          inspection.currentBranch !== input.baseBranch
+            ? input.baseBranch
+            : null
+        if (switched) await dependencies.checkoutBranch(switched, project.path)
+        const branch = switched ?? inspection.currentBranch
+        try {
+          await dependencies.updateMeta(input.projectId, input.threadId, {
+            worktreeChoice: input.choice,
+            ...(branch ? { gitBranch: branch } : {}),
+          })
+        } catch (error) {
+          // The message never sent, so the checkout must not stay moved for it:
+          // the user would find their project on a branch they picked for a
+          // thread that does not exist. Best effort — the original failure is
+          // the one worth surfacing, and Retry re-runs the switch anyway.
+          const previous = inspection.currentBranch
+          if (switched && previous) {
+            await dependencies
+              .checkoutBranch(previous, project.path)
+              .catch((restoreError: unknown) => {
+                console.warn(
+                  `[thread-checkout] Could not switch back to "${previous}" after persistence failed:`,
+                  restoreError,
+                )
+              })
+          }
+          throw error
+        }
+        return persistedResult(input.choice, branch ?? undefined)
       }
 
-      // The footer picker changes the local checkout before first send, so its
-      // current selection is authoritative. Allocation separately recognizes
-      // when this is the repository default and then fetches/uses the latest
-      // upstream tip instead of a stale local commit.
+      // Allocation separately recognizes when the base is the repository
+      // default and then fetches/uses the latest upstream tip instead of a
+      // stale local commit.
       const baseBranch = await checkoutBaseBranch(
         (branch) => dependencies.branchExists(project.path, branch),
         inspection,
+        input.baseBranch,
       )
       // A prior allocate may have succeeded while meta persistence failed. Prefer
       // reclaiming that registration over a second allocate that would throw

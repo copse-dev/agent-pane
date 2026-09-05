@@ -123,7 +123,7 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   approvedProviderHosts: z.array(z.string().max(256)).max(256),
   providerAllowUserApproval: z.boolean(),
   // User's OpenAI-compatible providers: preset overrides + custom definitions.
-  // Managed via dedicated IPC (settings:saveExtraProvider), not settings:set.
+  // Managed via dedicated IPC (settings:save-extra-provider), not settings:set.
   extraProviders: extraProvidersSchema,
   // Written by the OpenRouter catalog fetch; read by the cost estimator.
   openRouterPricing: openRouterPricingSchema,

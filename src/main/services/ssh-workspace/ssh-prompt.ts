@@ -84,7 +84,7 @@ export function initSshPrompt(win: BrowserWindow, ipcMain: IpcMain): void {
     (req) =>
       new Promise<SshPromptResponse>((resolve) => {
         const id = randomUUID()
-        win.webContents.send('ssh:prompt_request', {
+        win.webContents.send('ssh:prompt-request', {
           id,
           prompt: req.prompt,
           kind: req.kind,

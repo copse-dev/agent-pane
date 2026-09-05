@@ -220,7 +220,7 @@ Plan:
 2. Add thread-store methods to load, save, clear, and delete the sidecar using trusted project and
    thread IDs. Corrupt or future-version files fail closed to fresh provider history without
    damaging the human transcript.
-3. Change `agent:estimateContext` and `agent:clearHistory` to include `projectId`; run and retry
+3. Change `agent:estimate-context` and `agent:clear-history` to include `projectId`; run and retry
    already have project context. No API may resolve a sidecar from a globally unique `threadId`
    assumption.
 4. Run migration after legacy thread migration and before the first window. For each

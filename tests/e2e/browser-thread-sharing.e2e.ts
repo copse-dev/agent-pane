@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
-import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedE2eViewport,
+  seedEmptyProject,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
+import { listenOnFixturePort } from './helpers/fixture-server.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -60,7 +65,7 @@ describe('browser context sharing with a thread', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedE2eViewport()
-    seedEmptyProject(process.cwd(), PROJECT_ID)
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID)
 
     server = createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -83,16 +88,14 @@ describe('browser context sharing with a thread', function () {
           </body>
         </html>`)
     })
-    server.listen(0, '127.0.0.1')
-    await once(server, 'listening')
-    const address = server.address()
-    if (!address || typeof address === 'string') throw new Error('fixture server has no TCP port')
+    // The address bar is in frame, so the port must not change per run.
+    const origin = await listenOnFixturePort(server, 43118)
 
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.titlebar-btn[aria-label="Open browser"]').click()
     await $('.browser-url-input').waitForDisplayed({ timeout: 10_000 })
-    await navigateActiveTab(`http://127.0.0.1:${String(address.port)}/notes`)
+    await navigateActiveTab(`${origin}/notes`)
     await browser.waitUntil(
       async () =>
         (await $('.browser-tabs-tab.is-active .browser-tabs-tab-label').getText()) ===

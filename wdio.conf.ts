@@ -15,7 +15,7 @@ import { installSettingsActionBarClickSafety } from './tests/e2e/helpers/setting
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { assignDebugPort, type ChromeCapabilities } from './tests/e2e/helpers/debug-port.ts'
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
-import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
+import { E2E_GIT_BRANCH, E2E_SHELL } from './tests/e2e/helpers/e2e-env.ts'
 import { installE2eProfileCleanup } from './tests/e2e/helpers/profile-cleanup.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
@@ -204,6 +204,10 @@ export const config: Options.Testrunner = {
       // Pin the branch the app reports so footer/branch-picker screenshots stay
       // stable regardless of which branch the PR is built from.
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,
+      // Shells tabs spawn `$SHELL`. Point it at a wrapper that runs bash with no
+      // rc files and a fixed `$ ` prompt, so terminal captures never carry the
+      // runner's `user@host:~/path` prompt (a new hostname on every CI run).
+      SHELL: E2E_SHELL,
       // Report a fixed set of installed editors for the "Open in editor" dropdown
       // so the spec doesn't depend on what the runner has on PATH (launching is a
       // no-op under this mock). Mixes code editors with the macOS system targets.

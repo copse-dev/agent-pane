@@ -1,5 +1,5 @@
 /**
- * Detect when a shell command failed because the macOS project sandbox blocked it.
+ * Detect when a shell command failed because the project sandbox blocked it.
  *
  * SECURITY (issue #104): this detection must NOT use command-controlled stdout/stderr.
  * A command can trivially `echo "operation not permitted"` to fake a sandbox failure

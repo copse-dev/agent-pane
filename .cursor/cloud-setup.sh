@@ -4,8 +4,8 @@
 # (Cursor re-runs the update script on every snapshot refresh).
 set -euo pipefail
 
-# Pin Node to the version in .nvmrc. >=22.22.2 is required for native TypeScript
-# type-stripping in scripts/*.mts.
+# Pin Node to the Node 24 LTS release in .nvmrc. The build/check tooling runs
+# scripts/*.mts directly and the repository supports Node 24 or newer.
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 # shellcheck disable=SC1091
 . "$NVM_DIR/nvm.sh"

@@ -25,10 +25,26 @@ export const MODEL_FOLLOW_UP_PRESETS: FollowUpPreset[] = [
 
 export const DETERMINISTIC_FOLLOW_UP_IDS = {
   changes: 'changes',
+  createPr: 'create-pr',
   debugCi: 'debug-ci',
   fixMergeConflicts: 'fix-merge-conflicts',
   continuePlan: 'continue-plan',
 } as const
+
+/**
+ * The "Create PR" chip, offered when the branch holds work no pull request
+ * carries yet. Clicking opens the PR dialog (title, description, draft toggle)
+ * and, once confirmed, runs `createPrForThread` directly — no prompt is sent
+ * and no model is involved in the create, so unlike the prompt presets this
+ * carries no `prompt`. The shape matches the other action-only bubble
+ * (`model-compare`): an id and a label, with the renderer keyed on `action`.
+ */
+export function buildCreatePrSuggestion(): { id: string; label: string } {
+  return {
+    id: DETERMINISTIC_FOLLOW_UP_IDS.createPr,
+    label: 'Create PR',
+  }
+}
 
 /**
  * The bubble for a turn that ended with task-plan items still open. It names

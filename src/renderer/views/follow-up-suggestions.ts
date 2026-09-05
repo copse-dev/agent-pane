@@ -3,11 +3,18 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { FollowUpSuggestion } from '@shared/follow-ups/types.ts'
 import { reconcileChangesSuggestion } from '@shared/follow-ups/changes-stat.ts'
-import { switchThread } from '@shared/store/thread-helpers.ts'
+import { openCreatePrDialog } from './create-pr-dialog.ts'
+import {
+  addMessage,
+  addToolCall,
+  setMessageContent,
+  switchThread,
+  updateToolCall,
+} from '@shared/store/thread-helpers.ts'
 import { lastExchange } from './last-exchange.ts'
 import { openComparisonModelDialog } from './comparison-model-dialog.ts'
 import { comparisonModelsPayload, startComparison } from '../controller/retry-review-comparison.ts'
-import { showErrorToast } from './toast.ts'
+import { showErrorToast, showToast } from './toast.ts'
 
 /** Open the changeset reviewer pane (mirrors the diff-conflict banner path). */
 function openChangesReviewer(store: AppStore): void {
@@ -46,6 +53,101 @@ async function runComparisonFromBubble(
   startComparison(store, api, threadId, picked)
 }
 
+/**
+ * The "Create PR" bubble, in the two halves the old single agent turn split
+ * into: ask a model for a description *while* the dialog is open, then — once
+ * the user has settled the title, body and draft flag — run the same
+ * `createPrForThread` the `gh_pr_create` tool runs, with no model in the loop.
+ *
+ * Backing out of the dialog leaves the bubbles up: nothing happened, so the
+ * offer should still be there. Confirming records the attempt in the transcript
+ * either way, because a PR is the kind of thing you go looking for later.
+ */
+async function createPrFromBubble(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  onConfirmed: () => void,
+): Promise<void> {
+  const { activeProjectId } = store.getState()
+  const thread = store.getState().threads.find((t) => t.id === threadId)
+  if (!activeProjectId) return
+
+  // Fired before the dialog is awaited so the description is being written
+  // while the user reads the form, not after they have committed to it.
+  const exchange = lastExchange(store, threadId)
+  const bodyPromise = exchange
+    ? api.agent
+        .suggestPrBody(activeProjectId, threadId, JSON.stringify(exchange.context))
+        .catch(() => null)
+    : undefined
+
+  const picked = await openCreatePrDialog({
+    suggestedTitle: thread?.title ?? '',
+    branch: thread?.gitBranch ?? null,
+    ...(bodyPromise ? { bodyPromise } : {}),
+  })
+  if (!picked) return
+  onConfirmed()
+
+  const request = { title: picked.title, body: picked.body, draft: picked.draft }
+  const card = openPrCardInTranscript(store, threadId, request)
+  try {
+    const result = await api.gh.createPrForThread(activeProjectId, threadId, request)
+    settlePrCard(store, card, result.ok ? 'done' : 'error', result.message)
+    if (!result.ok)
+      showToast(`Could not open the pull request: ${result.message}`, { variant: 'error' })
+  } catch (err) {
+    settlePrCard(store, card, 'error', err instanceof Error ? err.message : String(err))
+    showErrorToast('Could not open the pull request', err)
+  }
+}
+
+/**
+ * Put the create in the transcript as a `gh_pr_create` card, the same shape the
+ * agent's own call leaves behind.
+ *
+ * Not decoration: without it the chat says the user asked for a PR and then
+ * nothing, while a PR exists on GitHub. Reusing the tool's name means the
+ * existing tool-card rendering (and the turn rollup) picks it up for free, and
+ * the transcript reads the same whether the model or the dialog opened it.
+ */
+function openPrCardInTranscript(
+  store: AppStore,
+  threadId: string,
+  request: { title: string; body: string; draft: boolean },
+): { messageId: string; toolCallId: string } {
+  const messageId = addMessage(store, threadId, 'assistant')
+  const toolCallId = `create-pr-${messageId}`
+  addToolCall(store, messageId, {
+    id: toolCallId,
+    name: 'gh_pr_create',
+    args: { title: request.title, draft: request.draft },
+    status: 'running',
+    result: null,
+  })
+  return { messageId, toolCallId }
+}
+
+/**
+ * Close the card out with what `gh` said, and mirror it as the message's prose.
+ *
+ * Content first, then the tool call: `tool_call_updated` on a settled call is
+ * what persists this synthetic message (persistence.ts), and nothing else
+ * does — the message is never finalized by a turn. Settling the card before
+ * the prose was written persisted a message with empty content, so a reload
+ * showed a bare card with the "Opened PR #N" line missing.
+ */
+function settlePrCard(
+  store: AppStore,
+  card: { messageId: string; toolCallId: string },
+  status: 'done' | 'error',
+  message: string,
+): void {
+  setMessageContent(store, card.messageId, message)
+  updateToolCall(store, card.messageId, card.toolCallId, { status, result: message })
+}
+
 export interface FollowUpSuggestionsMount {
   root: HTMLElement
   clearSuggestions: () => void
@@ -81,6 +183,17 @@ export function mountFollowUpSuggestions(
   let changesRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let displayedThreadId: string | null = null
   const suggestionsByThread = new Map<string, CachedSuggestions>()
+  const consumedThreads = new Set<string>()
+
+  function consumeSuggestions(threadId: string): void {
+    // Creating a PR appends a synthetic assistant card, not a new user turn.
+    // Its store events must not re-fetch the offer we just accepted. Invalidate
+    // pending fetches too, and allow suggestions again when a real run starts.
+    consumedThreads.add(threadId)
+    suggestionsByThread.delete(threadId)
+    nextFetchToken(threadId)
+    if (store.getState().activeThreadId === threadId) clearSuggestions()
+  }
 
   function clearSuggestions(): void {
     clear(root)
@@ -122,6 +235,10 @@ export function mountFollowUpSuggestions(
         btn.textContent = suggestion.label
       }
 
+      // The one bubble in the row that publishes something outside this
+      // machine, so it reads as the accented offer rather than another chip.
+      if (suggestion.action === 'create-pr') btn.classList.add('follow-up-bubble-create-pr')
+
       btn.addEventListener('click', () => {
         // The changeset chip is a shortcut into the reviewer pane, not a prompt:
         // dropping a canned "review my changes" message into the chat was
@@ -143,6 +260,12 @@ export function mountFollowUpSuggestions(
           void runComparisonFromBubble(store, api, sourceThreadId, clearSuggestions)
           return
         }
+        if (suggestion.action === 'create-pr') {
+          void createPrFromBubble(store, api, sourceThreadId, () => {
+            consumeSuggestions(sourceThreadId)
+          })
+          return
+        }
         clearSuggestions()
         if (suggestion.prompt) onSelect(suggestion.prompt)
       })
@@ -153,6 +276,7 @@ export function mountFollowUpSuggestions(
   }
 
   async function maybeFetchSuggestions(threadId: string): Promise<void> {
+    if (consumedThreads.has(threadId)) return
     const exchange = lastExchange(store, threadId)
     if (!exchange) {
       suggestionsByThread.delete(threadId)
@@ -229,6 +353,10 @@ export function mountFollowUpSuggestions(
       clearSuggestions()
       return
     }
+    if (consumedThreads.has(activeId)) {
+      clearSuggestions()
+      return
+    }
     if (displayedThreadId === activeId) return
 
     const exchange = lastExchange(store, activeId)
@@ -249,6 +377,7 @@ export function mountFollowUpSuggestions(
   const unsubs = [
     store.on('thread_status_changed', (tid, status) => {
       if (status === 'running') {
+        consumedThreads.delete(tid)
         suggestionsByThread.delete(tid)
         if (tid === store.getState().activeThreadId) {
           nextFetchToken(tid)

@@ -35,6 +35,31 @@ export async function waitForAgentIdle(timeoutMs = 15_000): Promise<void> {
   })
 }
 
+/**
+ * Wait until the selected thread has been auto-named.
+ *
+ * `maybeNameThread` (renderer/controller/thread-naming.ts) fires when the agent
+ * first responds and resolves the title through an IPC round trip, so a
+ * screenshot taken as soon as the turn settles may show "New Thread" on one
+ * run and the suggested title on the next. Call this before capturing a frame
+ * that includes the sidebar for a thread the spec created by sending a message.
+ */
+export async function waitForActiveThreadTitle(timeoutMs = 15_000): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const title = await browser.execute(
+        () => document.querySelector('.chat-row.selected .chat-title')?.textContent?.trim() ?? '',
+      )
+      return title !== '' && title !== 'New Thread'
+    },
+    {
+      timeout: timeoutMs,
+      interval: 100,
+      timeoutMsg: 'the selected thread was never auto-named',
+    },
+  )
+}
+
 /** Composer is always enabled; wait until it is mounted. */
 export async function waitForPromptReady(timeoutMs = 15_000): Promise<void> {
   await $('.prompt-input').waitForExist({ timeout: timeoutMs })

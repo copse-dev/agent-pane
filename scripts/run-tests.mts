@@ -96,6 +96,9 @@ async function bundleTests(testFiles: string[]): Promise<void> {
       // so bundling it breaks that lookup ("cannot be bundled"). Tests that build
       // a worker bundle to assert what it links against need the real package.
       'esbuild',
+      // The TypeScript compiler API (scripts/lib/api-protocol.mts) is ~9 MB of
+      // JS; the protocol drift test needs the real package, not a bundled copy.
+      'typescript',
       // Keep oxfmt external — it resolves its native binding at runtime and
       // scripts/lib/oxfmt.mts spawns its CLI from node_modules/.bin.
       'oxfmt',

@@ -501,7 +501,7 @@ describe('settings → plugins list', () => {
     )
   })
 
-  it('editing a model field persists the chosen id via plugins:setSetting', async () => {
+  it('editing a model field persists the chosen id via plugins:set-setting', async () => {
     const list = await openPlugins({ plugins: [modelFieldPlugin] }, spy)
     const modelSelect = list.querySelector<HTMLSelectElement>('.plugin-setting-model')
     assert.ok(modelSelect)
@@ -522,7 +522,7 @@ describe('settings → plugins list', () => {
     })
   })
 
-  it('toggling calls plugins:setEnabled with the flipped state', async () => {
+  it('toggling calls plugins:set-enabled with the flipped state', async () => {
     const list = await openPlugins({ plugins: [demoPlugin] }, spy)
     const toggle = list.querySelector<HTMLInputElement>('input.plugin-toggle-input')
     assert.ok(toggle)
@@ -549,7 +549,7 @@ describe('settings → plugins list', () => {
     assert.deepEqual(spy.lastSetEnabled, { id: 'copse.demo', enabled: false })
   })
 
-  it('editing a setting field calls plugins:setSetting with the coerced value', async () => {
+  it('editing a setting field calls plugins:set-setting with the coerced value', async () => {
     const list = await openPlugins({ plugins: [demoPlugin] }, spy)
     const numberInput = list.querySelector<HTMLInputElement>('.plugin-setting-number')
     assert.ok(numberInput)

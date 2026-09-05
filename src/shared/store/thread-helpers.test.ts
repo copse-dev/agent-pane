@@ -21,6 +21,7 @@ import {
   addToolCall,
   updateToolCall,
   applyPreparedThreadCheckout,
+  setThreadTitle,
 } from './thread-helpers.ts'
 import type { AppStore } from './store.ts'
 import type { Thread } from '@shared/types'
@@ -676,5 +677,32 @@ describe('deleteThread', () => {
     assert.equal(state.threads.length, 1)
     assert.equal(state.activeThreadId, state.threads[0]?.id)
     assert.ok(getActiveThread(store))
+  })
+})
+
+describe('setThreadTitle', () => {
+  it('records the auto-naming pass that wrote the title', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+
+    setThreadTitle(store, threadId, 'Add Login Button', { autoTitleCount: 1 })
+
+    const thread = getThreadById(store, threadId)
+    assert.ok(thread)
+    assert.equal(thread.title, 'Add Login Button')
+    assert.equal(thread.autoTitleCount, 1)
+  })
+
+  it('clears the auto-naming counter for a plain rename', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    setThreadTitle(store, threadId, 'Add Login Button', { autoTitleCount: 1 })
+
+    setThreadTitle(store, threadId, 'Mine')
+
+    const thread = getThreadById(store, threadId)
+    assert.ok(thread)
+    assert.equal(thread.title, 'Mine')
+    assert.equal('autoTitleCount' in thread, false)
   })
 })

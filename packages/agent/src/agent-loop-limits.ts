@@ -103,10 +103,31 @@ export function defaultMaxLlmCallsForSteps(maxSteps: number): number {
   return Math.min(DEFAULT_MAX_LLM_CALLS, maxSteps + 3)
 }
 
+/** Optional knobs for {@link AgentRunDeadline}, kept off the positional args. */
+export interface AgentRunDeadlineOptions {
+  /**
+   * Exclude paused time from the wall-clock hard cap (#2332).
+   *
+   * The local loop leaves this off: its pauses are its own tool execution and
+   * streaming, which is precisely the work the runaway budget exists to bound.
+   * A host-driven run (the ACP branch) turns it on, because there the pauses are
+   * approval modals — time spent blocked on a human. Blocking indefinitely on an
+   * approval prompt is intended behaviour, so it must not spend the run's
+   * runaway-work budget; without this an ACP turn is killed underneath a prompt
+   * the user can still see, and the kill is indistinguishable from Stop.
+   *
+   * The cap itself stays armed, so a run that never pauses — including one whose
+   * blocking site forgot to register an idle pause — is still bounded.
+   */
+  readonly excludePausesFromHardMax?: boolean
+}
+
 /**
  * Sliding idle deadline with pause support. Tool execution and LLM streaming pause
  * the idle clock; each completed stream or tool batch records activity and resets
- * the idle window. A hard wall-clock cap still applies from run start.
+ * the idle window. A hard wall-clock cap still applies from run start — over raw
+ * wall time by default, or over unpaused time only when
+ * {@link AgentRunDeadlineOptions.excludePausesFromHardMax} is set.
  */
 export class AgentRunDeadline {
   private readonly runStartedAt: number
@@ -123,18 +144,21 @@ export class AgentRunDeadline {
   private readonly idleTimeoutMs: number
   private readonly hardMaxMs: number
   private readonly clock: () => number
+  private readonly excludePausesFromHardMax: boolean
 
   constructor(
     idleTimeoutMs = AGENT_RUN_IDLE_TIMEOUT_MS,
     hardMaxMs = AGENT_RUN_HARD_MAX_MS,
     now = Date.now(),
     clock: () => number = Date.now,
+    options: AgentRunDeadlineOptions = {},
   ) {
     this.idleTimeoutMs = idleTimeoutMs
     this.hardMaxMs = hardMaxMs
     this.runStartedAt = now
     this.lastActivityAt = now
     this.clock = clock
+    this.excludePausesFromHardMax = options.excludePausesFromHardMax ?? false
   }
 
   /** Monotonic clock with active and accumulated pause time subtracted. */
@@ -162,8 +186,18 @@ export class AgentRunDeadline {
     }
   }
 
+  /**
+   * Elapsed time the hard cap is measured over: raw wall time, or wall time with
+   * pauses removed when the run asked for that (see
+   * {@link AgentRunDeadlineOptions.excludePausesFromHardMax}).
+   */
+  private hardElapsedMs(now = this.clock()): number {
+    if (!this.excludePausesFromHardMax) return now - this.runStartedAt
+    return this.effectiveNow(now) - this.runStartedAt
+  }
+
   isHardExpired(now = this.clock()): boolean {
-    return now - this.runStartedAt >= this.hardMaxMs
+    return this.hardElapsedMs(now) >= this.hardMaxMs
   }
 
   isIdleExpired(now = this.clock()): boolean {
@@ -175,14 +209,18 @@ export class AgentRunDeadline {
   }
 
   msUntilExpiry(now = this.clock()): number {
-    const untilHard = this.hardMaxMs - (now - this.runStartedAt)
+    const untilHard = this.hardMaxMs - this.hardElapsedMs(now)
     const untilIdle = this.idleTimeoutMs - (this.effectiveNow(now) - this.lastActivityAt)
     return Math.max(0, Math.min(untilHard, untilIdle))
   }
 
-  /** Hard wall-clock time since construction; pauses deliberately still count. */
+  /**
+   * Elapsed run time as the hard cap counts it. Pauses deliberately still count
+   * unless the run opted out via
+   * {@link AgentRunDeadlineOptions.excludePausesFromHardMax}.
+   */
   elapsedWallTimeMs(now = this.clock()): number {
-    return Math.max(0, now - this.runStartedAt)
+    return Math.max(0, this.hardElapsedMs(now))
   }
 
   /** Time left before the hard product cap, independent of the sliding idle window. */

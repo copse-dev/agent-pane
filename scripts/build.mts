@@ -4,15 +4,22 @@ import {
   accessSync,
   cpSync,
   copyFileSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { copyMonacoWorkers, pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
+import { API_PROTOCOL_VERSION } from '../src/shared/api-protocol.mts'
+import {
+  API_PROTOCOL_SCHEMA_BUILD_PATH,
+  generateApiProtocol,
+  serializeApiProtocol,
+} from './lib/api-protocol.mts'
 import { markTreeNoindex } from './lib/noindex.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 import { MAIN_EXTERNALS } from './main-externals.mts'
@@ -179,7 +186,7 @@ const nodeOpts = {
   // installers do not ship them: maps are not consumed by the packaged app and
   // were adding tens of megabytes to every architecture and container format.
   sourcemap: !isRelease,
-  target: 'node22',
+  target: 'node24',
   alias: sharedAlias,
   define,
   minifySyntax: isRelease,
@@ -333,6 +340,17 @@ if (isDemo) {
 }
 
 cpSync('assets', 'dist/assets', { recursive: true })
+
+// The full renderer ↔ main API protocol schema (docs/api-protocol.md). The
+// committed manifest carries only channels and arity; the typed schema a
+// transport or external client codes against is regenerated here so it is
+// never stale and never a 500 KB diff.
+mkdirSync(dirname(API_PROTOCOL_SCHEMA_BUILD_PATH), { recursive: true })
+writeFileSync(
+  API_PROTOCOL_SCHEMA_BUILD_PATH,
+  serializeApiProtocol(generateApiProtocol({ version: API_PROTOCOL_VERSION })),
+)
+console.log(`[build] wrote ${API_PROTOCOL_SCHEMA_BUILD_PATH}`)
 
 const bundledGortex = resolve('vendor/gortex', bundledGortexName)
 try {

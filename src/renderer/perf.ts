@@ -7,7 +7,7 @@
  * renderer without dragging the store or the API surface along.
  *
  * What the renderer contributes that no other layer can: the boundaries of a
- * user-visible action. Main sees `threads:loadProject` take N ms; only the
+ * user-visible action. Main sees `threads:load-project` take N ms; only the
  * renderer knows that call sat inside "the user clicked a project and the pane
  * was unusable until it finished".
  */

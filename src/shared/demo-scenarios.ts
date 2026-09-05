@@ -46,14 +46,14 @@ export interface DemoScenario {
    */
   revealFinalPreview?: boolean
   /**
-   * Never answer transcript hydration (`threads:loadMessages`), freezing an
+   * Never answer transcript hydration (`threads:load-messages`), freezing an
    * unhydrated thread in its mid-switch state. The conversation's hydration
    * notice is only ever on screen for the moment a transcript takes to read;
    * this holds that moment open so the visual spec can assert and capture it.
    */
   holdThreadHydration?: boolean
   /**
-   * Reject transcript hydration (`threads:loadMessages`), leaving an
+   * Reject transcript hydration (`threads:load-messages`), leaving an
    * unhydrated thread in its failed state: the conversation must own up with
    * a failure line — and keep the live activity row — instead of a
    * "Loading…" notice that never finishes.
@@ -262,7 +262,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   {
     // Exercises the proposed-diff path end to end: the replayed `write_file`
-    // calls travel the same route a real edit does (demo-api → `agent:show_diff`
+    // calls travel the same route a real edit does (demo-api → `agent:show-diff`
     // → Changes panel), so this fixture fails if that wiring breaks.
     //
     // Hand-written, unlike `landing`: it is a fixture for a panel state, not a
@@ -706,7 +706,8 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         id: 'demo-approval-light-accent-request',
         title: 'Run outside sandbox?',
         body: 'npm install',
-        bodyAdvice: 'This command needs access the project sandbox blocks.',
+        bodyAdvice:
+          'The project sandbox would block this command:\n• Installs or updates packages, which downloads and runs code from the internet',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -738,7 +739,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:oracle',
         bodyAdvice:
-          'This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).',
+          'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -747,7 +748,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm run check:e2e-syntax',
         bodyAdvice:
-          'This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).',
+          'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
@@ -756,7 +757,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         title: 'Run outside sandbox?',
         body: 'COREPACK_HOME="$TMPDIR/copse-corepack" corepack pnpm test',
         bodyAdvice:
-          'This command needs access the macOS project sandbox blocks (corepack downloads package-manager binaries).',
+          'The project sandbox would block this command:\n• Downloads package-manager binaries (corepack)',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
       },
