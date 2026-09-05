@@ -659,6 +659,26 @@ async function checkCustomToolPermission(
  * "remember" yet — the per-repo grant granularity is still an open question, so
  * every approve / merge-when-ready / mark-ready / rerun-CI call asks first.
  */
+async function checkWorktreePreparationPermission(signal?: AbortSignal): Promise<boolean> {
+  const { approved } = await requestApproval(
+    {
+      title: 'Prepare this worktree?',
+      body:
+        'Copse will install lockfile-pinned packages through Socket Firewall with dependency ' +
+        'lifecycle scripts disabled, then run only this repository’s declared prepare:native ' +
+        'entry point. Writes are limited to the active worktree and Copse-managed cache ' +
+        'directories for Corepack, pnpm, Electron, ChromeDriver, and gortex. Downloads may use ' +
+        'the network unless offline mode was requested.',
+      type: 'shell',
+      cause: 'shell-package-install',
+      allowRemember: false,
+      subject: 'prepare_worktree',
+    },
+    signal,
+  )
+  return approved
+}
+
 async function checkGithubWriteToolPermission(
   toolName: string,
   args: unknown,
@@ -1432,6 +1452,13 @@ export async function ensureToolPermitted(
   // wait also persists one bounded local task under the active turn tree.
   if (GITHUB_NONMUTATING_CI_TOOLS.has(toolName)) {
     return true
+  }
+
+  // A host-owned preparation run performs one fixed install/native-artifact
+  // workflow outside the project sandbox. It receives one bounded prompt here;
+  // the tool never delegates approval to arbitrary shell text.
+  if (toolName === 'prepare_worktree') {
+    return checkWorktreePreparationPermission(signal)
   }
 
   // Mutating PR actions (approve / merge-when-ready / mark-ready / rerun CI)

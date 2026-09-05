@@ -18,6 +18,26 @@ export function copseDataRoot(env: NodeJS.ProcessEnv = process.env): string {
   return nonEmpty(env['COPSE_DIR']) ?? join(homedir(), '.copse')
 }
 
+/** Root for verified package-manager and native-runtime inputs shared by worktrees. */
+export function copseCacheDir(env: NodeJS.ProcessEnv = process.env): string {
+  return join(copseDataRoot(env), 'cache')
+}
+
+/**
+ * Cache directories the worktree preparation capability owns. Keeping this list
+ * centralized makes the preparer and project-sandbox read overlay agree exactly.
+ */
+export function copseManagedPreparationCacheDirs(env: NodeJS.ProcessEnv = process.env): string[] {
+  const root = copseCacheDir(env)
+  return [
+    join(root, 'corepack'),
+    join(root, 'pnpm-store'),
+    join(root, 'electron-downloads'),
+    join(root, 'electron-dist'),
+    join(root, 'gortex'),
+  ]
+}
+
 /**
  * Electron profile data (`config.json`, `settings.json`, `mcp.json`, `tools/`,
  * the browser profiles and the semantic index).

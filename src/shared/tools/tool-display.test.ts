@@ -36,6 +36,15 @@ function rollupChildren(
 }
 
 describe('tool-display', () => {
+  it('labels worktree preparation tools and groups them by effect', () => {
+    assert.equal(getToolDisplayName('preflight_worktree'), 'Checked worktree')
+    assert.equal(getToolDisplayName('preflight_worktree', 'running'), 'Checking worktree')
+    assert.equal(getToolGroupKey('preflight_worktree'), 'reading')
+    assert.equal(getToolDisplayName('prepare_worktree'), 'Prepared worktree')
+    assert.equal(getToolDisplayName('prepare_worktree', 'running'), 'Preparing worktree')
+    assert.equal(getToolGroupKey('prepare_worktree'), 'shell')
+  })
+
   it('labels file edits with the target path (tense follows status)', () => {
     const write = {
       ...tc('1', 'write_file'),

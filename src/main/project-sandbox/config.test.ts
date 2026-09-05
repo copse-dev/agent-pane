@@ -31,7 +31,10 @@ import {
   workspaceSandboxOverlay,
   workspaceTmpDir,
 } from './config.ts'
-import { copseWorkspaceTmpDir } from '../services/storage/copse-paths.ts'
+import {
+  copseManagedPreparationCacheDirs,
+  copseWorkspaceTmpDir,
+} from '../services/storage/copse-paths.ts'
 import {
   assertAllowedWorkspaceRoot,
   clearAllowedWorkspaceRootsForTest,
@@ -138,6 +141,21 @@ describe('resolveNodeToolchainAllowRead', () => {
     const binDir = dirname(nodePath)
     assert.ok(allow.includes(binDir))
     assert.ok(allow.some((p) => p === `${binDir}/**`))
+  })
+})
+
+describe('prepared worktree cache access', () => {
+  it('allows fixed Copse cache reads without granting cache writes', () => {
+    const overlay = workspaceSandboxOverlay('/tmp/project')
+    const allowRead = overlay.filesystem?.allowRead ?? []
+    const allowWrite = overlay.filesystem?.allowWrite ?? []
+
+    for (const path of copseManagedPreparationCacheDirs()) {
+      assert.ok(allowRead.includes(path), path)
+      assert.ok(allowRead.includes(`${path}/**`), `${path}/**`)
+      assert.ok(!allowWrite.includes(path), path)
+      assert.ok(!allowWrite.includes(`${path}/**`), `${path}/**`)
+    }
   })
 })
 

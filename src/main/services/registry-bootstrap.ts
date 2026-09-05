@@ -26,6 +26,7 @@ import {
   getCiFailureLogsTool,
 } from '../tools/github-ci-tools.ts'
 import { runShellTool } from '../tools/shell-tool.ts'
+import { preflightWorktreeTool, prepareWorktreeTool } from '../tools/worktree-preparation-tool.ts'
 import { writeFileTool } from '../tools/write-file-tool.ts'
 import { strReplaceTool } from '../tools/str-replace-tool.ts'
 import { readStagedDiffTool, stagedDiffsTool } from '../tools/staged-diff-tools.ts'
@@ -101,6 +102,8 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitCommitTool)
   syncGhTools(registry)
   registry.register(runShellTool)
+  registry.register(preflightWorktreeTool)
+  registry.register(prepareWorktreeTool)
   registry.register(exploreTool)
   // Experimental CI investigator subagent (off by default). Gated by the
   // `copse.ci-investigator` first-party pack — the pack toggle in Settings >
