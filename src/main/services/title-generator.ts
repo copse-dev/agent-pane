@@ -25,18 +25,35 @@ function recordSmallTasksUsage(
   })
 }
 
-// Generate a short thread title from the first user message. Uses the
-// configured small-tasks model; returns null on failure so the caller can
-// fall back to a heuristic.
+/**
+ * Input cap for the title prompt. A re-title sends the opening message plus the
+ * most recent few (each already trimmed by the caller), so the cap has to fit a
+ * handful of messages rather than one.
+ */
+const THREAD_TITLE_INPUT_CAP = 1500
+
+/** The prompt {@link suggestThreadTitle} sends; `text` is the user's side of the thread. */
+export function threadTitlePrompt(text: string): string {
+  return (
+    'Reply with ONLY a concise 3-5 word title in Title Case for the following request. ' +
+    'If several messages are shown, they are one conversation: title it by its ' +
+    'overall goal, not just the latest message. ' +
+    'No quotes, no trailing punctuation.\n\nRequest:\n' +
+    text.slice(0, THREAD_TITLE_INPUT_CAP)
+  )
+}
+
+// Generate a short thread title from the user's side of the thread — the first
+// message alone on a new thread, or the opening plus recent messages when the
+// caller is re-titling a thread that has moved on. Uses the configured
+// small-tasks model; returns null on failure so the caller can fall back to a
+// heuristic.
 export async function suggestThreadTitle(text: string): Promise<string | null> {
   const provider = await resolveSmallTasksProvider()
   if (!provider) return null
   const model = resolveSmallTasksModelId()
 
-  const prompt =
-    'Reply with ONLY a concise 3-5 word title in Title Case for the following request. ' +
-    'No quotes, no trailing punctuation.\n\nRequest:\n' +
-    text.slice(0, 500)
+  const prompt = threadTitlePrompt(text)
   try {
     const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
     recordSmallTasksUsage(model, usage)
