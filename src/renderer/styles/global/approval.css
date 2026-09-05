@@ -54,6 +54,15 @@
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
+/* One reason bullet. Its own box, so a reason too long for the dialog wraps with
+ * a hanging indent under its own text rather than back to the left margin, where
+ * the continuation would read as another bullet. */
+.approval-advice-item {
+  display: inline-block;
+  max-width: 100%;
+  padding-left: 1.05em;
+  text-indent: -1.05em;
+}
 .approval-footer {
   margin-top: var(--spacing-sm);
   font-size: var(--font-size-sm);

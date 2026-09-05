@@ -498,6 +498,10 @@ export async function fetchModelOptions(
   const cloudGroup = 'Cloud models'
   for (const [value, label, provider] of CLOUD_MODELS) {
     if (!isAvailable(provider)) continue
+    // GPT-6 Astra is a staged OpenAI rollout. A valid provider credential is
+    // insufficient: only show it when the account's `/v1/models` catalog says
+    // it is callable (the main process owns that check; keys never cross IPC).
+    if (value === 'gpt-6-astra' && !isAvailable('openai:gpt-6-astra')) continue
     const hint = cloudModelIntellectHint(value)
     options.push({
       value,

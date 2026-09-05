@@ -3,6 +3,7 @@ import {
   arrowLeftIcon,
   arrowRightIcon,
   closeIcon,
+  downloadIcon,
   externalLinkIcon,
   fileTextIcon,
   imageIcon,
@@ -936,6 +937,12 @@ export function mountBrowserPane(
       imageIcon('ui-icon ui-icon-sm'),
       el('span', {}, 'Share screenshot'),
     )
+    const exportPdfItem = el(
+      'button',
+      { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
+      downloadIcon('ui-icon ui-icon-sm'),
+      el('span', {}, 'Export PDF'),
+    )
     const openExternalItem = el(
       'button',
       { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
@@ -954,6 +961,7 @@ export function mountBrowserPane(
       shareTextItem,
       shareScreenshotItem,
       el('div', { class: 'browser-menu-separator', role: 'separator' }),
+      exportPdfItem,
       openExternalItem,
       inspectorItem,
     )
@@ -1002,6 +1010,9 @@ export function mountBrowserPane(
         const shareableId = shareableWebContentsId(tab)
         shareTextItem.disabled = shareableId === null || !api
         shareScreenshotItem.disabled = shareableId === null || !api
+        // Printing needs a main-process guest; the demo/site iframe host has no
+        // `exportPdf`, so leave the item visible but inert there.
+        exportPdfItem.disabled = shareableId === null || !api?.browser.exportPdf
         // "Open in default browser" only makes sense for a real web page.
         openExternalItem.disabled = !currentHttpUrl(tab) || !api?.shell
         inspectorItem.disabled = !tab.webview
@@ -1035,6 +1046,20 @@ export function mountBrowserPane(
       void api.browser.shareScreenshot(id).catch((error: unknown) => {
         showErrorToast('Could not share browser screenshot', error)
       })
+    })
+    exportPdfItem.addEventListener('click', () => {
+      setMenuOpen(false)
+      const id = shareableWebContentsId(tab)
+      const exportPdf = api?.browser.exportPdf
+      if (id === null || !exportPdf) return
+      void exportPdf(id)
+        .then((filePath) => {
+          // Null means the user cancelled the save dialog — stay quiet.
+          if (filePath) showToast(`Exported PDF to ${filePath}`)
+        })
+        .catch((error: unknown) => {
+          showErrorToast('Could not export PDF', error)
+        })
     })
     openExternalItem.addEventListener('click', () => {
       setMenuOpen(false)

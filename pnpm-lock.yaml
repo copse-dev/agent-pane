@@ -73,6 +73,9 @@ importers:
       '@copse/plugin-sdk':
         specifier: workspace:*
         version: link:packages/plugin-sdk
+      '@copse/procwatch':
+        specifier: workspace:*
+        version: link:packages/procwatch
       '@copse/shell-guard':
         specifier: workspace:*
         version: link:packages/shell-guard
@@ -317,6 +320,12 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+
+  packages/procwatch:
+    dependencies:
+      '@copse/std':
+        specifier: workspace:*
+        version: link:../std
 
   packages/shell-guard:
     dependencies:

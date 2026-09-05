@@ -14,9 +14,9 @@
  *
  * Matched by prefix so dated snapshots (`gpt-5.6-sol-2026-07-01`) resolve too.
  * Mirrors the model list LLM 0.32 moved to Responses (simonw/llm#1435), plus the
- * gpt-5.6 family that shipped after it.
+ * gpt-5.6 family and GPT-6 Astra that shipped after it.
  */
-const RESPONSES_MODEL_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'] as const
+const RESPONSES_MODEL_PREFIXES = ['gpt-5', 'gpt-6-astra', 'o1', 'o3', 'o4'] as const
 
 /**
  * Whether `model` is a first-party OpenAI id that should use the Responses API.
