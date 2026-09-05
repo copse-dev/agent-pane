@@ -1,4 +1,4 @@
-// The `hooks:runDetail` IPC: read the raw record behind one hook card.
+// The `hooks:run-detail` IPC: read the raw record behind one hook card.
 //
 // A hook card (decision 10) is a compact summary — "Added context", "307 chars"
 // — derived from the spine `hook_run` line. That answers *what happened* but not

@@ -45,7 +45,7 @@ the product's own handlers make the consequences concrete:
 
 - `settings:set` accepts `registeredAcpAgents`, whose element schema is literally
   `command` / `args` / `env` (`src/main/services/storage/settings-writable.ts:30-36`,
-  `:258`), and `acp:probeAgent` (`register-handlers.ts:2035-2039`) spawns it
+  `:258`), and `acp:probe-agent` (`register-handlers.ts:2035-2039`) spawns it
   (`acp-client.ts:314`) with no approval prompt and no decision-log entry. Two JSON
   POSTs is arbitrary code execution.
 - `storage:set` validates the _key_ and passes `value` through as `unknown`
@@ -53,14 +53,14 @@ the product's own handlers make the consequences concrete:
   seeded into the workspace-root allow-list on the next launch
   (`src/main/services/workspace.ts:111-129`). That escalation is written to disk, so
   revoking the LAN token afterwards does not undo it.
-- `security:enableGuardedYolo` (`register-handlers.ts:1344-1365`) raises an approval —
+- `security:enable-guarded-yolo` (`register-handlers.ts:1344-1365`) raises an approval —
   which the same channel could then answer. A surface that can both raise and answer a
   prompt has no gate at all.
 
 A balanced-paren scan of `src/main` (excluding tests) finds **209 registrations, 30 of
 which call no sender guard whatsoever** — including `workspace:open`, which opens a
 native directory dialog on a desktop the phone user cannot see, plus
-`hooks:unsandboxedProjectHooks`, four `gh:*` handlers, and `workspace:isTrusted`. For
+`hooks:unsandboxed-project-hooks`, four `gh:*` handlers, and `workspace:is-trusted`. For
 those 30 there is no guard to satisfy and therefore no check at all behind the
 transport's own token.
 
@@ -394,7 +394,7 @@ desktop window is closed mid-run and the transcript is complete on disk afterwar
 
 ### L2 — the decision channel
 
-Fan out `agent:approval_request` **and** `agent:approval_cancelled` in the same change —
+Fan out `agent:approval-request` **and** `agent:approval-cancelled` in the same change —
 shipping the first without the second leaves a phone showing a live-looking Approve button
 for a settled prompt, which trains users that approvals are unreliable. Add
 `approval:listPending` so a client connecting mid-prompt can discover the open approval
@@ -527,9 +527,9 @@ no-store`. Without these, an attacker page frames the decision screen and overla
   of the listener after N failed auth attempts.
 
 Never exposed over this transport, in v1 or without a redesign: `settings:set`,
-`storage:set`, `acp:probeAgent`, `acp:autoSetup`, `security:enableGuardedYolo`,
-`terminal:*`, `shell:openExternal`, `editors:open`, `packs:*`, `workspace:open`,
-`workspace:createProject`, `fs:writeFile`, provider-key paths, and `~/.copse/lan/**`.
+`storage:set`, `acp:probe-agent`, `acp:auto-setup`, `security:enable-guarded-yolo`,
+`terminal:*`, `shell:open-external`, `editors:open`, `packs:*`, `workspace:open`,
+`workspace:create-project`, `fs:write-file`, provider-key paths, and `~/.copse/lan/**`.
 
 ### What the user is told, and what is actually true
 

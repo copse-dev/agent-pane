@@ -1894,7 +1894,7 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
   })
 
   // Captured bodies behind the cards (decision 6), so the inspector has real
-  // blobs to read back through `hooks:runDetail` rather than a stub.
+  // blobs to read back through `hooks:run-detail` rather than a stub.
   const capture = (ref: string, contents: string): { ref: string; contents: string } => ({
     ref,
     contents,

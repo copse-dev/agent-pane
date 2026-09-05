@@ -312,7 +312,7 @@ hooks cannot retroactively block work that already completed.
 - **Hook-card inspector ([validation & tooling phase](./plans/hooks-and-feature-packs.md#phase-g--validation--tooling)).** Every card carries an **Inspect run** disclosure:
   what the hook was handed and what it returned, in full. A card summarizes an effect
   (“Added context · Injected 307 chars”); the inspector shows the 307 chars. It reads the
-  execution's captured blobs on demand through the read-only `hooks:runDetail` IPC
+  execution's captured blobs on demand through the read-only `hooks:run-detail` IPC
   (`src/main/services/hooks/run-detail.ts`), lazily on first open and never re-fetched — a
   hook run is immutable once recorded, and the transcript never holds a second copy of a
   hook's output. A function hook's outcome blob is re-split into one labeled block per

@@ -143,7 +143,7 @@ export const followUpContextSchema = z.object({
 })
 
 /**
- * `gh:createPrForThread` request: the "Create PR" dialog's title, body and
+ * `gh:create-pr-for-thread` request: the "Create PR" dialog's title, body and
  * draft flag, nothing more. Every field reaches `gh pr create` as an argument,
  * so the shape is pinned and bounded rather than forwarded — and the target
  * (owner/repo) and branches (head/base) are not accepted at all. The channel
@@ -174,7 +174,7 @@ export const zHookTestRequest = z.object({
 })
 
 /**
- * A spine `hook_run` id (`hooks:runDetail`). Recorded ids are UUIDs, but seeded
+ * A spine `hook_run` id (`hooks:run-detail`). Recorded ids are UUIDs, but seeded
  * fixtures and older records use plain slugs — pin the character class rather
  * than the UUID shape, which is enough to keep an id from becoming a path.
  */

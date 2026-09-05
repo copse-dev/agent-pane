@@ -26,6 +26,7 @@ import {
   type ClientFrame,
   type ServerFrame,
 } from '@shared/tauri/ws-protocol.ts'
+import { API_PROTOCOL_VERSION } from '@shared/api-protocol.mts'
 
 type Listener = (event: unknown, ...args: unknown[]) => void
 
@@ -42,6 +43,14 @@ const listeners = new Map<string, Set<Listener>>()
 let nextInvokeId = 1
 let started = false
 
+/** Reject everything in flight; the socket is not going to answer. */
+function failPending(error: Error): void {
+  ready = false
+  sendQueue.length = 0
+  for (const entry of pending.values()) entry.reject(error)
+  pending.clear()
+}
+
 function push(frame: ClientFrame): void {
   if (ready && socket && socket.readyState === WebSocket.OPEN) {
     socket.send(encodeFrame(frame))
@@ -52,6 +61,18 @@ function push(frame: ClientFrame): void {
 
 function handleFrame(frame: ServerFrame): void {
   if (frame.t === 'hello-ok') {
+    // Both ends check: the server refuses a `hello` whose version it does not
+    // speak (4008), and the client refuses a `hello-ok` from a server it does
+    // not speak. Checking only one direction leaves the client trusting
+    // whatever answers the socket — exactly the case the daemon split creates,
+    // where the two halves are built and shipped separately.
+    if (frame.protocolVersion !== API_PROTOCOL_VERSION) {
+      const detail = `server speaks API protocol v${String(frame.protocolVersion)}, this client v${String(API_PROTOCOL_VERSION)}`
+      console.error(`[ws-bridge] refusing the sidecar handshake: ${detail}`)
+      failPending(new Error(`API protocol version mismatch: ${detail}`))
+      socket?.close(4008, 'protocol version mismatch')
+      return
+    }
     ready = true
     for (const queued of sendQueue.splice(0)) push(queued)
     return
@@ -101,17 +122,16 @@ function openSocket(): void {
     const ws = new WebSocket(`ws://127.0.0.1:${wsPort}/`, `${WS_AUTH_PROTOCOL_PREFIX}${wsToken}`)
     socket = ws
     ws.addEventListener('open', () => {
-      ws.send(encodeFrame({ t: 'hello', winId, token: wsToken }))
+      ws.send(
+        encodeFrame({ t: 'hello', winId, token: wsToken, protocolVersion: API_PROTOCOL_VERSION }),
+      )
     })
     ws.addEventListener('message', (event: MessageEvent) => {
       if (typeof event.data !== 'string') return
       handleFrame(decodeServerFrame(event.data))
     })
     ws.addEventListener('close', () => {
-      ready = false
-      const error = new Error('sidecar connection closed')
-      for (const entry of pending.values()) entry.reject(error)
-      pending.clear()
+      failPending(new Error('sidecar connection closed'))
     })
   } catch (err) {
     console.error('[ws-bridge] failed to open WebSocket to the sidecar', err)

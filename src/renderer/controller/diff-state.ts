@@ -53,7 +53,7 @@ export function attachDiffState(
       stagedDiffs: entries,
       activeDiff: entries.length === 0 ? null : stillQueued,
     })
-    // `agent:show_diff` owns opening Changes and arrives before this queue in
+    // `agent:show-diff` owns opening Changes and arrives before this queue in
     // the real edit path. A queue-only update is metadata: forcing the panel
     // open here makes background/deferred proposals construct Monaco while the
     // user is still watching another surface.

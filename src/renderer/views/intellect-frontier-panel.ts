@@ -69,7 +69,7 @@ const POINT_SPLAY_COLUMN_PX = 7
 const POINT_SPLAY_STEP_PX = 6
 const POINT_SPLAY_MAX_PX = 18
 
-/** Card links warmed per render. Matches the `modelCards:resolve` batch cap. */
+/** Card links warmed per render. Matches the `model-cards:resolve` batch cap. */
 const MAX_CARD_PREFETCH = 128
 
 /**

@@ -209,6 +209,31 @@ jobs:
           done
       - run: npm run format:check
       - run: npm run check:dead-code
+      # Enforce the API protocol's compatibility rule (docs/api-protocol.md).
+      # The unit test only pins that the committed manifest matches the sources,
+      # which a breaking change satisfies by regenerating; this is the step that
+      # reads the change against the base and fails a breaking one that did not
+      # bump API_PROTOCOL_VERSION. Only meaningful with a base to compare to,
+      # so it is skipped on schedule / branch-create runs.
+      - name: API protocol compatibility
+        env:
+          # PR base on pull_request; previous tip on push. Empty for schedule.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          # No usable base (schedule, first push, branch create) -> nothing to
+          # compare against. Skipping here is safe: the PR that introduces a
+          # change always has one.
+          if [ -z "${BASE_SHA:-}" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "No base sha for ${GITHUB_EVENT_NAME} -> skipping the API protocol comparison"
+            exit 0
+          fi
+          # A base that cannot be read fails the step rather than skipping it:
+          # a compatibility gate that passes whenever CI cannot see the base is
+          # worse than no gate. The script distinguishes that from a base that
+          # genuinely predates the protocol, which it allows.
+          git fetch --no-tags --quiet origin "$BASE_SHA" 2>/dev/null || true
+          node scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA"
       # Fail closed on high/critical dependency advisories. This runs after the
       # lockfile-exact setup, so it audits precisely the tree CI will execute.
       # The registry's audit endpoint intermittently times out from hosted

@@ -8,7 +8,7 @@ import { hydrateArtefactPreviews } from '../canvas/artefact-previews.ts'
 /**
  * On-demand transcripts.
  *
- * A project's threads arrive from `threads:loadProject` as metadata only —
+ * A project's threads arrive from `threads:load-project` as metadata only —
  * `messages: []` and `messagesLoaded: false` — because the sidebar draws a row
  * from a title, a status dot and a PR chip, and reading every transcript to
  * render one was the whole cost of opening a large project. The transcript for a

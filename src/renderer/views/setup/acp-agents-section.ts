@@ -14,7 +14,7 @@ import { mountModelSelectPicker } from '../model-picker.ts'
 
 // Settings panel for the coding agents installed on the user's own device that
 // Copse drives as a client (the `acp:<id>` models). It scans the device
-// (acp:detectAgents) and lists the known agents with their install + sign-in
+// (acp:detect-agents) and lists the known agents with their install + sign-in
 // commands ("preinstall" guidance), one-click add, plus a CRUD editor over the
 // `registeredAcpAgents` setting for configured/custom agents.
 //

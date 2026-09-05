@@ -148,7 +148,7 @@ Keep a spec at e2e only when its check requires one of:
 - **Monaco** editor (diff, selection, language workers).
 - **xterm / node-pty** terminal.
 - **webview / browser** panel (Electron webContents).
-- **Real IPC to main** — `fs:listDir`, git status/diff, sandbox, project load.
+- **Real IPC to main** — `fs:list-dir`, git status/diff, sandbox, project load.
 
 Everything else is component- or unit-testable. The full discriminator and the
 per-spec migration backlog live in

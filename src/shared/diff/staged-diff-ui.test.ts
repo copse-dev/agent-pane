@@ -65,7 +65,7 @@ describe('shouldJumpToProposed', () => {
   })
 
   it('waits (no jump) until the proposed path is in the queue', () => {
-    // agent:show_diff arrives before diff:queued, so the path may not be queued yet.
+    // agent:show-diff arrives before diff:queued, so the path may not be queued yet.
     assert.equal(shouldJumpToProposed('c.ts', entries), false)
   })
 })

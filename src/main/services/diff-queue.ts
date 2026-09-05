@@ -908,7 +908,7 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
     },
   )
 
-  // On-demand fetch of a queued diff's full content. `agent:show_diff` pushes the
+  // On-demand fetch of a queued diff's full content. `agent:show-diff` pushes the
   // before/after payload once when a diff is staged, but the renderer's Changes
   // pane can miss that event — it mounts a turn after the agent proposes (Monaco
   // loads async, #459) or is remounted on popout/workspace switch, and nothing
@@ -941,12 +941,12 @@ export function initDiffQueue(win: BrowserWindow, ipcMain: IpcMain): void {
     return stateFor(owner).queue.map((e) => ({ path: e.path, language: e.language }))
   })
 
-  ipcMain.handle('diff:approveAll', (event, projectIdArg: unknown, threadIdArg: unknown) => {
+  ipcMain.handle('diff:approve-all', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
     return approveAllStagedDiffs(parseOwner(projectIdArg, threadIdArg))
   })
 
-  ipcMain.handle('diff:rejectAll', (event, projectIdArg: unknown, threadIdArg: unknown) => {
+  ipcMain.handle('diff:reject-all', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
     const owner = parseOwner(projectIdArg, threadIdArg)
     const state = stateFor(owner)
@@ -1026,7 +1026,7 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
 function restage(owner: ThreadExecutionOwner, entry: QueueEntry, current: string): void {
   entry.before = current
   broadcastToAppWindows(
-    'agent:show_diff',
+    'agent:show-diff',
     owner.projectId,
     owner.threadId,
     entry.path,
@@ -1052,7 +1052,7 @@ export function stageDiff(
   if (!entry) throw new Error(`Staged diff entry for ${path} missing immediately after upsert`)
   // Payload before queue broadcast so the renderer can populate activeDiff first.
   broadcastToAppWindows(
-    'agent:show_diff',
+    'agent:show-diff',
     owner.projectId,
     owner.threadId,
     path,
@@ -1227,7 +1227,7 @@ function stageFileOp(request: FileOpRequest): Promise<string> {
     state.queue.push(queued)
   }
   broadcastToAppWindows(
-    'agent:show_diff',
+    'agent:show-diff',
     owner.projectId,
     owner.threadId,
     entry.path,

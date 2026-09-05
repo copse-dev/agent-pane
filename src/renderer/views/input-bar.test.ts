@@ -344,7 +344,7 @@ describe('input bar first-message checkout', () => {
         currentBranch: 'main',
         onPrepareCheckout: async () => {
           throw new Error(
-            "Error invoking remote method 'agent:prepareCheckout': Error: worktree allocation failed",
+            "Error invoking remote method 'agent:prepare-checkout': Error: worktree allocation failed",
           )
         },
         onRun: async () => {

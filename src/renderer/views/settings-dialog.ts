@@ -2801,7 +2801,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
    * version, its trust tier, an enable/disable toggle, an enumeration of what
    * the plugin contributes (tools / hooks / prompt blocks / panels), and any
    * plugin-scoped settings fields declared by its manifest. Toggling `enabled`
-   * calls `plugins:setEnabled`, which flips the shared `PluginRegistry` flag
+   * calls `plugins:set-enabled`, which flips the shared `PluginRegistry` flag
    * atomically (P1 contract) and persists to `electron-store`.
    */
   function makePluginRow(plugin: import('@shared/types/plugins.ts').PluginSummary): HTMLElement {
@@ -4243,7 +4243,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       saveIfDirty('smallTasksModel', formDataString(data, 'smallTasksModel').trim())
       // `advisorModel` and the three `comparisonModel*` values are no longer
       // saved here — they are plugin-scoped `model` settings persisted on change
-      // via `plugins:setSetting` from Settings → Plugins.
+      // via `plugins:set-setting` from Settings → Plugins.
       saveIfDirty(
         'orchestrationWorkerModel',
         formDataString(data, 'orchestrationWorkerModel').trim(),

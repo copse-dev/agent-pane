@@ -474,7 +474,7 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
         schedule()
         return
       }
-      // Blank-thread first send calls `agent:prepareCheckout` before any
+      // Blank-thread first send calls `agent:prepare-checkout` before any
       // `message_added` reconcile. Debouncing that create leaves a race that
       // surfaces as "Thread is not persisted yet; retry sending the message".
       // The integrated terminal has the same race on `terminal:create` when a
