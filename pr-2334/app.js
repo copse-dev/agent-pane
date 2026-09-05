@@ -241448,7 +241448,7 @@ var init_tool_args_format = __esm({
 });
 
 // src/renderer/controller/thread-proposals.ts
-async function startProposedThread(store3, api3, sourceThreadId, proposal) {
+async function startProposedThread(store3, api3, sourceThreadId, proposal, options2) {
   const projectId = store3.getState().activeProjectId;
   if (!projectId) throw new Error("Open a project before starting a proposed thread");
   store3.emit("composer_draft_flush");
@@ -241467,6 +241467,10 @@ async function startProposedThread(store3, api3, sourceThreadId, proposal) {
     model
   );
   applyPreparedThreadCheckout(store3, threadId, prepared);
+  if (prepared.checkoutMode !== "worktree" && !await options2.confirmSharedCheckout(proposal)) {
+    setThreadDraftPrompt(store3, threadId, proposal.prompt);
+    return { started: false, threadId, reason: "shared-checkout-declined" };
+  }
   addMessage(store3, threadId, "user", proposal.prompt);
   setThreadProposalDecision(store3, sourceThreadId, {
     id: proposal.id,
@@ -241477,7 +241481,7 @@ async function startProposedThread(store3, api3, sourceThreadId, proposal) {
   });
   startHumanTurnTree(store3, threadId);
   dispatchAgentRun(store3, api3, threadId, { content: proposal.prompt });
-  return { threadId, checkoutMode: prepared.checkoutMode };
+  return { started: true, threadId, checkoutMode: prepared.checkoutMode };
 }
 var init_thread_proposals = __esm({
   "src/renderer/controller/thread-proposals.ts"() {
@@ -241652,11 +241656,19 @@ function cardState(store3, sourceThreadId, proposalId) {
     ...decision?.checkoutMode ? { checkoutMode: decision.checkoutMode } : {}
   };
 }
-function warnSharedCheckout() {
-  showToast(
-    "This project cannot give the thread its own checkout, so it started in the shared one \u2014 its changes land in the working tree you already have open.",
-    { variant: "info", durationMs: 12e3 }
-  );
+function confirmSharedCheckout(proposal) {
+  return showConfirmDialog({
+    message: "Run this in your current checkout?",
+    detail: `This project cannot give "${proposal.title}" its own checkout, so the work would run in the one you already have open \u2014 its edits would land alongside your current changes. The offer stays on the card if you would rather not.`,
+    confirmLabel: "Run it here",
+    cancelLabel: "Leave it"
+  });
+}
+function noteDeclined() {
+  showToast("Not started. The prompt is waiting as a draft in the new thread.", {
+    variant: "info",
+    durationMs: 8e3
+  });
 }
 function threadProposalCardSignature(tc2, store3, sourceThreadId) {
   if (!isThreadProposalCall(tc2)) return void 0;
@@ -241668,8 +241680,10 @@ function createThreadProposalToolCard(tc2, store3, api3, sourceThreadId) {
   if (!proposal) return null;
   return createThreadProposalCard(proposal, cardState(store3, sourceThreadId, tc2.id), {
     onStart: async (accepted) => {
-      const started = await startProposedThread(store3, api3, sourceThreadId, accepted);
-      if (started.checkoutMode !== "worktree") warnSharedCheckout();
+      const result = await startProposedThread(store3, api3, sourceThreadId, accepted, {
+        confirmSharedCheckout
+      });
+      if (!result.started) noteDeclined();
     },
     onDismiss: (dismissed) => {
       setThreadProposalDecision(store3, sourceThreadId, {
@@ -241691,6 +241705,7 @@ var init_thread_proposal_tool_card = __esm({
     init_thread_proposal2();
     init_thread_helpers();
     init_thread_proposals();
+    init_confirm_dialog();
     init_toast();
     init_thread_proposal_card();
   }
