@@ -318,13 +318,16 @@ export function judgeRun(record: ThreadContainerRecord): {
       warnings,
     }
   }
+  // A secret that escaped the run outranks every other way it can end badly, so
+  // it is judged before the cleanup problems below: a container left behind is
+  // a chore, a leaked credential is an incident.
+  if (record.secretCanary.present) {
+    return { failure: `Secret canary leaked into the run: ${record.secretCanary.detail}`, warnings }
+  }
   // Cleanup failed but the work itself is intact and retrievable: still not a
   // clean finish, because a container left running is the user's problem now.
   if (warnings.length > 0 && (record.cleanupError !== null || record.teardown === 'failed')) {
     return { failure: warnings[0] ?? 'Cleanup failed', warnings }
-  }
-  if (record.secretCanary.present) {
-    return { failure: `Secret canary leaked into the run: ${record.secretCanary.detail}`, warnings }
   }
   if (record.containerExit !== 0) {
     return {
