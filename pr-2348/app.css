@@ -8764,6 +8764,11 @@ dialog.settings-overlay::backdrop {
   padding-left: var(--spacing-lg);
   line-height: var(--line-height-base);
 }
+.container-run-warnings {
+  padding: var(--spacing-sm);
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
 .container-run-commits li {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);

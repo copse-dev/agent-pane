@@ -20874,6 +20874,12 @@ var init_demo_scenarios = __esm({
           finishedAt: FIXED_TIME + 23 * 6e4,
           model: "claude-sonnet-4-6",
           egressAllowlist: ["api.anthropic.com:443"],
+          warnings: [],
+          checkout: {
+            root: "/Users/dev/projects/demo/.copse/worktrees/demo-container-thread",
+            mode: "worktree",
+            branch: "demo/lint-backlog"
+          },
           log: [
             "[thread-container] carry-in 9b1b901683b9 as refs/copse/carry-in/run-demo-1",
             "[thread-container] starting copse-run-demo-1 from copse-worker:local",
@@ -20924,9 +20930,10 @@ var init_demo_scenarios = __esm({
               toolNames: ["run_shell", "read_file", "write_file"],
               finalText: "Cleared the lint backlog in three commits. The push is waiting for your review."
             },
-            carryOutRef: "refs/copse/runs/run-demo-1",
+            carryOut: { expected: true, ref: "refs/copse/runs/run-demo-1", error: null },
             containerExit: 0,
             teardown: "removed",
+            cleanupError: null,
             secretCanary: { present: false, detail: "canary absent from every surface" }
           },
           error: null
@@ -21585,6 +21592,8 @@ function createDemoApi(scenario, options2 = {}) {
         model: request.model,
         egressAllowlist: ["api.anthropic.com:443"],
         log: ["[thread-container] starting copse-run-demo from copse-worker:local"],
+        warnings: [],
+        checkout: { root: "/repo", mode: "shared", branch: "main" },
         record: null,
         error: null
       }),
@@ -257000,7 +257009,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     }
     element3.dataset["phase"] = run6.phase;
     const result = run6.record?.result;
-    const summary = run6.phase === "finished" && result ? `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} back, ${String(result.deferrals.length)} waiting for review.` : run6.phase === "failed" ? run6.error ?? "The run did not complete." : `${run6.model} \xB7 reaches only ${run6.egressAllowlist.join(", ")}.`;
+    const fetched = run6.record?.carryOut.ref !== null && run6.record?.carryOut.ref !== void 0;
+    const summary = run6.phase === "finished" && result ? `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}, ${String(result.deferrals.length)} waiting for review.` : run6.phase === "failed" ? run6.error ?? "The run did not complete." : `${run6.model} \xB7 reaches only ${run6.egressAllowlist.join(", ")}.`;
     text4.textContent = `Container run: ${PHASE_LABEL[run6.phase].toLowerCase()}. ${summary}`;
     onStateChanged();
   }
@@ -257102,6 +257112,14 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     const row2 = (label, value2) => el("div", { class: "container-run-row" }, el("dt", {}, label), el("dd", {}, value2));
     rows.push(row2("Phase", PHASE_LABEL[run6.phase]));
     rows.push(row2("Model", run6.model));
+    if (run6.checkout) {
+      rows.push(
+        row2(
+          "Checkout",
+          (run6.checkout.mode === "worktree" ? "thread worktree" : "project checkout") + (run6.checkout.branch ? ` (${run6.checkout.branch})` : "")
+        )
+      );
+    }
     rows.push(row2("Reachable origins", run6.egressAllowlist.join(", ") || "none"));
     rows.push(
       row2(
@@ -257129,13 +257147,28 @@ function mountContainerRunControl(api3, context, onStateChanged) {
           `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`
         )
       );
-      rows.push(row2("Commits", run6.record?.carryOutRef ?? "none"));
+      rows.push(
+        row2(
+          "Commits",
+          run6.record?.carryOut.ref ?? (run6.record?.carryOut.expected === true ? `NOT FETCHED \u2014 ${run6.record.carryOut.error ?? "unknown error"}` : "none")
+        )
+      );
     }
     if (run6.error) rows.push(row2("Error", run6.error));
     const sections6 = [
       el("h2", { class: "container-run-title" }, "Unattended container run"),
       el("dl", { class: "container-run-summary" }, ...rows)
     ];
+    if (run6.warnings.length > 0) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-warnings" },
+          el("h3", {}, "Needs your attention"),
+          el("ul", {}, ...run6.warnings.map((warning) => el("li", {}, warning)))
+        )
+      );
+    }
     if (result && result.deferrals.length > 0) {
       sections6.push(
         el(
@@ -257162,7 +257195,11 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-commits" },
-          el("h3", {}, `Commits on ${run6.record?.carryOutRef ?? "the run ref"}`),
+          el(
+            "h3",
+            {},
+            run6.record?.carryOut.ref === null || run6.record?.carryOut.ref === void 0 ? "Commits the guest made (not fetched)" : `Commits on ${run6.record.carryOut.ref}`
+          ),
           el("ul", {}, ...result.commits.map((line2) => el("li", { class: "mono" }, line2)))
         )
       );
