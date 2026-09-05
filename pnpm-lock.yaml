@@ -25,7 +25,7 @@ overrides:
 
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74':
-    hash: b0a49de8e8d51c3bb484932aff9e8c9515a291b126b08e606878eb3139b2896c
+    hash: 65062e3ebee83cd5cdd07fb3da05641e5854927d4ce8c016be5ca8be19cbb02e
     path: patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
 
 importers:
@@ -34,7 +34,7 @@ importers:
     dependencies:
       '@anthropic-ai/sandbox-runtime':
         specifier: ^0.0.74
-        version: 0.0.74(patch_hash=b0a49de8e8d51c3bb484932aff9e8c9515a291b126b08e606878eb3139b2896c)
+        version: 0.0.74(patch_hash=65062e3ebee83cd5cdd07fb3da05641e5854927d4ce8c016be5ca8be19cbb02e)
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
@@ -4942,7 +4942,7 @@ snapshots:
       package-manager-detector: 1.8.0
       tinyexec: 1.3.0
 
-  '@anthropic-ai/sandbox-runtime@0.0.74(patch_hash=b0a49de8e8d51c3bb484932aff9e8c9515a291b126b08e606878eb3139b2896c)':
+  '@anthropic-ai/sandbox-runtime@0.0.74(patch_hash=65062e3ebee83cd5cdd07fb3da05641e5854927d4ce8c016be5ca8be19cbb02e)':
     dependencies:
       '@pondwader/socks5-server': 1.0.10
       commander: 12.1.0
