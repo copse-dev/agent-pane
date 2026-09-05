@@ -8,6 +8,7 @@ import {
   createThread,
   getThreadById,
   patchThreadAnywhere,
+  setThreadDraftPrompt,
   setThreadProposalDecision,
   setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
@@ -17,16 +18,28 @@ export interface ThreadProposalControllerApi {
   agent: Pick<ApiClient['agent'], 'prepareCheckout' | 'run'>
 }
 
-export interface StartedProposedThread {
-  threadId: string
+export interface StartProposedThreadOptions {
   /**
-   * What the repository actually granted. `'shared'` means the isolation the
-   * card offered was not available — the caller is responsible for saying so,
-   * since only it knows how to reach the user (a controller must not import a
-   * view).
+   * Asked **before dispatch**, and only when the repository could not grant the
+   * isolated checkout the card offered. Resolving `false` leaves the work
+   * unstarted.
+   *
+   * Injected rather than imported so the controller stays free of views (the
+   * same reason `automations.ts` keeps its own error formatter). It is not
+   * optional: a caller with no way to ask cannot honour the promise the card
+   * made, and silently proceeding is the exact defect this exists to prevent.
    */
-  checkoutMode: ThreadCheckoutMode
+  confirmSharedCheckout: (proposal: ThreadProposal) => Promise<boolean>
 }
+
+export type StartProposedThreadResult =
+  | { started: true; threadId: string; checkoutMode: ThreadCheckoutMode }
+  /**
+   * The repository could not isolate the work and the user declined to run it
+   * in the shared checkout. Nothing ran; the prompt is kept as a draft on
+   * `threadId` so the click is not simply lost, and the offer still stands.
+   */
+  | { started: false; threadId: string; reason: 'shared-checkout-declined' }
 
 /**
  * Turn an accepted proposal into a running thread.
@@ -45,22 +58,30 @@ export interface StartedProposedThread {
  * ignore — no user bubble, no dispatch, and the offer still standing on the
  * card that made it.
  *
- * Isolation is requested, not guaranteed. `decideThreadWorktreePolicy` degrades
+ * ## When isolation is refused
+ *
+ * Isolation is requested, not guaranteed: `decideThreadWorktreePolicy` degrades
  * to a shared checkout for a non-git folder, a remote project, a detached HEAD,
- * or a project with worktrees turned off. The run still goes ahead in that case
- * — the user asked for the work, and a shared checkout is how every ordinary
- * thread runs in such a project, so refusing here would make the feature
- * unusable exactly where the composer itself works fine. What must not happen
- * is the promise going unremarked: the granted mode is recorded on the decision
- * (so the settled card stops claiming isolation) and returned to the caller
- * (so it can tell the user now).
+ * or a project with worktrees turned off. The user clicked a card offering work
+ * "in its own checkout", so a degraded grant means the thing they agreed to is
+ * not the thing on offer — and the difference is not cosmetic. A shared
+ * checkout means the agent edits the working tree they already have open,
+ * alongside whatever they are doing in it.
+ *
+ * Telling them afterwards is too late: by then the run has started and the
+ * files are already moving. So consent is taken **before dispatch**, while
+ * nothing has run and the only thing that exists is an empty thread. Declining
+ * keeps the prompt as a draft rather than discarding the click, records no
+ * decision (the offer is still standing, which is true — it was never started),
+ * and leaves the working tree untouched.
  */
 export async function startProposedThread(
   store: AppStore,
   api: ThreadProposalControllerApi,
   sourceThreadId: string,
   proposal: ThreadProposal,
-): Promise<StartedProposedThread> {
+  options: StartProposedThreadOptions,
+): Promise<StartProposedThreadResult> {
   const projectId = store.getState().activeProjectId
   if (!projectId) throw new Error('Open a project before starting a proposed thread')
 
@@ -82,9 +103,18 @@ export async function startProposedThread(
   )
   applyPreparedThreadCheckout(store, threadId, prepared)
 
+  if (prepared.checkoutMode !== 'worktree' && !(await options.confirmSharedCheckout(proposal))) {
+    // Nothing has run: no user message, no turn tree, no dispatch. The prompt
+    // survives as a draft so the user can send it themselves — or enable
+    // worktrees and take the offer again, which is still on the card.
+    setThreadDraftPrompt(store, threadId, proposal.prompt)
+    return { started: false, threadId, reason: 'shared-checkout-declined' }
+  }
+
   addMessage(store, threadId, 'user', proposal.prompt)
   // Recorded only once the run is actually under way: a decision written before
-  // dispatch would mark the offer spent even if the checkout had failed.
+  // dispatch would mark the offer spent even if the checkout had failed or the
+  // user had declined the shared fallback.
   setThreadProposalDecision(store, sourceThreadId, {
     id: proposal.id,
     status: 'started',
@@ -94,5 +124,5 @@ export async function startProposedThread(
   })
   startHumanTurnTree(store, threadId)
   dispatchAgentRun(store, api, threadId, { content: proposal.prompt })
-  return { threadId, checkoutMode: prepared.checkoutMode }
+  return { started: true, threadId, checkoutMode: prepared.checkoutMode }
 }

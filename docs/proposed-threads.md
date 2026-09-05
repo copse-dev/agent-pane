@@ -91,25 +91,30 @@ folder, a remote project or a detached HEAD degrades to the shared checkout
 through the ordinary policy in
 [`worktree-policy.ts`](../src/shared/git/worktree-policy.ts).
 
-The run still goes ahead. The user asked for the work, and a shared checkout is
-how every ordinary thread runs in such a project — refusing here would make the
-feature unusable in exactly the projects where typing the same prompt into the
-composer works fine.
+A degraded grant is not a cosmetic difference. The user clicked a card offering
+work "in its own checkout"; what a shared checkout means is the agent editing
+the working tree they already have open, alongside whatever they are doing in
+it. That is not the thing they agreed to.
 
-What must not happen is the promise going unremarked, so the granted mode
-travels in two directions:
+So **consent is taken before dispatch, not reported after it**. Once
+`prepareCheckout` comes back with `shared`, the controller stops and asks
+through the `confirmSharedCheckout` callback its caller supplies — injected
+rather than imported, so the controller stays free of views, and required
+rather than optional, because a caller with no way to ask cannot honour the
+promise the card made. Reporting the fallback afterwards was the first attempt
+at this and it was wrong: by the time a notice appears the run has started and
+the files are already moving.
 
-- **Now.** `startProposedThread` returns the granted `checkoutMode`, and the
-  card's adapter shows a notice naming the consequence: the run's changes land in
-  the working tree the user already has open. The controller cannot say this
-  itself — it would have to import a view.
-- **Later.** The mode is recorded on the decision, so the settled card reads
-  _Started in the shared checkout_ rather than _Thread started_. The card made
-  the promise, so the card is where it gets corrected — and unlike a notice, that
-  correction is still there tomorrow.
+Declining costs nothing. Nothing has dispatched, so the working tree is
+untouched; the prompt is parked as a draft on the empty thread so the click is
+not simply lost, and no decision is recorded — the offer is still standing on
+the card, which is true, because it was never started.
 
-A decision written before this was captured carries no `checkoutMode` and reads
-as "not known" rather than as isolated.
+Accepting records the granted mode on the decision, so the settled card reads
+_Started in the shared checkout_ rather than _Thread started_. The card made the
+promise, so the card is where it is corrected — and unlike a dialog, that
+correction is still there tomorrow. A decision written before this was captured
+carries no `checkoutMode` and reads as "not known" rather than as isolated.
 
 ## Where the answer lives
 

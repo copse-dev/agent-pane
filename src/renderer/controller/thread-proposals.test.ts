@@ -4,7 +4,11 @@ import { createStore } from '@shared/store/store.ts'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import { threadProposalStatus, type ThreadProposal } from '@shared/threads/thread-proposal.ts'
-import { startProposedThread, type ThreadProposalControllerApi } from './thread-proposals.ts'
+import {
+  startProposedThread,
+  type StartProposedThreadOptions,
+  type ThreadProposalControllerApi,
+} from './thread-proposals.ts'
 
 const proposal: ThreadProposal = {
   id: 'call-1',
@@ -21,6 +25,22 @@ interface Harness {
   api: ThreadProposalControllerApi
   prepared: Array<{ threadId: string; prompt: string; choice: string }>
   runs: Array<{ threadId: string; payload: string }>
+}
+
+/**
+ * Consent stub. `asked` records whether the shared-checkout question was put at
+ * all, which is half of what these tests are pinning: an isolated grant must
+ * never ask, and a degraded one must never proceed without asking.
+ */
+function consent(answer: boolean): StartProposedThreadOptions & { asked: () => number } {
+  let asked = 0
+  return {
+    confirmSharedCheckout: (): Promise<boolean> => {
+      asked += 1
+      return Promise.resolve(answer)
+    },
+    asked: () => asked,
+  }
 }
 
 /** What the repository grants when it cannot give the thread its own checkout. */
@@ -113,9 +133,14 @@ test('accepting a proposal starts an isolated thread seeded with the prompt', as
   const store = storeWithSource()
   const h = harness()
 
-  const { threadId, checkoutMode } = await startProposedThread(store, h.api, 'source', proposal)
+  const approve = consent(true)
+  const started = await startProposedThread(store, h.api, 'source', proposal, approve)
 
-  assert.equal(checkoutMode, 'worktree')
+  assert.equal(started.started, true)
+  const threadId = started.threadId
+  assert.equal(started.checkoutMode, 'worktree')
+  // An isolated grant is exactly what the card offered: nothing to ask about.
+  assert.equal(approve.asked(), 0)
   const created = getThreadById(store, threadId)
   assert.ok(created)
   assert.equal(created.title, proposal.title)
@@ -146,7 +171,7 @@ test('the offering thread records the answer and the thread it created', async (
   const store = storeWithSource()
   const h = harness()
 
-  const { threadId } = await startProposedThread(store, h.api, 'source', proposal)
+  const { threadId } = await startProposedThread(store, h.api, 'source', proposal, consent(true))
 
   const source = getThreadById(store, 'source')
   assert.ok(source)
@@ -158,7 +183,13 @@ test('the offering thread records the answer and the thread it created', async (
 
 test('the new thread becomes the active one', async () => {
   const store = storeWithSource()
-  const { threadId } = await startProposedThread(store, harness().api, 'source', proposal)
+  const { threadId } = await startProposedThread(
+    store,
+    harness().api,
+    'source',
+    proposal,
+    consent(true),
+  )
   assert.equal(store.getState().activeThreadId, threadId)
 })
 
@@ -171,8 +202,12 @@ test('a repository that cannot isolate still runs the work, and says so', async 
   const store = storeWithSource()
   const h = harness({ grants: SHARED_CHECKOUT })
 
-  const started = await startProposedThread(store, h.api, 'source', proposal)
+  const approve = consent(true)
+  const started = await startProposedThread(store, h.api, 'source', proposal, approve)
+  assert.equal(started.started, true)
 
+  // The user was asked before anything ran, and agreed.
+  assert.equal(approve.asked(), 1)
   // Isolation was still what was asked for; only the grant differs.
   assert.deepEqual(h.prepared, [
     { threadId: started.threadId, prompt: proposal.prompt, choice: 'worktree' },
@@ -195,12 +230,40 @@ test('a repository that cannot isolate still runs the work, and says so', async 
   assert.equal(decision.checkoutMode, 'shared')
 })
 
+// The point of taking consent before dispatch: a declined fallback must leave
+// the user's working tree exactly as it was. Nothing dispatched, nothing in the
+// transcript, and the offer still on the card — it was never started.
+test('declining the shared fallback runs nothing and keeps the offer', async () => {
+  const store = storeWithSource()
+  const h = harness({ grants: SHARED_CHECKOUT })
+  const decline = consent(false)
+
+  const result = await startProposedThread(store, h.api, 'source', proposal, decline)
+
+  assert.equal(decline.asked(), 1)
+  assert.equal(result.started, false)
+  assert.equal(result.reason, 'shared-checkout-declined')
+
+  // Nothing ran: no agent dispatch, no user bubble, thread not running.
+  assert.deepEqual(h.runs, [])
+  const created = getThreadById(store, result.threadId)
+  assert.deepEqual(created?.messages ?? [], [])
+  assert.notEqual(created?.status, 'running')
+
+  // The click is not lost — the prompt is parked as a draft.
+  assert.equal(created?.draftPrompt, proposal.prompt)
+
+  // And the offer is untouched, so the card still shows it.
+  const source = getThreadById(store, 'source')
+  assert.equal(threadProposalStatus(source?.threadProposals, 'call-1'), 'pending')
+})
+
 test('a failed checkout leaves the offer standing and dispatches nothing', async () => {
   const store = storeWithSource()
   const h = harness({ prepareFails: new Error('worktree allocation failed') })
 
   await assert.rejects(
-    () => startProposedThread(store, h.api, 'source', proposal),
+    () => startProposedThread(store, h.api, 'source', proposal, consent(true)),
     /worktree allocation failed/,
   )
 
@@ -216,7 +279,7 @@ test('a failed checkout leaves the offer standing and dispatches nothing', async
 test('a proposal cannot be started without an open project', async () => {
   const store = createStore({ activeProjectId: null, threads: [] })
   await assert.rejects(
-    () => startProposedThread(store, harness().api, 'source', proposal),
+    () => startProposedThread(store, harness().api, 'source', proposal, consent(true)),
     /Open a project/,
   )
 })

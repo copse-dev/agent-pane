@@ -15,6 +15,7 @@ import {
   switchThread,
 } from '@shared/store/thread-helpers.ts'
 import { startProposedThread } from '../controller/thread-proposals.ts'
+import { showConfirmDialog } from './confirm-dialog.ts'
 import { showToast } from './toast.ts'
 import { createThreadProposalCard, type ThreadProposalCardState } from './thread-proposal-card.ts'
 
@@ -53,19 +54,35 @@ function cardState(
 }
 
 /**
- * Said the moment the isolation the card offered turns out to be unavailable.
+ * Asked when the repository cannot give the proposed thread its own checkout.
  *
- * Starting a proposal navigates to the new thread, so the corrected settled row
- * is behind the user by the time it exists — durable, but not in front of them.
- * This is the half that is: one quiet notice, at the moment the promise breaks,
- * naming the consequence rather than the policy.
+ * The card offered work "in its own checkout" and the user clicked that. When
+ * the policy degrades, what they would get is materially different — the agent
+ * editing the working tree they already have open — so the question is put
+ * before anything runs rather than reported after. Nothing has been dispatched
+ * at this point; declining costs only an empty thread holding the prompt.
+ *
+ * The wording names the consequence, not the policy: "worktrees are disabled"
+ * tells the user nothing about what is about to happen to their files.
  */
-function warnSharedCheckout(): void {
-  showToast(
-    'This project cannot give the thread its own checkout, so it started in the ' +
-      'shared one — its changes land in the working tree you already have open.',
-    { variant: 'info', durationMs: 12_000 },
-  )
+function confirmSharedCheckout(proposal: ThreadProposal): Promise<boolean> {
+  return showConfirmDialog({
+    message: 'Run this in your current checkout?',
+    detail:
+      `This project cannot give "${proposal.title}" its own checkout, so the work would ` +
+      'run in the one you already have open — its edits would land alongside your ' +
+      'current changes. The offer stays on the card if you would rather not.',
+    confirmLabel: 'Run it here',
+    cancelLabel: 'Leave it',
+  })
+}
+
+/** Said once the declined work is parked, so the empty thread is not a mystery. */
+function noteDeclined(): void {
+  showToast('Not started. The prompt is waiting as a draft in the new thread.', {
+    variant: 'info',
+    durationMs: 8_000,
+  })
 }
 
 /**
@@ -96,8 +113,10 @@ export function createThreadProposalToolCard(
 
   return createThreadProposalCard(proposal, cardState(store, sourceThreadId, tc.id), {
     onStart: async (accepted: ThreadProposal) => {
-      const started = await startProposedThread(store, api, sourceThreadId, accepted)
-      if (started.checkoutMode !== 'worktree') warnSharedCheckout()
+      const result = await startProposedThread(store, api, sourceThreadId, accepted, {
+        confirmSharedCheckout,
+      })
+      if (!result.started) noteDeclined()
     },
     onDismiss: (dismissed: ThreadProposal) => {
       setThreadProposalDecision(store, sourceThreadId, {
