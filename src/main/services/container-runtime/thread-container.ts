@@ -15,7 +15,7 @@
  * tested, not just observed.
  */
 import { execFile, execFileSync, spawn } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import {
   chmodSync,
   cpSync,
@@ -48,6 +48,8 @@ export const GUEST_WORKSPACE = '/workspace/repo'
 export const CARRY_IN_REF_PREFIX = 'refs/copse/carry-in/'
 export const CARRY_OUT_REF_PREFIX = 'refs/copse/runs/'
 export const MANAGED_LABEL = 'dev.copse.managed'
+/** Identifies which worker build an image was made from; see {@link workerImageFingerprint}. */
+export const FINGERPRINT_LABEL = 'dev.copse.worker-fingerprint'
 export const RUNTIME_LABEL = 'dev.copse.runtime'
 export const SANDBOX_RUNTIME_PACKAGE = '@anthropic-ai/sandbox-runtime'
 
@@ -332,6 +334,52 @@ export function fetchCarryOut(workspace: string, runtimeId: string, bundlePath: 
 // Image
 // ---------------------------------------------------------------------------
 
+/**
+ * Identity of the worker build an image would be made from: the guest bundle,
+ * the two files the image is assembled from, the uid it runs as, and the
+ * sandbox-runtime version staged beside the bundle.
+ *
+ * An image is reused only when its `dev.copse.worker-fingerprint` label matches
+ * this. Tag existence alone is not enough: `copse-worker:local` survives app
+ * upgrades, so a user who updates Copse would otherwise keep running the
+ * previous worker — including its permission behaviour — until they deleted the
+ * image by hand.
+ */
+export function workerBuildFingerprint(options: BuildImageOptions = {}): string {
+  const bundle = options.workerBundle ?? defaultWorkerBundlePath()
+  const hash = createHash('sha256')
+  hash.update('copse-worker-image-v1\n')
+  hash.update(`uid:${String(WORKER_UID)}\n`)
+  hash.update(`base:${options.baseImage ?? ''}\n`)
+  hash.update(WORKER_DOCKERFILE)
+  hash.update(WORKER_ENTRYPOINT_SH)
+  hash.update(readFileSync(bundle))
+  try {
+    const runtimeDir = installedPackageDir(dirname(bundle), SANDBOX_RUNTIME_PACKAGE)
+    const manifest: unknown = JSON.parse(readFileSync(join(runtimeDir, 'package.json'), 'utf8'))
+    hash.update(`sandbox-runtime:${isRecord(manifest) ? String(manifest['version']) : '?'}\n`)
+  } catch {
+    // A runtime we cannot locate is a build-time failure, not a hashing one.
+  }
+  return hash.digest('hex')
+}
+
+/** The worker build an existing image was made from, or null when it has none. */
+export async function workerImageFingerprint(image: string): Promise<string | null> {
+  try {
+    const label = await runDocker([
+      'image',
+      'inspect',
+      '--format',
+      `{{index .Config.Labels "${FINGERPRINT_LABEL}"}}`,
+      image,
+    ])
+    return label.length > 0 && label !== '<no value>' ? label : null
+  } catch {
+    return null
+  }
+}
+
 export interface BuildImageOptions {
   image?: string
   baseImage?: string
@@ -423,6 +471,7 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
       `Container worker bundle missing at ${workerBundle}; run \`pnpm run build\` (it is a standalone main bundle)`,
     )
   }
+  const fingerprint = workerBuildFingerprint({ ...options, workerBundle })
   const contextDir = resolve(options.contextDir ?? join(tmpdir(), 'copse-worker-context'))
   rmSync(contextDir, { recursive: true, force: true })
   mkdirSync(contextDir, { recursive: true })
@@ -434,7 +483,7 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
     `${JSON.stringify({ name: 'copse-worker-runtime', private: true }, null, 2)}\n`,
   )
   stageSandboxRuntime(contextDir)
-  const args = ['build', '--tag', image]
+  const args = ['build', '--tag', image, '--label', `${FINGERPRINT_LABEL}=${fingerprint}`]
   if (options.buildNetwork) args.push('--network', options.buildNetwork)
   if (options.baseImage) args.push('--build-arg', `BASE_IMAGE=${options.baseImage}`)
   args.push('--build-arg', `WORKER_UID=${String(WORKER_UID)}`, contextDir)
@@ -515,29 +564,117 @@ export async function listManagedRuntimes(): Promise<Array<{ runtimeId: string; 
     })
 }
 
-/** `docker wait`, bounded: on the wall-clock budget the container is stopped, then removed. */
-function waitForContainer(
-  name: string,
-  wallClockMs: number,
-): Promise<{ exit: number | null; timedOut: boolean }> {
-  return new Promise((resolveWait) => {
+/**
+ * How long `docker stop` may take at the deadline, and how long after that we
+ * still give `docker wait` to notice the container left. Both are bounded
+ * because the whole point of the deadline is that the run cannot outlive it: a
+ * Docker daemon that hangs must not strand the caller before its cleanup block.
+ */
+const STOP_TIMEOUT_MS = 45_000
+const SETTLE_AFTER_STOP_MS = 15_000
+
+export interface ContainerWaitOutcome {
+  exit: number | null
+  timedOut: boolean
+  /** Non-null when the deadline stop failed, or the wait never settled after it. */
+  cleanupError: string | null
+}
+
+/** The two Docker calls the wait makes, injectable so their failures are testable. */
+export interface WaitForContainerDependencies {
+  /** `docker wait`: resolves with its stdout when it closes; `cancel` gives up on it. */
+  wait: (name: string) => { output: Promise<string>; cancel: () => void }
+  /** `docker stop`: rejects when the daemon refuses or takes too long. */
+  stop: (name: string) => Promise<void>
+  settleAfterStopMs?: number
+}
+
+const productionWaitDependencies: WaitForContainerDependencies = {
+  wait: (name) => {
     const child = spawn('docker', ['wait', name], { stdio: ['ignore', 'pipe', 'ignore'] })
     let out = ''
-    let timedOut = false
-    const timer = setTimeout(() => {
-      timedOut = true
-      void execFileAsync('docker', ['stop', '--time', '30', name]).catch(() => {
-        // the container may already have exited
-      })
-    }, wallClockMs)
     child.stdout.on('data', (chunk: Buffer) => {
       out += chunk.toString()
     })
-    child.on('close', () => {
-      clearTimeout(timer)
+    return {
+      output: new Promise<string>((resolveOutput, rejectOutput) => {
+        child.on('error', rejectOutput)
+        child.on('close', () => {
+          resolveOutput(out)
+        })
+      }),
+      cancel: (): void => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+      },
+    }
+  },
+  stop: async (name) => {
+    await execFileAsync('docker', ['stop', '--time', '30', name], { timeout: STOP_TIMEOUT_MS })
+  },
+}
+
+/**
+ * Wait for the container, bounded by the run's wall-clock budget.
+ *
+ * `docker wait` closing is the happy path. At the deadline the daemon is asked
+ * to stop the container, but neither that request nor the wait is trusted to
+ * settle: the stop has its own timeout, and a further grace period settles this
+ * promise regardless, so the caller always reaches its cleanup block. A stop
+ * that failed, or a wait that never closed, is reported as `cleanupError` and
+ * never swallowed — the container may still be running, and the `docker rm
+ * --force` in teardown is the next line of defence.
+ */
+export function waitForContainer(
+  name: string,
+  wallClockMs: number,
+  dependencies: WaitForContainerDependencies = productionWaitDependencies,
+): Promise<ContainerWaitOutcome> {
+  const settleAfterStopMs = dependencies.settleAfterStopMs ?? SETTLE_AFTER_STOP_MS
+  return new Promise((resolveWait) => {
+    const waiting = dependencies.wait(name)
+    let out = ''
+    let timedOut = false
+    let settled = false
+    let settleTimer: ReturnType<typeof setTimeout> | undefined
+
+    const settle = (cleanupError: string | null): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      if (settleTimer) clearTimeout(settleTimer)
+      // Nothing more to learn from the wait; do not leave it running.
+      waiting.cancel()
       const code = Number.parseInt(out.trim(), 10)
-      resolveWait({ exit: Number.isFinite(code) ? code : null, timedOut })
-    })
+      resolveWait({ exit: Number.isFinite(code) ? code : null, timedOut, cleanupError })
+    }
+
+    const deadline = setTimeout(() => {
+      timedOut = true
+      void dependencies
+        .stop(name)
+        .then(() => null)
+        .catch((error: unknown) => (error instanceof Error ? error.message : String(error)))
+        .then((stopError) => {
+          if (settled) return
+          // Give the wait a bounded chance to observe the stop, then settle
+          // whatever happened — a hung wait must not outlive the deadline.
+          settleTimer = setTimeout(() => {
+            settle(
+              stopError ?? 'the container did not exit after the wall-clock stop; forcing teardown',
+            )
+          }, settleAfterStopMs)
+        })
+    }, wallClockMs)
+
+    waiting.output.then(
+      (output) => {
+        out = output
+        settle(null)
+      },
+      (error: unknown) => {
+        settle(`docker wait failed: ${error instanceof Error ? error.message : String(error)}`)
+      },
+    )
   })
 }
 
@@ -719,13 +856,16 @@ export async function runThreadInContainer(
   const startedAt = Date.now()
   let containerExit: number | null
   let teardown: ThreadContainerRecord['teardown']
+  let cleanupError: string | null = null
   try {
     log(`[thread-container] starting ${containerName(runtimeId)} from ${image}`)
     await runDocker(dockerRunArgs(runInput))
     options.onStarted?.()
     const waited = await waitForContainer(containerName(runtimeId), request.budgets.wallClockMs)
     containerExit = waited.exit
+    cleanupError = waited.cleanupError
     if (waited.timedOut) log('[thread-container] wall-clock budget reached; container stopped')
+    if (cleanupError !== null) log(`[thread-container] cleanup problem: ${cleanupError}`)
     try {
       const { stdout, stderr } = await execFileAsync(
         'docker',
@@ -738,19 +878,32 @@ export async function runThreadInContainer(
     }
   } finally {
     teardown = await teardownRuntime(runtimeId)
+    if (teardown === 'failed') {
+      const failure = `the container ${containerName(runtimeId)} could not be removed`
+      cleanupError = cleanupError === null ? failure : `${cleanupError}; ${failure}`
+      log(`[thread-container] ${failure}`)
+    }
     await broker.stop()
     rmSync(egressDir, { recursive: true, force: true })
   }
 
   const result = readJsonFile(join(runDir, 'out', 'result.json'), decodeResult)
-  let carryOutRef: string | null = null
-  const carryOut = join(runDir, 'out', 'carry-out.bundle')
-  if (existsSync(carryOut)) {
+  const carryOutBundle = join(runDir, 'out', 'carry-out.bundle')
+  const carryOut: ThreadContainerRecord['carryOut'] = {
+    expected: existsSync(carryOutBundle),
+    ref: null,
+    error: null,
+  }
+  if (carryOut.expected) {
     try {
-      carryOutRef = fetchCarryOut(workspace, runtimeId, carryOut)
-      log(`[thread-container] carry-out fetched to ${carryOutRef}`)
+      carryOut.ref = fetchCarryOut(workspace, runtimeId, carryOutBundle)
+      log(`[thread-container] carry-out fetched to ${carryOut.ref}`)
     } catch (error) {
-      log(`[thread-container] carry-out fetch failed: ${String(error)}`)
+      // The bundle stays in the run directory, so the work is recoverable —
+      // but the ref the record advertises does not exist, and saying the
+      // commits are back would be a lie.
+      carryOut.error = error instanceof Error ? error.message : String(error)
+      log(`[thread-container] carry-out fetch FAILED: ${carryOut.error}`)
     }
   }
   const record: ThreadContainerRecord = {
@@ -763,9 +916,10 @@ export async function runThreadInContainer(
     attestation,
     egress: broker.log(),
     result,
-    carryOutRef,
+    carryOut,
     containerExit,
     teardown,
+    cleanupError,
     secretCanary: secretCanaryCheck(runDir, canary),
   }
   writeFileSync(join(runDir, 'record.json'), `${JSON.stringify(record, null, 2)}\n`)

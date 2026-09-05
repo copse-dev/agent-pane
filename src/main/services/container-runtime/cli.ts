@@ -135,13 +135,15 @@ async function main(): Promise<void> {
   console.log(`  prompts reached a handler: ${String(result?.promptsAttempted ?? 'unknown')}`)
   console.log(`  deferred for review: ${String(result?.deferrals.length ?? 'unknown')}`)
   console.log(
-    `  commits: ${String(result?.commits.length ?? 0)} → ${record.carryOutRef ?? '(none)'}`,
+    `  commits: ${String(result?.commits.length ?? 0)} → ${record.carryOut.ref ?? '(not fetched)'}`,
   )
   console.log(
     `  egress connections: ${String(record.egress.filter((e) => e.event === 'connect').length)}`,
   )
   console.log(`  secret canary: ${record.secretCanary.detail}`)
   console.log(`  teardown: ${record.teardown}`)
+  if (record.carryOut.error !== null) console.log(`  carry-out FAILED: ${record.carryOut.error}`)
+  if (record.cleanupError !== null) console.log(`  cleanup: ${record.cleanupError}`)
   if (result?.stopReason === 'error') process.exitCode = 1
 }
 

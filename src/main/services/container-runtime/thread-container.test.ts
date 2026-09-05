@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   buildAttestation,
+  waitForContainer,
+  workerBuildFingerprint,
   containerName,
   createSnapshotCommit,
   dockerRunArgs,
@@ -169,6 +171,84 @@ describe('carry-in / carry-out over git bundles', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(guest, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('waitForContainer', () => {
+  /** A wait that never closes: the container is gone but `docker wait` hangs. */
+  function hungWait(): { output: Promise<string>; cancel: () => void } {
+    return { output: new Promise<string>(() => {}), cancel: (): void => {} }
+  }
+
+  it('settles on the ordinary exit', async () => {
+    const outcome = await waitForContainer('c', 10_000, {
+      wait: () => ({ output: Promise.resolve('137\n'), cancel: (): void => {} }),
+      stop: () => Promise.reject(new Error('must not be called')),
+    })
+    assert.deepEqual(outcome, { exit: 137, timedOut: false, cleanupError: null })
+  })
+
+  it('settles at the deadline even when stop fails and the wait never closes', async () => {
+    let cancelled = false
+    const outcome = await waitForContainer('c', 5, {
+      wait: () => ({
+        output: new Promise<string>(() => {}),
+        cancel: (): void => {
+          cancelled = true
+        },
+      }),
+      stop: () => Promise.reject(new Error('daemon refused: container is not running')),
+      settleAfterStopMs: 5,
+    })
+    assert.equal(outcome.timedOut, true)
+    assert.equal(outcome.exit, null)
+    // The failure is reported, not swallowed: the container may still be up.
+    assert.match(outcome.cleanupError ?? '', /daemon refused/)
+    assert.equal(cancelled, true, 'the abandoned wait must not be left running')
+  })
+
+  it('settles at the deadline when a successful stop never settles the wait', async () => {
+    const outcome = await waitForContainer('c', 5, {
+      wait: hungWait,
+      stop: () => Promise.resolve(),
+      settleAfterStopMs: 5,
+    })
+    assert.equal(outcome.timedOut, true)
+    assert.match(outcome.cleanupError ?? '', /did not exit/)
+  })
+
+  it('reports a wait that cannot start at all', async () => {
+    const outcome = await waitForContainer('c', 10_000, {
+      wait: () => ({
+        output: Promise.reject(new Error('spawn docker ENOENT')),
+        cancel: (): void => {},
+      }),
+      stop: () => Promise.reject(new Error('must not be called')),
+    })
+    assert.match(outcome.cleanupError ?? '', /ENOENT/)
+    assert.equal(outcome.timedOut, false)
+  })
+})
+
+describe('workerBuildFingerprint', () => {
+  it('changes when the shipped worker bundle changes, and is stable otherwise', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'copse-fingerprint-'))
+    try {
+      const bundle = join(dir, 'worker.cjs')
+      writeFileSync(bundle, 'console.log("v1")')
+      const first = workerBuildFingerprint({ workerBundle: bundle })
+      assert.equal(workerBuildFingerprint({ workerBundle: bundle }), first)
+      // An app upgrade ships a different guest: the image must not be reused.
+      writeFileSync(bundle, 'console.log("v2")')
+      assert.notEqual(workerBuildFingerprint({ workerBundle: bundle }), first)
+      // So must a different base image, which changes the guest's toolchain.
+      assert.notEqual(
+        workerBuildFingerprint({ workerBundle: bundle, baseImage: 'other:latest' }),
+        workerBuildFingerprint({ workerBundle: bundle }),
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 })

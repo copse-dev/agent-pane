@@ -44,9 +44,16 @@ export interface ThreadContainerRecord {
   attestation: ContainerRuntimeAttestation
   egress: EgressLogEntry[]
   result: ThreadContainerResult | null
-  carryOutRef: string | null
+  /**
+   * Retrieval of the guest's commits. `expected` is true when the guest wrote a
+   * bundle, so `ref === null` with `expected` means the work exists but could
+   * not be fetched — never report that as a clean finish.
+   */
+  carryOut: { expected: boolean; ref: string | null; error: string | null }
   containerExit: number | null
   teardown: 'removed' | 'already-gone' | 'failed'
+  /** Non-null when stopping or reaping the container did not settle cleanly. */
+  cleanupError: string | null
   secretCanary: { present: boolean; detail: string }
 }
 
@@ -83,6 +90,17 @@ export interface ContainerRunProgress {
   egressAllowlist: string[]
   /** Most recent host and guest log lines (bounded). */
   log: string[]
+  /**
+   * Things that went wrong around the work itself — a container that would not
+   * reap, commits that could not be fetched. Surfaced even on a run whose agent
+   * finished, so cleanup failures are never silent.
+   */
+  warnings: string[]
+  /**
+   * The checkout carried into the container: a thread with an isolated worktree
+   * runs its own branch and edits, not the project's.
+   */
+  checkout: { root: string; mode: 'shared' | 'worktree'; branch: string | null } | null
   record: ThreadContainerRecord | null
   error: string | null
 }

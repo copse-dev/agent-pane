@@ -113,10 +113,13 @@ describe('thread in a container (end to end)', { skip: !ENABLED }, () => {
       assert.match(result.deferrals[0]?.title ?? '', /Outward effect/)
       // 4. The work came back as commits the host can review; HEAD never moved.
       assert.ok(result.commits.some((line) => line.includes('agent: edit readme')))
-      assert.ok(record.carryOutRef)
-      assert.match(git(repo, ['show', `${record.carryOutRef}:README.md`]), /edited by the agent/)
-      assert.match(git(repo, ['show', `${record.carryOutRef}:build/out.txt`]), /built/)
-      assert.match(git(repo, ['show', `${record.carryOutRef}:notes.txt`]), /uncommitted/)
+      const carriedOutRef = record.carryOut.ref
+      assert.ok(carriedOutRef, record.carryOut.error ?? 'no carry-out ref')
+      assert.equal(record.carryOut.expected, true)
+      assert.equal(record.carryOut.error, null)
+      assert.match(git(repo, ['show', `${carriedOutRef}:README.md`]), /edited by the agent/)
+      assert.match(git(repo, ['show', `${carriedOutRef}:build/out.txt`]), /built/)
+      assert.match(git(repo, ['show', `${carriedOutRef}:notes.txt`]), /uncommitted/)
       assert.equal(git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']), 'main')
       // 5. The model was reached only through the broker, and nothing else was.
       assert.ok(record.egress.some((e) => e.event === 'connect'))
@@ -148,6 +151,7 @@ describe('thread in a container (end to end)', { skip: !ENABLED }, () => {
       )
       // 8. Teardown is idempotent and leaves nothing behind.
       assert.equal(record.teardown, 'removed')
+      assert.equal(record.cleanupError, null)
       assert.equal(await teardownRuntime(record.runtimeId), 'already-gone')
       assert.ok(!(await listManagedRuntimes()).some((r) => r.runtimeId === record.runtimeId))
     } finally {
