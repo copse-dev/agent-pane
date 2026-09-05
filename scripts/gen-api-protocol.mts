@@ -27,6 +27,9 @@ import {
   serializeApiProtocolManifest,
 } from './lib/api-protocol.mts'
 
+/** Where the version lives; a ref without this file predates the protocol. */
+const VERSION_MODULE = 'src/shared/api-protocol.mts'
+
 const manifestPath = resolve(API_PROTOCOL_MANIFEST_PATH)
 const args = process.argv.slice(2)
 const doc = generateApiProtocol({ version: API_PROTOCOL_VERSION })
@@ -40,7 +43,7 @@ if (compareIndex !== -1) {
     process.exit(2)
   }
   const previousVersion = versionAtRef(ref)
-  if (previousVersion === null) {
+  if (previousVersion === 'pre-protocol') {
     // The ref predates the protocol itself — the case on the PR that
     // introduces it, where `main` has no `api-protocol.mts` to read a version
     // from. There is no previous surface, so every channel is new and nothing
@@ -101,20 +104,34 @@ if (schemaIndex !== -1) {
   console.log(`Wrote ${out}: ${String(Object.keys(doc.$defs).length)} named types`)
 }
 
-/**
- * The protocol version the sources at `ref` declared, or `null` when the ref
- * predates the protocol module entirely (nothing to compare against).
- */
-function versionAtRef(ref: string): number | null {
-  let source: string
+/** Whether `git` succeeds, used to ask yes/no questions about a ref. */
+function gitOk(args: string[]): boolean {
   try {
-    source = execFileSync('git', ['show', `${ref}:src/shared/api-protocol.mts`], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
+    execFileSync('git', args, { stdio: 'ignore' })
+    return true
   } catch {
-    return null
+    return false
   }
+}
+
+/**
+ * The protocol version the sources at `ref` declared, or `'pre-protocol'` when
+ * that ref genuinely predates the protocol module.
+ *
+ * These two are deliberately distinguished from a ref that cannot be read at
+ * all. A base that is missing, unfetched, or misspelled must fail closed:
+ * treating it like "no protocol here" would turn the compatibility gate into a
+ * check that silently passes whenever CI cannot see the base — the failure
+ * mode this step exists to prevent.
+ */
+function versionAtRef(ref: string): number | 'pre-protocol' {
+  if (!gitOk(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])) {
+    throw new Error(
+      `cannot resolve ${ref} — fetch it before comparing (refusing to skip the compatibility check)`,
+    )
+  }
+  if (!gitOk(['cat-file', '-e', `${ref}:${VERSION_MODULE}`])) return 'pre-protocol'
+  const source = execFileSync('git', ['show', `${ref}:${VERSION_MODULE}`], { encoding: 'utf8' })
   const match = /API_PROTOCOL_VERSION = (\d+)/.exec(source)
   if (!match?.[1]) throw new Error(`${ref}: cannot read API_PROTOCOL_VERSION`)
   return Number(match[1])

@@ -457,4 +457,16 @@ describe('gen-api-protocol --compare-ref', () => {
     assert.equal(status, 0, out)
     assert.match(out, /no API protocol to compare against/)
   })
+
+  it('fails closed when the base cannot be read at all', () => {
+    // The bootstrap allowance above must not extend to a base that is missing,
+    // unfetched, or misspelled: "cannot read the base" is indistinguishable
+    // from "the base has no protocol" only if you stop asking, and a gate that
+    // passes whenever CI cannot see the base is worse than no gate.
+    for (const ref of ['deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', 'origin/no-such-branch']) {
+      const { status, out } = run(ref)
+      assert.equal(status, 1, `${ref} should fail closed, got:\n${out}`)
+      assert.match(out, /cannot resolve/)
+    }
+  })
 })

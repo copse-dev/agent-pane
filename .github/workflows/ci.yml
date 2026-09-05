@@ -228,11 +228,11 @@ jobs:
             echo "No base sha for ${GITHUB_EVENT_NAME} -> skipping the API protocol comparison"
             exit 0
           fi
+          # A base that cannot be read fails the step rather than skipping it:
+          # a compatibility gate that passes whenever CI cannot see the base is
+          # worse than no gate. The script distinguishes that from a base that
+          # genuinely predates the protocol, which it allows.
           git fetch --no-tags --quiet origin "$BASE_SHA" 2>/dev/null || true
-          if ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
-            echo "::warning::base $BASE_SHA is not fetchable; skipping the API protocol comparison"
-            exit 0
-          fi
           node scripts/gen-api-protocol.mts --compare-ref "$BASE_SHA"
       # Fail closed on high/critical dependency advisories. This runs after the
       # lockfile-exact setup, so it audits precisely the tree CI will execute.
