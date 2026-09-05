@@ -122,7 +122,11 @@ configuration may pass selected values by design.
 The principal local stores are:
 
 - `settings.json` and `config.json` under `~/.copse/user-data/` (or `COPSE_DIR`)
-  for credentials, preferences, providers, projects, and UI state;
+  for credentials, preferences, providers, projects, and UI state. Per-window UI
+  state includes the Browser pane's restorable tabs, so reopening Copse brings
+  the previous session back: the addresses those tabs were pointed at and the
+  titles of the canvas artefacts they were showing, never page content — an
+  artefact is re-read from the thread's own canvas store when its tab returns;
 - `~/.copse/workspace/<projectId>/<threadId>/` (or `COPSE_WORKSPACE_DIR`) for
   conversations, reasoning, tool arguments/results, hook output, images, and
   nested subagents;

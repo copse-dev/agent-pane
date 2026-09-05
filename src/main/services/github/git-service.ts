@@ -15,6 +15,7 @@ import { isGitAvailableForTarget } from '../tool-availability.ts'
 import { detectLanguage } from '../language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
 import { appendCommitAttribution } from '@shared/git/commit-attribution.ts'
+import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { imageMimeType } from '@shared/fs/image-path.ts'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
@@ -949,7 +950,8 @@ export async function checkoutGitBranch(
   const { stdout, stderr, code } = await runGit(['switch', '--', branch], root)
   if (code !== 0) {
     const message = (stderr || stdout).trim()
-    throw new Error(message || `git switch exited with code ${String(code)}`)
+    if (!message) throw new Error(`git switch exited with code ${String(code)}`)
+    throw new Error(describeBranchCheckoutFailure(branch, message))
   }
 }
 

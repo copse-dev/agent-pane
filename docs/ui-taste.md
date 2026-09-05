@@ -97,6 +97,37 @@ class-name sugar (tests/docs do not count). Prefer extracting repeated **panel s
 (tabs+content, list+viewer chrome) over inventing more atom variants — see
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
 
+### An outlined chip needs an edge you can find
+
+When a row mixes one filled action with outlined ones — the queued message's
+`Edit / Send now / Delete`, and any row shaped like it — the filled chip can look a size
+bigger even though every button in the row is provably the same box. The instinct is to
+shrink the filled one. That is treating the wrong element.
+
+Measure the edges before believing the illusion. In this row the outlined chips had
+almost no fill contrast (`--bg-hover` sits within 1.1:1 of the card behind them), so the
+border was the only thing marking where the button ended — and at `--border` that edge
+came to **1.47:1** against the card in dark and **1.18:1** in light. An edge that faint
+cannot be located, and the eye reads the shape as smaller than it is. The filled chip,
+whose fill gives it a 7.4:1 (dark) / 9.6:1 (light) boundary, was the only one drawing
+its real size.
+
+So raise the outlined chip's border (`--border-strong` here) rather than clipping or
+padding the filled one down to match. Shrinking the filled chip works in dark theme and
+quietly over-corrects in light, because the illusion is direction-dependent — a light
+fill on a dark ground blooms outward, a dark fill on a light ground contracts — whereas
+a faint edge is faint in both. It also forces an unrelated property to become
+load-bearing: the compensation is only ever as big as the border it insets against, so
+the border width can no longer be changed freely.
+
+Guarded at two levels, because a stylesheet assertion alone is not visual evidence:
+`gives the outlined queued actions an edge that can be located` in
+[`modern-css.test.ts`](../src/renderer/styles/modern-css.test.ts) pins the token, and
+[`queued-message-delete.e2e.ts`](../tests/e2e/queued-message-delete.e2e.ts) /
+[`queued-held.e2e.ts`](../tests/e2e/queued-held.e2e.ts) measure the rendered edge
+contrast against the surface behind the row and capture `.message-queued-actions` on its
+own.
+
 ### Agent-authored dialog copy and secrets
 
 - Agent-authored prose in a dialog follows the same sanitized Markdown contract as transcript

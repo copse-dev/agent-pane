@@ -12,6 +12,7 @@ import {
   MODEL_FOLLOW_UP_PRESETS,
   buildChangesSuggestion,
   buildContinuePlanSuggestion,
+  buildCreatePrSuggestion,
   buildDebugCiSuggestion,
   buildFixMergeConflictsSuggestion,
 } from '@shared/follow-ups/presets.ts'
@@ -169,6 +170,13 @@ export function buildDeterministicFollowUps(
     })
   }
 
+  // Directly after the changeset chip: "here is what changed" → "put it up for
+  // review" is the order the work actually happens in.
+  if (ctx.canOpenPr) {
+    const createPr = buildCreatePrSuggestion()
+    out.push({ id: createPr.id, label: createPr.label, action: 'create-pr' })
+  }
+
   if (ctx.hasOpenPr && ctx.hasCiFailures) {
     // Point the follow-up at the investigate_ci subagent tool only when the
     // `copse.ci-investigator` plugin is enabled (the same gate that registers the
@@ -197,6 +205,7 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
   const changes = buildChangesSuggestion({ additions: 1, deletions: 1 })
   const ci = buildDebugCiSuggestion()
   const plan = buildContinuePlanSuggestion(['Run the test suite'])
+  const createPr = buildCreatePrSuggestion()
   return [
     {
       id: changes.id,
@@ -207,6 +216,7 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
       additions: changes.additions,
       deletions: changes.deletions,
     },
+    { id: createPr.id, label: createPr.label, action: 'create-pr' },
     { id: ci.id, label: ci.label, prompt: ci.prompt },
     { id: MODEL_COMPARISON_FOLLOW_UP_ID, label: 'Compare models', action: 'model-compare' },
     // Present so the continue-plan bubble kind is drivable headlessly; the real

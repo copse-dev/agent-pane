@@ -33,7 +33,7 @@ Copse has no hosted backend of its own. Connect your preferred cloud provider di
 
 ## Get started
 
-You need [Node.js](https://nodejs.org/) 22.22.2 or newer, and on macOS the Xcode command-line tools (`xcode-select --install`) so the bundled terminal's native module can compile. Everything else is provisioned for you: `make` enables Corepack, which supplies the pinned `pnpm@10.34.5` from `packageManager`.
+You need [Node.js](https://nodejs.org/) 24 or newer, and on macOS the Xcode command-line tools (`xcode-select --install`) so the bundled terminal's native module can compile. Everything else is provisioned for you: `make` enables Corepack, which supplies the pinned `pnpm@10.34.5` from `packageManager`. Both `nvm use` and `fnm use` select the exact LTS release pinned in `.nvmrc`.
 
 ```bash
 git clone https://github.com/copse-dev/agent-pane.git
@@ -142,7 +142,7 @@ Use `SKIP_GORTEX_FETCH=1` if you intentionally do not want the bundled semantic-
 `make run` provisions pnpm and every bundled dependency, but it does not install Node or a C++ toolchain, so those gaps surface as raw tool errors rather than a friendly message:
 
 - A `node-gyp` or `clang` error during install means the Xcode command-line tools are missing — `xcode-select --install`.
-- `node is not installed`, or a version below 22.22.2, means Node itself needs installing or selecting. `nvm use` picks up the `.nvmrc` pin, and `make run` sources nvm automatically when it is present.
+- `node is not installed`, or a version below 24, means Node itself needs installing or selecting. `nvm use` and `fnm use` both pick up the `.nvmrc` pin, and `make run` sources nvm automatically when it is present.
 - An `EACCES` from `corepack enable` means your `node` lives somewhere unwritable (typically a `/usr/local` package install). Run `corepack enable` once with `sudo`, or switch to an nvm-managed Node.
 
 If `make run` returns straight away without opening a window, another Copse instance already holds the single-instance lock and was focused instead. Quit it and re-run.

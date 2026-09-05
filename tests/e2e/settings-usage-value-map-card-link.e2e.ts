@@ -103,7 +103,24 @@ describe('settings usage value map model card link', function () {
     // Opened by the shell, not navigated in-renderer.
     await expect(link).toHaveAttribute('target', '_blank')
 
+    // The fieldset is about as tall as the pinned shell, so the capture's own
+    // re-centring (`recentreClippedCapture`) would scroll it — and a scroll moves
+    // the point out from under the resting pointer, which hides the card once
+    // TOOLTIP_HIDE_GRACE_MS runs out. The committed reference only ever showed
+    // the card because the old capture landed inside that grace window. Pin
+    // the shell and centre the fieldset first, so the capture's own centring
+    // is a no-op, then hover again and take the frame with the card open.
     await prepareE2eScreenshot()
+    await browser.execute(() => {
+      document
+        .querySelector('.frontier-fieldset')
+        ?.scrollIntoView({ block: 'center', inline: 'nearest' })
+    })
+    await fieldset.$(modelPointSelector).moveTo()
+    await tooltip.waitForDisplayed({
+      timeout: 5_000,
+      timeoutMsg: 'value-map card did not reopen after pinning the shell',
+    })
     await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-card-link.png')
 
     // The pointer has to be able to leave the point, cross the gap, and land on

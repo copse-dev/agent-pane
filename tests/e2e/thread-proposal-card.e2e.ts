@@ -1,5 +1,12 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedThreadProposalFixture } from './helpers/seed-config.ts'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  resetUserData,
+  seedStableWorkspace,
+  seedThreadProposalFixture,
+} from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 // Visual eval for the model-proposed-thread card (`propose_thread`). The card's
@@ -103,5 +110,72 @@ describe('a model-proposed thread', () => {
       return proposal instanceof HTMLElement ? (proposal.dataset['proposalStatus'] ?? '') : ''
     })
     expect(status).toBe('dismissed')
+  })
+})
+
+describe('a proposed thread without an isolated checkout', () => {
+  let workspace = ''
+
+  before(() => {
+    // Explicit worktree requests fail closed for a real non-Git folder.
+    workspace = mkdtempSync(join(tmpdir(), 'copse-proposal-consent-'))
+  })
+
+  before(async () => {
+    resetUserData()
+    seedThreadProposalFixture(workspace)
+    await browser.reloadSession()
+    await $('.thread-proposal-start').waitForDisplayed({ timeout: 10_000 })
+  })
+
+  after(() => {
+    resetUserData()
+    if (workspace) rmSync(workspace, { recursive: true, force: true })
+  })
+
+  it('reports unavailable isolation without dispatching or consuming the offer', async () => {
+    await $('.thread-proposal-start').click()
+    const error = $('.toast-error')
+    await expect(error).toHaveText(
+      expect.stringContaining('Isolated worktree is unavailable: not git'),
+    )
+    await expect($('.messages-list .msg-user')).not.toExist()
+    await expect($('.messages-list .msg-assistant')).not.toExist()
+    await saveElementScreenshot('#toast-host', 'thread-proposal-isolation-refused.png')
+    // This is the expected refusal asserted above, not an ignored error.
+    await error.click()
+    await $('.chat-row*=Config loader guard').click()
+    const card = $('.thread-proposal')
+    await card.waitForDisplayed({ timeout: 10_000 })
+    await expect(card).toHaveAttribute('data-proposal-status', 'pending')
+    await expect($('.thread-proposal-start')).toBeEnabled()
+  })
+})
+
+describe('starting a proposed thread in an isolated checkout', () => {
+  before(async () => {
+    resetUserData()
+    seedThreadProposalFixture(seedStableWorkspace())
+    await browser.reloadSession()
+  })
+  after(() => resetUserData())
+
+  it('starts the mock agent only after creating the worktree', async () => {
+    await $('.thread-proposal-start').waitForDisplayed({ timeout: 10_000 })
+    await $('.thread-proposal-start').click()
+    await $('.messages-list .msg-user').waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() =>
+          [...document.querySelectorAll('.msg-assistant .message-text')].some((message) =>
+            message.textContent?.includes('Mock response to:'),
+          ),
+        ),
+      { timeout: 30_000, timeoutMsg: 'the isolated proposal did not reach the mock agent' },
+    )
+    await $('.chat-row*=Config loader guard').click()
+    await expect($('.thread-proposal')).toHaveAttribute('data-proposal-status', 'started')
+    await expect($('.thread-proposal-state')).toHaveText(expect.stringContaining('Thread started'))
+    await saveElementScreenshot('.thread-proposal', 'thread-proposal-started-isolated.png')
   })
 })

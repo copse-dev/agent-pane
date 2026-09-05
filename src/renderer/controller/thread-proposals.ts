@@ -13,6 +13,7 @@ import {
   setThreadTitle,
 } from '@shared/store/thread-helpers.ts'
 import { dispatchAgentRun, startHumanTurnTree } from './message-queue.ts'
+import { awaitPendingThreadPersistence } from './persistence.ts'
 
 export interface ThreadProposalControllerApi {
   agent: Pick<ApiClient['agent'], 'prepareCheckout' | 'run'>
@@ -52,17 +53,17 @@ export type StartProposedThreadResult =
  * gets its own branch and directory instead of landing on top of whatever the
  * user has open.
  *
- * Order matters. `createThread` first, so autosave sees the new id and creates
- * the thread on disk before the checkout IPC needs it; `prepareCheckout` next,
+ * Order matters. `createThread` first, then await its in-flight autosave so the
+ * thread exists on disk before the checkout IPC needs it; `prepareCheckout` next,
  * because a failure there must leave nothing but an empty thread the user can
  * ignore — no user bubble, no dispatch, and the offer still standing on the
  * card that made it.
  *
  * ## When isolation is refused
  *
- * Isolation is requested, not guaranteed: `decideThreadWorktreePolicy` degrades
- * to a shared checkout for a non-git folder, a remote project, a detached HEAD,
- * or a project with worktrees turned off. The user clicked a card offering work
+ * Current policy fails unavailable explicit worktree requests closed. Still
+ * defend against a returned shared grant, such as a persisted checkout decision.
+ * The user clicked a card offering work
  * "in its own checkout", so a degraded grant means the thing they agreed to is
  * not the thing on offer — and the difference is not cosmetic. A shared
  * checkout means the agent edits the working tree they already have open,
@@ -92,6 +93,9 @@ export async function startProposedThread(
     ...t,
     proposedBy: { threadId: sourceThreadId, proposalId: proposal.id },
   }))
+  // Starting autosave is not the same as completing it. The main-process
+  // checkout transaction rejects a thread whose create has not landed yet.
+  await awaitPendingThreadPersistence()
 
   const model = getThreadById(store, threadId)?.model ?? store.getState().settings?.model
   const prepared = await api.agent.prepareCheckout(

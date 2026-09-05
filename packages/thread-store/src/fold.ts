@@ -54,6 +54,7 @@ interface MessageLike {
   canvasArtefacts?: CanvasArtefactReference[]
   commandSummary?: string
   toolSummary?: string
+  runSummary?: string
   attachments?: TranscriptAttachment[]
   model?: string
   requestedModel?: string
@@ -213,6 +214,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   if (msg.canvasArtefacts !== undefined) line.canvasArtefacts = msg.canvasArtefacts
   if (msg.commandSummary !== undefined) line.commandSummary = msg.commandSummary
   if (msg.toolSummary !== undefined) line.toolSummary = msg.toolSummary
+  if (msg.runSummary !== undefined) line.runSummary = msg.runSummary
   if (msg.attachments !== undefined && msg.attachments.length > 0) {
     line.attachments = msg.attachments.map((attachment, i) => {
       const { content, ...metadata } = attachment
@@ -417,6 +419,7 @@ function foldOne(
   if (line.canvasArtefacts !== undefined) msg.canvasArtefacts = line.canvasArtefacts
   if (line.commandSummary !== undefined) msg.commandSummary = line.commandSummary
   if (line.toolSummary !== undefined) msg.toolSummary = line.toolSummary
+  if (line.runSummary !== undefined) msg.runSummary = line.runSummary
   if (line.attachments !== undefined) {
     msg.attachments = line.attachments.map((attachment) => {
       const { content, ...metadata } = attachment
@@ -456,6 +459,7 @@ export function foldMessage(
     ...(m.canvasArtefacts !== undefined ? { canvasArtefacts: m.canvasArtefacts } : {}),
     ...(m.commandSummary !== undefined ? { commandSummary: m.commandSummary } : {}),
     ...(m.toolSummary !== undefined ? { toolSummary: m.toolSummary } : {}),
+    ...(m.runSummary !== undefined ? { runSummary: m.runSummary } : {}),
     ...(m.attachments !== undefined ? { attachments: m.attachments } : {}),
     ...(m.model !== undefined ? { model: m.model } : {}),
     ...(m.requestedModel !== undefined ? { requestedModel: m.requestedModel } : {}),

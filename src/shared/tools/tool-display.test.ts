@@ -2,18 +2,22 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ToolCall } from '@shared/types'
 import {
+  buildSubagentDisplayItems,
   buildToolCallDisplayItems,
+  buildToolRunDisplayItems,
   getToolDisplayName,
   getToolCallLabel,
   getToolEditPath,
   getToolGroupKey,
   getToolGroupLabel,
   aggregateToolStatus,
+  RUN_ROLLUP_KEY,
   stripShellCdPrefix,
   shellCommandLabel,
   shellCommandsFromToolCalls,
   summarizeToolTurn,
 } from './tool-display.ts'
+import { deriveToolRuns, type ToolRunMessage } from './tool-runs.ts'
 
 function shell(id: string, command: string, status: ToolCall['status'] = 'done'): ToolCall {
   return { ...tc(id, 'run_shell', status), args: { command } }
@@ -371,6 +375,14 @@ describe('tool-display', () => {
     assert.equal(getToolDisplayName('mcp.copse.run_shell'), 'Run Shell')
   })
 
+  it('keeps acronyms upper case in humanized tool names', () => {
+    assert.equal(getToolDisplayName('mcp__copse__gh_pr_create'), 'GH PR Create')
+    assert.equal(getToolDisplayName('gh_pr_files'), 'GH PR Files')
+    assert.equal(getToolDisplayName('mcp__copse__get_ci_failure_logs'), 'Get CI Failure Logs')
+    assert.equal(getToolDisplayName('resolve_url'), 'Resolve URL')
+    assert.equal(getToolDisplayName('get_thread_id'), 'Get Thread ID')
+  })
+
   it('groups MCP tools by server without exposing an internal MCP marker', () => {
     assert.equal(getToolGroupKey('mcp__github__create_issue'), 'mcp:github')
     assert.equal(getToolGroupLabel('mcp:github'), 'github')
@@ -441,5 +453,131 @@ describe('tool-display', () => {
       aggregateToolStatus([tc('1', 'read_file', 'done'), tc('2', 'read_file', 'running')]),
       'running',
     )
+  })
+})
+
+function assistant(id: string, extra: Partial<ToolRunMessage> = {}): ToolRunMessage {
+  return { id, role: 'assistant', content: '', toolCalls: [], ...extra }
+}
+
+function reads(msgId: string, n: number, status: ToolCall['status'] = 'done'): ToolCall[] {
+  return Array.from({ length: n }, (_unused, i) => tc(`${msgId}-${String(i)}`, 'read_file', status))
+}
+
+describe('tool-display: cross-message runs', () => {
+  it('renders a single-message run exactly as the per-message rollup', () => {
+    const run = deriveToolRuns([assistant('a1', { toolCalls: reads('a1', 3) })])[0]
+    assert.ok(run)
+    assert.deepEqual(
+      buildToolRunDisplayItems(run),
+      buildToolCallDisplayItems(run.toolCalls),
+      'a one-step run must not add a nesting level',
+    )
+  })
+
+  it('nests one step per member message under a single run summary', () => {
+    const run = deriveToolRuns([
+      assistant('a1', { content: 'On it.', toolCalls: reads('a1', 2) }),
+      assistant('a2', { toolCalls: reads('a2', 3) }),
+      assistant('a3', { toolCalls: reads('a3', 1) }),
+    ])[0]
+    assert.ok(run)
+
+    const items = buildToolRunDisplayItems(run)
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'rollup')
+    assert.equal(items[0].key, RUN_ROLLUP_KEY)
+    assert.equal(items[0].label, 'Used 6 tools · 3 steps')
+    assert.deepEqual(
+      items[0].children.map((child) => (child.type === 'step' ? child.messageId : child.type)),
+      ['a1', 'a2', 'a3'],
+    )
+    // Each step still groups its own calls the way a message rollup would.
+    const first = items[0].children[0]
+    assert.equal(first?.type, 'step')
+    assert.equal(first.label, 'Read files')
+    assert.equal(first.children.length, 1)
+    assert.equal(first.children[0]?.type, 'group')
+  })
+
+  it('leads with the run polish and trails the counts, steps and failures', () => {
+    const run = deriveToolRuns([
+      assistant('a1', {
+        toolCalls: reads('a1', 2),
+        runSummary: 'Checked CI, branch state, and test coverage',
+      }),
+      assistant('a2', { toolCalls: [...reads('a2', 1), tc('a2-err', 'read_file', 'error')] }),
+    ])[0]
+    assert.ok(run)
+
+    const items = buildToolRunDisplayItems(run)
+    assert.equal(items[0]?.type, 'rollup')
+    assert.equal(
+      items[0].label,
+      'Checked CI, branch state, and test coverage · 4 tools · 2 steps · 1 failed',
+    )
+  })
+
+  it('stays progressive while any member is still running', () => {
+    const run = deriveToolRuns([
+      assistant('a1', { toolCalls: reads('a1', 2) }),
+      assistant('a2', { toolCalls: reads('a2', 1, 'running') }),
+    ])[0]
+    assert.ok(run)
+    assert.equal(buildToolRunDisplayItems(run)[0]?.label, 'Using 3 tools · 2 steps')
+  })
+
+  it('heads a step with that message’s own polish, keeping its failure count', () => {
+    const run = deriveToolRuns([
+      assistant('a1', {
+        toolCalls: [...reads('a1', 2), tc('a1-err', 'read_file', 'error')],
+        toolSummary: 'Inspected the repo layout',
+      }),
+      assistant('a2', { toolCalls: reads('a2', 2), reasoning: 'Nearly there.' }),
+    ])[0]
+    assert.ok(run)
+
+    const items = buildToolRunDisplayItems(run)
+    assert.equal(items[0]?.type, 'rollup')
+    const [first, second] = items[0].children
+    assert.equal(first?.type, 'step')
+    assert.equal(first.label, 'Inspected the repo layout · 1 failed')
+    // No polish yet on the second step — the canned category label stands in.
+    assert.equal(second?.type, 'step')
+    assert.equal(second.label, 'Read files')
+  })
+
+  it('names a reasoning-only step even though it ran nothing', () => {
+    const run = deriveToolRuns([
+      assistant('a1', { toolCalls: reads('a1', 2) }),
+      assistant('a2', { reasoning: 'Weighing the next move.' }),
+      assistant('a3', { toolCalls: reads('a3', 2) }),
+    ])[0]
+    assert.ok(run)
+
+    const items = buildToolRunDisplayItems(run)
+    assert.equal(items[0]?.type, 'rollup')
+    const middle = items[0].children[1]
+    assert.equal(middle?.type, 'step')
+    assert.equal(middle.label, 'Reasoned')
+    assert.equal(middle.children.length, 0)
+  })
+
+  it('leaves a message’s subagent cards for that message to render', () => {
+    const explore: ToolCall = {
+      ...tc('sub-1', 'task'),
+      subagent: {
+        id: 'sub-1',
+        kind: 'explore',
+        status: 'done',
+        prompt: 'look around',
+        summary: 'done',
+        messages: [],
+      },
+    }
+    const items = buildSubagentDisplayItems([tc('r1', 'read_file'), explore])
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'individual')
+    assert.equal(items[0].toolCall.id, 'sub-1')
   })
 })

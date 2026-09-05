@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
+import type { PrComposerCreateRequest } from '@shared/types/git.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
@@ -12,6 +13,9 @@ contextBridge.exposeInMainWorld('api', {
     getNavigation: () => ipcRenderer.invoke('mainWindow:getNavigation'),
     setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>
       ipcRenderer.invoke('mainWindow:setNavigation', navigation),
+    getBrowserSession: () => ipcRenderer.invoke('mainWindow:getBrowserSession'),
+    setBrowserSession: (session: import('@shared/types/main-window.ts').BrowserPaneSession) =>
+      ipcRenderer.invoke('mainWindow:setBrowserSession', session),
   },
   workspace: {
     open: () => ipcRenderer.invoke('workspace:open'),
@@ -41,6 +45,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('browser:share-page-text', webContentsId),
     shareScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:share-screenshot', webContentsId),
+    exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
     onOpenTab: (handler: (url: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string): void => {
         handler(url)
@@ -196,7 +201,17 @@ contextBridge.exposeInMainWorld('api', {
       prompt: string,
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
-    ) => ipcRenderer.invoke('agent:prepareCheckout', projectId, threadId, prompt, choice, model),
+      baseBranch?: string,
+    ) =>
+      ipcRenderer.invoke(
+        'agent:prepareCheckout',
+        projectId,
+        threadId,
+        prompt,
+        choice,
+        model,
+        baseBranch,
+      ),
     previewCheckout: (
       projectId: string,
       choice: 'automatic' | 'shared' | 'worktree',
@@ -223,6 +238,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('agent:suggestToolTurnSummary', actions),
     suggestFollowUps: (projectId: string, threadId: string, contextJson: string) =>
       ipcRenderer.invoke('agent:suggestFollowUps', projectId, threadId, contextJson),
+    suggestPrBody: (projectId: string, threadId: string, contextJson: string) =>
+      ipcRenderer.invoke('agent:suggestPrBody', projectId, threadId, contextJson),
     suggestNextStep: (contextJson: string) =>
       ipcRenderer.invoke('agent:suggestNextStep', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {
@@ -633,6 +650,20 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('threads:pr_refs', listener)
       return (): void => {
         ipcRenderer.removeListener('threads:pr_refs', listener)
+      }
+    },
+    onPrCreated: (handler: (projectId: string, threadId: string, ref: unknown) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        projectId: string,
+        threadId: string,
+        ref: unknown,
+      ): void => {
+        handler(projectId, threadId, ref)
+      }
+      ipcRenderer.on('threads:pr_created', listener)
+      return (): void => {
+        ipcRenderer.removeListener('threads:pr_created', listener)
       }
     },
     create: (projectId: string, thread: import('@shared/types').Thread) =>
@@ -1223,6 +1254,8 @@ contextBridge.exposeInMainWorld('api', {
     agentPrLinks: () => ipcRenderer.invoke('gh:agentPrLinks'),
     rerunFailedRuns: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:rerunFailedRuns', owner, repo, number),
+    createPrForThread: (projectId: string, threadId: string, request: PrComposerCreateRequest) =>
+      ipcRenderer.invoke('gh:createPrForThread', projectId, threadId, request),
     approvePr: (owner: string, repo: string, number: number) =>
       ipcRenderer.invoke('gh:approvePr', owner, repo, number),
     markPrReady: (owner: string, repo: string, number: number) =>

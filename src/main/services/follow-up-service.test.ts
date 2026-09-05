@@ -237,6 +237,7 @@ describe('continue-plan deterministic bubble', () => {
     hasMergeConflicts: false,
     hasCiFailures: false,
     changeStats: null,
+    canOpenPr: false,
   }
 
   it('leads with the plan when open todos survive the turn', () => {
@@ -266,6 +267,55 @@ describe('continue-plan deterministic bubble', () => {
       toolNames: [],
     })
     assert.deepEqual(suggestions, [])
+  })
+})
+
+describe('create-pr deterministic bubble', () => {
+  const base = {
+    branch: 'feature/x',
+    hasOpenPr: false,
+    hasMergeConflicts: false,
+    hasCiFailures: false,
+    changeStats: { additions: 118, deletions: 36 },
+    canOpenPr: true,
+  }
+  const turn = { userMessage: 'make a pr', assistantMessage: 'Done.', toolNames: [] }
+
+  it('offers the PR bubble right after the changeset chip', () => {
+    assert.deepEqual(
+      buildDeterministicFollowUps(base, turn).map((s) => s.id),
+      ['changes', 'create-pr'],
+    )
+  })
+
+  it('opens the dialog rather than sending a prompt', () => {
+    const pr = buildDeterministicFollowUps(base, turn).find((s) => s.id === 'create-pr')
+    assert.ok(pr, 'the create-pr bubble should be offered')
+    assert.equal(pr.action, 'create-pr')
+    // The create runs with no model in the loop, so there is no prompt for a
+    // caller to fall back to sending.
+    assert.equal(pr.prompt, undefined)
+  })
+
+  it('stays offered once the agent has committed and git status is clean', () => {
+    // canOpenPr covers committed-but-unpublished work, which is exactly the
+    // state a turn that ends in a commit leaves behind.
+    const suggestions = buildDeterministicFollowUps({ ...base, changeStats: null }, turn)
+    assert.deepEqual(
+      suggestions.map((s) => s.id),
+      ['create-pr'],
+    )
+  })
+
+  it('is withheld when the branch already has an open PR', () => {
+    const suggestions = buildDeterministicFollowUps(
+      { ...base, hasOpenPr: true, canOpenPr: false },
+      turn,
+    )
+    assert.equal(
+      suggestions.some((s) => s.id === 'create-pr'),
+      false,
+    )
   })
 })
 

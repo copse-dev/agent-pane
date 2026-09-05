@@ -212,6 +212,30 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('gives the outlined queued actions an edge that can be located', () => {
+    const css = read('input-bar.css')
+    // These chips have almost no fill contrast — `--bg-hover` sits within 1.1:1
+    // of the card behind them — so the border is the only thing marking where
+    // the button ends. At `--border` it measures 1.47:1 against the card in
+    // dark and 1.18:1 in light, faint enough that the eye cannot place the edge
+    // and reads the chip as smaller than it is; that is what made the filled
+    // "Send now" beside them look a size larger. happy-dom has no paint and the
+    // boxes are identical either way, so no geometry assertion catches this —
+    // pin the token instead.
+    assert.ok(
+      declares(css, '.queued-action', /border:\s*1px solid var\(--border-strong\)/),
+      '.queued-action must use --border-strong; --border leaves the chip edgeless against the card',
+    )
+    // The filled variants stay borderless on purpose: their fill already marks
+    // the edge, and giving them a rim too would double-draw it.
+    for (const selector of ['.queued-action.queued-send-now', '.queued-action.queued-release']) {
+      assert.ok(
+        declares(css, selector, /border-color:\s*transparent/),
+        `${selector} must keep a transparent border so its fill is the only edge`,
+      )
+    }
+  })
+
   it('auto-sizes the composer to its content', () => {
     const css = read('input-bar.css')
     // The composer is a contenteditable (composer-editor.ts), which grows with

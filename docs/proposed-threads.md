@@ -79,17 +79,22 @@ is the isolation the card promised: the checkout is requested as `'worktree'`, s
 the proposed work gets its own branch and directory instead of landing on top of
 whatever the user has open.
 
-Order matters: the thread is created first (so autosave writes it before the
-checkout IPC needs it), and a failed checkout leaves nothing but an empty thread
+Order matters: the thread is created first and its in-flight autosave is awaited
+before the checkout IPC needs it. A failed checkout leaves an empty thread
 — no user message, no dispatch, and the offer still standing on the card that
 made it.
 
 ### When isolation is not available
 
-The repository has the last word. A project with worktrees disabled, a non-git
-folder, a remote project or a detached HEAD degrades to the shared checkout
-through the ordinary policy in
+The repository has the last word. Current main fails an explicit `worktree`
+request closed for a non-Git folder, remote project, detached HEAD or submodules;
+an explicit request also overrides a project's automatic-worktree preference.
+The failure is shown after navigation, and no work is dispatched. See
 [`worktree-policy.ts`](../src/shared/git/worktree-policy.ts).
+
+The controller additionally defends against a returned shared grant (for example,
+a previously persisted checkout decision). This is not the current policy's
+ordinary fallback for a new explicit worktree request.
 
 A degraded grant is not a cosmetic difference. The user clicked a card offering
 work "in its own checkout"; what a shared checkout means is the agent editing

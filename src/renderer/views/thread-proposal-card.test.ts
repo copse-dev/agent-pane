@@ -8,6 +8,7 @@ import type { Message, ToolCall } from '@shared/types'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { mountConfirmDialog } from './confirm-dialog.ts'
 
 // Component-tier coverage of the model-proposed-thread card. The pure model is
 // unit-tested in `@copse/thread-store/thread-proposal.test.ts` and the start
@@ -79,7 +80,10 @@ function transcript(toolCalls: ToolCall[]): Message[] {
   ]
 }
 
-function mount(toolCalls: ToolCall[] = [proposalCall()]): {
+function mount(
+  toolCalls: ToolCall[] = [proposalCall()],
+  api: ApiClient = fakeApi(),
+): {
   store: AppStore
   root: HTMLElement
   threadId: string
@@ -94,7 +98,7 @@ function mount(toolCalls: ToolCall[] = [proposalCall()]): {
   })
   const root = document.createElement('div')
   document.body.append(root)
-  const unmount = mountConversation(root, store, fakeApi())
+  const unmount = mountConversation(root, store, api)
   store.emit('threads_changed')
   return { store, root, threadId, unmount }
 }
@@ -111,6 +115,42 @@ afterEach(() => {
 })
 
 describe('model-proposed thread card', () => {
+  for (const accepted of [false, true]) {
+    it(`takes shared-checkout consent before dispatch (accepted=${String(accepted)})`, async () => {
+      mountConfirmDialog()
+      const base = fakeApi()
+      const { root, store, threadId, unmount } = mount([proposalCall()], {
+        ...base,
+        agent: {
+          ...base.agent,
+          prepareCheckout: () =>
+            Promise.resolve({
+              checkoutMode: 'shared',
+              choice: 'worktree',
+              branch: 'main',
+            }),
+        },
+      })
+      card(root).querySelector<HTMLButtonElement>('.thread-proposal-start')?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.ok(document.querySelector('#confirm-dialog[open]'))
+      assert.match(
+        document.querySelector('.confirm-dialog-detail')?.textContent ?? '',
+        /alongside your current changes/,
+      )
+      assert.deepEqual(runs, [], 'nothing is dispatched while the dialog waits')
+      document
+        .querySelector<HTMLButtonElement>(
+          accepted ? '.confirm-dialog-confirm' : '.confirm-dialog-cancel',
+        )
+        ?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(runs.length, accepted ? 1 : 0)
+      const decision = store.getState().threads.find((t) => t.id === threadId)?.threadProposals?.[0]
+      assert.equal(decision?.status, accepted ? 'started' : undefined)
+      unmount()
+    })
+  }
   it('renders the offer as a top-level card, not a tool disclosure', () => {
     const { root, unmount } = mount()
     const proposal = card(root)

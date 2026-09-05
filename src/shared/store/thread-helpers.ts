@@ -32,7 +32,12 @@ import {
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 
-export { sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
+import { isHumanUserPrompt } from '@copse/thread-store/thread-sort.ts'
+export {
+  isHumanUserPrompt,
+  lastHumanPromptAt,
+  sortThreadsNewestFirst,
+} from '@copse/thread-store/thread-sort.ts'
 
 /**
  * Look up a thread by id (undefined for null/unknown ids). Finds background
@@ -405,6 +410,9 @@ export function addMessage(
   patchThreadAnywhere(store, threadId, (t) => ({
     ...t,
     messages: [...t.messages, message],
+    // The sidebar sorts on this and never reads transcripts, so it has to be
+    // recorded as the prompt lands rather than derived at display time.
+    ...(isHumanUserPrompt(message) ? { lastPromptAt: message.createdAt } : {}),
     updatedAt: Date.now(),
   }))
   store.emit('message_added', threadId, id)
@@ -567,6 +575,20 @@ export function setMessageToolSummary(
   store.emit('tool_call_updated', messageId, '')
 }
 
+/**
+ * Record the small-model polish for the run anchored at `messageId` — the
+ * rollup spanning this message and the tool-only assistant messages after it.
+ * Lands on the anchor, which is usually already finalized by the time the
+ * summary resolves (see the autosave's empty-tool-call-id path).
+ */
+export function setMessageRunSummary(store: AppStore, messageId: string, runSummary: string): void {
+  updateMessage(store, messageId, (m) => {
+    m.runSummary = runSummary
+  })
+  // Re-uses the tool-card refresh path so the run rollup label updates in place.
+  store.emit('tool_call_updated', messageId, '')
+}
+
 export function addToolCall(store: AppStore, messageId: string, toolCall: ToolCall): void {
   updateMessage(store, messageId, (m) => {
     m.toolCalls.push(toolCall)
@@ -580,6 +602,33 @@ export function findToolCall(
   toolCallId: string,
 ): ToolCall | undefined {
   return locateMessage(store, messageId)?.message.toolCalls.find((tc) => tc.id === toolCallId)
+}
+
+/**
+ * Which message in `threadId` owns `toolCallId`, searching newest-first.
+ *
+ * `findToolCall` is message-scoped, so a caller that only holds "the message the
+ * current turn is streaming into" cannot tell whether an update belongs to it.
+ * On the ACP path it usually doesn't have to — but the update pump is per
+ * *session*, not per turn, and the session is pooled and reused, so a terminal
+ * `tool_call_update` the agent emits after its turn was cancelled is handed to
+ * whichever turn's handlers are installed when it lands. Without an ownership
+ * check that straggler is appended to the next turn's bubble, below the user's
+ * follow-up (#2332 defect 3). Thread-scoped lookup answers it from state that
+ * already exists, so it survives the per-turn stream state being torn down.
+ */
+export function findToolCallOwner(
+  store: AppStore,
+  threadId: string,
+  toolCallId: string,
+): string | undefined {
+  const messages = getThreadById(store, threadId)?.messages
+  if (!messages) return undefined
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message?.toolCalls.some((tc) => tc.id === toolCallId)) return message.id
+  }
+  return undefined
 }
 
 export function updateToolCall(
@@ -774,8 +823,22 @@ export function setThreadStatus(
   store.emit('thread_status_changed', threadId, status)
 }
 
-export function setThreadTitle(store: AppStore, threadId: string, title: string): void {
-  patchThreadAnywhere(store, threadId, (t) => ({ ...t, title }))
+/**
+ * Set a thread's title. Titles are user-owned by default: omitting
+ * `autoTitleCount` clears the auto-naming counter, which is what stops later
+ * auto-naming passes from overwriting a manual rename. Auto-naming passes the
+ * pass number they just wrote so the next one knows it may still refine it.
+ */
+export function setThreadTitle(
+  store: AppStore,
+  threadId: string,
+  title: string,
+  options?: { autoTitleCount: number },
+): void {
+  patchThreadAnywhere(store, threadId, (t) => {
+    const { autoTitleCount: _previous, ...rest } = t
+    return options ? { ...rest, title, autoTitleCount: options.autoTitleCount } : { ...rest, title }
+  })
   store.emit('threads_changed')
 }
 

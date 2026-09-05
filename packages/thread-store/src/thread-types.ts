@@ -144,6 +144,13 @@ export interface ModelComparison {
 export interface Thread {
   id: string
   title: string
+  /**
+   * How many times auto-naming has written {@link title}. Absent means the title
+   * is nobody's but the user's — either the untouched `New Thread` default or a
+   * manual rename — so auto-naming must leave it alone. Present means the title
+   * is ours to refine as the thread grows, up to a small fixed number of passes.
+   */
+  autoTitleCount?: number
   status: ThreadStatus
   messages: Message[]
   /**
@@ -290,6 +297,22 @@ export interface Thread {
    * Soft-hide (not a delete) — restore is a later UI concern.
    */
   archivedAt?: number
+  /**
+   * When a human last prompted this thread — the sidebar's default sort key.
+   *
+   * Metadata rather than something read off the transcript, for the same reason
+   * {@link prRefs} is: the sidebar loads threads metadata-only, so a key derived
+   * from `messages` would be unavailable for exactly the threads it has to
+   * order. Set as each human prompt lands; absent on threads written before this
+   * existed, which fall back to `createdAt` until their transcript is next read
+   * (see `lastHumanPromptAt`).
+   *
+   * Only human prompts count — a hook or machine continuation carries a
+   * {@link MessageOrigin} and does not move the thread up the sidebar, so an
+   * overnight automation cannot reorder the list under the user. Agent activity
+   * on an unselected thread is surfaced by {@link unreadAt} instead.
+   */
+  lastPromptAt?: number
   createdAt: number
   updatedAt: number
 }
@@ -320,6 +343,14 @@ export interface ThreadCatalogEntry {
   updatedAt: number
   digest: string
   path: string
+  /**
+   * Copy of the thread meta's {@link Thread.prRefs}, so "find the thread that
+   * opened #2262" is answerable from the index alone. Required, not optional:
+   * a line without it is a pre-`prRefs` catalog, and dropping such lines on read
+   * is what makes the whole file rebuild itself (see `readCatalog`). `[]` means
+   * "indexed, no PRs" — the same convention `backfillThreadPrRefs` uses on meta.
+   */
+  prRefs: GithubPrRef[]
 }
 
 /**
@@ -381,6 +412,14 @@ export interface Message {
    * and never blocks delivery.
    */
   toolSummary?: string
+  /**
+   * Small-model polish for the *run* this message anchors — the rollup that
+   * spans this message and the tool-only assistant messages that follow it.
+   * Only ever set on a run's anchor, and only once the run spans more than one
+   * message; {@link Message.toolSummary} stays this message's own label and is
+   * shown as its step heading inside the run.
+   */
+  runSummary?: string
   /**
    * Primary-chat model that produced this assistant message — the concrete
    * route actually run, after a dynamic selector (`auto:…`) was expanded.
