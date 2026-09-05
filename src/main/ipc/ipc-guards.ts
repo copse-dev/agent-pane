@@ -66,6 +66,8 @@ export function parsePortKillArgs(args: unknown[]): number {
 }
 
 export const zNonEmptyString = z.string().min(1)
+/** A Git branch name handed to `git switch` or used as a worktree base. */
+export const zGitBranchName = z.string().min(1).max(256)
 export const zPathString = z.string().max(4096)
 export const zSessionId = z.uuid()
 

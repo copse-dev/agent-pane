@@ -52,6 +52,7 @@ import {
   zModelId,
   zHookRunId,
   zHookTestRequest,
+  zGitBranchName,
   zNonEmptyString,
   zPathString,
   zProjectId,
@@ -112,7 +113,13 @@ import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/pr
 import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
-import { getMainWindowNavigation, setMainWindowNavigation } from '../windows/create-main-window.ts'
+import {
+  getMainWindowBrowserSession,
+  getMainWindowNavigation,
+  setMainWindowBrowserSession,
+  setMainWindowNavigation,
+} from '../windows/create-main-window.ts'
+import { browserPaneSessionSchema, decodeBrowserPaneSession } from '../windows/main-window-state.ts'
 import {
   backfillThreadPrRefs,
   loadProjectThreadMetas,
@@ -463,6 +470,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const navigation = parseIpcArgs(mainWindowNavigationSchema, [rawNavigation])
     setMainWindowNavigation(event.sender, navigation)
+  })
+
+  // The Browser pane's tabs, so quitting no longer throws away the canvas the
+  // agent rendered. Stored per window beside its navigation and bounded by the
+  // same schema the launch-time decode uses.
+  ipcMain.handle('main-window:get-browser-session', (event) => {
+    assertMainFrameSender(event, win)
+    return getMainWindowBrowserSession(event.sender)
+  })
+
+  ipcMain.handle('main-window:set-browser-session', (event, rawSession: unknown) => {
+    assertMainFrameSender(event, win)
+    const session = parseIpcArgs(browserPaneSessionSchema, [rawSession])
+    setMainWindowBrowserSession(event.sender, decodeBrowserPaneSession(session))
   })
 
   ipcMain.handle('workspace:open', async () => {
@@ -2232,7 +2253,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('git:checkout-branch', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId, targetBranch] = parseIpcArgs(
-      z.tuple([zProjectId, zThreadId, z.string().min(1).max(256)]),
+      z.tuple([zProjectId, zThreadId, zGitBranchName]),
       rawArgs,
     )
     const root = await resolveWatchedGitRoot(projectId, threadId)

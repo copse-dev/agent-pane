@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import { MAX_RESTORED_BROWSER_TABS } from '@shared/types/main-window.ts'
 import type {
+  BrowserPaneSession,
   MainWindowBounds,
   MainWindowNavigation,
   MainWindowRecord,
@@ -20,6 +22,37 @@ const boundsSchema = z.object({
 const windowIdSchema = z.string().regex(/^[\w-]{1,128}$/)
 const nullableIdSchema = z.string().min(1).max(128).nullable()
 
+/**
+ * A restorable tab. `url` deliberately refuses `data:`: an artefact tab's live
+ * address is a whole document inlined, the durable copy of which already lives
+ * beside its thread, so the only thing worth persisting is its title. Refusing
+ * the scheme keeps config.json from becoming an accidental blob store.
+ */
+const browserTabSchema = z.object({
+  url: z
+    .string()
+    .max(4096)
+    .refine((value) => !/^data:/i.test(value.trim()), 'A tab URL may not be a data: URL'),
+  label: z.string().max(256).optional(),
+  // Matches the `canvas:reopenArtefact` title bound, so a stored title that
+  // cannot be handed back to the canvas store is rejected at the door.
+  artefactTitle: z.string().min(1).max(200).optional(),
+  artefactThreadId: z
+    .string()
+    .regex(/^[\w-]{1,128}$/)
+    .optional(),
+  artefactProjectId: z
+    .string()
+    .regex(/^[\w-]{1,128}$/)
+    .optional(),
+})
+
+export const browserPaneSessionSchema = z.object({
+  tabs: z.array(browserTabSchema).max(MAX_RESTORED_BROWSER_TABS),
+  activeTabIndex: z.number().int().min(0).max(MAX_RESTORED_BROWSER_TABS),
+  paneOpen: z.boolean(),
+})
+
 const recordSchema = z.object({
   id: windowIdSchema,
   activeProjectId: nullableIdSchema,
@@ -29,6 +62,7 @@ const recordSchema = z.object({
   maximized: z.boolean(),
   fullscreen: z.boolean(),
   lastFocusedAt: z.number().nonnegative(),
+  browserSession: browserPaneSessionSchema.optional(),
 })
 
 const stateSchema = z
@@ -51,6 +85,30 @@ const stateSchema = z
     }
   })
 
+/**
+ * Rebuild the session field by field. `exactOptionalPropertyTypes` makes the
+ * parsed shape (`label?: string | undefined`) incompatible with the declared
+ * one, and spreading each optional only when present is how the rest of this
+ * decoder already keeps the two in step. Exported because the IPC handler that
+ * accepts a session from the renderer parses with the same schema and needs the
+ * same narrowing.
+ */
+export function decodeBrowserPaneSession(
+  parsed: z.infer<typeof browserPaneSessionSchema>,
+): BrowserPaneSession {
+  return {
+    tabs: parsed.tabs.map((tab) => ({
+      url: tab.url,
+      ...(tab.label !== undefined ? { label: tab.label } : {}),
+      ...(tab.artefactTitle !== undefined ? { artefactTitle: tab.artefactTitle } : {}),
+      ...(tab.artefactThreadId !== undefined ? { artefactThreadId: tab.artefactThreadId } : {}),
+      ...(tab.artefactProjectId !== undefined ? { artefactProjectId: tab.artefactProjectId } : {}),
+    })),
+    activeTabIndex: parsed.activeTabIndex,
+    paneOpen: parsed.paneOpen,
+  }
+}
+
 function decodeState(value: unknown): MainWindowState | null {
   const parsed = stateSchema.safeParse(value)
   if (!parsed.success) return null
@@ -70,6 +128,9 @@ function decodeState(value: unknown): MainWindowState | null {
       maximized: record.maximized,
       fullscreen: record.fullscreen,
       lastFocusedAt: record.lastFocusedAt,
+      ...(record.browserSession
+        ? { browserSession: decodeBrowserPaneSession(record.browserSession) }
+        : {}),
     })),
   }
 }

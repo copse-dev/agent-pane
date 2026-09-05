@@ -109,6 +109,13 @@ export interface ApiClient {
     setNavigation: (
       navigation: import('@shared/types/main-window.ts').MainWindowNavigation,
     ) => Promise<void>
+    /** The Browser pane's tabs as this window last left them, if any. */
+    getBrowserSession: () => Promise<
+      import('@shared/types/main-window.ts').BrowserPaneSession | null
+    >
+    setBrowserSession: (
+      session: import('@shared/types/main-window.ts').BrowserPaneSession,
+    ) => Promise<void>
   }
   workspace: {
     open: () => Promise<string | null>
@@ -176,6 +183,8 @@ export interface ApiClient {
       prompt: string,
       choice: ThreadWorktreeChoice,
       model?: string,
+      /** Branch the blank-thread footer picker selected to start from. */
+      baseBranch?: string,
     ) => Promise<PreparedThreadCheckout>
     previewCheckout: (
       projectId: string,

@@ -55,10 +55,15 @@ derivable from the contract alone:
 
 Both halves are kebab-case (`sshWorkspace.listHosts` → `ssh-workspace:list-hosts`);
 no camelCase or snake_case on the wire. The invariants test enforces this for
-every member except a short exception list of bindings that still live under a
-different area than their facade namespace (for example
-`windowState.getNavigation` on `main-window:get-navigation`). That list may only
-shrink: moving one of them is a normal breaking change, handled as below.
+every member, with two documented escapes:
+
+- a **namespace area alias**, where a whole facade namespace lives under a
+  differently named area (`windowState` on `main-window:`). Members still follow
+  the convention for the second half, so a new one needs no new exception.
+- a short **per-member exception list**, for a single binding under another
+  area while the rest of its namespace is conventional (`diff.onShowDiff` on
+  `agent:show-diff`). That list may only shrink: moving one of them is a normal
+  breaking change, handled as below.
 
 ## How the surface changes
 

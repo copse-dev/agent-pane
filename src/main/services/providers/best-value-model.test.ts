@@ -170,6 +170,133 @@ describe('planAcpFrontierCandidates', () => {
     )
   })
 
+  it('keeps a catalog agent wrapped in a runner in the pool', () => {
+    // `npx @agentclientprotocol/claude-agent-acp` hides the adapter behind the
+    // runner. Dropping the agent leaves the user's only Claude route out of the
+    // pool entirely, so every `auto:` selector settles for a paid API route
+    // while the picker still lists Claude a row above it.
+    const candidates = planAcpFrontierCandidates([
+      {
+        id: 'claude-acp',
+        title: 'Claude',
+        command: 'npx',
+        args: ['@agentclientprotocol/claude-agent-acp'],
+        enabled: true,
+        model: 'opus',
+        availableModels: [
+          {
+            value: 'opus',
+            label: 'Opus (1M context)',
+            description: 'Opus 5 with 1M context · Best for everyday, complex tasks',
+          },
+        ],
+      },
+    ])
+    assert.deepEqual(
+      candidates.map((candidate) => ({ id: candidate.id, planAccess: candidate.planAccess })),
+      [
+        {
+          id: 'acp:claude-acp#opus',
+          planAccess: { provider: 'claude', modelId: 'claude-opus-5' },
+        },
+      ],
+    )
+  })
+
+  it("scores a model spelled in another vendor's word order", () => {
+    // The picker annotates "Claude 5 Sonnet" with an intellect hint via the
+    // family + version fallback; the pool must resolve the same spelling or the
+    // row it offers is one no selector can reach.
+    const sonnet5Score = getIntellectScore('claude-sonnet-5')
+    assert.ok(sonnet5Score)
+    const candidates = planAcpFrontierCandidates([
+      {
+        id: 'claude-agent-acp',
+        title: 'Claude',
+        command: 'claude-agent-acp',
+        enabled: true,
+        model: 'sonnet',
+        availableModels: [{ value: 'sonnet', label: 'Claude 5 Sonnet' }],
+      },
+    ])
+    assert.deepEqual(
+      candidates.map((candidate) => ({
+        id: candidate.id,
+        intellect: candidate.intellect,
+        planAccess: candidate.planAccess,
+      })),
+      [
+        {
+          id: 'acp:claude-agent-acp#sonnet',
+          intellect: sonnet5Score.value,
+          planAccess: { provider: 'claude', modelId: 'claude-sonnet-5' },
+        },
+      ],
+    )
+  })
+
+  it('lets balanced reach a Claude plan route instead of a paid OpenRouter one', () => {
+    // The reported case: Claude reachable only over the ACP plan (no Anthropic
+    // key), OpenRouter configured, and `auto:balanced` resolving to the paid
+    // $10/MTok GPT-5.6 Sol route because the plan route was never a candidate.
+    const solScore = getIntellectScore('gpt-5.6-sol')
+    assert.ok(solScore)
+    const planCandidates = planAcpFrontierCandidates([
+      {
+        id: 'claude-acp',
+        title: 'Claude',
+        command: 'npx',
+        args: ['@agentclientprotocol/claude-agent-acp'],
+        enabled: true,
+        model: 'opus',
+        availableModels: [
+          {
+            value: 'opus',
+            label: 'Opus (1M context)',
+            description: 'Opus 5 with 1M context · Best for everyday, complex tasks',
+          },
+        ],
+      },
+    ])
+    const snapshot: PlanUsageSnapshot = {
+      checkedAt: '2026-09-03T00:00:00Z',
+      providers: [
+        {
+          provider: 'claude',
+          status: 'ok',
+          usage: {
+            provider: 'claude',
+            plan: 'Max',
+            checkedAt: '2026-09-03T00:00:00Z',
+            windows: [
+              { id: 'seven_day_opus', label: 'Weekly Opus', usedPercent: 12, resetsAt: null },
+              { id: 'seven_day', label: 'Weekly', usedPercent: 8, resetsAt: null },
+              { id: 'five_hour', label: '5h', usedPercent: 3, resetsAt: null },
+            ],
+          },
+        },
+      ],
+    }
+    const points = frontierForKnownModels(
+      [
+        {
+          id: 'openrouter:openai/gpt-5.6-sol',
+          intellect: solScore.value,
+          costPerMTok: 10,
+        },
+        ...planCandidates,
+      ],
+      (candidate) => applyPlanCoverage(candidate, snapshot),
+      // No first-party keys: OpenRouter and the ACP agent are the only routes.
+      (candidate) => candidate.id.startsWith('openrouter:') || candidate.id.startsWith('acp:'),
+    )
+
+    const picked = pickDynamicModel({ kind: 'balanced' }, points)
+    assert.equal(picked?.id, 'acp:claude-acp#opus')
+    assert.equal(picked.plan, 'Weekly Opus')
+    assert.equal(picked.costPerMTok, 0)
+  })
+
   it('makes balanced choose Codex ACP over the exact GPT-5.6 Sol OpenRouter route', () => {
     const solScore = getIntellectScore('gpt-5.6-sol')
     assert.ok(solScore)

@@ -129,4 +129,36 @@ describe('validateDraft', () => {
     assert.match(validateDraft({ id: 'ok', title: ' ', command: 'x' }, []) ?? '', /Title/)
     assert.match(validateDraft({ id: 'ok', title: 'x', command: '' }, []) ?? '', /Command/)
   })
+
+  it('rejects a catalog id unless the command launches that catalog entry', () => {
+    // A custom agent titled "Claude ACP" slugs to `claude-acp`, which would be
+    // read as the plan-backed adapter; the retired and legacy ids are just as
+    // reserved. The real adapter, bare or runner-wrapped, keeps the id.
+    const spoof = validateDraft({ id: 'claude-acp', title: 'Claude ACP', command: 'my-agent' }, [])
+    assert.match(spoof ?? '', /belongs to Claude \(claude-agent-acp\)/)
+    assert.match(
+      validateDraft({ id: 'claude-code-acp', title: 'x', command: 'my-agent' }, []) ?? '',
+      /belongs to/,
+    )
+    assert.match(
+      validateDraft({ id: 'claude-agent-acp', title: 'x', command: 'my-agent' }, []) ?? '',
+      /belongs to/,
+    )
+    assert.equal(
+      validateDraft({ id: 'claude-acp', title: 'Claude', command: 'claude-agent-acp' }, []),
+      null,
+    )
+    assert.equal(
+      validateDraft(
+        {
+          id: 'claude-acp',
+          title: 'Claude',
+          command: 'npx',
+          args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+        },
+        [],
+      ),
+      null,
+    )
+  })
 })

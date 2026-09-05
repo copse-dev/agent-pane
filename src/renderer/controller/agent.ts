@@ -8,9 +8,11 @@ import {
   addToolCall,
   updateToolCall,
   findToolCall,
+  findToolCallOwner,
   setMessageContent,
   setMessageCommandSummary,
   setMessageToolSummary,
+  setMessageRunSummary,
   setThreadStatus,
   addUsageDelta,
   recordContextTrim,
@@ -26,6 +28,7 @@ import {
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
 import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
 import { getToolCallLabel, shellCommandsFromToolCalls } from '@shared/tools/tool-display.ts'
+import { toolRunForMessage } from '@shared/tools/tool-runs.ts'
 import {
   initSubagent,
   appendSubagentReasoning,
@@ -100,6 +103,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     // Same guard for the whole-turn tool rollup polish (`toolSummary`).
     toolSummaryMsgId: string | null
     toolSummaryCount: number
+    // Same guard for the cross-message run rollup polish (`runSummary`), keyed
+    // on the run's anchor rather than the streaming message.
+    runSummaryAnchorId: string | null
+    runSummaryCount: number
     // Last activity label this thread emitted, so progress chunks that round
     // to the same percent do not re-announce through the aria-live region.
     // Every emit below records it: a key that only tracked progress would go
@@ -119,6 +126,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         summaryCount: 0,
         toolSummaryMsgId: null,
         toolSummaryCount: 0,
+        runSummaryAnchorId: null,
+        runSummaryCount: 0,
         lastActivityLabel: null,
       }
       state.set(tid, st)
@@ -215,6 +224,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'tool_call': {
+        // A pooled ACP session can replay a `tool_call` for an id this thread
+        // already has — a straggler from a turn that has ended. Opening a second
+        // card for it would put the previous turn's work under the new turn's
+        // bubble, below the user's follow-up (#2332).
+        if (findToolCallOwner(store, threadId, chunk.toolCall.id)) break
         st.msgId ??= addAssistantMessage(store, threadId)
         addToolCall(store, st.msgId, {
           id: chunk.toolCall.id,
@@ -232,8 +246,12 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'tool_call_update': {
-        if (st.msgId && findToolCall(store, st.msgId, chunk.toolCallId)) {
-          updateToolCall(store, st.msgId, chunk.toolCallId, {
+        // Route by which message actually holds the call, not by whichever
+        // message happens to be streaming: a straggler from a finished turn
+        // otherwise patches — or silently misses — the wrong bubble (#2332).
+        const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId)
+        if (ownerId) {
+          updateToolCall(store, ownerId, chunk.toolCallId, {
             ...(chunk.name !== undefined ? { name: chunk.name } : {}),
             ...(chunk.args !== undefined ? { args: chunk.args } : {}),
             ...(chunk.status !== undefined ? { status: chunk.status } : {}),
@@ -246,15 +264,18 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'tool_result': {
-        if (st.msgId) {
-          updateToolCall(store, st.msgId, chunk.toolCallId, {
+        // Same ownership rule as `tool_call_update`: the result belongs to the
+        // message that holds the call, which is not always the one streaming.
+        const ownerId = findToolCallOwner(store, threadId, chunk.toolCallId) ?? st.msgId
+        if (ownerId) {
+          updateToolCall(store, ownerId, chunk.toolCallId, {
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
             ...(chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}),
           })
           if (chunk.toolCallId && !chunk.isError) {
-            const toolCall = findToolCall(store, st.msgId, chunk.toolCallId)
+            const toolCall = findToolCall(store, ownerId, chunk.toolCallId)
             // Only the foreground thread may rebind: branch status is global to
             // the working tree, so a background thread reading HEAD would chase a
             // branch the active thread checked out.
@@ -272,6 +293,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           // time the tools finish — never blocks delivery.
           maybeSummarizeCommands(store, api, threadId, st)
           maybeSummarizeToolTurn(store, api, threadId, st)
+          maybeSummarizeToolRun(store, api, threadId, st)
         }
         st.writing = false
         activity(threadId)
@@ -570,6 +592,8 @@ type AgentState = {
   summaryCount: number
   toolSummaryMsgId: string | null
   toolSummaryCount: number
+  runSummaryAnchorId: string | null
+  runSummaryCount: number
 }
 
 // Generate (or regenerate) a rolled-up label for the current message's batch of
@@ -634,6 +658,46 @@ function maybeSummarizeToolTurn(
       summary = null
     }
     if (summary?.trim()) setMessageToolSummary(store, msgId, summary.trim())
+  })()
+}
+
+// Polish the *run* rollup — the summary shown when a burst of tool work spans
+// several adjacent assistant messages. Same small-tasks service and the same
+// non-blocking contract as the per-message polish above; the deterministic
+// `Used N tools · M steps` label holds until it resolves. No-ops until the run
+// actually spans more than one message, so an ordinary single-message turn
+// never spends a second request.
+function maybeSummarizeToolRun(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  st: AgentState,
+): void {
+  const msgId = st.msgId
+  if (!msgId) return
+  const thread = getThreadById(store, threadId)
+  if (!thread) return
+  const run = toolRunForMessage(thread.messages, msgId)
+  if (!run || run.steps.length < 2 || run.toolCalls.length < 2) return
+  const requestCount = run.toolCalls.length
+  if (st.runSummaryAnchorId === run.anchorId && st.runSummaryCount === requestCount) return
+  st.runSummaryAnchorId = run.anchorId
+  st.runSummaryCount = requestCount
+
+  const actions = run.toolCalls.map((tc) => getToolCallLabel(tc))
+  void (async (): Promise<void> => {
+    let summary: string | null
+    try {
+      summary = await api.agent.suggestToolTurnSummary(actions)
+    } catch {
+      summary = null
+    }
+    // A run only ever grows, so the tool count identifies each request for an
+    // anchor. If a later request for this same anchor has since gone out, its
+    // reply covers more of the run than ours — drop ours rather than let a
+    // slower earlier request overwrite a newer summary.
+    if (st.runSummaryAnchorId === run.anchorId && st.runSummaryCount !== requestCount) return
+    if (summary?.trim()) setMessageRunSummary(store, run.anchorId, summary.trim())
   })()
 }
 
