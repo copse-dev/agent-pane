@@ -242277,6 +242277,18 @@ function createCanvasPreviewSection(tc2, threadId) {
   const uri = artefactUriFromToolResult(tc2.result);
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null;
 }
+function syncToolRunMemberVisibility(msgEl) {
+  if (!msgEl.classList.contains("msg-tool-run-member")) {
+    msgEl.hidden = false;
+    return;
+  }
+  const body = msgEl.querySelector(":scope > .message-body");
+  const hasVisibleBodyChild = [...body?.children ?? []].some(
+    (child) => !child.classList.contains("message-text") || child.hasChildNodes()
+  );
+  const hasVisibleDirectChild = [...msgEl.children].some((child) => child !== body);
+  msgEl.hidden = !hasVisibleBodyChild && !hasVisibleDirectChild;
+}
 function syncMessageCanvasPreviews(msgEl, msg, threadId) {
   const body = msgEl.querySelector(":scope > .message-body");
   if (!body) return;
@@ -242285,8 +242297,10 @@ function syncMessageCanvasPreviews(msgEl, msg, threadId) {
     const card2 = createCanvasPreviewCard(threadId, artefact.title);
     return card2 ? [card2] : [];
   });
-  if (cards.length === 0) return;
-  body.append(el("div", { class: "message-canvas-previews" }, ...cards));
+  if (cards.length > 0) {
+    body.append(el("div", { class: "message-canvas-previews" }, ...cards));
+  }
+  syncToolRunMemberVisibility(msgEl);
 }
 function createIndividualToolCard(tc2, label, api3, threadId, store3) {
   if (tc2.subagent) return createSubagentToolCard(tc2, label, api3);
@@ -243521,6 +243535,7 @@ function mountConversation(root4, store3, api3) {
     const msgId = msgEl.dataset["messageId"] ?? "";
     const run6 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run6 !== void 0 && run6.anchorId !== msgId;
+    msgEl.classList.toggle("msg-tool-run-member", isRunMember);
     const nestReasoning = run6 === void 0 && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls);
     const items = run6 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run6), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
       ...nestReasoning ? { forceRollup: true } : {}
@@ -243582,6 +243597,7 @@ function mountConversation(root4, store3, api3) {
         msgEl.insertBefore(node2, msgEl.children[base + i4] ?? null);
       }
     }
+    syncToolRunMemberVisibility(msgEl);
   }
   function renderRunAnchor(thread, run6) {
     const anchor2 = thread?.messages.find((m3) => m3.id === run6.anchorId);
@@ -243811,6 +243827,7 @@ function mountConversation(root4, store3, api3) {
       } else {
         existing?.remove();
       }
+      syncToolRunMemberVisibility(msgEl);
       prevLabel = text4;
     }
   }
