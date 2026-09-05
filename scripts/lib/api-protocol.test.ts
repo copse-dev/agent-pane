@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { API_PROTOCOL_VERSION } from '../../src/shared/api-protocol.mts'
 import {
@@ -442,11 +443,15 @@ describe('compareApiProtocol', () => {
 })
 
 describe('gen-api-protocol --compare-ref', () => {
-  const run = (ref: string): { status: number | null; out: string } => {
+  const run = (ref: string, gitDir?: string): { status: number | null; out: string } => {
     const result = spawnSync(
       process.execPath,
       [resolve(ROOT, 'scripts/gen-api-protocol.mts'), '--compare-ref', ref],
-      { cwd: ROOT, encoding: 'utf8' },
+      {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, ...(gitDir ? { GIT_DIR: gitDir } : {}) },
+      },
     )
     return { status: result.status, out: `${result.stdout}${result.stderr}` }
   }
@@ -457,17 +462,43 @@ describe('gen-api-protocol --compare-ref', () => {
     // that does not exist there exits 128 — which failed the whole job rather
     // than reporting "nothing to compare". There is no previous surface, so
     // every channel is new and nothing can be breaking.
-    // The repo's own first commit predates the protocol module.
-    const firstCommit = spawnSync('git', ['rev-list', '--max-parents=0', 'HEAD'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-    })
-      .stdout.split('\n')[0]
-      ?.trim()
-    assert.ok(firstCommit, 'expected a root commit to compare against')
-    const { status, out } = run(firstCommit)
-    assert.equal(status, 0, out)
-    assert.match(out, /no API protocol to compare against/)
+    // Do not infer the first commit from this checkout: CI's shallow clone
+    // presents its current tip as a root, and that tip already has a protocol.
+    // A bare fixture with an empty-tree commit is independent of checkout depth
+    // and never changes the developer's refs, index, or working tree.
+    const gitDir = mkdtempSync(join(tmpdir(), 'copse-protocol-base-'))
+    try {
+      execFileSync('git', ['init', '--bare', gitDir], { stdio: 'ignore' })
+      const tree = execFileSync(
+        'git',
+        ['-C', gitDir, 'hash-object', '-w', '-t', 'tree', '--stdin'],
+        {
+          input: '',
+          encoding: 'utf8',
+        },
+      ).trim()
+      const firstCommit = execFileSync(
+        'git',
+        [
+          '-C',
+          gitDir,
+          '-c',
+          'user.name=Protocol test',
+          '-c',
+          'user.email=protocol@example.invalid',
+          '-c',
+          'commit.gpgsign=false',
+          'commit-tree',
+          tree,
+        ],
+        { input: 'Before the protocol\n', encoding: 'utf8' },
+      ).trim()
+      const { status, out } = run(firstCommit, gitDir)
+      assert.equal(status, 0, out)
+      assert.match(out, /no API protocol to compare against/)
+    } finally {
+      rmSync(gitDir, { recursive: true, force: true })
+    }
   })
 
   it('fails closed when the base cannot be read at all', () => {
