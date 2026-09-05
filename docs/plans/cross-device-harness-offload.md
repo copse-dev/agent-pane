@@ -36,14 +36,14 @@ the reason for deferring it — "the runtime is welded to the app" — is no lon
 
 This is not aspiration; it is measurable on `main` today.
 
-| Fact                                                  | Evidence                                                                                                                                                                                                             |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The agent runtime does not need Electron              | 17 of 476 non-test files in `src/main` import `electron` at runtime, and none are on the agent, tool, hook, sandbox or thread-store path                                                                             |
-| A headless host already runs the _whole product loop_ | `src/main/services/headless-agent-host.ts` builds the real registry, skills, MCP, hooks, supervisor and permission policy from an explicit profile, with no renderer and no IPC                                      |
-| That claim is enforced, not asserted                  | `scripts/verify-agent-path-import.mts` bundles the registry, system prompt and headless host for plain Node and constructs them with `electron` poisoned; `scripts/module-boundaries.test.ts` holds `packages ↛ src` |
-| The main process already runs as plain Node           | The Tauri sidecar (`src/sidecar/`) runs `src/main/index.ts` byte-identical against an `electron` shim, with IPC over a loopback WebSocket                                                                            |
-| The wire format is already written                    | `packages/agent/src/headless-contract.ts` fixes the request/event envelope, resume and fork, stop reasons, and one permission vocabulary that fails `ask` **closed** with no interactive approver                    |
-| Linux has an enforcing sandbox                        | bubblewrap via ASRT, [#1440](https://github.com/copse-dev/agent-pane/pull/1440)–[#1442](https://github.com/copse-dev/agent-pane/pull/1442); `isProjectSandboxEnabled()` is a capability question, not a platform one |
+| Fact                                                  | Evidence                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The agent runtime does not need Electron              | 30 of 476 non-test files in `src/main` name `electron`, 13 of those for types only, so 17 import it at runtime — and none are on the agent, tool, hook, sandbox or thread-store path. [`library-splits.md`](library-splits.md) counts the same 30 for its client/server row |
+| A headless host already runs the _whole product loop_ | `src/main/services/headless-agent-host.ts` builds the real registry, skills, MCP, hooks, supervisor and permission policy from an explicit profile, with no renderer and no IPC                                                                                             |
+| That claim is enforced, not asserted                  | `scripts/verify-agent-path-import.mts` bundles the registry, system prompt and headless host for plain Node and constructs them with `electron` poisoned; `scripts/module-boundaries.test.ts` holds `packages ↛ src`                                                        |
+| The main process already runs as plain Node           | The Tauri sidecar (`src/sidecar/`) runs `src/main/index.ts` byte-identical against an `electron` shim, with IPC over a loopback WebSocket                                                                                                                                   |
+| The wire format is already written                    | `packages/agent/src/headless-contract.ts` fixes the request/event envelope, resume and fork, stop reasons, and one permission vocabulary that fails `ask` **closed** with no interactive approver                                                                           |
+| Linux has an enforcing sandbox                        | bubblewrap via ASRT, [#1440](https://github.com/copse-dev/agent-pane/pull/1440)–[#1442](https://github.com/copse-dev/agent-pane/pull/1442); `isProjectSandboxEnabled()` is a capability question, not a platform one                                                        |
 
 Every seam a remote host would need to rebind is already an injection point:
 `AgentHost.emit`, the approval / ask-user / SSH-prompt / staged-diff handlers, the shell
@@ -125,6 +125,12 @@ do not already have a plan of their own.
 A Node entry that runs the headless host stack on a remote host: no Electron, no window, an
 explicit profile. The sidecar's `electron` shim already proves the bundle builds; the verify
 script already proves the import graph is clean.
+
+The mechanism is not this plan's to invent. [`library-splits.md`](library-splits.md) step 9
+([#2312](https://github.com/copse-dev/agent-pane/issues/2312)) owns the versioned API
+protocol and the `ShellHost` interface for the files that reach for `BrowserWindow`,
+`dialog` and `shell`, and the client/server split that follows from them. O0 is that split's
+first consumer, not a second attempt at it: if #2312 lands first, O0 is a packaging step.
 
 _Exit gate:_ a `copse-worker` bundle runs a real turn on a Linux host with bubblewrap active,
 with `electron` absent from the bundle, and emits a valid headless-contract event stream.
@@ -210,8 +216,12 @@ Move a live thread between desktop and worker, and between two workers, as a lea
 
 ## Relationship to existing plans
 
-This plan is the missing middle, not a new stack. It consumes
-`copse-cloud-workspaces.md` C7 (detached worker, lease, ownership transfer),
+This plan is the missing middle, not a new stack. Its parent is
+[`library-splits.md`](library-splits.md), which did the extraction that makes the question
+worth asking and already owns the client/server split
+([#2312](https://github.com/copse-dev/agent-pane/issues/2312)) that O0 consumes; this plan is
+the product capability that split unlocks, and says nothing about how the packages are cut.
+It also consumes `copse-cloud-workspaces.md` C7 (detached worker, lease, ownership transfer),
 `deferred-approvals.md` D2 (a review surface an absent user can reach),
 `unattended-runs.md` U2–U3 (the unattended mode and its budgets),
 `acp-session-continuity.md` (writer lease and durable session binding),
