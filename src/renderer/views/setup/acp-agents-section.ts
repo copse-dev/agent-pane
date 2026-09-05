@@ -1,7 +1,8 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AcpAgentConfig, AcpModeChoice, AcpModelChoice } from '@shared/types/acp.ts'
-import { acpModelChoiceLabel, parseAcpAgentConfigs } from '@shared/acp.ts'
+import { acpModelChoiceLabel, launchesAcpCatalogEntry, parseAcpAgentConfigs } from '@shared/acp.ts'
 import {
+  findAcpCatalogEntry,
   KNOWN_ACP_AGENTS,
   type DetectedAcpAgent,
   type KnownAcpAgent,
@@ -129,14 +130,25 @@ export function knownToConfig(known: KnownAcpAgent): AcpAgentConfig {
   }
 }
 
+/**
+ * Validation for the add/edit form. Besides shape and uniqueness, a draft may
+ * not borrow a catalog id it does not earn: the id predicted from a title like
+ * "Claude ACP" is `claude-acp`, and an agent saved under that id is treated as
+ * the plan-backed Claude adapter wherever the command scan cannot see through a
+ * wrapper — so the command must actually launch that catalog entry.
+ */
 export function validateDraft(
-  draft: { id: string; title: string; command: string },
+  draft: { id: string; title: string; command: string; args?: string[] },
   existingIds: readonly string[],
 ): string | null {
   if (!ID_RE.test(draft.id)) return 'Id must be a lowercase slug (a-z, 0-9, -).'
   if (existingIds.includes(draft.id)) return `An agent with id "${draft.id}" already exists.`
   if (!draft.title.trim()) return 'Title is required.'
   if (!draft.command.trim()) return 'Command is required.'
+  const catalog = findAcpCatalogEntry(draft.id)
+  if (catalog && !launchesAcpCatalogEntry(draft, catalog)) {
+    return `Id "${draft.id}" belongs to ${catalog.title} (${catalog.command}); a custom agent needs its own id.`
+  }
   return null
 }
 
@@ -468,7 +480,8 @@ export function createAcpAgentsSection(
     const submit = el('button', { type: 'button', class: 'provider-save' }, options.submitLabel)
     submit.addEventListener('click', () => {
       const id = idInput.value.trim()
-      const draft = { id, title: titleInput.value.trim(), command: commandInput.value.trim() }
+      const args = parseArgsText(argsArea.value)
+      const draft = { id, title: titleInput.value.trim(), command: commandInput.value.trim(), args }
       const existingIds = isEdit ? [] : agents.map((a) => a.id)
       const error = validateDraft(draft, existingIds)
       if (error) {
@@ -477,7 +490,6 @@ export function createAcpAgentsSection(
         return
       }
       const env = parseEnvText(envArea.value)
-      const args = parseArgsText(argsArea.value)
       const model = modelSelect.value.trim()
       const permissionMode = modeSelect.value.trim()
       options.onSubmit({

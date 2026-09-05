@@ -17,6 +17,9 @@ const api: ApiClient = {
     getNavigation: () => ipcRenderer.invoke('main-window:get-navigation'),
     setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>
       ipcRenderer.invoke('main-window:set-navigation', navigation),
+    getBrowserSession: () => ipcRenderer.invoke('main-window:get-browser-session'),
+    setBrowserSession: (session: import('@shared/types/main-window.ts').BrowserPaneSession) =>
+      ipcRenderer.invoke('main-window:set-browser-session', session),
   },
   workspace: {
     open: () => ipcRenderer.invoke('workspace:open'),
@@ -203,7 +206,17 @@ const api: ApiClient = {
       prompt: string,
       choice: 'automatic' | 'shared' | 'worktree',
       model?: string,
-    ) => ipcRenderer.invoke('agent:prepare-checkout', projectId, threadId, prompt, choice, model),
+      baseBranch?: string,
+    ) =>
+      ipcRenderer.invoke(
+        'agent:prepare-checkout',
+        projectId,
+        threadId,
+        prompt,
+        choice,
+        model,
+        baseBranch,
+      ),
     previewCheckout: (
       projectId: string,
       choice: 'automatic' | 'shared' | 'worktree',

@@ -41,16 +41,30 @@ function kebab(name: string): string {
 }
 
 /**
+ * Facade namespaces whose channels live under a differently named area, as a
+ * whole. Their members still follow the convention for the second half, so a
+ * new member needs no new exception — only the area mapping is unusual.
+ */
+const NAMESPACE_AREAS: Record<string, string> = {
+  windowState: 'main-window',
+}
+
+/**
  * The channel a facade member is expected to bind: `namespace:method`, or for
  * a subscription `namespace:event` with the handler's `on` prefix dropped,
  * both halves kebab-cased.
  */
 function conventionalChannel(ns: string, method: string, kind: string): string {
   const name = kind === 'subscribe' && /^on[A-Z]/.test(method) ? method.slice(2) : method
-  return `${kebab(ns)}:${kebab(name)}`
+  return `${NAMESPACE_AREAS[ns] ?? kebab(ns)}:${kebab(name)}`
 }
 
-/** Bindings still under a different area than their facade namespace. */
+/**
+ * Individual bindings under a different area than their facade namespace,
+ * where the rest of that namespace is conventional. Unlike NAMESPACE_AREAS
+ * these are per-member, so each is a candidate for a later move and the list
+ * may only shrink.
+ */
 const CHANNEL_NAME_EXCEPTIONS: Record<string, string> = {
   'browser.onPluginTabRequest': 'plugins:browser-tab-request',
   'closeConfirm.onRequest': 'app:close-confirm-request',
@@ -60,8 +74,6 @@ const CHANNEL_NAME_EXCEPTIONS: Record<string, string> = {
   'sshWorkspace.onConnectionChanged': 'ssh:connection-changed',
   'updatePrompt.onDevNotice': 'update:dev-notice',
   'updatePrompt.onRequest': 'update:prompt-request',
-  'windowState.getNavigation': 'main-window:get-navigation',
-  'windowState.setNavigation': 'main-window:set-navigation',
   'workspace.createNewProject': 'workspace:create-project',
   'workspace.unsandboxedProjectHooks': 'hooks:unsandboxed-project-hooks',
 }

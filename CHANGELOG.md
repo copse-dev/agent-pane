@@ -8,6 +8,13 @@ every published entry.
 
 ## Unreleased
 
+- The Browser pane now restores its tabs when Copse is reopened. A window
+  remembers the pages it had open and the canvas artefacts it was showing, and
+  brings them back on the next launch — a prototype the agent rendered
+  yesterday is re-read from the thread it belongs to, so it reflects any edits
+  made to its source in the meantime. A window that quit with the pane closed
+  reopens with it closed; the tabs are simply there when it is next opened.
+  Stored tabs record addresses and artefact titles, not page content.
 - The renderer ↔ main API surface (`ApiClient`) is now a versioned protocol:
   a channel manifest (`schemas/api-protocol.manifest.json`) is generated from
   the contract and the preload bindings (`pnpm run gen:api-protocol`) and the

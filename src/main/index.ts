@@ -139,6 +139,7 @@ import {
   lmStudioDownloadStatusSchema,
   lmStudioTestSchema,
   parseIpcArgs,
+  zGitBranchName,
   zProjectId,
   zThreadId,
   describeImagesSchema,
@@ -607,6 +608,7 @@ app
         promptArg: unknown,
         choiceArg: unknown,
         modelArg?: unknown,
+        baseBranchArg?: unknown,
       ) => {
         assertMainFrameSender(event, win)
         assertPrimaryMainWindow(event.sender)
@@ -621,12 +623,17 @@ app
         if (modelArg !== undefined && typeof modelArg !== 'string') {
           throw new Error('Invalid checkout model')
         }
+        // The same shape `git:checkoutBranch` accepts: the picker's selection
+        // ends up in `git switch` or `git worktree add` either way.
+        const baseBranch =
+          baseBranchArg === undefined ? undefined : parseIpcArgs(zGitBranchName, [baseBranchArg])
         return prepareThreadCheckout({
           projectId,
           threadId,
           prompt: promptArg,
           choice: choiceArg,
           ...(modelArg !== undefined ? { model: modelArg } : {}),
+          ...(baseBranch !== undefined ? { baseBranch } : {}),
         })
       },
     )

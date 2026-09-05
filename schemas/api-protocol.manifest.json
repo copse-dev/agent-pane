@@ -63,7 +63,7 @@
         "api": "agent.prepareCheckout",
         "args": [
           4,
-          5
+          6
         ]
       },
       "agent:preview-checkout": {
@@ -724,11 +724,25 @@
           2
         ]
       },
+      "main-window:get-browser-session": {
+        "api": "windowState.getBrowserSession",
+        "args": [
+          0,
+          0
+        ]
+      },
       "main-window:get-navigation": {
         "api": "windowState.getNavigation",
         "args": [
           0,
           0
+        ]
+      },
+      "main-window:set-browser-session": {
+        "api": "windowState.setBrowserSession",
+        "args": [
+          1,
+          1
         ]
       },
       "main-window:set-navigation": {
