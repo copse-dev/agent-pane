@@ -8780,6 +8780,101 @@ dialog.settings-overlay::backdrop {
   margin-top: var(--spacing-lg);
 }
 
+/* src/renderer/styles/global/create-pr-dialog.css */
+#create-pr-dialog {
+  max-width: 460px;
+}
+.create-pr-dialog h3 {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+.create-pr-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.create-pr-dialog-field + .create-pr-dialog-field {
+  margin-top: var(--spacing-md);
+}
+.create-pr-dialog-field label {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.create-pr-dialog-title-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--font-size-base);
+}
+.create-pr-dialog-title-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.create-pr-dialog-body-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  resize: vertical;
+}
+.create-pr-dialog-body-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.create-pr-dialog-body-input.is-pending::placeholder {
+  animation: create-pr-body-pending 1.4s ease-in-out infinite;
+}
+@keyframes create-pr-body-pending {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+.create-pr-dialog-draft {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.create-pr-dialog-draft-toggle {
+  margin-top: 1px;
+}
+.create-pr-dialog-draft-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.create-pr-dialog-draft-text label {
+  cursor: pointer;
+}
+.create-pr-dialog-draft-hint {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.create-pr-dialog-hint {
+  margin: var(--spacing-md) 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+.create-pr-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}
+
 /* src/renderer/styles/global/mcp.css */
 .mcp-server-list {
   display: flex;
@@ -9123,6 +9218,14 @@ dialog.settings-overlay::backdrop {
 }
 .follow-up-bubble-changes .follow-up-label {
   color: var(--text-muted);
+}
+.follow-up-bubble-create-pr {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--text);
+}
+.follow-up-bubble-create-pr:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+  border-color: var(--accent);
 }
 .follow-up-stat-add {
   color: #3dd68c;

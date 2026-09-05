@@ -21703,6 +21703,7 @@ This response is streamed through the real renderer event path.`
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
       suggestFollowUps: emptyArray,
+      suggestPrBody: () => resolved(null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler) => {
         chunkHandlers.add(handler);
@@ -22189,6 +22190,7 @@ This response is streamed through the real renderer event path.`
       prFileDiff: () => resolved(null),
       resolvePrUrl: () => resolved(null),
       agentPrLinks: emptyArray,
+      createPrForThread: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       rerunFailedRuns: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       approvePr: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
       markPrReady: () => resolved({ ok: false, message: "Unavailable in demo", backend: "mock" }),
@@ -256587,6 +256589,7 @@ var init_presets = __esm({
   "src/shared/follow-ups/presets.ts"() {
     DETERMINISTIC_FOLLOW_UP_IDS = {
       changes: "changes",
+      createPr: "create-pr",
       debugCi: "debug-ci",
       fixMergeConflicts: "fix-merge-conflicts",
       continuePlan: "continue-plan"
@@ -256630,6 +256633,163 @@ var init_changes_stat = __esm({
   "src/shared/follow-ups/changes-stat.ts"() {
     init_presets();
     DEFAULT_MAX_SUGGESTIONS = 3;
+  }
+});
+
+// src/renderer/views/create-pr-dialog.ts
+function ensureDialog4() {
+  if (dialogEl3) return dialogEl3;
+  dialogEl3 = el("dialog", { id: "create-pr-dialog", class: "create-pr-dialog" });
+  document.body.append(dialogEl3);
+  return dialogEl3;
+}
+function openCreatePrDialog(opts) {
+  const dialog2 = ensureDialog4();
+  clear(dialog2);
+  const titleInput = el("input", {
+    type: "text",
+    class: "create-pr-dialog-title-input",
+    id: "create-pr-dialog-title",
+    placeholder: "Summarise the change",
+    value: opts.suggestedTitle?.trim() ?? ""
+  });
+  titleInput.value = opts.suggestedTitle?.trim() ?? "";
+  const bodyInput = el("textarea", {
+    class: "create-pr-dialog-body-input",
+    id: "create-pr-dialog-body",
+    rows: "6",
+    placeholder: opts.bodyPromise ? "Writing a description\u2026" : "Optional"
+  });
+  bodyInput.value = "";
+  let bodyIsUsers = false;
+  bodyInput.addEventListener("input", () => {
+    bodyIsUsers = true;
+  });
+  if (opts.bodyPromise) {
+    bodyInput.classList.add("is-pending");
+    void opts.bodyPromise.then((suggested) => {
+      bodyInput.classList.remove("is-pending");
+      bodyInput.placeholder = "Optional";
+      if (bodyIsUsers || !suggested) return;
+      bodyInput.value = suggested;
+    }).catch(() => {
+      bodyInput.classList.remove("is-pending");
+      bodyInput.placeholder = "Optional";
+    });
+  }
+  const draftInput = el("input", {
+    type: "checkbox",
+    class: "create-pr-dialog-draft-input",
+    id: "create-pr-dialog-draft",
+    "aria-label": "Create as draft"
+  });
+  draftInput.checked = opts.draft ?? false;
+  const draftToggle = el(
+    "label",
+    { class: "toggle-switch create-pr-dialog-draft-toggle" },
+    draftInput,
+    el("span", { class: "toggle-switch-track", "aria-hidden": "true" })
+  );
+  const createBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary create-pr-dialog-create" },
+    "Create pull request"
+  );
+  const cancelBtn = el(
+    "button",
+    { type: "button", class: "ui-btn create-pr-dialog-cancel" },
+    "Cancel"
+  );
+  const syncCreateLabel = () => {
+    createBtn.textContent = draftInput.checked ? "Create draft PR" : "Create pull request";
+  };
+  syncCreateLabel();
+  draftInput.addEventListener("change", syncCreateLabel);
+  const syncCreateEnabled = () => {
+    createBtn.disabled = titleInput.value.trim().length === 0;
+  };
+  syncCreateEnabled();
+  titleInput.addEventListener("input", syncCreateEnabled);
+  dialog2.append(
+    el("h3", {}, "Create pull request"),
+    el(
+      "div",
+      { class: "create-pr-dialog-field" },
+      el("label", { for: "create-pr-dialog-title" }, "Title"),
+      titleInput
+    ),
+    el(
+      "div",
+      { class: "create-pr-dialog-field" },
+      el("label", { for: "create-pr-dialog-body" }, "Description"),
+      bodyInput
+    ),
+    el(
+      "div",
+      { class: "create-pr-dialog-draft" },
+      draftToggle,
+      el(
+        "div",
+        { class: "create-pr-dialog-draft-text" },
+        el("label", { for: "create-pr-dialog-draft" }, "Create as draft"),
+        el(
+          "span",
+          { class: "create-pr-dialog-draft-hint" },
+          "Opens without requesting review or notifying reviewers."
+        )
+      )
+    ),
+    // Says what this actually does, which is not everything: the create path
+    // opens the PR and nothing else. `gh pr create` needs the head branch
+    // already on the remote, so an unpushed branch is a failure the user should
+    // see coming rather than read in an error toast.
+    el(
+      "p",
+      { class: "field-hint create-pr-dialog-hint" },
+      opts.branch ? `Opens a pull request from ${opts.branch} into the default branch. Push it first if you have not.` : "Opens a pull request from this branch into the default branch. Push it first if you have not."
+    ),
+    el("div", { class: "create-pr-dialog-actions" }, cancelBtn, createBtn)
+  );
+  return new Promise((resolve2) => {
+    let settled = false;
+    const perOpen = new AbortController();
+    const finish = (value2) => {
+      if (settled) return;
+      settled = true;
+      perOpen.abort();
+      dialog2.close();
+      resolve2(value2);
+    };
+    dialog2.addEventListener(
+      "cancel",
+      () => {
+        finish(null);
+      },
+      { signal: perOpen.signal }
+    );
+    cancelBtn.addEventListener("click", () => {
+      finish(null);
+    });
+    createBtn.addEventListener("click", () => {
+      const title2 = titleInput.value.trim();
+      if (!title2) return;
+      finish({ title: title2, body: bodyInput.value.trim(), draft: draftInput.checked });
+    });
+    titleInput.addEventListener("keydown", (e4) => {
+      if (e4.key !== "Enter") return;
+      e4.preventDefault();
+      bodyInput.focus();
+    });
+    dialog2.showModal();
+    titleInput.focus();
+    titleInput.select();
+  });
+}
+var dialogEl3;
+var init_create_pr_dialog = __esm({
+  "src/renderer/views/create-pr-dialog.ts"() {
+    init_helpers();
+    dialogEl3 = null;
   }
 });
 
@@ -256747,17 +256907,17 @@ var init_approval_comparison_pickers = __esm({
 });
 
 // src/renderer/views/comparison-model-dialog.ts
-function ensureDialog4() {
-  if (dialogEl3) return dialogEl3;
-  dialogEl3 = el("dialog", {
+function ensureDialog5() {
+  if (dialogEl4) return dialogEl4;
+  dialogEl4 = el("dialog", {
     id: "comparison-model-dialog",
     class: "comparison-model-dialog"
   });
-  document.body.append(dialogEl3);
-  return dialogEl3;
+  document.body.append(dialogEl4);
+  return dialogEl4;
 }
 function openComparisonModelDialog(api3, models) {
-  const dialog2 = ensureDialog4();
+  const dialog2 = ensureDialog5();
   clear(dialog2);
   const pickers = createComparisonModelPickers(
     api3,
@@ -256815,12 +256975,12 @@ function openComparisonModelDialog(api3, models) {
     runBtn.focus();
   });
 }
-var dialogEl3;
+var dialogEl4;
 var init_comparison_model_dialog = __esm({
   "src/renderer/views/comparison-model-dialog.ts"() {
     init_helpers();
     init_approval_comparison_pickers();
-    dialogEl3 = null;
+    dialogEl4 = null;
   }
 });
 
@@ -256843,6 +257003,47 @@ async function runComparisonFromBubble(store3, api3, threadId, onStarted) {
   onStarted();
   startComparison(store3, api3, threadId, picked);
 }
+async function createPrFromBubble(store3, api3, threadId, onConfirmed) {
+  const { activeProjectId } = store3.getState();
+  const thread = store3.getState().threads.find((t4) => t4.id === threadId);
+  if (!activeProjectId) return;
+  const exchange = lastExchange(store3, threadId);
+  const bodyPromise = exchange ? api3.agent.suggestPrBody(activeProjectId, threadId, JSON.stringify(exchange.context)).catch(() => null) : void 0;
+  const picked = await openCreatePrDialog({
+    suggestedTitle: thread?.title ?? "",
+    branch: thread?.gitBranch ?? null,
+    ...bodyPromise ? { bodyPromise } : {}
+  });
+  if (!picked) return;
+  onConfirmed();
+  const request = { title: picked.title, body: picked.body, draft: picked.draft };
+  const card2 = openPrCardInTranscript(store3, threadId, request);
+  try {
+    const result = await api3.gh.createPrForThread(activeProjectId, threadId, request);
+    settlePrCard(store3, card2, result.ok ? "done" : "error", result.message);
+    if (!result.ok)
+      showToast(`Could not open the pull request: ${result.message}`, { variant: "error" });
+  } catch (err2) {
+    settlePrCard(store3, card2, "error", err2 instanceof Error ? err2.message : String(err2));
+    showErrorToast("Could not open the pull request", err2);
+  }
+}
+function openPrCardInTranscript(store3, threadId, request) {
+  const messageId = addMessage(store3, threadId, "assistant");
+  const toolCallId = `create-pr-${messageId}`;
+  addToolCall(store3, messageId, {
+    id: toolCallId,
+    name: "gh_pr_create",
+    args: { title: request.title, draft: request.draft },
+    status: "running",
+    result: null
+  });
+  return { messageId, toolCallId };
+}
+function settlePrCard(store3, card2, status, message2) {
+  setMessageContent(store3, card2.messageId, message2);
+  updateToolCall(store3, card2.messageId, card2.toolCallId, { status, result: message2 });
+}
 function mountFollowUpSuggestions(store3, api3, onSelect) {
   const root4 = el("div", {
     class: "follow-up-suggestions",
@@ -256859,6 +257060,13 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
   let changesRefreshTimer = null;
   let displayedThreadId = null;
   const suggestionsByThread = /* @__PURE__ */ new Map();
+  const consumedThreads = /* @__PURE__ */ new Set();
+  function consumeSuggestions(threadId) {
+    consumedThreads.add(threadId);
+    suggestionsByThread.delete(threadId);
+    nextFetchToken(threadId);
+    if (store3.getState().activeThreadId === threadId) clearSuggestions();
+  }
   function clearSuggestions() {
     clear(root4);
     root4.hidden = true;
@@ -256895,6 +257103,7 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
       } else {
         btn.textContent = suggestion.label;
       }
+      if (suggestion.action === "create-pr") btn.classList.add("follow-up-bubble-create-pr");
       btn.addEventListener("click", () => {
         if (suggestion.action === "open-changes") {
           openChangesReviewer(store3);
@@ -256908,6 +257117,12 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
           void runComparisonFromBubble(store3, api3, sourceThreadId, clearSuggestions);
           return;
         }
+        if (suggestion.action === "create-pr") {
+          void createPrFromBubble(store3, api3, sourceThreadId, () => {
+            consumeSuggestions(sourceThreadId);
+          });
+          return;
+        }
         clearSuggestions();
         if (suggestion.prompt) onSelect(suggestion.prompt);
       });
@@ -256917,6 +257132,7 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
     displayedThreadId = threadId;
   }
   async function maybeFetchSuggestions(threadId) {
+    if (consumedThreads.has(threadId)) return;
     const exchange = lastExchange(store3, threadId);
     if (!exchange) {
       suggestionsByThread.delete(threadId);
@@ -256977,6 +257193,10 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
       clearSuggestions();
       return;
     }
+    if (consumedThreads.has(activeId)) {
+      clearSuggestions();
+      return;
+    }
     if (displayedThreadId === activeId) return;
     const exchange = lastExchange(store3, activeId);
     if (!exchange) {
@@ -256993,6 +257213,7 @@ function mountFollowUpSuggestions(store3, api3, onSelect) {
   const unsubs = [
     store3.on("thread_status_changed", (tid, status) => {
       if (status === "running") {
+        consumedThreads.delete(tid);
         suggestionsByThread.delete(tid);
         if (tid === store3.getState().activeThreadId) {
           nextFetchToken(tid);
@@ -257030,6 +257251,7 @@ var init_follow_up_suggestions = __esm({
   "src/renderer/views/follow-up-suggestions.ts"() {
     init_helpers();
     init_changes_stat();
+    init_create_pr_dialog();
     init_thread_helpers();
     init_last_exchange();
     init_comparison_model_dialog();
@@ -293238,10 +293460,10 @@ function openFileSearchDialog() {
   openImpl?.();
 }
 function closeFileSearchDialog() {
-  if (dialogEl4?.open) dialogEl4.close();
+  if (dialogEl5?.open) dialogEl5.close();
 }
 function isFileSearchDialogOpen() {
-  return !!dialogEl4?.open;
+  return !!dialogEl5?.open;
 }
 function mountFileSearchDialog(store3, api3) {
   const dialog2 = document.createElement("dialog");
@@ -293261,7 +293483,7 @@ function mountFileSearchDialog(store3, api3) {
   const shell3 = el("div", { class: "file-search-shell" }, input, list, empty3);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl4 = dialog2;
+  dialogEl5 = dialog2;
   let results = [];
   let selectedIdx = 0;
   let roadmapItems = [];
@@ -293411,7 +293633,7 @@ function mountFileSearchDialog(store3, api3) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl5, openImpl;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -293422,7 +293644,7 @@ var init_file_search_dialog = __esm({
     init_roadmap_plans_plugin();
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
-    dialogEl4 = null;
+    dialogEl5 = null;
     openImpl = null;
   }
 });
@@ -293445,14 +293667,14 @@ function keyLabel(token2, isMac2) {
   }
 }
 function openKeyboardShortcutsDialog() {
-  if (!dialogEl5 || dialogEl5.open) return;
-  dialogEl5.showModal();
+  if (!dialogEl6 || dialogEl6.open) return;
+  dialogEl6.showModal();
 }
 function closeKeyboardShortcutsDialog() {
-  if (dialogEl5?.open) dialogEl5.close();
+  if (dialogEl6?.open) dialogEl6.close();
 }
 function isKeyboardShortcutsDialogOpen() {
-  return !!dialogEl5?.open;
+  return !!dialogEl6?.open;
 }
 function mountKeyboardShortcutsDialog() {
   const dialog2 = document.createElement("dialog");
@@ -293488,12 +293710,12 @@ function mountKeyboardShortcutsDialog() {
   clear(dialog2);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl5 = dialog2;
+  dialogEl6 = dialog2;
   dialog2.addEventListener("mousedown", (e4) => {
     if (e4.target === dialog2) closeKeyboardShortcutsDialog();
   });
 }
-var SECTIONS, dialogEl5;
+var SECTIONS, dialogEl6;
 var init_keyboard_shortcuts_dialog = __esm({
   "src/renderer/views/keyboard-shortcuts-dialog.ts"() {
     init_helpers();
@@ -293535,7 +293757,7 @@ var init_keyboard_shortcuts_dialog = __esm({
         ]
       }
     ];
-    dialogEl5 = null;
+    dialogEl6 = null;
   }
 });
 
@@ -293799,10 +294021,10 @@ function openCommandPalette() {
   openImpl3?.();
 }
 function closeCommandPalette() {
-  if (dialogEl6?.open) dialogEl6.close();
+  if (dialogEl7?.open) dialogEl7.close();
 }
 function isCommandPaletteOpen() {
-  return !!dialogEl6?.open;
+  return !!dialogEl7?.open;
 }
 function mountCommandPalette(store3, api3) {
   const dialog2 = document.createElement("dialog");
@@ -293822,7 +294044,7 @@ function mountCommandPalette(store3, api3) {
   const shell3 = el("div", { class: "command-palette-shell" }, input, list, empty3);
   dialog2.append(shell3);
   document.body.append(dialog2);
-  dialogEl6 = dialog2;
+  dialogEl7 = dialog2;
   let entries2 = [];
   let selectedIdx = 0;
   let threadHits = [];
@@ -294034,7 +294256,7 @@ function mountCommandPalette(store3, api3) {
     void loadThreads2();
   };
 }
-var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl6, openImpl3;
+var PANEL_ITEMS, THREAD_LIMIT, PROJECT_LIMIT, dialogEl7, openImpl3;
 var init_command_palette = __esm({
   "src/renderer/views/command-palette.ts"() {
     init_helpers();
@@ -294057,7 +294279,7 @@ var init_command_palette = __esm({
     ];
     THREAD_LIMIT = 25;
     PROJECT_LIMIT = 25;
-    dialogEl6 = null;
+    dialogEl7 = null;
     openImpl3 = null;
   }
 });
