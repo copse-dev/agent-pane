@@ -64,6 +64,25 @@ The in-memory grant disappears on restart. The decision record does not: an answ
 `decision` spine event at `scope: external-read`, including the paths and whether the grant was
 remembered. Each later allowed command records a verdict sourced to `read-outside-grant`.
 
+## Native commit signing
+
+Copse's native `git_commit` tool honours the repository's Git signing configuration while keeping
+the commit subprocess inside the project sandbox. On macOS, Settings › Permissions offers an
+off-by-default grant that lets only that commit subprocess connect to the single Unix socket named
+by `SSH_AUTH_SOCK`. The path must be absolute, normalised, and a socket at the time of use. Internet
+access remains denied.
+
+The grant is explicit because ssh-agent has no commit-only operation: Git hooks inherit the commit
+sandbox and can ask the agent to use any loaded key. Recommend `ssh-add -c` when enabling it. Linux
+does not receive the grant because seccomp cannot restrict Unix sockets by path; Windows has no
+project sandbox.
+
+When `user.signingKey` names a private-key path, Copse reads only its non-symlink `.pub` sibling
+in the trusted main process and passes the public identity to Git as an inline `key::` value. The
+sandbox never gains read access to the private key or the `.ssh` directory. A small pinned patch to
+`@anthropic-ai/sandbox-runtime` makes its documented per-spawn `allowUnixSockets` option reach the
+macOS seatbelt profile; remove that patch once upstream ships the equivalent fix.
+
 ## What an approval prompt says
 
 Classifier reasons are **identifiers, not copy**. The regex pass and the token pass share them

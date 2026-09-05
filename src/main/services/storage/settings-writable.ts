@@ -292,6 +292,12 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // so a working Cloud Agent selection is never redirected behind the user's
   // back. Off means the turn falls back to a local chat model instead.
   preferAcpOverCloudAgent: z.boolean(),
+  // Let Copse's native git_commit subprocess reach the one macOS ssh-agent
+  // socket named by SSH_AUTH_SOCK. Off by default: the socket can use every key
+  // loaded into the agent, and Git hooks inherit the commit process's sandbox.
+  // The private key remains unreadable; git-commit-signing.ts supplies only its
+  // public identity when the configured signingKey names the private-key path.
+  gitCommitSshAgentSocketAccess: z.boolean(),
   // External ACP agents Copse drives as a client (model value `acp:<id>`).
   registeredAcpAgents: registeredAcpAgentsSchema,
   browserToolsEnabled: z.boolean(),

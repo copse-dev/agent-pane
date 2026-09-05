@@ -4,11 +4,16 @@ import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
 import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
-import { runCommand, type CommandResult } from '../exec/command-runner.ts'
+import { runCommand, type CommandResult, type RunCommandOptions } from '../exec/command-runner.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
 import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
+import {
+  gitCommitSigningSandboxOverlay,
+  resolveInlineSshPublicSigningKey,
+  resolveSshAgentSocketAllowList,
+} from '../../project-sandbox/git-commit-signing.ts'
 import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { isGitAvailableForTarget } from '../tool-availability.ts'
@@ -19,6 +24,7 @@ import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { imageMimeType } from '@shared/fs/image-path.ts'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
+import { getSetting } from '../storage/settings.ts'
 import {
   DEFAULT_GIT_BRANCH,
   type GitBranchInfo,
@@ -53,14 +59,17 @@ function unreachableRootResult(root: string): CommandResult {
   }
 }
 
+type RunGitOptions = Pick<RunCommandOptions, 'env' | 'sandboxConfig'>
+
 async function runGit(
   args: string[],
   root: string | null = getAgentExecutionRoot(),
+  options: RunGitOptions = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const cwd = root
   if (!cwd) return { stdout: '', stderr: 'No workspace open.', code: 1 }
   if (!(await isRootReachable(cwd))) return unreachableRootResult(cwd)
-  return runCommand('git', args, { cwd })
+  return runCommand('git', args, { cwd, ...options })
 }
 
 async function runGitRead(
@@ -1443,6 +1452,57 @@ export async function getGitDiffText(
   return combined || '(no output)'
 }
 
+export interface GitCommitSigningInvocation {
+  gitConfigArgs: string[]
+  runOptions: RunGitOptions
+}
+
+/**
+ * Prepare the one native commit spawn that is allowed to reach ssh-agent.
+ *
+ * The opt-in alone is insufficient: the repository must actually request SSH
+ * commit signing and the environment must name a real socket. A configured
+ * private-key path is replaced with the sibling public identity, passed inline
+ * to Git, so neither Git nor its hooks gain read access to the private key.
+ */
+export async function resolveGitCommitSigningInvocation(
+  root: string,
+): Promise<GitCommitSigningInvocation | null> {
+  if (isActiveSshWorkspace()) return null
+  if (!getSetting<boolean>('gitCommitSshAgentSocketAccess', false)) return null
+
+  const signingEnabled = await runGitRead(['config', '--bool', '--get', 'commit.gpgSign'], root)
+  if (signingEnabled.code !== 0 || signingEnabled.stdout.trim() !== 'true') return null
+
+  const format = await runGitRead(['config', '--get', 'gpg.format'], root)
+  if (format.code !== 0 || format.stdout.trim().toLowerCase() !== 'ssh') return null
+
+  const childEnv = envForRendererChildProcess()
+  const socketPaths = await resolveSshAgentSocketAllowList({
+    enabled: true,
+    authSock: childEnv['SSH_AUTH_SOCK'],
+    platform: process.platform,
+  })
+  if (socketPaths.length === 0) return null
+
+  const gitConfigArgs: string[] = []
+  const rawKey = await runGitRead(['config', '--get', 'user.signingKey'], root)
+  if (rawKey.code === 0 && !rawKey.stdout.trim().startsWith('key::')) {
+    const pathKey = await runGitRead(['config', '--path', '--get', 'user.signingKey'], root)
+    if (pathKey.code === 0) {
+      const inlineKey = await resolveInlineSshPublicSigningKey(pathKey.stdout.trim())
+      if (inlineKey) gitConfigArgs.push('-c', `user.signingKey=${inlineKey}`)
+    }
+  }
+
+  return {
+    gitConfigArgs,
+    runOptions: {
+      sandboxConfig: gitCommitSigningSandboxOverlay(root, socketPaths),
+    },
+  }
+}
+
 /**
  * Create a commit, appending the Copse attribution trailer (co-author + the
  * `models` that ran in this thread). Optionally stages all changes first.
@@ -1463,7 +1523,9 @@ export async function commitWithAttribution(
   }
 
   const fullMessage = appendCommitAttribution(message, models)
-  const { stdout, stderr, code } = await runGit(['commit', '-m', fullMessage], root)
+  const signing = await resolveGitCommitSigningInvocation(root)
+  const commitArgs = [...(signing?.gitConfigArgs ?? []), 'commit', '-m', fullMessage]
+  const { stdout, stderr, code } = await runGit(commitArgs, root, signing?.runOptions)
   if (code !== 0) {
     // `git commit` reports "nothing to commit" and similar on stdout, not stderr.
     return stderr.trim() || stdout.trim() || `git commit exited with code ${String(code)}`
