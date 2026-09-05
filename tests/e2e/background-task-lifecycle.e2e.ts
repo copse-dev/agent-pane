@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import type { MockScriptStep } from '../../src/shared/llm/mock-script.ts'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
@@ -68,7 +68,7 @@ describe('session-scoped background task lifecycle', function () {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-background-task-lifecycle', {
+    seedEmptyProject(seedStableWorkspace(), 'e2e-background-task-lifecycle', {
       subagentsEnabled: false,
     })
     await browser.reloadSession()

@@ -331,6 +331,68 @@ export function seedE2eViewport(
   writeSettings({ windowBounds: bounds, ...settings })
 }
 
+/**
+ * Fixed-path workspace for specs that need *a* project but not *this* repo.
+ *
+ * `seedEmptyProject(process.cwd(), …)` opens the checkout itself, and the
+ * checkout leaks into captures in ways that change per run: the Changes rail
+ * lists whatever CI has re-rendered under `tests/e2e/screenshots/`, the
+ * `@`-mention picker searches the real file tree, and the pre-send context
+ * estimate (the wheel beside the model picker) counts the real `AGENTS.md` and
+ * skills, so an unrelated docs edit nudges every wheel from 10% to 11%.
+ *
+ * This tree lives under the OS temp dir with a fixed leaf name (the titlebar
+ * shows the folder name), carries a handful of plain files so pickers and the
+ * explorer have something to show, and is a git repository with one commit made
+ * at a fixed date so its status is clean and its history identical everywhere.
+ * It is rebuilt from scratch on every call: a previous spec's shell may have
+ * written into it.
+ */
+export const E2E_WORKSPACE_ROOT = join(tmpdir(), 'copse-e2e', 'workspace')
+
+const E2E_WORKSPACE_FILES: Record<string, string> = {
+  'README.md': '# Workspace\n\nA small fixed project for Copse end-to-end specs.\n',
+  'src/index.ts': "import { greet } from './greeting.ts'\n\nconsole.log(greet('world'))\n",
+  'src/greeting.ts':
+    'export function greet(name: string): string {\n  return `Hello, ${name}!`\n}\n',
+  'scripts/shell-check.ts': "console.log('shell check ok')\n",
+  'docs/shell-permissions.md': '# Shell permissions\n\nCommands prompt before running.\n',
+  'docs/notes.md': '# Notes\n\n- keep fixtures small\n',
+}
+
+/** Commit date for the fixture's one commit; fixed so the hash never moves. */
+const E2E_WORKSPACE_COMMIT_DATE = '2026-01-01T00:00:00Z'
+
+export function seedStableWorkspace(options: { files?: Record<string, string> } = {}): string {
+  const root = E2E_WORKSPACE_ROOT
+  rmSync(root, { recursive: true, force: true })
+  mkdirSync(root, { recursive: true })
+  for (const [relative, content] of Object.entries({ ...E2E_WORKSPACE_FILES, ...options.files })) {
+    const target = join(root, relative)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, content, 'utf8')
+  }
+  const git = (...args: string[]) =>
+    execFileSync('git', args, {
+      cwd: root,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: E2E_WORKSPACE_COMMIT_DATE,
+        GIT_COMMITTER_DATE: E2E_WORKSPACE_COMMIT_DATE,
+      },
+    })
+  git('init', '-q')
+  git('config', 'user.email', 'e2e@example.com')
+  git('config', 'user.name', 'E2E')
+  git('config', 'commit.gpgsign', 'false')
+  git('config', 'init.defaultBranch', 'main')
+  git('add', '.')
+  git('commit', '-q', '-m', 'baseline')
+  git('branch', '-M', 'main')
+  return root
+}
+
 /** Workspace + pinned theme for the preload boot-theme e2e (#41). */
 export function seedThemeBootFixture(workspaceRoot: string, theme: 'light' | 'dark'): void {
   resetUserData()

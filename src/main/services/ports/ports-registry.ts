@@ -96,9 +96,24 @@ async function scanHostPortRows(port?: number): Promise<PortScanResult> {
 
 const coalescedHostScan = createPortScanCoalescer(scanHostPortRows)
 
+/**
+ * Under e2e the host is the CI runner, and its listeners (chromedriver, the
+ * Electron debug port, the `ss` probe itself) would otherwise render into every
+ * reference screenshot that shows the Terminal rail, with pids and ports that
+ * differ on each run. A spec that wants rows seeds them explicitly through
+ * `test:setPortRows`; every other spec sees "nothing listening", which hides the
+ * section. `tool` is non-null so the panel does not read this as "no scanner".
+ */
+const E2E_HOST_SCAN: PortScanResult = { rows: [], tool: 'e2e' }
+
+function hostScanIsSuppressed(): boolean {
+  return process.env['COPSE_E2E'] === '1'
+}
+
 /** Scan the host and assemble the panel's rows. Concurrent callers share one scan. */
 export function listPortRows(): Promise<PortScanResult> {
   if (seededRows) return Promise.resolve(seededRows)
+  if (hostScanIsSuppressed()) return Promise.resolve(E2E_HOST_SCAN)
   return coalescedHostScan()
 }
 

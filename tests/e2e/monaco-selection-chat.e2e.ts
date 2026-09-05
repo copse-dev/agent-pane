@@ -1,9 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
-import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedE2eViewport,
+  seedEmptyProject,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-monaco-selection-project'
@@ -49,16 +53,19 @@ async function dragSelectFirstMonacoLine(): Promise<void> {
 }
 
 describe('Monaco selection to chat attachment', () => {
-  let workspaceRoot = ''
-
   before(async function () {
     this.timeout(120_000)
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-monaco-selection-'))
-    writeFileSync(
-      join(workspaceRoot, SAMPLE_FILE),
-      ['Selected greeting from Monaco', 'Line two of the selected chat context', ''].join('\n'),
-      'utf8',
-    )
+    // A fixed workspace path: the titlebar renders the folder name, and a
+    // `mkdtemp` suffix there re-rendered the reference shot on every run.
+    const workspaceRoot = seedStableWorkspace({
+      files: {
+        [SAMPLE_FILE]: [
+          'Selected greeting from Monaco',
+          'Line two of the selected chat context',
+          '',
+        ].join('\n'),
+      },
+    })
     mkdirSync(join(process.cwd(), 'tests/e2e/screenshots'), { recursive: true })
     resetUserData()
     seedE2eViewport()
@@ -70,7 +77,6 @@ describe('Monaco selection to chat attachment', () => {
 
   after(() => {
     resetUserData()
-    if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
   it('adds the selected Monaco text to the current chat with Cmd/Ctrl+L', async () => {
