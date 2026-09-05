@@ -97,7 +97,8 @@ describe('cross-message tool runs (component)', () => {
       'Used 18 tools · 5 steps',
     )
 
-    // Every member message keeps its bubble but contributes a step, in order.
+    // Every member message keeps its DOM identity for event routing, contributes
+    // a step, and is marked for visual collapse once the anchor owns its cards.
     const steps = run.querySelectorAll<HTMLElement>('.tool-card-step')
     assert.deepEqual(
       [...steps].map((step) => step.dataset['stepMessageId']),
@@ -110,6 +111,8 @@ describe('cross-message tool runs (component)', () => {
         null,
         `${id} must not render its own cards`,
       )
+      assert.equal(memberEl.classList.contains('msg-tool-run-member'), true)
+      assert.equal(memberEl.hidden, true, `${id} must not leave an empty transcript row`)
     }
   })
 
@@ -209,6 +212,10 @@ describe('cross-message tool runs (component)', () => {
     // The continuation heuristic can resume text on a bubble that so far
     // carried only tools. Prose is a run boundary, so the member leaves.
     setMessageContent(store, member, 'Actually, the oracle found nothing.')
+
+    const restoredMember = qsRequired(host, `[data-message-id="${member}"]`)
+    assert.equal(restoredMember.classList.contains('msg-tool-run-member'), false)
+    assert.equal(restoredMember.hidden, false, 'visible prose restores the member bubble')
 
     const runs = [...host.querySelectorAll<HTMLElement>('.tool-card-rollup')]
     assert.deepEqual(

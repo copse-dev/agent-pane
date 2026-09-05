@@ -329,6 +329,24 @@ function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null
 }
 
+/**
+ * An absorbed run member stays addressable for streaming updates, but should
+ * not contribute an empty transcript row. Inspect the live DOM rather than the
+ * message shape so independently visible content added later restores it.
+ */
+function syncToolRunMemberVisibility(msgEl: HTMLElement): void {
+  if (!msgEl.classList.contains('msg-tool-run-member')) {
+    msgEl.hidden = false
+    return
+  }
+  const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
+  const hasVisibleBodyChild = [...(body?.children ?? [])].some(
+    (child) => !child.classList.contains('message-text') || child.hasChildNodes(),
+  )
+  const hasVisibleDirectChild = [...msgEl.children].some((child) => child !== body)
+  msgEl.hidden = !hasVisibleBodyChild && !hasVisibleDirectChild
+}
+
 function syncMessageCanvasPreviews(msgEl: HTMLElement, msg: Message, threadId: string): void {
   const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
   if (!body) return
@@ -338,8 +356,10 @@ function syncMessageCanvasPreviews(msgEl: HTMLElement, msg: Message, threadId: s
     const card = createCanvasPreviewCard(threadId, artefact.title)
     return card ? [card] : []
   })
-  if (cards.length === 0) return
-  body.append(el('div', { class: 'message-canvas-previews' }, ...cards))
+  if (cards.length > 0) {
+    body.append(el('div', { class: 'message-canvas-previews' }, ...cards))
+  }
+  syncToolRunMemberVisibility(msgEl)
 }
 
 function createIndividualToolCard(
@@ -2184,6 +2204,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         ? opts.run
         : undefined
     const isRunMember = run !== undefined && run.anchorId !== msgId
+    // Keep the persisted message node for stable event routing and backfill, but
+    // let CSS collapse it when the run absorbed everything it could show. The
+    // selector deliberately checks the live DOM, so a retained subagent card or
+    // a canvas preview added later makes the bubble visible again automatically.
+    msgEl.classList.toggle('msg-tool-run-member', isRunMember)
 
     const nestReasoning =
       run === undefined && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls)
@@ -2290,6 +2315,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         msgEl.insertBefore(node, msgEl.children[base + i] ?? null)
       }
     }
+    syncToolRunMemberVisibility(msgEl)
   }
 
   /**
@@ -2641,8 +2667,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // `querySelector` per assistant message: this pass runs on every rebuild and
     // every backfill chunk, and a `querySelector` for a message that isn't
     // rendered still walks the whole list.
-    const rendered = new Map<string, Element>()
-    list.querySelectorAll('[data-message-id]').forEach((node) => {
+    const rendered = new Map<string, HTMLElement>()
+    list.querySelectorAll<HTMLElement>('[data-message-id]').forEach((node) => {
       const id = node.getAttribute('data-message-id')
       // First match wins, matching the document-order result `querySelector` gave.
       if (id !== null && !rendered.has(id)) rendered.set(id, node)
@@ -2662,6 +2688,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       } else {
         existing?.remove()
       }
+      syncToolRunMemberVisibility(msgEl)
       prevLabel = text
     }
   }
