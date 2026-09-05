@@ -137,13 +137,13 @@ deferred, what was committed and on which ref, what the guest could reach, the c
 the teardown). A banner over the composer mirrors the phase while the dialog is closed, and a
 toast announces the end of the run.
 
-The renderer sends a prompt, a model id and two numbers over `container:runThread`; the main
+The renderer sends a prompt, a model id and two numbers over `container:run-thread`; the main
 process (`container-runtime/container-run-service.ts`) resolves the checkout, the provider
 (`providers/container-provider.ts`: local servers, OpenAI, OpenRouter and extra providers
 through the guest's OpenAI-compatible client; Anthropic through the product's own resolver
 inside the guest) and the key, builds the worker image on first use from the bundle the
 build emits and the sandbox runtime copied from the app's own `node_modules`, and pushes
-`ContainerRunProgress` snapshots over `container:runChanged`. Arming is written to the
+`ContainerRunProgress` snapshots over `container:run-changed`. Arming is written to the
 thread's decision log under `mode-arming`, like Guarded YOLO, and a thread can have only one
 live run.
 
