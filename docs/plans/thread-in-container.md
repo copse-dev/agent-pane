@@ -96,6 +96,11 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   tokens and the host's environment never enter. A secret canary exported on the host is
   checked against every host-owned surface of the run and against the guest's reported
   environment key names.
+- **The thread's checkout, not the project's.** A thread with an isolated worktree has its
+  own branch and its own uncommitted edits, so the service resolves the checkout through
+  `resolveThreadExecutionContext` (the cold resolver the supervisor also uses) and refuses a
+  root git cannot snapshot. A broken worktree fails the arming rather than silently falling
+  back to the project root, and the record names which checkout ran.
 - **Carry-in and carry-out are git bundles.** The host snapshots the working tree (staged,
   unstaged, untracked; `.gitignore` respected) into a commit without moving HEAD, bundles it
   under a run-scoped ref, and the guest fetches it onto a `work` branch. At the end the
@@ -104,7 +109,18 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   pushed by the run.
 - **Budgets end runs; modals do not.** Wall-clock and token ceilings are mandatory at arm
   time. The worker aborts its own loop at the ceiling and records the reason; the host stops
-  the container at the wall-clock budget as a backstop. Teardown is idempotent.
+  the container at the wall-clock budget as a backstop. Neither Docker call is trusted to
+  settle: the stop has its own timeout and a bounded grace period settles the wait either
+  way, so a hung daemon cannot strand a run short of its cleanup. Teardown is idempotent.
+- **A run is only finished when it is actually finished.** The service judges the record
+  rather than the guest's word: commits that were produced but could not be fetched, a
+  container that would not stop or reap, and a leaked secret canary all keep a run out of
+  the `finished` phase and are surfaced as the failure reason or a warning. The UI never
+  says commits are back when no ref was fetched.
+- **The image is keyed to the worker build.** Reuse is decided by a fingerprint of the guest
+  bundle, the Dockerfile, the entrypoint, the uid and the sandbox-runtime version, stored as
+  an image label — so an app upgrade rebuilds instead of silently running the previous
+  guest's security behaviour.
 - **Every run leaves a record.** `record.json` carries the image and digest, the attestation,
   the egress log, the guest's result (stop reason, prompts attempted, deferrals, commits,
   containment actually achieved, tokens), the carry-out ref, the container exit code, the
@@ -274,6 +290,10 @@ Recorded because each cost time and will again.
 | Attestation            | unit        | Every shortfall (root, writable rootfs, caps, privileges, foreign mount) refuses the declaration             | `security/unattended-run.test.ts`                        |
 | Ledger                 | unit        | Arming implies deferral mode; mutually exclusive with Guarded YOLO both ways; budgets required               | `security/unattended-run.test.ts`                        |
 | Gate matrix            | unit        | Command class × containment tier × unattended → exact outcome, including the desktop-tier and not-armed rows | `security/unattended-run.test.ts`                        |
+| Deadline settlement    | unit        | A failed or hung `docker stop` with a still-pending wait still settles, and says why                         | `container-runtime/thread-container.test.ts`             |
+| Image freshness        | unit        | The fingerprint changes with the worker bundle and the base image                                            | `container-runtime/thread-container.test.ts`             |
+| Completion honesty     | unit        | Unfetched commits, failed teardown and a leaked canary are never a clean finish                              | `container-runtime/container-run-service.test.ts`        |
+| Thread checkout        | unit (git)  | A thread worktree with its own commits and edits is carried in, not the project checkout                     | `container-runtime/container-run-service.test.ts`        |
 | Docker argv and record | unit        | The flags the attestation claims are the flags used; only the run dir is mounted; key passed by name         | `container-runtime/thread-container.test.ts`             |
 | Carry-in / carry-out   | unit (git)  | Dirty tree snapshots without moving HEAD; guest commits round-trip to `refs/copse/runs/<id>`                 | `container-runtime/thread-container.test.ts`             |
 | End to end             | integration | The eight properties listed above, against a real daemon, opt-in via `COPSE_THREAD_CONTAINER_E2E=1`          | `container-runtime/thread-container.integration.test.ts` |

@@ -98,9 +98,10 @@ export function mountContainerRunControl(
     }
     element.dataset['phase'] = run.phase
     const result = run.record?.result
+    const fetched = run.record?.carryOut.ref !== null && run.record?.carryOut.ref !== undefined
     const summary =
       run.phase === 'finished' && result
-        ? `${String(result.commits.length)} commit${result.commits.length === 1 ? '' : 's'} back, ${String(result.deferrals.length)} waiting for review.`
+        ? `${String(result.commits.length)} commit${result.commits.length === 1 ? '' : 's'} ${fetched ? 'back' : 'made but NOT fetched'}, ${String(result.deferrals.length)} waiting for review.`
         : run.phase === 'failed'
           ? (run.error ?? 'The run did not complete.')
           : `${run.model} · reaches only ${run.egressAllowlist.join(', ')}.`
@@ -217,6 +218,15 @@ export function mountContainerRunControl(
       el('div', { class: 'container-run-row' }, el('dt', {}, label), el('dd', {}, value))
     rows.push(row('Phase', PHASE_LABEL[run.phase]))
     rows.push(row('Model', run.model))
+    if (run.checkout) {
+      rows.push(
+        row(
+          'Checkout',
+          (run.checkout.mode === 'worktree' ? 'thread worktree' : 'project checkout') +
+            (run.checkout.branch ? ` (${run.checkout.branch})` : ''),
+        ),
+      )
+    }
     rows.push(row('Reachable origins', run.egressAllowlist.join(', ') || 'none'))
     rows.push(
       row(
@@ -247,7 +257,15 @@ export function mountContainerRunControl(
           `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`,
         ),
       )
-      rows.push(row('Commits', run.record?.carryOutRef ?? 'none'))
+      rows.push(
+        row(
+          'Commits',
+          run.record?.carryOut.ref ??
+            (run.record?.carryOut.expected === true
+              ? `NOT FETCHED — ${run.record.carryOut.error ?? 'unknown error'}`
+              : 'none'),
+        ),
+      )
     }
     if (run.error) rows.push(row('Error', run.error))
 
@@ -255,6 +273,16 @@ export function mountContainerRunControl(
       el('h2', { class: 'container-run-title' }, 'Unattended container run'),
       el('dl', { class: 'container-run-summary' }, ...rows),
     ]
+    if (run.warnings.length > 0) {
+      sections.push(
+        el(
+          'section',
+          { class: 'container-run-section container-run-warnings' },
+          el('h3', {}, 'Needs your attention'),
+          el('ul', {}, ...run.warnings.map((warning) => el('li', {}, warning))),
+        ),
+      )
+    }
     if (result && result.deferrals.length > 0) {
       sections.push(
         el(
@@ -281,7 +309,13 @@ export function mountContainerRunControl(
         el(
           'section',
           { class: 'container-run-section container-run-commits' },
-          el('h3', {}, `Commits on ${run.record?.carryOutRef ?? 'the run ref'}`),
+          el(
+            'h3',
+            {},
+            run.record?.carryOut.ref === null || run.record?.carryOut.ref === undefined
+              ? 'Commits the guest made (not fetched)'
+              : `Commits on ${run.record.carryOut.ref}`,
+          ),
           el('ul', {}, ...result.commits.map((line) => el('li', { class: 'mono' }, line))),
         ),
       )

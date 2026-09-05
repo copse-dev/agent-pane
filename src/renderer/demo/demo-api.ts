@@ -314,6 +314,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           model: request.model,
           egressAllowlist: ['api.anthropic.com:443'],
           log: ['[thread-container] starting copse-run-demo from copse-worker:local'],
+          warnings: [],
+          checkout: { root: '/repo', mode: 'shared' as const, branch: 'main' },
           record: null,
           error: null,
         }),

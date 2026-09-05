@@ -5,8 +5,12 @@ import type {
   ContainerRunRequest,
 } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { execFileSync } from 'node:child_process'
 import { storageGet } from '../storage/storage.ts'
-import { getProjectRoot } from '../workspace.ts'
+import {
+  resolveThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../thread-execution-context.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
 import { resolveContainerProvider } from '../providers/container-provider.ts'
 import {
@@ -14,9 +18,11 @@ import {
   newRuntimeId,
   runThreadInContainer,
   WORKER_IMAGE,
-  workerImageExists,
+  workerBuildFingerprint,
+  workerImageFingerprint,
   type ThreadContainerRequest,
 } from './thread-container.ts'
+import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 
 /**
  * One unattended container run per thread, driven from the UI
@@ -35,13 +41,39 @@ const LOG_TAIL = 60
 interface RunDependencies {
   run: typeof runThreadInContainer
   ensureImage: () => Promise<void>
+  /**
+   * The checkout this thread actually works in. Injected like the supervisor's
+   * so a test can describe a worktree without building one.
+   */
+  resolveContext: (projectId: string, threadId: string) => Promise<ThreadExecutionContext>
 }
 
 const productionDependencies: RunDependencies = {
   run: runThreadInContainer,
+  // Rebuild whenever the shipped worker differs from the one the existing
+  // image was built from. Reusing on tag alone would keep an app upgrade
+  // running the previous guest — and its previous security behaviour.
   ensureImage: async (): Promise<void> => {
-    if (!(await workerImageExists(WORKER_IMAGE))) await buildWorkerImage({ image: WORKER_IMAGE })
+    const wanted = workerBuildFingerprint()
+    if ((await workerImageFingerprint(WORKER_IMAGE)) === wanted) return
+    await buildWorkerImage({ image: WORKER_IMAGE })
   },
+  resolveContext: resolveThreadExecutionContext,
+}
+
+/**
+ * Refuse a root git would not snapshot, with a readable reason. Without this
+ * the failure surfaces mid-run as a raw `git rev-parse` error from carry-in,
+ * after the image build and the container start.
+ */
+function assertGitCheckout(root: string, describe: string): void {
+  try {
+    execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: root, stdio: 'ignore' })
+  } catch {
+    throw new Error(
+      `${describe} (${root}) is not a git checkout with a commit; a container run carries the work in as a git snapshot`,
+    )
+  }
 }
 
 function projectIsRemote(projectId: string): boolean {
@@ -85,12 +117,10 @@ export class ContainerRunService {
    * that already has a live run, a remote (SSH) project, and a model the
    * container cannot reach — all decided before Docker is touched.
    */
-  start(request: ContainerRunRequest): ContainerRunProgress {
+  async start(request: ContainerRunRequest): Promise<ContainerRunProgress> {
     if (this.isActive(request.threadId)) {
       throw new Error('This thread already has a container run in progress')
     }
-    const workspace = getProjectRoot(request.projectId)
-    if (!workspace) throw new Error('The project has no local checkout to carry into a container')
     if (projectIsRemote(request.projectId)) {
       throw new Error('Container runs need a local checkout; this project lives on an SSH host')
     }
@@ -109,10 +139,39 @@ export class ContainerRunService {
       model,
       egressAllowlist,
       log: [],
+      warnings: [],
+      checkout: null,
       record: null,
       error: null,
     }
+    // Claim the thread's slot before the first await, so two clicks cannot both
+    // pass the live-run check and start two containers on one checkout.
     this.runs.set(request.threadId, progress)
+
+    let checkout: ThreadExecutionContext
+    try {
+      // The thread — not the project — owns the checkout the run must carry in:
+      // a thread in an isolated worktree has its own branch and its own
+      // uncommitted edits, and snapshotting the project root would silently run
+      // the wrong tree. The resolver validates the worktree and throws rather
+      // than falling back, which is exactly the behaviour wanted here.
+      checkout = await this.deps.resolveContext(request.projectId, request.threadId)
+      assertGitCheckout(
+        checkout.root,
+        checkout.checkoutMode === 'worktree' ? "The thread's worktree" : 'The project checkout',
+      )
+    } catch (error) {
+      this.runs.delete(request.threadId)
+      throw error
+    }
+    this.update(progress, {
+      checkout: {
+        root: checkout.root,
+        mode: checkout.checkoutMode,
+        branch: checkout.branch,
+      },
+    })
+
     // The arming itself is a user decision worth a line in the durable log,
     // like enabling Guarded YOLO, so the thread's record shows who let a run
     // act without asking and under which budget.
@@ -124,6 +183,7 @@ export class ContainerRunService {
       scope: 'container',
       reasons: [
         `model ${model}`,
+        `checkout ${checkout.checkoutMode}${checkout.branch ? ` (${checkout.branch})` : ''}`,
         `egress ${egressAllowlist.join(', ')}`,
         `wall-clock ${String(Math.round(request.budgets.wallClockMs / 60_000))} min`,
         `tokens ${String(request.budgets.tokenCeiling)}`,
@@ -136,7 +196,7 @@ export class ContainerRunService {
     // A copy taken before the drive starts: the run mutates its own object as
     // it advances, and the caller wants the state it asked for.
     const first = snapshot(progress)
-    void this.drive(request, plan, workspace, progress)
+    void this.drive(request, plan, checkout.root, progress)
     return first
   }
 
@@ -182,11 +242,13 @@ export class ContainerRunService {
           process.env[keyEnv] = ''
         },
       })
+      const outcome = judgeRun(record)
       this.update(progress, {
-        phase: record.result && record.result.stopReason !== 'error' ? 'finished' : 'failed',
+        phase: outcome.failure === null ? 'finished' : 'failed',
         record,
         finishedAt: Date.now(),
-        error: record.result?.error ?? (record.result ? null : 'The guest wrote no result'),
+        error: outcome.failure,
+        warnings: outcome.warnings,
       })
     } catch (error) {
       this.update(progress, {
@@ -218,6 +280,47 @@ export class ContainerRunService {
 
 function snapshot(progress: ContainerRunProgress): ContainerRunProgress {
   return { ...progress, log: [...progress.log] }
+}
+
+/**
+ * Whether a finished run may be called finished, and what to say about it.
+ *
+ * A run is only clean when the guest wrote a result it did not itself call an
+ * error, the commits it produced were actually fetched, and the container was
+ * stopped and reaped. Anything else is a failure with a reason: the record can
+ * hold three commits and still be a run whose work never reached a ref the user
+ * can review, or one that left a container running. Cleanup problems that do
+ * not affect the work are reported as warnings alongside.
+ */
+export function judgeRun(record: ThreadContainerRecord): {
+  failure: string | null
+  warnings: string[]
+} {
+  const warnings: string[] = []
+  if (record.cleanupError !== null) warnings.push(record.cleanupError)
+  if (record.teardown === 'failed') {
+    warnings.push('The container could not be removed; remove it by hand before the next run.')
+  }
+  if (record.secretCanary.present) {
+    warnings.push(`Secret canary leaked into the run: ${record.secretCanary.detail}`)
+  }
+
+  if (!record.result) return { failure: 'The guest wrote no result', warnings }
+  if (record.result.stopReason === 'error') {
+    return { failure: record.result.error ?? 'The run ended with an error', warnings }
+  }
+  if (record.carryOut.expected && record.carryOut.ref === null) {
+    return {
+      failure: `The guest's commits could not be fetched: ${record.carryOut.error ?? 'unknown error'}`,
+      warnings,
+    }
+  }
+  // Cleanup failed but the work itself is intact and retrievable: still not a
+  // clean finish, because a container left running is the user's problem now.
+  if (warnings.length > 0 && (record.cleanupError !== null || record.teardown === 'failed')) {
+    return { failure: warnings[0] ?? 'Cleanup failed', warnings }
+  }
+  return { failure: null, warnings }
 }
 
 /** Phase transitions the runner's log lines imply, without a second event channel. */

@@ -357,6 +357,12 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       finishedAt: FIXED_TIME + 23 * 60_000,
       model: 'claude-sonnet-4-6',
       egressAllowlist: ['api.anthropic.com:443'],
+      warnings: [],
+      checkout: {
+        root: '/Users/dev/projects/demo/.copse/worktrees/demo-container-thread',
+        mode: 'worktree',
+        branch: 'demo/lint-backlog',
+      },
       log: [
         '[thread-container] carry-in 9b1b901683b9 as refs/copse/carry-in/run-demo-1',
         '[thread-container] starting copse-run-demo-1 from copse-worker:local',
@@ -408,9 +414,10 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           finalText:
             'Cleared the lint backlog in three commits. The push is waiting for your review.',
         },
-        carryOutRef: 'refs/copse/runs/run-demo-1',
+        carryOut: { expected: true, ref: 'refs/copse/runs/run-demo-1', error: null },
         containerExit: 0,
         teardown: 'removed',
+        cleanupError: null,
         secretCanary: { present: false, detail: 'canary absent from every surface' },
       },
       error: null,

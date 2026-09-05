@@ -65,6 +65,9 @@ describe('unattended container run (browser-hosted)', () => {
     expect(summary).toContain('brokered egress')
     expect(summary).toContain('refs/copse/runs/run-demo-1')
     expect(summary).toContain('absent')
+    // The checkout the run actually carried in — a thread worktree, not the
+    // project checkout (PR review finding 1).
+    expect(summary).toContain('thread worktree (demo/lint-backlog)')
     expect(summary).toMatch(/Prompts reached a handler\s*0/)
     // Section headings render uppercase through CSS; compare the source text.
     await expect(dialog.$('.container-run-deferrals h3')).toHaveText(
