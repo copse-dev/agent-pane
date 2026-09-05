@@ -7,7 +7,8 @@ import {
   seedStableWorkspace,
   seedThreadProposalFixture,
 } from './helpers/seed-config.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 // Visual eval for the model-proposed-thread card (`propose_thread`). The card's
 // DOM, its three states and the start/dismiss wiring are covered at component
@@ -173,9 +174,12 @@ describe('starting a proposed thread in an isolated checkout', () => {
         ),
       { timeout: 30_000, timeoutMsg: 'the isolated proposal did not reach the mock agent' },
     )
+    await waitForAgentIdle()
     await $('.chat-row*=Config loader guard').click()
     await expect($('.thread-proposal')).toHaveAttribute('data-proposal-status', 'started')
     await expect($('.thread-proposal-state')).toHaveText(expect.stringContaining('Thread started'))
-    await saveElementScreenshot('.thread-proposal', 'thread-proposal-started-isolated.png')
+    // Returning to the source can rehydrate and replace its card. Capture the
+    // persistent app shell, not a WebDriver reference to that replaceable node.
+    await saveAppScreenshot('thread-proposal-started-isolated.png')
   })
 })
