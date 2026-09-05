@@ -382,6 +382,7 @@ import {
   getGuardedYoloState,
   onGuardedYoloChanged,
 } from '../services/security/guarded-yolo.ts'
+import { getContainerRunService } from '../services/container-runtime/container-run-service.ts'
 
 const zAutomationScheduleInput = z.object({
   id: z.string().min(1).max(256).optional(),
@@ -449,6 +450,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
   })
   win.once('closed', stopGuardedYoloEvents)
+  const stopContainerRunEvents = getContainerRunService().onChanged((progress) => {
+    if (!win.isDestroyed()) win.webContents.send('container:run-changed', progress)
+  })
+  win.once('closed', stopContainerRunEvents)
   const storedProjects = storedWorkspaceProjects()
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)
@@ -1577,6 +1582,45 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     disableGuardedYolo(id)
     return getGuardedYoloState(id)
+  })
+
+  // Unattended container runs (docs/plans/thread-in-container.md). The
+  // renderer sends the prompt, the model and the budgets; the main process
+  // resolves the checkout, the provider and its key, and owns the run.
+  const zContainerRunRequest = z.object({
+    projectId: zNonEmptyString.max(256),
+    threadId: zGuardedYoloThreadId,
+    prompt: z.string().min(1).max(200_000),
+    model: zNonEmptyString.max(256),
+    budgets: z.object({
+      wallClockMs: z
+        .number()
+        .int()
+        .min(60_000)
+        .max(24 * 60 * 60_000),
+      tokenCeiling: z.number().int().min(1_000).max(100_000_000),
+    }),
+    extraEgress: z
+      .array(z.string().regex(/^[a-z0-9.-]+:\d{1,5}$/i))
+      .max(16)
+      .optional(),
+  })
+  ipcMain.handle('container:run-thread', (event, request: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsed = parseIpcArgs(zContainerRunRequest, [request])
+    return getContainerRunService().start({
+      projectId: parsed.projectId,
+      threadId: parsed.threadId,
+      prompt: parsed.prompt,
+      model: parsed.model,
+      budgets: parsed.budgets,
+      ...(parsed.extraEgress ? { extraEgress: parsed.extraEgress } : {}),
+    })
+  })
+  ipcMain.handle('container:get-run', (event, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
+    return getContainerRunService().get(id)
   })
   ipcMain.handle('threads:load-project', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)

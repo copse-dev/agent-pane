@@ -283,6 +283,20 @@
           2
         ]
       },
+      "container:get-run": {
+        "api": "container.getRun",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "container:run-thread": {
+        "api": "container.runThread",
+        "args": [
+          1,
+          1
+        ]
+      },
       "cursor-plugins:list": {
         "api": "cursorPlugins.list",
         "args": [
@@ -1829,6 +1843,13 @@
       },
       "canvas:show-artefact": {
         "api": "canvas.onShowArtefact",
+        "args": [
+          1,
+          1
+        ]
+      },
+      "container:run-changed": {
+        "api": "container.onRunChanged",
         "args": [
           1,
           1

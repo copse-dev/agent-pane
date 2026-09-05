@@ -1,0 +1,147 @@
+/* Unattended container runs: the composer banner and the run dialog
+   (docs/plans/thread-in-container.md). The banner sits with the other advisory
+   strips at the top of the composer card; the dialog is a native <dialog>
+   through dialog-shell.ts with two faces (arming form, status/result). */
+
+.container-run-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-base));
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+.container-run-banner[hidden] {
+  display: none;
+}
+.container-run-banner[data-phase='failed'] {
+  border-bottom-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-base));
+}
+.container-run-banner[data-phase='finished'] {
+  border-bottom-color: color-mix(in srgb, var(--success, var(--accent)) 55%, var(--border));
+  background: color-mix(in srgb, var(--success, var(--accent)) 12%, var(--bg-base));
+}
+.container-run-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--spacing-lg) + var(--spacing-xs));
+  height: calc(var(--spacing-lg) + var(--spacing-xs));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  flex: 0 0 auto;
+}
+.container-run-text {
+  min-width: 0;
+  flex: 1;
+  line-height: var(--line-height-base);
+}
+.container-run-details {
+  flex: 0 0 auto;
+}
+
+.container-run-dialog {
+  width: min(44rem, calc(100vw - 2 * var(--spacing-lg)));
+  max-height: calc(100vh - 2 * var(--spacing-lg));
+  overflow: auto;
+  padding: var(--spacing-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, var(--radius));
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.container-run-title {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-lg, 1.1rem);
+}
+.container-run-intro {
+  margin: 0 0 var(--spacing-md);
+  color: var(--text-secondary);
+  line-height: var(--line-height-base);
+}
+.container-run-form .ui-field {
+  margin-bottom: var(--spacing-md);
+}
+.container-run-prompt {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  line-height: var(--line-height-base);
+}
+.container-run-budgets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+}
+.container-run-model-hint {
+  margin: 0 0 var(--spacing-md);
+}
+.container-run-summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--spacing-xs) var(--spacing-md);
+  margin: 0 0 var(--spacing-md);
+}
+.container-run-row {
+  display: contents;
+}
+.container-run-summary dt {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.container-run-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.container-run-section {
+  margin: 0 0 var(--spacing-md);
+}
+.container-run-section h3 {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.container-run-section ul {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  line-height: var(--line-height-base);
+}
+.container-run-warnings {
+  padding: var(--spacing-sm);
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.container-run-commits li {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.container-run-log {
+  margin: 0;
+  max-height: 12rem;
+  overflow: auto;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Side-by-side budgets: the kit's stacked-sibling divider would push the
+   second field down; in a grid the two are peers. */
+.container-run-budgets .ui-field {
+  margin-bottom: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.container-run-budgets input {
+  width: 100%;
+}

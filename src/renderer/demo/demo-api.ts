@@ -303,6 +303,30 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
       onGuardedYoloChanged: subscribe,
     },
+    container: {
+      runThread: (request) =>
+        resolved({
+          threadId: request.threadId,
+          runtimeId: 'run-demo',
+          phase: 'running' as const,
+          startedAt: Date.now(),
+          finishedAt: null,
+          model: request.model,
+          egressAllowlist: ['api.anthropic.com:443'],
+          log: ['[thread-container] starting copse-run-demo from copse-worker:local'],
+          warnings: [],
+          checkout: { root: '/repo', mode: 'shared' as const, branch: 'main' },
+          record: null,
+          error: null,
+        }),
+      getRun: (threadId) =>
+        resolved(
+          scenario.containerRun && scenario.containerRun.threadId === threadId
+            ? scenario.containerRun
+            : null,
+        ),
+      onRunChanged: subscribe,
+    },
     fs: {
       readFile: (_projectId: string, _threadId: string, path: string) =>
         resolved(writtenFiles.get(path) ?? ''),
