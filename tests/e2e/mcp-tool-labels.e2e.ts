@@ -19,19 +19,36 @@ describe('MCP tool labels', () => {
   })
 
   it('hides internal server prefixes and preserves semantic Copse groups', async () => {
-    const createIssue = $('.tool-card[data-tool-id="tc-mcp-create"]')
-    await createIssue.waitForExist({ timeout: 30_000 })
-    await expect(createIssue.$('.tool-name')).toHaveText('Create Issue')
+    // The three tool-only assistant messages form one run anchored on the
+    // first, so the transcript shows a single collapsed summary rather than a
+    // rollup per message.
+    const run = $('.tool-card-rollup[data-rollup-key="run"]')
+    await run.waitForExist({ timeout: 30_000 })
+    await expect($$('.tool-card-rollup')).toBeElementsArrayOfSize(1)
+    await expect(run.$('.tool-card-header .tool-name')).toHaveText('Used 5 tools · 3 steps')
 
-    const rollups = await $$('.tool-card-rollup')
-    await expect(rollups).toBeElementsArrayOfSize(2)
-    await expect(rollups[0]!.$('.tool-name')).toHaveText('github')
-    await expect(rollups[1]!.$('.tool-name')).toHaveText('Checked git')
+    // Each step is headed by its message's own label: a lone MCP tool keeps its
+    // humanised name, a same-server pair takes the server's display name, and
+    // Copse's own tools keep their semantic group.
+    await run.$('summary.tool-card-header').click()
+    await expect(run).toHaveAttribute('open')
+    const steps = await run.$$('.tool-card-step')
+    await expect(steps).toBeElementsArrayOfSize(3)
+    await expect(steps[0]!).toHaveAttribute('data-step-message-id', 'msg-assistant-mcp-single')
+    await expect(steps[1]!).toHaveAttribute('data-step-message-id', 'msg-assistant-mcp-group')
+    await expect(steps[2]!).toHaveAttribute('data-step-message-id', 'msg-assistant-copse-group')
+    await expect(steps[0]!.$('.tool-card-header .tool-name')).toHaveText('Create Issue')
+    await expect(steps[1]!.$('.tool-card-header .tool-name')).toHaveText('github')
+    await expect(steps[2]!.$('.tool-card-header .tool-name')).toHaveText('Checked git')
 
-    await rollups[0]!.$('summary.tool-card-header').click()
-    await rollups[1]!.$('summary.tool-card-header').click()
-    await expect(rollups[0]!.$('.tool-card-group .tool-name')).toHaveText('github')
-    await expect(rollups[1]!.$('.tool-card-group .tool-name')).toHaveText('Checked git')
+    // The single tool's own card sits inside its step; open the step so the
+    // card's label is rendered text rather than hidden `<details>` content.
+    const single = steps[0]!
+    await single.$('summary.tool-card-header').click()
+    await expect(single).toHaveAttribute('open')
+    await expect(single.$('.tool-card[data-tool-id="tc-mcp-create"] .tool-name')).toHaveText(
+      'Create Issue',
+    )
 
     const transcript = await browser.execute(() => {
       return document.querySelector('.messages-list')?.textContent ?? ''
@@ -40,7 +57,7 @@ describe('MCP tool labels', () => {
     expect(transcript).not.toContain('github:')
     expect(transcript).not.toContain('copse:')
 
-    await rollups[1]!.scrollIntoView()
+    await run.scrollIntoView()
     await saveAppScreenshot('mcp-tool-labels.png')
   })
 })

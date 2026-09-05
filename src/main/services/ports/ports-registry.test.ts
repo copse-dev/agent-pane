@@ -1,6 +1,12 @@
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildPortRows, createPortScanCoalescer, portUrl } from './ports-registry.ts'
+import {
+  buildPortRows,
+  createPortScanCoalescer,
+  listPortRows,
+  portUrl,
+  setSeededPortRows,
+} from './ports-registry.ts'
 import type { OwnedProcess } from './port-owners.ts'
 import type { ListeningPort } from './port-scan.ts'
 
@@ -112,5 +118,41 @@ describe('createPortScanCoalescer', () => {
     assert.equal(calls, 2)
     finish?.({ rows: [], tool: 'lsof' })
     await next
+  })
+})
+
+describe('listPortRows under e2e', () => {
+  const previous = process.env['COPSE_E2E']
+  afterEach(() => {
+    setSeededPortRows(null)
+    if (previous === undefined) delete process.env['COPSE_E2E']
+    else process.env['COPSE_E2E'] = previous
+  })
+
+  it('reports nothing listening instead of scanning the runner', async () => {
+    process.env['COPSE_E2E'] = '1'
+    const result = await listPortRows()
+    assert.deepEqual(result.rows, [])
+    // Non-null: the panel must hide, not claim the host has no scanner.
+    assert.notEqual(result.tool, null)
+  })
+
+  it('still serves rows a spec seeded explicitly', async () => {
+    process.env['COPSE_E2E'] = '1'
+    const seeded = {
+      rows: [
+        {
+          port: 5173,
+          pid: 4242,
+          command: 'node',
+          address: '127.0.0.1',
+          owner: null,
+          url: 'http://localhost:5173',
+        },
+      ],
+      tool: 'seeded',
+    }
+    setSeededPortRows(seeded)
+    assert.deepEqual(await listPortRows(), seeded)
   })
 })

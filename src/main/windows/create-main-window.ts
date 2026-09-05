@@ -9,6 +9,7 @@ import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-re
 import { DEVTOOLS_SHORTCUT_CAPABILITY } from '@copse/agent/plugins/devtools-shortcut-plugin.ts'
 import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 import type {
+  BrowserPaneSession,
   MainWindowBounds,
   MainWindowNavigation,
   MainWindowRecord,
@@ -115,6 +116,31 @@ export function setMainWindowNavigation(
     storageSet('activeProjectId', navigation.activeProjectId)
     storageSet('activeThreadId', navigation.activeThreadId)
   }
+}
+
+/**
+ * The Browser-pane tabs this window last had open, or null for a window that
+ * never reported any (a fresh profile, or a record written before tabs were
+ * restorable). A pane pop-out is not a registered main window, so it reads
+ * null and mounts its pop-out seed instead.
+ */
+export function getMainWindowBrowserSession(webContents: WebContents): BrowserPaneSession | null {
+  return contextRecord(webContents)?.browserSession ?? null
+}
+
+/**
+ * Record the Browser pane's tabs against the sending window. Rejected for any
+ * sender that is not a full main window, for the same reason as
+ * {@link setMainWindowNavigation}: a pop-out is a second *view* of the pane and
+ * must not overwrite the session the window it detached from owns.
+ */
+export function setMainWindowBrowserSession(
+  webContents: WebContents,
+  browserSession: BrowserPaneSession,
+): void {
+  const context = mainWindowRegistry.fromWebContents(webContents)
+  if (!context) throw new Error('Browser session rejected: sender is not a full main window')
+  mainWindowState.update(context.id, { browserSession })
 }
 
 // A saved x/y can point at a display that's since been disconnected
@@ -292,7 +318,7 @@ export function unregisterDevtoolsShortcut(): void {
  * of the `copse.devtools-shortcut` first-party plugin's `devtools-shortcut`
  * capability. Called at boot (via `registerAllHandlers`) and again whenever the
  * plugin is toggled from Settings > Plugins (see `ipc/register-handlers.ts`
- * `plugins:setEnabled`), so the shortcut appears or disappears live — the atomic
+ * `plugins:set-enabled`), so the shortcut appears or disappears live — the atomic
  * plugin disable unregisters it in the same flag flip that drops the plugin's
  * capability from the Settings plugin list. Replaces the retired
  * `devtoolsShortcutEnabled` standalone setting: the plugin capability is now the

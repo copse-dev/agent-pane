@@ -27,6 +27,7 @@ import {
   type SpineHookRunLine,
 } from '../../../src/shared/threads/spine-schema.ts'
 import { copseDataRoot, copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
+import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/acp-turn-recovery.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -328,6 +329,68 @@ export function seedE2eViewport(
   settings: Record<string, unknown> = {},
 ): void {
   writeSettings({ windowBounds: bounds, ...settings })
+}
+
+/**
+ * Fixed-path workspace for specs that need *a* project but not *this* repo.
+ *
+ * `seedEmptyProject(process.cwd(), …)` opens the checkout itself, and the
+ * checkout leaks into captures in ways that change per run: the Changes rail
+ * lists whatever CI has re-rendered under `tests/e2e/screenshots/`, the
+ * `@`-mention picker searches the real file tree, and the pre-send context
+ * estimate (the wheel beside the model picker) counts the real `AGENTS.md` and
+ * skills, so an unrelated docs edit nudges every wheel from 10% to 11%.
+ *
+ * This tree lives under the OS temp dir with a fixed leaf name (the titlebar
+ * shows the folder name), carries a handful of plain files so pickers and the
+ * explorer have something to show, and is a git repository with one commit made
+ * at a fixed date so its status is clean and its history identical everywhere.
+ * It is rebuilt from scratch on every call: a previous spec's shell may have
+ * written into it.
+ */
+export const E2E_WORKSPACE_ROOT = join(tmpdir(), 'copse-e2e', 'workspace')
+
+const E2E_WORKSPACE_FILES: Record<string, string> = {
+  'README.md': '# Workspace\n\nA small fixed project for Copse end-to-end specs.\n',
+  'src/index.ts': "import { greet } from './greeting.ts'\n\nconsole.log(greet('world'))\n",
+  'src/greeting.ts':
+    'export function greet(name: string): string {\n  return `Hello, ${name}!`\n}\n',
+  'scripts/shell-check.ts': "console.log('shell check ok')\n",
+  'docs/shell-permissions.md': '# Shell permissions\n\nCommands prompt before running.\n',
+  'docs/notes.md': '# Notes\n\n- keep fixtures small\n',
+}
+
+/** Commit date for the fixture's one commit; fixed so the hash never moves. */
+const E2E_WORKSPACE_COMMIT_DATE = '2026-01-01T00:00:00Z'
+
+export function seedStableWorkspace(options: { files?: Record<string, string> } = {}): string {
+  const root = E2E_WORKSPACE_ROOT
+  rmSync(root, { recursive: true, force: true })
+  mkdirSync(root, { recursive: true })
+  for (const [relative, content] of Object.entries({ ...E2E_WORKSPACE_FILES, ...options.files })) {
+    const target = join(root, relative)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, content, 'utf8')
+  }
+  const git = (...args: string[]) =>
+    execFileSync('git', args, {
+      cwd: root,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: E2E_WORKSPACE_COMMIT_DATE,
+        GIT_COMMITTER_DATE: E2E_WORKSPACE_COMMIT_DATE,
+      },
+    })
+  git('init', '-q')
+  git('config', 'user.email', 'e2e@example.com')
+  git('config', 'user.name', 'E2E')
+  git('config', 'commit.gpgsign', 'false')
+  git('config', 'init.defaultBranch', 'main')
+  git('add', '.')
+  git('commit', '-q', '-m', 'baseline')
+  git('branch', '-M', 'main')
+  return root
 }
 
 /** Workspace + pinned theme for the preload boot-theme e2e (#41). */
@@ -856,7 +919,14 @@ export function seedProjectGroupsFixture(
  */
 export function seedOpenRouterFixture(
   workspaceRoot: string,
-  options?: { apiBase?: string; freeMode?: boolean; localServerUrl?: string },
+  options?: {
+    apiBase?: string
+    freeMode?: boolean
+    localServerUrl?: string
+    model?: string
+    registeredAcpAgents?: AcpAgentConfig[]
+    openRouterZdrOnly?: boolean
+  },
 ): void {
   const projectId = 'e2e-openrouter-project'
   const now = Date.parse('2026-07-28T10:00:00.000Z')
@@ -903,11 +973,15 @@ export function seedOpenRouterFixture(
     ],
   })
   writeSettings({
-    model: 'openrouter:qwen/qwen3-235b-a22b:free',
+    model: options?.model ?? 'openrouter:qwen/qwen3-235b-a22b:free',
     openRouterModel: 'anthropic/claude-3.5-sonnet',
     ...(options?.freeMode ? { openRouterFreeMode: true } : {}),
     ...(options?.apiBase ? { openRouterApiBase: options.apiBase } : {}),
     ...(options?.localServerUrl ? { localServerUrl: options.localServerUrl } : {}),
+    ...(options?.registeredAcpAgents ? { registeredAcpAgents: options.registeredAcpAgents } : {}),
+    ...(options?.openRouterZdrOnly !== undefined
+      ? { openRouterZdrOnly: options.openRouterZdrOnly }
+      : {}),
     apiKey: {
       openrouter: {
         v: 1,
@@ -1266,13 +1340,16 @@ export function seedRemoteArtifactFilenameFixture(workspaceRoot: string, summary
 }
 
 /** Thread with a GitHub PR markdown link for PR panel e2e. */
-export function seedPrPanelChatFixture(workspaceRoot: string): void {
+export function seedPrPanelChatFixture(
+  workspaceRoot: string,
+  options?: { worktreeMode?: 'always' | 'never' },
+): void {
   const projectId = 'e2e-pr-panel-project'
   const threadId = 'e2e-pr-panel-thread'
   const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace', ...options }],
     activeProjectId: projectId,
     [`threads:${projectId}`]: [
       {
@@ -1817,7 +1894,7 @@ export function seedHookCardsFixture(workspaceRoot: string): void {
   })
 
   // Captured bodies behind the cards (decision 6), so the inspector has real
-  // blobs to read back through `hooks:runDetail` rather than a stub.
+  // blobs to read back through `hooks:run-detail` rather than a stub.
   const capture = (ref: string, contents: string): { ref: string; contents: string } => ({
     ref,
     contents,
@@ -2356,8 +2433,8 @@ export function seedAcpUnfinishedTurnFixture(workspaceRoot: string): void {
                 id: 'tc-acp-upstream-search',
                 name: 'run_shell',
                 args: { command: 'rg "WebDriver BiDi" docs/' },
-                status: 'done',
-                result: 'docs/adr/selenium.md:WebDriver BiDi migration notes',
+                status: 'error',
+                result: ACP_CANCELLED_TOOL_CALL_RESULT,
                 kind: 'search',
               },
             ],
@@ -3173,8 +3250,13 @@ export function seedMachineTurnAttributionFixture(workspaceRoot: string): void {
 
 /**
  * Multi-segment tool-display fixture: a user bug report followed by several
- * assistant bubbles (text-after-tools splits), each with Reasoning + a rolled-up
- * tool burst — the shape Cursor cloud agent turns take in Copse.
+ * assistant bubbles (text-after-tools splits), each with Reasoning + a tool
+ * burst — the shape Cursor cloud agent turns take in Copse.
+ *
+ * The three tool-only segments carry no prose, so they are one presentation
+ * *run* (one summary, three steps). The prose answer ends it, and the segment
+ * after that answer is a plain per-message rollup — both presentations in one
+ * thread. See src/shared/tools/tool-runs.ts.
  */
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
@@ -3315,10 +3397,36 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 4,
           },
+          {
+            // A lone tool-bearing segment after the answer. Its prose ends the
+            // run above, so this one stays a plain per-message rollup — the two
+            // presentations sit in one thread and one screenshot.
+            id: 'msg-assistant-verify',
+            role: 'assistant',
+            content: 'Re-ran the focused checks against the patched settings dialog.',
+            toolSummary: 'Verified the settings fix',
+            toolCalls: [
+              {
+                id: 'tc-verify-1',
+                name: 'run_shell',
+                args: { command: 'npm test -- settings-dialog' },
+                status: 'done',
+                result: 'ok 12 passed',
+              },
+              {
+                id: 'tc-verify-2',
+                name: 'run_shell',
+                args: { command: 'npm run lint' },
+                status: 'done',
+                result: 'no problems',
+              },
+            ],
+            createdAt: now + 5,
+          },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 4,
+        updatedAt: now + 5,
       },
     ],
   })
@@ -4332,4 +4440,72 @@ export function seedForkResendFixture(workspaceRoot: string): {
   })
   writeSettings({ model: 'claude-sonnet-4-6' })
   return { projectId, threadId, title }
+}
+
+/**
+ * Thread whose last turn ends in a model-proposed thread (`propose_thread`)
+ * awaiting an answer. The card is built from the tool call's own arguments, so
+ * seeding the call is all it takes to reach the standing-offer state.
+ */
+export function seedThreadProposalFixture(workspaceRoot: string): {
+  projectId: string
+  threadId: string
+} {
+  const projectId = 'e2e-thread-proposal-project'
+  const threadId = 'e2e-thread-proposal-thread'
+  const now = Date.now()
+  const proposal = {
+    title: 'Retire the legacy settings parser',
+    summary:
+      'Replace the hand-rolled parsing in the settings store with a Zod schema, so a malformed config fails loudly on load instead of silently reading as defaults.',
+    rationale: 'It touches every settings call site, so it should not ride along with this fix.',
+    prompt: [
+      'Replace the hand-rolled parsing in src/main/services/storage/settings.ts with a Zod schema.',
+      '',
+      'Decode on read and fail closed on a malformed file rather than falling back to defaults,',
+      'keep the existing exported types, and add a unit test for a corrupt config.',
+    ].join('\n'),
+    files: ['src/main/services/storage/settings.ts', 'src/shared/types/state.ts'],
+  }
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Config loader guard',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-thread-proposal',
+            role: 'user',
+            content: 'The config loader blows up on an empty file — add a guard and a test.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-thread-proposal',
+            role: 'assistant',
+            content: 'Fixed, and the regression test covers it.',
+            toolCalls: [
+              {
+                id: 'e2e-proposal-call',
+                name: 'propose_thread',
+                args: proposal,
+                status: 'done',
+                result: 'Offered to the user.',
+              },
+            ],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+  return { projectId, threadId }
 }

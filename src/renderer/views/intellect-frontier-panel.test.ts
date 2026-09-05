@@ -506,8 +506,10 @@ describe('createIntellectFrontierPanel', () => {
           {
             id: 'kimi-k3',
             intellect: currentIntellect('kimi-k3'),
-            inputPricePerMTok: 3,
-            outputPricePerMTok: 15,
+            // Keep this fixture on the frontier. A newly scored cheap model
+            // should not turn this price-enrichment test into a ranking test.
+            inputPricePerMTok: 0.01,
+            outputPricePerMTok: 0.01,
           },
         ],
       }),

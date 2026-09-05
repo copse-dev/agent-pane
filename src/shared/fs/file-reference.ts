@@ -87,7 +87,7 @@ export function fileReferenceMatches(text: string): FileReferenceMatch[] {
 }
 
 /**
- * The main-process IPC guard for `index:resolveFileReferences` rejects calls
+ * The main-process IPC guard for `index:resolve-file-references` rejects calls
  * carrying more than this many candidates. A single message or terminal viewport
  * can legitimately reference more (e.g. a long directory/skill listing), so
  * callers resolve in batches of this size rather than overflowing the cap.

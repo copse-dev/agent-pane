@@ -1,5 +1,5 @@
 // Bulk import of provider API keys discovered in the environment, shared by the
-// `settings:importEnvKeys` IPC handler and its tests. Lives outside the handler
+// `settings:import-env-keys` IPC handler and its tests. Lives outside the handler
 // so the consent gate, never-overwrite, and plaintext-refusal branches are
 // testable without an Electron window.
 

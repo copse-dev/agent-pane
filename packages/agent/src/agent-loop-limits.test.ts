@@ -160,6 +160,32 @@ describe('agent-loop-limits', () => {
     assert.equal(deadline.isExpired(start + 201), true)
   })
 
+  it('excludes paused time from the hard cap when the run asked for that (#2332)', () => {
+    // The ACP branch: pauses are approval modals, i.e. time blocked on a human,
+    // which must not spend the runaway-work budget. The cap is 200ms and the
+    // whole of it is spent paused, so the run is nowhere near expiry at 1000ms.
+    const start = 1_000
+    const deadline = new AgentRunDeadline(AGENT_RUN_IDLE_TIMEOUT_MS, 200, start, Date.now, {
+      excludePausesFromHardMax: true,
+    })
+    deadline.pause(start + 10)
+    assert.equal(deadline.isHardExpired(start + 1_000), false)
+    assert.equal(deadline.isExpired(start + 1_000), false)
+    assert.equal(deadline.elapsedWallTimeMs(start + 1_000), 10)
+    deadline.resume(start + 1_000)
+    // The cap stays armed over unpaused time: 10ms before the pause plus 191ms
+    // after it crosses 200ms, so a genuinely runaway turn is still bounded.
+    assert.equal(deadline.isHardExpired(start + 1_100), false)
+    assert.equal(deadline.isHardExpired(start + 1_191), true)
+  })
+
+  it('keeps counting paused time toward the hard cap by default (the local loop)', () => {
+    const start = 1_000
+    const deadline = new AgentRunDeadline(AGENT_RUN_IDLE_TIMEOUT_MS, 200, start)
+    deadline.pause(start + 10)
+    assert.equal(deadline.isHardExpired(start + 1_000), true)
+  })
+
   it('reports ms until the nearest expiry, clamped at zero', () => {
     const deadline = new AgentRunDeadline(1_000, 10_000, 0)
     // Idle is the binding constraint early on.

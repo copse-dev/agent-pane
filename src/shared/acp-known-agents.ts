@@ -122,9 +122,10 @@ export function canonicalAcpAgentId(id: string): string {
  *     spawn time rather than copying the profile into the persisted config, so
  *     an entry that simply disappears downgrades an existing user's agent to
  *     spawning unconfined. Retiring an agent must never relax its seatbelt.
- *  2. `isClaudeAcpAgent` matches by spawn command, so a retired Claude wrapper
- *     must still be recognised as Claude or it loses its Claude-specific
- *     handling and is demoted to the API-billed path in the picker.
+ *  2. `isClaudeAcpAgent` matches by spawn command (or the package a runner
+ *     launches) and by canonical id, so a retired Claude wrapper must still be
+ *     recognised as Claude or it loses its Claude-specific handling and is
+ *     demoted to the API-billed path in the picker.
  *  3. Threads that ran one stay readable — history stores `acp:<id>` forever,
  *     and without a title the picker label falls back to the raw slug.
  *

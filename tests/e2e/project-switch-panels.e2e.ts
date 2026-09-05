@@ -1,7 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedProjectSwitchFixture } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedProjectSwitchFixture,
+  seedStableWorkspace,
+} from './helpers/seed-config.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -56,7 +60,7 @@ describe('project switch panel and terminal scoping', () => {
 
   it('restores each project terminal tabs and panel mode across A→B→A', async () => {
     resetUserData()
-    seedProjectSwitchFixture(process.cwd())
+    seedProjectSwitchFixture(seedStableWorkspace())
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 

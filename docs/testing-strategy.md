@@ -148,7 +148,7 @@ Keep a spec at e2e only when its check requires one of:
 - **Monaco** editor (diff, selection, language workers).
 - **xterm / node-pty** terminal.
 - **webview / browser** panel (Electron webContents).
-- **Real IPC to main** — `fs:listDir`, git status/diff, sandbox, project load.
+- **Real IPC to main** — `fs:list-dir`, git status/diff, sandbox, project load.
 
 Everything else is component- or unit-testable. The full discriminator and the
 per-spec migration backlog live in
@@ -353,7 +353,33 @@ Rules for anything that lands in a captured frame:
   home-dir paths in a captured view. Seed timestamps to fixed values; show
   workspace-relative paths.
 - **Randomness.** No `Math.random()` / `randomUUID()` in rendered output. Derive
-  visible ids/order from fixture data.
+  visible ids/order from fixture data. Background task ids are the one product
+  id that reaches the transcript (the completion wake names the task), so under
+  `COPSE_E2E` they come from a counter (`nextBackgroundOperationId`).
+- **The checkout itself.** Prefer `seedStableWorkspace()` over
+  `seedEmptyProject(process.cwd(), …)` for a spec that needs a project but not
+  this repository. The checkout leaks into frames three ways: the Changes rail
+  lists whatever CI has re-rendered under `tests/e2e/screenshots/`, the
+  `@`-mention picker searches the real tree, and the pre-send context estimate
+  (the wheel by the model picker) counts the real `AGENTS.md` and skills, so an
+  unrelated docs edit moves every wheel from 10% to 11%. The stable workspace is
+  a fixed temp path with a few plain files and one commit at a fixed date.
+- **The runner.** Shells tabs spawn `$SHELL`; under e2e that is
+  `tests/e2e/fixtures/e2e-shell.sh` (bash, no rc files, prompt `$ `), so the
+  runner's `user@host:~/path` never renders. The Ports rail reports nothing
+  listening unless a spec seeds rows through `test:setPortRows`, so chromedriver
+  and the Electron debug port stay out of frame. Fixture HTTP servers listen on
+  a fixed per-spec port via `listenOnFixturePort`, never `listen(0)`.
+- **Timing.** `saveAppScreenshot` / `saveElementScreenshot` wait for scroll
+  offsets and the subject's box to hold still (`waitForSettledLayout`) so a
+  smooth scroll is never captured mid-flight; a sidebar that shows a thread the
+  spec just created needs `waitForActiveThreadTitle()` first, because the
+  auto-title lands a round trip after the turn settles.
+- **Last resort.** When a value in frame comes from the wall clock and no
+  fixture can reach it — the trigger time of a run the real scheduler just
+  fired — `pinTextForCapture` swaps that one text node for a fixed string for
+  the duration of the capture and restores it. Keep the DOM assertion on the
+  real text alongside it; this is not a substitute for seeding.
 
 When you add an e2e screenshot, ask: _if I rebuild this on a different branch,
 on a different day, on a different machine — does any pixel move?_ If yes, pin

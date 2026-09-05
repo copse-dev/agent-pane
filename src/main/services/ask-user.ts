@@ -9,6 +9,7 @@ import {
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
+import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 import type { UserAlertSender } from './user-alerts.ts'
 
 export interface AskUserRequest {
@@ -44,17 +45,40 @@ export function setAskUserHandler(next: AskUserHandler | null): void {
   handler = next
 }
 
+/** One blank answer per question — the "carry on without an answer" result. */
+function blankAnswers(req: AskUserRequest): AskUserResult {
+  return { answers: req.questions.map(() => '') }
+}
+
 export function requestUserAnswers(
   req: AskUserRequest,
   signal?: AbortSignal,
 ): Promise<AskUserResult> {
-  const blank = (): AskUserResult => ({ answers: req.questions.map(() => '') })
   const activeHandler = scopedHandler.getStore() ?? handler
-  if (!activeHandler || signal?.aborted) return Promise.resolve(blank())
+  if (!activeHandler || signal?.aborted) return Promise.resolve(blankAnswers(req))
+  // A question on screen is a host-side wait on a human, exactly like an
+  // approval modal, so it pauses the run's sliding idle deadline the same way
+  // `requestApprovalInteractive` does. Without this the 15-minute idle budget
+  // keeps running while the dialog waits, and a user who thinks for longer than
+  // that has the turn aborted underneath a question still asking for an answer
+  // — the ask-user half of #2332. The wait stays bounded regardless:
+  // ASK_USER_TIMEOUT_MS caps it at 30 minutes, so pausing the clock here cannot
+  // leave a turn that neither progresses nor ever ends.
+  const threadId = getActiveRunThread() ?? undefined
+  return withRunDeadlinePaused(threadId, () =>
+    requestUserAnswersUnpaused(req, activeHandler, signal),
+  )
+}
+
+function requestUserAnswersUnpaused(
+  req: AskUserRequest,
+  activeHandler: AskUserHandler,
+  signal: AbortSignal | undefined,
+): Promise<AskUserResult> {
   if (!signal) return activeHandler(req)
   return new Promise<AskUserResult>((resolve, reject) => {
     const onAbort = (): void => {
-      resolve(blank())
+      resolve(blankAnswers(req))
     }
     signal.addEventListener('abort', onAbort, { once: true })
     void activeHandler(req, signal).then(
@@ -120,7 +144,7 @@ export function initAskUser(
         const threadId = getActiveRunThread() ?? undefined
         const stopAlert = alertUser('interaction', 'An agent has a question.')
         const cancel = (): void => {
-          win.webContents.send('agent:ask_user_cancelled', { id })
+          win.webContents.send('agent:ask-user-cancelled', { id })
           settle(id, blank())
         }
         const timer = setTimeout(() => {
@@ -134,7 +158,7 @@ export function initAskUser(
           resolve(result)
         })
         signal?.addEventListener('abort', cancel, { once: true })
-        win.webContents.send('agent:ask_user_request', { id, threadId, questions: req.questions })
+        win.webContents.send('agent:ask-user-request', { id, threadId, questions: req.questions })
       }),
   )
 }

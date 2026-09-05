@@ -22,32 +22,32 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
   const manager = getSshConnectionManager()
 
   const pushStates = (states: SshConnectionState[]): void => {
-    if (!win.isDestroyed()) win.webContents.send('ssh:connection_changed', states)
+    if (!win.isDestroyed()) win.webContents.send('ssh:connection-changed', states)
   }
 
   manager.onChange(pushStates)
 
-  ipcMain.handle('ssh-workspace:listHosts', (event) => {
+  ipcMain.handle('ssh-workspace:list-hosts', (event) => {
     assertMainFrameSender(event, win)
     return listConfiguredSshHosts()
   })
 
-  ipcMain.handle('ssh-workspace:listConfigAliases', (event) => {
+  ipcMain.handle('ssh-workspace:list-config-aliases', (event) => {
     assertMainFrameSender(event, win)
     return readSshConfigAliases().map(hostFromSshConfigAlias)
   })
 
-  ipcMain.handle('ssh-workspace:getStates', (event) => {
+  ipcMain.handle('ssh-workspace:get-states', (event) => {
     assertMainFrameSender(event, win)
     return manager.listStates()
   })
 
-  ipcMain.handle('ssh-workspace:listCredentialHostIds', (event) => {
+  ipcMain.handle('ssh-workspace:list-credential-host-ids', (event) => {
     assertMainFrameSender(event, win)
     return listStoredSshCredentialHostIds()
   })
 
-  ipcMain.handle('ssh-workspace:forgetCredentials', async (event, ...rawArgs) => {
+  ipcMain.handle('ssh-workspace:forget-credentials', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const hostId = parseIpcArgs(zSshHostId, rawArgs)
     // End the live ControlMaster too: otherwise OpenSSH would keep using an
@@ -99,7 +99,7 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle('ssh-workspace:listDirectory', async (event, ...rawArgs) => {
+  ipcMain.handle('ssh-workspace:list-directory', async (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [hostId, dirPath] = parseIpcArgs(sshBrowseSchema, rawArgs)
@@ -110,7 +110,7 @@ export function initSshWorkspaceIpc(win: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle('ssh-workspace:registerRoot', async (event, ...rawArgs) => {
+  ipcMain.handle('ssh-workspace:register-root', async (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
       const [hostId, dirPath] = parseIpcArgs(sshBrowseSchema, rawArgs)

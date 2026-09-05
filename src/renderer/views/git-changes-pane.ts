@@ -550,7 +550,7 @@ export function mountGitChangesPane(
     renderList()
     let view = resolveStagedDiffView(queue, proposedDiffCache, path, activeDiff)
     if (!view) {
-      // The full content never reached the cache — the `agent:show_diff` push
+      // The full content never reached the cache — the `agent:show-diff` push
       // predates this (async/re-)mount and nothing replays it. Pull the content
       // the main-process queue still holds so the diff renders instead of
       // clearing to an empty pane.
@@ -786,7 +786,7 @@ export function mountGitChangesPane(
 
     // A freshly proposed diff takes priority over any existing selection so the
     // pane jumps to the file the agent just proposed and is waiting on (#484).
-    // `agent:show_diff` arrives before the `diff:queued` broadcast that adds the
+    // `agent:show-diff` arrives before the `diff:queued` broadcast that adds the
     // path to the queue, so the target is consumed only once it is queued —
     // until then it is kept pending for the follow-up sync.
     if (shouldJumpToProposed(pendingProposedNavigate, queue)) {

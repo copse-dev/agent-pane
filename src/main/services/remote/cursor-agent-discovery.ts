@@ -7,7 +7,7 @@
  *
  * The renderer also runs a periodic sync for the active project (see
  * `external-cursor-agent-sync.ts`) — first tick after one interval, never on
- * editor open. Manual: `remoteAgent:discoverExternal` then reload threads.
+ * editor open. Manual: `remote-agent:discover-external` then reload threads.
  */
 import { randomUUID } from 'node:crypto'
 import type { Message, Thread } from '@shared/types'

@@ -65,6 +65,7 @@
     "bench:explore": "node scripts/run-benchmark-explorer.mts",
     "bench:swe-tasks": "node scripts/fetch-swe-bench-subset.mts",
     "gen:headless-schema": "node scripts/gen-headless-schema.mts",
+    "gen:api-protocol": "node scripts/gen-api-protocol.mts",
     "validate:browser-tools": "node scripts/validate-browser-tools.mts",
     "runners:burst": "node scripts/burst-runners.mts",
     "runners:burst:scw": "node scripts/burst-runners.mts scaleway",
@@ -184,6 +185,7 @@
     "@copse/llm": "workspace:*",
     "@copse/plan-usage": "workspace:*",
     "@copse/plugin-sdk": "workspace:*",
+    "@copse/procwatch": "workspace:*",
     "@copse/shell-guard": "workspace:*",
     "@copse/std": "workspace:*",
     "@copse/thread-store": "workspace:*",
@@ -241,6 +243,6 @@
   },
   "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": ">=22.22.2"
+    "node": ">=24"
   }
 }

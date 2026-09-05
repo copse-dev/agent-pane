@@ -100,7 +100,9 @@ describes it to the agent, so changing the layout means updating that preamble.
 - **`meta.json`** holds no message bodies — just the mutable fields (title,
   status, usage, todos, review, workingBrief, gitBranch, pendingMessages,
   queuePaused, draftPrompt, model, timestamps, contextTrims, contextSnapshot,
-  optional `archivedAt`). When `archivedAt` is set the thread is soft-hidden
+  `threadProposals` / `proposedBy` (answers to model-proposed threads and the
+  offer a thread was started from — see
+  [`proposed-threads.md`](proposed-threads.md)), optional `archivedAt`). When `archivedAt` is set the thread is soft-hidden
   from the sidebar and dropped from `catalog.jsonl`, but the directory remains.
 - **`agent-history.json`** is a versioned snapshot of the provider-format
   `LLMMessage[]` used to resume the agent loop after a restart (issue #993).
@@ -159,7 +161,7 @@ model appears in the thread; explore/CI subagent models stay on the nested
 `subagent.model` field (already shown on their cards).
 
 `startingCommit`/`dirty` are captured once, at send time, for a human-typed
-prompt (via `git:promptState`) — the HEAD SHA the turn began on and whether the
+prompt (via `git:prompt-state`) — the HEAD SHA the turn began on and whether the
 working tree already had uncommitted changes. Best-effort: absent outside a
 git repository, and not captured on paths that don't round-trip through main
 before the message is finalized (e.g. resend).
@@ -243,7 +245,7 @@ spawned `command` hooks such as Cursor permission hooks) appends one line:
   every channel it applied (`injectContext`, `agentMessage`, `userMessage`,
   `updatedInput`, halt reason), which the `decision` summary only counts
   characters of. Together they are what the hook-card inspector reads back
-  (`hooks:runDetail`). Both are bounded at capture with a visible truncation
+  (`hooks:run-detail`). Both are bounded at capture with a visible truncation
   marker, and function-hook capture is skipped for a run that abstained — there
   is no effect to explain. Command hooks need no `outcome` blob: their raw
   response is already `stdout`.
@@ -334,7 +336,7 @@ download `<title-slug>-<YYYY-MM-DD>`.
   OKF prose, blobs, plans, the `agent-history.json` sidecar and nested
   subagent directories. The directory lives in the chat store, so the main
   process assembles it ([`thread-archive.ts`](../src/main/services/thread-archive.ts)
-  over the `threads:exportArchive` IPC, zipped by the dependency-free writer in
+  over the `threads:export-archive` IPC, zipped by the dependency-free writer in
   [`zip-archive.ts`](../src/main/services/storage/zip-archive.ts)). The snapshot
   runs on the project's write queue so it cannot catch a save mid-flight, and
   refuses threads over `MAX_THREAD_DIRECTORY_BYTES` (512 MiB) rather than

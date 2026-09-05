@@ -189,6 +189,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     activeProjectId: scenario.project.id,
     activeThreadId: threads[0]?.id ?? null,
   }
+  // The demo runs one page load at a time, so the session it hands back is the
+  // one this page recorded — nothing outlives a reload, exactly as in the app
+  // when a window is opened for the first time.
+  let browserSession: import('@shared/types/main-window.ts').BrowserPaneSession | null = null
   let currentBranch = threads[0]?.gitBranch ?? 'demo/browser-renderer'
   const chunkHandlers = new Set<(threadId: string, chunk: StreamChunk) => void>()
   const showDiffHandlers = new Set<ShowDiffHandler>()
@@ -253,6 +257,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next) => {
         navigation = structuredClone(next)
+        return resolvedVoid()
+      },
+      getBrowserSession: () => resolved(browserSession ? structuredClone(browserSession) : null),
+      setBrowserSession: (next) => {
+        browserSession = structuredClone(next)
         return resolvedVoid()
       },
     },
@@ -385,6 +394,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       suggestCommandSummary: () => resolved(null),
       suggestToolTurnSummary: () => resolved(null),
       suggestFollowUps: emptyArray,
+      suggestPrBody: () => resolved(null),
       suggestNextStep: () => resolved(null),
       onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => {
         chunkHandlers.add(handler)
@@ -505,6 +515,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
       onPrRefs: () => () => undefined,
+      // No demo scenario opens a real PR, so nothing ever announces one.
+      onPrCreated: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {
         threads = [thread, ...threads.filter((candidate) => candidate.id !== thread.id)]
         return resolvedVoid()
@@ -904,6 +916,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       prFileDiff: () => resolved(null),
       resolvePrUrl: () => resolved(null),
       agentPrLinks: emptyArray,
+      createPrForThread: () =>
+        resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       rerunFailedRuns: () =>
         resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),
       approvePr: () => resolved({ ok: false, message: 'Unavailable in demo', backend: 'mock' }),

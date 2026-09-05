@@ -227,7 +227,7 @@ test('the IPC wrapper is stripped from the failure note', async (context) => {
       prepareCheckout: () =>
         Promise.reject(
           new Error(
-            "Error invoking remote method 'agent:prepareCheckout': Error: " +
+            "Error invoking remote method 'agent:prepare-checkout': Error: " +
               'Isolated worktree is unavailable: submodules unsupported (/repo/.gitmodules, for project /repo)',
           ),
         ),

@@ -19,6 +19,7 @@ import {
   type ServerFrame,
 } from '@shared/tauri/ws-protocol.ts'
 import { sidecarInternals } from './electron-shim/index.ts'
+import { API_PROTOCOL_VERSION } from '@shared/api-protocol.mts'
 import { MAX_VIDEO_BYTES } from '@shared/video/video-media.ts'
 import { WS_AUTH_PROTOCOL_PREFIX } from '@shared/tauri/ws-protocol.ts'
 
@@ -133,13 +134,20 @@ function start(): Promise<WsEndpoint> {
           socket.close(4003, 'bad token')
           return
         }
+        // Both ends ship from one build today, so this only trips when a
+        // renderer built against another protocol version reaches this
+        // server — the failure mode the daemon split makes possible.
+        if (frame.protocolVersion !== API_PROTOCOL_VERSION) {
+          socket.close(4008, 'protocol version mismatch')
+          return
+        }
         try {
           const unbind = sidecarInternals.bindClient(frame.winId, (channel, args) => {
             reply({ t: 'event', channel, args })
           })
           bound = { winId: frame.winId, unbind }
           clearTimeout(helloTimeout)
-          reply({ t: 'hello-ok' })
+          reply({ t: 'hello-ok', protocolVersion: API_PROTOCOL_VERSION })
         } catch (error) {
           console.error('[ws-server] hello rejected:', error)
           socket.close(4004, 'unknown window')

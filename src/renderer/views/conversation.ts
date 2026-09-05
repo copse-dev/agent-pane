@@ -71,11 +71,15 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
   aggregateToolStatus,
+  buildSubagentDisplayItems,
   buildToolCallDisplayItems,
+  buildToolRunDisplayItems,
   getToolCallLabel,
   getToolEditPath,
+  RUN_ROLLUP_KEY,
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
+import { toolRunForMessage, type ToolRun } from '@shared/tools/tool-runs.ts'
 import { navigateToChange } from '../controller/panels.ts'
 import { hydrationFailed, needsHydration } from '../controller/thread-hydration.ts'
 import { createPluginPanelEl } from './plugin-panel.ts'
@@ -89,6 +93,11 @@ import {
   retryReview,
 } from '../controller/retry-review-comparison.ts'
 import { renderToolArgs } from './tool-args-format.ts'
+import {
+  createThreadProposalToolCard,
+  isThreadProposalCall,
+  threadProposalCardSignature,
+} from './thread-proposal-tool-card.ts'
 import { renderSignature } from './render-signature.ts'
 import {
   drainMessageQueue,
@@ -320,6 +329,24 @@ function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null
 }
 
+/**
+ * An absorbed run member stays addressable for streaming updates, but should
+ * not contribute an empty transcript row. Inspect the live DOM rather than the
+ * message shape so independently visible content added later restores it.
+ */
+function syncToolRunMemberVisibility(msgEl: HTMLElement): void {
+  if (!msgEl.classList.contains('msg-tool-run-member')) {
+    msgEl.hidden = false
+    return
+  }
+  const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
+  const hasVisibleBodyChild = [...(body?.children ?? [])].some(
+    (child) => !child.classList.contains('message-text') || child.hasChildNodes(),
+  )
+  const hasVisibleDirectChild = [...msgEl.children].some((child) => child !== body)
+  msgEl.hidden = !hasVisibleBodyChild && !hasVisibleDirectChild
+}
+
 function syncMessageCanvasPreviews(msgEl: HTMLElement, msg: Message, threadId: string): void {
   const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
   if (!body) return
@@ -329,8 +356,10 @@ function syncMessageCanvasPreviews(msgEl: HTMLElement, msg: Message, threadId: s
     const card = createCanvasPreviewCard(threadId, artefact.title)
     return card ? [card] : []
   })
-  if (cards.length === 0) return
-  body.append(el('div', { class: 'message-canvas-previews' }, ...cards))
+  if (cards.length > 0) {
+    body.append(el('div', { class: 'message-canvas-previews' }, ...cards))
+  }
+  syncToolRunMemberVisibility(msgEl)
 }
 
 function createIndividualToolCard(
@@ -338,8 +367,16 @@ function createIndividualToolCard(
   label: string,
   api: ApiClient,
   threadId: string,
+  store?: AppStore,
 ): HTMLDetailsElement {
   if (tc.subagent) return createSubagentToolCard(tc, label, api)
+  // A proposed thread is an offer to the user, not a record of work done, so it
+  // gets its own card instead of an args/result disclosure. Falls through to the
+  // ordinary card while the arguments are still streaming.
+  if (store && isThreadProposalCall(tc)) {
+    const proposalCard = createThreadProposalToolCard(tc, store, api, threadId)
+    if (proposalCard) return proposalCard
+  }
 
   const card = el('details', {
     class: 'tool-card',
@@ -810,6 +847,7 @@ function createRollupToolCard(
   item: Extract<ToolCallDisplayItem, { type: 'rollup' }>,
   api: ApiClient,
   threadId: string,
+  store?: AppStore,
 ): HTMLDetailsElement {
   const status = aggregateToolStatus(item.toolCalls)
   const card = el('details', {
@@ -824,9 +862,39 @@ function createRollupToolCard(
       : undefined
   const body = el('div', { class: 'tool-rollup-body' })
   for (const child of item.children) {
-    body.append(createToolCard(child, api, threadId))
+    body.append(createToolCard(child, api, threadId, store))
   }
   card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
+  return card
+}
+
+/**
+ * One member message of a cross-message run, nested inside the run's summary.
+ * The step keeps its own message id on the element so that message's reasoning
+ * trail — which streams on its own event, long after the card was built — can
+ * be hung on the right step (see syncRunStepReasoning).
+ */
+function createStepToolCard(
+  item: Extract<ToolCallDisplayItem, { type: 'step' }>,
+  api: ApiClient,
+  threadId: string,
+): HTMLDetailsElement {
+  const status = aggregateToolStatus(item.toolCalls)
+  const card = el('details', {
+    class: 'tool-card tool-card-step',
+    'data-step-key': item.key,
+    'data-step-message-id': item.messageId,
+    'data-status': status,
+    'data-tool-count': String(item.toolCalls.length),
+  })
+  // Steps reuse the rollup's body treatment: one rail, unboxed rows inside.
+  // That is the single extra rail the run adds — groups below it inset without
+  // a rule of their own, so depth stops consuming horizontal space here.
+  const body = el('div', { class: 'tool-rollup-body' })
+  for (const child of item.children) {
+    body.append(createToolCard(child, api, threadId))
+  }
+  card.append(createToolHeader(item.label, status, 'tool-card-header'), body)
   return card
 }
 
@@ -834,10 +902,12 @@ function createToolCard(
   item: ToolCallDisplayItem,
   api: ApiClient,
   threadId: string,
+  store?: AppStore,
 ): HTMLDetailsElement {
-  if (item.type === 'rollup') return createRollupToolCard(item, api, threadId)
+  if (item.type === 'rollup') return createRollupToolCard(item, api, threadId, store)
+  if (item.type === 'step') return createStepToolCard(item, api, threadId)
   if (item.type === 'group') return createGroupToolCard(item)
-  return createIndividualToolCard(item.toolCall, item.label, api, threadId)
+  return createIndividualToolCard(item.toolCall, item.label, api, threadId, store)
 }
 
 // Stable identity for a tool card across `tool_call_updated` ticks: group cards
@@ -848,6 +918,7 @@ const toolCardSignatures = new WeakMap<HTMLElement, string>()
 
 function toolCardKey(item: ToolCallDisplayItem): string {
   if (item.type === 'rollup') return `r:${item.key}`
+  if (item.type === 'step') return `s:${item.key}`
   if (item.type === 'group') return `g:${item.key}`
   return `t:${item.toolCall.id}`
 }
@@ -858,8 +929,9 @@ function toolCardKey(item: ToolCallDisplayItem): string {
 // calls are plain JSON, so a stringify captures args/result/status/subagent —
 // digested rather than kept, or the cache would pin a second copy of every tool
 // result for as long as its card is on screen (see {@link renderSignature}).
-function toolCardSignature(item: ToolCallDisplayItem): string {
-  return renderSignature(item)
+function toolCardSignature(item: ToolCallDisplayItem, extra?: string): string {
+  const base = renderSignature(item)
+  return extra === undefined ? base : `${base}|${extra}`
 }
 
 function createMessageImages(images: string[]): HTMLElement {
@@ -939,7 +1011,7 @@ function hookCardDetailLines(card: HookCard): string[] {
 }
 
 /**
- * Fetch the raw record behind one card (`hooks:runDetail`). Injected rather than
+ * Fetch the raw record behind one card (`hooks:run-detail`). Injected rather than
  * reached for, so the card family stays a pure rendering concern and component
  * tests can drive the inspector without an IPC bridge.
  */
@@ -1201,6 +1273,42 @@ function shouldNestReasoningInTools(toolCalls: ToolCall[]): boolean {
   return toolCalls.some((tc) => !tc.subagent)
 }
 
+/**
+ * The presentation run this message belongs to, but only once it actually spans
+ * more than one assistant message. A one-message run is indistinguishable from
+ * the per-message rollup, so it stays on the untouched single-message path.
+ */
+function multiStepRunFor(thread: Thread | undefined, msgId: string): ToolRun | undefined {
+  if (!thread) return undefined
+  const run = toolRunForMessage(thread.messages, msgId)
+  return run && run.steps.length > 1 ? run : undefined
+}
+
+/** The summary/reasoning inputs a message contributes to its own tool cards. */
+function messageToolCardOpts(msg: Message): {
+  commandSummary?: string
+  toolSummary?: string
+  reasoning?: string
+} {
+  return {
+    ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
+    ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
+    ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
+  }
+}
+
+/**
+ * The message whose reasoning is still live, by the same rule
+ * {@link isReasoningDisclosureLive} applies: a running thread's last bubble
+ * with no answer text yet.
+ */
+function liveStepMessageId(thread: Thread | undefined): string | null {
+  if (!thread || thread.status !== 'running') return null
+  const last = thread.messages[thread.messages.length - 1]
+  if (!last || last.content.trim()) return null
+  return last.id
+}
+
 /** Progressive while this bubble is the live step; past once settled. */
 function reasoningDisclosureTitle(live: boolean): string {
   return live ? 'Reasoning…' : 'Reasoned'
@@ -1418,6 +1526,38 @@ function syncNestedRollupReasoning(
   body?.querySelectorAll<HTMLElement>(':scope > .message-reasoning').forEach((node) => {
     if (node !== details) node.remove()
   })
+}
+
+/**
+ * Hang each run member's reasoning trail at the top of its own step.
+ *
+ * Kept out of the step's render signature deliberately: reasoning streams token
+ * by token, and folding it into the signature would rebuild the whole step card
+ * (losing its expansion and its rendered markdown) on every chunk. This updates
+ * the existing disclosure in place instead — the same contract
+ * {@link syncNestedRollupReasoning} gives a single-message rollup.
+ */
+function syncRunStepReasoning(card: HTMLElement, run: ToolRun, liveStepId: string | null): void {
+  for (const step of run.steps) {
+    const body = card.querySelector<HTMLElement>(
+      `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`,
+    )
+    if (!body) continue
+    let details = body.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')
+    if (!step.reasoning?.trim()) {
+      details?.remove()
+      continue
+    }
+    const live = step.messageId === liveStepId
+    if (!details) {
+      details = buildReasoningEl(step.reasoning, live, live)
+      body.prepend(details)
+      continue
+    }
+    const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
+    if (textEl) renderReasoningText(textEl, step.reasoning)
+    setReasoningDisclosureTitle(details, live)
+  }
 }
 
 /**
@@ -1946,7 +2086,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     userExpandedGroups: Set<string>,
     userExpandedTools: Set<string>,
   ): void {
-    if (item.type === 'rollup') {
+    // Steps share the rollup's disclosure contract (auto-open while running,
+    // otherwise the user's own choice) and the same nested body.
+    if (item.type === 'rollup' || item.type === 'step') {
       const status = aggregateToolStatus(item.toolCalls)
       card.open = status === 'running' || userExpandedRollups.has(item.key)
       const nestedCards = card.querySelectorAll<HTMLDetailsElement>(
@@ -1985,6 +2127,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       return
     }
     const tc = item.toolCall
+    // A proposal card decides its own disclosure from the user's answer (open
+    // while the offer stands, one quiet line once it is settled), so the
+    // running/expanded rule for work-record cards does not apply to it.
+    if (card.classList.contains('thread-proposal')) return
     const running = tc.status === 'running' || tc.subagent?.status === 'running'
     card.open = running || userExpandedTools.has(tc.id)
     if (card.open) ensureToolCardBodyRendered(card)
@@ -1998,15 +2144,27 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       toolSummary?: string
       reasoning?: string
       reasoningLive?: boolean
+      /**
+       * The multi-message run this message belongs to. The run's combined
+       * rollup renders on its anchor; every other member keeps only its
+       * subagent cards (see {@link buildToolRunDisplayItems}).
+       */
+      run?: ToolRun
+      /** Message id whose reasoning is still streaming, for the step titles. */
+      liveStepId?: string | null
     } = {},
   ): void {
     const threadId = store.getState().activeThreadId ?? ''
     const userExpandedRollups = new Set<string>()
-    msgEl.querySelectorAll<HTMLElement>('.tool-card-rollup[open]').forEach((node) => {
-      const key = node.dataset['rollupKey']
-      // Running rollups are auto-expanded; don't treat that as a user preference.
-      if (key && node.dataset['status'] !== 'running') userExpandedRollups.add(key)
-    })
+    msgEl
+      .querySelectorAll<HTMLElement>('.tool-card-rollup[open], .tool-card-step[open]')
+      .forEach((node) => {
+        // Step keys (`step:<messageId>`) never collide with rollup keys, so one
+        // set covers both levels of disclosure.
+        const key = node.dataset['rollupKey'] ?? node.dataset['stepKey']
+        // Running rollups are auto-expanded; don't treat that as a user preference.
+        if (key && node.dataset['status'] !== 'running') userExpandedRollups.add(key)
+      })
 
     const userExpandedGroups = new Set<string>()
     msgEl.querySelectorAll<HTMLElement>('.tool-card-group[open]').forEach((node) => {
@@ -2022,6 +2180,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       )
       .forEach((node) => {
         const id = node.dataset['toolId']
+        // A proposal card's open state is derived from the answer, not chosen —
+        // capturing it here would pin a dismissed card open on the next tick.
+        if (node.classList.contains('thread-proposal')) return
         // Running tools are auto-expanded so their work is visible as it
         // streams; that is not a user preference. Without this guard the
         // auto-expansion was read back as one on the very next tick and
@@ -2031,11 +2192,36 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         if (id && node.dataset['status'] !== 'running') userExpandedTools.add(id)
       })
 
-    const nestReasoning = Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls)
-    const items = buildToolCallDisplayItems(toolCalls, {
-      ...(nestReasoning ? { forceRollup: true } : {}),
-    })
-    for (const item of items) applyRollupSummaries(item, opts)
+    const msgId = msgEl.dataset['messageId'] ?? ''
+    // A run only renders as one when its anchor is actually on screen. During
+    // the newest-first backfill a member can be rendered before its anchor is;
+    // it falls back to its own rollup and is repainted once the anchor lands
+    // (see finalizeMessageEl), rather than hiding its tools in the meantime.
+    const run =
+      opts.run &&
+      (opts.run.anchorId === msgId ||
+        list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null)
+        ? opts.run
+        : undefined
+    const isRunMember = run !== undefined && run.anchorId !== msgId
+    // Keep the persisted message node for stable event routing and backfill, but
+    // let CSS collapse it when the run absorbed everything it could show. The
+    // selector deliberately checks the live DOM, so a retained subagent card or
+    // a canvas preview added later makes the bubble visible again automatically.
+    msgEl.classList.toggle('msg-tool-run-member', isRunMember)
+
+    const nestReasoning =
+      run === undefined && Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls)
+    const items = run
+      ? isRunMember
+        ? buildSubagentDisplayItems(toolCalls)
+        : [...buildToolRunDisplayItems(run), ...buildSubagentDisplayItems(toolCalls)]
+      : buildToolCallDisplayItems(toolCalls, {
+          ...(nestReasoning ? { forceRollup: true } : {}),
+        })
+    // Run rollups carry their own composed label (polish + counts + steps), so
+    // the per-message summary only applies on the single-message path.
+    if (!run) for (const item of items) applyRollupSummaries(item, opts)
 
     // Index the cards already in the DOM by their stable key so unchanged ones
     // are reused wholesale instead of torn down and rebuilt on every tick — the
@@ -2050,7 +2236,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const desired: HTMLDetailsElement[] = []
     for (const item of items) {
       const key = toolCardKey(item)
-      const sig = toolCardSignature(item)
+      // A proposal card also renders the user's answer, which lives on the
+      // thread rather than on the tool call — fold it in so accepting or
+      // dismissing an offer rebuilds the card the way a new result would.
+      const sig = toolCardSignature(
+        item,
+        item.type === 'individual'
+          ? threadProposalCardSignature(item.toolCall, store, threadId)
+          : undefined,
+      )
       let card = existing.get(key) ?? null
       if (card) existing.delete(key)
 
@@ -2071,7 +2265,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         // The stale node was already claimed out of `existing`, so the cleanup
         // below won't drop it — remove it here or the rebuilt card duplicates.
         card?.remove()
-        card = createToolCard(item, api, threadId)
+        card = createToolCard(item, api, threadId, store)
         toolCardKeys.set(card, key)
         toolCardSignatures.set(card, sig)
       }
@@ -2079,6 +2273,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       applyToolCardOpenState(card, item, userExpandedRollups, userExpandedGroups, userExpandedTools)
       if (item.type === 'rollup' && nestReasoning) {
         syncNestedRollupReasoning(card, msgEl, opts.reasoning, opts.reasoningLive === true)
+      }
+      if (item.type === 'rollup' && run && item.key === RUN_ROLLUP_KEY) {
+        syncRunStepReasoning(card, run, opts.liveStepId ?? null)
       }
       desired.push(card)
     }
@@ -2088,9 +2285,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     existing.forEach((node) => {
       node.remove()
     })
-    // No rollup this tick (tools cleared) — leave body-level reasoning alone;
-    // when tools exist without nested reasoning, strip any orphan nested trail.
-    if (!nestReasoning) {
+    if (run) {
+      // Every member's reasoning is shown as a step inside the run's rollup, so
+      // no bubble keeps a trail of its own — including the anchor's, which the
+      // single-message path would have nested in its own rollup.
+      msgEl.querySelectorAll<HTMLElement>('.message-body > .message-reasoning').forEach((node) => {
+        node.remove()
+      })
+    } else if (!nestReasoning) {
+      // No rollup this tick (tools cleared) — leave body-level reasoning alone;
+      // when tools exist without nested reasoning, strip any orphan nested trail.
       msgEl
         .querySelectorAll<HTMLElement>('.tool-card-rollup .message-reasoning')
         .forEach((node) => {
@@ -2111,6 +2315,104 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         msgEl.insertBefore(node, msgEl.children[base + i] ?? null)
       }
     }
+    syncToolRunMemberVisibility(msgEl)
+  }
+
+  /**
+   * A run's combined rollup renders on its anchor, so anything that changes a
+   * member — a tool ticking, a new member arriving — has to repaint the anchor
+   * as well as the member's own bubble.
+   */
+  function renderRunAnchor(thread: Thread | undefined, run: ToolRun): void {
+    const anchor = thread?.messages.find((m) => m.id === run.anchorId)
+    const anchorEl = list.querySelector<HTMLElement>(`[data-message-id="${run.anchorId}"]`)
+    if (!anchor || !anchorEl) return
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    renderToolCards(anchorEl, anchor.toolCalls ?? [], {
+      ...messageToolCardOpts(anchor),
+      run,
+      liveStepId: liveStepMessageId(thread),
+    })
+  }
+
+  /**
+   * Hand back any rollup a member painted for itself while the anchor was still
+   * off screen — the newest-first backfill renders the transcript's tail before
+   * the history above it. Only members that still hold one are repainted.
+   */
+  function releaseRunMembers(thread: Thread | undefined, run: ToolRun): void {
+    for (const id of run.memberIds) {
+      if (id === run.anchorId) continue
+      const memberEl = list.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+      if (!memberEl?.querySelector(':scope > .tool-card-rollup')) continue
+      const msg = thread?.messages.find((m) => m.id === id)
+      if (!msg) continue
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+      renderToolCards(memberEl, msg.toolCalls ?? [], {
+        ...messageToolCardOpts(msg),
+        run,
+        liveStepId: liveStepMessageId(thread),
+      })
+    }
+  }
+
+  /** Repaint whichever side of `run` the message that just changed is not. */
+  function syncRunLayout(thread: Thread | undefined, run: ToolRun, changedId: string): void {
+    if (changedId === run.anchorId) releaseRunMembers(thread, run)
+    else renderRunAnchor(thread, run)
+  }
+
+  /**
+   * A bubble that gains visible prose leaves the run it had joined — prose is a
+   * run boundary. Rare (it takes the mid-sentence continuation heuristic landing
+   * on a bubble that so far had only tools or reasoning), but without this the
+   * old anchor would keep showing a step for a message that has moved on, and
+   * the message itself would show none of its tools or its reasoning trail.
+   */
+  function resyncRunMembership(thread: Thread | undefined, msgId: string): void {
+    const staleStep = list.querySelector<HTMLElement>(
+      `.tool-card-step[data-step-message-id="${msgId}"]`,
+    )
+    const anchorEl = staleStep?.closest<HTMLElement>('.msg')
+    const anchorId = anchorEl?.dataset['messageId']
+    if (!anchorEl || !anchorId || anchorId === msgId) return
+    const anchorRun = multiStepRunFor(thread, anchorId)
+    if (anchorRun?.memberIds.includes(msgId) === true) return
+    const anchor = thread?.messages.find((m) => m.id === anchorId)
+    if (!anchor) return
+    renderToolCards(anchorEl, anchor.toolCalls, {
+      ...messageToolCardOpts(anchor),
+      ...(anchorRun ? { run: anchorRun, liveStepId: liveStepMessageId(thread) } : {}),
+    })
+    refreshToolCards(msgId)
+    // The step that held this message's reasoning is gone with the repaint
+    // above. Unless the message now anchors a run of its own (where the trail
+    // lives on its step again), hand the trail back to its bubble.
+    const msg = thread?.messages.find((m) => m.id === msgId)
+    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
+    if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return
+    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
+  }
+
+  /**
+   * Update the run's reasoning trails in place after a reasoning chunk. Falls
+   * back to a full anchor repaint only when a step this run now has does not
+   * exist in the DOM yet — a member that has streamed reasoning but no tools.
+   */
+  function syncRunStepTrail(thread: Thread | undefined, run: ToolRun): void {
+    const runCard = list.querySelector<HTMLElement>(
+      `[data-message-id="${run.anchorId}"] > .tool-card-rollup[data-rollup-key="${RUN_ROLLUP_KEY}"]`,
+    )
+    const complete =
+      runCard !== null &&
+      run.steps.every((step) =>
+        runCard.querySelector(`.tool-card-step[data-step-message-id="${step.messageId}"]`),
+      )
+    if (!complete) {
+      renderRunAnchor(thread, run)
+      return
+    }
+    syncRunStepReasoning(runCard, run, liveStepMessageId(thread))
   }
 
   /**
@@ -2144,8 +2446,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (origin?.kind === 'machine') msgEl.setAttribute('data-operation-id', origin.operationId)
     const body = el('div', { class: 'message-body' })
     if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true))
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    const nestReasoning = shouldNestReasoningInTools(msg.toolCalls ?? [])
+    // A message absorbed into a multi-message run shows its reasoning as a step
+    // inside that run's rollup, so it never paints a body-level trail of its own
+    // — not even when it contributed reasoning but no tools.
+    const nestReasoning =
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+      shouldNestReasoningInTools(msg.toolCalls ?? []) ||
+      multiStepRunFor(thread, msgId) !== undefined
     appendMessageContent(body, msg, api, {
       ...(nestReasoning ? { nestReasoningInTools: true } : {}),
     })
@@ -2172,14 +2479,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
     hydrateRemoteArtifactImages(list, api)
+    const run = multiStepRunFor(thread, msgId)
     // Re-render any tool cards this message already carries (restored threads).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     renderToolCards(msgEl, msg.toolCalls ?? [], {
-      ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
-      ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
-      ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
+      ...messageToolCardOpts(msg),
+      ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
     })
     syncMessageCanvasPreviews(msgEl, msg, threadId)
+    // A run's rollup lives on its anchor, so inserting one message changes what
+    // a *different* message renders: a member joining gives the anchor a new
+    // step, and an anchor arriving during the newest-first backfill takes back
+    // the rollups its members had painted for themselves.
+    if (run) syncRunLayout(thread, run, msgId)
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
@@ -2355,8 +2667,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // `querySelector` per assistant message: this pass runs on every rebuild and
     // every backfill chunk, and a `querySelector` for a message that isn't
     // rendered still walks the whole list.
-    const rendered = new Map<string, Element>()
-    list.querySelectorAll('[data-message-id]').forEach((node) => {
+    const rendered = new Map<string, HTMLElement>()
+    list.querySelectorAll<HTMLElement>('[data-message-id]').forEach((node) => {
       const id = node.getAttribute('data-message-id')
       // First match wins, matching the document-order result `querySelector` gave.
       if (id !== null && !rendered.has(id)) rendered.set(id, node)
@@ -2376,6 +2688,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       } else {
         existing?.remove()
       }
+      syncToolRunMemberVisibility(msgEl)
       prevLabel = text
     }
   }
@@ -2604,13 +2917,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // is still pinned to the bottom (#468).
     const prevScrollTop = list.scrollTop
     const wasPinned = pinnedToBottom
+    const run = multiStepRunFor(thread, msgId)
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
     renderToolCards(msgEl, msg.toolCalls ?? [], {
-      ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
-      ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
-      ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
+      ...messageToolCardOpts(msg),
       reasoningLive: isReasoningDisclosureLive(thread, msg),
+      ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
     })
+    // This message's tools may belong to a rollup anchored on another bubble.
+    if (run) syncRunLayout(thread, run, msgId)
     if (wasPinned) {
       scrollToBottom()
     } else if (list.scrollTop !== prevScrollTop) {
@@ -2636,10 +2951,21 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl, msg.content, true, api)
         // Answer started — disclosure flips to past tense even while tokens stream.
-        if (msg.content.trim()) {
-          msgEl?.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
+        if (msgEl && msg.content.trim()) {
+          const trails = msgEl.querySelectorAll<HTMLDetailsElement>('.message-reasoning')
+          trails.forEach((details) => {
             setReasoningDisclosureTitle(details, false)
           })
+          // Tools or reasoning with nowhere to render on this bubble mean it is
+          // still drawn as an absorbed run member — its step lives on the
+          // anchor — and the prose that just landed is a run boundary. The
+          // `.some` is false on every ordinary text-only chunk and the trail
+          // lookup is already paid above, so the extra DOM query stays off the
+          // streaming path.
+          const absorbed =
+            (msg.toolCalls.some((tc) => !tc.subagent) && !msgEl.querySelector('.tool-card')) ||
+            (Boolean(msg.reasoning?.trim()) && trails.length === 0)
+          if (absorbed) resyncRunMembership(thread, mid)
         }
         scrollToBottom()
       }
@@ -2658,7 +2984,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msg = thread?.messages.find((m) => m.id === mid)
       const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (msg?.role === 'assistant' && msgEl) {
-        syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
+        // Inside a multi-message run the trail belongs to this message's step in
+        // the anchor's rollup, not to its own bubble.
+        const run = multiStepRunFor(thread, mid)
+        if (run) syncRunStepTrail(thread, run)
+        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
         activityBar.classList.add('agent-activity-clickable')
         setActivity(activityLabel.textContent)
         scrollToBottom()
@@ -2685,6 +3015,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         })
       }
       if (msg?.role === 'assistant' && msg.content.trim()) {
+        // The settled segment has prose, so it cannot still be a run member —
+        // release it from any anchor that absorbed it while it streamed.
+        resyncRunMembership(thread, mid)
         const body = msgEl?.querySelector<HTMLElement>('.message-body')
         if (body && !body.querySelector('.msg-copy')) attachCopyButton(body, mid, store)
         // Answer is in: tuck a body-level reasoning trail away unless the user

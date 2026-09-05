@@ -202,6 +202,20 @@ export function zapIcon(className = DEFAULT): SVGSVGElement {
   )
 }
 
+/** Lucide git-branch — marks work that splits off and runs beside this thread. */
+export function gitBranchIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'git-branch',
+    [
+      'M6 3v12',
+      'M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+      'M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+      'M15 6a9 9 0 0 0-9 9',
+    ],
+    className,
+  )
+}
+
 /** Lucide git-pull-request — sidebar thread GitHub PR status mark. */
 export function gitPullRequestIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(

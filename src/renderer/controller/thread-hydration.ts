@@ -2,12 +2,13 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Thread } from '@shared/types'
 import { begin as perfBegin } from '../perf.ts'
+import { lastHumanPromptAt } from '@shared/store/thread-helpers.ts'
 import { hydrateArtefactPreviews } from '../canvas/artefact-previews.ts'
 
 /**
  * On-demand transcripts.
  *
- * A project's threads arrive from `threads:loadProject` as metadata only —
+ * A project's threads arrive from `threads:load-project` as metadata only —
  * `messages: []` and `messagesLoaded: false` — because the sidebar draws a row
  * from a title, a status dot and a PR chip, and reading every transcript to
  * render one was the whole cost of opening a large project. The transcript for a
@@ -146,7 +147,20 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
             // transcript yet. Disk history first, then the streamed tail.
             const diskIds = new Set(messages.map((m) => m.id))
             const streamedMeanwhile = t.messages.filter((m) => !diskIds.has(m.id))
-            return { ...t, messages: [...messages, ...streamedMeanwhile], messagesLoaded: true }
+            const hydrated = {
+              ...t,
+              messages: [...messages, ...streamedMeanwhile],
+              messagesLoaded: true,
+            }
+            // Threads written before `lastPromptAt` existed only learn when they
+            // were last prompted while their transcript is in memory, which is
+            // exactly now. Recording it makes the sidebar's sort right for this
+            // thread from the next metadata-only load on, without it ever
+            // reading the transcript again. Idempotent: `lastHumanPromptAt`
+            // returns the persisted value once there is one, so a thread opened
+            // twice does not write twice.
+            const promptedAt = lastHumanPromptAt(hydrated)
+            return promptedAt === undefined ? hydrated : { ...hydrated, lastPromptAt: promptedAt }
           }),
         })
         touch(threadId)

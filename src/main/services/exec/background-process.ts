@@ -77,6 +77,23 @@ export interface BackgroundProcessInfo {
 
 const processes = new Map<string, BackgroundProcess>()
 
+/**
+ * Operation ids are quoted back to the model and rendered in the transcript
+ * ("Background task <id> exited with code 0 …" on the completion wake). A
+ * random UUID there makes every reference screenshot of that message differ
+ * per run, so under e2e ids come from a counter instead. Still unique for the
+ * life of the main process, which is all `processes` needs.
+ */
+let e2eOperationSequence = 0
+
+export function nextBackgroundOperationId(): string {
+  if (process.env['COPSE_E2E'] === '1') {
+    e2eOperationSequence += 1
+    return `e2e-background-${String(e2eOperationSequence)}`
+  }
+  return randomUUID()
+}
+
 // A full loopback URL as dev servers usually print it, e.g.
 // "Local:   http://localhost:5173/", "http://127.0.0.1:3000".
 const LOOPBACK_URL_RE =
@@ -224,7 +241,7 @@ export async function startBackgroundProcess(
   })
 
   const entry: BackgroundProcess = {
-    id: randomUUID(),
+    id: nextBackgroundOperationId(),
     command,
     cwd,
     proc,

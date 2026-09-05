@@ -192,6 +192,20 @@
   color: var(--text-secondary);
 }
 
+/* A run spans several persisted assistant messages, one step each. Steps reuse
+   the rollup body (`.tool-rollup-body` sets `display: flex`, which overrides the
+   UA's closed-<details> hiding — hence the explicit rule), so the run adds
+   exactly one extra rail. Groups below a step inset without a rule of their own,
+   which is where the nesting stops eating horizontal space. */
+.tool-card-step:not([open]) > .tool-rollup-body {
+  display: none;
+}
+/* Step headings read as normal rows, not a second italic summary; status lives
+   on the expanded tool rows, matching the run summary above them. */
+.tool-card-step > .tool-card-header .tool-status-icon {
+  display: none;
+}
+
 .tool-card-group > .tool-group-items {
   display: flex;
   flex-direction: column;

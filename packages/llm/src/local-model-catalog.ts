@@ -328,7 +328,7 @@ export interface RecommendedAssignment {
 /**
  * The "good default" local setup: the top budget-fitting recommendation for each
  * core role. Powers both the default advice and a future one-click "download the
- * recommended set" (each `model.id` feeds the existing `lmstudio:download` IPC).
+ * recommended set" (each `model.id` feeds the existing `lm-studio:download` IPC).
  * A role with no budget-fitting candidate is simply omitted rather than forcing
  * an over-budget pick. Deterministic — no I/O, no clock.
  */

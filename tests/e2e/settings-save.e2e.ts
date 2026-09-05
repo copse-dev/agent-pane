@@ -5,7 +5,7 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 /**
- * Regression for the `settings:setSecurity` save crash: the schema required
+ * Regression for the `settings:set-security` save crash: the schema required
  * `cursorHooksEnabled` but no renderer caller ever sent it, so clicking Save
  * surfaced an "Unexpected error … expected boolean, received undefined" toast.
  */

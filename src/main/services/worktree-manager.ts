@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { threadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
+import { describeBranchCheckoutFailure } from '@shared/git/branch-held.ts'
 import { runCommand } from './exec/command-runner.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { copseWorktreesDir } from './storage/copse-paths.ts'
@@ -357,8 +358,11 @@ const git = runWorktreeGit
 function commandFailure(
   action: string,
   result: { stdout: string; stderr: string; code: number },
+  /** Present when the command checks out a branch, to explain a held one. */
+  branch?: string,
 ): Error {
-  const detail = (result.stderr || result.stdout).trim()
+  const raw = (result.stderr || result.stdout).trim()
+  const detail = branch && raw ? describeBranchCheckoutFailure(branch, raw) : raw
   return new Error(
     detail ? `${action}: ${detail}` : `${action} exited with code ${String(result.code)}`,
   )
@@ -698,7 +702,12 @@ export async function restoreRetiredThreadWorktree(
       }
       await mkdir(dirname(target), { recursive: true })
       const add = await git(projectRoot, ['worktree', 'add', target, input.worktree.branch])
-      if (add.code !== 0) throw commandFailure('Cannot restore retired thread worktree', add)
+      if (add.code !== 0) {
+        // A retired thread's branch can be checked out elsewhere by the time it
+        // is reopened, and "already checked out at …" is unrecoverable without
+        // knowing which checkout to free.
+        throw commandFailure('Cannot restore retired thread worktree', add, input.worktree.branch)
+      }
     }
     const canonicalPath = await realpath(target)
     return activeWorktreeMetadata(input.worktree, canonicalPath)

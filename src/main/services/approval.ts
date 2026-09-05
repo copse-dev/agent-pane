@@ -201,7 +201,7 @@ export function runWithApprovalPromptTarget<T>(sender: ApprovalPromptTarget, fn:
   return approvalPromptTarget.run(sender, fn)
 }
 
-/** The renderer that should receive `agent:approval_request` for this turn. */
+/** The renderer that should receive `agent:approval-request` for this turn. */
 export function resolveApprovalPromptTarget(fallback: ApprovalPromptTarget): ApprovalPromptTarget {
   const target = approvalPromptTarget.getStore()
   if (target && !target.isDestroyed()) return target
@@ -569,7 +569,7 @@ export function initApproval(
           resolve(DENIED)
           return
         }
-        dest.send('agent:approval_request', { id, threadId, ...req })
+        dest.send('agent:approval-request', { id, threadId, ...req })
         // Deliver the user's configured native alert channels. A repeating
         // Dock/taskbar animation stops on focus and also when this approval
         // settles for any reason.
@@ -580,7 +580,7 @@ export function initApproval(
         // a still-visible dialog (timeout never sent approval_cancelled).
         const onAbort = (): void => {
           if (!pending.has(id)) return
-          if (!dest.isDestroyed()) dest.send('agent:approval_cancelled', { id })
+          if (!dest.isDestroyed()) dest.send('agent:approval-cancelled', { id })
           settle(id, { approved: false, remember: false })
         }
         signal?.addEventListener('abort', onAbort, { once: true })

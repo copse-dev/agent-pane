@@ -71,7 +71,7 @@ export function installPreloadPerfTracing(): void {
         src: 'preload',
         name: `invoke:${channel}`,
         ms: Math.round((performance.now() - start) * 100) / 100,
-        // Payload size is the other half of the story for `threads:loadProject`:
+        // Payload size is the other half of the story for `threads:load-project`:
         // a reply large enough to matter costs structured-clone time at both
         // ends and heap in the renderer. Measured only for array replies, where
         // the count is the meaningful figure and computing it is O(1).

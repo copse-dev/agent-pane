@@ -1,5 +1,7 @@
 import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
+import { THREAD_PROPOSAL_TOOL } from '@shared/threads/thread-proposal.ts'
+import type { ToolRun, ToolRunStep } from './tool-runs.ts'
 
 /** Progressive while a tool is in flight; past once it settles (done/error). */
 export type ToolLabelTense = 'running' | 'done'
@@ -59,6 +61,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   read_terminal: { running: 'Reading shell', done: 'Read shell' },
   video_frames: { running: 'Reading video', done: 'Read video' },
   ask_user: { running: 'Asking user', done: 'Asked user' },
+  propose_thread: { running: 'Proposing a thread', done: 'Proposed a thread' },
   update_todos: { running: 'Updating plan', done: 'Updated plan' },
   run_checkup: { running: 'Running checkup', done: 'Ran checkup' },
 }
@@ -146,12 +149,24 @@ export type ToolCallDisplayItem =
       children: ToolCallDisplayItem[]
       toolCalls: ToolCall[]
     }
+  // One member message of a cross-message run, nested inside the run's rollup.
+  // Carries its message id so the view can hang that message's reasoning trail
+  // (which streams separately) on the right step.
+  | {
+      type: 'step'
+      key: string
+      label: string
+      messageId: string
+      children: ToolCallDisplayItem[]
+      toolCalls: ToolCall[]
+    }
   | { type: 'group'; key: string; label: string; toolCalls: ToolCall[] }
   | { type: 'individual'; toolCall: ToolCall; label: string }
 
 const MCP_PREFIX = 'mcp__'
 const MCP_GROUP_PREFIX = 'mcp:'
 const TURN_ROLLUP_KEY = 'turn'
+export const RUN_ROLLUP_KEY = 'run'
 
 interface ParsedMcp {
   server: string
@@ -317,11 +332,18 @@ export function getToolGroupLabel(key: string, tense: ToolLabelTense = 'done'): 
   return pickLabel(group.label, tense)
 }
 
+/** Words that read as acronyms and stay fully upper case in tool labels. */
+const TOOL_NAME_ACRONYMS = new Set(['gh', 'pr', 'ci', 'url', 'id'])
+
 function formatToolNameFallback(name: string): string {
   return name
     .split('_')
     .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .map((word) =>
+      TOOL_NAME_ACRONYMS.has(word.toLowerCase())
+        ? word.toUpperCase()
+        : word.charAt(0).toUpperCase() + word.slice(1),
+    )
     .join(' ')
 }
 
@@ -432,9 +454,14 @@ export function buildToolCallDisplayItems(
   if (toolCalls.length === 0) return []
 
   const subagents: ToolCall[] = []
+  const proposals: ToolCall[] = []
   const regular: ToolCall[] = []
   for (const tc of toolCalls) {
     if (tc.subagent) subagents.push(tc)
+    // A proposed thread is an offer addressed to the user, so it keeps a
+    // top-level card for the same reason a subagent does: folded into
+    // `Used 12 tools` it is an offer nobody is ever shown.
+    else if (tc.name === THREAD_PROPOSAL_TOOL) proposals.push(tc)
     else regular.push(tc)
   }
 
@@ -452,8 +479,96 @@ export function buildToolCallDisplayItems(
     result.push(...grouped)
   }
 
-  for (const tc of subagents) {
+  for (const tc of [...subagents, ...proposals]) {
     result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
   }
   return result
+}
+
+/**
+ * Subagent runs keep their own top-level timeline card on the message that
+ * started them, even when that message's regular tools have moved into a
+ * cross-message run rollup anchored elsewhere.
+ */
+export function buildSubagentDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] {
+  return toolCalls
+    .filter((tc) => tc.subagent)
+    .map((tc) => ({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) }))
+}
+
+/**
+ * Collapsed summary for a whole run. The small-model polish leads once it has
+ * landed, with the operation count, step depth and failures trailing it as
+ * secondary metadata; until then the deterministic `Used N tools` holds the
+ * line, exactly as a single-message rollup does.
+ */
+export function summarizeToolRun(run: ToolRun): string {
+  const n = run.toolCalls.length
+  const status = aggregateToolStatus(run.toolCalls)
+  const failed = run.toolCalls.filter((tc) => tc.status === 'error').length
+  const polished = run.summary?.trim()
+  const parts: string[] = []
+  if (polished) {
+    parts.push(polished, `${String(n)} ${n === 1 ? 'tool' : 'tools'}`)
+  } else {
+    parts.push(status === 'running' ? `Using ${String(n)} tools` : `Used ${String(n)} tools`)
+  }
+  parts.push(`${String(run.steps.length)} steps`)
+  if (failed > 0 && status !== 'running') parts.push(`${String(failed)} failed`)
+  return parts.join(' · ')
+}
+
+/**
+ * Heading for one step. Prefers that message's own rollup polish; otherwise the
+ * same canned label a single-message rollup would have shown. A step that
+ * contributed only reasoning has no tools to name.
+ */
+function summarizeToolRunStep(step: ToolRunStep, children: ToolCallDisplayItem[]): string {
+  const polished = step.summary?.trim()
+  if (!polished) return summarizeToolTurn(step.toolCalls, children) || 'Reasoned'
+  // summarizeToolTurn appends the failure count itself; the polished label
+  // replaces it, so carry the failures over rather than losing them.
+  const failed = step.toolCalls.filter((tc) => tc.status === 'error').length
+  if (failed > 0 && aggregateToolStatus(step.toolCalls) !== 'running') {
+    return `${polished} · ${String(failed)} failed`
+  }
+  return polished
+}
+
+/**
+ * Build the cards for a whole presentation run. A single-step run is exactly
+ * the per-message rollup it replaces — the nesting only appears once the run
+ * actually spans more than one assistant message, where each member becomes a
+ * step inside the shared summary.
+ *
+ * Only the run's *regular* calls are covered here; subagent cards stay on their
+ * own message (see {@link buildSubagentDisplayItems}).
+ */
+export function buildToolRunDisplayItems(
+  run: ToolRun,
+  opts?: { forceRollup?: boolean },
+): ToolCallDisplayItem[] {
+  if (run.steps.length < 2) return buildToolCallDisplayItems(run.toolCalls, opts)
+
+  const children: ToolCallDisplayItem[] = run.steps.map((step) => {
+    const grouped = buildGroupedDisplayItems(step.toolCalls)
+    return {
+      type: 'step',
+      key: `step:${step.messageId}`,
+      label: summarizeToolRunStep(step, grouped),
+      messageId: step.messageId,
+      children: grouped,
+      toolCalls: step.toolCalls,
+    }
+  })
+
+  return [
+    {
+      type: 'rollup',
+      key: RUN_ROLLUP_KEY,
+      label: summarizeToolRun(run),
+      children,
+      toolCalls: run.toolCalls,
+    },
+  ]
 }

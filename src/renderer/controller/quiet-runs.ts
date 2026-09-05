@@ -1,7 +1,7 @@
 /**
  * Runs the user launched from the foreground and is sitting there watching.
  *
- * The completion alert (`alerts:threadFinished` → beep / Dock bounce / system
+ * The completion alert (`alerts:thread-finished` → beep / Dock bounce / system
  * notification) exists to pull someone back to a thread they walked away from.
  * A comparison started by clicking a follow-up bubble is the opposite case: the
  * click was a second ago, the card renders in front of them, and chiming at them

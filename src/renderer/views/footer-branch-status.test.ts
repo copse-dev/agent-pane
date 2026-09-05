@@ -366,6 +366,96 @@ describe('footer branch status', () => {
     assert.deepEqual(labels[0], 'main')
   })
 
+  it('names the picked branch for the send to act on, checking out nothing', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const checkouts: string[] = []
+    const base = createApi(
+      { currentBranch: 'main', pr: null },
+      [
+        { name: 'main', lastCommitDate: '2024-01-01' },
+        { name: 'feature/new', lastCommitDate: '2024-01-02' },
+      ],
+      'main',
+    )
+    const control = mountFooterBranchStatus(host, store, {
+      ...base,
+      git: {
+        ...base['git'],
+        checkoutBranch: async (_projectId: string, _threadId: string, branch: string) => {
+          checkouts.push(branch)
+        },
+      },
+    })
+    await settle()
+    await openBranchMenu(host)
+
+    const option = [...host.querySelectorAll<HTMLButtonElement>('.branch-picker-option')].find(
+      (node) => node.textContent.startsWith('feature/new'),
+    )
+    assert.ok(option)
+    option.click()
+    await settle()
+
+    // Selecting states where the thread will start. Moving the user's checkout
+    // for a message they have not sent is what stranded branches in other
+    // worktrees, so nothing is checked out until `prepareCheckout` runs.
+    assert.deepEqual(checkouts, [])
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/new')
+    assert.equal(control.pendingBaseBranch('thread-1'), 'feature/new')
+    assert.equal(control.pendingBaseBranch('thread-2'), undefined)
+    assert.match(
+      qsRequired(host, '.branch-picker-trigger').title,
+      /Start this thread from: feature\/new/,
+    )
+  })
+
+  it('drops a pending base branch once the thread it belonged to has started', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const control = mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: 'main', pr: null },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/new', lastCommitDate: '2024-01-02' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+    await openBranchMenu(host)
+    const option = [...host.querySelectorAll<HTMLButtonElement>('.branch-picker-option')].find(
+      (node) => node.textContent.startsWith('feature/new'),
+    )
+    assert.ok(option)
+    option.click()
+    await settle()
+    assert.equal(control.pendingBaseBranch('thread-1'), 'feature/new')
+
+    store.setState({ threads: [thread(undefined, true)] })
+    store.emit('threads_changed')
+    await settle()
+
+    // The selection was consumed by the first send; the thread now speaks for a
+    // real checkout, and a stale preference must not outlive it.
+    assert.equal(control.pendingBaseBranch('thread-1'), undefined)
+  })
+
   it('keeps the trunk PR out of the branch picker menu too', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
