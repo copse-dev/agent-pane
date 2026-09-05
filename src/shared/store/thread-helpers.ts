@@ -24,6 +24,11 @@ import type {
   ThreadReview,
 } from '@shared/types'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
+import {
+  clearThreadProposalDecision,
+  recordThreadProposalDecision,
+  type ThreadProposalDecision,
+} from '@shared/threads/thread-proposal.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 
@@ -906,6 +911,41 @@ export function recordThreadArchives(
     return { ...t, archives: [...existing, ...added], updatedAt: Date.now() }
   })
   store.setState({ threads: updated })
+  store.emit('threads_changed')
+}
+
+/**
+ * Record the user's answer to one model-proposed thread on the thread that
+ * offered it. Replaces any earlier answer for the same proposal, so undoing a
+ * dismissal and then starting it leaves one row (see `thread-proposal.ts`).
+ */
+export function setThreadProposalDecision(
+  store: AppStore,
+  threadId: string,
+  decision: ThreadProposalDecision,
+): void {
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    threadProposals: recordThreadProposalDecision(t.threadProposals, decision),
+    updatedAt: Date.now(),
+  }))
+  store.emit('threads_changed')
+}
+
+/** Return a proposal to its standing-offer state (the card's undo). */
+export function clearThreadProposalDecisionFor(
+  store: AppStore,
+  threadId: string,
+  proposalId: string,
+): void {
+  patchThreadAnywhere(store, threadId, (t) => {
+    const remaining = clearThreadProposalDecision(t.threadProposals, proposalId)
+    // Drop the key entirely when the last answer goes, so a thread that has
+    // decided nothing does not persist an empty array in `meta.json`.
+    if (remaining.length > 0) return { ...t, threadProposals: remaining, updatedAt: Date.now() }
+    const { threadProposals: _cleared, ...rest } = t
+    return { ...rest, updatedAt: Date.now() }
+  })
   store.emit('threads_changed')
 }
 

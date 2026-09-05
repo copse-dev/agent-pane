@@ -4,6 +4,7 @@ import type { RemoteAgentLink } from './remote-agent-link.ts'
 import type { GithubPrRef } from './github-pr-url.ts'
 import type { HookCard } from './hook-card.ts'
 import type { ThreadWorktree, ThreadWorktreeChoice } from './worktree-types.ts'
+import type { ThreadProposalDecision } from './thread-proposal.ts'
 import type { ArchiveAttachmentRef, VideoAttachmentRef } from './attachment-refs.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
 export type { HookCard } from './hook-card.ts'
@@ -247,6 +248,25 @@ export interface Thread {
    * means the model's own saved level applies.
    */
   reasoning?: ReasoningLevel
+  /**
+   * Answers to the {@link ThreadProposal}s the agent offered in this thread —
+   * one row per proposal, keyed by the offering tool call's id (see
+   * `thread-proposal.ts`). Absent means every offer in the transcript is still
+   * a standing offer, which is the resting state, not a pending prompt.
+   *
+   * Kept on the *offering* thread rather than derived from whether a started
+   * thread still exists: deleting the thread a proposal created must not put
+   * the card back to "start this?", and a dismissal has no thread to derive it
+   * from at all.
+   */
+  threadProposals?: ThreadProposalDecision[]
+  /** Provenance for a thread the user started from a model-authored proposal. */
+  proposedBy?: {
+    /** Thread whose transcript carries the offering `propose_thread` call. */
+    threadId: string
+    /** {@link ThreadProposal.id} — the offering tool call. */
+    proposalId: string
+  }
   /** Provenance for a task created by a project automation schedule. */
   automation?: {
     scheduleId: string

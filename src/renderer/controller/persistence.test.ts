@@ -17,6 +17,7 @@ import type { Message, Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
+import { startProposedThread } from './thread-proposals.ts'
 
 // attachAutosave registers a pagehide listener; provide a minimal window stub
 // (node test env has no DOM).
@@ -635,6 +636,52 @@ test('awaitPendingThreadPersistence waits for the immediate new-thread create', 
 test('awaitPendingThreadPersistence is a no-op when autosave is not attached', async () => {
   __resetPersistenceForTest()
   await awaitPendingThreadPersistence()
+})
+
+test('a proposed thread waits for its create before preparing the checkout', async () => {
+  __resetPersistenceForTest()
+  const persisted = new Set<string>()
+  let releaseCreate = (): void => undefined
+  const createGate = new Promise<void>((resolve) => {
+    releaseCreate = resolve
+  })
+  const { api } = fakeApi({
+    create: async (_projectId, created) => {
+      await createGate
+      persisted.add(created.id)
+    },
+  })
+  const store = createStore({ activeProjectId: 'p1', threads: [thread('source')], projects: [] })
+  const autosave = attachAutosave(store, api)
+  let prepared = false
+  try {
+    const starting = startProposedThread(
+      store,
+      {
+        agent: {
+          ...api.agent,
+          prepareCheckout: async (_projectId, id) => {
+            assert.ok(persisted.has(id), 'checkout must not race the new thread create')
+            prepared = true
+            return { checkoutMode: 'shared', choice: 'worktree', branch: null }
+          },
+        },
+      },
+      'source',
+      { id: 'proposal', title: 'Follow-up', summary: 'Separate work', prompt: 'Check it' },
+      {
+        confirmSharedCheckout: () => Promise.resolve(false),
+      },
+    )
+    await tick()
+    assert.equal(prepared, false)
+    releaseCreate()
+    assert.equal((await starting).started, false)
+    assert.equal(prepared, true)
+  } finally {
+    releaseCreate()
+    autosave.detach()
+  }
 })
 
 test('pagehide flush triggers a final reconcile', async () => {
