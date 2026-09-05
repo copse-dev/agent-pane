@@ -39,7 +39,16 @@ if (compareIndex !== -1) {
     console.error('--compare-ref needs a git ref')
     process.exit(2)
   }
-  const previous = generateApiProtocolAtRef(ref, versionAtRef(ref))
+  const previousVersion = versionAtRef(ref)
+  if (previousVersion === null) {
+    // The ref predates the protocol itself — the case on the PR that
+    // introduces it, where `main` has no `api-protocol.mts` to read a version
+    // from. There is no previous surface, so every channel is new and nothing
+    // can be breaking.
+    console.log(`${ref} has no API protocol to compare against; nothing to classify`)
+    process.exit(0)
+  }
+  const previous = generateApiProtocolAtRef(ref, previousVersion)
   const diff = compareApiProtocol(previous, doc)
   for (const line of diff.additive) console.log(`additive  ${line}`)
   for (const line of diff.breaking) console.log(`BREAKING  ${line}`)
@@ -92,11 +101,20 @@ if (schemaIndex !== -1) {
   console.log(`Wrote ${out}: ${String(Object.keys(doc.$defs).length)} named types`)
 }
 
-/** The protocol version the sources at `ref` declared. */
-function versionAtRef(ref: string): number {
-  const source = execFileSync('git', ['show', `${ref}:src/shared/api-protocol.mts`], {
-    encoding: 'utf8',
-  })
+/**
+ * The protocol version the sources at `ref` declared, or `null` when the ref
+ * predates the protocol module entirely (nothing to compare against).
+ */
+function versionAtRef(ref: string): number | null {
+  let source: string
+  try {
+    source = execFileSync('git', ['show', `${ref}:src/shared/api-protocol.mts`], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+  } catch {
+    return null
+  }
   const match = /API_PROTOCOL_VERSION = (\d+)/.exec(source)
   if (!match?.[1]) throw new Error(`${ref}: cannot read API_PROTOCOL_VERSION`)
   return Number(match[1])

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { API_PROTOCOL_VERSION } from '../../src/shared/api-protocol.mts'
@@ -425,5 +426,35 @@ describe('compareApiProtocol', () => {
   it('parses only documents that carry the fields the tooling reads', () => {
     assert.throws(() => parseApiProtocol('{"version":1}'), /not an API protocol document/)
     assert.equal(parseApiProtocol(serializeApiProtocol(doc({}))).version, 1)
+  })
+})
+
+describe('gen-api-protocol --compare-ref', () => {
+  const run = (ref: string): { status: number | null; out: string } => {
+    const result = spawnSync(
+      process.execPath,
+      [resolve(ROOT, 'scripts/gen-api-protocol.mts'), '--compare-ref', ref],
+      { cwd: ROOT, encoding: 'utf8' },
+    )
+    return { status: result.status, out: `${result.stdout}${result.stderr}` }
+  }
+
+  it('passes when the ref predates the protocol, instead of failing to read it', () => {
+    // CI compares against the PR base. On the PR that introduces the protocol
+    // that base has no `src/shared/api-protocol.mts`, and `git show` of a path
+    // that does not exist there exits 128 — which failed the whole job rather
+    // than reporting "nothing to compare". There is no previous surface, so
+    // every channel is new and nothing can be breaking.
+    // The repo's own first commit predates the protocol module.
+    const firstCommit = spawnSync('git', ['rev-list', '--max-parents=0', 'HEAD'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    })
+      .stdout.split('\n')[0]
+      ?.trim()
+    assert.ok(firstCommit, 'expected a root commit to compare against')
+    const { status, out } = run(firstCommit)
+    assert.equal(status, 0, out)
+    assert.match(out, /no API protocol to compare against/)
   })
 })
