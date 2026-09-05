@@ -335,6 +335,19 @@ describe('judgeRun', () => {
     assert.match(verdict.failure ?? '', /canary/i)
   })
 
+  it('leads with the leaked canary even when the container also could not be reaped', () => {
+    // A secret that escaped outranks a container left behind: the teardown
+    // problem is still reported, but as a warning beside it, not as the
+    // headline the user reads first.
+    const verdict = judgeRun({
+      ...fakeRecord(THREAD),
+      teardown: 'failed',
+      secretCanary: { present: true, detail: 'canary found in out/result.json' },
+    })
+    assert.match(verdict.failure ?? '', /canary/i)
+    assert.match(verdict.warnings.join(' '), /could not be removed/)
+  })
+
   it('fails when the guest reports commits but its bundle is missing', () => {
     const verdict = judgeRun({
       ...fakeRecord(THREAD),
