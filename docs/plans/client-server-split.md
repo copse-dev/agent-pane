@@ -51,8 +51,7 @@ invariants test, so the surface changes only deliberately. Delivered:
   against the PR base, so a breaking change without a version bump fails.
 - `scripts/lib/api-protocol.test.ts`: drift (committed manifest equals generated),
   every method bound to one namespaced channel, every channel has a literal
-  main-process endpoint, `ipc.ts` names only real channels, no dangling
-  `$ref`s. `--compare-ref <git-ref>` classifies a change as additive or
+  main-process endpoint, no dangling `$ref`s. `--compare-ref <git-ref>` classifies a change as additive or
   breaking and fails a breaking change without a version bump.
 - The preload object is now declared `const api: ApiClient`. It was never checked against
   the contract before; five subscription listeners were typed `unknown` /
@@ -71,8 +70,8 @@ Findings from generating it, which shape the next steps:
 
 - `src/shared/types/ipc.ts` (`IpcInvokeMap` / `IpcEventMap`) covered 111 of
   the 237 invoke channels and 36 of 53 event channels the preload binds, and
-  nothing imports it. It is not the source of truth and should be retired or
-  regenerated from the schema. One dead entry (`theme:changed`) was removed.
+  nothing imports it. It was not the source of truth, and has since been
+  deleted. One dead entry (`theme:changed`) was removed first.
 - Every channel the preload names has a literal `ipcMain.handle` / `ipcMain.on`
   under `src/main` (255 of 255; `perf:record` is main-only, used by the perf
   bridge), and every event channel has a literal sender. The handler table is
