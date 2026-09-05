@@ -143,6 +143,13 @@ export interface ModelComparison {
 export interface Thread {
   id: string
   title: string
+  /**
+   * How many times auto-naming has written {@link title}. Absent means the title
+   * is nobody's but the user's — either the untouched `New Thread` default or a
+   * manual rename — so auto-naming must leave it alone. Present means the title
+   * is ours to refine as the thread grows, up to a small fixed number of passes.
+   */
+  autoTitleCount?: number
   status: ThreadStatus
   messages: Message[]
   /**
