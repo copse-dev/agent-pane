@@ -87,10 +87,17 @@ describe('ACP unfinished-turn recovery fallback', () => {
     resetUserData()
   })
 
-  it('places the recovery fallback after the completed tool trace', async () => {
+  it('places the recovery fallback after the interrupted tool trace', async () => {
     const toolCard = await $('.tool-card[data-tool-id="tc-acp-upstream-search"]')
     const fallback = await $('[data-message-id="msg-assistant-acp-fallback"] .message-text')
-    await expect(toolCard).toHaveAttribute('data-status', 'done')
+    await expect(toolCard).toHaveAttribute('data-status', 'error')
+    await toolCard.$('summary.tool-card-header').click()
+    await expect(toolCard).toHaveText('may have partially run or produced effects', {
+      containing: true,
+    })
+    await expect(toolCard).toHaveText('inspect the current state before retrying it', {
+      containing: true,
+    })
     await expect(fallback).toHaveText(
       'The external agent stopped after using its tools without providing a final result. Send “continue” to resume.',
     )
