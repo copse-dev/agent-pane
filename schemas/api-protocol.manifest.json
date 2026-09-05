@@ -136,6 +136,13 @@
           1
         ]
       },
+      "agent:suggest-pr-body": {
+        "api": "agent.suggestPrBody",
+        "args": [
+          3,
+          3
+        ]
+      },
       "agent:suggest-terminal-title": {
         "api": "agent.suggestTerminalTitle",
         "args": [
@@ -411,6 +418,13 @@
       },
       "gh:approve-pr": {
         "api": "gh.approvePr",
+        "args": [
+          3,
+          3
+        ]
+      },
+      "gh:create-pr-for-thread": {
+        "api": "gh.createPrForThread",
         "args": [
           3,
           3
