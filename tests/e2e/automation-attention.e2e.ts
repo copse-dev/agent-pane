@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-automation-attention'
@@ -363,7 +363,15 @@ describe('automation attention grouping', function () {
     const waitingRun = (await visibleRuns)[0]
     assert.ok(waitingRun)
     await expect(waitingRun.$('.chat-attention-bell')).toBeDisplayed()
+    // The waiting run was started by `runNow` moments ago, so its trigger time
+    // is the wall clock; pin only that text for the capture.
+    const restoreRunTime = await pinTextForCapture(
+      '.automation-schedule-runs',
+      /^Latest · .+$/,
+      'Latest · Jan 1, 2026, 12:00 AM',
+    )
     await saveElementScreenshot('.automation-threads-group', 'automation-attention-group.png')
+    await restoreRunTime()
 
     const waitingThreadId = await waitingRun.getAttribute('data-thread-id')
     assert.ok(waitingThreadId)

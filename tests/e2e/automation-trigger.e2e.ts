@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import {
   E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
@@ -187,7 +188,15 @@ describe('cron automation trigger', function () {
     const scheduledRow = scheduleGroup.$('.automation-schedule-runs .chat-row')
     await scheduledRow.waitForExist({ timeout: 5_000 })
     assert.match(await scheduledRow.getText(), /^Latest · /)
+    // The row is the run the real scheduler just fired, so its time is the
+    // wall clock; nothing seeded can stand in for it. Pin only that text.
+    const restoreRunTime = await pinTextForCapture(
+      '.automation-schedule-runs',
+      /^Latest · .+$/,
+      'Latest · Jan 1, 2026, 12:00 AM',
+    )
     await saveElementScreenshot('.automation-threads-group', 'automation-thread-group.png')
+    await restoreRunTime()
     await scheduledRow.click()
 
     const userMessage = $('.msg-user .message-text')

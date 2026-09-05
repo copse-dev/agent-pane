@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
-import { once } from 'node:events'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
+import { listenOnFixturePort } from './helpers/fixture-server.ts'
 import { setComposerValue } from './helpers/composer.ts'
-import { waitForAgentIdle } from './helpers.ts'
+import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PLUGIN_ID = 'personal.browser-fixture'
@@ -59,11 +59,8 @@ describe('selected plugin browser behavior', function () {
           </body>
         </html>`)
     })
-    server.listen(0, '127.0.0.1')
-    await once(server, 'listening')
-    const address = server.address()
-    if (!address || typeof address === 'string') throw new Error('Fixture server has no TCP port.')
-    const origin = `http://127.0.0.1:${String(address.port)}`
+    // The plugin echoes this origin into its response, which is in frame.
+    const origin = await listenOnFixturePort(server, 43117)
 
     pluginRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-browser-plugin-'))
     mkdirSync(join(pluginRoot, 'dist'))
@@ -103,7 +100,7 @@ describe('selected plugin browser behavior', function () {
       }),
     )
 
-    seedEmptyProject(process.cwd(), PROJECT_ID, {
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID, {
       pluginSources: [pluginRoot],
       model: `plugin-model:${PLUGIN_ID}:${MODEL_ID}`,
     })
@@ -144,6 +141,7 @@ describe('selected plugin browser behavior', function () {
     const address = await addressInput.getValue()
     assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/reference$/)
 
+    await waitForActiveThreadTitle()
     await saveElementScreenshot('#app', 'selected-plugin-browser-tab.png')
   })
 })

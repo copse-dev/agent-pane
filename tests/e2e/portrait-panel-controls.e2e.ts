@@ -5,6 +5,7 @@ import {
   resetUserData,
   seedEmptyProject,
   seedPortraitRightPanelFixture,
+  seedStableWorkspace,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
 
@@ -55,7 +56,7 @@ async function openPortraitChrome(): Promise<void> {
   // (same reason `portrait-right-panel.e2e.ts` is CI-excluded), and the chrome
   // affordances are identical for bottom-pinned and auto-portrait layouts.
   seedPortraitRightPanelFixture(
-    process.cwd(),
+    seedStableWorkspace(),
     true,
     {
       width: PORTRAIT_WIDTH,
@@ -96,7 +97,7 @@ async function openPortraitChrome(): Promise<void> {
 
 async function openCenteredPortraitChrome(): Promise<void> {
   resetUserData()
-  seedEmptyProject(process.cwd(), 'e2e-portrait-panel-centered', {
+  seedEmptyProject(seedStableWorkspace(), 'e2e-portrait-panel-centered', {
     okfMemoriesEnabled: true,
     roadmapPlansEnabled: true,
     rightPanelPosition: 'bottom',

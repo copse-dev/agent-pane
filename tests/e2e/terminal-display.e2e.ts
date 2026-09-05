@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 const PROJECT_ID = 'e2e-terminal-project'
 
@@ -11,7 +11,7 @@ describe('integrated terminal', () => {
   before(async function () {
     this.timeout(90_000)
     resetUserData()
-    seedEmptyProject(process.cwd(), PROJECT_ID)
+    seedEmptyProject(seedStableWorkspace(), PROJECT_ID)
     await browser.reloadSession()
   })
 

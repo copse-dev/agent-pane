@@ -9,6 +9,7 @@ import {
   startBackgroundProcess,
   listBackgroundProcesses,
   getBackgroundProcessLogs,
+  nextBackgroundOperationId,
   stopBackgroundProcess,
   stopBackgroundProcessesForThread,
   stopAllBackgroundProcesses,
@@ -277,5 +278,29 @@ describe('classifyDetectedServerUrl', () => {
       url: 'http://localhost:4321',
       urlRemote: false,
     })
+  })
+})
+
+describe('nextBackgroundOperationId', () => {
+  const previous = process.env['COPSE_E2E']
+  afterEach(() => {
+    if (previous === undefined) delete process.env['COPSE_E2E']
+    else process.env['COPSE_E2E'] = previous
+  })
+
+  it('is a UUID outside e2e', () => {
+    delete process.env['COPSE_E2E']
+    assert.match(
+      nextBackgroundOperationId(),
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    )
+  })
+
+  it('is a stable, unique sequence under e2e so transcript captures do not churn', () => {
+    process.env['COPSE_E2E'] = '1'
+    const first = nextBackgroundOperationId()
+    const second = nextBackgroundOperationId()
+    assert.match(first, /^e2e-background-\d+$/)
+    assert.notEqual(first, second)
   })
 })

@@ -818,8 +818,22 @@ export function setThreadStatus(
   store.emit('thread_status_changed', threadId, status)
 }
 
-export function setThreadTitle(store: AppStore, threadId: string, title: string): void {
-  patchThreadAnywhere(store, threadId, (t) => ({ ...t, title }))
+/**
+ * Set a thread's title. Titles are user-owned by default: omitting
+ * `autoTitleCount` clears the auto-naming counter, which is what stops later
+ * auto-naming passes from overwriting a manual rename. Auto-naming passes the
+ * pass number they just wrote so the next one knows it may still refine it.
+ */
+export function setThreadTitle(
+  store: AppStore,
+  threadId: string,
+  title: string,
+  options?: { autoTitleCount: number },
+): void {
+  patchThreadAnywhere(store, threadId, (t) => {
+    const { autoTitleCount: _previous, ...rest } = t
+    return options ? { ...rest, title, autoTitleCount: options.autoTitleCount } : { ...rest, title }
+  })
   store.emit('threads_changed')
 }
 

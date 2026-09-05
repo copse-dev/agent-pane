@@ -36,6 +36,48 @@ async function describeViewer(): Promise<string> {
   })
 }
 
+/** The files `seedGitChangesFixture` puts in the tree, and nothing else. */
+const FIXTURE_ROWS = ['staged.ts', 'unstaged.ts', 'untracked.ts', 'committed.ts'] as const
+
+/**
+ * Wait until the Changes list shows the fixture's files and nothing else.
+ *
+ * Two windows poll `git status` here, and each status runs in the project
+ * sandbox. On Linux, bubblewrap materialises every *missing* mandatory-deny
+ * path (`.bashrc`, `.gitconfig`, `.claude/commands`, …) as an empty bind-mount
+ * target inside the workspace, and the sandbox runtime defers deleting those
+ * while another sandboxed command is still running — deleting one early would
+ * detach the other sandbox's deny mount. So while the docked pane's status and
+ * the pop-out's overlap, either window can list a dozen dotfiles nobody wrote.
+ * They disappear on their own once the commands finish.
+ *
+ * The product is right to show what git reports, so this is the spec's job, not
+ * a filter in `getGitStatus`: wait for the transient rows to clear before
+ * capturing, which also asserts the pane shows the state the fixture seeded.
+ */
+async function waitForFixtureRows(): Promise<void> {
+  let seen: string[] = []
+  try {
+    await browser.waitUntil(
+      async () => {
+        seen = await browser.execute(() =>
+          Array.from(document.querySelectorAll('.git-change-row')).map((row) =>
+            (row.textContent ?? '').trim(),
+          ),
+        )
+        if (seen.length !== FIXTURE_ROWS.length) return false
+        return FIXTURE_ROWS.every((name) => seen.some((text) => text.includes(name)))
+      },
+      { timeout: 30_000, interval: 250 },
+    )
+  } catch {
+    throw new Error(
+      `the Changes list never settled on the fixture's ${String(FIXTURE_ROWS.length)} files ` +
+        `(${FIXTURE_ROWS.join(', ')}); last saw ${String(seen.length)}: ${JSON.stringify(seen)}`,
+    )
+  }
+}
+
 describe('git changes embed alongside pop-out (#1753)', function () {
   this.timeout(240_000)
 
@@ -103,6 +145,7 @@ describe('git changes embed alongside pop-out (#1753)', function () {
       timeout: 15_000,
       timeoutMsg: `pop-out never showed diff decorations: ${await describeViewer()}`,
     })
+    await waitForFixtureRows()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-popout-embed-popout.png'))
 
     // Back in the main window, the docked pane must still be coloured, and must
@@ -121,6 +164,7 @@ describe('git changes embed alongside pop-out (#1753)', function () {
       timeout: 15_000,
       timeoutMsg: `docked pane lost decorations after re-selection: ${await describeViewer()}`,
     })
+    await waitForFixtureRows()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-popout-embed-docked.png'))
 
     // And the pop-out still shows them too.
