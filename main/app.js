@@ -20911,7 +20911,7 @@ var init_demo_scenarios = __esm({
       },
       {
         // Exercises the proposed-diff path end to end: the replayed `write_file`
-        // calls travel the same route a real edit does (demo-api → `agent:show_diff`
+        // calls travel the same route a real edit does (demo-api → `agent:show-diff`
         // → Changes panel), so this fixture fails if that wiring breaks.
         //
         // Hand-written, unlike `landing`: it is a fixture for a panel state, not a
@@ -258102,7 +258102,7 @@ ${description}
   }
   function checkoutErrorMessage(error53) {
     const message2 = error53 instanceof Error ? error53.message : "Could not prepare the checkout";
-    return message2.replace(/^Error invoking remote method 'agent:prepareCheckout': Error:\s*/, "");
+    return message2.replace(/^Error invoking remote method 'agent:prepare-checkout': Error:\s*/, "");
   }
   function selectCheckout(choice2) {
     const id39 = getActiveThreadId();
