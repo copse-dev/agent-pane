@@ -1009,13 +1009,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Instruction files</legend>
               <p class="settings-fieldset-desc">
-                Files appended to the system prompt, in precedence order. Global steering
+                Files available to the system prompt, in precedence order. Global steering
                 (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
                 project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
-                <code>CLAUDE.md</code> (Claude Code), and always-applied Cursor rules
+                <code>CLAUDE.md</code> (Claude Code), directory-scoped nested
+                <code>AGENTS.md</code>, and always-applied Cursor rules
                 (<code>.cursor/rules/*.mdc</code> with <code>alwaysApply: true</code>, plus
                 <code>.cursorrules</code>). Auto-attached and manually <code>@</code>-mentioned
-                rules also join this list for the turn that activates them.
+                rules also join this list for the turn that activates them. Nested
+                <code>AGENT.md</code> and <code>CLAUDE.md</code> remain root-only compatibility
+                formats.
               </p>
               <div id="sources-instructions-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -2661,15 +2664,38 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
    * fix for "discovered but not loaded" sits on the thing reporting it.
    */
   function makeInstructionRow(file: ProjectInstructionSummary): HTMLElement {
+    const nestedStatus =
+      file.scopePath === undefined
+        ? ''
+        : file.duplicateOf !== undefined
+          ? ` · scope: ${file.scopePath}/ · identical to ${file.duplicateOf}, loaded once through it`
+          : file.active
+            ? ` · scope: ${file.scopePath}/ · active this turn`
+            : ` · scope: ${file.scopePath}/ · activates when a path under this directory enters context`
     const detail =
       `${file.path} · ${formatByteSize(file.bytes)}` +
-      (file.active ? '' : ' · inert until you trust this workspace — click the badge to trust it')
-    const row = makeSourceRow(file.name, file.active ? file.scope : 'not loaded', detail, {
-      badgeClass: !file.active
+      (file.trusted
+        ? nestedStatus
+        : ' · inert until you trust this workspace — click the badge to trust it')
+    const badge = !file.trusted
+      ? 'not loaded'
+      : file.duplicateOf !== undefined
+        ? 'duplicate'
+        : file.scopePath !== undefined
+          ? file.active
+            ? 'active'
+            : 'scoped'
+          : file.scope
+    const row = makeSourceRow(file.name, badge, detail, {
+      badgeClass: !file.trusted
         ? 'sources-badge-untrusted'
-        : file.scope === 'project'
-          ? 'sources-badge-project'
-          : undefined,
+        : file.scopePath !== undefined
+          ? file.active && file.duplicateOf === undefined
+            ? 'sources-badge-auto'
+            : undefined
+          : file.scope === 'project'
+            ? 'sources-badge-project'
+            : undefined,
       titleAction: {
         label: `Open ${file.name}`,
         run: () => {
@@ -2677,7 +2703,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         },
       },
     })
-    if (file.active) return row
+    if (file.trusted) return row
 
     const badgeEl = row.querySelector<HTMLElement>('.sources-badge')
     if (badgeEl) {
@@ -2710,8 +2736,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       fillSourceList(
         '#sources-instructions-list',
         instructions.map((f) => makeInstructionRow(f)),
-        'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root, or ~/AGENTS.md globally).',
+        'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally).',
       )
+      // Discovery is bounded; say so rather than let a missing nested file
+      // look like it was never written.
+      if (instructions.some((f) => f.discoveryTruncated)) {
+        const note = document.createElement('span')
+        note.className = 'sources-empty'
+        note.id = 'sources-instructions-truncated'
+        note.textContent =
+          'Nested AGENTS.md discovery stopped at its directory limit, so this list may be incomplete. Deeper files are not loaded.'
+        qsRequired(overlay, '#sources-instructions-list').append(note)
+      }
 
       const kindLabel: Record<string, string> = {
         always: 'always',
