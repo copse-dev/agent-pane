@@ -16705,8 +16705,11 @@ function setThreadStatus(store3, threadId, status) {
   patchThreadAnywhere(store3, threadId, (t4) => ({ ...t4, status }));
   store3.emit("thread_status_changed", threadId, status);
 }
-function setThreadTitle(store3, threadId, title2) {
-  patchThreadAnywhere(store3, threadId, (t4) => ({ ...t4, title: title2 }));
+function setThreadTitle(store3, threadId, title2, options2) {
+  patchThreadAnywhere(store3, threadId, (t4) => {
+    const { autoTitleCount: _previous, ...rest } = t4;
+    return options2 ? { ...rest, title: title2, autoTitleCount: options2.autoTitleCount } : { ...rest, title: title2 };
+  });
   store3.emit("threads_changed");
 }
 function setThreadWorkingBrief(store3, threadId, workingBrief) {
@@ -17788,7 +17791,7 @@ function isPinned(thread, activeThreadId) {
   return (thread.pendingMessages?.length ?? 0) > 0;
 }
 function attachThreadHydration(store3, api3) {
-  const inFlight2 = /* @__PURE__ */ new Map();
+  const inFlight3 = /* @__PURE__ */ new Map();
   let recency = [];
   const touch = (threadId) => {
     recency = [...recency.filter((id39) => id39 !== threadId), threadId];
@@ -17812,7 +17815,7 @@ function attachThreadHydration(store3, api3) {
   };
   const fetchInto = (projectId, threadId) => {
     const key = `${projectId}:${threadId}`;
-    const existing = inFlight2.get(key);
+    const existing = inFlight3.get(key);
     if (existing) return existing;
     failedThreadIds.delete(threadId);
     const endHydrate = begin("thread:hydrate");
@@ -17846,9 +17849,9 @@ function attachThreadHydration(store3, api3) {
       failedThreadIds.add(threadId);
       store3.emit("threads_changed");
     }).finally(() => {
-      inFlight2.delete(key);
+      inFlight3.delete(key);
     });
-    inFlight2.set(key, request);
+    inFlight3.set(key, request);
     return request;
   };
   activeHydrator = {
@@ -17900,7 +17903,7 @@ function attachThreadHydration(store3, api3) {
     offPrRefs();
     activeHydrator = null;
     recency = [];
-    inFlight2.clear();
+    inFlight3.clear();
     failedThreadIds.clear();
   };
 }
@@ -294334,34 +294337,61 @@ var init_diff_state = __esm({
 });
 
 // src/renderer/controller/thread-naming.ts
+function namingMessages(thread) {
+  const queued = queuedMessageIds(thread);
+  return thread.messages.filter(
+    (m3) => m3.role === "user" && !m3.origin && !queued.has(m3.id) && m3.content.trim()
+  );
+}
 function firstWords(text4, n2 = 6) {
   return text4.split(/\s+/).slice(0, n2).join(" ").slice(0, 60) || "New Thread";
 }
+function namingInput(userMessages) {
+  const first3 = userMessages[0];
+  if (!first3) return "";
+  const recent = userMessages.slice(1).slice(-3);
+  return [first3, ...recent].map((m3) => m3.content.trim().slice(0, 300)).join("\n\n");
+}
 function maybeNameThread(store3, api3, threadId) {
-  if (namedThreads.has(threadId)) return;
+  if (inFlight2.has(threadId)) return;
   const thread = getThreadById(store3, threadId);
-  if (!thread || thread.title !== "New Thread") return;
-  const firstUser = thread.messages.find((m3) => m3.role === "user");
-  if (!firstUser || !firstUser.content.trim()) return;
-  namedThreads.add(threadId);
+  if (!thread) return;
+  const passes = thread.autoTitleCount ?? 0;
+  if (passes === 0 && thread.title !== "New Thread") return;
+  const threshold = PASS_THRESHOLDS[passes];
+  if (threshold === void 0) return;
+  const userMessages = namingMessages(thread);
+  const first3 = userMessages[0];
+  if (!first3 || userMessages.length < threshold) return;
+  const titleBefore = thread.title;
+  const input = namingInput(userMessages);
+  inFlight2.add(threadId);
   void (async () => {
     let title2;
     try {
-      title2 = await api3.agent.suggestTitle(firstUser.content);
+      title2 = await api3.agent.suggestTitle(input);
     } catch {
       title2 = null;
+    } finally {
+      inFlight2.delete(threadId);
     }
     const current = getThreadById(store3, threadId);
-    if (!current || current.title !== "New Thread") return;
-    setThreadTitle(store3, threadId, nonEmptyStringOr(title2?.trim(), firstWords(firstUser.content)));
+    if (!current) return;
+    if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
+    const fallback = passes === 0 ? firstWords(first3.content) : current.title;
+    setThreadTitle(store3, threadId, nonEmptyStringOr(title2?.trim(), fallback), {
+      autoTitleCount: passes + 1
+    });
   })();
 }
-var namedThreads;
+var inFlight2, PASS_THRESHOLDS;
 var init_thread_naming = __esm({
   "src/renderer/controller/thread-naming.ts"() {
     init_thread_helpers();
     init_unknown_value3();
-    namedThreads = /* @__PURE__ */ new Set();
+    init_message_queue();
+    inFlight2 = /* @__PURE__ */ new Set();
+    PASS_THRESHOLDS = [1, 3, 8];
   }
 });
 
