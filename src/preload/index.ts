@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('api', {
     getNavigation: () => ipcRenderer.invoke('mainWindow:getNavigation'),
     setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>
       ipcRenderer.invoke('mainWindow:setNavigation', navigation),
+    getBrowserSession: () => ipcRenderer.invoke('mainWindow:getBrowserSession'),
+    setBrowserSession: (session: import('@shared/types/main-window.ts').BrowserPaneSession) =>
+      ipcRenderer.invoke('mainWindow:setBrowserSession', session),
   },
   workspace: {
     open: () => ipcRenderer.invoke('workspace:open'),

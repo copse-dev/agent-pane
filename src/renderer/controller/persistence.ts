@@ -83,6 +83,16 @@ export function setNavigationOwnership(owns: boolean): void {
 }
 
 /**
+ * Whether this window owns the per-window session record at all — navigation,
+ * and the Browser pane's restorable tabs, which `setBrowserSession` rejects
+ * from a pop-out for exactly the reason above. Exposed so the pane can decline
+ * to write rather than firing IPC main is bound to refuse.
+ */
+export function ownsWindowSession(): boolean {
+  return ownsNavigation
+}
+
+/**
  * Whether boot has restored the stored navigation yet.
  *
  * `attachAutosave` is attached well before `loadProjects` resolves, and
