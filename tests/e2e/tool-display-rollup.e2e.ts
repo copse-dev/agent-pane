@@ -47,6 +47,43 @@ describe('tool call turn rollup', () => {
     )
     await expect($$('[data-message-id="msg-assistant-html"] .tool-card')).toBeElementsArrayOfSize(0)
 
+    // Absorbed messages remain addressable DOM nodes, but must not stack empty
+    // `.msg` padding and row gaps between the run summary and the prose answer.
+    const collapsedMemberLayout = await browser.execute(() => {
+      const ids = ['msg-assistant-reads', 'msg-assistant-html']
+      const members = ids.map((id) => {
+        const member = document.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+        return member
+          ? {
+              id,
+              display: getComputedStyle(member).display,
+              height: member.getBoundingClientRect().height,
+            }
+          : null
+      })
+      const anchor = document.querySelector<HTMLElement>('[data-message-id="msg-assistant-search"]')
+      const answer = document.querySelector<HTMLElement>('[data-message-id="msg-assistant-answer"]')
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      return {
+        members,
+        gap:
+          anchor && answer
+            ? answer.getBoundingClientRect().top - anchor.getBoundingClientRect().bottom
+            : null,
+        rowGap: list ? Number.parseFloat(getComputedStyle(list).rowGap) : null,
+        answerMargin: answer ? Number.parseFloat(getComputedStyle(answer).marginTop) : null,
+      }
+    })
+    expect(collapsedMemberLayout.members).toEqual([
+      { id: 'msg-assistant-reads', display: 'none', height: 0 },
+      { id: 'msg-assistant-html', display: 'none', height: 0 },
+    ])
+    const { gap, rowGap, answerMargin } = collapsedMemberLayout
+    if (gap === null || rowGap === null || answerMargin === null) {
+      throw new Error('Expected the run anchor, prose answer, and message list to render')
+    }
+    expect(gap).toBeLessThanOrEqual(rowGap + answerMargin + 1)
+
     // Reasoning lives on each step, so no member keeps a standalone trail; only
     // the prose answer (which ran no tools) still has a body-level one.
     await expect($$('.msg-assistant .message-body > .message-reasoning')).toBeElementsArrayOfSize(1)
