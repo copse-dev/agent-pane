@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Deterministic shell-command classification for agent harnesses: argv lexing and wrapper unwrapping, sandbox/external scope analysis, destructive-command harm gate, outside-project read proof, gh argv shapes, and trusted-command routing",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

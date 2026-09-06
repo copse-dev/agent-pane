@@ -20,6 +20,25 @@ model, or launch with `COPSE_PANEL_MOCK_LLM=1 pnpm run dev` to use the built-in
 mock agent. The mock is opt-in; an otherwise unconfigured app reports that no
 provider is available.
 
+## Licensing your contribution
+
+Copse is licensed under [AGPL-3.0-only](LICENSE). Contributions are accepted
+under that same license — what comes in matches what goes out.
+
+Sign off every commit with `git commit -s`, which appends a trailer:
+
+```
+Signed-off-by: Your Name <you@example.com>
+```
+
+That line certifies the [Developer Certificate of Origin
+1.1](https://developercertificate.org/): that you wrote the change, or have the
+right to submit it under this project's license, and that you understand the
+contribution and your sign-off are public and kept indefinitely.
+
+If your employer owns the intellectual property you create, make sure you have
+their permission before contributing.
+
 ## What not to file in public issues
 
 Do **not** open a public GitHub issue for a suspected vulnerability, a leaked

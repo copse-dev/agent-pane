@@ -37,7 +37,7 @@ and kept the thin REST client instead:
    usage / artifacts. The SDK also ships a local agent runtime, optional native
    platform packages, ConnectRPC, and Statsig — large for an Electron app that
    already has its own agent loop.
-2. **License / boundary** — Copse is Apache-2.0. Calling the public Cloud Agents
+2. **License / boundary** — Copse is AGPL-3.0-only. Calling the public Cloud Agents
    API with the user's Cursor API key is a clearer shipping boundary than bundling
    Cursor's proprietary SDK (ToS-licensed) into the desktop binary.
 3. **Impedance mismatch** — We still need an adapter onto Copse `StreamChunk`,
