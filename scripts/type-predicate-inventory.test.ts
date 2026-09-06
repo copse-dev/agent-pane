@@ -42,7 +42,9 @@ import { assertedPredicateInventory } from './lib/type-predicates.mts'
  *
  * The second test fails on a stale entry, so converting a predicate forces its
  * line out of this list in the same change — the list can only shrink.
- * `main` carries 183 of these in 113 files.
+ * The list started at 183 in 113 files when #1330 was opened; it holds 85 in
+ * 53 today. The two tests below keep it exact, so that second figure is
+ * measured rather than remembered.
  */
 const ASSERTED_PREDICATES: Readonly<Record<string, readonly string[]>> = {
   'packages/hooks-dialects/src/command-hook-runner.ts': [
