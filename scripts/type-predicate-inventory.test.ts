@@ -42,7 +42,7 @@ import { assertedPredicateInventory } from './lib/type-predicates.mts'
  *
  * The second test fails on a stale entry, so converting a predicate forces its
  * line out of this list in the same change — the list can only shrink.
- * The list started at 183 in 113 files when #1330 was opened; it holds 85 in
+ * The list started at 183 in 113 files when #1330 was opened; it holds 78 in
  * 53 today. The two tests below keep it exact, so that second figure is
  * measured rather than remembered.
  */
@@ -71,17 +71,7 @@ const ASSERTED_PREDICATES: Readonly<Record<string, readonly string[]>> = {
   'packages/thread-store/src/deferred-approval.ts': ['isDeferredApproval'],
   'packages/thread-store/src/export-jsonl.ts': ['threadHasExportableContent'],
   'packages/thread-store/src/fold.ts': ['isToolArgsBlobRef'],
-  'packages/thread-store/src/spine-schema.ts': [
-    'isContentRef',
-    'isSpineDecisionLine',
-    'isSpineHookRunLine',
-    'isSpineMachineContinuationLine',
-    'isSpineMessageLine',
-    'isSpineModelSelectedLine',
-    'isSpinePermissionDecisionLine',
-    'isSpinePlanLine',
-    'isTurnOutcome',
-  ],
+  'packages/thread-store/src/spine-schema.ts': ['fieldsMatch', 'matchesLine'],
   'packages/thread-store/src/thread-store.ts': ['isAgentHistoryMessage'],
   'scripts/gen-headless-schema.mts': ['isSchemaModule'],
   'scripts/lib/api-protocol.mts': [
