@@ -5,6 +5,23 @@ import { recentreClippedCapture, restoreScrollAfterCapture } from './capture-fra
 /** Fixed viewport for committed e2e reference screenshots (see tests/e2e/screenshots/). */
 export const E2E_VIEWPORT = { width: 1280, height: 800 } as const
 
+/**
+ * Fixed device-pixel ratio for committed reference screenshots on every host.
+ * WebDriver captures device pixels, so leaving this host-defined made macOS
+ * Retina runs write 2x PNGs while Linux CI rewrote the same references at 1x.
+ */
+export const E2E_DEVICE_SCALE_FACTOR = 2
+
+/** Fail fast when Chromium ignored the launch-time scale-factor pin. */
+export async function assertE2eDeviceScaleFactor(): Promise<void> {
+  const actual = await browser.execute(() => window.devicePixelRatio)
+  if (actual !== E2E_DEVICE_SCALE_FACTOR) {
+    throw new Error(
+      `Expected e2e devicePixelRatio ${String(E2E_DEVICE_SCALE_FACTOR)}, received ${String(actual)}`,
+    )
+  }
+}
+
 export const E2E_SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 /** Pin the app shell to a fixed size and settle layout before capturing. */

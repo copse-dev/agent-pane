@@ -17,6 +17,10 @@ import { assignDebugPort, type ChromeCapabilities } from './tests/e2e/helpers/de
 import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { E2E_GIT_BRANCH, E2E_SHELL } from './tests/e2e/helpers/e2e-env.ts'
 import { installE2eProfileCleanup } from './tests/e2e/helpers/profile-cleanup.ts'
+import {
+  assertE2eDeviceScaleFactor,
+  E2E_DEVICE_SCALE_FACTOR,
+} from './tests/e2e/helpers/screenshot.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
@@ -52,11 +56,10 @@ export const config: Options.Testrunner = {
   waitforTimeout: 30_000,
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 3,
-  // CI e2e runs in headless Linux Docker containers (see ci-runners/), which
-  // have no display, so WDIO auto-spawns Xvfb to give Electron a virtual one.
-  // Xvfb is X11/Linux only — a macOS host uses its native window server (and has
-  // no `Xvfb` binary) — so enable it on Linux only.
-  autoXvfb: process.platform === 'linux' && !process.env.DISPLAY,
+  // scripts/run-e2e.mts owns headless Linux's Xvfb lifecycle so it can size the
+  // framebuffer for the pinned 2x DPR. WDIO's built-in Xvfb uses 1280x1024,
+  // which leaves only 640x512 logical pixels and changes the app's layout.
+  autoXvfb: false,
   capabilities: [
     {
       browserName: 'chrome',
@@ -83,6 +86,10 @@ export const config: Options.Testrunner = {
         excludeSwitches: ['enable-automation'],
         args: [
           `--app=${electronShell}`,
+          // Reference PNGs are reviewed at 2x on every host; without this,
+          // Chromium inherits the display's DPR and the baselines resize when
+          // they move between Retina macOS and Linux CI.
+          `--force-device-scale-factor=${String(E2E_DEVICE_SCALE_FACTOR)}`,
           '--disable-gpu',
           '--no-sandbox',
           '--disable-dev-shm-usage',
@@ -112,7 +119,7 @@ export const config: Options.Testrunner = {
     ui: 'bdd',
     timeout: 30_000,
   },
-  before() {
+  async before() {
     // A wedged deleteSession must not flip a green suite red (main tip cdeb3abf
     // attempt 3 / git-changes-image; tip 2686950f / shard 4 still FAILED until
     // overwriteCommand patched the real browser behind @wdio/globals' Proxy).
@@ -123,6 +130,7 @@ export const config: Options.Testrunner = {
     // not scroll to rescue it (it only scrolls what is out of view). Nudge such
     // a control clear at click time; see helpers/settings-action-bar-click.ts.
     installSettingsActionBarClickSafety(browser)
+    await assertE2eDeviceScaleFactor()
   },
   afterTest: async (test, _context, result) => {
     // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic
