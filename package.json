@@ -190,6 +190,7 @@
     "@copse/procwatch": "workspace:*",
     "@copse/shell-guard": "workspace:*",
     "@copse/std": "workspace:*",
+    "@copse/store-kit": "workspace:*",
     "@copse/thread-store": "workspace:*",
     "@copse/streaming-markdown": "^1.1.0",
     "@electron/rebuild": "^4.2.0",
