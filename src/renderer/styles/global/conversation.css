@@ -194,16 +194,30 @@
      appear "collapsed". Keep every message at its content height. */
   flex-shrink: 0;
 }
-/* Reasoning ("thinking") disclosure, shown above the answer. */
+/* Reasoning ("thinking") disclosure, shown above the answer. Copse commenting
+   on its own turn rather than answering, so it takes the hatched plate rather
+   than the flat one the agent's own prose gets — see base.css. The surface is
+   scoped to [open]: a <details> cannot be laid out as a grid without Chromium's
+   ::details-content box reflowing the body, and a closed disclosure is one
+   summary line that wants no plate at all. */
 .message-reasoning {
+  --sev: var(--accent);
   margin-bottom: var(--spacing-sm);
-  border-left: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  padding-left: var(--spacing-sm);
+  border: 0;
+  border-radius: var(--radius);
+}
+.message-reasoning[open] {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--sev) var(--callout-hatch-line), transparent) 0 1px,
+      transparent 1px var(--callout-hatch-pitch)
+    ),
+    color-mix(in srgb, var(--sev) var(--callout-hatch-fill), transparent);
 }
 .message-reasoning:not([open]) {
   margin-bottom: var(--spacing-xs);
-  border-left: 0;
-  padding-left: 0;
 }
 .message-reasoning-summary {
   display: flex;
@@ -212,7 +226,9 @@
   cursor: pointer;
   list-style: none;
   font-size: var(--font-size-sm);
-  color: var(--text-secondary);
+  /* The rail carried the accent down the whole block; with it gone the label is
+     what carries it, and this one is a disclosure you click. */
+  color: var(--sev);
   user-select: none;
   width: fit-content;
   border-radius: var(--radius);
@@ -527,6 +543,14 @@
   --sm-link: var(--link);
   --sm-code-bg: var(--bg-elevated);
   --sm-error: var(--error);
+  /* The package defaults to GitHub's alert palette; Copse has its own semantic
+     tokens for four of the five, and invents --info and --important for the
+     other two (tokens.css). markdown.css restyles the blocks themselves. */
+  --sm-alert-note: var(--info);
+  --sm-alert-tip: var(--success);
+  --sm-alert-important: var(--important);
+  --sm-alert-warning: var(--warning);
+  --sm-alert-caution: var(--danger);
 }
 /* Links inside rendered markdown follow the app's link tier (the package's
    default keys them off its accent, which is too dim on the dark surfaces). */

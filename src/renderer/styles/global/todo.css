@@ -130,16 +130,20 @@
    the reviewed turn (see renderMessageReview) so it joins the transcript flow, in
    position and one per turn, and scrolls with the conversation. */
 .review-panel {
+  /* Copse's commentary on the turn, not part of the answer: the hatched plate
+     (base.css), the same material thinking and comparison take. */
+  --sev: var(--text-secondary);
   margin-top: var(--spacing-sm);
   border: 0;
-  border-left: 2px solid var(--text-secondary);
-  border-radius: 0;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--text-secondary) 7%, transparent),
-    transparent 72%
-  );
-  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--sev) var(--callout-hatch-line), transparent) 0 1px,
+      transparent 1px var(--callout-hatch-pitch)
+    ),
+    color-mix(in srgb, var(--sev) var(--callout-hatch-fill), transparent);
+  padding: var(--spacing-sm) var(--spacing-md);
   font-size: 13px;
 }
 .messages-list > [data-review-card] {
@@ -147,14 +151,7 @@
   margin-inline: auto;
 }
 .review-panel-error {
-  border-left-color: var(--danger, #d9534f);
-}
-.review-panel.review-panel-error {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--danger, #d9534f) 7%, transparent),
-    transparent 72%
-  );
+  --sev: var(--danger, #d9534f);
 }
 /* Retry action on a failed review/comparison card — pushed to the right edge of
    the header (no cost badge is present in the error state that would claim it). */
@@ -218,7 +215,7 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-secondary);
+  color: var(--sev);
 }
 /* Clean reviews render as a collapsed <details>; the header is the <summary>. */
 .review-panel > summary.review-panel-header {
@@ -241,16 +238,18 @@
 /* Model comparison card: two reviewer columns + a judge synthesis. Shares the
    review card's inline-in-transcript placement (see syncComparisonPanel). */
 .comparison-panel {
+  --sev: var(--accent, var(--text-secondary));
   margin-top: var(--spacing-sm);
   border: 0;
-  border-left: 2px solid var(--accent, var(--text-secondary));
-  border-radius: 0;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent, var(--text-secondary)) 7%, transparent),
-    transparent 72%
-  );
-  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--sev) var(--callout-hatch-line), transparent) 0 1px,
+      transparent 1px var(--callout-hatch-pitch)
+    ),
+    color-mix(in srgb, var(--sev) var(--callout-hatch-fill), transparent);
+  padding: var(--spacing-sm) var(--spacing-md);
   font-size: 13px;
 }
 .messages-list > [data-comparison-card] {
@@ -258,14 +257,7 @@
   margin-inline: auto;
 }
 .comparison-panel-error {
-  border-left-color: var(--danger, #d9534f);
-}
-.comparison-panel.comparison-panel-error {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--danger, #d9534f) 7%, transparent),
-    transparent 72%
-  );
+  --sev: var(--danger, #d9534f);
 }
 .comparison-panel-icon {
   display: inline-flex;
@@ -279,7 +271,7 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-secondary);
+  color: var(--sev);
 }
 .comparison-panel-cost {
   margin-left: auto;

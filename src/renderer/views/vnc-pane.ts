@@ -2,7 +2,7 @@ import RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { el } from '../dom/helpers.ts'
-import { closeIcon, monitorIcon, plusIcon } from '../dom/icons.ts'
+import { closeIcon, lockIcon, monitorIcon, plusIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
@@ -302,6 +302,9 @@ function mountVncSession(
   const authPanel = el(
     'div',
     { class: 'vnc-auth-panel', 'aria-label': 'Screen Sharing authentication', hidden: true },
+    // Gutter marker. The panel used to be edged with an accent rail; the icon
+    // column replaces it, so the title and the body start at the same inset.
+    lockIcon('ui-icon vnc-auth-icon'),
     el('div', { class: 'vnc-auth-title' }, 'Authentication required'),
     authDescription,
     usernameField,
@@ -352,6 +355,9 @@ function mountVncSession(
   const status = el(
     'div',
     { class: 'vnc-status', role: 'status', hidden: true },
+    // Decorative: the status text says the same thing, and data-kind drives
+    // both this dot's hue and the text colour beside it.
+    el('span', { class: 'vnc-status-dot', 'aria-hidden': 'true' }),
     statusTitle,
     statusDetail,
   )

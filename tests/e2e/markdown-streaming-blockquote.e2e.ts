@@ -44,6 +44,8 @@ describe('markdown streaming blockquote pending', () => {
         quoteText: quote?.textContent ?? '',
         hasRawMarker: (quote?.textContent ?? '').trimStart().startsWith('>'),
         borderLeftWidth: styles?.borderLeftWidth ?? '',
+        background: styles?.backgroundColor ?? '',
+        radius: styles?.borderTopLeftRadius ?? '',
         tagName: quote?.tagName ?? null,
       }
     })
@@ -52,7 +54,12 @@ describe('markdown streaming blockquote pending', () => {
     expect(result.tagName).toBe('BLOCKQUOTE')
     expect(result.quoteText).toContain('Quoted guidance for the team.')
     expect(result.hasRawMarker).toBe(false)
-    expect(result.borderLeftWidth).not.toBe('0px')
+    // A pending quote has to pick up the committed quote's surface, or it will
+    // restyle under the reader as it commits. That surface is a plate now, not a
+    // rail, so the plate is what proves the stylesheet reached it.
+    expect(result.borderLeftWidth).toBe('0px')
+    expect(result.background).not.toBe('rgba(0, 0, 0, 0)')
+    expect(Number.parseFloat(result.radius)).toBeGreaterThan(0)
 
     await saveAppScreenshot('markdown-streaming-blockquote-pending.png')
   })
