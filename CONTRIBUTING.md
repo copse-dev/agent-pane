@@ -60,12 +60,12 @@ issues first. [SUPPORT.md](SUPPORT.md) lists the supported release and platform.
 
 ## Development commands
 
-| Command             | Purpose                         |
-| ------------------- | ------------------------------- |
-| `pnpm run dev`      | Watch-build and launch Electron |
-| `pnpm run build`    | Bundle into `dist/`             |
-| `pnpm test`         | Unit and component tests        |
-| `pnpm run test:e2e` | Electron end-to-end tests       |
-| `pnpm run check`    | The pre-commit gate             |
+| Command             | Purpose                                                            |
+| ------------------- | ------------------------------------------------------------------ |
+| `pnpm run dev`      | Watch-build and launch Electron against the `~/.copse-dev` profile |
+| `pnpm run build`    | Bundle into `dist/`                                                |
+| `pnpm test`         | Unit and component tests                                           |
+| `pnpm run test:e2e` | Electron end-to-end tests                                          |
+| `pnpm run check`    | The pre-commit gate                                                |
 
 More detail: [docs/agent-development.md](docs/agent-development.md).
