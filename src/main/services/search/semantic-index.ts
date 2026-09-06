@@ -759,7 +759,7 @@ async function readRepoMru(): Promise<string[]> {
   try {
     const parsed: unknown = JSON.parse(await readFile(join(gortexHomeDir(), REPO_MRU_FILE), 'utf8'))
     if (!Array.isArray(parsed)) return []
-    return parsed.filter((p): p is string => typeof p === 'string')
+    return parsed.filter((p) => typeof p === 'string')
   } catch {
     return []
   }

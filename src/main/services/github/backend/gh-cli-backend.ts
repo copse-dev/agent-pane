@@ -431,7 +431,7 @@ export const ghCliBackend: GitHubBackend = {
             title: entry.title,
             url: entry.url,
             body: (entry.body ?? '').slice(0, 4000),
-            labels: (entry.labels ?? []).filter((name): name is string => typeof name === 'string'),
+            labels: (entry.labels ?? []).filter((name) => typeof name === 'string'),
             state: 'open',
           }
           if (entry.updatedAt) summary.updatedAt = entry.updatedAt
@@ -467,9 +467,7 @@ export const ghCliBackend: GitHubBackend = {
       title: entry.title,
       url: entry.url,
       body: (entry.body ?? '').slice(0, 8000),
-      labels: (entry.labels ?? [])
-        .map((l) => l.name)
-        .filter((name): name is string => typeof name === 'string'),
+      labels: (entry.labels ?? []).map((l) => l.name).filter((name) => typeof name === 'string'),
     }
     if (entry.state === 'OPEN' || entry.state === 'open') summary.state = 'open'
     else if (entry.state === 'CLOSED' || entry.state === 'closed') summary.state = 'closed'
@@ -510,7 +508,7 @@ export const ghCliBackend: GitHubBackend = {
           body: (entry.body ?? '').slice(0, 4000),
           labels: (entry.labels ?? [])
             .map((l) => l.name)
-            .filter((name): name is string => typeof name === 'string'),
+            .filter((name) => typeof name === 'string'),
         }
         if (entry.state === 'OPEN' || entry.state === 'open') summary.state = 'open'
         else if (entry.state === 'CLOSED' || entry.state === 'closed') summary.state = 'closed'
