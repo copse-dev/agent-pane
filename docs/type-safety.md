@@ -244,6 +244,24 @@ is the point: the cheapest predicate to add is also the honest one.
 If a change legitimately needs a new asserted predicate — a structural boundary parser usually does —
 add its line and its contract test together.
 
+### What stays asserted, and why
+
+The list is shrink-only, not a countdown to zero. Two categories on it are finished work:
+
+- **The shared helpers themselves.** `isRecord`, `memberOf`, `keyOf`, `isDefined`, `isNonNull`,
+  `isNonEmptyString`, `isNonBlankString`, `matchesFallbackType`. Each is one audited assertion with
+  a real test, standing in for the dozens it replaced. Removing them from the list would hide the
+  assertions the codebase actually relies on.
+- **Provenance guards over a callable.** `isToolFactory`, `isRawExecute`, `isDynamicImport`,
+  `isCreateGuard` narrow `unknown` to a specific function _signature_ from `typeof v === 'function'`,
+  which proves only that it is callable. No check can do better — the values come from user-authored
+  modules and an optional dependency — so the contract is enforced where the function is called
+  (a `try`/`catch` that isolates the failure to one file), not where it is narrowed. A generic
+  `isCallable<T>()` helper would only make the unchecked half convenient.
+
+The remainder — structural parsers over `unknown` — is the part still worth paying down, and the
+answer there is a decoder, not a better predicate.
+
 ## The suppression baseline is empty — keep it that way
 
 `eslint-suppressions.json` is `{}`. It used to hold a shrink-only baseline for
