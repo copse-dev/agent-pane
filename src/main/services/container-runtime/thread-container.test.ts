@@ -176,7 +176,16 @@ describe('carry-in / carry-out over git bundles', () => {
 
       const bundle = join(guest, 'carry-in.bundle')
       const carried = writeCarryInBundle(repo, 'run-x', bundle)
-      assert.equal(carried.sha, createSnapshotCommit(repo).sha)
+      // The bundle carries the same snapshot a fresh call would make. Compare
+      // trees, not commit shas: a commit sha folds in the committer timestamp
+      // at one-second granularity, so asserting sha equality across two calls
+      // passes or fails on whether they land either side of a second — which is
+      // exactly how this failed in CI having passed locally for days.
+      assert.equal(
+        git(repo, ['rev-parse', `${carried.sha}^{tree}`]),
+        git(repo, ['rev-parse', `${createSnapshotCommit(repo).sha}^{tree}`]),
+        'the bundled snapshot must have the same tree as a fresh snapshot',
+      )
       assert.equal(git(repo, ['for-each-ref', 'refs/copse/carry-in/']), '', 'temp ref removed')
 
       // What the guest does.
