@@ -1,0 +1,34 @@
+[
+  {
+    "id": "landing",
+    "label": "Landing walkthrough (replays a recorded turn)"
+  },
+  {
+    "id": "markdown-list-indent",
+    "label": "Markdown list indentation"
+  },
+  {
+    "id": "footer-compact",
+    "label": "Responsive composer footer"
+  },
+  {
+    "id": "subagent-display",
+    "label": "Subagent display visual reference"
+  },
+  {
+    "id": "subagent-ungrouped",
+    "label": "Subagent stays ungrouped beside reading tools"
+  },
+  {
+    "id": "semantic-search-markdown",
+    "label": "Semantic search subagent markdown"
+  },
+  {
+    "id": "settings-footer",
+    "label": "Settings scroll + sticky footer geometry"
+  },
+  {
+    "id": "chat-layout-styling",
+    "label": "Chat layout styling"
+  }
+]
