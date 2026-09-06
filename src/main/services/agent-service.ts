@@ -44,7 +44,7 @@ import {
 import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
-import { hasLastUsage } from './providers/provider-usage.ts'
+import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 import {
   clearActiveRunThread,
   recordThreadModel,
