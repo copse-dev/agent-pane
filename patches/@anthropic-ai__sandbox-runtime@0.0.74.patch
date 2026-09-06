@@ -1,5 +1,78 @@
+diff --git a/dist/sandbox/sandbox-utils.js b/dist/sandbox/sandbox-utils.js
+index 32831bf4b8fb14d9ea6fc5bcfe0dc621702c91f4..f53b047ebb0cd376a0f12a9deb3de08d185145b4 100644
+--- a/dist/sandbox/sandbox-utils.js
++++ b/dist/sandbox/sandbox-utils.js
+@@ -267,6 +267,50 @@ export function expandWindowsEnvRefs(p) {
+  *
+  * Returns the absolute path with symlinks resolved (or normalized glob pattern)
+  */
++/**
++ * PATCH (copse-dev/agent-pane): memoize the realpath lookups below for the
++ * duration of one synchronous sandbox-profile build.
++ *
++ * `generateSandboxProfile` pushes every read/write/deny path entry through
++ * `normalizePathForSandbox`, one blocking `realpathSync` apiece. A Copse
++ * workspace overlay produces ~49 entries per command, and ~35% of them resolve
++ * a directory another entry already resolved -- `<dir>` and `<dir>/**` are two
++ * entries naming one directory. A DevTools trace of an Electron host measured
++ * 2.94ms per profile build, once per sandboxed command, ~10 times a second.
++ *
++ * The memo is scoped to a single build rather than shared across commands. A
++ * profile is generated synchronously, so clearing on the next microtask means
++ * every entry sharing a memo belongs to one build and no resolution is ever
++ * reused by a later command. These paths become seatbelt/bwrap rules, so a
++ * resolution that outlived its build could emit a rule naming a stale symlink
++ * target; this scoping makes that impossible while still removing the
++ * duplicates. Failures are memoized too, so a missing path costs one syscall
++ * per build like any other.
++ */
++let realpathBuildMemo = null;
++function realpathSyncForBuild(target) {
++    if (realpathBuildMemo === null) {
++        realpathBuildMemo = new Map();
++        queueMicrotask(() => {
++            realpathBuildMemo = null;
++        });
++    }
++    if (realpathBuildMemo.has(target)) {
++        const cached = realpathBuildMemo.get(target);
++        if (cached instanceof Error)
++            throw cached;
++        return cached;
++    }
++    try {
++        const resolved = fs.realpathSync(target);
++        realpathBuildMemo.set(target, resolved);
++        return resolved;
++    }
++    catch (error) {
++        realpathBuildMemo.set(target, error);
++        throw error;
++    }
++}
+ export function normalizePathForSandbox(pathPattern) {
+     const cwd = process.cwd();
+     // Windows pre-processing: expand `%USERPROFILE%` / `%HOMEDRIVE%` /
+@@ -327,7 +371,7 @@ export function normalizePathForSandbox(pathPattern) {
+                 : path.dirname(staticPrefix);
+             // Try to resolve symlinks for the base directory
+             try {
+-                const resolvedBaseDir = fs.realpathSync(baseDir);
++                const resolvedBaseDir = realpathSyncForBuild(baseDir);
+                 // Validate that resolution stays within expected boundaries
+                 if (!isSymlinkOutsideBoundary(baseDir, resolvedBaseDir)) {
+                     // Reconstruct the pattern with the resolved directory
+@@ -345,7 +389,7 @@ export function normalizePathForSandbox(pathPattern) {
+     // Resolve symlinks to real paths to avoid bwrap issues
+     // Validate that the resolution stays within expected boundaries
+     try {
+-        const resolvedPath = fs.realpathSync(normalizedPath);
++        const resolvedPath = realpathSyncForBuild(normalizedPath);
+         // Only use resolved path if it doesn't cross boundary (e.g., symlink to parent dir)
+         if (isSymlinkOutsideBoundary(normalizedPath, resolvedPath)) {
+             // Symlink points outside expected boundaries - keep original path
 diff --git a/dist/utils/which.js b/dist/utils/which.js
-index cc8770074ab28a821acc56269a8868ba2a9746d2..579184d4aaceb4f49fb5932c79a6e5bf366595a6 100644
+index cc8770074ab28a821acc56269a8868ba2a9746d2..be8fdf47210ac8c0263adbb0c7a2451d75e40960 100644
 --- a/dist/utils/which.js
 +++ b/dist/utils/which.js
 @@ -1,4 +1,26 @@
