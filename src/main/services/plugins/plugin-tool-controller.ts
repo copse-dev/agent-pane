@@ -1,6 +1,10 @@
 import type { PluginToolSourceCandidate } from './plugin-tool-source.ts'
 import { PluginToolHost } from './plugin-tool-host.ts'
-import type { PluginToolRegistrations } from './plugin-tool-protocol.ts'
+import {
+  validatePluginHookRegistrations,
+  type PluginHookRegistration,
+  type PluginToolRegistrations,
+} from './plugin-tool-protocol.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import type { ToolRegistry } from '../tool-registry.ts'
@@ -10,6 +14,13 @@ export interface PluginToolRuntimeController {
   disable(pluginId: string): Promise<void>
   isRunning(pluginId: string): boolean
   registrations(pluginId: string): PluginToolRegistrations | null
+  invokeHook(
+    pluginId: string,
+    registrationId: string,
+    event: PluginHookRegistration['event'],
+    input: unknown,
+    signal?: AbortSignal,
+  ): Promise<unknown>
   invokeTool(
     pluginId: string,
     registrationId: string,
@@ -47,6 +58,18 @@ export class DefaultPluginToolRuntimeController implements PluginToolRuntimeCont
 
   registrations(pluginId: string): PluginToolRegistrations | null {
     return this.hosts.get(pluginId)?.registrations ?? null
+  }
+
+  invokeHook(
+    pluginId: string,
+    registrationId: string,
+    event: PluginHookRegistration['event'],
+    input: unknown,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const host = this.hosts.get(pluginId)
+    if (!host) return Promise.reject(new Error(`Plugin "${pluginId}" runtime is not running.`))
+    return host.invokeHook(registrationId, event, input, signal)
   }
 
   invokeTool(
@@ -101,6 +124,10 @@ export class ToolingPluginToolRuntimeController implements PluginToolRuntimeCont
     try {
       const registrations = this.runtime.registrations(pluginId)
       if (!registrations) throw new Error(`Plugin "${pluginId}" returned no tool registrations.`)
+      validatePluginHookRegistrations(
+        candidate.manifest.runtime?.hooks ?? [],
+        registrations.hooks ?? [],
+      )
       const declaredNames = [...(candidate.manifest.tools?.provides ?? [])].sort()
       const registeredNames = registrations.tools.map((tool) => tool.name).sort()
       if (
@@ -174,6 +201,16 @@ export class ToolingPluginToolRuntimeController implements PluginToolRuntimeCont
 
   registrations(pluginId: string): PluginToolRegistrations | null {
     return this.runtime.registrations(pluginId)
+  }
+
+  invokeHook(
+    pluginId: string,
+    registrationId: string,
+    event: PluginHookRegistration['event'],
+    input: unknown,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.runtime.invokeHook(pluginId, registrationId, event, input, signal)
   }
 
   invokeTool(

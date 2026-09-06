@@ -15,6 +15,7 @@
 // (schemas/copse-plugin.schema.json) validates the declarative manifest.
 import type { AsyncHook, BlockingHook } from '../hooks/canonical-events.ts'
 import type { PanelContributionDecl } from './plugin-panel.ts'
+import type { PluginHookRegistration } from './plugin-hook.ts'
 
 /** Host-assigned plugin trust class; disk manifests cannot self-promote. */
 export type PluginTrust = 'first-party' | 'user'
@@ -215,6 +216,8 @@ export interface PluginStorageDecl {
 export interface PluginToolRuntimeDecl {
   entrypoint: string
   apiVersion: 1
+  /** Isolated worker registrations; automatic canonical-event dispatch is a later stage. */
+  hooks?: readonly PluginHookRegistration[]
 }
 
 export interface PluginToolsDecl {

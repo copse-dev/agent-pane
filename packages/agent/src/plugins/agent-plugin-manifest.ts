@@ -27,6 +27,7 @@
 // Electron-free (execution-guidance rule 4): the host disk walk that feeds this
 // a parsed object lives in `src/main/services/plugins/discover-user-plugins.ts`.
 import { z } from 'zod'
+import { zPluginHookRegistrations } from './plugin-hook.ts'
 import type {
   PluginBrowserDecl,
   PluginCapabilityDecl,
@@ -173,6 +174,7 @@ const zBrowserDecl = z.strictObject({
 const zRuntimeDecl = z.strictObject({
   entrypoint: z.string().min(1).max(1_000),
   apiVersion: z.literal(1),
+  hooks: zPluginHookRegistrations.min(1).optional(),
 })
 
 const zCommandHook = z.strictObject({
@@ -429,6 +431,7 @@ function applyCopseExtension(
     const runtime: PluginToolRuntimeDecl = {
       entrypoint: extension.runtime.entrypoint,
       apiVersion: extension.runtime.apiVersion,
+      ...(extension.runtime.hooks ? { hooks: extension.runtime.hooks } : {}),
     }
     manifest.runtime = runtime
   }

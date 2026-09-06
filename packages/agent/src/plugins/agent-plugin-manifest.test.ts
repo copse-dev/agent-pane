@@ -35,6 +35,15 @@ function copse(block: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe('isValidAgentPluginName', () => {
+  it('preserves validated runtime hook declarations in the Copse extension', () => {
+    const runtime = {
+      entrypoint: 'dist/index.mjs',
+      apiVersion: 1,
+      hooks: [{ id: 'inspect', event: 'turnStart' }],
+    }
+    const parsed = parseAgentPluginManifest(manifest(copse({ runtime })))
+    assert.deepEqual(parsed.manifest.runtime, runtime)
+  })
   it('accepts the spec §5.5 examples', () => {
     for (const name of ['my-plugin', 'acme.tools', 'lint3r', 'a']) {
       assert.equal(isValidAgentPluginName(name), true, name)
