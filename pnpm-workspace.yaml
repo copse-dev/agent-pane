@@ -71,9 +71,9 @@ minimumReleaseAgeExclude:
   - ip-address
   - undici
 
-# Two performance patches to @anthropic-ai/sandbox-runtime, both in one patch
-# file. Drop each once upstream does the same; the named test fails loudly if a
-# version bump silently drops the patch.
+# Three patches to @anthropic-ai/sandbox-runtime, all in one patch file. Drop
+# each once upstream does the same; the named test fails loudly if a version
+# bump silently drops the patch.
 #
 # 1. `whichSync` forks `/usr/bin/which` via spawnSync on every sandboxed command
 #    to locate the shell binary. That is free under Bun (`Bun.which`) but a
@@ -90,5 +90,11 @@ minimumReleaseAgeExclude:
 #    duration of one synchronous profile build and clears on the next microtask,
 #    so no resolution is ever reused by a later command. Guarded by
 #    `sandbox-normalize-path-memo.test.ts`.
+#
+# 3. `wrapWithSandbox` read `allowUnixSockets` only from the global getter, so a
+#    caller could not widen it for one command. Native SSH commit signing needs
+#    the ssh-agent socket and nothing else, so the patch lets `customConfig`
+#    supply the list and falls back to the getter. Guarded by
+#    `git-commit-signing.test.ts`.
 patchedDependencies:
   '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch
