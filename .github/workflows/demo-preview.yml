@@ -348,6 +348,12 @@ jobs:
   # runs the workflow definitions from the pushed branch — so such a trigger would
   # silently never fire. Dispatching on THIS branch keeps what `uses:` gave us,
   # which is that a PR editing pages.yml exercises its own copy before merge.
+  #
+  # It also has to be one of those two triggers to fire at all. `github.token`
+  # normally starts no further run — the recursion guard ci.yml's autoformat job
+  # works around by pushing as an App — and `workflow_dispatch` and
+  # `repository_dispatch` are the documented exceptions to it. Reaching for any
+  # other event here would produce a dispatch that returns 204 and does nothing.
   deploy:
     needs: publish
     if: needs.publish.outputs.published == 'true'

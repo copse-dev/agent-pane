@@ -840,7 +840,7 @@ describe('demo preview deploy decoupling invariants', () => {
     assert.match(
       demoPreview,
       /catch \(err\) \{\n\s*core\.warning\(/,
-      'a deploy problem is never the PR’s fault; the build is already on demo-previews',
+      "a deploy problem is never the PR's fault; the build is already on demo-previews",
     )
     assert.doesNotMatch(
       demoPreview,
