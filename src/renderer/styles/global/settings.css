@@ -384,7 +384,7 @@ dialog.settings-overlay::backdrop {
   z-index: 1;
 }
 .settings-buttons button[type='submit'] {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: var(--spacing-md) var(--spacing-xl);
@@ -1091,7 +1091,7 @@ dialog.settings-overlay::backdrop {
 .usage-plan-signin-btn {
   align-self: flex-start;
   -webkit-app-region: no-drag;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--text-on-accent);
   border: none;
   border-radius: var(--radius);
@@ -2337,8 +2337,8 @@ dialog.settings-overlay::backdrop {
 }
 .automation-run-btn,
 .automation-save-btn {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
   color: var(--text-on-accent);
 }
 .automation-remove-btn {

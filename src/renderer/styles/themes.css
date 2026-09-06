@@ -55,7 +55,14 @@
   --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #ececec);
   --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #f7f7f7);
   --bg-active: #0060c0;
-  --bg-selected: color-mix(in srgb, var(--accent) 13%, var(--bg-elevated));
+  /* Mixed from --accent-fill, not --accent (issue #2483). Light's --accent is a
+     30%-of-black derivation for small text and borders, so washing 13% of it into
+     a near-white row produced a desaturated grey — a selection that read as
+     "slightly dirty background" rather than "selected". Against the same row
+     background the grey measured ΔE 8.4 where the dark theme's neon wash measures
+     ΔE 18; mixing the raw hue instead brings light to ΔE 12 and, more to the
+     point, makes it the accent colour rather than grey. */
+  --bg-selected: color-mix(in srgb, var(--accent-fill) 22%, var(--bg-elevated));
   /* The dark highlight fills invert on white: a light wash carrying near-black
      text. --highlight-current-bg cannot follow --warning here (light's warning
      is a dark brown, which would bury the match text). */
