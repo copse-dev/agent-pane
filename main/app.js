@@ -20391,6 +20391,24 @@ var init_zod = __esm({
   }
 });
 
+// packages/std/src/nullish.ts
+function isDefined(value2) {
+  return value2 !== void 0;
+}
+function isNonNull(value2) {
+  return value2 !== null;
+}
+function isNonEmptyString(value2) {
+  return typeof value2 === "string" && value2.length > 0;
+}
+function isNonBlankString(value2) {
+  return typeof value2 === "string" && value2.trim().length > 0;
+}
+var init_nullish = __esm({
+  "packages/std/src/nullish.ts"() {
+  }
+});
+
 // packages/std/src/unknown-value.ts
 function isRecord(value2) {
   return typeof value2 === "object" && value2 !== null && !Array.isArray(value2);
@@ -20445,15 +20463,14 @@ function optionalStringArray(value2, label = "value") {
   return expectStringArray(value2, label);
 }
 function firstNonEmptyString(...values3) {
-  return values3.find(
-    (value2) => value2 !== void 0 && value2 !== null && value2 !== ""
-  );
+  return values3.find(isNonEmptyString);
 }
 function nonEmptyStringOr(value2, fallback) {
   return firstNonEmptyString(value2, fallback) ?? fallback;
 }
 var init_unknown_value = __esm({
   "packages/std/src/unknown-value.ts"() {
+    init_nullish();
   }
 });
 
@@ -20663,7 +20680,7 @@ function stringField(args, key) {
 function stringListField(args, key) {
   const value2 = args[key];
   if (!Array.isArray(value2)) return [];
-  return value2.filter((entry) => typeof entry === "string" && entry.trim() !== "").map((entry) => entry.trim());
+  return value2.filter(isNonBlankString).map((entry) => entry.trim());
 }
 function parseThreadProposal(id39, args) {
   if (id39 === "" || !isRecord(args)) return null;
@@ -20705,6 +20722,7 @@ var THREAD_PROPOSAL_TOOL, THREAD_PROPOSAL_TITLE_MAX, THREAD_PROPOSAL_SUMMARY_MAX
 var init_thread_proposal = __esm({
   "packages/thread-store/src/thread-proposal.ts"() {
     init_unknown_value();
+    init_nullish();
     THREAD_PROPOSAL_TOOL = "propose_thread";
     THREAD_PROPOSAL_TITLE_MAX = 80;
     THREAD_PROPOSAL_SUMMARY_MAX = 400;
@@ -36237,12 +36255,20 @@ var init_attachment_preview = __esm({
   }
 });
 
+// src/shared/nullish.ts
+var init_nullish2 = __esm({
+  "src/shared/nullish.ts"() {
+    init_nullish();
+  }
+});
+
 // src/renderer/ui/cx.ts
 function cx(...parts) {
-  return parts.filter((part) => typeof part === "string" && part.length > 0).join(" ");
+  return parts.filter(isNonEmptyString).join(" ");
 }
 var init_cx = __esm({
   "src/renderer/ui/cx.ts"() {
+    init_nullish2();
   }
 });
 
@@ -36747,7 +36773,7 @@ var init_data_policies = __esm({
 
 // packages/llm/src/agent-model-identity.ts
 function resolveAgentModelIdentity(...forms) {
-  const named2 = forms.filter((form) => Boolean(form));
+  const named2 = forms.filter(isNonEmptyString);
   for (const form of named2) {
     const id39 = resolveIntellectModelId(form);
     if (id39 !== null && getIntellectScore(id39)) return id39;
@@ -36763,24 +36789,6 @@ var init_agent_model_identity = __esm({
   "packages/llm/src/agent-model-identity.ts"() {
     init_model_intellect();
     init_model_label();
-  }
-});
-
-// packages/std/src/nullish.ts
-function isDefined(value2) {
-  return value2 !== void 0;
-}
-function isNonNull(value2) {
-  return value2 !== null;
-}
-var init_nullish = __esm({
-  "packages/std/src/nullish.ts"() {
-  }
-});
-
-// src/shared/nullish.ts
-var init_nullish2 = __esm({
-  "src/shared/nullish.ts"() {
     init_nullish();
   }
 });
@@ -37220,7 +37228,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       `model-picker-${variant}`,
       recentMode ? "model-picker-recent-mode" : void 0,
       pickerOpts.className
-    ].filter((part) => Boolean(part)).join(" ")
+    ].filter(isNonEmptyString).join(" ")
   });
   wrap3.style.setProperty("--model-picker-anchor", `--model-picker-${String(++pickerAnchorId)}`);
   const triggerAttrs = {
@@ -37797,6 +37805,7 @@ var init_model_picker = __esm({
     init_helpers();
     init_icons();
     init_model_options();
+    init_nullish2();
     RECENT_MODEL_LIMIT = 5;
     pickerAnchorId = 0;
     fieldPickerId = 0;
@@ -53677,7 +53686,7 @@ function mountSettingsDialog(store3, api3) {
       const detail = [
         agent.description,
         ...agent.unsupportedFields.map((f3) => `${f3.field}: ${f3.reason}`)
-      ].filter((part) => Boolean(part)).join(" \xB7 ");
+      ].filter(isNonEmptyString).join(" \xB7 ");
       rows.push(
         makeSourceRow(agent.name, agent.source, detail || null, {
           badgeClass: agent.source === "project" ? "sources-badge-project" : void 0,
@@ -55522,6 +55531,7 @@ var init_settings_dialog = __esm({
     init_appearance();
     init_projects();
     init_appearance();
+    init_nullish2();
     isSettingsSection = (value2) => value2 === "general" || value2 === "usage" || value2 === "agent" || value2 === "permissions" || value2 === "mcp" || value2 === "customise" || value2 === "storage" || value2 === "appearance" || value2 === "ssh" || value2 === "experimental";
     PLUGIN_NAME_ACRONYMS = /* @__PURE__ */ new Set(["acp", "api", "ci", "llm", "mcp", "okf", "pii", "ui"]);
     COPSE_SITE_TINT_COLOR = "#002E2B";
