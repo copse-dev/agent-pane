@@ -69,6 +69,7 @@ import {
 import { canonicalModelLabel, modelDisplayName } from '@copse/llm/model-label.ts'
 import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 const ACP_GROUP = 'Agents on this device'
 
@@ -563,9 +564,7 @@ export async function fetchModelOptions(
   }
   for (const model of models) {
     const { id } = model
-    const hint = [localModelRoleHint(id), localModelIntellectHint(id)]
-      .filter((part): part is string => part !== null)
-      .join(' · ')
+    const hint = [localModelRoleHint(id), localModelIntellectHint(id)].filter(isNonNull).join(' · ')
     // The weights the app itself ships carry a curated name; anything else the
     // server happens to have loaded is spelled from its id. Either way the row
     // reads as a name, so the ` — ` before a hint is the only dash in it.

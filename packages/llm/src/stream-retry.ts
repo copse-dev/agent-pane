@@ -1,12 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { ToolCallRequestError } from '@lmstudio/sdk'
 import OpenAI from 'openai'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 export const DEFAULT_STREAM_MAX_ATTEMPTS = 4
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
 
 /**
  * A connection-level failure from LM Studio's native SDK transport.

@@ -23,6 +23,7 @@
  */
 
 import { isPromptCause, type PromptCause } from './prompt-cause.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 /** Bump when the queue-entry shape changes in a backwards-incompatible way. */
 export const DEFERRED_APPROVAL_SCHEMA_VERSION = 1
@@ -136,10 +137,6 @@ function isStatus(value: unknown): value is DeferralStatus {
 
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string'
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export function isDeferredApproval(value: unknown): value is DeferredApproval {

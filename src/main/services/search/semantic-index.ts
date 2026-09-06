@@ -22,6 +22,7 @@ import {
 import { isRecord } from '@shared/unknown-value.ts'
 import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 import { semanticIndexAllowed, semanticIndexPending } from './workspace-index-gate.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -1169,9 +1170,7 @@ export async function parseGortexJson(
 ): Promise<SemanticSearchHit[]> {
   const parsed = parseJsonPayload(stdout)
   const items = extractResultItems(parsed)
-  const hits = (await Promise.all(items.map(normalizeGortexHit))).filter(
-    (hit): hit is SemanticSearchHit => hit !== null,
-  )
+  const hits = (await Promise.all(items.map(normalizeGortexHit))).filter(isNonNull)
   const scoped =
     filterPath && filterPath !== '.'
       ? hits.filter((hit) => hit.path === filterPath || hit.path.startsWith(`${filterPath}/`))
@@ -1185,9 +1184,7 @@ export async function parseVeraJson(
 ): Promise<SemanticSearchHit[]> {
   const parsed = parseJsonPayload(stdout)
   const items = extractResultItems(parsed)
-  return (await Promise.all(items.map(normalizeVeraHit)))
-    .filter((hit): hit is SemanticSearchHit => hit !== null)
-    .slice(0, maxResults)
+  return (await Promise.all(items.map(normalizeVeraHit))).filter(isNonNull).slice(0, maxResults)
 }
 
 function parseJsonPayload(stdout: string): unknown {

@@ -159,6 +159,7 @@ export interface SpineMessageLine {
 // spine's name so existing importers are unchanged.
 export type { HookRunDecision as SpineHookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { HookRunDecision as SpineHookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 /**
  * One line of `events.jsonl`: a single hook execution (decision 6 of
@@ -357,10 +358,6 @@ export function hookRunBlobRefs(line: SpineHookRunLine): string[] {
 
 export function serializeSpineLine(line: SpineLine): string {
   return JSON.stringify(line)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }
 
 export function isContentRef(value: unknown): value is ContentRef {

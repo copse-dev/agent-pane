@@ -122,6 +122,20 @@ Finally, **check the test can fail**. Mutate the predicate body to `return true`
 suite goes red before you trust it — a predicate test that passes against a broken predicate is
 worse than none, because it reads like coverage.
 
+### Reach for the shared predicate before writing another one
+
+The cheapest predicate to keep honest is the one you don't write. Three cover most of what boundary
+code needs, all in `@copse/std` (re-exported as `@shared/…` for app code) and all tested there:
+
+- **`isRecord`** (`unknown-value.ts`) — `unknown` → `Record<string, unknown>`, rejecting arrays and
+  `null`. It had accumulated 22 local copies across `src/` and `packages/` before #1332.
+- **`isDefined` / `isNonNull`** (`nullish.ts`) — for `.filter(isNonNull)` instead of
+  `.filter((x): x is T => x !== null)`. An inline predicate is an unchecked claim that nothing can
+  test; a named one is checked once.
+
+A local copy is only justified where the import cannot reach — and `@copse/std` is dependency-free
+precisely so that it always can, including from an extracted package.
+
 ## The suppression baseline is empty — keep it that way
 
 `eslint-suppressions.json` is `{}`. It used to hold a shrink-only baseline for

@@ -23,6 +23,7 @@
  */
 
 import { isPromptCause, type PromptCause } from './prompt-cause.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 /** Bump when the decision line shape changes in a backwards-incompatible way. */
 export const DECISION_LOG_SCHEMA_VERSION = 1
@@ -223,10 +224,6 @@ function isDecisionVerdict(value: unknown): value is DecisionVerdict {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** Parse one line. Returns null on malformed JSON or a non-decision line. */

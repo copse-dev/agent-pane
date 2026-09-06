@@ -51,10 +51,11 @@ import {
   type SpineMachineContinuationLine,
   type SpineModelSelectedLine,
 } from '@shared/threads/spine-schema.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 /** Build PR refs from URL strings, matching what the link store feeds attach. */
 function prRefs(...urls: string[]): GithubPrRef[] {
-  return urls.map(parseGithubPrUrl).filter((r): r is GithubPrRef => r !== null)
+  return urls.map(parseGithubPrUrl).filter(isNonNull)
 }
 
 function thread(id: string, overrides: Partial<Thread> = {}): Thread {

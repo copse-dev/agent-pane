@@ -2,10 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { AnthropicProvider, markTrailingCacheBreakpoint } from './anthropic-provider.ts'
 import type { LLMMessage, ProviderStreamChunk } from './wire-types.ts'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 function recordAt(value: unknown, index: number): Record<string, unknown> {
   assert.ok(Array.isArray(value))

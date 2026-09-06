@@ -1,6 +1,7 @@
 import type { Message, Thread, ThreadUsage, ToolCall } from './thread-types.ts'
 import type { ThreadMeta } from './spine-schema.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
+import { isNonNull } from '@copse/std/nullish.ts'
 
 function parseUsage(value: unknown): ThreadUsage | null {
   if (
@@ -56,7 +57,7 @@ export function parseMessageValue(value: unknown): Message | null {
     id: value['id'],
     role: value['role'],
     content: value['content'],
-    toolCalls: toolCalls.filter((toolCall): toolCall is ToolCall => toolCall !== null),
+    toolCalls: toolCalls.filter(isNonNull),
     createdAt: value['createdAt'],
   }
 }
@@ -94,6 +95,6 @@ export function parseThreadValue(value: unknown): Thread | null {
   if (messages.some((message) => message === null)) return null
   return {
     ...meta,
-    messages: messages.filter((message): message is Message => message !== null),
+    messages: messages.filter(isNonNull),
   }
 }
