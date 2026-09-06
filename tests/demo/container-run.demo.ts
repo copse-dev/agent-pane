@@ -108,6 +108,9 @@ describe('unattended container run (browser-hosted)', () => {
     // Which harness ran the loop is stated before the counts are read: under an
     // agent the deferral row would mean something different.
     expect(summary).toMatch(/Harness\s*Copse/)
+    // What the guest held to authenticate: a scoped key here, never a login
+    // unless the user opted into carrying one in.
+    expect(summary).toMatch(/Credential\s*one API key, scoped to the run/)
     expect(summary).toMatch(/Effects refused\s*0/)
     // Section headings render uppercase through CSS; compare the source text.
     await expect(dialog.$('.container-run-deferrals h3')).toHaveText(

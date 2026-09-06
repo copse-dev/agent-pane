@@ -314,6 +314,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           prompt: request.prompt,
           model: request.model,
           egressAllowlist: ['api.anthropic.com:443'],
+          credential: 'key' as const,
           log: ['[thread-container] starting copse-run-demo from copse-worker:local'],
           warnings: [],
           checkout: { root: '/repo', mode: 'shared' as const, branch: 'main' },
@@ -328,7 +329,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         ),
       modelAvailability: (models) =>
         resolved(
-          Object.fromEntries(models.map((model) => [model, 'not available in the demo'] as const)),
+          Object.fromEntries(
+            models.map((model) => [model, { reason: 'not available in the demo' }] as const),
+          ),
         ),
       onRunChanged: subscribe,
     },

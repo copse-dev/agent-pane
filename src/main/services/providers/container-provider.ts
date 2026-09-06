@@ -7,7 +7,12 @@ import {
 import { extraProviderForModel, extraProviderModelId } from '@copse/llm/extra-providers.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
-import { containerAcpAgent, containerAcpAvailability } from '@shared/container-acp-agents.ts'
+import {
+  containerAcpAgent,
+  containerAcpAvailability,
+  containerAcpLoginDirs,
+} from '@shared/container-acp-agents.ts'
+import type { ContainerModelVerdict } from '@shared/types/container-run.ts'
 import { LM_STUDIO_MODEL_IDS, resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
 import { getAcpAgent } from '../acp/acp-agent-registry.ts'
 import { acpHarnessForContainer } from '../container-runtime/guest-acp-agent.ts'
@@ -56,7 +61,8 @@ export type ContainerProviderPlan =
       /** The full `acp:<id>[#model]` value; the guest routes it as the desktop would. */
       model: string
       harness: ThreadContainerAcpHarness
-      apiKey: string
+      /** Null when the run carries the user's sign-in instead (`harness.login`). */
+      apiKey: string | null
       egress: string[]
     }
 
@@ -72,30 +78,48 @@ function originOf(url: string): string {
  */
 export class ContainerModelUnavailable extends Error {
   readonly reason: string
+  /** Set when the agent would run on the user's sign-in if they opted in. */
+  readonly loginOffered: { agentTitle: string } | null
 
-  constructor(message: string, reason: string) {
+  constructor(message: string, reason: string, loginOffered: { agentTitle: string } | null = null) {
     super(message)
     this.name = 'ContainerModelUnavailable'
     this.reason = reason
+    this.loginOffered = loginOffered
   }
+}
+
+/** How the caller wants an ACP agent authenticated when it has no vendor key. */
+export interface ContainerProviderOptions {
+  /** Carry the agent's desktop sign-in into the run (decision A1′); never the default. */
+  useAgentLogin?: boolean
 }
 
 /**
- * Why a model cannot run in a container, or null when it can — decided by the
- * resolver itself, so the dialog's greyed rows and a refused start can never
- * disagree about which key counts (stored in Settings, or in the environment).
+ * The resolver's verdict on a model for the run dialog — decided by the
+ * resolver itself, so the dialog's rows and a refused start can never disagree
+ * about which key counts (stored in Settings, or in the environment). A row
+ * that would run on the user's sign-in is reported as runnable with the
+ * offer attached, so the dialog can show the opt-in for it.
  */
-export function explainContainerModel(model: string): string | null {
+export function explainContainerModel(model: string): ContainerModelVerdict {
   try {
     resolveContainerProvider(model)
-    return null
+    return { reason: null }
   } catch (error) {
-    if (error instanceof ContainerModelUnavailable) return error.reason
-    return error instanceof Error ? error.message : String(error)
+    if (error instanceof ContainerModelUnavailable) {
+      return error.loginOffered
+        ? { reason: null, loginOffered: error.loginOffered }
+        : { reason: error.reason }
+    }
+    return { reason: error instanceof Error ? error.message : String(error) }
   }
 }
 
-export function resolveContainerProvider(model: string): ContainerProviderPlan {
+export function resolveContainerProvider(
+  model: string,
+  options: ContainerProviderOptions = {},
+): ContainerProviderPlan {
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
     const configured = model.startsWith('lmstudio:') ? model.slice('lmstudio:'.length) : ''
@@ -151,7 +175,7 @@ export function resolveContainerProvider(model: string): ContainerProviderPlan {
     return { mode: 'openai-compatible', model, url, apiKey, egress: [originOf(url)] }
   }
   const acp = parseAcpModelSelection(model)
-  if (acp) return resolveAcpHarness(model, acp.id)
+  if (acp) return resolveAcpHarness(model, acp.id, options)
   // Agent-backed selections are the common way to land here, and the reason is
   // worth saying out loud: an ACP, remote or plugin agent is a separate program
   // that authenticates as the user, from an OAuth login in `$HOME` or its own
@@ -169,10 +193,16 @@ export function resolveContainerProvider(model: string): ContainerProviderPlan {
 /**
  * An ACP agent runs in the guest when the image carries its binary and the
  * user has its vendor's API key in Settings: the key is the run's one
- * credential, the desktop login never enters (decisions A1, A4, A6). Anything
- * else is refused with the same per-agent reason the picker shows.
+ * credential (decisions A1, A4, A6). Without a key, an agent whose sign-in
+ * lives in files may run on that sign-in when the user opts in for the run
+ * (A1′). Anything else is refused with the same per-agent reason the picker
+ * shows.
  */
-function resolveAcpHarness(model: string, agentId: string): ContainerProviderPlan {
+function resolveAcpHarness(
+  model: string,
+  agentId: string,
+  options: ContainerProviderOptions,
+): ContainerProviderPlan {
   const agent = getAcpAgent(agentId)
   if (!agent) {
     throw new ContainerModelUnavailable(
@@ -185,19 +215,23 @@ function resolveAcpHarness(model: string, agentId: string): ContainerProviderPla
   const availability = containerAcpAvailability(
     agent.id,
     capable ? { [capable.keySlug]: Boolean(apiKey) } : {},
+    { useLogin: options.useAgentLogin === true },
   )
-  if (!capable || !apiKey || !availability.runnable) {
+  if (!capable || !availability.runnable) {
     throw new ContainerModelUnavailable(
-      `${agent.title} cannot run in a container: it ${availability.reason ?? 'is not available'}. The container is given one API key for the run, never your login.`,
+      `${agent.title} cannot run in a container: it ${availability.reason ?? 'is not available'}. The container is given one credential for the run: an API key, or, if you opt in, your sign-in copied in.`,
       availability.reason ?? 'not available in a container',
+      availability.loginOffered ? { agentTitle: agent.title } : null,
     )
   }
   const domains = findAcpCatalogEntry(agent.id)?.sandbox?.allowedDomains ?? []
+  const harness = acpHarnessForContainer(agent, capable.keyEnv)
+  const loginDirs = availability.credential === 'login' ? containerAcpLoginDirs(agent.id) : null
   return {
     mode: 'acp',
     model,
-    harness: acpHarnessForContainer(agent, capable.keyEnv),
-    apiKey,
+    harness: loginDirs ? { ...harness, login: { dirs: loginDirs } } : harness,
+    apiKey: availability.credential === 'key' ? apiKey : null,
     egress: domains.map((domain) => `${domain}:443`),
   }
 }

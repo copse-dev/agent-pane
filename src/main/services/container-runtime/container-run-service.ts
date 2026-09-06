@@ -127,7 +127,9 @@ export class ContainerRunService {
     const prompt = request.prompt.trim()
     if (!prompt) throw new Error('The run needs a prompt')
     const model = request.model
-    const plan = resolveContainerProvider(model)
+    const plan = resolveContainerProvider(model, { useAgentLogin: request.useAgentLogin === true })
+    const credential: ContainerRunProgress['credential'] =
+      plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
     const egressAllowlist = [...new Set([...plan.egress, ...(request.extraEgress ?? [])])]
 
     const progress: ContainerRunProgress = {
@@ -139,6 +141,7 @@ export class ContainerRunService {
       prompt: request.prompt.trim(),
       model,
       egressAllowlist,
+      credential,
       log: [],
       warnings: [],
       checkout: null,
@@ -186,6 +189,11 @@ export class ContainerRunService {
         `model ${model}`,
         `checkout ${checkout.checkoutMode}${checkout.branch ? ` (${checkout.branch})` : ''}`,
         `egress ${egressAllowlist.join(', ')}`,
+        credential === 'login'
+          ? 'credential: your desktop sign-in, copied in for the run'
+          : credential === 'key'
+            ? 'credential: one API key, scoped to the run'
+            : 'credential: none',
         `wall-clock ${String(Math.round(request.budgets.wallClockMs / 60_000))} min`,
         `tokens ${String(request.budgets.tokenCeiling)}`,
       ],

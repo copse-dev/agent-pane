@@ -1,5 +1,5 @@
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { ContainerRunProgress } from '@shared/types/container-run.ts'
+import type { ContainerModelVerdict, ContainerRunProgress } from '@shared/types/container-run.ts'
 import { parseAcpModel } from '@shared/acp.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { containerAcpAgentTitles } from '@shared/container-acp-agents.ts'
@@ -91,22 +91,29 @@ function formatDuration(from: number, to: number): string {
  */
 export async function loadRunModelOptions(
   fetch: (opts?: FetchModelOptionsOpts) => Promise<ModelOption[]>,
-  availability: (models: string[]) => Promise<Record<string, string | null>>,
+  availability: (models: string[]) => Promise<Record<string, ContainerModelVerdict>>,
 ): Promise<ModelOption[]> {
   const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })])
   const canRun = new Set(runnable.map((option) => option.value))
   const agentRows = all.filter((option) => !canRun.has(option.value))
-  const reasons = agentRows.length > 0 ? await availability(agentRows.map((o) => o.value)) : {}
+  const verdicts = agentRows.length > 0 ? await availability(agentRows.map((o) => o.value)) : {}
   return all.map((option) => {
     if (canRun.has(option.value)) return option
-    // `null` is an answer ("runs"); only a row the resolver did not answer at
-    // all gets the generic reason.
-    const reason = Object.hasOwn(reasons, option.value)
-      ? reasons[option.value]
-      : 'not available in a container'
-    return reason === null || reason === undefined
-      ? option
-      : { ...option, disabled: true, label: `${option.label} — ${reason}` }
+    // Only a row the resolver did not answer at all gets the generic reason.
+    const verdict: ContainerModelVerdict = Object.hasOwn(verdicts, option.value)
+      ? (verdicts[option.value] ?? { reason: 'not available in a container' })
+      : { reason: 'not available in a container' }
+    if (verdict.reason !== null) {
+      return { ...option, disabled: true, label: `${option.label} — ${verdict.reason}` }
+    }
+    // Offered, not yet authorised: the row is pickable so the opt-in can be
+    // shown for it, and the suffix says what picking it will ask for.
+    return verdict.loginOffered
+      ? {
+          ...option,
+          label: `${option.label} — on your ${verdict.loginOffered.agentTitle} sign-in (opt in)`,
+        }
+      : option
   })
 }
 
@@ -119,7 +126,8 @@ export function agentModelsNote(): string {
       : (titles[0] ?? '')
   return (
     `Agent models run as their own process. ${named} can run unattended with an API key from Settings, ` +
-    'scoped to the run and never your login; an agent that only signs in through a browser cannot.'
+    'scoped to the run. Codex and Gemini CLI can also run on your desktop sign-in if you opt in per run; ' +
+    'an agent that only signs in through a browser cannot.'
   )
 }
 
@@ -246,7 +254,11 @@ export function mountContainerRunControl(
     modelSelect.addEventListener('change', () => {
       chosenModel = modelSelect.value
       renderEgressHint()
+      renderLoginOptIn()
     })
+    // The resolver's verdict per agent row, kept so choosing a row that runs
+    // only on the user's sign-in can reveal the opt-in for it.
+    const verdicts = new Map<string, ContainerModelVerdict>()
     // The field has to exist before the picker mounts: `mountModelSelectPicker`
     // inserts its trigger with `select.after(...)`, which is a no-op while the
     // select still has no parent.
@@ -260,11 +272,16 @@ export function mountContainerRunControl(
       loadOptions: async (current) => {
         const options = await loadRunModelOptions(
           (opts) => fetchModelOptions(api, current, opts),
-          (models) => api.container.modelAvailability(models),
+          async (models) => {
+            const answered = await api.container.modelAvailability(models)
+            for (const [model, verdict] of Object.entries(answered)) verdicts.set(model, verdict)
+            return answered
+          },
         )
         agentNote.hidden = !options.some(
           (option) => option.disabled === true || parseAcpModel(option.value) !== null,
         )
+        renderLoginOptIn()
         return options
       },
       ariaLabel: 'Model for the unattended run',
@@ -298,6 +315,49 @@ export function mountContainerRunControl(
     }
     renderEgressHint()
 
+    // The sign-in opt-in (decision A1′): shown only for an agent the resolver
+    // says would run on the user's sign-in, and never ticked by default. It is
+    // the whole account rather than a scoped key, and a token refresh in the
+    // guest can sign the desktop out — so the hint says both before the box.
+    const loginOptIn = el('input', {
+      type: 'checkbox',
+      class: 'container-run-agent-login',
+      name: 'containerRunAgentLogin',
+    })
+    const loginLabel = el(
+      'label',
+      { class: 'container-run-agent-login-label' },
+      loginOptIn,
+      el('span', { class: 'container-run-agent-login-text' }),
+    )
+    const loginHint = el('p', { class: 'field-hint container-run-agent-login-hint' })
+    const loginField = el(
+      'div',
+      { class: 'container-run-agent-login-field', hidden: '' },
+      loginLabel,
+      loginHint,
+    )
+    function loginOffer(): { agentTitle: string } | null {
+      return verdicts.get(chosenModel)?.loginOffered ?? null
+    }
+    function renderLoginOptIn(): void {
+      const offer = loginOffer()
+      loginField.hidden = offer === null
+      if (offer === null) {
+        loginOptIn.checked = false
+      } else {
+        const text = loginLabel.querySelector('.container-run-agent-login-text')
+        if (text) text.textContent = `Use my ${offer.agentTitle} sign-in for this run`
+        loginHint.textContent =
+          `${offer.agentTitle} has no API key in Settings. Ticking this copies its sign-in files from your home ` +
+          "directory into the container's throwaway home for this run and discards them with it. " +
+          'That is your whole account, not a scoped key, and a token refresh inside the run may sign ' +
+          'the desktop out. Adding an API key in Settings avoids both.'
+      }
+      renderStartState()
+    }
+    loginOptIn.addEventListener('change', renderStartState)
+
     const start = el(
       'button',
       { type: 'button', class: 'ui-btn ui-btn-primary container-run-start' },
@@ -309,10 +369,12 @@ export function mountContainerRunControl(
       'Cancel',
     )
     cancel.addEventListener('click', () => overlay?.close())
-    start.disabled = task.value.trim().length === 0
-    task.addEventListener('input', () => {
-      start.disabled = task.value.trim().length === 0
-    })
+    function renderStartState(): void {
+      start.disabled =
+        task.value.trim().length === 0 || (loginOffer() !== null && !loginOptIn.checked)
+    }
+    renderStartState()
+    task.addEventListener('input', renderStartState)
     start.addEventListener('click', () => {
       const threadId = context.getActiveThreadId()
       const projectId = context.getActiveProjectId()
@@ -331,6 +393,7 @@ export function mountContainerRunControl(
           prompt,
           model: chosenModel,
           budgets: { wallClockMs, tokenCeiling },
+          ...(loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {}),
         })
         .then((progress) => {
           update(progress)
@@ -369,6 +432,7 @@ export function mountContainerRunControl(
         uiField({ label: 'Token ceiling', control: tokens }),
       ),
       egressHint,
+      loginField,
       uiActions(cancel, start, { className: 'container-run-actions' }),
     )
   }
@@ -393,6 +457,21 @@ export function mountContainerRunControl(
       )
     }
     rows.push(row('Reachable origins', run.egressAllowlist.join(', ') || 'none'))
+    // What the guest held to authenticate. A sign-in carried in is the one
+    // case where the run had more than a scoped key, so it is never elided.
+    const held = run.record?.credential ?? run.credential
+    rows.push(
+      row(
+        'Credential',
+        typeof held === 'object'
+          ? `your desktop sign-in, copied in for the run (${held.login.map((d) => `~/${d}`).join(', ')})`
+          : held === 'key'
+            ? 'one API key, scoped to the run'
+            : held === 'login'
+              ? 'your desktop sign-in, copied in for the run'
+              : 'none',
+      ),
+    )
     rows.push(
       row(
         'Elapsed',

@@ -51,6 +51,7 @@ function fakeRecord(threadId: string): ThreadContainerRecord {
     },
     carryOut: { expected: true, ref: 'refs/copse/runs/run-fake', error: null },
     containerExit: 0,
+    credential: 'key',
     teardown: 'removed',
     cleanupError: null,
     secretCanary: { present: false, detail: 'absent' },
@@ -194,6 +195,39 @@ describe('ContainerRunService', () => {
     assert.ok(request.acp)
     assert.equal(request.acp.agent.id, 'claude-acp')
     assert.equal(request.acp.keyEnvName, 'ANTHROPIC_API_KEY')
+    await setSetting('registeredAcpAgents', [])
+  })
+
+  it('carries the sign-in in, and no key, when the user opts in for a keyless Codex', async () => {
+    await setSetting('registeredAcpAgents', [
+      { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
+    ])
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      run: (request, options): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        options?.onStarted?.()
+        return Promise.resolve({ ...fakeRecord(request.prompt), credential: { login: ['.codex'] } })
+      },
+    })
+    const base = {
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Tidy the README',
+      model: 'acp:codex-acp',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    }
+    // Without the opt-in the start is refused, and the refusal names both ways in.
+    await assert.rejects(service.start(base), /OpenAI API key in Settings, or your Codex sign-in/)
+    const first = await service.start({ ...base, useAgentLogin: true })
+    assert.equal(first.credential, 'login')
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    const request = seen[0]
+    assert.ok(request)
+    assert.equal(request.apiKeyEnv, undefined)
+    assert.deepEqual(request.acp?.login, { dirs: ['.codex', '.config/codex'] })
     await setSetting('registeredAcpAgents', [])
   })
 

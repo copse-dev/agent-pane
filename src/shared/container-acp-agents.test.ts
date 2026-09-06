@@ -6,6 +6,7 @@ import {
   containerAcpAgentSpecs,
   containerAcpAgentTitles,
   containerAcpAvailability,
+  containerAcpLoginDirs,
 } from './container-acp-agents.ts'
 import { KNOWN_ACP_AGENTS } from './acp-known-agents.ts'
 
@@ -36,16 +37,45 @@ describe('container ACP agents', () => {
     assert.deepEqual(containerAcpAvailability('claude-acp', { anthropic: true }), {
       runnable: true,
       reason: null,
+      credential: 'key',
+      loginOffered: false,
     })
+    // Claude keeps its OAuth in the macOS Keychain: no sign-in to carry, so
+    // the missing key is the whole story.
     assert.deepEqual(containerAcpAvailability('claude-acp', { anthropic: false }), {
       runnable: false,
       reason: 'needs an Anthropic API key in Settings',
+      credential: null,
+      loginOffered: false,
     })
+    assert.equal(containerAcpAvailability('codex-acp', { openai: true }).credential, 'key')
+  })
+
+  it('offers the sign-in for Codex and Gemini without a key, and runs on it only when opted in', () => {
+    const offered = containerAcpAvailability('gemini', {})
+    assert.equal(offered.runnable, false)
+    assert.equal(offered.loginOffered, true)
     assert.equal(
-      containerAcpAvailability('gemini', {}).reason,
-      'needs a Gemini API key in Settings',
+      offered.reason,
+      'needs a Gemini API key in Settings, or your Gemini CLI sign-in (opt in below)',
     )
-    assert.equal(containerAcpAvailability('codex-acp', { openai: true }).runnable, true)
+    assert.deepEqual(containerAcpAvailability('codex-acp', {}, { useLogin: true }), {
+      runnable: true,
+      reason: null,
+      credential: 'login',
+      loginOffered: false,
+    })
+    // A key always wins over the sign-in, opted in or not.
+    assert.equal(
+      containerAcpAvailability('codex-acp', { openai: true }, { useLogin: true }).credential,
+      'key',
+    )
+    // The opt-in changes nothing for an agent with no sign-in to carry.
+    assert.equal(containerAcpAvailability('claude-acp', {}, { useLogin: true }).runnable, false)
+    assert.deepEqual(containerAcpLoginDirs('codex-acp'), ['.codex', '.config/codex'])
+    assert.deepEqual(containerAcpLoginDirs('gemini'), ['.gemini', '.config/gemini'])
+    assert.equal(containerAcpLoginDirs('claude-acp'), null)
+    assert.equal(containerAcpLoginDirs('cursor'), null)
   })
 
   it('gives the browser-login agent and a custom agent their own reasons', () => {

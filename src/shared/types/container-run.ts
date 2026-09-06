@@ -65,6 +65,11 @@ export interface ThreadContainerRecord {
    */
   carryOut: { expected: boolean; ref: string | null; error: string | null }
   containerExit: number | null
+  /**
+   * What the guest held: a run-scoped key, the user's sign-in (the home
+   * directories that were copied in, discarded with the container), or nothing.
+   */
+  credential: 'none' | 'key' | { login: string[] }
   teardown: 'removed' | 'already-gone' | 'failed'
   /** Non-null when stopping or reaping the container did not settle cleanly. */
   cleanupError: string | null
@@ -90,7 +95,27 @@ export interface ContainerRunRequest {
   budgets: UnattendedRunBudgets
   /** Extra `host:port` origins the broker may forward to, beyond the model's. */
   extraEgress?: string[]
+  /**
+   * Run an ACP agent on the user's desktop sign-in, copied into the guest's
+   * throwaway home for the run, instead of a vendor key (decision A1′). Only
+   * honoured for agents that keep their sign-in in files; never the default.
+   */
+  useAgentLogin?: boolean
 }
+
+/**
+ * The resolver's verdict on one picker row (`container:model-availability`).
+ * `reason` is null when the row runs as it is. `loginOffered` names an agent
+ * that has no key but would run on the user's sign-in if they opt in: the row
+ * is offered, and choosing it reveals the opt-in.
+ */
+export interface ContainerModelVerdict {
+  reason: string | null
+  loginOffered?: { agentTitle: string }
+}
+
+/** What the guest was given to authenticate with. */
+export type ContainerRunCredential = 'none' | 'key' | 'login'
 
 /** Live snapshot of one thread's container run, pushed on every change. */
 export interface ContainerRunProgress {
@@ -108,6 +133,8 @@ export interface ContainerRunProgress {
   /** The model the guest was given and the origins it may reach. */
   model: string
   egressAllowlist: string[]
+  /** A vendor key scoped to the run, the user's sign-in copied in, or nothing. */
+  credential: ContainerRunCredential
   /** Most recent host and guest log lines (bounded). */
   log: string[]
   /**

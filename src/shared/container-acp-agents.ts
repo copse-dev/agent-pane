@@ -5,10 +5,15 @@
  * An agent runs in the guest only when two things hold: its binary is baked
  * into the worker image, pinned here so the image fingerprint moves with it,
  * and it has a documented API-key path — the one credential the run is given,
- * by value, scoped to the run. The user's desktop login never enters the
- * container, so an agent whose only sign-in is a browser (`cursor-agent`) stays
- * unavailable with a reason that says so, rather than the generic line that
- * sent people off to log in again.
+ * by value, scoped to the run. An agent whose only sign-in is a browser
+ * (`cursor-agent`) stays unavailable with a reason that says so, rather than
+ * the generic line that sent people off to log in again.
+ *
+ * One deliberate exception (decision A1′): an agent that keeps its desktop
+ * sign-in in files under `$HOME` may run on that sign-in instead of a key when
+ * the user opts in for the run, and the run copies those files into the
+ * guest's throwaway home. That is the whole account rather than a scoped key,
+ * so it is never the default and never silent.
  *
  * Pure data with no imports beyond the catalogue, so the renderer's roster and
  * the main process's resolver read the same table and give the same reasons.
@@ -32,6 +37,13 @@ export interface ContainerAcpAgent {
   keySlug: string
   /** How Settings names that key, for a reason the user can act on. */
   keyLabel: string
+  /**
+   * Whether the run may carry the user's desktop sign-in in instead of a key,
+   * on explicit opt-in. Only for agents whose login lives in files under
+   * `$HOME` (the catalogue's `homeDirs`); Claude Code keeps its OAuth
+   * credentials in the macOS Keychain, so there is nothing to copy.
+   */
+  loginCarryIn?: boolean
 }
 
 export const CONTAINER_ACP_AGENTS: readonly ContainerAcpAgent[] = [
@@ -55,6 +67,8 @@ export const CONTAINER_ACP_AGENTS: readonly ContainerAcpAgent[] = [
     keyEnv: 'CODEX_API_KEY',
     keySlug: 'openai',
     keyLabel: 'OpenAI',
+    // `codex login` writes ~/.codex/auth.json.
+    loginCarryIn: true,
   },
   {
     id: 'gemini',
@@ -63,8 +77,22 @@ export const CONTAINER_ACP_AGENTS: readonly ContainerAcpAgent[] = [
     keyEnv: 'GEMINI_API_KEY',
     keySlug: 'gemini',
     keyLabel: 'Gemini',
+    // Google sign-in writes ~/.gemini/oauth_creds.json.
+    loginCarryIn: true,
   },
 ]
+
+/**
+ * The home-relative directories that hold an agent's sign-in, for the agents
+ * that may carry it in; `null` for every other agent. The catalogue's
+ * `homeDirs` are the source: they are what the desktop seatbelt lets the
+ * agent read and write, so they are where its login lives.
+ */
+export function containerAcpLoginDirs(agentId: string): string[] | null {
+  const capable = containerAcpAgent(agentId)
+  if (!capable?.loginCarryIn) return null
+  return [...(findAcpCatalogEntry(capable.id)?.sandbox?.homeDirs ?? [])]
+}
 
 /** The key-capable entry for an agent id (any spelling the catalogue knows), or null. */
 export function containerAcpAgent(agentId: string): ContainerAcpAgent | null {
@@ -86,27 +114,63 @@ export interface ContainerAcpAvailability {
    * when runnable.
    */
   reason: string | null
+  /** What the run would hold when runnable: the vendor key, or the sign-in. */
+  credential: 'key' | 'login' | null
+  /**
+   * Set when the agent has no key but could run on the user's desktop sign-in
+   * if they opt in: the dialog offers the opt-in for exactly these rows.
+   */
+  loginOffered: boolean
 }
 
 /**
  * Whether `acp:<agentId>` can run in a container given which provider keys
- * are configured (`keysConfigured[slug]`), with the per-agent reason when not.
+ * are configured (`keysConfigured[slug]`) and whether the user has opted into
+ * carrying the agent's sign-in in, with the per-agent reason when not.
  */
 export function containerAcpAvailability(
   agentId: string,
   keysConfigured: Readonly<Record<string, boolean>>,
+  opts: { useLogin?: boolean } = {},
 ): ContainerAcpAvailability {
   const capable = containerAcpAgent(agentId)
   if (capable) {
-    return keysConfigured[capable.keySlug] === true
-      ? { runnable: true, reason: null }
-      : { runnable: false, reason: `needs ${aOrAn(capable.keyLabel)} API key in Settings` }
+    if (keysConfigured[capable.keySlug] === true) {
+      return { runnable: true, reason: null, credential: 'key', loginOffered: false }
+    }
+    if (capable.loginCarryIn === true) {
+      const title = findAcpCatalogEntry(capable.id)?.title ?? capable.id
+      return opts.useLogin === true
+        ? { runnable: true, reason: null, credential: 'login', loginOffered: false }
+        : {
+            runnable: false,
+            reason: `needs ${aOrAn(capable.keyLabel)} API key in Settings, or your ${title} sign-in (opt in below)`,
+            credential: null,
+            loginOffered: true,
+          }
+    }
+    return {
+      runnable: false,
+      reason: `needs ${aOrAn(capable.keyLabel)} API key in Settings`,
+      credential: null,
+      loginOffered: false,
+    }
   }
   const known = findAcpCatalogEntry(agentId)
   if (known?.setup && !known.envHints?.length) {
-    return { runnable: false, reason: 'signs in through a browser; no API-key path' }
+    return {
+      runnable: false,
+      reason: 'signs in through a browser; no API-key path',
+      credential: null,
+      loginOffered: false,
+    }
   }
-  return { runnable: false, reason: 'not carried by the worker image' }
+  return {
+    runnable: false,
+    reason: 'not carried by the worker image',
+    credential: null,
+    loginOffered: false,
+  }
 }
 
 /** Human names of the agents the guest can run, for a sentence in the dialog. */

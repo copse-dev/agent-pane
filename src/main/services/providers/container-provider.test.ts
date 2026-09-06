@@ -11,6 +11,12 @@ const CLAUDE_AGENT: AcpAgentConfig = {
   env: { ANTHROPIC_API_KEY: 'sk-ant-desktop' },
   enabled: true,
 }
+const CODEX_AGENT: AcpAgentConfig = {
+  id: 'codex-acp',
+  title: 'Codex',
+  command: 'codex-acp',
+  enabled: true,
+}
 const CURSOR_AGENT: AcpAgentConfig = {
   id: 'cursor',
   title: 'Cursor',
@@ -103,6 +109,41 @@ describe('resolveContainerProvider', () => {
         () => resolveContainerProvider('acp:claude-acp'),
         /needs an Anthropic API key in Settings/,
       )
+      // Claude has no sign-in to carry, so the opt-in changes nothing.
+      assert.throws(
+        () => resolveContainerProvider('acp:claude-acp', { useAgentLogin: true }),
+        /needs an Anthropic API key in Settings/,
+      )
+      assert.deepEqual(explainContainerModel('acp:claude-acp'), {
+        reason: 'needs an Anthropic API key in Settings',
+      })
+    })
+
+    it('runs Codex on the desktop sign-in only when opted in, and offers it otherwise', async () => {
+      await setSetting('registeredAcpAgents', [CODEX_AGENT])
+      // Not opted in: refused, but the dialog is told the row would run on
+      // the sign-in, so it can show the opt-in for it.
+      assert.throws(
+        () => resolveContainerProvider('acp:codex-acp'),
+        /needs an OpenAI API key in Settings, or your Codex sign-in/,
+      )
+      assert.deepEqual(explainContainerModel('acp:codex-acp'), {
+        reason: null,
+        loginOffered: { agentTitle: 'Codex' },
+      })
+      // Opted in: a plan with no key and the sign-in directories to carry.
+      const plan = resolveContainerProvider('acp:codex-acp', { useAgentLogin: true })
+      assert.equal(plan.mode, 'acp')
+      assert.equal(plan.apiKey, null)
+      assert.deepEqual(plan.harness.login, { dirs: ['.codex', '.config/codex'] })
+      assert.ok(plan.egress.includes('*.openai.com:443'))
+      // With a key, the key wins and nothing is carried in.
+      setApiKey('openai', 'sk-openai-run')
+      const keyed = resolveContainerProvider('acp:codex-acp', { useAgentLogin: true })
+      assert.equal(keyed.mode, 'acp')
+      assert.equal(keyed.apiKey, 'sk-openai-run')
+      assert.equal(keyed.harness.login, undefined)
+      assert.deepEqual(explainContainerModel('acp:codex-acp'), { reason: null })
     })
 
     it('accepts a key from the environment, as the run would', async () => {
@@ -110,7 +151,7 @@ describe('resolveContainerProvider', () => {
       const previous = process.env['ANTHROPIC_API_KEY']
       process.env['ANTHROPIC_API_KEY'] = 'sk-ant-from-env'
       try {
-        assert.equal(explainContainerModel('acp:claude-acp'), null)
+        assert.deepEqual(explainContainerModel('acp:claude-acp'), { reason: null })
         const plan = resolveContainerProvider('acp:claude-acp')
         assert.equal(plan.mode, 'acp')
         assert.equal(plan.apiKey, 'sk-ant-from-env')
@@ -122,22 +163,23 @@ describe('resolveContainerProvider', () => {
 
     it('explains a row with the short per-agent reason the dialog shows', async () => {
       await setSetting('registeredAcpAgents', [CLAUDE_AGENT, CURSOR_AGENT, CUSTOM_AGENT])
-      assert.equal(
-        explainContainerModel('acp:claude-acp#claude-opus-5'),
-        'needs an Anthropic API key in Settings',
-      )
-      assert.equal(
-        explainContainerModel('acp:cursor'),
-        'signs in through a browser; no API-key path',
-      )
-      assert.equal(explainContainerModel('acp:my-own-agent'), 'not carried by the worker image')
-      assert.equal(explainContainerModel('acp:never-registered'), 'not configured in Settings')
-      assert.equal(
-        explainContainerModel('remote-agent:anthropic#x'),
-        'not available in a container',
-      )
+      assert.deepEqual(explainContainerModel('acp:claude-acp#claude-opus-5'), {
+        reason: 'needs an Anthropic API key in Settings',
+      })
+      assert.deepEqual(explainContainerModel('acp:cursor'), {
+        reason: 'signs in through a browser; no API-key path',
+      })
+      assert.deepEqual(explainContainerModel('acp:my-own-agent'), {
+        reason: 'not carried by the worker image',
+      })
+      assert.deepEqual(explainContainerModel('acp:never-registered'), {
+        reason: 'not configured in Settings',
+      })
+      assert.deepEqual(explainContainerModel('remote-agent:anthropic#x'), {
+        reason: 'not available in a container',
+      })
       setApiKey('anthropic', 'sk-ant-run')
-      assert.equal(explainContainerModel('acp:claude-acp#claude-opus-5'), null)
+      assert.deepEqual(explainContainerModel('acp:claude-acp#claude-opus-5'), { reason: null })
     })
 
     it('refuses an agent that only signs in through a browser, whatever keys exist', async () => {

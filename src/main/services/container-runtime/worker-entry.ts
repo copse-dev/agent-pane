@@ -12,6 +12,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { createLocalOpenAIProvider } from '@copse/llm/create-provider.ts'
@@ -34,6 +35,7 @@ import { storageSet } from '../storage/storage.ts'
 import { guestAcpAgentConfig } from './guest-acp-agent.ts'
 import type { ThreadContainerAcpHarness } from './thread-container.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { restoreAgentLogin } from './agent-login.ts'
 import { GUEST_EGRESS_PROXY } from './egress-rules.ts'
 import { startGuestEgressProxy } from './guest-egress-proxy.ts'
 import type { LLMMessage } from '@shared/types/index.ts'
@@ -49,7 +51,13 @@ const specSchema = z.object({
   providerUrl: z.url().nullable(),
   productProvider: z.object({ apiKeySlug: z.string().min(1) }).nullable(),
   apiKeyEnv: z.string().min(1).nullable(),
-  acp: z.object({ agent: acpAgentConfigSchema, keyEnvName: z.string() }).nullable(),
+  acp: z
+    .object({
+      agent: acpAgentConfigSchema,
+      keyEnvName: z.string(),
+      login: z.object({ dirs: z.array(z.string().min(1)) }).optional(),
+    })
+    .nullable(),
   budgets: z.object({
     wallClockMs: z.number().positive(),
     tokenCeiling: z.number().positive(),
@@ -72,6 +80,7 @@ function harnessFromSpec(acp: NonNullable<Spec['acp']>): ThreadContainerAcpHarne
   const { agent } = acp
   return {
     keyEnvName: acp.keyEnvName,
+    ...(acp.login !== undefined ? { login: { dirs: acp.login.dirs } } : {}),
     agent: {
       id: agent.id,
       title: agent.title,
@@ -178,6 +187,14 @@ async function main(): Promise<void> {
   process.stdout.write(`[worker] run ${spec.runtimeId} thread ${spec.threadId}\n`)
   carryIn(spec)
   process.stdout.write(`[worker] carried in ${spec.carryInBase.slice(0, 12)}\n`)
+  if (spec.acp?.login) {
+    // The user's sign-in, staged by the host: into this throwaway home, private
+    // to the worker, before the agent can look for it.
+    const restored = restoreAgentLogin(RUN_DIR, homedir(), spec.acp.login.dirs)
+    process.stdout.write(
+      `[worker] sign-in restored: ${restored.map((d) => `~/${d}`).join(', ') || 'nothing found'}\n`,
+    )
+  }
 
   // The decision log and the deferred queue key off the active project; point
   // them at this run's project so both land in the mounted state directory.

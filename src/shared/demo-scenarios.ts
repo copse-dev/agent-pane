@@ -358,6 +358,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       prompt: 'Clear the lint suppression backlog in the renderer views',
       model: 'claude-sonnet-4-6',
       egressAllowlist: ['api.anthropic.com:443'],
+      credential: 'key',
       warnings: [],
       checkout: {
         root: '/Users/dev/projects/demo/.copse/worktrees/demo-container-thread',
@@ -419,6 +420,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         },
         carryOut: { expected: true, ref: 'refs/copse/runs/run-demo-1', error: null },
         containerExit: 0,
+        credential: 'key',
         teardown: 'removed',
         cleanupError: null,
         secretCanary: { present: false, detail: 'canary absent from every surface' },

@@ -1,6 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import type { ContainerModelVerdict } from '@shared/types/container-run.ts'
 import type { FetchModelOptionsOpts, ModelOption } from './model-options.ts'
 import { agentModelsNote, loadRunModelOptions } from './container-run-control.ts'
 
@@ -37,9 +38,19 @@ function fetcher(
 
 /** Stands in for `container.modelAvailability`: the resolver's verdict per row. */
 const verdicts =
-  (reasons: Record<string, string | null>) =>
-  (models: string[]): Promise<Record<string, string | null>> =>
-    Promise.resolve(Object.fromEntries(models.map((model) => [model, reasons[model] ?? null])))
+  (answers: Record<string, ContainerModelVerdict | string | null>) =>
+  (models: string[]): Promise<Record<string, ContainerModelVerdict>> =>
+    Promise.resolve(
+      Object.fromEntries(
+        models.map((model) => {
+          const answer = answers[model]
+          return [
+            model,
+            answer !== null && typeof answer === 'object' ? answer : { reason: answer ?? null },
+          ]
+        }),
+      ),
+    )
 
 describe('loadRunModelOptions', () => {
   it('enables an agent row the resolver would accept', async () => {
@@ -68,7 +79,7 @@ describe('loadRunModelOptions', () => {
     const asked: string[][] = []
     await loadRunModelOptions(fetcher([PROVIDER, CLAUDE, CURSOR], [PROVIDER]), (models) => {
       asked.push(models)
-      return Promise.resolve(Object.fromEntries(models.map((model) => [model, null])))
+      return Promise.resolve(Object.fromEntries(models.map((model) => [model, { reason: null }])))
     })
     assert.deepEqual(asked, [[CLAUDE.value, CURSOR.value]])
   })
@@ -84,6 +95,22 @@ describe('loadRunModelOptions', () => {
       options.some((option) => option.disabled === true),
       false,
     )
+  })
+
+  it('keeps a row the resolver would run on the sign-in pickable, and says so', async () => {
+    const CODEX: ModelOption = {
+      value: 'acp:codex-acp',
+      label: 'Codex',
+      group: 'Codex on this device',
+    }
+    const options = await loadRunModelOptions(
+      fetcher([PROVIDER, CODEX], [PROVIDER]),
+      verdicts({ [CODEX.value]: { reason: null, loginOffered: { agentTitle: 'Codex' } } }),
+    )
+    const codex = options.find((option) => option.value === CODEX.value)
+    assert.ok(codex)
+    assert.equal(codex.disabled, undefined)
+    assert.equal(codex.label, 'Codex — on your Codex sign-in (opt in)')
   })
 
   it('falls back to a generic reason for a row the resolver did not answer', async () => {
@@ -114,6 +141,6 @@ describe('agentModelsNote', () => {
     const note = agentModelsNote()
     assert.match(note, /Claude, Codex and Gemini CLI/)
     assert.match(note, /API key/)
-    assert.match(note, /never your login/)
+    assert.match(note, /desktop sign-in if you opt in/)
   })
 })

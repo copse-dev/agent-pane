@@ -66,7 +66,11 @@ import type {
   WorktreeSizeResult,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
-import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/container-run.ts'
+import type {
+  ContainerModelVerdict,
+  ContainerRunProgress,
+  ContainerRunRequest,
+} from '@shared/types/container-run.ts'
 import type { PluginBrowserTabRequest } from '@shared/types/plugin-browser.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 import type {
@@ -160,7 +164,7 @@ export interface ApiClient {
     runThread: (request: ContainerRunRequest) => Promise<ContainerRunProgress>
     getRun: (threadId: string) => Promise<ContainerRunProgress | null>
     /** Per model: why it cannot run in a container, or null when it can. */
-    modelAvailability: (models: string[]) => Promise<Record<string, string | null>>
+    modelAvailability: (models: string[]) => Promise<Record<string, ContainerModelVerdict>>
     onRunChanged: (handler: (progress: ContainerRunProgress) => void) => () => void
   }
   fs: {

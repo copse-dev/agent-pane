@@ -48,6 +48,7 @@ import {
 } from './egress-rules.ts'
 import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
+import { removeStagedLogin, stageAgentLogin } from './agent-login.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 
 const execFileAsync = promisify(execFile)
@@ -119,6 +120,12 @@ export interface ThreadContainerAcpHarness {
   agent: AcpAgentConfig
   /** The agent's own key variable, e.g. `ANTHROPIC_API_KEY`. */
   keyEnvName: string
+  /**
+   * Carry the user's desktop sign-in in instead of a key (decision A1′): the
+   * home-relative directories to copy. The host stages the ones that exist
+   * into the run directory and the guest restores them into its own home.
+   */
+  login?: { dirs: string[] }
 }
 
 /** The spec the guest reads from `run.json`. Contains no secrets. */
@@ -881,6 +888,17 @@ export async function runThreadInContainer(
   const carryIn = writeCarryInBundle(workspace, runtimeId, join(runDir, 'carry-in.bundle'))
   log(`[thread-container] carry-in ${carryIn.sha.slice(0, 12)} as ${carryIn.ref}`)
 
+  // The user's sign-in, when they opted in: staged now, removed in `finally`
+  // below whatever happens, so the world-readable copy lives only as long as
+  // the container it exists for.
+  let acp = request.acp
+  let stagedLogin: string[] | null = null
+  if (acp?.login) {
+    stagedLogin = stageAgentLogin(homedir(), acp.login.dirs, runDir, acp.agent.title)
+    acp = { ...acp, login: { dirs: stagedLogin } }
+    log(`[thread-container] sign-in carried in: ${stagedLogin.map((d) => `~/${d}`).join(', ')}`)
+  }
+
   const threadId = `${runtimeId}-thread`
   const spec: ThreadContainerRunSpec = {
     runtimeId,
@@ -891,7 +909,7 @@ export async function runThreadInContainer(
     providerUrl: request.providerUrl ?? null,
     productProvider: request.productProvider ?? null,
     apiKeyEnv,
-    acp: request.acp ?? null,
+    acp: acp ?? null,
     budgets: request.budgets,
     workspace: GUEST_WORKSPACE,
     carryInRef: carryIn.ref,
@@ -918,7 +936,12 @@ export async function runThreadInContainer(
     rules: egress,
     ...(request.egressResolve ? { resolve: request.egressResolve } : {}),
   })
-  await broker.start()
+  try {
+    await broker.start()
+  } catch (error) {
+    removeStagedLogin(runDir)
+    throw error
+  }
   const startedAt = Date.now()
   let containerExit: number | null
   let teardown: ThreadContainerRecord['teardown']
@@ -951,6 +974,7 @@ export async function runThreadInContainer(
     }
     await broker.stop()
     rmSync(egressDir, { recursive: true, force: true })
+    removeStagedLogin(runDir)
   }
 
   const result = readJsonFile(join(runDir, 'out', 'result.json'), decodeResult)
@@ -984,6 +1008,7 @@ export async function runThreadInContainer(
     result,
     carryOut,
     containerExit,
+    credential: stagedLogin ? { login: stagedLogin } : apiKeyEnv ? 'key' : 'none',
     teardown,
     cleanupError,
     secretCanary: secretCanaryCheck(runDir, canary),
