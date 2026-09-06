@@ -27305,12 +27305,6 @@ var init_state = __esm({
   }
 });
 
-// src/shared/types/ipc.ts
-var init_ipc = __esm({
-  "src/shared/types/ipc.ts"() {
-  }
-});
-
 // packages/agent/src/wire-types.ts
 var init_wire_types = __esm({
   "packages/agent/src/wire-types.ts"() {
@@ -27396,7 +27390,6 @@ var init_types = __esm({
     init_llm();
     init_layout();
     init_state();
-    init_ipc();
     init_tools();
     init_provider();
     init_skills();
@@ -36884,6 +36877,25 @@ var init_agent_model_identity = __esm({
   }
 });
 
+// packages/std/src/nullish.ts
+function isDefined(value2) {
+  return value2 !== void 0;
+}
+function isNonNull(value2) {
+  return value2 !== null;
+}
+var init_nullish = __esm({
+  "packages/std/src/nullish.ts"() {
+  }
+});
+
+// src/shared/nullish.ts
+var init_nullish2 = __esm({
+  "src/shared/nullish.ts"() {
+    init_nullish();
+  }
+});
+
 // src/renderer/views/model-options.ts
 function modelDisplayLabel(model) {
   return displayModelLabel(model);
@@ -37161,7 +37173,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
   }
   for (const model of models) {
     const { id: id39 } = model;
-    const hint = [localModelRoleHint(id39), localModelIntellectHint(id39)].filter((part) => part !== null).join(" \xB7 ");
+    const hint = [localModelRoleHint(id39), localModelIntellectHint(id39)].filter(isNonNull).join(" \xB7 ");
     const label = getLocalModelCapability(id39)?.label ?? modelDisplayName(id39);
     options2.push({
       value: `lmstudio:${id39}`,
@@ -37296,6 +37308,7 @@ var init_model_options = __esm({
     init_model_label();
     init_agent_model_identity();
     init_model_display();
+    init_nullish2();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
     CHAT_DEFAULT_GROUP = "Chat default";
@@ -57379,7 +57392,7 @@ function getHookCardStatusLabel(card2) {
     (card2.userMessageChars ?? 0) > 0 ? "Notified you" : void 0,
     (card2.queuedMessageChars ?? 0) > 0 ? "Queued follow-up" : void 0,
     (card2.sessionEnvKeys ?? 0) > 0 ? "Set session environment" : void 0
-  ].filter((effect) => effect !== void 0);
+  ].filter(isDefined);
   const primaryEffect = effects[0];
   if (primaryEffect !== void 0) {
     return effects.length === 1 ? primaryEffect : `${primaryEffect} +${String(effects.length - 1)}`;
@@ -57405,6 +57418,7 @@ function getHookCardStatusLabel(card2) {
 }
 var init_hook_card = __esm({
   "packages/thread-store/src/hook-card.ts"() {
+    init_nullish();
   }
 });
 
@@ -245456,7 +245470,7 @@ function mountComposerEditor() {
       root4.setAttribute("data-placeholder", text4);
     },
     getBlocks() {
-      return chipElements().map((c4) => blocks2.get(c4.dataset["blockId"] ?? "")).filter((b5) => b5 !== void 0);
+      return chipElements().map((c4) => blocks2.get(c4.dataset["blockId"] ?? "")).filter(isDefined);
     },
     insertPasteChip(content, label) {
       const block2 = {
@@ -245512,6 +245526,7 @@ var init_composer_editor = __esm({
     init_build_text_with_attachments();
     init_text_expand();
     init_icons();
+    init_nullish2();
     CHIP_CHAR = "\uFFFC";
     CHIP_SELECTOR = ".inline-paste-chip";
   }
@@ -246181,9 +246196,6 @@ var init_retry_review_comparison = __esm({
 });
 
 // src/renderer/views/tool-args-format.ts
-function isRecord2(value2) {
-  return !!value2 && typeof value2 === "object" && !Array.isArray(value2);
-}
 function displayValue(value2) {
   if (value2 === null) return "null";
   if (value2 === void 0) return "undefined";
@@ -246207,7 +246219,7 @@ function normalizeValue(value2) {
 function normalizeDeep(value2) {
   const normalized = normalizeValue(value2);
   if (Array.isArray(normalized)) return normalized.map(normalizeDeep);
-  if (!isRecord2(normalized)) return normalized;
+  if (!isRecord(normalized)) return normalized;
   return Object.fromEntries(
     Object.entries(normalized).map(([key, entry]) => [key, normalizeDeep(entry)])
   );
@@ -246221,14 +246233,14 @@ function optionalString2(value2) {
 }
 function terminalPayloadFrom(value2) {
   const normalized = normalizeDeep(value2);
-  if (!isRecord2(normalized)) return null;
+  if (!isRecord(normalized)) return null;
   const success2 = normalizeValue(normalized["success"]);
-  if (isRecord2(success2)) {
+  if (isRecord(success2)) {
     const { success: _success2, error: _error, ...meta5 } = normalized;
     return { status: "success", payload: success2, meta: meta5 };
   }
   const error63 = normalizeValue(normalized["error"]);
-  if (isRecord2(error63)) {
+  if (isRecord(error63)) {
     const { success: _success2, error: _error, ...meta5 } = normalized;
     return { status: "error", payload: error63, meta: meta5 };
   }
@@ -246285,13 +246297,13 @@ function entriesForDisplay(value2) {
 }
 function unwrapResultEnvelope(value2) {
   value2 = normalizeValue(value2);
-  if (!isRecord2(value2)) return value2;
+  if (!isRecord(value2)) return value2;
   const entries2 = Object.entries(value2);
   const [firstEntry] = entries2;
   if (entries2.length !== 1 || !firstEntry) return value2;
   const [key, rawEntry] = firstEntry;
   const entry = normalizeValue(rawEntry);
-  if ((key === "success" || key === "error") && isRecord2(entry)) return entry;
+  if ((key === "success" || key === "error") && isRecord(entry)) return entry;
   return value2;
 }
 function formatReadableValue(value2, indent = 0) {
@@ -246303,7 +246315,7 @@ function formatReadableValue(value2, indent = 0) {
 ${rendered}` : ` ${rendered.trim()}`}`;
     }).join("\n");
   }
-  if (!isRecord2(unwrapped)) return `${" ".repeat(indent)}${displayValue(unwrapped)}`;
+  if (!isRecord(unwrapped)) return `${" ".repeat(indent)}${displayValue(unwrapped)}`;
   return entriesForDisplay(unwrapped).map(([key, rawEntry]) => {
     const entry = normalizeValue(rawEntry);
     const pad3 = " ".repeat(indent);
@@ -246311,7 +246323,7 @@ ${rendered}` : ` ${rendered.trim()}`}`;
       return `${pad3}${key}:
 ${indentLines(entry.replace(/\n+$/, ""), indent + 2)}`;
     }
-    if (isRecord2(entry) || Array.isArray(entry)) {
+    if (isRecord(entry) || Array.isArray(entry)) {
       return `${pad3}${key}:
 ${formatReadableValue(entry, indent + 2)}`;
     }
@@ -246329,6 +246341,7 @@ function renderToolArgs(args) {
 var init_tool_args_format = __esm({
   "src/renderer/views/tool-args-format.ts"() {
     init_tool_display();
+    init_unknown_value3();
   }
 });
 
@@ -280071,7 +280084,7 @@ Notes: ${notes}` : prompt;
   });
   startBtn.addEventListener("click", () => void startThread());
   form.addEventListener("paste", (e4) => {
-    const files = Array.from(e4.clipboardData?.items ?? []).filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter((file2) => file2 !== null);
+    const files = Array.from(e4.clipboardData?.items ?? []).filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter(isNonNull);
     if (files.length === 0) files.push(...Array.from(e4.clipboardData?.files ?? []));
     if (files.length === 0) return;
     e4.preventDefault();
@@ -280198,6 +280211,7 @@ var init_roadmap_pane = __esm({
     init_attachment_icons();
     init_image_expand();
     init_unknown_value3();
+    init_nullish2();
     STATUS_OPTIONS = [
       "ready",
       "blocked",
