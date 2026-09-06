@@ -112,13 +112,17 @@ describe('thread in a container (end to end)', { skip: !ENABLED }, () => {
       assert.ok(result, `no result written; guest log:\n${logs.join('\n')}`)
       assert.equal(result.stopReason, 'completed', result.error ?? '')
 
-      // 1. Nobody was asked anything.
+      // 1. Nobody was asked anything, and the record says Copse ran the loop.
       assert.equal(result.promptsAttempted, 0)
+      assert.equal(result.harness, 'copse')
       // 2. The container declared its containment and the gate used it.
       assert.equal(result.containment.declared, true, result.containment.declineReason ?? '')
       // 3. The outward effect is in the review queue, and only that.
       assert.equal(result.deferrals.length, 1)
       assert.match(result.deferrals[0]?.title ?? '', /Outward effect/)
+      // The refused host escape is in the record too, not only in the log.
+      assert.equal(result.denials.length, 1)
+      assert.match(result.denials[0]?.reasons.join(' ') ?? '', /docker|host/)
       // 4. The work came back as commits the host can review; HEAD never moved.
       assert.ok(result.commits.some((line) => line.includes('agent: edit readme')))
       const carriedOutRef = record.carryOut.ref

@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { BROKER_SOCKET_NAME } from './egress-rules.ts'
+import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
+import { WORKER_DOCKERFILE } from './worker-image-files.ts'
 import {
   buildAttestation,
   waitForContainer,
@@ -269,9 +271,41 @@ describe('workerBuildFingerprint', () => {
         workerBuildFingerprint({ workerBundle: bundle, baseImage: 'other:latest' }),
         workerBuildFingerprint({ workerBundle: bundle }),
       )
+      // And the agents baked in: a version bump is a different guest too. The
+      // default is the key-capable catalogue set, so an explicit empty list and
+      // an explicit older pin both differ from it.
+      const current = workerBuildFingerprint({ workerBundle: bundle })
+      assert.equal(
+        workerBuildFingerprint({ workerBundle: bundle, acpAgents: containerAcpAgentSpecs() }),
+        current,
+      )
+      assert.notEqual(workerBuildFingerprint({ workerBundle: bundle, acpAgents: [] }), current)
+      assert.notEqual(
+        workerBuildFingerprint({
+          workerBundle: bundle,
+          acpAgents: ['@agentclientprotocol/claude-agent-acp@0.0.1'],
+        }),
+        current,
+      )
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('WORKER_DOCKERFILE', () => {
+  it('bakes the agents from a build argument, globally, before dropping to the worker user', () => {
+    const lines = WORKER_DOCKERFILE.split('\n')
+    const arg = lines.findIndex((line) => line.startsWith('ARG ACP_AGENTS='))
+    const install = lines.findIndex((line) => /npm install -g .*\$\{ACP_AGENTS\}/.test(line))
+    const user = lines.findIndex((line) => line.startsWith('USER '))
+    assert.ok(arg !== -1 && install !== -1 && user !== -1)
+    assert.ok(arg < install && install < user)
+    // An empty argument skips the layer rather than running `npm install -g`
+    // with nothing, so a build without agents stays a build.
+    assert.match(lines[install] ?? '', /if \[ -n "\$\{ACP_AGENTS\}" \]/)
+    // The image carries no agent by any other route.
+    assert.ok(!WORKER_DOCKERFILE.includes('socat'))
   })
 })
 

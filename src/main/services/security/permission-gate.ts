@@ -158,6 +158,14 @@ export interface ShellCommandPermissionOptions {
   originalCommand?: string
   /** When aborted, pending approval prompts settle as denied and callers treat as cancelled. */
   signal?: AbortSignal
+  /**
+   * What the contained-runtime gate does with an outward effect. `defer`
+   * (default) queues it for the host to replay — right for Copse's own tools,
+   * whose request the host can re-issue verbatim. `deny` refuses and records
+   * it, for a command that is an external agent's own and cannot be replayed
+   * by us (`docs/plans/thread-in-container.md`, decision A3).
+   */
+  outwardEffects?: 'defer' | 'deny'
 }
 
 export interface TerminalPermissionOptions {
@@ -849,6 +857,20 @@ async function ensureContainedShellCommandPermitted(
     throw new Error(
       `Command blocked by the unattended container policy: ${decision.reasons.join('; ')}`,
     )
+  }
+  if (opts.outwardEffects === 'deny') {
+    // Nobody is watching and nothing could replay this later; the refusal is
+    // the answer, and the record is where it is reported.
+    recordDecision({
+      kind: 'shell',
+      actor: 'system',
+      verdict: 'blocked',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'container',
+      reasons: [...decision.reasons, 'an external agent’s own command cannot be queued for replay'],
+      source: 'unattended-container',
+    })
+    return false
   }
   const { approved } = await requestApproval(
     {

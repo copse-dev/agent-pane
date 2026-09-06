@@ -27,7 +27,12 @@ import {
 } from '../security/runtime-containment.ts'
 import { armUnattendedRun, disarmUnattendedRun } from '../security/unattended-run.ts'
 import { readPendingDeferrals } from '../security/deferred-approval-store.ts'
+import { readDecisionLog } from '../security/decision-log-store.ts'
+import { disposeAllAcpSessions } from '../acp/acp-session-pool.ts'
+import { acpAgentConfigSchema } from '../storage/settings-writable.ts'
 import { storageSet } from '../storage/storage.ts'
+import { guestAcpAgentConfig } from './guest-acp-agent.ts'
+import type { ThreadContainerAcpHarness } from './thread-container.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { GUEST_EGRESS_PROXY } from './egress-rules.ts'
 import { startGuestEgressProxy } from './guest-egress-proxy.ts'
@@ -44,6 +49,7 @@ const specSchema = z.object({
   providerUrl: z.url().nullable(),
   productProvider: z.object({ apiKeySlug: z.string().min(1) }).nullable(),
   apiKeyEnv: z.string().min(1).nullable(),
+  acp: z.object({ agent: acpAgentConfigSchema, keyEnvName: z.string() }).nullable(),
   budgets: z.object({
     wallClockMs: z.number().positive(),
     tokenCeiling: z.number().positive(),
@@ -55,6 +61,29 @@ const specSchema = z.object({
 })
 
 type Spec = z.infer<typeof specSchema>
+
+/**
+ * The parsed harness as the shared type: zod leaves every optional field
+ * `| undefined`, and the config type (under exact optional properties) does
+ * not admit that, so the absent ones are dropped rather than carried as
+ * explicit undefineds.
+ */
+function harnessFromSpec(acp: NonNullable<Spec['acp']>): ThreadContainerAcpHarness {
+  const { agent } = acp
+  return {
+    keyEnvName: acp.keyEnvName,
+    agent: {
+      id: agent.id,
+      title: agent.title,
+      command: agent.command,
+      enabled: agent.enabled,
+      ...(agent.args !== undefined ? { args: agent.args } : {}),
+      ...(agent.model !== undefined ? { model: agent.model } : {}),
+      ...(agent.permissionMode !== undefined ? { permissionMode: agent.permissionMode } : {}),
+      ...(agent.configOptions !== undefined ? { configOptions: agent.configOptions } : {}),
+    },
+  }
+}
 
 type StopReason = 'completed' | 'budget:wall-clock' | 'budget:tokens' | 'aborted' | 'error'
 
@@ -135,8 +164,15 @@ async function main(): Promise<void> {
   if (attestation === null) throw new Error('attestation.json is not a valid attestation')
   const apiKey = spec.apiKeyEnv ? (process.env[spec.apiKeyEnv] ?? '') : ''
   if (spec.apiKeyEnv) {
-    // The key is consumed here and never reaches a child process or the record.
+    // The key is consumed here and never reaches a child process or the record
+    // through the environment. Under an ACP harness it reaches exactly one
+    // child — the agent — as the one entry of its explicit env map.
     process.env[spec.apiKeyEnv] = ''
+  }
+  if (spec.acp) {
+    process.stdout.write(
+      `[worker] harness: ACP agent ${spec.acp.agent.id} (${spec.acp.agent.command})\n`,
+    )
   }
 
   process.stdout.write(`[worker] run ${spec.runtimeId} thread ${spec.threadId}\n`)
@@ -202,6 +238,11 @@ async function main(): Promise<void> {
           subagentsEnabled: false,
           safetyClassifierEnabled: false,
           safeInstallEnabled: false,
+          // The one agent this run may drive, registered in the run's own
+          // settings overlay so `getAcpAgent` finds it and nothing else.
+          ...(spec.acp
+            ? { registeredAcpAgents: [guestAcpAgentConfig(harnessFromSpec(spec.acp), apiKey)] }
+            : {}),
         },
         // Product-resolved providers (Anthropic) find their key here; nothing
         // else from the host's settings or environment is in the guest.
@@ -269,6 +310,9 @@ async function main(): Promise<void> {
     process.off('SIGTERM', onSignal)
     process.off('SIGINT', onSignal)
     disarmUnattendedRun(spec.threadId)
+    // The desktop keeps an agent's session alive between turns; the guest has
+    // no next turn, and a live child would keep this process from exiting.
+    await disposeAllAcpSessions()
     await shutdownProjectSandbox()
     await egressProxy?.close()
   }
@@ -281,6 +325,17 @@ async function main(): Promise<void> {
     subject: entry.subject,
     ...(entry.reasons ? { reasons: entry.reasons } : {}),
   }))
+  // What the contained policy refused, from the run's own decision log: host
+  // escapes, and under an ACP harness the outward effects that could not be
+  // queued for replay. The log is the source so a refusal cannot go unreported.
+  const denials = (await readDecisionLog(spec.projectId).catch(() => []))
+    .filter(
+      (event) =>
+        event.verdict === 'blocked' &&
+        event.scope === 'container' &&
+        (event.threadId === undefined || event.threadId === spec.threadId),
+    )
+    .map((event) => ({ subject: event.subject, reasons: event.reasons ?? [] }))
   const commits = carryOut(spec)
   const outDir = join(RUN_DIR, 'out')
   writeFileSync(join(outDir, 'messages.json'), `${JSON.stringify(messages, null, 2)}\n`)
@@ -292,8 +347,10 @@ async function main(): Promise<void> {
         stopReason: stop.reason,
         ...(errorText !== undefined ? { error: errorText } : {}),
         usage: { inputTokens, outputTokens },
+        harness: spec.acp ? { acp: spec.acp.agent.id } : 'copse',
         promptsAttempted,
         deferrals,
+        denials,
         commits,
         containment: { declared: declineReason === null, declineReason, projectSandbox },
         toolNames,
@@ -305,7 +362,7 @@ async function main(): Promise<void> {
     )}\n`,
   )
   process.stdout.write(
-    `\n[worker] done: ${stop.reason}; prompts=${String(promptsAttempted)} deferrals=${String(deferrals.length)} commits=${String(commits.length)}\n`,
+    `\n[worker] done: ${stop.reason}; prompts=${String(promptsAttempted)} deferrals=${String(deferrals.length)} denials=${String(denials.length)} commits=${String(commits.length)}\n`,
   )
   if (!existsSync(join(outDir, 'result.json'))) throw new Error('result.json was not written')
 }

@@ -132,8 +132,12 @@ async function main(): Promise<void> {
   const result = record.result
   console.log('')
   console.log(`run ${record.runtimeId}: ${result?.stopReason ?? 'no result written'}`)
+  console.log(
+    `  harness: ${result === null ? 'unknown' : result.harness === 'copse' ? 'copse' : `ACP agent ${result.harness.acp}`}`,
+  )
   console.log(`  prompts reached a handler: ${String(result?.promptsAttempted ?? 'unknown')}`)
   console.log(`  deferred for review: ${String(result?.deferrals.length ?? 'unknown')}`)
+  console.log(`  refused by policy: ${String(result?.denials.length ?? 'unknown')}`)
   console.log(
     `  commits: ${String(result?.commits.length ?? 0)} → ${record.carryOut.ref ?? '(not fetched)'}`,
   )

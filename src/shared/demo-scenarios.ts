@@ -396,7 +396,9 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           threadId: 'demo-container-thread',
           stopReason: 'completed',
           usage: { inputTokens: 412_310, outputTokens: 38_902 },
+          harness: 'copse',
           promptsAttempted: 0,
+          denials: [],
           deferrals: [
             {
               id: 'd1',

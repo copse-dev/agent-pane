@@ -47,6 +47,8 @@ import {
   type EgressRule,
 } from './egress-rules.ts'
 import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
+import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -86,8 +88,15 @@ export interface ThreadContainerRequest {
   productProvider?: { apiKeySlug: string }
   /** Environment variable on the host holding the provider key; the value is passed, never the name. */
   apiKeyEnv?: string
+  /**
+   * Run the thread under an external ACP agent instead of Copse's own loop
+   * (`docs/plans/thread-in-container.md`, "Agent models in the guest"). The
+   * agent binary must be in the image; the run's one key reaches it through
+   * `keyEnvName` in its environment. Its origins must be in the allowlist.
+   */
+  acp?: ThreadContainerAcpHarness
   budgets: UnattendedRunBudgets
-  /** `host:port` origins the broker forwards to. Nothing else is reachable. */
+  /** `host:port` and `*.suffix:port` rules the broker admits. Nothing else is reachable. */
   egressAllowlist: string[]
   /**
    * Guest-facing origin name → `addr` or `addr:port` the host dials instead, for
@@ -100,6 +109,18 @@ export interface ThreadContainerRequest {
   maxSteps?: number
 }
 
+/** An ACP agent to run the thread under, and the variable its key arrives in. */
+export interface ThreadContainerAcpHarness {
+  /**
+   * The agent as the guest should register it. Carries no credentials and no
+   * user `env`: the only variable the agent is given is `keyEnvName`, filled
+   * in by the guest from the run's key (decision A1).
+   */
+  agent: AcpAgentConfig
+  /** The agent's own key variable, e.g. `ANTHROPIC_API_KEY`. */
+  keyEnvName: string
+}
+
 /** The spec the guest reads from `run.json`. Contains no secrets. */
 export interface ThreadContainerRunSpec {
   runtimeId: string
@@ -110,6 +131,7 @@ export interface ThreadContainerRunSpec {
   providerUrl: string | null
   productProvider: { apiKeySlug: string } | null
   apiKeyEnv: string | null
+  acp: ThreadContainerAcpHarness | null
   budgets: UnattendedRunBudgets
   workspace: string
   carryInRef: string
@@ -377,6 +399,8 @@ export function workerBuildFingerprint(options: BuildImageOptions = {}): string 
   hash.update('copse-worker-image-v1\n')
   hash.update(`uid:${String(WORKER_UID)}\n`)
   hash.update(`base:${options.baseImage ?? ''}\n`)
+  // The agents baked in, by pinned version: bumping one rebuilds the image.
+  hash.update(`acp-agents:${(options.acpAgents ?? containerAcpAgentSpecs()).join(' ')}\n`)
   hash.update(WORKER_DOCKERFILE)
   hash.update(WORKER_ENTRYPOINT_SH)
   hash.update(readFileSync(bundle))
@@ -411,6 +435,12 @@ export interface BuildImageOptions {
   baseImage?: string
   /** Docker build `--network`; some sandboxes need `host` for apt. */
   buildNetwork?: string
+  /**
+   * `package@version` specs of the ACP agents to bake in. Defaults to the
+   * key-capable catalogue agents (`container-acp-agents.ts`); a test that
+   * needs no agent passes `[]` and gets a smaller, faster build.
+   */
+  acpAgents?: readonly string[]
   contextDir?: string
   /**
    * The bundled guest entry. Defaults to the standalone bundle the build emits
@@ -512,6 +542,10 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
   const args = ['build', '--tag', image, '--label', `${FINGERPRINT_LABEL}=${fingerprint}`]
   if (options.buildNetwork) args.push('--network', options.buildNetwork)
   if (options.baseImage) args.push('--build-arg', `BASE_IMAGE=${options.baseImage}`)
+  args.push(
+    '--build-arg',
+    `ACP_AGENTS=${(options.acpAgents ?? containerAcpAgentSpecs()).join(' ')}`,
+  )
   args.push('--build-arg', `WORKER_UID=${String(WORKER_UID)}`, contextDir)
   await runDocker(args)
   return image
@@ -718,6 +752,7 @@ const resultSchema = z.object({
   stopReason: z.enum(['completed', 'budget:wall-clock', 'budget:tokens', 'aborted', 'error']),
   error: z.string().optional(),
   usage: z.object({ inputTokens: z.number(), outputTokens: z.number() }),
+  harness: z.union([z.literal('copse'), z.object({ acp: z.string() })]),
   promptsAttempted: z.number(),
   deferrals: z.array(
     z.object({
@@ -727,6 +762,7 @@ const resultSchema = z.object({
       reasons: z.array(z.string()).optional(),
     }),
   ),
+  denials: z.array(z.object({ subject: z.string(), reasons: z.array(z.string()) })),
   commits: z.array(z.string()),
   containment: z.object({
     declared: z.boolean(),
@@ -803,8 +839,12 @@ export async function runThreadInContainer(
   const runtimesDir = resolve(request.runtimesDir ?? join(copseDataRoot(), 'runtimes'))
   const runDir = join(runtimesDir, runtimeId)
   const egress = request.egressAllowlist.map(parseEgressRule)
-  if (request.providerUrl === undefined && request.productProvider === undefined) {
-    throw new Error('A run needs either a provider URL or a product-resolved provider')
+  if (
+    request.providerUrl === undefined &&
+    request.productProvider === undefined &&
+    request.acp === undefined
+  ) {
+    throw new Error('A run needs a provider URL, a product-resolved provider, or an ACP agent')
   }
   if (request.providerUrl !== undefined) {
     const provider = providerOrigin(request.providerUrl)
@@ -851,6 +891,7 @@ export async function runThreadInContainer(
     providerUrl: request.providerUrl ?? null,
     productProvider: request.productProvider ?? null,
     apiKeyEnv,
+    acp: request.acp ?? null,
     budgets: request.budgets,
     workspace: GUEST_WORKSPACE,
     carryInRef: carryIn.ref,

@@ -22,6 +22,11 @@ export const WORKER_DOCKERFILE = `# The Copse container worker image (docs/plans
 ARG BASE_IMAGE=node:22-bookworm-slim
 FROM \${BASE_IMAGE}
 ARG WORKER_UID=1001
+# ACP agents the guest may run, as pinned \`package@version\` specs
+# (src/shared/container-acp-agents.ts). Installed globally so they are on the
+# worker user's PATH under their catalogue names; the run gives one of them a
+# single API key by value, never a login. Empty means no agents are baked.
+ARG ACP_AGENTS=""
 
 ENV DEBIAN_FRONTEND=noninteractive \\
     npm_config_update_notifier=false
@@ -33,6 +38,8 @@ RUN apt-get update \\
       git \\
       ripgrep \\
     && rm -rf /var/lib/apt/lists/*
+
+RUN if [ -n "\${ACP_AGENTS}" ]; then npm install -g --no-fund --no-audit \${ACP_AGENTS} && npm cache clean --force; fi
 
 RUN useradd --create-home --uid "\${WORKER_UID}" --shell /bin/bash copse
 

@@ -9,7 +9,9 @@ The prototype is exercised end to end by
 Docker), driven by `pnpm run thread:container`, and started from the app through the composer
 footer ("Run unattended in a container…"). What it does **not** yet do
 is listed under [What the prototype proves, and what it does not](#what-the-prototype-proves-and-what-it-does-not).
-Agent-backed models (ACP) are offered greyed out; the route to running them is planned, not
+Key-capable agent models (ACP: Claude, Codex, Gemini) run in the guest under a vendor API
+key; the others are offered greyed out with a per-agent reason. That route is described, and
+its status tracked, under
 built, under [Agent models in the guest (ACP)](#agent-models-in-the-guest-acp).
 
 This plan is the executable slice of two documents that were design-only:
@@ -272,11 +274,15 @@ Recorded because each cost time and will again.
 
 ## Agent models in the guest (ACP)
 
-**Status: Proposed.** Today the run dialog lists agent-backed models (ACP agents, remote
-agents, plugin agents) greyed out as "not available in a container", and
-`resolveContainerProvider` refuses them with the reason. This section is the plan for
-making the ACP ones run. It is written so that every phase before the last is inert: the
-refusal stays until the pieces it depends on exist.
+**Status: Landed on the branch, except the real-agent run (A-3's exit gate needs a vendor
+key this sandbox does not have).** The run dialog enables the key-capable ACP agents
+(`container-acp-agents.ts`: Claude, Codex, Gemini) when their vendor key is in Settings and
+greys out every other agent with its own reason; `resolveContainerProvider` builds an `acp`
+plan for the former and refuses the latter with the same reason. The guest registers the
+one agent for the run, gives it the run's key as its only variable, runs it without a nested
+seatbelt, and answers its permission requests by blast radius — outward effects refused and
+recorded, never deferred. The record names the harness. This section was the plan; it is
+kept as the record of the decisions and of what each phase proved.
 
 ### What an agent model is, and why the guest cannot run one today
 
@@ -310,15 +316,14 @@ reason the guest cannot run one now:
    broker — so a stray `git push` still cannot reach anything. But the review queue would
    be empty, and `promptsAttempted === 0` would be true for the wrong reason.
 
-Two smaller facts complete the picture. The binary is not in the image: the worker image
-installs `bubblewrap ca-certificates git ripgrep` and nothing else
-(`worker-image-files.ts`), and Copse deliberately ships none of these agents
-(`acp-known-agents.ts` header). And the isolation the desktop gives an agent does not carry
-over: `acp-session-host-worker.js` is a standalone bundle (`scripts/main-bundles.mts:58`)
-that `buildWorkerImage` never stages, so `spawnTransport` would fall back to an in-process
-spawn with a warning; and `willSandboxAcpAgent` would be true inside the guest
-(`acp-client.ts:374`), nesting a second bubblewrap with its own network scope inside a
-container that has no network. Untested, and at best redundant.
+Two smaller facts completed the picture as it stood. The binary was not in the image: the
+worker image installed `bubblewrap ca-certificates git ripgrep` and nothing else, and Copse
+deliberately ships none of these agents (`acp-known-agents.ts` header) — A4 bakes the
+key-capable ones in. And the isolation the desktop gives an agent does not carry over:
+`acp-session-host-worker.js` is a standalone bundle (`scripts/main-bundles.mts`) that
+`buildWorkerImage` never stages, and `willSandboxAcpAgent` would be true inside the guest,
+nesting a second bubblewrap with its own network scope inside a container that has no
+network — A5 makes the container the sandbox instead.
 
 Everything else already works. `runHeadlessAgent` passes the model id straight through
 (`headless-agent-host.ts:238`); `runAgent` routes `acp:` to `runAcpTurn` with no changes
@@ -372,11 +377,15 @@ guarantee, and the record must say so.
   that already has network. The versions join `workerBuildFingerprint` so an upgrade
   rebuilds. `cursor-agent` has `autoInstall: false` and no key path (its `setup` is a
   browser login), so it is not baked and stays unavailable — with a per-agent reason.
-- **A5 — the container is the sandbox.** `acp-session-host-worker.js` is staged so the
-  session host works; the guest sets the ACP sandbox off (`willSandboxAcpAgent` false)
-  because the container already provides what the seatbelt would, and nested bubblewrap
-  with a network scope inside `--network=none` is undefined behaviour we do not want to
-  own.
+- **A5 — the container is the sandbox.** The agent config the guest registers carries
+  `sandbox: false`, so the agent spawns without a seatbelt of its own — the container already
+  provides what the seatbelt would, and nested bubblewrap with a network scope inside
+  `--network=none` is undefined behaviour we do not want to own. Because that config never
+  asks for a sandbox, `spawnTransport` never reaches for the session host, and
+  `acp-session-host-worker.js` is _not_ staged: staging a bundle the guest cannot use would
+  only widen the image. For every decision that asks "is this agent's process contained?"
+  — auto-approving its reads, defaulting Claude to `acceptEdits`, the prompt's sandbox note
+  — the guest answers yes (`acp-agent-service.ts`, `contained`).
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
@@ -384,14 +393,22 @@ guarantee, and the record must say so.
 
 ### Phases
 
-Each phase lands green and inert until A-3. The refusal in `resolveContainerProvider` is the
-switch, and it stays until the phase that removes it can prove its properties.
+Each phase was to land green and inert until A-3, with the refusal in
+`resolveContainerProvider` as the switch. A-0, A-2, A-3's code and A-4 landed together on
+the branch once A-1 was in, because they share one seam (the run spec's `acp` field) and
+were smaller apart than the plan expected; what is recorded under each is what it proved.
 
-- **A-0 — plumbing behind the refusal.** Bake the pinned agents into the image (A4); stage
-  `acp-session-host-worker.js` (A5); carry `AcpAgentConfig` in the run spec and into the
-  guest's `registeredAcpAgents`; add `harness` to the result and record. Exit gate: the
-  image builds and its fingerprint moves with the agent versions; a unit test proves the
-  guest would resolve the agent; the refusal is unchanged and its test still passes.
+- **A-0 — plumbing. Landed.** `WORKER_DOCKERFILE` takes an `ACP_AGENTS` build argument of
+  pinned `package@version` specs (`container-acp-agents.ts`) and installs them globally
+  before dropping to the worker user; the specs join `workerBuildFingerprint`, so a version
+  bump rebuilds, and `acpAgents: []` builds an agent-free image for tests. The run spec
+  carries `acp: { agent, keyEnvName }`; the worker registers that one agent in its settings
+  overlay (`guest-acp-agent.ts`), so `getAcpAgent` resolves it and nothing else. The result
+  and record gained `harness` and `denials`. Exit gate as met: the fingerprint moves with
+  the agent list; the Dockerfile is asserted layer by layer; the two directions of the
+  config crossing are unit-tested (`guest-acp-agent.test.ts`). The image build with the
+  real agents baked in has not been run here — this sandbox cannot reach the npm registry
+  from a Docker build — and is the first thing to run where it can.
 - **A-1 — egress rework. Landed.** The CONNECT proxy and pattern allowlist (A2), with the
   provider path migrated onto it: `egress-rules.ts` (the grammar, pure), `egress-broker.ts`
   (one socket, `CONNECT`/`OK`/`DENY`, refusals logged), `guest-egress-proxy.ts` (loopback
@@ -404,19 +421,40 @@ switch, and it stays until the phase that removes it can prove its properties.
   no refusal. Two origins both _reached_ from inside the guest at the integration tier
   waits for a second guest-side caller: the auto-run shell in the guest has no network by
   design, so only the model loop dials out until A-2's agent does.
-- **A-2 — credentials and the permission policy.** The key by env map (A1); the
-  permission handler and its record (A3). Exit gate: an integration test with a
-  **scripted ACP agent** — a small stdio program speaking ACP, standing in for a real one —
-  that requests permission for an in-guest write (allowed), an outward push (denied,
-  recorded), and a host escape (denied, recorded); the canary is absent; the record names
-  the harness.
-- **A-3 — a real agent, and the refusal removed for A6's set.** `claude-acp` with a real
-  key against the broker: the U0-style report over the run's own decision log, prompts
-  refused vs allowed. Exit gate: the run ends with commits under `refs/copse/runs/<id>`
-  and a record a reviewer can read without knowing which harness ran until they look.
-- **A-4 — the dialog.** Rows for A6's agents enabled when a key is in Settings; every other
-  agent row carries its own reason. The note under the model field says which agents
-  can run and why the rest cannot.
+- **A-2 — credentials and the permission policy. Landed; its integration test is
+  written and not yet run.** The worker consumes the run's key from its environment as
+  before and hands it to the agent as the one entry of its explicit `env` map (A1); the
+  user's own `env` never crosses (`acpHarnessForContainer`). Inside a contained run the
+  ACP permission responder treats the agent as contained: reads auto-approve, edits go
+  through the backup-then-allow path, and an `execute` request runs the contained gate
+  with `outwardEffects: 'deny'` — a new gate option that refuses and records an outward
+  effect instead of queueing it, because an agent's own command cannot be replayed by
+  Copse (A3). A host escape's throw is answered to the agent as a rejection rather than a
+  transport error. Any other kind that would reach a dialog is refused and recorded
+  (`kind: 'acp'`). The worker reads the refusals back from the run's decision log into
+  `result.denials`. Exit gate: `acp-container.integration.test.ts` runs a **scripted ACP
+  agent** (`scripted-acp-agent.ts`, carried in with the workspace) that asks for an
+  in-guest build (allowed, and run by the agent), an outward push (refused), a host
+  escape (refused), then commits; it asserts the harness is named, prompts and deferrals
+  are zero, two denials are recorded, the agent saw exactly the run's key and no canary,
+  and the work came back. The gate option is unit-tested in `unattended-run.test.ts`.
+  Needs Docker to run.
+- **A-3 — the refusal lifted for A6's set. Code landed; the real run is outstanding.**
+  `resolveContainerProvider` returns an `acp` plan for a registered key-capable agent
+  whose vendor key is in Settings: the full `acp:<id>[#model]` selection as the model,
+  the harness, the key, and the agent's catalogue `allowedDomains` on 443 as the egress
+  rules. Every other agent is refused with the per-agent reason. Exit gate — a real
+  `claude-acp` run ending with commits under `refs/copse/runs/<id>` and a readable
+  record — cannot be met here: no vendor key is available in this sandbox. It is the
+  second thing to run where one is.
+- **A-4 — the dialog. Landed.** `loadRunModelOptions` asks `settings.availableProviders`
+  which keys exist and enables a key-capable agent row when its vendor's is; every other
+  agent row is disabled with its own reason from `containerAcpAvailability` ("needs a
+  Gemini API key in Settings", "signs in through a browser; no API-key path", "not carried
+  by the worker image"). The note under the field names the agents that can run and what
+  they run on. The record view gained a Harness row, an "Effects refused" count and a
+  section listing the refusals. No new IPC: the renderer and the resolver read one shared
+  table and give one set of reasons.
 
 ### What this does not change
 
@@ -463,14 +501,19 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | Run service            | unit        | Provider resolved, key passed by env var and blanked once the guest holds it, phases published, refusals          | `container-runtime/container-run-service.test.ts`           |
 | UI (browser tier)      | demo        | Footer action, arming form with the draft prefilled, banner and review record for a finished run                  | `tests/demo/container-run.demo.ts`                          |
 | UI (Electron)          | e2e         | Real IPC: the dialog opens from the footer and a model without a key is refused with a readable error             | `tests/e2e/container-run-dialog.e2e.ts`                     |
-| ACP: agent resolution  | unit        | A run spec carrying an `AcpAgentConfig` makes `getAcpAgent` resolve inside the guest's settings overlay           | `container-runtime/worker-entry.test.ts` (A-0)              |
-| ACP: image bake        | unit        | The fingerprint moves with each pinned agent version; `cursor-agent` is never baked                               | `container-runtime/thread-container.test.ts` (A-0)          |
+| ACP: agent table       | unit        | Only catalogue agents with a documented key are baked; per-agent reasons; a retired id maps to its current entry  | `shared/container-acp-agents.test.ts` (A-0)                 |
+| ACP: config crossing   | unit        | Host side drops the user's env and desktop command path; guest side gives the agent exactly the run's key         | `container-runtime/guest-acp-agent.test.ts` (A-0)           |
+| ACP: image bake        | unit        | The fingerprint moves with the agent list and versions; the Dockerfile installs from the argument before `USER`   | `container-runtime/thread-container.test.ts` (A-0)          |
+| ACP: plan              | unit        | A registered key-capable agent with its key gives an `acp` plan on its catalogue domains; no user env crosses     | `providers/container-provider.test.ts` (A-3)                |
+| ACP: run request       | unit        | The service passes the harness and key variable, and no provider, for an `acp:` model                             | `container-runtime/container-run-service.test.ts` (A-3)     |
+| ACP: deny, not defer   | unit        | `outwardEffects: 'deny'` refuses an outward effect with nothing queued; contained effects still run               | `security/unattended-run.test.ts` (A-2)                     |
+| ACP: roster            | unit        | A key-capable agent row is enabled with its key and disabled naming the key without; browser-login agents differ  | `renderer/views/container-run-control.test.ts` (A-4)        |
 | ACP: egress grammar    | unit        | `host:port` and `*.suffix:port` parse and format; `*.com` is refused; the wildcard matches on the dot boundary    | `container-runtime/egress-rules.test.ts` (A-1)              |
 | ACP: egress patterns   | unit        | Two hosts on one port through one socket; `*.suffix` admits a subdomain, refuses the suffix and siblings; logged  | `container-runtime/egress-broker.test.ts` (A-1)             |
 | ACP: guest proxy       | unit        | Absolute-form HTTP streams an SSE body back with hop-by-hop headers dropped; CONNECT tunnels; DENY becomes a 403  | `container-runtime/guest-egress-proxy.test.ts` (A-1)        |
 | ACP: 443 in the guest  | integration | The model on guest port 443 is reached through the proxy, admitted by a wildcard rule named in the log            | `container-runtime/thread-container.integration.test.ts`    |
 | ACP: permission policy | integration | A scripted ACP agent: in-guest write allowed, outward push denied and recorded, host escape denied, harness named | `container-runtime/acp-container.integration.test.ts` (A-2) |
-| ACP: refusal           | unit        | Agents outside A6's set, and any agent without a key, are refused with a per-agent reason                         | `providers/container-provider.test.ts` (A-4)                |
+| ACP: refusal           | unit        | Agents outside A6's set, and any agent without a key, are refused with a per-agent reason                         | `providers/container-provider.test.ts` (A-3)                |
 
 ## Non-goals
 

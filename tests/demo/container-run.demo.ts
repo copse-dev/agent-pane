@@ -105,6 +105,10 @@ describe('unattended container run (browser-hosted)', () => {
     // project checkout (PR review finding 1).
     expect(summary).toContain('thread worktree (demo/lint-backlog)')
     expect(summary).toMatch(/Prompts reached a handler\s*0/)
+    // Which harness ran the loop is stated before the counts are read: under an
+    // agent the deferral row would mean something different.
+    expect(summary).toMatch(/Harness\s*Copse/)
+    expect(summary).toMatch(/Effects refused\s*0/)
     // Section headings render uppercase through CSS; compare the source text.
     await expect(dialog.$('.container-run-deferrals h3')).toHaveText(
       'Waiting for your review (1)',

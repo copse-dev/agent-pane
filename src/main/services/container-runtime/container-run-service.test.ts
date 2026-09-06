@@ -40,8 +40,10 @@ function fakeRecord(threadId: string): ThreadContainerRecord {
       threadId,
       stopReason: 'completed',
       usage: { inputTokens: 10, outputTokens: 5 },
+      harness: 'copse',
       promptsAttempted: 0,
       deferrals: [],
+      denials: [],
       commits: ['abc agent: did it'],
       containment: { declared: true, declineReason: null, projectSandbox: true },
       toolNames: [],
@@ -158,6 +160,41 @@ describe('ContainerRunService', () => {
     ])
     assert.equal(finished.error, null)
     assert.equal(service.isActive(THREAD), false)
+  })
+
+  it('runs an ACP agent under its vendor key on its own domains, with no provider', async () => {
+    await setSetting('registeredAcpAgents', [
+      { id: 'claude-acp', title: 'Claude', command: 'claude-agent-acp', enabled: true },
+    ])
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      run: (request, options): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        assert.equal(request.apiKeyEnv && process.env[request.apiKeyEnv], 'sk-ant-test')
+        options?.onStarted?.()
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    const first = await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Tidy the README',
+      model: 'acp:claude-acp#claude-opus-5',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    assert.ok(first.egressAllowlist.includes('*.anthropic.com:443'))
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    const request = seen[0]
+    assert.ok(request)
+    assert.equal(request.model, 'acp:claude-acp#claude-opus-5')
+    assert.equal(request.providerUrl, undefined)
+    assert.equal(request.productProvider, undefined)
+    assert.ok(request.acp)
+    assert.equal(request.acp.agent.id, 'claude-acp')
+    assert.equal(request.acp.keyEnvName, 'ANTHROPIC_API_KEY')
+    await setSetting('registeredAcpAgents', [])
   })
 
   it('refuses a second run while one is live, and reports a failed run', async () => {

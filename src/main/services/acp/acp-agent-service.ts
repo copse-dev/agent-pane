@@ -74,6 +74,9 @@ import {
 import { ensureWorktreeRecoverable, resetSessionBackup } from '../worktree-backup.ts'
 import { getSetting } from '../storage/settings.ts'
 import { ensureShellCommandPermitted } from '../security/permission-gate.ts'
+import { currentRunIsUnattendedContainer } from '../security/unattended-run.ts'
+import { recordDecision } from '../security/decision-log-store.ts'
+import { getActiveRunThread } from '../thread-models.ts'
 import { isStructurallyReadOnlyShellCommand } from '../security/permission-policy.ts'
 import { detectLanguage } from '../language.ts'
 import {
@@ -384,7 +387,12 @@ export async function runAcpAgentFromSettings(
   const executionContext = getThreadExecutionContext()
 
   const sandbox = resolveAcpSandbox(agent)
-  const sandboxed = willSandboxAcpAgent(sandbox)
+  // Inside an unattended container the container is the sandbox
+  // (`docs/plans/thread-in-container.md`, decision A5): the agent spawns
+  // without a seatbelt of its own, but for every decision that asks "is this
+  // agent's process contained?" the answer is yes.
+  const contained = currentRunIsUnattendedContainer(getActiveRunThread())
+  const sandboxed = willSandboxAcpAgent(sandbox) || contained
   const outboundPayload = promptPayloadFromUserContent(options.userPrompt)
   const hasText = Boolean(outboundPayload.text.trim())
   const hasImages = (outboundPayload.images?.length ?? 0) > 0
@@ -397,7 +405,7 @@ export async function runAcpAgentFromSettings(
   // choice, or `acceptEdits` for a Claude preset that will actually spawn
   // sandboxed. Part of the spawn config so a change respawns the pooled session
   // (the mode is applied once, at `session/new`, not switched live like model).
-  const permissionMode = resolveAcpPermissionMode(agent, willSandboxAcpAgent(sandbox))
+  const permissionMode = resolveAcpPermissionMode(agent, sandboxed)
   // Hand the agent the user's MCP servers so its session mounts them itself
   // (issue #602, tier 1). Best-effort: a config-read failure downgrades the turn
   // to "no forwarded servers" instead of failing it.
@@ -472,7 +480,7 @@ export async function runAcpAgentFromSettings(
     onChunk,
     requestPermission: (req, rpcSignal) =>
       respondToPermission(
-        { id: agent.id, title: agent.title, sandboxed },
+        { id: agent.id, title: agent.title, sandboxed, contained },
         req,
         cwd,
         projectRoot,
@@ -709,7 +717,7 @@ export function mergeAcpPermissionAbortSignals(
 }
 
 async function respondToAcpExecutePermission(
-  agent: { sandboxed: boolean },
+  agent: { sandboxed: boolean; contained?: boolean },
   req: RequestPermissionRequest,
   root: string | null,
   projectRoot: string | null,
@@ -719,14 +727,27 @@ async function respondToAcpExecutePermission(
   if (!command) return null
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const readOnly = agent.sandboxed && isStructurallyReadOnlyShellCommand(command)
-  const approved = await ensureShellCommandPermitted(command, {
-    sandboxEnabled: agent.sandboxed,
-    autoRun: getSetting<boolean>('autoRunSandboxCommands', true) || readOnly,
-    networkScopeAlreadyApplies: agent.sandboxed,
-    executionRoot: root,
-    projectRoot,
-    ...(signal ? { signal } : {}),
-  })
+  let approved: boolean
+  try {
+    approved = await ensureShellCommandPermitted(command, {
+      sandboxEnabled: agent.sandboxed,
+      autoRun: getSetting<boolean>('autoRunSandboxCommands', true) || readOnly,
+      networkScopeAlreadyApplies: agent.sandboxed,
+      executionRoot: root,
+      projectRoot,
+      // An agent's own command cannot be replayed by Copse, so an outward
+      // effect in an unattended container is refused rather than queued
+      // (decision A3). The gate records it; the agent hears "rejected".
+      ...(agent.contained === true ? { outwardEffects: 'deny' as const } : {}),
+      ...(signal ? { signal } : {}),
+    })
+  } catch (error) {
+    // The contained policy blocks by throwing (a host escape, a hard harm
+    // deny). Under an agent that is an answer, not a transport failure: it
+    // has already been recorded, so tell the agent no and let it carry on.
+    if (agent.contained !== true || signal?.aborted) throw error
+    return permissionResponseFor(req.options, false)
+  }
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   return permissionResponseFor(req.options, approved)
 }
@@ -742,7 +763,7 @@ async function respondToAcpExecutePermission(
  * agent-side session stops asking within the turn.
  */
 async function respondToPermission(
-  agent: { id: string; title: string; sandboxed: boolean },
+  agent: { id: string; title: string; sandboxed: boolean; contained?: boolean },
   req: RequestPermissionRequest,
   root: string | null = getAgentExecutionRoot(),
   projectRoot: string | null = getAgentProjectRoot(),
@@ -806,6 +827,24 @@ async function respondToPermission(
     }
   }
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
+  if (agent.contained === true) {
+    // Anything that would reach a dialog from here — a web fetch, an unknown
+    // tool kind — has nobody to answer it in an unattended container, and
+    // deferral mode would queue a request Copse could never replay. Refuse,
+    // and put the refusal where the run's record reads it from (decision A3).
+    recordDecision({
+      kind: 'acp',
+      actor: 'system',
+      verdict: 'blocked',
+      subject: `${agent.title}: ${req.toolCall.title ?? permissionKindLabel(kind)}`,
+      scope: 'container',
+      reasons: [
+        `${permissionKindLabel(kind)} permission cannot be reviewed in an unattended container`,
+      ],
+      source: 'unattended-container',
+    })
+    return permissionResponseFor(req.options, false)
+  }
   const toolCallId = req.toolCall.toolCallId
   const tracked = toolCallId ? trackAcpPermissionToolCall(toolCallId) : null
   const approvalSignal = tracked

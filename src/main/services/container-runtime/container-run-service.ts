@@ -128,7 +128,7 @@ export class ContainerRunService {
     if (!prompt) throw new Error('The run needs a prompt')
     const model = request.model
     const plan = resolveContainerProvider(model)
-    const egressAllowlist = [...new Set([plan.egress, ...(request.extraEgress ?? [])])]
+    const egressAllowlist = [...new Set([...plan.egress, ...(request.extraEgress ?? [])])]
 
     const progress: ContainerRunProgress = {
       threadId: request.threadId,
@@ -229,7 +229,9 @@ export class ContainerRunService {
         model: plan.model,
         ...(plan.mode === 'openai-compatible'
           ? { providerUrl: plan.url }
-          : { productProvider: { apiKeySlug: plan.apiKeySlug } }),
+          : plan.mode === 'product'
+            ? { productProvider: { apiKeySlug: plan.apiKeySlug } }
+            : { acp: plan.harness }),
         ...(apiKey ? { apiKeyEnv: keyEnv } : {}),
         budgets: request.budgets,
         egressAllowlist: progress.egressAllowlist,

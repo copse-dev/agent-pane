@@ -21,9 +21,22 @@ export interface ThreadContainerResult {
   stopReason: 'completed' | 'budget:wall-clock' | 'budget:tokens' | 'aborted' | 'error'
   error?: string
   usage: { inputTokens: number; outputTokens: number }
+  /**
+   * Who ran the loop: Copse's own harness, or an external ACP agent by id
+   * (`docs/plans/thread-in-container.md`, decision A3). The record has to say
+   * so, because the deferral guarantee below is a property of Copse's harness:
+   * under an agent, outward effects are denied rather than queued for replay.
+   */
+  harness: 'copse' | { acp: string }
   /** Approval prompts the worker's fail-closed handler saw. Must be zero. */
   promptsAttempted: number
   deferrals: Array<{ id: string; title: string; subject: string; reasons?: string[] }>
+  /**
+   * Effects the contained policy refused outright: host escapes always, and
+   * under an ACP harness the outward effects Copse could not replay. Read back
+   * from the run's own decision log, so nothing refused goes unreported.
+   */
+  denials: Array<{ subject: string; reasons: string[] }>
   commits: string[]
   containment: {
     declared: boolean

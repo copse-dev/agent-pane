@@ -221,6 +221,40 @@ describe('shell gate matrix: command class × containment tier × unattended', (
     assert.equal(queue[0]?.cause, 'shell-outward-effect')
   })
 
+  it('refuses and records an outward effect instead of deferring when asked to', async () => {
+    // An external agent's own command (decision A3): Copse could not replay
+    // it from the host, so a deferral would be a promise nobody can keep.
+    declareContainerRuntime(attestation())
+    armUnattendedRun(THREAD, { runtimeId: 'rt', budgets: BUDGETS })
+    const restore = setWorkspaceRootForTest(root)
+    try {
+      const permitted = await asRun(() =>
+        ensureShellCommandPermitted(outward, {
+          sandboxEnabled: false,
+          autoRun: true,
+          executionRoot: root,
+          outwardEffects: 'deny',
+        }),
+      )
+      assert.equal(permitted, false)
+      // Contained effects are unaffected by the option.
+      assert.equal(
+        await asRun(() =>
+          ensureShellCommandPermitted(contained, {
+            sandboxEnabled: false,
+            autoRun: true,
+            executionRoot: root,
+            outwardEffects: 'deny',
+          }),
+        ),
+        true,
+      )
+    } finally {
+      restore()
+    }
+    assert.equal((await readPendingDeferrals({ threadId: THREAD })).length, 0)
+  })
+
   it('unattended on the desktop tier keeps the desktop rules, only non-blocking', async () => {
     armUnattendedRun(THREAD, { runtimeId: 'rt', budgets: BUDGETS })
     // No containment: a destructive command still needs a human, and with

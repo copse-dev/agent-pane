@@ -1,5 +1,8 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
+import { parseAcpModel } from '@shared/acp.ts'
+import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
+import { containerAcpAgentTitles, containerAcpAvailability } from '@shared/container-acp-agents.ts'
 import { clear, el } from '../dom/helpers.ts'
 import { uiActions, uiField } from '../ui/index.ts'
 import {
@@ -70,39 +73,49 @@ function formatDuration(from: number, to: number): string {
 }
 
 /**
- * The model roster for a container run: the same catalogue the composer and
- * Settings show, with everything the guest cannot actually run marked
- * unavailable rather than hidden.
+ * The roster the run's model picker offers: every model the composer would,
+ * with the ones a container cannot run greyed out and told why.
  *
- * Agent-backed selections (ACP agents, remote agents, plugin agents) are the
- * ones it cannot run. They are separate programs holding their own credential
- * store on this device — an OAuth login under `$HOME`, or their own vendor key
- * — and an unattended container is given no credentials at all
- * (`docs/plans/unattended-runs.md`, decision 3), which a secret canary checks.
- *
- * So the reason has to name the container, not the user. An earlier version of
- * this said "needs its own login", which was wrong twice over: the agent is
- * usually already signed in (that is what "on this device" in its group heading
- * means), and signing in again would change nothing here. Nothing the user can
- * do to the agent makes it runnable in the guest; the provider-backed twin of
- * the same model, one group up, is the thing that runs.
- *
- * Hiding them would leave this picker quietly different from every other model
- * picker in the app; offering them would end in the service refusing the run.
- *
- * The split is derived rather than hardcoded: `includeAgentModels: false` is
- * already the product's own answer to "models that can execute a task
- * in-process", so this stays correct as that set changes.
+ * Provider-backed models (`includeAgentModels: false`) always run: the guest
+ * is given that provider's key. An agent model runs only when the worker
+ * image carries the agent and its vendor's key is in Settings
+ * (`container-acp-agents.ts`) — then the run gives the agent that key, scoped
+ * to the run, never the desktop login. The reason on a disabled row is the
+ * per-agent one, so "needs a Gemini API key" reads as the thing to go and do
+ * and "signs in through a browser" reads as the thing that cannot be done.
  */
 export async function loadRunModelOptions(
   fetch: (opts?: FetchModelOptionsOpts) => Promise<ModelOption[]>,
+  keysConfigured: () => Promise<Record<string, boolean>>,
 ): Promise<ModelOption[]> {
-  const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })])
+  const [all, runnable, keys] = await Promise.all([
+    fetch(),
+    fetch({ includeAgentModels: false }),
+    keysConfigured(),
+  ])
   const canRun = new Set(runnable.map((option) => option.value))
-  return all.map((option) =>
-    canRun.has(option.value)
+  return all.map((option) => {
+    if (canRun.has(option.value)) return option
+    const agentId = parseAcpModel(option.value)
+    const availability = agentId
+      ? containerAcpAvailability(agentId, keys)
+      : { runnable: false, reason: 'not available in a container' }
+    return availability.runnable
       ? option
-      : { ...option, disabled: true, label: `${option.label} — not available in a container` },
+      : { ...option, disabled: true, label: `${option.label} — ${availability.reason ?? ''}` }
+  })
+}
+
+/** The sentence under the picker whenever an agent model is on the roster. */
+export function agentModelsNote(): string {
+  const titles = containerAcpAgentTitles()
+  const named =
+    titles.length > 1
+      ? `${titles.slice(0, -1).join(', ')} and ${titles[titles.length - 1] ?? ''}`
+      : (titles[0] ?? '')
+  return (
+    `Agent models run as their own process. ${named} can run unattended with an API key from Settings, ` +
+    'scoped to the run and never your login; an agent that only signs in through a browser cannot.'
   )
 }
 
@@ -234,20 +247,20 @@ export function mountContainerRunControl(
     // inserts its trigger with `select.after(...)`, which is a no-op while the
     // select still has no parent.
     const modelField = uiField({ label: 'Model', control: modelSelect })
-    // Shown only once the roster confirms there is a greyed-out agent to explain.
-    // A disabled row cannot be clicked for its reason, and "not available in a
-    // container" invites the obvious follow-up — so answer it here, including
-    // the part that actually unblocks them: the same model is usually offered
-    // directly by its provider, and that one runs.
+    // Shown once the roster confirms there is an agent model to explain. A
+    // disabled row cannot be clicked for its reason, and an enabled agent row
+    // is a promise worth spelling out: it runs on a key, not on the login.
     const agentNote = el('p', { class: 'field-hint container-run-agent-note', hidden: '' })
-    agentNote.textContent =
-      'Agent models (Claude Code, Cursor, Codex…) sign in as you on this device. ' +
-      'An unattended container is given no credentials, so they cannot run there — ' +
-      "pick the same model from its provider instead, where there's an API key in Settings."
+    agentNote.textContent = agentModelsNote()
     modelPicker = mountModelSelectPicker(modelSelect, {
       loadOptions: async (current) => {
-        const options = await loadRunModelOptions((opts) => fetchModelOptions(api, current, opts))
-        agentNote.hidden = !options.some((option) => option.disabled === true)
+        const options = await loadRunModelOptions(
+          (opts) => fetchModelOptions(api, current, opts),
+          () => api.settings.availableProviders(),
+        )
+        agentNote.hidden = !options.some(
+          (option) => option.disabled === true || parseAcpModel(option.value) !== null,
+        )
         return options
       },
       ariaLabel: 'Model for the unattended run',
@@ -398,7 +411,19 @@ export function mountContainerRunControl(
     }
     if (result) {
       rows.push(row('Outcome', result.stopReason))
+      // Who ran the loop. Under an agent the deferral guarantee does not hold
+      // — its outward effects were refused, not queued — so the record must
+      // say which harness it is describing before anyone reads the counts.
+      rows.push(
+        row(
+          'Harness',
+          result.harness === 'copse'
+            ? 'Copse'
+            : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (ACP agent)`,
+        ),
+      )
       rows.push(row('Prompts reached a handler', String(result.promptsAttempted)))
+      rows.push(row('Effects refused', String(result.denials.length)))
       rows.push(
         row(
           'Tokens',
@@ -446,6 +471,27 @@ export function mountContainerRunControl(
                 {},
                 el('strong', {}, entry.title),
                 entry.reasons?.length ? ` — ${entry.reasons.join('; ')}` : '',
+              ),
+            ),
+          ),
+        ),
+      )
+    }
+    if (result && result.denials.length > 0) {
+      sections.push(
+        el(
+          'section',
+          { class: 'container-run-section container-run-denials' },
+          el('h3', {}, `Refused by the container policy (${String(result.denials.length)})`),
+          el(
+            'ul',
+            {},
+            ...result.denials.map((entry) =>
+              el(
+                'li',
+                {},
+                el('strong', {}, entry.subject),
+                entry.reasons.length > 0 ? ` — ${entry.reasons.join('; ')}` : '',
               ),
             ),
           ),
