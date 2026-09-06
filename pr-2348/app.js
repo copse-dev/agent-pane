@@ -25622,7 +25622,9 @@ var init_demo_scenarios = __esm({
               threadId: "demo-container-thread",
               stopReason: "completed",
               usage: { inputTokens: 412310, outputTokens: 38902 },
+              harness: "copse",
               promptsAttempted: 0,
+              denials: [],
               deferrals: [
                 {
                   id: "d1",
@@ -262516,6 +262518,66 @@ var init_guarded_yolo_control = __esm({
   }
 });
 
+// src/shared/container-acp-agents.ts
+function containerAcpAgent(agentId) {
+  const id39 = canonicalAcpAgentId(agentId);
+  return CONTAINER_ACP_AGENTS.find((agent) => agent.id === id39 || agent.aliases?.includes(id39)) ?? null;
+}
+function containerAcpAvailability(agentId, keysConfigured) {
+  const capable = containerAcpAgent(agentId);
+  if (capable) {
+    return keysConfigured[capable.keySlug] === true ? { runnable: true, reason: null } : { runnable: false, reason: `needs ${aOrAn(capable.keyLabel)} API key in Settings` };
+  }
+  const known = findAcpCatalogEntry(agentId);
+  if (known?.setup && !known.envHints?.length) {
+    return { runnable: false, reason: "signs in through a browser; no API-key path" };
+  }
+  return { runnable: false, reason: "not carried by the worker image" };
+}
+function containerAcpAgentTitles() {
+  return CONTAINER_ACP_AGENTS.map((agent) => findAcpCatalogEntry(agent.id)?.title ?? agent.id);
+}
+function aOrAn(word) {
+  return `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
+}
+var CONTAINER_ACP_AGENTS;
+var init_container_acp_agents = __esm({
+  "src/shared/container-acp-agents.ts"() {
+    init_acp_known_agents();
+    CONTAINER_ACP_AGENTS = [
+      {
+        id: "claude-acp",
+        // Zed's adapter was renamed upstream to this package; a config that still
+        // names it runs under the current binary.
+        aliases: ["claude-code-acp"],
+        npmPackage: "@agentclientprotocol/claude-agent-acp",
+        version: "0.75.1",
+        keyEnv: "ANTHROPIC_API_KEY",
+        keySlug: "anthropic",
+        keyLabel: "Anthropic"
+      },
+      {
+        id: "codex-acp",
+        npmPackage: "@agentclientprotocol/codex-acp",
+        version: "1.10.0",
+        // Codex accepts a platform key under this name; the OpenAI key in Settings
+        // is that key. OPENAI_API_KEY is scrubbed from every agent env by design.
+        keyEnv: "CODEX_API_KEY",
+        keySlug: "openai",
+        keyLabel: "OpenAI"
+      },
+      {
+        id: "gemini",
+        npmPackage: "@google/gemini-cli",
+        version: "0.58.0",
+        keyEnv: "GEMINI_API_KEY",
+        keySlug: "gemini",
+        keyLabel: "Gemini"
+      }
+    ];
+  }
+});
+
 // src/renderer/views/container-run-control.ts
 function isLive(progress2) {
   return progress2 !== null && progress2.phase !== "finished" && progress2.phase !== "failed";
@@ -262525,12 +262587,24 @@ function formatDuration(from2, to) {
   if (seconds2 < 90) return `${String(seconds2)}s`;
   return `${String(Math.round(seconds2 / 60))} min`;
 }
-async function loadRunModelOptions(fetch) {
-  const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })]);
+async function loadRunModelOptions(fetch, keysConfigured) {
+  const [all, runnable, keys3] = await Promise.all([
+    fetch(),
+    fetch({ includeAgentModels: false }),
+    keysConfigured()
+  ]);
   const canRun = new Set(runnable.map((option2) => option2.value));
-  return all.map(
-    (option2) => canRun.has(option2.value) ? option2 : { ...option2, disabled: true, label: `${option2.label} \u2014 not available in a container` }
-  );
+  return all.map((option2) => {
+    if (canRun.has(option2.value)) return option2;
+    const agentId = parseAcpModel(option2.value);
+    const availability = agentId ? containerAcpAvailability(agentId, keys3) : { runnable: false, reason: "not available in a container" };
+    return availability.runnable ? option2 : { ...option2, disabled: true, label: `${option2.label} \u2014 ${availability.reason ?? ""}` };
+  });
+}
+function agentModelsNote() {
+  const titles = containerAcpAgentTitles();
+  const named2 = titles.length > 1 ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1] ?? ""}` : titles[0] ?? "";
+  return `Agent models run as their own process. ${named2} can run unattended with an API key from Settings, scoped to the run and never your login; an agent that only signs in through a browser cannot.`;
 }
 function mountContainerRunControl(api3, context, onStateChanged) {
   const runs = /* @__PURE__ */ new Map();
@@ -262612,11 +262686,16 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     });
     const modelField = uiField({ label: "Model", control: modelSelect });
     const agentNote = el("p", { class: "field-hint container-run-agent-note", hidden: "" });
-    agentNote.textContent = "Agent models (Claude Code, Cursor, Codex\u2026) sign in as you on this device. An unattended container is given no credentials, so they cannot run there \u2014 pick the same model from its provider instead, where there's an API key in Settings.";
+    agentNote.textContent = agentModelsNote();
     modelPicker = mountModelSelectPicker(modelSelect, {
       loadOptions: async (current) => {
-        const options2 = await loadRunModelOptions((opts) => fetchModelOptions(api3, current, opts));
-        agentNote.hidden = !options2.some((option2) => option2.disabled === true);
+        const options2 = await loadRunModelOptions(
+          (opts) => fetchModelOptions(api3, current, opts),
+          () => api3.settings.availableProviders()
+        );
+        agentNote.hidden = !options2.some(
+          (option2) => option2.disabled === true || parseAcpModel(option2.value) !== null
+        );
         return options2;
       },
       ariaLabel: "Model for the unattended run",
@@ -262745,7 +262824,14 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     }
     if (result) {
       rows.push(row2("Outcome", result.stopReason));
+      rows.push(
+        row2(
+          "Harness",
+          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (ACP agent)`
+        )
+      );
       rows.push(row2("Prompts reached a handler", String(result.promptsAttempted)));
+      rows.push(row2("Effects refused", String(result.denials.length)));
       rows.push(
         row2(
           "Tokens",
@@ -262789,6 +262875,27 @@ function mountContainerRunControl(api3, context, onStateChanged) {
                 {},
                 el("strong", {}, entry.title),
                 entry.reasons?.length ? ` \u2014 ${entry.reasons.join("; ")}` : ""
+              )
+            )
+          )
+        )
+      );
+    }
+    if (result && result.denials.length > 0) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-denials" },
+          el("h3", {}, `Refused by the container policy (${String(result.denials.length)})`),
+          el(
+            "ul",
+            {},
+            ...result.denials.map(
+              (entry) => el(
+                "li",
+                {},
+                el("strong", {}, entry.subject),
+                entry.reasons.length > 0 ? ` \u2014 ${entry.reasons.join("; ")}` : ""
               )
             )
           )
@@ -262912,6 +263019,9 @@ function mountContainerRunControl(api3, context, onStateChanged) {
 var DEFAULT_WALL_CLOCK_MINUTES, DEFAULT_TOKEN_CEILING, PHASE_LABEL;
 var init_container_run_control = __esm({
   "src/renderer/views/container-run-control.ts"() {
+    init_acp();
+    init_acp_known_agents();
+    init_container_acp_agents();
     init_helpers();
     init_ui();
     init_model_options();
