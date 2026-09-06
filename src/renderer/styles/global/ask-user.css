@@ -54,7 +54,7 @@
   padding: 6px 16px;
 }
 .ask-user-submit {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: 6px 16px;

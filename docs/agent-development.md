@@ -103,6 +103,12 @@ on macOS), which split the profile across two unrelated directories. `app-init.t
 `~/.copse/user-data/` and migrates a legacy directory across on first launch;
 `COPSE_PANEL_USER_DATA` still pins an exact directory and skips migration.
 
+`pnpm run dev` (and `make run-dev`) launches against `~/.copse-dev` instead, so the watch loop keeps
+its own persistent threads, settings, and plugins — and its own Electron single-instance lock, which
+is what lets a dev build and `make run` be open at the same time. Setting `COPSE_DIR` or
+`COPSE_PANEL_USER_DATA` yourself disables that default, including setting `COPSE_DIR=~/.copse` to
+reproduce something against the everyday profile.
+
 To bypass the native “Open Folder” dialog, pre-seed a `projects` entry and `activeProjectId`.
 
 Chat threads do not live in `config.json`. They use the filesystem-native store at

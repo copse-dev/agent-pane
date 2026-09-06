@@ -57,3 +57,19 @@ describe('run_shell tool description (issue #785)', () => {
     assert.match(runShellTool.description, /run_background/)
   })
 })
+
+describe('run_shell tool description (issue #1714)', () => {
+  it('says where commands run and steers away from an inferred absolute cd', () => {
+    // Thread a47f13b5 lost several turns because nothing told the model that the
+    // shell's cwd was the worktree, not the checkout it had inferred: it `cd`d
+    // out of the sandbox, and every command after the `cd` failed with EPERM.
+    assert.match(runShellTool.description, /working directory named in your system prompt/)
+    assert.match(runShellTool.description, /do not `cd` to an absolute path you inferred/)
+  })
+
+  it('explains that worktree mode reaches the same files by another path', () => {
+    // The model's own reasoning in that thread was "these may be different
+    // checkouts". They were not.
+    assert.match(runShellTool.description, /same files by a different path/)
+  })
+})
