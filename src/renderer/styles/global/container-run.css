@@ -88,6 +88,15 @@
   width: 100%;
   font: inherit;
 }
+/* Sits directly under the model field, so it reads as that field's note rather
+   than a second paragraph of intro. Hidden until the roster has a greyed-out
+   agent row to explain. */
+.container-run-agent-note {
+  margin: calc(-1 * var(--spacing-sm)) 0 var(--spacing-md);
+}
+.container-run-agent-note[hidden] {
+  display: none;
+}
 .container-run-budgets {
   display: grid;
   grid-template-columns: 1fr 1fr;

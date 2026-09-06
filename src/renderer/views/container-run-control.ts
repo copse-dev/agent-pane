@@ -5,6 +5,7 @@ import { uiActions, uiField } from '../ui/index.ts'
 import {
   fetchModelOptions,
   modelDisplayLabel,
+  type FetchModelOptionsOpts,
   type ModelOption,
   type ModelOptionsApi,
 } from './model-options.ts'
@@ -74,31 +75,34 @@ function formatDuration(from: number, to: number): string {
  * unavailable rather than hidden.
  *
  * Agent-backed selections (ACP agents, remote agents, plugin agents) are the
- * ones it cannot run. They are separate programs that authenticate as the user
- * — an OAuth login in `$HOME` or a vendor API key — and an unattended container
- * deliberately holds neither (`docs/plans/unattended-runs.md`, decision 3: no
- * credentials in the guest). Hiding them would leave the picker quietly
- * different from every other model picker in the app; offering them would end
- * in the service refusing the run. Showing them greyed out, with the reason,
- * is the honest middle.
+ * ones it cannot run. They are separate programs holding their own credential
+ * store on this device — an OAuth login under `$HOME`, or their own vendor key
+ * — and an unattended container is given no credentials at all
+ * (`docs/plans/unattended-runs.md`, decision 3), which a secret canary checks.
+ *
+ * So the reason has to name the container, not the user. An earlier version of
+ * this said "needs its own login", which was wrong twice over: the agent is
+ * usually already signed in (that is what "on this device" in its group heading
+ * means), and signing in again would change nothing here. Nothing the user can
+ * do to the agent makes it runnable in the guest; the provider-backed twin of
+ * the same model, one group up, is the thing that runs.
+ *
+ * Hiding them would leave this picker quietly different from every other model
+ * picker in the app; offering them would end in the service refusing the run.
  *
  * The split is derived rather than hardcoded: `includeAgentModels: false` is
  * already the product's own answer to "models that can execute a task
  * in-process", so this stays correct as that set changes.
  */
 export async function loadRunModelOptions(
-  api: ModelOptionsApi,
-  current: string,
+  fetch: (opts?: FetchModelOptionsOpts) => Promise<ModelOption[]>,
 ): Promise<ModelOption[]> {
-  const [all, runnable] = await Promise.all([
-    fetchModelOptions(api, current),
-    fetchModelOptions(api, current, { includeAgentModels: false }),
-  ])
+  const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })])
   const canRun = new Set(runnable.map((option) => option.value))
   return all.map((option) =>
     canRun.has(option.value)
       ? option
-      : { ...option, disabled: true, label: `${option.label} — needs its own login` },
+      : { ...option, disabled: true, label: `${option.label} — not available in a container` },
   )
 }
 
@@ -230,8 +234,22 @@ export function mountContainerRunControl(
     // inserts its trigger with `select.after(...)`, which is a no-op while the
     // select still has no parent.
     const modelField = uiField({ label: 'Model', control: modelSelect })
+    // Shown only once the roster confirms there is a greyed-out agent to explain.
+    // A disabled row cannot be clicked for its reason, and "not available in a
+    // container" invites the obvious follow-up — so answer it here, including
+    // the part that actually unblocks them: the same model is usually offered
+    // directly by its provider, and that one runs.
+    const agentNote = el('p', { class: 'field-hint container-run-agent-note', hidden: '' })
+    agentNote.textContent =
+      'Agent models (Claude Code, Cursor, Codex…) sign in as you on this device. ' +
+      'An unattended container is given no credentials, so they cannot run there — ' +
+      "pick the same model from its provider instead, where there's an API key in Settings."
     modelPicker = mountModelSelectPicker(modelSelect, {
-      loadOptions: (current) => loadRunModelOptions(api, current),
+      loadOptions: async (current) => {
+        const options = await loadRunModelOptions((opts) => fetchModelOptions(api, current, opts))
+        agentNote.hidden = !options.some((option) => option.disabled === true)
+        return options
+      },
       ariaLabel: 'Model for the unattended run',
       loadOnMount: false,
     })
@@ -326,6 +344,7 @@ export function mountContainerRunControl(
           : { hint: 'Nothing in the composer to run — describe the task here.' }),
       }),
       modelField,
+      agentNote,
       el(
         'div',
         { class: 'container-run-budgets' },
