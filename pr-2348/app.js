@@ -25584,6 +25584,7 @@ var init_demo_scenarios = __esm({
           prompt: "Clear the lint suppression backlog in the renderer views",
           model: "claude-sonnet-4-6",
           egressAllowlist: ["api.anthropic.com:443"],
+          credential: "key",
           warnings: [],
           checkout: {
             root: "/Users/dev/projects/demo/.copse/worktrees/demo-container-thread",
@@ -25644,6 +25645,7 @@ var init_demo_scenarios = __esm({
             },
             carryOut: { expected: true, ref: "refs/copse/runs/run-demo-1", error: null },
             containerExit: 0,
+            credential: "key",
             teardown: "removed",
             cleanupError: null,
             secretCanary: { present: false, detail: "canary absent from every surface" }
@@ -26311,6 +26313,7 @@ function createDemoApi(scenario, options2 = {}) {
         prompt: request.prompt,
         model: request.model,
         egressAllowlist: ["api.anthropic.com:443"],
+        credential: "key",
         log: ["[thread-container] starting copse-run-demo from copse-worker:local"],
         warnings: [],
         checkout: { root: "/repo", mode: "shared", branch: "main" },
@@ -26321,7 +26324,9 @@ function createDemoApi(scenario, options2 = {}) {
         scenario.containerRun && scenario.containerRun.threadId === threadId ? scenario.containerRun : null
       ),
       modelAvailability: (models) => resolved(
-        Object.fromEntries(models.map((model) => [model, "not available in the demo"]))
+        Object.fromEntries(
+          models.map((model) => [model, { reason: "not available in the demo" }])
+        )
       ),
       onRunChanged: subscribe
     },
@@ -262549,7 +262554,9 @@ var init_container_acp_agents = __esm({
         // is that key. OPENAI_API_KEY is scrubbed from every agent env by design.
         keyEnv: "CODEX_API_KEY",
         keySlug: "openai",
-        keyLabel: "OpenAI"
+        keyLabel: "OpenAI",
+        // `codex login` writes ~/.codex/auth.json.
+        loginCarryIn: true
       },
       {
         id: "gemini",
@@ -262557,7 +262564,9 @@ var init_container_acp_agents = __esm({
         version: "0.58.0",
         keyEnv: "GEMINI_API_KEY",
         keySlug: "gemini",
-        keyLabel: "Gemini"
+        keyLabel: "Gemini",
+        // Google sign-in writes ~/.gemini/oauth_creds.json.
+        loginCarryIn: true
       }
     ];
   }
@@ -262576,17 +262585,23 @@ async function loadRunModelOptions(fetch, availability) {
   const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })]);
   const canRun = new Set(runnable.map((option2) => option2.value));
   const agentRows = all.filter((option2) => !canRun.has(option2.value));
-  const reasons = agentRows.length > 0 ? await availability(agentRows.map((o3) => o3.value)) : {};
+  const verdicts = agentRows.length > 0 ? await availability(agentRows.map((o3) => o3.value)) : {};
   return all.map((option2) => {
     if (canRun.has(option2.value)) return option2;
-    const reason = Object.hasOwn(reasons, option2.value) ? reasons[option2.value] : "not available in a container";
-    return reason === null || reason === void 0 ? option2 : { ...option2, disabled: true, label: `${option2.label} \u2014 ${reason}` };
+    const verdict = Object.hasOwn(verdicts, option2.value) ? verdicts[option2.value] ?? { reason: "not available in a container" } : { reason: "not available in a container" };
+    if (verdict.reason !== null) {
+      return { ...option2, disabled: true, label: `${option2.label} \u2014 ${verdict.reason}` };
+    }
+    return verdict.loginOffered ? {
+      ...option2,
+      label: `${option2.label} \u2014 on your ${verdict.loginOffered.agentTitle} sign-in (opt in)`
+    } : option2;
   });
 }
 function agentModelsNote() {
   const titles = containerAcpAgentTitles();
   const named2 = titles.length > 1 ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1] ?? ""}` : titles[0] ?? "";
-  return `Agent models run as their own process. ${named2} can run unattended with an API key from Settings, scoped to the run and never your login; an agent that only signs in through a browser cannot.`;
+  return `Agent models run as their own process. ${named2} can run unattended with an API key from Settings, scoped to the run. Codex and Gemini CLI can also run on your desktop sign-in if you opt in per run; an agent that only signs in through a browser cannot.`;
 }
 function mountContainerRunControl(api3, context, onStateChanged) {
   const runs = /* @__PURE__ */ new Map();
@@ -262665,7 +262680,9 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     modelSelect.addEventListener("change", () => {
       chosenModel = modelSelect.value;
       renderEgressHint();
+      renderLoginOptIn();
     });
+    const verdicts = /* @__PURE__ */ new Map();
     const modelField = uiField({ label: "Model", control: modelSelect });
     const agentNote = el("p", { class: "field-hint container-run-agent-note", hidden: "" });
     agentNote.textContent = agentModelsNote();
@@ -262673,11 +262690,16 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       loadOptions: async (current) => {
         const options2 = await loadRunModelOptions(
           (opts) => fetchModelOptions(api3, current, opts),
-          (models) => api3.container.modelAvailability(models)
+          async (models) => {
+            const answered = await api3.container.modelAvailability(models);
+            for (const [model, verdict] of Object.entries(answered)) verdicts.set(model, verdict);
+            return answered;
+          }
         );
         agentNote.hidden = !options2.some(
           (option2) => option2.disabled === true || parseAcpModel(option2.value) !== null
         );
+        renderLoginOptIn();
         return options2;
       },
       ariaLabel: "Model for the unattended run",
@@ -262706,6 +262728,40 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       egressHint.textContent = `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; the key is scoped to the run and blanked once the guest holds it.`;
     }
     renderEgressHint();
+    const loginOptIn = el("input", {
+      type: "checkbox",
+      class: "container-run-agent-login",
+      name: "containerRunAgentLogin"
+    });
+    const loginLabel = el(
+      "label",
+      { class: "container-run-agent-login-label" },
+      loginOptIn,
+      el("span", { class: "container-run-agent-login-text" })
+    );
+    const loginHint = el("p", { class: "field-hint container-run-agent-login-hint" });
+    const loginField = el(
+      "div",
+      { class: "container-run-agent-login-field", hidden: "" },
+      loginLabel,
+      loginHint
+    );
+    function loginOffer() {
+      return verdicts.get(chosenModel)?.loginOffered ?? null;
+    }
+    function renderLoginOptIn() {
+      const offer = loginOffer();
+      loginField.hidden = offer === null;
+      if (offer === null) {
+        loginOptIn.checked = false;
+      } else {
+        const text5 = loginLabel.querySelector(".container-run-agent-login-text");
+        if (text5) text5.textContent = `Use my ${offer.agentTitle} sign-in for this run`;
+        loginHint.textContent = `${offer.agentTitle} has no API key in Settings. Ticking this copies its sign-in files from your home directory into the container's throwaway home for this run and discards them with it. That is your whole account, not a scoped key, and a token refresh inside the run may sign the desktop out. Adding an API key in Settings avoids both.`;
+      }
+      renderStartState();
+    }
+    loginOptIn.addEventListener("change", renderStartState);
     const start2 = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-primary container-run-start" },
@@ -262717,10 +262773,11 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       "Cancel"
     );
     cancel.addEventListener("click", () => overlay?.close());
-    start2.disabled = task.value.trim().length === 0;
-    task.addEventListener("input", () => {
-      start2.disabled = task.value.trim().length === 0;
-    });
+    function renderStartState() {
+      start2.disabled = task.value.trim().length === 0 || loginOffer() !== null && !loginOptIn.checked;
+    }
+    renderStartState();
+    task.addEventListener("input", renderStartState);
     start2.addEventListener("click", () => {
       const threadId = context.getActiveThreadId();
       const projectId = context.getActiveProjectId();
@@ -262736,7 +262793,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         threadId,
         prompt,
         model: chosenModel,
-        budgets: { wallClockMs, tokenCeiling }
+        budgets: { wallClockMs, tokenCeiling },
+        ...loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {}
       }).then((progress2) => {
         update2(progress2);
         renderDialog();
@@ -262768,6 +262826,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         uiField({ label: "Token ceiling", control: tokens2 })
       ),
       egressHint,
+      loginField,
       uiActions(cancel, start2, { className: "container-run-actions" })
     );
   }
@@ -262787,6 +262846,13 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       );
     }
     rows.push(row2("Reachable origins", run6.egressAllowlist.join(", ") || "none"));
+    const held = run6.record?.credential ?? run6.credential;
+    rows.push(
+      row2(
+        "Credential",
+        typeof held === "object" ? `your desktop sign-in, copied in for the run (${held.login.map((d4) => `~/${d4}`).join(", ")})` : held === "key" ? "one API key, scoped to the run" : held === "login" ? "your desktop sign-in, copied in for the run" : "none"
+      )
+    );
     rows.push(
       row2(
         "Elapsed",
