@@ -23,6 +23,7 @@ import { isRecord } from '@shared/unknown-value.ts'
 import { getElectronUserDataPath } from '../electron-app-runtime.ts'
 import { semanticIndexAllowed, semanticIndexPending } from './workspace-index-gate.ts'
 import { isNonNull } from '@shared/nullish.ts'
+import { isNonEmptyString } from '@shared/nullish.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -212,9 +213,7 @@ export async function probeSemanticBackends(): Promise<SemanticBackend | null> {
   gortexExcludesReady = null
 
   // gortex has no `--version` flag; `gortex version` exits 0 without a daemon.
-  const gortexCandidates = ['gortex', getBundledGortexPath()].filter(
-    (cmd): cmd is string => typeof cmd === 'string' && cmd.length > 0,
-  )
+  const gortexCandidates = ['gortex', getBundledGortexPath()].filter(isNonEmptyString)
   for (const cmd of gortexCandidates) {
     if (await probe(cmd, ['version'])) {
       gortexCommand = cmd
