@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { activateGuardedYoloForRun } from './security/guarded-yolo.ts'
+import { activateUnattendedRunForRun } from './security/unattended-run.ts'
 
 // Tracks which LLM models actually ran in each thread so `git_commit` can credit
 // them in the Copse attribution trailer. Populated from usage chunks during a
@@ -49,6 +50,7 @@ export function setActiveRunThread(threadId: string): void {
     throw new Error(`Active run identity belongs to "${active.threadId}", not "${threadId}"`)
   }
   activateGuardedYoloForRun(threadId)
+  activateUnattendedRunForRun(threadId)
 }
 
 /** Clear mutable model state only when this async context owns the thread. */

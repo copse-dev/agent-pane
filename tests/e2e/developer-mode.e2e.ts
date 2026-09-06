@@ -26,7 +26,12 @@ describe('Developer mode surfaces', function () {
     )
     // Debug trace and Share trace are the two "this went wrong" exits, so they
     // are deliberately not behind Developer mode — unlike the exports above them.
-    assert.deepEqual(labels, ['Enable Guarded YOLO', 'Debug trace', 'Share trace'])
+    assert.deepEqual(labels, [
+      'Enable Guarded YOLO',
+      'Run unattended in a container…',
+      'Debug trace',
+      'Share trace',
+    ])
     await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu-default.png')
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
@@ -51,6 +56,7 @@ describe('Developer mode surfaces', function () {
     )
     assert.deepEqual(labels, [
       'Enable Guarded YOLO',
+      'Run unattended in a container…',
       'Copy thread ID',
       'Export conversation (JSONL)',
       'Export thread folder (ZIP)',

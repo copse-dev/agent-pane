@@ -102,6 +102,7 @@ import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
+import { mountContainerRunControl } from './container-run-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { isAcpModel } from '@shared/acp.ts'
@@ -271,6 +272,18 @@ export function mountInputBar(
   const guardedYolo = mountGuardedYoloControl(api, getActiveThreadId, () => {
     footerOverflow?.update()
   })
+  const containerRun = mountContainerRunControl(
+    api,
+    {
+      getActiveThreadId,
+      getActiveProjectId: () => store.getState().activeProjectId,
+      getModel: footerChatModel,
+      getDraft: () => composer.value,
+    },
+    () => {
+      footerOverflow?.update()
+    },
+  )
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
@@ -315,6 +328,11 @@ export function mountInputBar(
       label: guardedYolo.menuLabel,
       hidden: (): boolean => !getActiveThreadId(),
       onClick: guardedYolo.toggle,
+    },
+    {
+      label: containerRun.menuLabel,
+      hidden: (): boolean => !getActiveThreadId(),
+      onClick: containerRun.open,
     },
     {
       label: 'Copy thread ID',
@@ -567,6 +585,7 @@ export function mountInputBar(
   // which has to wait for the follow-up row to be mounted first.
   root.append(
     guardedYolo.element,
+    containerRun.element,
     branchWarning,
     checkoutError,
     imageCompatibilityWarning,
@@ -2201,6 +2220,7 @@ export function mountInputBar(
     store.on('threads_changed', () => {
       syncComposerThread()
       guardedYolo.refresh()
+      containerRun.refresh()
       hideBranchMismatch()
       updateState()
       updateFooter()
@@ -2297,6 +2317,7 @@ export function mountInputBar(
       modelPicker.destroy()
       footerOverflow.destroy()
       guardedYolo.destroy()
+      containerRun.destroy()
       footerCompact.destroy()
       portraitPanelControls.destroy()
       branchControl.destroy()

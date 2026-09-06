@@ -48,6 +48,7 @@ import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/
 import { emitShellOutput } from '../services/exec/shell-output-context.ts'
 import { getActiveRunThread } from '../services/thread-models.ts'
 import { currentRunUsesGuardedYolo } from '../services/security/guarded-yolo.ts'
+import { currentRunIsUnattendedContainer } from '../services/security/unattended-run.ts'
 import { recordDecision } from '../services/security/decision-log-store.ts'
 import { SHELL_DECISION_SUBJECT } from '@shared/threads/decision-log.ts'
 import { recordCreatedPullRequest } from '../services/worktree-parking.ts'
@@ -350,6 +351,10 @@ export const runShellTool = defineTool({
     // single source of truth shared with the gate and todo verification.
     const sandboxEnabled = isProjectSandboxEnabled()
     const guardedYolo = currentRunUsesGuardedYolo(getActiveRunThread())
+    // Inside an attested container there is no host sandbox to escape *to*: a
+    // command that would earn an unsandboxed retry simply retries in the same
+    // guest, so the escalation questions below are answered without a prompt.
+    const unattendedContainer = currentRunIsUnattendedContainer(getActiveRunThread())
     let outsideSandbox = shellRunsOutsideSandbox(command)
 
     // A command that leaves the sandbox ONLY because it reads accountable paths
@@ -391,6 +396,7 @@ export const runShellTool = defineTool({
       if (escalation.eligible) {
         if (
           guardedYolo ||
+          unattendedContainer ||
           (await promptExpectedSandboxBlock(command, escalation.reasons, signal))
         ) {
           outsideSandbox = true
@@ -405,7 +411,9 @@ export const runShellTool = defineTool({
 
     const containmentBanner = guardedYolo
       ? `[Guarded YOLO · ${outsideSandbox || !sandboxEnabled ? 'unsandboxed' : 'project sandbox'}]\n`
-      : ''
+      : unattendedContainer
+        ? `[Unattended · container${outsideSandbox || !sandboxEnabled ? '' : ' + project sandbox'}]\n`
+        : ''
     if (containmentBanner) {
       emitShellOutput(containmentBanner)
     }
@@ -456,14 +464,18 @@ export const runShellTool = defineTool({
           signal,
           result,
           childEnv,
-          guardedYolo,
+          guardedYolo || unattendedContainer,
           readGrantTargets !== null,
         )
         if (retry === 'declined') return 'User declined to run outside the sandbox.'
         if (retry) {
           if (succeeded(retry)) {
             recordCreatedPullRequest(command, retry.output)
-            const retryBanner = guardedYolo ? '[Guarded YOLO · unsandboxed retry]\n' : ''
+            const retryBanner = guardedYolo
+              ? '[Guarded YOLO · unsandboxed retry]\n'
+              : unattendedContainer
+                ? '[Unattended · container retry outside the project sandbox]\n'
+                : ''
             return `${retryBanner}${withBanner(formatShellSuccess(retry))}`
           }
           throw formatShellFailure(retry)

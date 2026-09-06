@@ -28,6 +28,8 @@ import {
 } from '../../project-sandbox/network-scope.ts'
 import { acpBridgeNetworkScopeAlreadyApplies } from '../acp/acp-bridge-permission-context.ts'
 import { classifyShellScope } from './safety-classifier.ts'
+import { currentRunIsUnattendedContainer } from './unattended-run.ts'
+import { decideContainedShellEffect } from '@copse/shell-guard/container-effects.ts'
 import { requestApproval } from '../approval.ts'
 import { recordDecision } from './decision-log-store.ts'
 import { getSetting, updateSetting } from '../storage/settings.ts'
@@ -156,6 +158,14 @@ export interface ShellCommandPermissionOptions {
   originalCommand?: string
   /** When aborted, pending approval prompts settle as denied and callers treat as cancelled. */
   signal?: AbortSignal
+  /**
+   * What the contained-runtime gate does with an outward effect. `defer`
+   * (default) queues it for the host to replay — right for Copse's own tools,
+   * whose request the host can re-issue verbatim. `deny` refuses and records
+   * it, for a command that is an external agent's own and cannot be replayed
+   * by us (`docs/plans/thread-in-container.md`, decision A3).
+   */
+  outwardEffects?: 'defer' | 'deny'
 }
 
 export interface TerminalPermissionOptions {
@@ -790,13 +800,113 @@ function sandboxCommandNormallyAllowed(command: string, workspaceRoot: string): 
   )
 }
 
+/**
+ * The contained-runtime gate: an unattended run on a container decides every
+ * shell command by where its effect lands, not by whether a host sandbox would
+ * have contained it. The harm gate still runs first — its hard denies (fork
+ * bombs, wiping `/`, killing the permission process) stay hard even in a guest
+ * nobody is watching — and `decideContainedShellEffect` turns its prompts into
+ * allows (in-guest destruction is what `docker rm` is for), refuses host
+ * escapes, and defers outward effects. A deferral goes through the ordinary
+ * approval seam: in deferral mode that queues the request and throws the typed
+ * error the agent understands; if the mode were somehow off it would block on a
+ * modal, which is the safe way for the pairing to fail.
+ */
+async function ensureContainedShellCommandPermitted(
+  command: string,
+  opts: ShellCommandPermissionOptions,
+): Promise<boolean> {
+  const workspaceRoot = opts.executionRoot ?? getAgentExecutionRoot()
+  const harm = assessShellHarm(command, {
+    workspaceRoot,
+    homeDir: homedir(),
+    canonicalizePath: realpathSync.native,
+    readScript: readScriptForHarm,
+  })
+  const decision = decideContainedShellEffect(command, harm)
+  firePermissionDecision(
+    'run_shell',
+    shellVerdictToHookDecision(decision.action === 'defer' ? 'prompt' : decision.action),
+    {
+      executionRoot: workspaceRoot,
+      ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
+    },
+  )
+  if (decision.action === 'allow') {
+    recordDecision({
+      kind: 'shell',
+      actor: 'system',
+      verdict: 'allowed',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'container',
+      reasons: decision.reasons,
+      source: 'unattended-container',
+    })
+    return true
+  }
+  if (decision.action === 'deny') {
+    recordDecision({
+      kind: 'shell',
+      actor: 'system',
+      verdict: 'blocked',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'container',
+      reasons: decision.reasons,
+      source: 'unattended-container',
+    })
+    throw new Error(
+      `Command blocked by the unattended container policy: ${decision.reasons.join('; ')}`,
+    )
+  }
+  if (opts.outwardEffects === 'deny') {
+    // Nobody is watching and nothing could replay this later; the refusal is
+    // the answer, and the record is where it is reported.
+    recordDecision({
+      kind: 'shell',
+      actor: 'system',
+      verdict: 'blocked',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'container',
+      reasons: [...decision.reasons, 'an external agent’s own command cannot be queued for replay'],
+      source: 'unattended-container',
+    })
+    return false
+  }
+  const { approved } = await requestApproval(
+    {
+      title: 'Outward effect needs review',
+      body: command,
+      bodyAdvice:
+        'This run is unattended inside a disposable container, but the effect of this command would leave it: ' +
+        decision.reasons.join('; '),
+      type: 'shell',
+      subject: SHELL_DECISION_SUBJECT,
+      scope: 'external',
+      cause: 'shell-outward-effect',
+      reasons: decision.reasons,
+      allowRemember: false,
+    },
+    opts.signal,
+  )
+  return approved
+}
+
 /** Gate a raw shell command string through the same approval flow as run_shell. */
 export async function ensureShellCommandPermitted(
   command: string,
   opts: ShellCommandPermissionOptions = {},
 ): Promise<boolean> {
   if (opts.signal?.aborted) return false
-  const guardedYolo = currentRunUsesGuardedYolo(getActiveRunThread())
+  const runThread = getActiveRunThread()
+  // An unattended run inside an attested container answers by blast radius
+  // (`docs/plans/thread-in-container.md`): contained effects run, outward
+  // effects queue for review, host escapes are refused. Nothing below applies —
+  // the sandbox-escalation, trusted-command and auto-approval paths all reason
+  // about leaving a *host* sandbox, and there is no host to leave from here.
+  if (currentRunIsUnattendedContainer(runThread)) {
+    return ensureContainedShellCommandPermitted(command, opts)
+  }
+  const guardedYolo = currentRunUsesGuardedYolo(runThread)
   // ASRT's network allowlist is process-global. While an ACP agent or a
   // port-binding background task has widened it, an otherwise-contained shell
   // command could inherit that egress. Suspend every auto-run path — including

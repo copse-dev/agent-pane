@@ -66,6 +66,11 @@ export interface DemoScenario {
    * the only way to reach `.vnc-discovered-port.selected` deterministically.
    */
   vncDiscoveredPorts?: readonly number[]
+  /**
+   * A container run already attached to the first thread, so the composer
+   * banner and the run dialog's status face render without Docker.
+   */
+  containerRun?: import('./types/container-run.ts').ContainerRunProgress
   /** Seed host approvals so browser geometry specs can inspect the real dialog. */
   approvalRequests?: readonly {
     id: string
@@ -313,6 +318,113 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         updatedAt: FIXED_TIME,
       },
     ],
+  },
+  {
+    id: 'container-run',
+    label: 'Unattended container run',
+    project: project('demo-container-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'claude-sonnet-4-6',
+    },
+    threads: [
+      {
+        id: 'demo-container-thread',
+        title: 'Clear the lint backlog',
+        status: 'idle',
+        gitBranch: 'demo/lint-backlog',
+        messages: [
+          {
+            id: 'demo-container-user',
+            role: 'user',
+            content: 'Clear the lint backlog and open a PR.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 412_310, outputTokens: 38_902 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    containerRun: {
+      threadId: 'demo-container-thread',
+      runtimeId: 'run-demo-1',
+      phase: 'finished',
+      startedAt: FIXED_TIME,
+      finishedAt: FIXED_TIME + 23 * 60_000,
+      prompt: 'Clear the lint suppression backlog in the renderer views',
+      model: 'claude-sonnet-4-6',
+      egressAllowlist: ['api.anthropic.com:443'],
+      warnings: [],
+      checkout: {
+        root: '/Users/dev/projects/demo/.copse/worktrees/demo-container-thread',
+        mode: 'worktree',
+        branch: 'demo/lint-backlog',
+      },
+      log: [
+        '[thread-container] carry-in 9b1b901683b9 as refs/copse/carry-in/run-demo-1',
+        '[thread-container] starting copse-run-demo-1 from copse-worker:local',
+        '[guest] [project-sandbox] Linux bubblewrap active (ASRT)',
+        '[guest] [worker] done: completed; prompts=0 deferrals=1 commits=3',
+        '[thread-container] carry-out fetched to refs/copse/runs/run-demo-1',
+      ],
+      record: {
+        runtimeId: 'run-demo-1',
+        threadId: 'demo-container-thread',
+        startedAt: FIXED_TIME,
+        finishedAt: FIXED_TIME + 23 * 60_000,
+        image: 'copse-worker:local',
+        imageDigest: 'sha256:0c1f2e3d4c5b6a798877665544332211aabbccddeeff00112233445566778899',
+        attestation: {
+          runtimeId: 'run-demo-1',
+          image: 'copse-worker:local',
+          user: 1001,
+          readOnlyRootfs: true,
+          capDropAll: true,
+          noNewPrivileges: true,
+          pidsLimit: 512,
+          memoryLimit: '4g',
+          network: 'brokered',
+          egressAllowlist: ['api.anthropic.com:443'],
+          hostMounts: ['/run/copse', '/run/copse/state', '/run/copse/out', '/run/copse/egress'],
+        },
+        egress: [{ at: FIXED_TIME, origin: 'api.anthropic.com:443', event: 'connect' }],
+        result: {
+          threadId: 'demo-container-thread',
+          stopReason: 'completed',
+          usage: { inputTokens: 412_310, outputTokens: 38_902 },
+          harness: 'copse',
+          promptsAttempted: 0,
+          denials: [],
+          deferrals: [
+            {
+              id: 'd1',
+              title: 'Outward effect needs review',
+              subject: 'shell command (arguments omitted)',
+              reasons: ['git push publishes commits to a remote'],
+            },
+          ],
+          commits: [
+            'a1b2c3d fix(lint): remove unused imports across src/main',
+            'b2c3d4e fix(lint): prefer nullish coalescing in providers',
+            'c3d4e5f chore: rerun formatter',
+          ],
+          containment: { declared: true, declineReason: null, projectSandbox: true },
+          toolNames: ['run_shell', 'read_file', 'write_file'],
+          finalText:
+            'Cleared the lint backlog in three commits. The push is waiting for your review.',
+        },
+        carryOut: { expected: true, ref: 'refs/copse/runs/run-demo-1', error: null },
+        containerExit: 0,
+        teardown: 'removed',
+        cleanupError: null,
+        secretCanary: { present: false, detail: 'canary absent from every surface' },
+      },
+      error: null,
+    },
   },
   {
     id: 'footer-compact',
