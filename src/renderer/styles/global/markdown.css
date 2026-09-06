@@ -202,3 +202,61 @@ html.mark-external-links
   /* Purely decorative — the link text already announces the destination. */
   pointer-events: none;
 }
+
+/* Light-theme syntax highlighting (issue #2486).
+ *
+ * `@copse/streaming-markdown/styles/default.css` ships a VS Code **Dark+**
+ * `.hljs-*` palette and says so in its own header: "the .hljs-* rules below are a
+ * VS Code Dark+ palette; override by redeclaring those selectors after this
+ * import." Nothing here ever did. `conversation.css` maps `--sm-code-bg` to
+ * `--bg-elevated`, which in the light theme is near-white, so Dark+ token colours
+ * were being painted onto a light ground: JSON keys (`.hljs-attr`, #9cdcfe) came
+ * out at 1.19:1 against it and strings (#ce9178) at 2.10:1. The whole palette
+ * measured between 1.12:1 and 2.65:1 — unreadable, which is what the issue
+ * reported.
+ *
+ * These are VS Code **Light+** hues, with comment, number and type darkened from
+ * their upstream values (#008000/#098658/#267f99) because Copse's light code
+ * surface is the tinted #e3e6e3 rather than pure white, where the originals land
+ * at 3.65-4.08:1. As written every token clears WCAG AA (4.5:1) for body text on
+ * that surface; the pinned floor is asserted in `light-contrast.test.ts`.
+ *
+ * Specificity (0,3,0) beats the package's own (0,2,0) nesting, so this wins on
+ * merit rather than on import order.
+ */
+[data-theme='light'] .streaming-markdown .hljs-comment,
+[data-theme='light'] .streaming-markdown .hljs-quote {
+  color: #007000;
+}
+[data-theme='light'] .streaming-markdown .hljs-keyword,
+[data-theme='light'] .streaming-markdown .hljs-selector-tag,
+[data-theme='light'] .streaming-markdown .hljs-built_in {
+  color: #0000ff;
+}
+[data-theme='light'] .streaming-markdown .hljs-string,
+[data-theme='light'] .streaming-markdown .hljs-regexp {
+  color: #a31515;
+}
+[data-theme='light'] .streaming-markdown .hljs-number,
+[data-theme='light'] .streaming-markdown .hljs-literal {
+  color: #07734b;
+}
+[data-theme='light'] .streaming-markdown .hljs-title,
+[data-theme='light'] .streaming-markdown .hljs-title.function_,
+[data-theme='light'] .streaming-markdown .hljs-function .hljs-title {
+  color: #795e26;
+}
+[data-theme='light'] .streaming-markdown .hljs-type,
+[data-theme='light'] .streaming-markdown .hljs-class .hljs-title {
+  color: #1f6b80;
+}
+[data-theme='light'] .streaming-markdown .hljs-attr,
+[data-theme='light'] .streaming-markdown .hljs-attribute,
+[data-theme='light'] .streaming-markdown .hljs-variable,
+[data-theme='light'] .streaming-markdown .hljs-template-variable {
+  color: #0451a5;
+}
+[data-theme='light'] .streaming-markdown .hljs-meta,
+[data-theme='light'] .streaming-markdown .hljs-symbol {
+  color: #1f1f1f;
+}

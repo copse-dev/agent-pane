@@ -56,6 +56,26 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
 - Light-theme interaction colours must be derived for readable contrast; do not place raw neon
   green behind or beneath small light-theme text.
 
+#### `--accent` tints, `--accent-fill` fills
+
+The two are the same colour in dark and deliberately diverge in light, where `--accent` becomes a
+30%-of-black derivation so small text, links, borders, and focus rings stay readable. That makes the
+choice load-bearing rather than stylistic:
+
+- **A filled control whose label is `--text-on-accent`** — primary buttons, count badges, anything
+  the eye reads as "the accent, with text on it" — takes `--accent-fill` (and `--accent-fill-hover`).
+  `.ui-btn-primary` in `global/ui.css` is the reference recipe. Painting `--text-on-accent` onto
+  `--accent` gives 1.24:1 in light with the shipped accent: dark text on a dark fill (#2488).
+- **Everything the accent only tints** — text, links, borders, rails, focus outlines, washes — takes
+  `--accent`, which is the tier derived to stay readable.
+- **A state a user has to see** — a selected row, an active tab — should not rest on the accent's
+  _lightness_, because that is the property the theme flips. Against ordinary row text, the dark
+  theme's accent stands at ΔE 51 and light's at 19; carry a fill (`--bg-selected`) or a rail as well,
+  so the signal survives both themes (#2483).
+
+`src/renderer/styles/light-contrast.test.ts` pins the first rule mechanically, and holds the light
+syntax-highlighting palette to WCAG AA on the real (tinted) code surface.
+
 ### Decorative motifs
 
 Line fields, large colour tiles, oversized serif type, and broad areas of forest, pink, or neon
