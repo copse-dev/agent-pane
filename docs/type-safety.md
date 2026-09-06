@@ -205,7 +205,7 @@ worse than none, because it reads like coverage.
 
 ### Reach for the shared predicate before writing another one
 
-The cheapest predicate to keep honest is the one you don't write. Four cover most of what boundary
+The cheapest predicate to keep honest is the one you don't write. These cover most of what boundary
 code needs, all in `@copse/std` (re-exported as `@shared/…` for app code) and all tested there:
 
 - **`isRecord`** (`unknown-value.ts`) — `unknown` → `Record<string, unknown>`, rejecting arrays and
@@ -216,6 +216,11 @@ code needs, all in `@copse/std` (re-exported as `@shared/…` for app code) and 
 - **`memberOf`** (`member-of.ts`) — builds a membership predicate from the tuple that defines the
   type, as [above](#prefer-a-predicate-the-compiler-checks). It replaced 28 hand-written membership
   predicates in #1330.
+- **`isNonEmptyString` / `isNonBlankString`** (`nullish.ts`) — a string with at least one character,
+  and a string with at least one _non-whitespace_ character. `isNonEmptyString` is what
+  `.filter((p): p is string => Boolean(p))` meant over a `(string | null | undefined)[]`, said out
+  loud. Pick deliberately: `'  '` passes one and fails the other, and getting it wrong is a silent
+  behaviour change, which is why neither is named as the default.
 
 A local copy is only justified where the import cannot reach — and `@copse/std` is dependency-free
 precisely so that it always can, including from an extracted package.

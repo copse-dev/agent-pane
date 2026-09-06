@@ -49,6 +49,7 @@ import type {
 import { type HookSpawnResult } from './hook-spawn.ts'
 import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
 import { memberOf } from '@copse/std/member-of.ts'
+import { isNonBlankString } from '@copse/std/nullish.ts'
 
 /**
  * Copse's per-hook timeout default (decision 13; H4). Copse-native hooks are our
@@ -166,7 +167,7 @@ const isCanonicalEvent = memberOf(HOOK_EVENT_NAMES)
  */
 function normalizeGlobField(value: unknown): string[] | undefined {
   const raw = typeof value === 'string' ? [value] : Array.isArray(value) ? value : []
-  const globs = raw.filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+  const globs = raw.filter(isNonBlankString)
   return globs.length > 0 ? globs : undefined
 }
 

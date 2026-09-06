@@ -1,5 +1,6 @@
 import type { LLMMessage } from '@copse/llm/wire-types.ts'
 import type { OperatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
+import { isNonBlankString } from '@copse/std/nullish.ts'
 
 // Current-turn context injection (H2 of the hooks platform).
 //
@@ -104,9 +105,7 @@ export function appendOperatorInstruction(
   blocks: ReadonlyArray<string | undefined>,
   placement: OperatorInstructionPlacement,
 ): boolean {
-  const present = blocks.filter(
-    (block): block is string => block !== undefined && block.trim().length > 0,
-  )
+  const present = blocks.filter(isNonBlankString)
   if (present.length === 0) return false
   const content = present.join('\n\n')
   if (placement === 'trailing-developer') {

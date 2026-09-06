@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { storageGet, storageSet } from '../storage/storage.ts'
+import { isNonEmptyString } from '@shared/nullish.ts'
 
 /**
  * "Trust this workspace" gate (issue #100).
@@ -42,7 +43,7 @@ export function runWithWorkspaceTrust<T>(root: string, trusted: boolean, fn: () 
 function loadTrusted(): Set<string> {
   const raw = storageGet(TRUSTED_WORKSPACES_KEY)
   if (!Array.isArray(raw)) return new Set()
-  return new Set(raw.filter((p): p is string => typeof p === 'string' && p.length > 0))
+  return new Set(raw.filter(isNonEmptyString))
 }
 
 function persistTrusted(roots: Set<string>): void {
