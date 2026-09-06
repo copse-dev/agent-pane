@@ -148,6 +148,23 @@ describe('buildSystemPrompt instruction layers', () => {
     assert.match(prompt, /not trusted/)
     assert.ok(prompt.includes('Global user rules'))
   })
+
+  it('activates a nested AGENTS.md from a path in the current user turn only', async () => {
+    await mkdir(join(tempRoot, 'packages', 'api'), { recursive: true })
+    await mkdir(join(tempRoot, 'packages', 'web'), { recursive: true })
+    await writeFile(join(tempRoot, 'packages', 'api', 'AGENTS.md'), 'Use API conventions.')
+    await writeFile(join(tempRoot, 'packages', 'web', 'AGENTS.md'), 'Use web conventions.')
+    const prompt = await runWithWorkspaceTrust(tempRoot, true, () =>
+      buildSystemPrompt({
+        subagentsEnabled: false,
+        invokedSkills: [],
+        userPrompt: 'Please update packages/api/src/router.ts.',
+      }),
+    )
+    assert.match(prompt, /path="packages\/api\/AGENTS\.md"/)
+    assert.match(prompt, /Use API conventions/)
+    assert.doesNotMatch(prompt, /Use web conventions/)
+  })
 })
 
 describe('buildSystemPrompt working directory', () => {
