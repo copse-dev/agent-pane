@@ -37,7 +37,11 @@ const OTHER_CONTEXT: ThreadExecutionContext = {
 }
 
 async function waitForBackgroundExit(id: string): Promise<void> {
-  const deadline = Date.now() + 5_000
+  // The full test run starts thousands of tests in parallel, so a fresh Node
+  // child can take more than five seconds to get scheduled on a busy runner.
+  // This is only the helper's deadlock guard; successful runs still return as
+  // soon as the process exits.
+  const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
     const info = listBackgroundProcesses(OWNER).find((entry) => entry.id === id)
     if (info && !info.running) return
