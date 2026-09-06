@@ -71,6 +71,7 @@ import {
 } from './plugin-tool-controller.ts'
 import { setPluginBrowserService } from './plugin-browser-service.ts'
 import type { DeclaredMcpServer } from '@shared/types/mcp.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 // P1 of #1336: selected-pack discovery is part of the production graph before
 // the isolated behavior runtime is wired by the host.
@@ -130,15 +131,6 @@ const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCh
 /** Storage key holding one plugin's settings values (`pluginId` scoped). */
 function pluginSettingsKey(pluginId: string): string {
   return `plugin.${pluginId}.settings`
-}
-
-/**
- * Narrow a persisted `unknown` to a plain object bag. A type predicate rather
- * than an `as` cast: these values come off disk and may be any shape, so the
- * check has to be real (and `no-unsafe-type-assertion` agrees).
- */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**

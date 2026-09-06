@@ -6,6 +6,7 @@ import {
 import type { LLMMessage, LLMProvider, LLMTool, StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { ToolRegistry } from './tool-registry.ts'
+import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 
 const TODO_WORKER_TOOLS = [
   'read_file',
@@ -104,14 +105,6 @@ export interface TodoWorkerResult {
 function filterWorkerTools(registry: ToolRegistry): LLMTool[] {
   const allowed = new Set<string>(TODO_WORKER_TOOLS)
   return registry.toLLMTools().filter((t) => allowed.has(t.name))
-}
-
-interface ProviderWithUsage {
-  lastUsage: { inputTokens: number; outputTokens: number } | null
-}
-
-function hasLastUsage(p: unknown): p is ProviderWithUsage {
-  return typeof p === 'object' && p !== null && 'lastUsage' in p
 }
 
 export async function runTodoWorker(opts: RunTodoWorkerOptions): Promise<TodoWorkerResult> {

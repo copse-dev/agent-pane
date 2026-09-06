@@ -203,6 +203,23 @@ Finally, **check the test can fail**. Mutate the predicate body to `return true`
 suite goes red before you trust it — a predicate test that passes against a broken predicate is
 worse than none, because it reads like coverage.
 
+### Reach for the shared predicate before writing another one
+
+The cheapest predicate to keep honest is the one you don't write. Four cover most of what boundary
+code needs, all in `@copse/std` (re-exported as `@shared/…` for app code) and all tested there:
+
+- **`isRecord`** (`unknown-value.ts`) — `unknown` → `Record<string, unknown>`, rejecting arrays and
+  `null`. It had accumulated 22 local copies across `src/` and `packages/` before #1332.
+- **`isDefined` / `isNonNull`** (`nullish.ts`) — for `.filter(isNonNull)` instead of
+  `.filter((x): x is T => x !== null)`. An inline predicate is an unchecked claim that nothing can
+  test; a named one is checked once.
+- **`memberOf`** (`member-of.ts`) — builds a membership predicate from the tuple that defines the
+  type, as [above](#prefer-a-predicate-the-compiler-checks). It replaced 28 hand-written membership
+  predicates in #1330.
+
+A local copy is only justified where the import cannot reach — and `@copse/std` is dependency-free
+precisely so that it always can, including from an extracted package.
+
 ### The hand-written predicate inventory is shrink-only
 
 `scripts/type-predicate-inventory.test.ts` lists every asserted predicate in the tracked source and
@@ -211,8 +228,8 @@ is gone fails. So adding one is a visible, deliberate line in the diff, and conv
 entry out in the same change. It exists because counting by hand did not hold — #1330 measured 161,
 then 212 four months later.
 
-Only the asserted form is counted. The three checked forms above are absent from it by construction,
-which is the point: the cheapest predicate to add is also the honest one.
+Only the asserted form is counted. The checked forms above are absent from it by construction, which
+is the point: the cheapest predicate to add is also the honest one.
 
 If a change legitimately needs a new asserted predicate — a structural boundary parser usually does —
 add its line and its contract test together.

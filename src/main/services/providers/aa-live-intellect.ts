@@ -12,6 +12,7 @@ import type { LiveAaModel } from '@copse/llm/live-intellect.ts'
 import { z } from 'zod'
 import { getApiKey } from '../storage/settings.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 /** Env override for e2e / demos — skips network and the stored AA key. */
 const MOCK_ENV = 'COPSE_AA_INTELLECT_MOCK'
@@ -223,7 +224,7 @@ async function requestAaEndpoint(
       throw new AaPayloadError(err)
     }
     if (page === 1) firstPayload = payload
-    models.push(...(payload.data ?? []).filter((model): model is AaApiModel => model !== null))
+    models.push(...(payload.data ?? []).filter(isNonNull))
 
     const pagination = payload.pagination
     hasMore =
@@ -270,7 +271,7 @@ export async function requestLiveIntellectModels(
 ): Promise<LiveIntellectFetch> {
   try {
     const endpoint = await requestAaEndpoint(AA_MODELS_URL, key, fetchImpl)
-    const models = endpoint.models.map(reduceModel).filter((m): m is LiveAaModel => m !== null)
+    const models = endpoint.models.map(reduceModel).filter(isNonNull)
     const indexVersion = reportedIndexVersion(endpoint.firstPayload, endpoint.models)
     return { ok: true, models, ...(indexVersion !== undefined ? { indexVersion } : {}) }
   } catch (err) {

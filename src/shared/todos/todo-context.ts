@@ -1,6 +1,7 @@
 import type { LLMMessage } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { formatTodosForPrompt } from './todo-logic.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 const TODO_PIN_PREFIX = '\n\n---\n\n## Active plan (pinned)\n'
 
@@ -37,10 +38,6 @@ const PATH_BEARING_TOOLS = new Set([
 
 /** Single-path arg names across {@link PATH_BEARING_TOOLS} (`rename_file` uses from/to). */
 const PATH_ARG_KEYS = ['path', 'from', 'to']
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function pathsFromArgs(args: unknown): string[] {
   if (!isRecord(args)) return []

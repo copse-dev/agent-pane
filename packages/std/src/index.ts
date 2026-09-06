@@ -4,5 +4,6 @@
 export * from './array-utils.ts'
 export * from './errors.ts'
 export * from './member-of.ts'
+export * from './nullish.ts'
 export * from './safe-json.ts'
 export * from './unknown-value.ts'

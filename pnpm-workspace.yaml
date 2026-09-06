@@ -70,3 +70,14 @@ minimumReleaseAgeExclude:
   - hono
   - ip-address
   - undici
+
+# `whichSync` in @anthropic-ai/sandbox-runtime forks `/usr/bin/which` via
+# spawnSync on every sandboxed command to locate the shell binary. That is free
+# under Bun (`Bun.which`) but a synchronous child process under Node, and Copse
+# runs it on the Electron main thread ~10 times a second during an agent turn
+# (measured at 6.35ms per call — 72% of the whole sandbox-wrap cost). The patch
+# memoizes the Node fallback on (binary, PATH). Drop it once the upstream
+# package caches this itself; `sandbox-which-cache.test.ts` fails loudly if a
+# version bump silently drops the patch.
+patchedDependencies:
+  '@anthropic-ai/sandbox-runtime@0.0.74': patches/@anthropic-ai__sandbox-runtime@0.0.74.patch

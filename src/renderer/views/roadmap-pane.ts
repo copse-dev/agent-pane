@@ -54,6 +54,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { memberOf } from '@shared/member-of.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 // A roadmap item is one `Roadmap`-typed knowledge note. Derive the shapes from
 // the IPC surface so this view never imports main-process types directly.
@@ -2151,7 +2152,7 @@ export function mountRoadmapPane(
     const files = Array.from(e.clipboardData?.items ?? [])
       .filter((item) => item.kind === 'file')
       .map((item) => item.getAsFile())
-      .filter((file): file is File => file !== null)
+      .filter(isNonNull)
     if (files.length === 0) files.push(...Array.from(e.clipboardData?.files ?? []))
     if (files.length === 0) return
     e.preventDefault()

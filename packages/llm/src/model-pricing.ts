@@ -16,10 +16,7 @@
 // `ModelPricingMap` to start showing real costs in the ledger.
 
 import { OPENROUTER_MODEL_PREFIX } from './openrouter.ts'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 export interface ModelPricing {
   /** USD per million input tokens. */

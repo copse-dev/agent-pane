@@ -1,0 +1,53 @@
+diff --git a/dist/utils/which.js b/dist/utils/which.js
+index cc8770074ab28a821acc56269a8868ba2a9746d2..579184d4aaceb4f49fb5932c79a6e5bf366595a6 100644
+--- a/dist/utils/which.js
++++ b/dist/utils/which.js
+@@ -1,4 +1,26 @@
+ import { spawnSync } from 'node:child_process';
++/**
++ * Memo for the Node fallback below, keyed on the binary name AND the PATH it
++ * was resolved against, so a changed PATH re-resolves rather than serving a
++ * stale answer.
++ *
++ * ONLY successful resolutions are cached. A failed lookup is not necessarily a
++ * fact about the filesystem: `spawnSync` below carries `timeout: 1000`, so on a
++ * loaded machine `which` can be killed before it answers and return null for a
++ * binary that is plainly present. Upstream re-spawns on the next call and
++ * recovers; caching the null would make one transient timeout permanent for the
++ * life of the process, and every later sandboxed command would throw
++ * "Shell '<name>' not found in PATH". A miss therefore costs one spawn next
++ * time, exactly as upstream.
++ *
++ * PATCH (copse-dev/agent-pane): `wrapCommandWithSandboxMacOS` and its Linux
++ * counterpart call `whichSync(binShell || 'bash')` on EVERY sandboxed command,
++ * and under Node this forks `/usr/bin/which` synchronously. A DevTools trace of
++ * an Electron host running an agent turn measured 6.35ms per call — 72% of the
++ * entire sandbox-wrap cost — blocking the main thread ~10 times a second.
++ * Under Bun this cost does not exist, because `Bun.which` is an in-process call.
++ */
++const whichCache = new Map();
+ /**
+  * Find the path to an executable, similar to the `which` command.
+  * Uses Bun.which when running in Bun, falls back to spawnSync for Node.js.
+@@ -12,13 +34,20 @@ export function whichSync(bin) {
+         return globalThis.Bun.which(bin);
+     }
+     // Fallback to Node.js implementation
++    const cacheKey = `${bin}\0${process.env.PATH ?? ''}`;
++    const cached = whichCache.get(cacheKey);
++    if (cached !== undefined) {
++        return cached;
++    }
+     const result = spawnSync('which', [bin], {
+         encoding: 'utf8',
+         stdio: ['ignore', 'pipe', 'ignore'],
+         timeout: 1000,
+     });
+     if (result.status === 0 && result.stdout) {
+-        return result.stdout.trim();
++        const resolved = result.stdout.trim();
++        whichCache.set(cacheKey, resolved);
++        return resolved;
+     }
+     return null;
+ }

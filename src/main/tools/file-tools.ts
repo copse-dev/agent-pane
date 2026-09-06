@@ -16,6 +16,7 @@ import { readTextLineRangeFromUtf8Content } from '../services/read-text-file.ts'
 import { buildReadFilePageMeta, formatReadFilePageFooter } from '@copse/agent/read-file-page.ts'
 import { getStagedDiffEntry } from '../services/diff-queue.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 export const LIST_DIR_MAX_ENTRIES = 1000
 
@@ -144,7 +145,7 @@ export const listDirTool = defineTool({
               (await isPathUnderRoot(resolve(absRoot, p), root)) ? p : null,
             ),
           )
-        ).filter((p): p is string => p !== null)
+        ).filter(isNonNull)
       } else {
         const { stdout } = await runCommand('rg', [
           '--files',
@@ -163,7 +164,7 @@ export const listDirTool = defineTool({
                 return (await isPathUnderRoot(resolve(absRoot, p), root)) ? rel : null
               }),
           )
-        ).filter((p): p is string => p !== null)
+        ).filter(isNonNull)
       }
       return (
         paths.slice(0, LIST_DIR_MAX_ENTRIES).join('\n') +

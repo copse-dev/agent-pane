@@ -24,6 +24,7 @@
 
 import { isPromptCause, type PromptCause } from './prompt-cause.ts'
 import { memberOf } from '@copse/std/member-of.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 /** Bump when the decision line shape changes in a backwards-incompatible way. */
 export const DECISION_LOG_SCHEMA_VERSION = 1
@@ -212,10 +213,6 @@ const isDecisionVerdict = memberOf(DECISION_VERDICTS)
 
 const isStringArray: (value: unknown) => value is string[] = (value) =>
   Array.isArray(value) && value.every((item) => typeof item === 'string')
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 /** Parse one line. Returns null on malformed JSON or a non-decision line. */
 export function parseDecisionLine(raw: string): DecisionEvent | null {
