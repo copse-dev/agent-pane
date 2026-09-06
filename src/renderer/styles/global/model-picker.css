@@ -292,8 +292,17 @@
   outline: 2px solid var(--border-focus);
   outline-offset: 1px;
 }
+/* The selected model carries a row fill as well as accent text (issue #2483).
+   Text colour alone was the whole signal, and it is the one cue that does not
+   survive the theme flip: against the row's ordinary --text-primary, the dark
+   theme's neon accent stands at ΔE 51 while light's dark derivation manages 19,
+   so in light the selected row read as "the same text, very slightly warmer".
+   --bg-selected is the token whose stated job is exactly this ("selection fill
+   for list rows ... stays consistent everywhere"), and a whole-row fill does not
+   care how light or dark the accent resolves. */
 .model-picker-option.is-selected {
   color: var(--accent);
+  background: var(--bg-selected);
 }
 .model-picker-option.is-active {
   outline: 1px solid var(--border-strong);

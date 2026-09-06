@@ -108,7 +108,7 @@
   background: var(--bg-elevated);
 }
 .onboarding-primary {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: 8px 16px;

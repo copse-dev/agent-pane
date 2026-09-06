@@ -55,7 +55,7 @@
   cursor: pointer;
 }
 .ssh-prompt-submit {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--text-on-accent);
   border: none;
   border-radius: var(--radius);

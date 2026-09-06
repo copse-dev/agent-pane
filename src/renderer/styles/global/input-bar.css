@@ -410,7 +410,7 @@
   outline: 1px solid var(--danger);
 }
 .submit-btn {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: 6px 16px;
@@ -499,7 +499,7 @@
 .queued-action.queued-send,
 .queued-action.queued-send-now {
   color: var(--text-on-accent);
-  background: var(--accent);
+  background: var(--accent-fill);
   border-color: transparent;
 }
 .queued-action.queued-send:hover,
