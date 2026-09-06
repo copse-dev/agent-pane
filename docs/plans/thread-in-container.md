@@ -48,7 +48,7 @@ host                                                 guest (docker, --network no
 run dir  ~/.copse/runtimes/<id>/                     /run/copse (ro)
   run.json, attestation.json  ──────────────────▶      read by the worker
   carry-in.bundle (snapshot commit) ────────────▶      git fetch → /workspace/repo (tmpfs)
-  egress/<host>_<port>.sock  ◀── EgressBroker          socat 127.0.0.1:<port> → sock
+  egress/broker.sock  ◀── EgressBroker (allowlist)     127.0.0.1:3128 CONNECT proxy → sock
   state/  (COPSE_DIR: decision log, deferred queue) ◀  written by the gate
   out/    result.json, messages.json, carry-out.bundle ◀ written at the end
 record.json (review record)                           worker.cjs: runHeadlessAgent(...)
@@ -84,14 +84,19 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   versa, and arming begins deferral mode in the same call so a gate can never see one
   without the other. The gate consults the runtime _and_ the ledger; a matrix test
   enumerates command class × tier × unattended state.
-- **Egress is deny-by-default and named.** The container has no network interface. For each
-  allowlisted `host:port`, the host binds that name to loopback inside the guest
-  (`--add-host`), a `socat` listener forwards the port into a unix socket the host mounts
-  at `/run/copse/egress`, and the host-side `EgressBroker` dials the real origin and
-  records every connection with byte counts. The guest cannot name a destination; it can
-  only reach a socket the host already created. (`--resolve host=addr` lets the host dial a
-  different address for a name only the guest resolves, which is how a local model server
-  is reached in the tests.)
+- **Egress is deny-by-default and named.** The container has no network interface. The
+  host mounts one unix socket at `/run/copse/egress/broker.sock`; the worker starts an HTTP
+  CONNECT proxy on its own loopback (`guest-egress-proxy.ts`) and every client in the
+  guest is pointed at it through `HTTPS_PROXY`/`HTTP_PROXY` (Node's global `fetch` honours
+  them under `NODE_USE_ENV_PROXY=1`). Each connection opens the socket and writes one line,
+  `CONNECT host:port`; the host-side `EgressBroker` matches it against the run's allowlist
+  — exact `host:port` entries and `*.suffix:port` wildcards (`egress-rules.ts`) — then
+  answers `OK` and pipes bytes, or `DENY <reason>` and closes. TLS stays end to end. Every
+  connection, close and refusal is recorded with the target and byte counts, so a target
+  the guest asked for and did not get is in the review record. The guest can name any
+  destination; the host decides. (`egressResolve` lets the host dial `addr[:port]` for a
+  name only the guest resolves, which is how a scripted model server on loopback plays a
+  real origin on 443 in the tests.)
 - **No credentials in the guest except one.** The model loop needs a provider key, so the
   worker receives exactly that value in its environment, consumes it into the provider
   client, and blanks the variable before any tool can spawn a child. Git remotes, GitHub
@@ -200,8 +205,8 @@ dispatch, gate, deferral queue and carry-out):
 - **A real model.** The scripted server proves the plumbing; a real provider behind the
   broker (`--allow api.openai.com:443` with `--api-key-env`) has been designed but not run
   here — this sandbox has no provider credential. The broker forwards raw TCP so TLS is
-  end-to-end; the guest needs the origin's port bound on loopback, which
-  `--sysctl net.ipv4.ip_unprivileged_port_start=0` provides for 443.
+  end-to-end, and since A-1 the guest reaches any port through its loopback proxy, so no
+  privileged bind and no sysctl is involved.
 - **Replaying a deferral from the dialog.** The record lists what is waiting, but approving
   it (the host-side push) still needs deferred-approvals D2.
 - **Attaching from the desktop.** The run is fire-and-collect. The assessment's route —
@@ -241,11 +246,11 @@ Recorded because each cost time and will again.
   version pinned in the lockfile. `node-pty` is aliased to a throwing stub: the worker
   offers no PTY, and a missing native module at load time would otherwise stop the bundle.
 - **Unix socket paths are short, and a profile path is not.** `sun_path` is 104–108 bytes;
-  `~/Library/Application Support/…/runtimes/<id>/egress/<host>_<port>.sock` is longer and
-  the failure is a hang rather than an error. The broker refuses a path over 100 bytes and
-  the sockets live under the system temp root (`copse-egress-<id>`), mounted into the guest
-  from there, with an empty `egress` directory kept in the run dir purely as the mountpoint
-  the read-only bind cannot create.
+  `~/Library/Application Support/…/runtimes/<id>/egress/broker.sock` is longer and the
+  failure is a hang rather than an error. The broker refuses a path over 100 bytes and the
+  socket lives under the system temp root in a short digested directory
+  (`copse-cx-<10 hex>`), mounted into the guest from there, with an empty `egress`
+  directory kept in the run dir purely as the mountpoint the read-only bind cannot create.
 - **Unix-socket egress is Linux-hosted.** Docker Desktop on macOS does not share unix
   sockets across the VM boundary. The broker abstraction is what changes for macOS (a
   loopback TCP listener on the host reached through `host.docker.internal`), not the guest
@@ -290,12 +295,12 @@ reason the guest cannot run one now:
    all of that exists.
 2. **It needs egress the broker cannot express.** The catalogue's `allowedDomains` are
    wildcards — `*.anthropic.com`, `*.claude.ai`, `*.openai.com`, `*.chatgpt.com`,
-   `*.cursor.com` — and OAuth refresh moves between subdomains. `parseEgressOrigin`
-   accepts only a literal `host:port` (`thread-container.ts:123`). Worse, the entrypoint
-   starts one `socat TCP-LISTEN:<port>,bind=127.0.0.1` per origin
-   (`worker-image-files.ts:83`), so **two origins on 443 collide** and the second listener
-   dies, backgrounded and unlogged. That collision is a latent bug in the shipped broker
-   regardless of this section.
+   `*.cursor.com` — and OAuth refresh moves between subdomains. The broker as first shipped
+   accepted only a literal `host:port`. Worse, its entrypoint started one
+   `socat TCP-LISTEN:<port>,bind=127.0.0.1` per origin, so **two origins on 443 collided**
+   and the second listener died, backgrounded and unlogged. A-1 replaced that scheme
+   (decision A2) and this point is now met; it is kept here because it is why A2 looks the
+   way it does.
 3. **It runs its own tool loop.** The run's headline claim — no prompt reached a handler,
    outward effects queued for review — is a property of Copse's harness:
    `ensureShellCommandPermitted`, `decideContainedShellEffect`, and the deferral queue. An
@@ -306,7 +311,7 @@ reason the guest cannot run one now:
    be empty, and `promptsAttempted === 0` would be true for the wrong reason.
 
 Two smaller facts complete the picture. The binary is not in the image: the worker image
-installs `bubblewrap ca-certificates git ripgrep socat` and nothing else
+installs `bubblewrap ca-certificates git ripgrep` and nothing else
 (`worker-image-files.ts`), and Copse deliberately ships none of these agents
 (`acp-known-agents.ts` header). And the isolation the desktop gives an agent does not carry
 over: `acp-session-host-worker.js` is a standalone bundle (`scripts/main-bundles.mts:58`)
@@ -387,11 +392,18 @@ switch, and it stays until the phase that removes it can prove its properties.
   guest's `registeredAcpAgents`; add `harness` to the result and record. Exit gate: the
   image builds and its fingerprint moves with the agent versions; a unit test proves the
   guest would resolve the agent; the refusal is unchanged and its test still passes.
-- **A-1 — egress rework.** The CONNECT proxy and pattern allowlist (A2), with the
-  provider path migrated onto it. Exit gate: the integration test allowlists two origins
-  on 443 and reaches both; a wildcard entry admits a subdomain and refuses a sibling
-  domain; the connection log names every target. This phase is worth landing on its own —
-  it fixes the shipped 443 collision.
+- **A-1 — egress rework. Landed.** The CONNECT proxy and pattern allowlist (A2), with the
+  provider path migrated onto it: `egress-rules.ts` (the grammar, pure), `egress-broker.ts`
+  (one socket, `CONNECT`/`OK`/`DENY`, refusals logged), `guest-egress-proxy.ts` (loopback
+  proxy in the worker bundle; `CONNECT` tunnels and absolute-form plain HTTP, re-chunked
+  and streamed so server-sent events arrive as sent). `--add-host`, the sysctl and `socat`
+  are gone. Exit gate as met: at the unit tier two hosts on one port through one broker,
+  a wildcard admitting a subdomain and refusing the bare suffix and two siblings, and a
+  remapped dial matched and logged on the port the guest named; at the integration tier
+  the model is reached on guest port 443 by a wildcard rule, with the rule in the log and
+  no refusal. Two origins both _reached_ from inside the guest at the integration tier
+  waits for a second guest-side caller: the auto-run shell in the guest has no network by
+  design, so only the model loop dials out until A-2's agent does.
 - **A-2 — credentials and the permission policy.** The key by env map (A1); the
   permission handler and its record (A3). Exit gate: an integration test with a
   **scripted ACP agent** — a small stdio program speaking ACP, standing in for a real one —
@@ -453,8 +465,10 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | UI (Electron)          | e2e         | Real IPC: the dialog opens from the footer and a model without a key is refused with a readable error             | `tests/e2e/container-run-dialog.e2e.ts`                     |
 | ACP: agent resolution  | unit        | A run spec carrying an `AcpAgentConfig` makes `getAcpAgent` resolve inside the guest's settings overlay           | `container-runtime/worker-entry.test.ts` (A-0)              |
 | ACP: image bake        | unit        | The fingerprint moves with each pinned agent version; `cursor-agent` is never baked                               | `container-runtime/thread-container.test.ts` (A-0)          |
-| ACP: egress patterns   | unit        | `*.suffix` admits a subdomain and refuses a sibling; exact hosts unchanged; the target is logged                  | `container-runtime/egress-broker.test.ts` (A-1)             |
-| ACP: two 443 origins   | integration | Two allowlisted origins on the same port are both reachable through the CONNECT proxy                             | `container-runtime/thread-container.integration.test.ts`    |
+| ACP: egress grammar    | unit        | `host:port` and `*.suffix:port` parse and format; `*.com` is refused; the wildcard matches on the dot boundary    | `container-runtime/egress-rules.test.ts` (A-1)              |
+| ACP: egress patterns   | unit        | Two hosts on one port through one socket; `*.suffix` admits a subdomain, refuses the suffix and siblings; logged  | `container-runtime/egress-broker.test.ts` (A-1)             |
+| ACP: guest proxy       | unit        | Absolute-form HTTP streams an SSE body back with hop-by-hop headers dropped; CONNECT tunnels; DENY becomes a 403  | `container-runtime/guest-egress-proxy.test.ts` (A-1)        |
+| ACP: 443 in the guest  | integration | The model on guest port 443 is reached through the proxy, admitted by a wildcard rule named in the log            | `container-runtime/thread-container.integration.test.ts`    |
 | ACP: permission policy | integration | A scripted ACP agent: in-guest write allowed, outward push denied and recorded, host escape denied, harness named | `container-runtime/acp-container.integration.test.ts` (A-2) |
 | ACP: refusal           | unit        | Agents outside A6's set, and any agent without a key, are refused with a per-agent reason                         | `providers/container-provider.test.ts` (A-4)                |
 

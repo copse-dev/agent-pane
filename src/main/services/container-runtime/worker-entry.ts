@@ -29,6 +29,8 @@ import { armUnattendedRun, disarmUnattendedRun } from '../security/unattended-ru
 import { readPendingDeferrals } from '../security/deferred-approval-store.ts'
 import { storageSet } from '../storage/storage.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { GUEST_EGRESS_PROXY } from './egress-rules.ts'
+import { startGuestEgressProxy } from './guest-egress-proxy.ts'
 import type { LLMMessage } from '@shared/types/index.ts'
 
 const RUN_DIR = '/run/copse'
@@ -117,6 +119,16 @@ function finalAssistantText(messages: readonly LLMMessage[]): string {
 }
 
 async function main(): Promise<void> {
+  // First, before any client exists: the loopback proxy every outbound byte
+  // goes through. Node's env-proxy dispatcher was pointed at this address when
+  // the process started and only connects on the first request.
+  const brokerSocket = process.env['COPSE_EGRESS_SOCKET']
+  const egressProxy = brokerSocket
+    ? await startGuestEgressProxy(brokerSocket, GUEST_EGRESS_PROXY)
+    : null
+  process.stdout.write(
+    `[worker] egress proxy ${egressProxy ? `on ${egressProxy.address.host}:${String(egressProxy.address.port)}` : 'off (no broker socket)'}\n`,
+  )
   const spec = readSpec()
   const attestationText = readFileSync(join(RUN_DIR, 'attestation.json'), 'utf8')
   const attestation = parseContainerRuntimeAttestation(attestationText)
@@ -258,6 +270,7 @@ async function main(): Promise<void> {
     process.off('SIGINT', onSignal)
     disarmUnattendedRun(spec.threadId)
     await shutdownProjectSandbox()
+    await egressProxy?.close()
   }
 
   const deferrals = (

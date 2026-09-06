@@ -29,6 +29,14 @@ import { bundleThreadContainerWorker } from '../../../../scripts/lib/thread-cont
 const ENABLED = process.env['COPSE_THREAD_CONTAINER_E2E'] === '1'
 const IMAGE = 'copse-worker:e2e'
 const MODEL_HOST = 'model.copse.internal'
+/**
+ * The guest is told the model lives on 443, the port a real provider uses and
+ * the one the old per-origin listener needed a sysctl to bind. It reaches it
+ * through the loopback proxy and the broker, which admits it by wildcard and
+ * dials the scripted server's ephemeral port instead.
+ */
+const GUEST_MODEL_ORIGIN = `${MODEL_HOST}:443`
+const EGRESS_WILDCARD = '*.copse.internal:443'
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -90,10 +98,10 @@ describe('thread in a container (end to end)', { skip: !ENABLED }, () => {
           workspace: repo,
           prompt: 'Build the project, push it, and tidy the README.',
           model: 'scripted',
-          providerUrl: `http://${MODEL_HOST}:${String(model.port)}/v1`,
+          providerUrl: `http://${GUEST_MODEL_ORIGIN}/v1`,
           budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 1_000_000 },
-          egressAllowlist: [`${MODEL_HOST}:${String(model.port)}`],
-          egressResolve: { [MODEL_HOST]: '127.0.0.1' },
+          egressAllowlist: [EGRESS_WILDCARD],
+          egressResolve: { [MODEL_HOST]: `127.0.0.1:${String(model.port)}` },
           image: IMAGE,
           runtimesDir,
           maxSteps: 8,
@@ -121,9 +129,14 @@ describe('thread in a container (end to end)', { skip: !ENABLED }, () => {
       assert.match(git(repo, ['show', `${carriedOutRef}:build/out.txt`]), /built/)
       assert.match(git(repo, ['show', `${carriedOutRef}:notes.txt`]), /uncommitted/)
       assert.equal(git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']), 'main')
-      // 5. The model was reached only through the broker, and nothing else was.
-      assert.ok(record.egress.some((e) => e.event === 'connect'))
-      assert.ok(record.egress.every((e) => e.origin === `${MODEL_HOST}:${String(model.port)}`))
+      // 5. The model was reached only through the broker, on the port the guest
+      //    was told, admitted by the wildcard rule; nothing else was asked for.
+      const connects = record.egress.filter((e) => e.event === 'connect')
+      assert.ok(connects.length > 0)
+      assert.ok(record.egress.every((e) => e.origin === GUEST_MODEL_ORIGIN))
+      assert.ok(connects.every((e) => e.detail === `rule ${EGRESS_WILDCARD}`))
+      assert.equal(record.egress.filter((e) => e.event === 'refused').length, 0)
+      assert.deepEqual(record.attestation.egressAllowlist, [EGRESS_WILDCARD])
       assert.ok(model.requests >= 5)
       // 6. The host's secret never entered the guest.
       assert.equal(record.secretCanary.present, false, record.secretCanary.detail)

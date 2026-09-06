@@ -10,7 +10,7 @@
  * review, and the host fetches the result as commits it can inspect before
  * anything is pushed anywhere.
  *
- * Pure builders (`dockerRunArgs`, `buildAttestation`, `parseEgressOrigin`, …)
+ * Pure builders (`dockerRunArgs`, `buildAttestation`, `parseEgressRule`, …)
  * are separated from the orchestration so the exact flags a run uses are unit
  * tested, not just observed.
  */
@@ -37,7 +37,15 @@ import type {
 } from '@shared/types/unattended-run.ts'
 import type { ThreadContainerRecord, ThreadContainerResult } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { EgressBroker, type EgressOrigin } from './egress-broker.ts'
+import { EgressBroker } from './egress-broker.ts'
+import {
+  GUEST_EGRESS_PROXY,
+  BROKER_SOCKET_NAME,
+  findEgressRule,
+  formatEgressRule,
+  parseEgressRule,
+  type EgressRule,
+} from './egress-rules.ts'
 import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
 
 const execFileAsync = promisify(execFile)
@@ -81,7 +89,10 @@ export interface ThreadContainerRequest {
   budgets: UnattendedRunBudgets
   /** `host:port` origins the broker forwards to. Nothing else is reachable. */
   egressAllowlist: string[]
-  /** Guest-facing origin name → address the host dials, for names only the guest knows. */
+  /**
+   * Guest-facing origin name → `addr` or `addr:port` the host dials instead, for
+   * names only the guest knows (a scripted origin on loopback playing a real one).
+   */
   egressResolve?: Record<string, string>
   image?: string
   /** Where run directories live; defaults to `<COPSE_DIR>/runtimes`. */
@@ -120,16 +131,14 @@ export function newRuntimeId(): string {
   return `run-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`
 }
 
-export function parseEgressOrigin(value: string): EgressOrigin {
-  const match = /^([a-z0-9.-]+):(\d{1,5})$/i.exec(value.trim())
-  if (!match) throw new Error(`Egress origin must be host:port, got "${value}"`)
-  const port = Number(match[2])
-  if (port < 1 || port > 65535) throw new Error(`Egress port out of range: ${value}`)
-  return { host: match[1] ?? '', port }
+/** A concrete `host:port` a provider URL resolves to, checked against the rules. */
+export interface ProviderOrigin {
+  host: string
+  port: number
 }
 
 /** The origin a provider URL resolves to, so it can be checked against the allowlist. */
-export function providerOrigin(url: string): EgressOrigin {
+export function providerOrigin(url: string): ProviderOrigin {
   const parsed = new URL(url)
   const port = parsed.port ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80
   return { host: parsed.hostname, port }
@@ -150,30 +159,13 @@ export function egressSocketDir(runtimeId: string): string {
   return join(tmpdir(), `copse-cx-${digest}`)
 }
 
-/**
- * The socket file for an origin: a fixed 15 bytes, whatever the origin is.
- *
- * The readable `openrouter.ai_443.sock` form was the other half of the overflow
- * above, and it grew with the hostname — an extra allowlisted origin on a long
- * corporate host could exceed the cap on its own, on Linux too. A digest keeps
- * the budget flat and knowable; the origin it stands for is recorded in the
- * run's `spec.egress` and in every broker log line.
- */
-export function egressSocketName(origin: EgressOrigin): string {
-  const digest = createHash('sha256')
-    .update(`${origin.host}:${String(origin.port)}`)
-    .digest('hex')
-    .slice(0, 10)
-  return `${digest}.sock`
-}
-
 export interface DockerRunInput {
   runtimeId: string
   image: string
   runDir: string
   /** Short host path holding the broker sockets; see {@link egressSocketDir}. */
   egressDir: string
-  egress: EgressOrigin[]
+  egress: EgressRule[]
   apiKeyEnv: string | null
   memoryLimit: string
   pidsLimit: number
@@ -217,17 +209,6 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     '--network=none',
     '--stop-timeout=30',
   ]
-  if (input.egress.length > 0) {
-    // Each allowed origin resolves to loopback inside the guest, where the
-    // entrypoint listens and forwards to the host broker's unix socket. The
-    // broker, not the guest, decides where that connection really goes.
-    args.push('--sysctl=net.ipv4.ip_unprivileged_port_start=0')
-    for (const origin of input.egress) {
-      // A loopback literal already points at the guest's own listener.
-      if (origin.host === '127.0.0.1' || origin.host === 'localhost') continue
-      args.push('--add-host', `${origin.host}:127.0.0.1`)
-    }
-  }
   args.push(
     '--volume',
     `${input.runDir}:${GUEST_RUN_DIR}:ro`,
@@ -241,13 +222,34 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     `COPSE_DIR=${GUEST_RUN_DIR}/state`,
     '--env',
     'HOME=/home/copse',
-    '--env',
-    // `host:port=socket`: the guest listens on the port and forwards into the
-    // socket this side named, rather than deriving a name that could overflow.
-    `COPSE_EGRESS_ORIGINS=${input.egress
-      .map((o) => `${o.host}:${String(o.port)}=${egressSocketName(o)}`)
-      .join(',')}`,
   )
+  if (input.egress.length > 0) {
+    // One broker socket, and a loopback proxy in the guest that opens it per
+    // request. Every client in the guest is pointed at that proxy: Node's own
+    // fetch (the worker's SDK calls) through NODE_USE_ENV_PROXY, and any child
+    // that honours the conventional variables — git, curl, an agent CLI. Both
+    // spellings, because the tools are split on which one they read. NO_PROXY
+    // is emptied so nothing decides to go direct; there is nowhere direct to go.
+    const proxy = `http://${GUEST_EGRESS_PROXY.host}:${String(GUEST_EGRESS_PROXY.port)}`
+    args.push(
+      '--env',
+      `COPSE_EGRESS_SOCKET=${GUEST_RUN_DIR}/egress/${BROKER_SOCKET_NAME}`,
+      '--env',
+      `HTTPS_PROXY=${proxy}`,
+      '--env',
+      `HTTP_PROXY=${proxy}`,
+      '--env',
+      `https_proxy=${proxy}`,
+      '--env',
+      `http_proxy=${proxy}`,
+      '--env',
+      'NO_PROXY=',
+      '--env',
+      'no_proxy=',
+      '--env',
+      'NODE_USE_ENV_PROXY=1',
+    )
+  }
   // The provider key is the one secret the guest holds, scoped to this run and
   // passed by value so the *name* of the host variable never leaks either.
   if (input.apiKeyEnv) args.push('--env', input.apiKeyEnv)
@@ -274,7 +276,7 @@ export function buildAttestation(
     pidsLimit: input.pidsLimit,
     memoryLimit: input.memoryLimit,
     network: input.egress.length > 0 ? 'brokered' : 'none',
-    egressAllowlist: input.egress.map((o) => `${o.host}:${String(o.port)}`),
+    egressAllowlist: input.egress.map(formatEgressRule),
     hostMounts: [
       GUEST_RUN_DIR,
       `${GUEST_RUN_DIR}/state`,
@@ -800,17 +802,13 @@ export async function runThreadInContainer(
   const workspace = resolve(request.workspace)
   const runtimesDir = resolve(request.runtimesDir ?? join(copseDataRoot(), 'runtimes'))
   const runDir = join(runtimesDir, runtimeId)
-  const egress = request.egressAllowlist.map((entry) => {
-    const origin = parseEgressOrigin(entry)
-    const connectHost = request.egressResolve?.[origin.host]
-    return connectHost !== undefined ? { ...origin, connectHost } : origin
-  })
+  const egress = request.egressAllowlist.map(parseEgressRule)
   if (request.providerUrl === undefined && request.productProvider === undefined) {
     throw new Error('A run needs either a provider URL or a product-resolved provider')
   }
   if (request.providerUrl !== undefined) {
     const provider = providerOrigin(request.providerUrl)
-    if (!egress.some((o) => o.host === provider.host && o.port === provider.port)) {
+    if (findEgressRule(egress, provider.host, provider.port) === null) {
       throw new Error(
         `Provider origin ${provider.host}:${String(provider.port)} is not in the egress allowlist; the guest could never reach it`,
       )
@@ -875,7 +873,10 @@ export async function runThreadInContainer(
   writeFileSync(join(runDir, 'run.json'), `${JSON.stringify(spec, null, 2)}\n`)
   writeFileSync(join(runDir, 'attestation.json'), `${JSON.stringify(attestation, null, 2)}\n`)
 
-  const broker = new EgressBroker(egressDir, egress, egressSocketName)
+  const broker = new EgressBroker(egressDir, {
+    rules: egress,
+    ...(request.egressResolve ? { resolve: request.egressResolve } : {}),
+  })
   await broker.start()
   const startedAt = Date.now()
   let containerExit: number | null

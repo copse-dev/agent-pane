@@ -32,7 +32,6 @@ RUN apt-get update \\
       ca-certificates \\
       git \\
       ripgrep \\
-      socat \\
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid "\${WORKER_UID}" --shell /bin/bash copse
@@ -50,40 +49,19 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 `
 
 /**
- * Guest entrypoint. Runs as the unprivileged worker user; the container has no
- * network interface. For each origin the host allowlisted, `COPSE_EGRESS_ORIGINS`
- * names `host:port=socket` triples: the hostname the host already pointed at
- * loopback, the port to listen on, and the broker socket to forward into. The
- * host names the socket because a unix path is capped near 104 bytes and a
- * hostname is not — see `egressSocketName`. A socat listener on that port
- * forwards into the socket, which is the only route out of the guest.
+ * Guest entrypoint. Runs as the unprivileged worker user with no network
+ * interface. Egress is the worker's own loopback proxy over the one broker
+ * socket the host mounted, so the entrypoint no longer listens for anything:
+ * the addresses the worker and its children use are in the environment Docker
+ * was given.
  */
 export const WORKER_ENTRYPOINT_SH = `#!/bin/sh
 # Guest entrypoint for a Copse container run. Runs as the unprivileged worker
-# user; the container has no network interface. For each origin the host
-# allowlisted, COPSE_EGRESS_ORIGINS names host:port=socket triples whose
-# hostnames the host already pointed at loopback; a socat listener on that port
-# forwards into the named broker socket, the only route out of the guest. The
-# host picks the socket file name: a unix socket path is capped near 104 bytes
-# and a hostname is not, so deriving it here from the host would break on a long
-# origin or a long temp root.
+# user; the container has no network interface. Outbound traffic goes through
+# the worker's own loopback proxy, which speaks to the host broker over the one
+# unix socket named by COPSE_EGRESS_SOCKET; HTTPS_PROXY and friends already
+# point every client here at it, so there is nothing to start first.
 set -eu
-
-RUN_DIR=/run/copse
-if [ -n "\${COPSE_EGRESS_ORIGINS:-}" ]; then
-  old_ifs=$IFS
-  IFS=','
-  for origin in $COPSE_EGRESS_ORIGINS; do
-    hostport=\${origin%%=*}
-    name=\${origin#*=}
-    port=\${hostport##*:}
-    case "$name" in
-      */*|''|..) echo "[entrypoint] refusing egress socket name: $name" >&2; exit 1 ;;
-    esac
-    socat "TCP-LISTEN:\${port},bind=127.0.0.1,fork,reuseaddr" "UNIX-CONNECT:$RUN_DIR/egress/\${name}" &
-  done
-  IFS=$old_ifs
-fi
 
 exec node /app/worker.cjs
 `

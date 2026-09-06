@@ -1601,7 +1601,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       tokenCeiling: z.number().int().min(1_000).max(100_000_000),
     }),
     extraEgress: z
-      .array(z.string().regex(/^[a-z0-9.-]+:\d{1,5}$/i))
+      .array(z.string().regex(/^(?:\*\.)?[a-z0-9.-]+:\d{1,5}$/i))
       .max(16)
       .optional(),
   })

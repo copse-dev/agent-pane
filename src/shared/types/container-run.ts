@@ -8,7 +8,8 @@ import type { ContainerRuntimeAttestation, UnattendedRunBudgets } from './unatte
 export interface EgressLogEntry {
   at: number
   origin: string
-  event: 'connect' | 'close' | 'error'
+  /** `refused`: the guest asked for a target the allowlist does not admit. */
+  event: 'connect' | 'close' | 'error' | 'refused'
   bytesToOrigin?: number
   bytesFromOrigin?: number
   detail?: string

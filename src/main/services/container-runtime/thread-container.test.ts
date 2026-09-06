@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
+import { BROKER_SOCKET_NAME } from './egress-rules.ts'
 import {
   buildAttestation,
   waitForContainer,
@@ -12,9 +13,7 @@ import {
   createSnapshotCommit,
   dockerRunArgs,
   egressSocketDir,
-  egressSocketName,
   fetchCarryOut,
-  parseEgressOrigin,
   providerOrigin,
   secretCanaryCheck,
   WORKER_UID,
@@ -29,7 +28,7 @@ function input(overrides: Partial<DockerRunInput> = {}): DockerRunInput {
     image: 'copse-worker:test',
     runDir: '/tmp/copse-runs/run-test',
     egressDir: '/tmp/copse-egress-run-test',
-    egress: [{ host: 'model.copse.internal', port: 8080 }],
+    egress: [{ host: 'model.copse.internal', wildcard: false, port: 8080 }],
     apiKeyEnv: null,
     memoryLimit: '4g',
     pidsLimit: 512,
@@ -54,16 +53,6 @@ function initRepo(): string {
 }
 
 describe('egress origins', () => {
-  it('parses host:port and rejects anything else', () => {
-    assert.deepEqual(parseEgressOrigin('api.example.com:443'), {
-      host: 'api.example.com',
-      port: 443,
-    })
-    assert.throws(() => parseEgressOrigin('api.example.com'))
-    assert.throws(() => parseEgressOrigin('http://x:1'))
-    assert.throws(() => parseEgressOrigin('x:70000'))
-  })
-
   it('derives the origin a provider URL needs', () => {
     assert.deepEqual(providerOrigin('http://model.copse.internal:8080/v1'), {
       host: 'model.copse.internal',
@@ -75,37 +64,16 @@ describe('egress origins', () => {
     })
   })
 
-  it('names sockets safely', () => {
-    // No separator, no traversal, no hostname — whatever the origin looks like.
-    for (const host of ['a.b-c', 'we/ird', '../../etc', 'x'.repeat(300)]) {
-      const name = egressSocketName({ host, port: 443 })
-      assert.match(name, /^[0-9a-f]{10}\.sock$/)
-    }
-    // Distinct origins get distinct sockets, including same host, other port.
-    const names = new Set(
-      [
-        { host: 'openrouter.ai', port: 443 },
-        { host: 'api.openai.com', port: 443 },
-        { host: 'openrouter.ai', port: 8443 },
-      ].map(egressSocketName),
-    )
-    assert.equal(names.size, 3)
-  })
-
-  it('keeps the socket path inside sun_path on a macOS temp root', () => {
-    // The overflow this replaced, measured on the reported failure: a per-user
-    // macOS temp root, the full runtime id in the directory and the hostname in
-    // the file name came to 104 bytes against a 104-byte cap.
+  it('keeps the broker socket path inside sun_path on a macOS temp root', () => {
+    // The overflow this design replaced, measured on the reported failure: a
+    // per-user macOS temp root, the full runtime id in the directory and the
+    // hostname in the file name came to 104 bytes against a 104-byte cap. There
+    // is one socket now, with a fixed name, so the budget no longer depends on
+    // how many origins a run allows or how long their names are.
     const macTmp = '/var/folders/r5/qll_28695_q_2qr2kk7lv5gm0000gn/T'
     const dir = join(macTmp, basename(egressSocketDir('run-mtpvs161-9a6506')))
-    const path = join(dir, egressSocketName({ host: 'openrouter.ai', port: 443 }))
+    const path = join(dir, BROKER_SOCKET_NAME)
     assert.ok(Buffer.byteLength(path) <= 100, `${path} is ${String(Buffer.byteLength(path))} bytes`)
-    // And it stays inside the cap for an origin no one budgeted for.
-    const long = join(
-      dir,
-      egressSocketName({ host: `${'gateway.'.repeat(20)}internal`, port: 443 }),
-    )
-    assert.ok(Buffer.byteLength(long) <= 100)
   })
 })
 
@@ -129,11 +97,27 @@ describe('dockerRunArgs', () => {
 
   it('binds each allowed origin to loopback and nothing else', () => {
     const args = dockerRunArgs(input())
-    assert.ok(args.includes('--add-host'))
-    assert.equal(args[args.indexOf('--add-host') + 1], 'model.copse.internal:127.0.0.1')
-    assert.ok(args.includes('--sysctl=net.ipv4.ip_unprivileged_port_start=0'))
+    // No per-origin plumbing: no host aliases, no unprivileged-port sysctl.
+    // Every client in the guest is pointed at the loopback proxy instead, and
+    // the proxy at the one broker socket.
+    assert.ok(!args.includes('--add-host'))
+    assert.ok(!args.some((a) => a.startsWith('--sysctl')))
+    const env = (name: string): string | undefined =>
+      args
+        .find((a, i) => args[i - 1] === '--env' && a.startsWith(`${name}=`))
+        ?.slice(name.length + 1)
+    assert.equal(env('COPSE_EGRESS_SOCKET'), '/run/copse/egress/broker.sock')
+    assert.equal(env('HTTPS_PROXY'), 'http://127.0.0.1:3128')
+    assert.equal(env('HTTP_PROXY'), 'http://127.0.0.1:3128')
+    assert.equal(env('https_proxy'), 'http://127.0.0.1:3128')
+    assert.equal(env('NO_PROXY'), '')
+    assert.equal(env('NODE_USE_ENV_PROXY'), '1')
     const none = dockerRunArgs(input({ egress: [] }))
-    assert.ok(!none.includes('--add-host'))
+    assert.equal(
+      none.some((a) => a.startsWith('HTTPS_PROXY=') || a.startsWith('COPSE_EGRESS_SOCKET=')),
+      false,
+      'a run with no egress gets no proxy and no socket',
+    )
     assert.ok(!none.some((a) => a.startsWith('--sysctl')))
   })
 
