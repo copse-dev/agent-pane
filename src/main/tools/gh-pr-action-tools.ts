@@ -69,7 +69,7 @@ async function runAction(
 export const ghCreatePrTool = defineTool({
   name: 'gh_pr_create',
   description:
-    'Open a pull request for the current branch. Copse appends the "Co-Authored-By: Copse" attribution trailer to the body and links the PR to this thread (the sidebar PR chip) from the created PR itself — prefer this over `run_shell gh pr create`, which does neither. Mutating action — asks for approval.',
+    'Push the current branch and open a pull request for it. Copse appends the "Co-Authored-By: Copse" attribution trailer to the body and links the PR to this thread (the sidebar PR chip) from the created PR itself — prefer this over separate `git push` and `run_shell gh pr create` calls. An explicit head is assumed to be pushed already. Mutating action — asks for approval.',
   parameters: z.object({
     title: z.string().min(1).describe('Pull request title.'),
     body: z
@@ -84,7 +84,9 @@ export const ghCreatePrTool = defineTool({
     head: z
       .string()
       .optional()
-      .describe('Branch holding the changes. Omit to use the current branch. Must be pushed.'),
+      .describe(
+        'Branch holding the changes. Omit to push and use the current branch. An explicit branch must already be pushed.',
+      ),
     draft: z.boolean().optional().default(false).describe('Open the PR as a draft.'),
     owner: z
       .string()

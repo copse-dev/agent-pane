@@ -207,7 +207,7 @@ export async function getPrWorkspaceContext(
     hasMergeConflicts,
     hasCiFailures,
     changeStats,
-    canOpenPr: await canOpenPrForBranch(root, branch, hasOpenPr, changeStats !== null),
+    canOpenPr: await canOpenPrForBranch(root, branch, hasOpenPr),
   }
 }
 
@@ -217,22 +217,20 @@ export async function getPrWorkspaceContext(
  * Deliberately conservative — the offer is only shown when every part of it is
  * true, because a chip that opens a dialog and then fails at `gh pr create` is
  * worse than no chip. In particular the branch must not be the default one
- * (there is nothing to open a PR *from*), and committed work counts as well as
- * uncommitted: an agent that ends its turn with a commit empties `git status`,
- * which is exactly the moment the user wants this button.
+ * (there is nothing to open a PR *from*), and there must be a commit for GitHub
+ * to put in the PR. Uncommitted-only work still belongs in the Changes chip;
+ * offering Create PR for it can only end in "no commits between".
  */
 async function canOpenPrForBranch(
   root: string,
   branch: string | null,
   hasOpenPr: boolean,
-  hasWorkingChanges: boolean,
 ): Promise<boolean> {
   // No `gh` means "we cannot tell whether a PR exists" as much as "we cannot
   // open one" — either way, do not offer.
   if (hasOpenPr || !branch || branch === 'HEAD' || !isGhAvailable()) return false
   const defaultBranch = await getDefaultBranch(root)
   if (defaultBranch && branch === defaultBranch) return false
-  if (hasWorkingChanges) return true
   // `hasOpenPr` is false here, so getCommittedChanges compares against the
   // default branch — commits this branch has and the base does not.
   const committed = await getCommittedChanges(root, { hasOpenPr: () => Promise.resolve(false) })

@@ -1429,11 +1429,18 @@ describe('formatGithubWritePrompt', () => {
     assert.equal(prompt.body, JSON.stringify({ weird: true }, null, 2))
   })
 
-  it('shows the PR title (and explicit target repo) for gh_pr_create', () => {
+  it('shows the PR title and the implicit branch push for gh_pr_create', () => {
     assert.deepEqual(formatGithubWritePrompt('gh_pr_create', { title: 'Fix the parser' }), {
       title: 'Open pull request on GitHub?',
-      body: '“Fix the parser”',
+      body: 'Push the current branch, then open “Fix the parser”.',
     })
+    assert.equal(
+      formatGithubWritePrompt('gh_pr_create', {
+        title: 'Fix the parser',
+        head: 'feature/already-pushed',
+      }).body,
+      'Open “Fix the parser” from feature/already-pushed.',
+    )
     assert.equal(
       formatGithubWritePrompt('gh_pr_create', {
         title: 'Fix the parser',
