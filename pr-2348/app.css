@@ -8771,6 +8771,12 @@ dialog.settings-overlay::backdrop {
   width: 100%;
   font: inherit;
 }
+.container-run-agent-note {
+  margin: calc(-1 * var(--spacing-sm)) 0 var(--spacing-md);
+}
+.container-run-agent-note[hidden] {
+  display: none;
+}
 .container-run-budgets {
   display: grid;
   grid-template-columns: 1fr 1fr;

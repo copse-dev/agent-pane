@@ -262525,14 +262525,11 @@ function formatDuration(from2, to) {
   if (seconds2 < 90) return `${String(seconds2)}s`;
   return `${String(Math.round(seconds2 / 60))} min`;
 }
-async function loadRunModelOptions(api3, current) {
-  const [all, runnable] = await Promise.all([
-    fetchModelOptions(api3, current),
-    fetchModelOptions(api3, current, { includeAgentModels: false })
-  ]);
+async function loadRunModelOptions(fetch) {
+  const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })]);
   const canRun = new Set(runnable.map((option2) => option2.value));
   return all.map(
-    (option2) => canRun.has(option2.value) ? option2 : { ...option2, disabled: true, label: `${option2.label} \u2014 needs its own login` }
+    (option2) => canRun.has(option2.value) ? option2 : { ...option2, disabled: true, label: `${option2.label} \u2014 not available in a container` }
   );
 }
 function mountContainerRunControl(api3, context, onStateChanged) {
@@ -262614,8 +262611,14 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       renderEgressHint();
     });
     const modelField = uiField({ label: "Model", control: modelSelect });
+    const agentNote = el("p", { class: "field-hint container-run-agent-note", hidden: "" });
+    agentNote.textContent = "Agent models (Claude Code, Cursor, Codex\u2026) sign in as you on this device. An unattended container is given no credentials, so they cannot run there \u2014 pick the same model from its provider instead, where there's an API key in Settings.";
     modelPicker = mountModelSelectPicker(modelSelect, {
-      loadOptions: (current) => loadRunModelOptions(api3, current),
+      loadOptions: async (current) => {
+        const options2 = await loadRunModelOptions((opts) => fetchModelOptions(api3, current, opts));
+        agentNote.hidden = !options2.some((option2) => option2.disabled === true);
+        return options2;
+      },
       ariaLabel: "Model for the unattended run",
       loadOnMount: false
     });
@@ -262696,6 +262699,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         ...quotesDraft ? {} : { hint: "Nothing in the composer to run \u2014 describe the task here." }
       }),
       modelField,
+      agentNote,
       el(
         "div",
         { class: "container-run-budgets" },
