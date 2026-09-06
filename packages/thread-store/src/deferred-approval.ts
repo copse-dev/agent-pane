@@ -127,9 +127,9 @@ export class DeferredApprovalError extends Error {
   }
 }
 
-export function isDeferredApprovalError(value: unknown): value is DeferredApprovalError {
-  return value instanceof DeferredApprovalError
-}
+export const isDeferredApprovalError: (value: unknown) => value is DeferredApprovalError = (
+  value,
+) => value instanceof DeferredApprovalError
 
 const isStatus = memberOf(DEFERRAL_STATUSES)
 

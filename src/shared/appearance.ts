@@ -57,6 +57,5 @@ export function migrateLegacyAppearanceDefaults(
   }
 }
 
-export function isUiTintStrength(value: unknown): value is UiTintStrength {
-  return value === 'off' || value === 'subtle' || value === 'medium' || value === 'strong'
-}
+export const isUiTintStrength: (value: unknown) => value is UiTintStrength = (value) =>
+  value === 'off' || value === 'subtle' || value === 'medium' || value === 'strong'

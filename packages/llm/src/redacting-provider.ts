@@ -1,9 +1,9 @@
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { redactMessages } from './redact-secrets.ts'
 
-function hasLastUsage(provider: LLMProvider): provider is LLMProvider & { lastUsage?: unknown } {
-  return 'lastUsage' in provider
-}
+const hasLastUsage: (provider: LLMProvider) => provider is LLMProvider & { lastUsage?: unknown } = (
+  provider,
+) => 'lastUsage' in provider
 
 /**
  * Wrap a remote (cloud) {@link LLMProvider} so that every message is run through

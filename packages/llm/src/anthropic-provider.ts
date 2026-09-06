@@ -313,13 +313,7 @@ function toAnthropicContent(
   })
 }
 
-function isImageMediaType(
+const isImageMediaType: (
   value: unknown,
-): value is 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' {
-  return (
-    value === 'image/png' ||
-    value === 'image/jpeg' ||
-    value === 'image/gif' ||
-    value === 'image/webp'
-  )
-}
+) => value is 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' = (value) =>
+  value === 'image/png' || value === 'image/jpeg' || value === 'image/gif' || value === 'image/webp'

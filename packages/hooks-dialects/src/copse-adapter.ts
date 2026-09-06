@@ -771,9 +771,8 @@ function copseEnvelope(
   return base
 }
 
-function isHookDecision(value: unknown): value is HookDecision {
-  return value === 'allow' || value === 'deny' || value === 'ask'
-}
+const isHookDecision: (value: unknown) => value is HookDecision = (value) =>
+  value === 'allow' || value === 'deny' || value === 'ask'
 
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {

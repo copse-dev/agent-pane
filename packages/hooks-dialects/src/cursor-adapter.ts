@@ -970,9 +970,8 @@ function firstString(...values: unknown[]): string | undefined {
   return undefined
 }
 
-function isHookDecision(value: unknown): value is HookDecision {
-  return value === 'allow' || value === 'deny' || value === 'ask'
-}
+const isHookDecision: (value: unknown) => value is HookDecision = (value) =>
+  value === 'allow' || value === 'deny' || value === 'ask'
 
 function outcomeFromResponse(parsed: unknown): {
   outcome: BlockingHookOutcome | null

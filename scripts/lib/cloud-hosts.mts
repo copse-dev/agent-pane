@@ -397,9 +397,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isUnknownArray(value: unknown): value is unknown[] {
-  return Array.isArray(value)
-}
+const isUnknownArray: (value: unknown) => value is unknown[] = (value) => Array.isArray(value)
 
 function requiredString(record: Record<string, unknown>, key: string): string {
   const value = record[key]

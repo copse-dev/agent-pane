@@ -24,9 +24,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function isUnknownArray(value: unknown): value is unknown[] {
-  return Array.isArray(value)
-}
+const isUnknownArray: (value: unknown) => value is unknown[] = (value) => Array.isArray(value)
 
 function stringField(value: unknown, name: string): string | undefined {
   if (!isRecord(value)) return undefined
