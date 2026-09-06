@@ -68,10 +68,6 @@ invariants test, so the surface changes only deliberately. Delivered:
 
 Findings from generating it, which shape the next steps:
 
-- `src/shared/types/ipc.ts` (`IpcInvokeMap` / `IpcEventMap`) covered 111 of
-  the 237 invoke channels and 36 of 53 event channels the preload binds, and
-  nothing imports it. It was not the source of truth, and has since been
-  deleted. One dead entry (`theme:changed`) was removed first.
 - Every channel the preload names has a literal `ipcMain.handle` / `ipcMain.on`
   under `src/main` (255 of 255; `perf:record` is main-only, used by the perf
   bridge), and every event channel has a literal sender. The handler table is
@@ -115,9 +111,9 @@ the headless event envelope.
 
 ## Decisions
 
-1. **Generate from the preload bindings, not `ipc.ts`.** The preload is what
-   runs and is now type-checked against `ApiClient`; `ipc.ts` was partial and
-   unused. Rationale recorded in `scripts/lib/api-protocol.mts`.
+1. **Generate from the preload bindings.** The preload is what runs and is now
+   type-checked against `ApiClient`. Rationale recorded in
+   `scripts/lib/api-protocol.mts`.
 2. **One integer version, bumped on breaking change only.** Additive changes
    regenerate the schema without a bump. Mirrors `HEADLESS_PROTOCOL_VERSION`.
 3. **Reject a version mismatch at the handshake** rather than negotiating down:
