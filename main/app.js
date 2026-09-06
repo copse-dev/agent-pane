@@ -27182,12 +27182,6 @@ var init_state = __esm({
   }
 });
 
-// src/shared/types/ipc.ts
-var init_ipc = __esm({
-  "src/shared/types/ipc.ts"() {
-  }
-});
-
 // packages/agent/src/wire-types.ts
 var init_wire_types = __esm({
   "packages/agent/src/wire-types.ts"() {
@@ -27273,7 +27267,6 @@ var init_types = __esm({
     init_llm();
     init_layout();
     init_state();
-    init_ipc();
     init_tools();
     init_provider();
     init_skills();
