@@ -38,6 +38,7 @@ import type {
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
+import { memberOf } from '@copse/std/member-of.ts'
 
 /**
  * Claude's per-hook timeout default (decision 13; H4). Claude Code documents a
@@ -81,9 +82,7 @@ export const CLAUDE_WIRED_HOOK_EVENTS: readonly DiscoveredClaudeEvent[] = [
   'SubagentStop',
 ]
 
-function isDiscoveredClaudeEvent(value: string): value is DiscoveredClaudeEvent {
-  return CLAUDE_WIRED_HOOK_EVENTS.some((event) => event === value)
-}
+const isDiscoveredClaudeEvent = memberOf(CLAUDE_WIRED_HOOK_EVENTS)
 
 /** A parsed Claude command hook ready to spawn. */
 interface DiscoveredClaudeHook {
@@ -138,11 +137,7 @@ export function projectClaudeLocalSettingsPath(workspaceRoot: string): string {
   return join(workspaceRoot, '.claude', 'settings.local.json')
 }
 
-function isPermissionDecision(value: unknown): value is ClaudePermissionDecision {
-  return (
-    typeof value === 'string' && (CLAUDE_PERMISSION_DECISIONS as readonly string[]).includes(value)
-  )
-}
+const isPermissionDecision = memberOf(CLAUDE_PERMISSION_DECISIONS)
 
 /**
  * Whether a Claude matcher group applies to `toolName`.

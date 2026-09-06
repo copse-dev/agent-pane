@@ -9,6 +9,7 @@
  * Everything here is I/O-free and unit-tested; `hook-file-check.mts` supplies
  * stdin, the linters, and the filesystem.
  */
+import { memberOf } from '@copse/std/member-of.ts'
 
 /**
  * Which agent is running the hook. It decides only how a finding is *reported*,
@@ -31,9 +32,7 @@ export type HookDialect = 'claude' | 'copse' | 'cursor' | 'cli'
 
 export const HOOK_DIALECTS: readonly HookDialect[] = ['claude', 'copse', 'cursor', 'cli']
 
-export function isHookDialect(value: string): value is HookDialect {
-  return (HOOK_DIALECTS as readonly string[]).includes(value)
-}
+export const isHookDialect: (value: string) => value is HookDialect = memberOf(HOOK_DIALECTS)
 
 /** One tool's complaint about the edited file. */
 export type Finding = {

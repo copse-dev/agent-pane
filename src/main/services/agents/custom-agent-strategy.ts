@@ -191,7 +191,7 @@ export function customAgentInvocationTask(outboundPrompt: UserContent): string {
     typeof outboundPrompt === 'string'
       ? outboundPrompt
       : outboundPrompt
-          .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+          .filter((block) => block.type === 'text')
           .map((block) => block.text)
           .join('\n')
   return text.trim() || BARE_INVOCATION_TASK

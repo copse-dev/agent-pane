@@ -53,6 +53,7 @@ import { attachImageExpand } from '../attachments/image-expand.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { memberOf } from '@shared/member-of.ts'
 import { isNonNull } from '@shared/nullish.ts'
 
 // A roadmap item is one `Roadmap`-typed knowledge note. Derive the shapes from
@@ -76,9 +77,7 @@ const STATUS_OPTIONS: readonly RoadmapStatus[] = [
  * title strikethrough only — see docs/ui-taste.md "Roadmap list rows". */
 const LIST_STATUS_BADGES = new Set<RoadmapStatus>(['blocked', 'conflicts', 'archived'])
 
-function isRoadmapStatus(value: unknown): value is RoadmapStatus {
-  return STATUS_OPTIONS.some((status) => status === value)
-}
+const isRoadmapStatus = memberOf(STATUS_OPTIONS)
 
 function roadmapModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()

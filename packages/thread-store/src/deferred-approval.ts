@@ -23,6 +23,7 @@
  */
 
 import { isPromptCause, type PromptCause } from './prompt-cause.ts'
+import { memberOf } from '@copse/std/member-of.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
 /** Bump when the queue-entry shape changes in a backwards-incompatible way. */
@@ -33,7 +34,9 @@ export const DEFERRED_APPROVAL_SCHEMA_VERSION = 1
  * terminal states record what they decided, not whether the replay then
  * succeeded — that is the replay's own business (plan Decision 5).
  */
-export type DeferralStatus = 'pending' | 'approved' | 'rejected'
+const DEFERRAL_STATUSES = ['pending', 'approved', 'rejected'] as const
+
+export type DeferralStatus = (typeof DEFERRAL_STATUSES)[number]
 
 export interface DeferredApproval {
   v: number
@@ -125,15 +128,11 @@ export class DeferredApprovalError extends Error {
   }
 }
 
-export function isDeferredApprovalError(value: unknown): value is DeferredApprovalError {
-  return value instanceof DeferredApprovalError
-}
+export const isDeferredApprovalError: (value: unknown) => value is DeferredApprovalError = (
+  value,
+) => value instanceof DeferredApprovalError
 
-const STATUSES: ReadonlySet<string> = new Set(['pending', 'approved', 'rejected'])
-
-function isStatus(value: unknown): value is DeferralStatus {
-  return typeof value === 'string' && STATUSES.has(value)
-}
+const isStatus = memberOf(DEFERRAL_STATUSES)
 
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string'

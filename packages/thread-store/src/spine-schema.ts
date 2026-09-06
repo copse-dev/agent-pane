@@ -450,15 +450,14 @@ function isSpinePermissionDecisionLine(value: unknown): value is SpinePermission
   )
 }
 
-function isMachineContinuationResult(value: unknown): value is MachineContinuationResult {
-  return (
-    value === 'completed' ||
-    value === 'duplicate' ||
-    value === 'stale' ||
-    value === 'budget-exhausted' ||
-    value === 'failed'
-  )
-}
+const isMachineContinuationResult: (value: unknown) => value is MachineContinuationResult = (
+  value,
+) =>
+  value === 'completed' ||
+  value === 'duplicate' ||
+  value === 'stale' ||
+  value === 'budget-exhausted' ||
+  value === 'failed'
 
 function isTurnOutcome(value: unknown): value is TurnOutcome {
   if (!isRecord(value)) return false
@@ -515,15 +514,12 @@ function isSpineModelSelectedLine(value: unknown): value is SpineModelSelectedLi
   )
 }
 
-function isPlanSpineAction(value: unknown): value is PlanSpineAction {
-  return (
-    value === 'create' ||
-    value === 'revise' ||
-    value === 'comment' ||
-    value === 'approve' ||
-    value === 'abandon'
-  )
-}
+const isPlanSpineAction: (value: unknown) => value is PlanSpineAction = (value) =>
+  value === 'create' ||
+  value === 'revise' ||
+  value === 'comment' ||
+  value === 'approve' ||
+  value === 'abandon'
 
 function isSpinePlanLine(value: unknown): value is SpinePlanLine {
   if (!isRecord(value)) return false

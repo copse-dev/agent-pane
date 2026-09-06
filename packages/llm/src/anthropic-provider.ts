@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { withAppAttribution } from './app-attribution.ts'
+import { memberOf } from '@copse/std/member-of.ts'
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import { anthropicParameterFields, type ModelParameters } from './model-parameters.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
@@ -313,13 +314,7 @@ function toAnthropicContent(
   })
 }
 
-function isImageMediaType(
-  value: unknown,
-): value is 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' {
-  return (
-    value === 'image/png' ||
-    value === 'image/jpeg' ||
-    value === 'image/gif' ||
-    value === 'image/webp'
-  )
-}
+/** The image media types Anthropic's content blocks accept. */
+const IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
+
+const isImageMediaType = memberOf(IMAGE_MEDIA_TYPES)

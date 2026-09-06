@@ -321,7 +321,7 @@ function lmStudioToolParameters(
 ): NonNullable<LMStudioTool['function']['parameters']> {
   const properties = isRecord(parameters['properties']) ? parameters['properties'] : {}
   const required = Array.isArray(parameters['required'])
-    ? parameters['required'].filter((value): value is string => typeof value === 'string')
+    ? parameters['required'].filter((value) => typeof value === 'string')
     : undefined
   const defs = isRecord(parameters['$defs']) ? parameters['$defs'] : undefined
   const additionalProperties =

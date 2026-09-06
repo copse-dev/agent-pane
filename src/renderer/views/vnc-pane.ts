@@ -87,9 +87,8 @@ interface VncTab {
   session: VncSessionController
 }
 
-function isVncCredentialType(type: string): type is VncCredentialType {
-  return type === 'username' || type === 'password' || type === 'target'
-}
+const isVncCredentialType: (type: string) => type is VncCredentialType = (type) =>
+  type === 'username' || type === 'password' || type === 'target'
 
 function mountVncSession(
   controlsRoot: HTMLElement,

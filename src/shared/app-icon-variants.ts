@@ -1,3 +1,5 @@
+import { memberOf } from '@shared/member-of.ts'
+
 export const APP_ICON_VARIANTS = [
   'rose',
   'pink-lady',
@@ -83,6 +85,4 @@ export const APP_ICON_VARIANT_SCHEMES: Record<AppIconVariant, AppIconScheme> = {
   lagoon: { start: '#06B6D4', end: '#14B8A6', bg: '#041A1C' },
 }
 
-export function isAppIconVariant(value: unknown): value is AppIconVariant {
-  return typeof value === 'string' && (APP_ICON_VARIANTS as readonly string[]).includes(value)
-}
+export const isAppIconVariant = memberOf(APP_ICON_VARIANTS)
