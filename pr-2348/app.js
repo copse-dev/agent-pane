@@ -26320,6 +26320,9 @@ function createDemoApi(scenario, options2 = {}) {
       getRun: (threadId) => resolved(
         scenario.containerRun && scenario.containerRun.threadId === threadId ? scenario.containerRun : null
       ),
+      modelAvailability: (models) => resolved(
+        Object.fromEntries(models.map((model) => [model, "not available in the demo"]))
+      ),
       onRunChanged: subscribe
     },
     fs: {
@@ -262519,29 +262522,8 @@ var init_guarded_yolo_control = __esm({
 });
 
 // src/shared/container-acp-agents.ts
-function containerAcpAgent(agentId) {
-  const id39 = canonicalAcpAgentId(agentId);
-  return CONTAINER_ACP_AGENTS.find((agent) => agent.id === id39 || agent.aliases?.includes(id39)) ?? null;
-}
-function containerAcpKeySlugs() {
-  return [...new Set(CONTAINER_ACP_AGENTS.map((agent) => agent.keySlug))];
-}
-function containerAcpAvailability(agentId, keysConfigured) {
-  const capable = containerAcpAgent(agentId);
-  if (capable) {
-    return keysConfigured[capable.keySlug] === true ? { runnable: true, reason: null } : { runnable: false, reason: `needs ${aOrAn(capable.keyLabel)} API key in Settings` };
-  }
-  const known = findAcpCatalogEntry(agentId);
-  if (known?.setup && !known.envHints?.length) {
-    return { runnable: false, reason: "signs in through a browser; no API-key path" };
-  }
-  return { runnable: false, reason: "not carried by the worker image" };
-}
 function containerAcpAgentTitles() {
   return CONTAINER_ACP_AGENTS.map((agent) => findAcpCatalogEntry(agent.id)?.title ?? agent.id);
-}
-function aOrAn(word) {
-  return `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
 }
 var CONTAINER_ACP_AGENTS;
 var init_container_acp_agents = __esm({
@@ -262590,18 +262572,15 @@ function formatDuration(from2, to) {
   if (seconds2 < 90) return `${String(seconds2)}s`;
   return `${String(Math.round(seconds2 / 60))} min`;
 }
-async function loadRunModelOptions(fetch, keysConfigured) {
-  const [all, runnable, keys3] = await Promise.all([
-    fetch(),
-    fetch({ includeAgentModels: false }),
-    keysConfigured()
-  ]);
+async function loadRunModelOptions(fetch, availability) {
+  const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })]);
   const canRun = new Set(runnable.map((option2) => option2.value));
+  const agentRows = all.filter((option2) => !canRun.has(option2.value));
+  const reasons = agentRows.length > 0 ? await availability(agentRows.map((o3) => o3.value)) : {};
   return all.map((option2) => {
     if (canRun.has(option2.value)) return option2;
-    const agentId = parseAcpModel(option2.value);
-    const availability = agentId ? containerAcpAvailability(agentId, keys3) : { runnable: false, reason: "not available in a container" };
-    return availability.runnable ? option2 : { ...option2, disabled: true, label: `${option2.label} \u2014 ${availability.reason ?? ""}` };
+    const reason = Object.hasOwn(reasons, option2.value) ? reasons[option2.value] : "not available in a container";
+    return reason === null || reason === void 0 ? option2 : { ...option2, disabled: true, label: `${option2.label} \u2014 ${reason}` };
   });
 }
 function agentModelsNote() {
@@ -262694,14 +262673,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       loadOptions: async (current) => {
         const options2 = await loadRunModelOptions(
           (opts) => fetchModelOptions(api3, current, opts),
-          async () => Object.fromEntries(
-            await Promise.all(
-              containerAcpKeySlugs().map(async (slug2) => [
-                slug2,
-                await api3.settings.getKey(slug2)
-              ])
-            )
-          )
+          (models) => api3.container.modelAvailability(models)
         );
         agentNote.hidden = !options2.some(
           (option2) => option2.disabled === true || parseAcpModel(option2.value) !== null
