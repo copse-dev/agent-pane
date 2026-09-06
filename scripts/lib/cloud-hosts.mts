@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { nonEmptyStringOr } from '../../src/shared/unknown-value.mts'
+import { isRecord } from '../../src/shared/unknown-value.mts'
 
 export const AWS_REGION_ENV = 'AWS_REGION'
 export const DEFAULT_AMI_SSM_PARAMETER =
@@ -392,10 +393,6 @@ export function shellQuote(value: string): string {
 // ---------------------------------------------------------------------------
 // JSON parsing helpers (AWS/Scaleway CLI output)
 // ---------------------------------------------------------------------------
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 const isUnknownArray: (value: unknown) => value is unknown[] = (value) => Array.isArray(value)
 

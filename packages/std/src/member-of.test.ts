@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { memberOf } from './member-of.ts'
+import { keyOf, memberOf } from './member-of.ts'
 
 /**
  * `memberOf` holds the codebase's only membership `is` assertion, so every
@@ -189,5 +189,64 @@ describe('memberOf narrowing', () => {
     // is not assignable to this annotation.
     const annotated: (value: unknown) => value is Theme = memberOf(THEMES)
     assert.equal(annotated('dark'), true)
+  })
+})
+
+/** The eight keys every object literal inherits and none of them declares. */
+const PROTOTYPE_KEYS = [
+  'toString',
+  'constructor',
+  'valueOf',
+  'hasOwnProperty',
+  '__proto__',
+  'isPrototypeOf',
+  'propertyIsEnumerable',
+  'toLocaleString',
+] as const
+
+describe('keyOf', () => {
+  const SCHEMAS = { model: 1, appIconVariant: 2 } as const
+  const isSchemaKey = keyOf(SCHEMAS)
+
+  it("accepts exactly the record's own keys", () => {
+    for (const key of Object.keys(SCHEMAS)) {
+      assert.equal(isSchemaKey(key), true, `rejected its own key ${key}`)
+    }
+    assert.equal(isSchemaKey('nope'), false)
+    assert.equal(isSchemaKey(''), false)
+  })
+
+  it('rejects every inherited prototype key', () => {
+    // The whole reason this exists rather than `key in RECORD`, which answers
+    // true for all eight and hands the caller an inherited function.
+    for (const key of PROTOTYPE_KEYS) {
+      assert.equal(isSchemaKey(key), false, `accepted inherited key ${key}`)
+      assert.equal(key in SCHEMAS, true, `${key} was expected to be inherited`)
+    }
+  })
+
+  it('rejects numbers and symbols that are not own keys', () => {
+    assert.equal(isSchemaKey(0), false)
+    assert.equal(isSchemaKey(Symbol.iterator), false)
+  })
+
+  it('follows the record it was built from for keys added later', () => {
+    // Unlike memberOf, which snapshots into a Set: the record is read on each
+    // call, so a lazily-populated registry keeps working.
+    const registry: Record<string, number> = { first: 1 }
+    const isRegistered = keyOf(registry)
+    assert.equal(isRegistered('second'), false)
+    registry['second'] = 2
+    assert.equal(isRegistered('second'), true)
+  })
+
+  it("narrows to the record's key union", () => {
+    const value: string = 'model'
+    if (isSchemaKey(value)) {
+      const key: 'model' | 'appIconVariant' = value
+      assert.equal(SCHEMAS[key], 1)
+    } else {
+      assert.fail('expected the predicate to accept an own key')
+    }
   })
 })
