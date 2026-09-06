@@ -884,7 +884,7 @@ export function parseScalewayIps(raw: string, defaultZone: string): ScalewayFlex
       // gives us; unlike volumes there is no detach timestamp to age against.
       attached: isRecord(value['server']),
       id: stringFromPath(value['id']),
-      tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      tags: Array.isArray(tags) ? tags.filter((tag) => typeof tag === 'string') : [],
       zone: stringFromPath(value['zone']) || defaultZone,
     }
   })
@@ -940,7 +940,7 @@ export function parseScalewayBlockVolumes(raw: string, defaultZone: string): Sca
       referenceCount: Array.isArray(references) ? references.length : -1,
       sizeBytes: typeof size === 'number' ? size : 0,
       status: stringFromPath(value['status']),
-      tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      tags: Array.isArray(tags) ? tags.filter((tag) => typeof tag === 'string') : [],
       zone: stringFromPath(value['zone']) || defaultZone,
     }
   })

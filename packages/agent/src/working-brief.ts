@@ -9,7 +9,7 @@ export function workingBriefFromUserContent(content: UserContent): string | null
     return trimmed ? trimmed.slice(0, WORKING_BRIEF_MAX_LEN) : null
   }
   const text = content
-    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+    .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
     .trim()

@@ -246,7 +246,7 @@ export function isReadOnlySimpleCommand(segment: string): boolean {
   } catch {
     return false
   }
-  if (tokens.length === 0 || !tokens.every((token): token is string => typeof token === 'string')) {
+  if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string')) {
     return false
   }
 

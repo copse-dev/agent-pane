@@ -55,7 +55,7 @@ export function uiActions(...args: Array<HTMLElement | UiActionsOptions>): Copse
   const hasOptions = last !== undefined && isUiActionsOptions(last)
   const options: UiActionsOptions = hasOptions ? last : {}
   const buttons = (hasOptions ? args.slice(0, -1) : args).filter(
-    (node): node is HTMLElement => node instanceof HTMLElement,
+    (node) => node instanceof HTMLElement,
   )
 
   const row = document.createElement(CopseUiActions.tagName)

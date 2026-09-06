@@ -537,18 +537,10 @@ export function main(): void {
 
   const verdicts = changed.map((p) => classify(p, scope))
   const kept = verdicts.filter((v) => v.decision === 'keep')
-  const ignored = verdicts.filter(
-    (v): v is Extract<PathVerdict, { decision: 'ignore' }> => v.decision === 'ignore',
-  )
-  const flapping = verdicts.filter(
-    (v): v is Extract<PathVerdict, { decision: 'flap' }> => v.decision === 'flap',
-  )
-  const contested = verdicts.filter(
-    (v): v is Extract<PathVerdict, { decision: 'contested' }> => v.decision === 'contested',
-  )
-  const outOfScope = verdicts.filter(
-    (v): v is Extract<PathVerdict, { decision: 'out-of-scope' }> => v.decision === 'out-of-scope',
-  )
+  const ignored = verdicts.filter((v) => v.decision === 'ignore')
+  const flapping = verdicts.filter((v) => v.decision === 'flap')
+  const contested = verdicts.filter((v) => v.decision === 'contested')
+  const outOfScope = verdicts.filter((v) => v.decision === 'out-of-scope')
 
   console.log(
     `screenshot filter: ${String(changed.length)} changed, ${String(kept.length)} kept (real), ` +
