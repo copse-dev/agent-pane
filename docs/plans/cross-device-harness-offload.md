@@ -38,7 +38,7 @@ This is not aspiration; it is measurable on `main` today.
 
 | Fact                                                  | Evidence                                                                                                                                                                                                                                                                                                |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The agent runtime does not need Electron              | 30 of 479 non-test files in `src/main` name `electron`, 13 of those for types only, so 17 import it at runtime — and none are on the agent, tool, hook, sandbox or thread-store path. [`library-splits.md`](library-splits.md) and [`client-server-split.md`](client-server-split.md) count the same 30 |
+| The agent runtime does not need Electron              | 30 of 480 non-test files in `src/main` name `electron`, 13 of those for types only, so 17 import it at runtime — and none are on the agent, tool, hook, sandbox or thread-store path. [`library-splits.md`](library-splits.md) and [`client-server-split.md`](client-server-split.md) count the same 30 |
 | A headless host already runs the _whole product loop_ | `src/main/services/headless-agent-host.ts` builds the real registry, skills, MCP, hooks, supervisor and permission policy from an explicit profile, with no renderer and no IPC                                                                                                                         |
 | That claim is enforced, not asserted                  | `scripts/verify-agent-path-import.mts` bundles the registry, system prompt and headless host for plain Node and constructs them with `electron` poisoned; `scripts/module-boundaries.test.ts` holds `packages ↛ src`                                                                                    |
 | The main process already runs as plain Node           | The Tauri sidecar (`src/sidecar/`) runs `src/main/index.ts` byte-identical against an `electron` shim, with IPC over a loopback WebSocket                                                                                                                                                               |
@@ -50,8 +50,9 @@ Every seam a remote host would need to rebind is already an injection point:
 output sink, `SecretCipher`, `ElectronAppRuntime`, and `configureThreadStore`.
 
 The honest qualification: **no main-process code drives any of this.** The only non-test
-caller of `runHeadlessAgent` is `scripts/autonomy-regression-agent.mts`. The runtime is
-portable and unused.
+caller of `runHeadlessAgent` is `scripts/autonomy-regression-agent.mts`;
+`scripts/verify-agent-path-import.mts` imports it without calling it, purely to prove the
+graph loads. The runtime is portable and unused.
 
 ## Where execution runs today
 
