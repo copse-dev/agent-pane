@@ -43,4 +43,13 @@ describe('resolveContainerProvider', () => {
   it('refuses a model it cannot place', () => {
     assert.throws(() => resolveContainerProvider('mystery-model'), /cannot resolve a provider/)
   })
+
+  it('says why an agent-backed selection cannot run in a container', () => {
+    // The picker offers these (greyed out), so the refusal has to explain
+    // itself rather than read as an internal resolver miss: an agent signs in
+    // as the user, and the guest is given no credentials by design.
+    for (const model of ['acp:claude-acp', 'remote-agent:anthropic#x', 'plugin-model:foo']) {
+      assert.throws(() => resolveContainerProvider(model), /signed in as you|credentials/)
+    }
+  })
 })

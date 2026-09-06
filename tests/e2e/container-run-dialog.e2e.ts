@@ -52,14 +52,14 @@ describe('unattended container run dialog', function () {
     const task = dialog.$('.container-run-prompt')
     await expect(task).toHaveValue('Clear the lint backlog and open a PR.')
     expect(await task.getAttribute('readonly')).not.toBe(null)
-    // The model is a choice, not a label, and it defaults to the thread's. This
-    // fixture seeds no provider keys, so the option list legitimately resolves
-    // to just that model — the picker must stay usable rather than blank. The
-    // populated list is covered in the browser tier, which has a provider.
-    const model = dialog.$('.container-run-model')
-    expect(await model.getTagName()).toBe('select')
-    await expect(model).toHaveValue('claude-sonnet-4-6')
-    expect(await model.$$('option').length).toBeGreaterThanOrEqual(1)
+    // The model is the shared searchable picker, over a hidden native select
+    // that carries the value, defaulting to the thread's model. This fixture
+    // seeds no provider keys, so what matters is that it still names the
+    // thread's model rather than going blank.
+    await expect(dialog.$('.container-run-model')).toHaveValue('claude-sonnet-4-6')
+    await expect(
+      dialog.$('.model-picker-trigger[aria-label="Model for the unattended run"]'),
+    ).toBeDisplayed()
     expect(await dialog.$('.container-run-model-hint').getText()).toContain('scoped to the run')
     await expect(dialog.$('.container-run-minutes')).toHaveValue('120')
     await expect(dialog.$('.container-run-start')).toBeEnabled()

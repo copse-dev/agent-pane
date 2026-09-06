@@ -8,6 +8,7 @@ import {
   type ModelOption,
   type ModelOptionsApi,
 } from './model-options.ts'
+import { mountModelSelectPicker, type ModelSelectPicker } from './model-picker.ts'
 import { createOverlayDialog, type OverlayDialog } from './dialog-shell.ts'
 import { showErrorToast, showToast } from './toast.ts'
 
@@ -68,49 +69,37 @@ function formatDuration(from: number, to: number): string {
 }
 
 /**
- * Fill the run's model `<select>` from a fetched option list.
+ * The model roster for a container run: the same catalogue the composer and
+ * Settings show, with everything the guest cannot actually run marked
+ * unavailable rather than hidden.
  *
- * Exported for its own test: a picker is only useful if it survives the shapes
- * the list actually arrives in — empty (no provider configured, which is the
- * normal state in both e2e fixtures), grouped, and not containing the model the
- * thread is already on. In every case the current model must stay selected and
- * selectable, because it is what the run would use.
+ * Agent-backed selections (ACP agents, remote agents, plugin agents) are the
+ * ones it cannot run. They are separate programs that authenticate as the user
+ * — an OAuth login in `$HOME` or a vendor API key — and an unattended container
+ * deliberately holds neither (`docs/plans/unattended-runs.md`, decision 3: no
+ * credentials in the guest). Hiding them would leave the picker quietly
+ * different from every other model picker in the app; offering them would end
+ * in the service refusing the run. Showing them greyed out, with the reason,
+ * is the honest middle.
+ *
+ * The split is derived rather than hardcoded: `includeAgentModels: false` is
+ * already the product's own answer to "models that can execute a task
+ * in-process", so this stays correct as that set changes.
  */
-export function fillModelSelect(
-  select: HTMLSelectElement,
-  options: readonly ModelOption[],
+export async function loadRunModelOptions(
+  api: ModelOptionsApi,
   current: string,
-): void {
-  // Nothing to offer: keep whatever row is already there rather than blanking
-  // the control and leaving the run with no model to name.
-  if (options.length === 0) return
-  clear(select)
-  const groups = new Map<string, HTMLElement>()
-  for (const option of options) {
-    const node = el(
-      'option',
-      { value: option.value, ...(option.disabled === true ? { disabled: '' } : {}) },
-      option.label,
-    )
-    if (option.group === undefined) {
-      select.append(node)
-      continue
-    }
-    let group = groups.get(option.group)
-    if (!group) {
-      group = el('optgroup', { label: option.group })
-      groups.set(option.group, group)
-      select.append(group)
-    }
-    group.append(node)
-  }
-  // A thread on an agent model has no row here (agents are filtered out), so
-  // keep the current value selectable rather than silently switching the run
-  // onto whatever happens to sort first.
-  if (!options.some((option) => option.value === current)) {
-    select.prepend(el('option', { value: current }, modelDisplayLabel(current)))
-  }
-  select.value = current
+): Promise<ModelOption[]> {
+  const [all, runnable] = await Promise.all([
+    fetchModelOptions(api, current),
+    fetchModelOptions(api, current, { includeAgentModels: false }),
+  ])
+  const canRun = new Set(runnable.map((option) => option.value))
+  return all.map((option) =>
+    canRun.has(option.value)
+      ? option
+      : { ...option, disabled: true, label: `${option.label} — needs its own login` },
+  )
 }
 
 export function mountContainerRunControl(
@@ -133,6 +122,11 @@ export function mountContainerRunControl(
    * memory only, which matches the run registry — it is session-only too.
    */
   let lastPrompt = ''
+  /**
+   * The arming form is rebuilt on every render, so the picker mounted against
+   * the previous select has to be torn down or it leaks its menu listeners.
+   */
+  let modelPicker: ModelSelectPicker | null = null
 
   // ── Banner ────────────────────────────────────────────────────────────
   const text = el('span', { class: 'container-run-text' })
@@ -188,6 +182,10 @@ export function mountContainerRunControl(
   function renderDialog(): void {
     if (!overlay?.isOpen()) return
     const run = activeRun()
+    // Both faces replace the whole dialog, so the picker mounted by a previous
+    // arming form is about to be detached: drop it before its select goes.
+    modelPicker?.destroy()
+    modelPicker = null
     clear(overlay.dialog)
     overlay.dialog.append(run ? statusView(run) : armForm())
   }
@@ -212,12 +210,15 @@ export function mountContainerRunControl(
       task.classList.add('is-readonly')
     }
 
+    // The same searchable picker the composer and Settings use, over a native
+    // select that stays the value carrier. Rolling a plain <select> here gave a
+    // second, worse way to choose a model in the same app.
     const modelSelect = el('select', {
       class: 'container-run-model',
-      'aria-label': 'Model for the unattended run',
+      name: 'containerRunModel',
     })
-    // The thread's model is the default and is always offered, so the picker is
-    // usable before the option list resolves — and still usable if it fails.
+    // The thread's model is the default and is always present, so the control
+    // names a model before the option list resolves — and still does if it fails.
     let chosenModel = context.getModel()
     modelSelect.append(el('option', { value: chosenModel }, modelDisplayLabel(chosenModel)))
     modelSelect.value = chosenModel
@@ -225,13 +226,18 @@ export function mountContainerRunControl(
       chosenModel = modelSelect.value
       renderEgressHint()
     })
-    void fetchModelOptions(api, chosenModel, { includeAgentModels: false })
-      .then((options) => {
-        fillModelSelect(modelSelect, options, chosenModel)
-      })
-      .catch((error: unknown) => {
-        console.error('[container-run] could not list models:', error)
-      })
+    // The field has to exist before the picker mounts: `mountModelSelectPicker`
+    // inserts its trigger with `select.after(...)`, which is a no-op while the
+    // select still has no parent.
+    const modelField = uiField({ label: 'Model', control: modelSelect })
+    modelPicker = mountModelSelectPicker(modelSelect, {
+      loadOptions: (current) => loadRunModelOptions(api, current),
+      ariaLabel: 'Model for the unattended run',
+      loadOnMount: false,
+    })
+    void modelPicker.refresh(chosenModel).catch((error: unknown) => {
+      console.error('[container-run] could not list models:', error)
+    })
 
     const minutes = el('input', {
       type: 'number',
@@ -319,7 +325,7 @@ export function mountContainerRunControl(
           ? {}
           : { hint: 'Nothing in the composer to run — describe the task here.' }),
       }),
-      uiField({ label: 'Model', control: modelSelect }),
+      modelField,
       el(
         'div',
         { class: 'container-run-budgets' },
@@ -551,6 +557,8 @@ export function mountContainerRunControl(
     refresh,
     destroy: (): void => {
       unsubscribe()
+      modelPicker?.destroy()
+      modelPicker = null
       overlay?.dialog.remove()
       overlay = null
     },

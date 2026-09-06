@@ -1,4 +1,9 @@
 import { OPENROUTER_BASE_URL, isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
+import {
+  ACP_MODEL_PREFIX,
+  PLUGIN_MODEL_PREFIX,
+  REMOTE_AGENT_MODEL_PREFIX,
+} from '@copse/llm/reserved-prefixes.ts'
 import { extraProviderForModel, extraProviderModelId } from '@copse/llm/extra-providers.ts'
 import { LM_STUDIO_MODEL_IDS, resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
 import { getLmStudioApiKey, getSetting, resolveApiKey } from '../storage/settings.ts'
@@ -97,5 +102,24 @@ export function resolveContainerProvider(model: string): ContainerProviderPlan {
     const url = 'https://api.openai.com/v1'
     return { mode: 'openai-compatible', model, url, apiKey, egress: originOf(url) }
   }
+  // Agent-backed selections are the common way to land here, and the reason is
+  // worth saying out loud: an ACP, remote or plugin agent is a separate program
+  // that authenticates as the user, from an OAuth login in `$HOME` or its own
+  // vendor key. An unattended container holds neither by design
+  // (`docs/plans/unattended-runs.md`, decision 3) and checks that it does not.
+  if (isAgentBackedModel(model)) {
+    throw new Error(
+      `${model} runs as its own agent process signed in as you, and an unattended container is not given your credentials. Pick a model with an API key in Settings.`,
+    )
+  }
   throw new Error(`Container runs cannot resolve a provider for model "${model}"`)
+}
+
+/** Selections that run an external agent process rather than a provider client. */
+function isAgentBackedModel(model: string): boolean {
+  return (
+    model.startsWith(ACP_MODEL_PREFIX) ||
+    model.startsWith(REMOTE_AGENT_MODEL_PREFIX) ||
+    model.startsWith(PLUGIN_MODEL_PREFIX)
+  )
 }

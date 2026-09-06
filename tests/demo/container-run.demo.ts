@@ -39,12 +39,17 @@ describe('unattended container run (browser-hosted)', () => {
     await expect(dialog.$('.container-run-start')).toBeDisabled()
     await expect(dialog.$('.container-run-minutes')).toHaveValue('120')
     await expect(dialog.$('.container-run-tokens')).toHaveValue('2000000')
-    // The model is a choice, not a label, defaulting to the thread's. The demo
-    // API serves no provider models, so the list is that one row here; the
-    // grouping and fallback shapes are pinned in container-run-control.test.ts.
-    const model = dialog.$('.container-run-model')
-    expect(await model.getTagName()).toBe('select')
-    await expect(model).toHaveValue('lmstudio:qwen/qwen3.6-35b-a3b')
+    // The model is the same searchable picker the composer and Settings use,
+    // over a hidden native select that carries the value, defaulting to the
+    // thread's model.
+    await expect(dialog.$('.container-run-model')).toHaveValue('lmstudio:qwen/qwen3.6-35b-a3b')
+    const trigger = dialog.$('.model-picker-trigger[aria-label="Model for the unattended run"]')
+    await expect(trigger).toBeDisplayed()
+    await trigger.click()
+    // A filter box is the point of reusing it: the roster is searchable rather
+    // than a flat native dropdown.
+    await expect(dialog.$('.model-picker-filter')).toBeDisplayed()
+    await browser.keys('Escape')
     const hint = await dialog.$('.container-run-model-hint').getText()
     expect(hint).toContain('endpoint')
     expect(hint).toContain('scoped to the run')
