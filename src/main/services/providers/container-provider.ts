@@ -66,6 +66,35 @@ function originOf(url: string): string {
   return `${parsed.hostname}:${String(port)}`
 }
 
+/**
+ * A model the container cannot run, with the short reason the dialog puts on
+ * the row beside the full sentence a failed start shows.
+ */
+export class ContainerModelUnavailable extends Error {
+  readonly reason: string
+
+  constructor(message: string, reason: string) {
+    super(message)
+    this.name = 'ContainerModelUnavailable'
+    this.reason = reason
+  }
+}
+
+/**
+ * Why a model cannot run in a container, or null when it can — decided by the
+ * resolver itself, so the dialog's greyed rows and a refused start can never
+ * disagree about which key counts (stored in Settings, or in the environment).
+ */
+export function explainContainerModel(model: string): string | null {
+  try {
+    resolveContainerProvider(model)
+    return null
+  } catch (error) {
+    if (error instanceof ContainerModelUnavailable) return error.reason
+    return error instanceof Error ? error.message : String(error)
+  }
+}
+
 export function resolveContainerProvider(model: string): ContainerProviderPlan {
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
@@ -129,8 +158,9 @@ export function resolveContainerProvider(model: string): ContainerProviderPlan {
   // vendor key. An unattended container holds neither by design
   // (`docs/plans/unattended-runs.md`, decision 3) and checks that it does not.
   if (isAgentBackedModel(model)) {
-    throw new Error(
+    throw new ContainerModelUnavailable(
       `${model} runs as its own agent process signed in as you, and an unattended container is not given your credentials. Pick a model with an API key in Settings.`,
+      'not available in a container',
     )
   }
   throw new Error(`Container runs cannot resolve a provider for model "${model}"`)
@@ -145,8 +175,9 @@ export function resolveContainerProvider(model: string): ContainerProviderPlan {
 function resolveAcpHarness(model: string, agentId: string): ContainerProviderPlan {
   const agent = getAcpAgent(agentId)
   if (!agent) {
-    throw new Error(
+    throw new ContainerModelUnavailable(
       `ACP agent "${agentId}" is not configured or is disabled; add it in Settings → ACP agents.`,
+      'not configured in Settings',
     )
   }
   const capable = containerAcpAgent(agent.id)
@@ -156,8 +187,9 @@ function resolveAcpHarness(model: string, agentId: string): ContainerProviderPla
     capable ? { [capable.keySlug]: Boolean(apiKey) } : {},
   )
   if (!capable || !apiKey || !availability.runnable) {
-    throw new Error(
+    throw new ContainerModelUnavailable(
       `${agent.title} cannot run in a container: it ${availability.reason ?? 'is not available'}. The container is given one API key for the run, never your login.`,
+      availability.reason ?? 'not available in a container',
     )
   }
   const domains = findAcpCatalogEntry(agent.id)?.sandbox?.allowedDomains ?? []

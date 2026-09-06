@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.test-shim.ts'
-import { resolveContainerProvider } from './container-provider.ts'
+import { explainContainerModel, resolveContainerProvider } from './container-provider.ts'
 
 const CLAUDE_AGENT: AcpAgentConfig = {
   id: 'claude-acp',
@@ -103,6 +103,41 @@ describe('resolveContainerProvider', () => {
         () => resolveContainerProvider('acp:claude-acp'),
         /needs an Anthropic API key in Settings/,
       )
+    })
+
+    it('accepts a key from the environment, as the run would', async () => {
+      await setSetting('registeredAcpAgents', [CLAUDE_AGENT])
+      const previous = process.env['ANTHROPIC_API_KEY']
+      process.env['ANTHROPIC_API_KEY'] = 'sk-ant-from-env'
+      try {
+        assert.equal(explainContainerModel('acp:claude-acp'), null)
+        const plan = resolveContainerProvider('acp:claude-acp')
+        assert.equal(plan.mode, 'acp')
+        assert.equal(plan.apiKey, 'sk-ant-from-env')
+      } finally {
+        if (previous === undefined) delete process.env['ANTHROPIC_API_KEY']
+        else process.env['ANTHROPIC_API_KEY'] = previous
+      }
+    })
+
+    it('explains a row with the short per-agent reason the dialog shows', async () => {
+      await setSetting('registeredAcpAgents', [CLAUDE_AGENT, CURSOR_AGENT, CUSTOM_AGENT])
+      assert.equal(
+        explainContainerModel('acp:claude-acp#claude-opus-5'),
+        'needs an Anthropic API key in Settings',
+      )
+      assert.equal(
+        explainContainerModel('acp:cursor'),
+        'signs in through a browser; no API-key path',
+      )
+      assert.equal(explainContainerModel('acp:my-own-agent'), 'not carried by the worker image')
+      assert.equal(explainContainerModel('acp:never-registered'), 'not configured in Settings')
+      assert.equal(
+        explainContainerModel('remote-agent:anthropic#x'),
+        'not available in a container',
+      )
+      setApiKey('anthropic', 'sk-ant-run')
+      assert.equal(explainContainerModel('acp:claude-acp#claude-opus-5'), null)
     })
 
     it('refuses an agent that only signs in through a browser, whatever keys exist', async () => {

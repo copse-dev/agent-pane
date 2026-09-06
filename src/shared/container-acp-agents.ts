@@ -74,11 +74,6 @@ export function containerAcpAgent(agentId: string): ContainerAcpAgent | null {
   )
 }
 
-/** The Settings key slugs the runnable agents draw on, deduplicated. */
-export function containerAcpKeySlugs(): string[] {
-  return [...new Set(CONTAINER_ACP_AGENTS.map((agent) => agent.keySlug))]
-}
-
 /** `package@version` for each baked agent, in table order — the image's build argument. */
 export function containerAcpAgentSpecs(): string[] {
   return CONTAINER_ACP_AGENTS.map((agent) => `${agent.npmPackage}@${agent.version}`)

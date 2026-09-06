@@ -2,11 +2,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import { parseAcpModel } from '@shared/acp.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
-import {
-  containerAcpAgentTitles,
-  containerAcpAvailability,
-  containerAcpKeySlugs,
-} from '@shared/container-acp-agents.ts'
+import { containerAcpAgentTitles } from '@shared/container-acp-agents.ts'
 import { clear, el } from '../dom/helpers.ts'
 import { uiActions, uiField } from '../ui/index.ts'
 import {
@@ -82,36 +78,35 @@ function formatDuration(from: number, to: number): string {
  *
  * Provider-backed models (`includeAgentModels: false`) always run: the guest
  * is given that provider's key. An agent model runs only when the worker
- * image carries the agent and its vendor's key is in Settings
+ * image carries the agent and its vendor's key is available
  * (`container-acp-agents.ts`) — then the run gives the agent that key, scoped
  * to the run, never the desktop login. The reason on a disabled row is the
  * per-agent one, so "needs a Gemini API key" reads as the thing to go and do
  * and "signs in through a browser" reads as the thing that cannot be done.
  *
- * `keysConfigured` answers *presence* per key slug — the same question the
- * resolver asks before it starts a run — not the validated-provider set the
- * composer's picker uses, which needs a live probe of each key and would grey
- * out an agent whose key is simply unverified right now.
+ * `availability` is the main-process resolver's own verdict for the agent
+ * rows, asked in one round trip. Nothing here decides which key counts: a
+ * key in Settings and one in the environment both run, and the same code
+ * that would refuse the start is the code that greys the row.
  */
 export async function loadRunModelOptions(
   fetch: (opts?: FetchModelOptionsOpts) => Promise<ModelOption[]>,
-  keysConfigured: () => Promise<Record<string, boolean>>,
+  availability: (models: string[]) => Promise<Record<string, string | null>>,
 ): Promise<ModelOption[]> {
-  const [all, runnable, keys] = await Promise.all([
-    fetch(),
-    fetch({ includeAgentModels: false }),
-    keysConfigured(),
-  ])
+  const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })])
   const canRun = new Set(runnable.map((option) => option.value))
+  const agentRows = all.filter((option) => !canRun.has(option.value))
+  const reasons = agentRows.length > 0 ? await availability(agentRows.map((o) => o.value)) : {}
   return all.map((option) => {
     if (canRun.has(option.value)) return option
-    const agentId = parseAcpModel(option.value)
-    const availability = agentId
-      ? containerAcpAvailability(agentId, keys)
-      : { runnable: false, reason: 'not available in a container' }
-    return availability.runnable
+    // `null` is an answer ("runs"); only a row the resolver did not answer at
+    // all gets the generic reason.
+    const reason = Object.hasOwn(reasons, option.value)
+      ? reasons[option.value]
+      : 'not available in a container'
+    return reason === null || reason === undefined
       ? option
-      : { ...option, disabled: true, label: `${option.label} — ${availability.reason ?? ''}` }
+      : { ...option, disabled: true, label: `${option.label} — ${reason}` }
   })
 }
 
@@ -129,8 +124,7 @@ export function agentModelsNote(): string {
 }
 
 export function mountContainerRunControl(
-  api: Pick<ApiClient, 'container'> &
-    ModelOptionsApi & { settings: Pick<ApiClient['settings'], 'getKey'> },
+  api: Pick<ApiClient, 'container'> & ModelOptionsApi,
   context: ContainerRunContext,
   onStateChanged: () => void,
 ): {
@@ -266,15 +260,7 @@ export function mountContainerRunControl(
       loadOptions: async (current) => {
         const options = await loadRunModelOptions(
           (opts) => fetchModelOptions(api, current, opts),
-          async () =>
-            Object.fromEntries(
-              await Promise.all(
-                containerAcpKeySlugs().map(async (slug): Promise<[string, boolean]> => [
-                  slug,
-                  await api.settings.getKey(slug),
-                ]),
-              ),
-            ),
+          (models) => api.container.modelAvailability(models),
         )
         agentNote.hidden = !options.some(
           (option) => option.disabled === true || parseAcpModel(option.value) !== null,

@@ -159,6 +159,8 @@ export interface ApiClient {
   container: {
     runThread: (request: ContainerRunRequest) => Promise<ContainerRunProgress>
     getRun: (threadId: string) => Promise<ContainerRunProgress | null>
+    /** Per model: why it cannot run in a container, or null when it can. */
+    modelAvailability: (models: string[]) => Promise<Record<string, string | null>>
     onRunChanged: (handler: (progress: ContainerRunProgress) => void) => () => void
   }
   fs: {

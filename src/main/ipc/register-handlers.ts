@@ -383,6 +383,7 @@ import {
   onGuardedYoloChanged,
 } from '../services/security/guarded-yolo.ts'
 import { getContainerRunService } from '../services/container-runtime/container-run-service.ts'
+import { explainContainerModel } from '../services/providers/container-provider.ts'
 
 const zAutomationScheduleInput = z.object({
   id: z.string().min(1).max(256).optional(),
@@ -1616,6 +1617,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       budgets: parsed.budgets,
       ...(parsed.extraEgress ? { extraEgress: parsed.extraEgress } : {}),
     })
+  })
+  // Why each model could not run in a container, or null when it could — the
+  // resolver's own answer, so the dialog's greyed rows never disagree with a
+  // refused start about which key counts (Settings or the environment).
+  ipcMain.handle('container:model-availability', (event, models: unknown) => {
+    assertMainFrameSender(event, win)
+    const list = parseIpcArgs(z.array(zNonEmptyString.max(256)).max(512), [models])
+    return Object.fromEntries(list.map((model) => [model, explainContainerModel(model)]))
   })
   ipcMain.handle('container:get-run', (event, threadId: unknown) => {
     assertMainFrameSender(event, win)

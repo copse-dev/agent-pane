@@ -453,14 +453,18 @@ were smaller apart than the plan expected; what is recorded under each is what i
   `claude-acp` run ending with commits under `refs/copse/runs/<id>` and a readable
   record — cannot be met here: no vendor key is available in this sandbox. It is the
   second thing to run where one is.
-- **A-4 — the dialog. Landed.** `loadRunModelOptions` asks `settings.availableProviders`
-  which keys exist and enables a key-capable agent row when its vendor's is; every other
-  agent row is disabled with its own reason from `containerAcpAvailability` ("needs a
-  Gemini API key in Settings", "signs in through a browser; no API-key path", "not carried
-  by the worker image"). The note under the field names the agents that can run and what
-  they run on. The record view gained a Harness row, an "Effects refused" count and a
-  section listing the refusals. No new IPC: the renderer and the resolver read one shared
-  table and give one set of reasons.
+- **A-4 — the dialog. Landed.** `loadRunModelOptions` asks the main process, over
+  `container:model-availability`, for the resolver's own verdict on each agent row:
+  `explainContainerModel` runs `resolveContainerProvider` and returns null or the short
+  reason from the typed refusal ("needs a Gemini API key in Settings", "signs in through a
+  browser; no API-key path", "not carried by the worker image", "not configured in
+  Settings"). The first cut asked the renderer-side key queries instead and got it wrong
+  twice — the validated-provider set greys a key that is merely unprobed, and the
+  Settings presence query cannot see a key in the environment that the resolver accepts —
+  so the rule is now that only the code that would refuse the start decides the row. The
+  note under the field names the agents that can run and what they run on. The record
+  view gained a Harness row, an "Effects refused" count and a section listing the
+  refusals.
 
 ### What this does not change
 

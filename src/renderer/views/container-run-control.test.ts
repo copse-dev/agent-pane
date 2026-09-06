@@ -35,16 +35,17 @@ function fetcher(
   return async (opts) => (opts?.includeAgentModels === false ? runnable : all)
 }
 
-const keys =
-  (configured: Record<string, boolean>): (() => Promise<Record<string, boolean>>) =>
-  () =>
-    Promise.resolve(configured)
+/** Stands in for `container.modelAvailability`: the resolver's verdict per row. */
+const verdicts =
+  (reasons: Record<string, string | null>) =>
+  (models: string[]): Promise<Record<string, string | null>> =>
+    Promise.resolve(Object.fromEntries(models.map((model) => [model, reasons[model] ?? null])))
 
 describe('loadRunModelOptions', () => {
-  it('enables a key-capable agent when its key is configured', async () => {
+  it('enables an agent row the resolver would accept', async () => {
     const options = await loadRunModelOptions(
       fetcher([PROVIDER, CLAUDE], [PROVIDER]),
-      keys({ anthropic: true }),
+      verdicts({ [CLAUDE.value]: null }),
     )
     assert.deepEqual(
       options.find((option) => option.value === CLAUDE.value),
@@ -52,10 +53,10 @@ describe('loadRunModelOptions', () => {
     )
   })
 
-  it('disables a key-capable agent without its key and names the key', async () => {
+  it('disables an agent row with the reason the resolver gives, after its label', async () => {
     const options = await loadRunModelOptions(
       fetcher([PROVIDER, CLAUDE], [PROVIDER]),
-      keys({ anthropic: false }),
+      verdicts({ [CLAUDE.value]: 'needs an Anthropic API key in Settings' }),
     )
     const claude = options.find((option) => option.value === CLAUDE.value)
     assert.ok(claude)
@@ -63,40 +64,47 @@ describe('loadRunModelOptions', () => {
     assert.equal(claude.label, 'Opus 5 — needs an Anthropic API key in Settings')
   })
 
-  it('disables a browser-login agent with its own reason, never a sign-in hint', async () => {
-    const options = await loadRunModelOptions(
-      fetcher([PROVIDER, CURSOR], [PROVIDER]),
-      keys({ cursor: true }),
-    )
-    const cursor = options.find((option) => option.value === CURSOR.value)
-    assert.ok(cursor)
-    assert.equal(cursor.disabled, true)
-    assert.match(cursor.label, /signs in through a browser/)
-    assert.doesNotMatch(cursor.label, /log ?in|needs its own/i)
-    assert.ok(cursor.label.startsWith(CURSOR.label))
+  it('asks the resolver only about the rows that are not provider-backed', async () => {
+    const asked: string[][] = []
+    await loadRunModelOptions(fetcher([PROVIDER, CLAUDE, CURSOR], [PROVIDER]), (models) => {
+      asked.push(models)
+      return Promise.resolve(Object.fromEntries(models.map((model) => [model, null])))
+    })
+    assert.deepEqual(asked, [[CLAUDE.value, CURSOR.value]])
   })
 
-  it('keeps the generic reason for agents that are not ACP', async () => {
-    const options = await loadRunModelOptions(fetcher([PROVIDER, REMOTE], [PROVIDER]), keys({}))
-    assert.match(
-      options.find((option) => option.value === REMOTE.value)?.label ?? '',
-      /not available in a container/,
-    )
-  })
-
-  it('leaves a runnable provider model exactly as it came', async () => {
-    const options = await loadRunModelOptions(fetcher([PROVIDER, CURSOR], [PROVIDER]), keys({}))
-    assert.deepEqual(
-      options.find((option) => option.value === PROVIDER.value),
-      PROVIDER,
-    )
-  })
-
-  it('disables nothing when every model is provider-backed', async () => {
-    const options = await loadRunModelOptions(fetcher([PROVIDER], [PROVIDER]), keys({}))
+  it('does not ask at all when every row is provider-backed', async () => {
+    let asked = 0
+    const options = await loadRunModelOptions(fetcher([PROVIDER], [PROVIDER]), () => {
+      asked += 1
+      return Promise.resolve({})
+    })
+    assert.equal(asked, 0)
     assert.equal(
       options.some((option) => option.disabled === true),
       false,
+    )
+  })
+
+  it('falls back to a generic reason for a row the resolver did not answer', async () => {
+    const options = await loadRunModelOptions(fetcher([PROVIDER, REMOTE], [PROVIDER]), () =>
+      Promise.resolve({}),
+    )
+    const remote = options.find((option) => option.value === REMOTE.value)
+    assert.ok(remote)
+    assert.equal(remote.disabled, true)
+    assert.match(remote.label, /not available in a container/)
+    assert.doesNotMatch(remote.label, /log ?in|needs its own/i)
+  })
+
+  it('leaves a runnable provider model exactly as it came', async () => {
+    const options = await loadRunModelOptions(
+      fetcher([PROVIDER, CURSOR], [PROVIDER]),
+      verdicts({ [CURSOR.value]: 'signs in through a browser; no API-key path' }),
+    )
+    assert.deepEqual(
+      options.find((option) => option.value === PROVIDER.value),
+      PROVIDER,
     )
   })
 })

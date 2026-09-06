@@ -326,6 +326,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             ? scenario.containerRun
             : null,
         ),
+      modelAvailability: (models) =>
+        resolved(
+          Object.fromEntries(models.map((model) => [model, 'not available in the demo'] as const)),
+        ),
       onRunChanged: subscribe,
     },
     fs: {

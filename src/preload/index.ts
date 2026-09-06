@@ -162,6 +162,8 @@ const api: ApiClient = {
     runThread: (request: import('@shared/types/container-run.ts').ContainerRunRequest) =>
       ipcRenderer.invoke('container:run-thread', request),
     getRun: (threadId: string) => ipcRenderer.invoke('container:get-run', threadId),
+    modelAvailability: (models: string[]) =>
+      ipcRenderer.invoke('container:model-availability', models),
     onRunChanged: (
       handler: (progress: import('@shared/types/container-run.ts').ContainerRunProgress) => void,
     ) => {
