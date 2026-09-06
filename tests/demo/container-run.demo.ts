@@ -30,16 +30,47 @@ describe('unattended container run (browser-hosted)', () => {
     await expect(dialog.$('.container-run-title')).toHaveText(
       'Run this thread unattended in a container',
     )
-    await expect(dialog.$('.container-run-prompt')).toBeDisplayed()
+    // No draft in the composer, so the task is the one thing there is to fill
+    // in — an editable field, and no run can start until it has something.
+    const task = dialog.$('.container-run-prompt')
+    await expect(task).toBeDisplayed()
+    await expect(task).toHaveValue('')
+    expect(await task.getAttribute('readonly')).toBe(null)
+    await expect(dialog.$('.container-run-start')).toBeDisabled()
     await expect(dialog.$('.container-run-minutes')).toHaveValue('120')
     await expect(dialog.$('.container-run-tokens')).toHaveValue('2000000')
+    // The model is a choice, not a label, defaulting to the thread's. The demo
+    // API serves no provider models, so the list is that one row here; the
+    // grouping and fallback shapes are pinned in container-run-control.test.ts.
+    const model = dialog.$('.container-run-model')
+    expect(await model.getTagName()).toBe('select')
+    await expect(model).toHaveValue('lmstudio:qwen/qwen3.6-35b-a3b')
     const hint = await dialog.$('.container-run-model-hint').getText()
-    expect(hint).toContain('Model: lmstudio:qwen/qwen3.6-35b-a3b')
-    expect(hint).toContain("only the model's endpoint")
+    expect(hint).toContain('endpoint')
+    expect(hint).toContain('scoped to the run')
+    await task.setValue('Fix the failing lint rule')
+    await expect(dialog.$('.container-run-start')).toBeEnabled()
     await expect(dialog.$('.container-run-start')).toHaveText('Start unattended run')
     await saveElementScreenshot('#container-run-dialog', 'container-run-arm-form.png')
     await dialog.$('.container-run-cancel').click()
     await expect(dialog).not.toBeDisplayed()
+  })
+
+  it('quotes the composer draft as the task instead of asking for it again', async () => {
+    await browser.url('/?scenario=footer-compact')
+    await $('.input-footer').waitForExist()
+    await $('.prompt-input').setValue('Tidy the backlog of lint suppressions')
+
+    await openOverflowItem('Run unattended in a container…')
+    const dialog = await $('#container-run-dialog')
+    await dialog.waitForDisplayed()
+    const task = dialog.$('.container-run-prompt')
+    await expect(task).toHaveValue('Tidy the backlog of lint suppressions')
+    // Shown, not asked for: the user typed it a moment ago in the composer.
+    expect(await task.getAttribute('readonly')).not.toBe(null)
+    await expect(dialog.$('.container-run-start')).toBeEnabled()
+    await saveElementScreenshot('#container-run-dialog', 'container-run-arm-form-draft.png')
+    await dialog.$('.container-run-cancel').click()
   })
 
   it('shows the finished run in the banner and the review record in the dialog', async () => {

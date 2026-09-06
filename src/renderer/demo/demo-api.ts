@@ -311,6 +311,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           phase: 'running' as const,
           startedAt: Date.now(),
           finishedAt: null,
+          prompt: request.prompt,
           model: request.model,
           egressAllowlist: ['api.anthropic.com:443'],
           log: ['[thread-container] starting copse-run-demo from copse-worker:local'],

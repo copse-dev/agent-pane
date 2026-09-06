@@ -2,6 +2,12 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import { clear, el } from '../dom/helpers.ts'
 import { uiActions, uiField } from '../ui/index.ts'
+import {
+  fetchModelOptions,
+  modelDisplayLabel,
+  type ModelOption,
+  type ModelOptionsApi,
+} from './model-options.ts'
 import { createOverlayDialog, type OverlayDialog } from './dialog-shell.ts'
 import { showErrorToast, showToast } from './toast.ts'
 
@@ -9,12 +15,21 @@ import { showErrorToast, showToast } from './toast.ts'
  * Run the active thread unattended inside a disposable container
  * (`docs/plans/thread-in-container.md`), from the composer footer.
  *
- * One dialog, two faces. Before a run it is the arming form: the prompt (the
- * composer draft, editable), the wall-clock and token budgets, and what the
- * guest will be allowed to reach. During and after a run it is the status view:
- * the phase, a log tail, and the review record — what was deferred, what was
- * committed, where the commits landed. A banner over the composer mirrors the
- * phase so the run stays visible while the dialog is closed.
+ * One dialog, two faces. Before a run it authorises one: the task, the model to
+ * run it on, the wall-clock and token budgets, and what the guest will be
+ * allowed to reach. During and after a run it is the status view: the phase, a
+ * log tail, and the review record — what was deferred, what was committed,
+ * where the commits landed. A banner over the composer mirrors the phase so the
+ * run stays visible while the dialog is closed.
+ *
+ * The first face is a confirmation, not a compose step. The task is whatever is
+ * already in the composer, shown read-only: both ways in (an existing thread,
+ * the new-thread input) mean the user has just typed it, and asking them to
+ * confirm their own sentence in a second textarea is a step that buys nothing.
+ * It becomes editable only when there is no draft, because then there is
+ * genuinely nothing to run. What the dialog is for is the part the composer
+ * cannot say: this runs unwatched, on this model, until one of these two
+ * budgets stops it.
  *
  * Everything sensitive stays in the main process: the renderer sends a prompt,
  * a model id and two numbers, and gets JSON snapshots back.
@@ -25,7 +40,7 @@ export interface ContainerRunContext {
   getActiveProjectId: () => string | null
   /** The concrete model the thread runs on, as the footer shows it. */
   getModel: () => string
-  /** The composer draft, to prefill the prompt. */
+  /** The composer draft: the task the run will carry out. */
   getDraft: () => string
 }
 
@@ -52,8 +67,54 @@ function formatDuration(from: number, to: number): string {
   return `${String(Math.round(seconds / 60))} min`
 }
 
+/**
+ * Fill the run's model `<select>` from a fetched option list.
+ *
+ * Exported for its own test: a picker is only useful if it survives the shapes
+ * the list actually arrives in — empty (no provider configured, which is the
+ * normal state in both e2e fixtures), grouped, and not containing the model the
+ * thread is already on. In every case the current model must stay selected and
+ * selectable, because it is what the run would use.
+ */
+export function fillModelSelect(
+  select: HTMLSelectElement,
+  options: readonly ModelOption[],
+  current: string,
+): void {
+  // Nothing to offer: keep whatever row is already there rather than blanking
+  // the control and leaving the run with no model to name.
+  if (options.length === 0) return
+  clear(select)
+  const groups = new Map<string, HTMLElement>()
+  for (const option of options) {
+    const node = el(
+      'option',
+      { value: option.value, ...(option.disabled === true ? { disabled: '' } : {}) },
+      option.label,
+    )
+    if (option.group === undefined) {
+      select.append(node)
+      continue
+    }
+    let group = groups.get(option.group)
+    if (!group) {
+      group = el('optgroup', { label: option.group })
+      groups.set(option.group, group)
+      select.append(group)
+    }
+    group.append(node)
+  }
+  // A thread on an agent model has no row here (agents are filtered out), so
+  // keep the current value selectable rather than silently switching the run
+  // onto whatever happens to sort first.
+  if (!options.some((option) => option.value === current)) {
+    select.prepend(el('option', { value: current }, modelDisplayLabel(current)))
+  }
+  select.value = current
+}
+
 export function mountContainerRunControl(
-  api: Pick<ApiClient, 'container'>,
+  api: Pick<ApiClient, 'container'> & ModelOptionsApi,
   context: ContainerRunContext,
   onStateChanged: () => void,
 ): {
@@ -66,6 +127,12 @@ export function mountContainerRunControl(
   const runs = new Map<string, ContainerRunProgress>()
   let refreshSequence = 0
   let overlay: OverlayDialog | null = null
+  /**
+   * The task the last run in this session was started with, so "Run again"
+   * against an empty composer offers it rather than an empty field. Session
+   * memory only, which matches the run registry — it is session-only too.
+   */
+  let lastPrompt = ''
 
   // ── Banner ────────────────────────────────────────────────────────────
   const text = el('span', { class: 'container-run-text' })
@@ -126,12 +193,46 @@ export function mountContainerRunControl(
   }
 
   function armForm(): HTMLElement {
-    const prompt = el('textarea', {
+    const draft = context.getDraft().trim()
+    // Read-only means one specific thing: this is the composer draft you just
+    // typed, quoted back. Falling back to the last run's task (for "Run again"
+    // against an empty composer) is a starting point instead, so it stays
+    // editable — a re-run is usually the same task with a correction.
+    const quotesDraft = draft.length > 0
+    const task = el('textarea', {
       class: 'container-run-prompt',
       rows: '6',
-      'aria-label': 'Task for the unattended run',
+      'aria-label': quotesDraft
+        ? 'Task the unattended run will carry out'
+        : 'Task for the unattended run',
     })
-    prompt.value = context.getDraft()
+    task.value = quotesDraft ? draft : lastPrompt
+    if (quotesDraft) {
+      task.readOnly = true
+      task.classList.add('is-readonly')
+    }
+
+    const modelSelect = el('select', {
+      class: 'container-run-model',
+      'aria-label': 'Model for the unattended run',
+    })
+    // The thread's model is the default and is always offered, so the picker is
+    // usable before the option list resolves — and still usable if it fails.
+    let chosenModel = context.getModel()
+    modelSelect.append(el('option', { value: chosenModel }, modelDisplayLabel(chosenModel)))
+    modelSelect.value = chosenModel
+    modelSelect.addEventListener('change', () => {
+      chosenModel = modelSelect.value
+      renderEgressHint()
+    })
+    void fetchModelOptions(api, chosenModel, { includeAgentModels: false })
+      .then((options) => {
+        fillModelSelect(modelSelect, options, chosenModel)
+      })
+      .catch((error: unknown) => {
+        console.error('[container-run] could not list models:', error)
+      })
+
     const minutes = el('input', {
       type: 'number',
       class: 'container-run-minutes',
@@ -147,7 +248,15 @@ export function mountContainerRunControl(
       step: '1000',
     })
     tokens.value = String(DEFAULT_TOKEN_CEILING)
-    const model = context.getModel()
+
+    const egressHint = el('p', { class: 'field-hint container-run-model-hint' })
+    function renderEgressHint(): void {
+      egressHint.textContent =
+        `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; ` +
+        'the key is scoped to the run and blanked once the guest holds it.'
+    }
+    renderEgressHint()
+
     const start = el(
       'button',
       { type: 'button', class: 'ui-btn ui-btn-primary container-run-start' },
@@ -159,10 +268,18 @@ export function mountContainerRunControl(
       'Cancel',
     )
     cancel.addEventListener('click', () => overlay?.close())
+    start.disabled = task.value.trim().length === 0
+    task.addEventListener('input', () => {
+      start.disabled = task.value.trim().length === 0
+    })
     start.addEventListener('click', () => {
       const threadId = context.getActiveThreadId()
       const projectId = context.getActiveProjectId()
       if (!threadId || !projectId) return
+      const prompt = task.value.trim()
+      if (!prompt) return
+      // Remembered for "Run again" when the composer has moved on since.
+      lastPrompt = prompt
       const wallClockMs = Math.max(1, Number(minutes.value) || DEFAULT_WALL_CLOCK_MINUTES) * 60_000
       const tokenCeiling = Math.max(1000, Number(tokens.value) || DEFAULT_TOKEN_CEILING)
       start.disabled = true
@@ -170,8 +287,8 @@ export function mountContainerRunControl(
         .runThread({
           projectId,
           threadId,
-          prompt: prompt.value,
-          model,
+          prompt,
+          model: chosenModel,
           budgets: { wallClockMs, tokenCeiling },
         })
         .then((progress) => {
@@ -195,18 +312,21 @@ export function mountContainerRunControl(
           '(a push, a publish, a GitHub write) is queued for your review, and the result comes back as ' +
           'commits you can inspect before merging.',
       ),
-      uiField({ label: 'Task', control: prompt }),
+      uiField({
+        label: quotesDraft ? 'Task (from the composer)' : 'Task',
+        control: task,
+        ...(quotesDraft
+          ? {}
+          : { hint: 'Nothing in the composer to run — describe the task here.' }),
+      }),
+      uiField({ label: 'Model', control: modelSelect }),
       el(
         'div',
         { class: 'container-run-budgets' },
         uiField({ label: 'Stop after (minutes)', control: minutes }),
         uiField({ label: 'Token ceiling', control: tokens }),
       ),
-      el(
-        'p',
-        { class: 'field-hint container-run-model-hint' },
-        `Model: ${model}. The container can reach only the model's endpoint; the key is scoped to the run.`,
-      ),
+      egressHint,
       uiActions(cancel, start, { className: 'container-run-actions' }),
     )
   }
@@ -217,6 +337,9 @@ export function mountContainerRunControl(
     const row = (label: string, value: string): HTMLElement =>
       el('div', { class: 'container-run-row' }, el('dt', {}, label), el('dd', {}, value))
     rows.push(row('Phase', PHASE_LABEL[run.phase]))
+    // What was asked. The dialog no longer holds the task while the run is in
+    // flight, and reviewing what an unwatched run did means little without it.
+    if (run.prompt) rows.push(row('Task', run.prompt))
     rows.push(row('Model', run.model))
     if (run.checkout) {
       rows.push(
@@ -346,6 +469,10 @@ export function mountContainerRunControl(
         'Start another run',
       )
       again.addEventListener('click', () => {
+        // Carry the task forward before the run is dropped: another run of the
+        // same thread is usually the same task again, and with the composer
+        // empty the form would otherwise open blank.
+        lastPrompt = run.prompt
         // Forget the finished run for this thread so the form comes back; the
         // record itself stays on disk under the profile.
         const threadId = context.getActiveThreadId()

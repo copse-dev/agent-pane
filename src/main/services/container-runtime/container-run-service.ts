@@ -136,6 +136,7 @@ export class ContainerRunService {
       phase: 'preparing',
       startedAt: Date.now(),
       finishedAt: null,
+      prompt: request.prompt.trim(),
       model,
       egressAllowlist,
       log: [],

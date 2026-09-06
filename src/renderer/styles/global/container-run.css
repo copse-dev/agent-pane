@@ -72,6 +72,22 @@
   font: inherit;
   line-height: var(--line-height-base);
 }
+/* The task the run will carry out, when it came from the composer: still a
+   textarea so long drafts scroll, but visibly a quotation of what was typed
+   rather than a field asking to be filled in again. */
+.container-run-prompt.is-readonly {
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  cursor: default;
+}
+.container-run-prompt.is-readonly:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.container-run-model {
+  width: 100%;
+  font: inherit;
+}
 .container-run-budgets {
   display: grid;
   grid-template-columns: 1fr 1fr;

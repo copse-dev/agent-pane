@@ -85,6 +85,12 @@ export interface ContainerRunProgress {
   phase: ContainerRunPhase
   startedAt: number
   finishedAt: number | null
+  /**
+   * The task the run was started with. Part of what the run *is*, so the review
+   * record can say what was asked and a re-run can offer it again — the dialog
+   * no longer composes the task, so it has nowhere else to read it from.
+   */
+  prompt: string
   /** The model the guest was given and the origins it may reach. */
   model: string
   egressAllowlist: string[]

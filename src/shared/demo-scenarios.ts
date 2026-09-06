@@ -355,6 +355,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       phase: 'finished',
       startedAt: FIXED_TIME,
       finishedAt: FIXED_TIME + 23 * 60_000,
+      prompt: 'Clear the lint suppression backlog in the renderer views',
       model: 'claude-sonnet-4-6',
       egressAllowlist: ['api.anthropic.com:443'],
       warnings: [],
