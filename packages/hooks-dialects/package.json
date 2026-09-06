@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Agent hook dialects for Cursor hooks.json, Claude Code settings hooks, and Copse hooks.json: discovery, matching, wire-payload marshalling, response interpretation, the sandboxed hook process spawn, and the command-hook runner over @copse/agent's canonical events",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
