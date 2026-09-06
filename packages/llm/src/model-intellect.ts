@@ -85,7 +85,9 @@ export function resolveIntellectModelId(id: string): string | null {
   // The wrapper-peeling order lives in `model-id-forms.ts` so the model-card
   // table unwraps ids exactly the way measurements do.
   return resolveModelIdForm(id, (candidate) =>
-    candidate in MODEL_INTELLECT_RAW ? candidate : (INTELLECT_ALIASES[candidate] ?? null),
+    Object.hasOwn(MODEL_INTELLECT_RAW, candidate)
+      ? candidate
+      : (INTELLECT_ALIASES[candidate] ?? null),
   )
 }
 

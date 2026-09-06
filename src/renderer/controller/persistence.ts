@@ -188,7 +188,7 @@ function metaSig(meta: ThreadMeta): string {
 function metaPatch(prev: ThreadMeta, next: ThreadMeta): Partial<ThreadMeta> {
   const patch: Record<string, unknown> = { ...next }
   for (const key of Object.keys(prev)) {
-    if (!(key in next)) patch[key] = undefined
+    if (!Object.hasOwn(next, key)) patch[key] = undefined
   }
   return patch
 }

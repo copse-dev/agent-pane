@@ -31,7 +31,8 @@ binding. If the implementation needs to diverge, update the document in the same
 
 ### Type safety
 
-Minimise `as` casts, never cast object literals, and do not use `eslint-disable` or
+Minimise `as` casts, never cast object literals, never use a dynamic key with `in` (it matches
+inherited members — use `Object.hasOwn`), and do not use `eslint-disable` or
 `@ts-expect-error` to hide a real error. Keep `eslint-suppressions.json` empty. Parse untrusted JSON
 with a decoder (`safeJsonParse(text, decodeWithSchema(schema))`), not a type argument. Prefer a type
 predicate the compiler checks — `memberOf(TUPLE)`, an annotated binding, or no annotation at all

@@ -46,6 +46,27 @@ wrong. Prefer the typed alternative:
 > `satisfies`, or a schema at the boundary — see
 > [Boundary parsing](#boundary-parsing-decoders-not-type-arguments).
 
+### Never use a dynamic key with `in`
+
+`in` walks the prototype chain, so `key in RECORD` — where `key` did not come from a literal —
+answers **true** for the eight members every object literal inherits: `toString`, `constructor`,
+`valueOf`, `hasOwnProperty`, `__proto__`, `isPrototypeOf`, `propertyIsEnumerable`,
+`toLocaleString`. A gate written that way says "yes, that key is allowed" for all eight.
+
+That is not a hypothetical. It was the body of both key allowlists the renderer can reach:
+`settings:set`'s writability gate, and `plugins:setSetting`, which took its key straight off the
+renderer and then wrote it into the pack's settings bag — defeating a check whose own comment said
+it existed to stop exactly that.
+
+`no-restricted-syntax` bans it (`eslint.config.mjs`). Use **`Object.hasOwn(record, key)`**, or
+**`keyOf(record)`** from `@copse/std` when you want a type predicate.
+
+A **literal** key is not restricted, and shouldn't be: `'filePath' in payload` is the ordinary way
+to discriminate an object union, and the tree has 248 of those against the ten dynamic ones this
+rule turned up outside tests. Tests are exempt too — several of the nine remaining use `in`
+deliberately to demonstrate the behaviour the rule forbids, and a test that cannot state the wrong
+answer cannot pin the right one.
+
 ### Never cast object literals
 
 `{ ... } as T` is banned in production code (`@typescript-eslint/consistent-type-assertions` with

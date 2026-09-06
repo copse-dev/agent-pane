@@ -194,7 +194,7 @@ export function validateCards(data: CardDataFile): void {
     }
   }
   for (const want of data.wanted ?? []) {
-    if (!(want.publisher in PUBLISHERS)) {
+    if (!Object.hasOwn(PUBLISHERS, want.publisher)) {
       problems.push(
         `${want.modelId}: unknown publisher '${want.publisher}' — add it to PUBLISHERS in scripts/sync-model-cards.mts`,
       )
