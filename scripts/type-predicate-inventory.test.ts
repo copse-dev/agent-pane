@@ -42,25 +42,11 @@ import { assertedPredicateInventory } from './lib/type-predicates.mts'
  *
  * The second test fails on a stale entry, so converting a predicate forces its
  * line out of this list in the same change — the list can only shrink.
- * The list started at 183 in 113 files when #1330 was opened; it holds 85 in
- * 53 today. The two tests below keep it exact, so that second figure is
+ * The list started at 183 in 113 files when #1330 was opened; it holds 73 in
+ * 52 today. The two tests below keep it exact, so that second figure is
  * measured rather than remembered.
  */
 const ASSERTED_PREDICATES: Readonly<Record<string, readonly string[]>> = {
-  'packages/hooks-dialects/src/command-hook-runner.ts': [
-    'isAfterDiffApplyPayload',
-    'isAfterFileEditPayload',
-    'isAfterToolUsePayload',
-    'isBeforeDiffApplyPayload',
-    'isBeforeSubmitPromptPayload',
-    'isPermissionDecisionPayload',
-    'isPostTurnReviewPayload',
-    'isSessionStartPayload',
-    'isStopPayload',
-    'isSubagentStartPayload',
-    'isSubagentStopPayload',
-    'isToolGatePayload',
-  ],
   'packages/hooks-dialects/src/cursor-adapter.ts': ['(anonymous)', '(anonymous)'],
   'packages/llm/src/create-provider.ts': ['isServerSideTool'],
   'packages/llm/src/provider-usage.ts': ['hasLastUsage'],
