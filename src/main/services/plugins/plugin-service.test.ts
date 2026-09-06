@@ -218,6 +218,33 @@ describe('PluginService', () => {
     assert.deepEqual(storageGet(pluginSettingsKey('demo.plugin')) ?? {}, {}, 'nothing persisted')
   })
 
+  it('rejects the keys every object literal inherits (P3 review)', async () => {
+    const registry = makeRegistry()
+    const service = createPluginService(registry)
+
+    // The guard above was `key in declared`, and `in` walks the prototype chain,
+    // so every one of these passed it and was then written straight into the
+    // bag — defeating the check at exactly the job its comment describes. Unlike
+    // the settings:set gate, nothing downstream threw first here.
+    for (const key of [
+      'toString',
+      'constructor',
+      'valueOf',
+      'hasOwnProperty',
+      '__proto__',
+      'isPrototypeOf',
+      'propertyIsEnumerable',
+      'toLocaleString',
+    ]) {
+      await assert.rejects(
+        () => service.setSetting('demo.plugin', key, 'x'),
+        new RegExp(`declares no setting "${key}"`),
+        `inherited key ${key} was accepted`,
+      )
+    }
+    assert.deepEqual(storageGet(pluginSettingsKey('demo.plugin')) ?? {}, {}, 'nothing persisted')
+  })
+
   it('ignores setEnabled for an unregistered plugin id (no throw, no persist)', async () => {
     const service = createPluginService(makeRegistry())
     await service.setEnabled('never-registered', false)

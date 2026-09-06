@@ -121,13 +121,13 @@ function isInputMessage(value: unknown): value is InputMessage {
 }
 
 function stringProperty(args: unknown, name: string): string | undefined {
-  if (!isRecord(args) || !(name in args)) return undefined
+  if (!isRecord(args) || !Object.hasOwn(args, name)) return undefined
   const value = args[name]
   return typeof value === 'string' ? value : undefined
 }
 
 function numberProperty(args: unknown, name: string): number | undefined {
-  if (!isRecord(args) || !(name in args)) return undefined
+  if (!isRecord(args) || !Object.hasOwn(args, name)) return undefined
   const value = args[name]
   return typeof value === 'number' ? value : undefined
 }
