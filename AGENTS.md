@@ -33,8 +33,11 @@ binding. If the implementation needs to diverge, update the document in the same
 
 Minimise `as` casts, never cast object literals, and do not use `eslint-disable` or
 `@ts-expect-error` to hide a real error. Keep `eslint-suppressions.json` empty. Parse untrusted JSON
-with a decoder (`safeJsonParse(text, decodeWithSchema(schema))`), not a type argument. An exported
-type predicate requires a test in the same PR. See [`docs/type-safety.md`](docs/type-safety.md).
+with a decoder (`safeJsonParse(text, decodeWithSchema(schema))`), not a type argument. Prefer a type
+predicate the compiler checks — `memberOf(TUPLE)`, an annotated binding, or no annotation at all
+inside `.filter()`; the hand-written ones are held shrink-only by
+`scripts/type-predicate-inventory.test.ts`, and an exported one requires a test in the same PR. See
+[`docs/type-safety.md`](docs/type-safety.md).
 
 ### User-visible changes require visual evidence
 
