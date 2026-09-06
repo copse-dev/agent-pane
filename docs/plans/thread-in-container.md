@@ -9,6 +9,8 @@ The prototype is exercised end to end by
 Docker), driven by `pnpm run thread:container`, and started from the app through the composer
 footer ("Run unattended in a container…"). What it does **not** yet do
 is listed under [What the prototype proves, and what it does not](#what-the-prototype-proves-and-what-it-does-not).
+Agent-backed models (ACP) are offered greyed out; the route to running them is planned, not
+built, under [Agent models in the guest (ACP)](#agent-models-in-the-guest-acp).
 
 This plan is the executable slice of two documents that were design-only:
 [`unattended-runs.md`](unattended-runs.md) (the product question: what changes about asking
@@ -263,6 +265,154 @@ Recorded because each cost time and will again.
   `--base-image` and `--build-network` (and the matching `COPSE_WORKER_*` variables) so a
   mirror or a locally built base can substitute without editing the Dockerfile.
 
+## Agent models in the guest (ACP)
+
+**Status: Proposed.** Today the run dialog lists agent-backed models (ACP agents, remote
+agents, plugin agents) greyed out as "not available in a container", and
+`resolveContainerProvider` refuses them with the reason. This section is the plan for
+making the ACP ones run. It is written so that every phase before the last is inert: the
+refusal stays until the pieces it depends on exist.
+
+### What an agent model is, and why the guest cannot run one today
+
+An `acp:<agent>[#<model>]` selection is not a model. It is a **separate program** — `claude-agent-acp`,
+`codex-acp`, `cursor-agent acp`, `gemini --acp` — that Copse spawns on `PATH` and talks to
+over ACP JSON-RPC on stdio (`acp-client.ts:448`). Three things follow, and each is a
+reason the guest cannot run one now:
+
+1. **It authenticates as the user, from its own store.** Each agent keeps an OAuth login
+   under `$HOME` (`acp-known-agents.ts` `homeDirs`: `.claude`, `.codex`, `.cursor`,
+   `.gemini`) or reads its own vendor key (`ANTHROPIC_API_KEY`, `CODEX_API_KEY`,
+   `GEMINI_API_KEY`). The guest's `$HOME` is an empty tmpfs; the one key it receives is
+   blanked before any child spawns (`worker-entry.ts`); `buildAcpAgentEnv` scrubs every
+   provider key from an inherited environment (`child-process-env.ts:41`); and the
+   secret canary asserts nothing leaked. Decision 3 in `unattended-runs.md` is the reason
+   all of that exists.
+2. **It needs egress the broker cannot express.** The catalogue's `allowedDomains` are
+   wildcards — `*.anthropic.com`, `*.claude.ai`, `*.openai.com`, `*.chatgpt.com`,
+   `*.cursor.com` — and OAuth refresh moves between subdomains. `parseEgressOrigin`
+   accepts only a literal `host:port` (`thread-container.ts:123`). Worse, the entrypoint
+   starts one `socat TCP-LISTEN:<port>,bind=127.0.0.1` per origin
+   (`worker-image-files.ts:83`), so **two origins on 443 collide** and the second listener
+   dies, backgrounded and unlogged. That collision is a latent bug in the shipped broker
+   regardless of this section.
+3. **It runs its own tool loop.** The run's headline claim — no prompt reached a handler,
+   outward effects queued for review — is a property of Copse's harness:
+   `ensureShellCommandPermitted`, `decideContainedShellEffect`, and the deferral queue. An
+   ACP agent executes its own tools and raises `session/request_permission` for the ones
+   it wants approved (`acp-agent-service.ts:95`). None of that passes the gate. OS
+   containment still holds — read-only rootfs, no capabilities, no interface but the
+   broker — so a stray `git push` still cannot reach anything. But the review queue would
+   be empty, and `promptsAttempted === 0` would be true for the wrong reason.
+
+Two smaller facts complete the picture. The binary is not in the image: the worker image
+installs `bubblewrap ca-certificates git ripgrep socat` and nothing else
+(`worker-image-files.ts`), and Copse deliberately ships none of these agents
+(`acp-known-agents.ts` header). And the isolation the desktop gives an agent does not carry
+over: `acp-session-host-worker.js` is a standalone bundle (`scripts/main-bundles.mts:58`)
+that `buildWorkerImage` never stages, so `spawnTransport` would fall back to an in-process
+spawn with a warning; and `willSandboxAcpAgent` would be true inside the guest
+(`acp-client.ts:374`), nesting a second bubblewrap with its own network scope inside a
+container that has no network. Untested, and at best redundant.
+
+Everything else already works. `runHeadlessAgent` passes the model id straight through
+(`headless-agent-host.ts:238`); `runAgent` routes `acp:` to `runAcpTurn` with no changes
+(`agent-service.ts:1254`); the only reason the guest's turn would fail is
+`getAcpAgent` reading `registeredAcpAgents` from the explicit settings overlay and finding
+none (`acp-agent-service.ts:371`). Carrying the agent config in the run spec fixes that in
+one place.
+
+### What it would buy, honestly
+
+Not billing. The thing that makes an ACP agent attractive on the desktop — running on the
+user's subscription login — is exactly the thing containment cannot hold. Under an API key
+the run costs what the provider path costs. What it buys is the **agent's own harness**:
+its tools, skills, planning and habits. For a task the user would hand to Claude Code or
+Codex on the desktop, that is a real reason. It is bought at the price of the deferral
+guarantee, and the record must say so.
+
+### Decisions
+
+- **A1 — credentials: a vendor API key, scoped to the run, never the login.** The key
+  travels as the existing single run-scoped env var, is read by the worker and blanked as
+  today, and reaches the agent only through the config's explicit `env` map — the one
+  path `buildAcpAgentEnv` does not scrub. Mounting the user's `$HOME` login into an
+  unattended container is rejected: it puts a live session where nobody is watching, and
+  the secret canary exists to catch precisely that. Decision 3 stays "narrowed": exactly
+  one credential, by value, for the run — now held by a third-party process, which is the
+  material change and the reason for A3.
+- **A2 — one broker socket and a CONNECT proxy, not one socket per origin.** Replace the
+  per-origin `socat`/`--add-host` scheme with a small guest-side HTTP CONNECT proxy on
+  loopback, advertised through `HTTPS_PROXY`/`HTTP_PROXY`, which forwards every connection
+  over a single unix socket to the host broker; the broker reads the CONNECT target,
+  matches it against a **pattern** allowlist (exact hosts and `*.suffix` entries), and
+  dials or refuses. This makes wildcards natural, removes `--add-host`, and fixes the 443
+  collision by construction. The connection log gains the target per connection, which
+  the record already wants. The provider path keeps working unchanged: the guest's
+  OpenAI-compatible client and the product resolver both honour the proxy variables.
+  Rejected alternative: a distinct loopback port per origin with rewriting — fixes the
+  collision, cannot express wildcards, and leaks the mapping into every client.
+- **A3 — the record names the harness, and outward effects are denied, not deferred.**
+  `ThreadContainerResult` gains `harness: 'copse' | { acp: <agentId> }`. Under an ACP
+  harness the guest answers `session/request_permission` with a fail-closed handler that
+  applies `decideContainedShellEffect` to any command it can see: in-guest effects allowed,
+  host escapes and outward effects **denied** — not deferred, because a deferral is a
+  promise to replay the exact request from the host, and an agent's own tool call cannot
+  be replayed by us. Every decision is recorded. `promptsAttempted` counts permission
+  requests the handler refused, so the invariant keeps a meaning: zero means the agent
+  never asked for something it was not allowed. The dialog and banner say "ran under
+  <agent>" so nobody reads a Copse-harness record into an agent run.
+- **A4 — the binary is baked, pinned and fingerprinted.** `WORKER_DOCKERFILE` gains a layer
+  per npm-installable catalogue agent (`installPackage`), pinned to a version, on a build
+  that already has network. The versions join `workerBuildFingerprint` so an upgrade
+  rebuilds. `cursor-agent` has `autoInstall: false` and no key path (its `setup` is a
+  browser login), so it is not baked and stays unavailable — with a per-agent reason.
+- **A5 — the container is the sandbox.** `acp-session-host-worker.js` is staged so the
+  session host works; the guest sets the ACP sandbox off (`willSandboxAcpAgent` false)
+  because the container already provides what the seatbelt would, and nested bubblewrap
+  with a network scope inside `--network=none` is undefined behaviour we do not want to
+  own.
+- **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
+  (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
+  Anything without a documented key path stays greyed out, and the reason is per agent:
+  "signs in through a browser, no key path" rather than the generic line.
+
+### Phases
+
+Each phase lands green and inert until A-3. The refusal in `resolveContainerProvider` is the
+switch, and it stays until the phase that removes it can prove its properties.
+
+- **A-0 — plumbing behind the refusal.** Bake the pinned agents into the image (A4); stage
+  `acp-session-host-worker.js` (A5); carry `AcpAgentConfig` in the run spec and into the
+  guest's `registeredAcpAgents`; add `harness` to the result and record. Exit gate: the
+  image builds and its fingerprint moves with the agent versions; a unit test proves the
+  guest would resolve the agent; the refusal is unchanged and its test still passes.
+- **A-1 — egress rework.** The CONNECT proxy and pattern allowlist (A2), with the
+  provider path migrated onto it. Exit gate: the integration test allowlists two origins
+  on 443 and reaches both; a wildcard entry admits a subdomain and refuses a sibling
+  domain; the connection log names every target. This phase is worth landing on its own —
+  it fixes the shipped 443 collision.
+- **A-2 — credentials and the permission policy.** The key by env map (A1); the
+  permission handler and its record (A3). Exit gate: an integration test with a
+  **scripted ACP agent** — a small stdio program speaking ACP, standing in for a real one —
+  that requests permission for an in-guest write (allowed), an outward push (denied,
+  recorded), and a host escape (denied, recorded); the canary is absent; the record names
+  the harness.
+- **A-3 — a real agent, and the refusal removed for A6's set.** `claude-acp` with a real
+  key against the broker: the U0-style report over the run's own decision log, prompts
+  refused vs allowed. Exit gate: the run ends with commits under `refs/copse/runs/<id>`
+  and a record a reviewer can read without knowing which harness ran until they look.
+- **A-4 — the dialog.** Rows for A6's agents enabled when a key is in Settings; every other
+  agent row carries its own reason. The note under the model field says which agents
+  can run and why the rest cannot.
+
+### What this does not change
+
+The container's hardening, the attestation, the ledger, the budgets and the carry-in/out are
+untouched. Guarded YOLO is untouched. Copse's own harness remains the default and the
+recommended path for container runs; the provider-backed twin of an agent's model is
+already in the list, one group up, and it keeps the deferral guarantee.
+
 ## Phases
 
 - **T0 ✅ — prototype on the branch.** Everything above. Exit gate: the end-to-end test
@@ -284,23 +434,29 @@ Recorded because each cost time and will again.
 
 ## Test plan
 
-| Area                   | Tier        | What it proves                                                                                               | Where                                                    |
-| ---------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| Effect classification  | unit        | Host escapes deny; outward effects defer; in-guest destruction allows; harm denies stay denies               | `packages/shell-guard/src/container-effects.test.ts`     |
-| Attestation            | unit        | Every shortfall (root, writable rootfs, caps, privileges, foreign mount) refuses the declaration             | `security/unattended-run.test.ts`                        |
-| Ledger                 | unit        | Arming implies deferral mode; mutually exclusive with Guarded YOLO both ways; budgets required               | `security/unattended-run.test.ts`                        |
-| Gate matrix            | unit        | Command class × containment tier × unattended → exact outcome, including the desktop-tier and not-armed rows | `security/unattended-run.test.ts`                        |
-| Deadline settlement    | unit        | A failed or hung `docker stop` with a still-pending wait still settles, and says why                         | `container-runtime/thread-container.test.ts`             |
-| Image freshness        | unit        | The fingerprint changes with the worker bundle and the base image                                            | `container-runtime/thread-container.test.ts`             |
-| Completion honesty     | unit        | Unfetched commits, failed teardown and a leaked canary are never a clean finish                              | `container-runtime/container-run-service.test.ts`        |
-| Thread checkout        | unit (git)  | A thread worktree with its own commits and edits is carried in, not the project checkout                     | `container-runtime/container-run-service.test.ts`        |
-| Docker argv and record | unit        | The flags the attestation claims are the flags used; only the run dir is mounted; key passed by name         | `container-runtime/thread-container.test.ts`             |
-| Carry-in / carry-out   | unit (git)  | Dirty tree snapshots without moving HEAD; guest commits round-trip to `refs/copse/runs/<id>`                 | `container-runtime/thread-container.test.ts`             |
-| End to end             | integration | The eight properties listed above, against a real daemon, opt-in via `COPSE_THREAD_CONTAINER_E2E=1`          | `container-runtime/thread-container.integration.test.ts` |
-| Provider plan          | unit        | Model id → endpoint, key and the one egress origin; cloud models without a key are refused before Docker     | `providers/container-provider.test.ts`                   |
-| Run service            | unit        | Provider resolved, key passed by env var and blanked once the guest holds it, phases published, refusals     | `container-runtime/container-run-service.test.ts`        |
-| UI (browser tier)      | demo        | Footer action, arming form with the draft prefilled, banner and review record for a finished run             | `tests/demo/container-run.demo.ts`                       |
-| UI (Electron)          | e2e         | Real IPC: the dialog opens from the footer and a model without a key is refused with a readable error        | `tests/e2e/container-run-dialog.e2e.ts`                  |
+| Area                   | Tier        | What it proves                                                                                                    | Where                                                       |
+| ---------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Effect classification  | unit        | Host escapes deny; outward effects defer; in-guest destruction allows; harm denies stay denies                    | `packages/shell-guard/src/container-effects.test.ts`        |
+| Attestation            | unit        | Every shortfall (root, writable rootfs, caps, privileges, foreign mount) refuses the declaration                  | `security/unattended-run.test.ts`                           |
+| Ledger                 | unit        | Arming implies deferral mode; mutually exclusive with Guarded YOLO both ways; budgets required                    | `security/unattended-run.test.ts`                           |
+| Gate matrix            | unit        | Command class × containment tier × unattended → exact outcome, including the desktop-tier and not-armed rows      | `security/unattended-run.test.ts`                           |
+| Deadline settlement    | unit        | A failed or hung `docker stop` with a still-pending wait still settles, and says why                              | `container-runtime/thread-container.test.ts`                |
+| Image freshness        | unit        | The fingerprint changes with the worker bundle and the base image                                                 | `container-runtime/thread-container.test.ts`                |
+| Completion honesty     | unit        | Unfetched commits, failed teardown and a leaked canary are never a clean finish                                   | `container-runtime/container-run-service.test.ts`           |
+| Thread checkout        | unit (git)  | A thread worktree with its own commits and edits is carried in, not the project checkout                          | `container-runtime/container-run-service.test.ts`           |
+| Docker argv and record | unit        | The flags the attestation claims are the flags used; only the run dir is mounted; key passed by name              | `container-runtime/thread-container.test.ts`                |
+| Carry-in / carry-out   | unit (git)  | Dirty tree snapshots without moving HEAD; guest commits round-trip to `refs/copse/runs/<id>`                      | `container-runtime/thread-container.test.ts`                |
+| End to end             | integration | The eight properties listed above, against a real daemon, opt-in via `COPSE_THREAD_CONTAINER_E2E=1`               | `container-runtime/thread-container.integration.test.ts`    |
+| Provider plan          | unit        | Model id → endpoint, key and the one egress origin; cloud models without a key are refused before Docker          | `providers/container-provider.test.ts`                      |
+| Run service            | unit        | Provider resolved, key passed by env var and blanked once the guest holds it, phases published, refusals          | `container-runtime/container-run-service.test.ts`           |
+| UI (browser tier)      | demo        | Footer action, arming form with the draft prefilled, banner and review record for a finished run                  | `tests/demo/container-run.demo.ts`                          |
+| UI (Electron)          | e2e         | Real IPC: the dialog opens from the footer and a model without a key is refused with a readable error             | `tests/e2e/container-run-dialog.e2e.ts`                     |
+| ACP: agent resolution  | unit        | A run spec carrying an `AcpAgentConfig` makes `getAcpAgent` resolve inside the guest's settings overlay           | `container-runtime/worker-entry.test.ts` (A-0)              |
+| ACP: image bake        | unit        | The fingerprint moves with each pinned agent version; `cursor-agent` is never baked                               | `container-runtime/thread-container.test.ts` (A-0)          |
+| ACP: egress patterns   | unit        | `*.suffix` admits a subdomain and refuses a sibling; exact hosts unchanged; the target is logged                  | `container-runtime/egress-broker.test.ts` (A-1)             |
+| ACP: two 443 origins   | integration | Two allowlisted origins on the same port are both reachable through the CONNECT proxy                             | `container-runtime/thread-container.integration.test.ts`    |
+| ACP: permission policy | integration | A scripted ACP agent: in-guest write allowed, outward push denied and recorded, host escape denied, harness named | `container-runtime/acp-container.integration.test.ts` (A-2) |
+| ACP: refusal           | unit        | Agents outside A6's set, and any agent without a key, are refused with a per-agent reason                         | `providers/container-provider.test.ts` (A-4)                |
 
 ## Non-goals
 
@@ -309,7 +465,10 @@ Recorded because each cost time and will again.
 - A second permission vocabulary, transport, queue or scheduler. The gate gained one branch
   and one prompt cause; the queue, the decision log and the headless host are the existing
   ones.
-- Auto-approving anything whose effect leaves the guest.
+- Auto-approving anything whose effect leaves the guest. Under an ACP harness that means
+  _denying_ it: an agent's own tool call cannot be replayed from the host, so it is not
+  deferred (decision A3).
+- Mounting a user's login into the guest, for any agent, ever (decision A1).
 - Changing Guarded YOLO, which keeps its meaning and its own ledger.
 - Cloud provisioning, checkpoints, suspend/resume — `copse-cloud-workspaces.md` and
   `execution-runtime-security.md` own those and this runtime should be a clean consumer.
