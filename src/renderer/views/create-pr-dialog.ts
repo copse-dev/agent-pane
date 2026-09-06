@@ -159,16 +159,14 @@ export function openCreatePrDialog(opts: {
         ),
       ),
     ),
-    // Says what this actually does, which is not everything: the create path
-    // opens the PR and nothing else. `gh pr create` needs the head branch
-    // already on the remote, so an unpushed branch is a failure the user should
-    // see coming rather than read in an error toast.
+    // Be explicit about the publish boundary: confirmation pushes committed
+    // branch state before opening the PR, while working-tree edits stay local.
     el(
       'p',
       { class: 'field-hint create-pr-dialog-hint' },
       opts.branch
-        ? `Opens a pull request from ${opts.branch} into the default branch. Push it first if you have not.`
-        : 'Opens a pull request from this branch into the default branch. Push it first if you have not.',
+        ? `Pushes committed changes on ${opts.branch}, then opens a pull request into the default branch. Uncommitted changes are not included.`
+        : 'Pushes committed changes on this branch, then opens a pull request into the default branch. Uncommitted changes are not included.',
     ),
     el('div', { class: 'create-pr-dialog-actions' }, cancelBtn, createBtn),
   )

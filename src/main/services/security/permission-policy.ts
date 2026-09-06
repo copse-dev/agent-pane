@@ -98,7 +98,9 @@ function formatGithubWritePromptBody(toolName: string, args: unknown): string {
     if (!title) return JSON.stringify(args, null, 2)
     const owner = nonEmptyStringArg(args, 'owner')
     const repo = nonEmptyStringArg(args, 'repo')
-    return owner && repo ? `${owner}/${repo}: “${title}”` : `“${title}”`
+    const head = nonEmptyStringArg(args, 'head')
+    if (owner && repo) return `${owner}/${repo}: “${title}”`
+    return head ? `Open “${title}” from ${head}.` : `Push the current branch, then open “${title}”.`
   }
   const number = args['number']
   if (typeof number !== 'number' || !Number.isInteger(number) || number <= 0) {

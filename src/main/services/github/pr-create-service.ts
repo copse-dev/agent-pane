@@ -1,4 +1,11 @@
-import { getCurrentBranchName, getDefaultBranch, getGithubRepoSlug } from './git-service.ts'
+import {
+  getAheadBehind,
+  getCurrentBranchName,
+  getDefaultBranch,
+  getGithubRepoSlug,
+  pushBranchToOrigin,
+  type GitPushResult,
+} from './git-service.ts'
 import { createPullRequest } from './gh-pr-actions-service.ts'
 import { resolveGitHubBackend } from './backend/backend.ts'
 import { appendPrBodyAttribution } from '@shared/git/commit-attribution.ts'
@@ -20,6 +27,11 @@ export interface PrCreateDependencies {
   getGithubRepoSlug: (root: string | null | undefined) => Promise<string | null>
   getCurrentBranchName: (root: string | null | undefined) => Promise<string | null>
   getDefaultBranch: (root: string | null | undefined) => Promise<string | null>
+  getAheadBehind: (
+    base: string,
+    root: string | null | undefined,
+  ) => Promise<{ ahead: number; behind: number } | null>
+  pushBranchToOrigin: (branch: string, root: string | null | undefined) => Promise<GitPushResult>
   createPullRequest: typeof createPullRequest
   getThreadModels: (threadId: string) => string[]
   backendKind: () => PrCreateResult['backend']
@@ -38,6 +50,8 @@ const defaultDependencies: PrCreateDependencies = {
   getGithubRepoSlug: (root) => getGithubRepoSlug(root ?? undefined),
   getCurrentBranchName: (root) => getCurrentBranchName(root ?? undefined),
   getDefaultBranch: (root) => getDefaultBranch(root ?? undefined),
+  getAheadBehind: (base, root) => getAheadBehind(base, root ?? undefined),
+  pushBranchToOrigin: (branch, root) => pushBranchToOrigin(branch, root ?? undefined),
   createPullRequest,
   getThreadModels,
   backendKind: () => resolveGitHubBackend().kind,
@@ -120,8 +134,30 @@ export async function createPrForThread(
     )
   }
 
+  // The composer always uses the current branch. Publish it here, inside the
+  // operation the user confirmed, instead of requiring a separate push whose
+  // completion can race GitHub's create mutation. Explicit `head` requests are
+  // left alone: they may intentionally name a branch that exists only on the
+  // remote (or belongs to a fork), and the tool contract requires those to be
+  // pushed already.
+  const publishesCurrentBranch = head === undefined && !crossRepo && deps.backendKind() !== 'mock'
+  if (publishesCurrentBranch) {
+    const aheadBehind = await deps.getAheadBehind(baseBranch, root)
+    if (!aheadBehind || aheadBehind.ahead === 0) {
+      return rejected(
+        `branch ${headBranch} has no committed changes ahead of ${baseBranch}. Commit the changes before opening a pull request.`,
+      )
+    }
+    const pushed = await deps.pushBranchToOrigin(headBranch, root)
+    if (!pushed.ok) {
+      return rejected(
+        `could not push ${headBranch} to origin before opening the pull request: ${pushed.message}`,
+      )
+    }
+  }
+
   const models = context ? deps.getThreadModels(context.threadId) : []
-  const result = await deps.createPullRequest({
+  const input = {
     owner: targetOwner,
     repo: targetRepo,
     head: headBranch,
@@ -129,7 +165,21 @@ export async function createPrForThread(
     title: request.title,
     body: appendPrBodyAttribution(request.body ?? '', models),
     ...(draft === undefined ? {} : { draft }),
-  })
+  }
+  let result = await deps.createPullRequest(input)
+  // A newly-created Git ref can briefly be visible to git while GitHub's PR
+  // mutation still reports a blank/unresolved head SHA. One bounded retry keeps
+  // that propagation window from leaking out as four misleading GraphQL errors.
+  if (publishesCurrentBranch && !result.ok && isUnresolvedHeadError(result.message)) {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 500))
+    result = await deps.createPullRequest(input)
+    if (!result.ok && isUnresolvedHeadError(result.message)) {
+      result = {
+        ...result,
+        message: `GitHub has not recognized the newly pushed branch ${headBranch} yet. Retry Create PR in a moment.`,
+      }
+    }
+  }
 
   if (result.ok && result.url && result.number !== undefined && context) {
     const ref = { url: result.url, owner: targetOwner, repo: targetRepo, number: result.number }
@@ -138,6 +188,10 @@ export async function createPrForThread(
   }
 
   return result
+}
+
+function isUnresolvedHeadError(message: string): boolean {
+  return /head sha can't be blank|head ref must be a branch/i.test(message)
 }
 
 /**

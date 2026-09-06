@@ -31,6 +31,7 @@ import {
   getCommittedChanges,
   getCommittedFileDiff,
   parseNameStatusZ,
+  pushBranchToOrigin,
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
@@ -221,6 +222,131 @@ describe('parseNameStatusZ', () => {
 })
 
 const gitOk = spawnSync('git', ['--version']).status === 0
+
+describe('pushBranchToOrigin', { skip: !gitOk && 'git not installed' }, () => {
+  it('publishes the local branch and configures its upstream', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'copse-git-push-'))
+    const repo = join(parent, 'repo')
+    const remote = join(parent, 'remote.git')
+    try {
+      await mkdir(repo)
+      spawnSync('git', ['init', '--bare', '-q', remote])
+      spawnSync('git', ['init', '-q', '-b', 'feature/publish'], { cwd: repo })
+      await writeFile(join(repo, 'change.txt'), 'published\n')
+      spawnSync('git', ['add', 'change.txt'], { cwd: repo })
+      spawnSync(
+        'git',
+        [
+          '-c',
+          'user.name=Copse Test',
+          '-c',
+          'user.email=test@copse.dev',
+          'commit',
+          '-qm',
+          'change',
+        ],
+        { cwd: repo },
+      )
+      spawnSync('git', ['remote', 'add', 'origin', remote], { cwd: repo })
+
+      const result = await pushBranchToOrigin('feature/publish', repo)
+
+      assert.equal(result.ok, true)
+      assert.equal(
+        spawnSync('git', [
+          '--git-dir',
+          remote,
+          'show-ref',
+          '--verify',
+          '--quiet',
+          'refs/heads/feature/publish',
+        ]).status,
+        0,
+      )
+      assert.equal(
+        spawnSync('git', ['config', '--get', 'branch.feature/publish.merge'], {
+          cwd: repo,
+          encoding: 'utf8',
+        }).stdout.trim(),
+        'refs/heads/feature/publish',
+      )
+    } finally {
+      await rm(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('does not overwrite a remote branch that has diverged', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'copse-git-push-diverged-'))
+    const repo = join(parent, 'repo')
+    const peer = join(parent, 'peer')
+    const remote = join(parent, 'remote.git')
+    try {
+      await mkdir(repo)
+      spawnSync('git', ['init', '--bare', '-q', remote])
+      spawnSync('git', ['init', '-q', '-b', 'feature/publish'], { cwd: repo })
+      await writeFile(join(repo, 'change.txt'), 'base\n')
+      spawnSync('git', ['add', 'change.txt'], { cwd: repo })
+      spawnSync(
+        'git',
+        ['-c', 'user.name=Copse Test', '-c', 'user.email=test@copse.dev', 'commit', '-qm', 'base'],
+        { cwd: repo },
+      )
+      spawnSync('git', ['remote', 'add', 'origin', remote], { cwd: repo })
+      spawnSync('git', ['push', '-qu', 'origin', 'feature/publish'], { cwd: repo })
+
+      spawnSync('git', ['clone', '-q', '--branch', 'feature/publish', remote, peer])
+      await writeFile(join(peer, 'remote.txt'), 'remote work\n')
+      spawnSync('git', ['add', 'remote.txt'], { cwd: peer })
+      spawnSync(
+        'git',
+        [
+          '-c',
+          'user.name=Copse Test',
+          '-c',
+          'user.email=test@copse.dev',
+          'commit',
+          '-qm',
+          'remote work',
+        ],
+        { cwd: peer },
+      )
+      spawnSync('git', ['push', '-q'], { cwd: peer })
+      const remoteHead = spawnSync('git', ['rev-parse', 'HEAD'], {
+        cwd: peer,
+        encoding: 'utf8',
+      }).stdout.trim()
+
+      await writeFile(join(repo, 'local.txt'), 'local work\n')
+      spawnSync('git', ['add', 'local.txt'], { cwd: repo })
+      spawnSync(
+        'git',
+        [
+          '-c',
+          'user.name=Copse Test',
+          '-c',
+          'user.email=test@copse.dev',
+          'commit',
+          '-qm',
+          'local work',
+        ],
+        { cwd: repo },
+      )
+
+      const result = await pushBranchToOrigin('feature/publish', repo)
+
+      assert.equal(result.ok, false)
+      assert.match(result.message, /fetch first|non-fast-forward/i)
+      assert.equal(
+        spawnSync('git', ['--git-dir', remote, 'rev-parse', 'refs/heads/feature/publish'], {
+          encoding: 'utf8',
+        }).stdout.trim(),
+        remoteHead,
+      )
+    } finally {
+      await rm(parent, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('repositoryHasSubmodules', { skip: !gitOk && 'git not installed' }, () => {
   it('finds the repository declaration from a nested project root', async () => {
