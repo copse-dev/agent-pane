@@ -2,7 +2,11 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import { parseAcpModel } from '@shared/acp.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
-import { containerAcpAgentTitles, containerAcpAvailability } from '@shared/container-acp-agents.ts'
+import {
+  containerAcpAgentTitles,
+  containerAcpAvailability,
+  containerAcpKeySlugs,
+} from '@shared/container-acp-agents.ts'
 import { clear, el } from '../dom/helpers.ts'
 import { uiActions, uiField } from '../ui/index.ts'
 import {
@@ -83,6 +87,11 @@ function formatDuration(from: number, to: number): string {
  * to the run, never the desktop login. The reason on a disabled row is the
  * per-agent one, so "needs a Gemini API key" reads as the thing to go and do
  * and "signs in through a browser" reads as the thing that cannot be done.
+ *
+ * `keysConfigured` answers *presence* per key slug — the same question the
+ * resolver asks before it starts a run — not the validated-provider set the
+ * composer's picker uses, which needs a live probe of each key and would grey
+ * out an agent whose key is simply unverified right now.
  */
 export async function loadRunModelOptions(
   fetch: (opts?: FetchModelOptionsOpts) => Promise<ModelOption[]>,
@@ -120,7 +129,8 @@ export function agentModelsNote(): string {
 }
 
 export function mountContainerRunControl(
-  api: Pick<ApiClient, 'container'> & ModelOptionsApi,
+  api: Pick<ApiClient, 'container'> &
+    ModelOptionsApi & { settings: Pick<ApiClient['settings'], 'getKey'> },
   context: ContainerRunContext,
   onStateChanged: () => void,
 ): {
@@ -256,7 +266,15 @@ export function mountContainerRunControl(
       loadOptions: async (current) => {
         const options = await loadRunModelOptions(
           (opts) => fetchModelOptions(api, current, opts),
-          () => api.settings.availableProviders(),
+          async () =>
+            Object.fromEntries(
+              await Promise.all(
+                containerAcpKeySlugs().map(async (slug): Promise<[string, boolean]> => [
+                  slug,
+                  await api.settings.getKey(slug),
+                ]),
+              ),
+            ),
         )
         agentNote.hidden = !options.some(
           (option) => option.disabled === true || parseAcpModel(option.value) !== null,

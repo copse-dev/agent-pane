@@ -421,8 +421,8 @@ were smaller apart than the plan expected; what is recorded under each is what i
   no refusal. Two origins both _reached_ from inside the guest at the integration tier
   waits for a second guest-side caller: the auto-run shell in the guest has no network by
   design, so only the model loop dials out until A-2's agent does.
-- **A-2 — credentials and the permission policy. Landed; its integration test is
-  written and not yet run.** The worker consumes the run's key from its environment as
+- **A-2 — credentials and the permission policy. Landed and proven locally; its
+  Docker integration test is written and not yet run.** The worker consumes the run's key from its environment as
   before and hands it to the agent as the one entry of its explicit `env` map (A1); the
   user's own `env` never crosses (`acpHarnessForContainer`). Inside a contained run the
   ACP permission responder treats the agent as contained: reads auto-approve, edits go
@@ -437,8 +437,14 @@ were smaller apart than the plan expected; what is recorded under each is what i
   in-guest build (allowed, and run by the agent), an outward push (refused), a host
   escape (refused), then commits; it asserts the harness is named, prompts and deferrals
   are zero, two denials are recorded, the agent saw exactly the run's key and no canary,
-  and the work came back. The gate option is unit-tested in `unattended-run.test.ts`.
-  Needs Docker to run.
+  and the work came back. Needs Docker to run. The seam it exercises is proven without
+  the container by `acp-harness.test.ts`, in the ordinary unit gate: the same
+  `runHeadlessAgent` call the worker makes, under a declared container runtime and an
+  armed run, with the scripted agent registered through the settings overlay — the real
+  ACP client answers its permission requests by blast radius, the build runs and is
+  committed by the agent, the push and the escape are refused with nothing queued, both
+  refusals are in the decision log, and the agent saw exactly the run's key. The gate
+  option itself is unit-tested in `unattended-run.test.ts`.
 - **A-3 — the refusal lifted for A6's set. Code landed; the real run is outstanding.**
   `resolveContainerProvider` returns an `acp` plan for a registered key-capable agent
   whose vendor key is in Settings: the full `acp:<id>[#model]` selection as the model,
@@ -484,36 +490,37 @@ already in the list, one group up, and it keeps the deferral guarantee.
 
 ## Test plan
 
-| Area                   | Tier        | What it proves                                                                                                    | Where                                                       |
-| ---------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Effect classification  | unit        | Host escapes deny; outward effects defer; in-guest destruction allows; harm denies stay denies                    | `packages/shell-guard/src/container-effects.test.ts`        |
-| Attestation            | unit        | Every shortfall (root, writable rootfs, caps, privileges, foreign mount) refuses the declaration                  | `security/unattended-run.test.ts`                           |
-| Ledger                 | unit        | Arming implies deferral mode; mutually exclusive with Guarded YOLO both ways; budgets required                    | `security/unattended-run.test.ts`                           |
-| Gate matrix            | unit        | Command class × containment tier × unattended → exact outcome, including the desktop-tier and not-armed rows      | `security/unattended-run.test.ts`                           |
-| Deadline settlement    | unit        | A failed or hung `docker stop` with a still-pending wait still settles, and says why                              | `container-runtime/thread-container.test.ts`                |
-| Image freshness        | unit        | The fingerprint changes with the worker bundle and the base image                                                 | `container-runtime/thread-container.test.ts`                |
-| Completion honesty     | unit        | Unfetched commits, failed teardown and a leaked canary are never a clean finish                                   | `container-runtime/container-run-service.test.ts`           |
-| Thread checkout        | unit (git)  | A thread worktree with its own commits and edits is carried in, not the project checkout                          | `container-runtime/container-run-service.test.ts`           |
-| Docker argv and record | unit        | The flags the attestation claims are the flags used; only the run dir is mounted; key passed by name              | `container-runtime/thread-container.test.ts`                |
-| Carry-in / carry-out   | unit (git)  | Dirty tree snapshots without moving HEAD; guest commits round-trip to `refs/copse/runs/<id>`                      | `container-runtime/thread-container.test.ts`                |
-| End to end             | integration | The eight properties listed above, against a real daemon, opt-in via `COPSE_THREAD_CONTAINER_E2E=1`               | `container-runtime/thread-container.integration.test.ts`    |
-| Provider plan          | unit        | Model id → endpoint, key and the one egress origin; cloud models without a key are refused before Docker          | `providers/container-provider.test.ts`                      |
-| Run service            | unit        | Provider resolved, key passed by env var and blanked once the guest holds it, phases published, refusals          | `container-runtime/container-run-service.test.ts`           |
-| UI (browser tier)      | demo        | Footer action, arming form with the draft prefilled, banner and review record for a finished run                  | `tests/demo/container-run.demo.ts`                          |
-| UI (Electron)          | e2e         | Real IPC: the dialog opens from the footer and a model without a key is refused with a readable error             | `tests/e2e/container-run-dialog.e2e.ts`                     |
-| ACP: agent table       | unit        | Only catalogue agents with a documented key are baked; per-agent reasons; a retired id maps to its current entry  | `shared/container-acp-agents.test.ts` (A-0)                 |
-| ACP: config crossing   | unit        | Host side drops the user's env and desktop command path; guest side gives the agent exactly the run's key         | `container-runtime/guest-acp-agent.test.ts` (A-0)           |
-| ACP: image bake        | unit        | The fingerprint moves with the agent list and versions; the Dockerfile installs from the argument before `USER`   | `container-runtime/thread-container.test.ts` (A-0)          |
-| ACP: plan              | unit        | A registered key-capable agent with its key gives an `acp` plan on its catalogue domains; no user env crosses     | `providers/container-provider.test.ts` (A-3)                |
-| ACP: run request       | unit        | The service passes the harness and key variable, and no provider, for an `acp:` model                             | `container-runtime/container-run-service.test.ts` (A-3)     |
-| ACP: deny, not defer   | unit        | `outwardEffects: 'deny'` refuses an outward effect with nothing queued; contained effects still run               | `security/unattended-run.test.ts` (A-2)                     |
-| ACP: roster            | unit        | A key-capable agent row is enabled with its key and disabled naming the key without; browser-login agents differ  | `renderer/views/container-run-control.test.ts` (A-4)        |
-| ACP: egress grammar    | unit        | `host:port` and `*.suffix:port` parse and format; `*.com` is refused; the wildcard matches on the dot boundary    | `container-runtime/egress-rules.test.ts` (A-1)              |
-| ACP: egress patterns   | unit        | Two hosts on one port through one socket; `*.suffix` admits a subdomain, refuses the suffix and siblings; logged  | `container-runtime/egress-broker.test.ts` (A-1)             |
-| ACP: guest proxy       | unit        | Absolute-form HTTP streams an SSE body back with hop-by-hop headers dropped; CONNECT tunnels; DENY becomes a 403  | `container-runtime/guest-egress-proxy.test.ts` (A-1)        |
-| ACP: 443 in the guest  | integration | The model on guest port 443 is reached through the proxy, admitted by a wildcard rule named in the log            | `container-runtime/thread-container.integration.test.ts`    |
-| ACP: permission policy | integration | A scripted ACP agent: in-guest write allowed, outward push denied and recorded, host escape denied, harness named | `container-runtime/acp-container.integration.test.ts` (A-2) |
-| ACP: refusal           | unit        | Agents outside A6's set, and any agent without a key, are refused with a per-agent reason                         | `providers/container-provider.test.ts` (A-3)                |
+| Area                   | Tier        | What it proves                                                                                                                                          | Where                                                       |
+| ---------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Effect classification  | unit        | Host escapes deny; outward effects defer; in-guest destruction allows; harm denies stay denies                                                          | `packages/shell-guard/src/container-effects.test.ts`        |
+| Attestation            | unit        | Every shortfall (root, writable rootfs, caps, privileges, foreign mount) refuses the declaration                                                        | `security/unattended-run.test.ts`                           |
+| Ledger                 | unit        | Arming implies deferral mode; mutually exclusive with Guarded YOLO both ways; budgets required                                                          | `security/unattended-run.test.ts`                           |
+| Gate matrix            | unit        | Command class × containment tier × unattended → exact outcome, including the desktop-tier and not-armed rows                                            | `security/unattended-run.test.ts`                           |
+| Deadline settlement    | unit        | A failed or hung `docker stop` with a still-pending wait still settles, and says why                                                                    | `container-runtime/thread-container.test.ts`                |
+| Image freshness        | unit        | The fingerprint changes with the worker bundle and the base image                                                                                       | `container-runtime/thread-container.test.ts`                |
+| Completion honesty     | unit        | Unfetched commits, failed teardown and a leaked canary are never a clean finish                                                                         | `container-runtime/container-run-service.test.ts`           |
+| Thread checkout        | unit (git)  | A thread worktree with its own commits and edits is carried in, not the project checkout                                                                | `container-runtime/container-run-service.test.ts`           |
+| Docker argv and record | unit        | The flags the attestation claims are the flags used; only the run dir is mounted; key passed by name                                                    | `container-runtime/thread-container.test.ts`                |
+| Carry-in / carry-out   | unit (git)  | Dirty tree snapshots without moving HEAD; guest commits round-trip to `refs/copse/runs/<id>`                                                            | `container-runtime/thread-container.test.ts`                |
+| End to end             | integration | The eight properties listed above, against a real daemon, opt-in via `COPSE_THREAD_CONTAINER_E2E=1`                                                     | `container-runtime/thread-container.integration.test.ts`    |
+| Provider plan          | unit        | Model id → endpoint, key and the one egress origin; cloud models without a key are refused before Docker                                                | `providers/container-provider.test.ts`                      |
+| Run service            | unit        | Provider resolved, key passed by env var and blanked once the guest holds it, phases published, refusals                                                | `container-runtime/container-run-service.test.ts`           |
+| UI (browser tier)      | demo        | Footer action, arming form with the draft prefilled, banner and review record for a finished run                                                        | `tests/demo/container-run.demo.ts`                          |
+| UI (Electron)          | e2e         | Real IPC: the dialog opens from the footer and a model without a key is refused with a readable error                                                   | `tests/e2e/container-run-dialog.e2e.ts`                     |
+| ACP: agent table       | unit        | Only catalogue agents with a documented key are baked; per-agent reasons; a retired id maps to its current entry                                        | `shared/container-acp-agents.test.ts` (A-0)                 |
+| ACP: config crossing   | unit        | Host side drops the user's env and desktop command path; guest side gives the agent exactly the run's key                                               | `container-runtime/guest-acp-agent.test.ts` (A-0)           |
+| ACP: image bake        | unit        | The fingerprint moves with the agent list and versions; the Dockerfile installs from the argument before `USER`                                         | `container-runtime/thread-container.test.ts` (A-0)          |
+| ACP: plan              | unit        | A registered key-capable agent with its key gives an `acp` plan on its catalogue domains; no user env crosses                                           | `providers/container-provider.test.ts` (A-3)                |
+| ACP: run request       | unit        | The service passes the harness and key variable, and no provider, for an `acp:` model                                                                   | `container-runtime/container-run-service.test.ts` (A-3)     |
+| ACP: deny, not defer   | unit        | `outwardEffects: 'deny'` refuses an outward effect with nothing queued; contained effects still run                                                     | `security/unattended-run.test.ts` (A-2)                     |
+| ACP: harness, local    | unit        | The worker's own call under a declared runtime drives the scripted agent: build allowed and committed, push and escape refused and logged, one key seen | `container-runtime/acp-harness.test.ts` (A-2)               |
+| ACP: roster            | unit        | A key-capable agent row is enabled with its key and disabled naming the key without; browser-login agents differ                                        | `renderer/views/container-run-control.test.ts` (A-4)        |
+| ACP: egress grammar    | unit        | `host:port` and `*.suffix:port` parse and format; `*.com` is refused; the wildcard matches on the dot boundary                                          | `container-runtime/egress-rules.test.ts` (A-1)              |
+| ACP: egress patterns   | unit        | Two hosts on one port through one socket; `*.suffix` admits a subdomain, refuses the suffix and siblings; logged                                        | `container-runtime/egress-broker.test.ts` (A-1)             |
+| ACP: guest proxy       | unit        | Absolute-form HTTP streams an SSE body back with hop-by-hop headers dropped; CONNECT tunnels; DENY becomes a 403                                        | `container-runtime/guest-egress-proxy.test.ts` (A-1)        |
+| ACP: 443 in the guest  | integration | The model on guest port 443 is reached through the proxy, admitted by a wildcard rule named in the log                                                  | `container-runtime/thread-container.integration.test.ts`    |
+| ACP: permission policy | integration | A scripted ACP agent: in-guest write allowed, outward push denied and recorded, host escape denied, harness named                                       | `container-runtime/acp-container.integration.test.ts` (A-2) |
+| ACP: refusal           | unit        | Agents outside A6's set, and any agent without a key, are refused with a per-agent reason                                                               | `providers/container-provider.test.ts` (A-3)                |
 
 ## Non-goals
 

@@ -6,6 +6,7 @@ import {
   containerAcpAgentSpecs,
   containerAcpAgentTitles,
   containerAcpAvailability,
+  containerAcpKeySlugs,
 } from './container-acp-agents.ts'
 import { KNOWN_ACP_AGENTS } from './acp-known-agents.ts'
 
@@ -57,6 +58,10 @@ describe('container ACP agents', () => {
       containerAcpAvailability('my-own-agent', {}).reason,
       'not carried by the worker image',
     )
+  })
+
+  it('lists each key slug the runnable agents draw on once', () => {
+    assert.deepEqual(containerAcpKeySlugs(), ['anthropic', 'openai', 'gemini'])
   })
 
   it('names the runnable agents by their catalogue titles', () => {
