@@ -1,4 +1,15 @@
 import { z } from 'zod'
+import {
+  zPluginHookRegistration,
+  zPluginHookRegistrations,
+} from '@copse/agent/plugins/plugin-hook.ts'
+
+export {
+  zPluginHookRegistration,
+  zPluginHookRegistrations,
+  validatePluginHookRegistrations,
+  type PluginHookRegistration,
+} from '@copse/agent/plugins/plugin-hook.ts'
 
 const zRequestId = z.number().int().positive()
 const zRegistrationId = z.string().min(1).max(128)
@@ -97,6 +108,8 @@ export const zPluginBrowserCall = z.discriminatedUnion('op', [
 export const zPluginToolRegistrations = z.strictObject({
   tools: z.array(zPluginToolRegistration).max(1_000),
   models: z.array(zPluginModelRegistration).max(1_000),
+  // Omitted by existing API-v1 workers; omission means no function hooks.
+  hooks: zPluginHookRegistrations.optional(),
 })
 
 export type PluginToolRegistration = z.infer<typeof zPluginToolRegistration>
@@ -110,6 +123,13 @@ export type PluginBrowserCall = z.infer<typeof zPluginBrowserCall>
 export type PluginToolRegistrations = z.infer<typeof zPluginToolRegistrations>
 
 export const zPluginToolHostRequest = z.discriminatedUnion('op', [
+  z.strictObject({
+    id: zRequestId,
+    op: z.literal('invoke-hook'),
+    registrationId: zRegistrationId,
+    event: zPluginHookRegistration.shape.event,
+    input: z.unknown(),
+  }),
   z.strictObject({
     id: zRequestId,
     op: z.literal('initialize'),

@@ -2,6 +2,8 @@ import {
   zPluginModelTurn,
   zPluginBrowserTab,
   zPluginToolRegistration,
+  zPluginHookRegistration,
+  type PluginHookRegistration,
   type PluginModelTurn,
   type PluginBrowserTab,
   type PluginBrowserUploadFile,
@@ -12,6 +14,16 @@ import {
 export interface PluginToolInvocationContext {
   readonly signal: AbortSignal
 }
+
+export interface PluginHookInvocationContext extends PluginToolInvocationContext {
+  readonly event: PluginHookRegistration['event']
+}
+
+/** Payload and return values cross a JSON boundary; handlers must validate their input. */
+export type PluginHookInvocationHandler = (
+  input: unknown,
+  context: PluginHookInvocationContext,
+) => unknown
 
 export interface PluginModelSessionApi {
   get(): Promise<unknown>
@@ -51,6 +63,7 @@ export interface PluginToolActivationApi {
   readonly pluginId: string
   registerTool(definition: PluginToolRegistration, handler: PluginToolInvocationHandler): void
   registerModelRoute(id: string, handler: PluginModelInvocationHandler): void
+  registerHook(definition: PluginHookRegistration, handler: PluginHookInvocationHandler): void
 }
 
 export interface PluginToolModule {
@@ -60,6 +73,12 @@ export interface PluginToolModule {
 export interface ActivatedPluginTools {
   readonly registrations: PluginToolRegistrations
   invokeTool(registrationId: string, input: unknown, signal: AbortSignal): Promise<unknown>
+  invokeHook(
+    registrationId: string,
+    event: PluginHookRegistration['event'],
+    input: unknown,
+    signal: AbortSignal,
+  ): Promise<unknown>
   invokeModel(
     registrationId: string,
     input: unknown,
@@ -101,9 +120,22 @@ export async function activatePluginTools(
     { definition: PluginToolRegistration; handler: PluginToolInvocationHandler }
   >()
   const models = new Map<string, PluginModelInvocationHandler>()
+  const hooks = new Map<
+    string,
+    { definition: PluginHookRegistration; handler: PluginHookInvocationHandler }
+  >()
+  let registeringHooks = true
   const api: PluginToolActivationApi = Object.freeze({
     apiVersion,
     pluginId,
+    registerHook(definition: PluginHookRegistration, handler: PluginHookInvocationHandler): void {
+      if (!registeringHooks) throw new Error('Plugin hooks must register during activate(api).')
+      const parsed = zPluginHookRegistration.parse(definition)
+      if (hooks.has(parsed.id)) throw new Error(`Duplicate plugin hook: ${parsed.id}`)
+      if (hooks.size >= 1_000) throw new Error('Plugin hook registration limit exceeded.')
+      if (typeof handler !== 'function') throw new Error(`Hook ${parsed.id} has no handler.`)
+      hooks.set(parsed.id, { definition: parsed, handler })
+    },
     registerTool(definition: PluginToolRegistration, handler: PluginToolInvocationHandler): void {
       const parsed = zPluginToolRegistration.parse(definition)
       if (tools.has(parsed.name)) throw new Error(`Duplicate plugin tool: ${parsed.name}`)
@@ -118,12 +150,25 @@ export async function activatePluginTools(
     },
   })
 
-  await moduleActivate(moduleValue)(api)
+  try {
+    await moduleActivate(moduleValue)(api)
+  } finally {
+    registeringHooks = false
+  }
 
   return {
     registrations: {
       tools: [...tools.values()].map((entry) => entry.definition),
       models: [...models.keys()].map((id) => ({ id })),
+      hooks: [...hooks.values()].map((entry) => entry.definition),
+    },
+    async invokeHook(registrationId, event, input, signal): Promise<unknown> {
+      signal.throwIfAborted()
+      const entry = hooks.get(registrationId)
+      if (!entry) throw new Error(`Unknown plugin hook: ${registrationId}`)
+      if (entry.definition.event !== event)
+        throw new Error(`Plugin hook event mismatch: ${registrationId}`)
+      return await entry.handler(input, Object.freeze({ signal, event }))
     },
     async invokeTool(registrationId, input, signal): Promise<unknown> {
       const entry = tools.get(registrationId)

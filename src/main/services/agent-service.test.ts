@@ -105,6 +105,7 @@ describe('runAgent AgentHost decoupling', () => {
       isRunning: (pluginId) => pluginId === 'personal.reference-model',
       registrations: () => ({ tools: [], models: [{ id: 'judge:default' }] }),
       invokeTool: () => Promise.reject(new Error('not a tool turn')),
+      invokeHook: () => Promise.reject(new Error('not a hook dispatch')),
       invokeModel: (_pluginId, _routeId, input) => {
         invocation = input
         return Promise.resolve({ text: 'Personal judge answer', inputTokens: 12, outputTokens: 4 })

@@ -38,6 +38,33 @@ function validManifest(): Record<string, unknown> {
 }
 
 describe('selected plugin tool discovery', () => {
+  it('accepts hook-only runtimes and preserves their declarations without installing in-process hooks', async () => {
+    const runtime = {
+      entrypoint: 'dist/index.mjs',
+      apiVersion: 1,
+      hooks: [{ id: 'inspect', event: 'turnStart' }],
+    }
+    const source = await discoverPluginToolSource(
+      await pluginRoot({ name: 'personal.hooks', runtime }),
+    )
+    assert.deepEqual(source.manifest.runtime, runtime)
+    const registered = registeredPluginToolSource(source)
+    assert.equal(registered.trust, 'user')
+    assert.deepEqual(registered.contributions.toolNames, [])
+    assert.deepEqual(registered.contributions.blockingHooks, [])
+    assert.deepEqual(registered.contributions.asyncHooks, [])
+    for (const hooks of [
+      [],
+      [{ id: 'x', event: '*' }],
+      [
+        { id: 'x', event: 'stop' },
+        { id: 'x', event: 'turnStart' },
+      ],
+    ]) {
+      const root = await pluginRoot({ name: 'personal.hooks', runtime: { ...runtime, hooks } })
+      await assert.rejects(discoverPluginToolSource(root), PluginToolSourceError)
+    }
+  })
   it('validates, canonicalizes, hashes, and registers the declared tool behavior', async () => {
     const candidate = await discoverPluginToolSource(await pluginRoot(validManifest()))
 

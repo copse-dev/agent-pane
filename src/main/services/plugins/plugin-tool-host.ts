@@ -22,6 +22,8 @@ import {
   PLUGIN_TOOL_PROTOCOL_MAX_LINE_BYTES,
   zPluginModelTurn,
   zPluginToolRegistrations,
+  validatePluginHookRegistrations,
+  type PluginHookRegistration,
   zPluginToolWorkerMessage,
   type PluginToolRegistrations,
   type PluginBrowserCall,
@@ -199,6 +201,10 @@ export class PluginToolHost {
         INITIALIZE_TIMEOUT_MS,
       )
       host.registrations = zPluginToolRegistrations.parse(result)
+      validatePluginHookRegistrations(
+        snapshot.manifest.runtime?.hooks ?? [],
+        host.registrations.hooks ?? [],
+      )
       host.initialized = true
       host.startupStderr = ''
       return host
@@ -496,6 +502,23 @@ export class PluginToolHost {
   invokeTool(registrationId: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
     return this.request(
       { op: 'invoke', kind: 'tool', registrationId, input },
+      INVOCATION_TIMEOUT_MS,
+      { ...(signal ? { signal } : {}) },
+    )
+  }
+
+  invokeHook(
+    registrationId: string,
+    event: PluginHookRegistration['event'],
+    input: unknown,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const hook = this.registrations.hooks?.find((h) => h.id === registrationId)
+    if (!hook || hook.event !== event) {
+      return Promise.reject(new Error(`Unknown plugin hook or event mismatch: ${registrationId}`))
+    }
+    return this.request(
+      { op: 'invoke-hook', registrationId, event, input },
       INVOCATION_TIMEOUT_MS,
       { ...(signal ? { signal } : {}) },
     )
