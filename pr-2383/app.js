@@ -501,10 +501,17 @@ var init_model_catalog = __esm({
   }
 });
 
-// packages/llm/src/model-parameters.ts
-function isReasoningLevel(value2) {
-  return REASONING_LEVELS.some((level) => level === value2);
+// packages/std/src/member-of.ts
+function memberOf(members2) {
+  const set6 = new Set(members2);
+  return (value2) => set6.has(value2);
 }
+var init_member_of = __esm({
+  "packages/std/src/member-of.ts"() {
+  }
+});
+
+// packages/llm/src/model-parameters.ts
 function isEmptyModelParameters(params) {
   return params.reasoning === void 0 && params.maxOutputTokens === void 0 && SAMPLING_FIELDS.every((field) => params[field] === void 0);
 }
@@ -672,12 +679,14 @@ function decodeModelParametersMap(value2) {
   }
   return out;
 }
-var REASONING_LEVELS, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_ASTRA_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_ASTRA_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_ASTRA_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_ASTRA_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
     init_model_selection();
+    init_member_of();
     REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+    isReasoningLevel = memberOf(REASONING_LEVELS);
     SAMPLING_FIELDS = [
       "temperature",
       "topP",
@@ -20382,6 +20391,24 @@ var init_zod = __esm({
   }
 });
 
+// packages/std/src/nullish.ts
+function isDefined(value2) {
+  return value2 !== void 0;
+}
+function isNonNull(value2) {
+  return value2 !== null;
+}
+function isNonEmptyString(value2) {
+  return typeof value2 === "string" && value2.length > 0;
+}
+function isNonBlankString(value2) {
+  return typeof value2 === "string" && value2.trim().length > 0;
+}
+var init_nullish = __esm({
+  "packages/std/src/nullish.ts"() {
+  }
+});
+
 // packages/std/src/unknown-value.ts
 function isRecord(value2) {
   return typeof value2 === "object" && value2 !== null && !Array.isArray(value2);
@@ -20436,15 +20463,14 @@ function optionalStringArray(value2, label = "value") {
   return expectStringArray(value2, label);
 }
 function firstNonEmptyString(...values3) {
-  return values3.find(
-    (value2) => value2 !== void 0 && value2 !== null && value2 !== ""
-  );
+  return values3.find(isNonEmptyString);
 }
 function nonEmptyStringOr(value2, fallback) {
   return firstNonEmptyString(value2, fallback) ?? fallback;
 }
 var init_unknown_value = __esm({
   "packages/std/src/unknown-value.ts"() {
+    init_nullish();
   }
 });
 
@@ -20654,7 +20680,7 @@ function stringField(args, key) {
 function stringListField(args, key) {
   const value2 = args[key];
   if (!Array.isArray(value2)) return [];
-  return value2.filter((entry) => typeof entry === "string" && entry.trim() !== "").map((entry) => entry.trim());
+  return value2.filter(isNonBlankString).map((entry) => entry.trim());
 }
 function parseThreadProposal(id39, args) {
   if (id39 === "" || !isRecord(args)) return null;
@@ -20696,6 +20722,7 @@ var THREAD_PROPOSAL_TOOL, THREAD_PROPOSAL_TITLE_MAX, THREAD_PROPOSAL_SUMMARY_MAX
 var init_thread_proposal = __esm({
   "packages/thread-store/src/thread-proposal.ts"() {
     init_unknown_value();
+    init_nullish();
     THREAD_PROPOSAL_TOOL = "propose_thread";
     THREAD_PROPOSAL_TITLE_MAX = 80;
     THREAD_PROPOSAL_SUMMARY_MAX = 400;
@@ -21468,7 +21495,7 @@ function metaSig(meta5) {
 function metaPatch(prev2, next3) {
   const patch = { ...next3 };
   for (const key of Object.keys(prev2)) {
-    if (!(key in next3)) patch[key] = void 0;
+    if (!Object.hasOwn(next3, key)) patch[key] = void 0;
   }
   return patch;
 }
@@ -27166,25 +27193,23 @@ var init_layout = __esm({
   }
 });
 
-// src/shared/types/state.ts
-function isRightPanelPosition(value2) {
-  return typeof value2 === "string" && RIGHT_PANEL_POSITIONS.includes(value2);
-}
-function isThemePreference(value2) {
-  return typeof value2 === "string" && THEME_PREFERENCES.includes(value2);
-}
-var RIGHT_PANEL_POSITIONS, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE;
-var init_state = __esm({
-  "src/shared/types/state.ts"() {
-    RIGHT_PANEL_POSITIONS = ["auto", "side", "bottom"];
-    THEME_PREFERENCES = ["system", "light", "dark"];
-    DEFAULT_THEME_PREFERENCE = "dark";
+// src/shared/member-of.ts
+var init_member_of2 = __esm({
+  "src/shared/member-of.ts"() {
+    init_member_of();
   }
 });
 
-// src/shared/types/ipc.ts
-var init_ipc = __esm({
-  "src/shared/types/ipc.ts"() {
+// src/shared/types/state.ts
+var RIGHT_PANEL_POSITIONS, isRightPanelPosition, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE, isThemePreference;
+var init_state = __esm({
+  "src/shared/types/state.ts"() {
+    init_member_of2();
+    RIGHT_PANEL_POSITIONS = ["auto", "side", "bottom"];
+    isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS);
+    THEME_PREFERENCES = ["system", "light", "dark"];
+    DEFAULT_THEME_PREFERENCE = "dark";
+    isThemePreference = memberOf(THEME_PREFERENCES);
   }
 });
 
@@ -27273,7 +27298,6 @@ var init_types = __esm({
     init_llm();
     init_layout();
     init_state();
-    init_ipc();
     init_tools();
     init_provider();
     init_skills();
@@ -28521,9 +28545,6 @@ var init_titlebar = __esm({
 });
 
 // src/renderer/dom/context-menu.ts
-function isHeading(entry) {
-  return "heading" in entry;
-}
 function showContextMenu(clientX, clientY, items) {
   dismissOpenContextMenu?.();
   if (items.every(isHeading)) return;
@@ -28600,11 +28621,12 @@ function showContextMenu(clientX, clientY, items) {
 function dismissContextMenu() {
   dismissOpenContextMenu?.();
 }
-var dismissOpenContextMenu;
+var isHeading, dismissOpenContextMenu;
 var init_context_menu = __esm({
   "src/renderer/dom/context-menu.ts"() {
     init_helpers();
     init_icons();
+    isHeading = (entry) => "heading" in entry;
     dismissOpenContextMenu = null;
   }
 });
@@ -28650,15 +28672,13 @@ var init_errors4 = __esm({
 });
 
 // src/shared/auto-approval.ts
-function isAutoApprovalLevel(value2) {
-  return typeof value2 === "string" && AUTO_APPROVAL_LEVELS.includes(value2);
-}
 function sanitizeAutoApprovalLevel(value2) {
   return isAutoApprovalLevel(value2) ? value2 : DEFAULT_AUTO_APPROVAL_LEVEL;
 }
-var AUTO_APPROVAL_LEVEL_SETTING, AUTO_APPROVAL_LEVELS, DEFAULT_AUTO_APPROVAL_LEVEL, AUTO_APPROVAL_LEVEL_LABELS;
+var AUTO_APPROVAL_LEVEL_SETTING, AUTO_APPROVAL_LEVELS, DEFAULT_AUTO_APPROVAL_LEVEL, AUTO_APPROVAL_LEVEL_LABELS, isAutoApprovalLevel;
 var init_auto_approval = __esm({
   "src/shared/auto-approval.ts"() {
+    init_member_of2();
     AUTO_APPROVAL_LEVEL_SETTING = "shellAutoApprovalLevel";
     AUTO_APPROVAL_LEVELS = ["off", "read", "local-write", "remote-write"];
     DEFAULT_AUTO_APPROVAL_LEVEL = "read";
@@ -28668,6 +28688,7 @@ var init_auto_approval = __esm({
       "local-write": "Reads + local commits \u2014 also git add/commit/checkout/stash",
       "remote-write": "Reads + local commits + pushes \u2014 also git push and gh pr create"
     };
+    isAutoApprovalLevel = memberOf(AUTO_APPROVAL_LEVELS);
   }
 });
 
@@ -28781,12 +28802,10 @@ var init_ui_scale2 = __esm({
 });
 
 // src/shared/app-icon-variants.ts
-function isAppIconVariant(value2) {
-  return typeof value2 === "string" && APP_ICON_VARIANTS.includes(value2);
-}
-var APP_ICON_VARIANTS, DEFAULT_APP_ICON_VARIANT, APP_ICON_VARIANT_LABELS;
+var APP_ICON_VARIANTS, DEFAULT_APP_ICON_VARIANT, APP_ICON_VARIANT_LABELS, isAppIconVariant;
 var init_app_icon_variants = __esm({
   "src/shared/app-icon-variants.ts"() {
+    init_member_of2();
     APP_ICON_VARIANTS = [
       "rose",
       "pink-lady",
@@ -28830,6 +28849,7 @@ var init_app_icon_variants = __esm({
       coral: "Coral",
       lagoon: "Lagoon"
     };
+    isAppIconVariant = memberOf(APP_ICON_VARIANTS);
   }
 });
 
@@ -29088,14 +29108,17 @@ var init_managed_agents = __esm({
 });
 
 // packages/thread-store/src/remote-agent-provider.ts
-function isRemoteAgentProvider(value2) {
-  return value2 === REMOTE_AGENT_PROVIDER_CURSOR || value2 === REMOTE_AGENT_PROVIDER_ANTHROPIC;
-}
-var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC;
+var REMOTE_AGENT_PROVIDER_CURSOR, REMOTE_AGENT_PROVIDER_ANTHROPIC, REMOTE_AGENT_PROVIDERS, isRemoteAgentProvider;
 var init_remote_agent_provider = __esm({
   "packages/thread-store/src/remote-agent-provider.ts"() {
+    init_member_of();
     REMOTE_AGENT_PROVIDER_CURSOR = "cursor";
     REMOTE_AGENT_PROVIDER_ANTHROPIC = "anthropic";
+    REMOTE_AGENT_PROVIDERS = [
+      REMOTE_AGENT_PROVIDER_CURSOR,
+      REMOTE_AGENT_PROVIDER_ANTHROPIC
+    ];
+    isRemoteAgentProvider = memberOf(REMOTE_AGENT_PROVIDERS);
   }
 });
 
@@ -34831,7 +34854,7 @@ function listIntellectScoredModelIds() {
 function resolveIntellectModelId(id39) {
   return resolveModelIdForm(
     id39,
-    (candidate) => candidate in MODEL_INTELLECT_RAW ? candidate : INTELLECT_ALIASES[candidate] ?? null
+    (candidate) => Object.hasOwn(MODEL_INTELLECT_RAW, candidate) ? candidate : INTELLECT_ALIASES[candidate] ?? null
   );
 }
 function pickMeasurement(modelId) {
@@ -36232,12 +36255,20 @@ var init_attachment_preview = __esm({
   }
 });
 
+// src/shared/nullish.ts
+var init_nullish2 = __esm({
+  "src/shared/nullish.ts"() {
+    init_nullish();
+  }
+});
+
 // src/renderer/ui/cx.ts
 function cx(...parts) {
-  return parts.filter((part) => typeof part === "string" && part.length > 0).join(" ");
+  return parts.filter(isNonEmptyString).join(" ");
 }
 var init_cx = __esm({
   "src/renderer/ui/cx.ts"() {
+    init_nullish2();
   }
 });
 
@@ -36742,7 +36773,7 @@ var init_data_policies = __esm({
 
 // packages/llm/src/agent-model-identity.ts
 function resolveAgentModelIdentity(...forms) {
-  const named2 = forms.filter((form) => Boolean(form));
+  const named2 = forms.filter(isNonEmptyString);
   for (const form of named2) {
     const id39 = resolveIntellectModelId(form);
     if (id39 !== null && getIntellectScore(id39)) return id39;
@@ -36758,6 +36789,7 @@ var init_agent_model_identity = __esm({
   "packages/llm/src/agent-model-identity.ts"() {
     init_model_intellect();
     init_model_label();
+    init_nullish();
   }
 });
 
@@ -37038,7 +37070,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
   }
   for (const model of models) {
     const { id: id39 } = model;
-    const hint = [localModelRoleHint(id39), localModelIntellectHint(id39)].filter((part) => part !== null).join(" \xB7 ");
+    const hint = [localModelRoleHint(id39), localModelIntellectHint(id39)].filter(isNonNull).join(" \xB7 ");
     const label = getLocalModelCapability(id39)?.label ?? modelDisplayName(id39);
     options2.push({
       value: `lmstudio:${id39}`,
@@ -37173,6 +37205,7 @@ var init_model_options = __esm({
     init_model_label();
     init_agent_model_identity();
     init_model_display();
+    init_nullish2();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
     CHAT_DEFAULT_GROUP = "Chat default";
@@ -37195,7 +37228,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       `model-picker-${variant}`,
       recentMode ? "model-picker-recent-mode" : void 0,
       pickerOpts.className
-    ].filter((part) => Boolean(part)).join(" ")
+    ].filter(isNonEmptyString).join(" ")
   });
   wrap3.style.setProperty("--model-picker-anchor", `--model-picker-${String(++pickerAnchorId)}`);
   const triggerAttrs = {
@@ -37772,6 +37805,7 @@ var init_model_picker = __esm({
     init_helpers();
     init_icons();
     init_model_options();
+    init_nullish2();
     RECENT_MODEL_LIMIT = 5;
     pickerAnchorId = 0;
     fieldPickerId = 0;
@@ -52190,10 +52224,7 @@ function migrateLegacyAppearanceDefaults(stored) {
     uiTintStrength: DEFAULT_TINT_STRENGTH
   };
 }
-function isUiTintStrength(value2) {
-  return value2 === "off" || value2 === "subtle" || value2 === "medium" || value2 === "strong";
-}
-var DEFAULT_ACCENT_COLOR, DEFAULT_TINT_COLOR, DEFAULT_TINT_STRENGTH, APPEARANCE_DEFAULTS_MIGRATION_SETTING, APPEARANCE_DEFAULTS_MIGRATION_VERSION, LEGACY_DEFAULTS;
+var DEFAULT_ACCENT_COLOR, DEFAULT_TINT_COLOR, DEFAULT_TINT_STRENGTH, APPEARANCE_DEFAULTS_MIGRATION_SETTING, APPEARANCE_DEFAULTS_MIGRATION_VERSION, LEGACY_DEFAULTS, isUiTintStrength;
 var init_appearance = __esm({
   "src/shared/appearance.ts"() {
     init_state();
@@ -52208,13 +52239,11 @@ var init_appearance = __esm({
       uiTintColor: "#002E2B",
       uiTintStrength: "subtle"
     };
+    isUiTintStrength = (value2) => value2 === "off" || value2 === "subtle" || value2 === "medium" || value2 === "strong";
   }
 });
 
 // src/renderer/views/settings-dialog.ts
-function isSettingsSection(value2) {
-  return value2 === "general" || value2 === "usage" || value2 === "agent" || value2 === "permissions" || value2 === "mcp" || value2 === "customise" || value2 === "storage" || value2 === "appearance" || value2 === "ssh" || value2 === "experimental";
-}
 function pluginDisplayName(plugin27) {
   const raw = plugin27.name || plugin27.id;
   if (plugin27.trust === "first-party") {
@@ -53673,7 +53702,7 @@ function mountSettingsDialog(store3, api3) {
       const detail = [
         agent.description,
         ...agent.unsupportedFields.map((f3) => `${f3.field}: ${f3.reason}`)
-      ].filter((part) => Boolean(part)).join(" \xB7 ");
+      ].filter(isNonEmptyString).join(" \xB7 ");
       rows.push(
         makeSourceRow(agent.name, agent.source, detail || null, {
           badgeClass: agent.source === "project" ? "sources-badge-project" : void 0,
@@ -55472,7 +55501,7 @@ function mountSettingsDialog(store3, api3) {
   qsRequired(overlay, "#settings-cancel").addEventListener("click", closeSettingsDialog);
   qsRequired(overlay, "#settings-close").addEventListener("click", closeSettingsDialog);
 }
-var PLUGIN_NAME_ACRONYMS, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingPluginDetail;
+var isSettingsSection, PLUGIN_NAME_ACRONYMS, COPSE_SITE_TINT_COLOR, TINT_STRENGTH_AMOUNTS, HEX_COLOR, UI_TINT_STRENGTHS, TINT_STRENGTH_LABELS, SIMPLE_FIELDS, overlayEl, pendingSection, pendingPluginDetail;
 var init_settings_dialog = __esm({
   "src/renderer/views/settings-dialog.ts"() {
     init_errors4();
@@ -55518,6 +55547,8 @@ var init_settings_dialog = __esm({
     init_appearance();
     init_projects();
     init_appearance();
+    init_nullish2();
+    isSettingsSection = (value2) => value2 === "general" || value2 === "usage" || value2 === "agent" || value2 === "permissions" || value2 === "mcp" || value2 === "customise" || value2 === "storage" || value2 === "appearance" || value2 === "ssh" || value2 === "experimental";
     PLUGIN_NAME_ACRONYMS = /* @__PURE__ */ new Set(["acp", "api", "ci", "llm", "mcp", "okf", "pii", "ui"]);
     COPSE_SITE_TINT_COLOR = "#002E2B";
     TINT_STRENGTH_AMOUNTS = {
@@ -57273,7 +57304,7 @@ function getHookCardStatusLabel(card2) {
     (card2.userMessageChars ?? 0) > 0 ? "Notified you" : void 0,
     (card2.queuedMessageChars ?? 0) > 0 ? "Queued follow-up" : void 0,
     (card2.sessionEnvKeys ?? 0) > 0 ? "Set session environment" : void 0
-  ].filter((effect) => effect !== void 0);
+  ].filter(isDefined);
   const primaryEffect = effects[0];
   if (primaryEffect !== void 0) {
     return effects.length === 1 ? primaryEffect : `${primaryEffect} +${String(effects.length - 1)}`;
@@ -57299,6 +57330,7 @@ function getHookCardStatusLabel(card2) {
 }
 var init_hook_card = __esm({
   "packages/thread-store/src/hook-card.ts"() {
+    init_nullish();
   }
 });
 
@@ -245350,7 +245382,7 @@ function mountComposerEditor() {
       root4.setAttribute("data-placeholder", text4);
     },
     getBlocks() {
-      return chipElements().map((c4) => blocks2.get(c4.dataset["blockId"] ?? "")).filter((b5) => b5 !== void 0);
+      return chipElements().map((c4) => blocks2.get(c4.dataset["blockId"] ?? "")).filter(isDefined);
     },
     insertPasteChip(content, label) {
       const block2 = {
@@ -245406,6 +245438,7 @@ var init_composer_editor = __esm({
     init_build_text_with_attachments();
     init_text_expand();
     init_icons();
+    init_nullish2();
     CHIP_CHAR = "\uFFFC";
     CHIP_SELECTOR = ".inline-paste-chip";
   }
@@ -246075,9 +246108,6 @@ var init_retry_review_comparison = __esm({
 });
 
 // src/renderer/views/tool-args-format.ts
-function isRecord2(value2) {
-  return !!value2 && typeof value2 === "object" && !Array.isArray(value2);
-}
 function displayValue(value2) {
   if (value2 === null) return "null";
   if (value2 === void 0) return "undefined";
@@ -246101,7 +246131,7 @@ function normalizeValue(value2) {
 function normalizeDeep(value2) {
   const normalized = normalizeValue(value2);
   if (Array.isArray(normalized)) return normalized.map(normalizeDeep);
-  if (!isRecord2(normalized)) return normalized;
+  if (!isRecord(normalized)) return normalized;
   return Object.fromEntries(
     Object.entries(normalized).map(([key, entry]) => [key, normalizeDeep(entry)])
   );
@@ -246115,14 +246145,14 @@ function optionalString2(value2) {
 }
 function terminalPayloadFrom(value2) {
   const normalized = normalizeDeep(value2);
-  if (!isRecord2(normalized)) return null;
+  if (!isRecord(normalized)) return null;
   const success2 = normalizeValue(normalized["success"]);
-  if (isRecord2(success2)) {
+  if (isRecord(success2)) {
     const { success: _success2, error: _error, ...meta5 } = normalized;
     return { status: "success", payload: success2, meta: meta5 };
   }
   const error63 = normalizeValue(normalized["error"]);
-  if (isRecord2(error63)) {
+  if (isRecord(error63)) {
     const { success: _success2, error: _error, ...meta5 } = normalized;
     return { status: "error", payload: error63, meta: meta5 };
   }
@@ -246179,13 +246209,13 @@ function entriesForDisplay(value2) {
 }
 function unwrapResultEnvelope(value2) {
   value2 = normalizeValue(value2);
-  if (!isRecord2(value2)) return value2;
+  if (!isRecord(value2)) return value2;
   const entries2 = Object.entries(value2);
   const [firstEntry] = entries2;
   if (entries2.length !== 1 || !firstEntry) return value2;
   const [key, rawEntry] = firstEntry;
   const entry = normalizeValue(rawEntry);
-  if ((key === "success" || key === "error") && isRecord2(entry)) return entry;
+  if ((key === "success" || key === "error") && isRecord(entry)) return entry;
   return value2;
 }
 function formatReadableValue(value2, indent = 0) {
@@ -246197,7 +246227,7 @@ function formatReadableValue(value2, indent = 0) {
 ${rendered}` : ` ${rendered.trim()}`}`;
     }).join("\n");
   }
-  if (!isRecord2(unwrapped)) return `${" ".repeat(indent)}${displayValue(unwrapped)}`;
+  if (!isRecord(unwrapped)) return `${" ".repeat(indent)}${displayValue(unwrapped)}`;
   return entriesForDisplay(unwrapped).map(([key, rawEntry]) => {
     const entry = normalizeValue(rawEntry);
     const pad3 = " ".repeat(indent);
@@ -246205,7 +246235,7 @@ ${rendered}` : ` ${rendered.trim()}`}`;
       return `${pad3}${key}:
 ${indentLines(entry.replace(/\n+$/, ""), indent + 2)}`;
     }
-    if (isRecord2(entry) || Array.isArray(entry)) {
+    if (isRecord(entry) || Array.isArray(entry)) {
       return `${pad3}${key}:
 ${formatReadableValue(entry, indent + 2)}`;
     }
@@ -246223,6 +246253,7 @@ function renderToolArgs(args) {
 var init_tool_args_format = __esm({
   "src/renderer/views/tool-args-format.ts"() {
     init_tool_display();
+    init_unknown_value3();
   }
 });
 
@@ -277763,11 +277794,13 @@ var init_zip_writer = __esm({
 });
 
 // src/shared/roadmap/export.ts
-var ROADMAP_EXPORT_FORMATS;
+var ROADMAP_EXPORT_FORMATS, isRoadmapExportFormat;
 var init_export = __esm({
   "src/shared/roadmap/export.ts"() {
     init_zip_writer();
+    init_member_of2();
     ROADMAP_EXPORT_FORMATS = ["md", "html", "mhtml", "jsonl"];
+    isRoadmapExportFormat = memberOf(ROADMAP_EXPORT_FORMATS);
   }
 });
 
@@ -277798,12 +277831,6 @@ var init_export_roadmap = __esm({
 });
 
 // src/shared/roadmap/complexity.ts
-function isRoadmapComplexity(value2) {
-  return typeof value2 === "string" && ROADMAP_COMPLEXITIES.some((entry) => entry === value2);
-}
-function isRoadmapCategory(value2) {
-  return typeof value2 === "string" && ROADMAP_CATEGORIES.some((entry) => entry === value2);
-}
 function roadmapCategoryLabel(category) {
   switch (category) {
     case "bug":
@@ -277814,22 +277841,24 @@ function roadmapCategoryLabel(category) {
       return "Projects";
   }
 }
-var ROADMAP_COMPLEXITIES, ROADMAP_CATEGORIES;
+var ROADMAP_COMPLEXITIES, isRoadmapComplexity, ROADMAP_CATEGORIES, isRoadmapCategory;
 var init_complexity = __esm({
   "src/shared/roadmap/complexity.ts"() {
+    init_member_of2();
     ROADMAP_COMPLEXITIES = ["low", "medium", "high"];
+    isRoadmapComplexity = memberOf(ROADMAP_COMPLEXITIES);
     ROADMAP_CATEGORIES = ["bug", "feature", "project"];
+    isRoadmapCategory = memberOf(ROADMAP_CATEGORIES);
   }
 });
 
 // src/shared/roadmap/fit.ts
-function isRoadmapFit(value2) {
-  return typeof value2 === "string" && ROADMAP_FITS.some((entry) => entry === value2);
-}
-var ROADMAP_FITS;
+var ROADMAP_FITS, isRoadmapFit;
 var init_fit = __esm({
   "src/shared/roadmap/fit.ts"() {
+    init_member_of2();
     ROADMAP_FITS = ["likely", "partial", "unlikely"];
+    isRoadmapFit = memberOf(ROADMAP_FITS);
   }
 });
 
@@ -277865,9 +277894,6 @@ var init_attachments = __esm({
 });
 
 // src/shared/roadmap/review.ts
-function isRoadmapReviewVerdict(value2) {
-  return typeof value2 === "string" && ROADMAP_REVIEW_VERDICTS.some((entry) => entry === value2);
-}
 function isReviewStale(fields, status, checkpoint) {
   if (status === "done" || status === "archived") return false;
   if (!isRoadmapReviewVerdict(fields["reviewVerdict"])) return true;
@@ -277888,17 +277914,16 @@ function reviewDetailMarkdown(detail) {
   }
   return trimmed2;
 }
-var ROADMAP_REVIEW_VERDICTS;
+var ROADMAP_REVIEW_VERDICTS, isRoadmapReviewVerdict;
 var init_review = __esm({
   "src/shared/roadmap/review.ts"() {
+    init_member_of2();
     ROADMAP_REVIEW_VERDICTS = ["resolved", "likely", "partial", "open"];
+    isRoadmapReviewVerdict = memberOf(ROADMAP_REVIEW_VERDICTS);
   }
 });
 
 // src/renderer/views/roadmap-pane.ts
-function isRoadmapStatus(value2) {
-  return STATUS_OPTIONS.some((status) => status === value2);
-}
 function roadmapModeActive(store3) {
   const { filesPaneOpen, rightPanelMode } = store3.getState();
   return filesPaneOpen && rightPanelMode === "roadmap";
@@ -279590,7 +279615,7 @@ Notes: ${notes}` : prompt;
   });
   startBtn.addEventListener("click", () => void startThread());
   form.addEventListener("paste", (e4) => {
-    const files = Array.from(e4.clipboardData?.items ?? []).filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter((file2) => file2 !== null);
+    const files = Array.from(e4.clipboardData?.items ?? []).filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter(isNonNull);
     if (files.length === 0) files.push(...Array.from(e4.clipboardData?.files ?? []));
     if (files.length === 0) return;
     e4.preventDefault();
@@ -279694,7 +279719,7 @@ Notes: ${notes}` : prompt;
     });
   };
 }
-var STATUS_OPTIONS, LIST_STATUS_BADGES, NEW_ITEM_DRAFT_KEY;
+var STATUS_OPTIONS, LIST_STATUS_BADGES, isRoadmapStatus, NEW_ITEM_DRAFT_KEY;
 var init_roadmap_pane = __esm({
   "src/renderer/views/roadmap-pane.ts"() {
     init_helpers();
@@ -279717,6 +279742,8 @@ var init_roadmap_pane = __esm({
     init_attachment_icons();
     init_image_expand();
     init_unknown_value3();
+    init_member_of2();
+    init_nullish2();
     STATUS_OPTIONS = [
       "ready",
       "blocked",
@@ -279725,6 +279752,7 @@ var init_roadmap_pane = __esm({
       "archived"
     ];
     LIST_STATUS_BADGES = /* @__PURE__ */ new Set(["blocked", "conflicts", "archived"]);
+    isRoadmapStatus = memberOf(STATUS_OPTIONS);
     NEW_ITEM_DRAFT_KEY = "__new__";
   }
 });
@@ -295506,9 +295534,6 @@ function discoveredDisplayLabel(port, optionIndex = 0) {
   const label = port >= 5900 && port <= 5999 ? "Screen sharing" : "Remote desktop";
   return optionIndex === 0 ? label : `${label} option ${String(optionIndex + 1)}`;
 }
-function isVncCredentialType(type3) {
-  return type3 === "username" || type3 === "password" || type3 === "target";
-}
 function mountVncSession(controlsRoot, viewerRoot, store3, api3, options2) {
   const machineSelect = el("select", {
     class: "vnc-machine-select",
@@ -296865,7 +296890,7 @@ function mountVncPane(controlsRoot, viewerRoot, store3, api3) {
     tabs.clear();
   };
 }
-var LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX;
+var LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   async "src/renderer/views/vnc-pane.ts"() {
     await init_rfb();
@@ -296883,6 +296908,7 @@ var init_vnc_pane = __esm({
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
     SSH_MACHINE_PREFIX = "ssh:";
+    isVncCredentialType = (type3) => type3 === "username" || type3 === "password" || type3 === "target";
   }
 });
 
@@ -308259,9 +308285,6 @@ var init_link_decorator = __esm({
 
 // src/renderer/main.ts
 var main_exports2 = {};
-function isPopoutMode(value2) {
-  return value2 !== null && [...POPOUT_MODES].some((mode) => mode === value2);
-}
 function getPopoutMode() {
   const raw = new URLSearchParams(window.location.search).get("popout");
   return isPopoutMode(raw) ? raw : null;
@@ -308650,7 +308673,7 @@ function switchToNextThread() {
   const next3 = nextThreadId(store2);
   if (next3) switchThread(store2, next3);
 }
-var sanitizerReady, highlighterReady, store2, api2, POPOUT_MODES, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut;
+var sanitizerReady, highlighterReady, store2, api2, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut;
 var init_main2 = __esm({
   async "src/renderer/main.ts"() {
     init_tokens();
@@ -308724,6 +308747,7 @@ var init_main2 = __esm({
     init_sanitizer_backend();
     init_highlighter_backend();
     init_link_decorator();
+    init_member_of2();
     registerUiKit();
     sanitizerReady = installSanitizerBackend();
     highlighterReady = installHighlighterBackend();
@@ -308731,7 +308755,7 @@ var init_main2 = __esm({
     installAppLinkDecorator();
     store2 = createStore();
     api2 = window.api;
-    POPOUT_MODES = /* @__PURE__ */ new Set([
+    POPOUT_MODES = [
       "explorer",
       "terminal",
       "changes",
@@ -308740,7 +308764,8 @@ var init_main2 = __esm({
       "memories",
       "roadmap",
       "vnc"
-    ]);
+    ];
+    isPopoutMode = memberOf(POPOUT_MODES);
     popoutMode = getPopoutMode();
     if (popoutMode) {
       document.documentElement.classList.add("is-popout");
@@ -308760,7 +308785,7 @@ var init_main2 = __esm({
     handleStopShortcut = null;
     if (popoutMode) {
       api2.panes.onSwitchMode((mode) => {
-        if (!POPOUT_MODES.has(mode)) return;
+        if (!isPopoutMode(mode)) return;
         void activatePopoutPane(mode);
       });
     }
