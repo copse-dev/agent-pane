@@ -44,13 +44,14 @@ on:
       - demo-previews
   workflow_dispatch:
 
-# pages/id-token are for the called pages.yml deploy: a reusable workflow's token
-# can narrow the caller's scopes but never widen them.
+# No pages/id-token here any more: nothing in this workflow deploys. The deploy
+# runs on the run `deploy` dispatches, which mints those scopes from pages.yml's
+# own `permissions:` block rather than inheriting a caller's. `actions: write` is
+# what the dispatch needs and is declared on that job alone, so `publish` — the
+# one job here that runs a shell script against a write token — does not get it.
 permissions:
   contents: write
   pull-requests: write
-  pages: write
-  id-token: write
 
 # A newer push to the same branch supersedes an in-flight preview build.
 concurrency:
@@ -320,23 +321,114 @@ jobs:
           fi
           echo "published=${published}" >> "$GITHUB_OUTPUT"
 
+  # Deliberately NOT `uses: ./.github/workflows/pages.yml`. A called workflow's
+  # jobs run inside THIS run, so the deploy took its place in the shared `pages`
+  # concurrency group here — and GitHub keeps a single pending slot, so a newer
+  # deploy arriving while ours waited cancelled ours, which marked this whole run
+  # cancelled and painted a grey X on the PR. That is not a rare edge: 23 of the
+  # 40 Demo preview runs before this change ended `cancelled`, on 23 different
+  # branches, every one of them a `publish` and `comment` that had already
+  # succeeded. One push to main fans this workflow out into a dozen runs whose
+  # deploys all reach the queue within seconds, so every one past the deploying
+  # run and the single pending one behind it is cancelled.
+  #
+  # Dispatching instead hands the deploy to a run of its own. The supersession
+  # still happens — it is the right behaviour, and pages.yml's note explains why
+  # `queue: max` was worse — but it now cancels a standalone "Deploy site" run
+  # that no PR is watching, instead of a PR's own preview run.
+  #
+  # Nothing is lost by not waiting: the deploy assembles whatever is on the
+  # demo-previews tip rather than this run's content, and `publish` has already
+  # pushed there by the time we get here. Whichever deploy runs next therefore
+  # carries this target, which is also why the sticky `comment` below never
+  # waited for it either.
+  #
+  # `workflow_dispatch`, not a `push:` trigger on demo-previews: that branch is an
+  # orphan holding preview content with no `.github/` of its own, and a push event
+  # runs the workflow definitions from the pushed branch — so such a trigger would
+  # silently never fire. Dispatching on THIS branch keeps what `uses:` gave us,
+  # which is that a PR editing pages.yml exercises its own copy before merge.
+  #
+  # It also has to be one of those two triggers to fire at all. `github.token`
+  # normally starts no further run — the recursion guard ci.yml's autoformat job
+  # works around by pushing as an App — and `workflow_dispatch` and
+  # `repository_dispatch` are the documented exceptions to it. Reaching for any
+  # other event here would produce a dispatch that returns 204 and does nothing.
   deploy:
     needs: publish
     if: needs.publish.outputs.published == 'true'
-    uses: ./.github/workflows/pages.yml
-    with:
-      # A deploy problem is never this PR's fault — the previews branch is shared,
-      # and so is the Pages service and the deploy queue. Warn rather than redden
-      # the PR; the preview is already committed and the next deploy publishes it.
-      tolerate-deploy-failure: true
-    secrets: inherit
+    runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
+    permissions:
+      actions: write
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const workflow_id = 'pages.yml';
+            // Warn, never fail — this carries over the `tolerate-deploy-failure:
+            // true` the `uses:` call used to pass. A deploy problem is never this
+            // PR's fault: the previews branch is shared, and so are the Pages
+            // service and the deploy queue. The build is already committed to
+            // demo-previews, so the next deploy publishes it either way.
+            //
+            // The concrete case this catches is a PR that merges while its own
+            // preview is still building: auto-delete takes the head branch with
+            // it, and dispatching on a ref that no longer exists 404s. ci.yml's
+            // autoformat job guards the same trap. Failing there would put a red
+            // X on an already-merged PR over a deploy nobody is waiting for.
+            try {
+              // A deploy that is already QUEUED has not assembled yet, so it will
+              // pick up the commit `publish` just pushed — dispatching a second one
+              // would only supersede it to publish the same tree. An IN-PROGRESS
+              // deploy is not enough: it may have fetched the previews tip before
+              // our push landed, so that case still needs a deploy of its own.
+              //
+              // Racing runs can both read "none queued" and both dispatch; the
+              // loser is superseded exactly as before, on a run no PR is watching.
+              // This is an optimisation, never a correctness condition.
+              //
+              // Deploys that demo-preview-cleanup.yml still calls with `uses:` are
+              // jobs inside ITS run and so are invisible here. Same story: at worst
+              // we dispatch alongside one and supersede it, and the deploy that
+              // wins assembles the tip both of them wanted published.
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id,
+                per_page: 30,
+              });
+              const pending = data.workflow_runs.find(
+                (run) => run.status === 'queued' || run.status === 'pending',
+              );
+              if (pending) {
+                core.info(
+                  `Deploy run ${pending.id} is already queued and will publish this build; skipping.`,
+                );
+                return;
+              }
+              const ref = context.ref.replace('refs/heads/', '');
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id,
+                ref,
+              });
+              core.info(`Dispatched the Pages deploy on ${ref}.`);
+            } catch (err) {
+              core.warning(
+                `Pages deploy not dispatched (${err.message}). This build is already committed to demo-previews, so the next deploy publishes it.`,
+                { title: 'Pages deploy not dispatched' },
+              );
+            }
 
-  # Deliberately NOT `needs: deploy`. The deploy serializes on the shared `pages`
+  # Deliberately NOT `needs: deploy`, and it predates the dispatch above: back
+  # when the deploy ran in this workflow it serialized on the shared `pages`
   # concurrency group, so gating the comment on it meant the preview link arrived
   # whenever that queue got around to this run — measured at seven hours after
-  # the push on a busy day. The comment describes URLs that the deploy will serve
-  # shortly, so it does not need to wait for it, and it survives a deploy that
-  # gets superseded by a newer one.
+  # the push on a busy day. The comment describes URLs that some deploy will serve
+  # shortly, so it does not need to wait for one, and it survives a deploy that
+  # gets superseded by a newer one. `needs: publish` also keeps it independent of
+  # the dispatch, which is a request rather than a result.
   comment:
     needs: publish
     if: needs.publish.outputs.published == 'true' && needs.publish.outputs.pr != ''
