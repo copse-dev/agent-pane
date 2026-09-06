@@ -57,7 +57,7 @@
 .vnc-tab.is-active {
   color: var(--text-primary);
   background: var(--bg-selected);
-  box-shadow: inset 2px 0 0 var(--accent);
+  font-weight: 600;
 }
 
 .vnc-tab.is-controlling::before {
@@ -356,13 +356,30 @@
   line-height: var(--line-height-base);
 }
 
+/* The VNC pane is the one place the marker becomes a gutter rather than a
+   plate (see `prototypes/side-highlight` — "M, the mix"): it is a separate pane
+   with its own chrome, and its status hue has to survive on a single line where
+   a plate would just box three of them. The icon column also means the title
+   and the body start at the same inset. */
 .vnc-auth-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
+  --sev: var(--accent);
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: start;
+  column-gap: var(--spacing-xs);
+  row-gap: var(--spacing-sm);
   padding: var(--spacing-md);
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--sev) 6%, transparent);
+}
+.vnc-auth-icon {
+  grid-column: 1;
+  justify-self: center;
+  margin-top: 3px;
+  color: var(--sev);
+}
+/* Everything else shares the body column, whatever fields the panel is showing. */
+.vnc-auth-panel > :not(.vnc-auth-icon) {
+  grid-column: 2;
 }
 
 .vnc-auth-panel[hidden] {
@@ -370,7 +387,7 @@
 }
 
 .vnc-auth-title {
-  color: var(--text-primary);
+  color: var(--sev);
   font-weight: 600;
 }
 
@@ -488,31 +505,50 @@
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
+/* One status line, so the marker is a pip in the same gutter the auth panel
+   uses rather than a rail — the hue that used to run down the edge is what the
+   dot is for. */
 .vnc-status {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-  padding-left: var(--spacing-sm);
+  --sev: var(--border-strong);
+  display: grid;
+  grid-template-columns: 6px 1fr;
+  align-items: start;
+  column-gap: var(--spacing-sm);
+  row-gap: var(--spacing-xs);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
-  border-left: 2px solid var(--border);
   overflow-wrap: anywhere;
 }
 
+.vnc-status-dot {
+  grid-column: 1;
+  grid-row: 1;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sev);
+  /* Centred on the title's first line, not on the block. */
+  margin-top: calc((var(--line-height-base) - 6px) / 2);
+}
+
+.vnc-status > :not(.vnc-status-dot) {
+  grid-column: 2;
+}
+
 .vnc-status[data-kind='working'] {
+  --sev: var(--accent);
   color: var(--text-secondary);
-  border-left-color: var(--accent);
 }
 
 .vnc-status[data-kind='ok'] {
+  --sev: var(--success);
   color: var(--success);
-  border-left-color: var(--success);
 }
 
 .vnc-status[data-kind='error'] {
+  --sev: var(--error);
   color: var(--error);
-  border-left-color: var(--error);
 }
 
 .vnc-status-title {

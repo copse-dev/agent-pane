@@ -41,12 +41,13 @@ The core brand palette is forest (`#002e2b`), neon green (`#20fd85`), pink (`#ff
 (`#fffdf7`). Define those once as brand tokens, then bind product components through semantic tokens
 such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
 
-- The default interaction accent is pink (`#ff93d0`): primary actions, focus, selected-row rails,
-  and links. Neon green remains part of the expressive brand palette and an optional custom accent.
+- The default interaction accent is pink (`#ff93d0`): primary actions, focus, the Thinking and
+  Comparison labels, and links. Neon green remains part of the expressive brand palette and an optional custom accent.
 - The default interface tint is a subtle wash of green (`#244c25`); stronger tint levels remain
   optional so the workbench stays low-fatigue.
 - Pink is the default interaction emphasis, not a product status colour. Do not use it for errors,
-  warnings, success, or routine headings; those keep their semantic/text tokens.
+  warnings, success, or routine headings; those keep their semantic/text tokens. The five callout
+  severities have their own hues — see "Callout severities" below.
   - **Exception — "experimental".** Where a surface asks you to opt into something unfinished, the
     experimental marker takes the accent (`.pack-badge-experimental` in Settings → Packs). It is not
     reporting that anything has gone wrong; it is the one thing on the card you must read before
@@ -774,10 +775,17 @@ manual VNC glance.
 
 ## Transcript status callouts
 
-Review and comparison results should read as annotations in the transcript, not rounded cards or
-pills. Use a square, thin status rail and a subtle horizontal color wash that fades into the chat
-background. Reserve the rail hue for state (accent, error, etc.); avoid a full perimeter border,
-rounded container corners, or a solid tinted block around these secondary results.
+Review and comparison results should read as annotations in the transcript, not cards or pills. They
+are Copse annotating its own turn rather than part of the answer, so they take the **hatched plate**
+(`--callout-hatch`) with `--sev` set to their state hue — `--text-secondary` at rest, `--danger` when
+the run failed. No perimeter border, no elevation, no chips.
+
+This used to be a thin status rail plus a horizontal wash that faded out to the right, and the rule
+here used to forbid a tinted block outright. The texture is what earns the block back: a flat wash
+of the state hue really would read as a card, but a hatch at 3% keeps the density constant down the
+whole panel, so a twenty-line review weighs no more than a two-line one — which is exactly what the
+fading wash was trying to buy and could not, because a gradient's weight follows its height. See
+`prototypes/side-highlight` for the alternatives that were tried and rejected.
 
 ## Conditional split panes
 
@@ -790,7 +798,8 @@ surface so the next action remains discoverable.
 ## Accent colour versus interface tint
 
 The accent and tint are separate controls. Accent is semantic interaction emphasis: links, primary
-actions, focus, selected rows, and user-authored message highlights. Interface tint is only a subtle
+actions, focus, and user-authored message highlights. Not selected rows — those are the fill alone,
+see "Sidebar selections". Interface tint is only a subtle
 wash through otherwise neutral surfaces. Derive hover and link shades from the accent per theme,
 and derive foreground text from the chosen solid accent so custom colours do not leave primary
 buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
@@ -818,44 +827,86 @@ Spec: [`tests/e2e/roadmap-list-rows.e2e.ts`](../tests/e2e/roadmap-list-rows.e2e.
 Complexity / fit / review chips stay when present (they are rare); tuck those
 further only if the list gets noisy again.
 
-## Accent rails never curve
+## A rail means nesting, and nothing else
 
-A rail — a slim bar marking one inline edge of a row, whether drawn as `border-left` or as an inset
-shadow (`box-shadow: inset 2px 0 0`) — is clipped to the element's `border-radius`. Put one on a
-rounded box and the bar bows around the corners it meets, and the row stops reading as a marked list
-item and starts reading as a generic tinted callout. Keep the corners a rail touches square.
+A rail — a slim bar on one inline edge of a block, drawn as `border-left` or as an inset shadow
+(`box-shadow: inset 2px 0 0`) — used to do three unrelated jobs here. The transcript used it for
+**containment** ("this block is a different kind of content"), the sidebar used it for **selection**
+("this row is current"), and tool cards used it for **nesting** ("these rows are children of that
+one"). Ten of them across six stylesheets, which is why one device started reading as repetition
+rather than as signal.
 
-Three ways out, in order of preference:
+Only nesting kept it. `.tool-rollup-body` and `.subagent-timeline` draw a guide line down the edge
+of their children, which is literally what the bar depicts. `accent-rails.test.ts` holds that list
+closed: adding a rail anywhere else fails, and the fix is to name the reason in `STRUCTURAL_RAILS`
+or to use one of the two replacements below.
 
-- **Square the whole box** (`border-radius: 0`) when the row belongs to a continuous list — the
-  sidebar chat rows, Settings nav, `.review-panel` and `.comparison-panel` in the transcript.
-- **Square only the rail's side** (`border-radius: 0 var(--radius) var(--radius) 0`) to keep a
-  rounded card and a straight rail. This is what `@copse/streaming-markdown` does for blockquotes,
-  and its GitHub alerts go further and square all four.
-- **Drop the rail for an even ring** (`box-shadow: inset 0 0 0 1px var(--accent)`) when the element
-  is genuinely a card rather than a list row — a ring has no direction, so it follows a radius
-  cleanly on all four sides. `.provider-chip.active` and `.vnc-discovered-port.selected` use this.
+**Containment is a plate.** Two materials on one shape, split by what the block _is_ rather than by
+what it looks like (`--callout-plate` / `--callout-hatch` in `styles/global/base.css`; both read
+`--sev` off the element, so a component sets its hue and never has to know its material):
 
-The rule is per-edge, so a rounded far side is fine; only the corners the bar actually reaches have
-to be square. `accent-rails.test.ts` parses every renderer stylesheet, joins each rail against any
-rule that could round the same element, and fails with both source locations. happy-dom has no
-layout and a screenshot diff only catches this after it ships, so the stylesheet is where it is
-pinned.
+- **Flat plate** — prose the agent wrote. GitHub alerts and blockquotes. It is part of the answer,
+  so it gets a plain surface, and the severity hue moves to the title and its glyph.
+- **Hatched plate** — Copse annotating its own turn: thinking, review, comparison. Not part of the
+  answer, and a texture is what says so without spending a fourth hue or a fourth shape. Density
+  stays constant, so a tall block weighs no more than a short one. Under
+  `prefers-reduced-transparency` or `prefers-contrast: more` it degrades to the flat plate:
+  commentary keeps a surface and loses only the distinction.
+
+The VNC pane is the exception and takes a **gutter** — a fixed 24px icon column. It is a separate
+pane with its own chrome, and its status hue has to survive on a single line where a plate would
+just box three of them.
+
+**Selection is the fill alone.** See "Sidebar selections" below.
+
+The rails that remain are still clipped to `border-radius`, so a rounded corner bends one into a
+curve and the row stops reading as a marked item. Keep the corners a rail touches square — square
+the whole box (`border-radius: 0`) for a row in a continuous list, or square only the rail's side
+(`border-radius: 0 var(--radius) var(--radius) 0`) to keep a rounded card and a straight bar, which
+is what `.thread-proposal` does. `accent-rails.test.ts` joins each rail against any rule that could
+round the same element and fails with both source locations; happy-dom has no layout and a
+screenshot diff only catches this after it ships, so the stylesheet is where it is pinned.
+
+### Callout severities
+
+Five alert kinds need five hues, and the palette had three. `--info` (Note) and `--important` are
+declared in `tokens.css` alongside `--success`, `--warning` and `--danger`; light-theme values are
+derived rather than reused, per "Brand colours and semantic tokens" above.
+
+`--important` is pushed bluer than a true violet on purpose: `--accent` is pink, and a
+magenta-leaning purple reads as _accent_ at 16px next to the pink Thinking and Comparison labels in
+the same transcript. **A user whose custom accent is itself purple collapses that distinction** —
+the fix, if it comes up, is to derive `--important` away from `--accent` rather than to fix a hex.
+Thinking and Comparison both key off `--accent` too, so a turn with both shows two pink hatches;
+that is not a regression (both already used the accent) but the texture makes the hue more present
+than a 2px bar did.
+
+Each callout's glyph is a **solid** silhouette, the only filled shapes in an otherwise outline icon
+set. That is a house rule, so state it: **filled marks status in the transcript, outline is chrome.**
+It is what scopes the two warning triangles — the callout's solid one and `triangle-alert` in
+`dom/icons.ts`, which stays outline everywhere the app's own chrome uses it — and the same scoping
+covers `circle`, `dot` and `check`, which the Review annotation borrows. At 16px a 1.4-weight wire drawing cannot balance a
+600-weight title, and thin strokes lose disproportionately on a dark surface. The five silhouettes
+differ in outline, not just in the mark inside (circle / bulb / bubble / triangle / octagon), so the
+kind reads before the hue does. Their vertical nudges are baked into each mask's `viewBox`: ink sits
+high in a bulb and a bubble and low in a triangle, so box-centring reads wrong. Those constants were
+measured once in `prototypes/side-highlight/proto.js` and are not recomputed at runtime.
 
 ## Sidebar selections
 
-Chat rows use flat, square, full-bleed selection and hover fills with a slim inset accent rail on
-the **trailing (right) edge**. Avoid rounded row highlights here: they read like detached pills
-instead of a selection within a continuous sidebar list — see "Accent rails never curve" above. Don't
-reintroduce horizontal `margin-inline` on `.chat-row` — the selection wash should span the sidebar
-edge-to-edge.
+Chat rows use flat, square, full-bleed selection and hover fills, and **the fill is the whole
+marker** — `--bg-selected` spans a continuous list edge to edge, which already says "this one is
+current"; weight carries the rest. The accent rail that used to sit on the trailing edge was
+redundant with it. Avoid rounded row highlights here: they read like detached pills instead of a
+selection within a continuous list. Don't reintroduce horizontal `margin-inline` on `.chat-row` —
+the selection wash should span the sidebar edge-to-edge.
 
 Thread rows and the paginated **Show more** control share the same horizontal inset
 (`margin-inline: var(--spacing-xs)` plus `padding-left: 28px`). Don't give Show more `width: 100%`
 without that margin — the label drifts left of the titles above it.
 
-Settings nav (`.settings-nav-btn.active`) keeps a **leading** accent rail — that list sits on the
-dialog's left edge, so the marker belongs there, not on the trailing side.
+Settings nav (`.settings-nav-btn.active`) and VNC tabs (`.vnc-tab.is-active`) follow the same rule:
+fill plus weight, no rail.
 
 ### Automation threads
 

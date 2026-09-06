@@ -17,6 +17,8 @@
   --danger: #f14c4c;
   --success: #4ec9b0;
   --warning: #cca700;
+  --info: #6fb3d9;
+  --important: #9d7cf4;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
@@ -87,6 +89,10 @@
   --danger: #cf222e;
   --success: #1a7f37;
   --warning: #9a6700;
+  /* Derived for contrast on cream rather than reused from dark, per the
+     rule above: the dark pair sits at ~0.55 luminance and washes out here. */
+  --info: #0969da;
+  --important: #8250df;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.14);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.2);
