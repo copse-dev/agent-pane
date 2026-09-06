@@ -24,10 +24,7 @@
 // Why generate from `api.d.ts` + the preload: the preload is the source of
 // truth. It is typed `ApiClient` (so the facade cannot drift from the contract)
 // and every channel it names has a literal `ipcMain.handle` in `src/main` (the
-// test checks both). A hand-written `IpcInvokeMap` / `IpcEventMap` in
-// `src/shared/types/ipc.ts` used to describe the same surface; it covered fewer
-// than half the bound channels and nothing imported it, so it was retired in
-// favour of this document.
+// test checks both).
 import ts from 'typescript'
 import { z } from 'zod'
 import { execFileSync } from 'node:child_process'
