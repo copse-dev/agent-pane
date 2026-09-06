@@ -32,6 +32,10 @@
     "label": "Light-theme approval with a bright accent"
   },
   {
+    "id": "light-contrast-surfaces",
+    "label": "Light-theme syntax, fills, and selection"
+  },
+  {
     "id": "approval-grouped-shell-commands",
     "label": "Grouped outside-sandbox command approval"
   },
