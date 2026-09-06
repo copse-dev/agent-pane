@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { keyOf } from '@copse/std/member-of.ts'
 
 export const TERMINAL_BENCH_PROFILE_IDS = ['main-legacy', 'pr-1149', 'product-aligned'] as const
 
@@ -271,9 +272,7 @@ export function rotateTerminalBenchProfiles(
   return [...profiles.slice(normalized), ...profiles.slice(0, normalized)]
 }
 
-function isVersionedProfileId(value: string): value is TerminalBenchProfileVersionedId {
-  return Object.hasOwn(DEFINITIONS, value)
-}
+const isVersionedProfileId = keyOf(DEFINITIONS)
 
 export function terminalBenchProfile(
   value: string | undefined = process.env['COPSE_TERMINAL_PROFILE'],

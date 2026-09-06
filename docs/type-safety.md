@@ -216,6 +216,11 @@ code needs, all in `@copse/std` (re-exported as `@shared/…` for app code) and 
 - **`memberOf`** (`member-of.ts`) — builds a membership predicate from the tuple that defines the
   type, as [above](#prefer-a-predicate-the-compiler-checks). It replaced 28 hand-written membership
   predicates in #1330.
+- **`keyOf`** (`member-of.ts`) — the same idea for a record's keys. It uses `Object.hasOwn`, not
+  `in`, which matters: `in` walks the prototype chain, so a gate written with it answers **true**
+  for `toString`, `constructor`, `valueOf`, `hasOwnProperty`, `__proto__`, `isPrototypeOf`,
+  `propertyIsEnumerable` and `toLocaleString`. That is not hypothetical — it was the body of the
+  `settings:set` writability gate.
 - **`isNonEmptyString` / `isNonBlankString`** (`nullish.ts`) — a string with at least one character,
   and a string with at least one _non-whitespace_ character. `isNonEmptyString` is what
   `.filter((p): p is string => Boolean(p))` meant over a `(string | null | undefined)[]`, said out
