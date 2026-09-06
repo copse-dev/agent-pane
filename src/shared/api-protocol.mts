@@ -20,4 +20,4 @@
  * handshake and refuses a peer that speaks a different one rather than letting
  * mismatched shapes reach the handler table.
  */
-export const API_PROTOCOL_VERSION = 2 as const
+export const API_PROTOCOL_VERSION = 3 as const
