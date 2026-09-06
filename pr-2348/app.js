@@ -25581,6 +25581,7 @@ var init_demo_scenarios = __esm({
           phase: "finished",
           startedAt: FIXED_TIME,
           finishedAt: FIXED_TIME + 23 * 6e4,
+          prompt: "Clear the lint suppression backlog in the renderer views",
           model: "claude-sonnet-4-6",
           egressAllowlist: ["api.anthropic.com:443"],
           warnings: [],
@@ -26305,6 +26306,7 @@ function createDemoApi(scenario, options2 = {}) {
         phase: "running",
         startedAt: Date.now(),
         finishedAt: null,
+        prompt: request.prompt,
         model: request.model,
         egressAllowlist: ["api.anthropic.com:443"],
         log: ["[thread-container] starting copse-run-demo from copse-worker:local"],
@@ -262523,10 +262525,38 @@ function formatDuration(from2, to) {
   if (seconds2 < 90) return `${String(seconds2)}s`;
   return `${String(Math.round(seconds2 / 60))} min`;
 }
+function fillModelSelect(select, options2, current) {
+  if (options2.length === 0) return;
+  clear(select);
+  const groups = /* @__PURE__ */ new Map();
+  for (const option2 of options2) {
+    const node3 = el(
+      "option",
+      { value: option2.value, ...option2.disabled === true ? { disabled: "" } : {} },
+      option2.label
+    );
+    if (option2.group === void 0) {
+      select.append(node3);
+      continue;
+    }
+    let group2 = groups.get(option2.group);
+    if (!group2) {
+      group2 = el("optgroup", { label: option2.group });
+      groups.set(option2.group, group2);
+      select.append(group2);
+    }
+    group2.append(node3);
+  }
+  if (!options2.some((option2) => option2.value === current)) {
+    select.prepend(el("option", { value: current }, modelDisplayLabel(current)));
+  }
+  select.value = current;
+}
 function mountContainerRunControl(api3, context, onStateChanged) {
   const runs = /* @__PURE__ */ new Map();
   let refreshSequence = 0;
   let overlay = null;
+  let lastPrompt = "";
   const text4 = el("span", { class: "container-run-text" });
   const details = el(
     "button",
@@ -262574,12 +262604,34 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     overlay.dialog.append(run6 ? statusView(run6) : armForm());
   }
   function armForm() {
-    const prompt = el("textarea", {
+    const draft = context.getDraft().trim();
+    const quotesDraft = draft.length > 0;
+    const task = el("textarea", {
       class: "container-run-prompt",
       rows: "6",
-      "aria-label": "Task for the unattended run"
+      "aria-label": quotesDraft ? "Task the unattended run will carry out" : "Task for the unattended run"
     });
-    prompt.value = context.getDraft();
+    task.value = quotesDraft ? draft : lastPrompt;
+    if (quotesDraft) {
+      task.readOnly = true;
+      task.classList.add("is-readonly");
+    }
+    const modelSelect = el("select", {
+      class: "container-run-model",
+      "aria-label": "Model for the unattended run"
+    });
+    let chosenModel = context.getModel();
+    modelSelect.append(el("option", { value: chosenModel }, modelDisplayLabel(chosenModel)));
+    modelSelect.value = chosenModel;
+    modelSelect.addEventListener("change", () => {
+      chosenModel = modelSelect.value;
+      renderEgressHint();
+    });
+    void fetchModelOptions(api3, chosenModel, { includeAgentModels: false }).then((options2) => {
+      fillModelSelect(modelSelect, options2, chosenModel);
+    }).catch((error63) => {
+      console.error("[container-run] could not list models:", error63);
+    });
     const minutes = el("input", {
       type: "number",
       class: "container-run-minutes",
@@ -262595,7 +262647,11 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       step: "1000"
     });
     tokens2.value = String(DEFAULT_TOKEN_CEILING);
-    const model = context.getModel();
+    const egressHint = el("p", { class: "field-hint container-run-model-hint" });
+    function renderEgressHint() {
+      egressHint.textContent = `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; the key is scoped to the run and blanked once the guest holds it.`;
+    }
+    renderEgressHint();
     const start2 = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-primary container-run-start" },
@@ -262607,18 +262663,25 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       "Cancel"
     );
     cancel.addEventListener("click", () => overlay?.close());
+    start2.disabled = task.value.trim().length === 0;
+    task.addEventListener("input", () => {
+      start2.disabled = task.value.trim().length === 0;
+    });
     start2.addEventListener("click", () => {
       const threadId = context.getActiveThreadId();
       const projectId = context.getActiveProjectId();
       if (!threadId || !projectId) return;
+      const prompt = task.value.trim();
+      if (!prompt) return;
+      lastPrompt = prompt;
       const wallClockMs = Math.max(1, Number(minutes.value) || DEFAULT_WALL_CLOCK_MINUTES) * 6e4;
       const tokenCeiling = Math.max(1e3, Number(tokens2.value) || DEFAULT_TOKEN_CEILING);
       start2.disabled = true;
       void api3.container.runThread({
         projectId,
         threadId,
-        prompt: prompt.value,
-        model,
+        prompt,
+        model: chosenModel,
         budgets: { wallClockMs, tokenCeiling }
       }).then((progress2) => {
         update2(progress2);
@@ -262637,18 +262700,19 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         { class: "container-run-intro" },
         "A disposable container gets a snapshot of the checkout and runs the task with no prompts: anything that stays inside the container runs on its own, anything that would leave it (a push, a publish, a GitHub write) is queued for your review, and the result comes back as commits you can inspect before merging."
       ),
-      uiField({ label: "Task", control: prompt }),
+      uiField({
+        label: quotesDraft ? "Task (from the composer)" : "Task",
+        control: task,
+        ...quotesDraft ? {} : { hint: "Nothing in the composer to run \u2014 describe the task here." }
+      }),
+      uiField({ label: "Model", control: modelSelect }),
       el(
         "div",
         { class: "container-run-budgets" },
         uiField({ label: "Stop after (minutes)", control: minutes }),
         uiField({ label: "Token ceiling", control: tokens2 })
       ),
-      el(
-        "p",
-        { class: "field-hint container-run-model-hint" },
-        `Model: ${model}. The container can reach only the model's endpoint; the key is scoped to the run.`
-      ),
+      egressHint,
       uiActions(cancel, start2, { className: "container-run-actions" })
     );
   }
@@ -262657,6 +262721,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     const rows = [];
     const row2 = (label, value2) => el("div", { class: "container-run-row" }, el("dt", {}, label), el("dd", {}, value2));
     rows.push(row2("Phase", PHASE_LABEL[run6.phase]));
+    if (run6.prompt) rows.push(row2("Task", run6.prompt));
     rows.push(row2("Model", run6.model));
     if (run6.checkout) {
       rows.push(
@@ -262776,6 +262841,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         "Start another run"
       );
       again.addEventListener("click", () => {
+        lastPrompt = run6.prompt;
         const threadId = context.getActiveThreadId();
         if (threadId) runs.delete(threadId);
         renderBanner();
@@ -262852,6 +262918,7 @@ var init_container_run_control = __esm({
   "src/renderer/views/container-run-control.ts"() {
     init_helpers();
     init_ui();
+    init_model_options();
     init_dialog_shell();
     init_toast();
     DEFAULT_WALL_CLOCK_MINUTES = 120;
