@@ -2,6 +2,7 @@ import { showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { el, clear, on } from '../dom/helpers.ts'
 import { arrowLeftIcon, checkIcon, chevronDownIcon, chevronRightIcon } from '../dom/icons.ts'
 import { modelDisplayLabel, type ModelOption } from './model-options.ts'
+import { isNonEmptyString } from '@shared/nullish.ts'
 
 export interface ModelPickerOptions {
   /** Field pickers use form-control chrome and open below; the composer stays compact. */
@@ -94,7 +95,7 @@ export function mountModelPicker(
       recentMode ? 'model-picker-recent-mode' : undefined,
       pickerOpts.className,
     ]
-      .filter((part): part is string => Boolean(part))
+      .filter(isNonEmptyString)
       .join(' '),
   })
   wrap.style.setProperty('--model-picker-anchor', `--model-picker-${String(++pickerAnchorId)}`)

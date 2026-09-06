@@ -51,6 +51,7 @@ import {
   type EquatingMap,
 } from '@copse/llm/intellect-equating.ts'
 import { optionalRecord } from '../src/shared/unknown-value.mts'
+import { isNonBlankString } from '@copse/std/nullish.ts'
 
 const DATA_PATH = resolve('scripts/data/intellect-scores.json')
 const GENERATED_PATH = resolve('packages/llm/src/model-intellect.generated.ts')
@@ -523,12 +524,7 @@ export function mergeApiModels(
     const knownModelId = [api.id, api.slug, api.name]
       .map((k) => (k ? aliasToId.get(k) : undefined))
       .find((id) => id !== undefined)
-    const modelId =
-      knownModelId ??
-      [api.slug, api.id, api.name].find(
-        (candidate): candidate is string =>
-          typeof candidate === 'string' && candidate.trim().length > 0,
-      )
+    const modelId = knownModelId ?? [api.slug, api.id, api.name].find(isNonBlankString)
     if (!modelId) continue
     const aliases = knownModelId ? aliasesFor.get(modelId) : undefined
     const measurement: Measurement = {

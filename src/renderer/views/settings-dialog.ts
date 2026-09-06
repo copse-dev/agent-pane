@@ -92,6 +92,7 @@ export {
   isUiTintStrength,
   type UiTintStrength,
 } from '@shared/appearance.ts'
+import { isNonEmptyString } from '@shared/nullish.ts'
 
 export type SettingsSection =
   | 'general'
@@ -1917,7 +1918,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         agent.description,
         ...agent.unsupportedFields.map((f) => `${f.field}: ${f.reason}`),
       ]
-        .filter((part): part is string => Boolean(part))
+        .filter(isNonEmptyString)
         .join(' · ')
       rows.push(
         makeSourceRow(agent.name, agent.source, detail || null, {

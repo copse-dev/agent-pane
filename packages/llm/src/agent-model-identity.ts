@@ -12,6 +12,7 @@
 
 import { getIntellectScore, resolveIntellectModelId } from './model-intellect.ts'
 import { claudeModelIdFromLabel } from './model-label.ts'
+import { isNonEmptyString } from '@copse/std/nullish.ts'
 
 /**
  * The canonical model id an agent's own spellings denote — the first form that
@@ -28,7 +29,7 @@ import { claudeModelIdFromLabel } from './model-label.ts'
 export function resolveAgentModelIdentity(
   ...forms: ReadonlyArray<string | null | undefined>
 ): string | null {
-  const named = forms.filter((form): form is string => Boolean(form))
+  const named = forms.filter(isNonEmptyString)
   for (const form of named) {
     const id = resolveIntellectModelId(form)
     if (id !== null && getIntellectScore(id)) return id
