@@ -784,6 +784,72 @@ describe('demo preview publish race invariants', () => {
   })
 })
 
+// Every deploy serializes on the shared `pages` group, which keeps ONE pending
+// slot: a newer pending deploy cancels the older one. While demo-preview.yml
+// reached that queue through `uses:`, the cancelled job was part of the PR's own
+// run, so the run went cancelled and the PR grew a grey X — on 23 of the 40 runs
+// before this changed, every one of them a preview that had already published
+// and commented. Dispatching moves the supersession onto a run no PR watches.
+// One `uses:` away from coming back, and nothing but the Actions tab shows it.
+describe('demo preview deploy decoupling invariants', () => {
+  const demoPreview = readFileSync(resolve('.github/workflows/demo-preview.yml'), 'utf8')
+
+  it('never puts a PR run in the pages deploy queue', () => {
+    assert.doesNotMatch(
+      demoPreview,
+      /^\s*uses: \.\/\.github\/workflows\/pages\.yml/m,
+      "a called workflow's jobs run inside this run, so its cancellation cancels the PR's preview run",
+    )
+  })
+
+  it('dispatches the deploy on the pushed branch instead', () => {
+    assert.match(demoPreview, /createWorkflowDispatch/)
+    assert.match(
+      demoPreview,
+      /^ {4}permissions:\n {6}actions: write$/m,
+      'dispatching needs actions: write; the deploy scopes belong to the dispatched run',
+    )
+    // The branch, not `main`: `uses:` resolved pages.yml from the pushed branch,
+    // so a PR editing the deploy exercised its own copy before merge.
+    assert.match(
+      demoPreview,
+      /ref: context\.ref\.replace\('refs\/heads\/', ''\)|const ref = context\.ref\.replace/,
+    )
+  })
+
+  it('skips the dispatch only for a deploy that has not assembled yet', () => {
+    // A queued deploy reads the demo-previews tip when it starts, so it carries
+    // the commit `publish` just pushed. An in-progress one may have fetched that
+    // tip already, so it is NOT evidence this build will be published.
+    const guard = demoPreview.match(/const pending = data\.workflow_runs\.find\(\n[\s\S]*?\);/)?.[0]
+    assert.ok(guard, 'expected the queued-deploy guard before the dispatch')
+    assert.doesNotMatch(
+      guard,
+      /'in_progress'/,
+      'an in-progress deploy may predate this push; skipping on it drops the preview',
+    )
+    assert.match(guard, /'queued'/)
+    assert.match(guard, /'pending'/)
+  })
+
+  it('warns rather than fails when the deploy cannot be dispatched', () => {
+    // What `tolerate-deploy-failure: true` bought on the old `uses:` call, and
+    // the reason it is not just defensive: a PR that merges while its preview is
+    // still building takes its head branch with it, so the dispatch ref 404s.
+    // Failing there paints a red X on an already-merged PR.
+    assert.match(
+      demoPreview,
+      /catch \(err\) \{\n\s*core\.warning\(/,
+      'a deploy problem is never the PR’s fault; the build is already on demo-previews',
+    )
+    assert.doesNotMatch(
+      demoPreview,
+      /core\.setFailed/,
+      'failing this job puts the deploy queue back on the PR, which is what this job exists to stop',
+    )
+  })
+})
+
 // Previews and demos are published under the production domain, so search
 // engines must be told to skip them — and told *only* about them. Both halves
 // are one-line changes away from silently inverting: a marker dropped from a
