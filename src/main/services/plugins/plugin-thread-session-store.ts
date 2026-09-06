@@ -1,4 +1,5 @@
 import { storageGet, storageUpdate } from '../storage/storage.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 const MAX_SESSION_BYTES = 256 * 1024
 
@@ -10,10 +11,6 @@ export interface PluginThreadSessionStore {
 
 function sessionBagKey(pluginId: string): string {
   return `plugin.${encodeURIComponent(pluginId)}.threadSessions`
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export function validatePluginThreadSessionState(state: unknown): void {

@@ -5,6 +5,7 @@
  * and now Copse — spawn at points in the agent loop. They communicate over stdio
  * with JSON in both directions and can observe, block, or annotate agent actions.
  */
+import { memberOf } from '@copse/std/member-of.ts'
 
 /** Hook lifecycle events Copse understands. Mirrors Cursor's event names exactly. */
 export const CURSOR_HOOK_EVENTS = [
@@ -41,11 +42,9 @@ export const CURSOR_PERMISSION_HOOK_EVENTS = [
 export type CursorPermissionHookEvent = (typeof CURSOR_PERMISSION_HOOK_EVENTS)[number]
 
 /** Whether an event is one of the permission-gating hooks (shell / MCP / read). */
-export function isCursorPermissionHookEvent(
+export const isCursorPermissionHookEvent: (
   event: CursorHookEvent,
-): event is CursorPermissionHookEvent {
-  return (CURSOR_PERMISSION_HOOK_EVENTS as readonly string[]).includes(event)
-}
+) => event is CursorPermissionHookEvent = memberOf(CURSOR_PERMISSION_HOOK_EVENTS)
 
 /**
  * Cursor's **generic** pre-tool gate — the pre-side twin of `postToolUse`. Where

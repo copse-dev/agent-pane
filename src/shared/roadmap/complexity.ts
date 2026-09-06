@@ -6,13 +6,13 @@
  * module holds the pure vocabulary shared with the renderer.
  */
 
+import { memberOf } from '@shared/member-of.ts'
+
 export const ROADMAP_COMPLEXITIES = ['low', 'medium', 'high'] as const
 
 export type RoadmapComplexity = (typeof ROADMAP_COMPLEXITIES)[number]
 
-export function isRoadmapComplexity(value: unknown): value is RoadmapComplexity {
-  return typeof value === 'string' && ROADMAP_COMPLEXITIES.some((entry) => entry === value)
-}
+export const isRoadmapComplexity = memberOf(ROADMAP_COMPLEXITIES)
 
 /**
  * Extract the classifier verdict from model output. Tolerant of chatty
@@ -42,9 +42,7 @@ export const ROADMAP_CATEGORIES = ['bug', 'feature', 'project'] as const
 
 export type RoadmapCategory = (typeof ROADMAP_CATEGORIES)[number]
 
-export function isRoadmapCategory(value: unknown): value is RoadmapCategory {
-  return typeof value === 'string' && ROADMAP_CATEGORIES.some((entry) => entry === value)
-}
+export const isRoadmapCategory = memberOf(ROADMAP_CATEGORIES)
 
 /** Human label for a category, used in the accordion header and filter list. */
 export function roadmapCategoryLabel(category: RoadmapCategory): string {

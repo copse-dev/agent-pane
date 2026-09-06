@@ -77,6 +77,11 @@ describe('create PR dialog', function () {
     await expect($(`${DIALOG} h3`)).toHaveText('Create pull request')
     await expect($(TITLE_INPUT)).toBeDisplayed()
     await expect($(TITLE_INPUT)).toHaveAttribute('placeholder', 'Summarise the change')
+    const publishHint = $(`${DIALOG} .create-pr-dialog-hint`)
+    await expect(publishHint).toHaveText('Pushes committed changes on', { containing: true })
+    await expect(publishHint).toHaveText('Uncommitted changes are not included.', {
+      containing: true,
+    })
     await expect($(`${DIALOG} .create-pr-dialog-draft-input`)).toExist()
     await expect($(`${DIALOG} .create-pr-dialog-draft-input`)).not.toBeSelected()
     await expect($(`.tool-card[data-tool-id^="create-pr-"]`)).not.toExist()

@@ -9,6 +9,8 @@
  * found.
  */
 
+import { isDefined } from '@shared/nullish.ts'
+
 /**
  * Split a Markdown file into its leading YAML frontmatter block and the body.
  *
@@ -126,7 +128,7 @@ export function parseYamlList(yaml: string, key: string): string[] {
     return (list[1] ?? '')
       .split('\n')
       .map((line) => line.match(/^[ \t]+-[ \t]+(.+)$/)?.[1])
-      .filter((value): value is string => value !== undefined)
+      .filter(isDefined)
       .map((value) => unwrapScalar(value))
       .filter(Boolean)
   }

@@ -130,11 +130,9 @@ export function resolveExecutionTarget(explicit: ExecutionTarget | undefined): E
   return explicit ?? getActiveExecutionTarget()
 }
 
-export function isSshExecutionTarget(
+export const isSshExecutionTarget: (
   target: ExecutionTarget,
-): target is Extract<ExecutionTarget, { kind: 'ssh' }> {
-  return target.kind === 'ssh'
-}
+) => target is Extract<ExecutionTarget, { kind: 'ssh' }> = (target) => target.kind === 'ssh'
 
 /** True when the active project routes shell/fs/git through an SSH workspace. */
 export function isActiveSshWorkspace(): boolean {

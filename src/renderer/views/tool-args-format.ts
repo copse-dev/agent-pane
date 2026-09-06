@@ -1,8 +1,5 @@
 import { stripShellCdPrefix } from '@shared/tools/tool-display.ts'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
-}
+import { isRecord } from '@shared/unknown-value.ts'
 
 function displayValue(value: unknown): string {
   if (value === null) return 'null'

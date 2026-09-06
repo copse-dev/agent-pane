@@ -23,10 +23,7 @@ import {
   type HeadlessEvent,
 } from './headless-contract.ts'
 import type { AgentStreamChunk } from './wire-types.ts'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')

@@ -1,6 +1,7 @@
 import type { Thread } from './thread.ts'
 import type { LayoutState } from './layout.ts'
 import type { ProjectWorktreeMode } from './worktree.ts'
+import { memberOf } from '@shared/member-of.ts'
 
 export type PanelTab = 'file' | 'diff'
 export type RightPanelMode =
@@ -17,9 +18,7 @@ export type RightPanelMode =
 // pin the panel so users can force a readable terminal on any screen.
 export type RightPanelPosition = 'auto' | 'side' | 'bottom'
 export const RIGHT_PANEL_POSITIONS: readonly RightPanelPosition[] = ['auto', 'side', 'bottom']
-export function isRightPanelPosition(value: unknown): value is RightPanelPosition {
-  return typeof value === 'string' && (RIGHT_PANEL_POSITIONS as readonly string[]).includes(value)
-}
+export const isRightPanelPosition = memberOf(RIGHT_PANEL_POSITIONS)
 export type Theme = 'light' | 'dark'
 // What the user picked in Settings. `system` follows the OS colour scheme and
 // resolves to a concrete `Theme` at runtime; `light`/`dark` pin it. The store
@@ -27,9 +26,7 @@ export type Theme = 'light' | 'dark'
 export type ThemePreference = 'system' | Theme
 export const THEME_PREFERENCES: readonly ThemePreference[] = ['system', 'light', 'dark']
 export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'dark'
-export function isThemePreference(value: unknown): value is ThemePreference {
-  return typeof value === 'string' && (THEME_PREFERENCES as readonly string[]).includes(value)
-}
+export const isThemePreference = memberOf(THEME_PREFERENCES)
 
 export interface OpenFile {
   path: string

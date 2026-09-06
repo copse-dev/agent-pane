@@ -49,6 +49,7 @@ import {
   emptyGitHubFileContent,
   type GitHubFileContent,
 } from '../pr-file-content.ts'
+import { isDefined, isNonNull } from '@shared/nullish.ts'
 
 /** REST + GraphQL base URLs, honoring GH_HOST for GitHub Enterprise. */
 function apiRoots(host = process.env['GH_HOST']?.trim()): { rest: string; graphql: string } {
@@ -233,7 +234,7 @@ function parseRestPull(value: unknown): RestPull {
 function issueLabels(value: unknown): string[] {
   return recordArrayOrEmpty(value)
     .map((label) => optionalString(label['name']))
-    .filter((name): name is string => name !== undefined)
+    .filter(isDefined)
 }
 
 /** REST uses open/closed; promote closed+merged to MERGED so callers match gh CLI. */
@@ -294,7 +295,7 @@ async function listPullFiles(ref: PrRef): Promise<GhPrChangedFile[]> {
           }
         : null,
     )
-    .filter((entry): entry is GhPrChangedFile => entry != null)
+    .filter(isNonNull)
 }
 
 async function fileAtRef(ref: PrRef, path: string, gitRef: string): Promise<GitHubFileContent> {
@@ -409,7 +410,7 @@ export const githubApiBackend: GitHubBackend = {
           if (typeof item['updated_at'] === 'string') summary.updatedAt = item['updated_at']
           return summary
         })
-        .filter((entry): entry is GhIssueSummary => entry != null),
+        .filter(isNonNull),
       // GitHub does not include a body-only sentinel page. A full raw page may
       // have a successor; an exact multiple can show one harmless final
       // "Load more" that resolves to an empty page.
@@ -468,7 +469,7 @@ export const githubApiBackend: GitHubBackend = {
         if (typeof item['updated_at'] === 'string') summary.updatedAt = item['updated_at']
         return summary
       })
-      .filter((entry): entry is GhIssueSummary => entry != null)
+      .filter(isNonNull)
   },
 
   async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {

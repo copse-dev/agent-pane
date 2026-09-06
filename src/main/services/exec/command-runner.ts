@@ -69,9 +69,8 @@ export class CommandTimeoutError extends Error {
   }
 }
 
-export function isCommandTimeoutError(err: unknown): err is CommandTimeoutError {
-  return err instanceof CommandTimeoutError
-}
+export const isCommandTimeoutError: (err: unknown) => err is CommandTimeoutError = (err) =>
+  err instanceof CommandTimeoutError
 
 function prepareGitInvocation(
   args: string[],

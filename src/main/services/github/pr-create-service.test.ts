@@ -5,9 +5,10 @@ import type { PrCreateInput } from './backend/backend.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 
 // The one create path, shared by the `gh_pr_create` tool and the "Create PR"
-// dialog. What matters here is that both get the same four things: the right
-// checkout's branches, the attribution trailer, the draft flag as asked, and
-// the `threads:pr-created` announce the Changes panel follows.
+// dialog. What matters here is that both get the same publish sequence: the
+// right checkout's branches, a push of its committed work, the attribution
+// trailer, the draft flag as asked, and the `threads:pr-created` announce the
+// Changes panel follows.
 
 const WORKTREE_CONTEXT: ThreadExecutionContext = {
   projectId: 'project-1',
@@ -28,6 +29,7 @@ interface Recorded {
   created: PrCreateInput[]
   slugRoots: (string | null | undefined)[]
   branchRoots: (string | null | undefined)[]
+  pushed: Array<{ branch: string; root: string | null | undefined }>
   broadcasts: Broadcast[]
 }
 
@@ -35,6 +37,7 @@ function deps(over: Partial<PrCreateDependencies> = {}): Recorded {
   const created: PrCreateInput[] = []
   const slugRoots: (string | null | undefined)[] = []
   const branchRoots: (string | null | undefined)[] = []
+  const pushed: Array<{ branch: string; root: string | null | undefined }> = []
   const broadcasts: Broadcast[] = []
   const base: PrCreateDependencies = {
     getGithubRepoSlug: (root) => {
@@ -46,6 +49,11 @@ function deps(over: Partial<PrCreateDependencies> = {}): Recorded {
       return Promise.resolve('feature/x')
     },
     getDefaultBranch: () => Promise.resolve('main'),
+    getAheadBehind: () => Promise.resolve({ ahead: 1, behind: 0 }),
+    pushBranchToOrigin: (branch, root) => {
+      pushed.push({ branch, root })
+      return Promise.resolve({ ok: true, message: `Pushed ${branch}.` })
+    },
     createPullRequest: (input) => {
       created.push(input)
       return Promise.resolve({
@@ -63,7 +71,7 @@ function deps(over: Partial<PrCreateDependencies> = {}): Recorded {
     },
     ...over,
   }
-  return { deps: base, created, slugRoots, branchRoots, broadcasts }
+  return { deps: base, created, slugRoots, branchRoots, pushed, broadcasts }
 }
 
 /** The `threads:pr-created` pushes a run made, in order. */
@@ -84,6 +92,89 @@ describe('createPrForThread', () => {
     assert.ok(created, 'the PR should have been created')
     assert.equal(created.head, 'feature/x')
     assert.equal(created.base, 'main')
+    assert.deepEqual(recorded.pushed, [{ branch: 'feature/x', root: '/repo/.worktrees/thread-1' }])
+  })
+
+  it('stops before GitHub when the current branch has only uncommitted work', async () => {
+    const recorded = deps({
+      getAheadBehind: () => Promise.resolve({ ahead: 0, behind: 0 }),
+    })
+    const result = await createPrForThread({ title: 'T' }, WORKTREE_CONTEXT, recorded.deps)
+
+    assert.equal(result.ok, false)
+    assert.match(result.message, /no committed changes ahead of main/)
+    assert.equal(recorded.pushed.length, 0)
+    assert.equal(recorded.created.length, 0)
+  })
+
+  it('reports a failed push without attempting the pull request', async () => {
+    const recorded = deps({
+      pushBranchToOrigin: () => Promise.resolve({ ok: false, message: 'authentication failed' }),
+    })
+    const result = await createPrForThread({ title: 'T' }, WORKTREE_CONTEXT, recorded.deps)
+
+    assert.equal(result.ok, false)
+    assert.match(result.message, /could not push feature\/x/)
+    assert.match(result.message, /authentication failed/)
+    assert.equal(recorded.created.length, 0)
+  })
+
+  it('leaves an explicit head alone because it may exist only on the remote', async () => {
+    const recorded = deps()
+    const result = await createPrForThread(
+      { title: 'T', head: 'feature/remote' },
+      WORKTREE_CONTEXT,
+      recorded.deps,
+    )
+
+    assert.equal(result.ok, true)
+    assert.equal(recorded.pushed.length, 0)
+    assert.equal(recorded.created[0]?.head, 'feature/remote')
+  })
+
+  it('retries once when a just-pushed head has not reached the PR mutation yet', async () => {
+    let attempts = 0
+    const recorded = deps({
+      createPullRequest: () => {
+        attempts += 1
+        return Promise.resolve(
+          attempts === 1
+            ? {
+                ok: false,
+                backend: 'cli' as const,
+                message: "GraphQL: Head sha can't be blank, Head ref must be a branch",
+              }
+            : {
+                ok: true,
+                backend: 'cli' as const,
+                url: 'https://github.com/copse-dev/agent-pane/pull/8',
+                number: 8,
+                message: 'Opened PR #8',
+              },
+        )
+      },
+    })
+    const result = await createPrForThread({ title: 'T' }, WORKTREE_CONTEXT, recorded.deps)
+
+    assert.equal(result.ok, true)
+    assert.equal(attempts, 2)
+    assert.equal(result.number, 8)
+  })
+
+  it('turns a persistent ref propagation failure into an actionable retry', async () => {
+    const recorded = deps({
+      createPullRequest: () =>
+        Promise.resolve({
+          ok: false,
+          backend: 'cli' as const,
+          message: "GraphQL: Head sha can't be blank, Head ref must be a branch",
+        }),
+    })
+    const result = await createPrForThread({ title: 'T' }, WORKTREE_CONTEXT, recorded.deps)
+
+    assert.equal(result.ok, false)
+    assert.match(result.message, /GitHub has not recognized the newly pushed branch feature\/x/)
+    assert.match(result.message, /Retry Create PR in a moment/)
   })
 
   it('appends the attribution trailer to the body it was handed', async () => {

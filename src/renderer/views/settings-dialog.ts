@@ -105,20 +105,17 @@ export type SettingsSection =
   | 'ssh'
   | 'experimental'
 
-function isSettingsSection(value: unknown): value is SettingsSection {
-  return (
-    value === 'general' ||
-    value === 'usage' ||
-    value === 'agent' ||
-    value === 'permissions' ||
-    value === 'mcp' ||
-    value === 'customise' ||
-    value === 'storage' ||
-    value === 'appearance' ||
-    value === 'ssh' ||
-    value === 'experimental'
-  )
-}
+const isSettingsSection: (value: unknown) => value is SettingsSection = (value) =>
+  value === 'general' ||
+  value === 'usage' ||
+  value === 'agent' ||
+  value === 'permissions' ||
+  value === 'mcp' ||
+  value === 'customise' ||
+  value === 'storage' ||
+  value === 'appearance' ||
+  value === 'ssh' ||
+  value === 'experimental'
 
 /**
  * Segments of a plugin id that are acronyms, and must stay uppercase rather than

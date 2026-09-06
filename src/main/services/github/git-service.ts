@@ -29,6 +29,7 @@ import {
   type GitPromptState,
   type GitStatusResult,
 } from '@shared/types/git.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 /**
  * A local checkout can vanish while the app still holds a path to it — a
@@ -171,10 +172,8 @@ function normalizeGitStatusForWorkspace(
     return { ...change, path }
   }
   return {
-    staged: status.staged.map(normalize).filter((change): change is GitChange => change !== null),
-    unstaged: status.unstaged
-      .map(normalize)
-      .filter((change): change is GitChange => change !== null),
+    staged: status.staged.map(normalize).filter(isNonNull),
+    unstaged: status.unstaged.map(normalize).filter(isNonNull),
   }
 }
 
@@ -820,7 +819,7 @@ export async function getCommittedChanges(
       const path = toWorkspaceRelativeGitPath(change.path, prefix)
       return path ? { ...change, path } : null
     })
-    .filter((change): change is GitChange => change !== null)
+    .filter(isNonNull)
   return { baseLabel: base.label, changes }
 }
 
@@ -1041,6 +1040,47 @@ export async function getAheadBehind(
     }
   }
   return null
+}
+
+export interface GitPushResult {
+  ok: boolean
+  message: string
+}
+
+/**
+ * Publish one local branch to the same-named branch on `origin`.
+ *
+ * Pull-request creation resolves its head through GitHub, not through this
+ * checkout. Waiting for this command to finish gives the create path a real
+ * remote ref to address, while the fully-qualified refspec keeps a branch name
+ * beginning with punctuation from being interpreted as an option.
+ */
+export async function pushBranchToOrigin(
+  branch: string,
+  root: string | null = getAgentExecutionRoot(),
+): Promise<GitPushResult> {
+  if (!root) return { ok: false, message: 'No workspace open.' }
+  if (!(await localBranchExists(root, branch))) {
+    return { ok: false, message: `Local branch ${branch} does not exist.` }
+  }
+
+  const ref = `refs/heads/${branch}`
+  const { stdout, stderr, code } = await runCommand(
+    'git',
+    ['push', '--set-upstream', 'origin', `${ref}:${ref}`],
+    {
+      cwd: root,
+      // This is called only after the user approved `gh_pr_create` or confirmed
+      // the composer dialog. A sandboxed push cannot reach the remote.
+      unsandboxed: true,
+      timeout_ms: 120_000,
+    },
+  )
+  const detail = (stderr.trim() || stdout.trim()).replace(/\s+/g, ' ')
+  if (code !== 0) {
+    return { ok: false, message: detail || `git push exited with code ${String(code)}.` }
+  }
+  return { ok: true, message: detail || `Pushed ${branch} to origin.` }
 }
 
 /** Current checked-out branch, or null when detached / outside a repo. */

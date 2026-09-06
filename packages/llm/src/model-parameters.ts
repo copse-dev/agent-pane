@@ -29,6 +29,7 @@
 
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import { parseModelSelection, type ModelNamespace } from './model-selection.ts'
+import { memberOf } from '@copse/std/member-of.ts'
 
 /**
  * Reasoning depth, ordered cheapest-first. `off` asks the model not to reason
@@ -39,9 +40,7 @@ export const REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhi
 
 export type ReasoningLevel = (typeof REASONING_LEVELS)[number]
 
-export function isReasoningLevel(value: unknown): value is ReasoningLevel {
-  return REASONING_LEVELS.some((level) => level === value)
-}
+export const isReasoningLevel = memberOf(REASONING_LEVELS)
 
 /**
  * User-chosen generation parameters for one model selection. Every field is

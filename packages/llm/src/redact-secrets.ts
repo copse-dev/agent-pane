@@ -129,7 +129,7 @@ export function redactSecrets(text: string, literalSecrets: readonly string[] = 
       if (replace) {
         // `args` ends with offset + full string; pass through only the captured
         // groups the replacer cares about.
-        const groups = args.filter((a): a is string => typeof a === 'string')
+        const groups = args.filter((a) => typeof a === 'string')
         return replace(match, ...groups)
       }
       return placeholder(label)

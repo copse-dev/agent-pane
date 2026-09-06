@@ -624,5 +624,5 @@ function deniedGithubHosts(observed: readonly ObservedToolCall[]): string[] {
 function blockedLabels(args: unknown): string[] {
   const blocked = isRecord(args) ? args[SANDBOX_NETWORK_AUDIT_BLOCKED_ARG] : undefined
   if (!Array.isArray(blocked)) return []
-  return blocked.filter((label): label is string => typeof label === 'string')
+  return blocked.filter((label) => typeof label === 'string')
 }

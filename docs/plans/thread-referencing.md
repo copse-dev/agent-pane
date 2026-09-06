@@ -180,8 +180,8 @@ awkward).
 
 ### Phase 2 — IPC + renderer persistence rewiring
 
-- `src/shared/types/ipc.ts`, `src/main/ipc/register-handlers.ts`,
-  `src/preload/index.ts`, `src/preload/api.d.ts`: replace
+- `src/main/ipc/register-handlers.ts`, `src/preload/index.ts`,
+  `src/preload/api.d.ts`: replace
   `threads:saveOne`/`threads:saveProject` with
   `threads:append-message(projectId, threadId, message)`,
   `threads:update-meta(projectId, threadId, metaPatch)`,

@@ -1,0 +1,126 @@
+diff --git a/dist/sandbox/sandbox-utils.js b/dist/sandbox/sandbox-utils.js
+index 32831bf4b8fb14d9ea6fc5bcfe0dc621702c91f4..f53b047ebb0cd376a0f12a9deb3de08d185145b4 100644
+--- a/dist/sandbox/sandbox-utils.js
++++ b/dist/sandbox/sandbox-utils.js
+@@ -267,6 +267,50 @@ export function expandWindowsEnvRefs(p) {
+  *
+  * Returns the absolute path with symlinks resolved (or normalized glob pattern)
+  */
++/**
++ * PATCH (copse-dev/agent-pane): memoize the realpath lookups below for the
++ * duration of one synchronous sandbox-profile build.
++ *
++ * `generateSandboxProfile` pushes every read/write/deny path entry through
++ * `normalizePathForSandbox`, one blocking `realpathSync` apiece. A Copse
++ * workspace overlay produces ~49 entries per command, and ~35% of them resolve
++ * a directory another entry already resolved -- `<dir>` and `<dir>/**` are two
++ * entries naming one directory. A DevTools trace of an Electron host measured
++ * 2.94ms per profile build, once per sandboxed command, ~10 times a second.
++ *
++ * The memo is scoped to a single build rather than shared across commands. A
++ * profile is generated synchronously, so clearing on the next microtask means
++ * every entry sharing a memo belongs to one build and no resolution is ever
++ * reused by a later command. These paths become seatbelt/bwrap rules, so a
++ * resolution that outlived its build could emit a rule naming a stale symlink
++ * target; this scoping makes that impossible while still removing the
++ * duplicates. Failures are memoized too, so a missing path costs one syscall
++ * per build like any other.
++ */
++let realpathBuildMemo = null;
++function realpathSyncForBuild(target) {
++    if (realpathBuildMemo === null) {
++        realpathBuildMemo = new Map();
++        queueMicrotask(() => {
++            realpathBuildMemo = null;
++        });
++    }
++    if (realpathBuildMemo.has(target)) {
++        const cached = realpathBuildMemo.get(target);
++        if (cached instanceof Error)
++            throw cached;
++        return cached;
++    }
++    try {
++        const resolved = fs.realpathSync(target);
++        realpathBuildMemo.set(target, resolved);
++        return resolved;
++    }
++    catch (error) {
++        realpathBuildMemo.set(target, error);
++        throw error;
++    }
++}
+ export function normalizePathForSandbox(pathPattern) {
+     const cwd = process.cwd();
+     // Windows pre-processing: expand `%USERPROFILE%` / `%HOMEDRIVE%` /
+@@ -327,7 +371,7 @@ export function normalizePathForSandbox(pathPattern) {
+                 : path.dirname(staticPrefix);
+             // Try to resolve symlinks for the base directory
+             try {
+-                const resolvedBaseDir = fs.realpathSync(baseDir);
++                const resolvedBaseDir = realpathSyncForBuild(baseDir);
+                 // Validate that resolution stays within expected boundaries
+                 if (!isSymlinkOutsideBoundary(baseDir, resolvedBaseDir)) {
+                     // Reconstruct the pattern with the resolved directory
+@@ -345,7 +389,7 @@ export function normalizePathForSandbox(pathPattern) {
+     // Resolve symlinks to real paths to avoid bwrap issues
+     // Validate that the resolution stays within expected boundaries
+     try {
+-        const resolvedPath = fs.realpathSync(normalizedPath);
++        const resolvedPath = realpathSyncForBuild(normalizedPath);
+         // Only use resolved path if it doesn't cross boundary (e.g., symlink to parent dir)
+         if (isSymlinkOutsideBoundary(normalizedPath, resolvedPath)) {
+             // Symlink points outside expected boundaries - keep original path
+diff --git a/dist/utils/which.js b/dist/utils/which.js
+index cc8770074ab28a821acc56269a8868ba2a9746d2..be8fdf47210ac8c0263adbb0c7a2451d75e40960 100644
+--- a/dist/utils/which.js
++++ b/dist/utils/which.js
+@@ -1,4 +1,26 @@
+ import { spawnSync } from 'node:child_process';
++/**
++ * Memo for the Node fallback below, keyed on the binary name AND the PATH it
++ * was resolved against, so a changed PATH re-resolves rather than serving a
++ * stale answer.
++ *
++ * ONLY successful resolutions are cached. A failed lookup is not necessarily a
++ * fact about the filesystem: `spawnSync` below carries `timeout: 1000`, so on a
++ * loaded machine `which` can be killed before it answers and return null for a
++ * binary that is plainly present. Upstream re-spawns on the next call and
++ * recovers; caching the null would make one transient timeout permanent for the
++ * life of the process, and every later sandboxed command would throw
++ * "Shell '<name>' not found in PATH". A miss therefore costs one spawn next
++ * time, exactly as upstream.
++ *
++ * PATCH (copse-dev/agent-pane): `wrapCommandWithSandboxMacOS` and its Linux
++ * counterpart call `whichSync(binShell || 'bash')` on EVERY sandboxed command,
++ * and under Node this forks `/usr/bin/which` synchronously. A DevTools trace of
++ * an Electron host running an agent turn measured 6.35ms per call — 72% of the
++ * entire sandbox-wrap cost — blocking the main thread ~10 times a second.
++ * Under Bun this cost does not exist, because `Bun.which` is an in-process call.
++ */
++const whichCache = new Map();
+ /**
+  * Find the path to an executable, similar to the `which` command.
+  * Uses Bun.which when running in Bun, falls back to spawnSync for Node.js.
+@@ -12,13 +34,20 @@ export function whichSync(bin) {
+         return globalThis.Bun.which(bin);
+     }
+     // Fallback to Node.js implementation
++    const cacheKey = `${bin}\0${process.env.PATH ?? ''}`;
++    const cached = whichCache.get(cacheKey);
++    if (cached !== undefined) {
++        return cached;
++    }
+     const result = spawnSync('which', [bin], {
+         encoding: 'utf8',
+         stdio: ['ignore', 'pipe', 'ignore'],
+         timeout: 1000,
+     });
+     if (result.status === 0 && result.stdout) {
+-        return result.stdout.trim();
++        const resolved = result.stdout.trim();
++        whichCache.set(cacheKey, resolved);
++        return resolved;
+     }
+     return null;
+ }

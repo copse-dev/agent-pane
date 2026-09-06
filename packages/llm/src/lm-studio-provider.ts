@@ -17,6 +17,7 @@ import {
 } from './model-parameters.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 type RespondOptions = Pick<
   LLMRespondOpts,
@@ -320,7 +321,7 @@ function lmStudioToolParameters(
 ): NonNullable<LMStudioTool['function']['parameters']> {
   const properties = isRecord(parameters['properties']) ? parameters['properties'] : {}
   const required = Array.isArray(parameters['required'])
-    ? parameters['required'].filter((value): value is string => typeof value === 'string')
+    ? parameters['required'].filter((value) => typeof value === 'string')
     : undefined
   const defs = isRecord(parameters['$defs']) ? parameters['$defs'] : undefined
   const additionalProperties =
@@ -411,10 +412,6 @@ async function prepareImage(
   const subtype = match[1].slice('image/'.length).replace(/[^a-z0-9]/gi, '') || 'png'
   const extension = subtype.toLowerCase() === 'jpeg' ? 'jpg' : subtype.toLowerCase()
   return client.prepareImageBase64(`copse-image-${index.toString()}.${extension}`, match[2])
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 /** Convert the configured OpenAI-compatible URL to the SDK's WebSocket origin. */

@@ -4,6 +4,7 @@
 // newer resetsAt and lower usedPercent.
 
 import type { PlanProviderId, PlanUsageSnapshot, PlanWindow } from '@copse/plan-usage'
+import { isRecord } from '@shared/unknown-value.ts'
 
 export const PLAN_WINDOW_HISTORY_STORAGE_KEY = 'planWindowHistory'
 export const PLAN_WINDOW_HISTORY_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
@@ -44,10 +45,6 @@ export interface CompletedPlanWindow {
 export interface PlanWindowHistoryState {
   samples: PlanWindowHistorySample[]
   completed: CompletedPlanWindow[]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function parseSampleWindow(raw: unknown): PlanWindowSampleWindow | null {

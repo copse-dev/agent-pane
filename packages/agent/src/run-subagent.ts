@@ -12,16 +12,9 @@ import type {
   SubagentMessage,
   ToolExecuteResult,
 } from './wire-types.ts'
+import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 
 const randomUUID = (): string => globalThis.crypto.randomUUID()
-
-interface ProviderWithUsage {
-  lastUsage: { inputTokens: number; outputTokens: number } | null
-}
-
-function hasLastUsage(p: unknown): p is ProviderWithUsage {
-  return typeof p === 'object' && p !== null && 'lastUsage' in p
-}
 
 export const EXPLORE_TOOL_NAMES = [
   'read_file',

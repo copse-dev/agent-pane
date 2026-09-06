@@ -217,7 +217,7 @@ async function benchGortex(
     const parsed = searchResultsSchema.parse(JSON.parse(stdout) as unknown)
     const paths = (parsed.results ?? [])
       .map((r) => optionalString(r['absolute_file_path'] ?? r['file_path'] ?? r['path']))
-      .filter((p): p is string => typeof p === 'string')
+      .filter((p) => typeof p === 'string')
       .slice(0, k)
       .map((p) => toRepoRelative(repo, p))
     results.push(scoreQuery(q, paths, latencyMs))

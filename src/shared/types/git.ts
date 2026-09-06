@@ -200,7 +200,7 @@ export interface PrCreateRequest {
   body?: string | undefined
   /** Branch to merge into. Omit for the repository's default branch. */
   base?: string | undefined
-  /** Branch holding the changes. Omit for the checkout's current branch. Must be pushed. */
+  /** Branch holding the changes. The create flow pushes the current branch when omitted. */
   head?: string | undefined
   draft?: boolean | undefined
   owner?: string | undefined
