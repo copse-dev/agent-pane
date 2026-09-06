@@ -36,6 +36,7 @@ import type {
   UnattendedRunBudgets,
 } from '@shared/types/unattended-run.ts'
 import type { ThreadContainerRecord, ThreadContainerResult } from '@shared/types/container-run.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { EgressBroker, type EgressOrigin } from './egress-broker.ts'
 import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
 
@@ -103,10 +104,6 @@ export interface ThreadContainerRunSpec {
   carryInRef: string
   carryInBase: string
   maxSteps: number | null
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
