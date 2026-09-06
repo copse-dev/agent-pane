@@ -52,16 +52,21 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 /**
  * Guest entrypoint. Runs as the unprivileged worker user; the container has no
  * network interface. For each origin the host allowlisted, `COPSE_EGRESS_ORIGINS`
- * names `host:port` pairs whose hostnames the host already pointed at loopback;
- * a socat listener on that port forwards into the host broker's unix socket,
- * which is the only route out of the guest.
+ * names `host:port=socket` triples: the hostname the host already pointed at
+ * loopback, the port to listen on, and the broker socket to forward into. The
+ * host names the socket because a unix path is capped near 104 bytes and a
+ * hostname is not — see `egressSocketName`. A socat listener on that port
+ * forwards into the socket, which is the only route out of the guest.
  */
 export const WORKER_ENTRYPOINT_SH = `#!/bin/sh
 # Guest entrypoint for a Copse container run. Runs as the unprivileged worker
 # user; the container has no network interface. For each origin the host
-# allowlisted, COPSE_EGRESS_ORIGINS names host:port pairs whose hostnames the
-# host already pointed at loopback; a socat listener on that port forwards into
-# the host broker's unix socket, which is the only route out of the guest.
+# allowlisted, COPSE_EGRESS_ORIGINS names host:port=socket triples whose
+# hostnames the host already pointed at loopback; a socat listener on that port
+# forwards into the named broker socket, the only route out of the guest. The
+# host picks the socket file name: a unix socket path is capped near 104 bytes
+# and a hostname is not, so deriving it here from the host would break on a long
+# origin or a long temp root.
 set -eu
 
 RUN_DIR=/run/copse
@@ -69,10 +74,13 @@ if [ -n "\${COPSE_EGRESS_ORIGINS:-}" ]; then
   old_ifs=$IFS
   IFS=','
   for origin in $COPSE_EGRESS_ORIGINS; do
-    host=\${origin%:*}
-    port=\${origin##*:}
-    sock="$RUN_DIR/egress/$(printf '%s' "$host" | tr -c 'a-zA-Z0-9.\\n-' '_')_\${port}.sock"
-    socat "TCP-LISTEN:\${port},bind=127.0.0.1,fork,reuseaddr" "UNIX-CONNECT:\${sock}" &
+    hostport=\${origin%%=*}
+    name=\${origin#*=}
+    port=\${hostport##*:}
+    case "$name" in
+      */*|''|..) echo "[entrypoint] refusing egress socket name: $name" >&2; exit 1 ;;
+    esac
+    socat "TCP-LISTEN:\${port},bind=127.0.0.1,fork,reuseaddr" "UNIX-CONNECT:$RUN_DIR/egress/\${name}" &
   done
   IFS=$old_ifs
 fi

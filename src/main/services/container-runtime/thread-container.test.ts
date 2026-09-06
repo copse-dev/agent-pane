@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import {
   buildAttestation,
   waitForContainer,
@@ -11,6 +11,7 @@ import {
   containerName,
   createSnapshotCommit,
   dockerRunArgs,
+  egressSocketDir,
   egressSocketName,
   fetchCarryOut,
   parseEgressOrigin,
@@ -75,8 +76,36 @@ describe('egress origins', () => {
   })
 
   it('names sockets safely', () => {
-    assert.equal(egressSocketName({ host: 'a.b-c', port: 1 }), 'a.b-c_1.sock')
-    assert.equal(egressSocketName({ host: 'we/ird', port: 2 }), 'we_ird_2.sock')
+    // No separator, no traversal, no hostname — whatever the origin looks like.
+    for (const host of ['a.b-c', 'we/ird', '../../etc', 'x'.repeat(300)]) {
+      const name = egressSocketName({ host, port: 443 })
+      assert.match(name, /^[0-9a-f]{10}\.sock$/)
+    }
+    // Distinct origins get distinct sockets, including same host, other port.
+    const names = new Set(
+      [
+        { host: 'openrouter.ai', port: 443 },
+        { host: 'api.openai.com', port: 443 },
+        { host: 'openrouter.ai', port: 8443 },
+      ].map(egressSocketName),
+    )
+    assert.equal(names.size, 3)
+  })
+
+  it('keeps the socket path inside sun_path on a macOS temp root', () => {
+    // The overflow this replaced, measured on the reported failure: a per-user
+    // macOS temp root, the full runtime id in the directory and the hostname in
+    // the file name came to 104 bytes against a 104-byte cap.
+    const macTmp = '/var/folders/r5/qll_28695_q_2qr2kk7lv5gm0000gn/T'
+    const dir = join(macTmp, basename(egressSocketDir('run-mtpvs161-9a6506')))
+    const path = join(dir, egressSocketName({ host: 'openrouter.ai', port: 443 }))
+    assert.ok(Buffer.byteLength(path) <= 100, `${path} is ${String(Buffer.byteLength(path))} bytes`)
+    // And it stays inside the cap for an origin no one budgeted for.
+    const long = join(
+      dir,
+      egressSocketName({ host: `${'gateway.'.repeat(20)}internal`, port: 443 }),
+    )
+    assert.ok(Buffer.byteLength(long) <= 100)
   })
 })
 

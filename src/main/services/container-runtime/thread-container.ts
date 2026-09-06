@@ -135,13 +135,36 @@ export function providerOrigin(url: string): EgressOrigin {
   return { host: parsed.hostname, port }
 }
 
-/** Where a run's broker sockets live on the host: short, private to the run. */
+/**
+ * Where a run's broker sockets live on the host: short, private to the run.
+ *
+ * Short on purpose. A unix socket path is capped by `sun_path` — 104 bytes on
+ * macOS, 108 on Linux, both counting the NUL — and macOS hands every process a
+ * per-user temp root like `/var/folders/r5/qll_28695_q_.../T/` that is already
+ * ~49 bytes. Spelling the whole runtime id here spent 32 more and pushed real
+ * runs over the limit, so the directory carries a digest of the id instead. The
+ * full id stays in `run.json` beside it, which is where anyone debugging looks.
+ */
 export function egressSocketDir(runtimeId: string): string {
-  return join(tmpdir(), `copse-egress-${runtimeId}`)
+  const digest = createHash('sha256').update(runtimeId).digest('hex').slice(0, 10)
+  return join(tmpdir(), `copse-cx-${digest}`)
 }
 
+/**
+ * The socket file for an origin: a fixed 15 bytes, whatever the origin is.
+ *
+ * The readable `openrouter.ai_443.sock` form was the other half of the overflow
+ * above, and it grew with the hostname — an extra allowlisted origin on a long
+ * corporate host could exceed the cap on its own, on Linux too. A digest keeps
+ * the budget flat and knowable; the origin it stands for is recorded in the
+ * run's `spec.egress` and in every broker log line.
+ */
 export function egressSocketName(origin: EgressOrigin): string {
-  return `${origin.host.replace(/[^a-z0-9.-]/gi, '_')}_${String(origin.port)}.sock`
+  const digest = createHash('sha256')
+    .update(`${origin.host}:${String(origin.port)}`)
+    .digest('hex')
+    .slice(0, 10)
+  return `${digest}.sock`
 }
 
 export interface DockerRunInput {
@@ -219,7 +242,11 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     '--env',
     'HOME=/home/copse',
     '--env',
-    `COPSE_EGRESS_ORIGINS=${input.egress.map((o) => `${o.host}:${String(o.port)}`).join(',')}`,
+    // `host:port=socket`: the guest listens on the port and forwards into the
+    // socket this side named, rather than deriving a name that could overflow.
+    `COPSE_EGRESS_ORIGINS=${input.egress
+      .map((o) => `${o.host}:${String(o.port)}=${egressSocketName(o)}`)
+      .join(',')}`,
   )
   // The provider key is the one secret the guest holds, scoped to this run and
   // passed by value so the *name* of the host variable never leaks either.
