@@ -262523,6 +262523,9 @@ function containerAcpAgent(agentId) {
   const id39 = canonicalAcpAgentId(agentId);
   return CONTAINER_ACP_AGENTS.find((agent) => agent.id === id39 || agent.aliases?.includes(id39)) ?? null;
 }
+function containerAcpKeySlugs() {
+  return [...new Set(CONTAINER_ACP_AGENTS.map((agent) => agent.keySlug))];
+}
 function containerAcpAvailability(agentId, keysConfigured) {
   const capable = containerAcpAgent(agentId);
   if (capable) {
@@ -262691,7 +262694,14 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       loadOptions: async (current) => {
         const options2 = await loadRunModelOptions(
           (opts) => fetchModelOptions(api3, current, opts),
-          () => api3.settings.availableProviders()
+          async () => Object.fromEntries(
+            await Promise.all(
+              containerAcpKeySlugs().map(async (slug2) => [
+                slug2,
+                await api3.settings.getKey(slug2)
+              ])
+            )
+          )
         );
         agentNote.hidden = !options2.some(
           (option2) => option2.disabled === true || parseAcpModel(option2.value) !== null
