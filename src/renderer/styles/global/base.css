@@ -98,3 +98,52 @@ input[type='password'] {
   flex: 1;
   overflow: hidden;
 }
+
+/* ---------------------------------------------------------------------------
+   Callout surfaces, shared by every block that used to carry an accent rail.
+
+   Two materials, one shape (see `prototypes/side-highlight` — "M, the mix"):
+
+   - **plate** — a flat 9% wash of the block's severity hue. Prose the agent
+     wrote: GitHub alerts and blockquotes. It is part of the answer, so it gets
+     a plain surface.
+   - **hatch** — the same plate rendered as a texture rather than a tint. Copse
+     annotating its own turn: thinking, review, comparison. Not part of the
+     answer, and the material is what says so without spending a fourth hue or
+     a fourth shape. Density stays constant, so a tall block weighs no more
+     than a short one — which a flat wash cannot claim.
+
+   Both read `--sev` off the element that uses them, so a component sets its hue
+   and never has to know which material it gets.
+
+   The 8px pitch is not arbitrary. A repeating gradient beats against the device
+   pixel grid when its period is *near* an integer number of device pixels; 8px
+   is a multiple of 4, so at every quarter-step display scale Windows offers
+   (1.25x, 1.5x, 1.75x, 2x...) the period lands on a whole number of device
+   pixels and there is no beat frequency to alias. The 1px line itself softens
+   at fractional scales, but identically in every cycle. Change the pitch to an
+   odd number and that guarantee is gone. */
+:root {
+  /* Neutral default: a block that forgets to set --sev gets a legible grey
+     rather than an invalid background that computes away to transparent. */
+  --sev: var(--text-secondary);
+  /* What travels is the tuning, not the finished background. A custom property
+     is substituted where it is *declared*, so one holding the whole
+     `color-mix(… var(--sev) …)` would freeze this root's grey into its computed
+     value and inherit that grey everywhere, however each block sets --sev. So
+     the numbers live here and the colour is mixed at each use site. */
+  --callout-plate-fill: 9%;
+  --callout-hatch-line: 11%;
+  --callout-hatch-fill: 3%;
+  --callout-hatch-pitch: 8px;
+}
+/* A decorative texture needs a degradation path, or it becomes the thing that
+   disappears into the page for the people who need it most. The lines go to
+   nothing and the wash comes up to the plate's weight: commentary keeps a
+   surface and loses only its distinction from content. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root {
+    --callout-hatch-line: 0%;
+    --callout-hatch-fill: var(--callout-plate-fill);
+  }
+}

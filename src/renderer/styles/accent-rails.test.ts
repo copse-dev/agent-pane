@@ -1,4 +1,17 @@
-// Contract test for accent rails: a rail never bends around a corner.
+// Contract tests for accent rails. Two rules, and the second is the reason the
+// first one still has anything left to guard:
+//
+//   1. A rail never bends around a corner.
+//   2. A rail is structure, not decoration — the list is closed.
+//
+// Copse used to draw ten of these across six stylesheets for three unrelated
+// jobs: containment ("this block is a different kind of content"), selection
+// ("this row is current") and nesting ("these rows are children of that one").
+// One device serving three meanings is what made it read as repetition rather
+// than as signal. `prototypes/side-highlight` took the first two away —
+// containment became a plate (flat for the agent's own prose, hatched for
+// Copse's commentary on a turn) and selection became the fill alone — and left
+// the third, where a line down the edge is literally what a nesting guide is.
 //
 // A selection/status rail is a slim bar on one inline edge of a row — either a
 // `border-left` or an inset shadow with a horizontal offset (`inset 2px 0 0`).
@@ -118,8 +131,15 @@ function subjects(selector: string): { classes: Set<string>; pseudo: string }[] 
   })
 }
 
-/** A rail on one inline edge, or null. CSS-triangle borders are not rails. */
-function rail(body: string): { side: Side; declaration: string } | null {
+/**
+ * A rail on one inline edge, or null. CSS-triangle borders are not rails.
+ *
+ * `kind` separates the two ways one can be drawn, which the second test needs:
+ * an inset shadow paints over the element and can only be a marker, while a
+ * border occupies layout space and is also how this app walls one pane off from
+ * the next (`.sidebar`, `.pane-left`, `.settings-nav`, `.diff-file-list`).
+ */
+function rail(body: string): { side: Side; kind: 'border' | 'shadow'; declaration: string } | null {
   const border = body.match(/border-(left|right|inline-start|inline-end)(?:-width)?:\s*([^;]+)/)
   if (border) {
     const isTriangle =
@@ -127,7 +147,11 @@ function rail(body: string): { side: Side; declaration: string } | null {
     const width = values(border[2] ?? '')[0] ?? '0'
     if (!isTriangle && !isZero(width) && width !== 'none') {
       const side: Side = /left|start/.test(border[1] ?? '') ? 'start' : 'end'
-      return { side, declaration: `border-${border[1] ?? ''}: ${(border[2] ?? '').trim()}` }
+      return {
+        side,
+        kind: 'border',
+        declaration: `border-${border[1] ?? ''}: ${(border[2] ?? '').trim()}`,
+      }
     }
   }
   // An inset shadow is a rail when it is offset horizontally with no blur: a
@@ -139,6 +163,7 @@ function rail(body: string): { side: Side; declaration: string } | null {
     if (offset !== 0) {
       return {
         side: offset > 0 ? 'start' : 'end',
+        kind: 'shadow',
         declaration: `box-shadow: ${(shadow?.[1] ?? '').trim()}`,
       }
     }
@@ -148,6 +173,27 @@ function rail(body: string): { side: Side; declaration: string } | null {
 
 /** `.msg` is the stem of `.msg-error`: a modifier applied on top of a base class. */
 const isStemOf = (stem: string, name: string): boolean => name.startsWith(`${stem}-`)
+
+/**
+ * Every element still allowed to carry a rail, keyed by a class on its subject
+ * compound, with the reason it is not decoration. Adding a row here is a design
+ * decision, not a fix: a new rail means one more thing in the app that looks
+ * like nesting and is not.
+ */
+const STRUCTURAL_RAILS: { class: string; why: string }[] = [
+  {
+    class: 'tool-rollup-body',
+    why: 'nesting guide — the bar says "these rows are children of that one"',
+  },
+  {
+    class: 'subagent-timeline',
+    why: "nesting guide — a subagent's rows hang off the card that spawned it",
+  },
+  {
+    class: 'thread-proposal',
+    why: 'a standing offer, marked as an ask rather than as a record; the settled states drop it (docs/proposed-threads.md)',
+  },
+]
 
 describe('accent rails', () => {
   it('never curves a rail around a rounded corner', () => {
@@ -209,6 +255,41 @@ describe('accent rails', () => {
         'Square the corners the rail touches (`border-radius: 0`, or `0 6px 6px 0` to stay rounded\n' +
         'on the far side), or drop the rail for an even ring (`box-shadow: inset 0 0 0 1px`).\n\n' +
         `${violations.join('\n\n')}\n`,
+    )
+  })
+
+  it('draws a rail only where it means nesting', () => {
+    const strays = stylesheets()
+      .flatMap(({ file, css }) => rules(file, css))
+      .flatMap((rule) => {
+        const found = rail(rule.body)
+        if (!found) return []
+        // A trailing-edge border is how the app draws the wall between two
+        // panes, so it is out of scope here — a marker on that edge is drawn as
+        // an inset shadow (which is what `.chat-row.selected` used), and a
+        // trailing border on a rounded row is still caught by the curve test.
+        if (found.kind === 'border' && found.side === 'end') return []
+        // One branch may be structural while another is not, so judge each.
+        return subjects(rule.selector)
+          .filter(
+            (subject) =>
+              subject.classes.size > 0 &&
+              !STRUCTURAL_RAILS.some((allowed) => subject.classes.has(allowed.class)),
+          )
+          .map(
+            () => `${rule.file}:${String(rule.line)} {${rule.selector}}\n    ${found.declaration}`,
+          )
+      })
+
+    assert.deepEqual(
+      strays,
+      [],
+      'A rail on the inline edge of a block now means one thing: these rows are children of that\n' +
+        "one. Containment takes a plate instead — flat for the agent's own prose, hatched for\n" +
+        'Copse annotating its own turn (styles/global/base.css holds the tuning) — and a\n' +
+        'selected list row takes the full-bleed fill alone. If this really is nesting, add it to\n' +
+        'STRUCTURAL_RAILS above with the reason.\n\n' +
+        `${strays.join('\n\n')}\n`,
     )
   })
 })

@@ -117,7 +117,6 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-selected);
   color: var(--text-primary);
   font-weight: 600;
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
 }
 /* The open section's own groups, listed under its row. A long section (General,
    Appearance) is several screens tall, so the sidebar doubles as its table of
