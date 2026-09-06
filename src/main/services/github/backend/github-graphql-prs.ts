@@ -11,6 +11,7 @@ import { deriveOverallState, rollupToCiChecks } from '../github-ci-service.ts'
 import type { GhStatusCheckRollup } from '../gh-json-schemas.ts'
 import { isRecord, nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { GhPrChecksState, GhPrSummary } from '@shared/types/git.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 const CHECK_CONTEXT_NODES = `__typename
               ... on CheckRun { name status conclusion detailsUrl }
@@ -182,7 +183,7 @@ export function graphqlPullNodesToSummaries(
 ): GhPrSummary[] {
   return recordArrayOrEmpty(nodes)
     .map((node) => graphqlPullToSummary(node, fallback))
-    .filter((entry): entry is GhPrSummary => entry !== null)
+    .filter(isNonNull)
 }
 
 export function workspacePullNodes(data: unknown): unknown {

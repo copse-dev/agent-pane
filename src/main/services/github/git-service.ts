@@ -29,6 +29,7 @@ import {
   type GitPromptState,
   type GitStatusResult,
 } from '@shared/types/git.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 /**
  * A local checkout can vanish while the app still holds a path to it — a
@@ -171,10 +172,8 @@ function normalizeGitStatusForWorkspace(
     return { ...change, path }
   }
   return {
-    staged: status.staged.map(normalize).filter((change): change is GitChange => change !== null),
-    unstaged: status.unstaged
-      .map(normalize)
-      .filter((change): change is GitChange => change !== null),
+    staged: status.staged.map(normalize).filter(isNonNull),
+    unstaged: status.unstaged.map(normalize).filter(isNonNull),
   }
 }
 
@@ -820,7 +819,7 @@ export async function getCommittedChanges(
       const path = toWorkspaceRelativeGitPath(change.path, prefix)
       return path ? { ...change, path } : null
     })
-    .filter((change): change is GitChange => change !== null)
+    .filter(isNonNull)
   return { baseLabel: base.label, changes }
 }
 
