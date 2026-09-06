@@ -43,7 +43,7 @@ make run
 
 `make run` checks your Node version, installs dependencies, builds `dist/`, and launches the app. It is idempotent and cheap to repeat: dependency inputs, build inputs, and the complete build output tree are content-addressed, so running it again after a branch switch or `git pull` does the minimum work needed without trusting filesystem timestamps. Run `make` on its own for the full target list.
 
-`make run` builds once and starts. While actively editing the app, `pnpm run dev` is still the loop you want — it rebuilds and relaunches Electron on save:
+`make run` builds once and starts. While actively editing the app, `pnpm run dev` (or `make run-dev`) is still the loop you want — it rebuilds and relaunches Electron on save, against its own persistent `~/.copse-dev` profile so it never shares threads or settings with the app `make run` launches:
 
 ```bash
 corepack enable
