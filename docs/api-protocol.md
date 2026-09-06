@@ -92,10 +92,8 @@ every member, with two documented escapes:
    without bumping anything.
 
 The same test also pins that every facade method is bound to exactly one
-namespaced channel, that every invoke/send channel has a literal
-`ipcMain.handle` and every event channel a literal sender under `src/main`, and
-that the older hand-written maps in `src/shared/types/ipc.ts` do not name
-channels the protocol lacks.
+namespaced channel, and that every invoke/send channel has a literal
+`ipcMain.handle` and every event channel a literal sender under `src/main`.
 
 ## Version negotiation at runtime
 
@@ -126,11 +124,6 @@ headless contract's event envelope rather than keeping two vocabularies.
 
 ## Known gaps
 
-- `src/shared/types/ipc.ts` (`IpcInvokeMap` / `IpcEventMap`) is a hand-written
-  map that covers fewer than half of the bound channels and is imported by
-  nothing; it predates this schema. It should be retired or regenerated from
-  the schema — until then the test only stops it naming channels that do not
-  exist.
 - The test-only bridge (`window.__copseTest`, `test:*` channels) and the perf
   bridge are deliberately outside the protocol.
 - The schema describes shapes, not behaviour: ordering guarantees, cancellation,

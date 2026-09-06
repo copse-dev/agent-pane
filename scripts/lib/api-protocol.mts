@@ -21,12 +21,10 @@
 // pins the manifest so the surface only changes when someone regenerates and
 // commits, and `gen-api-protocol --compare-ref` classifies full-shape changes.
 //
-// Why generate from `api.d.ts` + the preload rather than `src/shared/types/ipc.ts`:
-// the hand-written `IpcInvokeMap` / `IpcEventMap` in `ipc.ts` cover fewer than
-// half of the channels the preload actually binds and nothing imports them, so
-// they are not the source of truth. The preload is: it is typed `ApiClient`
-// (so the facade cannot drift from the contract) and every channel it names has
-// a literal `ipcMain.handle` in `src/main` (the test checks both).
+// Why generate from `api.d.ts` + the preload: the preload is the source of
+// truth. It is typed `ApiClient` (so the facade cannot drift from the contract)
+// and every channel it names has a literal `ipcMain.handle` in `src/main` (the
+// test checks both).
 import ts from 'typescript'
 import { z } from 'zod'
 import { execFileSync } from 'node:child_process'
