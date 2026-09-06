@@ -14,6 +14,7 @@ const WORKSPACE_PACKAGES = [
   ['packages/procwatch', '@copse/procwatch'],
   ['packages/shell-guard', '@copse/shell-guard'],
   ['packages/std', '@copse/std'],
+  ['packages/store-kit', '@copse/store-kit'],
   ['packages/thread-store', '@copse/thread-store'],
 ] as const
 
@@ -225,13 +226,13 @@ describe('workspace package resolution', () => {
     for (const file of ['tsconfig.json', 'tsconfig.node.json', 'tsconfig.web.json']) {
       assert.doesNotMatch(
         readFileSync(resolve(file), 'utf8'),
-        /"@copse\/(?:agent|hooks-dialects|llm|plan-usage|plugin-sdk|procwatch|shell-guard|std|thread-store)/,
+        /"@copse\/(?:agent|hooks-dialects|llm|plan-usage|plugin-sdk|procwatch|shell-guard|std|store-kit|thread-store)/,
       )
     }
     for (const file of sourceFiles('scripts')) {
       assert.doesNotMatch(
         readFileSync(file, 'utf8'),
-        /['"]@copse\/(?:agent|hooks-dialects|llm|plan-usage|plugin-sdk|procwatch|shell-guard|std|thread-store)['"]\s*:\s*(?:resolve|new URL)/,
+        /['"]@copse\/(?:agent|hooks-dialects|llm|plan-usage|plugin-sdk|procwatch|shell-guard|std|store-kit|thread-store)['"]\s*:\s*(?:resolve|new URL)/,
         `${file} must resolve workspace packages through their manifests`,
       )
     }
@@ -241,7 +242,7 @@ describe('workspace package resolution', () => {
     for (const file of sourceFiles('scripts')) {
       assert.doesNotMatch(
         readFileSync(file, 'utf8'),
-        /from ['"][^'"]*packages\/(?:agent|hooks-dialects|llm|plan-usage|plugin-sdk|procwatch|shell-guard|std|thread-store)\/src\//,
+        /from ['"][^'"]*packages\/(?:agent|hooks-dialects|llm|plan-usage|plugin-sdk|procwatch|shell-guard|std|store-kit|thread-store)\/src\//,
         `${file} bypasses a workspace package boundary`,
       )
     }
