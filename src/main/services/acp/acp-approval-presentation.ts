@@ -1,5 +1,6 @@
 import type { RequestPermissionRequest, ToolCallContent } from '@agentclientprotocol/sdk'
 import { unwrapInlineCode } from './session-update-adapter.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /**
  * Turn an external agent's `session/request_permission` into the title/body/type
@@ -281,8 +282,4 @@ function indentLines(text: string): string {
     .split('\n')
     .map((line) => `  ${line}`)
     .join('\n')
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

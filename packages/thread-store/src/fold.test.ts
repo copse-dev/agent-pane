@@ -19,6 +19,7 @@ import {
   type SpineMessageLine,
   type ThreadMeta,
 } from './spine-schema.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 const hash = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex')
 
@@ -209,10 +210,6 @@ test('spills oversized tool args to a blob and folds them back', () => {
   strictEqual(tcArgs['ref'], 'blobs/tc-fat.args.json')
   deepStrictEqual(foldThread(meta(), spine, resolverFor(files), { hash }).messages, messages)
 })
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 test('round-trips ACP tool-call display metadata (kind + resultFormat)', () => {
   // External ACP agents tag calls with a kind ('read', 'execute', …) and

@@ -4,13 +4,10 @@ import { createStore } from '@shared/store/store.ts'
 import type { AutomationTriggerEvent, Thread } from '@shared/types'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 import { attachAutomationController, type AutomationControllerApi } from './automations.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }
 
 function automationThread(id = 'scheduled-thread'): Thread {
