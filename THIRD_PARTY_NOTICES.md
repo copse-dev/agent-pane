@@ -1,6 +1,6 @@
 # Third-party notices
 
-Copse is licensed under Apache-2.0. It also bundles or optionally loads
+Copse is licensed under AGPL-3.0-only. It also bundles or optionally loads
 third-party components whose licenses require attribution. Those are listed here.
 
 ## Copse interface fonts
@@ -26,9 +26,10 @@ third-party components whose licenses require attribution. Those are listed here
   the user enables PII redaction in Settings → Experimental.
 - **Modifications:** none. The package and its model are used as published.
 
-CC BY 4.0 is a permissive, attribution-only license. It is not copyleft and does
-not change Copse's own Apache-2.0 license; it only obliges us to credit the
-author, link the license, and note any changes — which this notice does.
+CC BY 4.0 is a permissive, attribution-only license. It is not copyleft, and the
+FSF lists it as compatible with GPLv3, so it may be combined into Copse's
+AGPL-3.0-only work. It only obliges us to credit the author, link the license,
+and note any changes — which this notice does.
 
 ## noVNC (@novnc/novnc)
 
@@ -42,4 +43,7 @@ author, link the license, and note any changes — which this notice does.
 - **Modifications:** none. Version 1.5.0 is bundled as published.
 
 The MPL applies at file level to noVNC's own files and does not change Copse's
-Apache-2.0 license. The package's complete license text ships with the package.
+AGPL-3.0-only license. noVNC's sources carry no "Incompatible With Secondary
+Licenses" notice, so MPL-2.0 section 3.3 permits distributing it as part of a
+Larger Work under the GNU licenses. The package's complete license text ships
+with the package.

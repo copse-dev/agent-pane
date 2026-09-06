@@ -2,7 +2,8 @@
   "name": "copse-panel",
   "version": "0.1.0-beta.8",
   "private": true,
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
+  "author": "Jonathan Kingston",
   "description": "Copse — AI coding assistant desktop app",
   "main": "dist/main/index.js",
   "type": "commonjs",
@@ -102,6 +103,7 @@
   "build": {
     "appId": "dev.copse.app",
     "productName": "Copse",
+    "copyright": "Copyright © 2026 Jonathan Kingston",
     "asar": true,
     "directories": {
       "output": "release"
