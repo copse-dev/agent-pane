@@ -451,7 +451,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   win.once('closed', stopGuardedYoloEvents)
   const stopContainerRunEvents = getContainerRunService().onChanged((progress) => {
-    if (!win.isDestroyed()) win.webContents.send('container:runChanged', progress)
+    if (!win.isDestroyed()) win.webContents.send('container:run-changed', progress)
   })
   win.once('closed', stopContainerRunEvents)
   const storedProjects = storedWorkspaceProjects()
@@ -1605,7 +1605,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .max(16)
       .optional(),
   })
-  ipcMain.handle('container:runThread', (event, request: unknown) => {
+  ipcMain.handle('container:run-thread', (event, request: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(zContainerRunRequest, [request])
     return getContainerRunService().start({
@@ -1617,7 +1617,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       ...(parsed.extraEgress ? { extraEgress: parsed.extraEgress } : {}),
     })
   })
-  ipcMain.handle('container:getRun', (event, threadId: unknown) => {
+  ipcMain.handle('container:get-run', (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     return getContainerRunService().get(id)

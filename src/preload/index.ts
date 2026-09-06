@@ -160,8 +160,8 @@ const api: ApiClient = {
   },
   container: {
     runThread: (request: import('@shared/types/container-run.ts').ContainerRunRequest) =>
-      ipcRenderer.invoke('container:runThread', request),
-    getRun: (threadId: string) => ipcRenderer.invoke('container:getRun', threadId),
+      ipcRenderer.invoke('container:run-thread', request),
+    getRun: (threadId: string) => ipcRenderer.invoke('container:get-run', threadId),
     onRunChanged: (
       handler: (progress: import('@shared/types/container-run.ts').ContainerRunProgress) => void,
     ) => {
@@ -171,9 +171,9 @@ const api: ApiClient = {
       ): void => {
         handler(progress)
       }
-      ipcRenderer.on('container:runChanged', listener)
+      ipcRenderer.on('container:run-changed', listener)
       return (): void => {
-        ipcRenderer.off('container:runChanged', listener)
+        ipcRenderer.off('container:run-changed', listener)
       }
     },
   },
