@@ -1,4 +1,5 @@
 import { errorMessage } from '@shared/errors.ts'
+import { homedir } from 'node:os'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
@@ -13,6 +14,11 @@ import {
   shellRunsOutsideSandbox,
 } from '../services/security/command-routing-config.ts'
 import { detectSandboxFailure } from '../services/security/sandbox-failure.ts'
+import {
+  cdTargetOutsideRoot,
+  RETRY_WITHHELD_REASONS,
+  sandboxDenialAdvice,
+} from '../services/security/sandbox-denial-advice.ts'
 import {
   promptExpectedSandboxBlock,
   promptInstallSocketFirewall,
@@ -191,6 +197,25 @@ async function runShellOnce(
   })
 }
 
+/**
+ * Record which predicate withheld an unsandboxed retry from a failure that named
+ * a path outside the execution root (#1714). Gated on `outsideRootPath` so an
+ * ordinary failing command inside the sandbox — a red test run, a compile error —
+ * never writes a line; only the shape that looks like a denial and did not get
+ * the escalation does.
+ */
+function recordRetryWithheld(reason: string): void {
+  recordDecision({
+    kind: 'shell',
+    actor: 'system',
+    verdict: 'blocked',
+    subject: SHELL_DECISION_SUBJECT,
+    scope: 'sandbox',
+    reasons: [reason],
+    source: 'unsandboxed-retry-not-offered',
+  })
+}
+
 async function maybeRetryUnsandboxed(
   command: string,
   cwd: string,
@@ -200,9 +225,11 @@ async function maybeRetryUnsandboxed(
   env: NodeJS.ProcessEnv,
   guardedYolo: boolean,
   readGrantApplied: boolean,
+  outsideRootPath: string | null,
 ): Promise<ShellRunResult | 'declined' | null> {
   if (!isProjectSandboxEnabled()) return null
   if (!shellSandboxFailureShouldOfferUnsandboxedRetry(command, cwd)) {
+    if (outsideRootPath !== null) recordRetryWithheld(RETRY_WITHHELD_REASONS.notEligible)
     return null
   }
   // Decide purely from runner-side signals (recorded sandbox violations / wrapper
@@ -212,7 +239,10 @@ async function maybeRetryUnsandboxed(
     violationCount: result.sandboxViolationCount ?? sandboxViolationCountForCommand(command),
     spawnFailed: result.spawnFailed ?? false,
   })
-  if (!detection.likely) return null
+  if (!detection.likely) {
+    if (outsideRootPath !== null) recordRetryWithheld(RETRY_WITHHELD_REASONS.noRunnerEvidence)
+    return null
+  }
   const approved =
     guardedYolo ||
     (await promptUnsandboxedShell(command, detection.reasons, signal, { readGrantApplied }))
@@ -277,15 +307,18 @@ function formatShellSuccess(result: ShellRunResult): string {
   return clean || '(no output)'
 }
 
-function formatShellFailure(result: ShellRunResult): Error {
+function formatShellFailure(result: ShellRunResult, advice: string | null): Error {
   const clean = stripTerminalControlSequences(result.output).trim()
-  return new Error(`Exited with code ${String(result.exitCode)}:\n${clean}`)
+  // The advice goes last so the command's own output stays the headline; a
+  // denial explains a failure, it does not replace it.
+  const suffix = advice === null ? '' : `\n\n${advice}`
+  return new Error(`Exited with code ${String(result.exitCode)}:\n${clean}${suffix}`)
 }
 
 export const runShellTool = defineTool({
   name: 'run_shell',
   description:
-    'Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). Prefer dedicated tools over shell for GitHub/CI (`gh_pr_*`, `gh_run_*`, `get_ci_status`, `get_ci_failure_logs`) and for git status/diff/log/show/commit (`git_*`). Never drive `gh` or network `git fetch`/`push`/`pull` through run_shell when those tools exist. Do not use `git reset --hard` or `git clean -fd` for routine branch setup. ' +
+    'Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). Commands run in the working directory named in your system prompt, which is also the only directory the sandbox lets them reach; do not `cd` to an absolute path you inferred, and prefer paths relative to that directory. In worktree mode it is the checkout for this thread rather than the main clone — the same files by a different path. Prefer dedicated tools over shell for GitHub/CI (`gh_pr_*`, `gh_run_*`, `get_ci_status`, `get_ci_failure_logs`) and for git status/diff/log/show/commit (`git_*`). Never drive `gh` or network `git fetch`/`push`/`pull` through run_shell when those tools exist. Do not use `git reset --hard` or `git clean -fd` for routine branch setup. ' +
     'Output is streamed to the conversation. ' +
     'Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. ' +
     'If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. ' +
@@ -351,6 +384,18 @@ export const runShellTool = defineTool({
     const sandboxEnabled = isProjectSandboxEnabled()
     const guardedYolo = currentRunUsesGuardedYolo(getActiveRunThread())
     let outsideSandbox = shellRunsOutsideSandbox(command)
+
+    // Advisory only, and derived from the RAW model-authored command — the same
+    // input the routing decision above reads, never the command's own output
+    // (#104). Used to explain a failure and to record a withheld retry; it can
+    // not grant one.
+    //
+    // Skipped where there is no boundary to describe: with the sandbox off
+    // nothing denies a `cd` anywhere, and on a remote workspace the command ran
+    // on another machine, so neither this host's home directory nor local path
+    // arithmetic says anything true about it.
+    const cdTarget =
+      sandboxEnabled && !isRemote ? cdTargetOutsideRoot(command, cwd, homedir()) : null
 
     // A command that leaves the sandbox ONLY because it reads accountable paths
     // outside the project is contained instead, with just those paths readable
@@ -458,6 +503,7 @@ export const runShellTool = defineTool({
           childEnv,
           guardedYolo,
           readGrantTargets !== null,
+          cdTarget,
         )
         if (retry === 'declined') return 'User declined to run outside the sandbox.'
         if (retry) {
@@ -466,11 +512,24 @@ export const runShellTool = defineTool({
             const retryBanner = guardedYolo ? '[Guarded YOLO · unsandboxed retry]\n' : ''
             return `${retryBanner}${withBanner(formatShellSuccess(retry))}`
           }
-          throw formatShellFailure(retry)
+          // The retry ran outside the sandbox, so a sandbox denial is not what
+          // failed it; report the output alone.
+          throw formatShellFailure(retry, null)
         }
       }
 
-      throw formatShellFailure(result)
+      throw formatShellFailure(
+        result,
+        sandboxDenialAdvice({
+          root: cwd,
+          cdTarget,
+          // Whatever the runner recorded for this run. Re-reading the store here
+          // would always be 0: `runShellOnce` samples it before
+          // `afterSandboxedCommand()` clears it. A run that went outside the
+          // sandbox has no denial to explain in the first place.
+          blockedOperations: outsideSandbox ? 0 : (result.sandboxViolationCount ?? 0),
+        }),
+      )
     } finally {
       gitSsh.release()
       await adoptWorktreeChangesSince(baseline)
