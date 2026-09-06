@@ -7,6 +7,7 @@ import { expandScratchPath } from '@shared/acp-scratch-paths.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { copseWorkspaceTmpDir } from '../services/storage/copse-paths.ts'
 import { sanctionedAgentScratchEntries } from './agent-scratch-roots.ts'
+import { canonicalizePathCached } from './canonical-path-cache.ts'
 import {
   getChatStoreRootSync,
   getInternalWorkspaceRootRegistration,
@@ -31,12 +32,7 @@ import {
  * not exist yet), preserving prior behaviour.
  */
 function canonicalizeWorkspaceRoot(workspaceRoot: string): string {
-  const resolved = resolve(workspaceRoot)
-  try {
-    return realpathSync.native(resolved)
-  } catch {
-    return resolved
-  }
+  return canonicalizePathCached(workspaceRoot)
 }
 
 /** Mirrors ASRT macOS mandatory write denies, resolved against the workspace root. */
