@@ -69,6 +69,37 @@ describe('sandbox-runtime whichSync memo (patched)', () => {
     }
   })
 
+  it('does not cache a failed lookup, so a transient miss cannot become permanent', () => {
+    // `whichSync` spawns `which` with `timeout: 1000`, so on a loaded machine it
+    // can be killed before answering and return null for a binary that is plainly
+    // there. Caching that null would make one timeout permanent for the life of
+    // the process and every later sandboxed command would throw "Shell not found
+    // in PATH" — which is exactly how this failed e2e `close-confirm` the first
+    // time round. A miss must stay retryable.
+    const originalPath = process.env['PATH']
+    const dir = mkdtempSync(join(realpathSync(tmpdir()), 'copse-which-miss-'))
+    try {
+      const binName = `copse-late-${String(process.pid)}`
+      const binPath = join(dir, binName)
+      process.env['PATH'] = `${dir}${delimiter}${originalPath ?? ''}`
+
+      assert.equal(whichSync(binName), null, 'not there yet')
+
+      // Same binary name, same PATH — only the filesystem changed.
+      writeFileSync(binPath, '#!/bin/sh\nexit 0\n')
+      chmodSync(binPath, 0o755)
+      assert.equal(
+        whichSync(binName),
+        binPath,
+        'a failed lookup was cached — a single transient `which` timeout would ' +
+          'wedge every sandboxed command for the rest of the session',
+      )
+    } finally {
+      process.env['PATH'] = originalPath
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('still resolves a real binary', () => {
     assert.equal(typeof whichSync('sh'), 'string')
   })
