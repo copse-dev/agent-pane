@@ -262525,38 +262525,22 @@ function formatDuration(from2, to) {
   if (seconds2 < 90) return `${String(seconds2)}s`;
   return `${String(Math.round(seconds2 / 60))} min`;
 }
-function fillModelSelect(select, options2, current) {
-  if (options2.length === 0) return;
-  clear(select);
-  const groups = /* @__PURE__ */ new Map();
-  for (const option2 of options2) {
-    const node3 = el(
-      "option",
-      { value: option2.value, ...option2.disabled === true ? { disabled: "" } : {} },
-      option2.label
-    );
-    if (option2.group === void 0) {
-      select.append(node3);
-      continue;
-    }
-    let group2 = groups.get(option2.group);
-    if (!group2) {
-      group2 = el("optgroup", { label: option2.group });
-      groups.set(option2.group, group2);
-      select.append(group2);
-    }
-    group2.append(node3);
-  }
-  if (!options2.some((option2) => option2.value === current)) {
-    select.prepend(el("option", { value: current }, modelDisplayLabel(current)));
-  }
-  select.value = current;
+async function loadRunModelOptions(api3, current) {
+  const [all, runnable] = await Promise.all([
+    fetchModelOptions(api3, current),
+    fetchModelOptions(api3, current, { includeAgentModels: false })
+  ]);
+  const canRun = new Set(runnable.map((option2) => option2.value));
+  return all.map(
+    (option2) => canRun.has(option2.value) ? option2 : { ...option2, disabled: true, label: `${option2.label} \u2014 needs its own login` }
+  );
 }
 function mountContainerRunControl(api3, context, onStateChanged) {
   const runs = /* @__PURE__ */ new Map();
   let refreshSequence = 0;
   let overlay = null;
   let lastPrompt = "";
+  let modelPicker = null;
   const text4 = el("span", { class: "container-run-text" });
   const details = el(
     "button",
@@ -262600,6 +262584,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
   function renderDialog() {
     if (!overlay?.isOpen()) return;
     const run6 = activeRun();
+    modelPicker?.destroy();
+    modelPicker = null;
     clear(overlay.dialog);
     overlay.dialog.append(run6 ? statusView(run6) : armForm());
   }
@@ -262618,7 +262604,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     }
     const modelSelect = el("select", {
       class: "container-run-model",
-      "aria-label": "Model for the unattended run"
+      name: "containerRunModel"
     });
     let chosenModel = context.getModel();
     modelSelect.append(el("option", { value: chosenModel }, modelDisplayLabel(chosenModel)));
@@ -262627,9 +262613,13 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       chosenModel = modelSelect.value;
       renderEgressHint();
     });
-    void fetchModelOptions(api3, chosenModel, { includeAgentModels: false }).then((options2) => {
-      fillModelSelect(modelSelect, options2, chosenModel);
-    }).catch((error63) => {
+    const modelField = uiField({ label: "Model", control: modelSelect });
+    modelPicker = mountModelSelectPicker(modelSelect, {
+      loadOptions: (current) => loadRunModelOptions(api3, current),
+      ariaLabel: "Model for the unattended run",
+      loadOnMount: false
+    });
+    void modelPicker.refresh(chosenModel).catch((error63) => {
       console.error("[container-run] could not list models:", error63);
     });
     const minutes = el("input", {
@@ -262705,7 +262695,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         control: task,
         ...quotesDraft ? {} : { hint: "Nothing in the composer to run \u2014 describe the task here." }
       }),
-      uiField({ label: "Model", control: modelSelect }),
+      modelField,
       el(
         "div",
         { class: "container-run-budgets" },
@@ -262908,6 +262898,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     refresh,
     destroy: () => {
       unsubscribe();
+      modelPicker?.destroy();
+      modelPicker = null;
       overlay?.dialog.remove();
       overlay = null;
     }
@@ -262919,6 +262911,7 @@ var init_container_run_control = __esm({
     init_helpers();
     init_ui();
     init_model_options();
+    init_model_picker();
     init_dialog_shell();
     init_toast();
     DEFAULT_WALL_CLOCK_MINUTES = 120;
