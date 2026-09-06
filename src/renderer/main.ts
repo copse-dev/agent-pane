@@ -143,6 +143,7 @@ import { installArtifactImagePolicy } from './markdown/artifact-image-policy.ts'
 import { installSanitizerBackend } from './markdown/sanitizer-backend.ts'
 import { installHighlighterBackend } from './markdown/highlighter-backend.ts'
 import { installAppLinkDecorator } from './markdown/link-decorator.ts'
+import { memberOf } from '@shared/member-of.ts'
 
 // Inject host markdown policies into @copse/streaming-markdown before any view
 // renders: turn remote-agent artifact <img> tags into inert placeholders that
@@ -167,7 +168,7 @@ const api = window.api
 // mode we boot the app normally (so the pane gets the real workspace/threads),
 // but force the pane open and let popout.css hide the projects sidebar, chat,
 // and titlebar so the detached window shows only that pane.
-const POPOUT_MODES = new Set<RightPanelMode>([
+const POPOUT_MODES = [
   'explorer',
   'terminal',
   'changes',
@@ -176,10 +177,8 @@ const POPOUT_MODES = new Set<RightPanelMode>([
   'memories',
   'roadmap',
   'vnc',
-])
-function isPopoutMode(value: string | null): value is RightPanelMode {
-  return value !== null && [...POPOUT_MODES].some((mode) => mode === value)
-}
+] as const satisfies readonly RightPanelMode[]
+const isPopoutMode = memberOf(POPOUT_MODES)
 function getPopoutMode(): RightPanelMode | null {
   const raw = new URLSearchParams(window.location.search).get('popout')
   return isPopoutMode(raw) ? raw : null
@@ -540,7 +539,7 @@ async function activatePopoutPane(mode: RightPanelMode): Promise<void> {
 
 if (popoutMode) {
   api.panes.onSwitchMode((mode) => {
-    if (!POPOUT_MODES.has(mode)) return
+    if (!isPopoutMode(mode)) return
     void activatePopoutPane(mode)
   })
 }

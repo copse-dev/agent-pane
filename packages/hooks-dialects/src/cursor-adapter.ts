@@ -43,6 +43,7 @@ import type {
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
 import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
+import { memberOf } from '@copse/std/member-of.ts'
 
 /**
  * Cursor's per-hook timeout default (decision 13; H4). Cursor's own docs give a
@@ -118,9 +119,7 @@ export function projectHooksConfigPath(workspaceRoot: string): string {
   return join(workspaceRoot, '.cursor', 'hooks.json')
 }
 
-function isHookEvent(value: string): value is CursorHookEvent {
-  return (CURSOR_HOOK_EVENTS as readonly string[]).includes(value)
-}
+const isHookEvent = memberOf(CURSOR_HOOK_EVENTS)
 
 /**
  * Normalize an entry's `glob` matcher field (B2) to a clean string[] or
@@ -399,13 +398,9 @@ export function cursorGenericToolName(toolName: string): string {
   }
 }
 
-function isCursorAfterToolHookEvent(value: string | undefined): value is CursorAfterToolHookEvent {
-  return value !== undefined && (CURSOR_AFTER_TOOL_HOOK_EVENTS as readonly string[]).includes(value)
-}
+const isCursorAfterToolHookEvent = memberOf(CURSOR_AFTER_TOOL_HOOK_EVENTS)
 
-function isCursorToolGateHookEvent(value: string | undefined): value is CursorToolGateHookEvent {
-  return value !== undefined && (CURSOR_TOOL_GATE_HOOK_EVENTS as readonly string[]).includes(value)
-}
+const isCursorToolGateHookEvent = memberOf(CURSOR_TOOL_GATE_HOOK_EVENTS)
 
 /**
  * Resolve the dialect event carried by a registered canonical `toolGate` hook —

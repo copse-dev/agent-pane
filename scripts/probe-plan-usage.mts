@@ -45,6 +45,7 @@ import {
   firstNonEmptyString,
   nonEmptyStringOr,
 } from '../src/shared/unknown-value.mts'
+import { memberOf } from '@copse/std/member-of.ts'
 
 /**
  * Mirror of `copseUserDataDir` in `copse-paths.ts`. Kept inline because this
@@ -145,9 +146,7 @@ const PROVIDERS: ReadonlyArray<'all' | PlanProviderId> = [
   'cursor',
 ]
 
-function isRequestedProvider(value: unknown): value is Args['provider'] {
-  return typeof value === 'string' && PROVIDERS.some((provider) => provider === value)
-}
+const isRequestedProvider: (value: unknown) => value is Args['provider'] = memberOf(PROVIDERS)
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {

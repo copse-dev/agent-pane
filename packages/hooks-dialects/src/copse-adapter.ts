@@ -48,6 +48,7 @@ import type {
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
 import { expectRecord, expectStringArray, isRecord } from '@copse/std/unknown-value.ts'
+import { memberOf } from '@copse/std/member-of.ts'
 
 /**
  * Copse's per-hook timeout default (decision 13; H4). Copse-native hooks are our
@@ -156,9 +157,7 @@ export function projectCopseHooksConfigPath(workspaceRoot: string): string {
   return join(workspaceRoot, '.copse', 'hooks.json')
 }
 
-function isCanonicalEvent(value: string): value is HookEventName {
-  return (HOOK_EVENT_NAMES as readonly string[]).includes(value)
-}
+const isCanonicalEvent = memberOf(HOOK_EVENT_NAMES)
 
 /**
  * Normalize an entry's `glob` matcher field to a clean string[] or undefined.

@@ -37,6 +37,7 @@ import { getWorkspaceRoot } from '../workspace.ts'
 import { getDialectAdapter } from './dialect-registry.ts'
 import type { DialectAdapter, DialectInterpretation } from './dialect-adapter.ts'
 import { spawnHookProcess, type HookSpawnResult } from './hook-spawn.ts'
+import { memberOf } from '@shared/member-of.ts'
 
 /**
  * Bounded timeout for a dry run (ms). Independent of the vendor per-hook
@@ -133,9 +134,7 @@ function claudePlan(wireEvent: string): DryRunPlan | null {
   }
 }
 
-function isCanonicalEvent(value: string): value is HookEventName {
-  return (HOOK_EVENT_NAMES as readonly string[]).includes(value)
-}
+const isCanonicalEvent = memberOf(HOOK_EVENT_NAMES)
 
 /**
  * Map a Copse wire event to its dry-run plan. Copse is the native dialect, so

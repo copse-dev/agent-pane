@@ -23,6 +23,7 @@
  */
 
 import { isPromptCause, type PromptCause } from './prompt-cause.ts'
+import { memberOf } from '@copse/std/member-of.ts'
 
 /** Bump when the decision line shape changes in a backwards-incompatible way. */
 export const DECISION_LOG_SCHEMA_VERSION = 1
@@ -38,7 +39,9 @@ export const DECISION_LOG_MEDIA_TYPE = 'application/vnd.copse.decision-log+jsonl
 export const DECISION_LOG_CONFORMANCE = 'draft-vaughan-machine-readability' as const
 
 /** Who made the decision. */
-export type DecisionActor = 'user' | 'classifier' | 'hook' | 'system'
+const DECISION_ACTORS = ['user', 'classifier', 'hook', 'system'] as const
+
+export type DecisionActor = (typeof DECISION_ACTORS)[number]
 
 /**
  * The outcome. `approved`/`denied` are user verdicts; `allowed`/`blocked`/`ask`
@@ -48,16 +51,19 @@ export type DecisionActor = 'user' | 'classifier' | 'hook' | 'system'
  * showing — the action did not run, and a separate line records the human's
  * eventual answer.
  */
-export type DecisionVerdict =
-  | 'approved'
-  | 'denied'
-  | 'allowed'
-  | 'blocked'
-  | 'ask'
-  | 'classified'
-  | 'timeout'
-  | 'cancelled'
-  | 'deferred'
+const DECISION_VERDICTS = [
+  'approved',
+  'denied',
+  'allowed',
+  'blocked',
+  'ask',
+  'classified',
+  'timeout',
+  'cancelled',
+  'deferred',
+] as const
+
+export type DecisionVerdict = (typeof DECISION_VERDICTS)[number]
 
 /** One line of the durable decision audit (thread spine `type: "decision"`). */
 export interface DecisionEvent {
@@ -196,30 +202,13 @@ export function serializeDecisionLine(event: DecisionEvent): string {
   return JSON.stringify(event)
 }
 
-const DECISION_ACTORS: ReadonlySet<string> = new Set(['user', 'classifier', 'hook', 'system'])
-const DECISION_VERDICTS: ReadonlySet<string> = new Set([
-  'approved',
-  'denied',
-  'allowed',
-  'blocked',
-  'ask',
-  'classified',
-  'timeout',
-  'cancelled',
-  'deferred',
-])
-
 function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string'
 }
 
-function isDecisionActor(value: unknown): value is DecisionActor {
-  return typeof value === 'string' && DECISION_ACTORS.has(value)
-}
+const isDecisionActor = memberOf(DECISION_ACTORS)
 
-function isDecisionVerdict(value: unknown): value is DecisionVerdict {
-  return typeof value === 'string' && DECISION_VERDICTS.has(value)
-}
+const isDecisionVerdict = memberOf(DECISION_VERDICTS)
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
