@@ -1535,8 +1535,36 @@ copse-ui-field input[type=password],
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
+}
+.terminal-rail-section {
+  flex: 1 1 33.333%;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   min-height: 0;
+}
+.terminal-rail-resizer {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 var(--pane-divider-width, 1px);
+  height: var(--pane-divider-width, 1px);
+  background: var(--border);
+  cursor: row-resize;
+  touch-action: none;
+}
+.terminal-rail-resizer::after {
+  content: "";
+  position: absolute;
+  inset: -3px 0;
+}
+.terminal-rail-resizer:hover,
+.terminal-rail-resizer:focus-visible,
+.terminal-rail-resizer.is-dragging {
+  background: var(--accent);
+  outline: none;
 }
 .terminals-list-header {
   display: flex;
@@ -2170,12 +2198,7 @@ copse-ui-field input[type=password],
   z-index: 10;
 }
 .agent-tasks-section {
-  flex-shrink: 0;
-  max-height: 50%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-top: 1px solid var(--border);
+  min-height: 0;
 }
 .agent-tasks-section-header {
   padding: var(--spacing-sm);
@@ -2246,13 +2269,12 @@ copse-ui-field input[type=password],
   font-family: var(--font-mono);
 }
 .supervised-tasks-section {
-  flex-shrink: 0;
-  max-height: 40%;
-  overflow: hidden;
-  border-top: 1px solid var(--border);
+  min-height: 0;
 }
 .supervised-tasks-list {
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
   padding: var(--spacing-xs) 0;
 }
 .supervised-task-row {
@@ -4311,6 +4333,12 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-rollup-body .reasoning-activity-icon {
   color: var(--text-secondary);
 }
+.tool-card-step:not([open]) > .tool-rollup-body {
+  display: none;
+}
+.tool-card-step > .tool-card-header .tool-status-icon {
+  display: none;
+}
 .tool-card-group > .tool-group-items {
   display: flex;
   flex-direction: column;
@@ -5114,7 +5142,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   font-size: 11px;
   color: var(--text-secondary);
   background: var(--bg-hover);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   padding: 2px 10px;
   cursor: pointer;
@@ -8398,6 +8426,12 @@ dialog.settings-overlay::backdrop {
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
+.approval-advice-item {
+  display: inline-block;
+  max-width: 100%;
+  padding-left: 1.05em;
+  text-indent: -1.05em;
+}
 .approval-footer {
   margin-top: var(--spacing-sm);
   font-size: var(--font-size-sm);
@@ -8740,6 +8774,101 @@ dialog.settings-overlay::backdrop {
   line-height: var(--line-height-base);
 }
 .comparison-model-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}
+
+/* src/renderer/styles/global/create-pr-dialog.css */
+#create-pr-dialog {
+  max-width: 460px;
+}
+.create-pr-dialog h3 {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+.create-pr-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.create-pr-dialog-field + .create-pr-dialog-field {
+  margin-top: var(--spacing-md);
+}
+.create-pr-dialog-field label {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.create-pr-dialog-title-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--font-size-base);
+}
+.create-pr-dialog-title-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.create-pr-dialog-body-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  resize: vertical;
+}
+.create-pr-dialog-body-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.create-pr-dialog-body-input.is-pending::placeholder {
+  animation: create-pr-body-pending 1.4s ease-in-out infinite;
+}
+@keyframes create-pr-body-pending {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+.create-pr-dialog-draft {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.create-pr-dialog-draft-toggle {
+  margin-top: 1px;
+}
+.create-pr-dialog-draft-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.create-pr-dialog-draft-text label {
+  cursor: pointer;
+}
+.create-pr-dialog-draft-hint {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.create-pr-dialog-hint {
+  margin: var(--spacing-md) 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+.create-pr-dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm);
@@ -9089,6 +9218,14 @@ dialog.settings-overlay::backdrop {
 }
 .follow-up-bubble-changes .follow-up-label {
   color: var(--text-muted);
+}
+.follow-up-bubble-create-pr {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--text);
+}
+.follow-up-bubble-create-pr:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+  border-color: var(--accent);
 }
 .follow-up-stat-add {
   color: #3dd68c;
@@ -9444,6 +9581,15 @@ dialog.settings-overlay::backdrop {
 .command-palette-item-thread .command-palette-name {
   flex: 1;
   min-width: 0;
+}
+.command-palette-pr {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 30%;
 }
 .command-palette-context {
   flex-shrink: 0;
@@ -9925,6 +10071,198 @@ dialog.settings-overlay::backdrop {
   margin-bottom: 0;
 }
 
+/* src/renderer/styles/global/thread-proposal.css */
+.thread-proposal {
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  background: var(--bg-elevated);
+  font-size: var(--font-size-sm);
+  max-width: 100%;
+}
+.thread-proposal[data-proposal-status=dismissed],
+.thread-proposal[data-proposal-status=started] {
+  border-left-color: var(--border);
+  background: transparent;
+}
+.thread-proposal > .thread-proposal-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: auto;
+  max-width: 100%;
+  margin-inline: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: 0;
+  cursor: pointer;
+  list-style: none;
+}
+.thread-proposal > .thread-proposal-header::-webkit-details-marker {
+  display: none;
+}
+.thread-proposal > .thread-proposal-header:hover {
+  background: var(--bg-hover);
+}
+.thread-proposal-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+}
+.thread-proposal[data-proposal-status=dismissed] .thread-proposal-icon,
+.thread-proposal[data-proposal-status=started] .thread-proposal-icon {
+  color: var(--text-muted);
+}
+.thread-proposal-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.thread-proposal-header-title {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.thread-proposal[open] .thread-proposal-header-title {
+  display: none;
+}
+.thread-proposal-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-left: auto;
+  padding-left: var(--spacing-sm);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.thread-proposal-open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 2px var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.thread-proposal-state + .thread-proposal-open {
+  margin-left: var(--spacing-sm);
+}
+.thread-proposal-open:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.thread-proposal-body {
+  padding: 0 var(--spacing-md) var(--spacing-md);
+}
+.thread-proposal-title {
+  margin: 0 0 var(--spacing-xs);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.thread-proposal-summary {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: var(--line-height-base);
+}
+.thread-proposal-rationale {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--text-secondary);
+  line-height: var(--line-height-base);
+}
+.thread-proposal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+.thread-proposal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-width: 100%;
+  padding: 2px var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-proposal-chip[data-chip=files] {
+  font-family: var(--font-mono);
+}
+.thread-proposal-prompt {
+  margin-top: var(--spacing-sm);
+}
+.thread-proposal-prompt-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.thread-proposal-prompt-summary::-webkit-details-marker {
+  display: none;
+}
+.thread-proposal-prompt-summary::before {
+  content: "\203a";
+  display: inline-block;
+  transition: transform 120ms ease;
+}
+.thread-proposal-prompt[open] > .thread-proposal-prompt-summary::before {
+  transform: rotate(90deg);
+}
+.thread-proposal-prompt-summary:hover {
+  color: var(--text-primary);
+}
+.thread-proposal-prompt-text {
+  margin: var(--spacing-xs) 0 0;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: var(--line-height-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 12em;
+  overflow-y: auto;
+}
+.thread-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.thread-proposal-actions .ui-btn {
+  padding: var(--spacing-xs) var(--spacing-md);
+}
+.thread-proposal-error {
+  color: var(--error);
+  font-size: 11px;
+}
+
 /* src/renderer/styles/global/toasts.css */
 .toast-host {
   position: fixed;
@@ -10375,14 +10713,10 @@ dialog.settings-overlay::backdrop {
 
 /* src/renderer/styles/global/ports.css */
 .ports-section {
-  flex-shrink: 0;
-  max-height: 40%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-top: 1px solid var(--border);
+  min-height: 0;
 }
 .ports-list {
+  flex: 1;
   overflow-y: auto;
   min-height: 0;
   padding: var(--spacing-xs) 0;
