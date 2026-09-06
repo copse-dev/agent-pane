@@ -21495,7 +21495,7 @@ function metaSig(meta5) {
 function metaPatch(prev2, next3) {
   const patch = { ...next3 };
   for (const key of Object.keys(prev2)) {
-    if (!(key in next3)) patch[key] = void 0;
+    if (!Object.hasOwn(next3, key)) patch[key] = void 0;
   }
   return patch;
 }
@@ -34854,7 +34854,7 @@ function listIntellectScoredModelIds() {
 function resolveIntellectModelId(id39) {
   return resolveModelIdForm(
     id39,
-    (candidate) => candidate in MODEL_INTELLECT_RAW ? candidate : INTELLECT_ALIASES[candidate] ?? null
+    (candidate) => Object.hasOwn(MODEL_INTELLECT_RAW, candidate) ? candidate : INTELLECT_ALIASES[candidate] ?? null
   );
 }
 function pickMeasurement(modelId) {
