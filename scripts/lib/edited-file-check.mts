@@ -10,6 +10,7 @@
  * stdin, the linters, and the filesystem.
  */
 import { memberOf } from '@copse/std/member-of.ts'
+import { isRecord } from '../../src/shared/unknown-value.mts'
 
 /**
  * Which agent is running the hook. It decides only how a finding is *reported*,
@@ -60,11 +61,6 @@ export function checkPlanFor(path: string): CheckPlan | null {
   const lint = LINTABLE.test(normalized)
   const format = FORMATTABLE.test(normalized)
   return lint || format ? { lint, format } : null
-}
-
-/** Narrows an unknown payload to something indexable, without an assertion. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }
 
 /** Value at `key` if it is a non-empty string, else undefined. */
