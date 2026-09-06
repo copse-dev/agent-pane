@@ -97,6 +97,26 @@ active, which is seatbelt on macOS and bubblewrap on Linux. `permission-policy.t
 up-front prompts and `sandbox-failure.ts` the after-a-block retry; the `expects_sandbox_block`
 wording stays an expectation, per the section above.
 
+## Worktree preparation capability
+
+Copse source worktrees have two dedicated built-in tools. `preflight_worktree` is read-only and
+reports the pinned Node/pnpm state, dependency fingerprint, Electron runtime, matching ChromeDriver,
+gortex binary, and whether remote E2E is configured. `prepare_worktree` is mutating and always asks
+once before it runs; the approval cannot be remembered or reused for arbitrary commands.
+
+The preparer writes only the active worktree and fixed directories under `~/.copse/cache/`
+(`COPSE_DIR` relocates them). It routes the lockfile-exact pnpm install through Socket Firewall with
+all dependency lifecycle scripts disabled, then invokes the repository-declared `prepare:native`
+entry point. That entry point explicitly prepares Electron, ChromeDriver, node-pty, and checksum-
+verified gortex inputs. Preparation records the existing dev-dependency fingerprint only after the
+native artifacts validate. Node, package-manager, lockfile, workspace manifests, patches, or native
+preparation changes invalidate it.
+
+Ordinary project-sandbox commands receive read-only access to those fixed cache directories so
+prepared package symlinks and runtimes work without repeated sandbox escapes. The caches are never
+added to `allowWrite`; installs and repairs remain behind the dedicated approval. Offline mode
+forbids downloads and fails closed with remediation when the matching inputs are unavailable.
+
 ## Guarded YOLO
 
 Guarded YOLO is a session-only, thread-scoped mode armed from the composer footer. It becomes

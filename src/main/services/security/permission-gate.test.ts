@@ -60,6 +60,33 @@ import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../thread-models.ts'
 import { shellReplayLeaseStore } from './capability-lease.ts'
 
+describe('prepare_worktree permission', () => {
+  it('asks once for the bounded preparation capability', async () => {
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts += 1
+      assert.equal(request.title, 'Prepare this worktree?')
+      assert.equal(request.cause, 'shell-package-install')
+      assert.equal(request.allowRemember, false)
+      assert.match(request.body, /lifecycle scripts disabled/)
+      assert.match(request.body, /Copse-managed cache/)
+      return { approved: true, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureToolPermitted(
+          { toolName: 'prepare_worktree', args: { offline: false } },
+          new AbortController().signal,
+        ),
+        true,
+      )
+      assert.equal(prompts, 1)
+    } finally {
+      setApprovalHandler(null)
+    }
+  })
+})
+
 describe('isStructurallyReadOnlyShellCommand', () => {
   it('accepts simple read commands and read-only pipelines', () => {
     assert.equal(isStructurallyReadOnlyShellCommand('git status --short'), true)

@@ -3248,6 +3248,71 @@ export function seedMachineTurnAttributionFixture(workspaceRoot: string): void {
   })
 }
 
+/** A prepared-worktree before/after trace for focused tool-card visual evidence. */
+export function seedWorktreePreparationFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-worktree-preparation-project'
+  const threadId = 'e2e-worktree-preparation-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Prepare a fresh worktree',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-worktree-user',
+            role: 'user',
+            content: 'Check this fresh worktree and prepare it for the focused Electron test.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-worktree-preflight',
+            role: 'assistant',
+            content: 'This fresh checkout needs one bounded preparation run.',
+            toolCalls: [
+              {
+                id: 'tc-preflight-worktree',
+                name: 'preflight_worktree',
+                args: { offline: false },
+                status: 'done',
+                result:
+                  'Worktree preparation: absent\n- not ready — Dependencies: missing node_modules/.modules.yaml\nRemediation: Run prepare_worktree once.',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-worktree-prepare',
+            role: 'assistant',
+            content: 'The pinned dependencies and native runtimes are ready.',
+            toolCalls: [
+              {
+                id: 'tc-prepare-worktree',
+                name: 'prepare_worktree',
+                args: { offline: false },
+                status: 'done',
+                result:
+                  'Worktree preparation: ready\n- ready — Node: Node 24.20.0 ready\n- ready — pnpm: pnpm 10.34.5 ready in the Copse Corepack cache\n- ready — Electron: Electron 44.0.0 runtime ready\n- ready — ChromeDriver: ChromeDriver 44.0.0 ready\n- ready — gortex: gortex v0.60.0 ready\nRemediation: No preparation needed.',
+              },
+            ],
+            createdAt: now + 2,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now + 2,
+        model: 'claude-sonnet-4-6',
+      },
+    ],
+  })
+}
+
 /**
  * Multi-segment tool-display fixture: a user bug report followed by several
  * assistant bubbles (text-after-tools splits), each with Reasoning + a tool

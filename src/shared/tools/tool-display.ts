@@ -64,6 +64,8 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   propose_thread: { running: 'Proposing a thread', done: 'Proposed a thread' },
   update_todos: { running: 'Updating plan', done: 'Updated plan' },
   run_checkup: { running: 'Running checkup', done: 'Ran checkup' },
+  preflight_worktree: { running: 'Checking worktree', done: 'Checked worktree' },
+  prepare_worktree: { running: 'Preparing worktree', done: 'Prepared worktree' },
 }
 
 interface ToolGroupDef {
@@ -73,7 +75,7 @@ interface ToolGroupDef {
 
 const TOOL_GROUPS: Record<string, ToolGroupDef> = {
   reading: {
-    tools: ['explore', 'read_file', 'list_dir', 'video_frames'],
+    tools: ['explore', 'read_file', 'list_dir', 'video_frames', 'preflight_worktree'],
     label: { running: 'Reading files', done: 'Read files' },
   },
   searching: {
@@ -117,7 +119,7 @@ const TOOL_GROUPS: Record<string, ToolGroupDef> = {
     label: { running: 'Editing files', done: 'Edited files' },
   },
   shell: {
-    tools: ['run_shell', 'run_background', 'read_terminal'],
+    tools: ['run_shell', 'run_background', 'read_terminal', 'prepare_worktree'],
     label: { running: 'Running commands', done: 'Ran commands' },
   },
 }
