@@ -67,7 +67,7 @@ workspace package.
 | `src/main`     |   474 | 100,113 |             30 | `services/` is 87k of it, in 26 subdirectories plus 60 top-level files. Electron use concentrates in `windows/` (9) and `ipc/` (5).                                                                                                                                                |
 | `src/renderer` |   195 |  53,049 |              0 | Vanilla TypeScript DOM, no framework. `views/` is 40k. Every view receives `api: ApiClient`; only `src/renderer/main.ts` reads `window.api`.                                                                                                                                       |
 | `src/shared`   |   145 |  18,309 |              0 | Isomorphic. Several subdirectories have zero outward imports and are already library-shaped.                                                                                                                                                                                       |
-| `src/preload`  |     4 |   2,498 |              — | `api.d.ts` (1,043 lines) plus `shared/types/ipc.ts` (586) is the de facto client/server protocol.                                                                                                                                                                                  |
+| `src/preload`  |     4 |   2,498 |              — | `api.d.ts` (1,043 lines) is the de facto client/server protocol, frozen since #2352 as `schemas/api-protocol.manifest.json`. The hand-written `shared/types/ipc.ts` (586) beside it covered under half the channels, was imported by nothing, and has since been deleted.          |
 | `src/sidecar`  |     9 |   1,425 |              2 | Tauri prototype: runs `src/main` unchanged as plain Node via an esbuild alias of `electron` to a shim, with a loopback WebSocket for renderer IPC.                                                                                                                                 |
 | `scripts/`     |   161 |  31,323 |              — | About 11.8k is bench and eval harness; 4.8k is test infrastructure (oracle, screenshots, remote e2e, runner burst).                                                                                                                                                                |
 | `packages/`    |     — |       — |              0 | `@copse/std`, `@copse/llm`, `@copse/agent`, `@copse/plan-usage`, `@copse/shell-guard`, `@copse/thread-store`, `@copse/hooks-dialects`, and `@copse/plugin-sdk` as in-repo workspace packages; `extract-zip` as a vendored shim. `@copse/streaming-markdown` lives in its own repo. |
@@ -261,8 +261,10 @@ idea from the automation side.
 
 Sequence that keeps the app shipping throughout:
 
-1. Generate a JSON Schema from `api.d.ts` and `ipc.ts`, publish it, and add an invariants
-   test so the surface only changes deliberately.
+1. Generate a JSON Schema from `api.d.ts` plus the preload bindings, publish it, and add
+   an invariants test so the surface only changes deliberately. Landed in #2352; the
+   hand-written `ipc.ts` maps were partial and unused, so they were never a generator
+   input and have since been deleted.
 2. Introduce `ShellHost` for window, dialog, shell-open, notification, secure storage, and
    theme. Electron implements it; the sidecar shim becomes a second implementation instead
    of a module alias.
