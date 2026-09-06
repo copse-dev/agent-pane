@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Copse plugin runtime SDK and host protocol: the plugin-tool wire protocol, the author-facing SDK, the isolated worker entry, runtime source discovery and reviewed snapshots, and the MCP server configuration schema and types",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
