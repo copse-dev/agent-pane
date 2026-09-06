@@ -42,7 +42,9 @@ import { assertedPredicateInventory } from './lib/type-predicates.mts'
  *
  * The second test fails on a stale entry, so converting a predicate forces its
  * line out of this list in the same change — the list can only shrink.
- * `main` carries 183 of these in 113 files.
+ * The list started at 183 in 113 files when #1330 was opened; it holds 85 in
+ * 53 today. The two tests below keep it exact, so that second figure is
+ * measured rather than remembered.
  */
 const ASSERTED_PREDICATES: Readonly<Record<string, readonly string[]>> = {
   'packages/hooks-dialects/src/command-hook-runner.ts': [
@@ -62,7 +64,7 @@ const ASSERTED_PREDICATES: Readonly<Record<string, readonly string[]>> = {
   'packages/hooks-dialects/src/cursor-adapter.ts': ['(anonymous)', '(anonymous)'],
   'packages/llm/src/create-provider.ts': ['isServerSideTool'],
   'packages/llm/src/provider-usage.ts': ['hasLastUsage'],
-  'packages/plugin-sdk/src/plugin-model-turn.ts': ['(anonymous)', '(anonymous)'],
+  'packages/plugin-sdk/src/plugin-model-turn.ts': ['(anonymous)'],
   'packages/std/src/member-of.ts': ['(anonymous)', '(anonymous)'],
   'packages/std/src/nullish.ts': ['isDefined', 'isNonBlankString', 'isNonEmptyString', 'isNonNull'],
   'packages/std/src/unknown-value.ts': ['isRecord', 'matchesFallbackType'],
@@ -82,37 +84,27 @@ const ASSERTED_PREDICATES: Readonly<Record<string, readonly string[]>> = {
   ],
   'packages/thread-store/src/thread-store.ts': ['isAgentHistoryMessage'],
   'scripts/gen-headless-schema.mts': ['isSchemaModule'],
-  'scripts/hook-file-check.mts': ['(anonymous)'],
   'scripts/lib/api-protocol.mts': [
     '(anonymous)',
     'isObjectType',
     'isTupleTarget',
     'isTypeReference',
   ],
-  'scripts/lib/benchmark-catalog.mts': ['(anonymous)'],
-  'scripts/lib/edited-file-check.mts': ['(anonymous)'],
   'scripts/lib/terminal-bench-task-image.mts': ['(anonymous)'],
   'scripts/perf-report.mts': ['isTraceLine'],
   'scripts/skillsbench-agent-lib.mts': ['isInputMessage'],
-  'scripts/sync-intellect.mts': ['(anonymous)', 'isIsoDate'],
+  'scripts/sync-intellect.mts': ['isIsoDate'],
   'scripts/sync-local-models.mts': ['isIsoDate'],
   'scripts/terminal-bench-agent-lib.mts': ['isInputMessage'],
   'src/main/services/acp/acp-approval-presentation.ts': ['(anonymous)'],
   'src/main/services/acp/session-update-adapter.ts': ['(anonymous)', '(anonymous)'],
   'src/main/services/agent-errors.ts': ['isJsonRpcError'],
-  'src/main/services/agent-service.ts': ['(anonymous)'],
   'src/main/services/automations/automation-service.ts': ['isSchedule'],
   'src/main/services/diagnostics/perf-ipc.ts': ['isDetail'],
-  'src/main/services/github/backend/gh-cli-backend.ts': [
-    '(anonymous)',
-    '(anonymous)',
-    '(anonymous)',
-  ],
   'src/main/services/github/github-ci-service.ts': ['(anonymous)'],
   'src/main/services/mcp/custom-tools-config.ts': ['isRawExecute'],
   'src/main/services/mcp/custom-tools-registry.ts': ['isDynamicImport', 'isToolFactory'],
   'src/main/services/remote/remote-agent-client.ts': ['(anonymous)'],
-  'src/main/services/search/semantic-index.ts': ['(anonymous)'],
   'src/main/services/security/pii-redactor.ts': ['isCreateGuard'],
   'src/main/services/ssh-workspace/execution-target.ts': ['(anonymous)'],
   'src/main/services/storage/knowledge-store.ts': ['isIndexRecord'],

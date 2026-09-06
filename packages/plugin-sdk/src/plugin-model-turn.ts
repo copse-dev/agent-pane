@@ -14,7 +14,7 @@ const IMAGE_DATA_URL = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+
 export function pluginModelPromptText(content: UserContent): string {
   if (typeof content === 'string') return content
   return content
-    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+    .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
 }

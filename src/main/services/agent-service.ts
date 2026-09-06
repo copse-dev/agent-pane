@@ -388,7 +388,7 @@ function parentTools(
 function promptTextForSubmit(userPrompt: UserContent): string {
   if (typeof userPrompt === 'string') return userPrompt
   return userPrompt
-    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+    .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
 }

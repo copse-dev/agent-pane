@@ -11,6 +11,7 @@
  */
 import { memberOf } from '@copse/std/member-of.ts'
 import { isRecord } from '../../src/shared/unknown-value.mts'
+import { isDefined } from '@copse/std/nullish.ts'
 
 /**
  * Which agent is running the hook. It decides only how a finding is *reported*,
@@ -90,7 +91,7 @@ export function editedPathsFromPayload(payload: unknown): string[] {
     stringField(toolInput, 'notebook_path'),
     stringField(toolResponse, 'filePath'),
   ]
-  return [...new Set(candidates.filter((c): c is string => c !== undefined))]
+  return [...new Set(candidates.filter(isDefined))]
 }
 
 /**
