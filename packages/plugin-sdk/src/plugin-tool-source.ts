@@ -9,6 +9,7 @@ import {
   type RegisteredPlugin,
 } from '@copse/agent/plugins/plugin-manifest.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
+import { zPluginHookRegistrations } from './plugin-tool-protocol.ts'
 
 export const PLUGIN_MANIFEST_FILE = 'copse-plugin.json'
 
@@ -48,6 +49,7 @@ const zPluginToolSourceJson = z
     runtime: z.strictObject({
       entrypoint: z.string().min(1).max(1_000),
       apiVersion: z.literal(1),
+      hooks: zPluginHookRegistrations.min(1).optional(),
     }),
     tools: z
       .strictObject({
@@ -61,7 +63,10 @@ const zPluginToolSourceJson = z
       .optional(),
     browser: zPluginBrowser.optional(),
   })
-  .refine((value) => value.tools !== undefined || value.models !== undefined)
+  .refine(
+    (value) =>
+      value.tools !== undefined || value.models !== undefined || value.runtime.hooks !== undefined,
+  )
   .refine((value) => value.browser === undefined || value.models !== undefined)
 
 type PluginToolSourceJson = z.infer<typeof zPluginToolSourceJson>
@@ -260,6 +265,7 @@ export async function discoverPluginToolSource(
       runtime: {
         entrypoint: relative(root, entrypoint).split(sep).join('/'),
         apiVersion: raw.runtime.apiVersion,
+        ...(raw.runtime.hooks ? { hooks: raw.runtime.hooks } : {}),
       },
     },
     { sourceHint: basename(root) },

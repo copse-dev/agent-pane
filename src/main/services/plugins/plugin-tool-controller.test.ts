@@ -68,6 +68,7 @@ function fakeRuntime(registrations: PluginToolRegistrations): PluginToolRuntimeC
     invokeTool: (_pluginId, _registrationId, input) =>
       Promise.resolve({ result: JSON.stringify(input) }),
     invokeModel: (_pluginId, _registrationId, input) => Promise.resolve(input),
+    invokeHook: (_pluginId, _registrationId, _event, input) => Promise.resolve(input),
   }
 }
 
@@ -77,6 +78,19 @@ afterEach(async () => {
 })
 
 describe('ToolingPluginToolRuntimeController', () => {
+  it('stops a worker with undeclared hook registrations before exposing its tools', async () => {
+    const plugin = await candidate()
+    const runtime = fakeRuntime({
+      tools: [{ name: 'personal_judge', description: 'Judge', inputSchema: {} }],
+      models: [],
+      hooks: [{ id: 'unexpected', event: 'toolGate' }],
+    })
+    const registry = new ToolRegistry()
+    const controller = new ToolingPluginToolRuntimeController(registry, runtime)
+    await assert.rejects(controller.enable(plugin), /hooks not declared/)
+    assert.equal(registry.has('personal_judge'), false)
+    assert.deepEqual(runtime.disables, ['personal.controller-test'])
+  })
   it('registers exact declared tools, invokes them, and unregisters on disable', async () => {
     const plugin = await candidate()
     const runtime = fakeRuntime({
