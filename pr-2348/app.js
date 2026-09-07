@@ -262853,6 +262853,27 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       renderStartState();
     }
     loginOptIn.addEventListener("change", renderStartState);
+    const installOptIn = el("input", {
+      type: "checkbox",
+      class: "container-run-install",
+      name: "containerRunInstall",
+      checked: ""
+    });
+    const installField = el(
+      "div",
+      { class: "container-run-install-field" },
+      el(
+        "label",
+        { class: "container-run-install-label" },
+        installOptIn,
+        el("span", {}, "Install dependencies before the run")
+      ),
+      el(
+        "p",
+        { class: "field-hint container-run-install-hint" },
+        "Runs the checkout's lockfile install (pnpm or npm) once, before the agent starts, so tests and builds can run. For that step the container can also reach registry.npmjs.org; the agent\u2019s own commands stay off the network."
+      )
+    );
     const start2 = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-primary container-run-start" },
@@ -262885,7 +262906,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         prompt,
         model: chosenModel,
         budgets: { wallClockMs, tokenCeiling },
-        ...loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {}
+        ...loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {},
+        installDependencies: installOptIn.checked
       }).then((progress2) => {
         update2(progress2);
         renderDialog();
@@ -262918,6 +262940,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       ),
       egressHint,
       loginField,
+      installField,
       uiActions(cancel, start2, { className: "container-run-actions" })
     );
   }
@@ -263234,6 +263257,7 @@ var init_container_run_control = __esm({
       preparing: "Preparing",
       "building-image": "Building the worker image",
       starting: "Starting the container",
+      installing: "Installing dependencies",
       running: "Running unattended",
       collecting: "Collecting the result",
       finished: "Finished",
