@@ -6,6 +6,7 @@ import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 import { IMAGE_INPUT_UNSUPPORTED_MESSAGE } from '@shared/image-input-support.ts'
 import { ThreadWorktreeDetachedError } from './worktree-manager.ts'
 import type { TurnErrorDetail } from '@shared/types/turn-outcome.ts'
+import { isNonEmptyString } from '@shared/nullish.ts'
 
 /** Optional context so ACP failures can name the agent and its auth steps. */
 export interface ClassifyAgentErrorContext {
@@ -361,7 +362,7 @@ function formatAcpAuthError(
       ACP_KEYS_NOT_FORWARDED,
       acpTechnicalDetails(rpc),
     ]
-      .filter((part): part is string => Boolean(part))
+      .filter(isNonEmptyString)
       .join('\n\n')
   }
 
@@ -372,7 +373,7 @@ function formatAcpAuthError(
     ACP_KEYS_NOT_FORWARDED,
     acpTechnicalDetails(rpc ?? { code: -32000, message: 'Authentication required' }),
   ]
-    .filter((part): part is string => Boolean(part))
+    .filter(isNonEmptyString)
     .join('\n\n')
 }
 

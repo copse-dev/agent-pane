@@ -69,9 +69,9 @@ export function huggingFaceCardUrl(id: string): string | null {
  */
 export function resolveModelCardId(id: string): string | null {
   const direct = resolveModelIdForm(id, (candidate) =>
-    candidate in MODEL_CARDS ? candidate : null,
+    Object.hasOwn(MODEL_CARDS, candidate) ? candidate : null,
   )
   if (direct !== null) return direct
   const viaIntellect = resolveIntellectModelId(id)
-  return viaIntellect !== null && viaIntellect in MODEL_CARDS ? viaIntellect : null
+  return viaIntellect !== null && Object.hasOwn(MODEL_CARDS, viaIntellect) ? viaIntellect : null
 }

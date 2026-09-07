@@ -148,10 +148,29 @@ describe('ci.yml workflow invariants', () => {
   it('does not let a cheap trunk push satisfy the promotion aggregate gate', () => {
     const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
     assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
+    // Assert the property, not the formatting. The expression outgrew one line
+    // when fork runs gained their own context (#2520), and pinning the literal
+    // meant a correct change to it read as a regression. What has to hold is
+    // that each cheap tier publishes a check name a required `CI Passed` rule
+    // cannot match: trunk pushes skip the expensive tier, and fork PRs skip
+    // `check`, `build` and `e2e` entirely.
+    const nameBlock = aggregate.match(/^ {4}name: (>-\n(?: {6}.+\n)+|.+\n)/m)?.[1]
+    assert.ok(nameBlock, 'expected a `name:` on ci-passed')
+    const nameExpr = nameBlock.replace(/^>-\n/, '').replace(/\s+/g, ' ').trim()
     assert.match(
-      aggregate,
-      /name: \$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' && 'Develop CI Passed' \|\| 'CI Passed' \}\}/,
+      nameExpr,
+      /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' && 'Develop CI Passed'/,
       'trunk pushes need a distinct aggregate check context',
+    )
+    assert.match(
+      nameExpr,
+      /head\.repo\.full_name != github\.repository\) && 'Fork CI Passed'/,
+      'fork PRs need a distinct aggregate check context: their run skips check/build/e2e',
+    )
+    assert.match(
+      nameExpr,
+      /\|\| 'CI Passed' \}\}$/,
+      "everything else — same-repo PRs included — must still publish 'CI Passed'",
     )
     assert.match(
       aggregate,
@@ -781,6 +800,72 @@ describe('demo preview publish race invariants', () => {
       'the demo copy belongs to the build-once branch, not to every attempt',
     )
     assert.match(demoPreview, /git -C previews-branch checkout "\$restack_from" -- "\$path"/)
+  })
+})
+
+// Every deploy serializes on the shared `pages` group, which keeps ONE pending
+// slot: a newer pending deploy cancels the older one. While demo-preview.yml
+// reached that queue through `uses:`, the cancelled job was part of the PR's own
+// run, so the run went cancelled and the PR grew a grey X — on 23 of the 40 runs
+// before this changed, every one of them a preview that had already published
+// and commented. Dispatching moves the supersession onto a run no PR watches.
+// One `uses:` away from coming back, and nothing but the Actions tab shows it.
+describe('demo preview deploy decoupling invariants', () => {
+  const demoPreview = readFileSync(resolve('.github/workflows/demo-preview.yml'), 'utf8')
+
+  it('never puts a PR run in the pages deploy queue', () => {
+    assert.doesNotMatch(
+      demoPreview,
+      /^\s*uses: \.\/\.github\/workflows\/pages\.yml/m,
+      "a called workflow's jobs run inside this run, so its cancellation cancels the PR's preview run",
+    )
+  })
+
+  it('dispatches the deploy on the pushed branch instead', () => {
+    assert.match(demoPreview, /createWorkflowDispatch/)
+    assert.match(
+      demoPreview,
+      /^ {4}permissions:\n {6}actions: write$/m,
+      'dispatching needs actions: write; the deploy scopes belong to the dispatched run',
+    )
+    // The branch, not `main`: `uses:` resolved pages.yml from the pushed branch,
+    // so a PR editing the deploy exercised its own copy before merge.
+    assert.match(
+      demoPreview,
+      /ref: context\.ref\.replace\('refs\/heads\/', ''\)|const ref = context\.ref\.replace/,
+    )
+  })
+
+  it('skips the dispatch only for a deploy that has not assembled yet', () => {
+    // A queued deploy reads the demo-previews tip when it starts, so it carries
+    // the commit `publish` just pushed. An in-progress one may have fetched that
+    // tip already, so it is NOT evidence this build will be published.
+    const guard = demoPreview.match(/const pending = data\.workflow_runs\.find\(\n[\s\S]*?\);/)?.[0]
+    assert.ok(guard, 'expected the queued-deploy guard before the dispatch')
+    assert.doesNotMatch(
+      guard,
+      /'in_progress'/,
+      'an in-progress deploy may predate this push; skipping on it drops the preview',
+    )
+    assert.match(guard, /'queued'/)
+    assert.match(guard, /'pending'/)
+  })
+
+  it('warns rather than fails when the deploy cannot be dispatched', () => {
+    // What `tolerate-deploy-failure: true` bought on the old `uses:` call, and
+    // the reason it is not just defensive: a PR that merges while its preview is
+    // still building takes its head branch with it, so the dispatch ref 404s.
+    // Failing there paints a red X on an already-merged PR.
+    assert.match(
+      demoPreview,
+      /catch \(err\) \{\n\s*core\.warning\(/,
+      "a deploy problem is never the PR's fault; the build is already on demo-previews",
+    )
+    assert.doesNotMatch(
+      demoPreview,
+      /core\.setFailed/,
+      'failing this job puts the deploy queue back on the PR, which is what this job exists to stop',
+    )
   })
 })
 

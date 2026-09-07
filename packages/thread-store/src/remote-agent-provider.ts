@@ -4,6 +4,8 @@
  * display logic for remote agents stays in the app (`src/shared/remote-agent.ts`),
  * which re-exports this vocabulary so existing imports are unchanged.
  */
+import { memberOf } from '@copse/std/member-of.ts'
+
 export const REMOTE_AGENT_PROVIDER_CURSOR = 'cursor'
 export const REMOTE_AGENT_PROVIDER_ANTHROPIC = 'anthropic'
 
@@ -14,6 +16,4 @@ export const REMOTE_AGENT_PROVIDERS = [
 
 export type RemoteAgentProvider = (typeof REMOTE_AGENT_PROVIDERS)[number]
 
-export function isRemoteAgentProvider(value: unknown): value is RemoteAgentProvider {
-  return value === REMOTE_AGENT_PROVIDER_CURSOR || value === REMOTE_AGENT_PROVIDER_ANTHROPIC
-}
+export const isRemoteAgentProvider = memberOf(REMOTE_AGENT_PROVIDERS)

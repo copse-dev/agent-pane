@@ -27,6 +27,7 @@ import type {
   CommandHook,
 } from '@copse/agent/hooks/command-executor.ts'
 import type {
+  AgentSessionInfo,
   HookContext,
   HookEventName,
   HookEventPayloads,
@@ -41,95 +42,6 @@ import type { DialectAdapter, DialectInterpretation } from './dialect-adapter.ts
 
 /** No usable response — the action proceeds (a command hook is never fail-hard). */
 const ABSTAIN: CommandHookResult = { outcome: null, failed: false }
-
-function isToolGatePayload(payload: unknown): payload is HookEventPayloads['toolGate'] {
-  return (
-    typeof payload === 'object' && payload !== null && 'toolName' in payload && 'input' in payload
-  )
-}
-
-function isBeforeSubmitPromptPayload(
-  payload: unknown,
-): payload is HookEventPayloads['beforeSubmitPrompt'] {
-  return typeof payload === 'object' && payload !== null && 'prompt' in payload
-}
-
-function isAfterFileEditPayload(payload: unknown): payload is HookEventPayloads['afterFileEdit'] {
-  return typeof payload === 'object' && payload !== null && 'filePath' in payload
-}
-
-function isStopPayload(payload: unknown): payload is HookEventPayloads['stop'] {
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    'status' in payload &&
-    !('subagentType' in payload)
-  )
-}
-
-function isSubagentStartPayload(payload: unknown): payload is HookEventPayloads['subagentStart'] {
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    'subagentType' in payload &&
-    !('status' in payload)
-  )
-}
-
-function isSubagentStopPayload(payload: unknown): payload is HookEventPayloads['subagentStop'] {
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    'subagentType' in payload &&
-    'status' in payload
-  )
-}
-
-function isAfterToolUsePayload(payload: unknown): payload is HookEventPayloads['afterToolUse'] {
-  // Distinguished from `toolGate` (which has `toolName` + `input` but no
-  // `isError`) by the `isError` observation field the post-tool payload carries.
-  return (
-    typeof payload === 'object' && payload !== null && 'toolName' in payload && 'isError' in payload
-  )
-}
-
-function isSessionStartPayload(payload: unknown): payload is HookEventPayloads['sessionStart'] {
-  return typeof payload === 'object' && payload !== null && 'firstTurn' in payload
-}
-
-function isBeforeDiffApplyPayload(
-  payload: unknown,
-): payload is HookEventPayloads['beforeDiffApply'] {
-  // Shares `filePath` with `afterFileEdit`; the caller gates on `hook.event`
-  // first, so distinguishing from the (applied-bearing) afterDiffApply is enough.
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    'filePath' in payload &&
-    !('applied' in payload)
-  )
-}
-
-function isAfterDiffApplyPayload(payload: unknown): payload is HookEventPayloads['afterDiffApply'] {
-  return (
-    typeof payload === 'object' && payload !== null && 'filePath' in payload && 'applied' in payload
-  )
-}
-
-function isPermissionDecisionPayload(
-  payload: unknown,
-): payload is HookEventPayloads['permissionDecision'] {
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    'toolName' in payload &&
-    'decision' in payload
-  )
-}
-
-function isPostTurnReviewPayload(payload: unknown): payload is HookEventPayloads['postTurnReview'] {
-  return typeof payload === 'object' && payload !== null && 'issuesFound' in payload
-}
 
 /**
  * Resolve a `failed` run to its outcome per the hook's `onFailure` (decision 9):
@@ -292,6 +204,174 @@ async function spawnInterpretResolve(
 }
 
 /**
+ * What one event's dialect wiring produced: the marshalled stdin request and
+ * the closure that applies the dialect's exit-code table to the spawn.
+ */
+interface DispatchPlan {
+  request: unknown
+  interpret: (spawn: HookSpawnResult) => DialectInterpretation
+}
+
+/**
+ * Wire one canonical event to its dialect methods. `E` ties the hook and the
+ * payload together, which is the whole point of the table below.
+ */
+type EventDispatch<E extends HookEventName> = (
+  hook: CommandHook<E>,
+  payload: HookEventPayloads[E],
+  adapter: DialectAdapter,
+  session: AgentSessionInfo | undefined,
+) => DispatchPlan | null
+
+/**
+ * The common shape: a dialect either declares both halves of an event's pair or
+ * neither, and the interpret closure only needs the payload. A dialect that
+ * omits the pair (Claude has no compose-path hook; the foreign adapters declare
+ * none of the F2 Copse-native events) yields null and the runner abstains.
+ */
+function pairedDispatch<E extends HookEventName>(
+  hook: CommandHook<E>,
+  payload: HookEventPayloads[E],
+  session: AgentSessionInfo | undefined,
+  marshal:
+    | ((hook: CommandHook, payload: HookEventPayloads[E], session?: AgentSessionInfo) => unknown)
+    | undefined,
+  interpret:
+    | ((spawn: HookSpawnResult, payload: HookEventPayloads[E]) => DialectInterpretation)
+    | undefined,
+): DispatchPlan | null {
+  if (!marshal || !interpret) return null
+  return {
+    request: marshal(hook, payload, session),
+    interpret: (spawn) => interpret(spawn, payload),
+  }
+}
+
+/**
+ * Per-event dialect wiring, keyed by canonical event name.
+ *
+ * This table is why the runner has no payload type predicates. `run` receives
+ * `hook: CommandHook<E>` and `payload: HookEventPayloads[E]` as two separate
+ * parameters, so gating on `hook.event` narrows the hook and leaves the payload
+ * at its unresolved indexed-access type — TypeScript has no way to carry the
+ * correlation across two parameters. The twelve predicates that used to live
+ * here existed only to restate it, and because they had nothing but key
+ * presence to go on, siblings collided: `stop` had to say
+ * `!('subagentType' in payload)` to avoid matching `subagentStop`. Those
+ * negative clauses were load-bearing, invisible in the types, and unchecked —
+ * a predicate asserts `payload is T` and the compiler takes its word.
+ *
+ * Indexing this table with `hook.event` keeps both sides on the same `E`, so
+ * the compiler resolves the pair itself. It is strictly stronger than the
+ * predicates were: an entry that reads a field its payload lacks, reaches for a
+ * sibling event's field, or names an event outside the union is a type error
+ * (execution guidance rule 3 — prefer a compile error over a runtime check).
+ *
+ * An event with no entry has no fire site wired yet and abstains, which is the
+ * same no-op the unwired branch always produced.
+ */
+const EVENT_DISPATCH: { [E in HookEventName]?: EventDispatch<E> } = {
+  // The permission gate (A2). Its pair is the one a dialect must declare, and
+  // `interpretToolGate` also takes the hook so a dialect whose events fan out
+  // over the one canonical gate can recover which wire event ran.
+  toolGate: (hook, payload, adapter, session) => ({
+    request: adapter.marshalToolGateRequest(hook, payload, session),
+    interpret: (spawn) => adapter.interpretToolGate(spawn, payload, hook),
+  }),
+  beforeSubmitPrompt: (hook, payload, adapter, session) =>
+    pairedDispatch(
+      hook,
+      payload,
+      session,
+      adapter.marshalBeforeSubmitPromptRequest?.bind(adapter),
+      adapter.interpretBeforeSubmitPrompt?.bind(adapter),
+    ),
+  afterFileEdit: (hook, payload, adapter, session) =>
+    pairedDispatch(
+      hook,
+      payload,
+      session,
+      adapter.marshalAfterFileEditRequest?.bind(adapter),
+      adapter.interpretAfterFileEdit?.bind(adapter),
+    ),
+  stop: (hook, payload, adapter, session) =>
+    pairedDispatch(
+      hook,
+      payload,
+      session,
+      adapter.marshalStopRequest?.bind(adapter),
+      adapter.interpretStop?.bind(adapter),
+    ),
+  subagentStart: (hook, payload, adapter, session) =>
+    pairedDispatch(
+      hook,
+      payload,
+      session,
+      adapter.marshalSubagentStartRequest?.bind(adapter),
+      adapter.interpretSubagentStart?.bind(adapter),
+    ),
+  subagentStop: (hook, payload, adapter, session) =>
+    pairedDispatch(
+      hook,
+      payload,
+      session,
+      adapter.marshalSubagentStopRequest?.bind(adapter),
+      adapter.interpretSubagentStop?.bind(adapter),
+    ),
+  // Like `toolGate`, the post-tool interpretation takes the hook to resolve
+  // Cursor's dedicated vs generic post-tool flavors.
+  afterToolUse: (hook, payload, adapter, session) => {
+    const marshal = adapter.marshalAfterToolUseRequest?.bind(adapter)
+    const interpret = adapter.interpretAfterToolUse?.bind(adapter)
+    if (!marshal || !interpret) return null
+    return {
+      request: marshal(hook, payload, session),
+      interpret: (spawn) => interpret(spawn, payload, hook),
+    }
+  },
+  sessionStart: (hook, payload, adapter, session) =>
+    pairedDispatch(
+      hook,
+      payload,
+      session,
+      adapter.marshalSessionStartRequest?.bind(adapter),
+      adapter.interpretSessionStart?.bind(adapter),
+    ),
+  beforeDiffApply: (hook, payload, adapter, session) =>
+    pairedDispatch(
+      hook,
+      payload,
+      session,
+      adapter.marshalBeforeDiffApplyRequest?.bind(adapter),
+      adapter.interpretBeforeDiffApply?.bind(adapter),
+    ),
+  afterDiffApply: (hook, payload, adapter, session) =>
+    pairedDispatch(
+      hook,
+      payload,
+      session,
+      adapter.marshalAfterDiffApplyRequest?.bind(adapter),
+      adapter.interpretAfterDiffApply?.bind(adapter),
+    ),
+  permissionDecision: (hook, payload, adapter, session) =>
+    pairedDispatch(
+      hook,
+      payload,
+      session,
+      adapter.marshalPermissionDecisionRequest?.bind(adapter),
+      adapter.interpretPermissionDecision?.bind(adapter),
+    ),
+  postTurnReview: (hook, payload, adapter, session) =>
+    pairedDispatch(
+      hook,
+      payload,
+      session,
+      adapter.marshalPostTurnReviewRequest?.bind(adapter),
+      adapter.interpretPostTurnReview?.bind(adapter),
+    ),
+}
+
+/**
  * Build the host command-hook runner injected into `HookContext.runCommandHook`.
  * A2 wired the `toolGate` event (the permission gate); B1 adds
  * `beforeSubmitPrompt` (the compose path); B2 adds `afterFileEdit` (the
@@ -336,187 +416,16 @@ export function createCommandHookRunner(opts?: {
       // the fire site and hands it through the context (opaque to packages/agent).
       const session = context.agentSession
 
-      if (hook.event === 'toolGate' && isToolGatePayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        if (!adapter) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          adapter.marshalToolGateRequest(hook, payload, session),
-          (spawn) => adapter.interpretToolGate(spawn, payload, hook),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'beforeSubmitPrompt' && isBeforeSubmitPromptPayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        // A dialect with no compose-path hook (Claude) omits these — abstain.
-        const marshal = adapter?.marshalBeforeSubmitPromptRequest?.bind(adapter)
-        const interpret = adapter?.interpretBeforeSubmitPrompt?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'afterFileEdit' && isAfterFileEditPayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        const marshal = adapter?.marshalAfterFileEditRequest?.bind(adapter)
-        const interpret = adapter?.interpretAfterFileEdit?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'stop' && isStopPayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        const marshal = adapter?.marshalStopRequest?.bind(adapter)
-        const interpret = adapter?.interpretStop?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'subagentStart' && isSubagentStartPayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        const marshal = adapter?.marshalSubagentStartRequest?.bind(adapter)
-        const interpret = adapter?.interpretSubagentStart?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'subagentStop' && isSubagentStopPayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        const marshal = adapter?.marshalSubagentStopRequest?.bind(adapter)
-        const interpret = adapter?.interpretSubagentStop?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'afterToolUse' && isAfterToolUsePayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        const marshal = adapter?.marshalAfterToolUseRequest?.bind(adapter)
-        const interpret = adapter?.interpretAfterToolUse?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload, hook),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'sessionStart' && isSessionStartPayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        const marshal = adapter?.marshalSessionStartRequest?.bind(adapter)
-        const interpret = adapter?.interpretSessionStart?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'beforeDiffApply' && isBeforeDiffApplyPayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        const marshal = adapter?.marshalBeforeDiffApplyRequest?.bind(adapter)
-        const interpret = adapter?.interpretBeforeDiffApply?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'afterDiffApply' && isAfterDiffApplyPayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        const marshal = adapter?.marshalAfterDiffApplyRequest?.bind(adapter)
-        const interpret = adapter?.interpretAfterDiffApply?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'permissionDecision' && isPermissionDecisionPayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        const marshal = adapter?.marshalPermissionDecisionRequest?.bind(adapter)
-        const interpret = adapter?.interpretPermissionDecision?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
-          context,
-          record,
-        )
-      }
-
-      if (hook.event === 'postTurnReview' && isPostTurnReviewPayload(payload)) {
-        const adapter = getDialectAdapter(hook.dialect)
-        const marshal = adapter?.marshalPostTurnReviewRequest?.bind(adapter)
-        const interpret = adapter?.interpretPostTurnReview?.bind(adapter)
-        if (!adapter || !marshal || !interpret) return ABSTAIN
-        return spawnInterpretResolve(
-          hook,
-          adapter,
-          marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
-          context,
-          record,
-        )
-      }
-
-      // Unwired event (no fire site yet): abstain cleanly, never a hard failure.
-      return ABSTAIN
+      const dispatch = EVENT_DISPATCH[hook.event]
+      // No entry: the event's fire site lands in a later phase. Abstain
+      // cleanly rather than failing — same no-op as before the table.
+      if (!dispatch) return ABSTAIN
+      const adapter = getDialectAdapter(hook.dialect)
+      if (!adapter) return ABSTAIN
+      const plan = dispatch(hook, payload, adapter, session)
+      // This dialect declares no marshaller for the event.
+      if (!plan) return ABSTAIN
+      return spawnInterpretResolve(hook, adapter, plan.request, plan.interpret, context, record)
     },
   }
 }

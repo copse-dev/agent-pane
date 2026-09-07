@@ -849,7 +849,7 @@ function summarise(results: RunResult[], stacks: Stack[]): string {
       const values = results
         .filter((r) => r.stack === stack.key && r.ok)
         .map((r) => r[metric.key])
-        .filter((v): v is number => typeof v === 'number')
+        .filter((v) => typeof v === 'number')
       if (values.length === 0) return 'n/a'
       const mid = Math.round(median(values) * 10) / 10
       const low = Math.round(Math.min(...values) * 10) / 10

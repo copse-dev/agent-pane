@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { nonEmptyStringOr } from '../../src/shared/unknown-value.mts'
+import { isRecord } from '../../src/shared/unknown-value.mts'
 
 export const AWS_REGION_ENV = 'AWS_REGION'
 export const DEFAULT_AMI_SSM_PARAMETER =
@@ -393,13 +394,7 @@ export function shellQuote(value: string): string {
 // JSON parsing helpers (AWS/Scaleway CLI output)
 // ---------------------------------------------------------------------------
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isUnknownArray(value: unknown): value is unknown[] {
-  return Array.isArray(value)
-}
+const isUnknownArray: (value: unknown) => value is unknown[] = (value) => Array.isArray(value)
 
 function requiredString(record: Record<string, unknown>, key: string): string {
   const value = record[key]
@@ -886,7 +881,7 @@ export function parseScalewayIps(raw: string, defaultZone: string): ScalewayFlex
       // gives us; unlike volumes there is no detach timestamp to age against.
       attached: isRecord(value['server']),
       id: stringFromPath(value['id']),
-      tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      tags: Array.isArray(tags) ? tags.filter((tag) => typeof tag === 'string') : [],
       zone: stringFromPath(value['zone']) || defaultZone,
     }
   })
@@ -942,7 +937,7 @@ export function parseScalewayBlockVolumes(raw: string, defaultZone: string): Sca
       referenceCount: Array.isArray(references) ? references.length : -1,
       sizeBytes: typeof size === 'number' ? size : 0,
       status: stringFromPath(value['status']),
-      tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      tags: Array.isArray(tags) ? tags.filter((tag) => typeof tag === 'string') : [],
       zone: stringFromPath(value['zone']) || defaultZone,
     }
   })

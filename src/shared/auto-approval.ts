@@ -18,6 +18,8 @@
  * classifier for the exact eligibility rules and the safety argument.
  */
 
+import { memberOf } from '@shared/member-of.ts'
+
 /** Setting key holding the highest auto-approval tier the user has enabled. */
 export const AUTO_APPROVAL_LEVEL_SETTING = 'shellAutoApprovalLevel'
 
@@ -65,9 +67,7 @@ export const AUTO_APPROVAL_LEVEL_LABELS: Readonly<Record<AutoApprovalLevel, stri
   'remote-write': 'Reads + local commits + pushes — also git push and gh pr create',
 }
 
-export function isAutoApprovalLevel(value: unknown): value is AutoApprovalLevel {
-  return typeof value === 'string' && (AUTO_APPROVAL_LEVELS as readonly string[]).includes(value)
-}
+export const isAutoApprovalLevel = memberOf(AUTO_APPROVAL_LEVELS)
 
 /** Validate a value coming off the settings store or a form, falling back to the default. */
 export function sanitizeAutoApprovalLevel(value: unknown): AutoApprovalLevel {

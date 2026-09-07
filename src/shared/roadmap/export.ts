@@ -2,6 +2,7 @@ import type { RoadmapComplexity } from './complexity.ts'
 import type { RoadmapFit } from './fit.ts'
 import type { RoadmapReviewVerdict } from './review.ts'
 import { ZipBuilder } from './zip-writer.ts'
+import { memberOf } from '@shared/member-of.ts'
 
 /**
  * Deterministic, reusable exporter for one project's roadmap (issue #556
@@ -58,9 +59,7 @@ export interface RoadmapExportItem {
 export const ROADMAP_EXPORT_FORMATS = ['md', 'html', 'mhtml', 'jsonl'] as const
 export type RoadmapExportFormat = (typeof ROADMAP_EXPORT_FORMATS)[number]
 
-export function isRoadmapExportFormat(value: unknown): value is RoadmapExportFormat {
-  return typeof value === 'string' && ROADMAP_EXPORT_FORMATS.some((entry) => entry === value)
-}
+export const isRoadmapExportFormat = memberOf(ROADMAP_EXPORT_FORMATS)
 
 export interface RoadmapExportResult {
   format: RoadmapExportFormat

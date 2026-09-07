@@ -25,10 +25,8 @@ import {
  * The committed `schemas/api-protocol.manifest.json` is the frozen surface.
  * These tests make it change only deliberately: the manifest must equal what
  * the sources generate, every facade method must be bound to a channel that
- * follows the naming convention, every channel must have a real main-process
- * endpoint, and the hand-written `src/shared/types/ipc.ts` maps (a partial,
- * older description of the same surface) must not name channels the protocol
- * does not have. The invariants run over the freshly generated document, which
+ * follows the naming convention, and every channel must have a real
+ * main-process endpoint. The invariants run over the freshly generated document, which
  * carries the types the manifest leaves out.
  */
 const ROOT = resolve('.')
@@ -234,28 +232,6 @@ describe('API protocol manifest (schemas/api-protocol.manifest.json)', () => {
         const [ns, name] = entry['x-api'].split('.')
         assert.equal(committed.client[ns ?? '']?.[name ?? '']?.channel, channel)
       }
-    }
-  })
-
-  it('src/shared/types/ipc.ts only names channels the protocol has', () => {
-    // ipc.ts is a hand-written, partial map of the same surface. Until it is
-    // retired in favour of the generated schema it must not describe channels
-    // that no longer exist (or never did).
-    const ipc = readFileSync(resolve(ROOT, 'src/shared/types/ipc.ts'), 'utf8')
-    const eventStart = ipc.indexOf('export interface IpcEventMap')
-    assert.ok(eventStart > 0)
-    const declared = (text: string): string[] =>
-      [...text.matchAll(/^ {2}'([^']+)':/gm)].map((match) => match[1] ?? '')
-    const known = new Set([
-      ...Object.keys(committed.channels.invoke),
-      ...Object.keys(committed.channels.send),
-    ])
-    for (const channel of declared(ipc.slice(0, eventStart))) {
-      assert.ok(known.has(channel), `ipc.ts IpcInvokeMap names unknown channel ${channel}`)
-    }
-    const events = new Set(Object.keys(committed.channels.event))
-    for (const channel of declared(ipc.slice(eventStart))) {
-      assert.ok(events.has(channel), `ipc.ts IpcEventMap names unknown channel ${channel}`)
     }
   })
 

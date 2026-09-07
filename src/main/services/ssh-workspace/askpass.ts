@@ -5,6 +5,11 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { classifySshPrompt, requestSshPrompt } from './ssh-prompt.ts'
 import {
+  currentRendererPromptTarget,
+  runWithRendererPromptTarget,
+  type RendererPromptTarget,
+} from '../renderer-prompt-target.ts'
+import {
   clearSshCredentialCache,
   releaseSshCredentialNonce,
   resolveSshSecret,
@@ -25,6 +30,17 @@ interface AskpassSession {
   hostId?: string
   timer: NodeJS.Timeout
   release: () => void
+  /**
+   * Renderer to ask, captured when the lease was taken.
+   *
+   * OpenSSH asks over the unix socket below, in a fresh async context with no
+   * store, so the ambient scope set by whoever started this connection cannot
+   * reach {@link respondToAskpass} on its own. The nonce already identifies the
+   * connection, so the lease is the right place to remember which window it
+   * belongs to (#2507). Absent for work with no window behind it — a background
+   * agent run — which correctly falls back to the main window.
+   */
+  promptTarget?: RendererPromptTarget
 }
 
 let server: Server | null = null
@@ -143,26 +159,35 @@ async function respondToAskpass(socket: Socket, line: string): Promise<void> {
     return
   }
 
+  // Put the asking window back in scope for the whole answer, so both the
+  // prompt itself and anything it raises land where the connection was started.
+  const onAskingRenderer = <T>(fn: () => Promise<T>): Promise<T> =>
+    session.promptTarget ? runWithRendererPromptTarget(session.promptTarget, fn) : fn()
+
   const kind = classifySshPrompt(message.prompt)
   if (kind === 'confirm') {
     // Host-key trust is recorded by OpenSSH in known_hosts; nothing to cache.
-    const { value } = await requestSshPrompt({ prompt: message.prompt, kind })
+    const { value } = await onAskingRenderer(() =>
+      requestSshPrompt({ prompt: message.prompt, kind }),
+    )
     socket.end(JSON.stringify({ response: value ? 'yes' : null }) + '\n')
     return
   }
 
-  const value = await resolveSshSecret(
-    message.nonce,
-    message.prompt,
-    async () => {
-      const answer = await requestSshPrompt({
-        prompt: message.prompt,
-        kind,
-        canRememberOnDevice: session.hostId !== undefined,
-      })
-      return { value: answer.value, remember: answer.remember ?? false }
-    },
-    session.hostId,
+  const value = await onAskingRenderer(() =>
+    resolveSshSecret(
+      message.nonce,
+      message.prompt,
+      async () => {
+        const answer = await requestSshPrompt({
+          prompt: message.prompt,
+          kind,
+          canRememberOnDevice: session.hostId !== undefined,
+        })
+        return { value: answer.value, remember: answer.remember ?? false }
+      },
+      session.hostId,
+    ),
   )
   socket.end(JSON.stringify({ response: value || null }) + '\n')
 }
@@ -213,11 +238,15 @@ export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv, hostId?: string):
 
   const timer = setTimeout(release, ASKPASS_SESSION_TIMEOUT_MS)
   if (typeof timer.unref === 'function') timer.unref()
+  // Captured here, while still inside the caller's scope; by the time OpenSSH
+  // asks, that scope is gone (see AskpassSession.promptTarget).
+  const promptTarget = currentRendererPromptTarget()
   sessionsByNonce.set(nonce, {
     nonce,
     ...(hostId === undefined ? {} : { hostId }),
     timer,
     release,
+    ...(promptTarget === null ? {} : { promptTarget }),
   })
 
   const askpass = ensureAskpassWrapper()

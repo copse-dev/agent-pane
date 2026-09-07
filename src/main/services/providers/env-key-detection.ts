@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { at } from '@shared/array-utils.ts'
+import { isDefined } from '@shared/nullish.ts'
 
 /**
  * Opt-in detection of LLM provider API keys the user already has exported in
@@ -175,7 +176,7 @@ export function collectDetectedKeys(sources: readonly EnvSource[]): DetectedKey[
   // Report in the stable provider order declared above.
   return Object.keys(PROVIDER_ENV_VARS)
     .map((provider) => byProvider.get(provider))
-    .filter((d): d is DetectedKey => d !== undefined)
+    .filter(isDefined)
 }
 
 export interface ScanEnvDeps {

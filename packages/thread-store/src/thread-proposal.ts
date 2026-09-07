@@ -25,6 +25,7 @@
 
 import { isRecord } from '@copse/std/unknown-value.ts'
 import type { ThreadCheckoutMode } from './worktree-types.ts'
+import { isNonBlankString } from '@copse/std/nullish.ts'
 
 /** The tool the agent calls to offer one. */
 export const THREAD_PROPOSAL_TOOL = 'propose_thread'
@@ -97,9 +98,7 @@ function stringField(args: Record<string, unknown>, key: string): string | null 
 function stringListField(args: Record<string, unknown>, key: string): string[] {
   const value = args[key]
   if (!Array.isArray(value)) return []
-  return value
-    .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
-    .map((entry) => entry.trim())
+  return value.filter(isNonBlankString).map((entry) => entry.trim())
 }
 
 /**

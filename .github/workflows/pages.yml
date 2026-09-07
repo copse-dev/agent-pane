@@ -23,21 +23,26 @@ on:
     paths:
       - 'site/**'
       - '.github/workflows/pages.yml'
+  # Also how demo-preview.yml asks for a deploy once it has published: it
+  # dispatches this workflow rather than calling it, so a deploy superseded on
+  # the queue below cancels a run of its own instead of a PR's preview run.
   workflow_dispatch:
-  # Invoked by demo-preview.yml and demo-preview-cleanup.yml after they mutate
-  # the previews branch. NOT a `push:` trigger on demo-previews: that branch is
-  # an orphan holding preview content only, with no .github/ of its own, and a
-  # push event runs the workflow definitions from the pushed branch — so such a
-  # trigger would silently never fire and previews would stop deploying.
+  # Invoked by demo-preview-cleanup.yml after it prunes a closed PR's preview.
+  # NOT a `push:` trigger on demo-previews — for either path: that branch is an
+  # orphan holding preview content only, with no .github/ of its own, and a push
+  # event runs the workflow definitions from the pushed branch, so such a trigger
+  # would silently never fire and previews would stop deploying.
   workflow_call:
     inputs:
       tolerate-deploy-failure:
         description: >-
           Warn instead of failing when the deployment itself does not land.
-          Preview publishes pass true: they call this from a PR's own run, so a
-          failed deploy reddens a PR over a problem that is never that PR's —
-          the previews branch, the Pages service, or a deploy this one raced.
-          Site deploys from `release` leave it false and still fail loudly.
+          demo-preview-cleanup.yml passes true: it calls this from a PR's own
+          closed-event run, so a failed deploy reddens a PR over a problem that
+          is never that PR's — the previews branch, the Pages service, or a
+          deploy this one raced. Site deploys from `release` and the runs
+          demo-preview.yml dispatches leave it false and still fail loudly,
+          which is the point of dispatching: there is no PR to redden.
         type: boolean
         default: false
 
@@ -59,11 +64,13 @@ permissions:
 #
 # GitHub's default single pending slot is what we want instead: a newer pending
 # deploy supersedes an older one. That was previously rejected for marking the
-# caller's run cancelled and painting the PR red. It still does — but the cost is
-# now cosmetic rather than a lost preview link, because demo-preview.yml's sticky
-# comment no longer sits behind `needs: deploy`, and because the superseding
-# deploy publishes this target anyway. Publishes are also far rarer since the
-# no-change guard there started working, so pending collisions are the exception.
+# caller's run cancelled and painting the PR red — which it did, on 23 of the 40
+# Demo preview runs before demo-preview.yml stopped calling this workflow and
+# started dispatching it instead. A superseded deploy is now a cancelled "Deploy
+# site" run that no PR is watching, and nothing is lost with it: the assembler
+# reads the demo-previews tip, so whichever deploy wins the slot publishes every
+# target the superseded ones wanted published. Publishes are also far rarer since
+# the no-change guard there started working, so collisions are the exception.
 concurrency:
   group: pages
   cancel-in-progress: false

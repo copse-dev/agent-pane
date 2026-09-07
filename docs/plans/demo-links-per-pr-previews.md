@@ -21,13 +21,16 @@ before it serves untrusted PR builds from the live domain.
   testable on the PR that introduces it, before merge. It resolves the branch's open PR,
   builds the demo, commits the flat demo under `pr-<n>/` and the branch's marketing-site
   bundle (linking that demo) under `pr-<n>-preview/` on the machine-managed `demo-previews`
-  branch, calls `pages.yml` to redeploy, and posts/updates the sticky
+  branch, dispatches `pages.yml` to redeploy, and posts/updates the sticky
   `<!-- copse-demo-preview -->` comment — in parallel with that deploy, not behind it.
+  Dispatched rather than called, so a deploy superseded on the shared queue cancels a
+  run of its own instead of the PR's — see "Deploy serialization" below.
   Branches without an open PR build nothing, and a build whose bytes match what is
   already published commits nothing — see "Publish only on change" below.
 - **`.github/workflows/pages.yml`** — the deploy job is the single assembler: it lays
   down the production `site/` **from `main`** and overlays every machine-managed target
-  below `/demo/`. It exposes a `workflow_call` entrypoint. Keeping
+  below `/demo/`. It is reachable by `workflow_dispatch` (how `demo-preview.yml` asks
+  for a deploy) and by `workflow_call` (how `demo-preview-cleanup.yml` does). Keeping
   both PR artifacts as ordinary targets makes them compatible with older branch-local
   copies of this workflow, so a queued older deploy cannot omit or remap them. Pinning
   the root site to `main` means a preview push never changes the production homepage.
@@ -162,17 +165,46 @@ became a standing backlog — deploys observed starting 6h26m after creation, wi
 sticky comment (behind `needs: deploy`) landing seven hours after the push.
 
 `queue: max` is gone, so GitHub's default single pending slot coalesces a burst into one
-upload. That still marks a superseded caller's run cancelled, but the cost is now
-cosmetic: the comment no longer sits behind `needs: deploy`, so the preview link survives
-and posts within minutes, and the superseding deploy publishes that target anyway. Fixing
-the no-change guard (above) also removed most of the load that made the queue pathological
-in the first place.
+upload. Fixing the no-change guard (above) also removed most of the load that made the
+queue pathological in the first place.
 
-The deploy stays a `workflow_call` from the publishing workflows. A `push:` trigger on
-`demo-previews` looks tempting and is a trap: that branch is an orphan holding preview
-content with no `.github/` of its own, and a push event runs the workflow definitions
-from the pushed branch — so the trigger would silently never fire and previews would stop
-deploying entirely.
+That slot was still the last thing painting PRs, though, because a called workflow's jobs
+run **inside the caller's run**: a deploy superseded while pending was cancelled, which
+marked the whole Demo preview run cancelled and left a grey X on a PR whose publish and
+comment had both succeeded. Not an edge case — 23 of the 40 runs before the fix, on 23
+different branches, because one update to `main` fans this workflow out into a dozen runs
+whose deploys all reach the queue within seconds of each other.
+
+So **`demo-preview.yml` dispatches the deploy instead of calling it**. The supersession is
+unchanged and still correct; it just lands on a standalone `Deploy site` run that no PR is
+watching. Nothing is lost by not waiting, for the same reason queued deploys were
+interchangeable in the first place: the assembler reads whatever is on the `demo-previews`
+tip, and the publish has already pushed there. The run dispatches on its own branch, so a
+PR editing `pages.yml` still exercises its own copy pre-merge, exactly as `uses:` did.
+
+The dispatch is skipped outright when a deploy is already **queued** — that one has not
+assembled yet, so it will carry this build, and a second dispatch would only supersede it
+to publish the same tree. Deliberately not "in progress": such a deploy may have fetched
+the tip before this push landed, so skipping on it would drop the preview. Two runs can
+still race the check and both dispatch; the loser is superseded on a run nobody watches,
+which is why this is an optimisation and never a correctness condition.
+
+A dispatch that does not go out warns rather than fails, which is what
+`tolerate-deploy-failure: true` bought on the old call: a deploy problem is never the
+PR's fault, and the build is already committed to `demo-previews` for the next deploy to
+pick up. The concrete case is a PR that merges while its own preview is still building —
+auto-delete takes the head branch with it, and dispatching on a ref that no longer exists
+404s. Failing there would put a red X on an already-merged PR.
+
+`demo-preview-cleanup.yml` keeps calling `pages.yml` with `workflow_call`. Its deploy can
+be cancelled the same way, but it fires on a _closed_ PR, where the cancelled run is
+genuinely invisible — and keeping that caller keeps `tolerate-deploy-failure` honest
+rather than dead.
+
+Neither path may become a `push:` trigger on `demo-previews`. It looks tempting and is a
+trap: that branch is an orphan holding preview content with no `.github/` of its own, and
+a push event runs the workflow definitions from the pushed branch — so the trigger would
+silently never fire and previews would stop deploying entirely.
 
 If deploy volume ever bites again, the remaining escape hatch is a dedicated external
 preview host (Cloudflare Pages/Netlify give native per-PR URLs), explicitly _not_ chosen

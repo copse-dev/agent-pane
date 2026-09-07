@@ -42,6 +42,7 @@ import type {
   PluginUiContribution,
 } from './plugin-manifest.ts'
 import type { PanelContributionDecl } from './plugin-panel.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 /** Fixed manifest location (§5.1). Never configurable. */
 export const AGENT_PLUGIN_MANIFEST_FILE = 'plugin.json'
@@ -255,10 +256,6 @@ export interface AgentPluginParseResult {
    * Callers log these; they never change the outcome.
    */
   readonly warnings: readonly string[]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**

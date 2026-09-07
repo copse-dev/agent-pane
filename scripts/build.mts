@@ -22,7 +22,7 @@ import {
 } from './lib/api-protocol.mts'
 import { markTreeNoindex } from './lib/noindex.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
-import { MAIN_EXTERNALS } from './main-externals.mts'
+import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from './main-externals.mts'
 import {
   BUNDLED_CURSOR_SKILLS_VENDOR_DIR,
   assertBundledCursorSkillsSnapshot,
@@ -164,6 +164,7 @@ const nodeOpts = {
   platform: 'node' as const,
   format: 'cjs' as const,
   external: [...MAIN_EXTERNALS],
+  logOverride: { ...MAIN_LOG_OVERRIDE },
   // Development builds keep source maps for debugging and coverage. Release
   // installers do not ship them: maps are not consumed by the packaged app and
   // were adding tens of megabytes to every architecture and container format.

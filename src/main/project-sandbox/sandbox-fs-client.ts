@@ -241,7 +241,7 @@ export async function gatewayReaddir(absPath: string, root?: string): Promise<st
     reportGatewayDenial('readdir', absPath, root, 'worker returned no entries')
     return []
   }
-  return res['entries'].filter((entry): entry is string => typeof entry === 'string')
+  return res['entries'].filter((entry) => typeof entry === 'string')
 }
 
 export async function gatewayListDir(

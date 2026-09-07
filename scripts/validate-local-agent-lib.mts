@@ -149,7 +149,7 @@ export async function validateLocalAgentFinalAnswer(): Promise<void> {
   }
 
   const combined = chunks
-    .filter((c): c is Extract<StreamChunk, { type: 'text' }> => c.type === 'text')
+    .filter((c) => c.type === 'text')
     .map((c) => c.text)
     .join('')
     .trim()

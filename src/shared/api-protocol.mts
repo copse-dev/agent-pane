@@ -19,5 +19,13 @@
  * sidecar WebSocket bridge, later a daemon — exchanges this number in its
  * handshake and refuses a peer that speaks a different one rather than letting
  * mismatched shapes reach the handler table.
+ *
+ * v3 is a conservative bump, not an accurate one. `lm-studio:model-info` gained
+ * an optional `embedding` field on each row (#2487) — additive by the paragraph
+ * above — but `compareApiProtocol` compares whole resolved shapes and has no way
+ * to say "only optional result fields were added", so it classified it breaking
+ * and the gate demanded a bump. Teaching the differ that distinction is worth
+ * doing on its own; until then a bump is the safe side of the disagreement,
+ * since it can only refuse peers that would otherwise have been allowed.
  */
-export const API_PROTOCOL_VERSION = 2 as const
+export const API_PROTOCOL_VERSION = 3 as const

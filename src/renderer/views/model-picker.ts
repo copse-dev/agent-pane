@@ -2,6 +2,7 @@ import { showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { el, clear, on } from '../dom/helpers.ts'
 import { arrowLeftIcon, checkIcon, chevronDownIcon, chevronRightIcon } from '../dom/icons.ts'
 import { modelDisplayLabel, type ModelOption } from './model-options.ts'
+import { isNonEmptyString } from '@shared/nullish.ts'
 
 export interface ModelPickerOptions {
   /** Field pickers use form-control chrome and open below; the composer stays compact. */
@@ -65,9 +66,27 @@ export interface ModelPicker {
 
 const RECENT_MODEL_LIMIT = 5
 
+interface VerticalBounds {
+  top: number
+  bottom: number
+  height: number
+}
+
+export type FieldMenuSurfacePlacement = 'natural' | 'flipped' | 'contained'
+
+export function fieldMenuSurfacePlacement(
+  menu: VerticalBounds,
+  surface: Pick<VerticalBounds, 'top' | 'bottom'>,
+  trigger: Pick<VerticalBounds, 'top'>,
+  gap: number,
+): FieldMenuSurfacePlacement {
+  if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return 'natural'
+  return trigger.top - gap - menu.height >= surface.top ? 'flipped' : 'contained'
+}
+
 /**
  * Feeds `anchor-name` / `position-anchor` in model-picker.css, which lets a
- * field menu clamp itself to the surface instead of running off the page.
+ * field menu position itself against its own trigger instead of another picker.
  * One name per instance: Chromium resolves a duplicated anchor-name to another
  * element carrying it, which would throw a menu at a different picker.
  */
@@ -94,7 +113,7 @@ export function mountModelPicker(
       recentMode ? 'model-picker-recent-mode' : undefined,
       pickerOpts.className,
     ]
-      .filter((part): part is string => Boolean(part))
+      .filter(isNonEmptyString)
       .join(' '),
   })
   wrap.style.setProperty('--model-picker-anchor', `--model-picker-${String(++pickerAnchorId)}`)
@@ -230,6 +249,29 @@ export function mountModelPicker(
     setView('group')
   }
 
+  /**
+   * Anchor-position fallbacks are evaluated against the viewport, not against
+   * a smaller dialog or pane that acts as this menu's containing block. Detect
+   * that second boundary after layout and choose an above/contained placement.
+   */
+  function placeFieldMenuInsideSurface(): void {
+    menu.classList.remove('is-surface-flipped', 'is-surface-contained')
+    if (!open || variant !== 'field') return
+    const surface = menu.offsetParent
+    if (!(surface instanceof HTMLElement)) return
+
+    const menuRect = menu.getBoundingClientRect()
+    const surfaceRect = surface.getBoundingClientRect()
+    const triggerRect = trigger.getBoundingClientRect()
+    const gap = Number.parseFloat(getComputedStyle(menu).getPropertyValue('--spacing-xs')) || 4
+    const placement = fieldMenuSurfacePlacement(menuRect, surfaceRect, triggerRect, gap)
+    if (placement === 'flipped') {
+      menu.classList.add('is-surface-flipped')
+    } else if (placement === 'contained') {
+      menu.classList.add('is-surface-contained')
+    }
+  }
+
   function setOpen(next: boolean): void {
     open = next
     trigger.setAttribute('aria-expanded', String(next))
@@ -239,6 +281,7 @@ export function mountModelPicker(
       if (loadState === 'error') void refresh()
     } else {
       menu.setAttribute('hidden', '')
+      menu.classList.remove('is-surface-flipped', 'is-surface-contained')
       filter.value = ''
       setView(homeView, false)
       pickerOpts.onClose?.()
@@ -419,6 +462,7 @@ export function mountModelPicker(
       )
     }
     scrollActiveOptionIntoView()
+    placeFieldMenuInsideSurface()
   }
 
   function selectOption(value: string | null): void {

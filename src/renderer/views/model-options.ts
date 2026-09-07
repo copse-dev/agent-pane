@@ -69,6 +69,7 @@ import {
 import { canonicalModelLabel, modelDisplayName } from '@copse/llm/model-label.ts'
 import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
+import { isNonNull } from '@shared/nullish.ts'
 
 const ACP_GROUP = 'Agents on this device'
 
@@ -548,7 +549,7 @@ export async function fetchModelOptions(
 
   // Local models: only listed when a local server is reachable and exposes some.
   const lmGroup = 'Local models'
-  let models: Array<{ id: string; supportsImages?: boolean }>
+  let models: Array<{ id: string; supportsImages?: boolean; embedding?: boolean }>
   // Whether the catalogue below is trustworthy as a *complete* list. A reachable
   // server that simply lacks the pinned model is a different fault from one we
   // could not ask, and only the first tells the user to install something.
@@ -563,9 +564,11 @@ export async function fetchModelOptions(
   }
   for (const model of models) {
     const { id } = model
-    const hint = [localModelRoleHint(id), localModelIntellectHint(id)]
-      .filter((part): part is string => part !== null)
-      .join(' · ')
+    // An embedding model has no chat completion to offer: picking one as the
+    // chat model, or as a comparison reviewer, produces a run that cannot start.
+    // It was listed alongside the chat models with nothing to say so (#2487).
+    if (model.embedding === true) continue
+    const hint = [localModelRoleHint(id), localModelIntellectHint(id)].filter(isNonNull).join(' · ')
     // The weights the app itself ships carry a curated name; anything else the
     // server happens to have loaded is spelled from its id. Either way the row
     // reads as a name, so the ` — ` before a hint is the only dash in it.

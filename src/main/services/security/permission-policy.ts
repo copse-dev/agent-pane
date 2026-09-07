@@ -135,21 +135,39 @@ export type ShellPermissionMode = 'standard' | 'guarded-yolo'
 
 export type TerminalPermissionDecision =
   | { action: 'allow' }
-  | { action: 'prompt'; reason: 'sandbox-unavailable' | 'remote-target' }
+  | {
+      action: 'prompt'
+      reason: 'sandbox-unsupported' | 'sandbox-failed' | 'remote-target'
+    }
 
 /**
  * Integrated terminals are user-directed and run outside the project seatbelt on
  * macOS. A local PTY can therefore open without prompting when the sandbox is
  * available; SSH remains an explicit remote boundary.
+ *
+ * The two sandbox-less reasons are told apart because the prompt has to say
+ * something true. `sandbox-unsupported` is a platform with no ASRT backend at
+ * all — a permanent fact about the machine. `sandbox-failed` is a platform that
+ * has one, where init did not succeed *this session*; saying "not supported on
+ * this platform" there is simply wrong, and it hides the reason the host
+ * recorded (`projectSandboxInitFailure`), which is the only thing that tells the
+ * user whether it is fixable (#2507).
  */
 export function decideTerminalPermission(input: {
   sandboxEnabled: boolean
   remoteTarget: boolean
+  /** Whether this OS has an ASRT backend at all, supported or not. */
+  sandboxPlatform: boolean
 }): TerminalPermissionDecision {
   // SSH PTYs intentionally launch outside the local seatbelt. Treat the actual
   // spawn path as the boundary, not merely the platform's sandbox capability.
   if (input.remoteTarget) return { action: 'prompt', reason: 'remote-target' }
-  if (!input.sandboxEnabled) return { action: 'prompt', reason: 'sandbox-unavailable' }
+  if (!input.sandboxEnabled) {
+    return {
+      action: 'prompt',
+      reason: input.sandboxPlatform ? 'sandbox-failed' : 'sandbox-unsupported',
+    }
+  }
   return { action: 'allow' }
 }
 

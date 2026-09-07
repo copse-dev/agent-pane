@@ -55,7 +55,7 @@ document is retained as the original design and audit record.
   root.
 - **Terminal renderer is transport-agnostic.** The xterm.js pane only needs
   the existing IPC shape (`terminal:create/write/resize/destroy` +
-  `terminal:output/exit`, `src/shared/types/ipc.ts:200,327`) — an opaque
+  `terminal:output/exit`, `src/preload/api.d.ts:950-968`) — an opaque
   session id and a byte stream. A remote PTY needs zero renderer changes.
 
 ### Git and GitHub

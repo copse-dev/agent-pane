@@ -1,7 +1,11 @@
 import '../../../tests/setup-dom.ts'
 import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mountModelPicker, mountModelSelectPicker } from './model-picker.ts'
+import {
+  fieldMenuSurfacePlacement,
+  mountModelPicker,
+  mountModelSelectPicker,
+} from './model-picker.ts'
 import type { ModelOption } from './model-options.ts'
 
 const OPTIONS: ModelOption[] = [
@@ -13,6 +17,22 @@ const OPTIONS: ModelOption[] = [
 describe('shared model picker', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it('places a field menu naturally, flipped, or contained at a surface boundary', () => {
+    const surface = { top: 0, bottom: 420 }
+    assert.equal(
+      fieldMenuSurfacePlacement({ top: 100, bottom: 380, height: 280 }, surface, { top: 60 }, 4),
+      'natural',
+    )
+    assert.equal(
+      fieldMenuSurfacePlacement({ top: 300, bottom: 580, height: 280 }, surface, { top: 296 }, 4),
+      'flipped',
+    )
+    assert.equal(
+      fieldMenuSurfacePlacement({ top: 180, bottom: 460, height: 280 }, surface, { top: 176 }, 4),
+      'contained',
+    )
   })
 
   it('filters grouped options and selects from the searchable list', async () => {

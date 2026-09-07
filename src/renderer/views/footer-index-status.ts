@@ -50,7 +50,7 @@ function oldestBuildStart(status: WorkspaceIndexStatus): number | null {
   const starts = [status.fileIndex, status.semantic]
     .filter((c: IndexComponentStatus) => c.phase === 'building')
     .map((c) => c.startedAt)
-    .filter((n): n is number => typeof n === 'number')
+    .filter((n) => typeof n === 'number')
   return starts.length > 0 ? Math.min(...starts) : null
 }
 

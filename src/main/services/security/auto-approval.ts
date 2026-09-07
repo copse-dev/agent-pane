@@ -192,7 +192,7 @@ function argvOf(segment: string): string[] | null {
     return null
   }
   if (tokens.length === 0) return null
-  if (!tokens.every((token): token is string => typeof token === 'string')) return null
+  if (!tokens.every((token) => typeof token === 'string')) return null
   return tokens
 }
 

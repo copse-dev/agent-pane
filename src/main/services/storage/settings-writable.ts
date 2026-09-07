@@ -7,6 +7,7 @@ import {
   validateRemoteAgentBaseUrl,
   validateWebOriginPattern,
 } from '../security/web-origin-policy.ts'
+import { keyOf } from '@shared/member-of.ts'
 
 // Empty string means "use the provider default"; any non-empty value must be a
 // safe base URL since it carries the Cursor API key as an Authorization header.
@@ -292,6 +293,12 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // so a working Cloud Agent selection is never redirected behind the user's
   // back. Off means the turn falls back to a local chat model instead.
   preferAcpOverCloudAgent: z.boolean(),
+  // Let Copse's native git_commit subprocess reach the one macOS ssh-agent
+  // socket named by SSH_AUTH_SOCK. Off by default: the socket can use every key
+  // loaded into the agent, and Git hooks inherit the commit process's sandbox.
+  // The private key remains unreadable; git-commit-signing.ts supplies only its
+  // public identity when the configured signingKey names the private-key path.
+  gitCommitSshAgentSocketAccess: z.boolean(),
   // External ACP agents Copse drives as a client (model value `acp:<id>`).
   registeredAcpAgents: registeredAcpAgentsSchema,
   browserToolsEnabled: z.boolean(),
@@ -398,9 +405,21 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
 
 export type RendererWritableSettingKey = keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS
 
-export function isRendererWritableSettingKey(key: string): key is RendererWritableSettingKey {
-  return key in RENDERER_WRITABLE_SETTING_SCHEMAS
-}
+/**
+ * Whether the renderer may write this setting key.
+ *
+ * `keyOf` rather than `key in RENDERER_WRITABLE_SETTING_SCHEMAS`, which was the
+ * previous body and answered **true** for the eight keys every object literal
+ * inherits — `toString`, `constructor`, `valueOf`, `hasOwnProperty`,
+ * `__proto__`, `isPrototypeOf`, `propertyIsEnumerable`, `toLocaleString`. The
+ * `settings:set` handler takes its key straight off the renderer, so all eight
+ * passed this gate and then failed inside `parseRendererWritableSetting`,
+ * looking up an inherited function with no `.parse`. No setting was ever
+ * written — nothing on `Object.prototype` has a `parse` method — but the caller
+ * got an internal `TypeError` where the gate should have returned a clean
+ * "not writable" rejection.
+ */
+export const isRendererWritableSettingKey = keyOf(RENDERER_WRITABLE_SETTING_SCHEMAS)
 
 /**
  * Setting keys holding secret material that must never be read back through the
