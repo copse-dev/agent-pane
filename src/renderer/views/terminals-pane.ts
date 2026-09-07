@@ -18,6 +18,8 @@ import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 import { READ_TERMINAL_DEFAULT_LINES } from '@shared/terminal/read-terminal.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { createTerminalAfterPersist } from '../terminal/create-after-persist.ts'
+import { terminalStartFailureMessage } from '../terminal/start-failure-message.ts'
+import { resolveTerminalTabScope } from '../terminal/tab-scope.ts'
 
 /* selectionInactiveBackground is set per theme rather than left to xterm: its
    default (#3A3D41) is a dark grey, so in the light theme a selection made and
@@ -314,7 +316,12 @@ export function mountTerminalsPane(
         preserveSharedShell(tab, worktreePath)
       }
     } catch (err) {
-      tab.term.writeln(`\x1b[31mFailed to start terminal: ${String(err)}\x1b[0m`)
+      // The console keeps the original, wrapping and all; the pane shows the
+      // part the user can do something about (#2484).
+      console.error('[terminals] could not start a shell:', err)
+      tab.term.writeln(
+        `\x1b[31mFailed to start terminal: ${terminalStartFailureMessage(err)}\x1b[0m`,
+      )
     } finally {
       tab.creating = false
     }
@@ -454,8 +461,7 @@ export function mountTerminalsPane(
 
     const { term, fitAddon } = createXterm()
     const fileLinks = installTerminalFileLinks(term, store, api)
-    const scopeProjectId = options?.scopeProjectId ?? store.getState().activeProjectId
-    const scopeId = options?.scopeId ?? currentThreadId()
+    const { scopeProjectId, scopeId } = resolveTerminalTabScope(store.getState(), options)
     const tab: TerminalTab = {
       id,
       scopeProjectId,

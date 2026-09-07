@@ -877,6 +877,89 @@ test('restoreProject quarantines a missing project instead of deleting it (#997)
   assert.equal(lastProjects.length, 2)
 })
 
+// #2484. Quarantining a missing project hands over to the next one, and the
+// hand-off used to move `activeProjectId` on its own — leaving the outgoing
+// project's threads paired with the incoming project's id for as long as the
+// restore took. Anything reading the pair in that window got two different
+// projects, which is how a terminal came to be spawned against a thread main
+// then refused: `Thread "…" does not belong to project "…"`.
+test('quarantining a project never pairs its threads with the next project (#2484)', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+
+  const seen: { projectId: string | null; threadId: string | null }[] = []
+  const record = (): void => {
+    const { activeProjectId, activeThreadId } = store.getState()
+    seen.push({ projectId: activeProjectId, threadId: activeThreadId })
+  }
+
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      // Sampled mid-hand-off: 'a' has already been quarantined and 'b' picked,
+      // but nothing of 'b' has loaded yet.
+      record()
+      if (path === '/a') throw new Error('folder moved')
+      return path
+    },
+    loadProjectThreads: async (projectId) => {
+      record()
+      return projectId === 'b' ? [thread('t-b')] : [thread('t-a')]
+    },
+  })
+
+  await restoreProject(store, api, 'a')
+  record()
+
+  assert.ok(seen.length > 1, 'expected to sample the store during the hand-off')
+  const crossed = seen.filter((s) => s.projectId === 'b' && s.threadId === 't-a')
+  assert.deepEqual(
+    crossed,
+    [],
+    "project 'b' was active while a thread of the quarantined project 'a' was still selected",
+  )
+  assert.equal(store.getState().activeProjectId, 'b')
+  assert.equal(store.getState().activeThreadId, 't-b')
+})
+
+test('a quarantine that cannot restore the next project leaves no stale thread (#2484)', async () => {
+  // The durable half of the same bug: when the hand-off gives up part-way — a
+  // down SSH host — the store keeps whatever it was left with. Empty is
+  // recoverable; a thread from another project is not.
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'remote', path: '/r', name: 'R', sshHost: 'host-1' },
+    ],
+    activeProjectId: 'a',
+    activeThreadId: 't-a',
+    threads: [thread('t-a')],
+  })
+
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      if (path === '/a') throw new Error('folder moved')
+      return path
+    },
+    // restoreProject returns before touching the thread list when SSH is off.
+    settingsGet: async () => false,
+  })
+
+  await restoreProject(store, api, 'a')
+
+  assert.equal(store.getState().activeProjectId, 'remote')
+  assert.equal(store.getState().activeThreadId, null)
+  assert.deepEqual(store.getState().threads, [])
+})
+
 test('restoreProject keeps an SSH project active when connect fails (disconnect banner)', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({
