@@ -262624,20 +262624,42 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     { type: "button", class: "ui-btn ui-btn-secondary container-run-details" },
     "Details"
   );
+  const dismiss = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost container-run-dismiss",
+      "aria-label": "Dismiss this container run notice",
+      title: "Dismiss"
+    },
+    "\xD7"
+  );
   const element3 = el(
     "div",
     { class: "container-run-banner", role: "status", "aria-live": "polite", hidden: "" },
     el("span", { class: "container-run-icon", "aria-hidden": "true" }, "\u25A3"),
     text4,
-    details
+    details,
+    dismiss
   );
+  const dismissed = /* @__PURE__ */ new Map();
+  dismiss.addEventListener("click", () => {
+    const threadId = context.getActiveThreadId();
+    const run6 = activeRun();
+    if (!threadId || !run6 || isLive(run6)) return;
+    dismissed.set(threadId, run6.runtimeId);
+    renderBanner();
+  });
   function activeRun() {
     const threadId = context.getActiveThreadId();
     return threadId ? runs.get(threadId) ?? null : null;
   }
   function renderBanner() {
     const run6 = activeRun();
-    element3.hidden = run6 === null;
+    const threadId = context.getActiveThreadId();
+    const wavedAway = run6 !== null && threadId !== null && !isLive(run6) && dismissed.has(threadId) && dismissed.get(threadId) === run6.runtimeId;
+    element3.hidden = run6 === null || wavedAway;
+    dismiss.hidden = run6 === null || isLive(run6);
     if (!run6) {
       text4.textContent = "";
       delete element3.dataset["phase"];
@@ -262647,7 +262669,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     element3.dataset["phase"] = run6.phase;
     const result = run6.record?.result;
     const fetched = run6.record?.carryOut.ref !== null && run6.record?.carryOut.ref !== void 0;
-    const summary = run6.phase === "finished" && result ? `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}, ${String(result.deferrals.length)} waiting for review.` : run6.phase === "failed" ? run6.error ?? "The run did not complete." : `${run6.model} \xB7 reaches only ${run6.egressAllowlist.join(", ")}.`;
+    const commits = result === void 0 || result === null ? "" : result.commits.length === 0 ? "no commits" : `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}`;
+    const summary = run6.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run6.phase === "failed" ? run6.error ?? "The run did not complete." : `${run6.model} \xB7 reaches only ${run6.egressAllowlist.join(", ")}.`;
     text4.textContent = `Container run: ${PHASE_LABEL[run6.phase].toLowerCase()}. ${summary}`;
     onStateChanged();
   }
