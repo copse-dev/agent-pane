@@ -132,6 +132,15 @@ describe('unattended container run (browser-hosted)', () => {
     await $('.footer-overflow-trigger').click()
     const labels = await (await $$('.footer-overflow-item')).map((item) => item.getText())
     expect(labels).toContain('Run unattended in a container…')
+    await browser.keys('Escape')
+
+    // A finished run's banner can be waved away; the record is still there
+    // behind the footer item, which opens on the review face.
+    await banner.$('.container-run-dismiss').click()
+    await expect(banner).not.toBeDisplayed()
+    await openOverflowItem('Run unattended in a container…')
+    await expect(dialog.$('.container-run-status')).toHaveAttribute('data-phase', 'finished')
+    await dialog.$('.container-run-close').click()
   })
 
   it('shows a failed run without claiming its unfetched commits are back', async () => {

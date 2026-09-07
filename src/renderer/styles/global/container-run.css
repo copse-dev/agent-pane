@@ -40,8 +40,12 @@
   flex: 1;
   line-height: var(--line-height-base);
 }
-.container-run-details {
+.container-run-details,
+.container-run-dismiss {
   flex: 0 0 auto;
+}
+.container-run-dismiss[hidden] {
+  display: none;
 }
 
 .container-run-dialog {

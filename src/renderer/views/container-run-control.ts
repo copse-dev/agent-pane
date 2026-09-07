@@ -171,13 +171,37 @@ export function mountContainerRunControl(
     { type: 'button', class: 'ui-btn ui-btn-secondary container-run-details' },
     'Details',
   )
+  // A finished or failed run can be waved away; the record stays reachable
+  // from the footer menu, and a new run on the thread brings the banner back.
+  // A live run cannot be dismissed: its banner is the one place that says a
+  // container is still running on this thread.
+  const dismiss = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost container-run-dismiss',
+      'aria-label': 'Dismiss this container run notice',
+      title: 'Dismiss',
+    },
+    '×',
+  )
   const element = el(
     'div',
     { class: 'container-run-banner', role: 'status', 'aria-live': 'polite', hidden: '' },
     el('span', { class: 'container-run-icon', 'aria-hidden': 'true' }, '▣'),
     text,
     details,
+    dismiss,
   )
+  /** Runs whose banner was dismissed, by thread → runtime, so a new run reappears. */
+  const dismissed = new Map<string, string | null>()
+  dismiss.addEventListener('click', () => {
+    const threadId = context.getActiveThreadId()
+    const run = activeRun()
+    if (!threadId || !run || isLive(run)) return
+    dismissed.set(threadId, run.runtimeId)
+    renderBanner()
+  })
 
   function activeRun(): ContainerRunProgress | null {
     const threadId = context.getActiveThreadId()
@@ -186,7 +210,15 @@ export function mountContainerRunControl(
 
   function renderBanner(): void {
     const run = activeRun()
-    element.hidden = run === null
+    const threadId = context.getActiveThreadId()
+    const wavedAway =
+      run !== null &&
+      threadId !== null &&
+      !isLive(run) &&
+      dismissed.has(threadId) &&
+      dismissed.get(threadId) === run.runtimeId
+    element.hidden = run === null || wavedAway
+    dismiss.hidden = run === null || isLive(run)
     if (!run) {
       text.textContent = ''
       delete element.dataset['phase']
@@ -196,9 +228,15 @@ export function mountContainerRunControl(
     element.dataset['phase'] = run.phase
     const result = run.record?.result
     const fetched = run.record?.carryOut.ref !== null && run.record?.carryOut.ref !== undefined
+    const commits =
+      result === undefined || result === null
+        ? ''
+        : result.commits.length === 0
+          ? 'no commits'
+          : `${String(result.commits.length)} commit${result.commits.length === 1 ? '' : 's'} ${fetched ? 'back' : 'made but NOT fetched'}`
     const summary =
       run.phase === 'finished' && result
-        ? `${String(result.commits.length)} commit${result.commits.length === 1 ? '' : 's'} ${fetched ? 'back' : 'made but NOT fetched'}, ${String(result.deferrals.length)} waiting for review.`
+        ? `${commits}, ${String(result.deferrals.length)} waiting for review.`
         : run.phase === 'failed'
           ? (run.error ?? 'The run did not complete.')
           : `${run.model} · reaches only ${run.egressAllowlist.join(', ')}.`
