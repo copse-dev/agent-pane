@@ -29,21 +29,8 @@ export interface EgressRule {
  */
 export const GUEST_EGRESS_PROXY = { host: '127.0.0.1', port: 3128 } as const
 
-/** The one broker socket, by name; the host keeps it in a short per-run directory. */
-export const BROKER_SOCKET_NAME = 'broker.sock'
-
 /** The username on the proxy URL; the password is the run's token. */
 export const GUEST_EGRESS_USER = 'run'
-
-/**
- * The broker's liveness probe: the guest writes `PING\n` on a fresh connection
- * and the host answers `PONG\n` and closes. The worker sends one at startup so
- * a socket that mounts but does not connect (a Docker file-sharing backend
- * that cannot carry unix sockets, say) fails the run at once and by name,
- * instead of as a 403 on every request the agent makes.
- */
-export const BROKER_PROBE_REQUEST = 'PING'
-export const BROKER_PROBE_REPLY = 'PONG'
 
 /**
  * The proxy URL a client is given. With a token it authorises the client to

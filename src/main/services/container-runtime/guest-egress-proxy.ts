@@ -4,9 +4,9 @@
  * An HTTP proxy on loopback inside the container. Every client in the guest —
  * the worker's own SDK calls under `NODE_USE_ENV_PROXY=1`, and any child that
  * honours `HTTPS_PROXY` (git, curl, an agent CLI) — reaches the outside only
- * through it. For each request it opens one connection on the broker's unix
- * socket, writes `CONNECT host:port\n`, and waits for the host's one-line
- * answer: the host decides, the guest only asks.
+ * through it. For each request it opens one stream on the link to the host
+ * (`egress-link.ts`, frames over the container's stdio), naming `host:port`,
+ * and waits for the host's answer: the host decides, the guest only asks.
  *
  * Two request shapes, because that is what clients send to a proxy:
  *
@@ -21,13 +21,10 @@
  * widen what the image carries.
  */
 import { createServer as createHttpServer, type IncomingMessage, type Server } from 'node:http'
-import { connect, type Socket } from 'node:net'
-import {
-  BROKER_PROBE_REPLY,
-  BROKER_PROBE_REQUEST,
-  guestEgressAuthorization,
-  parseEgressTarget,
-} from './egress-rules.ts'
+import type { Socket } from 'node:net'
+import type { Duplex } from 'node:stream'
+import type { EgressLink } from './egress-link.ts'
+import { guestEgressAuthorization, parseEgressTarget } from './egress-rules.ts'
 
 export interface GuestEgressProxyAddress {
   host: string
@@ -58,42 +55,12 @@ export interface GuestEgressProxyOptions {
 }
 
 /**
- * Ask the broker whether it is there: one connection, `PING`, expect `PONG`.
- * Rejects with the connection's own error, or with what came back instead,
- * so the worker can name the fault before any client trips over it.
+ * Ask the broker whether it is there: one round trip on the link. Rejects
+ * with what went wrong so the worker can name the fault before any client
+ * trips over it.
  */
-export function probeBroker(socketPath: string, timeoutMs = 5000): Promise<void> {
-  return new Promise((resolveProbe, reject) => {
-    const socket = connect(socketPath)
-    let received = ''
-    let settled = false
-    const timer = setTimeout(() => {
-      settle(new Error(`no reply within ${String(timeoutMs)}ms`))
-    }, timeoutMs)
-    function settle(error: Error | null): void {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      socket.destroy()
-      if (error) reject(error)
-      else resolveProbe()
-    }
-    socket.once('connect', () => {
-      socket.write(`${BROKER_PROBE_REQUEST}\n`)
-    })
-    socket.on('data', (chunk: Buffer) => {
-      received += chunk.toString('utf8')
-      if (!received.includes('\n')) return
-      const line = received.slice(0, received.indexOf('\n')).trim()
-      settle(line === BROKER_PROBE_REPLY ? null : new Error(`unexpected reply: ${line}`))
-    })
-    socket.on('error', (error) => {
-      settle(error)
-    })
-    socket.on('close', () => {
-      settle(new Error('closed without replying'))
-    })
-  })
+export function probeBroker(link: EgressLink, timeoutMs = 5000): Promise<void> {
+  return link.ping(timeoutMs)
 }
 
 const PROXY_AUTH_REQUIRED =
@@ -110,43 +77,9 @@ const HOP_BY_HOP = new Set([
   'upgrade',
 ])
 
-/** Open a broker tunnel to `host:port`; resolves once the host has answered. */
-function openTunnel(socketPath: string, host: string, port: number): Promise<Socket> {
-  return new Promise((resolveTunnel, reject) => {
-    const tunnel = connect(socketPath)
-    let head = Buffer.alloc(0)
-    const fail = (message: string): void => {
-      tunnel.destroy()
-      reject(new Error(message))
-    }
-    const onData = (chunk: Buffer): void => {
-      head = Buffer.concat([head, chunk])
-      const newline = head.indexOf(0x0a)
-      if (newline === -1) {
-        if (head.length > 1024) fail('broker reply too long')
-        return
-      }
-      tunnel.off('data', onData)
-      tunnel.off('error', onError)
-      const line = head.subarray(0, newline).toString('utf8').trim()
-      if (line !== 'OK') {
-        fail(line.startsWith('DENY') ? line : `unexpected broker reply: ${line}`)
-        return
-      }
-      // Anything after the reply line already belongs to the origin's stream.
-      const rest = head.subarray(newline + 1)
-      if (rest.length > 0) tunnel.unshift(rest)
-      resolveTunnel(tunnel)
-    }
-    const onError = (error: Error): void => {
-      fail(`broker: ${error.message}`)
-    }
-    tunnel.once('connect', () => {
-      tunnel.write(`CONNECT ${host}:${String(port)}\n`)
-    })
-    tunnel.on('data', onData)
-    tunnel.on('error', onError)
-  })
+/** Open a stream to `host:port` on the link; resolves once the host has accepted. */
+function openTunnel(link: EgressLink, host: string, port: number): Promise<Duplex> {
+  return link.open(`${host}:${String(port)}`)
 }
 
 function targetOf(request: IncomingMessage): { host: string; port: number; path: string } | null {
@@ -164,7 +97,7 @@ function targetOf(request: IncomingMessage): { host: string; port: number; path:
   return { ...target, path: `${parsed.pathname}${parsed.search}` }
 }
 
-function pipeBoth(a: Socket, b: Socket): void {
+function pipeBoth(a: Duplex, b: Duplex): void {
   a.pipe(b)
   b.pipe(a)
   const drop = (): void => {
@@ -182,7 +115,7 @@ function pipeBoth(a: Socket, b: Socket): void {
  * the fixed `GUEST_EGRESS_PROXY` address the container's env already names.
  */
 export function startGuestEgressProxy(
-  brokerSocketPath: string,
+  link: EgressLink,
   listen: GuestEgressProxyAddress,
   options: GuestEgressProxyOptions = {},
 ): Promise<GuestEgressProxy> {
@@ -203,7 +136,7 @@ export function startGuestEgressProxy(
       client.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n')
       return
     }
-    openTunnel(brokerSocketPath, target.host, target.port).then(
+    openTunnel(link, target.host, target.port).then(
       (tunnel) => {
         client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
         if (head.length > 0) tunnel.write(head)
@@ -237,7 +170,7 @@ export function startGuestEgressProxy(
       return
     }
     const client = request.socket
-    openTunnel(brokerSocketPath, target.host, target.port).then(
+    openTunnel(link, target.host, target.port).then(
       (tunnel) => {
         // The head, rebuilt: origin-form path, hop-by-hop headers dropped, one
         // response per connection so the origin closes when it is done.

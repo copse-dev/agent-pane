@@ -3,8 +3,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
-import { BROKER_SOCKET_NAME } from './egress-rules.ts'
+import { join } from 'node:path'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
 import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
 import {
@@ -14,7 +13,6 @@ import {
   containerName,
   createSnapshotCommit,
   dockerRunArgs,
-  egressSocketDir,
   fetchCarryOut,
   providerOrigin,
   secretCanaryCheck,
@@ -29,7 +27,6 @@ function input(overrides: Partial<DockerRunInput> = {}): DockerRunInput {
     runtimeId: 'run-test',
     image: 'copse-worker:test',
     runDir: '/tmp/copse-runs/run-test',
-    egressDir: '/tmp/copse-egress-run-test',
     egress: [{ host: 'model.copse.internal', wildcard: false, port: 8080 }],
     egressToken: 'test-run-token',
     apiKeyEnv: null,
@@ -66,18 +63,6 @@ describe('egress origins', () => {
       port: 443,
     })
   })
-
-  it('keeps the broker socket path inside sun_path on a macOS temp root', () => {
-    // The overflow this design replaced, measured on the reported failure: a
-    // per-user macOS temp root, the full runtime id in the directory and the
-    // hostname in the file name came to 104 bytes against a 104-byte cap. There
-    // is one socket now, with a fixed name, so the budget no longer depends on
-    // how many origins a run allows or how long their names are.
-    const macTmp = '/var/folders/r5/qll_28695_q_2qr2kk7lv5gm0000gn/T'
-    const dir = join(macTmp, basename(egressSocketDir('run-mtpvs161-9a6506')))
-    const path = join(dir, BROKER_SOCKET_NAME)
-    assert.ok(Buffer.byteLength(path) <= 100, `${path} is ${String(Buffer.byteLength(path))} bytes`)
-  })
 })
 
 describe('dockerRunArgs', () => {
@@ -105,14 +90,16 @@ describe('dockerRunArgs', () => {
     const args = dockerRunArgs(input())
     // No per-origin plumbing: no host aliases, no unprivileged-port sysctl.
     // Every client in the guest is pointed at the loopback proxy instead, and
-    // the proxy at the one broker socket.
+    // the proxy at the link over the container's own stdio.
     assert.ok(!args.includes('--add-host'))
     assert.ok(!args.some((a) => a.startsWith('--sysctl')))
     const env = (name: string): string | undefined =>
       args
         .find((a, i) => args[i - 1] === '--env' && a.startsWith(`${name}=`))
         ?.slice(name.length + 1)
-    assert.equal(env('COPSE_EGRESS_SOCKET'), '/run/copse/egress/broker.sock')
+    assert.equal(env('COPSE_EGRESS'), 'stdio')
+    assert.equal(args[0], 'create')
+    assert.ok(args.includes('--interactive'), 'stdin is the link, so it must stay open')
     // The proxy URL carries the run's token (A7); the worker blanks it after
     // Node's dispatcher has read it, so children never see it.
     const proxy = 'http://run:test-run-token@127.0.0.1:3128'
@@ -125,9 +112,9 @@ describe('dockerRunArgs', () => {
     assert.equal(env('NODE_OPTIONS'), '--disable-warning=UNDICI-EHPA')
     const none = dockerRunArgs(input({ egress: [], egressToken: null }))
     assert.equal(
-      none.some((a) => a.startsWith('HTTPS_PROXY=') || a.startsWith('COPSE_EGRESS_SOCKET=')),
+      none.some((a) => a.startsWith('HTTPS_PROXY=') || a.startsWith('COPSE_EGRESS=')),
       false,
-      'a run with no egress gets no proxy and no socket',
+      'a run with no egress gets no proxy and no link',
     )
     assert.ok(!none.some((a) => a.startsWith('--sysctl')))
   })
@@ -135,13 +122,9 @@ describe('dockerRunArgs', () => {
   it('mounts only the run directory, and passes the key by name of the variable only', () => {
     const args = dockerRunArgs(input({ apiKeyEnv: 'COPSE_RUN_KEY' }))
     const volumes = args.filter((_, i) => args[i - 1] === '--volume')
-    assert.equal(volumes.length, 4)
+    assert.equal(volumes.length, 3)
     for (const volume of volumes) {
-      assert.ok(
-        volume.startsWith('/tmp/copse-runs/run-test') ||
-          volume.startsWith('/tmp/copse-egress-run-test'),
-        volume,
-      )
+      assert.ok(volume.startsWith('/tmp/copse-runs/run-test'), volume)
     }
     assert.ok(args.includes('COPSE_RUN_KEY'))
     assert.ok(!args.some((a) => a.includes('COPSE_RUN_KEY=')))

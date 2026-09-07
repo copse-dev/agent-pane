@@ -391,7 +391,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           memoryLimit: '4g',
           network: 'brokered',
           egressAllowlist: ['api.anthropic.com:443'],
-          hostMounts: ['/run/copse', '/run/copse/state', '/run/copse/out', '/run/copse/egress'],
+          hostMounts: ['/run/copse', '/run/copse/state', '/run/copse/out'],
         },
         egress: [{ at: FIXED_TIME, origin: 'api.anthropic.com:443', event: 'connect' }],
         result: {

@@ -14,8 +14,9 @@
  * are separated from the orchestration so the exact flags a run uses are unit
  * tested, not just observed.
  */
-import { execFile, execFileSync, spawn } from 'node:child_process'
+import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
+import { createInterface } from 'node:readline'
 import {
   chmodSync,
   cpSync,
@@ -39,7 +40,6 @@ import type { ThreadContainerRecord, ThreadContainerResult } from '@shared/types
 import { isRecord } from '@shared/unknown-value.ts'
 import { EgressBroker } from './egress-broker.ts'
 import {
-  BROKER_SOCKET_NAME,
   findEgressRule,
   formatEgressRule,
   guestEgressProxyUrl,
@@ -173,27 +173,10 @@ export function providerOrigin(url: string): ProviderOrigin {
   return { host: parsed.hostname, port }
 }
 
-/**
- * Where a run's broker sockets live on the host: short, private to the run.
- *
- * Short on purpose. A unix socket path is capped by `sun_path` — 104 bytes on
- * macOS, 108 on Linux, both counting the NUL — and macOS hands every process a
- * per-user temp root like `/var/folders/r5/qll_28695_q_.../T/` that is already
- * ~49 bytes. Spelling the whole runtime id here spent 32 more and pushed real
- * runs over the limit, so the directory carries a digest of the id instead. The
- * full id stays in `run.json` beside it, which is where anyone debugging looks.
- */
-export function egressSocketDir(runtimeId: string): string {
-  const digest = createHash('sha256').update(runtimeId).digest('hex').slice(0, 10)
-  return join(tmpdir(), `copse-cx-${digest}`)
-}
-
 export interface DockerRunInput {
   runtimeId: string
   image: string
   runDir: string
-  /** Short host path holding the broker sockets; see {@link egressSocketDir}. */
-  egressDir: string
   egress: EgressRule[]
   /**
    * The run's proxy token (decision A7): carried on the proxy URL the guest is
@@ -213,8 +196,12 @@ export interface DockerRunInput {
  */
 export function dockerRunArgs(input: DockerRunInput): string[] {
   const args = [
-    'run',
-    '--detach',
+    // Created now, started attached (`docker start --attach --interactive`):
+    // the container's stdin and stdout are the egress link (`egress-link.ts`),
+    // its stderr the run's log, and none of it needs a socket in a bind
+    // mount, which Docker Desktop's file sharing cannot carry into the VM.
+    'create',
+    '--interactive',
     '--name',
     containerName(input.runtimeId),
     '--label',
@@ -248,16 +235,15 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     `${join(input.runDir, 'state')}:${GUEST_RUN_DIR}/state:rw`,
     '--volume',
     `${join(input.runDir, 'out')}:${GUEST_RUN_DIR}/out:rw`,
-    '--volume',
-    `${input.egressDir}:${GUEST_RUN_DIR}/egress:rw`,
     '--env',
     `COPSE_DIR=${GUEST_RUN_DIR}/state`,
     '--env',
     'HOME=/home/copse',
   )
   if (input.egress.length > 0) {
-    // One broker socket, and a loopback proxy in the guest that opens it per
-    // request. Every client in the guest is pointed at that proxy: Node's own
+    // One link to the host over the container's stdio, and a loopback proxy
+    // in the guest that opens a stream on it per request. Every client in the
+    // guest is pointed at that proxy: Node's own
     // fetch (the worker's SDK calls) through NODE_USE_ENV_PROXY, and any child
     // that honours the conventional variables — git, curl, an agent CLI. Both
     // spellings, because the tools are split on which one they read. NO_PROXY
@@ -268,7 +254,7 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     const proxy = guestEgressProxyUrl(input.egressToken)
     args.push(
       '--env',
-      `COPSE_EGRESS_SOCKET=${GUEST_RUN_DIR}/egress/${BROKER_SOCKET_NAME}`,
+      'COPSE_EGRESS=stdio',
       '--env',
       `COPSE_EGRESS_TOKEN=${input.egressToken ?? ''}`,
       '--env',
@@ -322,12 +308,7 @@ export function buildAttestation(
     securityProfiles: 'default',
     perCommandNetwork: input.egressToken !== null ? 'token-gated' : 'none',
     egressAllowlist: input.egress.map(formatEgressRule),
-    hostMounts: [
-      GUEST_RUN_DIR,
-      `${GUEST_RUN_DIR}/state`,
-      `${GUEST_RUN_DIR}/out`,
-      `${GUEST_RUN_DIR}/egress`,
-    ],
+    hostMounts: [GUEST_RUN_DIR, `${GUEST_RUN_DIR}/state`, `${GUEST_RUN_DIR}/out`],
   }
 }
 
@@ -653,6 +634,9 @@ export async function listManagedRuntimes(): Promise<Array<{ runtimeId: string; 
  * because the whole point of the deadline is that the run cannot outlive it: a
  * Docker daemon that hangs must not strand the caller before its cleanup block.
  */
+const START_TIMEOUT_MS = 30_000
+const START_POLL_MS = 100
+const DETACH_TIMEOUT_MS = 5_000
 const STOP_TIMEOUT_MS = 45_000
 const SETTLE_AFTER_STOP_MS = 15_000
 
@@ -664,6 +648,77 @@ export interface ContainerWaitOutcome {
 }
 
 /** The two Docker calls the wait makes, injectable so their failures are testable. */
+/**
+ * Start a created container attached: its stdout and stdin become the egress
+ * link when the run has one, its stderr the run's log, line by line as it
+ * happens. Without egress the guest's stdin is closed at once and its stdout
+ * is only ever empty.
+ */
+function attachContainer(
+  name: string,
+  options: { broker: EgressBroker | null; onLog: (line: string) => void },
+): ChildProcess {
+  const child = spawn('docker', ['start', '--attach', '--interactive', name], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  if (options.broker) options.broker.attach(child.stdout, child.stdin)
+  else child.stdin.end()
+  child.stdin.on('error', () => {
+    // EPIPE once the container is gone; the link's own close handles it.
+  })
+  createInterface({ input: child.stderr }).on('line', (line) => {
+    options.onLog(line)
+  })
+  child.on('error', (error) => {
+    options.onLog(`[thread-container] docker start failed: ${error.message}`)
+  })
+  return child
+}
+
+/**
+ * `docker wait` on a container that is still `created` returns at once, so the
+ * wait must not begin until the daemon has started it. Polls until the state
+ * has moved on, or the attached start has died without moving it.
+ */
+async function untilStarted(name: string, attached: ChildProcess): Promise<void> {
+  const deadline = Date.now() + START_TIMEOUT_MS
+  for (;;) {
+    let status = ''
+    try {
+      status = await runDocker(['container', 'inspect', '--format', '{{.State.Status}}', name])
+    } catch {
+      // Not inspectable yet; the loop's deadline bounds this.
+    }
+    if (status !== '' && status !== 'created') return
+    if (attached.exitCode !== null) {
+      throw new Error(
+        `the container did not start (docker start exited ${String(attached.exitCode)})`,
+      )
+    }
+    if (Date.now() > deadline) throw new Error('the container did not start in time')
+    await new Promise((resolveTick) => setTimeout(resolveTick, START_POLL_MS))
+  }
+}
+
+/** The attached start exits with the container; give it a moment, then let it go. */
+function detachContainer(child: ChildProcess): Promise<void> {
+  return new Promise((resolveDetach) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolveDetach()
+      return
+    }
+    const timer = setTimeout(() => {
+      child.kill()
+      resolveDetach()
+    }, DETACH_TIMEOUT_MS)
+    child.once('exit', () => {
+      clearTimeout(timer)
+      resolveDetach()
+    })
+    child.stdin?.end()
+  })
+}
+
 export interface WaitForContainerDependencies {
   /** `docker wait`: resolves with its stdout when it closes; `cancel` gives up on it. */
   wait: (name: string) => { output: Promise<string>; cancel: () => void }
@@ -840,7 +895,7 @@ export interface RunThreadOptions {
   /** Injected for tests; defaults to a fresh value. */
   runtimeId?: string
   onLog?: (line: string) => void
-  /** Called once `docker run` has returned, i.e. the guest holds its environment. */
+  /** Called once the container is running, i.e. the guest holds its environment. */
   onStarted?: () => void
   /** Host-side canary value; defaults to a random marker exported to the child env. */
   canary?: string
@@ -884,22 +939,13 @@ export async function runThreadInContainer(
   const canary = options.canary ?? `copse-canary-${randomBytes(8).toString('hex')}`
   process.env['COPSE_SECRET_CANARY'] = canary
 
-  // `egress` in the run dir is only the mountpoint: the read-only bind of the
-  // run dir cannot grow one, so it must exist before the container starts.
-  for (const sub of ['', 'state', 'out', 'egress']) {
+  for (const sub of ['', 'state', 'out']) {
     mkdirSync(join(runDir, sub), { recursive: true })
   }
-  // Unix socket paths are capped at ~104 bytes, and a profile directory (macOS
-  // `Application Support`, a deep checkout) easily exceeds that, so the broker's
-  // sockets live in a short per-run directory under the system temp root and
-  // are mounted into the guest from there.
-  const egressDir = egressSocketDir(runtimeId)
-  mkdirSync(egressDir, { recursive: true })
   // The guest runs as an unprivileged uid the host does not share; these
   // directories are its only writable host paths, and they are private to the run.
   chmodSync(join(runDir, 'state'), 0o777)
   chmodSync(join(runDir, 'out'), 0o777)
-  chmodSync(egressDir, 0o777)
 
   const carryIn = writeCarryInBundle(workspace, runtimeId, join(runDir, 'carry-in.bundle'))
   log(`[thread-container] carry-in ${carryIn.sha.slice(0, 12)} as ${carryIn.ref}`)
@@ -936,7 +982,6 @@ export async function runThreadInContainer(
     runtimeId,
     image,
     runDir,
-    egressDir,
     egress,
     egressToken: egress.length > 0 ? randomBytes(16).toString('hex') : null,
     apiKeyEnv,
@@ -949,39 +994,31 @@ export async function runThreadInContainer(
   writeFileSync(join(runDir, 'run.json'), `${JSON.stringify(spec, null, 2)}\n`)
   writeFileSync(join(runDir, 'attestation.json'), `${JSON.stringify(attestation, null, 2)}\n`)
 
-  const broker = new EgressBroker(egressDir, {
+  const broker = new EgressBroker({
     rules: egress,
     ...(request.egressResolve ? { resolve: request.egressResolve } : {}),
   })
-  try {
-    await broker.start()
-  } catch (error) {
-    removeStagedLogin(runDir)
-    throw error
-  }
   const startedAt = Date.now()
   let containerExit: number | null
   let teardown: ThreadContainerRecord['teardown']
   let cleanupError: string | null = null
+  let attached: ChildProcess | null = null
   try {
     log(`[thread-container] starting ${containerName(runtimeId)} from ${image}`)
     await runDocker(dockerRunArgs(runInput))
+    attached = attachContainer(containerName(runtimeId), {
+      broker: egress.length > 0 ? broker : null,
+      onLog: (line) => {
+        log(`[guest] ${line}`)
+      },
+    })
+    await untilStarted(containerName(runtimeId), attached)
     options.onStarted?.()
     const waited = await waitForContainer(containerName(runtimeId), request.budgets.wallClockMs)
     containerExit = waited.exit
     cleanupError = waited.cleanupError
     if (waited.timedOut) log('[thread-container] wall-clock budget reached; container stopped')
     if (cleanupError !== null) log(`[thread-container] cleanup problem: ${cleanupError}`)
-    try {
-      const { stdout, stderr } = await execFileAsync(
-        'docker',
-        ['logs', '--tail', '60', containerName(runtimeId)],
-        { maxBuffer: 16 * 1024 * 1024 },
-      )
-      for (const line of `${stdout}${stderr}`.split('\n')) log(`[guest] ${line}`)
-    } catch {
-      // logs are a courtesy
-    }
   } finally {
     teardown = await teardownRuntime(runtimeId)
     if (teardown === 'failed') {
@@ -989,8 +1026,8 @@ export async function runThreadInContainer(
       cleanupError = cleanupError === null ? failure : `${cleanupError}; ${failure}`
       log(`[thread-container] ${failure}`)
     }
-    await broker.stop()
-    rmSync(egressDir, { recursive: true, force: true })
+    broker.stop()
+    if (attached) await detachContainer(attached)
     removeStagedLogin(runDir)
   }
 

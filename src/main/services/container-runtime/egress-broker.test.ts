@@ -1,16 +1,17 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { connect, createServer, type Server, type Socket } from 'node:net'
+import { createServer, type Server } from 'node:net'
+import { PassThrough } from 'node:stream'
 import { EgressBroker } from './egress-broker.ts'
+import { EgressLink, type MuxStream } from './egress-link.ts'
 import { parseEgressRule } from './egress-rules.ts'
 
 /**
- * The broker over a real unix socket, against a real TCP origin on loopback.
- * Everything a guest can do to it is one line of preamble, so that is what is
- * exercised: an admitted target, a refused one, a wildcard, and garbage.
+ * The broker over an in-memory link — two byte streams crossed, exactly the
+ * shape the attached container's stdio has — against a real TCP origin on
+ * loopback. Everything a guest can do to it is one `OPEN host:port`, so that
+ * is what is exercised: an admitted target, a refused one, a wildcard, and
+ * garbage.
  */
 
 /** A TCP origin that upper-cases whatever it is sent, so bytes are provably relayed. */
@@ -34,47 +35,44 @@ function startEchoOrigin(): Promise<{ port: number; close: () => void }> {
   })
 }
 
-/** Open the broker socket, send the preamble and one payload, collect the reply. */
-function ask(
-  socketPath: string,
-  preamble: string,
+/** Open `target` from the guest end, send one payload, collect what came back. */
+async function ask(
+  guest: EgressLink,
+  target: string,
   payload: string,
   waitMs = 300,
-): Promise<{ reply: string; socket: Socket }> {
-  return new Promise((resolveAsk) => {
-    const socket = connect(socketPath)
-    let received = ''
-    socket.on('data', (chunk: Buffer) => {
-      received += chunk.toString('utf8')
-    })
-    socket.once('connect', () => {
-      socket.write(preamble)
-      setTimeout(() => {
-        socket.write(payload)
-        setTimeout(() => {
-          resolveAsk({ reply: received, socket })
-        }, waitMs)
-      }, 50)
-    })
-    socket.on('error', () => {
-      resolveAsk({ reply: received, socket })
-    })
+): Promise<{ stream: MuxStream; reply: string } | { refused: string }> {
+  let stream: MuxStream
+  try {
+    stream = await guest.open(target)
+  } catch (error) {
+    return { refused: error instanceof Error ? error.message : String(error) }
+  }
+  let received = ''
+  stream.on('data', (chunk: Buffer) => {
+    received += chunk.toString('utf8')
   })
+  stream.on('error', () => {
+    // The assertion reads what arrived before the error.
+  })
+  if (payload.length > 0) stream.write(payload)
+  await new Promise((resolveWait) => setTimeout(resolveWait, waitMs))
+  return { stream, reply: received }
 }
 
 describe('EgressBroker', () => {
-  let dir = ''
   let origin: { port: number; close: () => void }
   let broker: EgressBroker
+  let guest: EgressLink
 
   before(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'copse-eb-'))
     origin = await startEchoOrigin()
-    broker = new EgressBroker(dir, {
+    broker = new EgressBroker({
       rules: [
         parseEgressRule(`model.copse.internal:${String(origin.port)}`),
         parseEgressRule(`*.example.test:${String(origin.port)}`),
         parseEgressRule('*.example.test:443'),
+        parseEgressRule('unreachable.example.test:9'),
       ],
       // Both names dial the loopback echo; only the allowlist tells them apart.
       resolve: {
@@ -82,26 +80,26 @@ describe('EgressBroker', () => {
         'api.example.test': '127.0.0.1',
         // The guest is told 443; the stand-in listens wherever it could.
         'tls.example.test': `127.0.0.1:${String(origin.port)}`,
+        // Allowed, and nothing listens there.
+        'unreachable.example.test': '127.0.0.1:9',
       },
     })
-    await broker.start()
+    const guestToHost = new PassThrough()
+    const hostToGuest = new PassThrough()
+    broker.attach(guestToHost, hostToGuest)
+    guest = new EgressLink(hostToGuest, guestToHost)
   })
 
-  after(async () => {
-    await broker.stop()
+  after(() => {
+    broker.stop()
     origin.close()
-    rmSync(dir, { recursive: true, force: true })
   })
 
   it('relays bytes both ways for an admitted target and logs the connection', async () => {
-    const { reply, socket } = await ask(
-      broker.path(),
-      `CONNECT model.copse.internal:${String(origin.port)}\n`,
-      'hello',
-    )
-    socket.destroy()
-    assert.ok(reply.startsWith('OK\n'), `expected OK, got ${JSON.stringify(reply)}`)
-    assert.equal(reply.slice(3), 'HELLO')
+    const answer = await ask(guest, `model.copse.internal:${String(origin.port)}`, 'hello')
+    assert.ok('stream' in answer, `refused: ${'refused' in answer ? answer.refused : ''}`)
+    answer.stream.destroy()
+    assert.equal(answer.reply, 'HELLO')
     const connectEntry = broker
       .log()
       .find(
@@ -112,25 +110,16 @@ describe('EgressBroker', () => {
   })
 
   it('admits a subdomain through a wildcard rule', async () => {
-    const { reply, socket } = await ask(
-      broker.path(),
-      `CONNECT api.example.test:${String(origin.port)}\n`,
-      'wild',
-    )
-    socket.destroy()
-    assert.ok(reply.startsWith('OK\n'), reply)
-    assert.equal(reply.slice(3), 'WILD')
+    const answer = await ask(guest, `api.example.test:${String(origin.port)}`, 'wild')
+    assert.ok('stream' in answer)
+    answer.stream.destroy()
+    assert.equal(answer.reply, 'WILD')
   })
 
   it('refuses a target no rule admits, and says so in the log', async () => {
-    const { reply, socket } = await ask(
-      broker.path(),
-      `CONNECT github.com:${String(origin.port)}\n`,
-      'never sent',
-      100,
-    )
-    socket.destroy()
-    assert.match(reply, /^DENY not in the allowlist\n/)
+    const answer = await ask(guest, `github.com:${String(origin.port)}`, 'never sent', 50)
+    assert.ok('refused' in answer)
+    assert.match(answer.refused, /^DENY not in the allowlist$/)
     const refused = broker.log().find((e) => e.event === 'refused')
     assert.ok(refused)
     assert.equal(refused.origin, `github.com:${String(origin.port)}`)
@@ -138,22 +127,17 @@ describe('EgressBroker', () => {
 
   it('refuses the bare suffix of a wildcard and a sibling domain', async () => {
     for (const host of ['example.test', 'notexample.test', 'example.test.evil']) {
-      const { reply, socket } = await ask(
-        broker.path(),
-        `CONNECT ${host}:${String(origin.port)}\n`,
-        'x',
-        100,
-      )
-      socket.destroy()
-      assert.match(reply, /^DENY/, `${host} was admitted`)
+      const answer = await ask(guest, `${host}:${String(origin.port)}`, 'x', 50)
+      assert.ok('refused' in answer, `${host} was admitted`)
+      assert.match(answer.refused, /^DENY/)
     }
   })
 
   it('dials a remapped port while matching and logging the port the guest named', async () => {
-    const { reply, socket } = await ask(broker.path(), 'CONNECT tls.example.test:443\n', 'remap')
-    socket.destroy()
-    assert.ok(reply.startsWith('OK\n'), reply)
-    assert.equal(reply.slice(3), 'REMAP')
+    const answer = await ask(guest, 'tls.example.test:443', 'remap')
+    assert.ok('stream' in answer)
+    answer.stream.destroy()
+    assert.equal(answer.reply, 'REMAP')
     const entry = broker
       .log()
       .find((e) => e.event === 'connect' && e.origin === 'tls.example.test:443')
@@ -161,19 +145,45 @@ describe('EgressBroker', () => {
     assert.match(entry.detail ?? '', /rule \*\.example\.test:443/)
   })
 
-  it('refuses a malformed preamble without dialling anything', async () => {
-    const { reply, socket } = await ask(broker.path(), 'GET / HTTP/1.1\n', '', 100)
-    socket.destroy()
-    assert.match(reply, /^DENY malformed preamble/)
-    assert.ok(broker.log().some((e) => e.event === 'refused' && e.detail === 'malformed preamble'))
+  it('refuses a malformed request without dialling anything', async () => {
+    const answer = await ask(guest, 'GET / HTTP/1.1', '', 50)
+    assert.ok('refused' in answer)
+    assert.match(answer.refused, /^DENY malformed request/)
+    assert.ok(broker.log().some((e) => e.event === 'refused' && e.detail === 'malformed request'))
   })
 
-  it('answers a probe with PONG, closes, and logs nothing', async () => {
+  it('refuses, with the dial error, an allowed origin that does not answer', async () => {
+    const answer = await ask(guest, 'unreachable.example.test:9', '', 50)
+    assert.ok('refused' in answer)
+    assert.match(answer.refused, /^DENY origin unreachable: connect ECONNREFUSED/)
+    const entry = broker
+      .log()
+      .find((e) => e.event === 'error' && e.origin === 'unreachable.example.test:9')
+    assert.ok(entry)
+    assert.match(entry.detail ?? '', /^origin: connect ECONNREFUSED/)
+  })
+
+  it('answers a probe and logs nothing for it', async () => {
     const before = broker.log().length
-    const { reply, socket } = await ask(broker.path(), 'PING\n', '', 100)
-    assert.equal(reply, 'PONG\n')
-    assert.equal(socket.destroyed || socket.readableEnded, true)
+    await guest.ping(500)
     assert.equal(broker.log().length, before)
-    socket.destroy()
+  })
+
+  it('records the bytes each way when the guest closes an admitted stream', async () => {
+    const answer = await ask(guest, `model.copse.internal:${String(origin.port)}`, 'count me')
+    assert.ok('stream' in answer)
+    answer.stream.end()
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100))
+    answer.stream.destroy()
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100))
+    const closes = broker
+      .log()
+      .filter(
+        (e) => e.event === 'close' && e.origin === `model.copse.internal:${String(origin.port)}`,
+      )
+    const last = closes.at(-1)
+    assert.ok(last)
+    assert.equal(last.bytesToOrigin, 'count me'.length)
+    assert.equal(last.bytesFromOrigin, 'COUNT ME'.length)
   })
 })

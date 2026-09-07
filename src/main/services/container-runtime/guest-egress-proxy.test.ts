@@ -1,16 +1,15 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { createServer as createHttpServer, request as httpRequest, type Server } from 'node:http'
 import { connect } from 'node:net'
+import { PassThrough } from 'node:stream'
 import { EgressBroker } from './egress-broker.ts'
+import { EgressLink } from './egress-link.ts'
 import { parseEgressRule } from './egress-rules.ts'
 import { probeBroker, startGuestEgressProxy, type GuestEgressProxy } from './guest-egress-proxy.ts'
 
 /**
- * The guest proxy end to end, in one process: proxy → broker socket → origin.
+ * The guest proxy end to end, in one process: proxy → link → broker → origin.
  * The origin is a real HTTP server on loopback that streams, so the
  * absolute-form path is proven to carry a body up and a chunked, incremental
  * response back — the shape a model conversation actually has.
@@ -51,27 +50,28 @@ function startOrigin(): Promise<{ port: number; close: () => void; seen: string[
 }
 
 describe('guest egress proxy', () => {
-  let dir = ''
   let origin: { port: number; close: () => void; seen: string[] }
   let broker: EgressBroker
+  let link: EgressLink
   let proxy: GuestEgressProxy
 
   before(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'copse-gp-'))
     origin = await startOrigin()
-    broker = new EgressBroker(dir, {
+    broker = new EgressBroker({
       rules: [parseEgressRule(`model.copse.internal:${String(origin.port)}`)],
       resolve: { 'model.copse.internal': '127.0.0.1' },
     })
-    await broker.start()
-    proxy = await startGuestEgressProxy(broker.path(), { host: '127.0.0.1', port: 0 })
+    const guestToHost = new PassThrough()
+    const hostToGuest = new PassThrough()
+    broker.attach(guestToHost, hostToGuest)
+    link = new EgressLink(hostToGuest, guestToHost)
+    proxy = await startGuestEgressProxy(link, { host: '127.0.0.1', port: 0 })
   })
 
   after(async () => {
     await proxy.close()
-    await broker.stop()
+    broker.stop()
     origin.close()
-    rmSync(dir, { recursive: true, force: true })
   })
 
   it('forwards an absolute-form request and streams the response back', async () => {
@@ -199,7 +199,7 @@ describe('guest egress proxy', () => {
   it('refuses every request without the run token, with a 407, when one is set', async () => {
     const refused: string[] = []
     const gated = await startGuestEgressProxy(
-      broker.path(),
+      link,
       { host: '127.0.0.1', port: 0 },
       { token: 'run-token-1', onRefused: (target) => refused.push(target) },
     )
@@ -268,15 +268,17 @@ describe('guest egress proxy', () => {
     assert.equal(result, 400)
   })
 
-  it('probes a live broker, and names the fault when the socket cannot be opened', async () => {
-    await probeBroker(broker.path())
-    await assert.rejects(probeBroker(join(dir, 'absent.sock'), 500), /ENOENT/)
+  it('probes a live broker, and names the fault when nothing answers', async () => {
+    await probeBroker(link)
+    const silent = new EgressLink(new PassThrough(), new PassThrough())
+    await assert.rejects(probeBroker(silent, 50), /no reply within 50ms/)
+    silent.close(undefined)
   })
 
   it('reports each tunnel the broker refused, with the reason the client saw', async () => {
     const failures: string[] = []
     const reporting = await startGuestEgressProxy(
-      broker.path(),
+      link,
       { host: '127.0.0.1', port: 0 },
       { onTunnelError: (target, reason) => failures.push(`${target} ${reason}`) },
     )

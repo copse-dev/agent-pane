@@ -32,10 +32,55 @@ import type { ThreadContainerAcpHarness } from './thread-container.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { restoreAgentLogin } from './agent-login.ts'
 import { GUEST_EGRESS_PROXY, guestEgressProxyUrl } from './egress-rules.ts'
+import { EgressLink } from './egress-link.ts'
 import { probeBroker, startGuestEgressProxy } from './guest-egress-proxy.ts'
 import type { LLMMessage } from '@shared/types/index.ts'
 
 const RUN_DIR = '/run/copse'
+
+/**
+ * The worker's log goes to stderr: under brokered egress its stdout is the
+ * link to the host (`egress-link.ts`), and a stray line there would corrupt a
+ * frame. The host reads both pipes and shows stderr as the run's log.
+ */
+function say(line: string): void {
+  process.stderr.write(line)
+}
+
+/**
+ * Take the process's stdio for the egress link before anything else can write
+ * to it. Stdout's original `write` is what the link uses; the visible
+ * `process.stdout` is then pointed at stderr, so a library that logs to it —
+ * or a `console.log` anywhere in the bundle — lands in the run's log instead
+ * of in the middle of a frame.
+ */
+function claimStdioLink(onHostGone: (error: Error | undefined) => void): EgressLink {
+  const stdout = process.stdout
+  const rawWrite = stdout.write.bind(stdout) as (
+    chunk: Buffer,
+    done?: (error?: Error | null) => void,
+  ) => boolean
+  const link = new EgressLink(
+    process.stdin,
+    {
+      write: (chunk): boolean => rawWrite(chunk),
+      on: (event, listener): void => {
+        stdout.on(event, listener)
+      },
+    },
+    { onClose: onHostGone },
+  )
+  const toStderr = (
+    chunk: string | Uint8Array,
+    encodingOrDone?: BufferEncoding | ((error?: Error | null) => void),
+    done?: (error?: Error | null) => void,
+  ): boolean =>
+    typeof encodingOrDone === 'function'
+      ? process.stderr.write(chunk, encodingOrDone)
+      : process.stderr.write(chunk, encodingOrDone, done)
+  stdout.write = toStderr
+  return link
+}
 
 const specSchema = z.object({
   runtimeId: z.string().min(1),
@@ -152,42 +197,48 @@ function finalAssistantText(messages: readonly LLMMessage[]): string {
 }
 
 async function main(): Promise<void> {
-  // First, before any client exists: the loopback proxy every outbound byte
-  // goes through. Node's env-proxy dispatcher was pointed at this address when
-  // the process started and only connects on the first request.
-  const brokerSocket = process.env['COPSE_EGRESS_SOCKET']
+  // First, before any client exists: the link to the host over this process's
+  // stdio, and the loopback proxy every outbound byte goes through. Node's
+  // env-proxy dispatcher was pointed at the proxy's address when the process
+  // started and only connects on the first request.
+  let hostGone: ((error: Error | undefined) => void) | null = null
+  const link =
+    process.env['COPSE_EGRESS'] === 'stdio'
+      ? claimStdioLink((error) => {
+          hostGone?.(error)
+        })
+      : null
   const tokenEnv = process.env['COPSE_EGRESS_TOKEN']
   const egressToken = tokenEnv !== undefined && tokenEnv.length > 0 ? tokenEnv : null
   let proxyRefusals = 0
   const tunnelFailures = new Set<string>()
-  const egressProxy = brokerSocket
-    ? await startGuestEgressProxy(brokerSocket, GUEST_EGRESS_PROXY, {
+  const egressProxy = link
+    ? await startGuestEgressProxy(link, GUEST_EGRESS_PROXY, {
         ...(egressToken ? { token: egressToken } : {}),
         onRefused: (target) => {
           proxyRefusals += 1
-          process.stdout.write(`[egress] refused without the run token: ${target}\n`)
+          say(`[egress] refused without the run token: ${target}\n`)
         },
         // Each distinct failure once: the agent retries, the log need not.
         onTunnelError: (target, reason) => {
           const line = `[egress] ${target}: ${reason}`
           if (tunnelFailures.has(line)) return
           tunnelFailures.add(line)
-          process.stdout.write(`${line}\n`)
+          say(`${line}\n`)
         },
       })
     : null
-  if (brokerSocket && egressProxy) {
-    // The socket is a bind mount from the host; on some Docker backends it
-    // mounts as a file that no connection can open. Find out now, by name,
-    // rather than as a 403 on the agent's first request and a run that
-    // "completes" having reached nothing.
+  if (link && egressProxy) {
+    // One round trip before anything depends on it, so a link the host is not
+    // reading fails the run now, by name, rather than as a 403 on the agent's
+    // first request and a run that "completes" having reached nothing.
     try {
-      await probeBroker(brokerSocket)
+      await probeBroker(link)
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       await egressProxy.close()
       throw new Error(
-        `egress broker unreachable at ${brokerSocket}: ${reason}. The socket is bind-mounted from the host; nothing in the guest can leave the container until it connects.`,
+        `egress broker unreachable over the container's stdio: ${reason}. Nothing in the guest can leave the container until the host answers.`,
         { cause: error },
       )
     }
@@ -208,8 +259,8 @@ async function main(): Promise<void> {
   ]) {
     if (process.env[name] !== undefined) process.env[name] = ''
   }
-  process.stdout.write(
-    `[worker] egress proxy ${egressProxy ? `on ${egressProxy.address.host}:${String(egressProxy.address.port)}${egressToken ? ', token-gated' : ''}, broker reachable` : 'off (no broker socket)'}\n`,
+  say(
+    `[worker] egress proxy ${egressProxy ? `on ${egressProxy.address.host}:${String(egressProxy.address.port)}${egressToken ? ', token-gated' : ''}, broker reachable over stdio` : 'off (no link to the host)'}\n`,
   )
   const spec = readSpec()
   const attestationText = readFileSync(join(RUN_DIR, 'attestation.json'), 'utf8')
@@ -223,19 +274,17 @@ async function main(): Promise<void> {
     process.env[spec.apiKeyEnv] = ''
   }
   if (spec.acp) {
-    process.stdout.write(
-      `[worker] harness: ACP agent ${spec.acp.agent.id} (${spec.acp.agent.command})\n`,
-    )
+    say(`[worker] harness: ACP agent ${spec.acp.agent.id} (${spec.acp.agent.command})\n`)
   }
 
-  process.stdout.write(`[worker] run ${spec.runtimeId} thread ${spec.threadId}\n`)
+  say(`[worker] run ${spec.runtimeId} thread ${spec.threadId}\n`)
   carryIn(spec)
-  process.stdout.write(`[worker] carried in ${spec.carryInBase.slice(0, 12)}\n`)
+  say(`[worker] carried in ${spec.carryInBase.slice(0, 12)}\n`)
   if (spec.acp?.login) {
     // The user's sign-in, staged by the host: into this throwaway home, private
     // to the worker, before the agent can look for it.
     const restored = restoreAgentLogin(RUN_DIR, homedir(), spec.acp.login.files)
-    process.stdout.write(
+    say(
       `[worker] sign-in restored: ${restored.map((d) => `~/${d}`).join(', ') || 'nothing found'}\n`,
     )
   }
@@ -250,14 +299,14 @@ async function main(): Promise<void> {
     declareContainerRuntime(attestation)
   } catch (error) {
     declineReason = error instanceof Error ? error.message : String(error)
-    process.stdout.write(`[worker] container containment NOT declared: ${declineReason}\n`)
+    say(`[worker] container containment NOT declared: ${declineReason}\n`)
   }
 
   // No nested sandbox (decision A7): the container is the boundary, and a
   // per-command bubblewrap inside it cost the container its default seccomp
   // and AppArmor profiles for no confinement the guest did not already have.
   const projectSandbox = false
-  process.stdout.write('[worker] project sandbox: none; the container is the sandbox\n')
+  say('[worker] project sandbox: none; the container is the sandbox\n')
 
   armUnattendedRun(spec.threadId, {
     runtimeId: spec.runtimeId,
@@ -284,6 +333,12 @@ async function main(): Promise<void> {
   }
   process.on('SIGTERM', onSignal)
   process.on('SIGINT', onSignal)
+  // The host closing the link — or dying — is the same thing as a stop: the
+  // guest's only way out is gone, and no one is waiting for the result.
+  hostGone = (error): void => {
+    say(`[worker] egress link closed by the host${error ? ` (${error.message})` : ''}; stopping\n`)
+    onSignal()
+  }
 
   let messages: readonly LLMMessage[] = []
   let toolNames: readonly string[] = []
@@ -323,7 +378,7 @@ async function main(): Promise<void> {
         interaction: {
           approve: (request) => {
             promptsAttempted += 1
-            process.stdout.write(`[worker] PROMPT REACHED HANDLER (refused): ${request.title}\n`)
+            say(`[worker] PROMPT REACHED HANDLER (refused): ${request.title}\n`)
             return Promise.resolve({ approved: false, remember: false })
           },
           stagedDiff: () => Promise.resolve(true),
@@ -344,7 +399,7 @@ async function main(): Promise<void> {
         projectId: spec.projectId,
         signal: controller.signal,
         onChunk: (chunk) => {
-          if (chunk.type === 'text') process.stdout.write(chunk.text)
+          if (chunk.type === 'text') say(chunk.text)
           if (chunk.type === 'usage') {
             inputTokens += chunk.inputTokens
             outputTokens += chunk.outputTokens
@@ -376,15 +431,14 @@ async function main(): Promise<void> {
     clearTimeout(timer)
     process.off('SIGTERM', onSignal)
     process.off('SIGINT', onSignal)
+    hostGone = null
     disarmUnattendedRun(spec.threadId)
     // The desktop keeps an agent's session alive between turns; the guest has
     // no next turn, and a live child would keep this process from exiting.
     await disposeAllAcpSessions()
     await egressProxy?.close()
     if (proxyRefusals > 0) {
-      process.stdout.write(
-        `[worker] ${String(proxyRefusals)} proxy request(s) refused for want of the run token\n`,
-      )
+      say(`[worker] ${String(proxyRefusals)} proxy request(s) refused for want of the run token\n`)
     }
   }
 
@@ -432,7 +486,7 @@ async function main(): Promise<void> {
       2,
     )}\n`,
   )
-  process.stdout.write(
+  say(
     `\n[worker] done: ${stop.reason}; prompts=${String(promptsAttempted)} deferrals=${String(deferrals.length)} denials=${String(denials.length)} commits=${String(commits.length)}\n`,
   )
   if (!existsSync(join(outDir, 'result.json'))) throw new Error('result.json was not written')
