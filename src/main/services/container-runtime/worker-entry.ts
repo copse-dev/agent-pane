@@ -35,7 +35,9 @@ import { GUEST_EGRESS_PROXY, GUEST_NO_PROXY, guestEgressProxyUrl } from './egres
 import {
   dependencyInstallEnv,
   dependencyInstallFor,
+  guestEnvironmentNote,
   type DependencyInstallStep,
+  type DependencyInstallSummary,
 } from './guest-install.ts'
 import { GUEST_EXCLUDED_TOOLS } from './guest-tools.ts'
 import { EgressLink } from './egress-link.ts'
@@ -235,11 +237,11 @@ function runInstallStep(
 async function installDependencies(
   workspace: string,
   proxy: { url: string; noProxy: string } | null,
-): Promise<void> {
+): Promise<DependencyInstallSummary> {
   const install = dependencyInstallFor(workspace)
   if (install === null) {
     say('[worker] no lockfile to install from (pnpm-lock.yaml or package-lock.json); skipping\n')
-    return
+    return { lockfile: null, failed: [], aborted: false }
   }
   // node-gyp builds against this Node's own headers (the image ships them
   // beside the binary) rather than fetching them from nodejs.org.
@@ -259,7 +261,7 @@ async function installDependencies(
       say(
         `[worker] dependency install FAILED at "${step.label}" (${how}) after ${String(Math.round((Date.now() - startedAt) / 1000))}s; what was fetched stays in place\n`,
       )
-      return
+      return { lockfile: install.lockfile, failed: [...failed, step.label], aborted: true }
     }
     failed.push(step.label)
     say(`[worker] dependency step "${step.label}" failed (${how}); continuing\n`)
@@ -272,6 +274,7 @@ async function installDependencies(
       `[worker] dependencies installed in ${String(seconds)}s with ${String(failed.length)} step(s) failed (${failed.join(', ')}); packages whose scripts failed may not work\n`,
     )
   }
+  return { lockfile: install.lockfile, failed, aborted: false }
 }
 
 /** Commit whatever the agent left uncommitted, then bundle everything since carry-in. */
@@ -387,12 +390,15 @@ async function main(): Promise<void> {
   say(`[worker] run ${spec.runtimeId} thread ${spec.threadId}\n`)
   carryIn(spec)
   say(`[worker] carried in ${spec.carryInBase.slice(0, 12)}\n`)
+  let installSummary: DependencyInstallSummary | null = null
   if (spec.installDependencies) {
-    await installDependencies(
+    installSummary = await installDependencies(
       spec.workspace,
       agentProxyUrl ? { url: agentProxyUrl, noProxy: GUEST_NO_PROXY } : null,
     )
   }
+  // The agent is told what it has and what it cannot do, before the task.
+  const prompt = `${guestEnvironmentNote(installSummary)}\n\nTask:\n${spec.prompt}`
   if (spec.acp?.login) {
     // The user's sign-in, staged by the host: into this throwaway home, private
     // to the worker, before the agent can look for it.
@@ -510,7 +516,7 @@ async function main(): Promise<void> {
           : {}),
       },
       {
-        prompt: spec.prompt,
+        prompt,
         threadId: spec.threadId,
         projectId: spec.projectId,
         signal: controller.signal,

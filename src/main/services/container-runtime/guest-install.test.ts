@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   DEPENDENCY_INSTALL_ORIGINS,
+  guestEnvironmentNote,
   PACKAGE_REGISTRY_ORIGIN,
   PNPM_STORE_DIR,
   dependencyInstallEnv,
@@ -120,5 +121,53 @@ describe('dependencyInstallEnv', () => {
     assert.equal(offline['npm_config_nodedir'], undefined)
     const withHeaders = dependencyInstallEnv({}, null, { nodeDir: '/usr/local' })
     assert.equal(withHeaders['npm_config_nodedir'], '/usr/local')
+  })
+})
+
+describe('guestEnvironmentNote', () => {
+  it('always says the shell is offline, then what the install left', () => {
+    for (const note of [
+      guestEnvironmentNote(null),
+      guestEnvironmentNote({ lockfile: null, failed: [], aborted: false }),
+      guestEnvironmentNote({ lockfile: 'pnpm-lock.yaml', failed: [], aborted: false }),
+      guestEnvironmentNote({
+        lockfile: 'pnpm-lock.yaml',
+        failed: ['project postinstall'],
+        aborted: false,
+      }),
+      guestEnvironmentNote({
+        lockfile: 'pnpm-lock.yaml',
+        failed: ['fetch and link'],
+        aborted: true,
+      }),
+    ]) {
+      assert.match(note, /no network access/)
+      assert.match(note, /do not run installs/)
+    }
+    assert.match(guestEnvironmentNote(null), /not installed for this run/)
+    assert.match(
+      guestEnvironmentNote({ lockfile: null, failed: [], aborted: false }),
+      /No lockfile/,
+    )
+    assert.match(
+      guestEnvironmentNote({ lockfile: 'pnpm-lock.yaml', failed: [], aborted: false }),
+      /installed from pnpm-lock\.yaml before you started\./,
+    )
+    assert.match(
+      guestEnvironmentNote({
+        lockfile: 'pnpm-lock.yaml',
+        failed: ['project postinstall'],
+        aborted: false,
+      }),
+      /skipped: project postinstall/,
+    )
+    assert.match(
+      guestEnvironmentNote({
+        lockfile: 'pnpm-lock.yaml',
+        failed: ['fetch and link'],
+        aborted: true,
+      }),
+      /treat node_modules as absent/,
+    )
   })
 })

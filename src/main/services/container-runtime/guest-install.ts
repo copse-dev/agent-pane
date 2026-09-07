@@ -184,3 +184,46 @@ export function dependencyInstallEnv(
     CYPRESS_INSTALL_BINARY: '0',
   }
 }
+
+/** What the install left the agent with, for the note it is given. */
+export interface DependencyInstallSummary {
+  lockfile: string | null
+  /** Steps that did not exit 0, by label; empty when everything passed. */
+  failed: string[]
+  /** The required step failed: nothing usable was linked. */
+  aborted: boolean
+}
+
+/**
+ * The first lines of the prompt an agent in the guest is given (decision A9).
+ * The first real run without one spent itself on `pnpm install` from a shell
+ * that has no network, which tore down a working `node_modules`, and then on
+ * asking to provision a cloud host. The agent is told what it has and what
+ * it cannot do, once, in plain terms, before the task.
+ */
+export function guestEnvironmentNote(install: DependencyInstallSummary | null): string {
+  const lines = [
+    'Environment: a disposable Linux container. Shell commands have no network access at all — ' +
+      'no package registry, no GitHub, no cloud: do not run installs, fetches, pushes or ' +
+      'provisioning; they fail and an install attempt damages node_modules. Commits you make ' +
+      'are carried back for review; nothing else leaves the container.',
+  ]
+  if (install === null) {
+    lines.push('Dependencies were not installed for this run.')
+  } else if (install.lockfile === null) {
+    lines.push('No lockfile was found, so no dependencies were installed.')
+  } else if (install.aborted) {
+    lines.push(
+      `The dependency install from ${install.lockfile} failed before linking; treat node_modules as absent.`,
+    )
+  } else if (install.failed.length === 0) {
+    lines.push(`Dependencies were installed from ${install.lockfile} before you started.`)
+  } else {
+    lines.push(
+      `Dependencies were installed from ${install.lockfile} before you started; these steps failed and ` +
+        `were skipped: ${install.failed.join(', ')}. Packages whose install scripts failed may not work; ` +
+        'the install log above your task says which.',
+    )
+  }
+  return lines.join('\n')
+}

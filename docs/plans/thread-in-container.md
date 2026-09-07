@@ -524,7 +524,11 @@ guarantee, and the record must say so.
   own CDN in the same class as GitHub releases. The install after that built and fetched
   everything and failed only on running a downloaded tool that wanted `GLIBCXX_3.4.32`,
   newer than bookworm's GCC 12 runtime, so the base is `node:24-trixie-slim` (Debian 13)
-  and the Electron libraries take their post-time_t names (`libgtk-3-0t64` and kin).
+  and the Electron libraries take their post-time_t names (`libgtk-3-0t64` and kin). That
+  run also showed the agent spending itself on `pnpm install` from its network-less shell,
+  which tore down a working `node_modules`, and then asking to provision a cloud host; the
+  worker now prefixes the task with a short environment note (`guestEnvironmentNote`):
+  shell commands are offline, do not install or push, this is what the install left you.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
