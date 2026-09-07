@@ -470,7 +470,13 @@ guarantee, and the record must say so.
   (Electron, Playwright, Puppeteer, Cypress) are switched off container-wide: their hosts
   are never admitted and an install that waited on them would only fail later. The
   agent's own shell stays off the network (A7): it cannot add a package mid-run, and that
-  is the intended shape. A failed install is said in the log and the run goes on.
+  is the intended shape. A failed install is said in the log and the run goes on. The
+  first real install got 668 packages in and then lost one to the desktop's resolver
+  answering `ENOTFOUND` for a name it had just answered a thousand times, which the guest
+  proxy turned into a 403 that pnpm treated as final. The broker now resolves each host
+  once per run and retries a transient dial fault (`EAI_AGAIN`, `ENOTFOUND`, `ECONNRESET`,
+  `ETIMEDOUT`) with a short backoff, and the proxy answers 502, the status clients retry
+  on, for an origin that did not answer; 403 stays for a refusal, which is final.
 - **A10 — no GitHub or CI tool in the guest, by name.** Asked by the author after the
   first complete run: does the agent hold write tools to GitHub? The bridge's ceiling
   includes four that write (`gh_pr_create`, `gh_pr_approve`, `gh_pr_mark_ready`,

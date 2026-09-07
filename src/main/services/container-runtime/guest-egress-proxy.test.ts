@@ -58,8 +58,11 @@ describe('guest egress proxy', () => {
   before(async () => {
     origin = await startOrigin()
     broker = new EgressBroker({
-      rules: [parseEgressRule(`model.copse.internal:${String(origin.port)}`)],
-      resolve: { 'model.copse.internal': '127.0.0.1' },
+      rules: [
+        parseEgressRule(`model.copse.internal:${String(origin.port)}`),
+        parseEgressRule('down.copse.internal:9'),
+      ],
+      resolve: { 'model.copse.internal': '127.0.0.1', 'down.copse.internal': '127.0.0.1:9' },
     })
     const guestToHost = new PassThrough()
     const hostToGuest = new PassThrough()
@@ -175,6 +178,25 @@ describe('guest egress proxy', () => {
     assert.equal(result.status, 403)
     assert.match(result.text, /DENY not in the allowlist/)
     assert.ok(broker.log().some((e) => e.event === 'refused' && e.origin === 'github.com:443'))
+  })
+
+  it('answers 502, not 403, for an allowed origin that did not answer, so clients retry', async () => {
+    const reply = await new Promise<string>((resolveTunnel, reject) => {
+      const socket = connect(proxy.address.port, proxy.address.host)
+      let received = ''
+      socket.on('data', (chunk: Buffer) => {
+        received += chunk.toString('utf8')
+      })
+      socket.on('close', () => {
+        resolveTunnel(received)
+      })
+      socket.on('error', reject)
+      socket.once('connect', () => {
+        socket.write('CONNECT down.copse.internal:9 HTTP/1.1\r\nHost: down.copse.internal\r\n\r\n')
+      })
+    })
+    assert.match(reply, /^HTTP\/1\.1 502 Bad Gateway/)
+    assert.match(reply, /DENY origin unreachable: connect ECONNREFUSED/)
   })
 
   it('rejects a CONNECT to a refused target with 403 rather than hanging', async () => {

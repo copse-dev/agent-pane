@@ -48,8 +48,8 @@ export interface GuestEgressProxyOptions {
   onRefused?: (target: string) => void
   /**
    * Told about every tunnel the broker would not or could not open, with the
-   * reason the client was given in its 403: the broker's `DENY`, or the
-   * failure to reach the broker at all.
+   * reason the client was given: the broker's `DENY`, or the failure to
+   * reach the broker at all.
    */
   onTunnelError?: (target: string, reason: string) => void
 }
@@ -65,6 +65,18 @@ export function probeBroker(link: EgressLink, timeoutMs = 5000): Promise<void> {
 
 const PROXY_AUTH_REQUIRED =
   'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="copse-run"\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'
+
+/**
+ * What the client is told when no tunnel came of its request. A refusal is a
+ * 403 and final. An origin that did not answer is a 502, because that is the
+ * status a client retries on — a package manager fetching a thousand tarballs
+ * through here must not give up on the one the resolver hiccuped over.
+ */
+function tunnelFailureStatus(message: string): { code: number; text: string } {
+  return message.startsWith('DENY origin unreachable') || message.startsWith('egress link')
+    ? { code: 502, text: 'Bad Gateway' }
+    : { code: 403, text: 'Forbidden' }
+}
 
 /** Headers that belong to the hop between client and proxy, not to the origin. */
 const HOP_BY_HOP = new Set([
@@ -145,8 +157,9 @@ export function startGuestEgressProxy(
       (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error)
         options.onTunnelError?.(`${target.host}:${String(target.port)}`, message)
+        const status = tunnelFailureStatus(message)
         client.end(
-          `HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n${message}\n`,
+          `HTTP/1.1 ${String(status.code)} ${status.text}\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n${message}\n`,
         )
       },
     )
@@ -220,7 +233,10 @@ export function startGuestEgressProxy(
       (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error)
         options.onTunnelError?.(`${target.host}:${String(target.port)}`, message)
-        response.writeHead(403, { Connection: 'close', 'Content-Type': 'text/plain' })
+        response.writeHead(tunnelFailureStatus(message).code, {
+          Connection: 'close',
+          'Content-Type': 'text/plain',
+        })
         response.end(`${message}\n`)
       },
     )

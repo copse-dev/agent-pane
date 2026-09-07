@@ -23,7 +23,8 @@
  * Refusals are logged, because they can happen: a target the guest asked for
  * and did not get is exactly what a reviewer wants to see.
  */
-import { connect, type Socket } from 'node:net'
+import { lookup as dnsLookup } from 'node:dns'
+import { connect, type Socket, type TcpSocketConnectOpts } from 'node:net'
 import type { Readable } from 'node:stream'
 import type { EgressLogEntry } from '@shared/types/container-run.ts'
 import { EgressLink, type EgressLinkOutput, type MuxStream } from './egress-link.ts'
@@ -51,6 +52,80 @@ export interface EgressBrokerOptions {
   resolve?: Readonly<Record<string, string>>
 }
 
+type LookupFunction = NonNullable<TcpSocketConnectOpts['lookup']>
+
+/** How long one answer from the resolver serves every dial to that host. */
+const LOOKUP_TTL_MS = 5 * 60_000
+
+/**
+ * A dial that failed this way is worth another go: the host's resolver
+ * throttled or timed out, or the origin dropped the handshake. A refused
+ * connection or an unknown host is not.
+ */
+const TRANSIENT_DIAL_CODES = new Set(['EAI_AGAIN', 'ENOTFOUND', 'ECONNRESET', 'ETIMEDOUT'])
+const DIAL_ATTEMPTS = 3
+const DIAL_BACKOFF_MS = [250, 750]
+
+/**
+ * One resolver answer per host per run. A dependency install opens a
+ * connection per package — a thousand lookups of the same name in a minute,
+ * which the desktop's resolver answered with ENOTFOUND part way through the
+ * first real install. `net.connect` takes a lookup of its own; this is that,
+ * with a cache in front.
+ */
+function cachedLookup(): LookupFunction {
+  const cache = new Map<string, { address: string; family: number; at: number }>()
+  return (hostname, options, callback) => {
+    if (options.all) {
+      dnsLookup(hostname, options, callback)
+      return
+    }
+    const hit = cache.get(hostname)
+    if (hit && Date.now() - hit.at < LOOKUP_TTL_MS) {
+      callback(null, hit.address, hit.family)
+      return
+    }
+    dnsLookup(hostname, options, (error, address, family) => {
+      if (!error && typeof address === 'string') {
+        cache.set(hostname, { address, family, at: Date.now() })
+      }
+      callback(error, address, family)
+    })
+  }
+}
+
+function dialCode(error: unknown): string {
+  return error instanceof Error && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : ''
+}
+
+/** Dial the origin, retrying a transient failure; resolves with a connected socket. */
+async function dialOrigin(
+  target: { host: string; port: number },
+  lookup: LookupFunction,
+): Promise<Socket> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await new Promise<Socket>((resolveDial, reject) => {
+        const socket = connect({ host: target.host, port: target.port, lookup })
+        socket.once('connect', () => {
+          resolveDial(socket)
+        })
+        socket.once('error', (error) => {
+          socket.destroy()
+          reject(error)
+        })
+      })
+    } catch (error) {
+      if (attempt >= DIAL_ATTEMPTS || !TRANSIENT_DIAL_CODES.has(dialCode(error))) throw error
+      await new Promise((resolveWait) =>
+        setTimeout(resolveWait, DIAL_BACKOFF_MS[attempt - 1] ?? DIAL_BACKOFF_MS.at(-1)),
+      )
+    }
+  }
+}
+
 /** Where to dial for a guest-named target, after any `resolve` remap. */
 function dialAddress(
   resolve: Readonly<Record<string, string>>,
@@ -69,6 +144,7 @@ export class EgressBroker {
   private readonly live = new Set<Socket | MuxStream>()
   private readonly rules: readonly EgressRule[]
   private readonly resolve: Readonly<Record<string, string>>
+  private readonly lookup = cachedLookup()
 
   constructor(options: EgressBrokerOptions) {
     this.rules = options.rules
@@ -129,8 +205,7 @@ export class EgressBroker {
       detail: `rule ${formatEgressRule(rule)}`,
     })
     const dial = dialAddress(this.resolve, host, port)
-    const upstream = connect(dial.port, dial.host)
-    this.live.add(upstream)
+    let upstream: Socket | null = null
     let guest: MuxStream | null = null
     let closed = false
     const finish = (event: 'close' | 'error', detail?: string): void => {
@@ -144,44 +219,61 @@ export class EgressBroker {
         bytesFromOrigin,
         ...(detail !== undefined ? { detail } : {}),
       })
-      upstream.destroy()
-      this.live.delete(upstream)
+      if (upstream) {
+        upstream.destroy()
+        this.live.delete(upstream)
+      }
       if (guest) {
         guest.destroy(event === 'error' && detail !== undefined ? new Error(detail) : undefined)
         this.live.delete(guest)
       }
     }
-    upstream.once('connect', () => {
-      if (closed) return
-      // Accepted only now: the guest's stream exists once the origin answered,
-      // so a dial that fails is a refusal, not a connection that broke.
-      const stream = link.accept(id)
-      guest = stream
-      this.live.add(stream)
-      stream.on('data', (chunk: Buffer) => {
-        bytesToOrigin += chunk.length
-      })
-      upstream.on('data', (chunk: Buffer) => {
-        bytesFromOrigin += chunk.length
-      })
-      stream.pipe(upstream)
-      upstream.pipe(stream)
-      stream.on('error', (error) => {
-        finish('error', `guest: ${error.message}`)
-      })
-      stream.on('close', () => {
-        finish('close')
-      })
-    })
-    upstream.on('error', (error) => {
-      // A dial that never connected is the origin's problem, and the guest is
-      // still waiting on its answer: tell it, then record it.
-      if (!closed && guest === null) link.refuse(id, `DENY origin unreachable: ${error.message}`)
-      finish('error', `origin: ${error.message}`)
-    })
-    upstream.on('close', () => {
-      finish('close')
-    })
+    dialOrigin(dial, this.lookup).then(
+      (socket) => {
+        if (this.link !== link || link.isClosed) {
+          socket.destroy()
+          finish('close')
+          return
+        }
+        upstream = socket
+        this.live.add(socket)
+        // Accepted only now: the guest's stream exists once the origin
+        // answered, so a dial that fails is a refusal, not a connection that
+        // broke.
+        const stream = link.accept(id)
+        guest = stream
+        this.live.add(stream)
+        stream.on('data', (chunk: Buffer) => {
+          bytesToOrigin += chunk.length
+        })
+        socket.on('data', (chunk: Buffer) => {
+          bytesFromOrigin += chunk.length
+        })
+        stream.pipe(socket)
+        socket.pipe(stream)
+        stream.on('error', (error) => {
+          finish('error', `guest: ${error.message}`)
+        })
+        stream.on('close', () => {
+          finish('close')
+        })
+        socket.on('error', (error) => {
+          finish('error', `origin: ${error.message}`)
+        })
+        socket.on('close', () => {
+          finish('close')
+        })
+      },
+      (error: unknown) => {
+        // The origin never answered, after the retries a transient fault
+        // gets: the guest is still waiting, so tell it, then record it.
+        const message = error instanceof Error ? error.message : String(error)
+        if (this.link === link && !link.isClosed) {
+          link.refuse(id, `DENY origin unreachable: ${message}`)
+        }
+        finish('error', `origin: ${message}`)
+      },
+    )
   }
 
   log(): EgressLogEntry[] {
