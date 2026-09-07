@@ -493,6 +493,21 @@ guarantee, and the record must say so.
   fails when a new `gh_*` tool reaches the bridge list without joining the exclusion).
   `run_shell` remains: it has no `gh`, no token, no route to github.com, and a `git push`
   through it is an outward effect the contained gate refuses and records.
+- **A11 — an installing run reaches GitHub anonymously, and the image can run an Electron
+  e2e suite.** Asked by the author: can the guest reach GitHub without ever holding the
+  desktop's credentials? Yes, by construction — the guest gets the environment the runner
+  builds and nothing of the shell's: no `gh`, no `GITHUB_TOKEN`, no credential helper, no
+  SSH agent, no keychain; the checkout is a bundle with no remotes; GitHub requires a token
+  for every write, gists included; and a push through `run_shell` is an outward effect the
+  gate refuses. So "Install dependencies" admits `github.com`, `*.github.com` and
+  `*.githubusercontent.com` on 443 alongside the registry: Electron and chromedriver come
+  down from releases during the install, and the agent's HTTP tools can read public repos,
+  PRs and CI. Anonymous API calls are limited to sixty an hour per address. The image
+  carries Xvfb, xauth and Electron's shared libraries (the list the Electron project
+  documents for Debian), so `xvfb-run` exists and the suite's own `--no-sandbox` and
+  `--disable-dev-shm-usage` flags do the rest under Docker's default seccomp. The
+  `ELECTRON_SKIP_BINARY_DOWNLOAD` switch is gone; the browser-CDN switches (Playwright,
+  Puppeteer, Cypress) stay, since those hosts are still not admitted.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:

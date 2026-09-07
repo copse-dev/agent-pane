@@ -13,7 +13,7 @@ import {
 } from '../thread-execution-context.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
 import { resolveContainerProvider } from '../providers/container-provider.ts'
-import { PACKAGE_REGISTRY_ORIGIN } from './guest-install.ts'
+import { DEPENDENCY_INSTALL_ORIGINS } from './guest-install.ts'
 import {
   buildWorkerImage,
   newRuntimeId,
@@ -164,13 +164,13 @@ export class ContainerRunService {
     const plan = resolveContainerProvider(model, { useAgentLogin: request.useAgentLogin === true })
     const credential: ContainerRunProgress['credential'] =
       plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
-    // The registry is reachable for the install step and nothing else asks
-    // for it: the guest's shell commands are off the network either way.
+    // The registry and GitHub are reachable when the run installs (A9, A11);
+    // the guest's shell commands are off the network either way.
     const install = request.installDependencies === true
     const egressAllowlist = [
       ...new Set([
         ...plan.egress,
-        ...(install ? [PACKAGE_REGISTRY_ORIGIN] : []),
+        ...(install ? DEPENDENCY_INSTALL_ORIGINS : []),
         ...(request.extraEgress ?? []),
       ]),
     ]

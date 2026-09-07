@@ -48,6 +48,9 @@ ENV DEBIAN_FRONTEND=noninteractive \\
 
 # python3, make, g++ and pkg-config are what node-gyp needs to build a native
 # module (node-pty, say) during a carried-in project's install (decision A9).
+# xvfb and Electron's shared libraries let a project's Electron e2e suite run
+# under a virtual display (decision A11); the Electron binary itself comes
+# from GitHub releases during the install, which an installing run admits.
 # No bubblewrap and no socat: the container is the sandbox (decision A7), so
 # nothing inside it nests a second one, and the container keeps Docker's
 # default seccomp and AppArmor profiles instead of the unconfined ones a
@@ -61,6 +64,25 @@ RUN apt-get update \\
       make \\
       g++ \\
       pkg-config \\
+      xvfb \\
+      xauth \\
+      fonts-liberation \\
+      libgtk-3-0 \\
+      libnotify4 \\
+      libnss3 \\
+      libxss1 \\
+      libxtst6 \\
+      libatspi2.0-0 \\
+      libdrm2 \\
+      libgbm1 \\
+      libxcb-dri3-0 \\
+      libasound2 \\
+      libx11-xcb1 \\
+      libxkbcommon0 \\
+      libsecret-1-0 \\
+      libcups2 \\
+      libgl1 \\
+      xdg-utils \\
     && rm -rf /var/lib/apt/lists/*
 
 RUN if [ -n "\${ACP_AGENTS}" ]; then npm install -g --no-fund --no-audit \${ACP_AGENTS} && npm cache clean --force; fi

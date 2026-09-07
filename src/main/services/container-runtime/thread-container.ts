@@ -259,11 +259,11 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     `COPSE_DIR=${GUEST_RUN_DIR}/state`,
     '--env',
     'HOME=/home/copse',
-    // Nothing in the guest can fetch a browser or an Electron binary (those
+    // Nothing in the guest can fetch a browser from its vendor's CDN (those
     // hosts are never admitted), so the postinstall hooks that try are told
-    // not to, here as well as for the worker's own install step.
-    '--env',
-    'ELECTRON_SKIP_BINARY_DOWNLOAD=1',
+    // not to, here as well as for the worker's own install step. Electron is
+    // not on this list: it comes from GitHub releases, which an installing
+    // run admits (A11).
     '--env',
     'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1',
     '--env',

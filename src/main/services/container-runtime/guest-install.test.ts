@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  DEPENDENCY_INSTALL_ORIGINS,
   PACKAGE_REGISTRY_ORIGIN,
   PNPM_STORE_DIR,
   dependencyInstallEnv,
@@ -82,6 +83,14 @@ describe('dependencyInstallFor', () => {
     assert.ok(!PNPM_STORE_DIR.startsWith('/workspace/repo'))
     assert.equal(PACKAGE_REGISTRY_ORIGIN, 'registry.npmjs.org:443')
   })
+
+  it('admits the registry and GitHub, on 443 only, and nothing else', () => {
+    assert.ok(DEPENDENCY_INSTALL_ORIGINS.includes(PACKAGE_REGISTRY_ORIGIN))
+    assert.ok(DEPENDENCY_INSTALL_ORIGINS.includes('github.com:443'))
+    assert.ok(DEPENDENCY_INSTALL_ORIGINS.includes('*.githubusercontent.com:443'))
+    for (const origin of DEPENDENCY_INSTALL_ORIGINS) assert.match(origin, /:443$/)
+    assert.equal(DEPENDENCY_INSTALL_ORIGINS.length, 4)
+  })
 })
 
 describe('dependencyInstallEnv', () => {
@@ -94,7 +103,11 @@ describe('dependencyInstallEnv', () => {
     assert.equal(env['HTTPS_PROXY'], 'http://run:tok@127.0.0.1:3128')
     assert.equal(env['http_proxy'], 'http://run:tok@127.0.0.1:3128')
     assert.equal(env['NO_PROXY'], '127.0.0.1')
-    assert.equal(env['ELECTRON_SKIP_BINARY_DOWNLOAD'], '1')
+    assert.equal(
+      env['ELECTRON_SKIP_BINARY_DOWNLOAD'],
+      undefined,
+      'Electron comes from GitHub, which the install admits',
+    )
     assert.equal(env['PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD'], '1')
     assert.equal(env['CI'], '1')
     const offline = dependencyInstallEnv({ PATH: '/usr/bin' }, null)

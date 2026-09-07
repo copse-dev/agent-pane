@@ -136,7 +136,7 @@ describe('dockerRunArgs', () => {
     assert.ok(!args.some((a) => a.startsWith('--tmpfs=/workspace')))
     // Postinstall binary downloads are switched off for every process in the
     // guest: their hosts are never admitted.
-    assert.ok(args.includes('ELECTRON_SKIP_BINARY_DOWNLOAD=1'))
+    assert.ok(!args.includes('ELECTRON_SKIP_BINARY_DOWNLOAD=1'), 'Electron comes from GitHub (A11)')
     assert.ok(args.includes('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1'))
     assert.ok(args.includes('COPSE_RUN_KEY'))
     assert.ok(!args.some((a) => a.includes('COPSE_RUN_KEY=')))
@@ -322,8 +322,18 @@ describe('WORKER_DOCKERFILE', () => {
     const pnpm = lines.findIndex((line) => /npm install -g .*"pnpm@\$\{PNPM_VERSION\}"/.test(line))
     assert.ok(pnpm !== -1 && pnpm < user)
     assert.ok(lines.some((line) => line === 'ARG BASE_IMAGE=node:24-bookworm-slim'))
-    // node-gyp's toolchain, so a project's native modules build in the guest.
-    for (const tool of ['python3', 'make', 'g++']) {
+    // node-gyp's toolchain, so a project's native modules build in the guest,
+    // and a virtual display with Electron's libraries, so an e2e suite runs (A11).
+    for (const tool of [
+      'python3',
+      'make',
+      'g++',
+      'xvfb',
+      'xauth',
+      'libgtk-3-0',
+      'libnss3',
+      'libgbm1',
+    ]) {
       assert.ok(
         new RegExp(`^\\s+${tool.replace('+', '\\+')} \\\\$`, 'm').test(WORKER_DOCKERFILE),
         tool,

@@ -503,8 +503,8 @@ export function mountContainerRunControl(
         'p',
         { class: 'field-hint container-run-install-hint' },
         "Runs the checkout's lockfile install (pnpm or npm) once, before the agent starts, so tests and builds " +
-          'can run. For that step the container can also reach registry.npmjs.org; the agent’s own commands ' +
-          'stay off the network.',
+          'can run. The container can then also reach registry.npmjs.org and GitHub, anonymously — it holds no ' +
+          'GitHub credential. The agent’s own commands stay off the network.',
       ),
     )
 

@@ -196,8 +196,10 @@ describe('ContainerRunService', () => {
     assert.ok(withInstall && without)
     assert.equal(withInstall.installDependencies, true)
     assert.ok(withInstall.egressAllowlist.includes('registry.npmjs.org:443'))
+    assert.ok(withInstall.egressAllowlist.includes('github.com:443'))
     assert.equal(without.installDependencies, undefined)
     assert.ok(!without.egressAllowlist.includes('registry.npmjs.org:443'))
+    assert.ok(!without.egressAllowlist.some((origin) => origin.includes('github')))
   })
 
   it('runs an ACP agent under its vendor key on its own domains, with no provider', async () => {

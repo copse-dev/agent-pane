@@ -20,8 +20,25 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** The one origin a dependency install reaches; pnpm and npm both use it. */
+/** The registry pnpm and npm both fetch from. */
 export const PACKAGE_REGISTRY_ORIGIN = 'registry.npmjs.org:443'
+
+/**
+ * What a dependency install may reach (decision A11): the registry, and
+ * GitHub for the release assets that install scripts fetch — Electron, a
+ * chromedriver — plus raw files and the API. Anonymous HTTPS only: the guest
+ * holds no GitHub token, no `gh`, no credential helper and no SSH agent, and
+ * GitHub requires a token for every write, so this admits reads and nothing
+ * else. The hosts are named in full because they are several: release assets
+ * redirect to objects.githubusercontent.com, raw files live on
+ * raw.githubusercontent.com.
+ */
+export const DEPENDENCY_INSTALL_ORIGINS: readonly string[] = [
+  PACKAGE_REGISTRY_ORIGIN,
+  'github.com:443',
+  '*.github.com:443',
+  '*.githubusercontent.com:443',
+]
 
 /**
  * The guest workspace is a fresh volume, so the store and `node_modules`
@@ -125,10 +142,12 @@ export function dependencyInstallFor(workspace: string): DependencyInstall | nul
 }
 
 /**
- * Environment for the install children: the run's proxy so the registry is
- * reachable, and every "download a binary in postinstall" switch off, because
- * those fetch from hosts the run does not admit (GitHub releases, browser
- * CDNs) and an install that needs them would only fail later and slower.
+ * Environment for the install children: the run's proxy so the registry and
+ * GitHub are reachable, and the "download a binary in postinstall" switches
+ * off for the fetches that go to hosts the run does not admit — browser CDNs —
+ * because an install that waited on them would only fail later and slower.
+ * Electron's own download is not switched off: it comes from GitHub releases,
+ * which the install admits, and the e2e suite needs the binary.
  */
 export function dependencyInstallEnv(
   base: NodeJS.ProcessEnv,
@@ -147,7 +166,6 @@ export function dependencyInstallEnv(
         }
       : {}),
     CI: '1',
-    ELECTRON_SKIP_BINARY_DOWNLOAD: '1',
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
     PUPPETEER_SKIP_DOWNLOAD: '1',
     CYPRESS_INSTALL_BINARY: '0',
