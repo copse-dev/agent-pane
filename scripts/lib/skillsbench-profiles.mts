@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { memberOf } from '@copse/std/member-of.ts'
 
 export const SKILLSBENCH_PROFILE_IDS = ['skills-none', 'skills-product', 'skills-explicit'] as const
 
@@ -102,12 +103,7 @@ function definition(
 
 const VERSIONED_ID = /^(.*)@([12])$/
 
-function isSkillsBenchProfileId(value: string): value is SkillsBenchProfileId {
-  for (const id of SKILLSBENCH_PROFILE_IDS) {
-    if (id === value) return true
-  }
-  return false
-}
+const isSkillsBenchProfileId = memberOf(SKILLSBENCH_PROFILE_IDS)
 
 function skillsBenchVersionedId(
   id: SkillsBenchProfileId,

@@ -39,3 +39,31 @@ export function memberOf<const T extends readonly (string | number | boolean)[]>
   const set = new Set<unknown>(members)
   return (value): value is T[number] => set.has(value)
 }
+
+/**
+ * Build a key predicate from the record whose keys define the type.
+ *
+ * The sibling of {@link memberOf} for the case where the vocabulary is a
+ * record's keys rather than a tuple's entries. Same reason it exists: `key in
+ * RECORD` does not narrow, so the predicate around it is an assertion nothing
+ * checks.
+ *
+ * ```ts
+ * const SCHEMAS = { model: …, appIconVariant: … } as const satisfies Record<string, ZodType>
+ * export const isWritableSettingKey = keyOf(SCHEMAS)
+ * ```
+ *
+ * It uses `Object.hasOwn`, **not** `in`, and that is the point rather than a
+ * detail. `in` walks the prototype chain, so a predicate written with it
+ * accepts `toString`, `constructor`, `valueOf`, `hasOwnProperty`, `__proto__`,
+ * `isPrototypeOf`, `propertyIsEnumerable` and `toLocaleString` — eight keys no
+ * record literal actually declares. A gate built on `in` therefore answers
+ * "yes, that key is allowed" for all eight, and whatever runs next reads an
+ * inherited function instead of the value it expected.
+ *
+ * A record with a `null` prototype avoids that too, but only if every future
+ * declaration remembers to use one. This does not depend on remembering.
+ */
+export function keyOf<T extends object>(source: T): (value: PropertyKey) => value is keyof T {
+  return (value): value is keyof T => Object.hasOwn(source, value)
+}

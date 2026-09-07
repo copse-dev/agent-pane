@@ -1,4 +1,5 @@
 import rawDescriptor from '../../benchmarks/terminal_bench/datasets/terminal-bench-2.1.json' with { type: 'json' }
+import { isRecord } from '../../src/shared/unknown-value.mts'
 
 export interface TerminalBenchTaskMetadata {
   name: string
@@ -13,10 +14,6 @@ export interface TerminalBenchDatasetDescriptor {
   upstreamRepository: string
   upstreamRevision: string
   tasks: TerminalBenchTaskMetadata[]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }
 
 function stringProperty(value: unknown, key: string): string {

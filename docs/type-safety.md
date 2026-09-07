@@ -46,6 +46,27 @@ wrong. Prefer the typed alternative:
 > `satisfies`, or a schema at the boundary — see
 > [Boundary parsing](#boundary-parsing-decoders-not-type-arguments).
 
+### Never use a dynamic key with `in`
+
+`in` walks the prototype chain, so `key in RECORD` — where `key` did not come from a literal —
+answers **true** for the eight members every object literal inherits: `toString`, `constructor`,
+`valueOf`, `hasOwnProperty`, `__proto__`, `isPrototypeOf`, `propertyIsEnumerable`,
+`toLocaleString`. A gate written that way says "yes, that key is allowed" for all eight.
+
+That is not a hypothetical. It was the body of both key allowlists the renderer can reach:
+`settings:set`'s writability gate, and `plugins:setSetting`, which took its key straight off the
+renderer and then wrote it into the pack's settings bag — defeating a check whose own comment said
+it existed to stop exactly that.
+
+`no-restricted-syntax` bans it (`eslint.config.mjs`). Use **`Object.hasOwn(record, key)`**, or
+**`keyOf(record)`** from `@copse/std` when you want a type predicate.
+
+A **literal** key is not restricted, and shouldn't be: `'filePath' in payload` is the ordinary way
+to discriminate an object union, and the tree has 248 of those against the ten dynamic ones this
+rule turned up outside tests. Tests are exempt too — several of the nine remaining use `in`
+deliberately to demonstrate the behaviour the rule forbids, and a test that cannot state the wrong
+answer cannot pin the right one.
+
 ### Never cast object literals
 
 `{ ... } as T` is banned in production code (`@typescript-eslint/consistent-type-assertions` with
@@ -205,7 +226,7 @@ worse than none, because it reads like coverage.
 
 ### Reach for the shared predicate before writing another one
 
-The cheapest predicate to keep honest is the one you don't write. Four cover most of what boundary
+The cheapest predicate to keep honest is the one you don't write. These cover most of what boundary
 code needs, all in `@copse/std` (re-exported as `@shared/…` for app code) and all tested there:
 
 - **`isRecord`** (`unknown-value.ts`) — `unknown` → `Record<string, unknown>`, rejecting arrays and
@@ -216,6 +237,16 @@ code needs, all in `@copse/std` (re-exported as `@shared/…` for app code) and 
 - **`memberOf`** (`member-of.ts`) — builds a membership predicate from the tuple that defines the
   type, as [above](#prefer-a-predicate-the-compiler-checks). It replaced 28 hand-written membership
   predicates in #1330.
+- **`keyOf`** (`member-of.ts`) — the same idea for a record's keys. It uses `Object.hasOwn`, not
+  `in`, which matters: `in` walks the prototype chain, so a gate written with it answers **true**
+  for `toString`, `constructor`, `valueOf`, `hasOwnProperty`, `__proto__`, `isPrototypeOf`,
+  `propertyIsEnumerable` and `toLocaleString`. That is not hypothetical — it was the body of the
+  `settings:set` writability gate.
+- **`isNonEmptyString` / `isNonBlankString`** (`nullish.ts`) — a string with at least one character,
+  and a string with at least one _non-whitespace_ character. `isNonEmptyString` is what
+  `.filter((p): p is string => Boolean(p))` meant over a `(string | null | undefined)[]`, said out
+  loud. Pick deliberately: `'  '` passes one and fails the other, and getting it wrong is a silent
+  behaviour change, which is why neither is named as the default.
 
 A local copy is only justified where the import cannot reach — and `@copse/std` is dependency-free
 precisely so that it always can, including from an extracted package.
@@ -233,6 +264,24 @@ is the point: the cheapest predicate to add is also the honest one.
 
 If a change legitimately needs a new asserted predicate — a structural boundary parser usually does —
 add its line and its contract test together.
+
+### What stays asserted, and why
+
+The list is shrink-only, not a countdown to zero. Two categories on it are finished work:
+
+- **The shared helpers themselves.** `isRecord`, `memberOf`, `keyOf`, `isDefined`, `isNonNull`,
+  `isNonEmptyString`, `isNonBlankString`, `matchesFallbackType`. Each is one audited assertion with
+  a real test, standing in for the dozens it replaced. Removing them from the list would hide the
+  assertions the codebase actually relies on.
+- **Provenance guards over a callable.** `isToolFactory`, `isRawExecute`, `isDynamicImport`,
+  `isCreateGuard` narrow `unknown` to a specific function _signature_ from `typeof v === 'function'`,
+  which proves only that it is callable. No check can do better — the values come from user-authored
+  modules and an optional dependency — so the contract is enforced where the function is called
+  (a `try`/`catch` that isolates the failure to one file), not where it is narrowed. A generic
+  `isCallable<T>()` helper would only make the unchecked half convenient.
+
+The remainder — structural parsers over `unknown` — is the part still worth paying down, and the
+answer there is a decoder, not a better predicate.
 
 ## The suppression baseline is empty — keep it that way
 

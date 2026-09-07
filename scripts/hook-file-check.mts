@@ -51,6 +51,7 @@ import {
   renderReport,
   siblingTestCandidates,
 } from './lib/edited-file-check.mts'
+import { isNonNull } from '@copse/std/nullish.ts'
 
 /**
  * The repo root, derived from this file's own location rather than `cwd`.
@@ -198,9 +199,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const reports = (await Promise.all(files.map((f) => checkFile(f, args.fix)))).filter(
-    (r): r is string => r !== null,
-  )
+  const reports = (await Promise.all(files.map((f) => checkFile(f, args.fix)))).filter(isNonNull)
   const { stdout, stderr, exitCode } = hookOutput(
     args.dialect,
     reports.length > 0 ? reports.join('\n\n') : null,

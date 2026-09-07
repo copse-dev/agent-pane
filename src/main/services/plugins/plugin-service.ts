@@ -738,7 +738,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
       // could grow arbitrary keys in any pack's bag forever.
       const pack = registry.has(pluginId) ? registry.get(pluginId) : undefined
       const declared = pack?.manifest.settings
-      if (!declared || !(key in declared)) {
+      if (!declared || !Object.hasOwn(declared, key)) {
         throw new Error(`pack "${pluginId}" declares no setting "${key}"`)
       }
       await storageUpdate(pluginSettingsKey(pluginId), (raw) => {

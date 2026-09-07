@@ -169,4 +169,18 @@ If `make run` returns straight away without opening a window, another Copse inst
 
 ## License
 
-Copse is available under the [Apache License 2.0](LICENSE).
+Copyright © 2026 Jonathan Kingston.
+
+Copse is free software, available under the [GNU Affero General Public License
+version 3](LICENSE). You may use, study, modify, and redistribute it. If you
+distribute a modified version, or make one available to users over a network,
+you must make the complete corresponding source available under the same
+license.
+
+Copse relicensed from Apache-2.0 to AGPL-3.0-only on 6 September 2026. Releases
+up to and including `0.1.0-beta.8` were published under the Apache License 2.0,
+and that grant remains in force for those versions. Everything from the
+relicensing commit onward is AGPL-3.0-only.
+
+Third-party components keep their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

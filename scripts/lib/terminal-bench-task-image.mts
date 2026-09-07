@@ -5,6 +5,7 @@ import {
   TERMINAL_BENCH_DATASET_DESCRIPTOR,
   terminalBenchTaskMetadata,
 } from './terminal-bench-tasks.mts'
+import { isRecord } from '../../src/shared/unknown-value.mts'
 
 export interface TerminalBenchTaskImageMetadata {
   schemaVersion: 2
@@ -18,10 +19,6 @@ export interface TerminalBenchTaskImageMetadata {
   created: string | null
   architecture: string
   os: string
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }
 
 const isUnknownArray: (value: unknown) => value is unknown[] = (value) => Array.isArray(value)
