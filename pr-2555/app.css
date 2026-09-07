@@ -3113,7 +3113,6 @@ label {
   opacity: 0.7;
 }
 .model-picker-menu {
-  --model-picker-menu-height: 280px;
   position: absolute;
   z-index: 40;
   bottom: calc(100% + var(--spacing-xs));
@@ -3121,7 +3120,7 @@ label {
   width: max-content;
   min-width: 100%;
   max-width: min(420px, 90vw);
-  max-height: min(var(--model-picker-menu-height), 45vh);
+  max-height: min(280px, 45vh);
   display: flex;
   flex-direction: column;
   background: var(--bg-elevated);
@@ -3146,12 +3145,11 @@ label {
 }
 .model-picker-field .model-picker-menu {
   position-anchor: var(--model-picker-anchor);
-  top: clamp(var(--spacing-xs), calc(anchor(bottom) + var(--spacing-xs)), calc(100% - var(--model-picker-menu-height) - var(--spacing-xs)));
+  top: calc(anchor(bottom) + var(--spacing-xs));
   bottom: auto;
   left: anchor(left);
   right: auto;
   min-width: anchor-size(width);
-  max-height: min(var(--model-picker-menu-height), 45vh, calc(100% - 2 * var(--spacing-xs)));
   position-try-fallbacks:
     --model-picker-clamp-right,
     --model-picker-flip-up,
@@ -3361,7 +3359,6 @@ label {
     left: 0;
     right: auto;
     min-width: 100%;
-    max-height: min(var(--model-picker-menu-height), 45vh);
   }
 }
 
