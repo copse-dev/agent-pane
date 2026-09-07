@@ -33,6 +33,7 @@ import {
   buildWorkerImage,
   dockerAvailable,
   listManagedRuntimes,
+  sweepOrphanedRuntimes,
   runThreadInContainer,
   teardownRuntime,
   WORKER_IMAGE,
@@ -79,6 +80,14 @@ async function main(): Promise<void> {
     for (const runtime of await listManagedRuntimes()) {
       console.log(`${runtime.runtimeId}\t${runtime.status}`)
     }
+    return
+  }
+  if (cli.has('sweep')) {
+    const sweep = await sweepOrphanedRuntimes()
+    console.log(
+      `removed ${String(sweep.removed.length)}, skipped ${String(sweep.skipped.length)} running, failed ${String(sweep.failed.length)}`,
+    )
+    for (const id of sweep.failed) console.log(`could not remove ${id}`)
     return
   }
   const teardown = cli.one('teardown')

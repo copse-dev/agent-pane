@@ -479,7 +479,13 @@ guarantee, and the record must say so.
   on, for an origin that did not answer; 403 stays for a refusal, which is final. The
   worker's home is on the volume as well (`/workspace/home`, created by the worker at
   start, mode 0700): the 256 MB tmpfs it used to be filled with Electron's download cache
-  on the first e2e-capable install, and the worker then died restoring the sign-in into it. The
+  on the first e2e-capable install, and the worker then died restoring the sign-in into it.
+  A volume outlives an app that quits mid-run, and five of them (8.5 GB) were found on
+  the author's machine after a day of rebuilding between runs, so the service now sweeps
+  at start: every managed container that is not running, and every managed volume, is torn
+  down (`sweepOrphanedRuntimes`; also `--sweep` on the CLI). A running one is left alone —
+  another instance's, or one this host lost and that stops on its own once its link
+  closed — and is swept next time. The
   second real install then fetched everything and failed on two install scripts: a driver
   download from a host the run never admits, and a native build with no toolchain in the
   image. So the install is three steps — fetch and link with scripts off (required), then

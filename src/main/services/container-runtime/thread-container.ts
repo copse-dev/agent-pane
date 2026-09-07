@@ -686,6 +686,55 @@ export async function listManagedRuntimes(): Promise<Array<{ runtimeId: string; 
     })
 }
 
+/** Every workspace volume this host created, by the runtime id on its label. */
+export async function listManagedVolumes(): Promise<string[]> {
+  const out = await runDocker([
+    'volume',
+    'ls',
+    '--filter',
+    `label=${MANAGED_LABEL}=1`,
+    '--format',
+    `{{.Label "${RUNTIME_LABEL}"}}`,
+  ])
+  return out.split('\n').filter((line) => line.trim().length > 0)
+}
+
+export interface OrphanSweep {
+  /** Runtimes whose container and volume are gone now. */
+  removed: string[]
+  /** Runtimes still running — another app instance's, or one this host lost and that is winding itself down. */
+  skipped: string[]
+  /** Runtimes Docker would not let go of. */
+  failed: string[]
+}
+
+/**
+ * Tear down every managed runtime that is not running: the containers and
+ * workspace volumes a run left behind when the app quit before its teardown.
+ * A running container is left alone — it may belong to another instance of
+ * the app sharing this daemon, and one this host abandoned stops on its own
+ * once its link closed (decision A8) — and is swept on a later start.
+ */
+export async function sweepOrphanedRuntimes(): Promise<OrphanSweep> {
+  const containers = await listManagedRuntimes()
+  const volumes = await listManagedVolumes()
+  const running = new Set(
+    containers.filter((c) => c.status.startsWith('Up')).map((c) => c.runtimeId),
+  )
+  const candidates = new Set(
+    [...containers.map((c) => c.runtimeId), ...volumes].filter(
+      (id) => id.length > 0 && !running.has(id),
+    ),
+  )
+  const sweep: OrphanSweep = { removed: [], skipped: [...running], failed: [] }
+  for (const runtimeId of candidates) {
+    const outcome = await teardownRuntime(runtimeId)
+    if (outcome === 'failed') sweep.failed.push(runtimeId)
+    else sweep.removed.push(runtimeId)
+  }
+  return sweep
+}
+
 /**
  * How long `docker stop` may take at the deadline, and how long after that we
  * still give `docker wait` to notice the container left. Both are bounded

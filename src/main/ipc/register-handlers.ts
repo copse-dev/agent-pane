@@ -455,6 +455,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (!win.isDestroyed()) win.webContents.send('container:run-changed', progress)
   })
   win.once('closed', stopContainerRunEvents)
+  // Containers and workspace volumes from runs the previous session quit on.
+  void getContainerRunService().sweepOrphans()
   const storedProjects = storedWorkspaceProjects()
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)

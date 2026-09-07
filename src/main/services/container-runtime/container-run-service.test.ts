@@ -9,6 +9,7 @@ import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 import { setApiKey, setSetting } from '../storage/settings.test-shim.ts'
 import { storageSet } from '../storage/storage.ts'
 import { ContainerRunService, judgeRun, phaseFromLog } from './container-run-service.ts'
+import type { OrphanSweep } from './thread-container.ts'
 import type { ThreadContainerRecord, ThreadContainerRequest } from './thread-container.ts'
 
 const PROJECT = 'container-run-project'
@@ -106,11 +107,15 @@ process.on('exit', () => {
   rmSync(root, { recursive: true, force: true })
 })
 
+const noSweep = (): Promise<OrphanSweep> =>
+  Promise.resolve({ removed: [], skipped: [], failed: [] })
+
 describe('ContainerRunService', () => {
   it('resolves the provider, hides the key behind an env var, and publishes progress to the record', async () => {
     const seen: ThreadContainerRequest[] = []
     const keyValues: string[] = []
     const service = new ContainerRunService({
+      sweep: noSweep,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -164,9 +169,34 @@ describe('ContainerRunService', () => {
     assert.equal(service.isActive(THREAD), false)
   })
 
+  it('sweeps orphans through its dependency at start, and treats no Docker as nothing to sweep', async () => {
+    const swept = new ContainerRunService({
+      sweep: (): Promise<OrphanSweep> =>
+        Promise.resolve({ removed: ['run-old'], skipped: ['run-live'], failed: [] }),
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
+    })
+    assert.deepEqual(await swept.sweepOrphans(), {
+      removed: ['run-old'],
+      skipped: ['run-live'],
+      failed: [],
+    })
+    const noDocker = new ContainerRunService({
+      sweep: (): Promise<OrphanSweep> => Promise.reject(new Error('docker: command not found')),
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
+    })
+    assert.equal(await noDocker.sweepOrphans(), null)
+  })
+
   it('admits the package registry, and asks the runner to install, only when the run opts in', async () => {
     const seen: ThreadContainerRequest[] = []
     const service = new ContainerRunService({
+      sweep: noSweep,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -208,6 +238,7 @@ describe('ContainerRunService', () => {
     ])
     const seen: ThreadContainerRequest[] = []
     const service = new ContainerRunService({
+      sweep: noSweep,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -244,6 +275,7 @@ describe('ContainerRunService', () => {
     ])
     const seen: ThreadContainerRequest[] = []
     const service = new ContainerRunService({
+      sweep: noSweep,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -276,6 +308,7 @@ describe('ContainerRunService', () => {
     const stopped: string[] = []
     const pending: { release: (() => void) | null } = { release: null }
     const service = new ContainerRunService({
+      sweep: noSweep,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (runtimeId): Promise<'removed'> => {
@@ -315,6 +348,7 @@ describe('ContainerRunService', () => {
   it('refuses a second run while one is live, and reports a failed run', async () => {
     const pending: { release: (() => void) | null } = { release: null }
     const service = new ContainerRunService({
+      sweep: noSweep,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -352,6 +386,7 @@ describe('ContainerRunService', () => {
   it('refuses a remote project and an unresolvable model before touching Docker', async () => {
     storageSet('projects', [{ id: PROJECT, path: root, sshHost: 'box' }])
     const service = new ContainerRunService({
+      sweep: noSweep,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
@@ -387,6 +422,7 @@ describe('ContainerRunService checkout resolution', () => {
 
     const seen: ThreadContainerRequest[] = []
     const service = new ContainerRunService({
+      sweep: noSweep,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(worktree, 'worktree', 'thread/work'),
       ensureImage: (): Promise<void> => Promise.resolve(),
@@ -416,6 +452,7 @@ describe('ContainerRunService checkout resolution', () => {
     // A directory with no git repository in it: no snapshot is possible.
     const notARepo = mkdtempSync(join(tmpdir(), 'copse-not-a-repo-'))
     const service = new ContainerRunService({
+      sweep: noSweep,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(notARepo),
       ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
@@ -439,6 +476,7 @@ describe('ContainerRunService checkout resolution', () => {
 
   it('propagates a broken worktree instead of falling back to the project root', async () => {
     const service = new ContainerRunService({
+      sweep: noSweep,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: (): Promise<ThreadExecutionContext> =>
         Promise.reject(new Error('worktree is not registered with git')),

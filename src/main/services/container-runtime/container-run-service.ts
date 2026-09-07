@@ -18,7 +18,9 @@ import {
   buildWorkerImage,
   newRuntimeId,
   runThreadInContainer,
+  sweepOrphanedRuntimes,
   teardownRuntime,
+  type OrphanSweep,
   WORKER_IMAGE,
   workerBuildFingerprint,
   workerImageFingerprint,
@@ -50,11 +52,14 @@ interface RunDependencies {
    * so a test can describe a worktree without building one.
    */
   resolveContext: (projectId: string, threadId: string) => Promise<ThreadExecutionContext>
+  /** Remove what earlier app sessions left behind; see {@link sweepOrphanedRuntimes}. */
+  sweep: typeof sweepOrphanedRuntimes
 }
 
 const productionDependencies: RunDependencies = {
   run: runThreadInContainer,
   stop: teardownRuntime,
+  sweep: sweepOrphanedRuntimes,
   // Rebuild whenever the shipped worker differs from the one the existing
   // image was built from. Reusing on tag alone would keep an app upgrade
   // running the previous guest — and its previous security behaviour.
@@ -99,6 +104,27 @@ export class ContainerRunService {
 
   constructor(deps: RunDependencies = productionDependencies) {
     this.deps = deps
+  }
+
+  /**
+   * Called once at app start. Runs are session-only, so anything managed
+   * that this process did not start is an orphan: a container and a volume
+   * of several gigabytes from a run the previous session quit on. Docker
+   * being absent is not an error here; there is nothing to sweep.
+   */
+  async sweepOrphans(): Promise<OrphanSweep | null> {
+    try {
+      const sweep = await this.deps.sweep()
+      if (sweep.removed.length > 0 || sweep.failed.length > 0) {
+        console.log(
+          `[container-run] swept ${String(sweep.removed.length)} orphaned run(s)` +
+            (sweep.failed.length > 0 ? `; could not remove ${sweep.failed.join(', ')}` : ''),
+        )
+      }
+      return sweep
+    } catch {
+      return null
+    }
   }
 
   get(threadId: string): ContainerRunProgress | null {
