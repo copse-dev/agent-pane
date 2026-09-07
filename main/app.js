@@ -25334,7 +25334,7 @@ url: http://localhost:61025/index.html
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, project, semanticSearchSummary, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
+var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
@@ -25366,6 +25366,27 @@ var init_demo_scenarios = __esm({
       "- Mock LLM \u2014 `COPSE-PANEL-MOCK-LLM=1` enables full e2e testing without API keys",
       "- MCP host \u2014 Per-server enable toggles in Settings",
       "- Persistence \u2014 filesystem-native threads and project settings"
+    ].join("\n");
+    syntaxContrastContent = [
+      "Here is the resolved model configuration:",
+      "",
+      "```json",
+      "{",
+      '  "model": "claude-opus-4",',
+      '  "temperature": 0.2,',
+      '  "maxTokens": 8192,',
+      '  "stream": true',
+      "}",
+      "```",
+      "",
+      "and the loop that reads it:",
+      "",
+      "```ts",
+      "// Resolve the model for this turn.",
+      "function resolveModel(settings: Settings): string {",
+      "  return settings.model ?? 'claude-opus-4'",
+      "}",
+      "```"
     ].join("\n");
     project = (id39, name = "copse-demo", path4 = "/demo/copse") => ({
       id: id39,
@@ -25853,6 +25874,42 @@ var init_demo_scenarios = __esm({
             bodyAdvice: "The project sandbox would block this command:\n\u2022 Installs or updates packages, which downloads and runs code from the internet",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
+          }
+        ]
+      },
+      {
+        // Companion to `approval-light-accent`: same bright accent, same light theme,
+        // but aimed at the surfaces issue #2486/#2488/#2483 reported rather than the
+        // approval dialog. The accent matters — light derives `--accent` as 30% of it
+        // mixed with black, so a bright one makes the derived tier unmistakably dark
+        // and any control that fills with it instead of `--accent-fill` shows up.
+        id: "light-contrast-surfaces",
+        label: "Light-theme syntax, fills, and selection",
+        project: project("demo-light-contrast-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "light",
+          uiAccentColor: "#20FD85",
+          uiTintColor: "#244C25",
+          uiTintStrength: "subtle"
+        },
+        threads: [
+          {
+            id: "demo-light-contrast-thread",
+            title: "Light-theme contrast",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-light-contrast-assistant",
+                role: "assistant",
+                content: syntaxContrastContent,
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
           }
         ]
       },
