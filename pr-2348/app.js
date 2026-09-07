@@ -29491,7 +29491,16 @@ var init_acp_known_agents = __esm({
           // OpenAI-owned infra wholesale: the API lives on api.openai.com, but the
           // ChatGPT-login flow talks to chatgpt.com / auth.openai.com and these move
           // between subdomains — pinning individual hosts breaks auth when they do.
-          allowedDomains: ["openai.com", "*.openai.com", "chatgpt.com", "*.chatgpt.com"],
+          // oaiusercontent.com is OpenAI's user-content store; under a ChatGPT
+          // sign-in the CLI fetches from it (seen refused in a container run).
+          allowedDomains: [
+            "openai.com",
+            "*.openai.com",
+            "chatgpt.com",
+            "*.chatgpt.com",
+            "oaiusercontent.com",
+            "*.oaiusercontent.com"
+          ],
           homeDirs: [".codex", ".config/codex"]
         },
         setup: "codex login",
