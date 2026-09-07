@@ -63,6 +63,8 @@ export const WORKER_IMAGE = 'copse-worker:local'
 export const WORKER_UID = 1001
 export const GUEST_RUN_DIR = '/run/copse'
 export const GUEST_WORKSPACE = '/workspace/repo'
+/** The worker's home in the guest: on the run's volume, created by the worker at start. */
+export const GUEST_HOME = '/workspace/home'
 export const CARRY_IN_REF_PREFIX = 'refs/copse/carry-in/'
 export const CARRY_OUT_REF_PREFIX = 'refs/copse/runs/'
 export const MANAGED_LABEL = 'dev.copse.managed'
@@ -244,7 +246,6 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     // the container. The image owns /workspace as the worker uid, which a
     // fresh volume inherits.
     `--mount=type=volume,source=${workspaceVolumeName(input.runtimeId)},target=/workspace,volume-nocopy=false`,
-    `--tmpfs=/home/copse:rw,nosuid,nodev,size=256m,uid=${String(WORKER_UID)},gid=${String(WORKER_UID)},mode=0750`,
     '--network=none',
     '--stop-timeout=30',
   ]
@@ -257,8 +258,12 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     `${join(input.runDir, 'out')}:${GUEST_RUN_DIR}/out:rw`,
     '--env',
     `COPSE_DIR=${GUEST_RUN_DIR}/state`,
+    // The worker's home lives on the run's volume too, not on a tmpfs: an
+    // install's caches (Electron's download, a tool's own cache) filled a
+    // 256 MB one on the first real e2e-capable install. The worker creates
+    // it, private to itself, before anything else runs.
     '--env',
-    'HOME=/home/copse',
+    `HOME=${GUEST_HOME}`,
     // Nothing in the guest can fetch a browser from its vendor's CDN (those
     // hosts are never admitted), so the postinstall hooks that try are told
     // not to, here as well as for the worker's own install step. Electron is

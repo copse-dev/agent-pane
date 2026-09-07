@@ -301,6 +301,9 @@ function finalAssistantText(messages: readonly LLMMessage[]): string {
 }
 
 async function main(): Promise<void> {
+  // The home is a directory on the run's volume that does not exist until
+  // the worker makes it (decision A9); private to the worker, as a home is.
+  mkdirSync(homedir(), { recursive: true, mode: 0o700 })
   // First, before any client exists: the link to the host over this process's
   // stdio, and the loopback proxy every outbound byte goes through. Node's
   // env-proxy dispatcher was pointed at the proxy's address when the process

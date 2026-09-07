@@ -134,6 +134,9 @@ describe('dockerRunArgs', () => {
       `--mount=type=volume,source=${workspaceVolumeName('run-test')},target=/workspace,volume-nocopy=false`,
     ])
     assert.ok(!args.some((a) => a.startsWith('--tmpfs=/workspace')))
+    // The home is on the volume as well: no tmpfs for it, and HOME points there.
+    assert.ok(!args.some((a) => a.startsWith('--tmpfs=/home')))
+    assert.ok(args.includes('HOME=/workspace/home'))
     // Postinstall binary downloads are switched off for every process in the
     // guest: their hosts are never admitted.
     assert.ok(!args.includes('ELECTRON_SKIP_BINARY_DOWNLOAD=1'), 'Electron comes from GitHub (A11)')

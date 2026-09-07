@@ -477,6 +477,9 @@ guarantee, and the record must say so.
   once per run and retries a transient dial fault (`EAI_AGAIN`, `ENOTFOUND`, `ECONNRESET`,
   `ETIMEDOUT`) with a short backoff, and the proxy answers 502, the status clients retry
   on, for an origin that did not answer; 403 stays for a refusal, which is final. The
+  worker's home is on the volume as well (`/workspace/home`, created by the worker at
+  start, mode 0700): the 256 MB tmpfs it used to be filled with Electron's download cache
+  on the first e2e-capable install, and the worker then died restoring the sign-in into it. The
   second real install then fetched everything and failed on two install scripts: a driver
   download from a host the run never admits, and a native build with no toolchain in the
   image. So the install is three steps — fetch and link with scripts off (required), then
