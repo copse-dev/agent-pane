@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ContainerModelVerdict } from '@shared/types/container-run.ts'
 import type { FetchModelOptionsOpts, ModelOption } from './model-options.ts'
-import { agentModelsNote, loadRunModelOptions } from './container-run-control.ts'
+import { agentModelsNote, loadRunModelOptions, startBlocker } from './container-run-control.ts'
 
 /**
  * The model roster the container-run sheet offers.
@@ -142,5 +142,98 @@ describe('agentModelsNote', () => {
     assert.match(note, /Claude, Codex and Gemini CLI/)
     assert.match(note, /API key/)
     assert.match(note, /desktop sign-in if you opt in/)
+  })
+})
+
+describe('startBlocker', () => {
+  const agent = 'acp:codex-acp#gpt-5.6-sol'
+  it('holds an agent model until the resolver has answered for it', () => {
+    assert.match(
+      startBlocker({
+        task: 'x',
+        model: agent,
+        verdict: undefined,
+        rosterLoaded: false,
+        loginChecked: false,
+      }) ?? '',
+      /Checking/,
+    )
+    assert.match(
+      startBlocker({
+        task: 'x',
+        model: agent,
+        verdict: undefined,
+        rosterLoaded: true,
+        loginChecked: false,
+      }) ?? '',
+      /not available/,
+    )
+  })
+
+  it('needs the opt-in for a sign-in row, and lets a key-backed row start', () => {
+    const offered = { reason: null, loginOffered: { agentTitle: 'Codex' } }
+    assert.match(
+      startBlocker({
+        task: 'x',
+        model: agent,
+        verdict: offered,
+        rosterLoaded: true,
+        loginChecked: false,
+      }) ?? '',
+      /Tick "Use my Codex sign-in/,
+    )
+    assert.equal(
+      startBlocker({
+        task: 'x',
+        model: agent,
+        verdict: offered,
+        rosterLoaded: true,
+        loginChecked: true,
+      }),
+      null,
+    )
+    assert.equal(
+      startBlocker({
+        task: 'x',
+        model: agent,
+        verdict: { reason: null },
+        rosterLoaded: true,
+        loginChecked: false,
+      }),
+      null,
+    )
+    assert.match(
+      startBlocker({
+        task: 'x',
+        model: agent,
+        verdict: { reason: 'needs a key' },
+        rosterLoaded: true,
+        loginChecked: false,
+      }) ?? '',
+      /needs a key/,
+    )
+  })
+
+  it('never holds a provider model on the roster, only on an empty task', () => {
+    assert.equal(
+      startBlocker({
+        task: 'x',
+        model: 'claude-sonnet-4-6',
+        verdict: undefined,
+        rosterLoaded: false,
+        loginChecked: false,
+      }),
+      null,
+    )
+    assert.match(
+      startBlocker({
+        task: '  ',
+        model: 'claude-sonnet-4-6',
+        verdict: undefined,
+        rosterLoaded: true,
+        loginChecked: false,
+      }) ?? '',
+      /task/,
+    )
   })
 })

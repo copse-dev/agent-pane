@@ -125,6 +125,36 @@ export async function loadRunModelOptions(
   })
 }
 
+/**
+ * Why the Start button is disabled, or null when the run may start. An agent
+ * model is startable only once the resolver has answered for it: the roster
+ * loads after the dialog opens, and a click in that window would reach the
+ * resolver with no opt-in the dialog could have shown — the "opt in below"
+ * refusal with nothing below it.
+ */
+export function startBlocker(state: {
+  task: string
+  model: string
+  verdict: ContainerModelVerdict | undefined
+  rosterLoaded: boolean
+  loginChecked: boolean
+}): string | null {
+  if (state.task.trim().length === 0) return 'Describe the task first'
+  if (parseAcpModel(state.model) === null) return null
+  if (state.verdict === undefined) {
+    return state.rosterLoaded
+      ? `${modelDisplayLabel(state.model)} is not available in a container`
+      : 'Checking whether this agent can run in a container…'
+  }
+  if (state.verdict.reason !== null) {
+    return `${modelDisplayLabel(state.model)}: ${state.verdict.reason}`
+  }
+  if (state.verdict.loginOffered && !state.loginChecked) {
+    return `Tick "Use my ${state.verdict.loginOffered.agentTitle} sign-in for this run" to start`
+  }
+  return null
+}
+
 /** The sentence under the picker whenever an agent model is on the roster. */
 export function agentModelsNote(): string {
   const titles = containerAcpAgentTitles()
@@ -359,9 +389,22 @@ export function mountContainerRunControl(
       ariaLabel: 'Model for the unattended run',
       loadOnMount: false,
     })
-    void modelPicker.refresh(chosenModel).catch((error: unknown) => {
-      console.error('[container-run] could not list models:', error)
-    })
+    let rosterLoaded = false
+    void modelPicker
+      .refresh(chosenModel)
+      .catch(async (error: unknown) => {
+        console.error('[container-run] could not list models:', error)
+        // The roster failed, but the thread's own model can still be asked
+        // about on its own, so the preselected row is not stuck on "checking".
+        if (parseAcpModel(chosenModel) !== null) {
+          const answered = await api.container.modelAvailability([chosenModel]).catch(() => ({}))
+          for (const [model, verdict] of Object.entries(answered)) verdicts.set(model, verdict)
+        }
+      })
+      .finally(() => {
+        rosterLoaded = true
+        renderLoginOptIn()
+      })
 
     const minutes = el('input', {
       type: 'number',
@@ -470,8 +513,15 @@ export function mountContainerRunControl(
     )
     cancel.addEventListener('click', () => overlay?.close())
     function renderStartState(): void {
-      start.disabled =
-        task.value.trim().length === 0 || (loginOffer() !== null && !loginOptIn.checked)
+      const blocker = startBlocker({
+        task: task.value,
+        model: chosenModel,
+        verdict: verdicts.get(chosenModel),
+        rosterLoaded,
+        loginChecked: loginOptIn.checked,
+      })
+      start.disabled = blocker !== null
+      start.title = blocker ?? ''
     }
     renderStartState()
     task.addEventListener('input', renderStartState)
