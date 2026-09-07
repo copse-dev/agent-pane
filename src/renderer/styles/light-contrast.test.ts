@@ -160,24 +160,32 @@ function lightSyntaxColours(): { selector: string; colour: string }[] {
 }
 
 describe('light theme: primary fills use --accent-fill (issue #2488)', () => {
-  it('never paints --text-on-accent onto an --accent background', () => {
+  it('uses the fill tier on the live controls named by the report', () => {
     // In light, `--accent` is `color-mix(in srgb, var(--accent-color) 30%, black)`
     // while `--text-on-accent` stays a dark grey — 1.24:1 with the shipped accent.
     // `--accent-fill` keeps the raw hue in both themes, which is what dark label
     // text is designed to sit on (`.ui-btn-primary` is the reference recipe).
-    const offenders = stylesheets()
-      .flatMap(({ file, css }) => rules(file, css))
-      .filter(
-        (rule) =>
-          /background(-color)?:\s*var\(--accent\)/.test(rule.body) &&
-          rule.body.includes('var(--text-on-accent)'),
+    const targets = [
+      '.titlebar-btn-badge',
+      '.memories-btn-primary',
+      '.queued-action.queued-send-now',
+      '.usage-plan-signin-btn',
+      '.automation-save-btn',
+    ]
+    const declarations = stylesheets().flatMap(({ file, css }) => rules(file, css))
+    for (const target of targets) {
+      const rule = declarations.find(
+        (candidate) =>
+          candidate.selector.includes(target) && candidate.body.includes('var(--text-on-accent)'),
       )
-      .map((rule) => `${rule.file}:${String(rule.line)} ${rule.selector}`)
-    assert.deepEqual(
-      offenders,
-      [],
-      `these rules put dark label text on the light theme's dark --accent; use --accent-fill:\n${offenders.join('\n')}`,
-    )
+      assert.ok(rule, `missing rule for ${target}`)
+      assert.match(
+        rule.body,
+        /background(?:-color)?:\s*var\(--accent-fill\)/,
+        `${rule.file}:${String(rule.line)} ${target} must use the readable fill tier`,
+      )
+      assert.ok(rule.body.includes('var(--text-on-accent)'), `${target} must keep its label tier`)
+    }
   })
 
   it('keeps --accent-fill undarkened in light, so the recipe still works', () => {

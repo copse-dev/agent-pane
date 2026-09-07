@@ -108,17 +108,24 @@ describe('browser-hosted light-theme contrast', () => {
     await saveElementScreenshot('.streaming-markdown pre', 'light-contrast-syntax.png')
   })
 
-  it('fills primary controls from the raw accent, not the derived tier', async () => {
+  it('fills the reported badge and memory action from the raw accent', async () => {
     const measured = await browser.execute(() => {
       const root = getComputedStyle(document.documentElement)
-      const button = document.querySelector<HTMLElement>('.submit-btn')
-      if (!button) return null
-      const style = getComputedStyle(button)
+      const badge = document.querySelector<HTMLElement>('.titlebar-btn-badge')
+      if (!badge) return null
+      const memoryAction = document.createElement('button')
+      memoryAction.className = 'memories-btn memories-btn-primary'
+      memoryAction.textContent = 'Save'
+      document.body.append(memoryAction)
+      const controls = [badge, memoryAction].map((control) => {
+        const style = getComputedStyle(control)
+        return { background: style.backgroundColor, color: style.color }
+      })
+      memoryAction.remove()
       return {
         accent: root.getPropertyValue('--accent').trim(),
         accentFill: root.getPropertyValue('--accent-fill').trim(),
-        background: style.backgroundColor,
-        color: style.color,
+        controls,
       }
     })
 
@@ -134,8 +141,10 @@ describe('browser-hosted light-theme contrast', () => {
     assert.match(measured.accent, /black/, '--accent should be the mixed-with-black derivation')
     // The scenario's configured accent, undarkened, with the dark label text the
     // fill is designed to carry.
-    assert.equal(measured.background, 'rgb(32, 253, 133)')
-    assert.equal(measured.color, 'rgb(68, 68, 68)')
+    assert.deepEqual(measured.controls, [
+      { background: 'rgb(32, 253, 133)', color: 'rgb(68, 68, 68)' },
+      { background: 'rgb(32, 253, 133)', color: 'rgb(68, 68, 68)' },
+    ])
   })
 
   it('gives the selection wash the accent hue rather than a grey', async () => {
