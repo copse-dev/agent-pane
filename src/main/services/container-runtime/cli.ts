@@ -28,11 +28,14 @@
  *   --build                 rebuild the worker image first
  *   --list                  list containers this host started and exit
  *   --teardown <runtimeId>  remove a container by runtime id and exit
+ *   --sweep                 remove every managed container and volume that is not running
+ *   --forget-store          remove the shared pnpm store volume; the next install refills it
  */
 import {
   buildWorkerImage,
   dockerAvailable,
   listManagedRuntimes,
+  forgetPnpmStoreVolume,
   sweepOrphanedRuntimes,
   runThreadInContainer,
   teardownRuntime,
@@ -52,7 +55,7 @@ function parseCli(argv: readonly string[]): Cli {
     if (!token.startsWith('--')) throw new Error(`Unexpected argument: ${token}`)
     const name = token.slice(2)
     const next = argv[index + 1]
-    const boolean = ['build', 'list'].includes(name)
+    const boolean = ['build', 'list', 'sweep', 'forget-store'].includes(name)
     const value = boolean || next === undefined || next.startsWith('--') ? '' : next
     if (value !== '') index++
     const list = flags.get(name) ?? []
@@ -80,6 +83,10 @@ async function main(): Promise<void> {
     for (const runtime of await listManagedRuntimes()) {
       console.log(`${runtime.runtimeId}\t${runtime.status}`)
     }
+    return
+  }
+  if (cli.has('forget-store')) {
+    console.log(`pnpm store: ${await forgetPnpmStoreVolume()}`)
     return
   }
   if (cli.has('sweep')) {

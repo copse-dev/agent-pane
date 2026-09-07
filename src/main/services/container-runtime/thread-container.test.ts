@@ -30,6 +30,7 @@ function input(overrides: Partial<DockerRunInput> = {}): DockerRunInput {
     runDir: '/tmp/copse-runs/run-test',
     egress: [{ host: 'model.copse.internal', wildcard: false, port: 8080 }],
     egressToken: 'test-run-token',
+    sharedStore: false,
     apiKeyEnv: null,
     memoryLimit: '4g',
     pidsLimit: 512,
@@ -133,6 +134,14 @@ describe('dockerRunArgs', () => {
     assert.deepEqual(mounts, [
       `--mount=type=volume,source=${workspaceVolumeName('run-test')},target=/workspace,volume-nocopy=false`,
     ])
+    // An installing run also mounts the host's shared pnpm store, nested in
+    // the fresh workspace (A12); one that does not install never sees it.
+    const installing = dockerRunArgs(input({ apiKeyEnv: 'COPSE_RUN_KEY', sharedStore: true }))
+    assert.ok(
+      installing.includes(
+        '--mount=type=volume,source=copse-pnpm-store,target=/workspace/.pnpm-store,volume-nocopy=false',
+      ),
+    )
     assert.ok(!args.some((a) => a.startsWith('--tmpfs=/workspace')))
     // The home is on the volume as well: no tmpfs for it, and HOME points there.
     assert.ok(!args.some((a) => a.startsWith('--tmpfs=/home')))

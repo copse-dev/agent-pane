@@ -533,6 +533,17 @@ guarantee, and the record must say so.
   the link on stdio (A8) the worker's stdin is an open handle, as is any background child
   the agent left, so the event loop never drained. The worker now exits explicitly once
   its log has flushed; `--init` reaps whatever the agent left running.
+- **A12 — one pnpm store volume per host, shared by every installing run.** Asked by the
+  author after a run's install spent its first minute fetching a thousand packages the
+  previous run had fetched too. The store (`/workspace/.pnpm-store`, beside the checkout)
+  is now a named volume, `copse-pnpm-store`, mounted inside the fresh workspace for a run
+  that installs and absent from one that does not. Labelled by role, not as a managed
+  runtime, so the start-up sweep leaves it alone; `--forget-store` on the CLI removes it
+  and the next install refills it. The workspace volume is still per run: only the
+  content-addressed store is shared, and pnpm checks every package it links against the
+  lockfile's integrity hash, so a stale or tampered entry from an earlier run is rejected
+  rather than linked. The image creates the directory so the mount is owned by the worker
+  uid, which changes the fingerprint: the image rebuilds once.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:

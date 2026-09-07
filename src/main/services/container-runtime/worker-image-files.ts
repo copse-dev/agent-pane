@@ -100,7 +100,7 @@ WORKDIR /app
 COPY --chown=root:root package.json ./
 COPY --chown=root:root node_modules ./node_modules
 COPY --chown=root:root worker.cjs entrypoint.sh ./
-RUN chmod 0755 /app/entrypoint.sh && mkdir -p /workspace && chown "\${WORKER_UID}" /workspace
+RUN chmod 0755 /app/entrypoint.sh && mkdir -p /workspace/.pnpm-store && chown -R "\${WORKER_UID}" /workspace
 
 USER \${WORKER_UID}:\${WORKER_UID}
 ENV NODE_PATH=/app/node_modules

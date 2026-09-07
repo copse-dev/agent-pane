@@ -55,7 +55,7 @@ import {
 } from './worker-image-files.ts'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
 import { removeStagedLogin, stageAgentLogin } from './agent-login.ts'
-import { sanitizedOriginUrl } from './guest-install.ts'
+import { PNPM_STORE_DIR, sanitizedOriginUrl } from './guest-install.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 
 const execFileAsync = promisify(execFile)
@@ -203,6 +203,8 @@ export interface DockerRunInput {
    * shell children by the worker. Null when there is no egress at all.
    */
   egressToken: string | null
+  /** Mount the host's shared pnpm store for the install step (decision A12). */
+  sharedStore: boolean
   apiKeyEnv: string | null
   memoryLimit: string
   pidsLimit: number
@@ -251,6 +253,14 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     // the container. The image owns /workspace as the worker uid, which a
     // fresh volume inherits.
     `--mount=type=volume,source=${workspaceVolumeName(input.runtimeId)},target=/workspace,volume-nocopy=false`,
+    // The shared pnpm store, only for a run that installs: a nested mount
+    // inside the fresh workspace, owned by the worker uid because the image
+    // has the directory (decision A12).
+    ...(input.sharedStore
+      ? [
+          `--mount=type=volume,source=${PNPM_STORE_VOLUME},target=${PNPM_STORE_DIR},volume-nocopy=false`,
+        ]
+      : []),
     '--network=none',
     '--stop-timeout=30',
   ]
@@ -336,6 +346,39 @@ export function containerName(runtimeId: string): string {
 /** The run's workspace volume: created before the container, removed after it. */
 export function workspaceVolumeName(runtimeId: string): string {
   return `copse-ws-${runtimeId}`
+}
+
+/**
+ * The pnpm store every installing run shares (decision A12): one volume per
+ * host, mounted beside a fresh workspace, so the second install of a project
+ * links from the store instead of fetching a thousand packages again. pnpm
+ * checks each package against the lockfile's integrity hash as it links, so
+ * a stale or tampered store entry is rejected rather than used. Labelled by
+ * role, not as a managed runtime, so the orphan sweep leaves it alone.
+ */
+export const PNPM_STORE_VOLUME = 'copse-pnpm-store'
+export const STORE_ROLE_LABEL = 'dev.copse.role'
+
+/** Create the shared store if it does not exist; creating an existing volume is a no-op. */
+export async function ensurePnpmStoreVolume(): Promise<void> {
+  await runDocker([
+    'volume',
+    'create',
+    '--label',
+    `${STORE_ROLE_LABEL}=pnpm-store`,
+    PNPM_STORE_VOLUME,
+  ])
+}
+
+/** Remove the shared store; the next installing run starts it again from nothing. */
+export async function forgetPnpmStoreVolume(): Promise<'removed' | 'already-gone'> {
+  try {
+    await runDocker(['volume', 'inspect', PNPM_STORE_VOLUME])
+  } catch {
+    return 'already-gone'
+  }
+  await runDocker(['volume', 'rm', PNPM_STORE_VOLUME])
+  return 'removed'
 }
 
 export function buildAttestation(
@@ -1107,6 +1150,7 @@ export async function runThreadInContainer(
     runDir,
     egress,
     egressToken: egress.length > 0 ? randomBytes(16).toString('hex') : null,
+    sharedStore: request.installDependencies === true,
     apiKeyEnv,
     memoryLimit: '4g',
     pidsLimit: 512,
@@ -1137,6 +1181,7 @@ export async function runThreadInContainer(
       `${RUNTIME_LABEL}=${runtimeId}`,
       workspaceVolumeName(runtimeId),
     ])
+    if (runInput.sharedStore) await ensurePnpmStoreVolume()
     await runDocker(dockerRunArgs(runInput))
     attached = attachContainer(containerName(runtimeId), {
       broker: egress.length > 0 ? broker : null,
