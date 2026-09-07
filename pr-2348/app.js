@@ -262555,8 +262555,8 @@ var init_container_acp_agents = __esm({
         keyEnv: "CODEX_API_KEY",
         keySlug: "openai",
         keyLabel: "OpenAI",
-        // `codex login` writes ~/.codex/auth.json.
-        loginCarryIn: true
+        // `codex login` writes the token here and nothing else is needed.
+        loginFiles: [".codex/auth.json"]
       },
       {
         id: "gemini",
@@ -262565,8 +262565,13 @@ var init_container_acp_agents = __esm({
         keyEnv: "GEMINI_API_KEY",
         keySlug: "gemini",
         keyLabel: "Gemini",
-        // Google sign-in writes ~/.gemini/oauth_creds.json.
-        loginCarryIn: true
+        // Google sign-in writes the token and the account; settings.json carries
+        // `selectedAuthType`, without which a headless CLI asks how to sign in.
+        loginFiles: [
+          ".gemini/oauth_creds.json",
+          ".gemini/google_accounts.json",
+          ".gemini/settings.json"
+        ]
       }
     ];
   }
@@ -262757,7 +262762,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       } else {
         const text5 = loginLabel.querySelector(".container-run-agent-login-text");
         if (text5) text5.textContent = `Use my ${offer.agentTitle} sign-in for this run`;
-        loginHint.textContent = `${offer.agentTitle} has no API key in Settings. Ticking this copies its sign-in files from your home directory into the container's throwaway home for this run and discards them with it. That is your whole account, not a scoped key, and a token refresh inside the run may sign the desktop out. Adding an API key in Settings avoids both.`;
+        loginHint.textContent = `${offer.agentTitle} has no API key in Settings. Ticking this copies its sign-in files (only those: no transcripts, no history) into the container's throwaway home for this run and discards them with it. That is your whole account, not a scoped key, and a token refresh inside the run may sign the desktop out. Adding an API key in Settings avoids both.`;
       }
       renderStartState();
     }
