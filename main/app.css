@@ -3155,6 +3155,15 @@ label {
     --model-picker-flip-up,
     --model-picker-flip-up-clamp-right;
 }
+.model-picker-field .model-picker-menu.is-surface-flipped {
+  top: auto;
+  bottom: calc(anchor(top) + var(--spacing-xs));
+}
+.model-picker-field .model-picker-menu.is-surface-contained {
+  top: var(--spacing-xs);
+  bottom: auto;
+  max-height: calc(100% - 2 * var(--spacing-xs));
+}
 .model-picker-view-title {
   min-width: 0;
   padding: var(--spacing-xs) var(--spacing-md);

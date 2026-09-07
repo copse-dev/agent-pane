@@ -28714,6 +28714,9 @@ function createOverlayDialog(opts) {
     isOpen: () => dialog2.open
   };
 }
+function isAnyDialogOpen() {
+  return document.querySelector("dialog[open]") !== null;
+}
 var init_dialog_shell = __esm({
   "src/renderer/views/dialog-shell.ts"() {
   }
@@ -37075,6 +37078,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
   }
   for (const model of models) {
     const { id: id39 } = model;
+    if (model.embedding === true) continue;
     const hint = [localModelRoleHint(id39), localModelIntellectHint(id39)].filter(isNonNull).join(" \xB7 ");
     const label = getLocalModelCapability(id39)?.label ?? modelDisplayName(id39);
     options2.push({
@@ -37224,6 +37228,10 @@ var init_model_options = __esm({
 });
 
 // src/renderer/views/model-picker.ts
+function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
+  if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
+  return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
+}
 function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts = {}) {
   const variant = pickerOpts.variant ?? "compact";
   const recentMode = pickerOpts.getRecentValues !== void 0;
@@ -37353,6 +37361,22 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
     activeValue = activeGroup()?.currentValue ?? null;
     setView("group");
   }
+  function placeFieldMenuInsideSurface() {
+    menu.classList.remove("is-surface-flipped", "is-surface-contained");
+    if (!open3 || variant !== "field") return;
+    const surface = menu.offsetParent;
+    if (!(surface instanceof HTMLElement)) return;
+    const menuRect = menu.getBoundingClientRect();
+    const surfaceRect = surface.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
+    const gap = Number.parseFloat(getComputedStyle(menu).getPropertyValue("--spacing-xs")) || 4;
+    const placement = fieldMenuSurfacePlacement(menuRect, surfaceRect, triggerRect, gap);
+    if (placement === "flipped") {
+      menu.classList.add("is-surface-flipped");
+    } else if (placement === "contained") {
+      menu.classList.add("is-surface-contained");
+    }
+  }
   function setOpen(next3) {
     open3 = next3;
     trigger.setAttribute("aria-expanded", String(next3));
@@ -37362,6 +37386,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       if (loadState === "error") void refresh();
     } else {
       menu.setAttribute("hidden", "");
+      menu.classList.remove("is-surface-flipped", "is-surface-contained");
       filter8.value = "";
       setView(homeView, false);
       pickerOpts.onClose?.();
@@ -37523,6 +37548,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       );
     }
     scrollActiveOptionIntoView();
+    placeFieldMenuInsideSurface();
   }
   function selectOption(value2) {
     if (value2 === null) return;
@@ -261764,6 +261790,23 @@ var init_last_exchange = __esm({
 });
 
 // src/renderer/views/approval-comparison-pickers.ts
+async function reviewerOptions(api3, current) {
+  const options2 = await fetchModelOptions(api3, current, REVIEWER_OPTIONS);
+  return options2.map(
+    (option2) => option2.value === current && UNRUNNABLE_CURRENT_SUFFIX.test(option2.label) ? { ...option2, disabled: true } : option2
+  );
+}
+async function refreshReviewer(picker, select, current) {
+  await picker.refresh(current);
+  const selected = select.selectedOptions[0];
+  if (selected?.disabled !== true) return;
+  const replacement = [...select.options].find(
+    (option2) => !option2.disabled && option2.value.length > 0
+  );
+  if (!replacement) return;
+  select.value = replacement.value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
 function modelRow(label, select) {
   return el(
     "label",
@@ -261788,27 +261831,27 @@ function createComparisonModelPickers(api3, models, intro) {
     modelRow("Judge", selectJudge)
   );
   const pickerA = mountModelSelectPicker(selectA, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Reviewer A model",
     loadOnMount: false
   });
   const pickerB = mountModelSelectPicker(selectB, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Reviewer B model",
     loadOnMount: false
   });
   const pickerJudge = mountModelSelectPicker(selectJudge, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Judge model",
     loadOnMount: false
   });
   void Promise.all([
-    pickerA.refresh(models.a),
-    pickerB.refresh(models.b),
-    pickerJudge.refresh(models.judge)
+    refreshReviewer(pickerA, selectA, models.a),
+    refreshReviewer(pickerB, selectB, models.b),
+    refreshReviewer(pickerJudge, selectJudge, models.judge)
   ]);
   return {
     root: root4,
@@ -261819,11 +261862,14 @@ function createComparisonModelPickers(api3, models, intro) {
     })
   };
 }
+var REVIEWER_OPTIONS, UNRUNNABLE_CURRENT_SUFFIX;
 var init_approval_comparison_pickers = __esm({
   "src/renderer/views/approval-comparison-pickers.ts"() {
     init_helpers();
     init_model_options();
     init_model_picker();
+    REVIEWER_OPTIONS = { includeAgentModels: false };
+    UNRUNNABLE_CURRENT_SUFFIX = / \((?:no key|not available|offline)\)$/i;
   }
 });
 
@@ -308635,8 +308681,7 @@ function registerKeyboardShortcuts() {
       openCommandPalette();
     }
     if (matchFindInChatShortcut(e4)) {
-      if (isFileSearchDialogOpen() || isCommandPaletteOpen() || isSettingsDialogOpen() || isKeyboardShortcutsDialogOpen())
-        return;
+      if (isAnyDialogOpen()) return;
       e4.preventDefault();
       openConversationSearch();
     }
@@ -308656,7 +308701,7 @@ function registerKeyboardShortcuts() {
     }
     if (meta5 && e4.key === "w") {
       e4.preventDefault();
-      void confirmDeleteThread();
+      if (!isAnyDialogOpen()) void confirmDeleteThread();
     }
     if (e4.key === "Escape") {
       if (isCommandPaletteOpen()) {
@@ -308752,6 +308797,7 @@ var init_main2 = __esm({
     init_roadmap_pane();
     init_browser_pane();
     await init_vnc_pane();
+    init_dialog_shell();
     init_settings_dialog();
     init_theme2();
     init_ui_scale2();
