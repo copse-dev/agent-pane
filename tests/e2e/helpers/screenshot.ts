@@ -197,6 +197,10 @@ export async function waitForImagesSettled(
   )
 }
 
+function isStaleElement(error: unknown): boolean {
+  return error instanceof Error && /stale element/i.test(error.message)
+}
+
 /**
  * Wait until nothing under `selector` is still moving: every scroll offset in
  * the subtree and the element's own box must read the same across consecutive
@@ -221,21 +225,30 @@ export async function waitForSettledLayout(
   while (Date.now() < deadline) {
     // A WDIO element crosses into the page as the DOM node itself; a selector
     // is looked up there. Specs hand `saveElementScreenshot` either.
-    const snapshot = await browser.execute((subject: string | Element) => {
-      const host = typeof subject === 'string' ? document.querySelector(subject) : subject
-      if (!host) return null
-      const rect = host.getBoundingClientRect()
-      const parts = [rect.top, rect.left, rect.width, rect.height]
-      const nodes = [host, ...host.querySelectorAll('*')]
-      for (const node of nodes) {
-        // Only scrollports carry a meaningful offset; skipping the rest keeps
-        // the walk cheap on a large settings form.
-        if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth) {
-          parts.push(node.scrollTop, node.scrollLeft)
+    let snapshot: string | null
+    try {
+      snapshot = await browser.execute((subject: string | Element) => {
+        const host = typeof subject === 'string' ? document.querySelector(subject) : subject
+        if (!host) return null
+        const rect = host.getBoundingClientRect()
+        const parts = [rect.top, rect.left, rect.width, rect.height]
+        const nodes = [host, ...host.querySelectorAll('*')]
+        for (const node of nodes) {
+          // Only scrollports carry a meaningful offset; skipping the rest keeps
+          // the walk cheap on a large settings form.
+          if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth) {
+            parts.push(node.scrollTop, node.scrollLeft)
+          }
         }
-      }
-      return parts.join(',')
-    }, target)
+        return parts.join(',')
+      }, target)
+    } catch (error) {
+      // The node was replaced between frames — a re-render is itself movement,
+      // so it is not settled; a selector re-resolves next time round, and an
+      // element handle that stays stale runs out the clock like a spinner.
+      if (!isStaleElement(error)) throw error
+      snapshot = null
+    }
     if (snapshot !== null && snapshot === previous) {
       stable += 1
       if (stable >= stableFrames) return
@@ -267,11 +280,15 @@ export async function saveElementScreenshot(selector: string, filename: string):
     // Let the scroll settle before capturing, as the prepare step does.
     await browser.pause(100)
   }
-  await waitForSettledLayout(el)
-  await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
+  // Settle by selector, then re-resolve: a subject that re-rendered while the
+  // page settled (a tool card whose transcript updated once more) is a fresh
+  // node by now, and the handle taken above would be stale.
+  await waitForSettledLayout(selector)
+  const subject = await browser.$(selector)
+  await subject.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
   // Hand the page back exactly as the caller left it — the scroll was for the
   // capture, and specs keep interacting with the page afterwards.
-  if (saved) await browser.execute(restoreScrollAfterCapture, el, saved)
+  if (saved) await browser.execute(restoreScrollAfterCapture, subject, saved)
 }
 
 /**
