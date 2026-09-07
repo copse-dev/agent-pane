@@ -260159,11 +260159,11 @@ function describe3(status) {
   });
   return `Workspace index \u2014 ${parts.join(", ")}`;
 }
-function buildingChipText(status, elapsedLabel) {
+function buildingChipText(status, elapsedLabel2) {
   const fileBuilding = status.fileIndex.phase === "building";
   const semanticBuilding = status.semantic.phase === "building";
-  if (fileBuilding && !semanticBuilding) return `Building file index\u2026 ${elapsedLabel}`;
-  return `Indexing\u2026 ${elapsedLabel}`;
+  if (fileBuilding && !semanticBuilding) return `Building file index\u2026 ${elapsedLabel2}`;
+  return `Indexing\u2026 ${elapsedLabel2}`;
 }
 function oldestBuildStart(status) {
   const starts = [status.fileIndex, status.semantic].filter((c4) => c4.phase === "building").map((c4) => c4.startedAt).filter((n2) => typeof n2 === "number");
@@ -262582,6 +262582,9 @@ var init_container_acp_agents = __esm({
 function isLive(progress2) {
   return progress2 !== null && progress2.phase !== "finished" && progress2.phase !== "failed";
 }
+function elapsedLabel(run6) {
+  return formatDuration(run6.startedAt, run6.finishedAt ?? Date.now()) + (run6.finishedAt === null ? " so far" : "");
+}
 function formatDuration(from2, to) {
   const seconds2 = Math.max(0, Math.round((to - from2) / 1e3));
   if (seconds2 < 90) return `${String(seconds2)}s`;
@@ -262649,11 +262652,31 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     onStateChanged();
   }
   function ensureDialog6() {
-    overlay ??= createOverlayDialog({
-      id: "container-run-dialog",
-      className: "container-run-dialog"
-    });
+    if (!overlay) {
+      overlay = createOverlayDialog({
+        id: "container-run-dialog",
+        className: "container-run-dialog"
+      });
+      overlay.dialog.addEventListener("close", stopElapsedClock);
+    }
     return overlay;
+  }
+  let elapsedTimer = null;
+  function stopElapsedClock() {
+    if (elapsedTimer !== null) clearInterval(elapsedTimer);
+    elapsedTimer = null;
+  }
+  function startElapsedClock(run6) {
+    stopElapsedClock();
+    if (!isLive(run6)) return;
+    elapsedTimer = setInterval(() => {
+      const cell = overlay?.dialog.querySelector(".container-run-elapsed");
+      if (!cell || !overlay?.isOpen()) {
+        stopElapsedClock();
+        return;
+      }
+      cell.textContent = elapsedLabel(run6);
+    }, 1e3);
   }
   function renderDialog() {
     if (!overlay?.isOpen()) return;
@@ -262662,6 +262685,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     modelPicker = null;
     clear(overlay.dialog);
     overlay.dialog.append(run6 ? statusView(run6) : armForm());
+    if (run6) startElapsedClock(run6);
+    else stopElapsedClock();
   }
   function armForm() {
     const draft = context.getDraft().trim();
@@ -262859,12 +262884,9 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         typeof held === "object" ? `your desktop sign-in, copied in for the run (${held.login.map((d4) => `~/${d4}`).join(", ")})` : held === "key" ? "one API key, scoped to the run" : held === "login" ? "your desktop sign-in, copied in for the run" : "none"
       )
     );
-    rows.push(
-      row2(
-        "Elapsed",
-        formatDuration(run6.startedAt, run6.finishedAt ?? Date.now()) + (run6.finishedAt === null ? " so far" : "")
-      )
-    );
+    const elapsedRow = row2("Elapsed", elapsedLabel(run6));
+    elapsedRow.querySelector("dd")?.classList.add("container-run-elapsed");
+    rows.push(elapsedRow);
     if (run6.record) {
       rows.push(row2("Image", run6.record.imageDigest?.slice(0, 19) ?? run6.record.image));
       rows.push(
@@ -263087,6 +263109,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     refresh,
     destroy: () => {
       unsubscribe();
+      stopElapsedClock();
       modelPicker?.destroy();
       modelPicker = null;
       overlay?.dialog.remove();
