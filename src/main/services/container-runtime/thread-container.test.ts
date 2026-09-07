@@ -31,7 +31,7 @@ function input(overrides: Partial<DockerRunInput> = {}): DockerRunInput {
     runDir: '/tmp/copse-runs/run-test',
     egressDir: '/tmp/copse-egress-run-test',
     egress: [{ host: 'model.copse.internal', wildcard: false, port: 8080 }],
-    egressToken: 'tok-0123456789abcdef',
+    egressToken: 'test-run-token',
     apiKeyEnv: null,
     memoryLimit: '4g',
     pidsLimit: 512,
@@ -115,11 +115,11 @@ describe('dockerRunArgs', () => {
     assert.equal(env('COPSE_EGRESS_SOCKET'), '/run/copse/egress/broker.sock')
     // The proxy URL carries the run's token (A7); the worker blanks it after
     // Node's dispatcher has read it, so children never see it.
-    const proxy = 'http://run:tok-0123456789abcdef@127.0.0.1:3128'
+    const proxy = 'http://run:test-run-token@127.0.0.1:3128'
     assert.equal(env('HTTPS_PROXY'), proxy)
     assert.equal(env('HTTP_PROXY'), proxy)
     assert.equal(env('https_proxy'), proxy)
-    assert.equal(env('COPSE_EGRESS_TOKEN'), 'tok-0123456789abcdef')
+    assert.equal(env('COPSE_EGRESS_TOKEN'), 'test-run-token')
     assert.equal(env('NO_PROXY'), '')
     assert.equal(env('NODE_USE_ENV_PROXY'), '1')
     const none = dockerRunArgs(input({ egress: [], egressToken: null }))
