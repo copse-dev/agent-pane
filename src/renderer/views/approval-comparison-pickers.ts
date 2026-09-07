@@ -9,6 +9,19 @@ export interface ComparisonModelSelection {
   judge: string
 }
 
+/**
+ * A comparison reviewer is a one-shot model role, not a chat session.
+ *
+ * `includeAgentModels: false` is the option `fetchModelOptions` documents for
+ * exactly this — "Remote / ACP agents run whole chat sessions rather than
+ * one-shot model roles" — and these pickers were the role pickers that never
+ * passed it. So the list offered `acp:claude-agent-acp#opus (not configured)`
+ * as a reviewer, which cannot review even when it *is* configured: the review
+ * runs through a provider built from the model id, and an agent id is not one
+ * (#2487).
+ */
+const REVIEWER_OPTIONS = { includeAgentModels: false } as const
+
 function modelRow(label: string, select: HTMLSelectElement): HTMLElement {
   return el(
     'label',
@@ -51,19 +64,19 @@ export function createComparisonModelPickers(
   )
 
   const pickerA = mountModelSelectPicker(selectA, {
-    loadOptions: (current) => fetchModelOptions(api, current),
+    loadOptions: (current) => fetchModelOptions(api, current, REVIEWER_OPTIONS),
     className: 'approval-model-picker',
     ariaLabel: 'Reviewer A model',
     loadOnMount: false,
   })
   const pickerB = mountModelSelectPicker(selectB, {
-    loadOptions: (current) => fetchModelOptions(api, current),
+    loadOptions: (current) => fetchModelOptions(api, current, REVIEWER_OPTIONS),
     className: 'approval-model-picker',
     ariaLabel: 'Reviewer B model',
     loadOnMount: false,
   })
   const pickerJudge = mountModelSelectPicker(selectJudge, {
-    loadOptions: (current) => fetchModelOptions(api, current),
+    loadOptions: (current) => fetchModelOptions(api, current, REVIEWER_OPTIONS),
     className: 'approval-model-picker',
     ariaLabel: 'Judge model',
     loadOnMount: false,
