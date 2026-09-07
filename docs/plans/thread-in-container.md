@@ -456,7 +456,7 @@ guarantee, and the record must say so.
 - **A9 — a Node 24 image with pnpm, a per-run volume, and an opt-in install step.** The
   first complete Codex run could not run the project's tests: the guest had Node 22, no
   pnpm, no `node_modules`, and no route to a registry, so the agent read CI evidence
-  instead. Three changes. The image builds on `node:24-bookworm-slim` with a pinned pnpm
+  instead. Three changes. The image builds on Debian's Node 24 image with a pinned pnpm
   baked in (`PNPM_VERSION`, part of the fingerprint). The workspace is a per-run named
   Docker volume (`copse-ws-<id>`, labelled, created before the container and removed in
   teardown) rather than a 2 GB tmpfs: a project's `node_modules` runs to gigabytes and
@@ -521,7 +521,10 @@ guarantee, and the record must say so.
   electron-rebuild fetching Electron's from electronjs.org. The first is avoided — the
   image ships Node's headers and the install runs with `npm_config_nodedir` pointing at
   them — and the second is admitted (`electronjs.org`, `*.electronjs.org`), the vendor's
-  own CDN in the same class as GitHub releases.
+  own CDN in the same class as GitHub releases. The install after that built and fetched
+  everything and failed only on running a downloaded tool that wanted `GLIBCXX_3.4.32`,
+  newer than bookworm's GCC 12 runtime, so the base is `node:24-trixie-slim` (Debian 13)
+  and the Electron libraries take their post-time_t names (`libgtk-3-0t64` and kin).
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:

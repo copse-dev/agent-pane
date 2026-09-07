@@ -22,7 +22,7 @@
  *   --tokens <n>            token ceiling (default 2,000,000)
  *   --max-steps <n>         cap on agent steps (default: product default)
  *   --image <ref>           worker image (default copse-worker:local)
- *   --base-image <ref>      base image for --build (default node:24-bookworm-slim)
+ *   --base-image <ref>      base image for --build (default node:24-trixie-slim)
  *   --build-network <net>   docker build --network (some sandboxes need host)
  *   --worker-bundle <path>  bundled guest entry (the wrapper passes the one it built)
  *   --build                 rebuild the worker image first

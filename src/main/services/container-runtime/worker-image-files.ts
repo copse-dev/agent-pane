@@ -14,8 +14,13 @@
  * `# syntax=` directive: it would pull a frontend image from Docker Hub, which
  * some sandboxes cannot reach.
  */
-/** The base the worker image builds on unless a build names another. */
-export const WORKER_BASE_IMAGE = 'node:24-bookworm-slim'
+/**
+ * The base the worker image builds on unless a build names another. Debian 13
+ * (trixie) rather than 12: a project's own tooling can be built against a
+ * newer C++ runtime than bookworm's GCC 12 provides (`GLIBCXX_3.4.32`, seen
+ * on the first install that got as far as running one).
+ */
+export const WORKER_BASE_IMAGE = 'node:24-trixie-slim'
 
 /**
  * The pnpm baked into the image for a carried-in project's install. A project
@@ -51,6 +56,7 @@ ENV DEBIAN_FRONTEND=noninteractive \\
 # xvfb and Electron's shared libraries let a project's Electron e2e suite run
 # under a virtual display (decision A11); the Electron binary itself comes
 # from GitHub releases during the install, which an installing run admits.
+# The t64 names are Debian 13's, after its time_t transition.
 # No bubblewrap and no socat: the container is the sandbox (decision A7), so
 # nothing inside it nests a second one, and the container keeps Docker's
 # default seccomp and AppArmor profiles instead of the unconfined ones a
@@ -67,20 +73,20 @@ RUN apt-get update \\
       xvfb \\
       xauth \\
       fonts-liberation \\
-      libgtk-3-0 \\
+      libgtk-3-0t64 \\
       libnotify4 \\
       libnss3 \\
       libxss1 \\
       libxtst6 \\
-      libatspi2.0-0 \\
+      libatspi2.0-0t64 \\
       libdrm2 \\
       libgbm1 \\
       libxcb-dri3-0 \\
-      libasound2 \\
+      libasound2t64 \\
       libx11-xcb1 \\
       libxkbcommon0 \\
       libsecret-1-0 \\
-      libcups2 \\
+      libcups2t64 \\
       libgl1 \\
       xdg-utils \\
     && rm -rf /var/lib/apt/lists/*

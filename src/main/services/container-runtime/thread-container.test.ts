@@ -324,7 +324,7 @@ describe('WORKER_DOCKERFILE', () => {
     // base, which is what the projects a run carries in expect.
     const pnpm = lines.findIndex((line) => /npm install -g .*"pnpm@\$\{PNPM_VERSION\}"/.test(line))
     assert.ok(pnpm !== -1 && pnpm < user)
-    assert.ok(lines.some((line) => line === 'ARG BASE_IMAGE=node:24-bookworm-slim'))
+    assert.ok(lines.some((line) => line === 'ARG BASE_IMAGE=node:24-trixie-slim'))
     // node-gyp's toolchain, so a project's native modules build in the guest,
     // and a virtual display with Electron's libraries, so an e2e suite runs (A11).
     for (const tool of [
@@ -333,7 +333,7 @@ describe('WORKER_DOCKERFILE', () => {
       'g++',
       'xvfb',
       'xauth',
-      'libgtk-3-0',
+      'libgtk-3-0t64',
       'libnss3',
       'libgbm1',
     ]) {
