@@ -136,6 +136,10 @@ describe('dockerRunArgs', () => {
     assert.ok(!args.some((a) => a.startsWith('--tmpfs=/workspace')))
     // The home is on the volume as well: no tmpfs for it, and HOME points there.
     assert.ok(!args.some((a) => a.startsWith('--tmpfs=/home')))
+    // /tmp stays a tmpfs, and an executable one: Docker's default is noexec.
+    const tmp = args.find((a) => a.startsWith('--tmpfs=/tmp:'))
+    assert.ok(tmp !== undefined, 'no /tmp tmpfs')
+    assert.match(tmp.slice('--tmpfs=/tmp:'.length), /(^|,)exec(,|$)/)
     assert.ok(args.includes('HOME=/workspace/home'))
     // Postinstall binary downloads are switched off for every process in the
     // guest: their hosts are never admitted.

@@ -56,8 +56,15 @@ export interface DependencyInstallStep {
   label: string
   command: string
   args: string[]
+  /** Where to run; the checkout when absent. */
+  cwd?: string
   /** A required step that fails ends the install; an optional one is reported and passed over. */
   required: boolean
+  /**
+   * Decided when the step's turn comes, because earlier steps create what it
+   * looks at: false skips the step without a word.
+   */
+  when?: () => boolean
 }
 
 export interface DependencyInstall {
@@ -76,6 +83,48 @@ function rootLifecycleScripts(workspace: string): string[] {
     return ['postinstall', 'prepare'].filter((name) => Object.hasOwn(scripts, name))
   } catch {
     return []
+  }
+}
+
+/**
+ * Electron's binary comes from its own install script, which pnpm 10 runs
+ * only for packages the project allows to build — and projects that rely on
+ * their test runner to fetch the binary on demand do not list it. The runner
+ * cannot fetch in the guest (the agent's shell is offline), so the install
+ * does it, once, when the package is there and its `dist` is not.
+ */
+export function electronBinaryStep(workspace: string): DependencyInstallStep {
+  const electron = join(workspace, 'node_modules', 'electron')
+  return {
+    label: 'fetch the Electron binary',
+    command: 'node',
+    args: ['install.js'],
+    cwd: electron,
+    required: false,
+    when: () =>
+      existsSync(join(electron, 'install.js')) && !existsSync(join(electron, 'dist', 'electron')),
+  }
+}
+
+/**
+ * The checkout's `origin`, for the guest's clone: the bundle carries no
+ * remotes, and tests and tools that ask `git remote get-url origin` should
+ * get the same answer they would on the desktop. Only the address crosses —
+ * a token in the URL's userinfo is stripped, and the guest has no route to
+ * the host anyway.
+ */
+export function sanitizedOriginUrl(url: string | null): string | null {
+  if (url === null) return null
+  const trimmed = url.trim()
+  if (trimmed.length === 0) return null
+  try {
+    const parsed = new URL(trimmed)
+    parsed.username = ''
+    parsed.password = ''
+    return parsed.toString()
+  } catch {
+    // scp-like (`git@github.com:org/repo.git`) or a path: nothing to strip.
+    return trimmed
   }
 }
 
@@ -107,6 +156,7 @@ export function dependencyInstallFor(workspace: string): DependencyInstall | nul
           args: ['rebuild', reporter],
           required: false,
         },
+        electronBinaryStep(workspace),
         ...lifecycle.map((name) => ({
           label: `project ${name}`,
           command: 'pnpm',
@@ -133,6 +183,7 @@ export function dependencyInstallFor(workspace: string): DependencyInstall | nul
           args: ['rebuild', ...quiet],
           required: false,
         },
+        electronBinaryStep(workspace),
         ...lifecycle.map((name) => ({
           label: `project ${name}`,
           command: 'npm',

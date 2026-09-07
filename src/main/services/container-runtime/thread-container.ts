@@ -55,6 +55,7 @@ import {
 } from './worker-image-files.ts'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
 import { removeStagedLogin, stageAgentLogin } from './agent-login.ts'
+import { sanitizedOriginUrl } from './guest-install.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 
 const execFileAsync = promisify(execFile)
@@ -159,6 +160,8 @@ export interface ThreadContainerRunSpec {
   workspace: string
   carryInRef: string
   carryInBase: string
+  /** The desktop checkout's `origin`, address only, or null when it has none. */
+  originUrl: string | null
   maxSteps: number | null
 }
 
@@ -238,7 +241,9 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     `--user=${String(WORKER_UID)}:${String(WORKER_UID)}`,
     // tmpfs mounts are root-owned by default regardless of the image; the
     // worker uid must own its scratch, workspace and home.
-    '--tmpfs=/tmp:rw,nosuid,nodev,size=1g,mode=1777',
+    // `exec`: Docker's tmpfs default is noexec, and a project's own tests
+    // write helper scripts to /tmp and run them (seen in the first full run).
+    '--tmpfs=/tmp:rw,exec,nosuid,nodev,size=1g,mode=1777',
     // The workspace is a per-run Docker volume, not a tmpfs: a project's
     // node_modules runs to gigabytes, and tmpfs pages are charged to the
     // container's memory limit. The volume lives on the daemon's own disk,
@@ -358,6 +363,15 @@ export function buildAttestation(
 // ---------------------------------------------------------------------------
 // Workspace carry-in / carry-out (git-first; no host path enters the guest)
 // ---------------------------------------------------------------------------
+
+/** The checkout's `origin` URL, or null when it has none. */
+function originUrlOf(cwd: string): string | null {
+  try {
+    return git(cwd, ['remote', 'get-url', 'origin'])
+  } catch {
+    return null
+  }
+}
 
 function git(cwd: string, args: string[], env?: Record<string, string>): string {
   return execFileSync('git', args, {
@@ -1084,6 +1098,7 @@ export async function runThreadInContainer(
     workspace: GUEST_WORKSPACE,
     carryInRef: carryIn.ref,
     carryInBase: carryIn.sha,
+    originUrl: sanitizedOriginUrl(originUrlOf(workspace)),
     maxSteps: request.maxSteps ?? null,
   }
   const runInput: DockerRunInput = {

@@ -1,11 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   DEPENDENCY_INSTALL_ORIGINS,
+  electronBinaryStep,
   guestEnvironmentNote,
+  sanitizedOriginUrl,
   PACKAGE_REGISTRY_ORIGIN,
   PNPM_STORE_DIR,
   dependencyInstallEnv,
@@ -41,7 +43,10 @@ describe('dependencyInstallFor', () => {
       assert.equal(fetch.required, true)
       assert.deepEqual(
         pnpm.steps.slice(1).map((step) => [step.label, step.required]),
-        [['build native modules', false]],
+        [
+          ['build native modules', false],
+          ['fetch the Electron binary', false],
+        ],
       )
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -67,13 +72,14 @@ describe('dependencyInstallFor', () => {
             true,
           ],
           ['build native modules', 'rebuild --reporter=append-only', false],
+          ['fetch the Electron binary', 'install.js', false],
           ['project postinstall', 'run postinstall', false],
           ['project prepare', 'run prepare', false],
         ],
       )
       // A manifest that is not JSON costs the lifecycle steps, not the install.
       writeFileSync(join(dir, 'package.json'), '{not json')
-      assert.equal(dependencyInstallFor(dir)?.steps.length, 2)
+      assert.equal(dependencyInstallFor(dir)?.steps.length, 3)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -169,5 +175,42 @@ describe('guestEnvironmentNote', () => {
       }),
       /treat node_modules as absent/,
     )
+  })
+})
+
+describe('electronBinaryStep', () => {
+  it('runs only when the package is there and its binary is not', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'copse-electron-'))
+    try {
+      const step = electronBinaryStep(dir)
+      assert.equal(step.required, false)
+      assert.equal(step.cwd, join(dir, 'node_modules', 'electron'))
+      const when = step.when
+      assert.ok(when)
+      assert.equal(when(), false, 'no package')
+      mkdirSync(join(dir, 'node_modules', 'electron', 'dist'), { recursive: true })
+      writeFileSync(join(dir, 'node_modules', 'electron', 'install.js'), '')
+      assert.equal(when(), true, 'package without a binary')
+      writeFileSync(join(dir, 'node_modules', 'electron', 'dist', 'electron'), '')
+      assert.equal(when(), false, 'binary present')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('sanitizedOriginUrl', () => {
+  it('keeps the address and drops any credential in it', () => {
+    assert.equal(sanitizedOriginUrl(null), null)
+    assert.equal(sanitizedOriginUrl('  '), null)
+    assert.equal(
+      sanitizedOriginUrl('https://x-access-token:ghp_secret@github.com/copse-dev/agent-pane.git'),
+      'https://github.com/copse-dev/agent-pane.git',
+    )
+    assert.equal(
+      sanitizedOriginUrl('git@github.com:copse-dev/agent-pane.git'),
+      'git@github.com:copse-dev/agent-pane.git',
+    )
+    assert.equal(sanitizedOriginUrl('/Users/me/repo'), '/Users/me/repo')
   })
 })

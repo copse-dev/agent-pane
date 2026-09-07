@@ -114,6 +114,7 @@ const specSchema = z.object({
   workspace: z.string().min(1),
   carryInRef: z.string().min(1),
   carryInBase: z.string().min(1),
+  originUrl: z.string().nullable().default(null),
   maxSteps: z.number().int().positive().nullable(),
 })
 
@@ -174,6 +175,9 @@ function carryIn(spec: Spec): void {
     `${spec.carryInRef}:refs/heads/work`,
   ])
   git(spec.workspace, ['checkout', '--quiet', 'work'])
+  // The desktop checkout's origin, by address only: nothing here can reach
+  // it, and a push is refused before git would try (decision A3).
+  if (spec.originUrl !== null) git(spec.workspace, ['remote', 'add', 'origin', spec.originUrl])
   const head = git(spec.workspace, ['rev-parse', 'HEAD'])
   if (head !== spec.carryInBase)
     throw new Error(`carry-in mismatch: ${head} != ${spec.carryInBase}`)
@@ -190,7 +194,11 @@ function runInstallStep(
   deadline: number,
 ): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
   return new Promise((resolveStep) => {
-    const child = spawn(step.command, step.args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(step.command, step.args, {
+      cwd: step.cwd ?? cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
     const onLine = (line: string): void => {
       if (line.trim().length > 0) say(`[install] ${line}\n`)
     }
@@ -253,6 +261,7 @@ async function installDependencies(
   const failed: string[] = []
   say(`[worker] installing dependencies from ${install.lockfile}\n`)
   for (const step of install.steps) {
+    if (step.when !== undefined && !step.when()) continue
     say(`[worker] dependency step: ${step.label} (${step.command} ${step.args.join(' ')})\n`)
     const { code, signal } = await runInstallStep(step, workspace, env, deadline)
     if (code === 0) continue
