@@ -26320,6 +26320,7 @@ function createDemoApi(scenario, options2 = {}) {
         record: null,
         error: null
       }),
+      stopRun: () => resolved(null),
       getRun: (threadId) => resolved(
         scenario.containerRun && scenario.containerRun.threadId === threadId ? scenario.containerRun : null
       ),
@@ -262988,6 +262989,30 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     );
     close2.addEventListener("click", () => overlay?.close());
     const actions = [close2];
+    if (isLive(run6)) {
+      const stop5 = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-danger container-run-stop" },
+        "Stop run"
+      );
+      stop5.addEventListener("click", () => {
+        stop5.disabled = true;
+        void api3.container.stopRun(run6.threadId).then((progress2) => {
+          if (progress2) update2(progress2);
+        }).catch((error63) => {
+          stop5.disabled = false;
+          showErrorToast("Could not stop the container run", error63);
+        });
+      });
+      actions.push(stop5);
+      sections6.push(
+        el(
+          "p",
+          { class: "field-hint container-run-close-hint" },
+          "Closing this window does not stop the run; it keeps going until it finishes, hits its budget, or you stop it."
+        )
+      );
+    }
     if (!isLive(run6)) {
       const again = el(
         "button",
