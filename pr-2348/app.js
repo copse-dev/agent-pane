@@ -262936,6 +262936,40 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         )
       );
     }
+    if (run6.record && run6.record.egress.length > 0) {
+      const connects = /* @__PURE__ */ new Map();
+      const refusals = [];
+      for (const entry of run6.record.egress) {
+        if (entry.event === "connect")
+          connects.set(entry.origin, (connects.get(entry.origin) ?? 0) + 1);
+        if (entry.event === "refused" || entry.event === "error") {
+          refusals.push(
+            `${entry.origin}: ${entry.event}${entry.detail ? ` \u2014 ${entry.detail}` : ""}`
+          );
+        }
+      }
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-egress" },
+          el("h3", {}, "Egress"),
+          el(
+            "ul",
+            {},
+            ...[...connects].map(
+              ([origin, count2]) => el(
+                "li",
+                { class: "mono" },
+                `${origin} \u2014 ${String(count2)} connection${count2 === 1 ? "" : "s"}`
+              )
+            ),
+            ...[...new Set(refusals)].map(
+              (line2) => el("li", { class: "mono container-run-egress-refused" }, line2)
+            )
+          )
+        )
+      );
+    }
     if (result && result.deferrals.length > 0) {
       sections6.push(
         el(
