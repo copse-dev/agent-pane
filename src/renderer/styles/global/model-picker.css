@@ -91,10 +91,12 @@
 /* Field pickers sit inside scrolling settings panes, often in a right-aligned
    column narrower than the menu: a plain `left: 0` then runs the menu off the
    surface, and the pane's own overflow clips whatever is left. Same treatment
-   as the footer popups in input-bar.css — anchor the menu to its own trigger,
-   keep the host out of the positioning chain so the containing block is the
+   as the footer popups in input-bar.css — anchor the menu to its own trigger
+   and keep the host out of the positioning chain so the containing block is the
    surface rather than the narrow field, and let position-try flip the menu
-   when the preferred edge would overflow. */
+   when the preferred edge would overflow the viewport. A smaller containing
+   surface needs the explicit classes below because Chromium does not consider
+   that boundary when choosing a position fallback (#2487). */
 @position-try --model-picker-clamp-right {
   left: auto;
   right: anchor(right);
@@ -119,6 +121,15 @@
   min-width: anchor-size(width);
   position-try-fallbacks:
     --model-picker-clamp-right, --model-picker-flip-up, --model-picker-flip-up-clamp-right;
+}
+.model-picker-field .model-picker-menu.is-surface-flipped {
+  top: auto;
+  bottom: calc(anchor(top) + var(--spacing-xs));
+}
+.model-picker-field .model-picker-menu.is-surface-contained {
+  top: var(--spacing-xs);
+  bottom: auto;
+  max-height: calc(100% - 2 * var(--spacing-xs));
 }
 .model-picker-view-title {
   min-width: 0;
