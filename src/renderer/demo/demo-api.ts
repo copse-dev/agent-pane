@@ -321,6 +321,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           record: null,
           error: null,
         }),
+      stopRun: () => resolved(null),
       getRun: (threadId) =>
         resolved(
           scenario.containerRun && scenario.containerRun.threadId === threadId

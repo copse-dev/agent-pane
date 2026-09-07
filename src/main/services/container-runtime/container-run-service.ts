@@ -17,6 +17,7 @@ import {
   buildWorkerImage,
   newRuntimeId,
   runThreadInContainer,
+  teardownRuntime,
   WORKER_IMAGE,
   workerBuildFingerprint,
   workerImageFingerprint,
@@ -41,6 +42,8 @@ const LOG_TAIL = 60
 interface RunDependencies {
   run: typeof runThreadInContainer
   ensureImage: () => Promise<void>
+  /** Force-remove a live run's container; the runner's wait then settles. */
+  stop: typeof teardownRuntime
   /**
    * The checkout this thread actually works in. Injected like the supervisor's
    * so a test can describe a worktree without building one.
@@ -50,6 +53,7 @@ interface RunDependencies {
 
 const productionDependencies: RunDependencies = {
   run: runThreadInContainer,
+  stop: teardownRuntime,
   // Rebuild whenever the shipped worker differs from the one the existing
   // image was built from. Reusing on tag alone would keep an app upgrade
   // running the previous guest — and its previous security behaviour.
@@ -88,6 +92,8 @@ function projectIsRemote(projectId: string): boolean {
 export class ContainerRunService {
   private readonly runs = new Map<string, ContainerRunProgress>()
   private readonly listeners = new Set<(progress: ContainerRunProgress) => void>()
+  /** Threads whose live run the user asked to stop, until the run settles. */
+  private readonly stopRequested = new Set<string>()
   private readonly deps: RunDependencies
 
   constructor(deps: RunDependencies = productionDependencies) {
@@ -109,6 +115,33 @@ export class ContainerRunService {
   isActive(threadId: string): boolean {
     const phase = this.runs.get(threadId)?.phase
     return phase !== undefined && phase !== 'finished' && phase !== 'failed'
+  }
+
+  /**
+   * Stop a live run. Closing the dialog never does this — the run belongs to
+   * the main process, not the window — so it is its own action. A container
+   * that is up is force-removed, which settles the runner's wait; a run that
+   * has not reached `docker run` yet is refused at that point instead. The
+   * outcome is reported as a stop by the user, not as a guest failure.
+   */
+  async stop(threadId: string): Promise<ContainerRunProgress | null> {
+    const progress = this.runs.get(threadId)
+    if (!progress || !this.isActive(threadId)) return progress ? snapshot(progress) : null
+    this.stopRequested.add(threadId)
+    this.update(progress, {
+      log: [...progress.log, '[thread-container] stop requested by the user'].slice(-LOG_TAIL),
+    })
+    if (progress.runtimeId !== null && progress.phase !== 'building-image') {
+      const outcome = await this.deps.stop(progress.runtimeId)
+      if (outcome === 'failed') {
+        this.update(progress, {
+          log: [...progress.log, '[thread-container] the container could not be removed'].slice(
+            -LOG_TAIL,
+          ),
+        })
+      }
+    }
+    return snapshot(progress)
   }
 
   /**
@@ -229,6 +262,9 @@ export class ContainerRunService {
     try {
       this.update(progress, { phase: 'building-image', runtimeId })
       await this.deps.ensureImage()
+      if (this.stopRequested.has(request.threadId)) {
+        throw new Error('Stopped by you before the container started')
+      }
       this.update(progress, { phase: 'starting' })
       if (apiKey) process.env[keyEnv] = apiKey
       const runRequest: ThreadContainerRequest = {
@@ -254,11 +290,13 @@ export class ContainerRunService {
         },
       })
       const outcome = judgeRun(record)
+      // A run the user stopped is not a guest failure; say what happened.
+      const stopped = this.stopRequested.has(request.threadId)
       this.update(progress, {
-        phase: outcome.failure === null ? 'finished' : 'failed',
+        phase: outcome.failure === null && !stopped ? 'finished' : 'failed',
         record,
         finishedAt: Date.now(),
-        error: outcome.failure,
+        error: stopped ? 'Stopped by you before the guest finished' : outcome.failure,
         warnings: outcome.warnings,
       })
     } catch (error) {
@@ -269,6 +307,7 @@ export class ContainerRunService {
       })
     } finally {
       process.env[keyEnv] = ''
+      this.stopRequested.delete(request.threadId)
     }
   }
 

@@ -616,6 +616,35 @@ export function mountContainerRunControl(
     )
     close.addEventListener('click', () => overlay?.close())
     const actions: HTMLElement[] = [close]
+    if (isLive(run)) {
+      // The run belongs to the main process, not this window: closing hides
+      // it, stopping is its own action, and the difference is said out loud.
+      const stop = el(
+        'button',
+        { type: 'button', class: 'ui-btn ui-btn-danger container-run-stop' },
+        'Stop run',
+      )
+      stop.addEventListener('click', () => {
+        stop.disabled = true
+        void api.container
+          .stopRun(run.threadId)
+          .then((progress) => {
+            if (progress) update(progress)
+          })
+          .catch((error: unknown) => {
+            stop.disabled = false
+            showErrorToast('Could not stop the container run', error)
+          })
+      })
+      actions.push(stop)
+      sections.push(
+        el(
+          'p',
+          { class: 'field-hint container-run-close-hint' },
+          'Closing this window does not stop the run; it keeps going until it finishes, hits its budget, or you stop it.',
+        ),
+      )
+    }
     if (!isLive(run)) {
       const again = el(
         'button',

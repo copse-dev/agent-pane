@@ -304,6 +304,13 @@
           1
         ]
       },
+      "container:stop-run": {
+        "api": "container.stopRun",
+        "args": [
+          1,
+          1
+        ]
+      },
       "cursor-plugins:list": {
         "api": "cursorPlugins.list",
         "args": [

@@ -113,6 +113,7 @@ describe('ContainerRunService', () => {
     const service = new ContainerRunService({
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request, options): Promise<ThreadContainerRecord> => {
         seen.push(request)
         keyValues.push(request.apiKeyEnv ? (process.env[request.apiKeyEnv] ?? '') : '')
@@ -171,6 +172,7 @@ describe('ContainerRunService', () => {
     const service = new ContainerRunService({
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request, options): Promise<ThreadContainerRecord> => {
         seen.push(request)
         assert.equal(request.apiKeyEnv && process.env[request.apiKeyEnv], 'sk-ant-test')
@@ -206,6 +208,7 @@ describe('ContainerRunService', () => {
     const service = new ContainerRunService({
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (request, options): Promise<ThreadContainerRecord> => {
         seen.push(request)
         options?.onStarted?.()
@@ -231,11 +234,52 @@ describe('ContainerRunService', () => {
     await setSetting('registeredAcpAgents', [])
   })
 
+  it('stops a live run on request, force-removing its container, and says who stopped it', async () => {
+    const stopped: string[] = []
+    const pending: { release: (() => void) | null } = { release: null }
+    const service = new ContainerRunService({
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (runtimeId): Promise<'removed'> => {
+        stopped.push(runtimeId)
+        // The runner's wait settles once the container is gone: no result.
+        pending.release?.()
+        return Promise.resolve('removed')
+      },
+      run: (request, options): Promise<ThreadContainerRecord> =>
+        new Promise((resolve) => {
+          options?.onLog?.('[thread-container] starting copse-run-fake from copse-worker:test')
+          options?.onStarted?.()
+          pending.release = (): void => {
+            resolve({ ...fakeRecord(request.prompt), result: null, teardown: 'already-gone' })
+          }
+        }),
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    const running = await waitFor(service, THREAD, (p) => p.phase === 'running')
+    assert.ok(running.runtimeId)
+    const snapshot = await service.stop(THREAD)
+    assert.deepEqual(stopped, [running.runtimeId])
+    assert.ok(snapshot?.log.some((line) => line.includes('stop requested by the user')))
+    const done = await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(done.error, 'Stopped by you before the guest finished')
+    assert.equal(service.isActive(THREAD), false)
+    // Stopping a run that is not live is a no-op that reports the state.
+    assert.equal((await service.stop(THREAD))?.phase, 'failed')
+  })
+
   it('refuses a second run while one is live, and reports a failed run', async () => {
     const pending: { release: (() => void) | null } = { release: null }
     const service = new ContainerRunService({
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
       run: (): Promise<ThreadContainerRecord> =>
         new Promise((_resolve, reject) => {
           pending.release = (): void => {
@@ -270,6 +314,7 @@ describe('ContainerRunService', () => {
   it('refuses a remote project and an unresolvable model before touching Docker', async () => {
     storageSet('projects', [{ id: PROJECT, path: root, sshHost: 'box' }])
     const service = new ContainerRunService({
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
       run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('must not be called')),
@@ -304,6 +349,7 @@ describe('ContainerRunService checkout resolution', () => {
 
     const seen: ThreadContainerRequest[] = []
     const service = new ContainerRunService({
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(worktree, 'worktree', 'thread/work'),
       ensureImage: (): Promise<void> => Promise.resolve(),
       run: (request): Promise<ThreadContainerRecord> => {
@@ -332,6 +378,7 @@ describe('ContainerRunService checkout resolution', () => {
     // A directory with no git repository in it: no snapshot is possible.
     const notARepo = mkdtempSync(join(tmpdir(), 'copse-not-a-repo-'))
     const service = new ContainerRunService({
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(notARepo),
       ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
       run: (): Promise<ThreadContainerRecord> => Promise.reject(new Error('must not be called')),
@@ -354,6 +401,7 @@ describe('ContainerRunService checkout resolution', () => {
 
   it('propagates a broken worktree instead of falling back to the project root', async () => {
     const service = new ContainerRunService({
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: (): Promise<ThreadExecutionContext> =>
         Promise.reject(new Error('worktree is not registered with git')),
       ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),

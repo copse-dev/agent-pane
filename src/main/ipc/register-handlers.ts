@@ -1633,6 +1633,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     return getContainerRunService().get(id)
   })
+  ipcMain.handle('container:stop-run', (event, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
+    return getContainerRunService().stop(id)
+  })
   ipcMain.handle('threads:load-project', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])

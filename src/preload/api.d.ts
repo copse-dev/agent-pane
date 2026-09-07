@@ -163,6 +163,8 @@ export interface ApiClient {
   container: {
     runThread: (request: ContainerRunRequest) => Promise<ContainerRunProgress>
     getRun: (threadId: string) => Promise<ContainerRunProgress | null>
+    /** Stop a live run; closing the dialog does not. Resolves to the run's snapshot. */
+    stopRun: (threadId: string) => Promise<ContainerRunProgress | null>
     /** Per model: why it cannot run in a container, or null when it can. */
     modelAvailability: (models: string[]) => Promise<Record<string, ContainerModelVerdict>>
     onRunChanged: (handler: (progress: ContainerRunProgress) => void) => () => void
