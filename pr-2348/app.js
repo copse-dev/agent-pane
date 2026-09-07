@@ -262629,7 +262629,9 @@ function formatDuration(from2, to) {
 }
 async function loadRunModelOptions(fetch, availability) {
   const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })]);
-  const canRun = new Set(runnable.map((option2) => option2.value));
+  const canRun = new Set(
+    runnable.filter((option2) => parseAcpModel(option2.value) === null).map((option2) => option2.value)
+  );
   const agentRows = all.filter((option2) => !canRun.has(option2.value));
   const verdicts = agentRows.length > 0 ? await availability(agentRows.map((o3) => o3.value)) : {};
   return all.map((option2) => {
