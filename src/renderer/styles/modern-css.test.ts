@@ -286,4 +286,31 @@ describe('modern CSS adoptions', () => {
       'the field menu must size its floor from the trigger, not from the surface',
     )
   })
+
+  it('keeps a field menu inside a surface the window has not run out of room for', () => {
+    const css = read('model-picker.css')
+    // position-try is not enough on its own: Chromium picks a fallback by
+    // testing overflow against the viewport, not against the menu's containing
+    // block, so a menu anchored low in a size-capped surface hangs outside it
+    // and never flips while the window still has room (#2487 — the comparison
+    // prompt's 420px dialog, where the menu hung 100px past the bottom edge).
+    // Runtime placement marks the menu to flip or contain itself; the geometry
+    // itself is covered by tests/e2e/settings-model-picker-bounds.e2e.ts.
+    assert.ok(
+      declares(
+        css,
+        '.model-picker-field .model-picker-menu.is-surface-flipped',
+        /bottom:\s*calc\(anchor\(top\)\s*\+\s*var\(--spacing-xs\)\)/,
+      ),
+      'a field menu that escapes its surface must be able to flip above its trigger',
+    )
+    assert.ok(
+      declares(
+        css,
+        '.model-picker-field .model-picker-menu.is-surface-contained',
+        /max-height:\s*calc\(100%\s*-\s*2\s*\*\s*var\(--spacing-xs\)/,
+      ),
+      'a surface shorter than the menu must trim it rather than let it spill',
+    )
+  })
 })

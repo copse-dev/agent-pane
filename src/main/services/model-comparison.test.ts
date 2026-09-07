@@ -58,6 +58,34 @@ describe('resolveComparisonModels', () => {
     assert.equal(models.b, DEFAULT_COMPARISON_MODEL_B)
   })
 
+  it('does not inherit a chat model that cannot be a reviewer (issue #2478)', () => {
+    // A reviewer is a plain provider call, so a chat model naming a route — a
+    // device agent, a cloud agent, a plugin route — cannot be one. Inheriting it
+    // is how a user who never opened the comparison settings got a reviewer that
+    // could not run: it used to go to the Anthropic API as a literal model id
+    // and come back rejected. Fall through to the rule, which picks something
+    // that can run.
+    for (const chatModel of [
+      'acp:claude-agent-acp#opus[1m]',
+      'acp:codex',
+      'remote-agent:anthropic',
+      'plugin-model:my%3Apack:route-1',
+    ]) {
+      assert.equal(resolveComparisonModels({ chatModel }).a, DEFAULT_COMPARISON_MODEL_A, chatModel)
+    }
+  })
+
+  it('still honours a route the user pinned as reviewer A themselves', () => {
+    // Substituting a different model for one the user named is the worse answer:
+    // they get the error, which says what to change. Only the *inherited*
+    // default steps aside.
+    const models = resolveComparisonModels({
+      modelA: 'acp:claude-agent-acp#opus[1m]',
+      chatModel: 'gpt-5',
+    })
+    assert.equal(models.a, 'acp:claude-agent-acp#opus[1m]')
+  })
+
   it('leaves collision-avoidance to resolution, not to the defaults', () => {
     // B and the judge share a rule on purpose. Keeping them apart is
     // `resolveDistinctDynamicModelIds`' job, against the live candidate pool —

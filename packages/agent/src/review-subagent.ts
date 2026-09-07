@@ -85,6 +85,52 @@ const reviewVerdictSchema = z.object({
   followUpPrompt: z.string().optional(),
 })
 
+/**
+ * Review prose that reports a *defect*: something in the diff is wrong. Read
+ * only when the reviewer gave no `REVIEW_JSON` line, and the sole input to
+ * `issuesFound` on that path.
+ */
+const DEFECT_PROSE = /\b(likely bug|concern|issue|missing|incorrect|should fix)\b/i
+
+/**
+ * Review prose that reports work *not finished* — which is a different claim
+ * from "the diff is wrong", and the one this vocabulary was missing.
+ *
+ * The system prompt asks for follow-up on two grounds: "code fixes are needed
+ * OR open todos were left incorrectly incomplete". Only the first was ever
+ * inferred, so a reviewer that said the task was incomplete in plain words —
+ * none of which is a defect word — produced `requestFollowUp: false`, the
+ * remediation loop broke on its first check, and the turn ended having been
+ * told the work was not done (#2506).
+ *
+ * Deliberately phrase-based rather than keyword-based. A bare `todo` or
+ * `remaining` appears just as often in a review that is *approving* the plan
+ * ("no TODOs remaining"), and the negated forms below are checked separately
+ * because a regex that matches "incomplete" also matches "nothing incomplete".
+ */
+const UNFINISHED_PROSE =
+  /\b(incomplete|unfinished|not (?:yet )?(?:done|complete|completed|finished|implemented)|still (?:needs?|requires?|to be done|outstanding|pending)|remains? (?:to be done|outstanding|unfinished)|left (?:incomplete|unfinished|undone)|partially (?:done|complete|implemented))\b/i
+
+/**
+ * Approving phrasings that contain the words above. "No work remains
+ * outstanding" is a review saying the opposite of what the pattern matches, and
+ * treating it as a follow-up request would spend a remediation turn arguing
+ * with a reviewer that already agreed.
+ */
+const NOT_UNFINISHED_PROSE =
+  /\b(no|nothing|none)\b[^.!?\n]{0,40}\b(incomplete|unfinished|undone|remains?|remaining|outstanding|left to do)\b/i
+
+/**
+ * Whether free-text review prose is asking for the work to continue.
+ *
+ * Exported so the host can reason about the same signal the parser uses, and so
+ * the vocabulary is testable on its own rather than only through a full verdict.
+ */
+export function proseRequestsFollowUp(summary: string): boolean {
+  if (DEFECT_PROSE.test(summary)) return true
+  return UNFINISHED_PROSE.test(summary) && !NOT_UNFINISHED_PROSE.test(summary)
+}
+
 /** Split review subagent output into user-facing summary and structured verdict. */
 export function parseReviewVerdict(raw: string): ParsedReviewVerdict {
   const lines = raw.trim().split('\n')
@@ -106,13 +152,17 @@ export function parseReviewVerdict(raw: string): ParsedReviewVerdict {
       : raw.trim()
 
   if (jsonLineIndex < 0) {
-    const issuesFound = /\b(likely bug|concern|issue|missing|incorrect|should fix)\b/i.test(summary)
+    // `issuesFound` stays defects-only: it drives the review card's badge, and
+    // an unfinished-but-correct diff has not found a bug. Follow-up is the
+    // broader question, so it takes both signals.
+    const issuesFound = DEFECT_PROSE.test(summary)
+    const requestFollowUp = proseRequestsFollowUp(summary)
     return {
       summary,
       issuesFound,
-      requestFollowUp: issuesFound,
+      requestFollowUp,
       todoUpdates: [],
-      followUpPrompt: issuesFound ? summary : null,
+      followUpPrompt: requestFollowUp ? summary : null,
     }
   }
 
@@ -121,8 +171,13 @@ export function parseReviewVerdict(raw: string): ParsedReviewVerdict {
     const parsed = reviewVerdictSchema.parse(JSON.parse(jsonText) as unknown)
     const todoUpdates = parsed.todoUpdates ?? []
     const issuesFound = parsed.issuesFound === true
+    // An explicit `false` is the reviewer's decision and stands. Absent, the
+    // flag is inferred — and inferring it from `issuesFound` alone lost the
+    // other half of the contract the prompt states, so the prose is consulted
+    // for the same "not finished" signal the no-JSON path now reads (#2506).
     const requestFollowUp =
-      parsed.requestFollowUp === true || (parsed.requestFollowUp !== false && issuesFound)
+      parsed.requestFollowUp === true ||
+      (parsed.requestFollowUp !== false && (issuesFound || proseRequestsFollowUp(summary)))
     return {
       summary: summary || '(no review output)',
       issuesFound,

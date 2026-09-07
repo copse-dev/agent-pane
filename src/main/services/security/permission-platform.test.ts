@@ -46,6 +46,7 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
       decideTerminalPermission({
         sandboxEnabled: true,
         remoteTarget: false,
+        sandboxPlatform: true,
       }),
       { action: 'allow' },
     )
@@ -53,6 +54,7 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
       decideTerminalPermission({
         sandboxEnabled: true,
         remoteTarget: true,
+        sandboxPlatform: true,
       }),
       { action: 'prompt', reason: 'remote-target' },
     )
@@ -145,12 +147,40 @@ for (const platform of ['Windows', 'sandbox init failure'] as const) {
     })
 
     it('prompts for a terminal because the OS sandbox is unavailable', () => {
+      // A platform with no ASRT backend at all — the permanent case.
       assert.deepEqual(
         decideTerminalPermission({
           sandboxEnabled: false,
           remoteTarget: false,
+          sandboxPlatform: false,
         }),
-        { action: 'prompt', reason: 'sandbox-unavailable' },
+        { action: 'prompt', reason: 'sandbox-unsupported' },
+      )
+    })
+
+    it('distinguishes a sandbox that failed to start from one the platform lacks', () => {
+      // Same observable state — no confinement — but only one of them is a fact
+      // about the machine, and the prompt has to say which (#2507).
+      assert.deepEqual(
+        decideTerminalPermission({
+          sandboxEnabled: false,
+          remoteTarget: false,
+          sandboxPlatform: true,
+        }),
+        { action: 'prompt', reason: 'sandbox-failed' },
+      )
+    })
+
+    it('still treats a remote target as the boundary when there is no local sandbox', () => {
+      // Order matters: an SSH PTY is a remote-account question, not a
+      // local-confinement one, however the local sandbox happens to be doing.
+      assert.deepEqual(
+        decideTerminalPermission({
+          sandboxEnabled: false,
+          remoteTarget: true,
+          sandboxPlatform: false,
+        }),
+        { action: 'prompt', reason: 'remote-target' },
       )
     })
   })

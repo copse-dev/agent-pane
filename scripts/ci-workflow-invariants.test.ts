@@ -148,10 +148,29 @@ describe('ci.yml workflow invariants', () => {
   it('does not let a cheap trunk push satisfy the promotion aggregate gate', () => {
     const aggregate = workflow.match(/^ {2}ci-passed:\n[\s\S]*$/m)?.[0]
     assert.ok(aggregate, 'expected the `ci-passed` job in ci.yml')
+    // Assert the property, not the formatting. The expression outgrew one line
+    // when fork runs gained their own context (#2520), and pinning the literal
+    // meant a correct change to it read as a regression. What has to hold is
+    // that each cheap tier publishes a check name a required `CI Passed` rule
+    // cannot match: trunk pushes skip the expensive tier, and fork PRs skip
+    // `check`, `build` and `e2e` entirely.
+    const nameBlock = aggregate.match(/^ {4}name: (>-\n(?: {6}.+\n)+|.+\n)/m)?.[1]
+    assert.ok(nameBlock, 'expected a `name:` on ci-passed')
+    const nameExpr = nameBlock.replace(/^>-\n/, '').replace(/\s+/g, ' ').trim()
     assert.match(
-      aggregate,
-      /name: \$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' && 'Develop CI Passed' \|\| 'CI Passed' \}\}/,
+      nameExpr,
+      /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' && 'Develop CI Passed'/,
       'trunk pushes need a distinct aggregate check context',
+    )
+    assert.match(
+      nameExpr,
+      /head\.repo\.full_name != github\.repository\) && 'Fork CI Passed'/,
+      'fork PRs need a distinct aggregate check context: their run skips check/build/e2e',
+    )
+    assert.match(
+      nameExpr,
+      /\|\| 'CI Passed' \}\}$/,
+      "everything else — same-repo PRs included — must still publish 'CI Passed'",
     )
     assert.match(
       aggregate,

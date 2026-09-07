@@ -567,7 +567,7 @@ export interface ApiClient {
       apiKey?: string,
     ) => Promise<{ ok: boolean; models?: string[]; error?: string }>
     models: () => Promise<string[]>
-    modelInfo: () => Promise<Array<{ id: string; supportsImages?: boolean }>>
+    modelInfo: () => Promise<Array<{ id: string; supportsImages?: boolean; embedding?: boolean }>>
     detect: (
       url?: string,
       apiKey?: string,

@@ -162,3 +162,38 @@ export function parseModelSelection(model: string): ModelSelection {
 
   return selection('cloud', '', '', model)
 }
+
+/**
+ * Namespaces that name a *route* rather than something callable.
+ *
+ * `acp` and `remote-agent` name an agent that runs elsewhere — its own process
+ * against the user's own sign-in, or the provider's own infrastructure — and
+ * `plugin-model` names a route a plugin owns. `auto` names a rule that has not
+ * been resolved into one of the others yet. None of the four is a model id any
+ * provider has heard of, so handing one to a chat provider is always a mistake:
+ * the host has to take the branch before a request is built.
+ *
+ * Kept next to the classifier because it answers the question the classifier
+ * raises. Adding a namespace to `ModelNamespace` means deciding which side of
+ * this line it falls on, and having both in one file is what makes that a
+ * decision rather than an omission.
+ */
+export type HostRoutedNamespace = Extract<
+  ModelNamespace,
+  'acp' | 'remote-agent' | 'plugin-model' | 'auto'
+>
+
+const HOST_ROUTED: readonly HostRoutedNamespace[] = ['acp', 'remote-agent', 'plugin-model', 'auto']
+
+/**
+ * The namespace of a selection the host must route itself, or `null` when the
+ * selection names a model a provider can be built for.
+ *
+ * Returns the namespace rather than a boolean: the four are wrong for different
+ * reasons — three are a model the user picked for somewhere it cannot run, one
+ * is an unexpanded rule — and only the caller knows how to say so.
+ */
+export function hostRoutedNamespace(model: string): HostRoutedNamespace | null {
+  const { namespace } = parseModelSelection(model)
+  return HOST_ROUTED.find((candidate) => candidate === namespace) ?? null
+}
