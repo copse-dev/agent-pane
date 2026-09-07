@@ -85,4 +85,37 @@ describe('comparison model pickers only offer models that can review', () => {
       `expected a local chat model among ${values.join(', ')}`,
     )
   })
+
+  it('replaces a stale ACP reviewer with a runnable model', async () => {
+    const pickers = createComparisonModelPickers(
+      mockApi(),
+      { a: 'acp:claude-agent-acp#opus', b: '', judge: '' },
+      'intro',
+    )
+    document.body.append(pickers.root)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(pickers.read().a, 'claude-sonnet-4-6')
+    const stale = [
+      ...pickers.root.querySelectorAll<HTMLOptionElement>('select.model-picker-native option'),
+    ].find((option) => option.value === 'acp:claude-agent-acp#opus')
+    assert.equal(stale?.disabled, true)
+  })
+
+  it('replaces a stale embedding reviewer with a runnable model', async () => {
+    const embedding = 'lmstudio:text-embedding-nomic-embed-text-v1.5'
+    const pickers = createComparisonModelPickers(
+      mockApi(),
+      { a: embedding, b: '', judge: '' },
+      'intro',
+    )
+    document.body.append(pickers.root)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(pickers.read().a, 'claude-sonnet-4-6')
+    const stale = [
+      ...pickers.root.querySelectorAll<HTMLOptionElement>('select.model-picker-native option'),
+    ].find((option) => option.value === embedding)
+    assert.equal(stale?.disabled, true)
+  })
 })
