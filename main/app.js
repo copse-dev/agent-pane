@@ -24423,7 +24423,12 @@ async function quarantineAndRestoreNext(store3, api3, id39) {
   await markProjectMissing(store3, api3, id39);
   const next3 = store3.getState().projects.find((p3) => p3.id !== id39 && !p3.missing);
   if (next3) {
-    store3.setState({ activeProjectId: next3.id, expandedProjectId: next3.id });
+    store3.setState({
+      activeProjectId: next3.id,
+      expandedProjectId: next3.id,
+      threads: [],
+      activeThreadId: null
+    });
     await restoreProject(store3, api3, next3.id);
     return;
   }
@@ -274201,6 +274206,47 @@ var init_create_after_persist = __esm({
   }
 });
 
+// src/renderer/terminal/start-failure-message.ts
+function unwrapIpcError(raw) {
+  let message2 = raw;
+  for (; ; ) {
+    const next3 = message2.replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
+    if (next3 === message2) return message2.trim();
+    message2 = next3;
+  }
+}
+function terminalStartFailureMessage(err2) {
+  const detail = unwrapIpcError(errorMessage(err2));
+  if (CROSS_PROJECT.test(detail)) {
+    return "This terminal was opened against a thread from another project. Close the tab and open a new one.";
+  }
+  return detail || "The shell could not be started.";
+}
+var CROSS_PROJECT;
+var init_start_failure_message = __esm({
+  "src/renderer/terminal/start-failure-message.ts"() {
+    init_errors4();
+    CROSS_PROJECT = /^Thread "[^"]*" does not belong to project "[^"]*"$/;
+  }
+});
+
+// src/renderer/terminal/tab-scope.ts
+function resolveTerminalTabScope(state4, options2) {
+  if (options2?.scopeProjectId !== void 0 || options2?.scopeId !== void 0) {
+    return {
+      scopeProjectId: options2.scopeProjectId ?? null,
+      scopeId: options2.scopeId ?? null
+    };
+  }
+  const { activeProjectId, activeThreadId, threads } = state4;
+  const belongs = activeThreadId !== null && threads.some((thread) => thread.id === activeThreadId);
+  return { scopeProjectId: activeProjectId, scopeId: belongs ? activeThreadId : null };
+}
+var init_tab_scope = __esm({
+  "src/renderer/terminal/tab-scope.ts"() {
+  }
+});
+
 // src/renderer/views/terminals-pane.ts
 function applyXtermBg(container2, theme) {
   container2.style.setProperty("--xterm-bg", XTERM_THEME[theme].background);
@@ -274405,7 +274451,10 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
         preserveSharedShell(tab, worktreePath);
       }
     } catch (err2) {
-      tab.term.writeln(`\x1B[31mFailed to start terminal: ${String(err2)}\x1B[0m`);
+      console.error("[terminals] could not start a shell:", err2);
+      tab.term.writeln(
+        `\x1B[31mFailed to start terminal: ${terminalStartFailureMessage(err2)}\x1B[0m`
+      );
     } finally {
       tab.creating = false;
     }
@@ -274525,8 +274574,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
     panel.append(container2);
     const { term, fitAddon } = createXterm();
     const fileLinks = installTerminalFileLinks(term, store3, api3);
-    const scopeProjectId = options2?.scopeProjectId ?? store3.getState().activeProjectId;
-    const scopeId = options2?.scopeId ?? currentThreadId();
+    const { scopeProjectId, scopeId } = resolveTerminalTabScope(store3.getState(), options2);
     const tab = {
       id: id39,
       scopeProjectId,
@@ -274798,6 +274846,8 @@ var init_terminals_pane = __esm({
     init_read_terminal();
     init_ui_scale();
     init_create_after_persist();
+    init_start_failure_message();
+    init_tab_scope();
     XTERM_THEME = {
       dark: {
         background: "#1e1e1e",
