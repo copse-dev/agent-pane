@@ -26,6 +26,7 @@ import {
 import { isDeferralModeActive } from './security/deferral-mode.ts'
 import { deferApproval } from './security/deferred-approval-store.ts'
 import type { UserAlertSender } from './user-alerts.ts'
+import { resolveRendererPromptTarget } from './renderer-prompt-target.ts'
 
 /** Model ids for a two-reviewer + judge comparison run. */
 export interface ComparisonModelSelection {
@@ -177,35 +178,6 @@ export function runWithApprovalHandler<T>(next: ApprovalHandler, fn: () => T): T
     { handler: next, dedupePrefix: `headless-${String(nextScopedHandlerId)}` },
     fn,
   )
-}
-
-/**
- * Where a desktop approval prompt should appear. Structurally an Electron
- * `WebContents`: the main window by default, or the renderer that triggered
- * the prompt when one is scoped via {@link runWithApprovalPromptTarget}.
- */
-export interface ApprovalPromptTarget {
-  isDestroyed(): boolean
-  send(channel: string, ...args: unknown[]): void
-}
-
-const approvalPromptTarget = new AsyncLocalStorage<ApprovalPromptTarget>()
-
-/**
- * Show the next desktop approval prompt on `sender` instead of the window
- * captured at {@link initApproval}. A pane pop-out's `terminal:create` would
- * otherwise open the unsandboxed-terminal dialog on the (possibly hidden) main
- * window while the pop-out sat on an empty xterm (#1705).
- */
-export function runWithApprovalPromptTarget<T>(sender: ApprovalPromptTarget, fn: () => T): T {
-  return approvalPromptTarget.run(sender, fn)
-}
-
-/** The renderer that should receive `agent:approval-request` for this turn. */
-export function resolveApprovalPromptTarget(fallback: ApprovalPromptTarget): ApprovalPromptTarget {
-  const target = approvalPromptTarget.getStore()
-  if (target && !target.isDestroyed()) return target
-  return fallback
 }
 
 /** In-flight coalesced approvals keyed by {@link approvalDedupeKey}. */
@@ -563,8 +535,9 @@ export function initApproval(
         const threadId = getActiveRunThread() ?? undefined
         // Default is the window `initApproval` captured (the main window). A
         // pop-out that triggered this prompt scopes a different target so the
-        // dialog appears where the user is looking, not behind it.
-        const dest = resolveApprovalPromptTarget(win.webContents)
+        // dialog appears where the user is looking, not behind it
+        // (`renderer-prompt-target.ts`).
+        const dest = resolveRendererPromptTarget(win.webContents)
         if (dest.isDestroyed()) {
           resolve(DENIED)
           return
