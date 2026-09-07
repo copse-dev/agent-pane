@@ -46,6 +46,8 @@ ARG ACP_AGENTS=""
 ENV DEBIAN_FRONTEND=noninteractive \\
     npm_config_update_notifier=false
 
+# python3, make, g++ and pkg-config are what node-gyp needs to build a native
+# module (node-pty, say) during a carried-in project's install (decision A9).
 # No bubblewrap and no socat: the container is the sandbox (decision A7), so
 # nothing inside it nests a second one, and the container keeps Docker's
 # default seccomp and AppArmor profiles instead of the unconfined ones a
@@ -55,6 +57,10 @@ RUN apt-get update \\
       ca-certificates \\
       git \\
       ripgrep \\
+      python3 \\
+      make \\
+      g++ \\
+      pkg-config \\
     && rm -rf /var/lib/apt/lists/*
 
 RUN if [ -n "\${ACP_AGENTS}" ]; then npm install -g --no-fund --no-audit \${ACP_AGENTS} && npm cache clean --force; fi

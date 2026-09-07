@@ -575,7 +575,7 @@ describe('phaseFromLog', () => {
     assert.equal(phaseFromLog('[guest] chatter', 'running'), 'running')
     // The install step (A9) is its own phase between starting and running.
     assert.equal(
-      phaseFromLog('[guest] [worker] installing dependencies: pnpm install', 'running'),
+      phaseFromLog('[guest] [worker] installing dependencies from pnpm-lock.yaml', 'running'),
       'installing',
     )
     assert.equal(phaseFromLog('[install] Progress: resolved 100', 'installing'), 'installing')
@@ -584,8 +584,16 @@ describe('phaseFromLog', () => {
       'running',
     )
     assert.equal(
-      phaseFromLog('[guest] [worker] dependency install FAILED (exit 1) after 9s', 'installing'),
+      phaseFromLog(
+        '[guest] [worker] dependency install FAILED at "fetch and link" (exit 1) after 9s',
+        'installing',
+      ),
       'running',
+    )
+    assert.equal(
+      phaseFromLog('[guest] [worker] dependency step "build native modules" failed', 'installing'),
+      'installing',
+      'a best-effort step failing is not the end of the install',
     )
   })
 })

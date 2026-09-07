@@ -322,6 +322,13 @@ describe('WORKER_DOCKERFILE', () => {
     const pnpm = lines.findIndex((line) => /npm install -g .*"pnpm@\$\{PNPM_VERSION\}"/.test(line))
     assert.ok(pnpm !== -1 && pnpm < user)
     assert.ok(lines.some((line) => line === 'ARG BASE_IMAGE=node:24-bookworm-slim'))
+    // node-gyp's toolchain, so a project's native modules build in the guest.
+    for (const tool of ['python3', 'make', 'g++']) {
+      assert.ok(
+        new RegExp(`^\\s+${tool.replace('+', '\\+')} \\\\$`, 'm').test(WORKER_DOCKERFILE),
+        tool,
+      )
+    }
     // The container is the sandbox (A7): no bubblewrap, and so no socat for
     // the runtime's bridge; the entrypoint starts nothing either.
     // The apt list is the check, not the prose: the Dockerfile's own comment

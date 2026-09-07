@@ -32,7 +32,11 @@ import type { ThreadContainerAcpHarness } from './thread-container.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { restoreAgentLogin } from './agent-login.ts'
 import { GUEST_EGRESS_PROXY, GUEST_NO_PROXY, guestEgressProxyUrl } from './egress-rules.ts'
-import { dependencyInstallEnv, dependencyInstallFor } from './guest-install.ts'
+import {
+  dependencyInstallEnv,
+  dependencyInstallFor,
+  type DependencyInstallStep,
+} from './guest-install.ts'
 import { GUEST_EXCLUDED_TOOLS } from './guest-tools.ts'
 import { EgressLink } from './egress-link.ts'
 import { probeBroker, startGuestEgressProxy } from './guest-egress-proxy.ts'
@@ -176,37 +180,17 @@ function carryIn(spec: Spec): void {
 /** Longest a dependency install may take before the run goes on without it. */
 const INSTALL_TIMEOUT_MS = 20 * 60_000
 
-/**
- * The checkout's own install, once, before the agent (decision A9). Its
- * output goes to the log as it comes; a failure is said and the run goes on,
- * because an agent with no `node_modules` can still read and reason, and the
- * log names what it will find missing.
- */
-function installDependencies(
-  workspace: string,
-  proxy: { url: string; noProxy: string } | null,
-): Promise<void> {
-  const install = dependencyInstallFor(workspace)
-  if (install === null) {
-    say('[worker] no lockfile to install from (pnpm-lock.yaml or package-lock.json); skipping\n')
-    return Promise.resolve()
-  }
-  say(
-    `[worker] installing dependencies: ${install.command} ${install.args.join(' ')} (${install.lockfile})\n`,
-  )
-  const startedAt = Date.now()
-  return new Promise((resolveInstall) => {
-    const child = spawn(install.command, install.args, {
-      cwd: workspace,
-      env: dependencyInstallEnv(process.env, proxy),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    const tail: string[] = []
+/** One install step, its output to the log as it comes; resolves with its exit status. */
+function runInstallStep(
+  step: DependencyInstallStep,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  deadline: number,
+): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  return new Promise((resolveStep) => {
+    const child = spawn(step.command, step.args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
     const onLine = (line: string): void => {
-      if (line.trim().length === 0) return
-      tail.push(line)
-      if (tail.length > 20) tail.shift()
-      say(`[install] ${line}\n`)
+      if (line.trim().length > 0) say(`[install] ${line}\n`)
     }
     for (const stream of [child.stdout, child.stderr]) {
       let pending = ''
@@ -220,30 +204,70 @@ function installDependencies(
         if (pending.length > 0) onLine(pending)
       })
     }
-    const timer = setTimeout(() => {
-      say(
-        `[worker] dependency install still running after ${String(INSTALL_TIMEOUT_MS / 60_000)} min; stopping it\n`,
-      )
-      child.kill('SIGKILL')
-    }, INSTALL_TIMEOUT_MS)
+    const timer = setTimeout(
+      () => {
+        say(
+          `[worker] dependency step "${step.label}" still running at the install deadline; stopping it\n`,
+        )
+        child.kill('SIGKILL')
+      },
+      Math.max(0, deadline - Date.now()),
+    )
     child.on('error', (error) => {
       clearTimeout(timer)
-      say(`[worker] dependency install could not start: ${error.message}\n`)
-      resolveInstall()
+      say(`[worker] dependency step "${step.label}" could not start: ${error.message}\n`)
+      resolveStep({ code: null, signal: null })
     })
     child.on('exit', (code, signal) => {
       clearTimeout(timer)
-      const seconds = Math.round((Date.now() - startedAt) / 1000)
-      if (code === 0) {
-        say(`[worker] dependencies installed in ${String(seconds)}s\n`)
-      } else {
-        say(
-          `[worker] dependency install FAILED (${signal ?? `exit ${String(code)}`}) after ${String(seconds)}s; the agent runs without node_modules\n`,
-        )
-      }
-      resolveInstall()
+      resolveStep({ code, signal })
     })
   })
+}
+
+/**
+ * The checkout's own install, once, before the agent (decision A9): fetch and
+ * link with scripts off, then native builds and the project's own lifecycle
+ * scripts as best effort. A failure is said and the run goes on — with
+ * whatever was installed in place, because an agent with most of
+ * `node_modules` can still do most things, and the log names what failed.
+ */
+async function installDependencies(
+  workspace: string,
+  proxy: { url: string; noProxy: string } | null,
+): Promise<void> {
+  const install = dependencyInstallFor(workspace)
+  if (install === null) {
+    say('[worker] no lockfile to install from (pnpm-lock.yaml or package-lock.json); skipping\n')
+    return
+  }
+  const env = dependencyInstallEnv(process.env, proxy)
+  const startedAt = Date.now()
+  const deadline = startedAt + INSTALL_TIMEOUT_MS
+  const failed: string[] = []
+  say(`[worker] installing dependencies from ${install.lockfile}\n`)
+  for (const step of install.steps) {
+    say(`[worker] dependency step: ${step.label} (${step.command} ${step.args.join(' ')})\n`)
+    const { code, signal } = await runInstallStep(step, workspace, env, deadline)
+    if (code === 0) continue
+    const how = signal ?? `exit ${String(code)}`
+    if (step.required) {
+      say(
+        `[worker] dependency install FAILED at "${step.label}" (${how}) after ${String(Math.round((Date.now() - startedAt) / 1000))}s; what was fetched stays in place\n`,
+      )
+      return
+    }
+    failed.push(step.label)
+    say(`[worker] dependency step "${step.label}" failed (${how}); continuing\n`)
+  }
+  const seconds = Math.round((Date.now() - startedAt) / 1000)
+  if (failed.length === 0) {
+    say(`[worker] dependencies installed in ${String(seconds)}s\n`)
+  } else {
+    say(
+      `[worker] dependencies installed in ${String(seconds)}s with ${String(failed.length)} step(s) failed (${failed.join(', ')}); packages whose scripts failed may not work\n`,
+    )
+  }
 }
 
 /** Commit whatever the agent left uncommitted, then bundle everything since carry-in. */

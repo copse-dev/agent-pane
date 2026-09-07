@@ -476,7 +476,12 @@ guarantee, and the record must say so.
   proxy turned into a 403 that pnpm treated as final. The broker now resolves each host
   once per run and retries a transient dial fault (`EAI_AGAIN`, `ENOTFOUND`, `ECONNRESET`,
   `ETIMEDOUT`) with a short backoff, and the proxy answers 502, the status clients retry
-  on, for an origin that did not answer; 403 stays for a refusal, which is final.
+  on, for an origin that did not answer; 403 stays for a refusal, which is final. The
+  second real install then fetched everything and failed on two install scripts: a driver
+  download from a host the run never admits, and a native build with no toolchain in the
+  image. So the install is three steps — fetch and link with scripts off (required), then
+  native builds and the project's own `postinstall`/`prepare` as best effort, each failure
+  named and passed over — and the image carries python3, make, g++ and pkg-config.
 - **A10 — no GitHub or CI tool in the guest, by name.** Asked by the author after the
   first complete run: does the agent hold write tools to GitHub? The bridge's ceiling
   includes four that write (`gh_pr_create`, `gh_pr_approve`, `gh_pr_mark_ready`,

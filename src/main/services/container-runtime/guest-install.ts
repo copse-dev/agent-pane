@@ -6,58 +6,126 @@
  * cannot `pnpm install` for itself. When the user opts in, the worker does it
  * once, first, with the run's proxy: the checkout's lockfile decides the
  * command, the package registry is on the allowlist for the run, and the
- * agent finds `node_modules` in place. What the command is and where it runs
+ * agent finds `node_modules` in place. What the steps are and where they run
  * is decided here, pure, so it can be tested without a guest.
+ *
+ * Three steps rather than one. Fetching and linking every package with
+ * lifecycle scripts off is the part that must succeed, and it only needs the
+ * registry. Building native modules and running the project's own postinstall
+ * come after, best effort: an install script that downloads a browser driver
+ * from a host the run never admits fails on its own, and the first real run
+ * showed one such script failing the whole install with `node_modules`
+ * already complete.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** The one origin a dependency install reaches; pnpm and npm both use it. */
 export const PACKAGE_REGISTRY_ORIGIN = 'registry.npmjs.org:443'
 
 /**
- * Why a worker-side install is the shape: the guest workspace is a fresh
- * volume, so the store and `node_modules` share a filesystem and pnpm links
- * rather than copies. The store lives beside the checkout, not in it, so a
- * `git add -A` by the agent cannot sweep it into a commit.
+ * The guest workspace is a fresh volume, so the store and `node_modules`
+ * share a filesystem and pnpm links rather than copies. The store lives beside
+ * the checkout, not in it, so a `git add -A` by the agent cannot sweep it in.
  */
 export const PNPM_STORE_DIR = '/workspace/.pnpm-store'
 
-export interface DependencyInstall {
-  /** What decided the command, for the log. */
-  lockfile: string
+export interface DependencyInstallStep {
+  /** For the log. */
+  label: string
   command: string
   args: string[]
+  /** A required step that fails ends the install; an optional one is reported and passed over. */
+  required: boolean
+}
+
+export interface DependencyInstall {
+  /** What decided the steps, for the log. */
+  lockfile: string
+  steps: DependencyInstallStep[]
+}
+
+/** The lifecycle scripts the project itself declares, in the order npm would run them. */
+function rootLifecycleScripts(workspace: string): string[] {
+  try {
+    const manifest: unknown = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8'))
+    if (typeof manifest !== 'object' || manifest === null || !('scripts' in manifest)) return []
+    const scripts: unknown = manifest.scripts
+    if (typeof scripts !== 'object' || scripts === null) return []
+    return ['postinstall', 'prepare'].filter((name) => Object.hasOwn(scripts, name))
+  } catch {
+    return []
+  }
 }
 
 /** The install for a checkout, by its lockfile; null when it has none we run. */
 export function dependencyInstallFor(workspace: string): DependencyInstall | null {
+  const lifecycle = rootLifecycleScripts(workspace)
   if (existsSync(join(workspace, 'pnpm-lock.yaml'))) {
+    // append-only: pnpm's default reporter redraws the terminal, which a log
+    // read line by line cannot show.
+    const reporter = '--reporter=append-only'
     return {
       lockfile: 'pnpm-lock.yaml',
-      command: 'pnpm',
-      // append-only: pnpm's default reporter redraws the terminal, which a
-      // log that is read line by line cannot show.
-      args: [
-        'install',
-        '--frozen-lockfile',
-        '--reporter=append-only',
-        `--store-dir=${PNPM_STORE_DIR}`,
+      steps: [
+        {
+          label: 'fetch and link',
+          command: 'pnpm',
+          args: [
+            'install',
+            '--frozen-lockfile',
+            '--ignore-scripts',
+            reporter,
+            `--store-dir=${PNPM_STORE_DIR}`,
+          ],
+          required: true,
+        },
+        {
+          label: 'build native modules',
+          command: 'pnpm',
+          args: ['rebuild', reporter],
+          required: false,
+        },
+        ...lifecycle.map((name) => ({
+          label: `project ${name}`,
+          command: 'pnpm',
+          args: ['run', name],
+          required: false,
+        })),
       ],
     }
   }
   if (existsSync(join(workspace, 'package-lock.json'))) {
+    const quiet = ['--no-audit', '--no-fund', '--loglevel=error']
     return {
       lockfile: 'package-lock.json',
-      command: 'npm',
-      args: ['ci', '--no-audit', '--no-fund', '--loglevel=error'],
+      steps: [
+        {
+          label: 'fetch and link',
+          command: 'npm',
+          args: ['ci', '--ignore-scripts', ...quiet],
+          required: true,
+        },
+        {
+          label: 'build native modules',
+          command: 'npm',
+          args: ['rebuild', ...quiet],
+          required: false,
+        },
+        ...lifecycle.map((name) => ({
+          label: `project ${name}`,
+          command: 'npm',
+          args: ['run', name, ...quiet],
+          required: false,
+        })),
+      ],
     }
   }
   return null
 }
 
 /**
- * Environment for the install child: the run's proxy so the registry is
+ * Environment for the install children: the run's proxy so the registry is
  * reachable, and every "download a binary in postinstall" switch off, because
  * those fetch from hosts the run does not admit (GitHub releases, browser
  * CDNs) and an install that needs them would only fail later and slower.
