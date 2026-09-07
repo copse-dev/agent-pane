@@ -135,7 +135,7 @@ describe('resolveContainerProvider', () => {
       const plan = resolveContainerProvider('acp:codex-acp', { useAgentLogin: true })
       assert.equal(plan.mode, 'acp')
       assert.equal(plan.apiKey, null)
-      assert.deepEqual(plan.harness.login, { dirs: ['.codex', '.config/codex'] })
+      assert.deepEqual(plan.harness.login, { files: ['.codex/auth.json'] })
       assert.ok(plan.egress.includes('*.openai.com:443'))
       // With a key, the key wins and nothing is carried in.
       setApiKey('openai', 'sk-openai-run')

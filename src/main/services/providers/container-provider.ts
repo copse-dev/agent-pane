@@ -10,7 +10,7 @@ import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import {
   containerAcpAgent,
   containerAcpAvailability,
-  containerAcpLoginDirs,
+  containerAcpLoginFiles,
 } from '@shared/container-acp-agents.ts'
 import type { ContainerModelVerdict } from '@shared/types/container-run.ts'
 import { LM_STUDIO_MODEL_IDS, resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
@@ -226,11 +226,11 @@ function resolveAcpHarness(
   }
   const domains = findAcpCatalogEntry(agent.id)?.sandbox?.allowedDomains ?? []
   const harness = acpHarnessForContainer(agent, capable.keyEnv)
-  const loginDirs = availability.credential === 'login' ? containerAcpLoginDirs(agent.id) : null
+  const loginFiles = availability.credential === 'login' ? containerAcpLoginFiles(agent.id) : null
   return {
     mode: 'acp',
     model,
-    harness: loginDirs ? { ...harness, login: { dirs: loginDirs } } : harness,
+    harness: loginFiles ? { ...harness, login: { files: loginFiles } } : harness,
     apiKey: availability.credential === 'key' ? apiKey : null,
     egress: domains.map((domain) => `${domain}:443`),
   }

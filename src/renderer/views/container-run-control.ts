@@ -349,8 +349,8 @@ export function mountContainerRunControl(
         const text = loginLabel.querySelector('.container-run-agent-login-text')
         if (text) text.textContent = `Use my ${offer.agentTitle} sign-in for this run`
         loginHint.textContent =
-          `${offer.agentTitle} has no API key in Settings. Ticking this copies its sign-in files from your home ` +
-          "directory into the container's throwaway home for this run and discards them with it. " +
+          `${offer.agentTitle} has no API key in Settings. Ticking this copies its sign-in files (only those: ` +
+          "no transcripts, no history) into the container's throwaway home for this run and discards them with it. " +
           'That is your whole account, not a scoped key, and a token refresh inside the run may sign ' +
           'the desktop out. Adding an API key in Settings avoids both.'
       }

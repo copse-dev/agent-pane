@@ -6,7 +6,7 @@ import {
   containerAcpAgentSpecs,
   containerAcpAgentTitles,
   containerAcpAvailability,
-  containerAcpLoginDirs,
+  containerAcpLoginFiles,
 } from './container-acp-agents.ts'
 import { KNOWN_ACP_AGENTS } from './acp-known-agents.ts'
 
@@ -72,10 +72,14 @@ describe('container ACP agents', () => {
     )
     // The opt-in changes nothing for an agent with no sign-in to carry.
     assert.equal(containerAcpAvailability('claude-acp', {}, { useLogin: true }).runnable, false)
-    assert.deepEqual(containerAcpLoginDirs('codex-acp'), ['.codex', '.config/codex'])
-    assert.deepEqual(containerAcpLoginDirs('gemini'), ['.gemini', '.config/gemini'])
-    assert.equal(containerAcpLoginDirs('claude-acp'), null)
-    assert.equal(containerAcpLoginDirs('cursor'), null)
+    assert.deepEqual(containerAcpLoginFiles('codex-acp'), ['.codex/auth.json'])
+    assert.deepEqual(containerAcpLoginFiles('gemini'), [
+      '.gemini/oauth_creds.json',
+      '.gemini/google_accounts.json',
+      '.gemini/settings.json',
+    ])
+    assert.equal(containerAcpLoginFiles('claude-acp'), null)
+    assert.equal(containerAcpLoginFiles('cursor'), null)
   })
 
   it('gives the browser-login agent and a custom agent their own reasons', () => {

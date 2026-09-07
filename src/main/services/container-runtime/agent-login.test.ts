@@ -14,25 +14,35 @@ import { join } from 'node:path'
 import { removeStagedLogin, restoreAgentLogin, stageAgentLogin } from './agent-login.ts'
 
 /**
- * The sign-in crossing, both directions, against real directories. The
- * properties that matter: only what exists is copied, a device with no sign-in
+ * The sign-in crossing, both directions, against real files. The properties
+ * that matter: only the named files are copied and only those that exist — a
+ * session transcript beside them never crosses — a device with no sign-in
  * refuses rather than starting an agent that cannot authenticate, the staged
  * copy is readable by a foreign uid for the run and gone afterwards, and the
  * guest's copy is private to the worker.
  */
+const CODEX_FILES = ['.codex/auth.json']
+const GEMINI_FILES = [
+  '.gemini/oauth_creds.json',
+  '.gemini/google_accounts.json',
+  '.gemini/settings.json',
+]
+
 describe('agent sign-in carry-in', () => {
-  it('stages the sign-in directories that exist, world-readable, and removes them after', () => {
+  it('stages only the sign-in files that exist, world-readable, and removes them after', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-login-home-'))
     const runDir = mkdtempSync(join(tmpdir(), 'copse-login-run-'))
     try {
-      mkdirSync(join(home, '.codex'), { mode: 0o700 })
+      mkdirSync(join(home, '.codex', 'sessions'), { recursive: true, mode: 0o700 })
       writeFileSync(join(home, '.codex', 'auth.json'), '{"token":"t"}', { mode: 0o600 })
-      const staged = stageAgentLogin(home, ['.codex', '.config/codex'], runDir, 'Codex')
-      assert.deepEqual(staged, ['.codex'])
+      // The bulk beside the sign-in: never copied.
+      writeFileSync(join(home, '.codex', 'sessions', 'rollout.jsonl'), 'x'.repeat(4096))
+      const staged = await stageAgentLogin(home, CODEX_FILES, runDir, 'Codex')
+      assert.deepEqual(staged, ['.codex/auth.json'])
       const copy = join(runDir, 'login', '.codex', 'auth.json')
       assert.equal(readFileSync(copy, 'utf8'), '{"token":"t"}')
       assert.equal(statSync(copy).mode & 0o777, 0o644)
-      assert.equal(statSync(join(runDir, 'login', '.codex')).mode & 0o777, 0o755)
+      assert.equal(existsSync(join(runDir, 'login', '.codex', 'sessions')), false)
       // The original is untouched.
       assert.equal(statSync(join(home, '.codex', 'auth.json')).mode & 0o777, 0o600)
       removeStagedLogin(runDir)
@@ -45,13 +55,13 @@ describe('agent sign-in carry-in', () => {
     }
   })
 
-  it('refuses a device with no sign-in for the agent, naming where it looked', () => {
+  it('refuses a device with no sign-in for the agent, naming where it looked', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-login-home-'))
     const runDir = mkdtempSync(join(tmpdir(), 'copse-login-run-'))
     try {
-      assert.throws(
-        () => stageAgentLogin(home, ['.gemini', '.config/gemini'], runDir, 'Gemini CLI'),
-        /No Gemini CLI sign-in was found on this device \(looked in ~\/\.gemini, ~\/\.config\/gemini\)/,
+      await assert.rejects(
+        () => stageAgentLogin(home, GEMINI_FILES, runDir, 'Gemini CLI'),
+        /No Gemini CLI sign-in was found on this device \(looked for ~\/\.gemini\/oauth_creds\.json/,
       )
       assert.equal(existsSync(join(runDir, 'login')), false)
     } finally {
@@ -60,16 +70,18 @@ describe('agent sign-in carry-in', () => {
     }
   })
 
-  it('restores the staged sign-in into the guest home, private to the worker', () => {
+  it('restores the staged sign-in into the guest home, private to the worker', async () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-login-home-'))
     const guestHome = mkdtempSync(join(tmpdir(), 'copse-login-guest-'))
     const runDir = mkdtempSync(join(tmpdir(), 'copse-login-run-'))
     try {
       mkdirSync(join(home, '.gemini'))
       writeFileSync(join(home, '.gemini', 'oauth_creds.json'), '{"refresh":"r"}')
-      stageAgentLogin(home, ['.gemini', '.config/gemini'], runDir, 'Gemini CLI')
-      const restored = restoreAgentLogin(runDir, guestHome, ['.gemini', '.config/gemini'])
-      assert.deepEqual(restored, ['.gemini'])
+      writeFileSync(join(home, '.gemini', 'settings.json'), '{"selectedAuthType":"oauth-personal"}')
+      const staged = await stageAgentLogin(home, GEMINI_FILES, runDir, 'Gemini CLI')
+      assert.deepEqual(staged, ['.gemini/oauth_creds.json', '.gemini/settings.json'])
+      const restored = restoreAgentLogin(runDir, guestHome, GEMINI_FILES)
+      assert.deepEqual(restored, staged)
       const copy = join(guestHome, '.gemini', 'oauth_creds.json')
       assert.equal(readFileSync(copy, 'utf8'), '{"refresh":"r"}')
       assert.equal(statSync(copy).mode & 0o777, 0o600)

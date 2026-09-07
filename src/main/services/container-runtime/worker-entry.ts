@@ -55,7 +55,7 @@ const specSchema = z.object({
     .object({
       agent: acpAgentConfigSchema,
       keyEnvName: z.string(),
-      login: z.object({ dirs: z.array(z.string().min(1)) }).optional(),
+      login: z.object({ files: z.array(z.string().min(1)) }).optional(),
     })
     .nullable(),
   budgets: z.object({
@@ -80,7 +80,7 @@ function harnessFromSpec(acp: NonNullable<Spec['acp']>): ThreadContainerAcpHarne
   const { agent } = acp
   return {
     keyEnvName: acp.keyEnvName,
-    ...(acp.login !== undefined ? { login: { dirs: acp.login.dirs } } : {}),
+    ...(acp.login !== undefined ? { login: { files: acp.login.files } } : {}),
     agent: {
       id: agent.id,
       title: agent.title,
@@ -190,7 +190,7 @@ async function main(): Promise<void> {
   if (spec.acp?.login) {
     // The user's sign-in, staged by the host: into this throwaway home, private
     // to the worker, before the agent can look for it.
-    const restored = restoreAgentLogin(RUN_DIR, homedir(), spec.acp.login.dirs)
+    const restored = restoreAgentLogin(RUN_DIR, homedir(), spec.acp.login.files)
     process.stdout.write(
       `[worker] sign-in restored: ${restored.map((d) => `~/${d}`).join(', ') || 'nothing found'}\n`,
     )

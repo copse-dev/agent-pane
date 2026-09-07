@@ -354,10 +354,14 @@ guarantee, and the record must say so.
 - **A1′ — the sign-in, on explicit opt-in, for the agents that keep it in files.** Asked
   for by the author after A1 shipped: a user who runs Codex on a ChatGPT login and reaches
   OpenAI models only through OpenRouter has no OpenAI key to give, and the row stayed
-  greyed. The run may instead copy the agent's sign-in directories — the catalogue's
-  `homeDirs`, `~/.codex` and `~/.gemini` — into the guest's throwaway home
+  greyed. The run may instead copy the agent's sign-in **files** — named per agent in
+  `container-acp-agents.ts` (`~/.codex/auth.json`; Gemini's `oauth_creds.json`,
+  `google_accounts.json` and `settings.json`) — into the guest's throwaway home
   (`agent-login.ts`), when the user ticks "Use my <agent> sign-in for this run" in the
-  dialog. What A1 said still holds and is why this is an opt-in and not a default: it is
+  dialog. Files and not the catalogue's `homeDirs`, and copied asynchronously, because
+  the first cut copied `~/.codex` whole and synchronously on the main process: that
+  directory also holds every session transcript the CLI ever wrote, and the app
+  beachballed for as long as the copy took. What A1 said still holds and is why this is an opt-in and not a default: it is
   the whole account rather than a scoped key; the guest's token refresh may rotate the
   desktop's out; and it exists only for agents whose login lives in files — Claude Code
   keeps its OAuth credentials in the macOS Keychain, so it stays key-only. The copy is

@@ -227,7 +227,7 @@ describe('ContainerRunService', () => {
     const request = seen[0]
     assert.ok(request)
     assert.equal(request.apiKeyEnv, undefined)
-    assert.deepEqual(request.acp?.login, { dirs: ['.codex', '.config/codex'] })
+    assert.deepEqual(request.acp?.login, { files: ['.codex/auth.json'] })
     await setSetting('registeredAcpAgents', [])
   })
 

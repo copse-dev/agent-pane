@@ -38,12 +38,13 @@ export interface ContainerAcpAgent {
   /** How Settings names that key, for a reason the user can act on. */
   keyLabel: string
   /**
-   * Whether the run may carry the user's desktop sign-in in instead of a key,
-   * on explicit opt-in. Only for agents whose login lives in files under
-   * `$HOME` (the catalogue's `homeDirs`); Claude Code keeps its OAuth
-   * credentials in the macOS Keychain, so there is nothing to copy.
+   * The home-relative files that hold the agent's desktop sign-in, when the
+   * run may carry it in instead of a key on explicit opt-in. Named files,
+   * never a directory: `~/.codex` also holds every session transcript the CLI
+   * wrote, and only the sign-in should cross. Absent for agents with no such
+   * files — Claude Code keeps its OAuth credentials in the macOS Keychain.
    */
-  loginCarryIn?: boolean
+  loginFiles?: readonly string[]
 }
 
 export const CONTAINER_ACP_AGENTS: readonly ContainerAcpAgent[] = [
@@ -67,8 +68,8 @@ export const CONTAINER_ACP_AGENTS: readonly ContainerAcpAgent[] = [
     keyEnv: 'CODEX_API_KEY',
     keySlug: 'openai',
     keyLabel: 'OpenAI',
-    // `codex login` writes ~/.codex/auth.json.
-    loginCarryIn: true,
+    // `codex login` writes the token here and nothing else is needed.
+    loginFiles: ['.codex/auth.json'],
   },
   {
     id: 'gemini',
@@ -77,21 +78,23 @@ export const CONTAINER_ACP_AGENTS: readonly ContainerAcpAgent[] = [
     keyEnv: 'GEMINI_API_KEY',
     keySlug: 'gemini',
     keyLabel: 'Gemini',
-    // Google sign-in writes ~/.gemini/oauth_creds.json.
-    loginCarryIn: true,
+    // Google sign-in writes the token and the account; settings.json carries
+    // `selectedAuthType`, without which a headless CLI asks how to sign in.
+    loginFiles: [
+      '.gemini/oauth_creds.json',
+      '.gemini/google_accounts.json',
+      '.gemini/settings.json',
+    ],
   },
 ]
 
 /**
- * The home-relative directories that hold an agent's sign-in, for the agents
- * that may carry it in; `null` for every other agent. The catalogue's
- * `homeDirs` are the source: they are what the desktop seatbelt lets the
- * agent read and write, so they are where its login lives.
+ * The home-relative files that hold an agent's sign-in, for the agents that
+ * may carry it in; `null` for every other agent.
  */
-export function containerAcpLoginDirs(agentId: string): string[] | null {
-  const capable = containerAcpAgent(agentId)
-  if (!capable?.loginCarryIn) return null
-  return [...(findAcpCatalogEntry(capable.id)?.sandbox?.homeDirs ?? [])]
+export function containerAcpLoginFiles(agentId: string): string[] | null {
+  const files = containerAcpAgent(agentId)?.loginFiles
+  return files ? [...files] : null
 }
 
 /** The key-capable entry for an agent id (any spelling the catalogue knows), or null. */
@@ -138,7 +141,7 @@ export function containerAcpAvailability(
     if (keysConfigured[capable.keySlug] === true) {
       return { runnable: true, reason: null, credential: 'key', loginOffered: false }
     }
-    if (capable.loginCarryIn === true) {
+    if (capable.loginFiles !== undefined) {
       const title = findAcpCatalogEntry(capable.id)?.title ?? capable.id
       return opts.useLogin === true
         ? { runnable: true, reason: null, credential: 'login', loginOffered: false }

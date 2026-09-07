@@ -122,10 +122,10 @@ export interface ThreadContainerAcpHarness {
   keyEnvName: string
   /**
    * Carry the user's desktop sign-in in instead of a key (decision A1′): the
-   * home-relative directories to copy. The host stages the ones that exist
-   * into the run directory and the guest restores them into its own home.
+   * home-relative files to copy. The host stages the ones that exist into the
+   * run directory and the guest restores them into its own home.
    */
-  login?: { dirs: string[] }
+  login?: { files: string[] }
 }
 
 /** The spec the guest reads from `run.json`. Contains no secrets. */
@@ -894,8 +894,8 @@ export async function runThreadInContainer(
   let acp = request.acp
   let stagedLogin: string[] | null = null
   if (acp?.login) {
-    stagedLogin = stageAgentLogin(homedir(), acp.login.dirs, runDir, acp.agent.title)
-    acp = { ...acp, login: { dirs: stagedLogin } }
+    stagedLogin = await stageAgentLogin(homedir(), acp.login.files, runDir, acp.agent.title)
+    acp = { ...acp, login: { files: stagedLogin } }
     log(`[thread-container] sign-in carried in: ${stagedLogin.map((d) => `~/${d}`).join(', ')}`)
   }
 
