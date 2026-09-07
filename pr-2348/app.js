@@ -262644,6 +262644,20 @@ async function loadRunModelOptions(fetch, availability) {
     } : option2;
   });
 }
+function startBlocker(state4) {
+  if (state4.task.trim().length === 0) return "Describe the task first";
+  if (parseAcpModel(state4.model) === null) return null;
+  if (state4.verdict === void 0) {
+    return state4.rosterLoaded ? `${modelDisplayLabel(state4.model)} is not available in a container` : "Checking whether this agent can run in a container\u2026";
+  }
+  if (state4.verdict.reason !== null) {
+    return `${modelDisplayLabel(state4.model)}: ${state4.verdict.reason}`;
+  }
+  if (state4.verdict.loginOffered && !state4.loginChecked) {
+    return `Tick "Use my ${state4.verdict.loginOffered.agentTitle} sign-in for this run" to start`;
+  }
+  return null;
+}
 function agentModelsNote() {
   const titles = containerAcpAgentTitles();
   const named2 = titles.length > 1 ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1] ?? ""}` : titles[0] ?? "";
@@ -262796,8 +262810,16 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       ariaLabel: "Model for the unattended run",
       loadOnMount: false
     });
-    void modelPicker.refresh(chosenModel).catch((error63) => {
+    let rosterLoaded = false;
+    void modelPicker.refresh(chosenModel).catch(async (error63) => {
       console.error("[container-run] could not list models:", error63);
+      if (parseAcpModel(chosenModel) !== null) {
+        const answered = await api3.container.modelAvailability([chosenModel]).catch(() => ({}));
+        for (const [model, verdict] of Object.entries(answered)) verdicts.set(model, verdict);
+      }
+    }).finally(() => {
+      rosterLoaded = true;
+      renderLoginOptIn();
     });
     const minutes = el("input", {
       type: "number",
@@ -262886,7 +262908,15 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     );
     cancel.addEventListener("click", () => overlay?.close());
     function renderStartState() {
-      start2.disabled = task.value.trim().length === 0 || loginOffer() !== null && !loginOptIn.checked;
+      const blocker = startBlocker({
+        task: task.value,
+        model: chosenModel,
+        verdict: verdicts.get(chosenModel),
+        rosterLoaded,
+        loginChecked: loginOptIn.checked
+      });
+      start2.disabled = blocker !== null;
+      start2.title = blocker ?? "";
     }
     renderStartState();
     task.addEventListener("input", renderStartState);
