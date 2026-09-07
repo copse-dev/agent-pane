@@ -66,6 +66,13 @@ function isLive(progress: ContainerRunProgress | null): boolean {
   return progress !== null && progress.phase !== 'finished' && progress.phase !== 'failed'
 }
 
+function elapsedLabel(run: ContainerRunProgress): string {
+  return (
+    formatDuration(run.startedAt, run.finishedAt ?? Date.now()) +
+    (run.finishedAt === null ? ' so far' : '')
+  )
+}
+
 function formatDuration(from: number, to: number): string {
   const seconds = Math.max(0, Math.round((to - from) / 1000))
   if (seconds < 90) return `${String(seconds)}s`
@@ -201,11 +208,35 @@ export function mountContainerRunControl(
 
   // ── Dialog ────────────────────────────────────────────────────────────
   function ensureDialog(): OverlayDialog {
-    overlay ??= createOverlayDialog({
-      id: 'container-run-dialog',
-      className: 'container-run-dialog',
-    })
+    if (!overlay) {
+      overlay = createOverlayDialog({
+        id: 'container-run-dialog',
+        className: 'container-run-dialog',
+      })
+      // A closed dialog has nothing to tick; the clock restarts on reopen.
+      overlay.dialog.addEventListener('close', stopElapsedClock)
+    }
     return overlay
+  }
+
+  // The elapsed row on a live run is a clock, not a log line: it ticks on its
+  // own rather than waiting for the next progress update to repaint the face.
+  let elapsedTimer: ReturnType<typeof setInterval> | null = null
+  function stopElapsedClock(): void {
+    if (elapsedTimer !== null) clearInterval(elapsedTimer)
+    elapsedTimer = null
+  }
+  function startElapsedClock(run: ContainerRunProgress): void {
+    stopElapsedClock()
+    if (!isLive(run)) return
+    elapsedTimer = setInterval(() => {
+      const cell = overlay?.dialog.querySelector('.container-run-elapsed')
+      if (!cell || !overlay?.isOpen()) {
+        stopElapsedClock()
+        return
+      }
+      cell.textContent = elapsedLabel(run)
+    }, 1000)
   }
 
   function renderDialog(): void {
@@ -217,6 +248,8 @@ export function mountContainerRunControl(
     modelPicker = null
     clear(overlay.dialog)
     overlay.dialog.append(run ? statusView(run) : armForm())
+    if (run) startElapsedClock(run)
+    else stopElapsedClock()
   }
 
   function armForm(): HTMLElement {
@@ -472,13 +505,9 @@ export function mountContainerRunControl(
               : 'none',
       ),
     )
-    rows.push(
-      row(
-        'Elapsed',
-        formatDuration(run.startedAt, run.finishedAt ?? Date.now()) +
-          (run.finishedAt === null ? ' so far' : ''),
-      ),
-    )
+    const elapsedRow = row('Elapsed', elapsedLabel(run))
+    elapsedRow.querySelector('dd')?.classList.add('container-run-elapsed')
+    rows.push(elapsedRow)
     if (run.record) {
       rows.push(row('Image', run.record.imageDigest?.slice(0, 19) ?? run.record.image))
       rows.push(
@@ -734,6 +763,7 @@ export function mountContainerRunControl(
     refresh,
     destroy: (): void => {
       unsubscribe()
+      stopElapsedClock()
       modelPicker?.destroy()
       modelPicker = null
       overlay?.dialog.remove()
