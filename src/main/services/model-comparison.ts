@@ -20,6 +20,7 @@ import {
   BEST_INTELLECT_MODEL_SELECTOR,
   BEST_VALUE_MODEL_SELECTOR,
 } from '@copse/llm/dynamic-model.ts'
+import { hostRoutedNamespace } from '@copse/llm/model-selection.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 // The former `MODEL_COMPARISON_ENABLED_SETTING` (top-level
@@ -58,13 +59,35 @@ export interface ComparisonModels {
 }
 
 /**
+ * The chat model, when it can actually serve as reviewer A.
+ *
+ * A reviewer is a plain provider call, so a chat model that names a *route* —
+ * a device agent (`acp:`), a cloud agent (`remote-agent:`), a plugin route —
+ * cannot be one. Inheriting it anyway is how a user who never opened the
+ * comparison settings ended up with a reviewer that could not run: before
+ * `buildProvider` learned to refuse them, an `acp:` reviewer went to the
+ * Anthropic API as a literal model id and came back "your credit balance is too
+ * low" (issue #2478); with the refusal it fails cleanly instead. Neither is a
+ * comparison, and neither was chosen.
+ *
+ * So the default falls through to the reviewer-A *rule* instead, which picks
+ * something that can run. A user who names a route here explicitly still gets
+ * the error — that is a choice, and silently substituting a different model for
+ * one the user pinned is the worse answer.
+ */
+function inheritableChatModel(chatModel: string): string {
+  return hostRoutedNamespace(chatModel) === null ? chatModel : ''
+}
+
+/**
  * Fill in the three *selections* from the (possibly blank) settings. The result
  * may hold dynamic selectors; expanding them into concrete, distinct model ids
  * is `resolveModelsFromSettings`' job in the runner, which is also where any
  * collision between them is resolved.
  *
  * A blank reviewer A still means "the current chat model" — that is the one
- * choice where the user's live context is a better answer than any rule.
+ * choice where the user's live context is a better answer than any rule —
+ * except when that model cannot review at all (see `inheritableChatModel`).
  */
 export function resolveComparisonModels(opts: {
   modelA?: string | null
@@ -73,7 +96,10 @@ export function resolveComparisonModels(opts: {
   chatModel: string
 }): ComparisonModels {
   return {
-    a: nonEmptyStringOr(opts.modelA?.trim(), opts.chatModel || DEFAULT_COMPARISON_MODEL_A),
+    a: nonEmptyStringOr(
+      opts.modelA?.trim(),
+      inheritableChatModel(opts.chatModel) || DEFAULT_COMPARISON_MODEL_A,
+    ),
     b: nonEmptyStringOr(opts.modelB?.trim(), DEFAULT_COMPARISON_MODEL_B),
     judge: nonEmptyStringOr(opts.judge?.trim(), DEFAULT_COMPARISON_JUDGE_MODEL),
   }
