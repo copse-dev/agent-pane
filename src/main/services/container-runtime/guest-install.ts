@@ -38,6 +38,10 @@ export const DEPENDENCY_INSTALL_ORIGINS: readonly string[] = [
   'github.com:443',
   '*.github.com:443',
   '*.githubusercontent.com:443',
+  // electron-rebuild fetches Electron's headers from the project's own CDN
+  // when it builds native modules against Electron rather than Node.
+  'electronjs.org:443',
+  '*.electronjs.org:443',
 ]
 
 /**
@@ -152,9 +156,18 @@ export function dependencyInstallFor(workspace: string): DependencyInstall | nul
 export function dependencyInstallEnv(
   base: NodeJS.ProcessEnv,
   proxy: { url: string; noProxy: string } | null,
+  options: {
+    /**
+     * Where the running Node's headers are (`<dir>/include/node`), so node-gyp
+     * builds against them instead of fetching a tarball from nodejs.org, which
+     * the run does not admit. The official Node image ships them.
+     */
+    nodeDir?: string
+  } = {},
 ): NodeJS.ProcessEnv {
   return {
     ...base,
+    ...(options.nodeDir !== undefined ? { npm_config_nodedir: options.nodeDir } : {}),
     ...(proxy
       ? {
           HTTPS_PROXY: proxy.url,

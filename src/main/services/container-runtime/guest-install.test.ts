@@ -89,7 +89,12 @@ describe('dependencyInstallFor', () => {
     assert.ok(DEPENDENCY_INSTALL_ORIGINS.includes('github.com:443'))
     assert.ok(DEPENDENCY_INSTALL_ORIGINS.includes('*.githubusercontent.com:443'))
     for (const origin of DEPENDENCY_INSTALL_ORIGINS) assert.match(origin, /:443$/)
-    assert.equal(DEPENDENCY_INSTALL_ORIGINS.length, 4)
+    assert.ok(DEPENDENCY_INSTALL_ORIGINS.includes('*.electronjs.org:443'))
+    assert.ok(
+      !DEPENDENCY_INSTALL_ORIGINS.some((origin) => origin.includes('nodejs.org')),
+      'node headers come from the image',
+    )
+    assert.equal(DEPENDENCY_INSTALL_ORIGINS.length, 6)
   })
 })
 
@@ -112,5 +117,8 @@ describe('dependencyInstallEnv', () => {
     assert.equal(env['CI'], '1')
     const offline = dependencyInstallEnv({ PATH: '/usr/bin' }, null)
     assert.equal(offline['HTTPS_PROXY'], undefined)
+    assert.equal(offline['npm_config_nodedir'], undefined)
+    const withHeaders = dependencyInstallEnv({}, null, { nodeDir: '/usr/local' })
+    assert.equal(withHeaders['npm_config_nodedir'], '/usr/local')
   })
 })

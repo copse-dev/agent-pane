@@ -13,7 +13,7 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { createLocalOpenAIProvider } from '@copse/llm/create-provider.ts'
 import { runHeadlessAgent } from '../headless-agent-host.ts'
@@ -241,7 +241,11 @@ async function installDependencies(
     say('[worker] no lockfile to install from (pnpm-lock.yaml or package-lock.json); skipping\n')
     return
   }
-  const env = dependencyInstallEnv(process.env, proxy)
+  // node-gyp builds against this Node's own headers (the image ships them
+  // beside the binary) rather than fetching them from nodejs.org.
+  const env = dependencyInstallEnv(process.env, proxy, {
+    nodeDir: dirname(dirname(process.execPath)),
+  })
   const startedAt = Date.now()
   const deadline = startedAt + INSTALL_TIMEOUT_MS
   const failed: string[] = []

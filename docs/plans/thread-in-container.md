@@ -507,7 +507,12 @@ guarantee, and the record must say so.
   documents for Debian), so `xvfb-run` exists and the suite's own `--no-sandbox` and
   `--disable-dev-shm-usage` flags do the rest under Docker's default seccomp. The
   `ELECTRON_SKIP_BINARY_DOWNLOAD` switch is gone; the browser-CDN switches (Playwright,
-  Puppeteer, Cypress) stay, since those hosts are still not admitted.
+  Puppeteer, Cypress) stay, since those hosts are still not admitted. The third real
+  install then named two more hosts: node-gyp fetching Node's headers from nodejs.org, and
+  electron-rebuild fetching Electron's from electronjs.org. The first is avoided — the
+  image ships Node's headers and the install runs with `npm_config_nodedir` pointing at
+  them — and the second is admitted (`electronjs.org`, `*.electronjs.org`), the vendor's
+  own CDN in the same class as GitHub releases.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
