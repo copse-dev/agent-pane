@@ -1,7 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { createOverlayDialog } from './dialog-shell.ts'
+import { createOverlayDialog, isAnyDialogOpen } from './dialog-shell.ts'
 
 describe('createOverlayDialog', () => {
   beforeEach(() => {
@@ -42,5 +42,55 @@ describe('createOverlayDialog', () => {
     // Closing while already closed must not re-fire cleanup.
     shell.close()
     assert.equal(closes, 1)
+  })
+})
+
+describe('isAnyDialogOpen', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('is false with no dialogs, and false when one exists but is closed', () => {
+    assert.equal(isAnyDialogOpen(), false)
+    createOverlayDialog({ id: 'closed-overlay' })
+    assert.equal(isAnyDialogOpen(), false)
+  })
+
+  it('is true while a modal dialog is open, and false again once it closes', () => {
+    const shell = createOverlayDialog({ id: 'modal-overlay' })
+    shell.open()
+    assert.equal(isAnyDialogOpen(), true)
+    shell.close()
+    assert.equal(isAnyDialogOpen(), false)
+  })
+
+  it('counts a non-modal dialog too', () => {
+    // The approval prompt shows inline over the chat with `show()`, not
+    // `showModal()`. It is still a question the user is answering, so a global
+    // shortcut must not act on the transcript behind it.
+    const dialog = document.createElement('dialog')
+    document.body.append(dialog)
+    dialog.show()
+    assert.equal(isAnyDialogOpen(), true)
+    dialog.close()
+    assert.equal(isAnyDialogOpen(), false)
+  })
+
+  it('stays true while any one of several dialogs is still open', () => {
+    const first = createOverlayDialog({ id: 'first-overlay' })
+    const second = createOverlayDialog({ id: 'second-overlay' })
+    first.open()
+    second.open()
+    first.close()
+    assert.equal(isAnyDialogOpen(), true, 'the second dialog is still on screen')
+    second.close()
+    assert.equal(isAnyDialogOpen(), false)
+  })
+
+  it('does not need to know the dialog exists', () => {
+    // The point of reading the DOM: a dialog built anywhere, by anything, is
+    // covered without being registered (#2474).
+    document.body.insertAdjacentHTML('beforeend', '<dialog open id="ad-hoc"></dialog>')
+    assert.equal(isAnyDialogOpen(), true)
   })
 })

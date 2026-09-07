@@ -37,3 +37,25 @@ export function createOverlayDialog(opts: { id: string; className?: string }): O
     isOpen: (): boolean => dialog.open,
   }
 }
+
+/**
+ * Whether any `<dialog>` in the document is currently open.
+ *
+ * Asked by global keyboard shortcuts, which must defer to whatever the user is
+ * answering rather than act on the screen behind it. Cmd/Ctrl+W is the case
+ * that made this necessary: it deletes the active thread, and with Settings —
+ * or any other dialog — on screen the keystroke a user meant as "close this"
+ * destroyed a conversation instead (#2474).
+ *
+ * Read off the DOM rather than from a list of `isXOpen()` predicates. There are
+ * seventeen dialogs in the renderer and the one hand-maintained list of them
+ * named four, which is the failure this is shaped to avoid: a new dialog is
+ * covered the moment it exists, without anyone remembering to add it here.
+ *
+ * The `open` attribute is set by both `show()` and `showModal()`, so a
+ * non-modal prompt sitting over the chat counts too — it is still a question
+ * the user is in the middle of.
+ */
+export function isAnyDialogOpen(): boolean {
+  return document.querySelector('dialog[open]') !== null
+}
