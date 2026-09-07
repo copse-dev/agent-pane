@@ -27,6 +27,8 @@ import { createServer, connect, type Server, type Socket } from 'node:net'
 import { join } from 'node:path'
 import type { EgressLogEntry } from '@shared/types/container-run.ts'
 import {
+  BROKER_PROBE_REPLY,
+  BROKER_PROBE_REQUEST,
   BROKER_SOCKET_NAME,
   findEgressRule,
   formatEgressRule,
@@ -125,6 +127,11 @@ export class EgressBroker {
       }
       guest.off('data', onData)
       const line = head.subarray(0, newline).toString('utf8').trim()
+      if (line === BROKER_PROBE_REQUEST) {
+        guest.end(`${BROKER_PROBE_REPLY}\n`)
+        this.live.delete(guest)
+        return
+      }
       const rest = head.subarray(newline + 1)
       const target = /^CONNECT\s+(\S+)$/i.exec(line)?.[1]
       const parsed = target === undefined ? null : parseEgressTarget(target)

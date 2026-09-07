@@ -285,6 +285,12 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
       'no_proxy=',
       '--env',
       'NODE_USE_ENV_PROXY=1',
+      // Node's env-proxy dispatcher announces itself as experimental on every
+      // process that loads it — the worker and each Node-based agent — and the
+      // run's log is where the user reads that. It is the mechanism the run
+      // relies on, chosen deliberately; the notice is noise here.
+      '--env',
+      'NODE_OPTIONS=--disable-warning=UNDICI-EHPA',
     )
   }
   // The provider key is the one secret the guest holds, scoped to this run and

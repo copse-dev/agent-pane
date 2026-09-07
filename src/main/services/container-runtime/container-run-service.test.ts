@@ -35,7 +35,7 @@ function fakeRecord(threadId: string): ThreadContainerRecord {
       egressAllowlist: ['api.anthropic.com:443'],
       hostMounts: ['/run/copse'],
     },
-    egress: [],
+    egress: [{ at: 1, origin: 'api.anthropic.com:443', event: 'connect' }],
     result: {
       threadId,
       stopReason: 'completed',
@@ -441,6 +441,23 @@ describe('judgeRun', () => {
       verdict.warnings.join(' '),
       /2 connections refused by the egress allowlist: sentry\.io:443/,
     )
+  })
+
+  it('warns when brokered egress saw no connection at all, and fails when there is no result either', () => {
+    const record = fakeRecord(THREAD)
+    const completed = judgeRun({ ...record, egress: [] })
+    assert.equal(completed.failure, null)
+    assert.match(completed.warnings.join(' '), /No connection reached the egress broker/)
+
+    const noResult = judgeRun({ ...record, egress: [], result: null })
+    assert.match(noResult.failure ?? '', /No connection reached the egress broker/)
+
+    const offline = judgeRun({
+      ...record,
+      egress: [],
+      attestation: { ...record.attestation, network: 'none', egressAllowlist: [] },
+    })
+    assert.deepEqual(offline, { failure: null, warnings: [] })
   })
 
   it('never reports success when the commits could not be fetched', () => {

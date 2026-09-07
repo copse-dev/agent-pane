@@ -7,7 +7,7 @@ import { createServer as createHttpServer, request as httpRequest, type Server }
 import { connect } from 'node:net'
 import { EgressBroker } from './egress-broker.ts'
 import { parseEgressRule } from './egress-rules.ts'
-import { startGuestEgressProxy, type GuestEgressProxy } from './guest-egress-proxy.ts'
+import { probeBroker, startGuestEgressProxy, type GuestEgressProxy } from './guest-egress-proxy.ts'
 
 /**
  * The guest proxy end to end, in one process: proxy → broker socket → origin.
@@ -266,5 +266,36 @@ describe('guest egress proxy', () => {
       req.end()
     })
     assert.equal(result, 400)
+  })
+
+  it('probes a live broker, and names the fault when the socket cannot be opened', async () => {
+    await probeBroker(broker.path())
+    await assert.rejects(probeBroker(join(dir, 'absent.sock'), 500), /ENOENT/)
+  })
+
+  it('reports each tunnel the broker refused, with the reason the client saw', async () => {
+    const failures: string[] = []
+    const reporting = await startGuestEgressProxy(
+      broker.path(),
+      { host: '127.0.0.1', port: 0 },
+      { onTunnelError: (target, reason) => failures.push(`${target} ${reason}`) },
+    )
+    try {
+      await new Promise<void>((resolveTunnel, reject) => {
+        const socket = connect(reporting.address.port, reporting.address.host)
+        // Drain the 403 so the socket can reach 'end', and so 'close'.
+        socket.resume()
+        socket.on('close', () => {
+          resolveTunnel()
+        })
+        socket.on('error', reject)
+        socket.once('connect', () => {
+          socket.write('CONNECT evil.example:443 HTTP/1.1\r\nHost: evil.example\r\n\r\n')
+        })
+      })
+    } finally {
+      await reporting.close()
+    }
+    assert.deepEqual(failures, ['evil.example:443 DENY not in the allowlist'])
   })
 })

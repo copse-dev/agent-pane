@@ -167,4 +167,13 @@ describe('EgressBroker', () => {
     assert.match(reply, /^DENY malformed preamble/)
     assert.ok(broker.log().some((e) => e.event === 'refused' && e.detail === 'malformed preamble'))
   })
+
+  it('answers a probe with PONG, closes, and logs nothing', async () => {
+    const before = broker.log().length
+    const { reply, socket } = await ask(broker.path(), 'PING\n', '', 100)
+    assert.equal(reply, 'PONG\n')
+    assert.equal(socket.destroyed || socket.readableEnded, true)
+    assert.equal(broker.log().length, before)
+    socket.destroy()
+  })
 })

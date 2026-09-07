@@ -22,7 +22,12 @@
  */
 import { createServer as createHttpServer, type IncomingMessage, type Server } from 'node:http'
 import { connect, type Socket } from 'node:net'
-import { guestEgressAuthorization, parseEgressTarget } from './egress-rules.ts'
+import {
+  BROKER_PROBE_REPLY,
+  BROKER_PROBE_REQUEST,
+  guestEgressAuthorization,
+  parseEgressTarget,
+} from './egress-rules.ts'
 
 export interface GuestEgressProxyAddress {
   host: string
@@ -44,6 +49,51 @@ export interface GuestEgressProxyOptions {
   token?: string
   /** Told about every request refused for want of the token. */
   onRefused?: (target: string) => void
+  /**
+   * Told about every tunnel the broker would not or could not open, with the
+   * reason the client was given in its 403: the broker's `DENY`, or the
+   * failure to reach the broker at all.
+   */
+  onTunnelError?: (target: string, reason: string) => void
+}
+
+/**
+ * Ask the broker whether it is there: one connection, `PING`, expect `PONG`.
+ * Rejects with the connection's own error, or with what came back instead,
+ * so the worker can name the fault before any client trips over it.
+ */
+export function probeBroker(socketPath: string, timeoutMs = 5000): Promise<void> {
+  return new Promise((resolveProbe, reject) => {
+    const socket = connect(socketPath)
+    let received = ''
+    let settled = false
+    const timer = setTimeout(() => {
+      settle(new Error(`no reply within ${String(timeoutMs)}ms`))
+    }, timeoutMs)
+    function settle(error: Error | null): void {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      socket.destroy()
+      if (error) reject(error)
+      else resolveProbe()
+    }
+    socket.once('connect', () => {
+      socket.write(`${BROKER_PROBE_REQUEST}\n`)
+    })
+    socket.on('data', (chunk: Buffer) => {
+      received += chunk.toString('utf8')
+      if (!received.includes('\n')) return
+      const line = received.slice(0, received.indexOf('\n')).trim()
+      settle(line === BROKER_PROBE_REPLY ? null : new Error(`unexpected reply: ${line}`))
+    })
+    socket.on('error', (error) => {
+      settle(error)
+    })
+    socket.on('close', () => {
+      settle(new Error('closed without replying'))
+    })
+  })
 }
 
 const PROXY_AUTH_REQUIRED =
@@ -161,6 +211,7 @@ export function startGuestEgressProxy(
       },
       (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error)
+        options.onTunnelError?.(`${target.host}:${String(target.port)}`, message)
         client.end(
           `HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n${message}\n`,
         )
@@ -235,6 +286,7 @@ export function startGuestEgressProxy(
       },
       (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error)
+        options.onTunnelError?.(`${target.host}:${String(target.port)}`, message)
         response.writeHead(403, { Connection: 'close', 'Content-Type': 'text/plain' })
         response.end(`${message}\n`)
       },

@@ -363,6 +363,17 @@ export function judgeRun(record: ThreadContainerRecord): {
       `${String(refused.length)} connection${refused.length === 1 ? '' : 's'} refused by the egress allowlist: ${origins.join(', ')}`,
     )
   }
+  // Brokered egress and an empty broker log: the guest never got a connection
+  // out, not even a refused one. Its model could not have been reached, so a
+  // "completed" result did not come from the run the user asked for. The
+  // worker probes the socket at startup and names the fault in the log.
+  const unreached = record.attestation.network === 'brokered' && record.egress.length === 0
+  if (unreached) {
+    const message =
+      "No connection reached the egress broker: nothing could leave the container. The socket is a bind mount from the host; the log has the guest's reason."
+    if (!record.result) return { failure: message, warnings }
+    warnings.push(message)
+  }
 
   if (!record.result) return { failure: 'The guest wrote no result', warnings }
   if (record.result.stopReason === 'error') {

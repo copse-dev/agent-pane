@@ -122,6 +122,7 @@ describe('dockerRunArgs', () => {
     assert.equal(env('COPSE_EGRESS_TOKEN'), 'test-run-token')
     assert.equal(env('NO_PROXY'), '')
     assert.equal(env('NODE_USE_ENV_PROXY'), '1')
+    assert.equal(env('NODE_OPTIONS'), '--disable-warning=UNDICI-EHPA')
     const none = dockerRunArgs(input({ egress: [], egressToken: null }))
     assert.equal(
       none.some((a) => a.startsWith('HTTPS_PROXY=') || a.startsWith('COPSE_EGRESS_SOCKET=')),

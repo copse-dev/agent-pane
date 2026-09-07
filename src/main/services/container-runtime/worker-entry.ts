@@ -32,7 +32,7 @@ import type { ThreadContainerAcpHarness } from './thread-container.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { restoreAgentLogin } from './agent-login.ts'
 import { GUEST_EGRESS_PROXY, guestEgressProxyUrl } from './egress-rules.ts'
-import { startGuestEgressProxy } from './guest-egress-proxy.ts'
+import { probeBroker, startGuestEgressProxy } from './guest-egress-proxy.ts'
 import type { LLMMessage } from '@shared/types/index.ts'
 
 const RUN_DIR = '/run/copse'
@@ -159,6 +159,7 @@ async function main(): Promise<void> {
   const tokenEnv = process.env['COPSE_EGRESS_TOKEN']
   const egressToken = tokenEnv !== undefined && tokenEnv.length > 0 ? tokenEnv : null
   let proxyRefusals = 0
+  const tunnelFailures = new Set<string>()
   const egressProxy = brokerSocket
     ? await startGuestEgressProxy(brokerSocket, GUEST_EGRESS_PROXY, {
         ...(egressToken ? { token: egressToken } : {}),
@@ -166,8 +167,31 @@ async function main(): Promise<void> {
           proxyRefusals += 1
           process.stdout.write(`[egress] refused without the run token: ${target}\n`)
         },
+        // Each distinct failure once: the agent retries, the log need not.
+        onTunnelError: (target, reason) => {
+          const line = `[egress] ${target}: ${reason}`
+          if (tunnelFailures.has(line)) return
+          tunnelFailures.add(line)
+          process.stdout.write(`${line}\n`)
+        },
       })
     : null
+  if (brokerSocket && egressProxy) {
+    // The socket is a bind mount from the host; on some Docker backends it
+    // mounts as a file that no connection can open. Find out now, by name,
+    // rather than as a 403 on the agent's first request and a run that
+    // "completes" having reached nothing.
+    try {
+      await probeBroker(brokerSocket)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      await egressProxy.close()
+      throw new Error(
+        `egress broker unreachable at ${brokerSocket}: ${reason}. The socket is bind-mounted from the host; nothing in the guest can leave the container until it connects.`,
+        { cause: error },
+      )
+    }
+  }
   // The token stays in this process's memory and in the agent's explicit env
   // (decision A7). Node's env-proxy dispatcher captured the proxy URL at
   // startup, so the worker's own clients keep working; every child spawned
@@ -185,7 +209,7 @@ async function main(): Promise<void> {
     if (process.env[name] !== undefined) process.env[name] = ''
   }
   process.stdout.write(
-    `[worker] egress proxy ${egressProxy ? `on ${egressProxy.address.host}:${String(egressProxy.address.port)}${egressToken ? ', token-gated' : ''}` : 'off (no broker socket)'}\n`,
+    `[worker] egress proxy ${egressProxy ? `on ${egressProxy.address.host}:${String(egressProxy.address.port)}${egressToken ? ', token-gated' : ''}, broker reachable` : 'off (no broker socket)'}\n`,
   )
   const spec = readSpec()
   const attestationText = readFileSync(join(RUN_DIR, 'attestation.json'), 'utf8')
