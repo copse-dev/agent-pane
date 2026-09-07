@@ -529,6 +529,10 @@ guarantee, and the record must say so.
   which tore down a working `node_modules`, and then asking to provision a cloud host; the
   worker now prefixes the task with a short environment note (`guestEnvironmentNote`):
   shell commands are offline, do not install or push, this is what the install left you.
+  The same run then sat idle after "done" until the wall-clock deadline killed it: with
+  the link on stdio (A8) the worker's stdin is an open handle, as is any background child
+  the agent left, so the event loop never drained. The worker now exits explicitly once
+  its log has flushed; `--init` reaps whatever the agent left running.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:

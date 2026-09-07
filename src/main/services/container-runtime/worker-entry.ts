@@ -623,7 +623,27 @@ async function main(): Promise<void> {
   if (!existsSync(join(outDir, 'result.json'))) throw new Error('result.json was not written')
 }
 
-void main().catch((error: unknown) => {
-  console.error('[worker] fatal:', error)
-  process.exitCode = 1
-})
+/**
+ * Leave once the log has drained. The process would otherwise sit on its
+ * open handles — the stdio link's stdin above all, and any background child
+ * the agent left behind — and the first run with a real install did exactly
+ * that: "done" at minute twenty, killed by the wall-clock deadline at minute
+ * a hundred and twenty. `--init` reaps whatever the agent left running once
+ * this process is gone.
+ */
+function leave(code: number): void {
+  process.stderr.write('', () => {
+    process.exit(code)
+  })
+}
+
+main().then(
+  () => {
+    say('[worker] exiting\n')
+    leave(0)
+  },
+  (error: unknown) => {
+    console.error('[worker] fatal:', error)
+    leave(1)
+  },
+)
