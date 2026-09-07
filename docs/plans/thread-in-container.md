@@ -36,7 +36,8 @@ Three things were already true on `main` and made this cheap:
    (`src/main/services/approval.ts`, `security/deferral-mode.ts`, `deferred-approval-store.ts`).
 3. **Linux containment exists.** Bubblewrap through the sandbox runtime is the Linux project
    sandbox, and it initialises inside a container once Docker's default seccomp profile is
-   relaxed to allow user namespaces.
+   relaxed to allow user namespaces. (The prototype started that way; decision A7 below
+   removed the nested sandbox once it was clear the container was the boundary.)
 
 What was missing was the thing between them: a runtime the gate could _trust_ as a
 containment boundary, and a gate rule that answers by blast radius instead of by "would a host
@@ -174,7 +175,7 @@ long-horizon plans want is exactly the one where it does.
 | 6 — the gate never blocks                            | Kept: arming implies deferral mode; the fail-closed handler in the worker counts what would have blocked and the test requires zero.                                                                                         |
 | 7 — budgets mandatory                                | Kept: refused without them; enforced in the guest and backstopped by the host.                                                                                                                                               |
 | 8 — every run produces a review record               | Kept as `record.json`; not yet written to the thread spine as canonical events.                                                                                                                                              |
-| 9 — not a hostile-workload boundary                  | Kept, and sharper: the guest runs with `seccomp=unconfined` so bubblewrap can create namespaces. The container is the user's own disposable machine, not a multi-tenant claim.                                               |
+| 9 — not a hostile-workload boundary                  | Kept. The container is the user's own disposable machine, not a multi-tenant claim. (It ran `seccomp=unconfined` while a bubblewrap nested inside it; A7 put the default profiles back.)                                     |
 | 10 — classifiers never grant authority               | Kept: `decideContainedShellEffect` routes; the grant is the explicitly armed run on an attested runtime.                                                                                                                     |
 
 If the loop-in-guest direction is confirmed, decisions 1 and 3 in `unattended-runs.md` should
@@ -236,9 +237,9 @@ Recorded because each cost time and will again.
 
 - **bubblewrap inside Docker needs `seccomp=unconfined`.** Docker's default profile refuses
   `unshare`, so ASRT's Linux backend fails to initialise with the misleading "kernel does
-  not allow non-privileged user namespaces". `apparmor=unconfined` and
-  `systempaths=unconfined` follow for the same reason. The autonomy eval already makes this
-  trade; the attestation does not claim a syscall filter at the container boundary.
+  not allow non-privileged user namespaces"; `apparmor=unconfined` and
+  `systempaths=unconfined` follow. The prototype paid that to nest a per-command sandbox;
+  decision A7 stopped paying it, and the attestation now records `securityProfiles`.
 - **`# syntax=docker/dockerfile:1` pulls a frontend image from Docker Hub.** In a sandbox
   where Hub is rate-limited or blocked the build fails before reading line 2. Leave it out.
 - **`git fetch` into the checked-out branch is refused, even an unborn one.** The guest
@@ -261,9 +262,8 @@ Recorded because each cost time and will again.
   materialises its mandatory write-deny paths (`.bash_profile`, `.vscode`, …) as mount
   points in the checkout for the life of the sandboxed process
   ([`linux-sandbox-rollout-followups.md`](linux-sandbox-rollout-followups.md) §0), and git
-  refuses to add a mount point. This is a pre-existing Linux limitation, not a container
-  one, and it also affects the `git_commit` tool's `stage_all`. Adding explicit paths works;
-  the worker's own end-of-run snapshot runs after the sandbox is shut down and is unaffected.
+  refuses to add a mount point. A pre-existing Linux limitation, not a container one; it
+  no longer applies in the guest since A7, and still applies to the desktop's `stage_all`.
 - **The guest's uid is not the host's.** The `state`, `out` and `egress` directories under
   the run directory are created world-writable so an unprivileged guest uid can write them.
   They are per-run and under the user's own profile; a user-namespace remap is the cleaner
@@ -405,6 +405,33 @@ guarantee, and the record must say so.
   only widen the image. For every decision that asks "is this agent's process contained?"
   — auto-approving its reads, defaulting Claude to `acceptEdits`, the prompt's sandbox note
   — the guest answers yes (`acp-agent-service.ts`, `contained`).
+- **A7 — the container is the sandbox, for every harness; no bubblewrap inside it.** Asked
+  by the author after the first real run: what is the nested sandbox for? On the desktop
+  bubblewrap gives an auto-run command four things — writes confined to the workspace, a
+  network namespace with an allowlist bridge, a PID namespace, and the prompt-on-escape
+  that the permission model rests on. In the guest the rootfs is read-only and the
+  workspace, home and `/tmp` are throwaway tmpfs, there is no network beyond the broker,
+  nothing in the container can see the host, and prompt-on-escape is exactly what the
+  contained-effect policy replaces. What the nesting cost was real: `seccomp=unconfined`,
+  `apparmor=unconfined` and `systempaths=unconfined` on the container so bubblewrap could
+  create namespaces, plus bubblewrap, socat and the runtime's initialisation in the image,
+  plus the `git add -A` mount-point quirk. So the guest no longer initialises the project
+  sandbox at all, the image carries neither bubblewrap nor socat, and the container runs
+  under Docker's default seccomp and AppArmor profiles; the attestation records
+  `securityProfiles: 'default'`. The one thing worth keeping — an auto-run shell command
+  cannot reach the network — is kept without namespaces: the host mints a per-run token,
+  the guest proxy refuses any request without it (`407`), the worker's own client gets it
+  through the proxy URL Node's env-proxy dispatcher reads once at startup, the agent gets
+  it through its explicit env map, and the worker blanks the variables from its own
+  environment before it spawns anything, so shell children inherit no proxy and no token
+  (`perCommandNetwork: 'token-gated'`; proven in `guest-egress-proxy.test.ts` and by a
+  Node 22 probe of the dispatcher's capture-at-startup). Residual, recorded rather than
+  hidden: a child runs as the same uid as the worker and can read the worker's initial
+  environment from `/proc`, so a deliberately hostile command could recover the token and
+  reach the allowlisted vendor origins — the same hosts the model already sends the
+  repository to. A namespace was the only thing that closed that, and it was not worth the
+  container's syscall filter. An ACP agent's own shell children inherit the agent's token,
+  as they inherit its seatbelt scope on the desktop.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
@@ -433,10 +460,8 @@ were smaller apart than the plan expected; what is recorded under each is what i
   (one socket, `CONNECT`/`OK`/`DENY`, refusals logged), `guest-egress-proxy.ts` (loopback
   proxy in the worker bundle; `CONNECT` tunnels and absolute-form plain HTTP, re-chunked
   and streamed so server-sent events arrive as sent). `--add-host` and the sysctl are
-  gone; `socat` stays in the image, not for egress but because the sandbox runtime bridges
-  each bubblewrap'd command's loopback through it and refuses to initialise without it —
-  the first cut removed it and the first real run reported "socat not installed" with
-  every guest command unsandboxed. Exit gate as met: at the unit tier two hosts on one port through one broker,
+  gone. (`socat` briefly came back when the first real run reported "socat not installed"
+  from the sandbox runtime's bridge; A7 then removed the nested sandbox and socat with it.) Exit gate as met: at the unit tier two hosts on one port through one broker,
   a wildcard admitting a subdomain and refusing the bare suffix and two siblings, and a
   remapped dial matched and logged on the port the guest named; at the integration tier
   the model is reached on guest port 443 by a wildcard rule, with the rule in the log and

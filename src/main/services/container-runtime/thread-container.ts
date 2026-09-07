@@ -39,10 +39,10 @@ import type { ThreadContainerRecord, ThreadContainerResult } from '@shared/types
 import { isRecord } from '@shared/unknown-value.ts'
 import { EgressBroker } from './egress-broker.ts'
 import {
-  GUEST_EGRESS_PROXY,
   BROKER_SOCKET_NAME,
   findEgressRule,
   formatEgressRule,
+  guestEgressProxyUrl,
   parseEgressRule,
   type EgressRule,
 } from './egress-rules.ts'
@@ -195,6 +195,12 @@ export interface DockerRunInput {
   /** Short host path holding the broker sockets; see {@link egressSocketDir}. */
   egressDir: string
   egress: EgressRule[]
+  /**
+   * The run's proxy token (decision A7): carried on the proxy URL the guest is
+   * started with, required by the guest proxy on every request, withheld from
+   * shell children by the worker. Null when there is no egress at all.
+   */
+  egressToken: string | null
   apiKeyEnv: string | null
   memoryLimit: string
   pidsLimit: number
@@ -219,13 +225,10 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     '--read-only',
     '--cap-drop=ALL',
     '--security-opt=no-new-privileges',
-    // bubblewrap inside the guest needs user namespaces, which Docker's default
-    // seccomp profile refuses. The trade is the one the autonomy eval already
-    // makes: the guest keeps namespaces, cap-drop and no-new-privileges; the
-    // syscall filter is what bubblewrap then applies per command.
-    '--security-opt=seccomp=unconfined',
-    '--security-opt=apparmor=unconfined',
-    '--security-opt=systempaths=unconfined',
+    // Docker's default seccomp and AppArmor profiles stay on. They were once
+    // relaxed so bubblewrap could nest a per-command sandbox inside the guest;
+    // the container is the sandbox now (decision A7), so the boundary that
+    // matters keeps its syscall filter.
     `--pids-limit=${String(input.pidsLimit)}`,
     `--memory=${input.memoryLimit}`,
     `--cpus=${String(input.cpus)}`,
@@ -259,10 +262,15 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     // that honours the conventional variables — git, curl, an agent CLI. Both
     // spellings, because the tools are split on which one they read. NO_PROXY
     // is emptied so nothing decides to go direct; there is nowhere direct to go.
-    const proxy = `http://${GUEST_EGRESS_PROXY.host}:${String(GUEST_EGRESS_PROXY.port)}`
+    // The URL carries the run's token: Node's env-proxy dispatcher reads it
+    // once at startup, after which the worker blanks these variables so the
+    // shell children it spawns inherit no way onto the proxy (decision A7).
+    const proxy = guestEgressProxyUrl(input.egressToken)
     args.push(
       '--env',
       `COPSE_EGRESS_SOCKET=${GUEST_RUN_DIR}/egress/${BROKER_SOCKET_NAME}`,
+      '--env',
+      `COPSE_EGRESS_TOKEN=${input.egressToken ?? ''}`,
       '--env',
       `HTTPS_PROXY=${proxy}`,
       '--env',
@@ -305,6 +313,8 @@ export function buildAttestation(
     pidsLimit: input.pidsLimit,
     memoryLimit: input.memoryLimit,
     network: input.egress.length > 0 ? 'brokered' : 'none',
+    securityProfiles: 'default',
+    perCommandNetwork: input.egressToken !== null ? 'token-gated' : 'none',
     egressAllowlist: input.egress.map(formatEgressRule),
     hostMounts: [
       GUEST_RUN_DIR,
@@ -922,6 +932,7 @@ export async function runThreadInContainer(
     runDir,
     egressDir,
     egress,
+    egressToken: egress.length > 0 ? randomBytes(16).toString('hex') : null,
     apiKeyEnv,
     memoryLimit: '4g',
     pidsLimit: 512,

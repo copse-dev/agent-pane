@@ -45,16 +45,33 @@ export function acpHarnessForContainer(
 
 /**
  * The guest side: the agent as the worker registers it for the run. The key
- * the worker consumed from its environment becomes the agent's one variable;
- * an empty key (a scripted agent under test) sets nothing.
+ * the worker consumed from its environment becomes the agent's variable; an
+ * empty key (a scripted agent under test, or a sign-in carried in) sets none.
+ * The proxy URL, token and all, is the agent's other variable (decision A7):
+ * the worker blanked its own copy so shell children get no route out, and
+ * this explicit map is the one path `buildAcpAgentEnv` overlays unscrubbed.
  */
 export function guestAcpAgentConfig(
   harness: ThreadContainerAcpHarness,
   apiKey: string,
+  proxyUrl: string | null = null,
 ): AcpAgentConfig {
+  const env: Record<string, string> = {
+    ...(apiKey ? { [harness.keyEnvName]: apiKey } : {}),
+    ...(proxyUrl
+      ? {
+          HTTPS_PROXY: proxyUrl,
+          HTTP_PROXY: proxyUrl,
+          https_proxy: proxyUrl,
+          http_proxy: proxyUrl,
+          NO_PROXY: '',
+          no_proxy: '',
+        }
+      : {}),
+  }
   return {
     ...harness.agent,
-    ...(apiKey ? { env: { [harness.keyEnvName]: apiKey } } : {}),
+    ...(Object.keys(env).length > 0 ? { env } : {}),
     sandbox: false,
     enabled: true,
   }

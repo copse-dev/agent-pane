@@ -68,6 +68,19 @@ describe('guestAcpAgentConfig', () => {
     assert.equal(guest.enabled, true)
   })
 
+  it('hands the agent the token-carrying proxy URL, the one route out (A7)', () => {
+    const harness = acpHarnessForContainer(registered, 'ANTHROPIC_API_KEY')
+    const guest = guestAcpAgentConfig(harness, '', 'http://run:tok@127.0.0.1:3128')
+    assert.deepEqual(guest.env, {
+      HTTPS_PROXY: 'http://run:tok@127.0.0.1:3128',
+      HTTP_PROXY: 'http://run:tok@127.0.0.1:3128',
+      https_proxy: 'http://run:tok@127.0.0.1:3128',
+      http_proxy: 'http://run:tok@127.0.0.1:3128',
+      NO_PROXY: '',
+      no_proxy: '',
+    })
+  })
+
   it('sets no variable at all when the run has no key', () => {
     const harness = acpHarnessForContainer(registered, 'ANTHROPIC_API_KEY')
     assert.equal('env' in guestAcpAgentConfig(harness, ''), false)

@@ -32,6 +32,25 @@ export const GUEST_EGRESS_PROXY = { host: '127.0.0.1', port: 3128 } as const
 /** The one broker socket, by name; the host keeps it in a short per-run directory. */
 export const BROKER_SOCKET_NAME = 'broker.sock'
 
+/** The username on the proxy URL; the password is the run's token. */
+export const GUEST_EGRESS_USER = 'run'
+
+/**
+ * The proxy URL a client is given. With a token it authorises the client to
+ * the guest proxy (`Proxy-Authorization` is derived from the URL's userinfo by
+ * every client that honours the variable); without one it names the proxy but
+ * cannot use it, which is what a shell child in the guest is handed.
+ */
+export function guestEgressProxyUrl(token: string | null): string {
+  const auth = token ? `${GUEST_EGRESS_USER}:${encodeURIComponent(token)}@` : ''
+  return `http://${auth}${GUEST_EGRESS_PROXY.host}:${String(GUEST_EGRESS_PROXY.port)}`
+}
+
+/** The `Proxy-Authorization` value the token produces, as clients send it. */
+export function guestEgressAuthorization(token: string): string {
+  return `Basic ${Buffer.from(`${GUEST_EGRESS_USER}:${token}`).toString('base64')}`
+}
+
 const RULE =
   /^(\*\.)?([a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*):(\d{1,5})$/i
 

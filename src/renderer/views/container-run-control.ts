@@ -551,9 +551,18 @@ export function mountContainerRunControl(
       rows.push(
         row(
           'Containment',
-          run.record.attestation.network === 'brokered'
-            ? 'read-only rootfs, no capabilities, brokered egress'
-            : 'read-only rootfs, no capabilities, no network',
+          [
+            'read-only rootfs, no capabilities',
+            run.record.attestation.securityProfiles === 'default'
+              ? 'default seccomp and AppArmor'
+              : null,
+            run.record.attestation.network === 'brokered' ? 'brokered egress' : 'no network',
+            run.record.attestation.perCommandNetwork === 'token-gated'
+              ? 'shell commands off the network'
+              : null,
+          ]
+            .filter((part) => part !== null)
+            .join(', '),
         ),
       )
       rows.push(row('Secret canary', run.record.secretCanary.present ? 'PRESENT' : 'absent'))

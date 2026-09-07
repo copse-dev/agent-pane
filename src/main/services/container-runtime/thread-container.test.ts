@@ -31,6 +31,7 @@ function input(overrides: Partial<DockerRunInput> = {}): DockerRunInput {
     runDir: '/tmp/copse-runs/run-test',
     egressDir: '/tmp/copse-egress-run-test',
     egress: [{ host: 'model.copse.internal', wildcard: false, port: 8080 }],
+    egressToken: 'tok-0123456789abcdef',
     apiKeyEnv: null,
     memoryLimit: '4g',
     pidsLimit: 512,
@@ -95,6 +96,9 @@ describe('dockerRunArgs', () => {
     }
     assert.equal(args.at(-1), 'copse-worker:test')
     assert.equal(args[args.indexOf('--name') + 1], containerName('run-test'))
+    // The container is the sandbox (A7): nothing inside it needs the
+    // unconfined profiles a nested bubblewrap did, so the defaults stay on.
+    assert.ok(!args.some((a) => a.includes('unconfined')))
   })
 
   it('binds each allowed origin to loopback and nothing else', () => {
@@ -109,12 +113,16 @@ describe('dockerRunArgs', () => {
         .find((a, i) => args[i - 1] === '--env' && a.startsWith(`${name}=`))
         ?.slice(name.length + 1)
     assert.equal(env('COPSE_EGRESS_SOCKET'), '/run/copse/egress/broker.sock')
-    assert.equal(env('HTTPS_PROXY'), 'http://127.0.0.1:3128')
-    assert.equal(env('HTTP_PROXY'), 'http://127.0.0.1:3128')
-    assert.equal(env('https_proxy'), 'http://127.0.0.1:3128')
+    // The proxy URL carries the run's token (A7); the worker blanks it after
+    // Node's dispatcher has read it, so children never see it.
+    const proxy = 'http://run:tok-0123456789abcdef@127.0.0.1:3128'
+    assert.equal(env('HTTPS_PROXY'), proxy)
+    assert.equal(env('HTTP_PROXY'), proxy)
+    assert.equal(env('https_proxy'), proxy)
+    assert.equal(env('COPSE_EGRESS_TOKEN'), 'tok-0123456789abcdef')
     assert.equal(env('NO_PROXY'), '')
     assert.equal(env('NODE_USE_ENV_PROXY'), '1')
-    const none = dockerRunArgs(input({ egress: [] }))
+    const none = dockerRunArgs(input({ egress: [], egressToken: null }))
     assert.equal(
       none.some((a) => a.startsWith('HTTPS_PROXY=') || a.startsWith('COPSE_EGRESS_SOCKET=')),
       false,
@@ -304,10 +312,11 @@ describe('WORKER_DOCKERFILE', () => {
     // An empty argument skips the layer rather than running `npm install -g`
     // with nothing, so a build without agents stays a build.
     assert.match(lines[install] ?? '', /if \[ -n "\$\{ACP_AGENTS\}" \]/)
-    // socat stays: the sandbox runtime needs it for its own loopback bridge
-    // and refuses to start without it (a real run reported exactly that).
-    // Egress no longer touches it — the entrypoint starts nothing.
-    assert.ok(/apt-get install[\s\S]*socat/.test(WORKER_DOCKERFILE))
+    // The container is the sandbox (A7): no bubblewrap, and so no socat for
+    // the runtime's bridge; the entrypoint starts nothing either.
+    // The apt list is the check, not the prose: the Dockerfile's own comment
+    // says why they are absent.
+    assert.ok(!/^\s+(?:bubblewrap|socat) \\$/m.test(WORKER_DOCKERFILE))
     assert.ok(!WORKER_ENTRYPOINT_SH.includes('socat'))
   })
 })

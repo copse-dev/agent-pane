@@ -196,6 +196,61 @@ describe('guest egress proxy', () => {
     assert.match(reply, /DENY not in the allowlist/)
   })
 
+  it('refuses every request without the run token, with a 407, when one is set', async () => {
+    const refused: string[] = []
+    const gated = await startGuestEgressProxy(
+      broker.path(),
+      { host: '127.0.0.1', port: 0 },
+      { token: 'run-token-1', onRefused: (target) => refused.push(target) },
+    )
+    try {
+      const auth = `Basic ${Buffer.from('run:run-token-1').toString('base64')}`
+      const status = (headers: Record<string, string>): Promise<number> =>
+        new Promise((resolve, reject) => {
+          const req = httpRequest(
+            {
+              host: gated.address.host,
+              port: gated.address.port,
+              method: 'GET',
+              path: `http://model.copse.internal:${String(origin.port)}/ping`,
+              headers,
+            },
+            (res) => {
+              res.resume()
+              res.on('end', () => {
+                resolve(res.statusCode ?? 0)
+              })
+            },
+          )
+          req.on('error', reject)
+          req.end()
+        })
+      // A shell child handed the proxy address alone: refused before the
+      // broker is even asked, and the refusal is reported.
+      assert.equal(await status({}), 407)
+      assert.equal(await status({ 'proxy-authorization': 'Basic d3Jvbmc6dG9rZW4=' }), 407)
+      assert.deepEqual(refused.length, 2)
+      // The worker's own client, and the agent, carry the token and go through.
+      assert.equal(await status({ 'proxy-authorization': auth }), 200)
+      // CONNECT without the token is refused the same way.
+      const reply = await new Promise<string>((resolve, reject) => {
+        const socket = connect(gated.address.port, gated.address.host)
+        let buffer = ''
+        socket.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString()
+        })
+        socket.on('close', () => {
+          resolve(buffer)
+        })
+        socket.on('error', reject)
+        socket.write(`CONNECT model.copse.internal:${String(origin.port)} HTTP/1.1\r\n\r\n`)
+      })
+      assert.match(reply, /^HTTP\/1\.1 407 /)
+    } finally {
+      await gated.close()
+    }
+  })
+
   it('rejects a request that is not absolute-form', async () => {
     const result = await new Promise<number>((resolveRequest, reject) => {
       const req = httpRequest(

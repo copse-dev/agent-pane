@@ -368,7 +368,8 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       log: [
         '[thread-container] carry-in 9b1b901683b9 as refs/copse/carry-in/run-demo-1',
         '[thread-container] starting copse-run-demo-1 from copse-worker:local',
-        '[guest] [project-sandbox] Linux bubblewrap active (ASRT)',
+        '[guest] [worker] egress proxy on 127.0.0.1:3128, token-gated',
+        '[guest] [worker] project sandbox: none; the container is the sandbox',
         '[guest] [worker] done: completed; prompts=0 deferrals=1 commits=3',
         '[thread-container] carry-out fetched to refs/copse/runs/run-demo-1',
       ],
@@ -413,7 +414,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
             'b2c3d4e fix(lint): prefer nullish coalescing in providers',
             'c3d4e5f chore: rerun formatter',
           ],
-          containment: { declared: true, declineReason: null, projectSandbox: true },
+          containment: { declared: true, declineReason: null, projectSandbox: false },
           toolNames: ['run_shell', 'read_file', 'write_file'],
           finalText:
             'Cleared the lint backlog in three commits. The push is waiting for your review.',

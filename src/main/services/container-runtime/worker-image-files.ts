@@ -31,17 +31,15 @@ ARG ACP_AGENTS=""
 ENV DEBIAN_FRONTEND=noninteractive \\
     npm_config_update_notifier=false
 
-# socat is not egress (that is the worker's own proxy): the sandbox runtime
-# bridges each bubblewrap'd command's loopback through a socat child and
-# refuses to initialise without it, which would leave every guest command
-# unsandboxed. Learned from a real run's log.
+# No bubblewrap and no socat: the container is the sandbox (decision A7), so
+# nothing inside it nests a second one, and the container keeps Docker's
+# default seccomp and AppArmor profiles instead of the unconfined ones a
+# nested bubblewrap needed.
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-      bubblewrap \\
       ca-certificates \\
       git \\
       ripgrep \\
-      socat \\
     && rm -rf /var/lib/apt/lists/*
 
 RUN if [ -n "\${ACP_AGENTS}" ]; then npm install -g --no-fund --no-audit \${ACP_AGENTS} && npm cache clean --force; fi

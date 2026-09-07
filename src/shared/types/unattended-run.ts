@@ -36,6 +36,18 @@ export interface ContainerRuntimeAttestation {
   egressAllowlist: string[]
   /** No host path is mounted except the run directory the host owns. */
   hostMounts: string[]
+  /**
+   * Docker's default seccomp and AppArmor profiles, or the unconfined ones an
+   * in-guest bubblewrap needed. Absent on records written before A7.
+   */
+  securityProfiles?: 'default' | 'unconfined'
+  /**
+   * How a shell command inside the guest is kept off the network: `token-gated`
+   * means the proxy refuses anything without the run's token, which the
+   * worker withholds from its children; `none` means there is no egress to
+   * keep it off. Absent on records written before A7.
+   */
+  perCommandNetwork?: 'token-gated' | 'none'
 }
 
 export interface UnattendedRunBudgets {

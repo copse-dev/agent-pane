@@ -22,7 +22,7 @@
  */
 import { createServer as createHttpServer, type IncomingMessage, type Server } from 'node:http'
 import { connect, type Socket } from 'node:net'
-import { parseEgressTarget } from './egress-rules.ts'
+import { guestEgressAuthorization, parseEgressTarget } from './egress-rules.ts'
 
 export interface GuestEgressProxyAddress {
   host: string
@@ -33,6 +33,21 @@ export interface GuestEgressProxy {
   address: GuestEgressProxyAddress
   close: () => Promise<void>
 }
+
+export interface GuestEgressProxyOptions {
+  /**
+   * Per-run token every request must carry as `Proxy-Authorization` (decision
+   * A7). The worker's own client and the agent are given it through their
+   * proxy URL; a shell child in the guest is not, so the network it can see
+   * is the proxy's 407 and nothing behind it. Absent = no check (tests).
+   */
+  token?: string
+  /** Told about every request refused for want of the token. */
+  onRefused?: (target: string) => void
+}
+
+const PROXY_AUTH_REQUIRED =
+  'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="copse-run"\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'
 
 /** Headers that belong to the hop between client and proxy, not to the origin. */
 const HOP_BY_HOP = new Set([
@@ -119,11 +134,20 @@ function pipeBoth(a: Socket, b: Socket): void {
 export function startGuestEgressProxy(
   brokerSocketPath: string,
   listen: GuestEgressProxyAddress,
+  options: GuestEgressProxyOptions = {},
 ): Promise<GuestEgressProxy> {
   const server: Server = createHttpServer()
+  const expected = options.token === undefined ? null : guestEgressAuthorization(options.token)
+  const authorised = (request: IncomingMessage): boolean =>
+    expected === null || request.headers['proxy-authorization'] === expected
 
   // HTTPS: CONNECT, then a raw tunnel.
   server.on('connect', (request, client: Socket, head: Buffer) => {
+    if (!authorised(request)) {
+      options.onRefused?.(request.url ?? '')
+      client.end(PROXY_AUTH_REQUIRED)
+      return
+    }
     const target = parseEgressTarget(request.url ?? '')
     if (target === null) {
       client.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n')
@@ -146,6 +170,15 @@ export function startGuestEgressProxy(
 
   // Plain HTTP: absolute-form request, rewritten to origin-form over the tunnel.
   server.on('request', (request, response) => {
+    if (!authorised(request)) {
+      options.onRefused?.(request.url ?? '')
+      response.writeHead(407, {
+        'Proxy-Authenticate': 'Basic realm="copse-run"',
+        Connection: 'close',
+      })
+      response.end()
+      return
+    }
     const target = targetOf(request)
     if (target === null) {
       response.writeHead(400, { Connection: 'close' })

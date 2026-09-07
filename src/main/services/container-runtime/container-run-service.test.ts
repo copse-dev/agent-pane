@@ -45,7 +45,7 @@ function fakeRecord(threadId: string): ThreadContainerRecord {
       deferrals: [],
       denials: [],
       commits: ['abc agent: did it'],
-      containment: { declared: true, declineReason: null, projectSandbox: true },
+      containment: { declared: true, declineReason: null, projectSandbox: false },
       toolNames: [],
       finalText: 'Done.',
     },

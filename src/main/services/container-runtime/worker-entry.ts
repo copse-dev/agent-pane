@@ -18,11 +18,6 @@ import { z } from 'zod'
 import { createLocalOpenAIProvider } from '@copse/llm/create-provider.ts'
 import { runHeadlessAgent } from '../headless-agent-host.ts'
 import {
-  initProjectSandbox,
-  isProjectSandboxEnabled,
-  shutdownProjectSandbox,
-} from '../../project-sandbox/index.ts'
-import {
   declareContainerRuntime,
   parseContainerRuntimeAttestation,
 } from '../security/runtime-containment.ts'
@@ -36,7 +31,7 @@ import { guestAcpAgentConfig } from './guest-acp-agent.ts'
 import type { ThreadContainerAcpHarness } from './thread-container.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { restoreAgentLogin } from './agent-login.ts'
-import { GUEST_EGRESS_PROXY } from './egress-rules.ts'
+import { GUEST_EGRESS_PROXY, guestEgressProxyUrl } from './egress-rules.ts'
 import { startGuestEgressProxy } from './guest-egress-proxy.ts'
 import type { LLMMessage } from '@shared/types/index.ts'
 
@@ -161,11 +156,36 @@ async function main(): Promise<void> {
   // goes through. Node's env-proxy dispatcher was pointed at this address when
   // the process started and only connects on the first request.
   const brokerSocket = process.env['COPSE_EGRESS_SOCKET']
+  const tokenEnv = process.env['COPSE_EGRESS_TOKEN']
+  const egressToken = tokenEnv !== undefined && tokenEnv.length > 0 ? tokenEnv : null
+  let proxyRefusals = 0
   const egressProxy = brokerSocket
-    ? await startGuestEgressProxy(brokerSocket, GUEST_EGRESS_PROXY)
+    ? await startGuestEgressProxy(brokerSocket, GUEST_EGRESS_PROXY, {
+        ...(egressToken ? { token: egressToken } : {}),
+        onRefused: (target) => {
+          proxyRefusals += 1
+          process.stdout.write(`[egress] refused without the run token: ${target}\n`)
+        },
+      })
     : null
+  // The token stays in this process's memory and in the agent's explicit env
+  // (decision A7). Node's env-proxy dispatcher captured the proxy URL at
+  // startup, so the worker's own clients keep working; every child spawned
+  // from here on inherits no proxy and no token, so a shell command in the
+  // guest has no route out. (A child can still read this process's initial
+  // environment from /proc — same uid — which is the residual A7 records.)
+  const agentProxyUrl = egressProxy ? guestEgressProxyUrl(egressToken) : null
+  for (const name of [
+    'HTTPS_PROXY',
+    'HTTP_PROXY',
+    'https_proxy',
+    'http_proxy',
+    'COPSE_EGRESS_TOKEN',
+  ]) {
+    if (process.env[name] !== undefined) process.env[name] = ''
+  }
   process.stdout.write(
-    `[worker] egress proxy ${egressProxy ? `on ${egressProxy.address.host}:${String(egressProxy.address.port)}` : 'off (no broker socket)'}\n`,
+    `[worker] egress proxy ${egressProxy ? `on ${egressProxy.address.host}:${String(egressProxy.address.port)}${egressToken ? ', token-gated' : ''}` : 'off (no broker socket)'}\n`,
   )
   const spec = readSpec()
   const attestationText = readFileSync(join(RUN_DIR, 'attestation.json'), 'utf8')
@@ -209,9 +229,11 @@ async function main(): Promise<void> {
     process.stdout.write(`[worker] container containment NOT declared: ${declineReason}\n`)
   }
 
-  await initProjectSandbox()
-  const projectSandbox = isProjectSandboxEnabled()
-  process.stdout.write(`[worker] project sandbox (bubblewrap): ${String(projectSandbox)}\n`)
+  // No nested sandbox (decision A7): the container is the boundary, and a
+  // per-command bubblewrap inside it cost the container its default seccomp
+  // and AppArmor profiles for no confinement the guest did not already have.
+  const projectSandbox = false
+  process.stdout.write('[worker] project sandbox: none; the container is the sandbox\n')
 
   armUnattendedRun(spec.threadId, {
     runtimeId: spec.runtimeId,
@@ -258,7 +280,11 @@ async function main(): Promise<void> {
           // The one agent this run may drive, registered in the run's own
           // settings overlay so `getAcpAgent` finds it and nothing else.
           ...(spec.acp
-            ? { registeredAcpAgents: [guestAcpAgentConfig(harnessFromSpec(spec.acp), apiKey)] }
+            ? {
+                registeredAcpAgents: [
+                  guestAcpAgentConfig(harnessFromSpec(spec.acp), apiKey, agentProxyUrl),
+                ],
+              }
             : {}),
         },
         // Product-resolved providers (Anthropic) find their key here; nothing
@@ -330,8 +356,12 @@ async function main(): Promise<void> {
     // The desktop keeps an agent's session alive between turns; the guest has
     // no next turn, and a live child would keep this process from exiting.
     await disposeAllAcpSessions()
-    await shutdownProjectSandbox()
     await egressProxy?.close()
+    if (proxyRefusals > 0) {
+      process.stdout.write(
+        `[worker] ${String(proxyRefusals)} proxy request(s) refused for want of the run token\n`,
+      )
+    }
   }
 
   const deferrals = (
