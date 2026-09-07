@@ -11,6 +11,7 @@ import {
   waitForContainer,
   workerBuildFingerprint,
   containerName,
+  workspaceVolumeName,
   createSnapshotCommit,
   dockerRunArgs,
   fetchCarryOut,
@@ -126,6 +127,17 @@ describe('dockerRunArgs', () => {
     for (const volume of volumes) {
       assert.ok(volume.startsWith('/tmp/copse-runs/run-test'), volume)
     }
+    // The workspace is a per-run named volume on the daemon's disk (A9), not
+    // a tmpfs charged to the memory limit and not a host path.
+    const mounts = args.filter((a) => a.startsWith('--mount='))
+    assert.deepEqual(mounts, [
+      `--mount=type=volume,source=${workspaceVolumeName('run-test')},target=/workspace,volume-nocopy=false`,
+    ])
+    assert.ok(!args.some((a) => a.startsWith('--tmpfs=/workspace')))
+    // Postinstall binary downloads are switched off for every process in the
+    // guest: their hosts are never admitted.
+    assert.ok(args.includes('ELECTRON_SKIP_BINARY_DOWNLOAD=1'))
+    assert.ok(args.includes('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1'))
     assert.ok(args.includes('COPSE_RUN_KEY'))
     assert.ok(!args.some((a) => a.includes('COPSE_RUN_KEY=')))
   })
@@ -275,6 +287,15 @@ describe('workerBuildFingerprint', () => {
       assert.notEqual(
         workerBuildFingerprint({
           workerBundle: bundle,
+          acpAgents: containerAcpAgentSpecs(),
+          pnpmVersion: '0.0.1',
+        }),
+        current,
+        'the baked pnpm is part of the image',
+      )
+      assert.notEqual(
+        workerBuildFingerprint({
+          workerBundle: bundle,
           acpAgents: ['@agentclientprotocol/claude-agent-acp@0.0.1'],
         }),
         current,
@@ -296,6 +317,11 @@ describe('WORKER_DOCKERFILE', () => {
     // An empty argument skips the layer rather than running `npm install -g`
     // with nothing, so a build without agents stays a build.
     assert.match(lines[install] ?? '', /if \[ -n "\$\{ACP_AGENTS\}" \]/)
+    // The project's package manager is baked the same way (A9), on a Node 24
+    // base, which is what the projects a run carries in expect.
+    const pnpm = lines.findIndex((line) => /npm install -g .*"pnpm@\$\{PNPM_VERSION\}"/.test(line))
+    assert.ok(pnpm !== -1 && pnpm < user)
+    assert.ok(lines.some((line) => line === 'ARG BASE_IMAGE=node:24-bookworm-slim'))
     // The container is the sandbox (A7): no bubblewrap, and so no socat for
     // the runtime's bridge; the entrypoint starts nothing either.
     // The apt list is the check, not the prose: the Dockerfile's own comment

@@ -47,7 +47,12 @@ import {
   parseEgressRule,
   type EgressRule,
 } from './egress-rules.ts'
-import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
+import {
+  WORKER_BASE_IMAGE,
+  WORKER_DOCKERFILE,
+  WORKER_ENTRYPOINT_SH,
+  WORKER_PNPM_VERSION,
+} from './worker-image-files.ts'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
 import { removeStagedLogin, stageAgentLogin } from './agent-login.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
@@ -97,6 +102,12 @@ export interface ThreadContainerRequest {
    * `keyEnvName` in its environment. Its origins must be in the allowlist.
    */
   acp?: ThreadContainerAcpHarness
+  /**
+   * Install the checkout's dependencies in the guest before the agent starts
+   * (decision A9): the worker runs the lockfile's install with the run's proxy.
+   * The caller admits the package registry in the allowlist when it sets this.
+   */
+  installDependencies?: boolean
   budgets: UnattendedRunBudgets
   /** `host:port` and `*.suffix:port` rules the broker admits. Nothing else is reachable. */
   egressAllowlist: string[]
@@ -140,6 +151,8 @@ export interface ThreadContainerRunSpec {
   productProvider: { apiKeySlug: string } | null
   apiKeyEnv: string | null
   acp: ThreadContainerAcpHarness | null
+  /** Run the checkout's lockfile install before the agent (decision A9). */
+  installDependencies: boolean
   budgets: UnattendedRunBudgets
   workspace: string
   carryInRef: string
@@ -224,7 +237,13 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     // tmpfs mounts are root-owned by default regardless of the image; the
     // worker uid must own its scratch, workspace and home.
     '--tmpfs=/tmp:rw,nosuid,nodev,size=1g,mode=1777',
-    `--tmpfs=/workspace:rw,nosuid,nodev,size=2g,uid=${String(WORKER_UID)},gid=${String(WORKER_UID)},mode=0755`,
+    // The workspace is a per-run Docker volume, not a tmpfs: a project's
+    // node_modules runs to gigabytes, and tmpfs pages are charged to the
+    // container's memory limit. The volume lives on the daemon's own disk,
+    // never on a host path, is created empty for this run and removed with
+    // the container. The image owns /workspace as the worker uid, which a
+    // fresh volume inherits.
+    `--mount=type=volume,source=${workspaceVolumeName(input.runtimeId)},target=/workspace,volume-nocopy=false`,
     `--tmpfs=/home/copse:rw,nosuid,nodev,size=256m,uid=${String(WORKER_UID)},gid=${String(WORKER_UID)},mode=0750`,
     '--network=none',
     '--stop-timeout=30',
@@ -240,6 +259,17 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     `COPSE_DIR=${GUEST_RUN_DIR}/state`,
     '--env',
     'HOME=/home/copse',
+    // Nothing in the guest can fetch a browser or an Electron binary (those
+    // hosts are never admitted), so the postinstall hooks that try are told
+    // not to, here as well as for the worker's own install step.
+    '--env',
+    'ELECTRON_SKIP_BINARY_DOWNLOAD=1',
+    '--env',
+    'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1',
+    '--env',
+    'PUPPETEER_SKIP_DOWNLOAD=1',
+    '--env',
+    'CYPRESS_INSTALL_BINARY=0',
   )
   if (input.egress.length > 0) {
     // One link to the host over the container's stdio, and a loopback proxy
@@ -291,6 +321,11 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
 
 export function containerName(runtimeId: string): string {
   return `copse-${runtimeId}`
+}
+
+/** The run's workspace volume: created before the container, removed after it. */
+export function workspaceVolumeName(runtimeId: string): string {
+  return `copse-ws-${runtimeId}`
 }
 
 export function buildAttestation(
@@ -405,9 +440,10 @@ export function workerBuildFingerprint(options: BuildImageOptions = {}): string 
   const hash = createHash('sha256')
   hash.update('copse-worker-image-v1\n')
   hash.update(`uid:${String(WORKER_UID)}\n`)
-  hash.update(`base:${options.baseImage ?? ''}\n`)
+  hash.update(`base:${options.baseImage ?? WORKER_BASE_IMAGE}\n`)
   // The agents baked in, by pinned version: bumping one rebuilds the image.
   hash.update(`acp-agents:${(options.acpAgents ?? containerAcpAgentSpecs()).join(' ')}\n`)
+  hash.update(`pnpm:${options.pnpmVersion ?? WORKER_PNPM_VERSION}\n`)
   hash.update(WORKER_DOCKERFILE)
   hash.update(WORKER_ENTRYPOINT_SH)
   hash.update(readFileSync(bundle))
@@ -448,6 +484,8 @@ export interface BuildImageOptions {
    * needs no agent passes `[]` and gets a smaller, faster build.
    */
   acpAgents?: readonly string[]
+  /** The pnpm baked in for a project's install; defaults to {@link WORKER_PNPM_VERSION}. */
+  pnpmVersion?: string
   contextDir?: string
   /**
    * The bundled guest entry. Defaults to the standalone bundle the build emits
@@ -548,11 +586,12 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
   stageSandboxRuntime(contextDir)
   const args = ['build', '--tag', image, '--label', `${FINGERPRINT_LABEL}=${fingerprint}`]
   if (options.buildNetwork) args.push('--network', options.buildNetwork)
-  if (options.baseImage) args.push('--build-arg', `BASE_IMAGE=${options.baseImage}`)
+  args.push('--build-arg', `BASE_IMAGE=${options.baseImage ?? WORKER_BASE_IMAGE}`)
   args.push(
     '--build-arg',
     `ACP_AGENTS=${(options.acpAgents ?? containerAcpAgentSpecs()).join(' ')}`,
   )
+  args.push('--build-arg', `PNPM_VERSION=${options.pnpmVersion ?? WORKER_PNPM_VERSION}`)
   args.push('--build-arg', `WORKER_UID=${String(WORKER_UID)}`, contextDir)
   await runDocker(args)
   return image
@@ -599,17 +638,28 @@ export async function teardownRuntime(
   runtimeId: string,
 ): Promise<'removed' | 'already-gone' | 'failed'> {
   const name = containerName(runtimeId)
+  let container: 'removed' | 'already-gone' | 'failed'
   try {
     await runDocker(['container', 'inspect', '--format', '{{.Id}}', name])
+    container = 'removed'
   } catch {
-    return 'already-gone'
+    container = 'already-gone'
   }
+  if (container === 'removed') {
+    try {
+      await runDocker(['rm', '--force', name])
+    } catch {
+      container = 'failed'
+    }
+  }
+  // The workspace volume goes with the container; a volume that is not there
+  // is fine, one that cannot be removed is not.
   try {
-    await runDocker(['rm', '--force', name])
-    return 'removed'
+    await runDocker(['volume', 'rm', '--force', workspaceVolumeName(runtimeId)])
   } catch {
     return 'failed'
   }
+  return container
 }
 
 /** Every container this host started and has not torn down — the orphan sweep. */
@@ -975,6 +1025,7 @@ export async function runThreadInContainer(
     productProvider: request.productProvider ?? null,
     apiKeyEnv,
     acp: acp ?? null,
+    installDependencies: request.installDependencies === true,
     budgets: request.budgets,
     workspace: GUEST_WORKSPACE,
     carryInRef: carryIn.ref,
@@ -1008,6 +1059,15 @@ export async function runThreadInContainer(
   let attached: ChildProcess | null = null
   try {
     log(`[thread-container] starting ${containerName(runtimeId)} from ${image}`)
+    await runDocker([
+      'volume',
+      'create',
+      '--label',
+      `${MANAGED_LABEL}=1`,
+      '--label',
+      `${RUNTIME_LABEL}=${runtimeId}`,
+      workspaceVolumeName(runtimeId),
+    ])
     await runDocker(dockerRunArgs(runInput))
     attached = attachContainer(containerName(runtimeId), {
       broker: egress.length > 0 ? broker : null,

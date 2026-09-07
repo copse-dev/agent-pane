@@ -56,6 +56,7 @@ const PHASE_LABEL: Record<ContainerRunProgress['phase'], string> = {
   preparing: 'Preparing',
   'building-image': 'Building the worker image',
   starting: 'Starting the container',
+  installing: 'Installing dependencies',
   running: 'Running unattended',
   collecting: 'Collecting the result',
   finished: 'Finished',
@@ -429,6 +430,34 @@ export function mountContainerRunControl(
     }
     loginOptIn.addEventListener('change', renderStartState)
 
+    // The install opt-in (decision A9): on by default, because an agent asked
+    // to run a project's tests needs its dependencies, and the guest's own
+    // shell is off the network so it cannot fetch them itself. The hint names
+    // the one origin this admits.
+    const installOptIn = el('input', {
+      type: 'checkbox',
+      class: 'container-run-install',
+      name: 'containerRunInstall',
+      checked: '',
+    })
+    const installField = el(
+      'div',
+      { class: 'container-run-install-field' },
+      el(
+        'label',
+        { class: 'container-run-install-label' },
+        installOptIn,
+        el('span', {}, 'Install dependencies before the run'),
+      ),
+      el(
+        'p',
+        { class: 'field-hint container-run-install-hint' },
+        "Runs the checkout's lockfile install (pnpm or npm) once, before the agent starts, so tests and builds " +
+          'can run. For that step the container can also reach registry.npmjs.org; the agent’s own commands ' +
+          'stay off the network.',
+      ),
+    )
+
     const start = el(
       'button',
       { type: 'button', class: 'ui-btn ui-btn-primary container-run-start' },
@@ -465,6 +494,7 @@ export function mountContainerRunControl(
           model: chosenModel,
           budgets: { wallClockMs, tokenCeiling },
           ...(loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {}),
+          installDependencies: installOptIn.checked,
         })
         .then((progress) => {
           update(progress)
@@ -504,6 +534,7 @@ export function mountContainerRunControl(
       ),
       egressHint,
       loginField,
+      installField,
       uiActions(cancel, start, { className: 'container-run-actions' }),
     )
   }

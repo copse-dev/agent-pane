@@ -1606,6 +1606,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .max(16)
       .optional(),
     useAgentLogin: z.boolean().optional(),
+    installDependencies: z.boolean().optional(),
   })
   ipcMain.handle('container:run-thread', (event, request: unknown) => {
     assertMainFrameSender(event, win)
@@ -1618,6 +1619,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       budgets: parsed.budgets,
       ...(parsed.extraEgress ? { extraEgress: parsed.extraEgress } : {}),
       ...(parsed.useAgentLogin !== undefined ? { useAgentLogin: parsed.useAgentLogin } : {}),
+      ...(parsed.installDependencies !== undefined
+        ? { installDependencies: parsed.installDependencies }
+        : {}),
     })
   })
   // Why each model could not run in a container, or null when it could — the

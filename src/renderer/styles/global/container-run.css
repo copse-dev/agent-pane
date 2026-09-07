@@ -174,3 +174,23 @@
 .container-run-budgets input {
   width: 100%;
 }
+
+/* The arming form's opt-ins: a box and its sentence on one line, the hint under. */
+.container-run-agent-login-label,
+.container-run-install-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+.container-run-agent-login-label input,
+.container-run-install-label input {
+  width: auto;
+  margin: 0;
+}
+.container-run-agent-login-field,
+.container-run-install-field {
+  margin-top: var(--spacing-md);
+}

@@ -10,7 +10,7 @@
  * would-be prompt is either allowed by the contained-effect policy or queued by
  * deferral mode before it could reach a handler.
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -31,7 +31,9 @@ import { guestAcpAgentConfig } from './guest-acp-agent.ts'
 import type { ThreadContainerAcpHarness } from './thread-container.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { restoreAgentLogin } from './agent-login.ts'
-import { GUEST_EGRESS_PROXY, guestEgressProxyUrl } from './egress-rules.ts'
+import { GUEST_EGRESS_PROXY, GUEST_NO_PROXY, guestEgressProxyUrl } from './egress-rules.ts'
+import { dependencyInstallEnv, dependencyInstallFor } from './guest-install.ts'
+import { GUEST_EXCLUDED_TOOLS } from './guest-tools.ts'
 import { EgressLink } from './egress-link.ts'
 import { probeBroker, startGuestEgressProxy } from './guest-egress-proxy.ts'
 import type { LLMMessage } from '@shared/types/index.ts'
@@ -98,6 +100,7 @@ const specSchema = z.object({
       login: z.object({ files: z.array(z.string().min(1)) }).optional(),
     })
     .nullable(),
+  installDependencies: z.boolean().default(false),
   budgets: z.object({
     wallClockMs: z.number().positive(),
     tokenCeiling: z.number().positive(),
@@ -168,6 +171,79 @@ function carryIn(spec: Spec): void {
   const head = git(spec.workspace, ['rev-parse', 'HEAD'])
   if (head !== spec.carryInBase)
     throw new Error(`carry-in mismatch: ${head} != ${spec.carryInBase}`)
+}
+
+/** Longest a dependency install may take before the run goes on without it. */
+const INSTALL_TIMEOUT_MS = 20 * 60_000
+
+/**
+ * The checkout's own install, once, before the agent (decision A9). Its
+ * output goes to the log as it comes; a failure is said and the run goes on,
+ * because an agent with no `node_modules` can still read and reason, and the
+ * log names what it will find missing.
+ */
+function installDependencies(
+  workspace: string,
+  proxy: { url: string; noProxy: string } | null,
+): Promise<void> {
+  const install = dependencyInstallFor(workspace)
+  if (install === null) {
+    say('[worker] no lockfile to install from (pnpm-lock.yaml or package-lock.json); skipping\n')
+    return Promise.resolve()
+  }
+  say(
+    `[worker] installing dependencies: ${install.command} ${install.args.join(' ')} (${install.lockfile})\n`,
+  )
+  const startedAt = Date.now()
+  return new Promise((resolveInstall) => {
+    const child = spawn(install.command, install.args, {
+      cwd: workspace,
+      env: dependencyInstallEnv(process.env, proxy),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const tail: string[] = []
+    const onLine = (line: string): void => {
+      if (line.trim().length === 0) return
+      tail.push(line)
+      if (tail.length > 20) tail.shift()
+      say(`[install] ${line}\n`)
+    }
+    for (const stream of [child.stdout, child.stderr]) {
+      let pending = ''
+      stream.on('data', (chunk: Buffer) => {
+        pending += chunk.toString('utf8')
+        const lines = pending.split('\n')
+        pending = lines.pop() ?? ''
+        for (const line of lines) onLine(line)
+      })
+      stream.on('end', () => {
+        if (pending.length > 0) onLine(pending)
+      })
+    }
+    const timer = setTimeout(() => {
+      say(
+        `[worker] dependency install still running after ${String(INSTALL_TIMEOUT_MS / 60_000)} min; stopping it\n`,
+      )
+      child.kill('SIGKILL')
+    }, INSTALL_TIMEOUT_MS)
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      say(`[worker] dependency install could not start: ${error.message}\n`)
+      resolveInstall()
+    })
+    child.on('exit', (code, signal) => {
+      clearTimeout(timer)
+      const seconds = Math.round((Date.now() - startedAt) / 1000)
+      if (code === 0) {
+        say(`[worker] dependencies installed in ${String(seconds)}s\n`)
+      } else {
+        say(
+          `[worker] dependency install FAILED (${signal ?? `exit ${String(code)}`}) after ${String(seconds)}s; the agent runs without node_modules\n`,
+        )
+      }
+      resolveInstall()
+    })
+  })
 }
 
 /** Commit whatever the agent left uncommitted, then bundle everything since carry-in. */
@@ -280,6 +356,12 @@ async function main(): Promise<void> {
   say(`[worker] run ${spec.runtimeId} thread ${spec.threadId}\n`)
   carryIn(spec)
   say(`[worker] carried in ${spec.carryInBase.slice(0, 12)}\n`)
+  if (spec.installDependencies) {
+    await installDependencies(
+      spec.workspace,
+      agentProxyUrl ? { url: agentProxyUrl, noProxy: GUEST_NO_PROXY } : null,
+    )
+  }
   if (spec.acp?.login) {
     // The user's sign-in, staged by the host: into this throwaway home, private
     // to the worker, before the agent can look for it.
@@ -374,6 +456,9 @@ async function main(): Promise<void> {
         enabledPluginIds: [],
         toolAvailability: { rg: true, git: true, gh: false },
         loadMcpServers: false,
+        // Deliberate, not incidental: no GitHub or CI tool in the guest, and
+        // so no way to open, approve or merge a PR from an unattended run.
+        excludeTools: GUEST_EXCLUDED_TOOLS,
         workspaceTrusted: true,
         interaction: {
           approve: (request) => {

@@ -80,6 +80,7 @@ export type ContainerRunPhase =
   | 'preparing'
   | 'building-image'
   | 'starting'
+  | 'installing'
   | 'running'
   | 'collecting'
   | 'finished'
@@ -101,6 +102,12 @@ export interface ContainerRunRequest {
    * honoured for agents that keep their sign-in in files; never the default.
    */
   useAgentLogin?: boolean
+  /**
+   * Install the checkout's dependencies in the guest before the agent starts
+   * (decision A9): the lockfile's install runs once with the run's proxy, and
+   * the package registry joins the run's reachable origins for it.
+   */
+  installDependencies?: boolean
 }
 
 /**

@@ -56,6 +56,12 @@ export interface HeadlessAgentProfile {
   readonly toolAvailability: ExplicitToolAvailability
   /** Whether to discover/connect the product's configured MCP servers. */
   readonly loadMcpServers: boolean
+  /**
+   * Tools the run must never offer, unregistered after bootstrap and before
+   * the agent sees a list — whatever the bootstrap's own probes decided. The
+   * container worker names the GitHub and CI tools here (decision A10).
+   */
+  readonly excludeTools?: readonly string[]
   /** Explicit trust posture used by MCP, hooks, shell routing, and permission policy. */
   readonly workspaceTrusted: boolean
   /** Host interaction channels; omitted channels resolve deterministically without ambient UI. */
@@ -170,6 +176,9 @@ export async function runHeadlessAgent(
                       const registry = createRegistry()
                       registerSkillTools(registry)
                       if (profile.loadMcpServers) await loadMcpServers(registry)
+                      for (const name of profile.excludeTools ?? []) {
+                        if (registry.has(name)) registry.unregister(name)
+                      }
 
                       const chunks: StreamChunk[] = []
                       const host: AgentHost<StreamChunk> = {

@@ -164,6 +164,42 @@ describe('ContainerRunService', () => {
     assert.equal(service.isActive(THREAD), false)
   })
 
+  it('admits the package registry, and asks the runner to install, only when the run opts in', async () => {
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: 'install-on',
+      prompt: 'install-on',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+      installDependencies: true,
+    })
+    await waitFor(service, 'install-on', (p) => p.phase === 'finished')
+    await service.start({
+      projectId: PROJECT,
+      threadId: 'install-off',
+      prompt: 'install-off',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    await waitFor(service, 'install-off', (p) => p.phase === 'finished')
+    const [withInstall, without] = seen
+    assert.ok(withInstall && without)
+    assert.equal(withInstall.installDependencies, true)
+    assert.ok(withInstall.egressAllowlist.includes('registry.npmjs.org:443'))
+    assert.equal(without.installDependencies, undefined)
+    assert.ok(!without.egressAllowlist.includes('registry.npmjs.org:443'))
+  })
+
   it('runs an ACP agent under its vendor key on its own domains, with no provider', async () => {
     await setSetting('registeredAcpAgents', [
       { id: 'claude-acp', title: 'Claude', command: 'claude-agent-acp', enabled: true },
@@ -537,6 +573,20 @@ describe('phaseFromLog', () => {
     assert.equal(phaseFromLog('[guest] [worker] done: completed', 'running'), 'collecting')
     assert.equal(phaseFromLog('[thread-container] starting x', 'finished'), 'finished')
     assert.equal(phaseFromLog('[guest] chatter', 'running'), 'running')
+    // The install step (A9) is its own phase between starting and running.
+    assert.equal(
+      phaseFromLog('[guest] [worker] installing dependencies: pnpm install', 'running'),
+      'installing',
+    )
+    assert.equal(phaseFromLog('[install] Progress: resolved 100', 'installing'), 'installing')
+    assert.equal(
+      phaseFromLog('[guest] [worker] dependencies installed in 90s', 'installing'),
+      'running',
+    )
+    assert.equal(
+      phaseFromLog('[guest] [worker] dependency install FAILED (exit 1) after 9s', 'installing'),
+      'running',
+    )
   })
 })
 

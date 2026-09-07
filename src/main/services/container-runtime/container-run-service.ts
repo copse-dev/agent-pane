@@ -13,6 +13,7 @@ import {
 } from '../thread-execution-context.ts'
 import { recordDecision } from '../security/decision-log-store.ts'
 import { resolveContainerProvider } from '../providers/container-provider.ts'
+import { PACKAGE_REGISTRY_ORIGIN } from './guest-install.ts'
 import {
   buildWorkerImage,
   newRuntimeId,
@@ -163,7 +164,16 @@ export class ContainerRunService {
     const plan = resolveContainerProvider(model, { useAgentLogin: request.useAgentLogin === true })
     const credential: ContainerRunProgress['credential'] =
       plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
-    const egressAllowlist = [...new Set([...plan.egress, ...(request.extraEgress ?? [])])]
+    // The registry is reachable for the install step and nothing else asks
+    // for it: the guest's shell commands are off the network either way.
+    const install = request.installDependencies === true
+    const egressAllowlist = [
+      ...new Set([
+        ...plan.egress,
+        ...(install ? [PACKAGE_REGISTRY_ORIGIN] : []),
+        ...(request.extraEgress ?? []),
+      ]),
+    ]
 
     const progress: ContainerRunProgress = {
       threadId: request.threadId,
@@ -278,6 +288,7 @@ export class ContainerRunService {
             : { acp: plan.harness }),
         ...(apiKey ? { apiKeyEnv: keyEnv } : {}),
         budgets: request.budgets,
+        ...(request.installDependencies === true ? { installDependencies: true } : {}),
         egressAllowlist: progress.egressAllowlist,
         image: WORKER_IMAGE,
       }
@@ -412,6 +423,14 @@ export function judgeRun(record: ThreadContainerRecord): {
 export function phaseFromLog(line: string, current: ContainerRunPhase): ContainerRunPhase {
   if (current === 'finished' || current === 'failed') return current
   if (line.includes('[thread-container] starting ')) return 'running'
+  if (line.includes('[worker] installing dependencies')) return 'installing'
+  if (
+    current === 'installing' &&
+    (line.includes('[worker] dependencies installed') ||
+      line.includes('[worker] dependency install '))
+  ) {
+    return 'running'
+  }
   if (line.includes('wall-clock budget reached') || line.includes('[worker] done:')) {
     return 'collecting'
   }

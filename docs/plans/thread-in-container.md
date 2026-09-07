@@ -453,6 +453,35 @@ guarantee, and the record must say so.
   length or mountpoint to get wrong. Rejected: keeping the socket and asking macOS users
   to switch Docker Desktop to gRPC FUSE (a setting the run cannot verify, and slower for
   everything else they do).
+- **A9 — a Node 24 image with pnpm, a per-run volume, and an opt-in install step.** The
+  first complete Codex run could not run the project's tests: the guest had Node 22, no
+  pnpm, no `node_modules`, and no route to a registry, so the agent read CI evidence
+  instead. Three changes. The image builds on `node:24-bookworm-slim` with a pinned pnpm
+  baked in (`PNPM_VERSION`, part of the fingerprint). The workspace is a per-run named
+  Docker volume (`copse-ws-<id>`, labelled, created before the container and removed in
+  teardown) rather than a 2 GB tmpfs: a project's `node_modules` runs to gigabytes and
+  tmpfs pages are charged to the memory limit; the volume lives on the daemon's disk and
+  never on a host path, so the containment attestation is unchanged. And the dialog
+  offers "Install dependencies before the run", on by default: the worker runs the
+  checkout's lockfile install once, before the agent, with the run's proxy
+  (`guest-install.ts`: pnpm for `pnpm-lock.yaml`, `npm ci` for `package-lock.json`, the
+  pnpm store beside the checkout so an agent's `git add -A` cannot sweep it in), and
+  `registry.npmjs.org:443` joins the allowlist for that run. Postinstall binary downloads
+  (Electron, Playwright, Puppeteer, Cypress) are switched off container-wide: their hosts
+  are never admitted and an install that waited on them would only fail later. The
+  agent's own shell stays off the network (A7): it cannot add a package mid-run, and that
+  is the intended shape. A failed install is said in the log and the run goes on.
+- **A10 — no GitHub or CI tool in the guest, by name.** Asked by the author after the
+  first complete run: does the agent hold write tools to GitHub? The bridge's ceiling
+  includes four that write (`gh_pr_create`, `gh_pr_approve`, `gh_pr_mark_ready`,
+  `gh_pr_enable_auto_merge`) and they register on the desktop when `gh` is on the PATH or a
+  GitHub token is in the environment. Neither holds in the guest, so the first run offered
+  23 tools and none of them — but absence by accident is not a property. The headless
+  profile gained `excludeTools`, applied after bootstrap and before the agent sees a list,
+  and the worker passes every GitHub and CI tool name (`guest-tools.ts`, with a test that
+  fails when a new `gh_*` tool reaches the bridge list without joining the exclusion).
+  `run_shell` remains: it has no `gh`, no token, no route to github.com, and a `git push`
+  through it is an outward effect the contained gate refuses and records.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
@@ -594,6 +623,8 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | ACP: egress patterns   | unit        | Two hosts on one port through one link; `*.suffix` admits a subdomain, refuses the suffix and siblings; a dead origin is a refusal; logged              | `container-runtime/egress-broker.test.ts` (A-1)                                                                                        |
 | ACP: guest proxy       | unit        | Absolute-form HTTP streams an SSE body back with hop-by-hop headers dropped; CONNECT tunnels; DENY becomes a 403                                        | `container-runtime/guest-egress-proxy.test.ts` (A-1)                                                                                   |
 | ACP: broker probe      | unit        | `PING`/`PONG` on the link; the worker fails a run whose host does not answer; a brokered run that reached nothing is warned about, or failed            | `egress-broker.test.ts`, `guest-egress-proxy.test.ts`, `container-run-service.test.ts` (A8)                                            |
+| ACP: install step      | unit        | Lockfile picks pnpm or npm ci, nothing without one; the store sits beside the checkout; the install env carries the proxy and every download switch off | `container-runtime/guest-install.test.ts`, `container-run-service.test.ts` (A9)                                                        |
+| ACP: guest tools       | unit        | Every GitHub write tool, and every gh_*/CI tool the bridge could offer, is on the guest's exclusion list                                                | `container-runtime/guest-tools.test.ts` (A10)                                                                                          |
 | ACP: stdio link        | unit        | Frames survive any split; a stream half-closes each way; refusal and reset reach the peer; a severed byte stream fails every stream                     | `container-runtime/egress-link.test.ts` (A8)                                                                                           |
 | ACP: 443 in the guest  | integration | The model on guest port 443 is reached through the proxy, admitted by a wildcard rule named in the log                                                  | `container-runtime/thread-container.integration.test.ts`                                                                               |
 | ACP: permission policy | integration | A scripted ACP agent: in-guest write allowed, outward push denied and recorded, host escape denied, harness named                                       | `container-runtime/acp-container.integration.test.ts` (A-2)                                                                            |

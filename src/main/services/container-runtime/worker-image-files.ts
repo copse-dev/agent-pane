@@ -8,20 +8,35 @@
 /**
  * Built from a staging context that holds only the bundled worker, the sandbox
  * runtime, and the entrypoint — never the repository, node_modules, or any
- * credential. The base image must provide Node 22; Debian/Ubuntu apt is used
- * for the guest toolchain so the same file serves both families. No
+ * credential. The base image must provide Node 24 (what the projects a run
+ * carries in expect; decision A9); Debian/Ubuntu apt is used for the guest
+ * toolchain so the same file serves both families. No
  * `# syntax=` directive: it would pull a frontend image from Docker Hub, which
  * some sandboxes cannot reach.
  */
+/** The base the worker image builds on unless a build names another. */
+export const WORKER_BASE_IMAGE = 'node:24-bookworm-slim'
+
+/**
+ * The pnpm baked into the image for a carried-in project's install. A project
+ * that pins another version through `packageManager` gets it from the
+ * registry at install time, which the run admits for that step.
+ */
+export const WORKER_PNPM_VERSION = '10.34.5'
+
 export const WORKER_DOCKERFILE = `# The Copse container worker image (docs/plans/thread-in-container.md).
 #
 # Built from a staging context that holds only the bundled worker, the pinned
 # sandbox runtime, and the entrypoint — never the repository, node_modules, or
-# any credential. The base image must provide Node 22; Debian/Ubuntu apt is
+# any credential. The base image must provide Node 24; Debian/Ubuntu apt is
 # used for the guest toolchain so the same file serves both families.
-ARG BASE_IMAGE=node:22-bookworm-slim
+ARG BASE_IMAGE=${WORKER_BASE_IMAGE}
 FROM \${BASE_IMAGE}
 ARG WORKER_UID=1001
+# The package manager a carried-in project's install runs under (decision A9),
+# pinned so the image is reproducible. Empty means none is baked.
+ARG PNPM_VERSION=""
+
 # ACP agents the guest may run, as pinned \`package@version\` specs
 # (src/shared/container-acp-agents.ts). Installed globally so they are on the
 # worker user's PATH under their catalogue names; the run gives one of them a
@@ -43,6 +58,7 @@ RUN apt-get update \\
     && rm -rf /var/lib/apt/lists/*
 
 RUN if [ -n "\${ACP_AGENTS}" ]; then npm install -g --no-fund --no-audit \${ACP_AGENTS} && npm cache clean --force; fi
+RUN if [ -n "\${PNPM_VERSION}" ]; then npm install -g --no-fund --no-audit "pnpm@\${PNPM_VERSION}" && npm cache clean --force; fi
 
 RUN useradd --create-home --uid "\${WORKER_UID}" --shell /bin/bash copse
 
@@ -60,17 +76,16 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 
 /**
  * Guest entrypoint. Runs as the unprivileged worker user with no network
- * interface. Egress is the worker's own loopback proxy over the one broker
- * socket the host mounted, so the entrypoint no longer listens for anything:
- * the addresses the worker and its children use are in the environment Docker
- * was given.
+ * interface. Egress is the worker's own loopback proxy over the link on the
+ * container's stdio, so the entrypoint listens for nothing: the addresses the
+ * worker and its children use are in the environment Docker was given.
  */
 export const WORKER_ENTRYPOINT_SH = `#!/bin/sh
 # Guest entrypoint for a Copse container run. Runs as the unprivileged worker
 # user; the container has no network interface. Outbound traffic goes through
-# the worker's own loopback proxy, which speaks to the host broker over the one
-# unix socket named by COPSE_EGRESS_SOCKET; HTTPS_PROXY and friends already
-# point every client here at it, so there is nothing to start first.
+# the worker's own loopback proxy, which speaks to the host broker over this
+# process's stdin and stdout; HTTPS_PROXY and friends already point every
+# client here at it, so there is nothing to start first.
 set -eu
 
 exec node /app/worker.cjs
