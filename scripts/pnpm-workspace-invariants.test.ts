@@ -20,6 +20,13 @@ describe('pnpm-workspace.yaml invariants', () => {
     return body
   }
 
+  /** The version string a package.json dependency entry pins. */
+  function pin(entry: RegExp): string {
+    const version = packageJson.match(entry)?.[1]
+    assert.ok(version !== undefined, `expected package.json to pin ${entry.source}`)
+    return version
+  }
+
   /** Package names from an overrides map, with any `@range` selector stripped. */
   function overridePackages(): string[] {
     const names: string[] = []
@@ -70,7 +77,16 @@ describe('pnpm-workspace.yaml invariants', () => {
     const architectures = block('supportedArchitectures')
     assert.match(architectures, /^ {2}os:\n {4}- current$/m)
     assert.match(architectures, /^ {2}cpu:\n {4}- arm64\n {4}- x64$/m)
-    assert.match(packageJson, /"@napi-rs\/keyring-darwin-arm64": "1\.3\.0"/)
-    assert.match(packageJson, /"@napi-rs\/keyring-darwin-x64": "1\.3\.0"/)
+    // The loader in @napi-rs/keyring requires its platform binary package at
+    // the same version, so the direct darwin pins must track the meta package.
+    const version = pin(/"@napi-rs\/keyring": "([^"]+)"/)
+    assert.match(version, /^\d+\.\d+\.\d+$/, 'expected an exact @napi-rs/keyring pin')
+    for (const arch of ['arm64', 'x64']) {
+      assert.equal(
+        pin(new RegExp(`"@napi-rs/keyring-darwin-${arch}": "([^"]+)"`)),
+        version,
+        `@napi-rs/keyring-darwin-${arch} must match @napi-rs/keyring ${version}`,
+      )
+    }
   })
 })
