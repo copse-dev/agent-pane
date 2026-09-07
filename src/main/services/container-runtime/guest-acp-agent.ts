@@ -7,6 +7,7 @@ import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { containerAcpAgent } from '@shared/container-acp-agents.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import type { ThreadContainerAcpHarness } from './thread-container.ts'
+import { GUEST_NO_PROXY } from './egress-rules.ts'
 
 /**
  * The host side: what of a registered agent may cross into the run spec.
@@ -64,8 +65,10 @@ export function guestAcpAgentConfig(
           HTTP_PROXY: proxyUrl,
           https_proxy: proxyUrl,
           http_proxy: proxyUrl,
-          NO_PROXY: '',
-          no_proxy: '',
+          // Loopback goes direct: the native-tools bridge is an MCP server on
+          // 127.0.0.1 in this same guest, and the proxy would refuse it.
+          NO_PROXY: GUEST_NO_PROXY,
+          no_proxy: GUEST_NO_PROXY,
         }
       : {}),
   }

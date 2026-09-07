@@ -42,6 +42,7 @@ import { EgressBroker } from './egress-broker.ts'
 import {
   findEgressRule,
   formatEgressRule,
+  GUEST_NO_PROXY,
   guestEgressProxyUrl,
   parseEgressRule,
   type EgressRule,
@@ -247,7 +248,9 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     // fetch (the worker's SDK calls) through NODE_USE_ENV_PROXY, and any child
     // that honours the conventional variables — git, curl, an agent CLI. Both
     // spellings, because the tools are split on which one they read. NO_PROXY
-    // is emptied so nothing decides to go direct; there is nowhere direct to go.
+    // names loopback only: nothing else is reachable direct, and the guest's
+    // own listeners (the ACP native-tools bridge) must not be sent to the
+    // proxy, which would refuse them.
     // The URL carries the run's token: Node's env-proxy dispatcher reads it
     // once at startup, after which the worker blanks these variables so the
     // shell children it spawns inherit no way onto the proxy (decision A7).
@@ -266,9 +269,9 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
       '--env',
       `http_proxy=${proxy}`,
       '--env',
-      'NO_PROXY=',
+      `NO_PROXY=${GUEST_NO_PROXY}`,
       '--env',
-      'no_proxy=',
+      `no_proxy=${GUEST_NO_PROXY}`,
       '--env',
       'NODE_USE_ENV_PROXY=1',
       // Node's env-proxy dispatcher announces itself as experimental on every

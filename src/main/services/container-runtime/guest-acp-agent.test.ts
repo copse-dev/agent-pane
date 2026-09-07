@@ -76,8 +76,8 @@ describe('guestAcpAgentConfig', () => {
       HTTP_PROXY: 'http://run:tok@127.0.0.1:3128',
       https_proxy: 'http://run:tok@127.0.0.1:3128',
       http_proxy: 'http://run:tok@127.0.0.1:3128',
-      NO_PROXY: '',
-      no_proxy: '',
+      NO_PROXY: '127.0.0.1,localhost,::1',
+      no_proxy: '127.0.0.1,localhost,::1',
     })
   })
 

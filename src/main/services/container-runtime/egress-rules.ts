@@ -29,6 +29,12 @@ export interface EgressRule {
  */
 export const GUEST_EGRESS_PROXY = { host: '127.0.0.1', port: 3128 } as const
 
+/**
+ * What bypasses the guest proxy: the guest's own loopback, where the ACP
+ * native-tools bridge listens. Everything else has nowhere direct to go.
+ */
+export const GUEST_NO_PROXY = '127.0.0.1,localhost,::1'
+
 /** The username on the proxy URL; the password is the run's token. */
 export const GUEST_EGRESS_USER = 'run'
 

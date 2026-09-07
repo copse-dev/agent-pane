@@ -107,7 +107,7 @@ describe('dockerRunArgs', () => {
     assert.equal(env('HTTP_PROXY'), proxy)
     assert.equal(env('https_proxy'), proxy)
     assert.equal(env('COPSE_EGRESS_TOKEN'), 'test-run-token')
-    assert.equal(env('NO_PROXY'), '')
+    assert.equal(env('NO_PROXY'), '127.0.0.1,localhost,::1')
     assert.equal(env('NODE_USE_ENV_PROXY'), '1')
     assert.equal(env('NODE_OPTIONS'), '--disable-warning=UNDICI-EHPA')
     const none = dockerRunArgs(input({ egress: [], egressToken: null }))
