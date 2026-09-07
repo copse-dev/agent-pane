@@ -52825,6 +52825,22 @@ function mountSettingsDialog(store3, api3) {
                 </span>
               </label>
             </fieldset>
+
+            <fieldset>
+              <legend>Commit signing</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="gitCommitSshAgentSocketAccess" />
+                Let Copse's git commit tool use your ssh-agent (macOS)
+              </label>
+              <p class="field-hint">
+                Off by default. Turn this on when Git uses a passphrase-protected SSH key and signed
+                commits fail inside Copse's sandbox. The grant applies only to Copse's native
+                <code>git_commit</code> subprocess, but Git hooks run inside that process and can
+                also ask ssh-agent to use <strong>any key it holds</strong>. The private key remains
+                unreadable. Pair this with <code>ssh-add -c</code> to confirm each use. macOS only:
+                Linux cannot admit one socket without admitting every Unix socket.
+              </p>
+            </fieldset>
           </section>
 
           <section class="settings-section" data-section="mcp">
@@ -55555,6 +55571,7 @@ var init_settings_dialog = __esm({
       { name: "remoteAgentAutoCreatePR", kind: "checkbox", default: true, save: true },
       { name: "remoteAgentWorkOnCurrentBranch", kind: "checkbox", default: false, save: true },
       { name: "preferAcpOverCloudAgent", kind: "checkbox", default: true, save: true },
+      { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
       { name: "localSubagentsEnabled", kind: "checkbox", default: true, save: true },
       {
         name: "subagentsEnabled",
