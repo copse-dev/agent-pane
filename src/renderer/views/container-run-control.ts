@@ -102,7 +102,14 @@ export async function loadRunModelOptions(
   availability: (models: string[]) => Promise<Record<string, ContainerModelVerdict>>,
 ): Promise<ModelOption[]> {
   const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })])
-  const canRun = new Set(runnable.map((option) => option.value))
+  // An agent model is never provider-backed, whatever the provider-only fetch
+  // says: it keeps the picker's current value on the roster as a fallback row
+  // even when that value is an agent, and the thread's own model is exactly
+  // that value. Treating it as runnable skipped the resolver, so the row had
+  // no verdict, no opt-in, and a Start that could only be refused.
+  const canRun = new Set(
+    runnable.filter((option) => parseAcpModel(option.value) === null).map((option) => option.value),
+  )
   const agentRows = all.filter((option) => !canRun.has(option.value))
   const verdicts = agentRows.length > 0 ? await availability(agentRows.map((o) => o.value)) : {}
   return all.map((option) => {

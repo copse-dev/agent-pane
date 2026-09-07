@@ -84,6 +84,36 @@ describe('loadRunModelOptions', () => {
     assert.deepEqual(asked, [[CLAUDE.value, CURSOR.value]])
   })
 
+  it("asks about the thread's own agent model even when the provider-only fetch lists it", async () => {
+    // fetchModelOptions keeps the current value on the roster as a "(no key)"
+    // fallback row even with agent models excluded — the very row the dialog
+    // preselects. It must still get the resolver's verdict and the opt-in.
+    const asked: string[][] = []
+    const options = await loadRunModelOptions(
+      fetcher(
+        [
+          { value: 'claude-sonnet-4-6', label: 'Sonnet' },
+          { value: 'acp:codex-acp#gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+        ],
+        [
+          { value: 'claude-sonnet-4-6', label: 'Sonnet' },
+          { value: 'acp:codex-acp#gpt-5.6-sol', label: 'acp:codex-acp#gpt-5.6-sol (no key)' },
+        ],
+      ),
+      (models) => {
+        asked.push(models)
+        return verdicts({
+          'acp:codex-acp#gpt-5.6-sol': { reason: null, loginOffered: { agentTitle: 'Codex' } },
+        })(models)
+      },
+    )
+    assert.deepEqual(asked, [['acp:codex-acp#gpt-5.6-sol']])
+    const sol = options[1]
+    assert.ok(sol)
+    assert.equal(sol.label, 'GPT-5.6 Sol — on your Codex sign-in (opt in)')
+    assert.equal(sol.disabled, undefined)
+  })
+
   it('does not ask at all when every row is provider-backed', async () => {
     let asked = 0
     const options = await loadRunModelOptions(fetcher([PROVIDER], [PROVIDER]), () => {
