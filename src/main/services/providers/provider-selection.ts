@@ -10,6 +10,8 @@ import { SERVICE_TIERS, isServiceTier, type ServiceTier } from '@copse/llm/servi
 import { extraProviderForModel, extraProviderModelId } from '@copse/llm/extra-providers.ts'
 import { getApprovedProviderHosts } from './approved-provider-hosts.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
+import { acpModelDisplayLabel, isAcpModel } from '@shared/acp.ts'
+import { listAcpAgents } from '../acp/acp-agent-registry.ts'
 import type { LLMProvider } from '@shared/types'
 import {
   DEFAULT_LM_STUDIO_URL,
@@ -218,6 +220,21 @@ export async function buildProvider(
   opts: BuildProviderOptions = {},
 ): Promise<LLMProvider> {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model)
+  // A device agent answers through its own process and its own login; it is
+  // never a directly-callable provider. None of the branches below recognise
+  // the `acp:` namespace, so such an id used to fall through to the final
+  // API-key fallback, which hands the literal `acp:<agent>#<model>` string to
+  // `AnthropicProvider` and bills the user's own Anthropic account for a model
+  // they picked precisely to avoid that. Chat turns route to the agent long
+  // before they reach here; comparison reviewers, subagents, small tasks, image
+  // description and orchestration workers all call this directly, so refuse
+  // instead of silently changing who pays.
+  if (isAcpModel(model)) {
+    throw new Error(
+      `${acpModelDisplayLabel(model, listAcpAgents())} runs as its own agent on this device, ` +
+        `so it cannot be used for this. Choose a different model.`,
+    )
+  }
   const params = resolveTurnParameters(model, opts)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = localServerUrl()
