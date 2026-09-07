@@ -30,6 +30,12 @@ export interface StandaloneMainBundle {
   external?: string[]
   /** Extra module aliases, merged over the shared `@shared` alias. */
   alias?: Record<string, string>
+  /**
+   * esbuild log levels this bundle sets over the main bundle's, by message
+   * id. A bundle that must carry a package the main bundle leaves external
+   * inherits that package's bundling warnings, and says here which it accepts.
+   */
+  logOverride?: Record<string, 'silent' | 'warning' | 'error'>
 }
 
 export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
@@ -79,5 +85,10 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
     outfile: 'dist/main/thread-container-worker.cjs',
     external: ['@anthropic-ai/sandbox-runtime'],
     alias: { 'node-pty': 'src/main/services/container-runtime/node-pty-stub.cjs' },
+    // jsdom (behind the fetch_url tool) is external to the main bundle and
+    // bundled here, and it resolves its synchronous-XHR helper by path at
+    // run time. The worker never issues a synchronous XHR, so the helper's
+    // absence is accepted rather than made a build error.
+    logOverride: { 'require-resolve-not-external': 'warning' },
   },
 ]

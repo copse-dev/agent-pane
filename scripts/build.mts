@@ -55,6 +55,7 @@ const sharedAlias = {
 function standaloneOverrides(entry: string): {
   external?: string[]
   alias: Record<string, string>
+  logOverride?: Record<string, 'silent' | 'warning' | 'error'>
 } {
   const bundle = STANDALONE_MAIN_BUNDLES.find((candidate) => candidate.entry === entry)
   const alias = Object.fromEntries(
@@ -63,6 +64,9 @@ function standaloneOverrides(entry: string): {
   return {
     ...(bundle?.external ? { external: bundle.external } : {}),
     alias: { ...sharedAlias, ...alias },
+    ...(bundle?.logOverride
+      ? { logOverride: { ...MAIN_LOG_OVERRIDE, ...bundle.logOverride } }
+      : {}),
   }
 }
 

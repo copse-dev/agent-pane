@@ -22,6 +22,7 @@ export async function bundleThreadContainerWorker(outfile: string): Promise<stri
     sourcemap: false,
     target: 'node22',
     ...(bundle.external ? { external: bundle.external } : {}),
+    ...(bundle.logOverride ? { logOverride: bundle.logOverride } : {}),
     alias: {
       '@shared': resolve('./src/shared'),
       ...Object.fromEntries(
