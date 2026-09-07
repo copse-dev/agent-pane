@@ -2,10 +2,10 @@ import { openPersistentStore } from './persistent-store.ts'
 import { runSerialized } from './write-queue.ts'
 import { perfCount } from '../diagnostics/perf-trace.ts'
 
-// Cache reads in memory (see cached-store.ts for why: electron-store re-parses
-// the whole multi-MB config.json on every `.get`, which turned hot-loop reads
-// into a startup-hang). Every main-process read/write goes through this module,
-// so caching here is sound.
+// Cache reads in memory (see `@copse/store-kit`'s cached-store.ts for why:
+// electron-store re-parses the whole multi-MB config.json on every `.get`,
+// which turned hot-loop reads into a startup-hang). Every main-process
+// read/write goes through this module, so caching here is sound.
 //
 // Known limitation (pre-existing): a separate `copse --acp` process shares the
 // same config.json with its own ElectronStore; cross-process writes were

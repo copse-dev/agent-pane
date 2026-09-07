@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { foldMessage } from '../../src/shared/threads/fold.ts'
 import { parseSpine } from '../../src/shared/threads/spine-schema.ts'
+import { isNonNull } from '@copse/std/nullish.ts'
 
 type JsonDecoder<T> = (value: unknown) => T | null
 
@@ -498,7 +499,7 @@ function terminalTrial(
 }
 
 function unique(values: Array<string | null>): string[] {
-  return [...new Set(values.filter((value): value is string => value !== null))].sort()
+  return [...new Set(values.filter(isNonNull))].sort()
 }
 
 function summarizeRun(trials: BenchmarkTrial[], generatedAt: string): BenchmarkRunSummary {

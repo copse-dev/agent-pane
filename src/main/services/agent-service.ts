@@ -230,6 +230,7 @@ export {
   suggestCommandSummary,
   suggestToolTurnSummary,
 } from './title-generator.ts'
+import { isNonEmptyString } from '@shared/nullish.ts'
 
 const abortMap = new Map<string, AbortController>()
 
@@ -387,7 +388,7 @@ function parentTools(
 function promptTextForSubmit(userPrompt: UserContent): string {
   if (typeof userPrompt === 'string') return userPrompt
   return userPrompt
-    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+    .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
 }
@@ -1226,7 +1227,7 @@ export async function runAgent(
         msg,
         acpTurnInterruptionMarker(aborted ? 'aborted' : (authFailure ?? 'error'), acpRunAgentId),
       ]
-        .filter((part): part is string => Boolean(part))
+        .filter(isNonEmptyString)
         .join('\n\n')
       return resultWithOutcome({
         usage: partial?.usage ?? { inputTokens: 0, outputTokens: 0 },

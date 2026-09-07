@@ -1028,7 +1028,7 @@ export function compareApiProtocol(
       }
     }
     for (const channel of Object.keys(next)) {
-      if (!(channel in prev)) additive.push(`channels.${kind}.${channel}: added`)
+      if (!Object.hasOwn(prev, channel)) additive.push(`channels.${kind}.${channel}: added`)
     }
   }
   for (const [ns, methods] of Object.entries(before.client)) {

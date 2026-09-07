@@ -51,6 +51,7 @@ import {
   type EquatingMap,
 } from '@copse/llm/intellect-equating.ts'
 import { optionalRecord } from '../src/shared/unknown-value.mts'
+import { isNonBlankString, isNonNull } from '@copse/std/nullish.ts'
 
 const DATA_PATH = resolve('scripts/data/intellect-scores.json')
 const GENERATED_PATH = resolve('packages/llm/src/model-intellect.generated.ts')
@@ -435,7 +436,7 @@ export async function requestAaModels(
     }
     const payload = aaPayloadSchema.parse((await res.json()) as unknown)
     if (page === 1) firstPayload = payload
-    models.push(...(payload.data ?? []).filter((m): m is AaApiModel => m !== null))
+    models.push(...(payload.data ?? []).filter(isNonNull))
 
     const pagination = payload.pagination
     hasMore =
@@ -523,12 +524,7 @@ export function mergeApiModels(
     const knownModelId = [api.id, api.slug, api.name]
       .map((k) => (k ? aliasToId.get(k) : undefined))
       .find((id) => id !== undefined)
-    const modelId =
-      knownModelId ??
-      [api.slug, api.id, api.name].find(
-        (candidate): candidate is string =>
-          typeof candidate === 'string' && candidate.trim().length > 0,
-      )
+    const modelId = knownModelId ?? [api.slug, api.id, api.name].find(isNonBlankString)
     if (!modelId) continue
     const aliases = knownModelId ? aliasesFor.get(modelId) : undefined
     const measurement: Measurement = {

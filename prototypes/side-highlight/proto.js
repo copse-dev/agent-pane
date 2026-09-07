@@ -327,7 +327,7 @@ for (const button of document.querySelectorAll('.sw')) {
 // screenshottable) rather than only reachable by clicking.
 const fromHash = () => {
   const wanted = location.hash.slice(1)
-  apply(wanted in BLURB ? wanted : 'current')
+  apply(Object.hasOwn(BLURB, wanted) ? wanted : 'current')
   // ?at=<n> scrolls straight to the nth specimen, so any part of any treatment
   // is a single URL rather than a scroll away.
   const at = new URLSearchParams(location.search).get('at')

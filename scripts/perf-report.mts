@@ -19,7 +19,7 @@
 
 import { readFileSync } from 'node:fs'
 
-interface Record_ {
+interface TraceLine {
   t: number
   kind: 'mark' | 'span' | 'count'
   src: 'main' | 'renderer' | 'preload'
@@ -28,8 +28,14 @@ interface Record_ {
   detail?: Record<string, string | number | boolean | undefined>
 }
 
-/** Trace lines are our own output, but a truncated final line is normal. */
-function isRecord(value: unknown): value is Record_ {
+/**
+ * Trace lines are our own output, but a truncated final line is normal.
+ *
+ * Named for what it checks. It was `isRecord`, which it is not — it reads two
+ * named fields, so a sweep consolidating the codebase's `isRecord` copies onto
+ * `@copse/std` would have replaced it and silently accepted every object.
+ */
+function isTraceLine(value: unknown): value is TraceLine {
   if (typeof value !== 'object' || value === null) return false
   const t: unknown = Reflect.get(value, 't')
   const name: unknown = Reflect.get(value, 'name')
@@ -42,13 +48,13 @@ if (!file) {
   process.exit(2)
 }
 
-const records: Record_[] = readFileSync(file, 'utf8')
+const records: TraceLine[] = readFileSync(file, 'utf8')
   .split('\n')
   .filter((line) => line.trim() !== '')
   .flatMap((line) => {
     try {
       const parsed: unknown = JSON.parse(line.replace(/^\[perf\] /, ''))
-      return isRecord(parsed) ? [parsed] : []
+      return isTraceLine(parsed) ? [parsed] : []
     } catch {
       return []
     }
@@ -64,7 +70,7 @@ const ms = (n: number): string => `${n.toFixed(0).padStart(7)}ms`
 const spans = records.filter((r) => r.kind === 'span')
 const counts = records.filter((r) => r.kind === 'count')
 
-function detailOf(r: Record_): string {
+function detailOf(r: TraceLine): string {
   if (!r.detail) return ''
   const parts = Object.entries(r.detail)
     .filter(([, v]) => v !== undefined)

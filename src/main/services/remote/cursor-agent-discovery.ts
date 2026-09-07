@@ -30,6 +30,7 @@ import { createThread, loadProjectThreads } from '../thread-store.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { parseGithubOwnerRepo } from './remote-agent-shared.ts'
 import { seedRemoteAgentSession } from './remote-agent-client.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /** Default page size for the spike (Cursor max is 100). */
 export const EXTERNAL_CURSOR_AGENT_LIST_LIMIT = 50
@@ -139,13 +140,9 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed ? trimmed : null
 }
 
-function isUnknownRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
 /** Parse one list/detail agent row; returns null when required identity fields are missing. */
 export function parseCursorAgentSummary(raw: unknown): CursorAgentSummary | null {
-  if (!isUnknownRecord(raw)) return null
+  if (!isRecord(raw)) return null
   const rec = raw
   const id = asNonEmptyString(rec['id'])
   const name = asNonEmptyString(rec['name'])
@@ -167,7 +164,7 @@ export function parseCursorAgentSummary(raw: unknown): CursorAgentSummary | null
 }
 
 export function parseCursorAgentListPage(raw: unknown): CursorAgentListPage {
-  if (!isUnknownRecord(raw)) return { items: [] }
+  if (!isRecord(raw)) return { items: [] }
   const rec = raw
   const itemsRaw = rec['items']
   const items: CursorAgentSummary[] = []
@@ -183,13 +180,13 @@ export function parseCursorAgentListPage(raw: unknown): CursorAgentListPage {
 
 export function parseCursorAgentDetail(raw: unknown): CursorAgentDetail | null {
   const summary = parseCursorAgentSummary(raw)
-  if (!summary || !isUnknownRecord(raw)) return null
+  if (!summary || !isRecord(raw)) return null
   const rec = raw
   const reposRaw = rec['repos']
   const repos: Array<{ url: string; startingRef?: string }> = []
   if (Array.isArray(reposRaw)) {
     for (const row of reposRaw) {
-      if (!isUnknownRecord(row)) continue
+      if (!isRecord(row)) continue
       const repoRec = row
       const url = asNonEmptyString(repoRec['url'])
       if (!url) continue
