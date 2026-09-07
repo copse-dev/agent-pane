@@ -25594,7 +25594,8 @@ var init_demo_scenarios = __esm({
           log: [
             "[thread-container] carry-in 9b1b901683b9 as refs/copse/carry-in/run-demo-1",
             "[thread-container] starting copse-run-demo-1 from copse-worker:local",
-            "[guest] [project-sandbox] Linux bubblewrap active (ASRT)",
+            "[guest] [worker] egress proxy on 127.0.0.1:3128, token-gated",
+            "[guest] [worker] project sandbox: none; the container is the sandbox",
             "[guest] [worker] done: completed; prompts=0 deferrals=1 commits=3",
             "[thread-container] carry-out fetched to refs/copse/runs/run-demo-1"
           ],
@@ -25639,7 +25640,7 @@ var init_demo_scenarios = __esm({
                 "b2c3d4e fix(lint): prefer nullish coalescing in providers",
                 "c3d4e5f chore: rerun formatter"
               ],
-              containment: { declared: true, declineReason: null, projectSandbox: true },
+              containment: { declared: true, declineReason: null, projectSandbox: false },
               toolNames: ["run_shell", "read_file", "write_file"],
               finalText: "Cleared the lint backlog in three commits. The push is waiting for your review."
             },
@@ -262915,7 +262916,12 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       rows.push(
         row2(
           "Containment",
-          run6.record.attestation.network === "brokered" ? "read-only rootfs, no capabilities, brokered egress" : "read-only rootfs, no capabilities, no network"
+          [
+            "read-only rootfs, no capabilities",
+            run6.record.attestation.securityProfiles === "default" ? "default seccomp and AppArmor" : null,
+            run6.record.attestation.network === "brokered" ? "brokered egress" : "no network",
+            run6.record.attestation.perCommandNetwork === "token-gated" ? "shell commands off the network" : null
+          ].filter((part) => part !== null).join(", ")
         )
       );
       rows.push(row2("Secret canary", run6.record.secretCanary.present ? "PRESENT" : "absent"));
