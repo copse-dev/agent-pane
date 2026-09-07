@@ -568,6 +568,43 @@ export function mountContainerRunControl(
         ),
       )
     }
+    // What the guest reached and what it was refused, from the broker's own
+    // log. The refusals matter most: a "completed" run with an agent that
+    // reached nothing has its reason here and nowhere else.
+    if (run.record && run.record.egress.length > 0) {
+      const connects = new Map<string, number>()
+      const refusals: string[] = []
+      for (const entry of run.record.egress) {
+        if (entry.event === 'connect')
+          connects.set(entry.origin, (connects.get(entry.origin) ?? 0) + 1)
+        if (entry.event === 'refused' || entry.event === 'error') {
+          refusals.push(
+            `${entry.origin}: ${entry.event}${entry.detail ? ` — ${entry.detail}` : ''}`,
+          )
+        }
+      }
+      sections.push(
+        el(
+          'section',
+          { class: 'container-run-section container-run-egress' },
+          el('h3', {}, 'Egress'),
+          el(
+            'ul',
+            {},
+            ...[...connects].map(([origin, count]) =>
+              el(
+                'li',
+                { class: 'mono' },
+                `${origin} — ${String(count)} connection${count === 1 ? '' : 's'}`,
+              ),
+            ),
+            ...[...new Set(refusals)].map((line) =>
+              el('li', { class: 'mono container-run-egress-refused' }, line),
+            ),
+          ),
+        ),
+      )
+    }
     if (result && result.deferrals.length > 0) {
       sections.push(
         el(

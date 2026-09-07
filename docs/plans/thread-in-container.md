@@ -432,8 +432,11 @@ were smaller apart than the plan expected; what is recorded under each is what i
   provider path migrated onto it: `egress-rules.ts` (the grammar, pure), `egress-broker.ts`
   (one socket, `CONNECT`/`OK`/`DENY`, refusals logged), `guest-egress-proxy.ts` (loopback
   proxy in the worker bundle; `CONNECT` tunnels and absolute-form plain HTTP, re-chunked
-  and streamed so server-sent events arrive as sent). `--add-host`, the sysctl and `socat`
-  are gone. Exit gate as met: at the unit tier two hosts on one port through one broker,
+  and streamed so server-sent events arrive as sent). `--add-host` and the sysctl are
+  gone; `socat` stays in the image, not for egress but because the sandbox runtime bridges
+  each bubblewrap'd command's loopback through it and refuses to initialise without it —
+  the first cut removed it and the first real run reported "socat not installed" with
+  every guest command unsandboxed. Exit gate as met: at the unit tier two hosts on one port through one broker,
   a wildcard admitting a subdomain and refusing the bare suffix and two siblings, and a
   remapped dial matched and logged on the port the guest named; at the integration tier
   the model is reached on guest port 443 by a wildcard rule, with the rule in the log and

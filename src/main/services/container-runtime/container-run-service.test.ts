@@ -426,6 +426,23 @@ describe('judgeRun', () => {
     assert.deepEqual(judgeRun(fakeRecord(THREAD)), { failure: null, warnings: [] })
   })
 
+  it('warns, without failing, when the guest asked for a destination the allowlist refused', () => {
+    const record = fakeRecord(THREAD)
+    const verdict = judgeRun({
+      ...record,
+      egress: [
+        { at: 1, origin: 'api.openai.com:443', event: 'connect' },
+        { at: 2, origin: 'sentry.io:443', event: 'refused', detail: 'not in the allowlist' },
+        { at: 3, origin: 'sentry.io:443', event: 'refused', detail: 'not in the allowlist' },
+      ],
+    })
+    assert.equal(verdict.failure, null)
+    assert.match(
+      verdict.warnings.join(' '),
+      /2 connections refused by the egress allowlist: sentry\.io:443/,
+    )
+  })
+
   it('never reports success when the commits could not be fetched', () => {
     const record = fakeRecord(THREAD)
     const verdict = judgeRun({

@@ -354,6 +354,15 @@ export function judgeRun(record: ThreadContainerRecord): {
   if (record.secretCanary.present) {
     warnings.push(`Secret canary leaked into the run: ${record.secretCanary.detail}`)
   }
+  // A destination the guest asked for and did not get is the likeliest reason
+  // an agent "completed" having done nothing; say so where the user looks.
+  const refused = record.egress.filter((entry) => entry.event === 'refused')
+  if (refused.length > 0) {
+    const origins = [...new Set(refused.map((entry) => entry.origin))]
+    warnings.push(
+      `${String(refused.length)} connection${refused.length === 1 ? '' : 's'} refused by the egress allowlist: ${origins.join(', ')}`,
+    )
+  }
 
   if (!record.result) return { failure: 'The guest wrote no result', warnings }
   if (record.result.stopReason === 'error') {

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { BROKER_SOCKET_NAME } from './egress-rules.ts'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
-import { WORKER_DOCKERFILE } from './worker-image-files.ts'
+import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
 import {
   buildAttestation,
   waitForContainer,
@@ -304,8 +304,11 @@ describe('WORKER_DOCKERFILE', () => {
     // An empty argument skips the layer rather than running `npm install -g`
     // with nothing, so a build without agents stays a build.
     assert.match(lines[install] ?? '', /if \[ -n "\$\{ACP_AGENTS\}" \]/)
-    // The image carries no agent by any other route.
-    assert.ok(!WORKER_DOCKERFILE.includes('socat'))
+    // socat stays: the sandbox runtime needs it for its own loopback bridge
+    // and refuses to start without it (a real run reported exactly that).
+    // Egress no longer touches it — the entrypoint starts nothing.
+    assert.ok(/apt-get install[\s\S]*socat/.test(WORKER_DOCKERFILE))
+    assert.ok(!WORKER_ENTRYPOINT_SH.includes('socat'))
   })
 })
 
