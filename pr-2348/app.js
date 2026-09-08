@@ -25732,7 +25732,8 @@ var init_demo_scenarios = __esm({
             cleanupError: null,
             secretCanary: { present: false, detail: "canary absent from every surface" }
           },
-          error: null
+          error: null,
+          continuedFrom: null
         }
       },
       {
@@ -26436,7 +26437,8 @@ function createDemoApi(scenario, options2 = {}) {
         warnings: [],
         checkout: { root: "/repo", mode: "shared", branch: "main" },
         record: null,
-        error: null
+        error: null,
+        continuedFrom: request.continueFrom ?? null
       }),
       stopRun: () => resolved(null),
       adoptRun: () => resolved({
@@ -58640,6 +58642,46 @@ var init_artefact = __esm({
 });
 
 // src/shared/store/container-run-card.ts
+function argsOf(toolCall) {
+  const record2 = toolCall.args;
+  if (!isRecord(record2)) return null;
+  const task = record2["task"];
+  const model = record2["model"];
+  if (typeof task !== "string" || typeof model !== "string") return null;
+  const runtimeId = record2["runtimeId"];
+  const ref = record2["ref"];
+  const credential = record2["credential"];
+  const continuedFrom = record2["continuedFrom"];
+  return {
+    task,
+    model,
+    runtimeId: typeof runtimeId === "string" ? runtimeId : null,
+    ref: typeof ref === "string" ? ref : null,
+    credential: credential === "key" || credential === "login" ? credential : "none",
+    continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null
+  };
+}
+function latestContainerRun(thread) {
+  for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+    const message2 = thread.messages[index];
+    if (!message2) continue;
+    const toolCall = message2.toolCalls.find((candidate) => candidate.name === CONTAINER_RUN_TOOL);
+    if (!toolCall) continue;
+    const args = argsOf(toolCall);
+    if (!args) continue;
+    return {
+      messageId: message2.id,
+      toolCallId: toolCall.id,
+      runtimeId: args.runtimeId,
+      model: args.model,
+      credential: args.credential,
+      ref: args.ref,
+      status: toolCall.status,
+      isLastTurn: index === thread.messages.length - 1
+    };
+  }
+  return null;
+}
 function containerRunToolCallId(progress2) {
   return `container-run:${progress2.threadId}:${String(progress2.startedAt)}`;
 }
@@ -58732,7 +58774,9 @@ function containerRunToolCall(progress2) {
     task: progress2.prompt,
     model: progress2.model,
     runtimeId: progress2.runtimeId,
-    ref: progress2.record?.carryOut.ref ?? null
+    ref: progress2.record?.carryOut.ref ?? null,
+    credential: progress2.credential,
+    continuedFrom: progress2.continuedFrom
   };
   const transcript = progress2.record?.transcript ?? [];
   const log3 = logMessage(progress2);
@@ -58789,6 +58833,7 @@ ${note2}` : note2
 var CONTAINER_RUN_TOOL, CONTAINER_RUN_ADOPT_EVENT;
 var init_container_run_card = __esm({
   "src/shared/store/container-run-card.ts"() {
+    init_unknown_value3();
     init_thread_helpers();
     CONTAINER_RUN_TOOL = "container_run";
     CONTAINER_RUN_ADOPT_EVENT = "container-run-adopt";
@@ -263267,7 +263312,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       const wallClockMs = Math.max(1, Number(minutes2.value) || DEFAULT_WALL_CLOCK_MINUTES) * 6e4;
       const tokenCeiling = Math.max(1e3, Number(tokens2.value) || DEFAULT_TOKEN_CEILING);
       start2.disabled = true;
-      void api3.container.runThread({
+      void startRun({
         projectId,
         threadId,
         prompt,
@@ -263275,12 +263320,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         budgets: { wallClockMs, tokenCeiling },
         ...loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {},
         installDependencies: installOptIn.checked
-      }).then((progress2) => {
-        update2(progress2);
-        renderDialog();
-      }).catch((error63) => {
-        start2.disabled = false;
-        showErrorToast("Could not start the container run", error63);
+      }).then((started) => {
+        if (!started) start2.disabled = false;
       });
     });
     return el(
@@ -263558,6 +263599,81 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     view.dataset["phase"] = run6.phase;
     return view;
   }
+  async function startRun(request) {
+    addMessage(context.store, request.threadId, "user", request.prompt);
+    context.clearDraft();
+    try {
+      const progress2 = await api3.container.runThread(request);
+      update2(progress2);
+      overlay?.close();
+      return true;
+    } catch (error63) {
+      showErrorToast("Could not start the container run", error63);
+      return false;
+    }
+  }
+  const DEFAULT_BUDGETS = {
+    wallClockMs: DEFAULT_WALL_CLOCK_MINUTES * 6e4,
+    tokenCeiling: DEFAULT_TOKEN_CEILING
+  };
+  function latestOnActiveThread() {
+    const threadId = context.getActiveThreadId();
+    const thread = threadId ? getThreadById(context.store, threadId) : void 0;
+    return thread ? latestContainerRun(thread) : null;
+  }
+  function followUpTarget() {
+    const latest = latestOnActiveThread();
+    const live = isLive2(activeRun());
+    if (!latest && !live) return { available: false, live: false, defaultToContainer: false };
+    return {
+      available: true,
+      live,
+      defaultToContainer: !live && latest !== null && latest.isLastTurn && latest.runtimeId !== null
+    };
+  }
+  async function followUp(prompt) {
+    const threadId = context.getActiveThreadId();
+    const projectId = context.getActiveProjectId();
+    if (!threadId || !projectId) return false;
+    if (isLive2(activeRun())) {
+      showToast("The container is still busy with the previous run; wait for it or stop it.", {
+        variant: "error"
+      });
+      return false;
+    }
+    const latest = latestOnActiveThread();
+    if (!latest || latest.runtimeId === null) {
+      showToast("This thread has no container run to continue.", { variant: "error" });
+      return false;
+    }
+    return startRun({
+      projectId,
+      threadId,
+      prompt,
+      model: latest.model,
+      budgets: DEFAULT_BUDGETS,
+      ...latest.credential === "login" ? { useAgentLogin: true } : {},
+      installDependencies: true,
+      continueFrom: latest.runtimeId
+    });
+  }
+  const usageFolded = /* @__PURE__ */ new Set();
+  function settle(progress2) {
+    const thread = getThreadById(context.store, progress2.threadId);
+    const usage = progress2.record?.result?.usage;
+    if (usage && progress2.runtimeId !== null && !usageFolded.has(progress2.runtimeId)) {
+      usageFolded.add(progress2.runtimeId);
+      addUsageDelta(context.store, progress2.threadId, {
+        model: progress2.model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens
+      });
+    }
+    markThreadUnread(context.store, progress2.threadId);
+    void api3.alerts.threadFinished(progress2.threadId, thread?.title ?? "Container run").catch((error63) => {
+      console.error("[container-run] could not signal the finished run:", error63);
+    });
+  }
   async function adopt(runtimeId, toolCallId) {
     const threadId = context.getActiveThreadId();
     const projectId = context.getActiveProjectId();
@@ -263590,6 +263706,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     runs.set(progress2.threadId, progress2);
     syncContainerRunCard(context.store, progress2);
     if (previous && isLive2(previous) && !isLive2(progress2)) {
+      settle(progress2);
       const result = progress2.record?.result;
       if (progress2.phase === "finished" && result) {
         showToast(
@@ -263641,6 +263758,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     menuLabel: () => isLive2(activeRun()) ? "Show container run" : "Run unattended in a container\u2026",
     open: open3,
     refresh,
+    followUpTarget,
+    followUp,
     destroy: () => {
       unsubscribe();
       document.removeEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt);
@@ -263657,6 +263776,7 @@ var init_container_run_control = __esm({
   "src/renderer/views/container-run-control.ts"() {
     init_unknown_value3();
     init_container_run_card();
+    init_thread_helpers();
     init_acp();
     init_acp_known_agents();
     init_container_acp_agents();
@@ -263758,7 +263878,15 @@ function mountInputBar(root4, store3, api3, opts = {}) {
       "attach-btn-icon"
     )
   );
-  const submitRow = el("div", { class: "submit-row" }, stopBtn, submitBtn);
+  const targetSelect = el("select", {
+    class: "composer-target",
+    "aria-label": "Send this message to",
+    hidden: ""
+  });
+  const targetContainer = el("option", { value: "container" }, "To container");
+  const targetThread = el("option", { value: "thread" }, "To thread");
+  targetSelect.append(targetContainer, targetThread);
+  const submitRow = el("div", { class: "submit-row" }, targetSelect, stopBtn, submitBtn);
   const inputRow = el("div", { class: "input-row" }, composer.el, attachBtn, fileInput, submitRow);
   const branchWarningText = el("span", { class: "composer-branch-warning-text" });
   const checkoutBranchBtn = el(
@@ -263831,6 +263959,7 @@ function mountInputBar(root4, store3, api3, opts = {}) {
   const guardedYolo = mountGuardedYoloControl(api3, getActiveThreadId, () => {
     footerOverflow?.update();
   });
+  let containerRunMounted = false;
   const containerRun = mountContainerRunControl(
     api3,
     {
@@ -263838,12 +263967,18 @@ function mountInputBar(root4, store3, api3, opts = {}) {
       getActiveThreadId,
       getActiveProjectId: () => store3.getState().activeProjectId,
       getModel: footerChatModel,
-      getDraft: () => composer.value
+      getDraft: () => composer.value,
+      clearDraft: () => {
+        composer.clear();
+      }
     },
     () => {
       footerOverflow?.update();
+      updateTargetPicker();
     }
   );
+  containerRunMounted = true;
+  updateTargetPicker();
   const footer = el("div", { class: "input-footer" });
   const modelHost = el("div", { class: "footer-model-host" });
   const checkoutHost = el("div", { class: "footer-checkout-host" });
@@ -264457,9 +264592,25 @@ ${description}
     stopPendingThreadId = null;
     stopBtn.classList.remove("stop-pending");
   }
+  let targetThreadId = null;
+  function updateTargetPicker() {
+    if (!containerRunMounted) return;
+    const target = containerRun.followUpTarget();
+    targetSelect.hidden = !target.available;
+    if (!target.available) return;
+    targetContainer.disabled = target.live;
+    targetContainer.textContent = target.live ? "To container (busy)" : "To container";
+    const threadId = getActiveThreadId();
+    if (threadId !== targetThreadId) {
+      targetThreadId = threadId;
+      targetSelect.value = target.defaultToContainer ? "container" : "thread";
+    }
+    if (target.live && targetSelect.value === "container") targetSelect.value = "thread";
+  }
   function updateState() {
     const running = isRunning();
     stopBtn.hidden = !running;
+    updateTargetPicker();
     submitBtn.textContent = running ? "Queue" : "Send";
     submitBtn.setAttribute("aria-label", running ? "Queue message" : "Send message");
     submitBtn.classList.toggle("with-stop", running);
@@ -264777,6 +264928,12 @@ ${description}
     if (!id39) return;
     const projectId = store3.getState().activeProjectId;
     if (!projectId) return;
+    if (!targetSelect.hidden && targetSelect.value === "container") {
+      if (!rawText) return;
+      const started = await containerRun.followUp(rawText);
+      if (started) updateState();
+      return;
+    }
     if (attachedImages.length > 0) {
       const incompatibility = await incompatibleImageModel();
       if (incompatibility) {

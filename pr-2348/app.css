@@ -5107,6 +5107,15 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   align-items: center;
   gap: 8px;
 }
+.composer-target {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: 4px 6px;
+}
 .stop-btn {
   border-radius: var(--radius);
   padding: 6px 12px;
