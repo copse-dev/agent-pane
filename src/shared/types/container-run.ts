@@ -122,6 +122,14 @@ export interface ContainerRunRequest {
    * the package registry joins the run's reachable origins for it.
    */
   installDependencies?: boolean
+  /**
+   * Continue an earlier run of this thread (decision A14): the guest starts
+   * from that run's carry-out ref rather than a snapshot of the checkout, and
+   * its prompt is prefixed with what that run was asked and reported. The
+   * value is the earlier run's runtime id; the main process resolves the rest
+   * from the run it holds or its record on disk.
+   */
+  continueFrom?: string
 }
 
 /**
@@ -171,4 +179,6 @@ export interface ContainerRunProgress {
   checkout: { root: string; mode: 'shared' | 'worktree'; branch: string | null } | null
   record: ThreadContainerRecord | null
   error: string | null
+  /** The earlier run this one continues from (its runtime id), or null for a fresh run. */
+  continuedFrom: string | null
 }

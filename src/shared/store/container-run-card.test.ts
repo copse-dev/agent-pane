@@ -10,6 +10,7 @@ import {
   containerRunSummary,
   containerRunToolCall,
   containerRunToolCallId,
+  latestContainerRun,
   noteAdoptionOnCard,
   syncContainerRunCard,
 } from './container-run-card.ts'
@@ -32,6 +33,7 @@ function progress(overrides: Partial<ContainerRunProgress> = {}): ContainerRunPr
     checkout: null,
     record: null,
     error: null,
+    continuedFrom: null,
     ...overrides,
   }
 }
@@ -112,6 +114,8 @@ describe('containerRunToolCall', () => {
       model: 'claude-sonnet-4-6',
       runtimeId: 'run-1',
       ref: null,
+      credential: 'key',
+      continuedFrom: null,
     })
     assert.ok(tc.subagent)
     assert.equal(tc.subagent.kind, 'container')
@@ -217,5 +221,44 @@ describe('syncContainerRunCard', () => {
     // A card that is not there is not invented.
     noteAdoptionOnCard(store, THREAD, 'nope', { applied: [], alreadyApplied: 0 })
     assert.equal(store.getState().threads[0]?.messages.length, 1)
+  })
+})
+
+describe('latestContainerRun', () => {
+  it('reads the newest run back from its card and says whether it is the last turn', () => {
+    const store = createStore()
+    store.setState({ threads: [thread()], activeThreadId: THREAD })
+    assert.equal(latestContainerRun(thread()), null)
+    syncContainerRunCard(
+      store,
+      progress({ phase: 'finished', runtimeId: 'run-1', credential: 'login', record: record() }),
+    )
+    const first = store.getState().threads[0]
+    assert.ok(first)
+    const latest = latestContainerRun(first)
+    assert.ok(latest)
+    assert.equal(latest.runtimeId, 'run-1')
+    assert.equal(latest.model, 'claude-sonnet-4-6')
+    assert.equal(latest.credential, 'login')
+    assert.equal(latest.ref, 'refs/copse/runs/run-1')
+    assert.equal(latest.status, 'done')
+    assert.equal(latest.isLastTurn, true)
+    // A later run wins, and a message after it means the run is no longer the last turn.
+    syncContainerRunCard(
+      store,
+      progress({ startedAt: 2_000, phase: 'running', runtimeId: 'run-2', continuedFrom: 'run-1' }),
+    )
+    const second = store.getState().threads[0]
+    assert.ok(second)
+    assert.equal(latestContainerRun(second)?.runtimeId, 'run-2')
+    assert.equal(latestContainerRun(second)?.status, 'running')
+    const withReply: Thread = {
+      ...second,
+      messages: [
+        ...second.messages,
+        { id: 'u', role: 'user', content: 'thanks', toolCalls: [], createdAt: 3 },
+      ],
+    }
+    assert.equal(latestContainerRun(withReply)?.isLastTurn, false)
   })
 })

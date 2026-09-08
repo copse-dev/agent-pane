@@ -5,9 +5,18 @@ import { isRecord } from '@shared/unknown-value.ts'
 import {
   CONTAINER_RUN_ADOPT_EVENT,
   containerRunToolCallId,
+  latestContainerRun,
   noteAdoptionOnCard,
   syncContainerRunCard,
+  type LatestContainerRun,
 } from '@shared/store/container-run-card.ts'
+import {
+  addMessage,
+  addUsageDelta,
+  getThreadById,
+  markThreadUnread,
+} from '@shared/store/thread-helpers.ts'
+import type { ContainerRunRequest } from '@shared/types/container-run.ts'
 import { parseAcpModel } from '@shared/acp.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { containerAcpAgentTitles } from '@shared/container-acp-agents.ts'
@@ -57,6 +66,18 @@ export interface ContainerRunContext {
   getModel: () => string
   /** The composer draft: the task the run will carry out. */
   getDraft: () => string
+  /** Empty the composer once its draft has become a run's task. */
+  clearDraft: () => void
+}
+
+/** What the composer needs to know to offer the container as a target (A14). */
+export interface ContainerFollowUpTarget {
+  /** The thread has a container run to continue. */
+  available: boolean
+  /** That run is still going: a follow-up cannot reach it yet. */
+  live: boolean
+  /** The run is the thread's last turn, so the container is the natural next hop. */
+  defaultToContainer: boolean
 }
 
 const DEFAULT_WALL_CLOCK_MINUTES = 120
@@ -187,7 +208,7 @@ export function agentModelsNote(): string {
 }
 
 export function mountContainerRunControl(
-  api: Pick<ApiClient, 'container'> & ModelOptionsApi,
+  api: Pick<ApiClient, 'container' | 'alerts'> & ModelOptionsApi,
   context: ContainerRunContext,
   onStateChanged: () => void,
 ): {
@@ -195,6 +216,10 @@ export function mountContainerRunControl(
   menuLabel: () => string
   open: () => void
   refresh: () => void
+  /** Whether, and how, the composer should offer the container as a target. */
+  followUpTarget: () => ContainerFollowUpTarget
+  /** Continue the thread's latest run with this prompt; false when nothing started. */
+  followUp: (prompt: string) => Promise<boolean>
   destroy: () => void
 } {
   const runs = new Map<string, ContainerRunProgress>()
@@ -553,24 +578,17 @@ export function mountContainerRunControl(
       const wallClockMs = Math.max(1, Number(minutes.value) || DEFAULT_WALL_CLOCK_MINUTES) * 60_000
       const tokenCeiling = Math.max(1000, Number(tokens.value) || DEFAULT_TOKEN_CEILING)
       start.disabled = true
-      void api.container
-        .runThread({
-          projectId,
-          threadId,
-          prompt,
-          model: chosenModel,
-          budgets: { wallClockMs, tokenCeiling },
-          ...(loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {}),
-          installDependencies: installOptIn.checked,
-        })
-        .then((progress) => {
-          update(progress)
-          renderDialog()
-        })
-        .catch((error: unknown) => {
-          start.disabled = false
-          showErrorToast('Could not start the container run', error)
-        })
+      void startRun({
+        projectId,
+        threadId,
+        prompt,
+        model: chosenModel,
+        budgets: { wallClockMs, tokenCeiling },
+        ...(loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {}),
+        installDependencies: installOptIn.checked,
+      }).then((started) => {
+        if (!started) start.disabled = false
+      })
     })
     return el(
       'div',
@@ -900,6 +918,112 @@ export function mountContainerRunControl(
 
   // ── State ─────────────────────────────────────────────────────────────
   /**
+   * Start a run as a turn on the thread (A13, A14): the task becomes a user
+   * message, the composer empties, the dialog closes and the banner takes
+   * over. The card follows from the first progress snapshot. A start the
+   * main process refuses leaves the message in place with the refusal in a
+   * toast — what was asked is still worth the thread remembering.
+   */
+  async function startRun(request: ContainerRunRequest): Promise<boolean> {
+    addMessage(context.store, request.threadId, 'user', request.prompt)
+    context.clearDraft()
+    try {
+      const progress = await api.container.runThread(request)
+      update(progress)
+      overlay?.close()
+      return true
+    } catch (error) {
+      showErrorToast('Could not start the container run', error)
+      return false
+    }
+  }
+
+  const DEFAULT_BUDGETS = {
+    wallClockMs: DEFAULT_WALL_CLOCK_MINUTES * 60_000,
+    tokenCeiling: DEFAULT_TOKEN_CEILING,
+  }
+
+  function latestOnActiveThread(): LatestContainerRun | null {
+    const threadId = context.getActiveThreadId()
+    const thread = threadId ? getThreadById(context.store, threadId) : undefined
+    return thread ? latestContainerRun(thread) : null
+  }
+
+  function followUpTarget(): ContainerFollowUpTarget {
+    const latest = latestOnActiveThread()
+    const live = isLive(activeRun())
+    if (!latest && !live) return { available: false, live: false, defaultToContainer: false }
+    return {
+      available: true,
+      live,
+      defaultToContainer:
+        !live && latest !== null && latest.isLastTurn && latest.runtimeId !== null,
+    }
+  }
+
+  /**
+   * A follow-up sent to the container (A14): a new run that carries in the
+   * latest run's commits and is told what that run was asked and reported,
+   * on the same model and credential. The guest is a fresh process; the
+   * continuity is the checkout and the prompt.
+   */
+  async function followUp(prompt: string): Promise<boolean> {
+    const threadId = context.getActiveThreadId()
+    const projectId = context.getActiveProjectId()
+    if (!threadId || !projectId) return false
+    if (isLive(activeRun())) {
+      showToast('The container is still busy with the previous run; wait for it or stop it.', {
+        variant: 'error',
+      })
+      return false
+    }
+    const latest = latestOnActiveThread()
+    if (!latest || latest.runtimeId === null) {
+      showToast('This thread has no container run to continue.', { variant: 'error' })
+      return false
+    }
+    return startRun({
+      projectId,
+      threadId,
+      prompt,
+      model: latest.model,
+      budgets: DEFAULT_BUDGETS,
+      ...(latest.credential === 'login' ? { useAgentLogin: true } : {}),
+      installDependencies: true,
+      continueFrom: latest.runtimeId,
+    })
+  }
+
+  /** Runs whose usage has been folded into the thread, so a re-sync never counts twice. */
+  const usageFolded = new Set<string>()
+
+  /**
+   * What a finished agent turn does, done for a finished run: the thread is
+   * marked unread when it is not on screen, the app's own alert goes out (a
+   * notification when the window is hidden, the dock bounce and the sound the
+   * user chose), and the run's tokens join the thread's usage. The first
+   * real run finished invisibly for a user looking at another tab.
+   */
+  function settle(progress: ContainerRunProgress): void {
+    const thread = getThreadById(context.store, progress.threadId)
+    const usage = progress.record?.result?.usage
+    if (usage && progress.runtimeId !== null && !usageFolded.has(progress.runtimeId)) {
+      usageFolded.add(progress.runtimeId)
+      addUsageDelta(context.store, progress.threadId, {
+        model: progress.model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      })
+    }
+    markThreadUnread(context.store, progress.threadId)
+    void api.alerts
+      .threadFinished(progress.threadId, thread?.title ?? 'Container run')
+      .catch((error: unknown) => {
+        console.error('[container-run] could not signal the finished run:', error)
+      })
+  }
+
+  /**
    * Apply a finished run's commits to the thread's checkout and say so on
    * the card. `toolCallId` is the card that asked, when one did; the dialog's
    * button finds the card by the run instead.
@@ -942,6 +1066,7 @@ export function mountContainerRunControl(
     // it is next shown (see refresh).
     syncContainerRunCard(context.store, progress)
     if (previous && isLive(previous) && !isLive(progress)) {
+      settle(progress)
       const result = progress.record?.result
       if (progress.phase === 'finished' && result) {
         showToast(
@@ -1001,6 +1126,8 @@ export function mountContainerRunControl(
       isLive(activeRun()) ? 'Show container run' : 'Run unattended in a container…',
     open,
     refresh,
+    followUpTarget,
+    followUp,
     destroy: (): void => {
       unsubscribe()
       document.removeEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt)

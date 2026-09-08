@@ -56,7 +56,11 @@ import {
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
 import { removeStagedLogin, stageAgentLogin } from './agent-login.ts'
 import { PNPM_STORE_DIR, sanitizedOriginUrl } from './guest-install.ts'
-import { decodeGuestTranscript } from './guest-transcript.ts'
+import {
+  decodeGuestTranscript,
+  relocateGuestPaths,
+  relocateTranscript,
+} from './guest-transcript.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 
 const execFileAsync = promisify(execFile)
@@ -112,6 +116,12 @@ export interface ThreadContainerRequest {
    * The caller admits the package registry in the allowlist when it sets this.
    */
   installDependencies?: boolean
+  /**
+   * Carry in this ref instead of a snapshot of the checkout (decision A14):
+   * an earlier run's carry-out, so the guest continues from that run's
+   * commits without the desktop's checkout having moved.
+   */
+  carryInRef?: string
   budgets: UnattendedRunBudgets
   /** `host:port` and `*.suffix:port` rules the broker admits. Nothing else is reachable. */
   egressAllowlist: string[]
@@ -467,8 +477,12 @@ export function writeCarryInBundle(
   workspace: string,
   runtimeId: string,
   bundlePath: string,
+  fromRef?: string,
 ): { ref: string; sha: string; dirty: boolean } {
-  const snapshot = createSnapshotCommit(workspace)
+  const snapshot =
+    fromRef === undefined
+      ? createSnapshotCommit(workspace)
+      : { sha: git(workspace, ['rev-parse', '--verify', `${fromRef}^{commit}`]), dirty: false }
   const ref = `${CARRY_IN_REF_PREFIX}${runtimeId}`
   git(workspace, ['update-ref', ref, snapshot.sha])
   try {
@@ -531,6 +545,35 @@ export function adoptCarryOut(workspace: string, ref: string, base: string): Car
   }
   const applied = pending.map((sha) => git(workspace, ['log', '-1', '--format=%h %s', sha]))
   return { applied, alreadyApplied }
+}
+
+/**
+ * What a continuation needs from an earlier run (decision A14): the ref its
+ * commits are on, what it was asked and what it reported, from the run's
+ * files on disk so a run an earlier app session made can be continued too.
+ * Null when there is no such run or it fetched no commits back.
+ */
+export function loadRunForContinuation(
+  runtimeId: string,
+  runtimesDir = join(copseDataRoot(), 'runtimes'),
+): { threadId: string; ref: string; prompt: string; finalText: string } | null {
+  const carry = loadCarryOutForAdoption(runtimeId, runtimesDir)
+  if (carry === null) return null
+  const spec = readJsonFile(join(runtimesDir, runtimeId, 'run.json'), (value) =>
+    isRecord(value) ? value : null,
+  )
+  const record = readJsonFile(join(runtimesDir, runtimeId, 'record.json'), (value) =>
+    isRecord(value) ? value : null,
+  )
+  const prompt = spec?.['prompt']
+  const result = record?.['result']
+  const finalText = isRecord(result) ? result['finalText'] : undefined
+  return {
+    threadId: carry.threadId,
+    ref: carry.ref,
+    prompt: typeof prompt === 'string' ? prompt : '',
+    finalText: typeof finalText === 'string' ? finalText : '',
+  }
 }
 
 /**
@@ -1188,7 +1231,12 @@ export async function runThreadInContainer(
   chmodSync(join(runDir, 'state'), 0o777)
   chmodSync(join(runDir, 'out'), 0o777)
 
-  const carryIn = writeCarryInBundle(workspace, runtimeId, join(runDir, 'carry-in.bundle'))
+  const carryIn = writeCarryInBundle(
+    workspace,
+    runtimeId,
+    join(runDir, 'carry-in.bundle'),
+    request.carryInRef,
+  )
   log(`[thread-container] carry-in ${carryIn.sha.slice(0, 12)} as ${carryIn.ref}`)
 
   // The user's sign-in, when they opted in: staged now, removed in `finally`
@@ -1285,7 +1333,10 @@ export async function runThreadInContainer(
     removeStagedLogin(runDir)
   }
 
-  const result = readJsonFile(join(runDir, 'out', 'result.json'), decodeResult)
+  const decoded = readJsonFile(join(runDir, 'out', 'result.json'), decodeResult)
+  // The agent's last words name files by their guest path; the desktop wants
+  // them relative to the checkout (A14).
+  const result = decoded ? { ...decoded, finalText: relocateGuestPaths(decoded.finalText) } : null
   const carryOutBundle = join(runDir, 'out', 'carry-out.bundle')
   const carryOut: ThreadContainerRecord['carryOut'] = {
     expected: existsSync(carryOutBundle) || (result?.commits.length ?? 0) > 0,
@@ -1314,7 +1365,9 @@ export async function runThreadInContainer(
     attestation,
     egress: broker.log(),
     result,
-    transcript: readJsonFile(join(runDir, 'out', 'transcript.json'), decodeGuestTranscript) ?? [],
+    transcript: relocateTranscript(
+      readJsonFile(join(runDir, 'out', 'transcript.json'), decodeGuestTranscript) ?? [],
+    ),
     carryIn: { sha: carryIn.sha, dirty: carryIn.dirty },
     carryOut,
     containerExit,

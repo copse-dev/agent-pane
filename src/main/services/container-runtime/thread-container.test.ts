@@ -221,6 +221,34 @@ describe('carry-in / carry-out over git bundles', () => {
   })
 })
 
+describe('writeCarryInBundle from a ref', () => {
+  it("carries in the ref's commit, not the working tree, and calls it clean", () => {
+    const repo = initRepo()
+    try {
+      const base = git(repo, ['rev-parse', 'HEAD'])
+      git(repo, ['checkout', '--quiet', '--detach', base])
+      writeFileSync(join(repo, 'guest.txt'), 'from the run\n')
+      git(repo, ['add', '-A'])
+      git(repo, ['commit', '--quiet', '-m', 'guest: work'])
+      const runHead = git(repo, ['rev-parse', 'HEAD'])
+      git(repo, ['update-ref', 'refs/copse/runs/run-a', runHead])
+      git(repo, ['checkout', '--quiet', 'main'])
+      writeFileSync(join(repo, 'wip.txt'), 'uncommitted on the desktop\n')
+      const bundle = join(repo, 'carry-in.bundle')
+      const carried = writeCarryInBundle(repo, 'run-b', bundle, 'refs/copse/runs/run-a')
+      assert.equal(carried.sha, runHead)
+      assert.equal(carried.dirty, false)
+      assert.equal(git(repo, ['bundle', 'list-heads', bundle]).includes(runHead), true)
+      assert.throws(
+        () => writeCarryInBundle(repo, 'run-c', bundle, 'refs/copse/runs/missing'),
+        /refs\/copse\/runs\/missing/,
+      )
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('adoptCarryOut', () => {
   /** A run's commits on the carry-out ref, on top of a base, as fetchCarryOut leaves them. */
   function runOnRef(repo: string, base: string, ref: string, files: string[]): void {

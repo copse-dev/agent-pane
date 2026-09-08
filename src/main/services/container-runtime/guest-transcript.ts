@@ -90,6 +90,21 @@ export function foldGuestTranscript(
         if (chunk.resultFormat) toolCall.resultFormat = chunk.resultFormat
         break
       }
+      // An external ACP agent reports its tool calls as patches — a title, the
+      // input, streamed output, and finally a status — rather than one result.
+      // The first real Codex run showed every call as failed because these
+      // were ignored and the end-of-run rule below took "never answered" for
+      // "failed".
+      case 'tool_call_update': {
+        const toolCall = byId.get(chunk.toolCallId)
+        if (!toolCall) break
+        if (chunk.name !== undefined) toolCall.name = chunk.name
+        if (chunk.args !== undefined) toolCall.args = chunk.args
+        if (chunk.status !== undefined) toolCall.status = chunk.status
+        if (chunk.result !== undefined) toolCall.result = cut(chunk.result, resultLimit)
+        if (chunk.resultFormat !== undefined) toolCall.resultFormat = chunk.resultFormat
+        break
+      }
       default:
         break
     }
@@ -154,5 +169,33 @@ export function decodeGuestTranscript(value: unknown): SubagentMessage[] | null 
     })),
     ...(createdAt !== undefined ? { createdAt } : {}),
     ...(reasoning !== undefined ? { reasoning } : {}),
+  }))
+}
+
+/** Where the guest's checkout lives; the same as `GUEST_WORKSPACE` in the runner. */
+const GUEST_WORKSPACE_PREFIX = '/workspace/repo/'
+
+/**
+ * Turn the guest's absolute paths into checkout-relative ones, so a link the
+ * agent wrote (`/workspace/repo/src/main/index.ts:214`) opens the same file
+ * on the desktop. A path the guest alone had — a scratch log under `.tmp/`
+ * that never came back — stays a dead link, which is the truth.
+ */
+export function relocateGuestPaths(text: string): string {
+  return text.split(GUEST_WORKSPACE_PREFIX).join('')
+}
+
+/** The transcript with every guest path relocated: prose, reasoning and tool results. */
+export function relocateTranscript(messages: SubagentMessage[]): SubagentMessage[] {
+  return messages.map((message) => ({
+    ...message,
+    content: relocateGuestPaths(message.content),
+    ...(message.reasoning !== undefined
+      ? { reasoning: relocateGuestPaths(message.reasoning) }
+      : {}),
+    toolCalls: message.toolCalls.map((toolCall) => ({
+      ...toolCall,
+      result: toolCall.result === null ? null : relocateGuestPaths(toolCall.result),
+    })),
   }))
 }

@@ -320,6 +320,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           checkout: { root: '/repo', mode: 'shared' as const, branch: 'main' },
           record: null,
           error: null,
+          continuedFrom: request.continueFrom ?? null,
         }),
       stopRun: () => resolved(null),
       adoptRun: () =>

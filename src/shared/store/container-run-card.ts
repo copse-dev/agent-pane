@@ -11,9 +11,10 @@
  * it — the spine persists a tool call only when it is no longer running, so a
  * run the app quit on leaves no half-card behind.
  */
-import type { ContainerRunProgress } from '../types/container-run.ts'
-import type { SubagentMessage, SubagentSession, ToolCall } from '@shared/types'
+import type { ContainerRunCredential, ContainerRunProgress } from '../types/container-run.ts'
+import type { SubagentMessage, SubagentSession, Thread, ToolCall } from '@shared/types'
 import type { AppStore } from './store.ts'
+import { isRecord } from '../unknown-value.ts'
 import {
   addMessage,
   addToolCall,
@@ -37,6 +38,70 @@ export interface ContainerRunToolArgs {
   runtimeId: string | null
   /** Where the guest's commits landed, once fetched; what a follow-up applies. */
   ref: string | null
+  /** What the guest held, so a continuation can ask for the same (A14). */
+  credential: ContainerRunCredential
+  /** The earlier run this one continued, when it did. */
+  continuedFrom: string | null
+}
+
+/** The most recent container run on a thread, read back from its card. */
+export interface LatestContainerRun {
+  messageId: string
+  toolCallId: string
+  runtimeId: string | null
+  model: string
+  credential: ContainerRunCredential
+  ref: string | null
+  status: ToolCall['status']
+  /** The card is the thread's last message: nothing was said since the run. */
+  isLastTurn: boolean
+}
+
+function argsOf(toolCall: ToolCall): ContainerRunToolArgs | null {
+  const record: unknown = toolCall.args
+  if (!isRecord(record)) return null
+  const task = record['task']
+  const model = record['model']
+  if (typeof task !== 'string' || typeof model !== 'string') return null
+  const runtimeId = record['runtimeId']
+  const ref = record['ref']
+  const credential = record['credential']
+  const continuedFrom = record['continuedFrom']
+  return {
+    task,
+    model,
+    runtimeId: typeof runtimeId === 'string' ? runtimeId : null,
+    ref: typeof ref === 'string' ? ref : null,
+    credential: credential === 'key' || credential === 'login' ? credential : 'none',
+    continuedFrom: typeof continuedFrom === 'string' ? continuedFrom : null,
+  }
+}
+
+/**
+ * The thread's latest container run, from the card that holds it, so the
+ * composer can offer to continue it (A14) — after a restart as well, when
+ * the main process no longer holds the run.
+ */
+export function latestContainerRun(thread: Pick<Thread, 'messages'>): LatestContainerRun | null {
+  for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+    const message = thread.messages[index]
+    if (!message) continue
+    const toolCall = message.toolCalls.find((candidate) => candidate.name === CONTAINER_RUN_TOOL)
+    if (!toolCall) continue
+    const args = argsOf(toolCall)
+    if (!args) continue
+    return {
+      messageId: message.id,
+      toolCallId: toolCall.id,
+      runtimeId: args.runtimeId,
+      model: args.model,
+      credential: args.credential,
+      ref: args.ref,
+      status: toolCall.status,
+      isLastTurn: index === thread.messages.length - 1,
+    }
+  }
+  return null
 }
 
 export function containerRunToolCallId(
@@ -149,6 +214,8 @@ export function containerRunToolCall(progress: ContainerRunProgress): ToolCall {
     model: progress.model,
     runtimeId: progress.runtimeId,
     ref: progress.record?.carryOut.ref ?? null,
+    credential: progress.credential,
+    continuedFrom: progress.continuedFrom,
   }
   const transcript = progress.record?.transcript ?? []
   const log = logMessage(progress)

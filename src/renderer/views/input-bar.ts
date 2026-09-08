@@ -192,7 +192,18 @@ export function mountInputBar(
   // Stop and Send/Queue sit together in a flex row so the Send/Queue button's
   // width (it grows for "Queue") pushes Stop along with it instead of the two
   // overlapping at a hardcoded offset.
-  const submitRow = el('div', { class: 'submit-row' }, stopBtn, submitBtn)
+  // Where a message goes when the thread has a container run (A14): on to
+  // the container, continuing that run, or to the thread's own agent. Hidden
+  // on a thread with no run; the container is the default right after one.
+  const targetSelect = el('select', {
+    class: 'composer-target',
+    'aria-label': 'Send this message to',
+    hidden: '',
+  })
+  const targetContainer = el('option', { value: 'container' }, 'To container')
+  const targetThread = el('option', { value: 'thread' }, 'To thread')
+  targetSelect.append(targetContainer, targetThread)
+  const submitRow = el('div', { class: 'submit-row' }, targetSelect, stopBtn, submitBtn)
   // The Send button is positioned relative to this row (not the whole input
   // bar), so it sits inside the textarea box and never overlaps the footer.
   const inputRow = el('div', { class: 'input-row' }, composer.el, attachBtn, fileInput, submitRow)
@@ -272,6 +283,9 @@ export function mountInputBar(
   const guardedYolo = mountGuardedYoloControl(api, getActiveThreadId, () => {
     footerOverflow?.update()
   })
+  // The control's own mount reports state before the const below is assigned;
+  // the picker reads the control, so it waits for the mount to finish.
+  let containerRunMounted = false
   const containerRun = mountContainerRunControl(
     api,
     {
@@ -280,11 +294,17 @@ export function mountInputBar(
       getActiveProjectId: () => store.getState().activeProjectId,
       getModel: footerChatModel,
       getDraft: () => composer.value,
+      clearDraft: () => {
+        composer.clear()
+      },
     },
     () => {
       footerOverflow?.update()
+      updateTargetPicker()
     },
   )
+  containerRunMounted = true
+  updateTargetPicker()
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
@@ -1120,9 +1140,31 @@ export function mountInputBar(
     stopBtn.classList.remove('stop-pending')
   }
 
+  /**
+   * The target picker follows the thread's container run: shown when there
+   * is one, defaulting to the container when the run is the last turn, and
+   * held on the thread while the run is still busy.
+   */
+  let targetThreadId: string | null = null
+  function updateTargetPicker(): void {
+    if (!containerRunMounted) return
+    const target = containerRun.followUpTarget()
+    targetSelect.hidden = !target.available
+    if (!target.available) return
+    targetContainer.disabled = target.live
+    targetContainer.textContent = target.live ? 'To container (busy)' : 'To container'
+    const threadId = getActiveThreadId()
+    if (threadId !== targetThreadId) {
+      targetThreadId = threadId
+      targetSelect.value = target.defaultToContainer ? 'container' : 'thread'
+    }
+    if (target.live && targetSelect.value === 'container') targetSelect.value = 'thread'
+  }
+
   function updateState(): void {
     const running = isRunning()
     stopBtn.hidden = !running
+    updateTargetPicker()
     submitBtn.textContent = running ? 'Queue' : 'Send'
     submitBtn.setAttribute('aria-label', running ? 'Queue message' : 'Send message')
     // Not styling — the demo autoplay driver and the e2e specs read this class
@@ -1555,6 +1597,14 @@ export function mountInputBar(
 
     const projectId = store.getState().activeProjectId
     if (!projectId) return
+    // A follow-up to the container (A14): a continuation run, not a turn of
+    // the thread's own agent. Prose only — the guest gets no attachments.
+    if (!targetSelect.hidden && targetSelect.value === 'container') {
+      if (!rawText) return
+      const started = await containerRun.followUp(rawText)
+      if (started) updateState()
+      return
+    }
     if (attachedImages.length > 0) {
       const incompatibility = await incompatibleImageModel()
       if (incompatibility) {

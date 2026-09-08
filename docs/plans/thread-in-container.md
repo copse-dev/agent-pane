@@ -716,6 +716,7 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | ACP: refusal           | unit        | Agents outside A6's set, and any agent without a key, are refused with a per-agent reason                                                               | `providers/container-provider.test.ts` (A-3)                                                                                           |
 | Run as a turn: card    | unit        | A run becomes one container tool call on its thread — running with the log, settled with transcript and record — updated in place, not duplicated       | `store/container-run-card.test.ts`, `container-runtime/guest-transcript.test.ts` (A13)                                                 |
 | Run as a turn: apply   | unit        | The guest's commits after the carry-in base are cherry-picked once; a second press counts them; a dirty tree is refused; a conflict is aborted          | `container-runtime/thread-container.test.ts`, `container-run-service.test.ts` (A13)                                                    |
+| Run as a turn: follow  | unit        | A continuation carries in the earlier run's ref, prefixes its exchange to the prompt, and refuses another thread's run; ACP patches settle calls        | `container-run-service.test.ts`, `guest-transcript.test.ts`, `store/container-run-card.test.ts` (A14)                                  |
 
 ## Non-goals
 

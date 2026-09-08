@@ -1,7 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
-import { decodeGuestTranscript, foldGuestTranscript } from './guest-transcript.ts'
+import {
+  decodeGuestTranscript,
+  foldGuestTranscript,
+  relocateGuestPaths,
+  relocateTranscript,
+} from './guest-transcript.ts'
 
 const call = (id: string, name = 'run_shell'): StreamChunk => ({
   type: 'tool_call',
@@ -44,6 +49,31 @@ describe('foldGuestTranscript', () => {
       ],
     )
     assert.ok(messages.every((m) => m.role === 'assistant' && typeof m.createdAt === 'number'))
+  })
+
+  it('honours an ACP agent finishing its calls through tool_call_update patches', () => {
+    const [message] = foldGuestTranscript([
+      call('t1'),
+      { type: 'tool_call_update', toolCallId: 't1', args: { command: 'pnpm test' } },
+      {
+        type: 'tool_call_update',
+        toolCallId: 't1',
+        status: 'done',
+        result: '242 specs',
+        resultFormat: 'markdown',
+      },
+      call('t2'),
+      { type: 'tool_call_update', toolCallId: 't2', status: 'error', result: 'exit 1' },
+      { type: 'tool_call_update', toolCallId: 'unknown', status: 'done' },
+    ])
+    assert.ok(message)
+    assert.deepEqual(
+      message.toolCalls.map((tc) => [tc.status, tc.result, tc.resultFormat ?? null, tc.args]),
+      [
+        ['done', '242 specs', 'markdown', { command: 'pnpm test' }],
+        ['error', 'exit 1', null, { command: 'echo t2' }],
+      ],
+    )
   })
 
   it('marks an unanswered tool call as an error and an error result as one', () => {
@@ -108,5 +138,36 @@ describe('decodeGuestTranscript', () => {
     assert.deepEqual(decoded, folded)
     assert.equal(decodeGuestTranscript({ not: 'a list' }), null)
     assert.equal(decodeGuestTranscript([{ id: 'x' }]), null)
+  })
+})
+
+describe('relocateGuestPaths', () => {
+  it('turns guest checkout paths into checkout-relative ones, everywhere the agent wrote them', () => {
+    assert.equal(
+      relocateGuestPaths(
+        'see [index](/workspace/repo/src/main/index.ts:214) and /workspace/repo/.tmp/run.log',
+      ),
+      'see [index](src/main/index.ts:214) and .tmp/run.log',
+    )
+    assert.equal(relocateGuestPaths('/workspace/home/x'), '/workspace/home/x')
+    const [message] = relocateTranscript([
+      {
+        id: 'm',
+        role: 'assistant',
+        content: 'read /workspace/repo/a.ts',
+        reasoning: 'look at /workspace/repo/b.ts',
+        toolCalls: [
+          { id: 't', name: 'read_file', args: {}, status: 'done', result: '/workspace/repo/c.ts' },
+          { id: 'u', name: 'read_file', args: {}, status: 'done', result: null },
+        ],
+      },
+    ])
+    assert.ok(message)
+    assert.equal(message.content, 'read a.ts')
+    assert.equal(message.reasoning, 'look at b.ts')
+    assert.deepEqual(
+      message.toolCalls.map((tc) => tc.result),
+      ['c.ts', null],
+    )
   })
 })

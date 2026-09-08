@@ -488,6 +488,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
         secretCanary: { present: false, detail: 'canary absent from every surface' },
       },
       error: null,
+      continuedFrom: null,
     },
   },
   {

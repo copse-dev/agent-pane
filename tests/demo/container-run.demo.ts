@@ -198,9 +198,13 @@ describe('unattended container run (browser-hosted)', () => {
       window.api.container.runThread = () => Promise.resolve(failed)
     })
     await $('.container-run-start').click()
+    // Starting closes the sheet (A14): the banner is the run's face now, and
+    // the task became a message on the thread.
+    const dialog = await $('#container-run-dialog')
+    await expect(dialog).not.toBeDisplayed()
     await expect($('.container-run-banner')).toHaveAttribute('data-phase', 'failed')
     expect(await $('.container-run-banner').getText()).not.toContain('commits back')
-    const dialog = await $('#container-run-dialog')
+    await $('.container-run-details').click()
     await expect(dialog.$('.container-run-status')).toHaveAttribute('data-phase', 'failed')
     expect(await dialog.$('.container-run-summary').getText()).toContain('missing carry-out bundle')
     await expect(dialog.$('.container-run-commits h3')).toHaveText(
@@ -208,5 +212,33 @@ describe('unattended container run (browser-hosted)', () => {
       { ignoreCase: true },
     )
     await saveElementScreenshot('#container-run-dialog', 'container-run-failed-result.png')
+  })
+
+  it('offers the container as the follow-up target and continues the run from the composer', async () => {
+    await browser.url('/?scenario=container-run')
+    await $('.container-run-banner').waitForDisplayed()
+    await $('.tool-card-subagent[data-tool-id^="container-run:"]').waitForExist()
+    // The run is the thread's last turn, so the picker shows and points at it.
+    const target = await $('.composer-target')
+    await expect(target).toBeDisplayed()
+    await expect(target).toHaveValue('container')
+    await saveElementScreenshot('.input-row', 'container-run-follow-up-target.png')
+
+    await $('.prompt-input').setValue('Now add a test for the formatter change')
+    await $('.submit-btn').click()
+    // The follow-up is a user message and a new, running card; the composer is empty.
+    await browser.waitUntil(async () => {
+      const cards = await $$('.tool-card-subagent[data-tool-id^="container-run:"]')
+      return cards.length === 2
+    })
+    const texts = await (await $$('.msg-user .message-text')).map((node) => node.getText())
+    expect(texts.some((text) => text.includes('Now add a test for the formatter change'))).toBe(
+      true,
+    )
+    expect((await $('.prompt-input').getText()).trim()).toBe('')
+    const cards = await $$('.tool-card-subagent[data-tool-id^="container-run:"]')
+    await expect(cards[1]).toHaveAttribute('data-status', 'running')
+    // A busy container is not a target: the picker falls back to the thread.
+    await expect(target).toHaveValue('thread')
   })
 })

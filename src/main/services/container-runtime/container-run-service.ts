@@ -18,6 +18,7 @@ import {
   adoptCarryOut,
   buildWorkerImage,
   loadCarryOutForAdoption,
+  loadRunForContinuation,
   newRuntimeId,
   runThreadInContainer,
   sweepOrphanedRuntimes,
@@ -61,6 +62,8 @@ interface RunDependencies {
   adopt: typeof adoptCarryOut
   /** A finished run's ref and base from its record on disk, for a run this session did not start. */
   loadCarryOut: typeof loadCarryOutForAdoption
+  /** What an earlier run was asked, reported and left on its ref, from disk (A14). */
+  loadContinuation: typeof loadRunForContinuation
 }
 
 const productionDependencies: RunDependencies = {
@@ -69,6 +72,7 @@ const productionDependencies: RunDependencies = {
   sweep: sweepOrphanedRuntimes,
   adopt: adoptCarryOut,
   loadCarryOut: loadCarryOutForAdoption,
+  loadContinuation: loadRunForContinuation,
   // Rebuild whenever the shipped worker differs from the one the existing
   // image was built from. Reusing on tag alone would keep an app upgrade
   // running the previous guest — and its previous security behaviour.
@@ -246,6 +250,10 @@ export class ContainerRunService {
     }
     const prompt = request.prompt.trim()
     if (!prompt) throw new Error('The run needs a prompt')
+    const continuation =
+      request.continueFrom !== undefined
+        ? this.continuationOf(request.threadId, request.continueFrom)
+        : null
     const model = request.model
     const plan = resolveContainerProvider(model, { useAgentLogin: request.useAgentLogin === true })
     const credential: ContainerRunProgress['credential'] =
@@ -276,6 +284,7 @@ export class ContainerRunService {
       checkout: null,
       record: null,
       error: null,
+      continuedFrom: continuation?.runtimeId ?? null,
     }
     // Claim the thread's slot before the first await, so two clicks cannot both
     // pass the live-run check and start two containers on one checkout.
@@ -334,8 +343,35 @@ export class ContainerRunService {
     // A copy taken before the drive starts: the run mutates its own object as
     // it advances, and the caller wants the state it asked for.
     const first = snapshot(progress)
-    void this.drive(request, plan, checkout.root, progress)
+    void this.drive(request, plan, checkout.root, progress, continuation)
     return first
+  }
+
+  /**
+   * The earlier run a follow-up continues (decision A14): its carry-out ref
+   * becomes the carry-in, and what it was asked and reported prefixes the new
+   * prompt so the guest — a fresh process with no memory — knows where it
+   * left off. From memory when this session ran it, from disk otherwise, and
+   * only ever a run of the same thread.
+   */
+  private continuationOf(threadId: string, runtimeId: string): RunContinuation {
+    const live = this.runs.get(threadId)
+    const fromMemory =
+      live?.record && live.record.runtimeId === runtimeId && live.record.carryOut.ref !== null
+        ? {
+            runtimeId,
+            ref: live.record.carryOut.ref,
+            prompt: live.prompt,
+            finalText: live.record.result?.finalText ?? '',
+          }
+        : null
+    if (fromMemory) return fromMemory
+    const stored = this.deps.loadContinuation(runtimeId)
+    if (stored === null) {
+      throw new Error('The earlier run left no commits to continue from, or its record is gone')
+    }
+    if (stored.threadId !== threadId) throw new Error('That run belongs to another thread')
+    return { runtimeId, ref: stored.ref, prompt: stored.prompt, finalText: stored.finalText }
   }
 
   private async drive(
@@ -343,6 +379,7 @@ export class ContainerRunService {
     plan: ReturnType<typeof resolveContainerProvider>,
     workspace: string,
     progress: ContainerRunProgress,
+    continuation: RunContinuation | null,
   ): Promise<void> {
     const runtimeId = newRuntimeId()
     // The key travels as an environment variable the runner names on the
@@ -365,7 +402,10 @@ export class ContainerRunService {
       if (apiKey) process.env[keyEnv] = apiKey
       const runRequest: ThreadContainerRequest = {
         workspace,
-        prompt: request.prompt.trim(),
+        prompt: continuation
+          ? continuationPrompt(continuation, request.prompt.trim())
+          : request.prompt.trim(),
+        ...(continuation ? { carryInRef: continuation.ref } : {}),
         model: plan.model,
         ...(plan.mode === 'openai-compatible'
           ? { providerUrl: plan.url }
@@ -423,6 +463,33 @@ export class ContainerRunService {
   clearForTests(): void {
     this.runs.clear()
   }
+}
+
+interface RunContinuation {
+  runtimeId: string
+  ref: string
+  prompt: string
+  finalText: string
+}
+
+/**
+ * The prompt a continuation run is given: the earlier exchange, then the
+ * follow-up. The guest starts from the earlier run's commits, so "as before"
+ * has something to refer to.
+ */
+export function continuationPrompt(earlier: RunContinuation, followUp: string): string {
+  const reported = earlier.finalText.trim()
+  return [
+    'This continues an earlier run in this container. The checkout already holds the commits that run made.',
+    '',
+    'Earlier you were asked:',
+    earlier.prompt.trim(),
+    '',
+    reported.length > 0 ? `You reported:\n${reported}` : 'It ended without a report.',
+    '',
+    'Follow-up:',
+    followUp,
+  ].join('\n')
 }
 
 function snapshot(progress: ContainerRunProgress): ContainerRunProgress {
