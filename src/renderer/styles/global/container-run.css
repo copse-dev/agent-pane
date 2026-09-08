@@ -194,3 +194,10 @@
 .container-run-install-field {
   margin-top: var(--spacing-md);
 }
+
+/* A container run's card on the thread (A13): the follow-up under the record. */
+.tool-card-subagent .subagent-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}

@@ -283,6 +283,13 @@
           2
         ]
       },
+      "container:adopt-run": {
+        "api": "container.adoptRun",
+        "args": [
+          3,
+          3
+        ]
+      },
       "container:get-run": {
         "api": "container.getRun",
         "args": [

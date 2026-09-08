@@ -1644,6 +1644,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zGuardedYoloThreadId, [threadId])
     return getContainerRunService().stop(id)
   })
+  // Follow up on a finished run: its commits, cherry-picked onto the thread's
+  // checkout. The runtime id names the record on disk, so it works for a run
+  // an earlier app session made; the thread must be the one that ran it.
+  ipcMain.handle(
+    'container:adopt-run',
+    (event, projectId: unknown, threadId: unknown, runtimeId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, rid] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.string().regex(/^[a-z0-9-]{1,128}$/i)]),
+        [projectId, threadId, runtimeId],
+      )
+      return getContainerRunService().adopt(pid, tid, rid)
+    },
+  )
   ipcMain.handle('threads:load-project', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])

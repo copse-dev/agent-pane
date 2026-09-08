@@ -42,7 +42,8 @@ import {
 import { GUEST_EXCLUDED_TOOLS } from './guest-tools.ts'
 import { EgressLink } from './egress-link.ts'
 import { probeBroker, startGuestEgressProxy } from './guest-egress-proxy.ts'
-import type { LLMMessage } from '@shared/types/index.ts'
+import type { LLMMessage, StreamChunk } from '@shared/types/index.ts'
+import { foldGuestTranscript } from './guest-transcript.ts'
 
 const RUN_DIR = '/run/copse'
 
@@ -469,6 +470,7 @@ async function main(): Promise<void> {
   }
 
   let messages: readonly LLMMessage[] = []
+  let chunks: readonly StreamChunk[] = []
   let toolNames: readonly string[] = []
   try {
     const result = await runHeadlessAgent(
@@ -552,6 +554,7 @@ async function main(): Promise<void> {
         : {},
     )
     messages = result.messages
+    chunks = result.chunks
     toolNames = result.toolNames
   } catch (error) {
     if (stop.reason === 'completed') {
@@ -595,6 +598,12 @@ async function main(): Promise<void> {
   const commits = carryOut(spec)
   const outDir = join(RUN_DIR, 'out')
   writeFileSync(join(outDir, 'messages.json'), `${JSON.stringify(messages, null, 2)}\n`)
+  // The run's timeline for the thread that launched it (A13): the stream,
+  // folded and bounded, beside the raw history.
+  writeFileSync(
+    join(outDir, 'transcript.json'),
+    `${JSON.stringify(foldGuestTranscript(chunks), null, 2)}\n`,
+  )
   writeFileSync(
     join(outDir, 'result.json'),
     `${JSON.stringify(

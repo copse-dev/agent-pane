@@ -12,9 +12,11 @@ import {
   workerBuildFingerprint,
   containerName,
   workspaceVolumeName,
+  adoptCarryOut,
   createSnapshotCommit,
   dockerRunArgs,
   fetchCarryOut,
+  loadCarryOutForAdoption,
   providerOrigin,
   secretCanaryCheck,
   WORKER_UID,
@@ -215,6 +217,88 @@ describe('carry-in / carry-out over git bundles', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(guest, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('adoptCarryOut', () => {
+  /** A run's commits on the carry-out ref, on top of a base, as fetchCarryOut leaves them. */
+  function runOnRef(repo: string, base: string, ref: string, files: string[]): void {
+    git(repo, ['checkout', '--quiet', '--detach', base])
+    for (const file of files) {
+      writeFileSync(join(repo, file), `${file}\n`)
+      git(repo, ['add', '-A'])
+      git(repo, ['commit', '--quiet', '-m', `guest: add ${file}`])
+    }
+    git(repo, ['update-ref', ref, 'HEAD'])
+    git(repo, ['checkout', '--quiet', 'main'])
+  }
+
+  it("cherry-picks the guest's commits onto HEAD once, and counts them the second time", () => {
+    const repo = initRepo()
+    try {
+      const base = git(repo, ['rev-parse', 'HEAD'])
+      runOnRef(repo, base, 'refs/copse/runs/run-a', ['one.txt', 'two.txt'])
+      // The user moved on in the meantime: the pick lands on the new HEAD.
+      writeFileSync(join(repo, 'theirs.txt'), 'theirs\n')
+      git(repo, ['add', '-A'])
+      git(repo, ['commit', '--quiet', '-m', 'user: meanwhile'])
+      const first = adoptCarryOut(repo, 'refs/copse/runs/run-a', base)
+      assert.deepEqual(
+        first.applied.map((line) => line.slice(line.indexOf(' ') + 1)),
+        ['guest: add one.txt', 'guest: add two.txt'],
+      )
+      assert.equal(first.alreadyApplied, 0)
+      assert.equal(git(repo, ['show', 'HEAD:two.txt']), 'two.txt')
+      assert.equal(git(repo, ['show', 'HEAD~2:theirs.txt']), 'theirs')
+      const second = adoptCarryOut(repo, 'refs/copse/runs/run-a', base)
+      assert.deepEqual(second, { applied: [], alreadyApplied: 2 })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a dirty checkout and leaves a conflicting pick aborted', () => {
+    const repo = initRepo()
+    try {
+      const base = git(repo, ['rev-parse', 'HEAD'])
+      runOnRef(repo, base, 'refs/copse/runs/run-b', ['README.md'])
+      writeFileSync(join(repo, 'README.md'), '# edited\n')
+      assert.throws(() => adoptCarryOut(repo, 'refs/copse/runs/run-b', base), /uncommitted changes/)
+      git(repo, ['add', '-A'])
+      git(repo, ['commit', '--quiet', '-m', 'user: edited the readme'])
+      assert.throws(
+        () => adoptCarryOut(repo, 'refs/copse/runs/run-b', base),
+        /Could not apply the run's commits/,
+      )
+      assert.equal(git(repo, ['status', '--porcelain']), '', 'the pick was aborted')
+      assert.equal(git(repo, ['show', 'HEAD:README.md']), '# edited')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('reads what a follow-up needs from a record on disk, and nothing from a bad id', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'copse-tc-records-'))
+    try {
+      execFileSync('mkdir', ['-p', join(dir, 'run-1')])
+      writeFileSync(
+        join(dir, 'run-1', 'record.json'),
+        JSON.stringify({
+          threadId: 't1',
+          carryIn: { sha: 'abc', dirty: false },
+          carryOut: { expected: true, ref: 'refs/copse/runs/run-1', error: null },
+        }),
+      )
+      assert.deepEqual(loadCarryOutForAdoption('run-1', dir), {
+        threadId: 't1',
+        ref: 'refs/copse/runs/run-1',
+        base: 'abc',
+      })
+      assert.equal(loadCarryOutForAdoption('run-2', dir), null)
+      assert.equal(loadCarryOutForAdoption('../run-1', dir), null)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 })

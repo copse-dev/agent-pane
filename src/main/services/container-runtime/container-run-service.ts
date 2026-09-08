@@ -15,12 +15,15 @@ import { recordDecision } from '../security/decision-log-store.ts'
 import { resolveContainerProvider } from '../providers/container-provider.ts'
 import { DEPENDENCY_INSTALL_ORIGINS } from './guest-install.ts'
 import {
+  adoptCarryOut,
   buildWorkerImage,
+  loadCarryOutForAdoption,
   newRuntimeId,
   runThreadInContainer,
   sweepOrphanedRuntimes,
   teardownRuntime,
   type OrphanSweep,
+  type CarryOutAdoption,
   WORKER_IMAGE,
   workerBuildFingerprint,
   workerImageFingerprint,
@@ -54,12 +57,18 @@ interface RunDependencies {
   resolveContext: (projectId: string, threadId: string) => Promise<ThreadExecutionContext>
   /** Remove what earlier app sessions left behind; see {@link sweepOrphanedRuntimes}. */
   sweep: typeof sweepOrphanedRuntimes
+  /** Apply a run's commits to a checkout; see {@link adoptCarryOut}. */
+  adopt: typeof adoptCarryOut
+  /** A finished run's ref and base from its record on disk, for a run this session did not start. */
+  loadCarryOut: typeof loadCarryOutForAdoption
 }
 
 const productionDependencies: RunDependencies = {
   run: runThreadInContainer,
   stop: teardownRuntime,
   sweep: sweepOrphanedRuntimes,
+  adopt: adoptCarryOut,
+  loadCarryOut: loadCarryOutForAdoption,
   // Rebuild whenever the shipped worker differs from the one the existing
   // image was built from. Reusing on tag alone would keep an app upgrade
   // running the previous guest — and its previous security behaviour.
@@ -169,6 +178,57 @@ export class ContainerRunService {
       }
     }
     return snapshot(progress)
+  }
+
+  /**
+   * Follow up on a finished run in the thread's own checkout (decision A13):
+   * cherry-pick the guest's commits onto the checkout's HEAD. The run is
+   * looked up in memory first and on disk after — the record outlives the
+   * session, and so should the follow-up — and it must belong to the thread
+   * asking, so one thread cannot pull another's run into its checkout.
+   */
+  async adopt(projectId: string, threadId: string, runtimeId: string): Promise<CarryOutAdoption> {
+    if (this.isActive(threadId)) {
+      throw new Error('This thread has a container run in progress; wait for it to finish')
+    }
+    const live = this.runs.get(threadId)
+    const fromMemory =
+      live?.record && live.record.runtimeId === runtimeId && live.record.carryOut.ref !== null
+        ? { threadId, ref: live.record.carryOut.ref, base: live.record.carryIn.sha }
+        : null
+    const source = fromMemory ?? this.deps.loadCarryOut(runtimeId)
+    if (source === null) {
+      throw new Error('This run fetched no commits, or its record is gone')
+    }
+    if (source.threadId !== threadId) {
+      throw new Error('This run belongs to another thread')
+    }
+    const checkout = await this.deps.resolveContext(projectId, threadId)
+    const adoption = this.deps.adopt(checkout.root, source.ref, source.base)
+    recordDecision({
+      kind: 'mode',
+      actor: 'user',
+      verdict: 'approved',
+      subject: 'container run commits applied to the checkout',
+      scope: 'container',
+      reasons: [
+        `ref ${source.ref}`,
+        `applied ${String(adoption.applied.length)}`,
+        `already present ${String(adoption.alreadyApplied)}`,
+      ],
+      cause: 'mode-arming',
+      threadId,
+      projectId,
+    })
+    if (live) {
+      this.update(live, {
+        log: [
+          ...live.log,
+          `[thread-container] ${String(adoption.applied.length)} commit(s) from ${source.ref} applied to the checkout`,
+        ].slice(-LOG_TAIL),
+      })
+    }
+    return adoption
   }
 
   /**

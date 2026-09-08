@@ -163,6 +163,8 @@ const api: ApiClient = {
       ipcRenderer.invoke('container:run-thread', request),
     getRun: (threadId: string) => ipcRenderer.invoke('container:get-run', threadId),
     stopRun: (threadId: string) => ipcRenderer.invoke('container:stop-run', threadId),
+    adoptRun: (projectId: string, threadId: string, runtimeId: string) =>
+      ipcRenderer.invoke('container:adopt-run', projectId, threadId, runtimeId),
     modelAvailability: (models: string[]) =>
       ipcRenderer.invoke('container:model-availability', models),
     onRunChanged: (

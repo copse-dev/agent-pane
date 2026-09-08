@@ -64,6 +64,10 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   propose_thread: { running: 'Proposing a thread', done: 'Proposed a thread' },
   update_todos: { running: 'Updating plan', done: 'Updated plan' },
   run_checkup: { running: 'Running checkup', done: 'Ran checkup' },
+  container_run: {
+    running: 'Running unattended in a container',
+    done: 'Ran unattended in a container',
+  },
 }
 
 interface ToolGroupDef {

@@ -322,6 +322,15 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           error: null,
         }),
       stopRun: () => resolved(null),
+      adoptRun: () =>
+        resolved({
+          applied: [
+            'a1b2c3d fix(lint): remove unused imports across src/main',
+            'b2c3d4e fix(lint): prefer nullish coalescing in providers',
+            'c3d4e5f chore: rerun formatter',
+          ],
+          alreadyApplied: 0,
+        }),
       getRun: (threadId) =>
         resolved(
           scenario.containerRun && scenario.containerRun.threadId === threadId

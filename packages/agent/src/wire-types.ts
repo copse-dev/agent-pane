@@ -161,7 +161,12 @@ export interface SubagentMessage {
 
 export interface SubagentSession {
   id: string
-  kind: 'explore' | 'investigate_ci' | 'delegate' | 'custom'
+  /**
+   * `container`: not a subagent of the loop at all but an unattended container
+   * run the thread launched (`docs/plans/thread-in-container.md`, A13). The
+   * guest's transcript is the timeline, the run's review record is the result.
+   */
+  kind: 'explore' | 'investigate_ci' | 'delegate' | 'custom' | 'container'
   status: 'running' | 'done' | 'error'
   prompt: string
   summary: string | null

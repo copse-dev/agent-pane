@@ -275,6 +275,7 @@ export function mountInputBar(
   const containerRun = mountContainerRunControl(
     api,
     {
+      store,
       getActiveThreadId,
       getActiveProjectId: () => store.getState().activeProjectId,
       getModel: footerChatModel,

@@ -544,6 +544,29 @@ guarantee, and the record must say so.
   lockfile's integrity hash, so a stale or tampered entry from an earlier run is rejected
   rather than linked. The image creates the directory so the mount is owned by the worker
   uid, which changes the fingerprint: the image rebuilds once.
+- **A13 — a run is a turn on the thread that launched it, and its follow-up is a
+  cherry-pick.** Asked by the author: should a run be a thread of its own, or a subagent
+  the user can follow up on in a shared checkout? The second. A run was session-only and
+  lived in a dialog; now the thread keeps it as one assistant message holding a
+  `container_run` tool call whose subagent session is the run (`container-run-card.ts`,
+  kind `container`): the task as the prompt, the guest's transcript as the timeline, the
+  review record — outcome, commits and their ref, what waits for review, what was refused,
+  the agent's last words — as the result, in Markdown. The renderer rebuilds the card from
+  every progress snapshot over the same tool-call id, so the thread shows the run advance
+  (the log tail is its timeline while it runs) and keeps it once it settles; the spine
+  persists a tool call only when it is no longer running, so a run the app quit on leaves
+  no half-card. The transcript comes from the worker, which folds the harness stream it
+  already collects into subagent messages (`guest-transcript.ts`, bounded: results cut at
+  8 KB, the last 400 messages) and writes them beside the result; the record carries them
+  and the carry-in base. The follow-up is a button on the card and in the dialog: "apply
+  the run's commits to this checkout" cherry-picks the commits after the carry-in base on
+  `refs/copse/runs/<id>` onto the thread's HEAD (`adoptCarryOut`, decided by `git cherry`
+  so a second press applies nothing and says so; a dirty tree is refused; a conflict
+  aborts the pick and reports). A cherry-pick, not a merge, because the base may be a
+  snapshot commit of a tree the user still has dirty. The runtime id names the record on
+  disk, so the follow-up works for a run an earlier session made. Rejected: a thread per
+  run, which would put the result where the conversation is not; and importing only a
+  summary, since the messages file already existed.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
@@ -691,6 +714,8 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | ACP: 443 in the guest  | integration | The model on guest port 443 is reached through the proxy, admitted by a wildcard rule named in the log                                                  | `container-runtime/thread-container.integration.test.ts`                                                                               |
 | ACP: permission policy | integration | A scripted ACP agent: in-guest write allowed, outward push denied and recorded, host escape denied, harness named                                       | `container-runtime/acp-container.integration.test.ts` (A-2)                                                                            |
 | ACP: refusal           | unit        | Agents outside A6's set, and any agent without a key, are refused with a per-agent reason                                                               | `providers/container-provider.test.ts` (A-3)                                                                                           |
+| Run as a turn: card    | unit        | A run becomes one container tool call on its thread — running with the log, settled with transcript and record — updated in place, not duplicated       | `store/container-run-card.test.ts`, `container-runtime/guest-transcript.test.ts` (A13)                                                 |
+| Run as a turn: apply   | unit        | The guest's commits after the carry-in base are cherry-picked once; a second press counts them; a dirty tree is refused; a conflict is aborted          | `container-runtime/thread-container.test.ts`, `container-run-service.test.ts` (A13)                                                    |
 
 ## Non-goals
 

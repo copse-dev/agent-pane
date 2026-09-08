@@ -4,6 +4,7 @@
  * main process owns the run and pushes these snapshots over IPC.
  */
 import type { ContainerRuntimeAttestation, UnattendedRunBudgets } from './unattended-run.ts'
+import type { SubagentMessage } from '@copse/agent/wire-types.ts'
 
 export interface EgressLogEntry {
   at: number
@@ -58,6 +59,19 @@ export interface ThreadContainerRecord {
   attestation: ContainerRuntimeAttestation
   egress: EgressLogEntry[]
   result: ThreadContainerResult | null
+  /**
+   * The guest's own transcript, folded from the stream the harness produced
+   * (assistant text, reasoning, tool calls with their results, bounded) so the
+   * thread that launched the run can show it as the run's timeline (A13).
+   * Empty when the guest wrote none.
+   */
+  transcript: SubagentMessage[]
+  /**
+   * The commit the guest started from: HEAD, or a snapshot commit on top of it
+   * when the working tree was dirty. The guest's commits are the ones after
+   * it on `carryOut.ref`, which is what a follow-up applies to the checkout.
+   */
+  carryIn: { sha: string; dirty: boolean }
   /**
    * Retrieval of the guest's commits. `expected` is true when the guest wrote a
    * bundle, so `ref === null` with `expected` means the work exists but could

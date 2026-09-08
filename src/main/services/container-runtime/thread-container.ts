@@ -56,6 +56,7 @@ import {
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
 import { removeStagedLogin, stageAgentLogin } from './agent-login.ts'
 import { PNPM_STORE_DIR, sanitizedOriginUrl } from './guest-install.ts'
+import { decodeGuestTranscript } from './guest-transcript.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 
 const execFileAsync = promisify(execFile)
@@ -417,11 +418,14 @@ function originUrlOf(cwd: string): string | null {
 }
 
 function git(cwd: string, args: string[], env?: Record<string, string>): string {
+  // stderr is captured, not inherited: git's own account of a failure belongs
+  // in the thrown error, where the record and the dialog can show it.
   return execFileSync('git', args, {
     cwd,
     encoding: 'utf8',
     env: { ...process.env, ...env },
     maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
   }).trim()
 }
 
@@ -463,7 +467,7 @@ export function writeCarryInBundle(
   workspace: string,
   runtimeId: string,
   bundlePath: string,
-): { ref: string; sha: string } {
+): { ref: string; sha: string; dirty: boolean } {
   const snapshot = createSnapshotCommit(workspace)
   const ref = `${CARRY_IN_REF_PREFIX}${runtimeId}`
   git(workspace, ['update-ref', ref, snapshot.sha])
@@ -472,7 +476,7 @@ export function writeCarryInBundle(
   } finally {
     git(workspace, ['update-ref', '-d', ref])
   }
-  return { ref, sha: snapshot.sha }
+  return { ref, sha: snapshot.sha, dirty: snapshot.dirty }
 }
 
 /** Fetch the guest's commits back under `refs/copse/runs/<id>`; the host never pushes. */
@@ -480,6 +484,79 @@ export function fetchCarryOut(workspace: string, runtimeId: string, bundlePath: 
   const ref = `${CARRY_OUT_REF_PREFIX}${runtimeId}`
   git(workspace, ['fetch', '--no-tags', bundlePath, `refs/heads/work:${ref}`])
   return ref
+}
+
+export interface CarryOutAdoption {
+  /** `<short sha> <subject>` of each commit cherry-picked, oldest first. */
+  applied: string[]
+  /** Commits on the ref whose change HEAD already had; left alone. */
+  alreadyApplied: number
+}
+
+/**
+ * Follow up on a run in the thread's own checkout (decision A13): apply the
+ * guest's commits — the ones after the carry-in base on the carry-out ref —
+ * onto HEAD, so the thread's next turn, attended, starts from where the run
+ * left off. A cherry-pick rather than a merge: the base may be a snapshot
+ * commit of a dirty tree the user still has, and a merge would bring that
+ * snapshot in as a commit of its own. `git cherry` decides what is still
+ * missing by patch id, so applying twice is a no-op with a count, not a pile
+ * of duplicate commits. A conflict aborts the whole pick and is reported; the
+ * checkout is left as it was.
+ */
+export function adoptCarryOut(workspace: string, ref: string, base: string): CarryOutAdoption {
+  const dirty = git(workspace, ['status', '--porcelain', '--untracked-files=no'])
+  if (dirty.length > 0) {
+    throw new Error(
+      'The checkout has uncommitted changes to tracked files; commit or stash them before applying the run',
+    )
+  }
+  const cherry = git(workspace, ['cherry', 'HEAD', ref, base])
+  const lines = cherry.length === 0 ? [] : cherry.split('\n')
+  const pending = lines.filter((line) => line.startsWith('+ ')).map((line) => line.slice(2))
+  const alreadyApplied = lines.filter((line) => line.startsWith('- ')).length
+  if (pending.length === 0) return { applied: [], alreadyApplied }
+  try {
+    git(workspace, ['cherry-pick', '--no-edit', '--allow-empty-message', ...pending])
+  } catch (error) {
+    try {
+      git(workspace, ['cherry-pick', '--abort'])
+    } catch {
+      // Nothing to abort, or the abort itself failed: the pick error is the one to report.
+    }
+    throw new Error(
+      `Could not apply the run's commits: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    )
+  }
+  const applied = pending.map((sha) => git(workspace, ['log', '-1', '--format=%h %s', sha]))
+  return { applied, alreadyApplied }
+}
+
+/**
+ * What a follow-up needs from a run's record on disk, for a run this app
+ * session did not start: the record is the durable artefact, the in-memory
+ * run is not. Null when there is no such record or it fetched no commits.
+ */
+export function loadCarryOutForAdoption(
+  runtimeId: string,
+  runtimesDir = join(copseDataRoot(), 'runtimes'),
+): { threadId: string; ref: string; base: string } | null {
+  if (!/^[a-z0-9-]+$/i.test(runtimeId)) return null
+  const record = readJsonFile(join(runtimesDir, runtimeId, 'record.json'), (value) =>
+    isRecord(value) ? value : null,
+  )
+  if (!record) return null
+  const carryOut = record['carryOut']
+  const carryIn = record['carryIn']
+  if (!isRecord(carryOut) || !isRecord(carryIn)) return null
+  const threadId = record['threadId']
+  const ref = carryOut['ref']
+  const base = carryIn['sha']
+  if (typeof threadId !== 'string' || typeof ref !== 'string' || typeof base !== 'string') {
+    return null
+  }
+  return { threadId, ref, base }
 }
 
 // ---------------------------------------------------------------------------
@@ -1237,6 +1314,8 @@ export async function runThreadInContainer(
     attestation,
     egress: broker.log(),
     result,
+    transcript: readJsonFile(join(runDir, 'out', 'transcript.json'), decodeGuestTranscript) ?? [],
+    carryIn: { sha: carryIn.sha, dirty: carryIn.dirty },
     carryOut,
     containerExit,
     credential: stagedLogin ? { login: stagedLogin } : apiKeyEnv ? 'key' : 'none',

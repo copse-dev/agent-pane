@@ -50,6 +50,8 @@ function fakeRecord(threadId: string): ThreadContainerRecord {
       toolNames: [],
       finalText: 'Done.',
     },
+    transcript: [],
+    carryIn: { sha: 'base', dirty: false },
     carryOut: { expected: true, ref: 'refs/copse/runs/run-fake', error: null },
     containerExit: 0,
     credential: 'key',
@@ -109,6 +111,25 @@ process.on('exit', () => {
 
 const noSweep = (): Promise<OrphanSweep> =>
   Promise.resolve({ removed: [], skipped: [], failed: [] })
+/** The adoption seam: no git; records what it was asked to apply. */
+function adoptSpy(): {
+  calls: Array<[string, string, string]>
+  adopt: (
+    workspace: string,
+    ref: string,
+    base: string,
+  ) => { applied: string[]; alreadyApplied: number }
+} {
+  const calls: Array<[string, string, string]> = []
+  return {
+    calls,
+    adopt: (workspace, ref, base): { applied: string[]; alreadyApplied: number } => {
+      calls.push([workspace, ref, base])
+      return { applied: ['abc agent: did it'], alreadyApplied: 0 }
+    },
+  }
+}
+const noRecordOnDisk = (): null => null
 
 describe('ContainerRunService', () => {
   it('resolves the provider, hides the key behind an env var, and publishes progress to the record', async () => {
@@ -116,6 +137,8 @@ describe('ContainerRunService', () => {
     const keyValues: string[] = []
     const service = new ContainerRunService({
       sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -173,6 +196,8 @@ describe('ContainerRunService', () => {
     const swept = new ContainerRunService({
       sweep: (): Promise<OrphanSweep> =>
         Promise.resolve({ removed: ['run-old'], skipped: ['run-live'], failed: [] }),
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -185,6 +210,8 @@ describe('ContainerRunService', () => {
     })
     const noDocker = new ContainerRunService({
       sweep: (): Promise<OrphanSweep> => Promise.reject(new Error('docker: command not found')),
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -197,6 +224,8 @@ describe('ContainerRunService', () => {
     const seen: ThreadContainerRequest[] = []
     const service = new ContainerRunService({
       sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -239,6 +268,8 @@ describe('ContainerRunService', () => {
     const seen: ThreadContainerRequest[] = []
     const service = new ContainerRunService({
       sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -276,6 +307,8 @@ describe('ContainerRunService', () => {
     const seen: ThreadContainerRequest[] = []
     const service = new ContainerRunService({
       sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -309,6 +342,8 @@ describe('ContainerRunService', () => {
     const pending: { release: (() => void) | null } = { release: null }
     const service = new ContainerRunService({
       sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (runtimeId): Promise<'removed'> => {
@@ -349,6 +384,8 @@ describe('ContainerRunService', () => {
     const pending: { release: (() => void) | null } = { release: null }
     const service = new ContainerRunService({
       sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.resolve(),
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
@@ -387,6 +424,8 @@ describe('ContainerRunService', () => {
     storageSet('projects', [{ id: PROJECT, path: root, sshHost: 'box' }])
     const service = new ContainerRunService({
       sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(root),
       ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
@@ -423,6 +462,8 @@ describe('ContainerRunService checkout resolution', () => {
     const seen: ThreadContainerRequest[] = []
     const service = new ContainerRunService({
       sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(worktree, 'worktree', 'thread/work'),
       ensureImage: (): Promise<void> => Promise.resolve(),
@@ -453,6 +494,8 @@ describe('ContainerRunService checkout resolution', () => {
     const notARepo = mkdtempSync(join(tmpdir(), 'copse-not-a-repo-'))
     const service = new ContainerRunService({
       sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: checkoutAt(notARepo),
       ensureImage: (): Promise<void> => Promise.reject(new Error('must not be called')),
@@ -477,6 +520,8 @@ describe('ContainerRunService checkout resolution', () => {
   it('propagates a broken worktree instead of falling back to the project root', async () => {
     const service = new ContainerRunService({
       sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
       stop: (): Promise<'removed'> => Promise.resolve('removed'),
       resolveContext: (): Promise<ThreadExecutionContext> =>
         Promise.reject(new Error('worktree is not registered with git')),
@@ -635,6 +680,54 @@ describe('phaseFromLog', () => {
       'installing',
       'a best-effort step failing is not the end of the install',
     )
+  })
+})
+
+describe('ContainerRunService.adopt', () => {
+  it("applies a finished run's commits to the thread's checkout, from memory or from disk", async () => {
+    const spy = adoptSpy()
+    const loaded: string[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: spy.adopt,
+      loadCarryOut: (runtimeId): { threadId: string; ref: string; base: string } | null => {
+        loaded.push(runtimeId)
+        return runtimeId === 'run-old'
+          ? { threadId: THREAD, ref: 'refs/copse/runs/run-old', base: 'old-base' }
+          : runtimeId === 'run-theirs'
+            ? { threadId: 'another-thread', ref: 'refs/copse/runs/run-theirs', base: 'b' }
+            : null
+      },
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => Promise.resolve(fakeRecord(request.prompt)),
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Fix it',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    // The run in memory: its record names the ref and the carry-in base.
+    const adoption = await service.adopt(PROJECT, THREAD, 'run-fake')
+    assert.deepEqual(adoption, { applied: ['abc agent: did it'], alreadyApplied: 0 })
+    assert.deepEqual(spy.calls, [[root, 'refs/copse/runs/run-fake', 'base']])
+    assert.deepEqual(loaded, [], 'a run in memory is not read from disk')
+    assert.ok(
+      service
+        .get(THREAD)
+        ?.log.some((line) => line.includes('1 commit(s) from refs/copse/runs/run-fake applied')),
+    )
+    // A run from an earlier session: the record on disk.
+    await service.adopt(PROJECT, THREAD, 'run-old')
+    assert.deepEqual(spy.calls[1], [root, 'refs/copse/runs/run-old', 'old-base'])
+    // Another thread's run, and a run with no record, are refused.
+    await assert.rejects(service.adopt(PROJECT, THREAD, 'run-theirs'), /belongs to another thread/)
+    await assert.rejects(service.adopt(PROJECT, THREAD, 'run-none'), /record is gone/)
+    assert.equal(spy.calls.length, 2)
   })
 })
 

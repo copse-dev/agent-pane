@@ -127,8 +127,39 @@ describe('unattended container run (browser-hosted)', () => {
     await expect(dialog.$('.container-run-again')).toBeDisplayed()
     await saveElementScreenshot('#container-run-dialog', 'container-run-result.png')
 
-    // The menu label follows the run state: a finished run is not "live".
     await dialog.$('.container-run-close').click()
+
+    // The run is a turn on the thread (A13): one subagent card, labelled for
+    // what it is, holding the guest's transcript and the record, with the
+    // follow-up under it.
+    const card = await $('.tool-card-subagent[data-tool-id^="container-run:"]')
+    await card.waitForExist()
+    await expect(card).toHaveAttribute('data-status', 'done')
+    expect(await card.$('.tool-card-header').getText()).toContain('Ran unattended in a container')
+    await card.$('.tool-card-header').click()
+    expect(await card.getAttribute('open')).not.toBe(null)
+    const cardText = await card.getText()
+    expect(cardText).toContain('Finished: 3 commits on refs/copse/runs/run-demo-1')
+    expect(cardText).toContain('Reading the lint report')
+    expect(cardText).toContain('git push publishes commits to a remote')
+    await expect(card.$('.subagent-container-apply')).toBeDisplayed()
+    await saveElementScreenshot(
+      '.tool-card-subagent[data-tool-id^="container-run:"]',
+      'container-run-card.png',
+    )
+    // The follow-up: the demo backend applies the three commits; the card says so.
+    await card.$('.subagent-container-apply').click()
+    await browser.waitUntil(
+      async () => (await card.getText()).includes('Applied to this checkout: 3 commits'),
+      { timeout: 5_000, timeoutMsg: 'the card never noted the applied commits' },
+    )
+    await browser.execute(() => {
+      const cards = document.querySelectorAll('.tool-card-subagent[data-tool-id^="container-run:"]')
+      if (cards.length !== 1)
+        throw new Error(`expected one run card, found ${String(cards.length)}`)
+    })
+
+    // The menu label follows the run state: a finished run is not "live".
     await $('.footer-overflow-trigger').click()
     const labels = await (await $$('.footer-overflow-item')).map((item) => item.getText())
     expect(labels).toContain('Run unattended in a container…')

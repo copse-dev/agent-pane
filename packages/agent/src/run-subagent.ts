@@ -140,6 +140,7 @@ const NO_SUMMARY_FALLBACK: Record<SubagentSession['kind'], string> = {
   investigate_ci: 'Investigation completed with no findings report.',
   delegate: 'Worker finished with no report.',
   custom: 'The agent finished without reporting anything back.',
+  container: 'The container run ended without a result.',
 }
 
 function buildUserTask(prompt: string, parentGoal: string, paths?: string[]): string {

@@ -1,5 +1,13 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ContainerModelVerdict, ContainerRunProgress } from '@shared/types/container-run.ts'
+import type { AppStore } from '@shared/store/store.ts'
+import { isRecord } from '@shared/unknown-value.ts'
+import {
+  CONTAINER_RUN_ADOPT_EVENT,
+  containerRunToolCallId,
+  noteAdoptionOnCard,
+  syncContainerRunCard,
+} from '@shared/store/container-run-card.ts'
 import { parseAcpModel } from '@shared/acp.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { containerAcpAgentTitles } from '@shared/container-acp-agents.ts'
@@ -41,6 +49,8 @@ import { showErrorToast, showToast } from './toast.ts'
  */
 
 export interface ContainerRunContext {
+  /** The thread store: the run is written into its thread as a card (A13). */
+  store: AppStore
   getActiveThreadId: () => string | null
   getActiveProjectId: () => string | null
   /** The concrete model the thread runs on, as the footer shows it. */
@@ -846,6 +856,22 @@ export function mountContainerRunControl(
         ),
       )
     }
+    if (!isLive(run) && run.record?.carryOut.ref && (result?.commits.length ?? 0) > 0) {
+      // The follow-up (A13): the guest's commits onto this thread's checkout,
+      // so the next attended turn starts from them.
+      const apply = el(
+        'button',
+        { type: 'button', class: 'ui-btn ui-btn-secondary container-run-apply' },
+        `Apply ${String(result?.commits.length ?? 0)} commit${result?.commits.length === 1 ? '' : 's'} to this checkout`,
+      )
+      apply.addEventListener('click', () => {
+        apply.disabled = true
+        void adopt(run.record?.runtimeId ?? '', null).finally(() => {
+          apply.disabled = false
+        })
+      })
+      actions.push(apply)
+    }
     if (!isLive(run)) {
       const again = el(
         'button',
@@ -873,9 +899,48 @@ export function mountContainerRunControl(
   }
 
   // ── State ─────────────────────────────────────────────────────────────
+  /**
+   * Apply a finished run's commits to the thread's checkout and say so on
+   * the card. `toolCallId` is the card that asked, when one did; the dialog's
+   * button finds the card by the run instead.
+   */
+  async function adopt(runtimeId: string, toolCallId: string | null): Promise<void> {
+    const threadId = context.getActiveThreadId()
+    const projectId = context.getActiveProjectId()
+    if (!threadId || !projectId || runtimeId.length === 0) return
+    try {
+      const adoption = await api.container.adoptRun(projectId, threadId, runtimeId)
+      const run = runs.get(threadId)
+      const cardId =
+        toolCallId ?? (run && run.runtimeId === runtimeId ? containerRunToolCallId(run) : null)
+      if (cardId !== null) noteAdoptionOnCard(context.store, threadId, cardId, adoption)
+      showToast(
+        adoption.applied.length === 0
+          ? `All ${String(adoption.alreadyApplied)} commit(s) from the run are already in this checkout.`
+          : `Applied ${String(adoption.applied.length)} commit(s) from the run to this checkout.`,
+        { variant: 'info', durationMs: 8_000 },
+      )
+    } catch (error) {
+      showErrorToast("Could not apply the run's commits", error)
+    }
+  }
+  const onCardAdopt = (event: Event): void => {
+    if (!(event instanceof CustomEvent)) return
+    const detail: unknown = event.detail
+    if (!isRecord(detail)) return
+    const runtimeId = detail['runtimeId']
+    const toolCallId = detail['toolCallId']
+    if (typeof runtimeId !== 'string' || typeof toolCallId !== 'string') return
+    void adopt(runtimeId, toolCallId)
+  }
+  document.addEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt)
+
   function update(progress: ContainerRunProgress): void {
     const previous = runs.get(progress.threadId)
     runs.set(progress.threadId, progress)
+    // The thread keeps the run as a card; a thread not in memory gets it when
+    // it is next shown (see refresh).
+    syncContainerRunCard(context.store, progress)
     if (previous && isLive(previous) && !isLive(progress)) {
       const result = progress.record?.result
       if (progress.phase === 'finished' && result) {
@@ -907,7 +972,10 @@ export function mountContainerRunControl(
       .getRun(threadId)
       .then((progress) => {
         if (sequence !== refreshSequence) return
-        if (progress) runs.set(threadId, progress)
+        if (progress) {
+          runs.set(threadId, progress)
+          syncContainerRunCard(context.store, progress)
+        }
         renderBanner()
         renderDialog()
       })
@@ -935,6 +1003,7 @@ export function mountContainerRunControl(
     refresh,
     destroy: (): void => {
       unsubscribe()
+      document.removeEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt)
       stopElapsedClock()
       modelPicker?.destroy()
       modelPicker = null

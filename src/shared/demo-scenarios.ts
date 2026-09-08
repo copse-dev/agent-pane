@@ -446,6 +446,40 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           finalText:
             'Cleared the lint backlog in three commits. The push is waiting for your review.',
         },
+        transcript: [
+          {
+            id: 'guest-1',
+            role: 'assistant',
+            content: 'Reading the lint report to see which suppressions are still needed.',
+            toolCalls: [
+              {
+                id: 'guest-t1',
+                name: 'run_shell',
+                args: { command: 'pnpm run lint -- --format json' },
+                status: 'done',
+                result: '14 suppressions, 11 of them for rules that no longer fire',
+              },
+              {
+                id: 'guest-t2',
+                name: 'str_replace',
+                args: { path: 'src/main/providers/openai.ts' },
+                status: 'done',
+                result: 'Replaced 1 occurrence',
+                editStats: { additions: 1, deletions: 3 },
+              },
+            ],
+            createdAt: FIXED_TIME + 60_000,
+          },
+          {
+            id: 'guest-2',
+            role: 'assistant',
+            content:
+              'Cleared the lint backlog in three commits. The push is waiting for your review.',
+            toolCalls: [],
+            createdAt: FIXED_TIME + 22 * 60_000,
+          },
+        ],
+        carryIn: { sha: '9b1b901683b9f0e5b2a3c4d5e6f708192a3b4c5d', dirty: false },
         carryOut: { expected: true, ref: 'refs/copse/runs/run-demo-1', error: null },
         containerExit: 0,
         credential: 'key',
