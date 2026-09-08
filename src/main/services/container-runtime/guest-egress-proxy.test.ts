@@ -152,6 +152,44 @@ describe('guest egress proxy', () => {
     assert.match(reply, /data: two/)
   })
 
+  it('closes while a client still holds a CONNECT tunnel open, instead of waiting on it', async () => {
+    // A second proxy on the same link, so the shared one stays up for the
+    // tests after this. An SDK that pools its connection keeps the tunnel up
+    // between requests; the worker's close must not wait for it to hang up.
+    const own = await startGuestEgressProxy(link, { host: '127.0.0.1', port: 0 })
+    const socket = connect(own.address.port, own.address.host)
+    const established = new Promise<void>((resolveTunnel, reject) => {
+      let received = ''
+      socket.on('data', (chunk: Buffer) => {
+        received += chunk.toString('utf8')
+        if (received.includes('200 Connection Established\r\n\r\n')) resolveTunnel()
+      })
+      socket.on('error', reject)
+      socket.once('connect', () => {
+        socket.write(
+          `CONNECT model.copse.internal:${String(origin.port)} HTTP/1.1\r\nHost: model.copse.internal\r\n\r\n`,
+        )
+      })
+    })
+    await established
+    const closed = new Promise<void>((resolveClosed) => {
+      socket.once('close', () => {
+        resolveClosed()
+      })
+    })
+    const outcome = await Promise.race([
+      own.close().then(() => 'closed' as const),
+      new Promise<'hung'>((resolveHung) => {
+        setTimeout(() => {
+          resolveHung('hung')
+        }, 2_000)
+      }),
+    ])
+    assert.equal(outcome, 'closed')
+    await closed
+    assert.equal(socket.destroyed, true, "the client's end of the tunnel is gone too")
+  })
+
   it('answers 403 with the broker reason for a target the allowlist refuses', async () => {
     const result = await new Promise<{ status: number; text: string }>((resolveRequest, reject) => {
       const req = httpRequest(

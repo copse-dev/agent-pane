@@ -119,14 +119,14 @@ function adoptSpy(): {
     workspace: string,
     ref: string,
     base: string,
-  ) => { applied: string[]; alreadyApplied: number }
+  ) => Promise<{ applied: string[]; alreadyApplied: number }>
 } {
   const calls: Array<[string, string, string]> = []
   return {
     calls,
-    adopt: (workspace, ref, base): { applied: string[]; alreadyApplied: number } => {
+    adopt: (workspace, ref, base): Promise<{ applied: string[]; alreadyApplied: number }> => {
       calls.push([workspace, ref, base])
-      return { applied: ['abc agent: did it'], alreadyApplied: 0 }
+      return Promise.resolve({ applied: ['abc agent: did it'], alreadyApplied: 0 })
     },
   }
 }
@@ -172,6 +172,7 @@ describe('ContainerRunService', () => {
     const request = seen[0]
     assert.ok(request)
     assert.equal(request.workspace, root)
+    assert.equal(request.threadId, THREAD, 'the record names the desktop thread, for follow-ups')
     assert.equal(request.prompt, 'Fix the lint backlog')
     assert.deepEqual(request.productProvider, { apiKeySlug: 'anthropic' })
     assert.equal(request.providerUrl, undefined)
@@ -387,6 +388,83 @@ describe('ContainerRunService', () => {
     assert.equal(service.isActive(THREAD), false)
     // Stopping a run that is not live is a no-op that reports the state.
     assert.equal((await service.stop(THREAD))?.phase, 'failed')
+  })
+
+  it("hands the runner the guest-facing name for a server on the desktop's loopback", async () => {
+    await setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
+    const seen: ThreadContainerRequest[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    const started = await service.start({
+      projectId: PROJECT,
+      threadId: 'loopback',
+      prompt: 'loopback',
+      model: 'lmstudio:qwen3',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    assert.deepEqual(started.egressAllowlist, ['model.copse.internal:1234'])
+    await waitFor(service, 'loopback', (p) => p.phase === 'finished')
+    const request = seen[0]
+    assert.ok(request)
+    assert.equal(request.providerUrl, 'http://model.copse.internal:1234/v1')
+    assert.deepEqual(request.egressResolve, { 'model.copse.internal': '127.0.0.1' })
+  })
+
+  it('honours a stop asked for before the container exists', async () => {
+    // The snapshot and bundle of a large checkout take a while; a stop in that
+    // window has no container to remove, so the runner is told through its
+    // signal and refuses to create one.
+    const pending: { release: (() => void) | null } = { release: null }
+    const stopped: string[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (runtimeId): Promise<'already-gone'> => {
+        stopped.push(runtimeId)
+        return Promise.resolve('already-gone')
+      },
+      run: (request, options): Promise<ThreadContainerRecord> =>
+        new Promise((resolve, reject) => {
+          options?.onLog?.('[thread-container] carry-in abc123 as refs/copse/carry-in/x')
+          pending.release = (): void => {
+            if (options?.signal?.aborted) {
+              reject(new Error('Stopped by you before the container started'))
+              return
+            }
+            resolve(fakeRecord(request.threadId ?? 'none'))
+          }
+        }),
+    })
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'work',
+      model: 'claude-sonnet-4-6',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+    })
+    const starting = await waitFor(service, THREAD, (p) => p.phase === 'starting')
+    assert.ok(starting.runtimeId)
+    await service.stop(THREAD)
+    assert.deepEqual(stopped, [starting.runtimeId], 'the force-remove is still tried')
+    pending.release?.()
+    const done = await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(done.error, 'Stopped by you before the container started')
+    assert.equal(service.isActive(THREAD), false)
   })
 
   it('refuses a second run while one is live, and reports a failed run', async () => {

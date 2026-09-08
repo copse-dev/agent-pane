@@ -567,6 +567,36 @@ guarantee, and the record must say so.
   disk, so the follow-up works for a run an earlier session made. Rejected: a thread per
   run, which would put the result where the conversation is not; and importing only a
   summary, since the messages file already existed.
+- **A14 — a run starts from the composer, and the composer follows it.** From the first
+  real Codex run: the task was the dialog's, not the thread's; a finished run said nothing
+  the user could hear; the guest's links pointed at `/workspace/repo/…`; and the follow-up
+  had nowhere to go but the dialog. Now the run's prompt is the thread's user message and
+  the card its reply, the dialog closes on start and the banner alone shows the phase, and
+  the composer gets a target picker (`.composer-target`): "to container" when the thread's
+  last turn is a container run, "to thread" otherwise, held on the thread while the run is
+  live. A message to the container is a continuation run: it carries in the earlier run's
+  carry-out ref rather than a fresh snapshot (`carryInRef`, so the desktop's checkout need
+  not have moved), prefixes what that run was asked and reported to the new prompt (the
+  prompt is the continuity; the guest keeps no session), and records `continuedFrom`. The
+  run's record and its transcript relocate guest paths to checkout-relative ones, so the
+  agent's links open on the desktop; a settled run marks the thread unread, rings the
+  thread-finished alert, and folds the guest's usage into the thread's counter once. Two
+  things the first run showed and this fixes in the runner: the snapshot and bundle ran
+  synchronous git on the main process, which beachballed the app for the minute a large
+  checkout takes (async now), and the twenty minutes between "tools offered" and the
+  agent's report showed nothing, because the agent's text reached the host only on a
+  newline and its tool calls were never logged (`guest-progress.ts`: one line as a call
+  starts and settles, the text at each boundary). Review findings folded in: the carry-out
+  bundles `refs/heads/work` pointed at HEAD, so a branch the agent made comes back whole
+  (`guest-carry-out.ts`); a failed turn is a `turn_outcome` chunk, not a rejection, and is
+  reported as one (`guest-turn.ts`); the token ceiling binds on the agent's live context
+  report as well as on usage, which an ACP agent sends only after the turn; a server on
+  the desktop's loopback is given a guest-facing name the broker resolves, since the
+  guest's loopback bypasses its proxy by design (`guestFacingEndpoint`); the record names
+  the desktop thread, not the guest's, so a follow-up from disk is accepted; the proxy's
+  close destroys the tunnels it holds, so a pooled connection cannot hold the result; and
+  a stop asked for before the container exists reaches the runner as a signal it checks
+  before and after `docker run`.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
@@ -717,6 +747,8 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | Run as a turn: card    | unit        | A run becomes one container tool call on its thread — running with the log, settled with transcript and record — updated in place, not duplicated       | `store/container-run-card.test.ts`, `container-runtime/guest-transcript.test.ts` (A13)                                                 |
 | Run as a turn: apply   | unit        | The guest's commits after the carry-in base are cherry-picked once; a second press counts them; a dirty tree is refused; a conflict is aborted          | `container-runtime/thread-container.test.ts`, `container-run-service.test.ts` (A13)                                                    |
 | Run as a turn: follow  | unit        | A continuation carries in the earlier run's ref, prefixes its exchange to the prompt, and refuses another thread's run; ACP patches settle calls        | `container-run-service.test.ts`, `guest-transcript.test.ts`, `store/container-run-card.test.ts` (A14)                                  |
+| Run as a turn: guest   | unit        | The carry-out follows HEAD onto a branch the agent made; a failed turn is named; the agent's live context counts against the ceiling                    | `guest-carry-out.test.ts`, `guest-turn.test.ts`, `guest-progress.test.ts` (A14)                                                        |
+| Run as a turn: host    | unit        | A loopback server gets a guest-facing name the runner is told to resolve; a stop before `docker run` is honoured; a held tunnel does not hold close     | `container-provider.test.ts`, `container-run-service.test.ts`, `guest-egress-proxy.test.ts`, `input-bar.test.ts` (A14)                 |
 
 ## Non-goals
 

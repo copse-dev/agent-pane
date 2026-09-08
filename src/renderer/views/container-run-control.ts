@@ -312,7 +312,7 @@ export function mountContainerRunControl(
         ? `${commits}, ${String(result.deferrals.length)} waiting for review.`
         : run.phase === 'failed'
           ? (run.error ?? 'The run did not complete.')
-          : `${run.model} · reaches only ${run.egressAllowlist.join(', ')}.`
+          : `${run.model} · limited to the egress allowlist.`
     text.textContent = `Container run: ${PHASE_LABEL[run.phase].toLowerCase()}. ${summary}`
     onStateChanged()
   }

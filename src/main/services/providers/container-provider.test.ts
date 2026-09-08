@@ -41,12 +41,29 @@ describe('resolveContainerProvider', () => {
   })
 
   it('routes a local model to the configured local server, with its origin as egress', async () => {
-    await setSetting('localServerUrl', 'http://localhost:1234/v1')
+    await setSetting('localServerUrl', 'http://models.lan:1234/v1')
     const plan = resolveContainerProvider('lmstudio:qwen3')
     assert.equal(plan.mode, 'openai-compatible')
-    assert.equal(plan.url, 'http://localhost:1234/v1')
+    assert.equal(plan.url, 'http://models.lan:1234/v1')
     assert.equal(plan.model, 'qwen3')
-    assert.deepEqual(plan.egress, ['localhost:1234'])
+    assert.deepEqual(plan.egress, ['models.lan:1234'])
+    assert.equal(plan.egressResolve, undefined)
+  })
+
+  it("gives a server on the desktop's loopback a name the guest can reach it by", async () => {
+    // The guest's loopback bypasses its proxy, so `127.0.0.1` in the guest is
+    // the guest's own empty loopback; the alias goes through the broker, which
+    // dials the host's.
+    await setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
+    const plan = resolveContainerProvider('lmstudio:qwen3')
+    assert.equal(plan.mode, 'openai-compatible')
+    assert.equal(plan.url, 'http://model.copse.internal:1234/v1')
+    assert.deepEqual(plan.egress, ['model.copse.internal:1234'])
+    assert.deepEqual(plan.egressResolve, { 'model.copse.internal': '127.0.0.1' })
+    await setSetting('localServerUrl', 'http://localhost:1234/v1')
+    const named = resolveContainerProvider('lmstudio:qwen3')
+    assert.equal(named.mode, 'openai-compatible')
+    assert.equal(named.url, 'http://model.copse.internal:1234/v1')
   })
 
   it('routes claude models through the product resolver with the anthropic key', () => {

@@ -284,8 +284,11 @@ export function mountInputBar(
     footerOverflow?.update()
   })
   // The control's own mount reports state before the const below is assigned;
-  // the picker reads the control, so it waits for the mount to finish.
+  // the picker reads the control, so it waits for the mount to finish. The
+  // thread the picker last chose a default for lives here too: the picker
+  // runs from this mount, so its state has to exist before it.
   let containerRunMounted = false
+  let targetThreadId: string | null = null
   const containerRun = mountContainerRunControl(
     api,
     {
@@ -1145,7 +1148,6 @@ export function mountInputBar(
    * is one, defaulting to the container when the run is the last turn, and
    * held on the thread while the run is still busy.
    */
-  let targetThreadId: string | null = null
   function updateTargetPicker(): void {
     if (!containerRunMounted) return
     const target = containerRun.followUpTarget()

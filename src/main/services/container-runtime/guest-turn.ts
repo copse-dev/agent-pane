@@ -1,0 +1,56 @@
+/**
+ * What the guest reads off the agent's stream about the turn itself: whether
+ * it failed, and how many tokens it has used so far. Pure, so the worker's
+ * two stop rules that depend on it can be tested without a guest.
+ *
+ * `runHeadlessAgent` resolves whether or not the agent's turn succeeded — a
+ * provider error, an agent that could not authenticate, a crash in an ACP
+ * child all come back as a `turn_outcome` chunk with `status: 'failed'`, not
+ * as a rejection. The worker's first version only marked a run failed when
+ * the call threw, so a failed turn was reported as completed with whatever
+ * partial text it had. The token ceiling has the same blind spot under an
+ * ACP harness: usage arrives once, after the turn, so it can only be checked
+ * once the tokens are spent. What arrives live is the agent's own report of
+ * its context (`usage_update`, carried as an agent-reported context-pressure
+ * chunk); counting that against the ceiling is how the budget binds mid-turn.
+ */
+import type { StreamChunk } from '@shared/types'
+
+/** Why a turn failed, from its outcome chunk; null for any other chunk. */
+export function failedTurn(chunk: StreamChunk): string | null {
+  if (chunk.type !== 'turn_outcome' || chunk.outcome.status !== 'failed') return null
+  const detail = chunk.outcome.error
+  const reason = chunk.outcome.rawStopReason ?? chunk.outcome.stopReason
+  if (detail?.message) return detail.message
+  return `the agent's turn failed (${reason})`
+}
+
+export interface TokenTally {
+  /** Summed from the usage chunks the turn reported. */
+  inputTokens: number
+  outputTokens: number
+  /** The most the agent said its context held, when it said so at all. */
+  contextTokens: number
+}
+
+export function newTokenTally(): TokenTally {
+  return { inputTokens: 0, outputTokens: 0, contextTokens: 0 }
+}
+
+/** Fold one chunk into the tally. */
+export function countTokens(tally: TokenTally, chunk: StreamChunk): void {
+  if (chunk.type === 'usage') {
+    tally.inputTokens += chunk.inputTokens
+    tally.outputTokens += chunk.outputTokens
+  } else if (chunk.type === 'context_pressure' && chunk.source === 'agent-reported') {
+    tally.contextTokens = Math.max(tally.contextTokens, chunk.conversationTokens)
+  }
+}
+
+/**
+ * Tokens the run has used, as far as the guest can tell: the usage it was
+ * told, or the context the agent reports holding, whichever says more.
+ */
+export function tokensUsed(tally: TokenTally): number {
+  return Math.max(tally.inputTokens + tally.outputTokens, tally.contextTokens)
+}

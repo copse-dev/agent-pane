@@ -113,6 +113,8 @@ export class ContainerRunService {
   private readonly listeners = new Set<(progress: ContainerRunProgress) => void>()
   /** Threads whose live run the user asked to stop, until the run settles. */
   private readonly stopRequested = new Set<string>()
+  /** One per live run: aborted on stop, so the runner can refuse to create the container. */
+  private readonly stopSignals = new Map<string, AbortController>()
   private readonly deps: RunDependencies
 
   constructor(deps: RunDependencies = productionDependencies) {
@@ -168,6 +170,7 @@ export class ContainerRunService {
     const progress = this.runs.get(threadId)
     if (!progress || !this.isActive(threadId)) return progress ? snapshot(progress) : null
     this.stopRequested.add(threadId)
+    this.stopSignals.get(threadId)?.abort()
     this.update(progress, {
       log: [...progress.log, '[thread-container] stop requested by the user'].slice(-LOG_TAIL),
     })
@@ -208,7 +211,7 @@ export class ContainerRunService {
       throw new Error('This run belongs to another thread')
     }
     const checkout = await this.deps.resolveContext(projectId, threadId)
-    const adoption = this.deps.adopt(checkout.root, source.ref, source.base)
+    const adoption = await this.deps.adopt(checkout.root, source.ref, source.base)
     recordDecision({
       kind: 'mode',
       actor: 'user',
@@ -392,6 +395,9 @@ export class ContainerRunService {
       this.update(progress, { log: [...progress.log, line].slice(-LOG_TAIL) })
       this.update(progress, { phase: phaseFromLog(line, progress.phase) })
     }
+    const stopSignal = new AbortController()
+    this.stopSignals.set(request.threadId, stopSignal)
+    if (this.stopRequested.has(request.threadId)) stopSignal.abort()
     try {
       this.update(progress, { phase: 'building-image', runtimeId })
       await this.deps.ensureImage()
@@ -402,13 +408,17 @@ export class ContainerRunService {
       if (apiKey) process.env[keyEnv] = apiKey
       const runRequest: ThreadContainerRequest = {
         workspace,
+        threadId: request.threadId,
         prompt: continuation
           ? continuationPrompt(continuation, request.prompt.trim())
           : request.prompt.trim(),
         ...(continuation ? { carryInRef: continuation.ref } : {}),
         model: plan.model,
         ...(plan.mode === 'openai-compatible'
-          ? { providerUrl: plan.url }
+          ? {
+              providerUrl: plan.url,
+              ...(plan.egressResolve ? { egressResolve: plan.egressResolve } : {}),
+            }
           : plan.mode === 'product'
             ? { productProvider: { apiKeySlug: plan.apiKeySlug } }
             : { acp: plan.harness }),
@@ -421,6 +431,7 @@ export class ContainerRunService {
       const record = await this.deps.run(runRequest, {
         runtimeId,
         onLog: log,
+        signal: stopSignal.signal,
         onStarted: () => {
           // The container has the key now; the host process no longer needs it.
           process.env[keyEnv] = ''
@@ -445,6 +456,7 @@ export class ContainerRunService {
     } finally {
       process.env[keyEnv] = ''
       this.stopRequested.delete(request.threadId)
+      this.stopSignals.delete(request.threadId)
     }
   }
 

@@ -14,7 +14,7 @@
  * are separated from the orchestration so the exact flags a run uses are unit
  * tested, not just observed.
  */
-import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { createInterface } from 'node:readline'
 import {
@@ -85,6 +85,12 @@ export type { ThreadContainerRecord, ThreadContainerResult } from '@shared/types
 export interface ThreadContainerRequest {
   /** Local git checkout to carry in. */
   workspace: string
+  /**
+   * The desktop thread the run belongs to, written to the record so a
+   * follow-up or continuation from disk can check the run is this thread's.
+   * The guest's own thread id is private to the guest and never this.
+   */
+  threadId?: string
   prompt: string
   /** Product model id as the settings UI would store it, e.g. `local:qwen`. */
   model: string
@@ -419,24 +425,30 @@ export function buildAttestation(
 // ---------------------------------------------------------------------------
 
 /** The checkout's `origin` URL, or null when it has none. */
-function originUrlOf(cwd: string): string | null {
+async function originUrlOf(cwd: string): Promise<string | null> {
   try {
-    return git(cwd, ['remote', 'get-url', 'origin'])
+    return await git(cwd, ['remote', 'get-url', 'origin'])
   } catch {
     return null
   }
 }
 
-function git(cwd: string, args: string[], env?: Record<string, string>): string {
-  // stderr is captured, not inherited: git's own account of a failure belongs
-  // in the thrown error, where the record and the dialog can show it.
-  return execFileSync('git', args, {
+/**
+ * Run git and return its stdout. Asynchronous on purpose: this runs in
+ * Electron's main process, and the snapshot of a large working tree plus the
+ * bundle of its whole history take tens of seconds — done synchronously they
+ * froze the entire app until the container started (A14). stderr is captured,
+ * not inherited: git's own account of a failure belongs in the thrown error,
+ * where the record and the dialog can show it.
+ */
+async function git(cwd: string, args: string[], env?: Record<string, string>): Promise<string> {
+  const { stdout } = await execFileAsync('git', args, {
     cwd,
     encoding: 'utf8',
     env: { ...process.env, ...env },
     maxBuffer: 64 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim()
+  })
+  return stdout.trim()
 }
 
 /**
@@ -445,16 +457,18 @@ function git(cwd: string, args: string[], env?: Record<string, string>): string 
  * trick `remote-e2e.mts` and the app's worktree backup use. Returns HEAD when
  * the tree is clean.
  */
-export function createSnapshotCommit(cwd: string): { sha: string; dirty: boolean } {
-  const headSha = git(cwd, ['rev-parse', 'HEAD'])
+export async function createSnapshotCommit(cwd: string): Promise<{ sha: string; dirty: boolean }> {
+  const headSha = await git(cwd, ['rev-parse', 'HEAD'])
   const tmp = mkdtempSync(join(tmpdir(), 'copse-carry-in-index-'))
   try {
     const index = { GIT_INDEX_FILE: join(tmp, 'index') }
-    git(cwd, ['read-tree', 'HEAD'], index)
-    git(cwd, ['add', '-A'], index)
-    const tree = git(cwd, ['write-tree'], index)
-    if (tree === git(cwd, ['rev-parse', 'HEAD^{tree}'])) return { dirty: false, sha: headSha }
-    const sha = git(cwd, [
+    await git(cwd, ['read-tree', 'HEAD'], index)
+    await git(cwd, ['add', '-A'], index)
+    const tree = await git(cwd, ['write-tree'], index)
+    if (tree === (await git(cwd, ['rev-parse', 'HEAD^{tree}']))) {
+      return { dirty: false, sha: headSha }
+    }
+    const sha = await git(cwd, [
       '-c',
       'user.name=copse',
       '-c',
@@ -473,30 +487,37 @@ export function createSnapshotCommit(cwd: string): { sha: string; dirty: boolean
 }
 
 /** Bundle the snapshot under a run-scoped ref so the guest can fetch it by name. */
-export function writeCarryInBundle(
+export async function writeCarryInBundle(
   workspace: string,
   runtimeId: string,
   bundlePath: string,
   fromRef?: string,
-): { ref: string; sha: string; dirty: boolean } {
+): Promise<{ ref: string; sha: string; dirty: boolean }> {
   const snapshot =
     fromRef === undefined
-      ? createSnapshotCommit(workspace)
-      : { sha: git(workspace, ['rev-parse', '--verify', `${fromRef}^{commit}`]), dirty: false }
+      ? await createSnapshotCommit(workspace)
+      : {
+          sha: await git(workspace, ['rev-parse', '--verify', `${fromRef}^{commit}`]),
+          dirty: false,
+        }
   const ref = `${CARRY_IN_REF_PREFIX}${runtimeId}`
-  git(workspace, ['update-ref', ref, snapshot.sha])
+  await git(workspace, ['update-ref', ref, snapshot.sha])
   try {
-    git(workspace, ['bundle', 'create', bundlePath, ref])
+    await git(workspace, ['bundle', 'create', bundlePath, ref])
   } finally {
-    git(workspace, ['update-ref', '-d', ref])
+    await git(workspace, ['update-ref', '-d', ref])
   }
   return { ref, sha: snapshot.sha, dirty: snapshot.dirty }
 }
 
 /** Fetch the guest's commits back under `refs/copse/runs/<id>`; the host never pushes. */
-export function fetchCarryOut(workspace: string, runtimeId: string, bundlePath: string): string {
+export async function fetchCarryOut(
+  workspace: string,
+  runtimeId: string,
+  bundlePath: string,
+): Promise<string> {
   const ref = `${CARRY_OUT_REF_PREFIX}${runtimeId}`
-  git(workspace, ['fetch', '--no-tags', bundlePath, `refs/heads/work:${ref}`])
+  await git(workspace, ['fetch', '--no-tags', bundlePath, `refs/heads/work:${ref}`])
   return ref
 }
 
@@ -518,23 +539,27 @@ export interface CarryOutAdoption {
  * of duplicate commits. A conflict aborts the whole pick and is reported; the
  * checkout is left as it was.
  */
-export function adoptCarryOut(workspace: string, ref: string, base: string): CarryOutAdoption {
-  const dirty = git(workspace, ['status', '--porcelain', '--untracked-files=no'])
+export async function adoptCarryOut(
+  workspace: string,
+  ref: string,
+  base: string,
+): Promise<CarryOutAdoption> {
+  const dirty = await git(workspace, ['status', '--porcelain', '--untracked-files=no'])
   if (dirty.length > 0) {
     throw new Error(
       'The checkout has uncommitted changes to tracked files; commit or stash them before applying the run',
     )
   }
-  const cherry = git(workspace, ['cherry', 'HEAD', ref, base])
+  const cherry = await git(workspace, ['cherry', 'HEAD', ref, base])
   const lines = cherry.length === 0 ? [] : cherry.split('\n')
   const pending = lines.filter((line) => line.startsWith('+ ')).map((line) => line.slice(2))
   const alreadyApplied = lines.filter((line) => line.startsWith('- ')).length
   if (pending.length === 0) return { applied: [], alreadyApplied }
   try {
-    git(workspace, ['cherry-pick', '--no-edit', '--allow-empty-message', ...pending])
+    await git(workspace, ['cherry-pick', '--no-edit', '--allow-empty-message', ...pending])
   } catch (error) {
     try {
-      git(workspace, ['cherry-pick', '--abort'])
+      await git(workspace, ['cherry-pick', '--abort'])
     } catch {
       // Nothing to abort, or the abort itself failed: the pick error is the one to report.
     }
@@ -543,7 +568,9 @@ export function adoptCarryOut(workspace: string, ref: string, base: string): Car
       { cause: error },
     )
   }
-  const applied = pending.map((sha) => git(workspace, ['log', '-1', '--format=%h %s', sha]))
+  const applied: string[] = []
+  for (const sha of pending)
+    applied.push(await git(workspace, ['log', '-1', '--format=%h %s', sha]))
   return { applied, alreadyApplied }
 }
 
@@ -1181,9 +1208,18 @@ export interface RunThreadOptions {
   onLog?: (line: string) => void
   /** Called once the container is running, i.e. the guest holds its environment. */
   onStarted?: () => void
+  /**
+   * A stop asked for before the container exists (the snapshot and bundle of
+   * a large checkout take a while): the runner refuses to create it and, if
+   * the ask lands while `docker run` is in flight, tears it down at once.
+   * A stop after that is a force-remove, which settles the wait on its own.
+   */
+  signal?: AbortSignal
   /** Host-side canary value; defaults to a random marker exported to the child env. */
   canary?: string
 }
+
+const STOPPED_BEFORE_START = 'Stopped by you before the container started'
 
 /** Provision → carry in → run → carry out → record → tear down. */
 export async function runThreadInContainer(
@@ -1231,7 +1267,7 @@ export async function runThreadInContainer(
   chmodSync(join(runDir, 'state'), 0o777)
   chmodSync(join(runDir, 'out'), 0o777)
 
-  const carryIn = writeCarryInBundle(
+  const carryIn = await writeCarryInBundle(
     workspace,
     runtimeId,
     join(runDir, 'carry-in.bundle'),
@@ -1250,10 +1286,11 @@ export async function runThreadInContainer(
     log(`[thread-container] sign-in carried in: ${stagedLogin.map((d) => `~/${d}`).join(', ')}`)
   }
 
-  const threadId = `${runtimeId}-thread`
+  // The guest's thread is its own; the record names the desktop thread.
+  const guestThreadId = `${runtimeId}-thread`
   const spec: ThreadContainerRunSpec = {
     runtimeId,
-    threadId,
+    threadId: guestThreadId,
     projectId: `${runtimeId}-project`,
     prompt: request.prompt,
     model: request.model,
@@ -1266,7 +1303,7 @@ export async function runThreadInContainer(
     workspace: GUEST_WORKSPACE,
     carryInRef: carryIn.ref,
     carryInBase: carryIn.sha,
-    originUrl: sanitizedOriginUrl(originUrlOf(workspace)),
+    originUrl: sanitizedOriginUrl(await originUrlOf(workspace)),
     maxSteps: request.maxSteps ?? null,
   }
   const runInput: DockerRunInput = {
@@ -1296,6 +1333,7 @@ export async function runThreadInContainer(
   let cleanupError: string | null = null
   let attached: ChildProcess | null = null
   try {
+    if (options.signal?.aborted) throw new Error(STOPPED_BEFORE_START)
     log(`[thread-container] starting ${containerName(runtimeId)} from ${image}`)
     await runDocker([
       'volume',
@@ -1308,6 +1346,9 @@ export async function runThreadInContainer(
     ])
     if (runInput.sharedStore) await ensurePnpmStoreVolume()
     await runDocker(dockerRunArgs(runInput))
+    // The container exists now; a stop that landed while it was being made
+    // has nothing to remove yet, so the `finally` below is the removal.
+    if (options.signal?.aborted) throw new Error(STOPPED_BEFORE_START)
     attached = attachContainer(containerName(runtimeId), {
       broker: egress.length > 0 ? broker : null,
       onLog: (line) => {
@@ -1345,7 +1386,7 @@ export async function runThreadInContainer(
   }
   if (carryOut.expected) {
     try {
-      carryOut.ref = fetchCarryOut(workspace, runtimeId, carryOutBundle)
+      carryOut.ref = await fetchCarryOut(workspace, runtimeId, carryOutBundle)
       log(`[thread-container] carry-out fetched to ${carryOut.ref}`)
     } catch (error) {
       // The bundle stays in the run directory, so the work is recoverable —
@@ -1357,7 +1398,7 @@ export async function runThreadInContainer(
   }
   const record: ThreadContainerRecord = {
     runtimeId,
-    threadId,
+    threadId: request.threadId ?? guestThreadId,
     startedAt,
     finishedAt: Date.now(),
     image,

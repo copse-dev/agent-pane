@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { addMessage, getThreadById, setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
 import type { Thread } from '@shared/types'
+import type { ContainerRunProgress } from '@shared/types/container-run.ts'
+import { containerRunToolCall } from '@shared/store/container-run-card.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
 import { mountProjectsPane } from './projects-pane.ts'
@@ -2376,5 +2378,59 @@ describe('input bar stacking order', () => {
     banner.hidden = true
     await settle()
     assert.equal(branchWarning.classList.contains('is-composer-top'), true)
+  })
+})
+
+describe('input bar container target', () => {
+  it('mounts on a restored thread whose last turn is a container run, offering the container', async () => {
+    // The picker reads the run back from the thread's card, so the composer
+    // offers the container after a restart too; its first update runs from
+    // the control's own mount, before the rest of the bar exists.
+    const progress: ContainerRunProgress = {
+      threadId: 'thread-1',
+      runtimeId: 'run-1',
+      phase: 'finished',
+      startedAt: 1_000,
+      finishedAt: 2_000,
+      prompt: 'Fix the lint backlog',
+      model: 'claude-sonnet-4-6',
+      egressAllowlist: ['api.anthropic.com:443'],
+      credential: 'key',
+      log: [],
+      warnings: [],
+      checkout: null,
+      record: null,
+      error: null,
+      continuedFrom: null,
+    }
+    const restored: Thread = {
+      ...thread(),
+      messages: [
+        { id: 'u1', role: 'user', content: 'Fix the lint backlog', toolCalls: [], createdAt: 1 },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '',
+          toolCalls: [containerRunToolCall(progress)],
+          createdAt: 2,
+        },
+      ],
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [restored],
+    })
+    const host = document.createElement('div')
+    host.id = 'input-bar'
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+    const picker = host.querySelector<HTMLSelectElement>('.composer-target')
+    assert.ok(picker)
+    assert.equal(picker.hidden, false)
+    assert.equal(picker.value, 'container')
   })
 })

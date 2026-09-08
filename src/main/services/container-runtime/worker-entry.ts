@@ -44,6 +44,9 @@ import { EgressLink } from './egress-link.ts'
 import { probeBroker, startGuestEgressProxy } from './guest-egress-proxy.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types/index.ts'
 import { foldGuestTranscript } from './guest-transcript.ts'
+import { GuestProgress } from './guest-progress.ts'
+import { bundleCarryOut } from './guest-carry-out.ts'
+import { countTokens, failedTurn, newTokenTally, tokensUsed } from './guest-turn.ts'
 
 const RUN_DIR = '/run/copse'
 
@@ -289,23 +292,12 @@ async function installDependencies(
 
 /** Commit whatever the agent left uncommitted, then bundle everything since carry-in. */
 function carryOut(spec: Spec): string[] {
-  const status = git(spec.workspace, ['status', '--porcelain'])
-  if (status.length > 0) {
-    git(spec.workspace, ['add', '-A'])
-    git(spec.workspace, ['commit', '--quiet', '-m', 'copse: end-of-run snapshot'])
-  }
-  const commits = git(spec.workspace, ['log', '--format=%H %s', `${spec.carryInBase}..HEAD`])
-    .split('\n')
-    .filter((line) => line.length > 0)
-  if (commits.length > 0) {
-    git(spec.workspace, [
-      'bundle',
-      'create',
-      join(RUN_DIR, 'out', 'carry-out.bundle'),
-      `${spec.carryInBase}..work`,
-    ])
-  }
-  return commits
+  return bundleCarryOut(
+    git,
+    spec.workspace,
+    spec.carryInBase,
+    join(RUN_DIR, 'out', 'carry-out.bundle'),
+  )
 }
 
 function finalAssistantText(messages: readonly LLMMessage[]): string {
@@ -447,8 +439,7 @@ async function main(): Promise<void> {
   // assign it, which control-flow narrowing cannot see.
   const stop: { reason: StopReason } = { reason: 'completed' }
   let errorText: string | undefined
-  let inputTokens = 0
-  let outputTokens = 0
+  const tokens = newTokenTally()
   const controller = new AbortController()
   // Leave the host a margin to collect the result before it stops the container.
   const selfDeadline = Math.max(1_000, spec.budgets.wallClockMs - 20_000)
@@ -472,6 +463,9 @@ async function main(): Promise<void> {
   let messages: readonly LLMMessage[] = []
   let chunks: readonly StreamChunk[] = []
   let toolNames: readonly string[] = []
+  // The run's only live signal: tool calls as they happen, text when the
+  // agent pauses to act (A14).
+  const progress = new GuestProgress(say)
   try {
     const result = await runHeadlessAgent(
       {
@@ -532,17 +526,20 @@ async function main(): Promise<void> {
         projectId: spec.projectId,
         signal: controller.signal,
         onChunk: (chunk) => {
-          if (chunk.type === 'text') say(chunk.text)
-          if (chunk.type === 'usage') {
-            inputTokens += chunk.inputTokens
-            outputTokens += chunk.outputTokens
-            if (
-              inputTokens + outputTokens > spec.budgets.tokenCeiling &&
-              !controller.signal.aborted
-            ) {
-              stop.reason = 'budget:tokens'
-              controller.abort()
-            }
+          progress.handle(chunk)
+          // A failed turn comes back as a chunk, not a rejection; without
+          // this the run would report completed with whatever it had.
+          const failure = failedTurn(chunk)
+          if (failure !== null && stop.reason === 'completed') {
+            stop.reason = 'error'
+            errorText = failure
+          }
+          // The ceiling binds on the agent's live context report as well as
+          // on usage, which an ACP harness only sends once the turn is over.
+          countTokens(tokens, chunk)
+          if (tokensUsed(tokens) > spec.budgets.tokenCeiling && !controller.signal.aborted) {
+            stop.reason = 'budget:tokens'
+            controller.abort()
           }
         },
       },
@@ -562,6 +559,7 @@ async function main(): Promise<void> {
       errorText = error instanceof Error ? error.message : String(error)
     }
   } finally {
+    progress.flush()
     clearTimeout(timer)
     process.off('SIGTERM', onSignal)
     process.off('SIGINT', onSignal)
@@ -611,7 +609,7 @@ async function main(): Promise<void> {
         threadId: spec.threadId,
         stopReason: stop.reason,
         ...(errorText !== undefined ? { error: errorText } : {}),
-        usage: { inputTokens, outputTokens },
+        usage: { inputTokens: tokens.inputTokens, outputTokens: tokens.outputTokens },
         harness: spec.acp ? { acp: spec.acp.agent.id } : 'copse',
         promptsAttempted,
         deferrals,

@@ -170,20 +170,20 @@ describe('dockerRunArgs', () => {
 })
 
 describe('carry-in / carry-out over git bundles', () => {
-  it('snapshots a dirty tree without touching HEAD and round-trips commits back', () => {
+  it('snapshots a dirty tree without touching HEAD and round-trips commits back', async () => {
     const repo = initRepo()
     const guest = mkdtempSync(join(tmpdir(), 'copse-tc-guest-'))
     try {
       writeFileSync(join(repo, 'wip.txt'), 'uncommitted\n')
       const headBefore = git(repo, ['rev-parse', 'HEAD'])
-      const snapshot = createSnapshotCommit(repo)
+      const snapshot = await createSnapshotCommit(repo)
       assert.equal(snapshot.dirty, true)
       assert.notEqual(snapshot.sha, headBefore)
       assert.equal(git(repo, ['rev-parse', 'HEAD']), headBefore, 'HEAD must not move')
       assert.equal(git(repo, ['status', '--porcelain']).includes('wip.txt'), true)
 
       const bundle = join(guest, 'carry-in.bundle')
-      const carried = writeCarryInBundle(repo, 'run-x', bundle)
+      const carried = await writeCarryInBundle(repo, 'run-x', bundle)
       // The bundle carries the same snapshot a fresh call would make. Compare
       // trees, not commit shas: a commit sha folds in the committer timestamp
       // at one-second granularity, so asserting sha equality across two calls
@@ -191,7 +191,7 @@ describe('carry-in / carry-out over git bundles', () => {
       // exactly how this failed in CI having passed locally for days.
       assert.equal(
         git(repo, ['rev-parse', `${carried.sha}^{tree}`]),
-        git(repo, ['rev-parse', `${createSnapshotCommit(repo).sha}^{tree}`]),
+        git(repo, ['rev-parse', `${(await createSnapshotCommit(repo)).sha}^{tree}`]),
         'the bundled snapshot must have the same tree as a fresh snapshot',
       )
       assert.equal(git(repo, ['for-each-ref', 'refs/copse/carry-in/']), '', 'temp ref removed')
@@ -210,7 +210,7 @@ describe('carry-in / carry-out over git bundles', () => {
       const out = join(guest, 'carry-out.bundle')
       git(work, ['bundle', 'create', out, `${carried.sha}..work`])
 
-      const ref = fetchCarryOut(repo, 'run-x', out)
+      const ref = await fetchCarryOut(repo, 'run-x', out)
       assert.equal(ref, 'refs/copse/runs/run-x')
       assert.equal(git(repo, ['show', `${ref}:done.txt`]), 'guest work')
       assert.equal(git(repo, ['rev-parse', 'HEAD']), headBefore, 'the host never moves HEAD')
@@ -222,7 +222,7 @@ describe('carry-in / carry-out over git bundles', () => {
 })
 
 describe('writeCarryInBundle from a ref', () => {
-  it("carries in the ref's commit, not the working tree, and calls it clean", () => {
+  it("carries in the ref's commit, not the working tree, and calls it clean", async () => {
     const repo = initRepo()
     try {
       const base = git(repo, ['rev-parse', 'HEAD'])
@@ -235,12 +235,12 @@ describe('writeCarryInBundle from a ref', () => {
       git(repo, ['checkout', '--quiet', 'main'])
       writeFileSync(join(repo, 'wip.txt'), 'uncommitted on the desktop\n')
       const bundle = join(repo, 'carry-in.bundle')
-      const carried = writeCarryInBundle(repo, 'run-b', bundle, 'refs/copse/runs/run-a')
+      const carried = await writeCarryInBundle(repo, 'run-b', bundle, 'refs/copse/runs/run-a')
       assert.equal(carried.sha, runHead)
       assert.equal(carried.dirty, false)
       assert.equal(git(repo, ['bundle', 'list-heads', bundle]).includes(runHead), true)
-      assert.throws(
-        () => writeCarryInBundle(repo, 'run-c', bundle, 'refs/copse/runs/missing'),
+      await assert.rejects(
+        writeCarryInBundle(repo, 'run-c', bundle, 'refs/copse/runs/missing'),
         /refs\/copse\/runs\/missing/,
       )
     } finally {
@@ -262,7 +262,7 @@ describe('adoptCarryOut', () => {
     git(repo, ['checkout', '--quiet', 'main'])
   }
 
-  it("cherry-picks the guest's commits onto HEAD once, and counts them the second time", () => {
+  it("cherry-picks the guest's commits onto HEAD once, and counts them the second time", async () => {
     const repo = initRepo()
     try {
       const base = git(repo, ['rev-parse', 'HEAD'])
@@ -271,7 +271,7 @@ describe('adoptCarryOut', () => {
       writeFileSync(join(repo, 'theirs.txt'), 'theirs\n')
       git(repo, ['add', '-A'])
       git(repo, ['commit', '--quiet', '-m', 'user: meanwhile'])
-      const first = adoptCarryOut(repo, 'refs/copse/runs/run-a', base)
+      const first = await adoptCarryOut(repo, 'refs/copse/runs/run-a', base)
       assert.deepEqual(
         first.applied.map((line) => line.slice(line.indexOf(' ') + 1)),
         ['guest: add one.txt', 'guest: add two.txt'],
@@ -279,24 +279,27 @@ describe('adoptCarryOut', () => {
       assert.equal(first.alreadyApplied, 0)
       assert.equal(git(repo, ['show', 'HEAD:two.txt']), 'two.txt')
       assert.equal(git(repo, ['show', 'HEAD~2:theirs.txt']), 'theirs')
-      const second = adoptCarryOut(repo, 'refs/copse/runs/run-a', base)
+      const second = await adoptCarryOut(repo, 'refs/copse/runs/run-a', base)
       assert.deepEqual(second, { applied: [], alreadyApplied: 2 })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  it('refuses a dirty checkout and leaves a conflicting pick aborted', () => {
+  it('refuses a dirty checkout and leaves a conflicting pick aborted', async () => {
     const repo = initRepo()
     try {
       const base = git(repo, ['rev-parse', 'HEAD'])
       runOnRef(repo, base, 'refs/copse/runs/run-b', ['README.md'])
       writeFileSync(join(repo, 'README.md'), '# edited\n')
-      assert.throws(() => adoptCarryOut(repo, 'refs/copse/runs/run-b', base), /uncommitted changes/)
+      await assert.rejects(
+        adoptCarryOut(repo, 'refs/copse/runs/run-b', base),
+        /uncommitted changes/,
+      )
       git(repo, ['add', '-A'])
       git(repo, ['commit', '--quiet', '-m', 'user: edited the readme'])
-      assert.throws(
-        () => adoptCarryOut(repo, 'refs/copse/runs/run-b', base),
+      await assert.rejects(
+        adoptCarryOut(repo, 'refs/copse/runs/run-b', base),
         /Could not apply the run's commits/,
       )
       assert.equal(git(repo, ['status', '--porcelain']), '', 'the pick was aborted')

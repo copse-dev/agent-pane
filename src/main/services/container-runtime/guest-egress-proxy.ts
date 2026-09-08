@@ -132,6 +132,20 @@ export function startGuestEgressProxy(
   options: GuestEgressProxyOptions = {},
 ): Promise<GuestEgressProxy> {
   const server: Server = createHttpServer()
+  // Every socket a tunnel holds open, on both ends. `closeAllConnections`
+  // only knows the sockets the HTTP parser still owns; a CONNECT tunnel and
+  // a detached plain-HTTP response are past that, and a client that keeps
+  // its tunnel up (an SDK's pooled connection) would otherwise hold `close`
+  // — and with it the worker's result — until it chose to hang up.
+  const held = new Set<Duplex>()
+  const hold = (...sockets: Duplex[]): void => {
+    for (const socket of sockets) {
+      held.add(socket)
+      socket.once('close', () => {
+        held.delete(socket)
+      })
+    }
+  }
   const expected = options.token === undefined ? null : guestEgressAuthorization(options.token)
   const authorised = (request: IncomingMessage): boolean =>
     expected === null || request.headers['proxy-authorization'] === expected
@@ -150,6 +164,7 @@ export function startGuestEgressProxy(
     }
     openTunnel(link, target.host, target.port).then(
       (tunnel) => {
+        hold(client, tunnel)
         client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
         if (head.length > 0) tunnel.write(head)
         pipeBoth(client, tunnel)
@@ -215,6 +230,7 @@ export function startGuestEgressProxy(
         })
         // The response goes back on the raw socket; the origin's own status
         // line and headers are what the client should see.
+        hold(client, tunnel)
         response.detachSocket(client)
         tunnel.pipe(client)
         const drop = (): void => {
@@ -256,6 +272,7 @@ export function startGuestEgressProxy(
               resolveClose()
             })
             server.closeAllConnections()
+            for (const socket of held) socket.destroy()
           }),
       })
     })

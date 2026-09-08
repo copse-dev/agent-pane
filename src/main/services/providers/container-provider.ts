@@ -45,9 +45,12 @@ export type ContainerProviderPlan =
       mode: 'openai-compatible'
       /** The model id the endpoint expects (prefix stripped). */
       model: string
+      /** The URL as the guest should dial it; see {@link guestFacingEndpoint}. */
       url: string
       apiKey: string | null
       egress: string[]
+      /** Guest-facing host → where the broker dials it, for a host-local endpoint. */
+      egressResolve?: Record<string, string>
     }
   | {
       mode: 'product'
@@ -70,6 +73,37 @@ function originOf(url: string): string {
   const parsed = new URL(url)
   const port = parsed.port ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80
   return `${parsed.hostname}:${String(port)}`
+}
+
+/** The name the guest dials a host-local endpoint by; the broker resolves it to the host. */
+export const HOST_LOCAL_ALIAS = 'model.copse.internal'
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0'])
+
+/**
+ * An OpenAI-compatible endpoint as the guest should dial it. A server on the
+ * desktop's loopback (LM Studio at `http://127.0.0.1:1234/v1`, say) cannot be
+ * named by that address in the guest: loopback bypasses the guest proxy by
+ * design, so the guest would dial its own — empty — loopback and the run
+ * would fail on the first request. Such a URL is rewritten to a name only
+ * the guest knows, admitted by the allowlist under that name, and resolved
+ * by the broker back to the host's loopback at the same port.
+ */
+export function guestFacingEndpoint(url: string): {
+  url: string
+  egress: string[]
+  egressResolve?: Record<string, string>
+} {
+  const parsed = new URL(url)
+  if (!LOOPBACK_HOSTS.has(parsed.hostname)) return { url, egress: [originOf(url)] }
+  const dialHost = parsed.hostname === '::1' || parsed.hostname === '[::1]' ? '::1' : '127.0.0.1'
+  parsed.hostname = HOST_LOCAL_ALIAS
+  const guestUrl = parsed.toString()
+  return {
+    url: guestUrl,
+    egress: [originOf(guestUrl)],
+    egressResolve: { [HOST_LOCAL_ALIAS]: dialHost },
+  }
 }
 
 /**
@@ -127,9 +161,8 @@ export function resolveContainerProvider(
     return {
       mode: 'openai-compatible',
       model: id,
-      url,
       apiKey: getLmStudioApiKey() || null,
-      egress: [originOf(url)],
+      ...guestFacingEndpoint(url),
     }
   }
   if (isOpenRouterModel(model)) {
@@ -152,9 +185,8 @@ export function resolveContainerProvider(
     return {
       mode: 'openai-compatible',
       model: extraProviderModelId(model),
-      url: extra.baseUrl,
       apiKey,
-      egress: [originOf(extra.baseUrl)],
+      ...guestFacingEndpoint(extra.baseUrl),
     }
   }
   if (model.startsWith('claude')) {
