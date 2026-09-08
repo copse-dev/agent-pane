@@ -10966,8 +10966,8 @@ var init_pt = __esm({
           case "not_multiple_of":
             return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
           case "unrecognized_keys": {
-            const plural = issue2.keys.length > 1 ? "s" : "";
-            return `Chave${plural} inv\xE1lida${plural}: ${joinValues(issue2.keys, ", ")}`;
+            const plural2 = issue2.keys.length > 1 ? "s" : "";
+            return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
           }
           case "invalid_key":
             return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -11115,8 +11115,8 @@ var init_pt_BR = __esm({
           case "not_multiple_of":
             return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
           case "unrecognized_keys": {
-            const plural = issue2.keys.length > 1 ? "s" : "";
-            return `Chave${plural} inv\xE1lida${plural}: ${joinValues(issue2.keys, ", ")}`;
+            const plural2 = issue2.keys.length > 1 ? "s" : "";
+            return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
           }
           case "invalid_key":
             return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -22086,7 +22086,11 @@ var init_tool_display = __esm({
       ask_user: { running: "Asking user", done: "Asked user" },
       propose_thread: { running: "Proposing a thread", done: "Proposed a thread" },
       update_todos: { running: "Updating plan", done: "Updated plan" },
-      run_checkup: { running: "Running checkup", done: "Ran checkup" }
+      run_checkup: { running: "Running checkup", done: "Ran checkup" },
+      container_run: {
+        running: "Running unattended in a container",
+        done: "Ran unattended in a container"
+      }
     };
     TOOL_GROUPS = {
       reading: {
@@ -25688,6 +25692,39 @@ var init_demo_scenarios = __esm({
               toolNames: ["run_shell", "read_file", "write_file"],
               finalText: "Cleared the lint backlog in three commits. The push is waiting for your review."
             },
+            transcript: [
+              {
+                id: "guest-1",
+                role: "assistant",
+                content: "Reading the lint report to see which suppressions are still needed.",
+                toolCalls: [
+                  {
+                    id: "guest-t1",
+                    name: "run_shell",
+                    args: { command: "pnpm run lint -- --format json" },
+                    status: "done",
+                    result: "14 suppressions, 11 of them for rules that no longer fire"
+                  },
+                  {
+                    id: "guest-t2",
+                    name: "str_replace",
+                    args: { path: "src/main/providers/openai.ts" },
+                    status: "done",
+                    result: "Replaced 1 occurrence",
+                    editStats: { additions: 1, deletions: 3 }
+                  }
+                ],
+                createdAt: FIXED_TIME + 6e4
+              },
+              {
+                id: "guest-2",
+                role: "assistant",
+                content: "Cleared the lint backlog in three commits. The push is waiting for your review.",
+                toolCalls: [],
+                createdAt: FIXED_TIME + 22 * 6e4
+              }
+            ],
+            carryIn: { sha: "9b1b901683b9f0e5b2a3c4d5e6f708192a3b4c5d", dirty: false },
             carryOut: { expected: true, ref: "refs/copse/runs/run-demo-1", error: null },
             containerExit: 0,
             credential: "key",
@@ -26402,6 +26439,14 @@ function createDemoApi(scenario, options2 = {}) {
         error: null
       }),
       stopRun: () => resolved(null),
+      adoptRun: () => resolved({
+        applied: [
+          "a1b2c3d fix(lint): remove unused imports across src/main",
+          "b2c3d4e fix(lint): prefer nullish coalescing in providers",
+          "c3d4e5f chore: rerun formatter"
+        ],
+        alreadyApplied: 0
+      }),
       getRun: (threadId) => resolved(
         scenario.containerRun && scenario.containerRun.threadId === threadId ? scenario.containerRun : null
       ),
@@ -55175,8 +55220,8 @@ function mountSettingsDialog(store3, api3) {
         const warn3 = document.createElement("div");
         warn3.className = "mcp-trust-banner trust-unsandboxed-hooks-warning";
         const label = document.createElement("span");
-        const plural = unsandboxed.length === 1 ? "hook" : "hooks";
-        label.textContent = `This workspace declares ${String(unsandboxed.length)} ${plural} with "sandbox": false in .copse/hooks.json. Trusting this workspace allows ${unsandboxed.length === 1 ? "it" : "them"} to run OUTSIDE the project sandbox:`;
+        const plural2 = unsandboxed.length === 1 ? "hook" : "hooks";
+        label.textContent = `This workspace declares ${String(unsandboxed.length)} ${plural2} with "sandbox": false in .copse/hooks.json. Trusting this workspace allows ${unsandboxed.length === 1 ? "it" : "them"} to run OUTSIDE the project sandbox:`;
         const list = document.createElement("ul");
         for (const h3 of unsandboxed) {
           const li2 = document.createElement("li");
@@ -58591,6 +58636,162 @@ function artefactTitleFromUri(uri) {
 var init_artefact = __esm({
   "src/shared/canvas/artefact.ts"() {
     init_browser_url();
+  }
+});
+
+// src/shared/store/container-run-card.ts
+function containerRunToolCallId(progress2) {
+  return `container-run:${progress2.threadId}:${String(progress2.startedAt)}`;
+}
+function isLive(progress2) {
+  return progress2.phase !== "finished" && progress2.phase !== "failed";
+}
+function cardStatus(progress2) {
+  if (isLive(progress2)) return "running";
+  return progress2.phase === "finished" ? "done" : "error";
+}
+function plural(count2, noun) {
+  return `${String(count2)} ${noun}${count2 === 1 ? "" : "s"}`;
+}
+function minutes(from2, to) {
+  const seconds2 = Math.max(0, Math.round((to - from2) / 1e3));
+  return seconds2 < 90 ? `${String(seconds2)}s` : `${String(Math.round(seconds2 / 60))} min`;
+}
+function containerRunSummary(progress2) {
+  if (isLive(progress2)) return null;
+  const result = progress2.record?.result ?? null;
+  const ref = progress2.record?.carryOut.ref ?? null;
+  if (progress2.phase === "failed") return `Failed: ${progress2.error ?? "the run did not complete"}`;
+  if (!result) return "Finished without a result";
+  const commits = result.commits.length === 0 ? "no commits" : `${plural(result.commits.length, "commit")} ${ref ? `on ${ref}` : "made but not fetched"}`;
+  return `Finished: ${commits}, ${plural(result.deferrals.length, "effect")} waiting for review, ${plural(result.denials.length, "effect")} refused.`;
+}
+function containerRunResultMarkdown(progress2) {
+  if (isLive(progress2)) return null;
+  const record2 = progress2.record;
+  const result = record2?.result ?? null;
+  const lines = [];
+  const summary = containerRunSummary(progress2);
+  if (summary) lines.push(`**${summary}**`);
+  const facts = [`model ${progress2.model}`];
+  if (result) {
+    facts.push(
+      result.harness === "copse" ? "Copse harness" : `${result.harness.acp} agent`,
+      `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`
+    );
+  }
+  if (progress2.finishedAt !== null) facts.push(minutes(progress2.startedAt, progress2.finishedAt));
+  lines.push(facts.join(" \xB7 "));
+  if (result && result.commits.length > 0) {
+    lines.push("", ...result.commits.map((line2) => `- \`${line2}\``));
+  }
+  if (progress2.warnings.length > 0) {
+    lines.push(
+      "",
+      "**Needs your attention**",
+      ...progress2.warnings.map((warning) => `- ${warning}`)
+    );
+  }
+  if (result && result.deferrals.length > 0) {
+    lines.push(
+      "",
+      "**Waiting for your review**",
+      ...result.deferrals.map(
+        (entry) => `- ${entry.title}${entry.reasons?.length ? ` \u2014 ${entry.reasons.join("; ")}` : ""}`
+      )
+    );
+  }
+  if (result && result.denials.length > 0) {
+    lines.push(
+      "",
+      "**Refused by the container policy**",
+      ...result.denials.map(
+        (entry) => `- ${entry.subject}${entry.reasons.length > 0 ? ` \u2014 ${entry.reasons.join("; ")}` : ""}`
+      )
+    );
+  }
+  if (result?.finalText) lines.push("", result.finalText);
+  return lines.join("\n");
+}
+function logMessage(progress2) {
+  if (progress2.log.length === 0) return null;
+  return {
+    id: "run-log",
+    role: "assistant",
+    content: `\`\`\`text
+${progress2.log.join("\n")}
+\`\`\``,
+    toolCalls: [],
+    createdAt: progress2.startedAt
+  };
+}
+function containerRunToolCall(progress2) {
+  const id39 = containerRunToolCallId(progress2);
+  const status = cardStatus(progress2);
+  const args = {
+    task: progress2.prompt,
+    model: progress2.model,
+    runtimeId: progress2.runtimeId,
+    ref: progress2.record?.carryOut.ref ?? null
+  };
+  const transcript = progress2.record?.transcript ?? [];
+  const log3 = logMessage(progress2);
+  const session = {
+    id: progress2.runtimeId ?? id39,
+    kind: "container",
+    status,
+    prompt: progress2.prompt,
+    summary: containerRunSummary(progress2),
+    messages: log3 ? [...transcript, log3] : transcript,
+    model: progress2.model
+  };
+  if (progress2.record?.result) {
+    session.usage = {
+      inputTokens: progress2.record.result.usage.inputTokens,
+      outputTokens: progress2.record.result.usage.outputTokens
+    };
+  }
+  return {
+    id: id39,
+    name: CONTAINER_RUN_TOOL,
+    args,
+    status,
+    result: containerRunResultMarkdown(progress2),
+    resultFormat: "markdown",
+    subagent: session
+  };
+}
+function syncContainerRunCard(store3, progress2) {
+  const thread = getThreadById(store3, progress2.threadId);
+  if (!thread || thread.messagesLoaded === false) return "skipped";
+  const toolCall = containerRunToolCall(progress2);
+  const owner = findToolCallOwner(store3, progress2.threadId, toolCall.id);
+  if (owner !== void 0) {
+    updateToolCall(store3, owner, toolCall.id, toolCall);
+    return "updated";
+  }
+  const messageId = addMessage(store3, progress2.threadId, "assistant", "");
+  addToolCall(store3, messageId, toolCall);
+  return "added";
+}
+function noteAdoptionOnCard(store3, threadId, toolCallId, adoption) {
+  const owner = findToolCallOwner(store3, threadId, toolCallId);
+  if (owner === void 0) return;
+  const thread = getThreadById(store3, threadId);
+  const existing = thread?.messages.find((message2) => message2.id === owner)?.toolCalls.find((toolCall) => toolCall.id === toolCallId)?.result ?? "";
+  const note2 = adoption.applied.length === 0 ? `**Already in this checkout** (${plural(adoption.alreadyApplied, "commit")}).` : `**Applied to this checkout:** ${plural(adoption.applied.length, "commit")}${adoption.alreadyApplied > 0 ? ` (${String(adoption.alreadyApplied)} already present)` : ""}`;
+  updateToolCall(store3, owner, toolCallId, {
+    result: existing.length > 0 ? `${existing}
+
+${note2}` : note2
+  });
+}
+var CONTAINER_RUN_TOOL, CONTAINER_RUN_ADOPT_EVENT;
+var init_container_run_card = __esm({
+  "src/shared/store/container-run-card.ts"() {
+    init_thread_helpers();
+    CONTAINER_RUN_TOOL = "container_run";
+    CONTAINER_RUN_ADOPT_EVENT = "container-run-adopt";
   }
 });
 
@@ -247327,7 +247528,31 @@ function populateSubagentCard(card2, tc2, label, api3) {
     card2.append(resultEl);
     setAssistantMarkdown(resultEl, parentResult, false, api3);
   }
+  const followUp = containerRunFollowUp(tc2, session, status);
+  if (followUp) card2.append(followUp);
   subagentCardChromeSig.set(card2, chromeSig);
+}
+function containerRunFollowUp(tc2, session, status) {
+  if (session.kind !== "container" || status === "running") return null;
+  const args = tc2.args;
+  if (!isRecord(args)) return null;
+  const runtimeId = args["runtimeId"];
+  const ref = args["ref"];
+  if (typeof runtimeId !== "string" || typeof ref !== "string") return null;
+  const button = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary subagent-container-apply" },
+    "Apply the run\u2019s commits to this checkout"
+  );
+  button.addEventListener("click", () => {
+    button.dispatchEvent(
+      new CustomEvent(CONTAINER_RUN_ADOPT_EVENT, {
+        bubbles: true,
+        detail: { runtimeId, toolCallId: tc2.id }
+      })
+    );
+  });
+  return el("div", { class: "subagent-actions" }, button);
 }
 function createSubagentToolCard(tc2, label, api3) {
   const card2 = el("details", {
@@ -248900,6 +249125,8 @@ var init_conversation = __esm({
     init_artefact_previews();
     init_artefact();
     init_thread_helpers();
+    init_container_run_card();
+    init_unknown_value3();
     init_code_block_copy();
     init_table_copy();
     init_dist();
@@ -260265,9 +260492,9 @@ var init_skill_picker = __esm({
 // src/renderer/views/footer-index-status.ts
 function formatElapsed(ms4) {
   const totalSeconds = Math.max(0, Math.floor(ms4 / 1e3));
-  const minutes = Math.floor(totalSeconds / 60);
+  const minutes2 = Math.floor(totalSeconds / 60);
   const seconds2 = totalSeconds % 60;
-  return minutes > 0 ? `${String(minutes)}m ${String(seconds2)}s` : `${String(seconds2)}s`;
+  return minutes2 > 0 ? `${String(minutes2)}m ${String(seconds2)}s` : `${String(seconds2)}s`;
 }
 function componentLabel(component2) {
   return component2 === "fileIndex" ? "file index" : "semantic code index";
@@ -262724,7 +262951,7 @@ var init_container_acp_agents = __esm({
 });
 
 // src/renderer/views/container-run-control.ts
-function isLive(progress2) {
+function isLive2(progress2) {
   return progress2 !== null && progress2.phase !== "finished" && progress2.phase !== "failed";
 }
 function elapsedLabel(run6) {
@@ -262807,7 +263034,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
   dismiss.addEventListener("click", () => {
     const threadId = context.getActiveThreadId();
     const run6 = activeRun();
-    if (!threadId || !run6 || isLive(run6)) return;
+    if (!threadId || !run6 || isLive2(run6)) return;
     dismissed.set(threadId, run6.runtimeId);
     renderBanner();
   });
@@ -262818,9 +263045,9 @@ function mountContainerRunControl(api3, context, onStateChanged) {
   function renderBanner() {
     const run6 = activeRun();
     const threadId = context.getActiveThreadId();
-    const wavedAway = run6 !== null && threadId !== null && !isLive(run6) && dismissed.has(threadId) && dismissed.get(threadId) === run6.runtimeId;
+    const wavedAway = run6 !== null && threadId !== null && !isLive2(run6) && dismissed.has(threadId) && dismissed.get(threadId) === run6.runtimeId;
     element3.hidden = run6 === null || wavedAway;
-    dismiss.hidden = run6 === null || isLive(run6);
+    dismiss.hidden = run6 === null || isLive2(run6);
     if (!run6) {
       text4.textContent = "";
       delete element3.dataset["phase"];
@@ -262852,7 +263079,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
   }
   function startElapsedClock(run6) {
     stopElapsedClock();
-    if (!isLive(run6)) return;
+    if (!isLive2(run6)) return;
     elapsedTimer = setInterval(() => {
       const cell = overlay?.dialog.querySelector(".container-run-elapsed");
       if (!cell || !overlay?.isOpen()) {
@@ -262931,14 +263158,14 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       rosterLoaded = true;
       renderLoginOptIn();
     });
-    const minutes = el("input", {
+    const minutes2 = el("input", {
       type: "number",
       class: "container-run-minutes",
       min: "1",
       max: "1440",
       step: "1"
     });
-    minutes.value = String(DEFAULT_WALL_CLOCK_MINUTES);
+    minutes2.value = String(DEFAULT_WALL_CLOCK_MINUTES);
     const tokens2 = el("input", {
       type: "number",
       class: "container-run-tokens",
@@ -263037,7 +263264,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       const prompt = task.value.trim();
       if (!prompt) return;
       lastPrompt = prompt;
-      const wallClockMs = Math.max(1, Number(minutes.value) || DEFAULT_WALL_CLOCK_MINUTES) * 6e4;
+      const wallClockMs = Math.max(1, Number(minutes2.value) || DEFAULT_WALL_CLOCK_MINUTES) * 6e4;
       const tokenCeiling = Math.max(1e3, Number(tokens2.value) || DEFAULT_TOKEN_CEILING);
       start2.disabled = true;
       void api3.container.runThread({
@@ -263075,7 +263302,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
       el(
         "div",
         { class: "container-run-budgets" },
-        uiField({ label: "Stop after (minutes)", control: minutes }),
+        uiField({ label: "Stop after (minutes)", control: minutes2 }),
         uiField({ label: "Token ceiling", control: tokens2 })
       ),
       egressHint,
@@ -263273,7 +263500,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     );
     close2.addEventListener("click", () => overlay?.close());
     const actions = [close2];
-    if (isLive(run6)) {
+    if (isLive2(run6)) {
       const stop5 = el(
         "button",
         { type: "button", class: "ui-btn ui-btn-danger container-run-stop" },
@@ -263297,7 +263524,21 @@ function mountContainerRunControl(api3, context, onStateChanged) {
         )
       );
     }
-    if (!isLive(run6)) {
+    if (!isLive2(run6) && run6.record?.carryOut.ref && (result?.commits.length ?? 0) > 0) {
+      const apply5 = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary container-run-apply" },
+        `Apply ${String(result?.commits.length ?? 0)} commit${result?.commits.length === 1 ? "" : "s"} to this checkout`
+      );
+      apply5.addEventListener("click", () => {
+        apply5.disabled = true;
+        void adopt(run6.record?.runtimeId ?? "", null).finally(() => {
+          apply5.disabled = false;
+        });
+      });
+      actions.push(apply5);
+    }
+    if (!isLive2(run6)) {
       const again = el(
         "button",
         { type: "button", class: "ui-btn ui-btn-primary container-run-again" },
@@ -263317,10 +263558,38 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     view.dataset["phase"] = run6.phase;
     return view;
   }
+  async function adopt(runtimeId, toolCallId) {
+    const threadId = context.getActiveThreadId();
+    const projectId = context.getActiveProjectId();
+    if (!threadId || !projectId || runtimeId.length === 0) return;
+    try {
+      const adoption = await api3.container.adoptRun(projectId, threadId, runtimeId);
+      const run6 = runs.get(threadId);
+      const cardId = toolCallId ?? (run6 && run6.runtimeId === runtimeId ? containerRunToolCallId(run6) : null);
+      if (cardId !== null) noteAdoptionOnCard(context.store, threadId, cardId, adoption);
+      showToast(
+        adoption.applied.length === 0 ? `All ${String(adoption.alreadyApplied)} commit(s) from the run are already in this checkout.` : `Applied ${String(adoption.applied.length)} commit(s) from the run to this checkout.`,
+        { variant: "info", durationMs: 8e3 }
+      );
+    } catch (error63) {
+      showErrorToast("Could not apply the run's commits", error63);
+    }
+  }
+  const onCardAdopt = (event3) => {
+    if (!(event3 instanceof CustomEvent)) return;
+    const detail = event3.detail;
+    if (!isRecord(detail)) return;
+    const runtimeId = detail["runtimeId"];
+    const toolCallId = detail["toolCallId"];
+    if (typeof runtimeId !== "string" || typeof toolCallId !== "string") return;
+    void adopt(runtimeId, toolCallId);
+  };
+  document.addEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt);
   function update2(progress2) {
     const previous = runs.get(progress2.threadId);
     runs.set(progress2.threadId, progress2);
-    if (previous && isLive(previous) && !isLive(progress2)) {
+    syncContainerRunCard(context.store, progress2);
+    if (previous && isLive2(previous) && !isLive2(progress2)) {
       const result = progress2.record?.result;
       if (progress2.phase === "finished" && result) {
         showToast(
@@ -263348,7 +263617,10 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     }
     void api3.container.getRun(threadId).then((progress2) => {
       if (sequence !== refreshSequence) return;
-      if (progress2) runs.set(threadId, progress2);
+      if (progress2) {
+        runs.set(threadId, progress2);
+        syncContainerRunCard(context.store, progress2);
+      }
       renderBanner();
       renderDialog();
     }).catch((error63) => {
@@ -263366,11 +263638,12 @@ function mountContainerRunControl(api3, context, onStateChanged) {
   refresh();
   return {
     element: element3,
-    menuLabel: () => isLive(activeRun()) ? "Show container run" : "Run unattended in a container\u2026",
+    menuLabel: () => isLive2(activeRun()) ? "Show container run" : "Run unattended in a container\u2026",
     open: open3,
     refresh,
     destroy: () => {
       unsubscribe();
+      document.removeEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt);
       stopElapsedClock();
       modelPicker?.destroy();
       modelPicker = null;
@@ -263382,6 +263655,8 @@ function mountContainerRunControl(api3, context, onStateChanged) {
 var DEFAULT_WALL_CLOCK_MINUTES, DEFAULT_TOKEN_CEILING, PHASE_LABEL;
 var init_container_run_control = __esm({
   "src/renderer/views/container-run-control.ts"() {
+    init_unknown_value3();
+    init_container_run_card();
     init_acp();
     init_acp_known_agents();
     init_container_acp_agents();
@@ -263559,6 +263834,7 @@ function mountInputBar(root4, store3, api3, opts = {}) {
   const containerRun = mountContainerRunControl(
     api3,
     {
+      store: store3,
       getActiveThreadId,
       getActiveProjectId: () => store3.getState().activeProjectId,
       getModel: footerChatModel,

@@ -8916,6 +8916,11 @@ dialog.settings-overlay::backdrop {
 .container-run-install-field {
   margin-top: var(--spacing-md);
 }
+.tool-card-subagent .subagent-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
 
 /* src/renderer/styles/global/new-project-dialog.css */
 #new-project-dialog {
