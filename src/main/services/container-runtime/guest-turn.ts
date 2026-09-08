@@ -1,28 +1,27 @@
 /**
- * What the guest reads off the agent's stream about the turn itself: whether
- * it failed, and how many tokens it has used so far. Pure, so the worker's
- * two stop rules that depend on it can be tested without a guest.
+ * What the guest reads about the turn itself: whether it failed, and how
+ * many tokens it has used so far. Pure, so the worker's two stop rules that
+ * depend on it can be tested without a guest.
  *
  * `runHeadlessAgent` resolves whether or not the agent's turn succeeded — a
  * provider error, an agent that could not authenticate, a crash in an ACP
- * child all come back as a `turn_outcome` chunk with `status: 'failed'`, not
- * as a rejection. The worker's first version only marked a run failed when
- * the call threw, so a failed turn was reported as completed with whatever
- * partial text it had. The token ceiling has the same blind spot under an
- * ACP harness: usage arrives once, after the turn, so it can only be checked
- * once the tokens are spent. What arrives live is the agent's own report of
- * its context (`usage_update`, carried as an agent-reported context-pressure
- * chunk); counting that against the ceiling is how the budget binds mid-turn.
+ * child all come back as the result's `turnOutcome` with `status: 'failed'`,
+ * not as a rejection. The worker's first version only marked a run failed
+ * when the call threw, so a failed turn was reported as completed with
+ * whatever partial text it had. The token ceiling has the same blind spot
+ * under an ACP harness: usage arrives once, after the turn, so it can only
+ * be checked once the tokens are spent. What arrives live is the agent's own
+ * report of its context (`usage_update`, carried as an agent-reported
+ * context-pressure chunk); counting that against the ceiling is how the
+ * budget binds mid-turn.
  */
-import type { StreamChunk } from '@shared/types'
+import type { StreamChunk, TurnOutcome } from '@shared/types'
 
-/** Why a turn failed, from its outcome chunk; null for any other chunk. */
-export function failedTurn(chunk: StreamChunk): string | null {
-  if (chunk.type !== 'turn_outcome' || chunk.outcome.status !== 'failed') return null
-  const detail = chunk.outcome.error
-  const reason = chunk.outcome.rawStopReason ?? chunk.outcome.stopReason
-  if (detail?.message) return detail.message
-  return `the agent's turn failed (${reason})`
+/** Why a turn failed, from its outcome; null when it did not, or there is none. */
+export function failedTurn(outcome: TurnOutcome | undefined): string | null {
+  if (outcome === undefined || outcome.status !== 'failed') return null
+  if (outcome.error?.message) return outcome.error.message
+  return `the agent's turn failed (${outcome.rawStopReason ?? outcome.stopReason})`
 }
 
 export interface TokenTally {

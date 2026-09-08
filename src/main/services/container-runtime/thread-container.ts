@@ -22,7 +22,6 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -62,6 +61,9 @@ import {
   relocateTranscript,
 } from './guest-transcript.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
+import { runSerialized } from '@copse/thread-store/write-queue.ts'
+import { snapshotWorkingTree } from '../git-snapshot.ts'
+import { providerEndpointUrl, type ProviderDescription } from '../providers/provider-description.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -95,18 +97,15 @@ export interface ThreadContainerRequest {
   /** Product model id as the settings UI would store it, e.g. `local:qwen`. */
   model: string
   /**
-   * OpenAI-compatible base URL the guest should talk to, e.g.
-   * `http://model.copse.internal:8080/v1`. Its host:port must be in the
-   * egress allowlist; that is the only route out of the guest. Omit for a
-   * provider the product resolves itself in the guest (`productProvider`).
+   * The provider as the guest should build it (`describeProvider`, adapted
+   * for the guest by `resolveContainerProvider`): protocol, endpoint and the
+   * user's tuned parameters, without the key. Its endpoint's origin must be
+   * in the egress allowlist; that is the only route out of the guest. Omit
+   * for an ACP run, which brings its own agent.
    */
-  providerUrl?: string
-  /**
-   * Let the guest build the provider through the product's own resolver from
-   * the model id and this one API key (Anthropic today). The key's origin must
-   * still be in the egress allowlist.
-   */
-  productProvider?: { apiKeySlug: string }
+  provider?: ProviderDescription
+  /** What the guest trims history against; the desktop's own answer for the model. */
+  contextWindow?: number
   /** Environment variable on the host holding the provider key; the value is passed, never the name. */
   apiKeyEnv?: string
   /**
@@ -167,8 +166,8 @@ export interface ThreadContainerRunSpec {
   projectId: string
   prompt: string
   model: string
-  providerUrl: string | null
-  productProvider: { apiKeySlug: string } | null
+  provider: ProviderDescription | null
+  contextWindow: number | null
   apiKeyEnv: string | null
   acp: ThreadContainerAcpHarness | null
   /** Run the checkout's lockfile install before the agent (decision A9). */
@@ -453,37 +452,14 @@ async function git(cwd: string, args: string[], env?: Record<string, string>): P
 
 /**
  * Snapshot the working tree (staged + unstaged + untracked, .gitignore
- * respected) into a commit without touching HEAD or the real index — the same
- * trick `remote-e2e.mts` and the app's worktree backup use. Returns HEAD when
- * the tree is clean.
+ * respected) into a commit without touching HEAD or the real index. Returns
+ * HEAD when the tree is clean.
  */
-export async function createSnapshotCommit(cwd: string): Promise<{ sha: string; dirty: boolean }> {
-  const headSha = await git(cwd, ['rev-parse', 'HEAD'])
-  const tmp = mkdtempSync(join(tmpdir(), 'copse-carry-in-index-'))
-  try {
-    const index = { GIT_INDEX_FILE: join(tmp, 'index') }
-    await git(cwd, ['read-tree', 'HEAD'], index)
-    await git(cwd, ['add', '-A'], index)
-    const tree = await git(cwd, ['write-tree'], index)
-    if (tree === (await git(cwd, ['rev-parse', 'HEAD^{tree}']))) {
-      return { dirty: false, sha: headSha }
-    }
-    const sha = await git(cwd, [
-      '-c',
-      'user.name=copse',
-      '-c',
-      'user.email=copse@copse.invalid',
-      'commit-tree',
-      tree,
-      '-p',
-      'HEAD',
-      '-m',
-      'copse: working-tree snapshot for a container run',
-    ])
-    return { dirty: true, sha }
-  } finally {
-    rmSync(tmp, { recursive: true, force: true })
-  }
+export function createSnapshotCommit(cwd: string): Promise<{ sha: string; dirty: boolean }> {
+  return snapshotWorkingTree((args, env) => git(cwd, args, env), {
+    message: 'copse: working-tree snapshot for a container run',
+    identity: { name: 'copse', email: 'copse@copse.invalid' },
+  })
 }
 
 /** Bundle the snapshot under a run-scoped ref so the guest can fetch it by name. */
@@ -544,28 +520,14 @@ export function adoptCarryOut(
   ref: string,
   base: string,
 ): Promise<CarryOutAdoption> {
-  // One pick at a time per checkout. Two follow-ups pressed together would
-  // otherwise both run against the same index, and the one that failed would
-  // `cherry-pick --abort` the other's pick as well as its own.
-  const key = resolve(workspace)
-  const previous = adoptions.get(key) ?? Promise.resolve()
-  const turn = previous.then(
-    () => adoptOnce(workspace, ref, base),
-    () => adoptOnce(workspace, ref, base),
+  // One pick at a time per checkout, the whole check-and-pick as one turn.
+  // Two follow-ups pressed together would otherwise both run against the
+  // same index, and the one that failed would `cherry-pick --abort` the
+  // other's pick as well as its own.
+  return runSerialized(`carry-out-adoption:${resolve(workspace)}`, () =>
+    adoptOnce(workspace, ref, base),
   )
-  const settled = turn.then(
-    () => undefined,
-    () => undefined,
-  )
-  adoptions.set(key, settled)
-  void settled.then(() => {
-    if (adoptions.get(key) === settled) adoptions.delete(key)
-  })
-  return turn
 }
-
-/** The pick in flight, or just finished, for each checkout; see {@link adoptCarryOut}. */
-const adoptions = new Map<string, Promise<void>>()
 
 async function adoptOnce(workspace: string, ref: string, base: string): Promise<CarryOutAdoption> {
   const dirty = await git(workspace, ['status', '--porcelain', '--untracked-files=no'])
@@ -1261,15 +1223,11 @@ export async function runThreadInContainer(
   const runtimesDir = resolve(request.runtimesDir ?? join(copseDataRoot(), 'runtimes'))
   const runDir = join(runtimesDir, runtimeId)
   const egress = request.egressAllowlist.map(parseEgressRule)
-  if (
-    request.providerUrl === undefined &&
-    request.productProvider === undefined &&
-    request.acp === undefined
-  ) {
-    throw new Error('A run needs a provider URL, a product-resolved provider, or an ACP agent')
+  if (request.provider === undefined && request.acp === undefined) {
+    throw new Error('A run needs a provider description or an ACP agent')
   }
-  if (request.providerUrl !== undefined) {
-    const provider = providerOrigin(request.providerUrl)
+  if (request.provider !== undefined) {
+    const provider = providerOrigin(providerEndpointUrl(request.provider))
     if (findEgressRule(egress, provider.host, provider.port) === null) {
       throw new Error(
         `Provider origin ${provider.host}:${String(provider.port)} is not in the egress allowlist; the guest could never reach it`,
@@ -1318,8 +1276,8 @@ export async function runThreadInContainer(
     projectId: `${runtimeId}-project`,
     prompt: request.prompt,
     model: request.model,
-    providerUrl: request.providerUrl ?? null,
-    productProvider: request.productProvider ?? null,
+    provider: request.provider ?? null,
+    contextWindow: request.contextWindow ?? null,
     apiKeyEnv,
     acp: acp ?? null,
     installDependencies: request.installDependencies === true,

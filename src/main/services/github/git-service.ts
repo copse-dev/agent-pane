@@ -5,6 +5,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { resolvePathWithinRoot, toRelativePathWithinRoot } from '../workspace.ts'
 import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { runCommand, type CommandResult, type RunCommandOptions } from '../exec/command-runner.ts'
+import { snapshotWorkingTree } from '../git-snapshot.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
@@ -571,35 +572,22 @@ export async function createWorktreeBackup(
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
 
   let tempIndex: TemporaryGitIndex | undefined
-  // A throwaway index isolates our `add -A` from the user's staged state; the
-  // identity env lets `commit-tree` succeed even when the repo has no user.name.
-  const env: NodeJS.ProcessEnv = {
-    GIT_INDEX_FILE: '',
-    GIT_AUTHOR_NAME: 'Copse',
-    GIT_AUTHOR_EMAIL: 'copse@localhost',
-    GIT_COMMITTER_NAME: 'Copse',
-    GIT_COMMITTER_EMAIL: 'copse@localhost',
-  }
-
   try {
+    // The throwaway index is allocated where git runs (a remote workspace
+    // cannot use a client-local path), then the shared snapshot does the rest.
     tempIndex = await createTemporaryGitIndex(root)
-    env['GIT_INDEX_FILE'] = tempIndex.path
-    const run = (args: string[]): Promise<{ stdout: string; code: number }> =>
-      runCommand('git', args, { cwd: root, env })
-    const head = await runGit(['rev-parse', '--verify', 'HEAD'], root)
-    const hasHead = head.code === 0 && head.stdout.trim() !== ''
-    // Seed the throwaway index from HEAD so deletions show up in the snapshot.
-    // A fresh repo (no HEAD) starts from an empty index instead.
-    if (hasHead && (await run(['read-tree', 'HEAD'])).code !== 0) return null
-    if ((await run(['add', '-A'])).code !== 0) return null
-    const tree = (await run(['write-tree'])).stdout.trim()
-    if (!tree) return null
-    const commitArgs = ['commit-tree', tree, '-m', `copse backup: ${label}`]
-    if (hasHead) commitArgs.push('-p', head.stdout.trim())
-    const commit = (await run(commitArgs)).stdout.trim()
-    if (!commit) return null
+    const run = async (args: string[], env?: Record<string, string>): Promise<string> => {
+      const result = await runCommand('git', args, { cwd: root, env: { ...env } })
+      if (result.code !== 0) throw new Error(`git ${args[0] ?? ''} failed (${String(result.code)})`)
+      return result.stdout.trim()
+    }
+    const snapshot = await snapshotWorkingTree(run, {
+      message: `copse backup: ${label}`,
+      identity: { name: 'Copse', email: 'copse@localhost' },
+      indexPath: tempIndex.path,
+    })
     const ref = `refs/copse/backups/${String(Date.now())}`
-    if ((await runGit(['update-ref', ref, commit], root)).code !== 0) return null
+    if ((await runGit(['update-ref', ref, snapshot.sha], root)).code !== 0) return null
     return ref
   } catch {
     return null

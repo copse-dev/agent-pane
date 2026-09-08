@@ -600,6 +600,26 @@ guarantee, and the record must say so.
   hold the result; a stop asked for before the container exists reaches the runner as a
   signal it checks before and after `docker run`; and follow-ups are applied one at a
   time per checkout, so two pressed together cannot abort each other's pick.
+- **A15 — one resolution of the model for desktop and guest.** From the review of A14:
+  the container resolved providers on its own (`container-provider.ts`), a narrower copy
+  of the desktop's `buildProvider` that lost the user's tuned parameters, OpenRouter's
+  privacy routing and the OpenAI transport choices, and the worker hard-coded a 128k
+  context window. Now the desktop resolves a selection once into a description
+  (`describeProvider` → `ProviderDescription`: protocol, endpoint, tuned parameters, the
+  privacy and transport settings; keys apart), builds its own client from it, and the
+  container carries the same description into the guest in `run.json` with the context
+  window the desktop would trim against; the guest builds the same client from it
+  (`buildProviderFromDescription`, settings-free). The one thing the container changes is
+  the endpoint's name when it is a server on the desktop's loopback, and LM Studio's own
+  WebSocket transport becomes the OpenAI-compatible endpoint it also is, since the guest
+  proxy carries HTTP only. The description's schema is its type, as the supervisor's task
+  schema is. Two smaller consolidations from the same review: the working-tree snapshot
+  (throwaway index → tree → commit) that the carry-in, the worktree backup and the remote
+  e2e push had each written out lives once in `git-snapshot.ts` over an injected git, and
+  the follow-up's cherry-pick is serialized per checkout through the thread store's
+  `runSerialized` rather than a mutex of its own; and `runHeadlessAgent` returns the
+  turn's own `turnOutcome`, so the worker reports a failed turn from the loop's verdict
+  instead of reconstructing one from the chunks.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:

@@ -1,23 +1,20 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { StreamChunk } from '@shared/types'
+import type { TurnOutcome } from '@shared/types'
 import { countTokens, failedTurn, newTokenTally, tokensUsed } from './guest-turn.ts'
 
 const outcome = (
   status: 'completed' | 'failed' | 'cancelled',
-  extra: Partial<Extract<StreamChunk, { type: 'turn_outcome' }>['outcome']> = {},
-): StreamChunk => ({
-  type: 'turn_outcome',
-  outcome: {
-    status,
-    stopReason: status === 'failed' ? 'error' : 'end_turn',
-    source: 'provider',
-    executor: 'acp',
-    provider: 'codex-acp',
-    model: 'acp:codex-acp',
-    endedAt: 1,
-    ...extra,
-  },
+  extra: Partial<TurnOutcome> = {},
+): TurnOutcome => ({
+  status,
+  stopReason: status === 'failed' ? 'error' : 'end_turn',
+  source: 'provider',
+  executor: 'acp',
+  provider: 'codex-acp',
+  model: 'acp:codex-acp',
+  endedAt: 1,
+  ...extra,
 })
 
 describe('failedTurn', () => {
@@ -33,11 +30,10 @@ describe('failedTurn', () => {
     assert.equal(failedTurn(outcome('failed')), "the agent's turn failed (error)")
   })
 
-  it('is silent for a turn that completed, was cancelled, or any other chunk', () => {
+  it('is silent for a turn that completed, was cancelled, or recorded no outcome', () => {
     assert.equal(failedTurn(outcome('completed')), null)
     assert.equal(failedTurn(outcome('cancelled')), null)
-    assert.equal(failedTurn({ type: 'text', text: 'hi' }), null)
-    assert.equal(failedTurn({ type: 'done' }), null)
+    assert.equal(failedTurn(undefined), null)
   })
 })
 

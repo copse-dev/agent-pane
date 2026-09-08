@@ -15,7 +15,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { createLocalOpenAIProvider } from '@copse/llm/create-provider.ts'
+import {
+  buildProviderFromDescription,
+  decodeProviderDescription,
+  providerEndpointUrl,
+  type ProviderDescription,
+} from '../providers/provider-description.ts'
 import { runHeadlessAgent } from '../headless-agent-host.ts'
 import {
   declareContainerRuntime,
@@ -100,8 +105,16 @@ const specSchema = z.object({
   projectId: z.string().min(1),
   prompt: z.string().min(1),
   model: z.string().min(1),
-  providerUrl: z.url().nullable(),
-  productProvider: z.object({ apiKeySlug: z.string().min(1) }).nullable(),
+  provider: z
+    .unknown()
+    .transform((value, context): ProviderDescription => {
+      const description = decodeProviderDescription(value)
+      if (description !== null) return description
+      context.addIssue({ code: 'custom', message: 'not a provider description' })
+      return z.NEVER
+    })
+    .nullable(),
+  contextWindow: z.number().int().positive().nullable(),
   apiKeyEnv: z.string().min(1).nullable(),
   acp: z
     .object({
@@ -149,6 +162,9 @@ function harnessFromSpec(acp: NonNullable<Spec['acp']>): ThreadContainerAcpHarne
 }
 
 type StopReason = 'completed' | 'budget:wall-clock' | 'budget:tokens' | 'aborted' | 'error'
+
+/** When the spec carries no window: the broad cloud floor the desktop falls back to. */
+const DEFAULT_GUEST_CONTEXT_WINDOW = 128_000
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim()
@@ -490,11 +506,6 @@ async function main(): Promise<void> {
               }
             : {}),
         },
-        // Product-resolved providers (Anthropic) find their key here; nothing
-        // else from the host's settings or environment is in the guest.
-        ...(spec.productProvider !== null
-          ? { apiKeys: { [spec.productProvider.apiKeySlug]: apiKey } }
-          : {}),
         enabledPluginIds: [],
         toolAvailability: { rg: true, git: true, gh: false },
         loadMcpServers: false,
@@ -527,13 +538,6 @@ async function main(): Promise<void> {
         signal: controller.signal,
         onChunk: (chunk) => {
           progress.handle(chunk)
-          // A failed turn comes back as a chunk, not a rejection; without
-          // this the run would report completed with whatever it had.
-          const failure = failedTurn(chunk)
-          if (failure !== null && stop.reason === 'completed') {
-            stop.reason = 'error'
-            errorText = failure
-          }
           // The ceiling binds on the agent's live context report as well as
           // on usage, which an ACP harness only sends once the turn is over.
           countTokens(tokens, chunk)
@@ -543,16 +547,30 @@ async function main(): Promise<void> {
           }
         },
       },
-      spec.providerUrl !== null
+      // The desktop's own resolution of the model, built here from its
+      // description with the run's one key; the guest has no settings to
+      // resolve anything from. The endpoint's host counts as approved: the
+      // desktop admitted it to the allowlist when it described the provider.
+      spec.provider !== null
         ? {
-            provider: createLocalOpenAIProvider(spec.providerUrl, spec.model, apiKey || 'copse'),
-            contextWindow: 128_000,
+            provider: buildProviderFromDescription(spec.provider, {
+              apiKey: apiKey || null,
+              approvedHosts: [new URL(providerEndpointUrl(spec.provider)).hostname],
+            }),
+            contextWindow: spec.contextWindow ?? DEFAULT_GUEST_CONTEXT_WINDOW,
           }
         : {},
     )
     messages = result.messages
     chunks = result.chunks
     toolNames = result.toolNames
+    // A failed turn comes back as the result's outcome, not a rejection;
+    // without this the run would report completed with whatever it had.
+    const failure = failedTurn(result.turnOutcome)
+    if (failure !== null && stop.reason === 'completed') {
+      stop.reason = 'error'
+      errorText = failure
+    }
   } catch (error) {
     if (stop.reason === 'completed') {
       stop.reason = 'error'

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
-import { setApiKey, setSetting } from '../storage/settings.test-shim.ts'
+import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.test-shim.ts'
 import { storageSet } from '../storage/storage.ts'
 import { ContainerRunService, judgeRun, phaseFromLog } from './container-run-service.ts'
 import type { loadRunForContinuation } from './thread-container.ts'
@@ -174,8 +174,9 @@ describe('ContainerRunService', () => {
     assert.equal(request.workspace, root)
     assert.equal(request.threadId, THREAD, 'the record names the desktop thread, for follow-ups')
     assert.equal(request.prompt, 'Fix the lint backlog')
-    assert.deepEqual(request.productProvider, { apiKeySlug: 'anthropic' })
-    assert.equal(request.providerUrl, undefined)
+    assert.equal(request.provider?.kind, 'anthropic')
+    assert.equal(request.provider.model, 'claude-sonnet-4-6')
+    assert.equal(request.contextWindow, 1_000_000)
     // The key was present for `docker run` and blanked once the guest held it.
     assert.deepEqual(keyValues, ['sk-ant-test', ''])
     assert.ok(request.apiKeyEnv && !request.apiKeyEnv.includes('sk-ant'))
@@ -300,8 +301,7 @@ describe('ContainerRunService', () => {
     const request = seen[0]
     assert.ok(request)
     assert.equal(request.model, 'acp:claude-acp#claude-opus-5')
-    assert.equal(request.providerUrl, undefined)
-    assert.equal(request.productProvider, undefined)
+    assert.equal(request.provider, undefined)
     assert.ok(request.acp)
     assert.equal(request.acp.agent.id, 'claude-acp')
     assert.equal(request.acp.keyEnvName, 'ANTHROPIC_API_KEY')
@@ -417,7 +417,8 @@ describe('ContainerRunService', () => {
     await waitFor(service, 'loopback', (p) => p.phase === 'finished')
     const request = seen[0]
     assert.ok(request)
-    assert.equal(request.providerUrl, 'http://model.copse.internal:1234/v1')
+    assert.equal(request.provider?.kind, 'openai-compatible')
+    assert.equal(request.provider.url, 'http://model.copse.internal:1234/v1')
     assert.deepEqual(request.egressResolve, { 'model.copse.internal': '127.0.0.1' })
   })
 
@@ -528,7 +529,11 @@ describe('ContainerRunService', () => {
     }
     await assert.rejects(service.start({ ...base, model: 'claude-sonnet-4-6' }), /SSH host/)
     storageSet('projects', [{ id: PROJECT, path: root }])
-    await assert.rejects(service.start({ ...base, model: 'mystery' }), /cannot resolve/)
+    // An id no provider claims goes wherever a key exists, as it does on the
+    // desktop; without one there is nowhere for it to go.
+    deleteApiKey('anthropic')
+    deleteApiKey('openai')
+    await assert.rejects(service.start({ ...base, model: 'mystery' }), /cannot resolve a provider/)
     assert.equal(service.get(THREAD), null)
   })
 })

@@ -130,11 +130,23 @@ async function main(): Promise<void> {
   }
   const apiKeyEnv = cli.one('api-key-env')
   const maxSteps = cli.one('max-steps')
+  const model = required(cli.one('model') ?? process.env['COPSE_MODEL'], '--model')
   const record = await runThreadInContainer({
     workspace: cli.one('workspace') ?? process.cwd(),
     prompt: required(cli.one('prompt'), '--prompt'),
-    model: required(cli.one('model') ?? process.env['COPSE_MODEL'], '--model'),
-    providerUrl,
+    model,
+    // The CLI names an OpenAI-compatible endpoint directly; a key, when
+    // given, travels through `apiKeyEnv` as it does for the app's runs.
+    provider: {
+      kind: 'openai-compatible',
+      model,
+      apiKeySlug: 'cli',
+      url: providerUrl,
+      label: 'the --provider-url endpoint',
+      local: true,
+      includeUsage: true,
+      params: {},
+    },
     ...(apiKeyEnv ? { apiKeyEnv } : {}),
     budgets: {
       wallClockMs: Number(cli.one('ttl') ?? '120') * 60_000,

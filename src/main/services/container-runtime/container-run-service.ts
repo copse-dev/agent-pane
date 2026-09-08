@@ -258,7 +258,9 @@ export class ContainerRunService {
         ? this.continuationOf(request.threadId, request.continueFrom)
         : null
     const model = request.model
-    const plan = resolveContainerProvider(model, { useAgentLogin: request.useAgentLogin === true })
+    const plan = await resolveContainerProvider(model, {
+      useAgentLogin: request.useAgentLogin === true,
+    })
     const credential: ContainerRunProgress['credential'] =
       plan.mode === 'acp' && plan.harness.login ? 'login' : plan.apiKey ? 'key' : 'none'
     // The registry and GitHub are reachable when the run installs (A9, A11);
@@ -379,7 +381,7 @@ export class ContainerRunService {
 
   private async drive(
     request: ContainerRunRequest,
-    plan: ReturnType<typeof resolveContainerProvider>,
+    plan: Awaited<ReturnType<typeof resolveContainerProvider>>,
     workspace: string,
     progress: ContainerRunProgress,
     continuation: RunContinuation | null,
@@ -414,14 +416,13 @@ export class ContainerRunService {
           : request.prompt.trim(),
         ...(continuation ? { carryInRef: continuation.ref } : {}),
         model: plan.model,
-        ...(plan.mode === 'openai-compatible'
+        ...(plan.mode === 'provider'
           ? {
-              providerUrl: plan.url,
+              provider: plan.provider,
+              contextWindow: plan.contextWindow,
               ...(plan.egressResolve ? { egressResolve: plan.egressResolve } : {}),
             }
-          : plan.mode === 'product'
-            ? { productProvider: { apiKeySlug: plan.apiKeySlug } }
-            : { acp: plan.harness }),
+          : { acp: plan.harness }),
         ...(apiKey ? { apiKeyEnv: keyEnv } : {}),
         budgets: request.budgets,
         ...(request.installDependencies === true ? { installDependencies: true } : {}),

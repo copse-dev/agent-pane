@@ -1634,10 +1634,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Why each model could not run in a container, or null when it could — the
   // resolver's own answer, so the dialog's greyed rows never disagree with a
   // refused start about which key counts (Settings or the environment).
-  ipcMain.handle('container:model-availability', (event, models: unknown) => {
+  ipcMain.handle('container:model-availability', async (event, models: unknown) => {
     assertMainFrameSender(event, win)
     const list = parseIpcArgs(z.array(zNonEmptyString.max(256)).max(512), [models])
-    return Object.fromEntries(list.map((model) => [model, explainContainerModel(model)]))
+    const verdicts = await Promise.all(list.map((model) => explainContainerModel(model)))
+    return Object.fromEntries(list.map((model, index) => [model, verdicts[index]]))
   })
   ipcMain.handle('container:get-run', (event, threadId: unknown) => {
     assertMainFrameSender(event, win)
