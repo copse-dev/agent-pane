@@ -6,6 +6,7 @@ import {
   isEditTool,
   buildReviewPrompt,
   parseReviewVerdict,
+  proseRequestsFollowUp,
   REVIEW_SYSTEM_PROMPT,
 } from './review-subagent.ts'
 
@@ -86,5 +87,95 @@ REVIEW_JSON: {"issuesFound":true,"requestFollowUp":true,"todoUpdates":[{"id":"t1
   it('instructs the model to stay read-only', () => {
     assert.match(REVIEW_SYSTEM_PROMPT, /read-only/i)
     assert.match(REVIEW_SYSTEM_PROMPT, /Do NOT write files/i)
+  })
+})
+
+// #2506. The system prompt asks for follow-up on two grounds — "code fixes are
+// needed OR open todos were left incorrectly incomplete" — and only the first
+// was ever inferred. A review that said the work was not done in plain words
+// produced `requestFollowUp: false`, so the remediation loop broke on its first
+// check and the turn ended having been told the work was unfinished.
+describe('an unfinished verdict asks for follow-up', () => {
+  it('reads incompleteness that carries no defect word at all', () => {
+    for (const summary of [
+      'The refactor is incomplete: three call sites still use the old helper.',
+      'This is unfinished — the migration only covers the read path.',
+      'Task not done: the CLI flag was never wired up.',
+      'The plan item is not yet complete.',
+      'Not implemented for the SSH workspace case.',
+      'Two items still need work before this is finished.',
+      'One acceptance criterion remains outstanding.',
+      'Left incomplete: the rollback path.',
+      'Partially implemented — the happy path only.',
+    ]) {
+      assert.equal(proseRequestsFollowUp(summary), true, summary)
+    }
+  })
+
+  it('does not read an approving review as unfinished', () => {
+    // Each of these contains a word the pattern matches, while saying the
+    // opposite. Firing here would spend a remediation turn arguing with a
+    // reviewer that already agreed.
+    for (const summary of [
+      'Looks correct; nothing incomplete and no todos remaining.',
+      'No unfinished work — the plan is reconciled.',
+      'None of the plan items remain outstanding.',
+      'The changes look correct and the plan is reconciled.',
+      'Clean diff, tests updated alongside.',
+    ]) {
+      assert.equal(proseRequestsFollowUp(summary), false, summary)
+    }
+  })
+
+  it('still reads a defect as follow-up, unchanged', () => {
+    assert.equal(proseRequestsFollowUp('Likely bug in the retry path.'), true)
+    assert.equal(proseRequestsFollowUp('Missing null check on the parsed id.'), true)
+  })
+
+  it('asks for follow-up on free-text incompleteness, without claiming a defect', () => {
+    // `issuesFound` drives the review card's badge, and an unfinished-but-correct
+    // diff has not found a bug. The two flags are deliberately not the same.
+    const verdict = parseReviewVerdict('The task is incomplete: the CLI flag was never wired up.')
+    assert.equal(verdict.requestFollowUp, true)
+    assert.equal(verdict.issuesFound, false)
+    assert.equal(verdict.followUpPrompt, 'The task is incomplete: the CLI flag was never wired up.')
+  })
+
+  it('carries the prose into the follow-up prompt so the parent is told why', () => {
+    // Without this the remediation nudge is the generic one and the parent never
+    // learns what the reviewer said was missing.
+    const verdict = parseReviewVerdict('Not done: the rollback path is still a stub.')
+    assert.equal(verdict.followUpPrompt, 'Not done: the rollback path is still a stub.')
+  })
+
+  it('infers follow-up from the prose when the JSON omits the flag', () => {
+    const verdict = parseReviewVerdict(
+      [
+        'The migration is incomplete — two call sites remain.',
+        'REVIEW_JSON: {"issuesFound":false}',
+      ].join('\n'),
+    )
+    assert.equal(verdict.requestFollowUp, true)
+    assert.equal(verdict.issuesFound, false)
+  })
+
+  it('honours an explicit requestFollowUp:false even when the prose sounds unfinished', () => {
+    // The reviewer said no. A structured decision is not something to second-guess
+    // with a regex.
+    const verdict = parseReviewVerdict(
+      [
+        'Some items are incomplete but intentionally deferred.',
+        'REVIEW_JSON: {"issuesFound":false,"requestFollowUp":false}',
+      ].join('\n'),
+    )
+    assert.equal(verdict.requestFollowUp, false)
+  })
+
+  it('leaves an approving structured verdict alone', () => {
+    const verdict = parseReviewVerdict(
+      ['Looks good, plan reconciled.', 'REVIEW_JSON: {"issuesFound":false}'].join('\n'),
+    )
+    assert.equal(verdict.requestFollowUp, false)
+    assert.equal(verdict.issuesFound, false)
   })
 })

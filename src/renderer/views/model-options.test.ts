@@ -20,6 +20,7 @@ interface MockOpts {
   openRouterModels?: Array<{ id: string; name: string }>
   cursorCloudModels?: Array<{ id: string; label: string }>
   lmStudioModels?: string[]
+  lmStudioModelInfo?: Array<{ id: string; supportsImages?: boolean; embedding?: boolean }>
   openRouterModelSetting?: string
   openRouterZdrOnlySetting?: boolean
   openRouterAllowTrainingSetting?: boolean
@@ -88,6 +89,9 @@ function mockApi(opts: MockOpts = {}): ApiClient {
       lmStudio: {
         ...base['lmStudio'],
         models: async () => opts.lmStudioModels ?? [],
+        ...(opts.lmStudioModelInfo === undefined
+          ? {}
+          : { modelInfo: async () => opts.lmStudioModelInfo ?? [] }),
       },
       plugins: {
         ...base['plugins'],
@@ -785,5 +789,55 @@ describe('role pickers and the safety default', () => {
     assert.ok(options.some((o) => o.value === 'auto:best-local'))
     // Pointing a role at a role is circular.
     assert.ok(!options.some((o) => o.value.startsWith('auto:role:')))
+  })
+})
+
+// #2487. `text-embedding-nomic-embed-text-v1.5` was listed alongside the chat
+// models. It has no chat completion, so picking it — as the chat model or as a
+// comparison reviewer — produces a run that cannot start, and nothing on the row
+// said so.
+describe('embedding models are not offered', () => {
+  it('drops a model the server flagged as an embedding model', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        lmStudioModelInfo: [
+          { id: 'text-embedding-nomic-embed-text-v1.5', embedding: true },
+          { id: 'qwen3-coder-30b' },
+        ],
+      }),
+      '',
+    )
+    const local = options.filter((o) => o.value.startsWith('lmstudio:')).map((o) => o.value)
+    assert.deepEqual(local, ['lmstudio:qwen3-coder-30b'])
+  })
+
+  it('keeps every model the server did not flag', async () => {
+    // The flag is the only thing that hides a row here; the picker does not
+    // second-guess the list it was given.
+    const options = await fetchModelOptions(
+      mockApi({
+        lmStudioModelInfo: [{ id: 'qwen3-coder-30b' }, { id: 'llama-3.3-70b-instruct' }],
+      }),
+      '',
+    )
+    const local = options.filter((o) => o.value.startsWith('lmstudio:')).map((o) => o.value)
+    assert.deepEqual(local, ['lmstudio:qwen3-coder-30b', 'lmstudio:llama-3.3-70b-instruct'])
+  })
+
+  it('still surfaces a flagged model that is the current selection', async () => {
+    // Hiding the row would leave the picker showing a value it does not list, so
+    // the "not available" fallback below the loop is what the user sees instead.
+    const options = await fetchModelOptions(
+      mockApi({
+        lmStudioModelInfo: [
+          { id: 'text-embedding-nomic-embed-text-v1.5', embedding: true },
+          { id: 'qwen3-coder-30b' },
+        ],
+      }),
+      'lmstudio:text-embedding-nomic-embed-text-v1.5',
+    )
+    const row = options.find((o) => o.value === 'lmstudio:text-embedding-nomic-embed-text-v1.5')
+    assert.ok(row, 'the current selection must stay visible')
+    assert.match(row.label, /not available/i)
   })
 })
