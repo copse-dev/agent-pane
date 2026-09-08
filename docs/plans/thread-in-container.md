@@ -590,13 +590,16 @@ guarantee, and the record must say so.
   bundles `refs/heads/work` pointed at HEAD, so a branch the agent made comes back whole
   (`guest-carry-out.ts`); a failed turn is a `turn_outcome` chunk, not a rejection, and is
   reported as one (`guest-turn.ts`); the token ceiling binds on the agent's live context
-  report as well as on usage, which an ACP agent sends only after the turn; a server on
-  the desktop's loopback is given a guest-facing name the broker resolves, since the
-  guest's loopback bypasses its proxy by design (`guestFacingEndpoint`); the record names
-  the desktop thread, not the guest's, so a follow-up from disk is accepted; the proxy's
-  close destroys the tunnels it holds, so a pooled connection cannot hold the result; and
-  a stop asked for before the container exists reaches the runner as a signal it checks
-  before and after `docker run`.
+  reports as well as on usage, which an ACP agent sends only after the turn — summed over
+  calls, since each report is the context one call was given and the ceiling is a limit
+  on spending, not on size; a server on the desktop's loopback is given a guest-facing
+  name the broker resolves, since the guest's loopback bypasses its proxy by design
+  (`guestFacingEndpoint`); the record names the desktop thread, not the guest's, so a
+  follow-up from disk is accepted; the proxy holds every client from the CONNECT on and
+  destroys them on close, so neither a pooled connection nor a dial still in flight can
+  hold the result; a stop asked for before the container exists reaches the runner as a
+  signal it checks before and after `docker run`; and follow-ups are applied one at a
+  time per checkout, so two pressed together cannot abort each other's pick.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:

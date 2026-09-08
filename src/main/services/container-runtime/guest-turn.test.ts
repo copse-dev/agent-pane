@@ -42,7 +42,7 @@ describe('failedTurn', () => {
 })
 
 describe('token tally', () => {
-  it('sums usage and takes the most the agent reported holding', () => {
+  it("sums usage, and the agent's context reports as the input each call cost", () => {
     const tally = newTokenTally()
     countTokens(tally, { type: 'usage', model: 'm', inputTokens: 100, outputTokens: 20 })
     countTokens(tally, { type: 'usage', model: 'm', inputTokens: 50, outputTokens: 5 })
@@ -59,9 +59,16 @@ describe('token tally', () => {
     }
     pressure(900, false)
     assert.equal(tokensUsed(tally), 175, "Copse's own estimate is not the agent's word")
-    pressure(600, true)
-    assert.equal(tokensUsed(tally), 600)
-    pressure(300, true)
-    assert.equal(tokensUsed(tally), 600, 'a smaller later report does not lower it')
+    // Four calls on a growing context: what they cost is their sum, not the
+    // largest of them — a ceiling of 100k has to stop 40k+45k+50k+55k.
+    pressure(40_000, true)
+    pressure(45_000, true)
+    pressure(45_000, true)
+    assert.equal(tokensUsed(tally), 85_000, 'a repeated report is the same call again')
+    pressure(50_000, true)
+    pressure(55_000, true)
+    assert.equal(tokensUsed(tally), 190_000)
+    pressure(20_000, true)
+    assert.equal(tokensUsed(tally), 210_000, 'a call after compaction still costs its context')
   })
 })

@@ -539,11 +539,35 @@ export interface CarryOutAdoption {
  * of duplicate commits. A conflict aborts the whole pick and is reported; the
  * checkout is left as it was.
  */
-export async function adoptCarryOut(
+export function adoptCarryOut(
   workspace: string,
   ref: string,
   base: string,
 ): Promise<CarryOutAdoption> {
+  // One pick at a time per checkout. Two follow-ups pressed together would
+  // otherwise both run against the same index, and the one that failed would
+  // `cherry-pick --abort` the other's pick as well as its own.
+  const key = resolve(workspace)
+  const previous = adoptions.get(key) ?? Promise.resolve()
+  const turn = previous.then(
+    () => adoptOnce(workspace, ref, base),
+    () => adoptOnce(workspace, ref, base),
+  )
+  const settled = turn.then(
+    () => undefined,
+    () => undefined,
+  )
+  adoptions.set(key, settled)
+  void settled.then(() => {
+    if (adoptions.get(key) === settled) adoptions.delete(key)
+  })
+  return turn
+}
+
+/** The pick in flight, or just finished, for each checkout; see {@link adoptCarryOut}. */
+const adoptions = new Map<string, Promise<void>>()
+
+async function adoptOnce(workspace: string, ref: string, base: string): Promise<CarryOutAdoption> {
   const dirty = await git(workspace, ['status', '--porcelain', '--untracked-files=no'])
   if (dirty.length > 0) {
     throw new Error(

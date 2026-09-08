@@ -190,6 +190,49 @@ describe('guest egress proxy', () => {
     assert.equal(socket.destroyed, true, "the client's end of the tunnel is gone too")
   })
 
+  it('closes while a CONNECT is still being dialled, and refuses the tunnel if it opens after', async () => {
+    // A link nobody answers: the dial stays pending for as long as the test
+    // likes, which is a slow resolver or a far origin from the proxy's side.
+    const unanswered = new EgressLink(new PassThrough(), new PassThrough())
+    const own = await startGuestEgressProxy(unanswered, { host: '127.0.0.1', port: 0 })
+    const socket = connect(own.address.port, own.address.host)
+    let received = ''
+    socket.on('data', (chunk: Buffer) => {
+      received += chunk.toString('utf8')
+    })
+    socket.on('error', () => {
+      // Reset by the close below; that is the point.
+    })
+    await new Promise<void>((resolveConnected) => {
+      socket.once('connect', () => {
+        socket.write(
+          'CONNECT model.copse.internal:443 HTTP/1.1\r\nHost: model.copse.internal\r\n\r\n',
+        )
+        resolveConnected()
+      })
+    })
+    // Let the CONNECT reach the proxy and start its dial.
+    await new Promise((resolveTick) => setTimeout(resolveTick, 50))
+    const outcome = await Promise.race([
+      own.close().then(() => 'closed' as const),
+      new Promise<'hung'>((resolveHung) => {
+        setTimeout(() => {
+          resolveHung('hung')
+        }, 2_000)
+      }),
+    ])
+    assert.equal(outcome, 'closed')
+    await new Promise<void>((resolveClosed) => {
+      if (socket.destroyed) resolveClosed()
+      else {
+        socket.once('close', () => {
+          resolveClosed()
+        })
+      }
+    })
+    assert.equal(received.includes('200 Connection Established'), false)
+  })
+
   it('answers 403 with the broker reason for a target the allowlist refuses', async () => {
     const result = await new Promise<{ status: number; text: string }>((resolveRequest, reject) => {
       const req = httpRequest(

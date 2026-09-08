@@ -286,6 +286,29 @@ describe('adoptCarryOut', () => {
     }
   })
 
+  it('applies two follow-ups pressed together one after the other, both whole', async () => {
+    // Overlapping picks against one index would share it, and the one that
+    // failed would abort the other's; the second waits for the first.
+    const repo = initRepo()
+    try {
+      const base = git(repo, ['rev-parse', 'HEAD'])
+      runOnRef(repo, base, 'refs/copse/runs/run-c', ['one.txt', 'two.txt'])
+      runOnRef(repo, base, 'refs/copse/runs/run-d', ['three.txt', 'four.txt'])
+      const [first, second] = await Promise.all([
+        adoptCarryOut(repo, 'refs/copse/runs/run-c', base),
+        adoptCarryOut(repo, 'refs/copse/runs/run-d', base),
+      ])
+      assert.equal(first.applied.length, 2)
+      assert.equal(second.applied.length, 2)
+      for (const file of ['one.txt', 'two.txt', 'three.txt', 'four.txt']) {
+        assert.equal(git(repo, ['show', `HEAD:${file}`]), file)
+      }
+      assert.equal(git(repo, ['status', '--porcelain']), '')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   it('refuses a dirty checkout and leaves a conflicting pick aborted', async () => {
     const repo = initRepo()
     try {

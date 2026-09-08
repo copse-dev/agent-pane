@@ -138,6 +138,7 @@ export function startGuestEgressProxy(
   // its tunnel up (an SDK's pooled connection) would otherwise hold `close`
   // — and with it the worker's result — until it chose to hang up.
   const held = new Set<Duplex>()
+  let closing = false
   const hold = (...sockets: Duplex[]): void => {
     for (const socket of sockets) {
       held.add(socket)
@@ -162,9 +163,18 @@ export function startGuestEgressProxy(
       client.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n')
       return
     }
+    // Held from here, not from when the tunnel is up: the socket left the
+    // server's own books at the upgrade, and a close during the dial would
+    // otherwise wait on a client the dial's outcome may never reach.
+    hold(client)
     openTunnel(link, target.host, target.port).then(
       (tunnel) => {
-        hold(client, tunnel)
+        if (closing || client.destroyed) {
+          tunnel.destroy()
+          client.destroy()
+          return
+        }
+        hold(tunnel)
         client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
         if (head.length > 0) tunnel.write(head)
         pipeBoth(client, tunnel)
@@ -198,8 +208,14 @@ export function startGuestEgressProxy(
       return
     }
     const client = request.socket
+    hold(client)
     openTunnel(link, target.host, target.port).then(
       (tunnel) => {
+        if (closing || client.destroyed) {
+          tunnel.destroy()
+          client.destroy()
+          return
+        }
         // The head, rebuilt: origin-form path, hop-by-hop headers dropped, one
         // response per connection so the origin closes when it is done.
         const lines = [`${request.method ?? 'GET'} ${target.path} HTTP/1.1`]
@@ -230,7 +246,7 @@ export function startGuestEgressProxy(
         })
         // The response goes back on the raw socket; the origin's own status
         // line and headers are what the client should see.
-        hold(client, tunnel)
+        hold(tunnel)
         response.detachSocket(client)
         tunnel.pipe(client)
         const drop = (): void => {
@@ -268,6 +284,7 @@ export function startGuestEgressProxy(
         address: { host: listen.host, port },
         close: () =>
           new Promise<void>((resolveClose) => {
+            closing = true
             server.close(() => {
               resolveClose()
             })

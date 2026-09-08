@@ -29,12 +29,22 @@ export interface TokenTally {
   /** Summed from the usage chunks the turn reported. */
   inputTokens: number
   outputTokens: number
-  /** The most the agent said its context held, when it said so at all. */
+  /**
+   * What the agent's context reports add up to, as spending: each report is
+   * the context one model call was given, so the sum over calls is the input
+   * the turn has cost so far — the ceiling is a spending limit, not a size
+   * limit, and a turn of many calls on a modest context is the case it has
+   * to catch. A report that repeats the last one is the same call reported
+   * again (a heartbeat, a tool result on the same context), not a new one,
+   * and is not added.
+   */
   contextTokens: number
+  /** The last context report, to tell a new call from a repeat. */
+  lastContextReport: number | null
 }
 
 export function newTokenTally(): TokenTally {
-  return { inputTokens: 0, outputTokens: 0, contextTokens: 0 }
+  return { inputTokens: 0, outputTokens: 0, contextTokens: 0, lastContextReport: null }
 }
 
 /** Fold one chunk into the tally. */
@@ -43,13 +53,19 @@ export function countTokens(tally: TokenTally, chunk: StreamChunk): void {
     tally.inputTokens += chunk.inputTokens
     tally.outputTokens += chunk.outputTokens
   } else if (chunk.type === 'context_pressure' && chunk.source === 'agent-reported') {
-    tally.contextTokens = Math.max(tally.contextTokens, chunk.conversationTokens)
+    if (chunk.conversationTokens !== tally.lastContextReport) {
+      tally.contextTokens += chunk.conversationTokens
+      tally.lastContextReport = chunk.conversationTokens
+    }
   }
 }
 
 /**
  * Tokens the run has used, as far as the guest can tell: the usage it was
- * told, or the context the agent reports holding, whichever says more.
+ * told, or what the agent's context reports add up to, whichever says more.
+ * An estimate on the agent side — the agent's own accounting arrives with
+ * the usage chunk once the turn is over — but one that grows with every
+ * model call, which is what a ceiling on spending has to follow.
  */
 export function tokensUsed(tally: TokenTally): number {
   return Math.max(tally.inputTokens + tally.outputTokens, tally.contextTokens)
