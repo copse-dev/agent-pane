@@ -5,6 +5,7 @@ import { dirname, join, relative, sep } from 'node:path'
 import { formatByteSize } from '@shared/file-bytes.ts'
 import { isUnsafeEntryPath, readZipDirectory, readZipEntry } from '../storage/zip-reader.ts'
 import { threadBlobsDir } from '../thread-store.ts'
+import { runSerialized } from '../storage/write-queue.ts'
 
 /**
  * Unpack a zip into the thread that asked for it, so the agent can then read it
@@ -129,6 +130,13 @@ export async function extractArchiveForThread(
     ARCHIVES_DIR,
     `${sanitizeName(input.name)}-${digest}`,
   )
+  return runSerialized(root, () => extractArchiveInto(input, root))
+}
+
+async function extractArchiveInto(
+  input: ExtractArchiveInput,
+  root: string,
+): Promise<ExtractedArchive> {
   if (existsSync(root)) {
     return { root, files: await listExtracted(root), skipped: [], truncated: false, reused: true }
   }
