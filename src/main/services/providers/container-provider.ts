@@ -222,6 +222,8 @@ function forGuest(description: ProviderDescription, url: string): ProviderDescri
         label: 'LM Studio',
         local: true,
         includeUsage: true,
+        apiStyle: null,
+        extraBody: null,
         params: description.params,
       }
     case 'openai-compatible':

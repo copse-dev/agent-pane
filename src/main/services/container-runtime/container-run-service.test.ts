@@ -544,6 +544,9 @@ describe('ContainerRunService checkout resolution', () => {
     // different uncommitted edits: snapshotting the project root would run the
     // wrong branch and lose the thread's work.
     const worktree = join(root, '..', `${PROJECT}-worktree`)
+    // A fixed path beside the temp root: a run that died mid-test leaves it
+    // behind, and `worktree add` refuses a directory that exists.
+    rmSync(worktree, { recursive: true, force: true })
     git(root, ['worktree', 'add', '--quiet', '-b', 'thread/work', worktree])
     writeFileSync(join(worktree, 'thread.txt'), 'thread commit\n')
     git(worktree, ['add', '-A'])

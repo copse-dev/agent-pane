@@ -106,6 +106,8 @@ describe('thread in a container (end to end)', { skip: !ENABLED }, () => {
             label: 'the scripted model',
             local: true,
             includeUsage: true,
+            apiStyle: null,
+            extraBody: null,
             params: {},
           },
           budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 1_000_000 },

@@ -145,6 +145,8 @@ async function main(): Promise<void> {
       label: 'the --provider-url endpoint',
       local: true,
       includeUsage: true,
+      apiStyle: null,
+      extraBody: null,
       params: {},
     },
     ...(apiKeyEnv ? { apiKeyEnv } : {}),

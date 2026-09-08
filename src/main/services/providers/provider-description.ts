@@ -48,7 +48,12 @@ const common = {
   model: z.string().min(1),
   /** Which stored key the description is used with; the key itself travels apart. */
   apiKeySlug: z.string().min(1),
-  params: modelParametersSchema,
+  /**
+   * Typed as the providers take it rather than inferred: zod types an absent
+   * optional as `| undefined`, which exact optional properties refuse where
+   * `ModelParameters` is consumed. The object schema still does the checking.
+   */
+  params: z.custom<ModelParameters>((value) => modelParametersSchema.safeParse(value).success),
 }
 
 export const providerDescriptionSchema = z.discriminatedUnion('kind', [
@@ -64,8 +69,9 @@ export const providerDescriptionSchema = z.discriminatedUnion('kind', [
       /** A local server: usable without a key, usage not reported by default. */
       local: z.boolean(),
       includeUsage: z.boolean(),
-      apiStyle: z.enum(['chat-completions', 'responses']).optional(),
-      extraBody: z.record(z.string(), z.unknown()).optional(),
+      /** Null rather than absent, so the inferred type has no optional to narrow. */
+      apiStyle: z.enum(['chat-completions', 'responses']).nullable(),
+      extraBody: z.record(z.string(), z.unknown()).nullable(),
     })
     .strict(),
   z
@@ -81,42 +87,18 @@ export const providerDescriptionSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('openai'),
       ...common,
-      serviceTier: z.enum(SERVICE_TIERS).optional(),
+      serviceTier: z.enum(SERVICE_TIERS).nullable(),
       forceChatCompletions: z.boolean(),
     })
     .strict(),
 ])
 
-/**
- * Zod types an absent optional as `| undefined`, which the project's exact
- * optional properties refuse where `ModelParameters` is consumed; the values
- * it parses never carry an explicit undefined, so the parameters are declared
- * as the type the providers take.
- */
-type WithModelParameters<D> = D extends { params: unknown }
-  ? Omit<D, 'params'> & { params: ModelParameters }
-  : never
+export type ProviderDescription = z.infer<typeof providerDescriptionSchema>
 
-export type ProviderDescription = WithModelParameters<z.infer<typeof providerDescriptionSchema>>
-
-/** Whether the value is a description, as a type guard; the schema decides. */
-export function isProviderDescription(value: unknown): value is ProviderDescription {
-  return providerDescriptionSchema.safeParse(value).success
-}
-
-/**
- * A description read back from disk, or null when the value is not one.
- * Optional fields an encoder wrote as explicit `undefined` are dropped, so
- * the result holds exactly what the schema admits and nothing else.
- */
+/** A description read back from disk, or null when the value is not one. */
 export function decodeProviderDescription(value: unknown): ProviderDescription | null {
   const parsed = providerDescriptionSchema.safeParse(value)
-  if (!parsed.success) return null
-  const withoutUndefined = (record: object): Record<string, unknown> =>
-    Object.fromEntries(Object.entries(record).filter(([, field]) => field !== undefined))
-  const { params, ...rest } = parsed.data
-  const compact: unknown = { ...withoutUndefined(rest), params: withoutUndefined(params) }
-  return isProviderDescription(compact) ? compact : null
+  return parsed.success ? parsed.data : null
 }
 
 const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com'
@@ -167,8 +149,8 @@ export function buildProviderFromDescription(
           baseUrl: description.url,
           local: description.local,
           includeUsage: description.includeUsage,
-          ...(description.apiStyle !== undefined ? { apiStyle: description.apiStyle } : {}),
-          ...(description.extraBody !== undefined ? { extraBody: description.extraBody } : {}),
+          ...(description.apiStyle !== null ? { apiStyle: description.apiStyle } : {}),
+          ...(description.extraBody !== null ? { extraBody: description.extraBody } : {}),
         },
         description.model,
         apiKey,
@@ -201,9 +183,7 @@ export function buildProviderFromDescription(
         {
           params: description.params,
           forceChatCompletions: description.forceChatCompletions,
-          ...(description.serviceTier !== undefined
-            ? { serviceTier: description.serviceTier }
-            : {}),
+          ...(description.serviceTier !== null ? { serviceTier: description.serviceTier } : {}),
         },
       )
   }

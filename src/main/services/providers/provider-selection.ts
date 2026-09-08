@@ -356,8 +356,8 @@ export async function describeProvider(
       label: extra.label,
       local: extra.local,
       includeUsage: extra.includeUsage ?? !extra.local,
-      ...(extra.apiStyle !== undefined ? { apiStyle: extra.apiStyle } : {}),
-      ...(extra.extraBody !== undefined ? { extraBody: extra.extraBody } : {}),
+      apiStyle: extra.apiStyle ?? null,
+      extraBody: extra.extraBody ?? null,
       params,
     }
   }
@@ -387,7 +387,7 @@ function openAiTransport(): Pick<
   const options = openAiRequestOptions()
   return {
     forceChatCompletions: options.forceChatCompletions === true,
-    ...(options.serviceTier !== undefined ? { serviceTier: options.serviceTier } : {}),
+    serviceTier: options.serviceTier ?? null,
   }
 }
 
