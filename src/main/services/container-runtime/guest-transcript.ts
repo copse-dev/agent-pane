@@ -18,6 +18,7 @@
  */
 import { z } from 'zod'
 import type { StreamChunk, SubagentMessage, ToolCall } from '@shared/types'
+import { planAgentTextChunk, type AgentTextChunkState } from '@copse/agent/agent-text-chunk.ts'
 
 /** Longest tool result carried, in characters; the rest is cut with a note. */
 export const TRANSCRIPT_RESULT_LIMIT = 8_000
@@ -40,33 +41,43 @@ export function foldGuestTranscript(
   const messageLimit = options.messageLimit ?? TRANSCRIPT_MESSAGE_LIMIT
   const resultLimit = options.resultLimit ?? TRANSCRIPT_RESULT_LIMIT
   const messages: SubagentMessage[] = []
-  let current: SubagentMessage | null = null
+  // A holder rather than a bare `let`: `open` below assigns it, which
+  // control-flow narrowing cannot see.
+  const cursor: { current: SubagentMessage | null } = { current: null }
   let sequence = 0
-  // Text after a tool turn opens a new message; tool calls in a row share one,
-  // so a timeline reads as prose, then the tools it led to, then prose.
-  const ensure = (forText: boolean): SubagentMessage => {
-    if (current === null || (forText && current.toolCalls.length > 0)) {
-      sequence += 1
-      current = {
-        id: `guest-${String(sequence)}`,
-        role: 'assistant',
-        content: '',
-        toolCalls: [],
-        createdAt: Date.now(),
-      }
-      messages.push(current)
+  const open = (): SubagentMessage => {
+    sequence += 1
+    const message: SubagentMessage = {
+      id: `guest-${String(sequence)}`,
+      role: 'assistant',
+      content: '',
+      toolCalls: [],
+      createdAt: Date.now(),
     }
-    return current
+    cursor.current = message
+    messages.push(message)
+    return message
   }
+  // Text after a tool turn opens a new message, as the desktop's own stream
+  // does (`planAgentTextChunk`, shared so the two never disagree): an agent
+  // that narrates between commands reads as one message per step, not as one
+  // run-on block, and a sentence a tool call interrupted is not stranded.
+  let textState: AgentTextChunkState = { msgId: null, toolSinceText: false, currentText: '' }
   const byId = new Map<string, ToolCall>()
   for (const chunk of chunks) {
     switch (chunk.type) {
-      case 'text':
-        ensure(true).content += chunk.text
+      case 'text': {
+        const { plan, state } = planAgentTextChunk(textState, chunk.text)
+        if (plan.action === 'ignore') break
+        const message = plan.startNewMessage || cursor.current === null ? open() : cursor.current
+        message.content += plan.text
+        textState = { ...state, msgId: message.id }
         break
+      }
       case 'reasoning': {
-        const message = ensure(true)
+        const message = cursor.current === null || textState.toolSinceText ? open() : cursor.current
         message.reasoning = (message.reasoning ?? '') + chunk.text
+        textState = { ...textState, msgId: message.id, toolSinceText: false }
         break
       }
       case 'tool_call': {
@@ -77,8 +88,10 @@ export function foldGuestTranscript(
           status: 'running',
           result: null,
         }
-        ensure(false).toolCalls.push(toolCall)
+        const message = cursor.current ?? open()
+        message.toolCalls.push(toolCall)
         byId.set(toolCall.id, toolCall)
+        textState = { ...textState, msgId: message.id, toolSinceText: true }
         break
       }
       case 'tool_result': {
@@ -133,6 +146,20 @@ export function foldGuestTranscript(
     },
     ...kept.slice(dropped),
   ]
+}
+
+/**
+ * What the run came to, in the agent's words: the last message with prose,
+ * which is the report the desktop would show last. Not the raw assistant
+ * text of the turn — under an ACP harness that is every narration between
+ * commands run together with nothing between them.
+ */
+export function finalGuestText(messages: readonly SubagentMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const content = messages[index]?.content.trim() ?? ''
+    if (content.length > 0) return content
+  }
+  return ''
 }
 
 const toolCallSchema = z.object({

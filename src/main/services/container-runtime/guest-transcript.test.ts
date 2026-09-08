@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
 import {
   decodeGuestTranscript,
+  finalGuestText,
   foldGuestTranscript,
   relocateGuestPaths,
   relocateTranscript,
@@ -74,6 +75,44 @@ describe('foldGuestTranscript', () => {
         ['error', 'exit 1', null, { command: 'echo t2' }],
       ],
     )
+  })
+
+  it("splits an agent's narration between commands as the desktop does, and reports the last", () => {
+    // Codex narrates a sentence per step with no separator of its own; run
+    // together these read "…environment issues.The worktree is clean…". Each
+    // step is its own message, and the run's final text is the last one.
+    const messages = foldGuestTranscript([
+      { type: 'text', text: "I'll identify today's changes and run the suite." },
+      call('t1', 'run_shell'),
+      { type: 'tool_call_update', toolCallId: 't1', status: 'done', result: 'clean' },
+      { type: 'text', text: 'The worktree is clean; running the oracle.' },
+      call('t2', 'run_shell'),
+      { type: 'text', text: '   ' },
+      { type: 'tool_call_update', toolCallId: 't2', status: 'done', result: 'ok' },
+      { type: 'text', text: 'The smoke spec reproduces the slow handshake.' },
+      { type: 'done' },
+    ])
+    assert.deepEqual(
+      messages.map((m) => [m.content, m.toolCalls.length]),
+      [
+        ["I'll identify today's changes and run the suite.", 1],
+        ['The worktree is clean; running the oracle.', 1],
+        ['The smoke spec reproduces the slow handshake.', 0],
+      ],
+    )
+    assert.equal(finalGuestText(messages), 'The smoke spec reproduces the slow handshake.')
+    // A sentence a tool call interrupted stays whole, as on the desktop.
+    const interrupted = foldGuestTranscript([
+      { type: 'text', text: 'Checking the lint config' },
+      call('t3'),
+      result('t3'),
+      { type: 'text', text: ' and the formatter.' },
+    ])
+    assert.deepEqual(
+      interrupted.map((m) => m.content),
+      ['Checking the lint config and the formatter.'],
+    )
+    assert.equal(finalGuestText([]), '')
   })
 
   it('marks an unanswered tool call as an error and an error result as one', () => {

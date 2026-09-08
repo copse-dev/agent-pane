@@ -600,6 +600,11 @@ guarantee, and the record must say so.
   hold the result; a stop asked for before the container exists reaches the runner as a
   signal it checks before and after `docker run`; and follow-ups are applied one at a
   time per checkout, so two pressed together cannot abort each other's pick.
+  The guest's transcript folds text with the desktop's own `planAgentTextChunk`, so an
+  agent that narrates between commands reads as one message per step rather than one
+  run-on block, and the run's final text is the last of those messages, not the turn's raw
+  assistant text, which under an ACP harness is every narration joined with nothing
+  between.
 - **A15 — one resolution of the model for desktop and guest.** From the review of A14:
   the container resolved providers on its own (`container-provider.ts`), a narrower copy
   of the desktop's `buildProvider` that lost the user's tuned parameters, OpenRouter's

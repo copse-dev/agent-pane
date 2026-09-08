@@ -48,7 +48,7 @@ import { GUEST_EXCLUDED_TOOLS } from './guest-tools.ts'
 import { EgressLink } from './egress-link.ts'
 import { probeBroker, startGuestEgressProxy } from './guest-egress-proxy.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types/index.ts'
-import { foldGuestTranscript } from './guest-transcript.ts'
+import { finalGuestText, foldGuestTranscript } from './guest-transcript.ts'
 import { GuestProgress } from './guest-progress.ts'
 import { bundleCarryOut } from './guest-carry-out.ts'
 import { countTokens, failedTurn, newTokenTally, tokensUsed } from './guest-turn.ts'
@@ -616,10 +616,8 @@ async function main(): Promise<void> {
   writeFileSync(join(outDir, 'messages.json'), `${JSON.stringify(messages, null, 2)}\n`)
   // The run's timeline for the thread that launched it (A13): the stream,
   // folded and bounded, beside the raw history.
-  writeFileSync(
-    join(outDir, 'transcript.json'),
-    `${JSON.stringify(foldGuestTranscript(chunks), null, 2)}\n`,
-  )
+  const transcript = foldGuestTranscript(chunks)
+  writeFileSync(join(outDir, 'transcript.json'), `${JSON.stringify(transcript, null, 2)}\n`)
   writeFileSync(
     join(outDir, 'result.json'),
     `${JSON.stringify(
@@ -635,7 +633,9 @@ async function main(): Promise<void> {
         commits,
         containment: { declared: declineReason === null, declineReason, projectSandbox },
         toolNames,
-        finalText: finalAssistantText(messages),
+        // The agent's last report, as the desktop would show it; the raw
+        // assistant text is the fallback for a stream that carried no prose.
+        finalText: finalGuestText(transcript) || finalAssistantText(messages),
         envKeys: Object.keys(process.env).sort(),
       },
       null,
