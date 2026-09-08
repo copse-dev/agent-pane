@@ -28,15 +28,16 @@ supportedArchitectures:
 
 overrides:
   '@hono/node-server': 2.0.11
+  '@xmldom/xmldom': 0.8.15
   adm-zip: ^0.6.0
   brace-expansion: 5.0.9
   minimatch: 10.2.5
   deepmerge-ts: 8.0.0
   dompurify: ^3.4.13
-  js-yaml@4: 4.3.1
+  js-yaml@4: 4.3.2
   serialize-javascript: ^7.0.7
   tar: ^7.5.22
-  sharp: 0.35.3
+  sharp: 0.35.4
   fast-xml-parser: 5.10.1
   fast-uri: 3.1.6
   hono: 4.12.34
@@ -56,6 +57,7 @@ overrides:
 # (scripts/pnpm-workspace-invariants.test.ts enforces it).
 minimumReleaseAgeExclude:
   - '@hono/node-server'
+  - '@xmldom/xmldom'
   - adm-zip
   - brace-expansion
   - minimatch
