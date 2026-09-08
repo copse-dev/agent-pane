@@ -78,6 +78,31 @@ describe('cached-store (storage read-complexity contract)', () => {
     assert.deepEqual(data.get('key'), { a: 1 }, 'write must reach the backing store')
   })
 
+  it('does not cache a value whose backing write failed, and permits retry', () => {
+    const { backing, data } = countingBacking({ key: 'saved' })
+    let fail = true
+    const store = createCachedStore({
+      ...backing,
+      set(key, value): void {
+        if (fail) throw new Error('disk full')
+        backing.set(key, value)
+      },
+    })
+    assert.equal(store.get('key'), 'saved')
+    assert.throws(() => {
+      store.set('key', 'unsaved')
+    }, /disk full/)
+    assert.equal(store.get('key'), 'saved')
+    assert.throws(() => {
+      store.set('new', 'unsaved')
+    }, /disk full/)
+    assert.equal(store.get('new'), undefined)
+    fail = false
+    store.set('key', 'retried')
+    assert.equal(store.get('key'), 'retried')
+    assert.equal(data.get('key'), 'retried')
+  })
+
   it('returns clones: mutating a read result must not poison later reads', () => {
     // electron-store returned a freshly-parsed object per read; callers may
     // mutate their copy. The cache must preserve that isolation.
