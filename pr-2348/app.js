@@ -263103,7 +263103,7 @@ function mountContainerRunControl(api3, context, onStateChanged) {
     const result = run6.record?.result;
     const fetched = run6.record?.carryOut.ref !== null && run6.record?.carryOut.ref !== void 0;
     const commits = result === void 0 || result === null ? "" : result.commits.length === 0 ? "no commits" : `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}`;
-    const summary = run6.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run6.phase === "failed" ? run6.error ?? "The run did not complete." : `${run6.model} \xB7 reaches only ${run6.egressAllowlist.join(", ")}.`;
+    const summary = run6.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run6.phase === "failed" ? run6.error ?? "The run did not complete." : `${run6.model} \xB7 limited to the egress allowlist.`;
     text4.textContent = `Container run: ${PHASE_LABEL[run6.phase].toLowerCase()}. ${summary}`;
     onStateChanged();
   }
@@ -263960,6 +263960,7 @@ function mountInputBar(root4, store3, api3, opts = {}) {
     footerOverflow?.update();
   });
   let containerRunMounted = false;
+  let targetThreadId = null;
   const containerRun = mountContainerRunControl(
     api3,
     {
@@ -264592,7 +264593,6 @@ ${description}
     stopPendingThreadId = null;
     stopBtn.classList.remove("stop-pending");
   }
-  let targetThreadId = null;
   function updateTargetPicker() {
     if (!containerRunMounted) return;
     const target = containerRun.followUpTarget();
