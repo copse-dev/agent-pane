@@ -283,6 +283,7 @@ export async function registerInternalWorkspaceRoot(
       )
       siblingRoots.push(dirname(siblingDotGit))
     } catch {
+      signal?.throwIfAborted()
       // A stale/prunable sibling cannot grant authority; it needs no extra deny path.
     }
   }
@@ -301,6 +302,9 @@ export async function registerInternalWorkspaceRoot(
     primaryCheckoutRoot,
     siblingRoots: Object.freeze([...new Set(siblingRoots)]),
   })
+  // Cancellation can arrive after the last read or while enumerating siblings.
+  // Never publish a partial deny list after optional discovery has timed out.
+  signal?.throwIfAborted()
   internalWorkspaceRoots.set(canonicalExecutionRoot, registration)
   return registration
 }
