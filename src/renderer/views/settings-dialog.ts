@@ -296,6 +296,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   // P5: the master model-comparison toggle moved to Settings > Plugins
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
@@ -1365,6 +1366,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 When a turn ends with one clearly valuable next move, it appears as placeholder
                 text in the message box — press Tab to accept it, or just type to ignore it.
                 Uses the small-tasks model; most turns show nothing.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Unattended container runs</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="containerRunsEnabled" />
+                Let a thread run unattended inside a disposable Docker container
+              </label>
+              <p class="field-hint">
+                Adds "Run unattended in a container" to the message box menu. The run works on a
+                snapshot of the thread's checkout with no prompts, reaching only its model's
+                origin, and brings its commits back for you to apply. Needs Docker; the first run
+                builds the worker image. A run carries one credential: the model's API key, or,
+                if you opt in per run, your Codex or Gemini sign-in copied into the container.
               </p>
             </fieldset>
 

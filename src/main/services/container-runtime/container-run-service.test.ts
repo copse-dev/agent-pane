@@ -104,6 +104,7 @@ beforeEach(async () => {
   storageSet('activeProjectId', PROJECT)
   setApiKey('anthropic', 'sk-ant-test')
   await setSetting('localServerUrl', '')
+  await setSetting('containerRunsEnabled', true)
 })
 
 process.on('exit', () => {
@@ -134,6 +135,36 @@ const noRecordOnDisk = (): null => null
 const noContinuationOnDisk = (): null => null
 
 describe('ContainerRunService', () => {
+  it('starts nothing while the experimental setting is off', async () => {
+    await setSetting('containerRunsEnabled', false)
+    let runs = 0
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        runs += 1
+        return Promise.resolve(fakeRecord(request.prompt))
+      },
+    })
+    await assert.rejects(
+      service.start({
+        projectId: PROJECT,
+        threadId: THREAD,
+        prompt: 'work',
+        model: 'claude-sonnet-4-6',
+        budgets: { wallClockMs: 60_000, tokenCeiling: 10_000 },
+      }),
+      /Settings › Experimental/,
+    )
+    assert.equal(runs, 0)
+    assert.equal(service.get(THREAD), null)
+  })
+
   it('resolves the provider, hides the key behind an env var, and publishes progress to the record', async () => {
     const seen: ThreadContainerRequest[] = []
     const keyValues: string[] = []

@@ -500,6 +500,8 @@ export function seedEmptyProject(
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
     nextStepSuggestionEnabled?: boolean
+    /** Opt into the experimental unattended container runs (off by default). */
+    containerRunsEnabled?: boolean
     model?: string
     advisorModel?: string
     localServerUrl?: string
@@ -627,6 +629,9 @@ export function seedEmptyProject(
   }
   if (options?.nextStepSuggestionEnabled !== undefined) {
     settings.nextStepSuggestionEnabled = options.nextStepSuggestionEnabled
+  }
+  if (options?.containerRunsEnabled !== undefined) {
+    settings.containerRunsEnabled = options.containerRunsEnabled
   }
   if (options?.model) {
     settings.model = options.model

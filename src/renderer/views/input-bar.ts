@@ -288,6 +288,17 @@ export function mountInputBar(
   // thread the picker last chose a default for lives here too: the picker
   // runs from this mount, so its state has to exist before it.
   let containerRunMounted = false
+  // Experimental and off by default (Settings › Experimental): the menu entry
+  // and the composer's target picker exist only once the user turned it on.
+  let containerRunsEnabled = false
+  const refreshContainerRunsSetting = async (): Promise<void> => {
+    const enabled = await api.settings.get('containerRunsEnabled').catch(() => undefined)
+    const next = enabled === true
+    if (next === containerRunsEnabled) return
+    containerRunsEnabled = next
+    footerOverflow?.update()
+    updateTargetPicker()
+  }
   // The thread and run the picker last chose a default for: a run that
   // settles is a new default (the container), not a choice the user made.
   let targetDefaultKey: string | null = null
@@ -310,6 +321,7 @@ export function mountInputBar(
   )
   containerRunMounted = true
   updateTargetPicker()
+  void refreshContainerRunsSetting()
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
@@ -357,7 +369,7 @@ export function mountInputBar(
     },
     {
       label: containerRun.menuLabel,
-      hidden: (): boolean => !getActiveThreadId(),
+      hidden: (): boolean => !containerRunsEnabled || !getActiveThreadId(),
       onClick: containerRun.open,
     },
     {
@@ -1152,6 +1164,10 @@ export function mountInputBar(
    */
   function updateTargetPicker(): void {
     if (!containerRunMounted) return
+    if (!containerRunsEnabled) {
+      targetSelect.hidden = true
+      return
+    }
     const target = containerRun.followUpTarget()
     targetSelect.hidden = !target.available
     if (!target.available) return
@@ -2288,6 +2304,7 @@ export function mountInputBar(
       if (tid === getActiveThreadId()) updateFooter()
     }),
     store.on('settings_changed', () => {
+      void refreshContainerRunsSetting()
       modelPicker.refresh()
       // An added/edited provider (e.g. a freshly fetched HF list) changes pricing.
       refreshModelPricing()

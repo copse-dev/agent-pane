@@ -26,6 +26,7 @@ describe('unattended container run dialog', function () {
     seedEmptyProject(workspaceRoot, PROJECT_ID, {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
+      containerRunsEnabled: true,
     })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })

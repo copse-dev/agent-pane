@@ -7,6 +7,7 @@ import type {
 import { isRecord } from '@shared/unknown-value.ts'
 import { execFileSync } from 'node:child_process'
 import { storageGet } from '../storage/storage.ts'
+import { getSetting } from '../storage/settings.ts'
 import {
   resolveThreadExecutionContext,
   type ThreadExecutionContext,
@@ -266,6 +267,13 @@ export class ContainerRunService {
     }
     if (projectIsRemote(request.projectId)) {
       throw new Error('Container runs need a local checkout; this project lives on an SSH host')
+    }
+    // Experimental and off by default: nothing starts a container until the
+    // user has turned it on, whatever the renderer asks for.
+    if (!getSetting<boolean>('containerRunsEnabled', false)) {
+      throw new Error(
+        'Container runs are experimental and off; turn them on in Settings › Experimental',
+      )
     }
     const prompt = request.prompt.trim()
     if (!prompt) throw new Error('The run needs a prompt')

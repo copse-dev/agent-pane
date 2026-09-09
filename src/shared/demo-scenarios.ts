@@ -355,6 +355,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       theme: 'dark',
       uiTintStrength: 'off',
       model: 'claude-sonnet-4-6',
+      containerRunsEnabled: true,
     },
     threads: [
       {
@@ -503,6 +504,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       // Copy/export overflow actions are developer-mode gated; the geometry
       // demo needs them visible to exercise `.footer-overflow`.
       developerMode: true,
+      containerRunsEnabled: true,
     },
     threads: [
       {

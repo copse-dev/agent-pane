@@ -70,6 +70,8 @@ function createApi(options: {
   >
   openRouterModels?: () => Promise<Awaited<ReturnType<ApiClient['openRouter']['models']>>>
   lmStudioModelInfo?: () => Promise<Awaited<ReturnType<ApiClient['lmStudio']['modelInfo']>>>
+  /** Turn the experimental container-run setting on for the mounted bar. */
+  containerRunsEnabled?: boolean
   onDescribeImages?: ApiClient['agent']['describeImages']
   estimateContext?: ApiClient['agent']['estimateContext']
   promptState?: { startingCommit: string | null; dirty: boolean }
@@ -170,7 +172,10 @@ function createApi(options: {
             openai: true,
           })),
         extraProviders: async () => [],
-        get: async () => undefined,
+        get: async (key: string): Promise<unknown> =>
+          key === 'containerRunsEnabled' && options.containerRunsEnabled === true
+            ? true
+            : undefined,
         set: async (): Promise<void> => {},
       },
       plugins: {
@@ -939,8 +944,8 @@ describe('input bar developer diagnostics', () => {
     })
     const host = document.createElement('div')
     document.body.append(host)
-    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
-    await settle()
+    mountInputBar(host, store, createApi({ currentBranch: 'main', containerRunsEnabled: true }))
+    await flush()
 
     const overflow = host.querySelector<HTMLElement>('.footer-overflow')
     const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
@@ -2046,8 +2051,8 @@ describe('input bar footer overflow menu', () => {
     })
     const host = document.createElement('div')
     document.body.append(host)
-    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
-    await settle()
+    mountInputBar(host, store, createApi({ currentBranch: 'main', containerRunsEnabled: true }))
+    await flush()
 
     const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
     assert.ok(trigger)
@@ -2426,11 +2431,35 @@ describe('input bar container target', () => {
     const host = document.createElement('div')
     host.id = 'input-bar'
     document.body.append(host)
-    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
-    await settle()
+    mountInputBar(host, store, createApi({ currentBranch: 'main', containerRunsEnabled: true }))
+    await flush()
     const picker = host.querySelector<HTMLSelectElement>('.composer-target')
     assert.ok(picker)
     assert.equal(picker.hidden, false)
     assert.equal(picker.value, 'container')
+  })
+
+  it('offers neither the menu entry nor the picker while the experimental setting is off', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    host.id = 'input-bar'
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await flush()
+    const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
+    assert.ok(trigger)
+    trigger.click()
+    await settle()
+    const labels = [...host.querySelectorAll('.footer-overflow-item')].map((item) =>
+      item.textContent.trim(),
+    )
+    assert.ok(!labels.includes('Run unattended in a container…'), labels.join(', '))
+    assert.equal(host.querySelector<HTMLSelectElement>('.composer-target')?.hidden, true)
   })
 })

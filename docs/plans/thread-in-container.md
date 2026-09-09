@@ -139,7 +139,10 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
 
 ## From the app
 
-The composer footer's overflow menu has **Run unattended in a container…**
+The feature is experimental and off by default: Settings › Experimental › Unattended
+container runs turns it on, and nothing starts a container until it is (the run service
+refuses, whatever the renderer asks). With it on, the composer footer's overflow menu has
+**Run unattended in a container…**
 (`src/renderer/views/container-run-control.ts`). The dialog it opens has two faces: before a
 run it is the arming form — the composer draft as the task, the wall-clock and token budgets,
 and a note of the model and the single origin the guest will be able to reach — and during
