@@ -605,6 +605,14 @@ guarantee, and the record must say so.
   run-on block, and the run's final text is the last of those messages, not the turn's raw
   assistant text, which under an ACP harness is every narration joined with nothing
   between.
+  Three more from the first follow-ups tried: a settled run is written into the thread's
+  model history as the turn it is (its prompt, the card as a tool call with the record as
+  the result) and the dispatcher's cache dropped, since the run never passes through the
+  dispatcher and a message to the thread otherwise started with no context at all; a run
+  that made no commits can still be continued, from a fresh snapshot with the prompt as
+  the continuity; and the composer's target re-applies its default when the run it
+  follows settles, so the container is offered once the run is done rather than the
+  thread it was held to while the run was live.
 - **A15 — one resolution of the model for desktop and guest.** From the review of A14:
   the container resolved providers on its own (`container-provider.ts`), a narrower copy
   of the desktop's `buildProvider` that lost the user's tuned parameters, OpenRouter's

@@ -17,6 +17,7 @@ import {
   dockerRunArgs,
   fetchCarryOut,
   loadCarryOutForAdoption,
+  loadRunForContinuation,
   providerOrigin,
   secretCanaryCheck,
   WORKER_UID,
@@ -351,6 +352,33 @@ describe('adoptCarryOut', () => {
       })
       assert.equal(loadCarryOutForAdoption('run-2', dir), null)
       assert.equal(loadCarryOutForAdoption('../run-1', dir), null)
+      // A continuation needs the record, not commits: a run that made none
+      // still says what it was asked and reported.
+      writeFileSync(join(dir, 'run-1', 'run.json'), JSON.stringify({ prompt: 'Run the tests' }))
+      assert.deepEqual(loadRunForContinuation('run-1', dir), {
+        threadId: 't1',
+        ref: 'refs/copse/runs/run-1',
+        prompt: 'Run the tests',
+        finalText: '',
+      })
+      execFileSync('mkdir', ['-p', join(dir, 'run-3')])
+      writeFileSync(
+        join(dir, 'run-3', 'record.json'),
+        JSON.stringify({
+          threadId: 't1',
+          carryIn: { sha: 'abc', dirty: false },
+          carryOut: { expected: false, ref: null, error: null },
+          result: { finalText: 'Nothing to change.' },
+        }),
+      )
+      assert.deepEqual(loadRunForContinuation('run-3', dir), {
+        threadId: 't1',
+        ref: null,
+        prompt: '',
+        finalText: 'Nothing to change.',
+      })
+      assert.equal(loadRunForContinuation('run-2', dir), null)
+      assert.equal(loadRunForContinuation('../run-1', dir), null)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

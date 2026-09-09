@@ -562,28 +562,33 @@ async function adoptOnce(workspace: string, ref: string, base: string): Promise<
 
 /**
  * What a continuation needs from an earlier run (decision A14): the ref its
- * commits are on, what it was asked and what it reported, from the run's
- * files on disk so a run an earlier app session made can be continued too.
- * Null when there is no such run or it fetched no commits back.
+ * commits are on (null when it made none: the follow-up then starts from a
+ * fresh snapshot, and the prompt alone is the continuity), what it was asked
+ * and what it reported, from the run's files on disk so a run an earlier app
+ * session made can be continued too. Null when there is no such record.
  */
 export function loadRunForContinuation(
   runtimeId: string,
   runtimesDir = join(copseDataRoot(), 'runtimes'),
-): { threadId: string; ref: string; prompt: string; finalText: string } | null {
-  const carry = loadCarryOutForAdoption(runtimeId, runtimesDir)
-  if (carry === null) return null
-  const spec = readJsonFile(join(runtimesDir, runtimeId, 'run.json'), (value) =>
-    isRecord(value) ? value : null,
-  )
+): { threadId: string; ref: string | null; prompt: string; finalText: string } | null {
+  if (!/^[a-z0-9-]+$/i.test(runtimeId)) return null
   const record = readJsonFile(join(runtimesDir, runtimeId, 'record.json'), (value) =>
     isRecord(value) ? value : null,
   )
+  if (!record) return null
+  const threadId = record['threadId']
+  if (typeof threadId !== 'string') return null
+  const carryOut = record['carryOut']
+  const ref = isRecord(carryOut) ? carryOut['ref'] : null
+  const spec = readJsonFile(join(runtimesDir, runtimeId, 'run.json'), (value) =>
+    isRecord(value) ? value : null,
+  )
   const prompt = spec?.['prompt']
-  const result = record?.['result']
+  const result = record['result']
   const finalText = isRecord(result) ? result['finalText'] : undefined
   return {
-    threadId: carry.threadId,
-    ref: carry.ref,
+    threadId,
+    ref: typeof ref === 'string' ? ref : null,
     prompt: typeof prompt === 'string' ? prompt : '',
     finalText: typeof finalText === 'string' ? finalText : '',
   }

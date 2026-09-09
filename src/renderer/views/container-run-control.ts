@@ -78,6 +78,8 @@ export interface ContainerFollowUpTarget {
   live: boolean
   /** The run is the thread's last turn, so the container is the natural next hop. */
   defaultToContainer: boolean
+  /** The run the target follows, so a settled run re-applies the default once. */
+  runtimeId: string | null
 }
 
 const DEFAULT_WALL_CLOCK_MINUTES = 120
@@ -952,12 +954,15 @@ export function mountContainerRunControl(
   function followUpTarget(): ContainerFollowUpTarget {
     const latest = latestOnActiveThread()
     const live = isLive(activeRun())
-    if (!latest && !live) return { available: false, live: false, defaultToContainer: false }
+    if (!latest && !live) {
+      return { available: false, live: false, defaultToContainer: false, runtimeId: null }
+    }
     return {
       available: true,
       live,
       defaultToContainer:
         !live && latest !== null && latest.isLastTurn && latest.runtimeId !== null,
+      runtimeId: latest?.runtimeId ?? activeRun()?.runtimeId ?? null,
     }
   }
 

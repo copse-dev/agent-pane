@@ -111,6 +111,10 @@ function projectIsRemote(projectId: string): boolean {
 export class ContainerRunService {
   private readonly runs = new Map<string, ContainerRunProgress>()
   private readonly listeners = new Set<(progress: ContainerRunProgress) => void>()
+  /** Told once per run when it settles, with the project the thread belongs to. */
+  private readonly settledListeners = new Set<
+    (projectId: string, progress: ContainerRunProgress) => void
+  >()
   /** Threads whose live run the user asked to stop, until the run settles. */
   private readonly stopRequested = new Set<string>()
   /** One per live run: aborted on stop, so the runner can refuse to create the container. */
@@ -151,6 +155,18 @@ export class ContainerRunService {
     this.listeners.add(listener)
     return () => {
       this.listeners.delete(listener)
+    }
+  }
+
+  /**
+   * A run has finished or failed. Unlike {@link onChanged}, this names the
+   * project, which the thread's history lives under (A14: the run is a turn
+   * on the thread, so it goes into the thread's model history).
+   */
+  onSettled(listener: (projectId: string, progress: ContainerRunProgress) => void): () => void {
+    this.settledListeners.add(listener)
+    return () => {
+      this.settledListeners.delete(listener)
     }
   }
 
@@ -362,7 +378,7 @@ export class ContainerRunService {
   private continuationOf(threadId: string, runtimeId: string): RunContinuation {
     const live = this.runs.get(threadId)
     const fromMemory =
-      live?.record && live.record.runtimeId === runtimeId && live.record.carryOut.ref !== null
+      live?.record && live.record.runtimeId === runtimeId
         ? {
             runtimeId,
             ref: live.record.carryOut.ref,
@@ -373,7 +389,7 @@ export class ContainerRunService {
     if (fromMemory) return fromMemory
     const stored = this.deps.loadContinuation(runtimeId)
     if (stored === null) {
-      throw new Error('The earlier run left no commits to continue from, or its record is gone')
+      throw new Error("The earlier run's record is gone, so there is nothing to continue from")
     }
     if (stored.threadId !== threadId) throw new Error('That run belongs to another thread')
     return { runtimeId, ref: stored.ref, prompt: stored.prompt, finalText: stored.finalText }
@@ -414,7 +430,9 @@ export class ContainerRunService {
         prompt: continuation
           ? continuationPrompt(continuation, request.prompt.trim())
           : request.prompt.trim(),
-        ...(continuation ? { carryInRef: continuation.ref } : {}),
+        // An earlier run that made no commits left nothing to carry in;
+        // the checkout is snapshotted afresh and the prompt is the continuity.
+        ...(continuation?.ref ? { carryInRef: continuation.ref } : {}),
         model: plan.model,
         ...(plan.mode === 'provider'
           ? {
@@ -458,6 +476,7 @@ export class ContainerRunService {
       process.env[keyEnv] = ''
       this.stopRequested.delete(request.threadId)
       this.stopSignals.delete(request.threadId)
+      for (const listener of this.settledListeners) listener(request.projectId, snapshot(progress))
     }
   }
 
@@ -480,7 +499,8 @@ export class ContainerRunService {
 
 interface RunContinuation {
   runtimeId: string
-  ref: string
+  /** Where the earlier run's commits are, or null when it made none (A14). */
+  ref: string | null
   prompt: string
   finalText: string
 }
@@ -493,7 +513,9 @@ interface RunContinuation {
 export function continuationPrompt(earlier: RunContinuation, followUp: string): string {
   const reported = earlier.finalText.trim()
   return [
-    'This continues an earlier run in this container. The checkout already holds the commits that run made.',
+    earlier.ref !== null
+      ? 'This continues an earlier run in this container. The checkout already holds the commits that run made.'
+      : 'This continues an earlier run in this container. That run made no commits, so the checkout is as it was.',
     '',
     'Earlier you were asked:',
     earlier.prompt.trim(),

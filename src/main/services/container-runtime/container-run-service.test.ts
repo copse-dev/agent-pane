@@ -833,6 +833,65 @@ describe('ContainerRunService.adopt', () => {
 })
 
 describe('ContainerRunService continuation (A14)', () => {
+  it('continues a run that made no commits from a fresh snapshot, with the prompt as the continuity', async () => {
+    const seen: ThreadContainerRequest[] = []
+    const settled: string[] = []
+    const service = new ContainerRunService({
+      sweep: noSweep,
+      adopt: adoptSpy().adopt,
+      loadCarryOut: noRecordOnDisk,
+      loadContinuation: noContinuationOnDisk,
+      resolveContext: checkoutAt(root),
+      ensureImage: (): Promise<void> => Promise.resolve(),
+      stop: (): Promise<'removed'> => Promise.resolve('removed'),
+      run: (request): Promise<ThreadContainerRecord> => {
+        seen.push(request)
+        const record = fakeRecord(request.prompt)
+        return Promise.resolve({
+          ...record,
+          result: record.result
+            ? { ...record.result, commits: [], finalText: 'Nothing to change.' }
+            : null,
+          carryOut: { expected: false, ref: null, error: null },
+        })
+      },
+    })
+    service.onSettled((projectId, progress) => {
+      settled.push(`${projectId}:${progress.threadId}:${progress.phase}`)
+    })
+    const budgets = { wallClockMs: 60_000, tokenCeiling: 10_000 }
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Run the e2e tests',
+      model: 'claude-sonnet-4-6',
+      budgets,
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    assert.deepEqual(settled, [`${PROJECT}:${THREAD}:finished`])
+    await service.start({
+      projectId: PROJECT,
+      threadId: THREAD,
+      prompt: 'Try again',
+      model: 'claude-sonnet-4-6',
+      budgets,
+      continueFrom: 'run-fake',
+    })
+    await waitFor(service, THREAD, (p) => p.phase === 'finished' && p.continuedFrom === 'run-fake')
+    const second = seen[1]
+    assert.ok(second)
+    assert.equal(
+      second.carryInRef,
+      undefined,
+      'nothing to carry in: the checkout is snapshotted afresh',
+    )
+    assert.match(second.prompt, /That run made no commits, so the checkout is as it was\./)
+    assert.match(second.prompt, /Earlier you were asked:\nRun the e2e tests/)
+    assert.match(second.prompt, /You reported:\nNothing to change\./)
+    assert.match(second.prompt, /Follow-up:\nTry again$/)
+    assert.equal(settled.length, 2)
+  })
+
   it("carries in the earlier run's ref and prefixes its exchange to the follow-up prompt", async () => {
     const seen: ThreadContainerRequest[] = []
     const service = new ContainerRunService({

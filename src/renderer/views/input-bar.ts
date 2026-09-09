@@ -288,7 +288,9 @@ export function mountInputBar(
   // thread the picker last chose a default for lives here too: the picker
   // runs from this mount, so its state has to exist before it.
   let containerRunMounted = false
-  let targetThreadId: string | null = null
+  // The thread and run the picker last chose a default for: a run that
+  // settles is a new default (the container), not a choice the user made.
+  let targetDefaultKey: string | null = null
   const containerRun = mountContainerRunControl(
     api,
     {
@@ -1155,9 +1157,9 @@ export function mountInputBar(
     if (!target.available) return
     targetContainer.disabled = target.live
     targetContainer.textContent = target.live ? 'To container (busy)' : 'To container'
-    const threadId = getActiveThreadId()
-    if (threadId !== targetThreadId) {
-      targetThreadId = threadId
+    const key = `${getActiveThreadId() ?? ''}\u0000${target.runtimeId ?? ''}\u0000${target.live ? 'live' : 'settled'}`
+    if (key !== targetDefaultKey) {
+      targetDefaultKey = key
       targetSelect.value = target.defaultToContainer ? 'container' : 'thread'
     }
     if (target.live && targetSelect.value === 'container') targetSelect.value = 'thread'

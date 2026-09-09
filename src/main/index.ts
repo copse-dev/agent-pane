@@ -118,7 +118,14 @@ import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
-import { clearAgentHistory } from './services/thread-store.ts'
+import {
+  clearAgentHistory,
+  getProjectThread,
+  loadAgentHistory,
+  saveAgentHistory,
+} from './services/thread-store.ts'
+import { getContainerRunService } from './services/container-runtime/container-run-service.ts'
+import { recordContainerRunTurn } from './services/container-runtime/container-run-history.ts'
 import { AgentDispatcher } from './services/agent-dispatcher.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
@@ -502,6 +509,19 @@ app
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })
     const agentDispatcher = new AgentDispatcher(agentHost, registry)
+    // A container run is a turn on its thread but never passes through the
+    // dispatcher; write it into the thread's model history when it settles
+    // (A14), so the next message to the thread knows what the run did.
+    getContainerRunService().onSettled((projectId, progress) => {
+      void recordContainerRunTurn(projectId, progress, {
+        loadHistory: loadAgentHistory,
+        saveHistory: saveAgentHistory,
+        loadThread: getProjectThread,
+        forgetHistory: (pid, tid) => {
+          agentDispatcher.forgetHistory(pid, tid)
+        },
+      })
+    })
     disposeLongTaskWake = installLongTaskWakeConsumer(taskSupervisor, agentDispatcher)
     disposeCiWatchConsumer = installCiWatchConsumer(taskSupervisor, agentDispatcher)
     disposeBackgroundProcessSupervisor = installBackgroundProcessSupervisor(taskSupervisor)
