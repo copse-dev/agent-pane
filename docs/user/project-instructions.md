@@ -39,10 +39,11 @@ transcript naming the file that was loaded.
 
 During a turn, Copse reads only the ancestor directories of referenced paths, rather than scanning
 unrelated parts of the repository. Each scope, including a missing `AGENTS.md`, is read once when
-first referenced and shared by later tool calls. A file the agent writes, moves, or removes with a
-file tool is picked up straight away: writing an `AGENTS.md` makes the next file tool call read its
-ancestors again. Other edits to an already-read scope are seen by the next turn. A newly referenced
-scope is read when the agent first enters it. Settings still discovers the full bounded inventory.
+first referenced and shared by later tool calls. Writing, moving, or removing an `AGENTS.md` with a
+file tool invalidates those reads, so a later tool can activate newly available instructions. Rules
+already injected remain in the current turn; changes to those rules apply next turn. External
+edits to an already-read scope are also seen next turn. A newly referenced scope is read when the
+agent first enters it. Settings still discovers the full bounded inventory.
 
 Nested `AGENT.md` and `CLAUDE.md` remain root-only compatibility formats. Only `AGENTS.md` follows
 the cross-client directory-scoping convention, which avoids silently changing the meaning of

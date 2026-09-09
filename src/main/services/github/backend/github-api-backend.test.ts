@@ -4,6 +4,7 @@ import { expectRecord } from '@shared/unknown-value.ts'
 import { githubApiBackend } from './github-api-backend.ts'
 import { resetGitHubApiTokenCacheForTest } from './github-token.ts'
 import { resetGitHubHttpCacheForTest } from './github-http-cache.ts'
+import { PR_ACTIVITY_QUERY } from './pr-activity.ts'
 
 interface RouteResult {
   status?: number
@@ -328,6 +329,54 @@ describe('githubApiBackend', () => {
     assert.equal(diff.after, '')
     assert.equal(diff.beforeImage, `data:image/png;base64,${before}`)
     assert.equal(diff.afterImage, `data:image/png;base64,${after}`)
+  })
+
+  it('loads activity for the selected repository and retains details if activity is unavailable', async () => {
+    let unavailable = false
+    router = (_method, url, body): RouteResult => {
+      if (url.endsWith('/graphql')) {
+        if (
+          typeof body === 'object' &&
+          body !== null &&
+          'query' in body &&
+          body.query === PR_ACTIVITY_QUERY
+        ) {
+          assert.deepEqual(variablesOf(body), { owner: 'octo', repo: 'demo', number: 7 })
+          if (unavailable) return { body: { errors: [{ message: 'Resource not accessible' }] } }
+          return {
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    headRefOid: 'abc1234',
+                    comments: { nodes: [], pageInfo: { hasPreviousPage: false } },
+                    reviews: { nodes: [], pageInfo: { hasPreviousPage: false } },
+                    commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+                  },
+                },
+              },
+            },
+          }
+        }
+        return { body: { data: { repository: { pullRequest: { reviewDecision: null } } } } }
+      }
+      if (url.endsWith('/files?per_page=100')) return { body: [] }
+      return {
+        body: {
+          number: 7,
+          title: 'Activity test',
+          html_url: 'https://github.com/octo/demo/pull/7',
+        },
+      }
+    }
+    const details = await githubApiBackend.getPrDetails(REF)
+    assert.equal(details?.activity?.headSha, 'abc1234')
+    assert.deepEqual(details.activity.checks, [])
+    assert.equal(details.activity.error, undefined)
+    unavailable = true
+    const partial = await githubApiBackend.getPrDetails(REF)
+    assert.equal(partial?.title, 'Activity test')
+    assert.match(partial.activity?.error ?? '', /Could not load/)
   })
 
   it('getPrChecksState returns no_checks instead of throwing on a network error', async () => {
