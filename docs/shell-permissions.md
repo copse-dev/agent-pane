@@ -140,6 +140,12 @@ Update this document and the Guarded YOLO / harm / read-outside tests with any i
 
 ## Implementation map
 
+Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
+`TMPPREFIX` into the existing workspace scratch directory. zsh uses `TMPPREFIX` for large
+heredocs independently of `TMPDIR`; leaving its default `/tmp/zsh` breaks patch commands even
+when every destination file is inside the workspace. This redirect does not widen the sandbox's
+writable roots or change the approval policy.
+
 - `permission-policy.ts`: pure permission decisions, MCP decisions, outside-sandbox classification,
   and prompt-body formatting.
 - `@copse/shell-guard` (`packages/shell-guard/`): the deterministic classifiers, host-free.
