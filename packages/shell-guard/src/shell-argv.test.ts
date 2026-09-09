@@ -258,6 +258,54 @@ describe('read-only classification and its escape hatches', () => {
     }
   })
 
+  it('admits sed only as a provable filter', () => {
+    // The post-mortem's own spelling, and the line-selection shapes agents use.
+    for (const command of [
+      "sed -n '1,320p' SKILL.md",
+      "sed -n '5p' notes.md",
+      "sed -n '/^## /p' README.md",
+      "sed -n -e '1,5p' -e '20p' a.md",
+      "sed -ne '1p' a.md",
+      "sed --quiet --expression='1,3p' a.md",
+      "sed --expression '1,3p' -- a.md",
+      "sed -E -n '/^[0-9]+/p' a.md",
+      "cat a.md | sed -n '1,10p'",
+      'sed -n 1p -',
+    ]) {
+      assert.equal(isStructurallyReadOnlyShellCommand(command), true, command)
+    }
+    for (const command of [
+      // In place, script file, or an option the table does not know.
+      "sed -i 's/a/b/' a.md",
+      "sed -i.bak -n '1p' a.md",
+      "sed -I '' -n '1p' a.md",
+      "sed --in-place=.bak -n '1p' a.md",
+      'sed -f script.sed a.md',
+      'sed --file=script.sed a.md',
+      "sed -l 70 -n '1p' a.md",
+      "sed --line-length=70 -n '1p' a.md",
+      // Active script letters: write, read, execute — and their look-alikes.
+      "sed -n 'w out.txt' a.md",
+      "sed -n '1,3w out.txt' a.md",
+      "sed -n 's/x/y/w out.txt' a.md",
+      "sed 'W out.txt' a.md",
+      "sed '1r other.txt' a.md",
+      "sed 'R other.txt' a.md",
+      "sed '1e ls' a.md",
+      "sed 's/hello/world/' a.md",
+      "sed -e '1p' -e 'w x' a.md",
+      'sed -e',
+      'sed',
+      // `;` and `$` are shell metacharacters to the quote-blind whole-line
+      // check, which runs before any per-command parsing and stays
+      // conservative on purpose.
+      "sed -n '5p;10p' notes.md",
+      "sed -E -n '/^[0-9]+$/p' a.md",
+    ]) {
+      assert.equal(isStructurallyReadOnlyShellCommand(command), false, command)
+    }
+  })
+
   it('matches escape-hatch flags per command, never globally', () => {
     // `-o` is an output file for sort and tree but "only matching" for grep,
     // so the table has to stay keyed by command.

@@ -3,9 +3,14 @@ import { randomBytes } from 'node:crypto'
 import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import {
+  CallToolRequestSchema,
+  CancelledNotificationSchema,
+  ListToolsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js'
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
+import { AbandonedCallAbort } from '../approval.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { ToolResultImage } from '@shared/types'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
@@ -215,6 +220,14 @@ interface BridgeExecuteContext {
   getTurnSignal: () => AbortSignal | null
   /** Live reader for this HTTP MCP call's abort (agent disconnect). */
   getCallSignal: () => AbortSignal
+  /**
+   * Abandon this HTTP call from the outside: the agent cancelled it over MCP
+   * (a `notifications/cancelled` that, in stateless mode, lands on a different
+   * server instance than the call it names) rather than by disconnecting.
+   */
+  abandonCall: (detail: string) => void
+  /** Bridge-wide registry of in-flight calls by MCP request id, for the above. */
+  inflightCalls: Map<string, (detail: string) => void>
   /** Owning Copse thread — rebound into ALS so approvals attribute correctly. */
   threadId: string
   /**
@@ -303,7 +316,19 @@ function buildMcpServer(
     { capabilities: { tools: {} } },
   )
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: bridgedTools(registry) }))
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  // Stateless mode gives every POST its own server, so the SDK's built-in
+  // cancellation (which aborts a request on the SAME server) never sees the
+  // call a `notifications/cancelled` names. Route it through the bridge-wide
+  // registry instead; the abandoned call's stream is still open, so the
+  // "approval still pending, retry" error below actually reaches the agent.
+  server.setNotificationHandler(CancelledNotificationSchema, (notification) => {
+    const requestId = notification.params.requestId
+    if (requestId === undefined) return
+    ctx.inflightCalls.get(String(requestId))?.(
+      `the MCP client cancelled the tool call${notification.params.reason ? ` (${notification.params.reason})` : ''}`,
+    )
+  })
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name
     if (!activeBridgeToolNames().includes(name) || !registry.has(name)) {
       return {
@@ -334,6 +359,14 @@ function buildMcpServer(
         isError: true,
       }
     }
+    const requestKey = String(extra.requestId)
+    ctx.inflightCalls.set(requestKey, ctx.abandonCall)
+    // Same-server cancellation (a batched cancel, or a future stateful mode)
+    // is an abandonment too, not a turn-level cancel.
+    const onExtraAbort = (): void => {
+      ctx.abandonCall('the MCP client cancelled the tool call')
+    }
+    extra.signal.addEventListener('abort', onExtraAbort, { once: true })
     try {
       const executeSignal = mergeBridgeExecuteSignal(
         ctx.sessionSignal,
@@ -371,6 +404,11 @@ function buildMcpServer(
       return { content: toMcpContent(result, images) }
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
+    } finally {
+      extra.signal.removeEventListener('abort', onExtraAbort)
+      if (ctx.inflightCalls.get(requestKey) === ctx.abandonCall) {
+        ctx.inflightCalls.delete(requestKey)
+      }
     }
   })
   return server
@@ -461,6 +499,7 @@ export async function startAcpNativeBridge(
   let turnSignal: AbortSignal | null = null
   let executionContext: ThreadExecutionContext | null = null
   let workspaceWriteObserver: ((path: string) => void) | null = null
+  const inflightCalls = new Map<string, (detail: string) => void>()
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async (): Promise<void> => {
@@ -473,17 +512,27 @@ export async function startAcpNativeBridge(
       // No sessionIdGenerator → stateless mode: every POST is self-contained.
       const transport = new StreamableHTTPServerTransport({})
       // Per-HTTP-call abort: when the agent abandons this MCP request (timeout /
-      // disconnect) while Copse is blocked on an approval, cancel that prompt
-      // immediately instead of waiting for turn end.
+      // disconnect / MCP cancel) the call is aborted with an AbandonedCallAbort
+      // reason. A command already running is killed as before, but an approval
+      // the call is blocked on is *parked*, not cancelled: the prompt stays open
+      // and its verdict is kept for the agent's retry of the same call
+      // (`approval.ts`). Codex abandons a silent call after ~300 s, so an
+      // approval the user took longer than that to click was previously lost.
+      // Turn end still cancels the prompt (`cancelApprovalsForThread`).
       const callAbort = new AbortController()
+      const abandonCall = (detail: string): void => {
+        if (!callAbort.signal.aborted) callAbort.abort(new AbandonedCallAbort(detail))
+      }
       const onHttpClose = (): void => {
-        callAbort.abort()
+        abandonCall('the MCP client closed the connection before the tool call finished')
       }
       req.on('close', onHttpClose)
       const server = buildMcpServer(registry, advisorContext, {
         sessionSignal: signal,
         getTurnSignal: () => turnSignal,
         getCallSignal: () => callAbort.signal,
+        abandonCall,
+        inflightCalls,
         threadId: opts.threadId,
         getExecutionContext: () => executionContext,
         networkScopeAlreadyApplies,

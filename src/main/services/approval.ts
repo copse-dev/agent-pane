@@ -27,6 +27,65 @@ import { isDeferralModeActive } from './security/deferral-mode.ts'
 import { deferApproval } from './security/deferred-approval-store.ts'
 import type { UserAlertSender } from './user-alerts.ts'
 import { resolveRendererPromptTarget } from './renderer-prompt-target.ts'
+import { getAgentExecutionRoot } from './execution-root.ts'
+import { isRecord } from '@shared/unknown-value.ts'
+
+/**
+ * Abort reason a transport passes when the CALLER went away but the user's
+ * answer is still wanted.
+ *
+ * The ACP native bridge aborts a tool call with this when the external agent
+ * abandons the MCP request — Codex's client gives up on a silent call after
+ * roughly 300 s, and any approval the user takes more than five minutes to
+ * click used to be cancelled underneath them, with the agent seeing a bare
+ * failure. An abort carrying this reason is a *detach*, not a cancel: the
+ * prompt stays open, the caller is told to retry (see
+ * {@link ApprovalPendingError}), and the eventual verdict is kept for a bounded
+ * time so the retry reuses it without prompting again.
+ *
+ * `AbortSignal.any` propagates the first source's reason to the merged signal,
+ * so the bridge can keep merging its per-call abort with the turn and session
+ * aborts and this module still tells the three apart.
+ */
+export class AbandonedCallAbort extends Error {
+  override readonly name = 'AbandonedCallAbort'
+
+  constructor(detail = 'the tool call was abandoned by its client') {
+    super(detail)
+  }
+}
+
+export function isAbandonedCallAbort(reason: unknown): boolean {
+  if (reason instanceof AbandonedCallAbort) return true
+  return isRecord(reason) && reason['name'] === 'AbandonedCallAbort'
+}
+
+/**
+ * Thrown to the caller whose call was abandoned while its prompt stays open.
+ * A throw rather than a denial for the same reason {@link DeferredApprovalError}
+ * is one: every gate caller reads `approved === false` as "the user declined"
+ * and carries on quietly, and this must reach the agent as a clear instruction.
+ */
+export class ApprovalPendingError extends Error {
+  override readonly name = 'ApprovalPendingError'
+
+  constructor(title: string) {
+    super(approvalPendingMessage(title))
+  }
+}
+
+export function approvalPendingMessage(title: string): string {
+  return (
+    `Approval is still pending in Copse ("${title}"): this tool call was abandoned ` +
+    `before the user answered, but the prompt stays open. Do not treat this as a denial. ` +
+    `Retry the exact same call (same command, working directory and arguments); once the ` +
+    `user answers, the retry reuses that answer without prompting again, for up to ` +
+    `${String(ABANDONED_VERDICT_TTL_MS / 60_000)} minutes.`
+  )
+}
+
+/** How long an abandoned call's verdict is kept for an identical retry. */
+export const ABANDONED_VERDICT_TTL_MS = 10 * 60_000
 
 /** Model ids for a two-reviewer + judge comparison run. */
 export interface ComparisonModelSelection {
@@ -193,9 +252,85 @@ interface InflightWaiter {
   onAbort: () => void
   /** Thread that opened this waiter; used to dismiss orphans when the turn ends. */
   threadId: string | null
+  /**
+   * Set on the waiter that stands in for an abandoned caller: it keeps the
+   * shared prompt open and, when the user answers, records the verdict under
+   * this key instead of returning it to anyone. Never a real caller.
+   */
+  ledgerKey?: string
 }
 
 const inflight = new Map<string, InflightApproval>()
+
+/**
+ * Verdicts whose callers were gone by the time the user answered, keyed by
+ * thread + execution root + the prompt's own dedupe key — "the same command in
+ * the same directory of the same thread". Consumed by the first identical
+ * request within {@link ABANDONED_VERDICT_TTL_MS}; one answer authorises one
+ * run, exactly as it would have had the caller stayed. Session-only, like the
+ * rest of this module's state.
+ */
+interface StoredVerdict {
+  response: ApprovalResponse
+  settledAt: number
+}
+
+const abandonedVerdicts = new Map<string, StoredVerdict>()
+let approvalClock: () => number = () => Date.now()
+
+/** Test helper — replace the clock the abandoned-verdict window is measured on. */
+export function setApprovalClockForTest(clock: (() => number) | null): void {
+  approvalClock = clock ?? ((): number => Date.now())
+}
+
+/** Test helper — forget every stored verdict. */
+export function clearAbandonedVerdictsForTest(): void {
+  abandonedVerdicts.clear()
+}
+
+function abandonedVerdictKey(threadId: string, promptKey: string): string {
+  return `${threadId}\u0000${getAgentExecutionRoot() ?? ''}\u0000${promptKey}`
+}
+
+function storeAbandonedVerdict(ledgerKey: string, response: ApprovalResponse): void {
+  const now = approvalClock()
+  for (const [key, entry] of abandonedVerdicts) {
+    if (now - entry.settledAt > ABANDONED_VERDICT_TTL_MS) abandonedVerdicts.delete(key)
+  }
+  abandonedVerdicts.set(ledgerKey, { response, settledAt: now })
+}
+
+function takeAbandonedVerdict(ledgerKey: string): ApprovalResponse | null {
+  const entry = abandonedVerdicts.get(ledgerKey)
+  if (!entry) return null
+  abandonedVerdicts.delete(ledgerKey)
+  if (approvalClock() - entry.settledAt > ABANDONED_VERDICT_TTL_MS) return null
+  return entry.response
+}
+
+/** How many prompts are being held open for abandoned callers (diagnostics/tests). */
+export function parkedApprovalCount(): number {
+  let count = 0
+  for (const entry of inflight.values()) {
+    for (const waiter of entry.waiters) if (waiter.ledgerKey !== undefined) count++
+  }
+  return count
+}
+
+/** A stored verdict handed to an identical retry: the user's answer, replayed. */
+function recordReplayedDecision(req: ApprovalRequest, response: ApprovalResponse): void {
+  recordDecision({
+    kind: req.type,
+    actor: 'user',
+    verdict: response.approved ? 'approved' : 'denied',
+    subject: req.subject ?? req.title,
+    ...(req.scope ? { scope: req.scope } : {}),
+    ...(req.cause ? { cause: req.cause } : {}),
+    ...(req.reasons?.length ? { reasons: req.reasons } : {}),
+    remembered: response.remember,
+    source: 'abandoned-call-replay',
+  })
+}
 
 /** Best-effort: persistence never blocks the approval flow it describes. */
 function recordApprovalDecision(
@@ -235,10 +370,14 @@ export function setApprovalHandler(next: ApprovalHandler | null): void {
       entry.controller.abort()
       for (const waiter of entry.waiters) {
         waiter.signal?.removeEventListener('abort', waiter.onAbort)
+        // A parked prompt torn down with the transport was never answered;
+        // storing a denial would replay one the user did not give.
+        if (waiter.ledgerKey !== undefined) continue
         waiter.resolve(DENIED)
       }
     }
     inflight.clear()
+    abandonedVerdicts.clear()
     abortAllAcpPermissions()
   }
 }
@@ -421,8 +560,22 @@ function requestApprovalUnpaused(
   if (signal?.aborted) return Promise.resolve(DENIED)
 
   const key = `${dedupePrefix}:${approvalDedupeKey(req)}`
+  // Only a thread-attributed request can be parked and replayed: the ledger is
+  // keyed by thread, and a headless/untracked caller has no retry to serve.
+  const ledgerKey = threadId === null ? null : abandonedVerdictKey(threadId, key)
 
-  return new Promise<ApprovalResponse>((resolve) => {
+  // An identical request whose earlier call was abandoned, answered since: the
+  // user already decided this. Checked before joining an open prompt, so a
+  // retry that arrives while the prompt is still up simply joins it instead.
+  if (ledgerKey !== null) {
+    const stored = takeAbandonedVerdict(ledgerKey)
+    if (stored) {
+      recordReplayedDecision(req, stored)
+      return Promise.resolve(stored)
+    }
+  }
+
+  return new Promise<ApprovalResponse>((resolve, reject) => {
     // Register the waiter before invoking the handler so a synchronous settle
     // (tests, immediate deny) still reaches this caller.
     if (signal?.aborted) {
@@ -437,6 +590,23 @@ function requestApprovalUnpaused(
       inflight.set(key, entry)
     }
     const active = entry
+    // A live retry of an abandoned call takes over as the prompt's consumer:
+    // retire the stand-in, or the answer would be both delivered here and
+    // stored for a further replay — one answer authorising two runs.
+    if (ledgerKey !== null) {
+      for (const other of active.waiters) {
+        if (other.ledgerKey === ledgerKey) active.waiters.delete(other)
+      }
+    }
+
+    const teardownIfIdle = (): void => {
+      // Only tear down the shared prompt once nobody is left waiting — a
+      // sibling tool call may still need the user's answer.
+      if (active.waiters.size === 0 && inflight.get(key) === active) {
+        inflight.delete(key)
+        active.controller.abort()
+      }
+    }
 
     const waiter: InflightWaiter = {
       resolve,
@@ -446,16 +616,21 @@ function requestApprovalUnpaused(
         if (!active.waiters.has(waiter)) return
         active.waiters.delete(waiter)
         signal?.removeEventListener('abort', waiter.onAbort)
+        if (ledgerKey !== null && isAbandonedCallAbort(signal?.reason)) {
+          // The caller is gone but the question stands: keep the prompt open
+          // with a stand-in waiter that files the answer for the caller's
+          // retry, and tell the caller so — this is not a denial.
+          if (![...active.waiters].some((other) => other.ledgerKey === ledgerKey)) {
+            active.waiters.add(parkedWaiter(ledgerKey, threadId, active, teardownIfIdle))
+          }
+          reject(new ApprovalPendingError(req.title))
+          return
+        }
         // Abort is a transport cancel, not a user denial — record per waiter so
         // coalesced siblings that stay open are not blamed for this leave.
         recordApprovalDecision(req, DENIED, 'aborted')
         resolve(DENIED)
-        // Only tear down the shared prompt once nobody is left waiting — a
-        // sibling tool call may still need the user's answer.
-        if (active.waiters.size === 0 && inflight.get(key) === active) {
-          inflight.delete(key)
-          active.controller.abort()
-        }
+        teardownIfIdle()
       },
     }
     active.waiters.add(waiter)
@@ -479,6 +654,34 @@ function requestApprovalUnpaused(
       },
     )
   })
+}
+
+/**
+ * The waiter that stands in for an abandoned caller. It has no signal of its
+ * own: it leaves only when the prompt settles (the answer goes to the ledger)
+ * or when the thread's turn ends / the transport is torn down, in which case
+ * the answer was never given and nothing is stored.
+ */
+function parkedWaiter(
+  ledgerKey: string,
+  threadId: string | null,
+  entry: InflightApproval,
+  teardownIfIdle: () => void,
+): InflightWaiter {
+  const waiter: InflightWaiter = {
+    threadId,
+    signal: undefined,
+    ledgerKey,
+    resolve: (response) => {
+      storeAbandonedVerdict(ledgerKey, response)
+    },
+    onAbort: () => {
+      if (!entry.waiters.has(waiter)) return
+      entry.waiters.delete(waiter)
+      teardownIfIdle()
+    },
+  }
+  return waiter
 }
 
 export function initApproval(

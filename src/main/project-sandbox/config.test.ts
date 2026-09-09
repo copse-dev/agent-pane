@@ -22,10 +22,12 @@ import {
   fsServerSandboxOverlay,
   fsWorkerSandboxOverlay,
   readAllowedSandboxOverlay,
+  readOnlyTreeExcluding,
   readOnlyWorkspaceSandboxOverlay,
   resolveNodeToolchainAllowRead,
   sandboxRuntimeHelperAllowReadPaths,
   sandboxNetworkConfig,
+  threadReadRootAllowEntries,
   uncoveredSiblingDenyPaths,
   workspaceMandatoryWriteDenyPaths,
   workspaceSandboxOverlay,
@@ -37,6 +39,14 @@ import {
   clearAllowedWorkspaceRootsForTest,
   registerInternalWorkspaceRoot,
 } from '../services/workspace.ts'
+import { runWithActiveRunIdentity } from '../services/thread-models.ts'
+import {
+  clearThreadReadRoots,
+  grantThreadReadRoot,
+} from '../services/security/thread-read-roots.ts'
+
+/** Bare directory entries are emitted everywhere but Linux (see config.ts). */
+const LISTING_ENTRIES = process.platform !== 'linux'
 
 describe('acpAgentSandboxOverlay', () => {
   const workspace = '/tmp/acp-sandbox-test-workspace'
@@ -311,6 +321,9 @@ describe('workspaceSandboxOverlay', () => {
       mkdirSync(executionRoot, { recursive: true })
       const siblingPackage = join(worktree, 'packages', 'other')
       mkdirSync(siblingPackage)
+      // Uncommitted content in the primary working tree: readable, never writable.
+      mkdirSync(join(repo, 'packages'))
+      writeFileSync(join(repo, 'packages', 'wip.txt'), 'uncommitted\n')
 
       const registration = await registerInternalWorkspaceRoot(worktree, executionRoot)
       const siblingGitDir = realpathSync.native(
@@ -333,7 +346,18 @@ describe('workspaceSandboxOverlay', () => {
       // per-worktree write bind. Rebinding either ancestor here would make the
       // validated gitDir read-only again and prevent Git creating index.lock.
       assert.ok(!allowRead.includes(registration.commonGitDir))
-      assert.ok(!allowRead.includes(join(registration.commonGitDir, 'worktrees')))
+      assert.ok(!allowRead.includes(`${registration.commonGitDir}/**`))
+      // `worktrees/` itself is listing-only: an ancestor of the writable
+      // per-worktree dir, so it is a bare entry off Linux and absent on it.
+      assert.equal(
+        allowRead.includes(join(registration.commonGitDir, 'worktrees')),
+        LISTING_ENTRIES,
+      )
+      assert.ok(!allowRead.includes(join(registration.commonGitDir, 'worktrees/**')))
+      // Sibling admin dirs are readable so `git worktree list` is complete…
+      assert.ok(allowRead.includes(siblingGitDir))
+      assert.ok(allowRead.includes(`${siblingGitDir}/**`))
+      assert.ok(allowRead.includes(join(registration.commonGitDir, 'HEAD')))
       assert.ok(allowWrite.includes(join(registration.commonGitDir, 'objects/**')))
       assert.ok(allowWrite.includes(join(registration.commonGitDir, 'refs/**')))
       assert.ok(!allowWrite.includes(registration.commonGitDir))
@@ -350,14 +374,27 @@ describe('workspaceSandboxOverlay', () => {
       // per-worktree admin directory. Denying the nonexistent latter path makes
       // Linux bubblewrap abort while trying to create a read-only mount point.
       assert.ok(!denyWrite.includes(join(registration.gitDir, 'hooks/**')))
-      // Bug fix: the shared primary checkout must also be denied for reads —
-      // ASRT default-allows all reads and the base home-deny only covers
-      // layouts where the primary tree lives under $HOME. `tmpRoot` is a
-      // realpath'd tmpdir, so it may sit outside $HOME, and without this
-      // deny a sandboxed worktree agent could read `repo/packages/app/...`.
+      // The shared primary checkout is readable per top-level child (never as
+      // one `repo/**` rule, and never its `.git`), and stays out of allowWrite.
       assert.equal(registration.primaryCheckoutRoot, repo)
-      assert.ok(denyRead.includes(repo))
-      assert.ok(denyRead.includes(`${repo}/**`))
+      assert.ok(!denyRead.includes(repo))
+      assert.ok(!denyRead.includes(`${repo}/**`))
+      assert.equal(allowRead.includes(repo), LISTING_ENTRIES)
+      assert.ok(!allowRead.includes(`${repo}/**`))
+      assert.ok(allowRead.includes(join(repo, 'packages')))
+      assert.ok(allowRead.includes(join(repo, 'packages/**')))
+      assert.ok(!allowRead.includes(join(repo, '.git')))
+      assert.ok(!allowRead.includes(join(repo, '.git/**')))
+      assert.ok(
+        !allowWrite.some(
+          (path) =>
+            path === repo ||
+            (path.startsWith(`${repo}/`) && !path.startsWith(registration.commonGitDir)),
+        ),
+        'nothing under the primary working tree may be writable',
+      )
+      // …while their working trees stay denied.
+      assert.ok(denyRead.includes(sibling))
       // Nested execution roots deny the concrete siblings around their ancestor
       // chain rather than masking the whole checkout. The broad mask makes
       // Linux bubblewrap unable to create mandatory deny mount points inside
@@ -385,12 +422,12 @@ describe('workspaceSandboxOverlay', () => {
     }
   })
 
-  it('denies the shared primary checkout without walling off a non-nested worktree root', async () => {
+  it('exposes the shared primary checkout read-only without walling off a non-nested worktree root', async () => {
     // Non-nested variant of the linked-worktree test: executionRoot ===
-    // checkoutRoot === a linked worktree path. The primary checkout must
-    // still be denied (that is the bug this test pins), but the worktree
-    // path itself must stay readable — no `${checkoutRoot}/**` deny in this
-    // shape, or the agent could no longer read its own execution root.
+    // checkoutRoot === a linked worktree path. The primary checkout is
+    // readable but never writable, and the worktree path itself must stay
+    // readable — no `${checkoutRoot}/**` deny in this shape, or the agent
+    // could no longer read its own execution root.
     const tmpRoot = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-sandbox-flat-wt-')))
     const repo = join(tmpRoot, 'repo')
     const worktree = join(tmpRoot, 'thread')
@@ -410,18 +447,24 @@ describe('workspaceSandboxOverlay', () => {
       git(repo, ['commit', '--allow-empty', '-m', 'initial'])
       git(repo, ['worktree', 'add', '-q', '-b', 'flat', worktree])
 
+      writeFileSync(join(repo, 'notes.md'), 'primary\n')
       const registration = await registerInternalWorkspaceRoot(worktree)
       const overlay = workspaceSandboxOverlay(worktree)
       const allowRead = overlay.filesystem?.allowRead ?? []
+      const allowWrite = overlay.filesystem?.allowWrite ?? []
       const denyRead = overlay.filesystem?.denyRead ?? []
 
       assert.equal(registration.primaryCheckoutRoot, repo)
       assert.equal(registration.root, worktree)
       assert.equal(registration.checkoutRoot, worktree)
-      // Shared primary tree is denied even outside $HOME…
-      assert.ok(denyRead.includes(repo))
-      assert.ok(denyRead.includes(`${repo}/**`))
-      // …but the worktree the agent actually runs in stays fully readable —
+      // Shared primary tree is readable (per child, never `.git`) and not writable…
+      assert.ok(!denyRead.includes(repo))
+      assert.ok(!denyRead.includes(`${repo}/**`))
+      assert.ok(allowRead.includes(join(repo, 'notes.md')))
+      assert.ok(!allowRead.includes(join(repo, '.git')))
+      assert.ok(!allowWrite.includes(join(repo, 'notes.md')))
+      assert.ok(!allowWrite.includes(repo))
+      // …and the worktree the agent actually runs in stays fully readable —
       // the non-nested branch does not add `${checkoutRoot}/**` to denyRead.
       assert.ok(!denyRead.includes(worktree))
       assert.ok(!denyRead.includes(`${worktree}/**`))
@@ -430,6 +473,94 @@ describe('workspaceSandboxOverlay', () => {
     } finally {
       clearAllowedWorkspaceRootsForTest()
       rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('carves the shared .git, the thread worktree and nested siblings out of the primary read view', () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-primary-read-')))
+    try {
+      mkdirSync(join(root, 'src', 'lib'), { recursive: true })
+      mkdirSync(join(root, '.git', 'objects'), { recursive: true })
+      mkdirSync(join(root, '.claude', 'worktrees', 'me'), { recursive: true })
+      mkdirSync(join(root, '.claude', 'worktrees', 'sib'), { recursive: true })
+      mkdirSync(join(root, '.claude', 'worktrees', 'stale'), { recursive: true })
+      writeFileSync(join(root, 'README.md'), 'hi\n')
+      writeFileSync(join(root, '.claude', 'settings.json'), '{}\n')
+
+      const entries = readOnlyTreeExcluding(root, [
+        join(root, '.git'),
+        join(root, '.claude', 'worktrees', 'me'),
+        join(root, '.claude', 'worktrees', 'sib'),
+        '/somewhere/else', // outside the root: ignored
+      ])
+
+      // Ordinary children: the entry plus its subtree.
+      assert.ok(entries.includes(join(root, 'src')))
+      assert.ok(entries.includes(join(root, 'src/**')))
+      assert.ok(entries.includes(join(root, 'README.md')))
+      assert.ok(!entries.includes(join(root, 'README.md/**')))
+      // Carve-outs and their subtrees never appear.
+      for (const carved of ['.git', '.git/**', '.claude/**', '.claude/worktrees/**']) {
+        assert.ok(!entries.includes(join(root, carved)), `unexpected ${carved}`)
+      }
+      assert.ok(!entries.includes(join(root, '.claude', 'worktrees', 'me')))
+      assert.ok(!entries.includes(join(root, '.claude', 'worktrees', 'sib')))
+      // Siblings along the carve-out chain are still readable.
+      assert.ok(entries.includes(join(root, '.claude', 'settings.json')))
+      assert.ok(entries.includes(join(root, '.claude', 'worktrees', 'stale')))
+      assert.ok(entries.includes(join(root, '.claude', 'worktrees', 'stale/**')))
+      // Chain directories (ancestors of a carve-out) are listing-only entries,
+      // and only where a bare entry cannot shadow a write bind.
+      for (const chain of ['', '.claude', join('.claude', 'worktrees')]) {
+        assert.equal(entries.includes(join(root, chain)), LISTING_ENTRIES, `chain ${chain}`)
+      }
+      // No `/**` rule ever names a chain directory.
+      assert.ok(!entries.includes(`${root}/**`))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('grants nothing from the primary when its tree cannot be enumerated', () => {
+    assert.deepEqual(readOnlyTreeExcluding('/nonexistent/copse-primary', []), [])
+  })
+
+  it("adds the active thread's read roots to allowRead only", () => {
+    const skillDir = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-skill-root-')))
+    const linkDir = join(dirname(skillDir), `${skillDir.split('/').pop() ?? 'x'}-link`)
+    symlinkSync(skillDir, linkDir)
+    try {
+      grantThreadReadRoot('thread-with-skill', {
+        path: linkDir,
+        canonical: skillDir,
+        isDirectory: true,
+        label: 'test skill',
+      })
+      const root = process.cwd()
+      const inThread = runWithActiveRunIdentity('thread-with-skill', () =>
+        workspaceSandboxOverlay(root),
+      )
+      const allowRead = inThread.filesystem?.allowRead ?? []
+      const allowWrite = inThread.filesystem?.allowWrite ?? []
+      // Both spellings, because the kernel enforces the realpath and the model
+      // types the path the prompt showed it.
+      for (const spelling of [skillDir, linkDir]) {
+        assert.ok(allowRead.includes(spelling), `read ${spelling}`)
+        assert.ok(allowRead.includes(`${spelling}/**`), `read ${spelling}/**`)
+        assert.ok(!allowWrite.includes(spelling), `no write ${spelling}`)
+        assert.ok(!allowWrite.includes(`${spelling}/**`), `no write ${spelling}/**`)
+      }
+      // Another thread — or no thread at all — sees nothing of it.
+      const otherThread = runWithActiveRunIdentity('other-thread', () =>
+        workspaceSandboxOverlay(root),
+      )
+      assert.ok(!(otherThread.filesystem?.allowRead ?? []).includes(skillDir))
+      assert.ok(!(workspaceSandboxOverlay(root).filesystem?.allowRead ?? []).includes(skillDir))
+      assert.deepEqual(threadReadRootAllowEntries(), [])
+    } finally {
+      clearThreadReadRoots()
+      rmSync(linkDir, { force: true })
+      rmSync(skillDir, { recursive: true, force: true })
     }
   })
 

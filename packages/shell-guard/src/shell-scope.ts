@@ -32,11 +32,15 @@ export interface ShellScopeAnalysis {
  */
 export interface ShellScopeEnvironment {
   /**
-   * Absolute root of a directory the sandbox mounts read-only, so a structurally
-   * read-only command naming a path under it is contained rather than an escape.
-   * Writes under it still count as outside the workspace. Null: no such root.
+   * Absolute roots of directories the sandbox mounts read-only, so a structurally
+   * read-only command naming a path under one is contained rather than an escape.
+   * Writes under them still count as outside the workspace. Empty: no such root.
+   *
+   * Copse binds the chat store here (#644) plus whatever the active thread has
+   * been granted read access to — today the directories of skills it invoked
+   * (`thread-read-roots.ts`).
    */
-  containedReadRoot?: () => string | null
+  containedReadRoots?: () => readonly string[]
   /**
    * Predicate over absolute paths for scratch directories the host sanctions
    * (masked out before the outside-path rules run), or null when there are none.
@@ -45,7 +49,7 @@ export interface ShellScopeEnvironment {
 }
 
 const DEFAULT_ENVIRONMENT: Required<ShellScopeEnvironment> = {
-  containedReadRoot: () => null,
+  containedReadRoots: () => [],
   sanctionedScratchMatcher: () => null,
 }
 
@@ -540,39 +544,41 @@ function collectExternalReasons(command: string): { reasons: ScopeReason[]; hasH
 /**
  * Tilde path tokens (`~`, `~/x`), matched at an argument boundary so `foo~bar`
  * doesn't count. `$HOME` needs no equivalent: the read-only check that gates the
- * chat-store waiver rejects any command containing `$`, so a `$HOME` reference
- * is never waived and always keeps its reason.
+ * contained-read waiver rejects any command containing `$`, so a `$HOME`
+ * reference is never waived and always keeps its reason.
  */
 const TILDE_PATH_TOKENS = /(?:^|[\s'"=|])(~(?:\/[^\s'"|;&]*)?)/g
 
 /**
- * The chat store's read-only mount inside the project seatbelt.
+ * The read-only mounts inside the project seatbelt: the chat store (#644) and
+ * the roots granted to the active thread (an invoked skill's directory).
  *
- * `workspaceSandboxOverlay` re-allows reads under the chat-store root (#644) so
- * seatbelt-confined tools can open past-thread files, but leaves it out of
- * `allowWrite`. This classifier has to model the same asymmetry: a *read* of a
- * chat-store path is contained by the sandbox and must not be flagged as an
- * escape, while a write is genuinely blocked and must still prompt.
+ * `workspaceSandboxOverlay` re-allows reads under these roots so
+ * seatbelt-confined tools can open the files, but leaves them out of
+ * `allowWrite`. This classifier has to model the same asymmetry: a *read* of
+ * such a path is contained by the sandbox and must not be flagged as an escape,
+ * while a write is genuinely blocked and must still prompt.
  *
  * Without this, every `cat ~/.copse/workspace/<project>/<thread>/…` — the exact
  * absolute paths the `@`-thread steering preamble hands the agent — was
  * classified `external`, so the user got a "Run outside sandbox?" prompt whose
  * approval ran the command **fully unsandboxed with network access**. That is
  * strictly worse than the truth, which is that the read would have succeeded
- * inside the sandbox untouched.
+ * inside the sandbox untouched. The same misclassification hit
+ * `sed -n 1,320p ~/.codex/skills/<skill>/SKILL.md` from a skill-driven thread.
  *
- * Resolved through {@link ShellScopeEnvironment.containedReadRoot}, which the app binds
- * to the same `copseWorkspaceDir` the seatbelt overlay uses, so the classifier and the
- * seatbelt overlay agree on where the store lives. The overlay additionally
- * realpaths that root; if the store were reached through a symlink the two would
- * differ, but only in the safe direction — the command auto-runs inside seatbelt,
- * the kernel denies it against the canonical path, and the existing
- * sandbox-failure escalation offers the unsandboxed retry.
+ * Resolved through {@link ShellScopeEnvironment.containedReadRoots}, which the
+ * app binds to the same roots the seatbelt overlay uses, so the classifier and
+ * the overlay agree on where they live. The overlay additionally realpaths each
+ * root; if one were reached through a symlink the two would differ, but only in
+ * the safe direction — the command auto-runs inside seatbelt, the kernel denies
+ * it against the canonical path, and the existing sandbox-failure escalation
+ * offers the unsandboxed retry. (Thread read roots are recorded in both
+ * spellings, so that case does not arise for them.)
  */
-function chatStoreReadRoot(command: string): string | null {
-  if (!isStructurallyReadOnlyShellCommand(command)) return null
-  const root = environment.containedReadRoot()
-  return root === null ? null : resolve(root)
+function containedReadRoots(command: string): string[] {
+  if (!isStructurallyReadOnlyShellCommand(command)) return []
+  return environment.containedReadRoots().map((root) => resolve(root))
 }
 
 function isInsideRoot(absPath: string, root: string): boolean {
@@ -606,27 +612,27 @@ function referencesOutsideWorkspace(
 ): string | null {
   const home = homedir()
   const command = maskAgentScratchPaths(rawCommand)
-  // Non-null only for a structurally read-only command — see chatStoreReadRoot.
+  // Non-empty only for a structurally read-only command — see containedReadRoots.
   // Read against the raw text: masking only removes already-sanctioned paths,
   // and the read-only shape of the command is unchanged by it.
-  const chatRoot = chatStoreReadRoot(rawCommand)
-  const isChatStoreRead = (absPath: string): boolean =>
-    chatRoot !== null && isInsideRoot(absPath, chatRoot)
+  const readRoots = containedReadRoots(rawCommand)
+  const isContainedRead = (absPath: string): boolean =>
+    readRoots.some((root) => isInsideRoot(absPath, root))
 
   for (const { re, reason } of OUTSIDE_PATH_PATTERNS) {
     if (!re.test(command)) continue
-    // The `~/` rule fires on any home reference, including the chat store.
-    // Waive it only when EVERY tilde token in the command is a chat-store read;
-    // a bare `~` (no path) never qualifies.
+    // The `~/` rule fires on any home reference, including the contained read
+    // roots. Waive it only when EVERY tilde token in the command is a contained
+    // read; a bare `~` (no path) never qualifies.
     if (reason === REASON_HOME_PATH) {
       const tokens = [...command.matchAll(TILDE_PATH_TOKENS)].map((m) => m[1] ?? '')
-      const allChatStore =
+      const allContained =
         tokens.length > 0 &&
         tokens.every((token) => {
           const rest = token.slice(1)
-          return rest.startsWith('/') && isChatStoreRead(resolve(home, `.${rest}`))
+          return rest.startsWith('/') && isContainedRead(resolve(home, `.${rest}`))
         })
-      if (allChatStore) continue
+      if (allContained) continue
     }
     return reason
   }
@@ -642,7 +648,7 @@ function referencesOutsideWorkspace(
     if (p.startsWith('/dev/') || p.startsWith('/proc/')) continue
     const resolved = resolve(p)
     if (isInsideRoot(resolved, root)) continue
-    if (isChatStoreRead(resolved)) continue
+    if (isContainedRead(resolved)) continue
     if (resolved.startsWith(home + '/')) {
       return `absolute path outside workspace: ${p}`
     }
