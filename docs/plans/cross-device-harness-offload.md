@@ -1,6 +1,10 @@
 # Offloading the harness to another device
 
-**Status: Proposed.** Nothing here is implemented. This plan answers one question the
+**Status: Proposed (partly overtaken).** [`thread-in-container.md`](thread-in-container.md)
+landed the loop-in-guest half of this while it was open: O0, O3 and O4 below are delivered for
+a disposable local container. What remains unbuilt, and is what this plan now exists for, is
+ownership — the lease in O1 and the attach/detach in O2, which that plan parks as its T2.
+This plan answers one question the
 package extraction made worth asking: now that the agent runtime no longer needs Electron,
 what stops it running on a different machine from the window that started it?
 
@@ -28,6 +32,10 @@ place:
 - [`remote-agents.md`](../remote-agents.md) is the only shipped path where the laptop can
   close — because the run belongs to Cursor or Anthropic, not to Copse. Right shape, wrong
   owner.
+- [`thread-in-container.md`](thread-in-container.md) is the one that **did** move Copse's own
+  loop off the desktop, into a hardened local container, unattended and with zero prompts. It
+  is the executable slice of this argument and it landed first. What it does not do is let the
+  desktop attach: the run is fire-and-collect.
 
 So the capability has been consistently deferred rather than designed. What changed is that
 the reason for deferring it — "the runtime is welded to the app" — is no longer true.
@@ -38,7 +46,7 @@ This is not aspiration; it is measurable on `main` today.
 
 | Fact                                                  | Evidence                                                                                                                                                                                                                                                                                                |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The agent runtime does not need Electron              | 30 of 480 non-test files in `src/main` name `electron`, 13 of those for types only, so 17 import it at runtime — and none are on the agent, tool, hook, sandbox or thread-store path. [`library-splits.md`](library-splits.md) and [`client-server-split.md`](client-server-split.md) count the same 30 |
+| The agent runtime does not need Electron              | 30 of 517 non-test files in `src/main` name `electron`, 13 of those for types only, so 17 import it at runtime — and none are on the agent, tool, hook, sandbox or thread-store path. [`library-splits.md`](library-splits.md) and [`client-server-split.md`](client-server-split.md) count the same 30 |
 | A headless host already runs the _whole product loop_ | `src/main/services/headless-agent-host.ts` builds the real registry, skills, MCP, hooks, supervisor and permission policy from an explicit profile, with no renderer and no IPC                                                                                                                         |
 | That claim is enforced, not asserted                  | `scripts/verify-agent-path-import.mts` bundles the registry, system prompt and headless host for plain Node and constructs them with `electron` poisoned; `scripts/module-boundaries.test.ts` holds `packages ↛ src`                                                                                    |
 | The main process already runs as plain Node           | The Tauri sidecar (`src/sidecar/`) runs `src/main/index.ts` byte-identical against an `electron` shim, with IPC over a loopback WebSocket                                                                                                                                                               |
@@ -49,21 +57,24 @@ Every seam a remote host would need to rebind is already an injection point:
 `AgentHost.emit`, the approval / ask-user / SSH-prompt / staged-diff handlers, the shell
 output sink, `SecretCipher`, `ElectronAppRuntime`, and `configureThreadStore`.
 
-The honest qualification: **no main-process code drives any of this.** The only non-test
-caller of `runHeadlessAgent` is `scripts/autonomy-regression-agent.mts`;
-`scripts/verify-agent-path-import.mts` imports it without calling it, purely to prove the
-graph loads. The runtime is portable and unused.
+This section originally ended "the runtime is portable and unused". That is no longer true, and
+the change is the point: `src/main/services/container-runtime/worker-entry.ts` now calls
+`runHeadlessAgent` inside a guest container, so main-process code drives the portable runtime
+off the desktop today. `scripts/autonomy-regression-agent.mts` is the other caller, and
+`scripts/verify-agent-path-import.mts` imports it without calling it, purely to prove the graph
+loads. The portability argument below is therefore settled by shipped code rather than by
+inspection; what is still missing is ownership.
 
 ## Where execution runs today
 
-| Piece                           | Local   | SSH workspace | ACP over SSH           | Managed / Cursor agents |
-| ------------------------------- | ------- | ------------- | ---------------------- | ----------------------- |
-| Agent loop                      | desktop | desktop       | remote (foreign agent) | provider                |
-| Shell, fs, git, search          | desktop | remote        | remote                 | provider                |
-| Permission gate, diff queue     | desktop | desktop       | desktop                | provider                |
-| Thread store                    | desktop | desktop       | desktop                | provider (reattachable) |
-| Provider credentials            | desktop | desktop       | agent's own            | provider                |
-| **Survives the laptop closing** | no      | no            | no                     | yes                     |
+| Piece                           | Local   | SSH workspace | ACP over SSH           | Container run                                                                                 | Managed / Cursor agents |
+| ------------------------------- | ------- | ------------- | ---------------------- | --------------------------------------------------------------------------------------------- | ----------------------- |
+| Agent loop                      | desktop | desktop       | remote (foreign agent) | **guest**                                                                                     | provider                |
+| Shell, fs, git, search          | desktop | remote        | remote                 | **guest**                                                                                     | provider                |
+| Permission gate, diff queue     | desktop | desktop       | desktop                | **guest** (defers outward effects)                                                            | provider                |
+| Thread store                    | desktop | desktop       | desktop                | host run dir; result as `refs/copse/runs/<id>`                                                | provider (reattachable) |
+| Provider credentials            | desktop | desktop       | agent's own            | one key in the guest                                                                          | provider                |
+| **Survives the laptop closing** | no      | no            | no                     | partly — the guest does not need the window, but there is no attach and the host must collect | yes                     |
 
 ## The premise, corrected
 
@@ -138,14 +149,26 @@ its first remote consumer: it packages `copse-core` for a second machine and add
 remote deployment needs that a local daemon does not — a sandbox-state handshake, and the
 lease in O1. If step 4 lands first, O0 is a packaging step.
 
-_Exit gate:_ a `copse-worker` bundle runs a real turn on a Linux host with bubblewrap active,
-with `electron` absent from the bundle, and emits a valid headless-contract event stream.
+**Delivered for a container.** `thread-in-container.md` shipped exactly this worker:
+`container-runtime/worker-entry.ts`, bundled standalone as `dist/main/thread-container-worker.cjs`,
+running `runHeadlessAgent` as an unprivileged user with bubblewrap active inside the guest. O0
+is therefore no longer "build a worker" but "point that worker at a machine that is not a
+disposable local container" — a host that outlives the run, whose sandbox state is handshaked
+rather than attested once at spawn.
+
+_Exit gate:_ the same worker bundle runs a real turn on a second machine with bubblewrap
+active, with `electron` absent from the bundle, and emits a valid headless-contract event
+stream.
 
 ### O1 — the writer lease
 
 Fenced per-thread ownership in the thread store: acquire, heartbeat, expire, take over. The
 desktop and the worker both honour it. Stale-owner recovery is specified by
 `acp-session-continuity.md`'s writer lease; this generalises it beyond ACP.
+
+This is the half nothing has built. `thread-in-container.md` parks it as T2 and names the same
+mechanism — "the per-thread writer lease from `acp-session-continuity.md` so desktop and guest
+never both advance a turn" — so O1 and T2 should be one piece of work, not two.
 
 _Exit gate:_ two processes race for one thread and exactly one advances it. Killing the owner
 lets the other take over only after expiry. No duplicate provider turn, commit, or spine
@@ -167,14 +190,21 @@ it returns. D0–D1 of [`deferred-approvals.md`](deferred-approvals.md) are land
 outcome and its durable append-only queue exist. What is missing is D2's review surface and an
 approver that is not the local UI.
 
+**Delivered for a container.** The unattended ledger, its mutual exclusion with Guarded YOLO,
+and a fail-closed handler proving zero prompts are on `main`; a deferred `git push` is queued
+under `shell-outward-effect` and never runs. D2's review surface is still missing, and is
+`thread-in-container.md`'s T3.
+
 _Exit gate:_ an unattended run never blocks on a modal. Every deferred request replays against
 the same execution context or fails loudly when that context is gone.
 
 ### O4 — leased credentials and egress
 
-Short-lived provider keys scoped to the lease; the worker's network scope declared and
-enforced. `execution-runtime-security.md` R3 asks for broker-only egress on Linux, which
-bubblewrap alone does not provide, so this phase inherits that gap rather than closing it.
+**Delivered for a container, and more strictly than this plan proposed.** The guest runs
+`--network none` with a per-origin unix-socket broker and a connection log, and exactly one
+provider key travels in, blanked from the environment before any child spawns. That is
+`execution-runtime-security.md` R3's broker-only egress, met for this runtime. What remains for
+a second machine is scoping the key's lifetime to the lease rather than to a single run.
 
 ### O5 — triggers while the desktop is away
 
@@ -222,7 +252,13 @@ Move a live thread between desktop and worker, and between two workers, as a lea
 
 ## Relationship to existing plans
 
-This plan is the missing middle, not a new stack. Its parents are
+[`thread-in-container.md`](thread-in-container.md) is the closest sibling and now the senior
+one: it owns the runtime, the contained-effect gate, the egress broker and the credential
+narrowing, and it proved the loop-in-guest direction end to end. This plan owns the half it
+parks — ownership and hand-off — and its O1/O2 are that plan's T2 stated as a design. Where
+the two disagree, the shipped prototype wins.
+
+Its parents are
 [`library-splits.md`](library-splits.md), which did the extraction that makes the question
 worth asking, and [`client-server-split.md`](client-server-split.md), which owns the daemon
 O0 consumes; this plan is the product capability that daemon unlocks once it can run on a
