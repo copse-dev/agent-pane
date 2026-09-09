@@ -5,13 +5,13 @@
  * issues, recent commits, and the small-tasks model — advisory only.
  */
 
+import { memberOf } from '@shared/member-of.ts'
+
 export const ROADMAP_REVIEW_VERDICTS = ['resolved', 'likely', 'partial', 'open'] as const
 
 export type RoadmapReviewVerdict = (typeof ROADMAP_REVIEW_VERDICTS)[number]
 
-export function isRoadmapReviewVerdict(value: unknown): value is RoadmapReviewVerdict {
-  return typeof value === 'string' && ROADMAP_REVIEW_VERDICTS.some((entry) => entry === value)
-}
+export const isRoadmapReviewVerdict = memberOf(ROADMAP_REVIEW_VERDICTS)
 
 /** Extract the verdict from model output: the first review word in the first line. */
 export function parseReviewVerdict(text: string): RoadmapReviewVerdict | null {

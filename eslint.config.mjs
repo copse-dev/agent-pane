@@ -97,6 +97,32 @@ export default ts.config(
       '@typescript-eslint/no-this-alias': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'error',
       '@typescript-eslint/explicit-function-return-type': 'error',
+      // `in` walks the prototype chain, so `key in RECORD` with a key that did not
+      // come from a literal answers **true** for the eight members every object
+      // literal inherits: toString, constructor, valueOf, hasOwnProperty,
+      // __proto__, isPrototypeOf, propertyIsEnumerable, toLocaleString. A gate
+      // written that way says "yes, that key is allowed" for all eight, and
+      // whatever runs next reads an inherited function instead of the value it
+      // expected. That is not hypothetical — it was the body of the
+      // `settings:set` writability gate and of `plugins:setSetting`, which took
+      // its key straight off the renderer and then wrote it into the pack's bag.
+      //
+      // Only a DYNAMIC key is restricted. `'filePath' in payload` is the
+      // unrelated and entirely fine idiom for discriminating an object union,
+      // and there are 248 of those; a blanket ban on `in` would bury the ten
+      // that mattered. Tests are exempt below, because several of them use `in`
+      // deliberately to assert the prototype behaviour this rule exists to stop.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "BinaryExpression[operator='in'][left.type!='Literal']",
+          message:
+            'A dynamic key with `in` also matches inherited members (toString, constructor, ' +
+            '__proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from ' +
+            "@copse/std when you want a type predicate. A literal key (`'kind' in value`) is " +
+            'fine and is not restricted.',
+        },
+      ],
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-control-regex': 'off',
     },
@@ -228,6 +254,10 @@ export default ts.config(
       // (a fake `Response`, a stub `HTMLElement`). That's the deliberate test
       // pattern, so the object-literal-cast ban only applies to production code.
       '@typescript-eslint/consistent-type-assertions': 'off',
+      // Several tests reach for `key in record` precisely to demonstrate that it
+      // accepts prototype keys — the behaviour the production rule forbids. A
+      // test that cannot state the wrong answer cannot pin the right one.
+      'no-restricted-syntax': 'off',
     },
   },
   {

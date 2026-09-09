@@ -22,6 +22,7 @@ import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
+import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
   activeSandboxNetworkScopeLabels,
   isSandboxNetworkScopeActive,
@@ -161,6 +162,10 @@ export interface ShellCommandPermissionOptions {
 export interface TerminalPermissionOptions {
   sandboxEnabled?: boolean
   remoteTarget?: boolean
+  /** Whether the OS has an ASRT backend at all. Defaults to this machine's. */
+  sandboxPlatform?: boolean
+  /** Recorded ASRT init failure, when there is one. Defaults to this session's. */
+  sandboxFailure?: string
 }
 
 /**
@@ -1186,6 +1191,7 @@ export async function ensureTerminalPermitted(
   const decision = decideTerminalPermission({
     sandboxEnabled: opts.sandboxEnabled ?? isProjectSandboxEnabled(),
     remoteTarget: opts.remoteTarget ?? isSshExecutionTarget(getActiveExecutionTarget()),
+    sandboxPlatform: opts.sandboxPlatform ?? isProjectSandboxPlatform(),
   })
   if (decision.action === 'allow') return true
 
@@ -1205,13 +1211,42 @@ export async function ensureTerminalPermitted(
   const { approved } = await requestApproval({
     title: 'Open unsandboxed terminal?',
     cause: 'terminal-unsandboxed',
-    body:
-      'The integrated terminal cannot be confined by the project sandbox on this platform. ' +
-      'Commands you run in it can access your full user account, filesystem, and network.',
+    body: unsandboxedTerminalBody(
+      decision.reason,
+      opts.sandboxFailure ?? projectSandboxInitFailure(),
+    ),
     type: 'shell',
     allowRemember: false,
   })
   return approved
+}
+
+/**
+ * Why this terminal will not be confined, in the only two shapes that are true.
+ *
+ * The prompt used to say "on this platform" for both, which is right for
+ * Windows and wrong everywhere else: on macOS and Linux the sandbox exists and
+ * something stopped it starting, and the user is being asked to accept an
+ * unconfined shell without being told what (#2507). `initProjectSandbox`
+ * already records that reason for exactly this purpose — a missing
+ * `bubblewrap`, unavailable user namespaces — so quote it, and the user can see
+ * whether it is theirs to fix rather than a permanent property of the machine.
+ */
+function unsandboxedTerminalBody(
+  reason: 'sandbox-unsupported' | 'sandbox-failed',
+  failure: string | undefined,
+): string {
+  const consequence =
+    'Commands you run in it can access your full user account, filesystem, and network.'
+  if (reason === 'sandbox-unsupported') {
+    return `The integrated terminal cannot be confined by the project sandbox on this platform. ${consequence}`
+  }
+  // A trimmed one-liner: this goes in a prompt, and an ASRT failure can carry a
+  // multi-line stack that would bury the question.
+  const detail = failure?.split('\n')[0]?.trim()
+  return detail
+    ? `The project sandbox did not start this session, so the integrated terminal cannot be confined: ${detail}. ${consequence}`
+    : `The project sandbox did not start this session, so the integrated terminal cannot be confined. ${consequence}`
 }
 
 /**

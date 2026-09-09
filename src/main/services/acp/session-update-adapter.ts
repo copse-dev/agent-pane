@@ -3,6 +3,7 @@ import type { StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import type { PanelEntry } from '@copse/agent/plugins/plugin-panel.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /**
  * Translate between Copse's internal `StreamChunk` stream and ACP
@@ -303,22 +304,18 @@ function toolCallStatus(
   return undefined
 }
 
-function isUnknownRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 /**
  * MCP transports wrap successful tool text in a protocol envelope. Extract it
  * only when doing so is lossless; errors, mixed media, and structured results
  * stay serialized so the UI never hides meaningful response data.
  */
 function mcpTextResult(value: unknown): string | undefined {
-  if (!isUnknownRecord(value)) return undefined
+  if (!isRecord(value)) return undefined
   const error = value['error']
   if (error !== undefined && error !== null) return undefined
 
   const result = value['result']
-  if (!isUnknownRecord(result) || result['isError'] === true) return undefined
+  if (!isRecord(result) || result['isError'] === true) return undefined
   const structuredContent = result['structuredContent']
   if (structuredContent !== undefined && structuredContent !== null) return undefined
 
@@ -326,7 +323,7 @@ function mcpTextResult(value: unknown): string | undefined {
   if (!Array.isArray(content) || content.length === 0) return undefined
   const parts: string[] = []
   for (const item of content) {
-    if (!isUnknownRecord(item) || item['type'] !== 'text' || typeof item['text'] !== 'string') {
+    if (!isRecord(item) || item['type'] !== 'text' || typeof item['text'] !== 'string') {
       return undefined
     }
     parts.push(item['text'])

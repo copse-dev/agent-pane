@@ -29,7 +29,7 @@ The question that started this plan was whether
 [`@cloudflare/computer`](https://blog.cloudflare.com/cloudflare-computer/) could be added
 as another cloud provider. It cannot, at any of the three seams that use that word:
 
-- **LLM providers** (`CloudProvider` in `src/shared/types/ipc.ts`,
+- **LLM providers** (`LLMProvider` in `@copse/llm/wire-types.ts`,
   `src/main/services/providers/`) — the wrong seam; this is not an inference product.
 - **Remote agent providers** (`REMOTE_AGENT_PROVIDERS` in `src/shared/remote-agent.ts` —
   `cursor`, `anthropic`) — these are provider-managed agent services reached over REST +

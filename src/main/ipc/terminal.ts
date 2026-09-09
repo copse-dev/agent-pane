@@ -1,5 +1,5 @@
 import { ipcMain, type BrowserWindow, type WebContents } from 'electron'
-import { runWithApprovalPromptTarget } from '../services/approval.ts'
+import { runWithRendererPromptTarget } from '../services/renderer-prompt-target.ts'
 import { ensureTerminalPermitted } from '../services/security/permission-gate.ts'
 import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
 import { getProjectRoot } from '../services/workspace.ts'
@@ -83,24 +83,30 @@ export function initTerminal(win: BrowserWindow): () => void {
   ipcMain.handle('terminal:create', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [cols, rows, meta] = parseIpcArgs(terminalCreateSchema, rawArgs)
-    const permitted = await runWithApprovalPromptTarget(event.sender, () =>
-      ensureTerminalPermitted(),
-    )
-    if (!permitted) throw new Error('Terminal access was not approved')
-    const execution = await resolveTerminalRoot(meta)
-    // Route to the renderer that asked, not to the window captured at init.
-    // Every other terminal op is already keyed on `event.sender.id`; only the
-    // output target was not, so a pane pop-out's shell wrote to the main window
-    // — which had no tab for that session and dropped it (#1705).
-    trackOwnerTeardown(event.sender)
-    const sessionId = await createTerminalSession(
-      event.sender,
-      cols,
-      rows,
-      normalizeMeta(meta),
-      execution.root,
-    )
-    return { sessionId, checkoutMode: execution.checkoutMode }
+    // The WHOLE handler is scoped to the calling renderer, not just the
+    // permission check. Opening an SSH terminal asks twice — the remote-terminal
+    // approval here, then a passphrase or host-key question while the PTY is
+    // spawned — and scoping only the first sent the halves to different windows:
+    // a pop-out showed the approval and the main window silently held the
+    // passphrase prompt until it timed out (#2507).
+    return runWithRendererPromptTarget(event.sender, async () => {
+      const permitted = await ensureTerminalPermitted()
+      if (!permitted) throw new Error('Terminal access was not approved')
+      const execution = await resolveTerminalRoot(meta)
+      // Route to the renderer that asked, not to the window captured at init.
+      // Every other terminal op is already keyed on `event.sender.id`; only the
+      // output target was not, so a pane pop-out's shell wrote to the main window
+      // — which had no tab for that session and dropped it (#1705).
+      trackOwnerTeardown(event.sender)
+      const sessionId = await createTerminalSession(
+        event.sender,
+        cols,
+        rows,
+        normalizeMeta(meta),
+        execution.root,
+      )
+      return { sessionId, checkoutMode: execution.checkoutMode }
+    })
   })
 
   ipcMain.handle('terminal:write', (event, sessionId: unknown, data: unknown) => {

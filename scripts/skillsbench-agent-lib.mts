@@ -15,6 +15,7 @@ import {
   type SkillsBenchProfileSelectionId,
   type SkillsBenchSkill,
 } from './lib/skillsbench-profiles.mts'
+import { isRecord } from '../src/shared/unknown-value.mts'
 
 export const DEFAULT_SKILLSBENCH_STREAM_OUTPUT_TOKENS = 4_096
 
@@ -119,18 +120,14 @@ function isInputMessage(value: unknown): value is InputMessage {
   return value.type === 'start' || value.type === 'tool_result'
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
 function stringProperty(args: unknown, name: string): string | undefined {
-  if (!isRecord(args) || !(name in args)) return undefined
+  if (!isRecord(args) || !Object.hasOwn(args, name)) return undefined
   const value = args[name]
   return typeof value === 'string' ? value : undefined
 }
 
 function numberProperty(args: unknown, name: string): number | undefined {
-  if (!isRecord(args) || !(name in args)) return undefined
+  if (!isRecord(args) || !Object.hasOwn(args, name)) return undefined
   const value = args[name]
   return typeof value === 'number' ? value : undefined
 }

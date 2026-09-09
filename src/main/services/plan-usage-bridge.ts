@@ -15,7 +15,7 @@ import {
 } from '@copse/plan-usage'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 import { resolveApiKey } from './storage/settings.ts'
-import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { firstNonEmptyString, isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 /** Env override for e2e / demos — skips network and credential discovery. */
 const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
@@ -100,10 +100,6 @@ export async function readClaudeKeychainCredentialsJson(): Promise<string | null
   } catch {
     return null
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**

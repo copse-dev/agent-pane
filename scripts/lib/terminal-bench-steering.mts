@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { expectString, isRecord } from '../../src/shared/unknown-value.mts'
+import { isNonBlankString } from '@copse/std/nullish.ts'
 
 export interface TerminalBenchSteering {
   schema_version: 1
@@ -18,20 +19,16 @@ const MAX_LIST_ITEMS = 20
 const MAX_LIST_ITEM_CHARS = 4_000
 const MAX_RECOMMENDED_STEP_BUDGET = 200
 
-function nonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0
-}
-
 export function parseTerminalBenchSteering(value: unknown): TerminalBenchSteering {
   if (!isRecord(value)) {
     throw new Error('steering must be a JSON object')
   }
   const record = value
   if (record['schema_version'] !== 1) throw new Error('steering.schema_version must be 1')
-  if (!nonEmptyString(record['parent_trial_id'])) {
+  if (!isNonBlankString(record['parent_trial_id'])) {
     throw new Error('steering.parent_trial_id must be a non-empty string')
   }
-  if (!Array.isArray(record['diagnosis']) || !record['diagnosis'].every(nonEmptyString)) {
+  if (!Array.isArray(record['diagnosis']) || !record['diagnosis'].every(isNonBlankString)) {
     throw new Error('steering.diagnosis must be an array of non-empty strings')
   }
   if (
@@ -40,7 +37,7 @@ export function parseTerminalBenchSteering(value: unknown): TerminalBenchSteerin
   ) {
     throw new Error('steering.diagnosis exceeds its item or character limit')
   }
-  if (!nonEmptyString(record['prompt_patch'])) {
+  if (!isNonBlankString(record['prompt_patch'])) {
     throw new Error('steering.prompt_patch must be a non-empty string')
   }
   if (record['prompt_patch'].length > MAX_PROMPT_PATCH_CHARS) {
@@ -52,8 +49,8 @@ export function parseTerminalBenchSteering(value: unknown): TerminalBenchSteerin
       (nudge) =>
         typeof nudge === 'object' &&
         nudge !== null &&
-        nonEmptyString(Reflect.get(nudge, 'trigger')) &&
-        nonEmptyString(Reflect.get(nudge, 'message')),
+        isNonBlankString(Reflect.get(nudge, 'trigger')) &&
+        isNonBlankString(Reflect.get(nudge, 'message')),
     )
   ) {
     throw new Error('steering.nudges must contain trigger/message string pairs')

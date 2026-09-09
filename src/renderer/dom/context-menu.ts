@@ -16,9 +16,8 @@ export interface ContextMenuHeading {
 
 export type ContextMenuEntry = ContextMenuItem | ContextMenuHeading
 
-function isHeading(entry: ContextMenuEntry): entry is ContextMenuHeading {
-  return 'heading' in entry
-}
+const isHeading: (entry: ContextMenuEntry) => entry is ContextMenuHeading = (entry) =>
+  'heading' in entry
 
 /** Dismiss any open context menu (and its dismiss listeners). */
 let dismissOpenContextMenu: (() => void) | null = null

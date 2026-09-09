@@ -1,4 +1,5 @@
 import type { SpineHookRunLine } from './spine-schema.ts'
+import { isDefined } from '@copse/std/nullish.ts'
 
 /**
  * Renderer-facing display model for a hook execution, decision, or halt
@@ -175,7 +176,7 @@ export function getHookCardStatusLabel(card: HookCard): string {
     (card.userMessageChars ?? 0) > 0 ? 'Notified you' : undefined,
     (card.queuedMessageChars ?? 0) > 0 ? 'Queued follow-up' : undefined,
     (card.sessionEnvKeys ?? 0) > 0 ? 'Set session environment' : undefined,
-  ].filter((effect): effect is string => effect !== undefined)
+  ].filter(isDefined)
   const primaryEffect = effects[0]
   if (primaryEffect !== undefined) {
     return effects.length === 1 ? primaryEffect : `${primaryEffect} +${String(effects.length - 1)}`

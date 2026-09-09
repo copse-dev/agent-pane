@@ -159,6 +159,7 @@ export interface SpineMessageLine {
 // spine's name so existing importers are unchanged.
 export type { HookRunDecision as SpineHookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { HookRunDecision as SpineHookRunDecision } from '@copse/agent/hooks/hook-outcome.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 
 /**
  * One line of `events.jsonl`: a single hook execution (decision 6 of
@@ -359,192 +360,325 @@ export function serializeSpineLine(line: SpineLine): string {
   return JSON.stringify(line)
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+/** Keys of `T` that must be present; an optional key is excluded. */
+type RequiredKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? never : K }[keyof T]
+
+/** Keys of `T` that may be absent. */
+type OptionalKeys<T> = Exclude<keyof T, RequiredKeys<T>>
+
+/**
+ * A check for one field. Normally it must *prove* the field's declared type, so
+ * the compiler rejects a body that establishes something else. Naming the field
+ * in a table's `Loose` parameter downgrades it to a plain boolean: the check
+ * still runs, but it is no longer claimed to establish the declared type.
+ */
+type FieldCheck<T, K extends keyof T, Loose> = K extends Loose
+  ? (value: unknown) => boolean
+  : (value: unknown) => value is T[K]
+
+/**
+ * One check per required field of `T`.
+ *
+ * Two things are enforced by the compiler here, and together they are why this
+ * file no longer hand-writes an `is` per line type. A missing entry fails with
+ * "Property 'x' is missing"; an entry whose body proves the wrong thing fails
+ * with "Type predicate 'x is string' is not assignable to 'value is number'".
+ * Adding a required field to a spine interface without teaching the parser to
+ * validate it is therefore a build error, not a silent widening of what
+ * {@link parseSpineLine} hands back as typed data.
+ *
+ * Each check is a bare arrow with no annotation, so TypeScript infers its
+ * predicate from the body (`docs/type-safety.md`) rather than taking an
+ * assertion's word for it.
+ *
+ * `Loose` names the fields this parser deliberately does not fully prove — the
+ * tolerance `docs/thread-store-format.md` requires. Putting it in the type
+ * makes every such field appear in the table's declaration, so the exceptions
+ * are read off the source rather than inferred from what is missing. Widening
+ * one is a compatibility decision, not a tidy-up: a line this parser starts
+ * rejecting drops out of `preservedRefs`, and `pruneStaleFiles` then deletes
+ * the blob files it still references.
+ */
+type RequiredFieldChecks<T, Loose extends keyof T = never> = {
+  [K in RequiredKeys<T>]: FieldCheck<T, K, Loose>
 }
 
-export function isContentRef(value: unknown): value is ContentRef {
-  return isRecord(value) && typeof value['ref'] === 'string' && typeof value['sha256'] === 'string'
+/**
+ * Checks for optional fields, applied only when the field is present — the
+ * `x === undefined || check(x)` clauses these replace. A field with no entry is
+ * not inspected at all, which is the pre-existing behaviour for most of them.
+ */
+type OptionalFieldChecks<T, Loose extends keyof T = never> = {
+  [K in OptionalKeys<T>]?: K extends Loose
+    ? (value: unknown) => boolean
+    : (value: unknown) => value is Exclude<T[K], undefined>
 }
 
-function isSpineMessageLine(value: unknown): value is SpineMessageLine {
+/**
+ * The file's one `is` assertion, replacing the nine that used to sit one per
+ * line type. It claims exactly what the tables establish: every required field
+ * present and of its declared type, and every optional field that is present
+ * and has a check passing it.
+ */
+function fieldsMatch<T, Loose extends keyof T>(
+  value: unknown,
+  required: RequiredFieldChecks<T, Loose>,
+  optional: OptionalFieldChecks<T, Loose>,
+): value is T {
   if (!isRecord(value)) return false
-  const role = value['role']
-  return (
-    value['type'] === 'message' &&
-    typeof value['v'] === 'number' &&
-    typeof value['id'] === 'string' &&
-    (role === 'user' || role === 'assistant' || role === 'error') &&
-    isContentRef(value['content']) &&
-    (value['canvasArtefacts'] === undefined ||
-      (Array.isArray(value['canvasArtefacts']) &&
-        value['canvasArtefacts'].every(
-          (artefact) => isRecord(artefact) && typeof artefact['title'] === 'string',
-        ))) &&
-    (value['toolCalls'] === undefined || Array.isArray(value['toolCalls']))
-  )
+  for (const [key, check] of Object.entries<(value: unknown) => boolean>(required)) {
+    if (!check(value[key])) return false
+  }
+  for (const [key, check] of Object.entries<((value: unknown) => boolean) | undefined>(optional)) {
+    if (check && value[key] !== undefined && !check(value[key])) return false
+  }
+  return true
 }
 
-function isSpineHookRunLine(value: unknown): value is SpineHookRunLine {
+/**
+ * Check one line against its field tables, plus any rule spanning two fields.
+ *
+ * Running the cross-field rule here rather than as a trailing `&&` at the call
+ * site is what keeps each line predicate a single expression — the shape
+ * TypeScript infers a predicate from, and so the shape it checks rather than
+ * takes on trust. The rule reads the *raw* record, never the narrowed line: a
+ * correlated type like {@link SpineMachineContinuationLine} declares
+ * `result?: never` on its `started` arm, so a rule handed the narrowed value
+ * would be told the field it exists to inspect cannot be there.
+ */
+function matchesLine<T, Loose extends keyof T = never>(
+  value: unknown,
+  required: RequiredFieldChecks<T, Loose>,
+  optional: OptionalFieldChecks<T, Loose> = {},
+  crossField?: (line: Record<string, unknown>) => boolean,
+): value is T {
   if (!isRecord(value)) return false
-  const executor = value['executor']
-  return (
-    value['type'] === 'hook_run' &&
-    typeof value['v'] === 'number' &&
-    typeof value['id'] === 'string' &&
-    typeof value['event'] === 'string' &&
-    typeof value['hookId'] === 'string' &&
-    (executor === 'function' || executor === 'command') &&
-    typeof value['startedAt'] === 'number' &&
-    typeof value['durationMs'] === 'number' &&
-    typeof value['parseOk'] === 'boolean' &&
-    isRecord(value['decision'])
-  )
+  if (crossField && !crossField(value)) return false
+  return fieldsMatch(value, required, optional)
 }
 
-function isSpineDecisionLine(value: unknown): value is SpineDecisionLine {
-  if (!isRecord(value)) return false
-  const actor = value['actor']
-  const verdict = value['verdict']
-  return (
-    value['type'] === 'decision' &&
-    typeof value['v'] === 'number' &&
-    typeof value['id'] === 'string' &&
-    typeof value['at'] === 'number' &&
-    typeof value['kind'] === 'string' &&
-    typeof value['subject'] === 'string' &&
-    (actor === 'user' || actor === 'classifier' || actor === 'hook' || actor === 'system') &&
-    (verdict === 'approved' ||
-      verdict === 'denied' ||
-      verdict === 'allowed' ||
-      verdict === 'blocked' ||
-      verdict === 'ask' ||
-      verdict === 'classified' ||
-      verdict === 'timeout' ||
-      verdict === 'cancelled' ||
-      verdict === 'deferred') &&
-    (value['detail'] === undefined || isContentRef(value['detail'])) &&
-    (value['cause'] === undefined || isPromptCause(value['cause'])) &&
-    (value['toolCallId'] === undefined || typeof value['toolCallId'] === 'string') &&
-    (value['turnId'] === undefined || typeof value['turnId'] === 'string') &&
-    (value['step'] === undefined || typeof value['step'] === 'number')
-  )
+const CONTENT_REF_FIELDS: RequiredFieldChecks<ContentRef> = {
+  ref: (value) => typeof value === 'string',
+  sha256: (value) => typeof value === 'string',
 }
 
-function isSpinePermissionDecisionLine(value: unknown): value is SpinePermissionDecisionLine {
-  if (!isRecord(value)) return false
-  const harm = value['harmDecision']
-  const policy = value['policyDecision']
-  const response = value['userResponse']
-  return (
-    value['type'] === 'permission_decision' &&
-    typeof value['v'] === 'number' &&
-    typeof value['id'] === 'string' &&
-    typeof value['decidedAt'] === 'number' &&
-    typeof value['originalCommand'] === 'string' &&
-    value['originalMode'] === 'guarded-yolo' &&
-    value['effectiveMode'] === 'guarded-yolo' &&
-    (value['sandboxState'] === 'project-sandbox' || value['sandboxState'] === 'unsandboxed') &&
-    (harm === 'allow' || harm === 'prompt' || harm === 'deny') &&
-    (policy === 'allow' || policy === 'prompt' || policy === 'deny') &&
-    Array.isArray(value['reasons']) &&
-    value['reasons'].every((reason) => typeof reason === 'string') &&
-    (response === 'approved' || response === 'declined' || response === 'not-required')
-  )
+export const isContentRef: (value: unknown) => value is ContentRef = (value) =>
+  matchesLine(value, CONTENT_REF_FIELDS)
+
+const MESSAGE_LINE_FIELDS: RequiredFieldChecks<SpineMessageLine, 'toolCalls'> = {
+  v: (value) => typeof value === 'number',
+  type: (value) => value === 'message',
+  id: (value) => typeof value === 'string',
+  role: (value) => value === 'user' || value === 'assistant' || value === 'error',
+  content: isContentRef,
+  // Absent on legacy lines written before tool calls were persisted, and the
+  // elements have never been validated. `parseSpineLine` substitutes `[]` for
+  // an absent or non-array value immediately after this check, which is what
+  // makes the declared `SpineToolCall[]` true of what the caller receives.
+  toolCalls: (value) => value === undefined || Array.isArray(value),
 }
 
-function isMachineContinuationResult(value: unknown): value is MachineContinuationResult {
-  return (
-    value === 'completed' ||
-    value === 'duplicate' ||
-    value === 'stale' ||
-    value === 'budget-exhausted' ||
-    value === 'failed'
-  )
+const MESSAGE_LINE_OPTIONAL: OptionalFieldChecks<SpineMessageLine, 'canvasArtefacts'> = {
+  // Only `title` is inspected; the rest of an artefact is passed through as the
+  // renderer's problem, exactly as before.
+  canvasArtefacts: (value) =>
+    Array.isArray(value) &&
+    value.every((artefact) => isRecord(artefact) && typeof artefact['title'] === 'string'),
 }
 
-function isTurnOutcome(value: unknown): value is TurnOutcome {
-  if (!isRecord(value)) return false
-  const status = value['status']
-  const source = value['source']
-  const executor = value['executor']
-  return (
-    (status === 'completed' || status === 'failed' || status === 'cancelled') &&
-    typeof value['stopReason'] === 'string' &&
-    (source === 'provider' || source === 'host' || source === 'user' || source === 'hook') &&
-    (executor === 'local' ||
-      executor === 'acp' ||
-      executor === 'remote' ||
-      executor === 'plugin') &&
-    typeof value['provider'] === 'string' &&
-    typeof value['model'] === 'string' &&
-    typeof value['endedAt'] === 'number'
-  )
+const isSpineMessageLine: (value: unknown) => value is SpineMessageLine = (value) =>
+  matchesLine(value, MESSAGE_LINE_FIELDS, MESSAGE_LINE_OPTIONAL)
+
+const HOOK_RUN_FIELDS: RequiredFieldChecks<SpineHookRunLine, 'decision'> = {
+  v: (value) => typeof value === 'number',
+  type: (value) => value === 'hook_run',
+  id: (value) => typeof value === 'string',
+  event: (value) => typeof value === 'string',
+  hookId: (value) => typeof value === 'string',
+  executor: (value) => value === 'function' || value === 'command',
+  startedAt: (value) => typeof value === 'number',
+  durationMs: (value) => typeof value === 'number',
+  parseOk: (value) => typeof value === 'boolean',
+  // The hooks platform owns `HookRunDecision`'s shape, and this package has
+  // never validated past "it is an object": a spine written by a newer Copse
+  // can carry decision fields this one has no schema for, and rejecting those
+  // lines would delete the stdout/stderr blobs they reference.
+  decision: isRecord,
 }
 
-function isSpineMachineContinuationLine(value: unknown): value is SpineMachineContinuationLine {
-  if (!isRecord(value)) return false
-  const phase = value['phase']
-  const result = value['result']
-  const turnOutcome = value['turnOutcome']
-  return (
-    value['type'] === 'machine_continuation' &&
-    typeof value['v'] === 'number' &&
-    typeof value['id'] === 'string' &&
-    typeof value['operationId'] === 'string' &&
-    typeof value['turnTreeId'] === 'string' &&
-    typeof value['recordedAt'] === 'number' &&
-    (value['budgetUsed'] === undefined ||
-      (typeof value['budgetUsed'] === 'number' &&
-        Number.isInteger(value['budgetUsed']) &&
-        value['budgetUsed'] >= 0)) &&
-    ((phase === 'started' && result === undefined && turnOutcome === undefined) ||
-      (phase === 'finished' &&
-        isMachineContinuationResult(result) &&
-        (turnOutcome === undefined || isTurnOutcome(turnOutcome))))
-  )
+const isSpineHookRunLine: (value: unknown) => value is SpineHookRunLine = (value) =>
+  matchesLine(value, HOOK_RUN_FIELDS)
+
+const DECISION_LINE_FIELDS: RequiredFieldChecks<SpineDecisionLine> = {
+  v: (value) => typeof value === 'number',
+  type: (value) => value === 'decision',
+  id: (value) => typeof value === 'string',
+  at: (value) => typeof value === 'number',
+  kind: (value) => typeof value === 'string',
+  subject: (value) => typeof value === 'string',
+  actor: (value) =>
+    value === 'user' || value === 'classifier' || value === 'hook' || value === 'system',
+  verdict: (value) =>
+    value === 'approved' ||
+    value === 'denied' ||
+    value === 'allowed' ||
+    value === 'blocked' ||
+    value === 'ask' ||
+    value === 'classified' ||
+    value === 'timeout' ||
+    value === 'cancelled' ||
+    value === 'deferred',
 }
 
-function isSpineModelSelectedLine(value: unknown): value is SpineModelSelectedLine {
-  if (!isRecord(value)) return false
-  return (
-    value['type'] === 'model_selected' &&
-    typeof value['v'] === 'number' &&
-    typeof value['id'] === 'string' &&
-    typeof value['recordedAt'] === 'number' &&
-    (value['by'] === 'user' || value['by'] === 'auto') &&
-    (value['from'] === undefined || typeof value['from'] === 'string') &&
-    typeof value['to'] === 'string'
-  )
+const DECISION_LINE_OPTIONAL: OptionalFieldChecks<SpineDecisionLine, 'cause'> = {
+  detail: isContentRef,
+  cause: isPromptCause,
+  toolCallId: (value) => typeof value === 'string',
+  turnId: (value) => typeof value === 'string',
+  step: (value) => typeof value === 'number',
 }
 
-function isPlanSpineAction(value: unknown): value is PlanSpineAction {
-  return (
-    value === 'create' ||
-    value === 'revise' ||
-    value === 'comment' ||
-    value === 'approve' ||
-    value === 'abandon'
-  )
+const isSpineDecisionLine: (value: unknown) => value is SpineDecisionLine = (value) =>
+  matchesLine(value, DECISION_LINE_FIELDS, DECISION_LINE_OPTIONAL)
+
+const PERMISSION_DECISION_FIELDS: RequiredFieldChecks<SpinePermissionDecisionLine, 'reasons'> = {
+  v: (value) => typeof value === 'number',
+  type: (value) => value === 'permission_decision',
+  id: (value) => typeof value === 'string',
+  decidedAt: (value) => typeof value === 'number',
+  originalCommand: (value) => typeof value === 'string',
+  originalMode: (value) => value === 'guarded-yolo',
+  effectiveMode: (value) => value === 'guarded-yolo',
+  sandboxState: (value) => value === 'project-sandbox' || value === 'unsandboxed',
+  harmDecision: (value) => value === 'allow' || value === 'prompt' || value === 'deny',
+  policyDecision: (value) => value === 'allow' || value === 'prompt' || value === 'deny',
+  reasons: (value) => Array.isArray(value) && value.every((reason) => typeof reason === 'string'),
+  userResponse: (value) => value === 'approved' || value === 'declined' || value === 'not-required',
 }
 
-function isSpinePlanLine(value: unknown): value is SpinePlanLine {
-  if (!isRecord(value)) return false
-  return (
-    value['type'] === 'plan' &&
-    typeof value['v'] === 'number' &&
-    typeof value['id'] === 'string' &&
-    typeof value['planId'] === 'string' &&
-    typeof value['createdAt'] === 'number' &&
-    isPlanSpineAction(value['action']) &&
-    (value['revision'] === undefined || typeof value['revision'] === 'number') &&
-    (value['artifact'] === undefined || isContentRef(value['artifact'])) &&
-    (value['commentId'] === undefined || typeof value['commentId'] === 'string') &&
-    (value['executionProfileId'] === undefined ||
-      typeof value['executionProfileId'] === 'string') &&
-    (value['contentHash'] === undefined || typeof value['contentHash'] === 'string')
-  )
+const isSpinePermissionDecisionLine: (value: unknown) => value is SpinePermissionDecisionLine = (
+  value,
+) => matchesLine(value, PERMISSION_DECISION_FIELDS)
+
+const isMachineContinuationResult: (value: unknown) => value is MachineContinuationResult = (
+  value,
+) =>
+  value === 'completed' ||
+  value === 'duplicate' ||
+  value === 'stale' ||
+  value === 'budget-exhausted' ||
+  value === 'failed'
+
+const TURN_OUTCOME_FIELDS: RequiredFieldChecks<TurnOutcome, 'stopReason'> = {
+  status: (value) => value === 'completed' || value === 'failed' || value === 'cancelled',
+  // Declared as a nine-literal union, but the spine has only ever validated it
+  // as a string — and this is the field that made the old predicate's
+  // `value is TurnOutcome` a lie rather than merely incomplete. Tightening it
+  // is a compatibility decision, not a fix: a newer Copse can write a stop
+  // reason this build has no literal for, and a `machine_continuation` line
+  // rejected over it takes its turn outcome out of the transcript.
+  stopReason: (value) => typeof value === 'string',
+  source: (value) =>
+    value === 'provider' || value === 'host' || value === 'user' || value === 'hook',
+  executor: (value) =>
+    value === 'local' || value === 'acp' || value === 'remote' || value === 'plugin',
+  provider: (value) => typeof value === 'string',
+  model: (value) => typeof value === 'string',
+  endedAt: (value) => typeof value === 'number',
 }
+
+const isTurnOutcome: (value: unknown) => value is TurnOutcome = (value) =>
+  matchesLine(value, TURN_OUTCOME_FIELDS)
+
+const MACHINE_CONTINUATION_FIELDS: RequiredFieldChecks<SpineMachineContinuationLine, 'result'> = {
+  v: (value) => typeof value === 'number',
+  type: (value) => value === 'machine_continuation',
+  id: (value) => typeof value === 'string',
+  operationId: (value) => typeof value === 'string',
+  turnTreeId: (value) => typeof value === 'string',
+  recordedAt: (value) => typeof value === 'number',
+  // `phase` is proved here; the correlation between it and `result` /
+  // `turnOutcome` is a cross-field rule, checked in `isSpineMachineContinuationLine`
+  // below because no per-field check can see two fields at once.
+  phase: (value) => value === 'started' || value === 'finished',
+  // Correlated with `phase`, so no per-field check can decide it; the real rule
+  // is `machineContinuationPhaseAgrees`, run below as the cross-field pass.
+  result: () => true,
+}
+
+const MACHINE_CONTINUATION_OPTIONAL: OptionalFieldChecks<
+  SpineMachineContinuationLine,
+  'budgetUsed'
+> = {
+  budgetUsed: (value) => typeof value === 'number' && Number.isInteger(value) && value >= 0,
+}
+
+/**
+ * `started` carries no result; `finished` carries one and may carry a turn
+ * outcome. That disjunction is the one rule here that spans fields, so it stays
+ * an explicit clause — and because a `&&` chain is not a form TypeScript can
+ * infer a predicate from, the narrowing half is done first and the correlation
+ * is checked against the already-narrowed value.
+ */
+const isSpineMachineContinuationLine: (value: unknown) => value is SpineMachineContinuationLine = (
+  value,
+) =>
+  matchesLine(
+    value,
+    MACHINE_CONTINUATION_FIELDS,
+    MACHINE_CONTINUATION_OPTIONAL,
+    machineContinuationPhaseAgrees,
+  )
+
+function machineContinuationPhaseAgrees(line: Record<string, unknown>): boolean {
+  return line['phase'] === 'started'
+    ? line['result'] === undefined && line['turnOutcome'] === undefined
+    : isMachineContinuationResult(line['result']) &&
+        (line['turnOutcome'] === undefined || isTurnOutcome(line['turnOutcome']))
+}
+
+const MODEL_SELECTED_FIELDS: RequiredFieldChecks<SpineModelSelectedLine> = {
+  v: (value) => typeof value === 'number',
+  type: (value) => value === 'model_selected',
+  id: (value) => typeof value === 'string',
+  recordedAt: (value) => typeof value === 'number',
+  by: (value) => value === 'user' || value === 'auto',
+  to: (value) => typeof value === 'string',
+}
+
+const MODEL_SELECTED_OPTIONAL: OptionalFieldChecks<SpineModelSelectedLine> = {
+  from: (value) => typeof value === 'string',
+}
+
+const isSpineModelSelectedLine: (value: unknown) => value is SpineModelSelectedLine = (value) =>
+  matchesLine(value, MODEL_SELECTED_FIELDS, MODEL_SELECTED_OPTIONAL)
+
+const isPlanSpineAction: (value: unknown) => value is PlanSpineAction = (value) =>
+  value === 'create' ||
+  value === 'revise' ||
+  value === 'comment' ||
+  value === 'approve' ||
+  value === 'abandon'
+
+const PLAN_LINE_FIELDS: RequiredFieldChecks<SpinePlanLine> = {
+  v: (value) => typeof value === 'number',
+  type: (value) => value === 'plan',
+  id: (value) => typeof value === 'string',
+  planId: (value) => typeof value === 'string',
+  createdAt: (value) => typeof value === 'number',
+  action: isPlanSpineAction,
+}
+
+const PLAN_LINE_OPTIONAL: OptionalFieldChecks<SpinePlanLine> = {
+  revision: (value) => typeof value === 'number',
+  artifact: isContentRef,
+  commentId: (value) => typeof value === 'string',
+  executionProfileId: (value) => typeof value === 'string',
+  contentHash: (value) => typeof value === 'string',
+}
+
+const isSpinePlanLine: (value: unknown) => value is SpinePlanLine = (value) =>
+  matchesLine(value, PLAN_LINE_FIELDS, PLAN_LINE_OPTIONAL)
 
 /** Parse one spine line into the {@link SpineLine} union. Null on malformed/unknown. */
 export function parseSpineLine(raw: string): SpineLine | null {

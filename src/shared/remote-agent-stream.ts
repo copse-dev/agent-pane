@@ -46,9 +46,8 @@ export class RemoteAgentStreamError extends Error {
   }
 }
 
-export function isRemoteAgentStreamError(err: unknown): err is RemoteAgentStreamError {
-  return err instanceof RemoteAgentStreamError
-}
+export const isRemoteAgentStreamError: (err: unknown) => err is RemoteAgentStreamError = (err) =>
+  err instanceof RemoteAgentStreamError
 
 interface CursorToolCallEvent {
   callId?: string | undefined

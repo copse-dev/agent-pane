@@ -37,7 +37,7 @@ function asStringRecord(value: unknown): Record<string, string> | undefined {
 
 function asStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined
-  const out = value.filter((v): v is string => typeof v === 'string')
+  const out = value.filter((v) => typeof v === 'string')
   return out.length > 0 ? out : undefined
 }
 

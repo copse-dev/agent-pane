@@ -50,6 +50,20 @@ describe('findFilesTool truncation flag', () => {
     const out = await runFindFiles({ pattern: '*.md' })
     assert.match(out, /No files match/)
   })
+
+  it('finds bare filenames and extension globs at any depth', async () => {
+    setIndexForTest(['package.json', 'packages/app/package.json', 'src/main.ts'], testRoot)
+    assert.equal(
+      await runFindFiles({ pattern: 'package.json' }),
+      'package.json\npackages/app/package.json',
+    )
+    assert.equal(await runFindFiles({ pattern: '*.ts' }), 'src/main.ts')
+  })
+
+  it('keeps path-qualified globs scoped to their directory', async () => {
+    setIndexForTest(['src/main.ts', 'src/nested/other.ts', 'test/main.ts'], testRoot)
+    assert.equal(await runFindFiles({ pattern: 'src/*.ts' }), 'src/main.ts')
+  })
 })
 
 describe('searchCodeTool pattern/query aliasing', () => {

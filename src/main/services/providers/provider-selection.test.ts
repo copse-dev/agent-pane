@@ -14,6 +14,8 @@ import {
 } from './provider-selection.ts'
 import { setSetting, setApiKey } from '../storage/settings.test-shim.ts'
 import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
+import { createProvider } from '@copse/llm/create-provider.ts'
+import { AnthropicProvider } from '@copse/llm/anthropic-provider.ts'
 import type { LLMProvider } from '@shared/types'
 import { expectStringRecord } from '@shared/unknown-value.ts'
 import { jsonResponse } from './test-response.ts'
@@ -485,5 +487,101 @@ describe('listLmStudioModels cache', () => {
 
     assert.deepEqual(await listLmStudioModels(), ['fresh'])
     assert.equal(fetchMock.mock.callCount(), 4)
+  })
+})
+
+// Issue #2478. `acp:`, `remote-agent:`, `plugin-model:` and `auto:` name a route
+// the host takes, not a model. `buildProvider`'s last branch is a fallback that
+// hands whatever it was given to Anthropic, so before the guard these fell all
+// the way through: a turn pointed at the user's own device agent went out to
+// api.anthropic.com on their stored key, carrying the agent id as the model.
+describe('buildProvider refuses host-routed selections (issue #2478)', () => {
+  // Every assertion here needs mock mode OFF: it short-circuits ahead of all
+  // routing, which is exactly what the last test in this block pins.
+  function withoutMockMode<T>(body: () => T): T {
+    const prev = process.env['COPSE_PANEL_MOCK_LLM']
+    delete process.env['COPSE_PANEL_MOCK_LLM']
+    try {
+      return body()
+    } finally {
+      if (prev === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+      else process.env['COPSE_PANEL_MOCK_LLM'] = prev
+    }
+  }
+
+  beforeEach(() => {
+    // The key is the point: with one configured, the old fall-through built a
+    // usable Anthropic client and spent money. The guard has to fire anyway.
+    setApiKey('anthropic', 'sk-ant-host-routed-test')
+  })
+
+  afterEach(() => {
+    setApiKey('anthropic', '')
+  })
+
+  it('rejects each route-shaped namespace instead of calling a cloud provider', async () => {
+    await withoutMockMode(async () => {
+      for (const model of [
+        'acp:claude-agent-acp#opus[1m]',
+        'acp:codex',
+        'remote-agent:anthropic',
+        'plugin-model:my%3Apack:route-1',
+        'auto:best-value',
+      ]) {
+        await assert.rejects(
+          () => buildProvider(model),
+          // The id is in the message so the surface that shows it (a comparison
+          // note, a failed turn) names the selection the user has to change.
+          (err: unknown) => err instanceof Error && err.message.includes(model),
+          model,
+        )
+      }
+    })
+  })
+
+  it('says why an ACP selection is not a model this path can call', async () => {
+    await withoutMockMode(async () => {
+      await assert.rejects(
+        () => buildProvider('acp:claude-agent-acp#opus[1m]'),
+        /device agent.*own sign-in/s,
+      )
+    })
+  })
+
+  it('tells a caller to expand an `auto:` rule rather than offering a model', async () => {
+    // The other three are a choice the user made; this one is a caller that
+    // forgot `resolveDynamicModelId`, and the message has to say so.
+    await withoutMockMode(async () => {
+      await assert.rejects(() => buildProvider('auto:min-intellect:45'), /resolveDynamicModelId/)
+    })
+  })
+
+  it('would have built an Anthropic client for the same id without the guard', async () => {
+    // Guards the guard. `createProvider`'s final branch takes any unrecognised
+    // id when an Anthropic key exists, which is how an ACP agent id reached
+    // api.anthropic.com and came back "credit balance is too low". If this ever
+    // stops holding, the guard above is no longer load-bearing and should be
+    // re-argued rather than kept out of habit.
+    await withoutMockMode(async () => {
+      const provider = createProvider('acp:claude-agent-acp#opus[1m]', {
+        anthropicApiKey: 'sk-ant-host-routed-test',
+      })
+      assert.ok(provider instanceof AnthropicProvider)
+      await Promise.resolve()
+    })
+  })
+
+  it('still lets mock mode short-circuit ahead of the guard', async () => {
+    // Demo traces and e2e fixtures carry `acp:` ids, and mock mode never reaches
+    // the network — there is no spend to prevent, so the documented precedence
+    // of the mock escape hatch over routing stands.
+    const prev = process.env['COPSE_PANEL_MOCK_LLM']
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    try {
+      assert.ok((await buildProvider('acp:codex')) instanceof MockLLMProvider)
+    } finally {
+      if (prev === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+      else process.env['COPSE_PANEL_MOCK_LLM'] = prev
+    }
   })
 })

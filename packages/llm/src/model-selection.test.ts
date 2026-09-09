@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseModelSelection } from './model-selection.ts'
+import { hostRoutedNamespace, parseModelSelection } from './model-selection.ts'
 
 describe('parseModelSelection', () => {
   it('leaves a bare cloud id whole', () => {
@@ -112,5 +112,50 @@ describe('parseModelSelection', () => {
       id: 'min-intellect:45',
       modelId: 'min-intellect:45',
     })
+  })
+})
+
+describe('hostRoutedNamespace', () => {
+  it('names the route for every namespace the host has to take itself', () => {
+    for (const [model, namespace] of [
+      ['acp:claude-agent-acp', 'acp'],
+      ['acp:claude-agent-acp#opus[1m]', 'acp'],
+      ['remote-agent:anthropic', 'remote-agent'],
+      ['remote-agent:cursor#claude-opus-5', 'remote-agent'],
+      ['plugin-model:my%3Apack:route-1', 'plugin-model'],
+      ['auto:best-value', 'auto'],
+      ['auto:min-intellect:45', 'auto'],
+    ] as const) {
+      assert.equal(hostRoutedNamespace(model), namespace)
+    }
+  })
+
+  it('passes through every selection a provider can be built for', () => {
+    for (const model of [
+      'claude-opus-5',
+      'gpt-5.6-sol',
+      'lm-studio',
+      'lmstudio:qwen/qwen3-coder-30b',
+      'openrouter:anthropic/claude-opus-5',
+      'gemini:gemini-2.5-flash',
+      'deepseek:deepseek-chat',
+      '',
+    ]) {
+      assert.equal(hostRoutedNamespace(model), null, model)
+    }
+  })
+
+  it('still routes an agent namespace with no agent id', () => {
+    // `acp:` on its own is a broken selection, not a cloud model called "acp:".
+    // Letting it through would send that literal to a provider — the exact
+    // fall-through this guards (issue #2478).
+    assert.equal(hostRoutedNamespace('acp:'), 'acp')
+    assert.equal(hostRoutedNamespace('acp:#opus'), 'acp')
+    assert.equal(hostRoutedNamespace('remote-agent:'), 'remote-agent')
+  })
+
+  it('does not fire on a cloud id that merely starts with the same letters', () => {
+    assert.equal(hostRoutedNamespace('acp-model-2'), null)
+    assert.equal(hostRoutedNamespace('automatic-1111'), null)
   })
 })

@@ -9,16 +9,13 @@ import {
   type StartProposedThreadOptions,
   type ThreadProposalControllerApi,
 } from './thread-proposals.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 const proposal: ThreadProposal = {
   id: 'call-1',
   title: 'Migrate the settings store to Zod',
   summary: 'Replace the hand-rolled settings parsing with a Zod schema.',
   prompt: 'Replace the hand-rolled parsing in settings.ts with a Zod schema, then run the tests.',
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }
 
 interface Harness {

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { copseWorkspaceDir } from '@copse/store-kit/copse-paths.ts'
 
 /**
  * Facts the store cannot know on its own and the host supplies once.
@@ -37,10 +37,7 @@ export interface ThreadStoreEnvironment {
 }
 
 export function defaultWorkspaceRoot(env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env['COPSE_WORKSPACE_DIR']
-  return configured !== undefined && configured.length > 0
-    ? configured
-    : join(homedir(), '.copse', 'workspace')
+  return copseWorkspaceDir(env)
 }
 
 /** Directory names directly under `root`, or none when the root does not exist. */

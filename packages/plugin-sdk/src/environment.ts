@@ -1,5 +1,4 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { copseDataRoot } from '@copse/store-kit/copse-paths.ts'
 
 /**
  * The one host fact the SDK's host-side helpers need: the profile root under
@@ -14,8 +13,7 @@ export interface PluginSdkEnvironment {
 }
 
 export function defaultDataRoot(env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env['COPSE_DIR']
-  return configured !== undefined && configured.length > 0 ? configured : join(homedir(), '.copse')
+  return copseDataRoot(env)
 }
 
 const DEFAULTS: PluginSdkEnvironment = { dataRoot: () => defaultDataRoot() }

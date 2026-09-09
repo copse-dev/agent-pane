@@ -91,7 +91,10 @@ export const findFilesTool = defineTool({
     const idx = getIndex(root)
     if (!idx) return 'File index not available. Try opening the workspace again.'
     // Take one extra so we can tell "exactly max_results total" from "more were dropped".
-    const found = micromatch(idx.paths, pattern).slice(0, max_results + 1)
+    const found = micromatch(idx.paths, pattern, { basename: !pattern.includes('/') }).slice(
+      0,
+      max_results + 1,
+    )
     if (found.length === 0) return `No files match: ${pattern}`
     const truncated = found.length > max_results
     const matches = truncated ? found.slice(0, max_results) : found
