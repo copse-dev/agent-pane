@@ -211,17 +211,17 @@ describe('createSnapshotCommit', () => {
     return dir
   }
 
-  it('returns HEAD itself for a clean tree', () => {
+  it('returns HEAD itself for a clean tree', async () => {
     const dir = initRepo()
     try {
       const head = git(dir, ['rev-parse', 'HEAD'])
-      assert.deepEqual(createSnapshotCommit(dir), { dirty: false, sha: head })
+      assert.deepEqual(await createSnapshotCommit(dir), { dirty: false, sha: head })
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
-  it('captures unstaged and untracked changes without touching HEAD or the index', () => {
+  it('captures unstaged and untracked changes without touching HEAD or the index', async () => {
     const dir = initRepo()
     try {
       writeFileSync(join(dir, 'a.txt'), 'two\n')
@@ -229,7 +229,7 @@ describe('createSnapshotCommit', () => {
       const headBefore = git(dir, ['rev-parse', 'HEAD'])
       const statusBefore = git(dir, ['status', '--porcelain'])
 
-      const snapshot = createSnapshotCommit(dir)
+      const snapshot = await createSnapshotCommit(dir)
       assert.equal(snapshot.dirty, true)
       assert.notEqual(snapshot.sha, headBefore)
       // Snapshot parent is HEAD; its tree carries both changes.
@@ -244,12 +244,12 @@ describe('createSnapshotCommit', () => {
     }
   })
 
-  it('respects .gitignore in the snapshot', () => {
+  it('respects .gitignore in the snapshot', async () => {
     const dir = initRepo()
     try {
       writeFileSync(join(dir, '.gitignore'), 'secret.txt\n')
       writeFileSync(join(dir, 'secret.txt'), 'do not ship\n')
-      const snapshot = createSnapshotCommit(dir)
+      const snapshot = await createSnapshotCommit(dir)
       assert.equal(snapshot.dirty, true)
       assert.throws(() => git(dir, ['show', `${snapshot.sha}:secret.txt`]))
       assert.equal(git(dir, ['show', `${snapshot.sha}:.gitignore`]), 'secret.txt')

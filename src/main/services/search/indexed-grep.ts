@@ -103,7 +103,12 @@ async function searchWithIndexedCli(
   opts: CodeContentSearchOptions,
 ): Promise<string[]> {
   const args = buildIndexedCliArgs(backend, opts)
-  const { stdout } = await executeCommand(backend, args, opts.signal ? { signal: opts.signal } : {})
+  const { stdout, code } = await executeCommand(
+    backend,
+    args,
+    opts.signal ? { signal: opts.signal } : {},
+  )
+  if (code !== 0) return []
   return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot)
 }
 
@@ -166,7 +171,13 @@ async function searchWithRipgrep(opts: CodeContentSearchOptions): Promise<string
     opts.searchRoot,
   ]
 
-  const { stdout } = await executeCommand('rg', args, opts.signal ? { signal: opts.signal } : {})
+  const { stdout, stderr, code } = await executeCommand(
+    'rg',
+    args,
+    opts.signal ? { signal: opts.signal } : {},
+  )
+  if (code !== 0 && code !== 1)
+    throw new Error(stderr.trim() || `ripgrep exited with code ${String(code)}`)
   return await parseRipgrepJson(stdout, opts.maxResults, opts.displayRoot)
 }
 
@@ -182,7 +193,13 @@ async function searchWithGrepRecursive(opts: CodeContentSearchOptions): Promise<
     opts.pattern,
     opts.searchRoot,
   ]
-  const { stdout } = await executeCommand('grep', args, opts.signal ? { signal: opts.signal } : {})
+  const { stdout, stderr, code } = await executeCommand(
+    'grep',
+    args,
+    opts.signal ? { signal: opts.signal } : {},
+  )
+  if (code !== 0 && code !== 1)
+    throw new Error(stderr.trim() || `grep exited with code ${String(code)}`)
   return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot)
 }
 

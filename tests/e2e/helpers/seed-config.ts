@@ -32,6 +32,10 @@ import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/a
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
+// A developer may have LM Studio listening on the product's default port. E2E
+// must not discover or query that real service unless a fixture explicitly
+// supplies its own localServerUrl through the supported settings surface.
+const E2E_UNREACHABLE_LM_STUDIO_URL = 'http://127.0.0.1:1/v1'
 
 /**
  * Plugins the host turns off on a profile with no `pluginDisabled` list — mirrors
@@ -317,6 +321,7 @@ function writeSettings(settings: Record<string, unknown>): void {
       onboardingCompleted: true,
       theme: 'dark',
       uiTintStrength: 'off',
+      localServerUrl: E2E_UNREACHABLE_LM_STUDIO_URL,
       ...settings,
     }),
     'utf8',
@@ -500,6 +505,8 @@ export function seedEmptyProject(
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
     nextStepSuggestionEnabled?: boolean
+    /** Opt into the experimental unattended container runs (off by default). */
+    containerRunsEnabled?: boolean
     model?: string
     advisorModel?: string
     localServerUrl?: string
@@ -627,6 +634,9 @@ export function seedEmptyProject(
   }
   if (options?.nextStepSuggestionEnabled !== undefined) {
     settings.nextStepSuggestionEnabled = options.nextStepSuggestionEnabled
+  }
+  if (options?.containerRunsEnabled !== undefined) {
+    settings.containerRunsEnabled = options.containerRunsEnabled
   }
   if (options?.model) {
     settings.model = options.model
@@ -1700,6 +1710,91 @@ export function seedConversationVisualHierarchyFixture(workspaceRoot: string): v
 }
 
 /**
+ * Every surface that used to carry an accent rail, on one screen: the five
+ * GitHub alert kinds and a plain quote (flat plate), a thinking disclosure plus
+ * a review and a failed comparison (hatched plate), and a two-thread sidebar so
+ * one row is selected and one is not.
+ */
+export function seedCalloutSurfacesFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-callout-surfaces-project'
+  const threadId = 'e2e-callout-surfaces-thread'
+  const otherThreadId = 'e2e-callout-surfaces-other-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Callout surfaces',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-callouts',
+            role: 'user',
+            content: 'Summarise what I need to know before I upgrade.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-callouts',
+            role: 'assistant',
+            content: [
+              'Here is what the upgrade changes.',
+              '',
+              '> [!NOTE]',
+              '> Useful information that users should know, even when skimming.',
+              '',
+              '> [!TIP]',
+              '> Helpful advice for doing things better or more easily.',
+              '',
+              '> [!IMPORTANT]',
+              '> Key information users need to know to achieve their goal.',
+              '',
+              '> [!WARNING]',
+              '> Urgent info that needs immediate attention to avoid problems.',
+              '',
+              '> [!CAUTION]',
+              '> Advises about risks or negative outcomes of certain actions.',
+              '',
+              '> A plain quote carries no label — the quote itself is the whole marker.',
+            ].join('\n'),
+            reasoning: 'Checking the release notes for anything that changes the migration order.',
+            toolCalls: [],
+            review: {
+              status: 'done',
+              summary: 'The upgrade notes match the changelog. No issues found.',
+            },
+            createdAt: now + 1,
+          },
+        ],
+        comparison: {
+          status: 'error',
+          models: { a: 'reviewer-a', b: 'reviewer-b', judge: 'judge' },
+          reviewA: '',
+          reviewB: '',
+          synthesis: '',
+          error: 'Comparison declined.',
+        },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+      {
+        id: otherThreadId,
+        title: 'An unselected thread',
+        status: 'idle',
+        messages: [],
+        createdAt: now - 1000,
+        updatedAt: now - 1000,
+      },
+    ],
+  })
+}
+
+/**
  * Assistant answer trailed by a Cursor ACP transport RetriableError.
  * Seeds developer mode so the collapsed transport-note disclosure is visible.
  */
@@ -2129,12 +2224,19 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
  * pinned appearance defaults as {@link resetUserData}, so call it *after* that
  * reset — not before, or the reset overwrites it.
  */
-export function seedDeveloperModeSetting(developerMode: boolean): void {
-  writeSettings({ developerMode })
+export function seedDeveloperModeSetting(
+  developerMode: boolean,
+  settings: Record<string, unknown> = {},
+): void {
+  writeSettings({ ...settings, developerMode })
 }
 
 /** Populated conversation used to validate Developer mode's diagnostic surfaces. */
-export function seedDeveloperModeFixture(workspaceRoot: string, developerMode: boolean): void {
+export function seedDeveloperModeFixture(
+  workspaceRoot: string,
+  developerMode: boolean,
+  settings: Record<string, unknown> = {},
+): void {
   const projectId = 'e2e-developer-mode-project'
   const threadId = 'e2e-developer-mode-thread'
   const now = Date.now()
@@ -2163,7 +2265,7 @@ export function seedDeveloperModeFixture(workspaceRoot: string, developerMode: b
       },
     ],
   })
-  writeSettings({ developerMode })
+  writeSettings({ ...settings, developerMode })
 }
 
 /** ACP thread whose context snapshot represents a `usage_update` from the agent. */

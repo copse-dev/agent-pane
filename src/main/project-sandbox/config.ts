@@ -11,7 +11,9 @@ import { canonicalizePathCached } from './canonical-path-cache.ts'
 import {
   getChatStoreRootSync,
   getInternalWorkspaceRootRegistration,
+  type InternalWorkspaceRootRegistration,
 } from '../services/workspace.ts'
+import { activeThreadReadRoots } from '../services/security/thread-read-roots.ts'
 import {
   WEB_ALLOWED_ORIGINS_SETTING,
   sandboxAllowedDomainsFromOrigins,
@@ -127,6 +129,163 @@ function nestedCheckoutSiblingDenyPaths(checkoutRoot: string, executionRoot: str
     cursor = join(cursor, segment)
   }
   return [...new Set(denyPaths)]
+}
+
+/**
+ * Whether a bare directory entry (no `/**`) in `allowRead` is safe to emit.
+ *
+ * macOS seatbelt is rule-based: a literal directory allow grants a listing of
+ * that directory and nothing below it, and cannot disturb any other rule. ASRT's
+ * Linux backend instead realizes an allowRead entry under a read-denied region
+ * as a `--ro-bind` of that path, mounted AFTER the write binds — so a read entry
+ * that is an ancestor of a writable path shadows the write bind and turns it
+ * read-only (see the linked-worktree test: "Rebinding either ancestor here would
+ * make the validated gitDir read-only again"). Listing-only entries are
+ * therefore emitted everywhere except Linux, where the loss is only that `ls`
+ * of that one directory fails while everything beneath it stays readable.
+ */
+function listingOnlyDirEntriesSupported(): boolean {
+  return process.platform !== 'linux'
+}
+
+/**
+ * Upper bound on the entries {@link readOnlyTreeExcluding} may add. A carve-out
+ * chain through a directory holding hundreds of unregistered entries (a stale
+ * `.claude/worktrees/`) would otherwise grow ASRT's inline seatbelt profile past
+ * ARG_MAX, the same failure `uncoveredSiblingDenyPaths` guards against. Past
+ * the cap the remaining chain directories are simply not opened: fail closed,
+ * never a broader rule.
+ */
+const MAX_TREE_READ_ENTRIES = 400
+
+/**
+ * `allowRead` entries that expose `root` read-only EXCEPT the `carveOuts`
+ * beneath it, without ever naming an ancestor of a carve-out with a `/**` rule.
+ *
+ * Every top-level child that is not on a carve-out's path gets `child` plus
+ * `child/**`. A directory on the path to a carve-out is opened and its own
+ * children handled the same way, so the carve-out itself (a sibling worktree,
+ * the thread's own worktree, the shared `.git`) is never covered by any rule
+ * and keeps whatever policy the rest of the overlay gives it. Directories on
+ * such a path get a listing-only entry where the platform allows one
+ * ({@link listingOnlyDirEntriesSupported}).
+ *
+ * A broad `${root}/**` would be simpler but wrong on both platforms: on macOS
+ * a nested sibling's deny would rely on ASRT's late re-emission for every
+ * shape, and on Linux the resulting `--ro-bind` of `root` would shadow the
+ * write binds for `root/.git/objects` and a worktree nested under `root`.
+ *
+ * The tree is enumerated fresh for every spawn (like
+ * {@link nestedCheckoutSiblingDenyPaths}); an unreadable directory yields no
+ * entries at all rather than a guess.
+ */
+export function readOnlyTreeExcluding(root: string, carveOuts: readonly string[]): string[] {
+  const carved = new Set<string>()
+  const chainDirs = new Set<string>()
+  for (const carveOut of carveOuts) {
+    const rel = relative(root, carveOut)
+    if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) continue
+    carved.add(rel)
+    const segments = rel.split(sep)
+    for (let i = 1; i < segments.length; i++) chainDirs.add(segments.slice(0, i).join(sep))
+  }
+  const listable = listingOnlyDirEntriesSupported()
+  const paths: string[] = listable ? [root] : []
+  const visit = (dirRel: string): boolean => {
+    let entries
+    try {
+      entries = readdirSync(dirRel ? join(root, dirRel) : root, { withFileTypes: true })
+    } catch {
+      return false
+    }
+    for (const entry of entries) {
+      if (paths.length >= MAX_TREE_READ_ENTRIES) return true
+      const rel = dirRel ? join(dirRel, entry.name) : entry.name
+      if (carved.has(rel)) continue
+      const abs = join(root, rel)
+      if (chainDirs.has(rel)) {
+        if (listable) paths.push(abs)
+        if (paths.length >= MAX_TREE_READ_ENTRIES) continue
+        if (!visit(rel)) return false
+        continue
+      }
+      const entryCount = entry.isDirectory() ? 2 : 1
+      if (paths.length + entryCount > MAX_TREE_READ_ENTRIES) return true
+      paths.push(abs)
+      if (entry.isDirectory()) paths.push(`${abs}/**`)
+    }
+    return true
+  }
+  if (!visit('')) return []
+  return [...new Set(paths)]
+}
+
+/**
+ * Read-only view of the shared primary checkout for a linked-worktree thread.
+ *
+ * SECURITY TRADE-OFF. The primary working tree is the user's own checkout and
+ * routinely holds uncommitted work. A thread running in a linked worktree
+ * previously could not read it at all (`denyRead`), which is the strictest
+ * reading but broke the tooling a worktree-based thread exists for: from the
+ * worktree, `git worktree list --porcelain` reported only the primary with a
+ * zero HEAD and no linked entries, and `git -C <primary> …` died with "Unable
+ * to read current working directory" (reconcile-worktrees post-mortem,
+ * 2026-09-09). Reading the primary is what such a thread needs — comparing
+ * against `main`, listing worktrees, reading a config file the worktree does
+ * not carry — and a read of the user's own project by the user's own agent is
+ * the same exposure the thread already has to every committed file through
+ * the shared object store. Writes are a different matter: a worktree thread
+ * that could edit the primary would be editing the user's uncommitted work
+ * behind their back, so the primary is NOT added to `allowWrite` (the write
+ * policy is allow-list based on every platform, so nothing more is needed to
+ * deny it) and its `.git` keeps the existing config/hooks write denies.
+ *
+ * Carved out of the read view, so they keep their own policy:
+ * - the shared `.git` (`commonGitDir`): the narrow admin paths git needs are
+ *   allowed individually by the caller — a wholesale read of the common
+ *   directory would, on Linux, ro-bind over the per-worktree write binds;
+ * - the thread's own checkout when it is nested inside the primary
+ *   (`<primary>/.claude/worktrees/<thread>`): already writable via its own
+ *   rules, and a read-only bind over its ancestor would shadow that;
+ * - every registered sibling worktree nested inside the primary: another
+ *   thread's in-progress work stays unreadable, exactly as it is outside the
+ *   primary via `uncoveredSiblingDenyPaths`.
+ */
+export function primaryCheckoutReadPaths(
+  internalRoot: InternalWorkspaceRootRegistration,
+): string[] {
+  const primary = internalRoot.primaryCheckoutRoot
+  if (!primary || primary === internalRoot.root || primary === internalRoot.checkoutRoot) return []
+  return readOnlyTreeExcluding(primary, [
+    internalRoot.commonGitDir,
+    internalRoot.checkoutRoot,
+    ...internalRoot.siblingRoots,
+  ])
+}
+
+/**
+ * `allowRead` entries for the roots the active thread has been granted — the
+ * directories of skills it invoked (`thread-read-roots.ts`). Reads only; the
+ * shell-scope classifier waives the same roots for read-only commands, so a
+ * command that names one auto-runs inside the seatbelt and must then succeed.
+ *
+ * Both the discovered spelling and the realpath are emitted: the kernel
+ * enforces against the canonical path, and a symlinked `~/.codex/skills/x`
+ * would otherwise be allowed by the classifier and denied by the seatbelt.
+ * No ancestor traversal entries are added — ASRT already allows directory
+ * metadata reads once any deny exists, which is all component-by-component
+ * path resolution needs, and an ancestor entry is exactly the Linux
+ * write-shadowing hazard {@link listingOnlyDirEntriesSupported} describes.
+ */
+export function threadReadRootAllowEntries(): string[] {
+  const entries = new Set<string>()
+  for (const root of activeThreadReadRoots()) {
+    for (const spelling of new Set([root.path, root.canonical])) {
+      entries.add(spelling)
+      if (root.isDirectory) entries.add(`${spelling}/**`)
+    }
+  }
+  return [...entries]
 }
 
 /**
@@ -653,6 +812,21 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'config'),
         join(internalRoot.commonGitDir, 'packed-refs'),
         join(internalRoot.commonGitDir, 'shallow'),
+        // The primary checkout's own state, read-only: its HEAD (without it
+        // `git worktree list` reported the primary at 0000000), its index (so
+        // `git -C <primary> status/diff` work — the refresh write fails
+        // silently), and the admin dir of every registered sibling so the
+        // worktree list is complete. Their working trees stay denied.
+        join(internalRoot.commonGitDir, 'HEAD'),
+        join(internalRoot.commonGitDir, 'ORIG_HEAD'),
+        join(internalRoot.commonGitDir, 'FETCH_HEAD'),
+        join(internalRoot.commonGitDir, 'index'),
+        join(internalRoot.commonGitDir, 'description'),
+        ...internalRoot.siblingGitDirs.flatMap((dir) => [dir, `${dir}/**`]),
+        // Listing `worktrees/` is what lets git enumerate them; a bare entry
+        // for the ancestor of the writable per-worktree dir is only safe where
+        // it cannot shadow that write bind.
+        ...(listingOnlyDirEntriesSupported() ? [join(internalRoot.commonGitDir, 'worktrees')] : []),
       ]
     : []
   const gitAdminWrite = internalRoot
@@ -666,21 +840,13 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
       ]
     : []
   const siblingDeny = internalRoot ? uncoveredSiblingDenyPaths(internalRoot.siblingRoots) : []
-  // Close the "shared project tree" hole: ASRT default-allows all reads, and
-  // the base `denyRead: [homedir()]` only covers layouts where the primary
-  // checkout lives under $HOME. Linked worktrees under `/tmp`, `/var/folders`,
-  // or a custom `COPSE_WORKTREES_DIR` sit outside $HOME, so a sandboxed
-  // worktree agent could still read the primary checkout without an explicit
-  // deny. Same story for sibling packages inside a nested worktree checkout:
-  // the more-specific `allowRead: [executionRoot, executionRoot/**]` above
-  // covers the agent's own directory; denying the enclosing checkout tree
-  // walls off the rest without touching the discovery-read ancestors.
-  const primaryCheckoutDeny =
-    internalRoot?.primaryCheckoutRoot &&
-    internalRoot.primaryCheckoutRoot !== internalRoot.root &&
-    internalRoot.primaryCheckoutRoot !== internalRoot.checkoutRoot
-      ? [internalRoot.primaryCheckoutRoot, `${internalRoot.primaryCheckoutRoot}/**`]
-      : []
+  // The shared primary checkout is readable (never writable) from a linked
+  // worktree — see primaryCheckoutReadPaths for the trade-off. The entries are
+  // per-child allows with the shared `.git`, the thread's own nested worktree,
+  // and nested sibling worktrees carved out, so under $HOME the home deny
+  // still covers those, and outside $HOME `siblingDeny` above does. Sibling
+  // packages inside a nested worktree checkout are handled separately below.
+  const primaryCheckoutRead = internalRoot ? primaryCheckoutReadPaths(internalRoot) : []
   // Nested execution root (e.g. `worktree/packages/app` under `worktree`):
   // deny siblings at every level of the ancestor chain. Do not broadly deny
   // `${checkoutRoot}/**`: Linux ASRT realizes that as a tmpfs and can no longer
@@ -704,7 +870,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
-      denyRead: [homedir(), ...siblingDeny, ...primaryCheckoutDeny, ...nestedCheckoutDeny],
+      denyRead: [homedir(), ...siblingDeny, ...nestedCheckoutDeny],
       allowRead: [
         root,
         `${root}/**`,
@@ -716,7 +882,10 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         ...chatStoreRead,
         ...worktreeDiscoveryRead,
         ...gitAdminRead,
+        ...primaryCheckoutRead,
         ...agentScratch,
+        // Read-only roots the active thread earned (invoked skill directories).
+        ...threadReadRootAllowEntries(),
       ],
       allowWrite: [root, `${root}/**`, tmpDir, `${tmpDir}/**`, ...gitAdminWrite, ...agentScratch],
       denyWrite: [...workspaceMandatoryWriteDenyPaths(root), ...siblingDeny, ...gitAdminDenyWrite],

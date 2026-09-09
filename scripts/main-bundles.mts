@@ -22,6 +22,20 @@ export interface StandaloneMainBundle {
   entry: string
   /** Repo-relative output, next to `dist/main/index.js` where the runtime looks. */
   outfile: string
+  /**
+   * Replaces the main bundle's `external` list. A bundle that runs somewhere
+   * without the app's node_modules must carry everything the main bundle
+   * leaves behind, except what it deliberately stages beside itself.
+   */
+  external?: string[]
+  /** Extra module aliases, merged over the shared `@shared` alias. */
+  alias?: Record<string, string>
+  /**
+   * esbuild log levels this bundle sets over the main bundle's, by message
+   * id. A bundle that must carry a package the main bundle leaves external
+   * inherits that package's bundling warnings, and says here which it accepts.
+   */
+  logOverride?: Record<string, 'silent' | 'warning' | 'error'>
 }
 
 export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
@@ -59,5 +73,22 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
   {
     entry: 'src/main/services/ssh-workspace/askpass-helper.ts',
     outfile: 'dist/main/ssh-askpass-helper.js',
+  },
+  // The guest side of an unattended container run
+  // (docs/plans/thread-in-container.md). Copied into the worker image and
+  // executed by Node inside the container, where the app's node_modules do
+  // not exist: only the sandbox runtime stays external (the image stages it
+  // beside the bundle, because it locates helper files by path at run time),
+  // and node-pty resolves to a stub because the worker offers no PTY.
+  {
+    entry: 'src/main/services/container-runtime/worker-entry.ts',
+    outfile: 'dist/main/thread-container-worker.cjs',
+    external: ['@anthropic-ai/sandbox-runtime'],
+    alias: { 'node-pty': 'src/main/services/container-runtime/node-pty-stub.cjs' },
+    // jsdom (behind the fetch_url tool) is external to the main bundle and
+    // bundled here, and it resolves its synchronous-XHR helper by path at
+    // run time. The worker never issues a synchronous XHR, so the helper's
+    // absence is accepted rather than made a build error.
+    logOverride: { 'require-resolve-not-external': 'warning' },
   },
 ]

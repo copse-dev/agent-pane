@@ -176,6 +176,7 @@ describe('runHeadlessAgent', () => {
       assert.equal(result.chunks.at(-1)?.type, 'done')
       assert.ok(result.toolNames.includes('list_dir'))
       assert.deepEqual(result.skillNames, [])
+      assert.equal(result.turnOutcome?.status, 'completed')
     } finally {
       await rm(workspace, { recursive: true, force: true })
     }

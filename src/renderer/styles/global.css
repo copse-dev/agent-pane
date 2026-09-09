@@ -21,6 +21,7 @@
 @import './global/ssh-prompt.css';
 @import './global/update-prompt.css';
 @import './global/confirm-dialog.css';
+@import './global/container-run.css';
 @import './global/new-project-dialog.css';
 @import './global/comparison-model-dialog.css';
 @import './global/create-pr-dialog.css';

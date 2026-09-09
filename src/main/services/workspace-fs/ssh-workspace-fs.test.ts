@@ -1,5 +1,9 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtemp, mkdir, writeFile, access, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
 import {
   resetSshConnectionManagerForTests,
@@ -48,12 +52,58 @@ describe('SshWorkspaceFs', () => {
     await setSetting('sshWorkspaceHosts', previousHosts)
   })
 
+  it(
+    'removes a nonempty directory recursively with force',
+    { skip: process.platform === 'win32' },
+    async (t) => {
+      const root = await mkdtemp(join(tmpdir(), 'copse-remote-remove-'))
+      t.after(() => rm(root, { recursive: true, force: true }))
+      const directory = join(root, "build's output")
+      await mkdir(directory)
+      await writeFile(join(directory, 'artifact.txt'), 'built')
+      resetSshConnectionManagerForTests()
+      const transport = new FakeSshTransport()
+      t.mock.method(transport, 'execShell', async (command: string) => {
+        const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
+        return { stdout: result.stdout, stderr: result.stderr, code: result.status ?? 1 }
+      })
+      setSshTransportFactory(() => transport)
+      const fs = new SshWorkspaceFs('dev', root)
+      await fs.rm(directory, { recursive: true, force: true })
+      await assert.rejects(access(directory), { code: 'ENOENT' })
+      await fs.rm(directory, { recursive: true, force: true })
+    },
+  )
+
   it('reads a file over SSH exec', async () => {
     const fs = new SshWorkspaceFs('dev', '/home/me/project')
     const text = await fs.readFile('/home/me/project/hello.txt', 'utf-8')
     assert.equal(text, 'remote hello\n')
     await getSshConnectionManager().disconnect('dev')
   })
+
+  it(
+    'reads binary bytes with the host base64, including filenames with spaces and quotes',
+    { skip: process.platform === 'win32' },
+    async (t) => {
+      const dir = await mkdtemp(join(tmpdir(), 'copse-ssh-binary-'))
+      const path = join(dir, "image's sample.bin")
+      const bytes = Buffer.from(Array.from({ length: 512 }, (_, i) => i % 256))
+      try {
+        await writeFile(path, bytes)
+        const transport = new FakeSshTransport()
+        t.mock.method(transport, 'execShell', async (command: string) => {
+          const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
+          return { stdout: result.stdout, stderr: result.stderr, code: result.status ?? 1 }
+        })
+        setSshTransportFactory(() => transport)
+        const fs = new SshWorkspaceFs('dev', dir)
+        assert.deepEqual(await fs.readFileBytes(path), bytes)
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('falls back to POSIX find when the host lacks GNU find -printf', async () => {
     resetSshConnectionManagerForTests()

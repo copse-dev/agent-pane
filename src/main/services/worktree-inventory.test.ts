@@ -271,6 +271,16 @@ describe('worktree inventory', () => {
       runningThreadIds: NO_RUNS,
     })
     assert.equal(cleaned.status, 'cleaned')
+    const remaining = await listWorktreeInventory({
+      projectId: 'project-1',
+      projectRoot: repo,
+      runningThreadIds: NO_RUNS,
+    })
+    assert.equal(
+      cleaned.changedCount,
+      remaining.find((item) => item.path === worktreePath)?.changedCount,
+    )
+    assert.ok(cleaned.changedCount !== null && cleaned.changedCount !== undefined)
     assert.equal(existsSync(join(worktreePath, '.venv')), false)
     assert.equal(existsSync(join(worktreePath, 'packages', 'app', 'node_modules')), false)
     assert.equal(existsSync(join(worktreePath, 'vendor', 'bundle')), false)

@@ -1,10 +1,35 @@
 /* ---- projects pane settings button ---- */
+.projects-settings-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: var(--chrome-action-band-height);
+  border-top: 1px solid var(--border);
+}
+.projects-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--chrome-action-band-height);
+  height: 100%;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.projects-menu-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 .projects-settings-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: 100%;
+  width: auto;
   box-sizing: border-box;
   height: var(--chrome-action-band-height);
   min-height: var(--chrome-action-band-height);
@@ -14,7 +39,6 @@
   color: var(--text-muted);
   background: transparent;
   border: none;
-  border-top: 1px solid var(--border);
   cursor: pointer;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
@@ -451,11 +475,14 @@
   background: var(--bg-hover);
 }
 .chat-row.selected {
+  /* The fill alone. --bg-selected is full-bleed across a continuous list, which
+     already says "this one is current"; the accent rail that used to sit on the
+     trailing edge was redundant with it, and one visual device doing selection,
+     containment and nesting at once is what made the rail read as noise. Weight
+     carries the rest — see docs/ui-taste.md -> "Sidebar selections". */
   background: var(--bg-selected);
   color: var(--text-primary);
-  /* Trailing-edge accent rail — selection fill is full-bleed, so the marker
-     sits on the sidebar's right edge rather than inset on the left. */
-  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+  font-weight: 600;
 }
 .chat-title {
   flex: 1 1 auto;
@@ -1273,6 +1300,83 @@
 }
 .pr-viewer-host {
   gap: 0;
+}
+.pr-detail-sections {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+}
+.pr-detail-sections:empty {
+  display: none;
+}
+.pr-detail-section {
+  padding: var(--spacing-sm) 0;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  font-size: var(--font-size-sm);
+}
+.pr-detail-section[aria-pressed='true'] {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+.pr-activity {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.pr-activity-notice,
+.pr-comment-meta {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-base);
+}
+.pr-comment {
+  padding: var(--spacing-md) 0;
+  border-bottom: 1px solid var(--border);
+}
+.pr-comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+.pr-activity-link {
+  color: var(--accent);
+  font-size: inherit;
+  text-align: left;
+}
+.pr-activity-link:hover {
+  text-decoration: underline;
+}
+.pr-check-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border);
+}
+.pr-check-name {
+  flex: 1;
+  min-width: 0;
+}
+.pr-check-state {
+  color: var(--text-muted);
+}
+.pr-check-state-success {
+  color: var(--success);
+}
+.pr-check-state-failure {
+  color: var(--error);
+}
+.pr-check-state-pending {
+  color: var(--warning);
 }
 .pr-viewer-meta {
   flex-shrink: 0;

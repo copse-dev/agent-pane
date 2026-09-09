@@ -94,9 +94,19 @@ Two defaults harden every invoked skill, trusted or not (both toggleable in
   `EXTERNAL LINKS:` notice plus guidance that any fetch/install/run-from-network
   step is approval-gated and must not exfiltrate workspace contents or secrets
   (`skill-prompt.ts`).
+- **Read-only skill directory** (always on). Invoking a skill grants that
+  thread's sandboxed `run_shell` read-only access to the skill's directory and
+  any validated `paths` entries from its frontmatter (`skill-read-roots.ts` →
+  `thread-read-roots.ts`); the seatbelt overlay adds them to `allowRead` only,
+  and the shell-scope classifier waives them for structurally read-only
+  commands, so `cat`/`sed -n`/`grep` over skill files run contained instead of
+  prompting "Run outside sandbox?". Writes into a skill directory and reads of
+  anything else still prompt. Validation of `paths` is documented in
+  `docs/cursor-plugins.md`.
 - **Sandbox confinement reminder** (`skillSandboxGuidance`, default on). The
   invoked-skills block states that skill shell commands run inside the macOS
-  project sandbox (no network, no out-of-workspace FS), and — where no OS sandbox
+  project sandbox (no network, no out-of-workspace FS beyond the read-only
+  skill directory), and — where no OS sandbox
   is active (Linux/Windows, or ASRT init failed) — that the only boundary is
   approval, so network/install/out-of-workspace commands must be surfaced rather
   than auto-run. The live sandbox state is read via a native-free flag

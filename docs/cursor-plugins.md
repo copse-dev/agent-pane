@@ -68,12 +68,12 @@ use this module.
 
 ### Trust model
 
-| Source                    | Skills trust                            | MCP trust                                                   |
-| ------------------------- | --------------------------------------- | ----------------------------------------------------------- |
-| `~/.cursor/skills` (user) | Trusted                                 | —                                                           |
-| Cursor plugin (`plugin`)  | Untrusted (delimited as data in prompt) | Trusted (user installed via Cursor; full env interpolation) |
-| Project workspace         | Untrusted                               | Requires workspace trust (#100)                             |
-| `skillPluginPaths`        | Untrusted                               | —                                                           |
+| Source                                          | Skills trust                            | MCP trust                                                   |
+| ----------------------------------------------- | --------------------------------------- | ----------------------------------------------------------- |
+| `~/.{cursor,agents,claude,codex}/skills` (user) | Trusted                                 | —                                                           |
+| Cursor plugin (`plugin`)                        | Untrusted (delimited as data in prompt) | Trusted (user installed via Cursor; full env interpolation) |
+| Project workspace                               | Untrusted                               | Requires workspace trust (#100)                             |
+| `skillPluginPaths`                              | Untrusted                               | —                                                           |
 
 Plugin skills are untrusted because their text is still attacker-influenceable
 content (a malicious marketplace plugin). Plugin MCP configs are treated like
@@ -84,6 +84,58 @@ Merge priority for duplicate MCP server names:
 1. `~/.cursor/mcp.json` / app `mcp.json` (user)
 2. Cursor plugin `.mcp.json` files
 3. Project `.cursor/mcp.json` / `.mcp.json` (only when workspace is trusted)
+
+## Skill discovery roots and frontmatter
+
+Skills are `<root>/<name>/SKILL.md` files (the folder name must equal the
+frontmatter `name`). `skills-registry.ts` scans these roots, in this order;
+the first skill loaded for a name wins, so an earlier root overrides a later
+one:
+
+1. **User** — `~/.cursor/skills`, `~/.agents/skills`, `~/.claude/skills`,
+   `~/.codex/skills` (source `user`, trusted). `.codex` is the Codex CLI's
+   layout; it was added after a Codex-backed thread could not find the skill it
+   had been asked to run (reconcile-worktrees post-mortem, 2026-09-09).
+2. **Bundled Cursor plugin skills** shipped with Copse (`bundled`, trusted).
+3. **Project** — the same four container directories under the workspace,
+   including monorepo packages, but never inside a nested repository such as a
+   `.claude/worktrees/*` checkout (`project`, untrusted). Within the project
+   scope the containers keep the order above.
+4. **Cursor plugins** (`~/.cursor/plugins/{local,cache}`) and
+   `skillPluginPaths` (`plugin` / `plugin-path`, untrusted).
+5. **Built-in skills** shipped in `assets/skills` (`bundled`); last, so any
+   user or project skill of the same name overrides a first-party one.
+
+### Frontmatter
+
+```yaml
+---
+name: reconcile-worktrees # must match the folder name
+description: One line the model sees in the catalog
+disable-model-invocation: true # optional: user-only, hidden from the model
+paths: # optional: extra read-only entries, relative to this directory
+  - data
+  - references/schema.json
+---
+```
+
+- `disable-model-invocation` keeps a skill out of the model's catalog; the
+  user can still invoke it with `/name`.
+- `paths` declares extra read-only entries for `run_shell`. When a skill is
+  invoked, that thread's sandboxed shell may **read** the skill directory for
+  the rest of the thread (never write to it); `paths` adds entries relative to
+  the skill directory. Entries are validated, not trusted: absolute paths, `~`,
+  `$VAR`, and `..` are rejected; anything that is or lives under a credential
+  file or directory (`.env*`, `.ssh`, `.aws`, key files, …) is rejected; the
+  home directory, the filesystem root, and any parent of home are rejected. A
+  symlink that leaves the skill directory is honoured only for a trusted
+  (`user` / `bundled`) skill. Refused entries are reported in the invoked-skill
+  prompt so the model does not rely on them. See
+  `src/main/services/skills/skill-read-roots.ts` and
+  `src/main/services/security/thread-read-roots.ts`.
+
+Reads outside these roots — and every write outside the workspace — still go
+through the normal "Run outside sandbox?" approval.
 
 ## Local development
 

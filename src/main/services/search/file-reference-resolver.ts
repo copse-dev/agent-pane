@@ -51,12 +51,11 @@ export async function resolveFileReferences(
   // rather than any one thread's execution root.
   const workspaceRoot = getWorkspaceRoot()
   if (!workspaceRoot) return []
-  const idx = getIndex(workspaceRoot)
-  if (!idx) return []
+  const paths = getIndex(workspaceRoot)?.paths ?? []
 
-  const exactPaths = new Set(idx.paths)
+  const exactPaths = new Set(paths)
   const pathsByBasename = new Map<string, string[]>()
-  for (const path of idx.paths) {
+  for (const path of paths) {
     const name = basename(path)
     const paths = pathsByBasename.get(name)
     if (paths) paths.push(path)

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
-import type { LLMMessage, LLMProvider, StreamChunk, UserContent } from '@shared/types'
+import type { LLMMessage, LLMProvider, StreamChunk, TurnOutcome, UserContent } from '@shared/types'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { runAgent, abortAgent } from './agent-service.ts'
 import { AgentDispatcher } from './agent-dispatcher.ts'
@@ -56,6 +56,12 @@ export interface HeadlessAgentProfile {
   readonly toolAvailability: ExplicitToolAvailability
   /** Whether to discover/connect the product's configured MCP servers. */
   readonly loadMcpServers: boolean
+  /**
+   * Tools the run must never offer, unregistered after bootstrap and before
+   * the agent sees a list — whatever the bootstrap's own probes decided. The
+   * container worker names the GitHub and CI tools here (decision A10).
+   */
+  readonly excludeTools?: readonly string[]
   /** Explicit trust posture used by MCP, hooks, shell routing, and permission policy. */
   readonly workspaceTrusted: boolean
   /** Host interaction channels; omitted channels resolve deterministically without ambient UI. */
@@ -101,6 +107,13 @@ export interface HeadlessAgentResult {
   /** Effective product construction, exposed for profile-resolution/hash tests. */
   readonly toolNames: readonly string[]
   readonly skillNames: readonly string[]
+  /**
+   * The turn's own verdict, as the agent loop recorded it: whether it
+   * completed, failed or was cancelled, and why. A failure comes back here,
+   * not as a rejection, so a caller that needs to know reads this rather
+   * than second-guessing the chunks.
+   */
+  readonly turnOutcome?: TurnOutcome
 }
 
 function runWithHeadlessInteractions<T>(
@@ -170,8 +183,12 @@ export async function runHeadlessAgent(
                       const registry = createRegistry()
                       registerSkillTools(registry)
                       if (profile.loadMcpServers) await loadMcpServers(registry)
+                      for (const name of profile.excludeTools ?? []) {
+                        if (registry.has(name)) registry.unregister(name)
+                      }
 
                       const chunks: StreamChunk[] = []
+                      let turnOutcome: TurnOutcome | undefined
                       const host: AgentHost<StreamChunk> = {
                         emit: (_emittingThreadId, chunk) => {
                           chunks.push(chunk)
@@ -259,6 +276,7 @@ export async function runHeadlessAgent(
                             )
                             inputTokens += result.usage.inputTokens
                             outputTokens += result.usage.outputTokens
+                            if (result.turnOutcome) turnOutcome = result.turnOutcome
                             return result
                           },
                         })
@@ -332,6 +350,7 @@ export async function runHeadlessAgent(
                           usage: { inputTokens, outputTokens },
                           toolNames: registry.names(),
                           skillNames: listSkills().map((skill) => skill.name),
+                          ...(turnOutcome !== undefined ? { turnOutcome } : {}),
                         }
                       } finally {
                         if (run.waitForMachineContinuations) {

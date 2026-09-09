@@ -12,7 +12,7 @@ describe('Developer mode surfaces', function () {
 
   it('hides diagnostics and Hooks by default, keeping the trace exits', async () => {
     resetUserData()
-    seedDeveloperModeFixture(process.cwd(), false)
+    seedDeveloperModeFixture(process.cwd(), false, { containerRunsEnabled: true })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
@@ -26,7 +26,12 @@ describe('Developer mode surfaces', function () {
     )
     // Debug trace and Share trace are the two "this went wrong" exits, so they
     // are deliberately not behind Developer mode — unlike the exports above them.
-    assert.deepEqual(labels, ['Enable Guarded YOLO', 'Debug trace', 'Share trace'])
+    assert.deepEqual(labels, [
+      'Enable Guarded YOLO',
+      'Run unattended in a container…',
+      'Debug trace',
+      'Share trace',
+    ])
     await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu-default.png')
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
@@ -37,7 +42,7 @@ describe('Developer mode surfaces', function () {
 
   it('reveals the footer diagnostics menu and Hooks settings when enabled', async () => {
     resetUserData()
-    seedDeveloperModeFixture(process.cwd(), true)
+    seedDeveloperModeFixture(process.cwd(), true, { containerRunsEnabled: true })
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
@@ -51,6 +56,7 @@ describe('Developer mode surfaces', function () {
     )
     assert.deepEqual(labels, [
       'Enable Guarded YOLO',
+      'Run unattended in a container…',
       'Copy thread ID',
       'Export conversation (JSONL)',
       'Export thread folder (ZIP)',

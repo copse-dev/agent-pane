@@ -32,15 +32,14 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { snapshotWorkingTree } from '../src/main/services/git-snapshot.ts'
 import {
   AWS_REGION_ENV,
   capture,
@@ -330,42 +329,25 @@ export function gitSshCommand(config: SshConfig): string {
 /**
  * Snapshot the working tree (staged + unstaged + untracked, .gitignore
  * respected) into a commit object without touching HEAD or the real index —
- * the same trick the app's createWorktreeBackup() uses. Returns HEAD itself
- * when the tree is clean, so repeat pushes of an unchanged tree are no-ops.
+ * the app's own snapshot. Returns HEAD itself when the tree is clean, so
+ * repeat pushes of an unchanged tree are no-ops.
  */
-export function createSnapshotCommit(cwd: string): { sha: string; dirty: boolean } {
-  const git = (args: string[], env?: Record<string, string>): string =>
-    execFileSync('git', args, {
-      cwd,
-      encoding: 'utf8',
-      env: { ...process.env, ...env },
-      maxBuffer: 50 * 1024 * 1024,
-    }).trim()
-
-  const headSha = git(['rev-parse', 'HEAD'])
-  const tmp = mkdtempSync(join(tmpdir(), 'remote-e2e-index-'))
-  try {
-    const index = { GIT_INDEX_FILE: join(tmp, 'index') }
-    git(['read-tree', 'HEAD'], index)
-    git(['add', '-A'], index)
-    const tree = git(['write-tree'], index)
-    if (tree === git(['rev-parse', 'HEAD^{tree}'])) return { dirty: false, sha: headSha }
-    const sha = git([
-      '-c',
-      'user.name=remote-e2e',
-      '-c',
-      'user.email=remote-e2e@copse.invalid',
-      'commit-tree',
-      tree,
-      '-p',
-      'HEAD',
-      '-m',
-      'remote-e2e: working-tree snapshot',
-    ])
-    return { dirty: true, sha }
-  } finally {
-    rmSync(tmp, { recursive: true, force: true })
-  }
+export function createSnapshotCommit(cwd: string): Promise<{ sha: string; dirty: boolean }> {
+  return snapshotWorkingTree(
+    (args, env) =>
+      Promise.resolve(
+        execFileSync('git', args, {
+          cwd,
+          encoding: 'utf8',
+          env: { ...process.env, ...env },
+          maxBuffer: 50 * 1024 * 1024,
+        }).trim(),
+      ),
+    {
+      message: 'remote-e2e: working-tree snapshot',
+      identity: { name: 'remote-e2e', email: 'remote-e2e@copse.invalid' },
+    },
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -997,7 +979,7 @@ async function runCommand(options: Options): Promise<void> {
     return
   }
 
-  const snapshot = createSnapshotCommit(process.cwd())
+  const snapshot = await createSnapshotCommit(process.cwd())
   const runId = newRunId(Date.now())
   console.log(
     `==> Snapshot ${snapshot.sha.slice(0, 12)} (${snapshot.dirty ? 'includes working-tree changes' : 'clean tree = HEAD'})`,

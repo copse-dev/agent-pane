@@ -84,6 +84,7 @@ const automationsPlugin: PluginSummary = {
         slot: 'settings-plugin-detail',
         title: 'Automation schedules',
       },
+      { id: 'automation-manager', level: 3, slot: 'app-dialog', title: 'Automations' },
     ],
     followUps: [],
     capabilities: [],
@@ -121,6 +122,7 @@ function mountWithSettings(threads: Thread[], activeThreadId: string): HTMLEleme
 
 afterEach(() => {
   if (isSettingsDialogOpen()) closeSettingsDialog()
+  document.querySelector<HTMLDialogElement>('#automation-dialog')?.close()
   document.body.replaceChildren()
   resetProjectSwitchStateForTest()
   resetAttention()
@@ -279,16 +281,9 @@ describe('projects pane automation setup links', () => {
     setup.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    assert.equal(isSettingsDialogOpen(), true)
-    const pluginsSection = document.querySelector('.settings-section[data-section="customise"]')
-    assert.ok(pluginsSection?.classList.contains('active'))
-    // The plugin's detail sits inside a fold that is closed by default; a deep
-    // link that left it closed would land on the card, not on the schedule.
-    const pluginRow = document.querySelector(
-      `.plugin-row[data-plugin-id="${AUTOMATIONS_PLUGIN_ID}"]`,
-    )
-    assert.ok(pluginRow)
-    assert.equal(pluginRow.querySelector<HTMLDetailsElement>('.plugin-settings-fold')?.open, true)
+    assert.equal(isSettingsDialogOpen(), false)
+    const pluginRow = document.querySelector<HTMLDialogElement>('#automation-dialog')
+    assert.ok(pluginRow?.open)
     const form = pluginRow.querySelector<HTMLFormElement>('.automation-form')
     assert.ok(form)
     assert.equal(form.hidden, false)
@@ -315,11 +310,9 @@ describe('projects pane automation setup links', () => {
     setup.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    assert.equal(isSettingsDialogOpen(), true)
-    const pluginRow = document.querySelector(
-      `.plugin-row[data-plugin-id="${AUTOMATIONS_PLUGIN_ID}"]`,
-    )
-    assert.ok(pluginRow)
+    assert.equal(isSettingsDialogOpen(), false)
+    const pluginRow = document.querySelector<HTMLDialogElement>('#automation-dialog')
+    assert.ok(pluginRow?.open)
     assert.match(pluginRow.querySelector('.automation-list')?.textContent ?? '', /Docs freshness/)
     // No schedule was named, so the list stays the destination.
     assert.equal(pluginRow.querySelector<HTMLFormElement>('.automation-form')?.hidden, true)

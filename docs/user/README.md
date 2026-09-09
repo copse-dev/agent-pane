@@ -13,6 +13,7 @@ contributor and design archive — start here instead.
 - [Install](install.md) — macOS 26+ from a signed DMG, or run from source
 - [Quickstart](quickstart.md) — open a project, pick a model, send the first prompt
 - [Connect a model](connect-a-model.md) — API key, environment scan, or a local server
+- [Project instructions](project-instructions.md) — root and directory-scoped AGENTS.md files
 
 ## Staying in control
 

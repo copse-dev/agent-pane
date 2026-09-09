@@ -265,16 +265,20 @@ describe('shared UI polish', () => {
         threadBackground: threadStyle.backgroundColor,
         settingsRail: settingsStyle.boxShadow,
         threadRail: threadStyle.boxShadow,
+        settingsWeight: settingsStyle.fontWeight,
+        threadWeight: threadStyle.fontWeight,
       }
     })
     assert.ok(selectionStyles, 'settings and selected thread rows must exist')
     assert.equal(selectionStyles.settingsRadius, selectionStyles.threadRadius)
     assert.equal(selectionStyles.settingsBackground, selectionStyles.threadBackground)
-    // Settings keeps a leading rail; thread rows use a trailing rail so the
-    // marker sits on the projects sidebar's right edge.
-    assert.match(selectionStyles.settingsRail, /(?:^|[^-\d])2px/)
-    assert.match(selectionStyles.threadRail, /-2px/)
-    assert.notEqual(selectionStyles.settingsRail, selectionStyles.threadRail)
+    // Neither list carries a rail any more, and that they now match is the
+    // point: one selection gesture, the full-bleed fill plus weight, wherever
+    // the list happens to sit. See docs/ui-taste.md -> "Sidebar selections".
+    assert.equal(selectionStyles.settingsRail, 'none')
+    assert.equal(selectionStyles.threadRail, 'none')
+    assert.equal(selectionStyles.settingsWeight, '600')
+    assert.equal(selectionStyles.threadWeight, '600')
     await saveAppScreenshot('settings-thread-style-selection.png')
   })
 })

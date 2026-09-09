@@ -107,6 +107,32 @@ describe('indexed-grep backend selection', () => {
     assert.equal(formatCodeSearchResults(['a.ts:1: x'], 5, 'rg'), 'a.ts:1: x')
   })
 
+  it('reports a failed search instead of turning it into a confident miss', async () => {
+    setIndexedGrepCommandRunnerForTest(async () => ({
+      stdout: '',
+      stderr: 'regex parse error: unclosed character class',
+      code: 2,
+      stdoutTruncated: false,
+    }))
+    await assert.rejects(
+      searchCodeContent({ pattern: '[', searchRoot: '/tmp/repo', maxResults: 10 }),
+      /unclosed character class/,
+    )
+  })
+
+  it('treats exit code 1 as a successful search with no matches', async () => {
+    setIndexedGrepCommandRunnerForTest(async () => ({
+      stdout: '',
+      stderr: '',
+      code: 1,
+      stdoutTruncated: false,
+    }))
+    assert.deepEqual(
+      await searchCodeContent({ pattern: 'absent', searchRoot: '/tmp/repo', maxResults: 10 }),
+      { lines: [], backend: 'rg' },
+    )
+  })
+
   it('cross-checks a successful empty indexed result with ripgrep', async () => {
     const commands: string[] = []
     const rgMatch = JSON.stringify({
@@ -138,6 +164,28 @@ describe('indexed-grep backend selection', () => {
     assert.deepEqual(commands, ['ig', 'rg'])
     assert.equal(result.backend, 'rg')
     assert.deepEqual(result.lines, ['src/main.ts:12: const needle = true'])
+  })
+
+  it('discards partial output from a failed indexed search and retries with ripgrep', async () => {
+    const commands: string[] = []
+    setIndexedGrepBackendForTest('ig')
+    setIndexedGrepCommandRunnerForTest(async (command) => {
+      commands.push(command)
+      return {
+        stdout: command === 'ig' ? '/tmp/repo/stale.ts:1: partial result\n' : '',
+        stderr: command === 'ig' ? 'index is corrupt' : '',
+        code: command === 'ig' ? 2 : 1,
+        stdoutTruncated: false,
+      }
+    })
+    assert.deepEqual(
+      await searchCodeContent({ pattern: 'needle', searchRoot: '/tmp/repo', maxResults: 10 }),
+      {
+        lines: [],
+        backend: 'rg',
+      },
+    )
+    assert.deepEqual(commands, ['ig', 'rg'])
   })
 
   it('keeps a non-empty indexed result without spawning ripgrep', async () => {

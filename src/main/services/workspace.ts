@@ -12,6 +12,7 @@ import { isRecord } from '@shared/unknown-value.ts'
 const WORKSPACE_KEY = 'workspaceRoot'
 const PROJECTS_KEY = 'projects'
 const ACTIVE_PROJECT_KEY = 'activeProjectId'
+const LINKED_WORKTREE_REGISTRATION_TIMEOUT_MS = 2_000
 
 const storedWorkspaceRoot = storageGet(WORKSPACE_KEY)
 let workspaceRoot: string | null =
@@ -39,13 +40,20 @@ export interface InternalWorkspaceRootRegistration {
    * Main-repository working tree derived from `commonGitDir` when its basename
    * is `.git` (the standard non-bare layout). `null` for bare repositories or
    * unusual `commondir` values where no primary checkout can be inferred. The
-   * sandbox denies reads under this path so a linked-worktree agent cannot
-   * read the shared project tree of an outside-$HOME layout (tmpdir,
-   * `COPSE_WORKTREES_DIR`, …) where ASRT's default home-deny does not apply.
+   * sandbox exposes this tree READ-ONLY to a linked-worktree agent (see
+   * `primaryCheckoutReadPaths` in `project-sandbox/config.ts` for the
+   * trade-off); writes stay denied, and sibling worktrees inside it stay
+   * unreadable.
    */
   readonly primaryCheckoutRoot: string | null
   /** Other linked checkouts in the same repository, explicitly denied by the sandbox. */
   readonly siblingRoots: readonly string[]
+  /**
+   * Per-worktree admin directories (`<common>/worktrees/<name>`) of those
+   * siblings. Exposed read-only so `git worktree list` from a linked worktree
+   * can enumerate the repository; a sibling's working tree stays denied.
+   */
+  readonly siblingGitDirs: readonly string[]
 }
 
 const internalWorkspaceRoots = new Map<string, InternalWorkspaceRootRegistration>()
@@ -128,6 +136,36 @@ export async function seedAllowedWorkspaceRoots(
 }
 
 /**
+ * Run best-effort linked-worktree discovery without letting slow or blocked Git
+ * metadata prevent an otherwise valid project folder from opening.
+ */
+export async function runOptionalLinkedWorktreeRegistration(
+  register: (signal: AbortSignal) => Promise<void>,
+  signal: AbortSignal,
+): Promise<void> {
+  let onAbort: (() => void) | undefined
+  const aborted = new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve()
+      return
+    }
+    onAbort = (): void => {
+      resolve()
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+  const registration = Promise.resolve()
+    .then(() => register(signal))
+    .catch(() => undefined)
+
+  try {
+    await Promise.race([registration, aborted])
+  } finally {
+    if (onAbort) signal.removeEventListener('abort', onAbort)
+  }
+}
+
+/**
  * Register sandbox metadata when an allowed project lives inside an existing
  * linked Git worktree. The `.git` file points outside the selected project, so
  * a plain workspace allow-list entry is not enough for sandboxed Git commands
@@ -139,12 +177,12 @@ async function registerAllowedLinkedWorktree(root: string): Promise<void> {
     try {
       const dotGit = await stat(join(cursor, '.git'))
       if (dotGit.isFile()) {
-        try {
-          await registerInternalWorkspaceRoot(cursor, root)
-        } catch {
-          // Gitfiles also represent submodules and may be malformed. Neither
-          // grants linked-worktree authority; the project remains allowlisted.
-        }
+        await runOptionalLinkedWorktreeRegistration(async (signal) => {
+          await registerInternalWorkspaceRoot(cursor, root, signal)
+        }, AbortSignal.timeout(LINKED_WORKTREE_REGISTRATION_TIMEOUT_MS))
+        // Gitfiles also represent submodules and may be malformed. Neither a
+        // failed nor a timed-out probe grants linked-worktree authority; the
+        // project remains allowlisted.
         return
       }
       if (dotGit.isDirectory()) return
@@ -211,6 +249,7 @@ export async function assertAllowedWorkspaceRoot(root: string, sshHost?: string)
 export async function registerInternalWorkspaceRoot(
   checkoutRoot: string,
   executionRoot: string = checkoutRoot,
+  signal?: AbortSignal,
 ): Promise<InternalWorkspaceRootRegistration> {
   const canonicalCheckoutRoot = await canonicalWorkspaceRoot(checkoutRoot, localWorkspaceFs)
   const canonicalExecutionRoot = await canonicalWorkspaceRoot(executionRoot, localWorkspaceFs)
@@ -219,12 +258,14 @@ export async function registerInternalWorkspaceRoot(
     throw new Error('Internal execution root is outside its linked Git worktree')
   }
   const dotGitPath = join(canonicalCheckoutRoot, '.git')
-  const dotGit = await readFile(dotGitPath, 'utf-8')
+  const dotGit = await readFile(dotGitPath, { encoding: 'utf-8', signal })
   const match = /^gitdir:\s*(.+?)\s*$/i.exec(dotGit.trim())
   if (!match?.[1]) throw new Error('Internal workspace root is not a linked Git worktree')
 
   const gitDir = realpathSync.native(resolve(canonicalCheckoutRoot, match[1]))
-  const commonRelative = (await readFile(join(gitDir, 'commondir'), 'utf-8')).trim()
+  const commonRelative = (
+    await readFile(join(gitDir, 'commondir'), { encoding: 'utf-8', signal })
+  ).trim()
   if (!commonRelative) throw new Error('Linked worktree has no common Git directory')
   const commonGitDir = realpathSync.native(resolve(gitDir, commonRelative))
   if (dirname(gitDir) !== join(commonGitDir, 'worktrees')) {
@@ -232,11 +273,15 @@ export async function registerInternalWorkspaceRoot(
   }
 
   const siblingRoots: string[] = []
+  const siblingGitDirs: string[] = []
   for (const entry of await readdir(dirname(gitDir), { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === basename(gitDir)) continue
     try {
       const siblingGitFile = (
-        await readFile(join(dirname(gitDir), entry.name, 'gitdir'), 'utf-8')
+        await readFile(join(dirname(gitDir), entry.name, 'gitdir'), {
+          encoding: 'utf-8',
+          signal,
+        })
       ).trim()
       if (!siblingGitFile) continue
       const siblingDotGit = realpathSync.native(
@@ -245,7 +290,9 @@ export async function registerInternalWorkspaceRoot(
           : resolve(dirname(gitDir), entry.name, siblingGitFile),
       )
       siblingRoots.push(dirname(siblingDotGit))
+      siblingGitDirs.push(join(dirname(gitDir), entry.name))
     } catch {
+      signal?.throwIfAborted()
       // A stale/prunable sibling cannot grant authority; it needs no extra deny path.
     }
   }
@@ -263,7 +310,11 @@ export async function registerInternalWorkspaceRoot(
     commonGitDir,
     primaryCheckoutRoot,
     siblingRoots: Object.freeze([...new Set(siblingRoots)]),
+    siblingGitDirs: Object.freeze([...new Set(siblingGitDirs)]),
   })
+  // Cancellation can arrive after the last read or while enumerating siblings.
+  // Never publish a partial deny list after optional discovery has timed out.
+  signal?.throwIfAborted()
   internalWorkspaceRoots.set(canonicalExecutionRoot, registration)
   return registration
 }

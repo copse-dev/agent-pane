@@ -98,3 +98,49 @@ input[type='password'] {
   flex: 1;
   overflow: hidden;
 }
+
+/* ---------------------------------------------------------------------------
+   Callout surfaces, shared by every block that used to carry an accent rail.
+
+   Two materials, one shape (see `prototypes/side-highlight` — "M, the mix"):
+
+   - **plate** — a flat 9% wash of the block's severity hue. Prose the agent
+     wrote: GitHub alerts and blockquotes. It is part of the answer, so it gets
+     a plain surface.
+   - **hatch** — the same plate rendered as a texture rather than a tint. Copse
+     annotating its own turn: thinking, review, comparison. Not part of the
+     answer, and the material is what says so without spending a fourth hue or
+     a fourth shape. The low-opacity texture keeps the surface quiet even
+     when the commentary spans several lines.
+
+   Components select their material and mix `--sev` at the use site, sharing
+   the tuning values below rather than inheriting a finished background.
+
+   The 8px pitch is a visual choice, not an anti-aliasing guarantee. At 135deg
+   the horizontal repeat is 8 * sqrt(2) CSS pixels, so divisibility by four
+   does not align the stripes with the device pixel grid. Recheck fractional
+   display scales and zoom when changing the pitch or line width. */
+:root {
+  /* Neutral default: a block that forgets to set --sev gets a legible grey
+     rather than an invalid background that computes away to transparent. */
+  --sev: var(--text-secondary);
+  /* What travels is the tuning, not the finished background. A custom property
+     is substituted where it is *declared*, so one holding the whole
+     `color-mix(… var(--sev) …)` would freeze this root's grey into its computed
+     value and inherit that grey everywhere, however each block sets --sev. So
+     the numbers live here and the colour is mixed at each use site. */
+  --callout-plate-fill: 9%;
+  --callout-hatch-line: 11%;
+  --callout-hatch-fill: 3%;
+  --callout-hatch-pitch: 8px;
+}
+/* A decorative texture needs a degradation path, or it becomes the thing that
+   disappears into the page for the people who need it most. The lines go to
+   nothing and the wash comes up to the plate's weight: commentary keeps a
+   surface and loses only its distinction from content. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root {
+    --callout-hatch-line: 0%;
+    --callout-hatch-fill: var(--callout-plate-fill);
+  }
+}

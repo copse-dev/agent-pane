@@ -1,5 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { z } from 'zod'
 import * as agentService from './agent-service.ts'
 import * as providerSelection from './providers/provider-selection.ts'
 import { suggestThreadTitle } from './title-generator.ts'
@@ -17,6 +21,8 @@ import {
   type PluginToolRuntimeController,
 } from './plugins/plugin-tool-controller.ts'
 import { pluginModelValue } from '@shared/plugin-model.ts'
+import { defineTool } from '@shared/types'
+import { runWithWorkspaceTrust } from './security/workspace-trust.ts'
 
 // agent-service is now an orchestrator that re-exports the public surface from the
 // focused modules it composes. These tests pin that public surface so IPC callers
@@ -49,7 +55,13 @@ describe('agent-service public surface', () => {
 describe('runAgent AgentHost decoupling', () => {
   it('streams a fallback notice when a remote agent is selected without a valid key', async () => {
     const priorCursorKey = process.env['CURSOR_API_KEY']
+    const priorLmStudioUrl = process.env['COPSE_EVAL_LM_STUDIO_URL']
     delete process.env['CURSOR_API_KEY']
+    // The fallback route probes the configured local model. Keep a developer's
+    // running LM Studio server out of this unit test: it may accept the request
+    // and leave the test waiting on a real generation instead of exercising the
+    // unavailable-provider fallback deterministically.
+    process.env['COPSE_EVAL_LM_STUDIO_URL'] = 'http://127.0.0.1:1/v1'
     await setSetting('model', 'remote-agent:cursor')
 
     const received: Array<{ threadId: string; chunk: StreamChunk }> = []
@@ -90,6 +102,8 @@ describe('runAgent AgentHost decoupling', () => {
       )
     } finally {
       if (priorCursorKey !== undefined) process.env['CURSOR_API_KEY'] = priorCursorKey
+      if (priorLmStudioUrl === undefined) delete process.env['COPSE_EVAL_LM_STUDIO_URL']
+      else process.env['COPSE_EVAL_LM_STUDIO_URL'] = priorLmStudioUrl
     }
   })
 
@@ -105,6 +119,7 @@ describe('runAgent AgentHost decoupling', () => {
       isRunning: (pluginId) => pluginId === 'personal.reference-model',
       registrations: () => ({ tools: [], models: [{ id: 'judge:default' }] }),
       invokeTool: () => Promise.reject(new Error('not a tool turn')),
+      invokeHook: () => Promise.reject(new Error('not a hook dispatch')),
       invokeModel: (_pluginId, _routeId, input) => {
         invocation = input
         return Promise.resolve({ text: 'Personal judge answer', inputTokens: 12, outputTokens: 4 })
@@ -231,6 +246,246 @@ describe('runAgent AgentHost decoupling', () => {
       )
     }
     assert.deepEqual(checkpoints.at(-1), result.messages.slice(0, checkpoints.at(-1)?.length))
+  })
+
+  it('activates nested instructions on first file access and defers the first edit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-agent-nested-instructions-'))
+    await mkdir(join(root, 'packages', 'api'), { recursive: true })
+    await writeFile(join(root, 'packages', 'api', 'AGENTS.md'), 'Never edit before reading this.')
+    const writes: string[] = []
+    const registry = new ToolRegistry()
+    registry.register(
+      defineTool({
+        name: 'write_file',
+        description: 'Test edit tool',
+        parameters: z.object({ path: z.string() }),
+        execute: ({ path }) => {
+          writes.push(path)
+          return Promise.resolve('File written.')
+        },
+      }),
+    )
+
+    let calls = 0
+    const provider: LLMProvider = {
+      stream: async function* (messages) {
+        calls += 1
+        const system = messages.find((message) => message.role === 'system')
+        assert.ok(system?.role === 'system')
+        if (calls === 1) {
+          assert.doesNotMatch(system.content, /Never edit before reading this/)
+          yield {
+            type: 'tool_call' as const,
+            toolCall: {
+              id: 'first-edit',
+              name: 'write_file',
+              args: { path: 'packages/api/router.ts' },
+            },
+          }
+          return
+        }
+        assert.match(system.content, /Never edit before reading this/)
+        if (calls === 2) {
+          const deferred = messages.find(
+            (message) =>
+              message.role === 'tool' &&
+              message.toolResults.some((result) => result.toolCallId === 'first-edit'),
+          )
+          assert.ok(deferred?.role === 'tool')
+          assert.match(deferred.toolResults[0]?.result ?? '', /Edit deferred/)
+          assert.deepEqual(writes, [])
+          yield {
+            type: 'tool_call' as const,
+            toolCall: {
+              id: 'retried-edit',
+              name: 'write_file',
+              args: { path: 'packages/api/router.ts' },
+            },
+          }
+          return
+        }
+        assert.deepEqual(writes, ['packages/api/router.ts'])
+        yield { type: 'text' as const, text: 'Done.' }
+      },
+    }
+    setDefaultPluginRegistry(new PluginRegistry())
+    await setSetting('subagentsEnabled', false)
+    await setSetting('skillsEnabled', false)
+
+    try {
+      await runWithWorkspaceTrust(root, true, () =>
+        runWithThreadExecutionContext(
+          {
+            projectId: 'project-nested',
+            threadId: 'thread-nested',
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () =>
+            runWithActiveRunIdentity('thread-nested', () =>
+              agentService.runAgent(
+                'thread-nested',
+                'Make the requested change.',
+                [],
+                { emit: () => undefined },
+                registry,
+                {
+                  provider,
+                  contextWindow: 100_000,
+                  model: 'claude-sonnet-4-6',
+                  maxSteps: 6,
+                  maxLlmCalls: 6,
+                },
+              ),
+            ),
+        ),
+      )
+      assert.equal(calls, 3)
+      assert.deepEqual(writes, ['packages/api/router.ts'])
+    } finally {
+      setDefaultPluginRegistry(null)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('memoizes referenced instruction scopes, notices activations, and refreshes after an AGENTS.md write', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-agent-nested-discovery-'))
+    await mkdir(join(root, 'packages', 'api'), { recursive: true })
+    await mkdir(join(root, 'packages', 'web'), { recursive: true })
+    await writeFile(join(root, 'packages', 'api', 'AGENTS.md'), 'API rules here.')
+    const registry = new ToolRegistry()
+    registry.register(
+      defineTool({
+        name: 'read_file',
+        description: 'Test read tool',
+        parameters: z.object({ path: z.string() }),
+        execute: () => Promise.resolve('contents'),
+      }),
+    )
+    registry.register(
+      defineTool({
+        name: 'write_file',
+        description: 'Test write tool',
+        parameters: z.object({ path: z.string(), content: z.string() }),
+        execute: async ({ path, content }) => {
+          await writeFile(join(root, path), content)
+          return 'File written.'
+        },
+      }),
+    )
+
+    const readTool = (
+      id: string,
+      path: string,
+    ): { type: 'tool_call'; toolCall: { id: string; name: string; args: { path: string } } } => ({
+      type: 'tool_call',
+      toolCall: { id, name: 'read_file', args: { path } },
+    })
+    let calls = 0
+    const provider: LLMProvider = {
+      stream: async function* (messages) {
+        calls += 1
+        const system = messages.find((message) => message.role === 'system')
+        assert.ok(system?.role === 'system')
+        switch (calls) {
+          case 1:
+            assert.doesNotMatch(system.content, /API rules here/)
+            yield readTool('read-api', 'packages/api/a.ts')
+            return
+          case 2:
+            assert.match(system.content, /API rules here/)
+            // The prompt already referenced this missing scope. An external
+            // write stays cached until an explicit file-tool invalidation.
+            await writeFile(join(root, 'packages', 'web', 'AGENTS.md'), 'Web rules here.')
+            yield readTool('read-web-stale', 'packages/web/b.ts')
+            return
+          case 3:
+            assert.doesNotMatch(system.content, /Web rules here/)
+            yield {
+              type: 'tool_call' as const,
+              toolCall: {
+                id: 'write-web-agents',
+                name: 'write_file',
+                args: { path: 'packages/web/AGENTS.md', content: 'Web rules here.' },
+              },
+            }
+            return
+          case 4:
+            assert.doesNotMatch(system.content, /Web rules here/)
+            // A different path than the stale read: the loop skips a repeat of
+            // a recent call's exact arguments.
+            yield readTool('read-web-fresh', 'packages/web/c.ts')
+            return
+          default:
+            assert.match(system.content, /Web rules here/)
+            yield { type: 'text' as const, text: 'Done.' }
+        }
+      },
+    }
+    const received: StreamChunk[] = []
+    setDefaultPluginRegistry(new PluginRegistry())
+    await setSetting('subagentsEnabled', false)
+    await setSetting('skillsEnabled', false)
+
+    try {
+      await runWithWorkspaceTrust(root, true, () =>
+        runWithThreadExecutionContext(
+          {
+            projectId: 'project-nested-discovery',
+            threadId: 'thread-nested-discovery',
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () =>
+            runWithActiveRunIdentity('thread-nested-discovery', () =>
+              agentService.runAgent(
+                'thread-nested-discovery',
+                'Look around packages/web/b.ts.',
+                [],
+                { emit: (_threadId, chunk) => received.push(chunk) },
+                registry,
+                {
+                  provider,
+                  contextWindow: 100_000,
+                  model: 'claude-sonnet-4-6',
+                  maxSteps: 8,
+                  maxLlmCalls: 8,
+                },
+              ),
+            ),
+        ),
+      )
+      assert.equal(calls, 5)
+
+      // One transcript line per activation, landing after that call's result —
+      // never between a tool call and its result, where it would strand the card.
+      const notices = received.flatMap((chunk, index) =>
+        chunk.type === 'text' && chunk.text.includes('Loaded directory-scoped instructions')
+          ? [{ index, text: chunk.text }]
+          : [],
+      )
+      assert.deepEqual(
+        notices.map((notice) => notice.text),
+        [
+          '_Loaded directory-scoped instructions from `packages/api/AGENTS.md`._\n\n',
+          '_Loaded directory-scoped instructions from `packages/web/AGENTS.md`._\n\n',
+        ],
+      )
+      const resultIndex = (toolCallId: string): number =>
+        received.findIndex(
+          (chunk) => chunk.type === 'tool_result' && chunk.toolCallId === toolCallId,
+        )
+      assert.ok(resultIndex('read-api') >= 0)
+      assert.ok(notices[0] && notices[0].index > resultIndex('read-api'))
+      assert.ok(notices[1] && notices[1].index > resultIndex('read-web-fresh'))
+    } finally {
+      setDefaultPluginRegistry(null)
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('emits a structured terminal record with raw provider failure details', async () => {

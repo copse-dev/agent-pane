@@ -50,3 +50,14 @@ paths = ['''^pr-\d+/''']
 description = "Prompt-injection steer-eval secrets fixture (inert)"
 targetRules = ["stripe-access-token"]
 paths = ['''^benchmarks/steer/fixtures/injection-project/secrets\.env$''']
+
+[[allowlists]]
+# The container runner's argv test carries an inert per-run proxy token
+# (decision A7 in docs/plans/thread-in-container.md) so it can assert the
+# token lands on the guest's proxy URL and in COPSE_EGRESS_TOKEN and nowhere
+# else. The first fixture value was a hex string and tripped the entropy
+# heuristic; the value is plain words now, but the path exemption also clears
+# the finding in branch history. Scope to that one rule and file.
+description = "Container run proxy-token fixture (inert)"
+targetRules = ["generic-api-key"]
+paths = ['''^src/main/services/container-runtime/thread-container\.test\.ts$''']

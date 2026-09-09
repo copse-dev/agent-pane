@@ -295,7 +295,7 @@ export function createOpenRouterProvider(
 // Built-in / loopback hosts pass without it; an unapproved custom host throws
 // before the SDK client is constructed so no key or prompt is sent.
 export function createExtraCloudProvider(
-  provider: ExtraProvider,
+  provider: Pick<ExtraProvider, 'baseUrl' | 'local' | 'apiStyle' | 'includeUsage' | 'extraBody'>,
   model: string,
   apiKey: string,
   approvedHosts: readonly string[] = [],

@@ -60,6 +60,7 @@ import {
 } from '../../project-sandbox/sandbox-argv.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isSpawnableWorkingDirectory } from '../../project-sandbox/spawn-cwd.ts'
+import { withSandboxTmpEnv } from '../../project-sandbox/tmp-env.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import { spawnSandboxedAcpSessionHost } from './acp-session-host.ts'
 
@@ -489,7 +490,7 @@ export async function spawnAcpAgentProcess(
       const tmpDir = ensureWorkspaceTmpDir()
       const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
         cwd: config.cwd,
-        env: withSandboxShellPath({ ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir }),
+        env: withSandboxShellPath(withSandboxTmpEnv(env, tmpDir)),
         stdio,
         // Lead a process group so `terminateAcpChild` can reap the real agent,
         // which the sandbox wrapper shell spawns as a grandchild.

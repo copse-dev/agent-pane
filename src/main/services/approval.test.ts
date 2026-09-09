@@ -4,12 +4,18 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  ABANDONED_VERDICT_TTL_MS,
+  AbandonedCallAbort,
+  ApprovalPendingError,
   approvalDedupeKey,
   cancelApprovalsForThread,
   cancelApprovalsForAcpToolCall,
+  clearAbandonedVerdictsForTest,
+  parkedApprovalCount,
   pendingApprovalCountForThread,
   requestApproval,
   runWithApprovalHandler,
+  setApprovalClockForTest,
   setApprovalHandler,
   trackAcpPermissionToolCall,
   type ApprovalRequest,
@@ -357,3 +363,249 @@ function waitForAbort(signal: AbortSignal): Promise<void> {
     )
   })
 }
+
+describe('abandoned calls (parked prompts and verdict replay)', () => {
+  let auditRoot: string
+  let previousRoot: string | undefined
+  let handlerCalls = 0
+  let handlerSignal: AbortSignal | undefined
+  let release: ((response: ApprovalResponse) => void) | undefined
+
+  function parkingHandler(): void {
+    setApprovalHandler(
+      (_req, signal) =>
+        new Promise((resolve) => {
+          handlerCalls++
+          handlerSignal = signal
+          release = resolve
+        }),
+    )
+  }
+
+  /** The bridge's abandonment: a merged signal whose first abort carries the sentinel. */
+  function abandonedSignal(): { signal: AbortSignal; abandon: () => void } {
+    const call = new AbortController()
+    const turn = new AbortController()
+    return {
+      signal: AbortSignal.any([turn.signal, call.signal]),
+      abandon: (): void => {
+        call.abort(new AbandonedCallAbort('client gave up'))
+      },
+    }
+  }
+
+  beforeEach(() => {
+    previousRoot = process.env['COPSE_WORKSPACE_DIR']
+    auditRoot = mkdtempSync(join(tmpdir(), 'copse-approval-abandon-'))
+    process.env['COPSE_WORKSPACE_DIR'] = auditRoot
+    storageSet('activeProjectId', PROJECT)
+    handlerCalls = 0
+    handlerSignal = undefined
+    release = undefined
+  })
+
+  afterEach(() => {
+    setApprovalHandler(null)
+    setApprovalClockForTest(null)
+    clearAbandonedVerdictsForTest()
+    resetRunDeadlinesForTest()
+    if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+    else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
+    rmSync(auditRoot, { recursive: true, force: true })
+  })
+
+  it('keeps the prompt open and tells the caller to retry when its call is abandoned', async () => {
+    parkingHandler()
+    const logged = (await readDecisionLog(PROJECT)).length
+    const { signal, abandon } = abandonedSignal()
+    const pending = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(pending, (error: unknown) => {
+      assert.ok(error instanceof ApprovalPendingError)
+      assert.match(error.message, /still pending/)
+      assert.match(error.message, /Retry the exact same call/)
+      assert.match(error.message, /10 minutes/)
+      return true
+    })
+    // The prompt itself was NOT cancelled…
+    assert.equal(handlerSignal?.aborted, false)
+    assert.equal(parkedApprovalCount(), 1)
+    assert.equal(pendingApprovalCountForThread(THREAD), 1)
+    // …and no denial was invented for the audit log.
+    assert.equal((await readDecisionLog(PROJECT)).length, logged)
+  })
+
+  it('replays the eventual verdict to an identical retry without prompting again', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+
+    release?.({ approved: true, remember: false, resolution: 'user' })
+    await Promise.resolve()
+    assert.equal(parkedApprovalCount(), 0)
+
+    const retry = await requestUnderThread(req)
+    assert.equal(retry.approved, true)
+    assert.equal(handlerCalls, 1, 'the retry must not open a second prompt')
+
+    const events = await readDecisionLog(PROJECT)
+    assert.deepEqual(
+      events.slice(-2).map((event) => [event.verdict, event.source ?? 'user']),
+      [
+        ['approved', 'user'],
+        ['approved', 'abandoned-call-replay'],
+      ],
+    )
+  })
+
+  it('replays a denial too, so the agent does not re-ask a question the user refused', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    release?.({ approved: false, remember: false, resolution: 'user' })
+    await Promise.resolve()
+    assert.deepEqual(await requestUnderThread(req), {
+      approved: false,
+      remember: false,
+      resolution: 'user',
+    })
+    assert.equal(handlerCalls, 1)
+  })
+
+  it('serves a stored verdict once', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    release?.({ approved: true, remember: false })
+    await Promise.resolve()
+    assert.equal((await requestUnderThread(req)).approved, true)
+    // A second identical request is a fresh question.
+    const again = requestUnderThread(req)
+    await Promise.resolve()
+    assert.equal(handlerCalls, 2)
+    release?.({ approved: false, remember: false })
+    assert.equal((await again).approved, false)
+  })
+
+  it('joins the still-open prompt when the retry arrives before the user answers', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+
+    const retry = requestUnderThread(req)
+    await Promise.resolve()
+    assert.equal(handlerCalls, 1)
+    assert.equal(parkedApprovalCount(), 0, 'the live retry replaces the stand-in')
+    release?.({ approved: true, remember: false })
+    assert.equal((await retry).approved, true)
+    // The retry consumed the live prompt, so nothing is left to replay to a
+    // third call: one answer, one run.
+    const third = requestUnderThread(req)
+    await Promise.resolve()
+    assert.equal(handlerCalls, 2)
+    release?.({ approved: false, remember: false })
+    await third
+  })
+
+  it('forgets a verdict older than the replay window', async () => {
+    let now = 1_000_000
+    setApprovalClockForTest(() => now)
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    release?.({ approved: true, remember: false })
+    await Promise.resolve()
+
+    now += ABANDONED_VERDICT_TTL_MS + 1
+    const retry = requestUnderThread(req)
+    await Promise.resolve()
+    assert.equal(handlerCalls, 2, 'an expired verdict must prompt afresh')
+    release?.({ approved: false, remember: false })
+    assert.equal((await retry).approved, false)
+  })
+
+  it('scopes a stored verdict to the thread and the request that earned it', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    release?.({ approved: true, remember: false })
+    await Promise.resolve()
+
+    const otherThread = runWithActiveRunIdentity('t-other', () => requestApproval(req))
+    await Promise.resolve()
+    assert.equal(handlerCalls, 2, 'another thread must not inherit the verdict')
+    release?.({ approved: false, remember: false })
+    await otherThread
+
+    const otherCommand = requestUnderThread({ ...req, body: 'rm -rf dist' })
+    await Promise.resolve()
+    assert.equal(handlerCalls, 3, 'a different command must not inherit the verdict')
+    release?.({ approved: false, remember: false })
+    await otherCommand
+
+    // The original thread's verdict is still there for the identical retry.
+    assert.equal((await requestUnderThread(req)).approved, true)
+    assert.equal(handlerCalls, 3)
+  })
+
+  it('treats a plain abort as a cancel, exactly as before', async () => {
+    parkingHandler()
+    const controller = new AbortController()
+    const pending = requestUnderThread(req, controller.signal)
+    await Promise.resolve()
+    controller.abort()
+    assert.deepEqual(await pending, { approved: false, remember: false })
+    assert.equal(handlerSignal?.aborted, true)
+    assert.equal(parkedApprovalCount(), 0)
+  })
+
+  it('still dismisses a parked prompt when the thread turn ends, storing nothing', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const first = requestUnderThread(req, signal)
+    await Promise.resolve()
+    abandon()
+    await assert.rejects(first, ApprovalPendingError)
+    assert.equal(cancelApprovalsForThread(THREAD), 1)
+    assert.equal(handlerSignal?.aborted, true)
+    assert.equal(parkedApprovalCount(), 0)
+    // Whatever the torn-down handler returns now is not a user answer.
+    release?.({ approved: true, remember: false })
+    await Promise.resolve()
+    const retry = requestUnderThread(req)
+    await Promise.resolve()
+    assert.equal(handlerCalls, 2)
+    release?.({ approved: false, remember: false })
+    await retry
+  })
+
+  it('does not park a request that no thread owns', async () => {
+    parkingHandler()
+    const { signal, abandon } = abandonedSignal()
+    const pending = requestApproval(req, signal)
+    await Promise.resolve()
+    abandon()
+    assert.deepEqual(await pending, { approved: false, remember: false })
+    assert.equal(handlerSignal?.aborted, true)
+    assert.equal(parkedApprovalCount(), 0)
+  })
+})

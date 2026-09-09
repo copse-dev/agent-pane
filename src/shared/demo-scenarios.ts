@@ -66,6 +66,11 @@ export interface DemoScenario {
    * the only way to reach `.vnc-discovered-port.selected` deterministically.
    */
   vncDiscoveredPorts?: readonly number[]
+  /**
+   * A container run already attached to the first thread, so the composer
+   * banner and the run dialog's status face render without Docker.
+   */
+  containerRun?: import('./types/container-run.ts').ContainerRunProgress
   /** Seed host approvals so browser geometry specs can inspect the real dialog. */
   approvalRequests?: readonly {
     id: string
@@ -342,6 +347,152 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'container-run',
+    label: 'Unattended container run',
+    project: project('demo-container-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'claude-sonnet-4-6',
+      containerRunsEnabled: true,
+    },
+    threads: [
+      {
+        id: 'demo-container-thread',
+        title: 'Clear the lint backlog',
+        status: 'idle',
+        gitBranch: 'demo/lint-backlog',
+        messages: [
+          {
+            id: 'demo-container-user',
+            role: 'user',
+            content: 'Clear the lint backlog and open a PR.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 412_310, outputTokens: 38_902 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    containerRun: {
+      threadId: 'demo-container-thread',
+      runtimeId: 'run-demo-1',
+      phase: 'finished',
+      startedAt: FIXED_TIME,
+      finishedAt: FIXED_TIME + 23 * 60_000,
+      prompt: 'Clear the lint suppression backlog in the renderer views',
+      model: 'claude-sonnet-4-6',
+      egressAllowlist: ['api.anthropic.com:443'],
+      credential: 'key',
+      warnings: [],
+      checkout: {
+        root: '/Users/dev/projects/demo/.copse/worktrees/demo-container-thread',
+        mode: 'worktree',
+        branch: 'demo/lint-backlog',
+      },
+      log: [
+        '[thread-container] carry-in 9b1b901683b9 as refs/copse/carry-in/run-demo-1',
+        '[thread-container] starting copse-run-demo-1 from copse-worker:local',
+        '[guest] [worker] egress proxy on 127.0.0.1:3128, token-gated',
+        '[guest] [worker] project sandbox: none; the container is the sandbox',
+        '[guest] [worker] done: completed; prompts=0 deferrals=1 commits=3',
+        '[thread-container] carry-out fetched to refs/copse/runs/run-demo-1',
+      ],
+      record: {
+        runtimeId: 'run-demo-1',
+        threadId: 'demo-container-thread',
+        startedAt: FIXED_TIME,
+        finishedAt: FIXED_TIME + 23 * 60_000,
+        image: 'copse-worker:local',
+        imageDigest: 'sha256:0c1f2e3d4c5b6a798877665544332211aabbccddeeff00112233445566778899',
+        attestation: {
+          runtimeId: 'run-demo-1',
+          image: 'copse-worker:local',
+          user: 1001,
+          readOnlyRootfs: true,
+          capDropAll: true,
+          noNewPrivileges: true,
+          pidsLimit: 512,
+          memoryLimit: '4g',
+          network: 'brokered',
+          egressAllowlist: ['api.anthropic.com:443'],
+          hostMounts: ['/run/copse', '/run/copse/state', '/run/copse/out'],
+        },
+        egress: [{ at: FIXED_TIME, origin: 'api.anthropic.com:443', event: 'connect' }],
+        result: {
+          threadId: 'demo-container-thread',
+          stopReason: 'completed',
+          usage: { inputTokens: 412_310, outputTokens: 38_902 },
+          harness: 'copse',
+          promptsAttempted: 0,
+          denials: [],
+          deferrals: [
+            {
+              id: 'd1',
+              title: 'Outward effect needs review',
+              subject: 'shell command (arguments omitted)',
+              reasons: ['git push publishes commits to a remote'],
+            },
+          ],
+          commits: [
+            'a1b2c3d fix(lint): remove unused imports across src/main',
+            'b2c3d4e fix(lint): prefer nullish coalescing in providers',
+            'c3d4e5f chore: rerun formatter',
+          ],
+          containment: { declared: true, declineReason: null, projectSandbox: false },
+          toolNames: ['run_shell', 'read_file', 'write_file'],
+          finalText:
+            'Cleared the lint backlog in three commits. The push is waiting for your review.',
+        },
+        transcript: [
+          {
+            id: 'guest-1',
+            role: 'assistant',
+            content: 'Reading the lint report to see which suppressions are still needed.',
+            toolCalls: [
+              {
+                id: 'guest-t1',
+                name: 'run_shell',
+                args: { command: 'pnpm run lint -- --format json' },
+                status: 'done',
+                result: '14 suppressions, 11 of them for rules that no longer fire',
+              },
+              {
+                id: 'guest-t2',
+                name: 'str_replace',
+                args: { path: 'src/main/providers/openai.ts' },
+                status: 'done',
+                result: 'Replaced 1 occurrence',
+                editStats: { additions: 1, deletions: 3 },
+              },
+            ],
+            createdAt: FIXED_TIME + 60_000,
+          },
+          {
+            id: 'guest-2',
+            role: 'assistant',
+            content:
+              'Cleared the lint backlog in three commits. The push is waiting for your review.',
+            toolCalls: [],
+            createdAt: FIXED_TIME + 22 * 60_000,
+          },
+        ],
+        carryIn: { sha: '9b1b901683b9f0e5b2a3c4d5e6f708192a3b4c5d', dirty: false },
+        carryOut: { expected: true, ref: 'refs/copse/runs/run-demo-1', error: null },
+        containerExit: 0,
+        credential: 'key',
+        teardown: 'removed',
+        cleanupError: null,
+        secretCanary: { present: false, detail: 'canary absent from every surface' },
+      },
+      error: null,
+      continuedFrom: null,
+    },
+  },
+  {
     id: 'footer-compact',
     label: 'Responsive composer footer',
     project: project('demo-footer-project'),
@@ -353,6 +504,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       // Copy/export overflow actions are developer-mode gated; the geometry
       // demo needs them visible to exercise `.footer-overflow`.
       developerMode: true,
+      containerRunsEnabled: true,
     },
     threads: [
       {

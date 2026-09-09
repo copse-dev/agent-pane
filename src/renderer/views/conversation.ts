@@ -37,6 +37,8 @@ import {
 } from '../canvas/artefact-previews.ts'
 import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
+import { CONTAINER_RUN_ADOPT_EVENT } from '@shared/store/container-run-card.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
@@ -800,7 +802,43 @@ function populateSubagentCard(
     setAssistantMarkdown(resultEl, parentResult, false, api)
   }
 
+  const followUp = containerRunFollowUp(tc, session, status)
+  if (followUp) card.append(followUp)
+
   subagentCardChromeSig.set(card, chromeSig)
+}
+
+/**
+ * A container run's card (A13) ends with its follow-up: the guest's commits
+ * onto this thread's checkout. Only once the run has settled with commits on
+ * a ref; the button asks the run control to do it, by event, so the card
+ * stays a view.
+ */
+function containerRunFollowUp(
+  tc: ToolCall,
+  session: SubagentSession,
+  status: ToolCall['status'],
+): HTMLElement | null {
+  if (session.kind !== 'container' || status === 'running') return null
+  const args: unknown = tc.args
+  if (!isRecord(args)) return null
+  const runtimeId = args['runtimeId']
+  const ref = args['ref']
+  if (typeof runtimeId !== 'string' || typeof ref !== 'string') return null
+  const button = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary subagent-container-apply' },
+    'Apply the run’s commits to this checkout',
+  )
+  button.addEventListener('click', () => {
+    button.dispatchEvent(
+      new CustomEvent(CONTAINER_RUN_ADOPT_EVENT, {
+        bubbles: true,
+        detail: { runtimeId, toolCallId: tc.id },
+      }),
+    )
+  })
+  return el('div', { class: 'subagent-actions' }, button)
 }
 
 function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLDetailsElement {

@@ -1,5 +1,13 @@
 # Beyond the side highlight
 
+Status: **Merged in PR #2404.** M — the mix is the selected design on main; see
+[`docs/ui-taste.md`](../../docs/ui-taste.md) -> "Rails mark nesting and standing asks" for the
+rule as it stands, and `src/renderer/styles/accent-rails.test.ts` for the guard that keeps the list
+of remaining rails closed. This page stays as the workshop behind that decision — the rejected
+treatments, the measurements, and the remaining questions below. The standalone workshop keeps
+its historical CSS; production behavior is documented in `ui-taste.md` and exercised by
+`tests/e2e/callout-surfaces.e2e.ts`.
+
 A design prototype for replacing Copse's accent rail — the slim bar on one inline edge of a block,
 drawn either as `border-left` or as an inset shadow with a horizontal offset.
 
@@ -10,7 +18,7 @@ to one:
 | URL            | View                                   |
 | -------------- | -------------------------------------- |
 | `#current`     | today's rails                          |
-| **`#m`**       | **the mix — the proposed direction**   |
+| **`#m`**       | **the mix — the selected direction**   |
 | `#mix`         | today + B + H + M, side by side        |
 | `#a` `#b` `#c` | line — label line, quiet plate, gutter |
 | `#split`       | today + A/B/C, side by side            |
@@ -61,7 +69,7 @@ markers are CSS triangles, and `.vnc-discovered-port.selected` already uses an e
 (`inset 0 0 0 1px`). `todo.css` holds the review/comparison panels despite its name — the plan/todo
 rows themselves have no rail.
 
-## M — the mix (proposed)
+## M — the mix (selected)
 
 Not a fourth idea but a composition, split by **what each block is** rather than by what it looks
 like. That split is the point: it gives the two plate styles a meaning they have to earn, instead
@@ -81,19 +89,28 @@ output, and today nothing in the visual language says so — they just get a dif
 like everything else. A texture rather than another hue is what marks them without spending a
 fourth colour or a fourth shape.
 
-Open questions before this ships:
+Implementation decisions and remaining questions:
 
-- **Moiré.** The hatch is a 1px line on an 8px pitch. That is exactly the pattern that aliases at
-  fractional device pixel ratios, and Copse ships on mixed-DPI Windows. Test at 1.25×/1.5× before
-  committing to the pitch; a coarser pitch or a `device-pixel-ratio` media query may be needed.
-- **Accent load.** `.message-reasoning` and `.comparison-panel` both key off `--accent`, so a turn
-  with thinking _and_ a comparison shows two pink hatches. Not a regression — both already use the
-  accent today — but the texture makes the hue more present than a 2px bar did.
-- **Reduced transparency / high contrast.** A decorative texture needs a degradation path; the
-  hatch should fall back to B's flat plate rather than disappearing into the page.
-- **Where the work actually is.** Alerts and blockquotes are styled by `@copse/streaming-markdown`,
-  not this repo, so B's plate for those is an upstream change or an override of its default
-  stylesheet — the largest single chunk, and the one with a dependency outside our control.
+- **Moiré.** The 1px line on an 8px pitch is a visual choice, not a guarantee against aliasing.
+  At 135 degrees, an 8px repeat along the gradient line corresponds to `8 × sqrt(2)` CSS pixels
+  along a horizontal scanline. Divisibility by four therefore does not align every cycle with the
+  device pixel grid. Chromium captures at DPR 1, 1.25, 1.5, 1.75 and 2 were visually reviewed;
+  native mixed-DPI Windows and arbitrary zoom remain validation cases when tuning the hatch.
+- **Accent load.** Still true, and now written down in `docs/ui-taste.md` -> "Callout severities"
+  along with the custom-accent case (a user whose accent is purple collapses `--important`). Not
+  fixed: the fix is to derive `--important` away from `--accent`, which is a change to how accents
+  work rather than a hex.
+- **Reduced transparency / increased contrast.** The production `--callout-hatch-line` becomes
+  `0%` and `--callout-hatch-fill` takes `--callout-plate-fill` under
+  `prefers-reduced-transparency: reduce` or `prefers-contrast: more`. Commentary keeps a wash and
+  loses its texture. Windows forced colors is a separate mode: its system palette controls the
+  surface and text, and the glyph masks use `CanvasText` to keep their silhouettes visible.
+- **Where the work actually is.** ~~Alerts and blockquotes are styled by
+  `@copse/streaming-markdown`, not this repo.~~ **Overridden locally**, in
+  `styles/global/markdown.css`: `renderer/main.ts` imports the package's default.css before
+  `global.css`, so rules at the package's own specificity win on source order. The package's
+  `--sm-alert-*` knobs are mapped onto Copse's tokens in `conversation.css`. No upstream change was
+  needed; if the package ever restyles alerts, that override is where the collision lands.
 
 ## Callout icons
 
@@ -103,6 +120,12 @@ the severity hue across the whole height of the block, and now a 15px glyph carr
 block alone. The workshop (second specimen) compares four fixes across all four severities.
 
 Findings, in order of how much they buy:
+
+**Selected:** solid, distinct silhouettes, no disc. The disc was the optional fourth column and is
+not needed — solid alone carries at 16px in the real app. The two-warning-triangle collision below
+is resolved by scope rather than by retiring a glyph: `docs/ui-taste.md` now states the rule
+outright, that a filled mark is transcript status and an outline is chrome, so the callout's solid
+triangle and `triangle-alert` in `dom/icons.ts` are two different jobs rather than two styles of one.
 
 1. **Solid beats heavier outline — chosen.** Going 1.4 → 1.9 helps but the glyph is still a wire
    drawing; a filled glyph is what actually balances the bold title. Thin strokes also lose
@@ -244,18 +267,18 @@ shared circle with a different mark inside:
 | Warning   | triangle      | `--warning`   |
 | Caution   | octagon       | `--danger`    |
 
-**Two of those hues do not exist in `tokens.css`.** `--info` (Note) and `--important` are invented
-here, and adding them is a real decision rather than a detail:
+**The implementation added two semantic hues to `tokens.css`:** `--info` (Note) and `--important`.
+The workshop introduced them for the following reasons:
 
 - Copse's palette is deliberately small — `docs/ui-taste.md` reserves pink for interaction emphasis
   and gives error/warning/success/danger their own semantic tokens. A five-kind alert family needs
-  five hues, which is two more than the palette currently has.
+  five hues in this treatment, two more than the palette had before this change.
 - `--important: #9d7cf4` is pushed **bluer than a true violet on purpose**. `--accent` is `#ff93d0`,
   and a magenta-leaning purple reads as "accent" at 16px — especially next to the pink Thinking and
   Comparison labels that sit in the same transcript. Verify this holds under a custom accent: a
   user who sets their accent to purple collapses the distinction entirely, which is an argument for
   deriving `--important` away from whatever `--accent` currently is.
-- Both need light-theme values derived for contrast, per the existing rule that light-theme
+- Both have separate light-theme values in `themes.css`, per the existing rule that light-theme
   interaction colours are derived rather than reused.
 
 If a sixth and seventh hue is too much, the fallback is to give Important the same `--info` blue and
@@ -320,9 +343,9 @@ already work this way, so it is the one option with precedent in the codebase. C
 of the set, and the only one that survives a light theme unchanged.
 
 **H — Hatch.** A texture rather than a tint: a 1px diagonal hatch at very low alpha, so the block
-reads as a different material without becoming a solid coloured slab. Its one real advantage is
-that density stays constant, so a tall callout weighs no more than a short one — which a flat wash
-cannot claim. Against it: at 8px pitch it is the busiest thing on the page, it risks moiré at
+reads as a different material without becoming a solid coloured slab. The low-opacity texture
+distinguishes commentary from prose, although a taller block still occupies more visual space.
+Against it: at 8px pitch it is the busiest thing on the page, it risks moiré at
 fractional device pixel ratios, and it has no precedent anywhere in Copse.
 
 **I — Margin.** No graphic at all. The kind of block is named in a fixed 78px left column,
@@ -333,8 +356,26 @@ callout bodies sit at 94px while ordinary prose sits at 0.
 
 ## Known gaps
 
-- Blockquotes and GitHub alerts are styled by `@copse/streaming-markdown`, not by this repo. Either
-  the package changes upstream or Copse overrides its default stylesheet.
+`accent-rails.test.ts` holds the allowed rails closed, and `ui-taste.md` documents the production
+materials and their tuning tokens. The callout e2e spec covers light/dark themes, both forced-colors
+palettes, reduced transparency, increased contrast, and separate expanded-Thinking screenshots.
+Custom accent/tint combinations and native mixed-DPI Windows still need broader visual coverage.
+The production VNC status row also uses a compact 6px column rather than aligning its dot with
+the authentication panel's 24px gutter as this workshop does.
+
+A living guide rendered from production components is a separate follow-up. This directory is
+the experiment archive, not that guide: it copies CSS and retains rejected treatments. The guide
+should use the real components and tokens, with controls for themes, content length, widths and
+states, and link each rule to its visual regression test.
+
+One thing arrived after this inventory was taken: `.thread-proposal` (#2334) draws its own accent
+rail on a standing offer. It is allowlisted rather than converted — a proposal card is an _ask_,
+which is a fourth job the rail was never doing when this was written, and it has its own rationale
+in `docs/proposed-threads.md`. Worth revisiting together, not silently.
+
+- Blockquotes and GitHub alerts inherit package styles from `@copse/streaming-markdown`;
+  `global/markdown.css` overrides their surfaces and glyphs locally. Recheck the overrides after
+  a package styling change.
 - `<details>` cannot take C's grid: Chromium wraps everything after the summary in a
   `::details-content` box, which auto-places into the gutter column and reflows the body one word
   per line. `.message-reasoning` and `.tool-card-rollup` need padding instead. D, E, G, H and J

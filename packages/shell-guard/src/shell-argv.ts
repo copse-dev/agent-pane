@@ -254,8 +254,108 @@ export function isReadOnlySimpleCommand(segment: string): boolean {
   const name = basename(argv[0] ?? '')
   if (!name) return false
   if (name === 'git') return isReadOnlyGitCommand(argv)
+  if (name === 'sed') return isReadOnlySedCommand(argv)
   if (!READ_ONLY_SHELL_BASENAMES.has(name)) return false
   return !argv.slice(1).some((arg) => isEscapeHatchFlag(name, arg))
+}
+
+/** Long options that leave `sed` a pure filter. Anything else disqualifies it. */
+const SED_INERT_LONG_FLAGS: ReadonlySet<string> = new Set([
+  '--quiet',
+  '--silent',
+  '--regexp-extended',
+  '--null-data',
+  '--posix',
+  '--separate',
+  '--unbuffered',
+  '--debug',
+  '--sandbox',
+  '--follow-symlinks',
+  '--help',
+  '--version',
+])
+
+/** Short option letters with the same property (`-n`, `-E`/`-r`, `-s`, `-u`, `-z`). */
+const SED_INERT_SHORT_FLAGS = 'nEsuzr'
+
+/**
+ * Script letters that make `sed` more than a filter: `w`/`W` write a file,
+ * `r`/`R` read one, and `e` (GNU) executes a command.
+ */
+const SED_SCRIPT_ACTIVE_LETTERS = /[wWrRe]/
+
+/**
+ * `sed` is the one line-oriented reader agents reach for that the basename
+ * allow-list cannot admit wholesale: `-i` rewrites its input, `-f` runs a script
+ * file, and the script language itself can write, read, or execute. This admits
+ * it only in the shape that is provably a filter:
+ *
+ * - no in-place edit (`-i`, `-I`, `--in-place`), no script file (`-f`,
+ *   `--file`), and no option this table does not know — `-l`/`--line-length`
+ *   take a value and are refused rather than parsed;
+ * - every script (positional or via `-e`/`--expression`) is free of the letters
+ *   that name an active command. A sed script is a small language this module
+ *   does not parse, so the test is letter-level: `s/hello/world/` is refused
+ *   for the `w` and `r` in its replacement text and keeps prompting as it does
+ *   today, while the line-selection shapes steering prompts hand agents
+ *   (`sed -n '1,320p' FILE`, `sed -n '5p;10p'`, `sed -n '/^## /p'`) are
+ *   admitted.
+ *
+ * Refusal only ever means the command prompts, which was the status quo; the
+ * read-outside-project grant still keeps its own head list and stays unchanged.
+ */
+function isReadOnlySedCommand(argv: readonly string[]): boolean {
+  const scripts: string[] = []
+  const positional: string[] = []
+  let expressionSeen = false
+  let expectScript = false
+  let filesOnly = false
+  for (const arg of argv.slice(1)) {
+    if (expectScript) {
+      scripts.push(arg)
+      expectScript = false
+      continue
+    }
+    if (filesOnly || arg === '-' || !arg.startsWith('-')) {
+      positional.push(arg)
+      continue
+    }
+    if (arg === '--') {
+      filesOnly = true
+      continue
+    }
+    if (arg.startsWith('--')) {
+      const equals = arg.indexOf('=')
+      const flag = equals === -1 ? arg : arg.slice(0, equals)
+      if (flag === '--expression') {
+        expressionSeen = true
+        if (equals === -1) expectScript = true
+        else scripts.push(arg.slice(equals + 1))
+        continue
+      }
+      if (!SED_INERT_LONG_FLAGS.has(flag)) return false
+      continue
+    }
+    // Short bundle (`-n`, `-nE`, `-ne SCRIPT`, `-eSCRIPT`).
+    for (let index = 1; index < arg.length; index += 1) {
+      const letter = arg.charAt(index)
+      if (letter === 'e') {
+        expressionSeen = true
+        const attached = arg.slice(index + 1)
+        if (attached) scripts.push(attached)
+        else expectScript = true
+        break
+      }
+      if (!SED_INERT_SHORT_FLAGS.includes(letter)) return false
+    }
+  }
+  if (expectScript) return false
+  if (!expressionSeen) {
+    const script = positional.shift()
+    if (script === undefined) return false
+    scripts.push(script)
+  }
+  return scripts.every((script) => !SED_SCRIPT_ACTIVE_LETTERS.test(script))
 }
 
 /**

@@ -2,6 +2,13 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
 import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
+import {
+  clearAbandonedVerdictsForTest,
+  parkedApprovalCount,
+  requestApproval,
+  setApprovalHandler,
+  type ApprovalResponse,
+} from '../approval.ts'
 import { getAdvisorContext } from '../advisor-runner-context.ts'
 import {
   startAcpNativeBridge,
@@ -149,8 +156,143 @@ describe('startAcpNativeBridge', () => {
   afterEach(async () => {
     setPermissionGateForTests(null)
     setDefaultPluginRegistry(null)
+    setApprovalHandler(null)
+    clearAbandonedVerdictsForTest()
     await bridge?.close()
     bridge = null
+  })
+
+  /**
+   * A gate that really prompts: every run_shell call asks for approval through
+   * the approval service, the way the permission gate does, so the bridge's
+   * per-call abort reaches a live prompt.
+   */
+  function promptingGate(): {
+    handlerCalls: () => number
+    handlerSignal: () => AbortSignal | undefined
+    started: () => Promise<void>
+    release: (response: ApprovalResponse) => void
+  } {
+    let calls = 0
+    let signal: AbortSignal | undefined
+    let release: ((response: ApprovalResponse) => void) | undefined
+    let markStarted: (() => void) | undefined
+    let started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    setApprovalHandler(
+      (_req, promptSignal) =>
+        new Promise((resolve) => {
+          calls++
+          signal = promptSignal
+          release = resolve
+          markStarted?.()
+          started = new Promise<void>((next) => {
+            markStarted = next
+          })
+        }),
+    )
+    setPermissionGateForTests(async (check, gateSignal) => {
+      if (check.toolName !== 'run_shell') return true
+      const command = expectRecord(check.args)['command']
+      const response = await requestApproval(
+        { title: 'Run outside sandbox?', body: String(command), type: 'shell' },
+        gateSignal,
+      )
+      return response.approved
+    })
+    return {
+      handlerCalls: () => calls,
+      handlerSignal: () => signal,
+      started: () => started,
+      release: (response) => release?.(response),
+    }
+  }
+
+  const SHELL_CALL = {
+    jsonrpc: '2.0',
+    id: 7,
+    method: 'tools/call',
+    params: { name: 'run_shell', arguments: { command: 'git worktree list --porcelain' } },
+  }
+
+  it('parks the approval when the client drops the HTTP call, and replays it to the retry', async () => {
+    const executed: string[] = []
+    const gate = promptingGate()
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId: 'bridge-abandon',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-abandon', '/worktrees/bridge-abandon'))
+    for (const init of initialized()) await rpc(bridge, init)
+
+    // The agent's client gives up on the call (Codex does so after ~300 s)
+    // while the user has not yet answered the prompt.
+    const client = new AbortController()
+    const started = gate.started()
+    const abandoned = fetch(bridge.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${bridge.token}`,
+      },
+      body: JSON.stringify(SHELL_CALL),
+      signal: client.signal,
+    })
+    await started
+    client.abort()
+    await assert.rejects(abandoned)
+    // Let the server observe the closed socket.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    assert.equal(gate.handlerSignal()?.aborted, false, 'the prompt must stay open')
+    assert.equal(parkedApprovalCount(), 1)
+    assert.deepEqual(executed, [], 'nothing ran: nobody was listening for the result')
+
+    // The user answers minutes later; the agent retries the same command.
+    gate.release({ approved: true, remember: false, resolution: 'user' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const retry = await rpc(bridge, SHELL_CALL)
+    assert.equal(contentText(retry), 'ran git worktree list --porcelain')
+    assert.deepEqual(executed, ['run_shell:git worktree list --porcelain'])
+    assert.equal(gate.handlerCalls(), 1, 'the retry must not prompt again')
+  })
+
+  it('tells the agent the approval is still pending when it cancels the call over MCP', async () => {
+    const executed: string[] = []
+    const gate = promptingGate()
+    bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal, {
+      threadId: 'bridge-cancel',
+    })
+    assert.ok(bridge)
+    bridge.setExecutionContext(worktreeContext('bridge-cancel', '/worktrees/bridge-cancel'))
+    for (const init of initialized()) await rpc(bridge, init)
+
+    const started = gate.started()
+    const call = rpc(bridge, SHELL_CALL)
+    await started
+    // Stateless transport: the cancellation arrives on its own POST, so it
+    // reaches a different server instance than the call it names.
+    await rpc(bridge, {
+      jsonrpc: '2.0',
+      method: 'notifications/cancelled',
+      params: { requestId: SHELL_CALL.id, reason: 'timed out' },
+    })
+
+    const response = await call
+    assert.equal(expectRecord(rpcResult(response))['isError'], true)
+    assert.match(contentText(response) ?? '', /Approval is still pending/)
+    assert.match(contentText(response) ?? '', /Retry the exact same call/)
+    assert.equal(gate.handlerSignal()?.aborted, false)
+    assert.deepEqual(executed, [])
+
+    gate.release({ approved: false, remember: false, resolution: 'user' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const retry = await rpc(bridge, SHELL_CALL)
+    assert.equal(contentText(retry), 'User rejected the run_shell tool call.')
+    assert.deepEqual(executed, [])
+    assert.equal(gate.handlerCalls(), 1)
   })
 
   it('serves only curated tools and executes through the registry gate', async () => {

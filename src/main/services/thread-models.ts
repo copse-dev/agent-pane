@@ -1,6 +1,8 @@
-import { AsyncLocalStorage } from 'node:async_hooks'
+import { activeRunStorage } from './active-run-identity.ts'
+export { getActiveRunThread, runWithActiveRunIdentity } from './active-run-identity.ts'
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { activateGuardedYoloForRun } from './security/guarded-yolo.ts'
+import { activateUnattendedRunForRun } from './security/unattended-run.ts'
 
 // Tracks which LLM models actually ran in each thread so `git_commit` can credit
 // them in the Copse attribution trailer. Populated from usage chunks during a
@@ -10,19 +12,6 @@ import { activateGuardedYoloForRun } from './security/guarded-yolo.ts'
 // renderer and isn't reachable from a tool's `execute`.
 
 const modelsByThread = new Map<string, Set<string>>()
-
-interface ActiveRunIdentity {
-  readonly threadId: string
-  model: string | null
-  turnTreeId: TurnTreeId | null
-}
-
-const activeRunStorage = new AsyncLocalStorage<ActiveRunIdentity>()
-
-/** Scope the active thread/model identity to one complete asynchronous run. */
-export function runWithActiveRunIdentity<T>(threadId: string, fn: () => T): T {
-  return activeRunStorage.run({ threadId, model: null, turnTreeId: null }, fn)
-}
 
 /** Record a model id observed for a thread (no-op for blank ids). */
 export function recordThreadModel(threadId: string, model: string): void {
@@ -49,6 +38,7 @@ export function setActiveRunThread(threadId: string): void {
     throw new Error(`Active run identity belongs to "${active.threadId}", not "${threadId}"`)
   }
   activateGuardedYoloForRun(threadId)
+  activateUnattendedRunForRun(threadId)
 }
 
 /** Clear mutable model state only when this async context owns the thread. */
@@ -58,11 +48,6 @@ export function clearActiveRunThread(threadId: string): void {
     active.model = null
     active.turnTreeId = null
   }
-}
-
-/** Thread whose run is currently executing tools, or null when idle. */
-export function getActiveRunThread(): string | null {
-  return activeRunStorage.getStore()?.threadId ?? null
 }
 
 /** Record the resolved model the active run is executing on (blank clears it). */

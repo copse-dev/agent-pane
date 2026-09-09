@@ -61,6 +61,18 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   from whichever channel carries it. A consequence worth knowing: under Cursor,
   a bridged or MCP call that is auto-approved never produces a permission
   request, so it can keep the generic `MCP: tool` label.
+- **An abandoned bridged call does not lose its approval.** MCP clients give
+  up on a silent tool call after their own timeout (Codex: roughly 300 s), and
+  a bridged `run_shell` blocked on "Run outside sandbox?" is silent for as long
+  as the user takes to answer. The bridge aborts the call with an
+  `AbandonedCallAbort` reason; the approval service (`approval.ts`) treats that
+  as a detach rather than a cancel — the prompt stays open, the call fails with
+  a clear "approval is still pending, retry the exact same call" error (which
+  reaches the agent when it cancelled over MCP; a dropped connection has no one
+  to deliver it to), and the user's eventual answer is kept for ten minutes so
+  the identical retry (same command, working directory and thread) reuses it
+  without prompting again. A retry that arrives while the prompt is still open
+  simply joins it. Turn end still dismisses the prompt, as before.
 - Because that title is also how Copse recognises **its own** bridged tools to
   skip a duplicate approval prompt, the same per-agent spread applies: Cursor's
   `copse-gh_pr_list: gh_pr_list` and Claude's `mcp__copse__gh_pr_view` are both

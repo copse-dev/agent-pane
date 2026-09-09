@@ -24,6 +24,25 @@ function untrusted(): ProjectInstructionSummary {
     scope: 'project',
     bytes: 7129,
     active: false,
+    trusted: false,
+  }
+}
+
+function nested(
+  name: string,
+  scopePath: string,
+  active: boolean,
+  extra: Partial<ProjectInstructionSummary> = {},
+): ProjectInstructionSummary {
+  return {
+    path: `/workspace/${name}`,
+    name,
+    scope: 'project',
+    bytes: 256,
+    active,
+    trusted: true,
+    scopePath,
+    ...extra,
   }
 }
 
@@ -60,7 +79,7 @@ function stubApi(initial: ProjectInstructionSummary[]): Harness {
       unsandboxedProjectHooks: () => Promise.resolve([]),
       setTrusted: (trusted: boolean) => {
         trustCalls.push(trusted)
-        files = files.map((file) => ({ ...file, active: trusted }))
+        files = files.map((file) => ({ ...file, active: trusted, trusted }))
         return Promise.resolve([])
       },
     },
@@ -107,6 +126,55 @@ describe('settings sources → instructions', () => {
     const detail = list.querySelector('.sources-row-detail')?.textContent ?? ''
     assert.match(detail, /7\.0 KB/)
     assert.doesNotMatch(detail, /7129 B/)
+  })
+
+  it('shows the latest turn activation separately from a nested file scope', async () => {
+    const list = await openInstructions(
+      stubApi([
+        nested('packages/api/AGENTS.md', 'packages/api', true),
+        nested('packages/web/AGENTS.md', 'packages/web', false),
+      ]).api,
+    )
+    const rows = [...list.querySelectorAll<HTMLElement>('.sources-row')]
+    const api = rows.find((row) => row.textContent.includes('packages/api/AGENTS.md'))
+    const web = rows.find((row) => row.textContent.includes('packages/web/AGENTS.md'))
+    assert.ok(api)
+    assert.ok(web)
+    assert.equal(api.querySelector('.sources-badge')?.textContent, 'active')
+    assert.match(api.querySelector('.sources-row-detail')?.textContent ?? '', /active this turn/)
+    assert.equal(web.querySelector('.sources-badge')?.textContent, 'scoped')
+    assert.match(
+      web.querySelector('.sources-row-detail')?.textContent ?? '',
+      /activates when a path under this directory enters context/,
+    )
+  })
+
+  it('keeps a nested duplicate of the root rules listed, marked rather than hidden', async () => {
+    const list = await openInstructions(
+      stubApi([
+        nested('packages/api/AGENTS.md', 'packages/api', true, { duplicateOf: 'AGENTS.md' }),
+      ]).api,
+    )
+    const row = list.querySelector<HTMLElement>('.sources-row')
+    assert.ok(row)
+    assert.equal(row.querySelector('.sources-badge')?.textContent, 'duplicate')
+    assert.match(
+      row.querySelector('.sources-row-detail')?.textContent ?? '',
+      /identical to AGENTS\.md, loaded once through it/,
+    )
+    assert.equal(list.querySelector('#sources-instructions-truncated'), null)
+  })
+
+  it('says when nested discovery stopped short instead of listing silently', async () => {
+    const list = await openInstructions(
+      stubApi([
+        nested('packages/api/AGENTS.md', 'packages/api', false, { discoveryTruncated: true }),
+      ]).api,
+    )
+    assert.match(
+      list.querySelector('#sources-instructions-truncated')?.textContent ?? '',
+      /this list may be incomplete/,
+    )
   })
 
   it('points at the badge as the way to trust an inert file', async () => {
