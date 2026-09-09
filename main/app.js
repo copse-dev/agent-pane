@@ -281071,7 +281071,70 @@ var init_git_image_diff = __esm({
   }
 });
 
+// src/shared/fs/image-path.ts
+function imageMimeType(path4) {
+  const name = path4.split("/").pop()?.toLowerCase() ?? "";
+  const ext = name.split(".").pop() ?? "";
+  return IMAGE_MIME_BY_EXT[ext] ?? null;
+}
+function isRasterImagePath(path4) {
+  const mime = imageMimeType(path4);
+  return mime !== null && mime !== "image/svg+xml";
+}
+var IMAGE_MIME_BY_EXT;
+var init_image_path = __esm({
+  "src/shared/fs/image-path.ts"() {
+    IMAGE_MIME_BY_EXT = {
+      avif: "image/avif",
+      bmp: "image/bmp",
+      gif: "image/gif",
+      ico: "image/x-icon",
+      jpeg: "image/jpeg",
+      jpg: "image/jpeg",
+      png: "image/png",
+      svg: "image/svg+xml",
+      webp: "image/webp"
+    };
+  }
+});
+
 // src/renderer/views/git-changes-pane.ts
+function bytesToBase64(bytes) {
+  const chunks = [];
+  const chunkSize = 32768;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
+  }
+  return btoa(chunks.join(""));
+}
+function proposedImageDataUrl(path4, content) {
+  if (!content) return null;
+  const mime = imageMimeType(path4);
+  if (!mime) return null;
+  const dataUrlPrefix = `data:${mime};base64,`;
+  if (content.startsWith(dataUrlPrefix)) return content;
+  if (isRasterImagePath(path4)) {
+    const bytes = new Uint8Array(content.length);
+    for (let i4 = 0; i4 < content.length; i4++) {
+      const codeUnit = content.charCodeAt(i4);
+      if (codeUnit > 255) return null;
+      bytes[i4] = codeUnit;
+    }
+    return `${dataUrlPrefix}${bytesToBase64(bytes)}`;
+  }
+  return `${dataUrlPrefix}${bytesToBase64(new TextEncoder().encode(content))}`;
+}
+function proposedImageDiff(view) {
+  if (!imageMimeType(view.path)) return null;
+  return {
+    path: view.path,
+    before: "",
+    after: "",
+    language: view.language,
+    beforeImage: proposedImageDataUrl(view.path, view.before),
+    afterImage: proposedImageDataUrl(view.path, view.after)
+  };
+}
 function isChangeSelection(seed) {
   if (!seed || typeof seed !== "object") return false;
   if (!("kind" in seed) || !("path" in seed) || typeof seed.path !== "string") return false;
@@ -281145,7 +281208,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
   const dirWrap = el("div", { class: "git-dir-view" });
   dirWrap.hidden = true;
   const emptyState = el("div", { class: "panel-empty" }, "Select a changed file");
-  viewerRoot.append(conflictBanner, diffWrap, approvalBar, imageWrap, dirWrap, emptyState);
+  viewerRoot.append(conflictBanner, diffWrap, imageWrap, dirWrap, emptyState, approvalBar);
   let diffEditor = null;
   let pendingSelect = null;
   let selectRequestId = 0;
@@ -281419,9 +281482,20 @@ function mountGitChangesPane(listRoot, viewerRoot, store3, api3, monaco) {
       const owner = activeOwner();
       if (owner) void api3.diff.reject(owner.projectId, owner.threadId, view.path);
     };
+    const imageDiff = proposedImageDiff(view);
+    if (imageDiff) {
+      emptyState.hidden = true;
+      diffWrap.hidden = true;
+      imageWrap.hidden = false;
+      dirWrap.hidden = true;
+      if (diffEditor) disposeDiffModels(diffEditor);
+      renderImageDiff(imageWrap, imageDiff);
+      return;
+    }
     emptyState.hidden = true;
     imageWrap.hidden = true;
     dirWrap.hidden = true;
+    clear(imageWrap);
     diffWrap.hidden = false;
     const proposed = {
       path: view.path,
@@ -281908,6 +281982,7 @@ var init_git_changes_pane = __esm({
     init_ui_scale();
     init_git_image_diff();
     init_material_file_icons();
+    init_image_path();
     STATUS_LABEL = {
       modified: "M",
       added: "A",
