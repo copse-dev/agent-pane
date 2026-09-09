@@ -213,9 +213,8 @@ describe('projects pane — drag to reorder (component)', () => {
   it('tags every row with the id that addresses it', () => {
     // `beginGroupRename` re-queries by these after a re-render, and the e2e
     // drag helper (tests/e2e/helpers/sidebar-drag.ts) addresses rows by them
-    // rather than adding a selector that only tests use. An expanded project
-    // wraps its row in `.project-line`, a collapsed one does not — both shapes
-    // have to stay reachable.
+    // rather than adding a selector that only tests use. Expanded and collapsed
+    // projects both wrap their row and menu button in `.project-line`.
     mount(
       [project('a', 'Alpha'), project('b', 'Beta'), project('c', 'Gamma', 'work')],
       [{ id: 'work', name: 'Work' }],

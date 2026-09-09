@@ -5,6 +5,7 @@ import {
   chevronRightIcon,
   closeIcon,
   gitPullRequestIcon,
+  moreHorizontalIcon,
   plusIcon,
   runningStatusIcon,
   searchIcon,
@@ -251,62 +252,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   settingsBtn.addEventListener('click', () => {
     openSettingsDialog()
   })
-  const menuButton = el(
-    'button',
-    {
-      type: 'button',
-      class: 'projects-menu-btn',
-      'aria-label': 'Project menu',
-      'aria-haspopup': 'menu',
-      'data-tooltip': 'Settings and automations',
-    },
-    settingsIcon(),
-  )
-  menuButton.addEventListener('click', () => {
-    menuButton.disabled = true
-    void api.plugins
-      .list()
-      .then((result) => {
-        const rect = menuButton.getBoundingClientRect()
-        const plugin = result.plugins.find(hasAutomationDialog)
-        showContextMenu(rect.left, rect.top, [
-          {
-            label: 'Settings',
-            onSelect: (): void => {
-              openSettingsDialog()
-            },
-          },
-          ...(plugin
-            ? [
-                {
-                  label: 'Automations',
-                  onSelect: (): void => {
-                    openAutomationDialog(store, api)
-                  },
-                },
-                {
-                  label: 'New automation…',
-                  disabled: !store.getState().activeProjectId,
-                  onSelect: (): void => {
-                    openAutomationDialog(store, api, { createNew: true })
-                  },
-                },
-              ]
-            : []),
-        ])
-      })
-      .catch((error: unknown) => {
-        showErrorToast('Could not load project menu', error)
-      })
-      .finally(() => {
-        menuButton.disabled = false
-      })
-  })
   root.append(
     header,
     searchRow,
     list,
-    el('div', { class: 'projects-settings-actions' }, menuButton, settingsBtn),
+    el('div', { class: 'projects-settings-actions' }, settingsBtn),
   )
 
   let sshWorkspaceEnabled = false
@@ -889,27 +839,74 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         }
         switchProject(store, api, project.id)
       })
+      const projectMenuEntries: ContextMenuEntry[] = [
+        {
+          label: 'Remove from sidebar',
+          onSelect: (): void => {
+            void removeProject(store, api, project.id)
+          },
+        },
+        ...groupMenuEntries(project, projectGroups),
+      ]
       projectRow.addEventListener('contextmenu', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        showContextMenu(e.clientX, e.clientY, [
-          {
-            label: 'Remove from sidebar',
-            onSelect: (): void => {
-              void removeProject(store, api, project.id)
-            },
-          },
-          ...groupMenuEntries(project, projectGroups),
-        ])
+        showContextMenu(e.clientX, e.clientY, projectMenuEntries)
       })
+      const menuButton = el(
+        'button',
+        {
+          type: 'button',
+          class: 'project-menu-btn',
+          'aria-label': `Project menu for ${projectDisplayName(project)}`,
+          'aria-haspopup': 'menu',
+          'data-tooltip': 'Project menu',
+        },
+        moreHorizontalIcon('ui-icon ui-icon-sm'),
+      )
+      menuButton.addEventListener('click', () => {
+        menuButton.disabled = true
+        void api.plugins
+          .list()
+          .then((result) => {
+            if (!menuButton.isConnected) return
+            const rect = menuButton.getBoundingClientRect()
+            const entries: ContextMenuEntry[] = []
+            if (result.plugins.some(hasAutomationDialog)) {
+              entries.push(
+                {
+                  label: 'Automations',
+                  onSelect: (): void => {
+                    openAutomationDialog(store, api, { projectId: project.id })
+                  },
+                },
+                {
+                  label: 'New automation…',
+                  disabled: project.missing === true,
+                  onSelect: (): void => {
+                    openAutomationDialog(store, api, { projectId: project.id, createNew: true })
+                  },
+                },
+              )
+            }
+            showContextMenu(rect.left, rect.bottom, [...entries, ...projectMenuEntries])
+          })
+          .catch((error: unknown) => {
+            showErrorToast('Could not load project menu', error)
+          })
+          .finally(() => {
+            menuButton.disabled = false
+          })
+      })
+      const projectLine = el('div', { class: 'project-line' }, projectRow, menuButton)
+      entry.append(projectLine)
 
       if (isExpanded && project.missing) {
-        entry.append(projectRow, renderMissingNotice(project))
+        entry.append(renderMissingNotice(project))
         return entry
       }
 
       if (isExpanded) {
-        const projectLine = el('div', { class: 'project-line' })
         const newThreadBtn = el(
           'button',
           {
@@ -932,10 +929,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           }
           openNewThread(store)
         })
-        projectLine.append(projectRow, newThreadBtn)
-        entry.append(projectLine)
-      } else {
-        entry.append(projectRow)
+        projectLine.append(newThreadBtn)
       }
 
       if (!isExpanded) return entry

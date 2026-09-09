@@ -9,6 +9,7 @@ import { createFakeApi, createPendingApi } from '../fake-api.test-support.ts'
 import { resetProjectSwitchStateForTest } from '../controller/projects.ts'
 import { resetAttention, setAttentionThreads } from '../controller/attention.ts'
 import { mountProjectsPane } from './projects-pane.ts'
+import { dismissContextMenu } from '../dom/context-menu.ts'
 import {
   closeSettingsDialog,
   isSettingsDialogOpen,
@@ -121,6 +122,7 @@ function mountWithSettings(threads: Thread[], activeThreadId: string): HTMLEleme
 }
 
 afterEach(() => {
+  dismissContextMenu()
   if (isSettingsDialogOpen()) closeSettingsDialog()
   document.querySelector<HTMLDialogElement>('#automation-dialog')?.close()
   document.body.replaceChildren()
@@ -337,5 +339,71 @@ describe('projects pane automation setup links', () => {
     assert.ok(automationRow && conversationRow)
     assert.deepEqual(labelsFor(automationRow), ['Rename', 'Fork', 'Archive', 'Automation setup…'])
     assert.deepEqual(labelsFor(conversationRow), ['Rename', 'Fork', 'Archive'])
+  })
+})
+
+describe('project row automation menu', () => {
+  for (const label of ['Automations', 'New automation…']) {
+    it(`opens ${label} for the selected row without changing the active project`, async () => {
+      const store = createStore({
+        projects: [
+          { id: 'a', path: '/a', name: 'Alpha' },
+          { id: 'b', path: '/b', name: 'Beta' },
+        ],
+        activeProjectId: 'a',
+        expandedProjectId: 'a',
+        workspaceRoot: '/a',
+      })
+      const requestedProjects: string[] = []
+      const api = createFakeApi()
+      api.plugins.list = (): Promise<{ plugins: PluginSummary[] }> =>
+        Promise.resolve({ plugins: [automationsPlugin] })
+      api.automations.list = (projectId): Promise<AutomationSchedule[]> => {
+        requestedProjects.push(projectId)
+        return Promise.resolve([])
+      }
+      const host = document.createElement('div')
+      document.body.append(host)
+      const dispose = mountProjectsPane(host, store, api)
+      assert.equal(host.querySelector('.projects-menu-btn'), null)
+      assert.equal(host.querySelectorAll('.project-line .project-menu-btn').length, 2)
+      const button = host.querySelector<HTMLButtonElement>(
+        '.project-entry[data-project-id="b"] .project-menu-btn',
+      )
+      assert.ok(button)
+      button.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const menuItems = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+      )
+      assert.ok(menuItems.some((item) => item.textContent === 'Remove from sidebar'))
+      const action = menuItems.find((item) => item.textContent === label)
+      assert.ok(action)
+      action.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const dialog = document.querySelector<HTMLDialogElement>('#automation-dialog')
+      assert.ok(dialog?.open)
+      assert.match(dialog.querySelector('.automation-scope')?.textContent ?? '', /Project: Beta/)
+      assert.deepEqual(requestedProjects, ['b'])
+      assert.equal(store.getState().activeProjectId, 'a')
+      assert.equal(store.getState().expandedProjectId, 'a')
+      assert.equal(
+        dialog.querySelector<HTMLFormElement>('.automation-form')?.hidden,
+        label !== 'New automation…',
+      )
+      dispose()
+    })
+  }
+
+  it('keeps project actions available without the automation plugin', async () => {
+    const host = mount([], '')
+    host.querySelector<HTMLButtonElement>('.project-menu-btn')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const labels = Array.from(document.querySelectorAll('.context-menu-item')).map(
+      (item) => item.textContent,
+    )
+    assert.ok(labels.includes('Remove from sidebar'))
+    assert.ok(!labels.includes('Automations'))
+    assert.ok(!labels.includes('New automation…'))
   })
 })

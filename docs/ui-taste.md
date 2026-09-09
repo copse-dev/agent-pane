@@ -989,9 +989,10 @@ destination. Schedules are project-scoped, so a heading under a project that
 isn't open lands on the project first rather than editing another project's
 automations. Spec: [`tests/e2e/automation-settings-link.e2e.ts`](../tests/e2e/automation-settings-link.e2e.ts).
 
-Setup now opens the plugin's standalone Automations modal. The side cog exposes
-the same list and a direct **New automation…** action; its adjacent Settings label
-stays a direct shortcut. Keep the modal header outside its scroll body, retain
+Setup now opens the plugin's standalone Automations modal. Each project row's
+ellipsis menu exposes **Automations** and **New automation…**, scoped to that row's
+project even when another project is active. The sidebar footer keeps only the
+direct Settings shortcut. Keep the modal header outside its scroll body, retain
 the project scope above the form, and use the identical editor inside Settings.
 Do not recreate the editor when plugin enablement changes: it may contain a draft.
 Spec: [`tests/e2e/automation-dialog.e2e.ts`](../tests/e2e/automation-dialog.e2e.ts).
