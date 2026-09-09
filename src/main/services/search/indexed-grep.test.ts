@@ -166,6 +166,28 @@ describe('indexed-grep backend selection', () => {
     assert.deepEqual(result.lines, ['src/main.ts:12: const needle = true'])
   })
 
+  it('discards partial output from a failed indexed search and retries with ripgrep', async () => {
+    const commands: string[] = []
+    setIndexedGrepBackendForTest('ig')
+    setIndexedGrepCommandRunnerForTest(async (command) => {
+      commands.push(command)
+      return {
+        stdout: command === 'ig' ? '/tmp/repo/stale.ts:1: partial result\n' : '',
+        stderr: command === 'ig' ? 'index is corrupt' : '',
+        code: command === 'ig' ? 2 : 1,
+        stdoutTruncated: false,
+      }
+    })
+    assert.deepEqual(
+      await searchCodeContent({ pattern: 'needle', searchRoot: '/tmp/repo', maxResults: 10 }),
+      {
+        lines: [],
+        backend: 'rg',
+      },
+    )
+    assert.deepEqual(commands, ['ig', 'rg'])
+  })
+
   it('keeps a non-empty indexed result without spawning ripgrep', async () => {
     const commands: string[] = []
     setIndexedGrepBackendForTest('ig')
