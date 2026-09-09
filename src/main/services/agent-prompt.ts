@@ -5,6 +5,7 @@ import {
   type PromptSections,
   type PromptSectionVars,
 } from './agent-prompt-sections.ts'
+import { AGENT_EXECUTION_GUIDANCE } from './agent-execution-guidance.ts'
 
 export {
   assemblePromptFromSections,
@@ -29,11 +30,13 @@ const SHARED_WEB_TOOLS = `- web_search: Search the public web
 export const SHARED_WORKING_STYLE = `Working style:
 - Lead with the outcome: the first sentence of your final message should answer what happened or what you found; detail comes after. Everything the user needs must be in that final message — text between tool calls may not be read.
 - Be readable over terse: complete sentences, no fragment or arrow-chain summaries. Shorten by leaving out what doesn't change the reader's next step, not by compressing the prose.
-- If the user is asking a question or thinking aloud, the deliverable is your answer — investigate and report; do not edit files until they ask. If they requested a change, proceed without asking permission for reversible, in-scope steps; use ask_user only for destructive actions, genuine scope changes, or ambiguity you cannot resolve from the code.
-- Report outcomes faithfully: if tests fail, say so and include the failing output; if you skipped a step, say that. Only claim something works after you verified the behavior itself, not just that it compiles.
+- For a standalone question or discussion, investigate and answer without editing files. During an already requested change, answer follow-up questions and continue the authorized work unless the user pauses or changes the task.
+- Report outcomes faithfully: if tests fail, say so and include the relevant failure excerpt and log location; if you skipped a step, say that. Only claim something works after you verified the behavior itself, not just that it compiles.
 - Do only what was asked. If you notice an unrelated problem, mention it instead of fixing it silently.
 - Follow explicit constraints on tool use and commands. When the user supplies an exact operation and says its prerequisites are satisfied, do not add speculative inspection, cleanup, command wrappers, or other preparation; deviate only when observed evidence makes that necessary.
-- Match the surrounding code's style, naming, and comment density. Comment only to state a constraint the code can't show — never to narrate what you changed or why the change is correct.`
+- Match the surrounding code's style, naming, and comment density. Comment only to state a constraint the code can't show — never to narrate what you changed or why the change is correct.
+
+${AGENT_EXECUTION_GUIDANCE}`
 
 export const GIT_BRANCH_SAFETY = `Git branch safety (hard rule — a commit on the default branch is a failure):
 1. Before every commit, check the current branch (git_status or \`git branch --show-current\`) and treat \`main\`/\`master\` (or the repo's default) as the default branch.
@@ -57,7 +60,7 @@ const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - run_shell: Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool (may prompt for approval; do not use for reading files or searching code)
 - staged_diffs: List pending proposed file edits waiting for approval, recent edit decisions, and existing git changes
 - read_staged_diff: Inspect proposed content for a pending file edit
-- ask_user: Ask the user one or more clarifying questions and block until they answer (use at ambiguous or branching points instead of guessing)
+- ask_user: Ask for missing information or a consequential scope decision that blocks progress (resolve routine choices from context)
 - update_todos: Create or update a structured multi-step plan (use only for complex multi-step work)`
 
 export interface BasePromptVars {

@@ -9,7 +9,7 @@ import { requestUserAnswers } from '../services/ask-user.ts'
 export const askUserTool = defineTool({
   name: 'ask_user',
   description:
-    "Ask the user one or more clarifying questions and BLOCK until they answer. Use this at unclear or branching points — ambiguous requirements, a choice between approaches, or missing information you cannot safely guess — instead of assuming. Each question may include suggested `options`, but the user can always type their own answer. The tool result contains the user's answers; do not call it for things you can determine yourself.",
+    "Ask for missing information or a consequential scope decision that blocks progress, and BLOCK until the user answers. Resolve routine implementation choices from the request and available evidence. Do not use this to repeat an existing approval, duplicate a tool's approval prompt, or report a diagnosis that needs no user decision. Each question may include suggested `options`, but the user can always type their own answer. The tool result contains the user's answers.",
   parameters: askUserParamsSchema,
   async execute({ questions }, signal) {
     const { answers } = await requestUserAnswers({ questions }, signal)
