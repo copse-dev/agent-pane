@@ -504,6 +504,9 @@ export async function cleanupWorktreePackages(
     }
     return {
       status: input.remove ? 'cleaned' : 'ready',
+      ...(input.remove
+        ? { changedCount: (await inspectChanges(record.path))?.length ?? null }
+        : {}),
       path: record.path,
       directories,
       bytes,

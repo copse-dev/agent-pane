@@ -2467,3 +2467,43 @@ dialog.settings-overlay::backdrop {
     flex-wrap: wrap;
   }
 }
+
+.sources-worktrees-selection,
+.sources-worktrees-selection label,
+#sources-worktrees-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.sources-worktrees-selection {
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-md);
+  font-size: var(--font-size-sm);
+}
+
+.settings-content .sources-worktrees-selection label {
+  flex-direction: row;
+  margin: 0;
+}
+
+.sources-worktree-select,
+#sources-worktrees-select-all {
+  flex-shrink: 0;
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+#sources-worktrees-selected-count {
+  color: var(--text-secondary);
+}
+
+#sources-worktrees-status {
+  white-space: pre-line;
+}
+
+/* Fieldset's native min-content width otherwise defeats row truncation. */
+.sources-worktrees-fieldset {
+  min-inline-size: 0;
+}

@@ -49,6 +49,17 @@ class MemoryTaskStore implements SupervisedTaskStore {
     return Promise.resolve(this.tasks.get(memoryKey(projectId, taskId)) ?? null)
   }
 
+  async findPersisted(
+    projectId: string,
+    taskId: string,
+  ): Promise<SupervisedTaskMeta | SupervisedTaskArchive | null> {
+    return (
+      (await this.get(projectId, taskId)) ??
+      (await this.loadTaskArchive(projectId)).find((task) => task.taskId === taskId) ??
+      null
+    )
+  }
+
   saveTransition(meta: SupervisedTaskMeta, audit: SupervisedTaskAuditEvent): Promise<void> {
     this.tasks.set(memoryKey(meta.projectId, meta.taskId), meta)
     this.audit.push(audit)
@@ -76,6 +87,7 @@ class MemoryTaskStore implements SupervisedTaskStore {
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
         attempt: task.attempt,
+        ...(task.contentHash ? { contentHash: task.contentHash } : {}),
       })
       compacted++
     }

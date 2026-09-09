@@ -433,7 +433,8 @@ describe('project-instructions', () => {
     assert.equal(layers.project.match(/<project_instructions /g)?.length, 1)
   })
 
-  it("keeps each thread's activation apart and shows Settings the latest one", async () => {
+  it("keeps each thread's activation apart and shows Settings the latest one", async (t) => {
+    t.mock.method(Date, 'now', () => 1_000)
     for (const name of ['api', 'web']) {
       await mkdir(join(projectRoot, 'packages', name), { recursive: true })
       await writeFile(join(projectRoot, 'packages', name, 'AGENTS.md'), `${name} rules`)
@@ -472,6 +473,14 @@ describe('project-instructions', () => {
     assert.deepEqual(
       activeNames(await withTrust(true, () => loadProjectInstructionSources(latest))),
       ['packages/web/AGENTS.md'],
+    )
+    // Updating an existing thread must become latest even with the same clock tick.
+    await inThread('thread-a', () =>
+      loadInstructionLayersWithMetadata({ nestedContextPaths: ['packages/api/a.ts'] }, true),
+    )
+    assert.deepEqual(
+      activeNames(await withTrust(true, () => loadProjectInstructionSources(latest))),
+      ['packages/api/AGENTS.md'],
     )
   })
 

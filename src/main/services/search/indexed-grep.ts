@@ -103,7 +103,12 @@ async function searchWithIndexedCli(
   opts: CodeContentSearchOptions,
 ): Promise<string[]> {
   const args = buildIndexedCliArgs(backend, opts)
-  const { stdout } = await executeCommand(backend, args, opts.signal ? { signal: opts.signal } : {})
+  const { stdout, code } = await executeCommand(
+    backend,
+    args,
+    opts.signal ? { signal: opts.signal } : {},
+  )
+  if (code !== 0) return []
   return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot)
 }
 

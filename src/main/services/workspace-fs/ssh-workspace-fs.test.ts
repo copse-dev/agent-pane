@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, access, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FakeSshTransport } from '../ssh-workspace/fake-ssh-transport.ts'
@@ -51,6 +51,29 @@ describe('SshWorkspaceFs', () => {
     clearSshWorkspaceFsCacheForTest()
     await setSetting('sshWorkspaceHosts', previousHosts)
   })
+
+  it(
+    'removes a nonempty directory recursively with force',
+    { skip: process.platform === 'win32' },
+    async (t) => {
+      const root = await mkdtemp(join(tmpdir(), 'copse-remote-remove-'))
+      t.after(() => rm(root, { recursive: true, force: true }))
+      const directory = join(root, "build's output")
+      await mkdir(directory)
+      await writeFile(join(directory, 'artifact.txt'), 'built')
+      resetSshConnectionManagerForTests()
+      const transport = new FakeSshTransport()
+      t.mock.method(transport, 'execShell', async (command: string) => {
+        const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
+        return { stdout: result.stdout, stderr: result.stderr, code: result.status ?? 1 }
+      })
+      setSshTransportFactory(() => transport)
+      const fs = new SshWorkspaceFs('dev', root)
+      await fs.rm(directory, { recursive: true, force: true })
+      await assert.rejects(access(directory), { code: 'ENOENT' })
+      await fs.rm(directory, { recursive: true, force: true })
+    },
+  )
 
   it('reads a file over SSH exec', async () => {
     const fs = new SshWorkspaceFs('dev', '/home/me/project')

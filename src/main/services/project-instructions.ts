@@ -131,7 +131,7 @@ export function createNestedInstructionTurn(): NestedInstructionTurn {
 
 interface NestedActivationRecord {
   names: ReadonlySet<string>
-  at: number
+  sequence: number
 }
 
 /**
@@ -145,6 +145,8 @@ interface NestedActivationRecord {
  * execution-root paths would never compare equal across that boundary.
  */
 const lastNestedActivationByProjectRoot = new Map<string, Map<string, NestedActivationRecord>>()
+// Wall-clock ticks can tie or move backwards; assembly order defines the latest activation.
+let nestedActivationSequence = 0
 const nestedDiscoveryCache = new Map<
   string,
   { expiresAt: number; discovery: NestedInstructionDiscovery }
@@ -162,7 +164,7 @@ function latestNestedActivation(projectKey: string): ReadonlySet<string> {
   if (own) return own.names
   let latest: NestedActivationRecord | undefined
   for (const record of byThread.values()) {
-    if (!latest || record.at > latest.at) latest = record
+    if (!latest || record.sequence > latest.sequence) latest = record
   }
   return latest?.names ?? new Set()
 }
@@ -170,7 +172,7 @@ function latestNestedActivation(projectKey: string): ReadonlySet<string> {
 function recordNestedActivation(projectKey: string, names: ReadonlySet<string>): void {
   const byThread =
     lastNestedActivationByProjectRoot.get(projectKey) ?? new Map<string, NestedActivationRecord>()
-  byThread.set(activationThreadKey(), { names, at: Date.now() })
+  byThread.set(activationThreadKey(), { names, sequence: ++nestedActivationSequence })
   lastNestedActivationByProjectRoot.set(projectKey, byThread)
 }
 

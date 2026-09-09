@@ -29,6 +29,10 @@ class EmptyTaskStore implements SupervisedTaskStore {
   get(): Promise<SupervisedTaskMeta | null> {
     return Promise.resolve(null)
   }
+  findPersisted(): Promise<SupervisedTaskMeta | null> {
+    return this.get()
+  }
+
   saveTransition(_meta: SupervisedTaskMeta, _audit: SupervisedTaskAuditEvent): Promise<void> {
     return Promise.resolve()
   }
