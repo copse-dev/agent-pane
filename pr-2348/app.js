@@ -25601,7 +25601,8 @@ var init_demo_scenarios = __esm({
           onboardingCompleted: true,
           theme: "dark",
           uiTintStrength: "off",
-          model: "claude-sonnet-4-6"
+          model: "claude-sonnet-4-6",
+          containerRunsEnabled: true
         },
         threads: [
           {
@@ -25747,7 +25748,8 @@ var init_demo_scenarios = __esm({
           model: "lmstudio:qwen/qwen3.6-35b-a3b",
           // Copy/export overflow actions are developer-mode gated; the geometry
           // demo needs them visible to exercise `.footer-overflow`.
-          developerMode: true
+          developerMode: true,
+          containerRunsEnabled: true
         },
         threads: [
           {
@@ -53553,6 +53555,21 @@ function mountSettingsDialog(store3, api3) {
             </fieldset>
 
             <fieldset>
+              <legend>Unattended container runs</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="containerRunsEnabled" />
+                Let a thread run unattended inside a disposable Docker container
+              </label>
+              <p class="field-hint">
+                Adds "Run unattended in a container" to the message box menu. The run works on a
+                snapshot of the thread's checkout with no prompts, reaching only its model's
+                origin, and brings its commits back for you to apply. Needs Docker; the first run
+                builds the worker image. A run carries one credential: the model's API key, or,
+                if you opt in per run, your Codex or Gemini sign-in copied into the container.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -55889,6 +55906,7 @@ var init_settings_dialog = __esm({
       // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
+      { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       // P5: the master model-comparison toggle moved to Settings > Plugins
       // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
@@ -263969,6 +263987,15 @@ function mountInputBar(root4, store3, api3, opts = {}) {
     footerOverflow?.update();
   });
   let containerRunMounted = false;
+  let containerRunsEnabled = false;
+  const refreshContainerRunsSetting = async () => {
+    const enabled = await api3.settings.get("containerRunsEnabled").catch(() => void 0);
+    const next3 = enabled === true;
+    if (next3 === containerRunsEnabled) return;
+    containerRunsEnabled = next3;
+    footerOverflow?.update();
+    updateTargetPicker();
+  };
   let targetDefaultKey = null;
   const containerRun = mountContainerRunControl(
     api3,
@@ -263989,6 +264016,7 @@ function mountInputBar(root4, store3, api3, opts = {}) {
   );
   containerRunMounted = true;
   updateTargetPicker();
+  void refreshContainerRunsSetting();
   const footer = el("div", { class: "input-footer" });
   const modelHost = el("div", { class: "footer-model-host" });
   const checkoutHost = el("div", { class: "footer-checkout-host" });
@@ -264033,7 +264061,7 @@ function mountInputBar(root4, store3, api3, opts = {}) {
     },
     {
       label: containerRun.menuLabel,
-      hidden: () => !getActiveThreadId(),
+      hidden: () => !containerRunsEnabled || !getActiveThreadId(),
       onClick: containerRun.open
     },
     {
@@ -264604,6 +264632,10 @@ ${description}
   }
   function updateTargetPicker() {
     if (!containerRunMounted) return;
+    if (!containerRunsEnabled) {
+      targetSelect.hidden = true;
+      return;
+    }
     const target = containerRun.followUpTarget();
     targetSelect.hidden = !target.available;
     if (!target.available) return;
@@ -265499,6 +265531,7 @@ ${description}
       if (tid === getActiveThreadId()) updateFooter();
     }),
     store3.on("settings_changed", () => {
+      void refreshContainerRunsSetting();
       modelPicker.refresh();
       refreshModelPricing();
       updateFooter();
