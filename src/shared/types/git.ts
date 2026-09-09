@@ -147,6 +147,34 @@ export interface GhPrDetails extends GhPrSummary {
   autoMergeEnabled?: boolean
   /** GitHub review decision, e.g. `APPROVED`, `REVIEW_REQUIRED`, `CHANGES_REQUESTED`. */
   reviewDecision?: string
+  /** Bounded read of conversation comments, submitted reviews, and head checks. */
+  activity?: GhPrActivity
+}
+
+export interface GhPrComment {
+  id: string
+  body: string
+  author: string
+  createdAt: string
+  url: string
+  /** Absent for general conversation comments. */
+  reviewState?: string
+}
+
+export interface GhPrCheck {
+  name: string
+  state: string
+  url: string | null
+}
+
+export interface GhPrActivity {
+  comments: GhPrComment[]
+  checks: GhPrCheck[]
+  headSha: string
+  commentsTruncated: boolean
+  checksTruncated: boolean
+  /** A failed read must never look like an empty conversation or passing CI. */
+  error?: string
 }
 
 /** Which backend implementation serviced a GitHub operation. */

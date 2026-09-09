@@ -72,8 +72,8 @@ choice load-bearing rather than stylistic:
 - **A state a user has to see** — a selected row, an active tab — should not rest on the accent's
   _lightness_, because that is the property the theme flips. Against ordinary row text, the dark
   theme's accent stands at ΔE 51 and light's at 19; carry a fill (`--bg-selected`) as well, so the
-  signal survives both themes (#2483). A rail is no longer the alternative here — see "A rail means
-  nesting, and nothing else" — so for a list row the fill plus a weight change is the whole signal,
+  signal survives both themes (#2483). A rail is no longer the alternative here — see "Rails mark
+  nesting and standing asks" — so for a list row the fill plus a weight change is the whole signal,
   which is why the fill's own contrast is the thing that has to hold up.
 
 `src/renderer/styles/light-contrast.test.ts` pins the first rule mechanically, and holds the light
@@ -799,14 +799,16 @@ manual VNC glance.
 
 Review and comparison results should read as annotations in the transcript, not cards or pills. They
 are Copse annotating its own turn rather than part of the answer, so they take the **hatched plate**
-(`--callout-hatch`) with `--sev` set to their state hue — `--text-secondary` at rest, `--danger` when
-the run failed. No perimeter border, no elevation, no chips.
+with `--sev` set to their state hue — `--text-secondary` for a normal review, `--accent` for a
+comparison, and `--danger` when either run failed. Mix the background at the component using
+`--callout-hatch-line`, `--callout-hatch-fill`, and `--callout-hatch-pitch` from `global/base.css`.
+No perimeter border, no elevation, no chips.
 
 This used to be a thin status rail plus a horizontal wash that faded out to the right, and the rule
 here used to forbid a tinted block outright. The texture is what earns the block back: a flat wash
-of the state hue really would read as a card, but a hatch at 3% keeps the density constant down the
-whole panel, so a twenty-line review weighs no more than a two-line one — which is exactly what the
-fading wash was trying to buy and could not, because a gradient's weight follows its height. See
+of the state hue really would read as a card, but a low-opacity hatch over a 3% wash keeps the
+surface quiet. A longer review still occupies more space; the texture does not make its visual
+weight independent of height. See
 `prototypes/side-highlight` for the alternatives that were tried and rejected.
 
 ## Conditional split panes
@@ -849,7 +851,7 @@ Spec: [`tests/e2e/roadmap-list-rows.e2e.ts`](../tests/e2e/roadmap-list-rows.e2e.
 Complexity / fit / review chips stay when present (they are rare); tuck those
 further only if the list gets noisy again.
 
-## A rail means nesting, and nothing else
+## Rails mark nesting and standing asks
 
 A rail — a slim bar on one inline edge of a block, drawn as `border-left` or as an inset shadow
 (`box-shadow: inset 2px 0 0`) — used to do three unrelated jobs here. The transcript used it for
@@ -858,26 +860,29 @@ A rail — a slim bar on one inline edge of a block, drawn as `border-left` or a
 one"). Ten of them across six stylesheets, which is why one device started reading as repetition
 rather than as signal.
 
-Only nesting kept it. `.tool-rollup-body` and `.subagent-timeline` draw a guide line down the edge
-of their children, which is literally what the bar depicts. `accent-rails.test.ts` holds that list
-closed: adding a rail anywhere else fails, and the fix is to name the reason in `STRUCTURAL_RAILS`
-or to use one of the two replacements below.
+Nesting keeps it: `.tool-rollup-body` and `.subagent-timeline` draw a guide line down the edge
+of their children. There is one explicit exception: `.thread-proposal` uses a rail for a standing
+ask and drops it when the proposal is settled (see [Proposed threads](proposed-threads.md)).
+`accent-rails.test.ts` holds this list closed. A new rail needs an explicit design reason in
+`STRUCTURAL_RAILS`; ordinary content and selections use the replacements below.
 
 **Containment is a plate.** Two materials on one shape, split by what the block _is_ rather than by
-what it looks like (`--callout-plate` / `--callout-hatch` in `styles/global/base.css`; both read
-`--sev` off the element, so a component sets its hue and never has to know its material):
+what it looks like. Components set `--sev` and mix their background locally using the tuning
+tokens in `styles/global/base.css`: `--callout-plate-fill`, `--callout-hatch-line`,
+`--callout-hatch-fill`, and `--callout-hatch-pitch`. There are no finished `--callout-plate` or
+`--callout-hatch` properties: a root-level mix would resolve the root's severity before inheritance.
 
 - **Flat plate** — prose the agent wrote. GitHub alerts and blockquotes. It is part of the answer,
   so it gets a plain surface, and the severity hue moves to the title and its glyph.
 - **Hatched plate** — Copse annotating its own turn: thinking, review, comparison. Not part of the
-  answer, and a texture is what says so without spending a fourth hue or a fourth shape. Density
-  stays constant, so a tall block weighs no more than a short one. Under
+  answer, and a texture is what says so without spending a fourth hue or a fourth shape. Under
   `prefers-reduced-transparency` or `prefers-contrast: more` it degrades to the flat plate:
   commentary keeps a surface and loses only the distinction.
 
-The VNC pane is the exception and takes a **gutter** — a fixed 24px icon column. It is a separate
-pane with its own chrome, and its status hue has to survive on a single line where a plate would
-just box three of them.
+The VNC pane takes a **gutter**: a 24px icon column in the authentication panel and a compact 6px
+status-dot column in status rows. It is a separate pane with its own chrome, and its status hue
+has to survive on a single line where a plate would just box three of them. These columns do not
+currently align across states; the shared gutter in the prototype remains a polish option.
 
 **Selection is the fill alone.** See "Sidebar selections" below.
 
@@ -913,6 +918,12 @@ differ in outline, not just in the mark inside (circle / bulb / bubble / triangl
 kind reads before the hue does. Their vertical nudges are baked into each mask's `viewBox`: ink sits
 high in a bulb and a bubble and low in a triangle, so box-centring reads wrong. Those constants were
 measured once in `prototypes/side-highlight/proto.js` and are not recomputed at runtime.
+
+In forced-colors mode, callout masks use the system `CanvasText` foreground. Only the glyph's
+pseudo-element opts out of automatic color adjustment so its background is not forced to the
+same color as the plate; the rest of the callout still follows the user's contrast palette.
+`tests/e2e/callout-surfaces.e2e.ts` verifies all five glyphs in dark and light forced-colors
+palettes, plus the reduced-transparency and increased-contrast material fallbacks.
 
 ## Sidebar selections
 
@@ -995,3 +1006,10 @@ eval: `tests/e2e/guarded-yolo.e2e.ts`.
 centers both. Always override `flex-direction: row` (and reset `margin-bottom`) on checkbox list
 rows built from `<label>`. Visual eval:
 [`tests/e2e/roadmap-import-picker.e2e.ts`](../tests/e2e/roadmap-import-picker.e2e.ts).
+
+## Worktree storage selection
+
+Keep selection controls inline and reveal bulk actions only when checkouts are selected. The
+worktree fieldset needs `min-inline-size: 0`: its native min-content width otherwise overrides row
+truncation and pushes actions outside Settings. Explicitly use a row direction for the Select all
+label; the default form label stacks its control above its text.

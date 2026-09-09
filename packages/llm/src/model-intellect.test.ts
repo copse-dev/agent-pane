@@ -88,6 +88,35 @@ describe('getIntellectScore', () => {
       }
     }
   })
+
+  it('keeps every canonical measurement unchanged when a new index is linked', () => {
+    for (const [modelId, entries] of Object.entries(MODEL_INTELLECT_RAW)) {
+      const canonical = entries.find((entry) => entry.indexVersion === CANONICAL_INTELLECT_VERSION)
+      if (!canonical) continue
+      const score = getIntellectScore(modelId)
+      assert.ok(score, modelId)
+      assert.equal(score.value, canonical.value, modelId)
+      assert.equal(score.estimated, undefined, modelId)
+    }
+  })
+
+  it('explains a v4.3-only frontier measurement as an extrapolated estimate', () => {
+    const modelId = 'claude-fable-5-1'
+    const score = getIntellectScore(modelId)
+    assert.ok(score)
+    assert.equal(score.estimated, true)
+    assert.match(score.basis ?? '', /equated v4\.3→v4\.1/)
+    assert.match(score.basis ?? '', /611 anchors/)
+    assert.match(score.basis ?? '', /extrapolated beyond anchor range/)
+    const explanation = explainIntellectScore(modelId)
+    assert.ok(explanation)
+    assert.equal(explanation.value, score.value)
+    assert.deepEqual(
+      explanation.steps.map((step) => step.step),
+      ['measured', 'equated'],
+    )
+    assert.match(explanation.steps[0]?.detail ?? '', /on index v4\.3/)
+  })
 })
 
 describe('explainIntellectScore', () => {

@@ -125,7 +125,7 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
   async rm(path: string, options?: { force?: boolean; recursive?: boolean }): Promise<void> {
     const flags = [options?.recursive ? '-r' : '', options?.force ? '-f' : '']
       .filter(Boolean)
-      .join('')
+      .join(' ')
     const result = await this.exec(`rm ${flags} ${this.quote(path)}`.trim())
     if (result.code !== 0) throw remoteFsError(path, result)
   }

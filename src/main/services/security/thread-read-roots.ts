@@ -1,4 +1,4 @@
-import { getActiveRunThread } from '../thread-models.ts'
+import { getActiveRunThread } from '../active-run-identity.ts'
 
 /**
  * Session-only, thread-scoped ledger of directories a thread's sandboxed

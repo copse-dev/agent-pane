@@ -35,6 +35,17 @@ class MemoryStore implements SupervisedTaskStore {
     return Promise.resolve(task?.projectId === projectId ? task : null)
   }
 
+  async findPersisted(
+    projectId: string,
+    taskId: string,
+  ): Promise<SupervisedTaskMeta | SupervisedTaskArchive | null> {
+    return (
+      (await this.get(projectId, taskId)) ??
+      (await this.loadTaskArchive()).find((task) => task.taskId === taskId) ??
+      null
+    )
+  }
+
   saveTransition(meta: SupervisedTaskMeta, _audit: SupervisedTaskAuditEvent): Promise<void> {
     this.tasks.set(meta.taskId, meta)
     return Promise.resolve()

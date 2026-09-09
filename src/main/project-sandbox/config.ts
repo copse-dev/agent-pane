@@ -199,6 +199,7 @@ export function readOnlyTreeExcluding(root: string, carveOuts: readonly string[]
       return false
     }
     for (const entry of entries) {
+      if (paths.length >= MAX_TREE_READ_ENTRIES) return true
       const rel = dirRel ? join(dirRel, entry.name) : entry.name
       if (carved.has(rel)) continue
       const abs = join(root, rel)
@@ -208,6 +209,8 @@ export function readOnlyTreeExcluding(root: string, carveOuts: readonly string[]
         if (!visit(rel)) return false
         continue
       }
+      const entryCount = entry.isDirectory() ? 2 : 1
+      if (paths.length + entryCount > MAX_TREE_READ_ENTRIES) return true
       paths.push(abs)
       if (entry.isDirectory()) paths.push(`${abs}/**`)
     }

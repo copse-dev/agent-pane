@@ -68,6 +68,7 @@ function stubApi(
     removals?: WorktreeRemovalResult[]
     calls?: RemoveCall[]
     projectCalls?: string[]
+    sizeCalls?: string[]
     size?: WorktreeSizeResult
     cleanupResults?: WorktreePackageCleanupResult[]
     cleanupCalls?: CleanupCall[]
@@ -89,10 +90,12 @@ function stubApi(
         options.projectCalls?.push(projectId)
         return Promise.resolve(entries)
       },
-      size: (_projectId: string, path: string) =>
-        Promise.resolve(
+      size: (_projectId: string, path: string): Promise<WorktreeSizeResult> => {
+        options.sizeCalls?.push(path)
+        return Promise.resolve(
           options.size ?? { path, bytes: 12 * 1024 * 1024, fileCount: 42, truncated: false },
-        ),
+        )
+      },
       cleanupPackages: (
         projectId: string,
         path: string,
@@ -255,7 +258,7 @@ describe('settings sources → worktrees list', () => {
       bytes: 16 * 1024 * 1024,
       truncated: false,
     }
-    const cleaned: WorktreePackageCleanupResult = { ...result, status: 'cleaned' }
+    const cleaned: WorktreePackageCleanupResult = { ...result, status: 'cleaned', changedCount: 1 }
     const list = await openWorktrees(
       stubApi([entry()], { cleanupCalls, cleanupResults: [result, cleaned] }),
     )
@@ -276,6 +279,7 @@ describe('settings sources → worktrees list', () => {
       { projectId: 'project-1', path: entry().path, remove: false },
       { projectId: 'project-1', path: entry().path, remove: true },
     ])
+    assert.equal(list.querySelector('.sources-worktree-changes')?.textContent, '1 uncommitted')
   })
 
   it('badges a checkout its thread has let go of, and one with no thread at all', async () => {
@@ -392,5 +396,246 @@ describe('settings sources → worktrees list', () => {
       { projectId: 'project-1', path: entry().path, force: false },
       { projectId: 'project-1', path: entry().path, force: true },
     ])
+  })
+  it('selects all eligible rows, reveals bulk actions, and resets selection on project change', async () => {
+    const list = await openWorktrees(
+      stubApi([
+        entry(),
+        entry({ path: '/w/second' }),
+        entry({ path: '/w/running', usage: { ...USAGE, running: true } }),
+      ]),
+      [
+        { id: 'project-1', name: 'Copse', path: '/repo' },
+        { id: 'project-2', name: 'Website', path: '/website' },
+      ],
+    )
+    const all = document.querySelector<HTMLInputElement>('#sources-worktrees-select-all')
+    const actions = document.querySelector<HTMLElement>('#sources-worktrees-bulk-actions')
+    const checkboxes = [...list.querySelectorAll<HTMLInputElement>('.sources-worktree-select')]
+    assert.ok(all && actions)
+    assert.equal(actions.hidden, true)
+    checkboxes[0]?.click()
+    assert.equal(all.indeterminate, true)
+    assert.equal(actions.hidden, false)
+    all.click()
+    assert.deepEqual(
+      checkboxes.map((checkbox) => checkbox.checked),
+      [true, true, false],
+    )
+    assert.equal(checkboxes[2]?.disabled, true)
+    assert.equal(
+      document.getElementById('sources-worktrees-selected-count')?.textContent,
+      '2 selected',
+    )
+    const project = document.querySelector<HTMLSelectElement>('#storage-project-select')
+    assert.ok(project)
+    project.value = 'project-2'
+    project.dispatchEvent(new Event('change'))
+    await flush()
+    assert.equal(actions.hidden, true)
+    assert.equal(all.checked, false)
+  })
+
+  it('cleans selected worktrees with one preview and only remeasures affected rows', async () => {
+    const entries = [entry(), entry({ path: '/w/second' }), entry({ path: '/w/untouched' })]
+    const projectCalls: string[] = []
+    const sizeCalls: string[] = []
+    const cleanupCalls: CleanupCall[] = []
+    const results: WorktreePackageCleanupResult[] = entries.slice(0, 2).map((item) => ({
+      status: 'ready',
+      path: item.path,
+      directories: [{ path: 'node_modules', bytes: 1024, truncated: false }],
+      bytes: 1024,
+      truncated: false,
+    }))
+    const list = await openWorktrees(
+      stubApi(entries, {
+        projectCalls,
+        sizeCalls,
+        cleanupCalls,
+        cleanupResults: [...results, ...results],
+      }),
+    )
+    const rows = [...list.children]
+    const checkboxes = list.querySelectorAll<HTMLInputElement>('.sources-worktree-select')
+    checkboxes[0]?.click()
+    checkboxes[1]?.click()
+    document.querySelector<HTMLButtonElement>('#sources-worktrees-cleanup')?.click()
+    await flush()
+    assert.equal(cleanupCalls.length, 2)
+    assert.ok(cleanupCalls.every((call) => !call.remove))
+    assert.match(
+      document.querySelector('.confirm-dialog-message')?.textContent ?? '',
+      /2 package directories from 2 worktrees/,
+    )
+    assert.equal(
+      document.querySelector<HTMLSelectElement>('#storage-project-select')?.disabled,
+      true,
+    )
+    clickActiveConfirmDialogConfirm()
+    await flush()
+    assert.deepEqual(
+      cleanupCalls.filter((call) => call.remove).map((call) => call.path),
+      entries.slice(0, 2).map((item) => item.path),
+    )
+    assert.deepEqual(projectCalls, ['project-1'])
+    assert.deepEqual(sizeCalls, [
+      ...entries.map((item) => item.path),
+      ...entries.slice(0, 2).map((item) => item.path),
+    ])
+    assert.deepEqual([...list.children], rows, 'all row nodes survive cleanup')
+  })
+
+  it('remeasures only the individually cleaned worktree', async () => {
+    const sizeCalls: string[] = []
+    const projectCalls: string[] = []
+    const result: WorktreePackageCleanupResult = {
+      status: 'ready',
+      path: entry().path,
+      directories: [{ path: 'node_modules', bytes: 1024, truncated: false }],
+      bytes: 1024,
+      truncated: false,
+    }
+    const list = await openWorktrees(
+      stubApi([entry(), entry({ path: '/w/other' })], {
+        sizeCalls,
+        projectCalls,
+        cleanupResults: [result, result],
+      }),
+    )
+    list.querySelector<HTMLButtonElement>('.sources-worktree-cleanup-btn')?.click()
+    await flush()
+    clickActiveConfirmDialogConfirm()
+    await flush()
+    assert.deepEqual(projectCalls, ['project-1'])
+    assert.deepEqual(sizeCalls, [entry().path, '/w/other', entry().path])
+  })
+
+  it('deletes selected rows without relisting or remeasuring, keeping a blocked row selected', async () => {
+    const calls: RemoveCall[] = []
+    const projectCalls: string[] = []
+    const sizeCalls: string[] = []
+    const entries = [entry(), entry({ path: '/w/busy' }), entry({ path: '/w/last' })]
+    const list = await openWorktrees(
+      stubApi(entries, {
+        calls,
+        projectCalls,
+        sizeCalls,
+        removals: [
+          { status: 'removed', path: entry().path, branch: null, branchDeleted: false },
+          { status: 'blocked-running', path: '/w/busy', threadId: 'busy' },
+          { status: 'removed', path: '/w/last', branch: null, branchDeleted: false },
+        ],
+      }),
+    )
+    document.querySelector<HTMLInputElement>('#sources-worktrees-select-all')?.click()
+    document.querySelector<HTMLButtonElement>('#sources-worktrees-delete')?.click()
+    await flush()
+    assert.equal(calls.length, 0)
+    clickActiveConfirmDialogConfirm()
+    await flush()
+    assert.equal(calls.length, 3)
+    assert.ok(calls.every((call) => !call.force))
+    assert.equal(list.querySelectorAll('.sources-row').length, 1)
+    assert.equal(list.querySelector<HTMLInputElement>('.sources-worktree-select')?.checked, true)
+    assert.deepEqual(projectCalls, ['project-1'])
+    assert.deepEqual(
+      sizeCalls,
+      entries.map((item) => item.path),
+    )
+    assert.match(
+      document.getElementById('sources-worktrees-status')?.textContent ?? '',
+      /an agent turn running/,
+    )
+  })
+  it('continues bulk cleanup after a failure and keeps the failed checkout selected', async () => {
+    const entries = [entry(), entry({ path: '/w/failed' }), entry({ path: '/w/last' })]
+    const calls: CleanupCall[] = []
+    const base = stubApi(entries)
+    const api: ApiClient = {
+      ...base,
+      worktrees: {
+        ...base.worktrees,
+        cleanupPackages: (projectId, path, remove) => {
+          calls.push({ projectId, path, remove })
+          if (remove && path === '/w/failed')
+            return Promise.reject(new Error('Cannot remove packages'))
+          return Promise.resolve({
+            status: remove ? 'cleaned' : 'ready',
+            path,
+            directories: [{ path: 'node_modules', bytes: 1024, truncated: false }],
+            bytes: 1024,
+            truncated: false,
+          })
+        },
+      },
+    }
+    const list = await openWorktrees(api)
+    document.querySelector<HTMLInputElement>('#sources-worktrees-select-all')?.click()
+    document.querySelector<HTMLButtonElement>('#sources-worktrees-cleanup')?.click()
+    await flush()
+    clickActiveConfirmDialogCancel()
+    await flush()
+    assert.ok(
+      calls.every((call) => !call.remove),
+      'cancel removes no packages',
+    )
+    document.querySelector<HTMLButtonElement>('#sources-worktrees-cleanup')?.click()
+    await flush()
+    clickActiveConfirmDialogConfirm()
+    await flush()
+    assert.deepEqual(
+      calls.filter((call) => call.remove).map((call) => call.path),
+      entries.map((item) => item.path),
+    )
+    assert.match(
+      document.getElementById('sources-worktrees-status')?.textContent ?? '',
+      /Cannot remove packages/,
+    )
+    assert.deepEqual(
+      [...list.querySelectorAll<HTMLInputElement>('.sources-worktree-select')].map(
+        (checkbox) => checkbox.checked,
+      ),
+      [false, true, false],
+    )
+  })
+
+  it('does not overwrite the cleaned size with an older in-flight measurement', async () => {
+    const base = stubApi([entry()])
+    let resolveOld: (result: WorktreeSizeResult) => void = () => {
+      throw new Error('measurement not started')
+    }
+    let sizeCalls = 0
+    const api: ApiClient = {
+      ...base,
+      worktrees: {
+        ...base.worktrees,
+        size: (_projectId, path) => {
+          if (++sizeCalls > 1)
+            return Promise.resolve({ path, bytes: 1024, fileCount: 1, truncated: false })
+          return new Promise((resolve) => {
+            resolveOld = resolve
+          })
+        },
+        cleanupPackages: (_projectId, path, remove) =>
+          Promise.resolve({
+            status: remove ? 'cleaned' : 'ready',
+            path,
+            directories: [{ path: 'node_modules', bytes: 1024, truncated: false }],
+            bytes: 1024,
+            truncated: false,
+          }),
+      },
+    }
+    const list = await openWorktrees(api)
+    list.querySelector<HTMLButtonElement>('.sources-worktree-cleanup-btn')?.click()
+    await flush()
+    clickActiveConfirmDialogConfirm()
+    await flush()
+    const cleanedSize = list.querySelector('.sources-worktree-size')?.textContent
+    resolveOld({ path: entry().path, bytes: 1024 * 1024, fileCount: 2, truncated: false })
+    await flush()
+    assert.equal(list.querySelector('.sources-worktree-size')?.textContent, cleanedSize)
+    assert.equal(sizeCalls, 2)
   })
 })

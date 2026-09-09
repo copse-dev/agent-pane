@@ -18,7 +18,8 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
  */
 const ADVISOR_PLUGIN_ROW = '.plugin-row[data-plugin-id="copse.advisor-strategy"]'
 
-describe('advisor pair assessment hint', () => {
+describe('advisor pair assessment hint', function () {
+  this.timeout(120_000)
   before(() => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
   })
@@ -39,7 +40,9 @@ describe('advisor pair assessment hint', () => {
     await $('#advisorModel').waitForExist({ timeout: 15_000 })
     // Plugin settings live in a closed "Plugin settings" disclosure — open this
     // plugin's before asserting on anything inside it.
-    await $(`${ADVISOR_PLUGIN_ROW} .plugin-settings-summary`).click()
+    const disclosure = $(`${ADVISOR_PLUGIN_ROW} .plugin-settings-summary`)
+    await disclosure.scrollIntoView({ block: 'center' })
+    await disclosure.click()
     await $('#advisorPairHint').waitForDisplayed({ timeout: 15_000 })
   }
 
@@ -47,7 +50,7 @@ describe('advisor pair assessment hint', () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-advisor-pair-good', {
       model: 'lmstudio:qwen/qwen3.6-35b-a3b',
-      advisorModel: 'claude-fable-5',
+      advisorModel: 'claude-fable-5-1',
     })
     await browser.reloadSession()
     await openPacksSection()

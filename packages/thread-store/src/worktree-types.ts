@@ -107,6 +107,8 @@ export interface WorktreePackageDirectory {
 export type WorktreePackageCleanupResult =
   | {
       status: 'ready' | 'cleaned'
+      /** Remaining changed paths after cleanup; omitted by preview/older hosts. */
+      changedCount?: number | null
       path: string
       directories: WorktreePackageDirectory[]
       bytes: number

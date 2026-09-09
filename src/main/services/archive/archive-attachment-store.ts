@@ -23,11 +23,10 @@ const MEDIA_DIR = 'media'
 
 /** Keep a stored name free of anything path-like; it comes from a renderer `File`. */
 function sanitizeFileName(name: string): string {
-  const safe = name
-    .replace(/[^A-Za-z0-9._-]+/g, '-')
-    .replace(/^[.-]+/, '')
-    .slice(0, 80)
-  return safe || 'archive.zip'
+  const safe = name.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '')
+  const extension = fileExtension(safe)
+  const stem = safe.slice(0, safe.length - extension.length)
+  return stem.slice(0, 80 - extension.length) + extension || 'archive.zip'
 }
 
 function assertSupported(name: string): void {

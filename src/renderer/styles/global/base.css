@@ -110,19 +110,16 @@ input[type='password'] {
    - **hatch** — the same plate rendered as a texture rather than a tint. Copse
      annotating its own turn: thinking, review, comparison. Not part of the
      answer, and the material is what says so without spending a fourth hue or
-     a fourth shape. Density stays constant, so a tall block weighs no more
-     than a short one — which a flat wash cannot claim.
+     a fourth shape. The low-opacity texture keeps the surface quiet even
+     when the commentary spans several lines.
 
-   Both read `--sev` off the element that uses them, so a component sets its hue
-   and never has to know which material it gets.
+   Components select their material and mix `--sev` at the use site, sharing
+   the tuning values below rather than inheriting a finished background.
 
-   The 8px pitch is not arbitrary. A repeating gradient beats against the device
-   pixel grid when its period is *near* an integer number of device pixels; 8px
-   is a multiple of 4, so at every quarter-step display scale Windows offers
-   (1.25x, 1.5x, 1.75x, 2x...) the period lands on a whole number of device
-   pixels and there is no beat frequency to alias. The 1px line itself softens
-   at fractional scales, but identically in every cycle. Change the pitch to an
-   odd number and that guarantee is gone. */
+   The 8px pitch is a visual choice, not an anti-aliasing guarantee. At 135deg
+   the horizontal repeat is 8 * sqrt(2) CSS pixels, so divisibility by four
+   does not align the stripes with the device pixel grid. Recheck fractional
+   display scales and zoom when changing the pitch or line width. */
 :root {
   /* Neutral default: a block that forgets to set --sev gets a legible grey
      rather than an invalid background that computes away to transparent. */

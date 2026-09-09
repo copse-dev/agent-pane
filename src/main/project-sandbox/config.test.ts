@@ -521,6 +521,26 @@ describe('workspaceSandboxOverlay', () => {
     }
   })
 
+  it('caps read rules for wide directories without widening excluded subtrees', () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-primary-wide-')))
+    try {
+      const tree = join(root, 'worktrees')
+      mkdirSync(tree)
+      for (let index = 0; index < 250; index++) mkdirSync(join(tree, `checkout-${String(index)}`))
+      const excluded = join(tree, 'private')
+      mkdirSync(excluded)
+      for (const readRoot of [root, tree]) {
+        const entries = readOnlyTreeExcluding(readRoot, [excluded])
+        assert.ok(entries.length <= 400, `read rules exceeded cap: ${String(entries.length)}`)
+        assert.ok(!entries.includes(excluded))
+        assert.ok(!entries.includes(`${excluded}/**`))
+        assert.ok(!entries.includes(`${tree}/**`))
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('grants nothing from the primary when its tree cannot be enumerated', () => {
     assert.deepEqual(readOnlyTreeExcluding('/nonexistent/copse-primary', []), [])
   })

@@ -1,3 +1,4 @@
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { randomUUID } from 'node:crypto'
 import {
   appendFileSync,
@@ -42,6 +43,11 @@ export interface SupervisedTaskStore {
   loadAll(): Promise<LoadedSupervisedTasks>
   loadProject(projectId: string): Promise<LoadedSupervisedTasks>
   get(projectId: string, taskId: string): Promise<SupervisedTaskMeta | null>
+  /** Strict identity lookup: corrupt/missing metadata in an existing slot must throw. */
+  findPersisted(
+    projectId: string,
+    taskId: string,
+  ): Promise<SupervisedTaskMeta | SupervisedTaskArchive | null>
   saveTransition(meta: SupervisedTaskMeta, audit: SupervisedTaskAuditEvent): Promise<void>
   compactTerminalTasks(before: number): Promise<number>
   loadTaskArchive(projectId: string): Promise<SupervisedTaskArchive[]>
@@ -97,6 +103,7 @@ function archiveTask(task: SupervisedTaskMeta): SupervisedTaskArchive | null {
     updatedAt: task.updatedAt,
     ...(task.finishedAt !== undefined ? { finishedAt: task.finishedAt } : {}),
     attempt: task.attempt,
+    ...(task.contentHash ? { contentHash: task.contentHash } : {}),
     ...(task.lastError ? { lastError: task.lastError } : {}),
     ...(task.resultRef ? { resultRef: task.resultRef } : {}),
   })
@@ -150,6 +157,30 @@ export class FileSupervisedTaskStore implements SupervisedTaskStore {
       } catch {
         return null
       }
+    })
+  }
+
+  findPersisted(
+    projectId: string,
+    taskId: string,
+  ): Promise<SupervisedTaskMeta | SupervisedTaskArchive | null> {
+    return runSerialized(queueKey(projectId, taskId), () => {
+      const archivePath = containedArchivePath(projectId, taskId, this.env)
+      const dir = containedTaskDir(projectId, taskId, this.env)
+      if (!existsSync(archivePath) && !existsSync(dir)) return null
+      const record = existsSync(archivePath)
+        ? safeJsonParse(
+            readFileSync(archivePath, 'utf8'),
+            decodeWithSchema(supervisedTaskArchiveSchema),
+          )
+        : safeJsonParse(
+            readFileSync(join(dir, META_FILE), 'utf8'),
+            decodeWithSchema(supervisedTaskMetaSchema),
+          )
+      if (!record || record.projectId !== projectId || record.taskId !== taskId) {
+        throw new Error('Cannot recover supervised task identity: invalid persisted record')
+      }
+      return record
     })
   }
 
