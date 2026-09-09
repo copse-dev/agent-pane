@@ -162,4 +162,21 @@ describe('browser preview network policy', () => {
     expect(redirectError).toMatch(/ERR_(FAILED|BLOCKED_BY_CLIENT)/)
     expect(externalRequests).toEqual([])
   })
+  it('blocks data previews from navigating or opening a network tab, while host navigation still works', async () => {
+    await navigate('data:text/html,<title>Navigation probe</title>', 'Navigation probe')
+    const tabsBefore = await browser.execute(() => document.querySelectorAll('webview').length)
+    await browser.execute(async (target) => {
+      const guest = document.querySelector<Guest>('webview')
+      await guest?.executeJavaScript(
+        `window.open(${JSON.stringify(target + '/popup')}); location.href = ${JSON.stringify(target + '/navigation')}`,
+      )
+      await guest?.executeJavaScript('new Promise(resolve => setTimeout(resolve, 300))')
+    }, otherOrigin)
+    expect(externalRequests).toEqual([])
+    expect(await browser.execute(() => document.querySelectorAll('webview').length)).toBe(
+      tabsBefore,
+    )
+    await navigate(origin, 'Local preview')
+    expect(externalRequests).toEqual([])
+  })
 })

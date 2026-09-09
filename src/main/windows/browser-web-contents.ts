@@ -13,6 +13,7 @@ import { isAllowedBrowserNavigationUrl } from '../services/browser/browser-origi
 import { browserAllowedOrigins } from '../services/browser/browser-network-grants.ts'
 import {
   isBrowserRequestAllowed,
+  isBrowserPageNavigationAllowed,
   previewResponseHeaders,
 } from '../services/browser/browser-network-policy.ts'
 
@@ -113,7 +114,7 @@ export function attachBrowserGuestWindowOpen(contents: WebContents): void {
   contents.on('destroyed', () => documents.delete(contents.id))
   contents.setWindowOpenHandler(({ url }) => {
     const { openTabUrl } = browserGuestWindowOpen(contents.getType(), url)
-    if (openTabUrl) {
+    if (openTabUrl && isBrowserPageNavigationAllowed(contents.getURL(), openTabUrl)) {
       const partition = browserPartitionForContents(contents)
       getMainWindow()?.webContents.send('browser:open-tab', openTabUrl, partition)
     }
@@ -129,6 +130,12 @@ export function attachBrowserGuestWindowOpen(contents: WebContents): void {
   const blockNonWebScheme = (event: Electron.Event, url: string): void => {
     if (!isAllowedBrowserNavigationUrl(url)) event.preventDefault()
   }
-  contents.on('will-navigate', blockNonWebScheme)
+  // Unlike loadURL, this event is emitted for page-initiated navigation. Check
+  // the initiating frame before Chromium replaces its URL with the destination.
+  contents.on('will-frame-navigate', (event) => {
+    if (!event.isMainFrame) return
+    const source = event.initiator?.url ?? event.frame?.url ?? contents.getURL()
+    if (!isBrowserPageNavigationAllowed(source, event.url)) event.preventDefault()
+  })
   contents.on('will-redirect', blockNonWebScheme)
 }

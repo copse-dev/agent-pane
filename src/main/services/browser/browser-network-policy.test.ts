@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { isBrowserRequestAllowed, previewResponseHeaders } from './browser-network-policy.ts'
+import {
+  isBrowserPageNavigationAllowed,
+  isBrowserRequestAllowed,
+  previewResponseHeaders,
+} from './browser-network-policy.ts'
 import { PREVIEW_CSP, securePreviewHtml } from '@shared/preview-csp.ts'
 import { grantWebOriginForNextFetch, clearWebOriginGrant } from '../security/web-origin-policy.ts'
 
@@ -74,6 +78,32 @@ describe('browser request network boundary', () => {
       }),
       false,
     )
+  })
+
+  it('blocks page-controlled network navigation from opaque previews and across local origins', () => {
+    for (const source of [
+      'data:text/html,preview',
+      'file:///tmp/preview.html',
+      'about:blank',
+      '',
+      'blob:https://example.com/id',
+    ]) {
+      assert.equal(isBrowserPageNavigationAllowed(source, 'https://example.com'), false)
+    }
+    assert.equal(
+      isBrowserPageNavigationAllowed('http://localhost:3000', 'http://localhost:4000/leak'),
+      false,
+    )
+    assert.equal(
+      isBrowserPageNavigationAllowed('http://localhost:3000', 'http://localhost:3000/next'),
+      true,
+    )
+    assert.equal(
+      isBrowserPageNavigationAllowed('https://example.com', 'https://assets.example.com'),
+      true,
+    )
+    assert.equal(isBrowserPageNavigationAllowed('https://example.com', 'file:///etc/passwd'), false)
+    assert.equal(isBrowserPageNavigationAllowed('data:text/html,preview', 'about:blank'), true)
   })
 
   it('uses wildcard origins and checks WebSocket origins without opening all ports', () => {

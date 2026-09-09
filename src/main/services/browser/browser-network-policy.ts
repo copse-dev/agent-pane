@@ -1,5 +1,5 @@
 import { PREVIEW_CSP } from '@shared/preview-csp.ts'
-import { isLoopbackHost } from './browser-origin-policy.ts'
+import { isAllowedBrowserNavigationUrl, isLoopbackHost } from './browser-origin-policy.ts'
 import { matchesWebOriginAllowlist, parseFetchUrl } from '../security/web-origin-policy.ts'
 
 export function isLocalPreview(url: string): boolean {
@@ -30,6 +30,10 @@ export function isBrowserRequestAllowed(input: {
     return false
   }
   if (resourceType === 'mainFrame') return true
+  return isDocumentNetworkAllowed(documentUrl, target)
+}
+
+function isDocumentNetworkAllowed(documentUrl: string, target: URL): boolean {
   // Requests without an owning document (e.g. a service worker) fail closed.
   if (!URL.canParse(documentUrl)) return false
   const document = new URL(documentUrl)
@@ -37,6 +41,15 @@ export function isBrowserRequestAllowed(input: {
     return document.origin !== 'null' && target.origin === document.origin
   }
   return document.protocol === 'http:' || document.protocol === 'https:'
+}
+
+/** Page-controlled navigation must obey the originating document's network limits.
+ * Host-requested loadURL navigation is separately checked by the request allowlist.
+ */
+export function isBrowserPageNavigationAllowed(documentUrl: string, url: string): boolean {
+  if (!isAllowedBrowserNavigationUrl(url)) return false
+  if (url === 'about:blank') return true
+  return isDocumentNetworkAllowed(documentUrl, new URL(url))
 }
 
 /** Preserve the server's CSP: multiple policies intersect, never replace it. */
