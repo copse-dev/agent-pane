@@ -55978,12 +55978,11 @@ function liveWorktreeLimit(value2) {
   if (value2 === "3") return 3;
   return 1;
 }
-function createAutomationPluginSettings(store3, api3, pluginEnabled, revealScheduleId, createNew = false) {
+function createAutomationPluginSettings(store3, api3, pluginEnabled, revealScheduleId, createNew = false, projectId = store3.getState().activeProjectId) {
   const root4 = el("section", {
     class: "automation-plugin-settings",
     "data-plugin-detail": AUTOMATIONS_PLUGIN_ID
   });
-  const projectId = store3.getState().activeProjectId;
   const project2 = store3.getState().projects.find((candidate) => candidate.id === projectId);
   const heading = el("div", { class: "automation-plugin-heading" });
   heading.append(
@@ -60053,7 +60052,8 @@ function hasAutomationDialog(plugin27) {
 }
 function openAutomationDialog(store3, api3, options2 = {}) {
   if (document.querySelector("#automation-dialog[open]")) return;
-  const projectId = store3.getState().activeProjectId;
+  const activeProjectId = store3.getState().activeProjectId;
+  const projectId = options2.projectId ?? activeProjectId;
   const { dialog: dialog2, open: open3, close: close2 } = createOverlayDialog({ id: "automation-dialog" });
   dialog2.setAttribute("aria-labelledby", "automation-dialog-title");
   const closeButton = el(
@@ -60077,7 +60077,7 @@ function openAutomationDialog(store3, api3, options2 = {}) {
   body.append(status);
   dialog2.append(header, body);
   const unsubscribe = store3.on("workspace_changed", () => {
-    if (store3.getState().activeProjectId !== projectId) close2();
+    if (store3.getState().activeProjectId !== activeProjectId) close2();
   });
   dialog2.addEventListener(
     "close",
@@ -60096,7 +60096,8 @@ function openAutomationDialog(store3, api3, options2 = {}) {
       api3,
       enabled,
       options2.scheduleId,
-      options2.createNew
+      options2.createNew,
+      projectId
     );
     const toggle = el(
       "button",
@@ -60759,56 +60760,11 @@ function mountProjectsPane(root4, store3, api3) {
   settingsBtn.addEventListener("click", () => {
     openSettingsDialog();
   });
-  const menuButton = el(
-    "button",
-    {
-      type: "button",
-      class: "projects-menu-btn",
-      "aria-label": "Project menu",
-      "aria-haspopup": "menu",
-      "data-tooltip": "Settings and automations"
-    },
-    settingsIcon()
-  );
-  menuButton.addEventListener("click", () => {
-    menuButton.disabled = true;
-    void api3.plugins.list().then((result) => {
-      const rect2 = menuButton.getBoundingClientRect();
-      const plugin27 = result.plugins.find(hasAutomationDialog);
-      showContextMenu(rect2.left, rect2.top, [
-        {
-          label: "Settings",
-          onSelect: () => {
-            openSettingsDialog();
-          }
-        },
-        ...plugin27 ? [
-          {
-            label: "Automations",
-            onSelect: () => {
-              openAutomationDialog(store3, api3);
-            }
-          },
-          {
-            label: "New automation\u2026",
-            disabled: !store3.getState().activeProjectId,
-            onSelect: () => {
-              openAutomationDialog(store3, api3, { createNew: true });
-            }
-          }
-        ] : []
-      ]);
-    }).catch((error63) => {
-      showErrorToast("Could not load project menu", error63);
-    }).finally(() => {
-      menuButton.disabled = false;
-    });
-  });
   root4.append(
     header,
     searchRow,
     list,
-    el("div", { class: "projects-settings-actions" }, menuButton, settingsBtn)
+    el("div", { class: "projects-settings-actions" }, settingsBtn)
   );
   let sshWorkspaceEnabled = false;
   addBtn.addEventListener("click", () => {
@@ -61262,25 +61218,68 @@ function mountProjectsPane(root4, store3, api3) {
         }
         switchProject(store3, api3, project2.id);
       });
+      const projectMenuEntries = [
+        {
+          label: "Remove from sidebar",
+          onSelect: () => {
+            void removeProject(store3, api3, project2.id);
+          }
+        },
+        ...groupMenuEntries(project2, projectGroups)
+      ];
       projectRow.addEventListener("contextmenu", (e4) => {
         e4.preventDefault();
         e4.stopPropagation();
-        showContextMenu(e4.clientX, e4.clientY, [
-          {
-            label: "Remove from sidebar",
-            onSelect: () => {
-              void removeProject(store3, api3, project2.id);
-            }
-          },
-          ...groupMenuEntries(project2, projectGroups)
-        ]);
+        showContextMenu(e4.clientX, e4.clientY, projectMenuEntries);
       });
+      const menuButton = el(
+        "button",
+        {
+          type: "button",
+          class: "project-menu-btn",
+          "aria-label": `Project menu for ${projectDisplayName(project2)}`,
+          "aria-haspopup": "menu",
+          "data-tooltip": "Project menu"
+        },
+        moreHorizontalIcon("ui-icon ui-icon-sm")
+      );
+      menuButton.addEventListener("click", () => {
+        menuButton.disabled = true;
+        void api3.plugins.list().then((result) => {
+          if (!menuButton.isConnected) return;
+          const rect2 = menuButton.getBoundingClientRect();
+          const entries2 = [];
+          if (result.plugins.some(hasAutomationDialog)) {
+            entries2.push(
+              {
+                label: "Automations",
+                onSelect: () => {
+                  openAutomationDialog(store3, api3, { projectId: project2.id });
+                }
+              },
+              {
+                label: "New automation\u2026",
+                disabled: project2.missing === true,
+                onSelect: () => {
+                  openAutomationDialog(store3, api3, { projectId: project2.id, createNew: true });
+                }
+              }
+            );
+          }
+          showContextMenu(rect2.left, rect2.bottom, [...entries2, ...projectMenuEntries]);
+        }).catch((error63) => {
+          showErrorToast("Could not load project menu", error63);
+        }).finally(() => {
+          menuButton.disabled = false;
+        });
+      });
+      const projectLine = el("div", { class: "project-line" }, projectRow, menuButton);
+      entry.append(projectLine);
       if (isExpanded && project2.missing) {
-        entry.append(projectRow, renderMissingNotice(project2));
+        entry.append(renderMissingNotice(project2));
         return entry;
       }
       if (isExpanded) {
-        const projectLine = el("div", { class: "project-line" });
         const newThreadBtn = el(
           "button",
           {
@@ -61303,10 +61302,7 @@ function mountProjectsPane(root4, store3, api3) {
           }
           openNewThread(store3);
         });
-        projectLine.append(projectRow, newThreadBtn);
-        entry.append(projectLine);
-      } else {
-        entry.append(projectRow);
+        projectLine.append(newThreadBtn);
       }
       if (!isExpanded) return entry;
       const sidebarThreads = getSidebarThreads(store3, project2.id);
