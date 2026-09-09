@@ -186,13 +186,29 @@ function buildThreadRefBlock(refs: ThreadRefAttachment[]): string {
 // States plainly that the video is *not* in context, because the model would
 // otherwise reasonably assume an attachment it can see. Naming the tool and the
 // default behaviour here saves a wasted turn spent asking the user what to do.
+//
+// The last two sentences are the #2513 fix, and they are the same two the
+// archive block below already carries. This block used to say "Use the
+// `video_frames` tool" flatly, which is only true under the native loop. An ACP
+// agent is offered the very same tool through Copse's MCP bridge, but its client
+// renames it — `copse-video_frames`, `mcp__copse__video_frames`,
+// `mcp.copse.video_frames` are the three observed shapes (acp-bridge-name.ts).
+// Told to use a name nothing in its tool set matches, the reporting agent
+// concluded the reader "isn't exposed in this session's tool set" and read the
+// recording with shell tooling instead. So: match on the tool name's *ending*
+// rather than the whole string, and make having no such tool a thing to say out
+// loud rather than to work around.
 const VIDEO_STEERING_PREAMBLE =
   'The user attached the video(s) below. The video itself is NOT in your context — ' +
   'only these paths are. Use the `video_frames` tool to read one as still images: it ' +
   'samples the recording and returns only the frames that are visually different from ' +
   'each other, so a whole screen recording usually costs a handful of images. Call it ' +
   'with just the path to survey the whole video, then again with `start`/`end` around ' +
-  'a moment you need to see more closely. There is no audio track available.'
+  'a moment you need to see more closely. There is no audio track available. ' +
+  'Your client may offer that tool under a namespaced name, so look for one whose name ' +
+  'ends in `video_frames` — for example `mcp__copse__video_frames`. If no such tool is ' +
+  'offered to you, say so and ask how to proceed — do not try to read the video with ' +
+  'shell commands.'
 
 function buildVideoRefBlock(refs: VideoRefAttachment[]): string {
   const lines = refs.map((r) => `- "${r.name}" (${r.size}): ${r.path}`)
@@ -210,6 +226,8 @@ const ARCHIVE_STEERING_PREAMBLE =
   'everything inside. After that the contents are ordinary files — read them with ' +
   'read_file, grep them with search_code, or summarize the tree with explore, using the ' +
   'paths under the extraction root it gives you. Unpack once, then work with the files. ' +
+  'Your client may offer that tool under a namespaced name, so look for one whose name ' +
+  'ends in `read_archive` — for example `mcp__copse__read_archive`. ' +
   'If no such tool is offered to you, say so and ask how to proceed — do not silently ' +
   'ignore the archive, and do not unpack it yourself with shell commands.'
 
