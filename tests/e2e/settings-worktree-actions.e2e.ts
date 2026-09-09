@@ -24,6 +24,7 @@ describe('settings → Storage → worktree actions', function () {
   let projectRoot = ''
   let openedProjectRoot = ''
   let worktreeRoot = ''
+  let secondWorktreeRoot = ''
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -58,6 +59,10 @@ describe('settings → Storage → worktree actions', function () {
       'module.exports = true\n'.repeat(200),
     )
     writeFileSync(join(worktreeRoot, 'draft.txt'), 'uncommitted work\n')
+    secondWorktreeRoot = join(worktreesRoot, PROJECT_ID, 'second-checkout')
+    git(projectRoot, ['worktree', 'add', '-q', '-b', 'copse/second-checkout', secondWorktreeRoot])
+    mkdirSync(join(secondWorktreeRoot, 'node_modules'), { recursive: true })
+    writeFileSync(join(secondWorktreeRoot, 'node_modules', 'package.js'), 'module.exports = true\n')
 
     const now = Date.now()
     writeSeedConfig({
@@ -93,11 +98,12 @@ describe('settings → Storage → worktree actions', function () {
 
   after(() => {
     resetUserData()
-    if (projectRoot && worktreeRoot && existsSync(worktreeRoot)) {
+    for (const path of [worktreeRoot, secondWorktreeRoot]) {
+      if (!projectRoot || !path || !existsSync(path)) continue
       try {
-        git(projectRoot, ['worktree', 'remove', '--force', worktreeRoot])
+        git(projectRoot, ['worktree', 'remove', '--force', path])
       } catch {
-        rmSync(worktreeRoot, { recursive: true, force: true })
+        rmSync(path, { recursive: true, force: true })
       }
     }
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
@@ -107,7 +113,7 @@ describe('settings → Storage → worktree actions', function () {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').$('button[data-section="storage"]').click()
 
-    await expect($$('.sources-row[data-worktree-path]')).toBeElementsArrayOfSize(1)
+    await expect($$('.sources-row[data-worktree-path]')).toBeElementsArrayOfSize(2)
 
     const row = $(`.sources-row[data-worktree-path="${worktreeRoot}"]`)
     await row.waitForDisplayed({ timeout: 30_000 })
@@ -150,5 +156,73 @@ describe('settings → Storage → worktree actions', function () {
     await expect($('#settings-dialog')).not.toBeDisplayed()
     await expect($(`.chat-row[data-thread-id="${THREAD_ID}"]`)).toHaveElementClass('selected')
     assert.equal(existsSync(join(worktreeRoot, 'node_modules')), true, 'cancel keeps dependencies')
+  })
+  it('selects all, cleans packages in place, and deletes only confirmed checkouts', async () => {
+    await $('[aria-label="Settings"]').click()
+    await $('#settings-dialog').$('button[data-section="storage"]').click()
+    await expect($$('.sources-row[data-worktree-path]')).toBeElementsArrayOfSize(2)
+    await expect($('#sources-worktrees-bulk-actions')).not.toBeDisplayed()
+    await $('#sources-worktrees-select-all').click()
+    await expect($('#sources-worktrees-selected-count')).toHaveText('2 selected')
+    await expect($('#sources-worktrees-cleanup')).toBeClickable()
+    await expect($('#sources-worktrees-delete')).toBeClickable()
+    const layout = await browser.execute(() => {
+      const section = document.querySelector('.settings-section[data-section="storage"]')
+      const fieldset = document.querySelector('.sources-worktrees-fieldset')
+      const checkbox = document.querySelector('#sources-worktrees-select-all')
+      const label = checkbox?.parentElement
+      if (!section || !fieldset || !checkbox || !label) throw new Error('Missing worktree controls')
+      return {
+        fits: fieldset.getBoundingClientRect().right <= section.getBoundingClientRect().right + 1,
+        inline: getComputedStyle(label).flexDirection === 'row',
+      }
+    })
+    assert.equal(layout.fits, true, 'long worktree names must not widen the settings panel')
+    assert.equal(layout.inline, true, 'Select all checkbox stays beside its label')
+    await saveElementScreenshot(
+      '#sources-worktrees-selection',
+      'settings-worktree-bulk-selection.png',
+    )
+
+    // A DOM marker disappears if cleanup rebuilds the inventory instead of
+    // updating the existing checkout's footprint.
+    await browser.execute(() => {
+      document.querySelectorAll<HTMLElement>('.sources-row[data-worktree-path]').forEach((row) => {
+        row.dataset['retainedForCleanup'] = 'true'
+      })
+    })
+    await $('#sources-worktrees-cleanup').click()
+    const confirm = $('#confirm-dialog')
+    await confirm.waitForDisplayed({ timeout: 30_000 })
+    await expect(confirm.$('.confirm-dialog-message')).toHaveText(
+      'Remove 2 package directories from 2 worktrees?',
+    )
+    await confirm.$('.confirm-dialog-confirm').click()
+    await expect($('#sources-worktrees-status')).toHaveText(
+      expect.stringContaining('Cleaned up 2 directories'),
+    )
+    await expect($$('[data-retained-for-cleanup="true"]')).toBeElementsArrayOfSize(2)
+    assert.equal(existsSync(join(worktreeRoot, 'node_modules')), false)
+    assert.equal(existsSync(join(secondWorktreeRoot, 'node_modules')), false)
+    assert.equal(existsSync(join(worktreeRoot, 'draft.txt')), true)
+    await expect(
+      $(`.sources-row[data-worktree-path="${worktreeRoot}"] .sources-worktree-changes`),
+    ).toHaveText('1 UNCOMMITTED')
+    await expect(
+      $(`.sources-row[data-worktree-path="${secondWorktreeRoot}"] .sources-worktree-changes`),
+    ).not.toExist()
+    await expect($('#sources-worktrees-bulk-actions')).not.toBeDisplayed()
+
+    await $('#sources-worktrees-select-all').click()
+    await $('#sources-worktrees-delete').click()
+    await confirm.waitForDisplayed()
+    await expect(confirm.$('.confirm-dialog-message')).toHaveText('Delete 2 worktrees?')
+    await confirm.$('.confirm-dialog-confirm').click()
+    await expect(confirm.$('.confirm-dialog-message')).toHaveText('Discard 1 uncommitted file?')
+    await confirm.$('.confirm-dialog-cancel').click()
+    await expect($$('.sources-row[data-worktree-path]')).toBeElementsArrayOfSize(1)
+    assert.equal(existsSync(join(worktreeRoot, 'draft.txt')), true)
+    assert.equal(existsSync(secondWorktreeRoot), false)
+    await expect($('#sources-worktrees-selected-count')).toHaveText('1 selected')
   })
 })

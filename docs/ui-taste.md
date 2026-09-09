@@ -1006,3 +1006,10 @@ eval: `tests/e2e/guarded-yolo.e2e.ts`.
 centers both. Always override `flex-direction: row` (and reset `margin-bottom`) on checkbox list
 rows built from `<label>`. Visual eval:
 [`tests/e2e/roadmap-import-picker.e2e.ts`](../tests/e2e/roadmap-import-picker.e2e.ts).
+
+## Worktree storage selection
+
+Keep selection controls inline and reveal bulk actions only when checkouts are selected. The
+worktree fieldset needs `min-inline-size: 0`: its native min-content width otherwise overrides row
+truncation and pushes actions outside Settings. Explicitly use a row direction for the Select all
+label; the default form label stacks its control above its text.
