@@ -24423,7 +24423,12 @@ async function quarantineAndRestoreNext(store3, api3, id39) {
   await markProjectMissing(store3, api3, id39);
   const next3 = store3.getState().projects.find((p3) => p3.id !== id39 && !p3.missing);
   if (next3) {
-    store3.setState({ activeProjectId: next3.id, expandedProjectId: next3.id });
+    store3.setState({
+      activeProjectId: next3.id,
+      expandedProjectId: next3.id,
+      threads: [],
+      activeThreadId: null
+    });
     await restoreProject(store3, api3, next3.id);
     return;
   }
@@ -25329,7 +25334,7 @@ url: http://localhost:61025/index.html
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, project, semanticSearchSummary, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
+var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
@@ -25361,6 +25366,27 @@ var init_demo_scenarios = __esm({
       "- Mock LLM \u2014 `COPSE-PANEL-MOCK-LLM=1` enables full e2e testing without API keys",
       "- MCP host \u2014 Per-server enable toggles in Settings",
       "- Persistence \u2014 filesystem-native threads and project settings"
+    ].join("\n");
+    syntaxContrastContent = [
+      "Here is the resolved model configuration:",
+      "",
+      "```json",
+      "{",
+      '  "model": "claude-opus-4",',
+      '  "temperature": 0.2,',
+      '  "maxTokens": 8192,',
+      '  "stream": true',
+      "}",
+      "```",
+      "",
+      "and the loop that reads it:",
+      "",
+      "```ts",
+      "// Resolve the model for this turn.",
+      "function resolveModel(settings: Settings): string {",
+      "  return settings.model ?? 'claude-opus-4'",
+      "}",
+      "```"
     ].join("\n");
     project = (id39, name = "copse-demo", path4 = "/demo/copse") => ({
       id: id39,
@@ -25848,6 +25874,42 @@ var init_demo_scenarios = __esm({
             bodyAdvice: "The project sandbox would block this command:\n\u2022 Installs or updates packages, which downloads and runs code from the internet",
             bodyFooter: "Allow running it once outside the sandbox?",
             type: "shell"
+          }
+        ]
+      },
+      {
+        // Companion to `approval-light-accent`: same bright accent, same light theme,
+        // but aimed at the surfaces issue #2486/#2488/#2483 reported rather than the
+        // approval dialog. The accent matters — light derives `--accent` as 30% of it
+        // mixed with black, so a bright one makes the derived tier unmistakably dark
+        // and any control that fills with it instead of `--accent-fill` shows up.
+        id: "light-contrast-surfaces",
+        label: "Light-theme syntax, fills, and selection",
+        project: project("demo-light-contrast-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "light",
+          uiAccentColor: "#20FD85",
+          uiTintColor: "#244C25",
+          uiTintStrength: "subtle"
+        },
+        threads: [
+          {
+            id: "demo-light-contrast-thread",
+            title: "Light-theme contrast",
+            status: "idle",
+            messages: [
+              {
+                id: "demo-light-contrast-assistant",
+                role: "assistant",
+                content: syntaxContrastContent,
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
           }
         ]
       },
@@ -28708,6 +28770,9 @@ function createOverlayDialog(opts) {
     },
     isOpen: () => dialog2.open
   };
+}
+function isAnyDialogOpen() {
+  return document.querySelector("dialog[open]") !== null;
 }
 var init_dialog_shell = __esm({
   "src/renderer/views/dialog-shell.ts"() {
@@ -37070,6 +37135,7 @@ async function fetchModelOptions(api3, current, opts = {}) {
   }
   for (const model of models) {
     const { id: id39 } = model;
+    if (model.embedding === true) continue;
     const hint = [localModelRoleHint(id39), localModelIntellectHint(id39)].filter(isNonNull).join(" \xB7 ");
     const label = getLocalModelCapability(id39)?.label ?? modelDisplayName(id39);
     options2.push({
@@ -37219,6 +37285,10 @@ var init_model_options = __esm({
 });
 
 // src/renderer/views/model-picker.ts
+function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
+  if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
+  return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
+}
 function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts = {}) {
   const variant = pickerOpts.variant ?? "compact";
   const recentMode = pickerOpts.getRecentValues !== void 0;
@@ -37348,6 +37418,22 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
     activeValue = activeGroup()?.currentValue ?? null;
     setView("group");
   }
+  function placeFieldMenuInsideSurface() {
+    menu.classList.remove("is-surface-flipped", "is-surface-contained");
+    if (!open3 || variant !== "field") return;
+    const surface = menu.offsetParent;
+    if (!(surface instanceof HTMLElement)) return;
+    const menuRect = menu.getBoundingClientRect();
+    const surfaceRect = surface.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
+    const gap = Number.parseFloat(getComputedStyle(menu).getPropertyValue("--spacing-xs")) || 4;
+    const placement = fieldMenuSurfacePlacement(menuRect, surfaceRect, triggerRect, gap);
+    if (placement === "flipped") {
+      menu.classList.add("is-surface-flipped");
+    } else if (placement === "contained") {
+      menu.classList.add("is-surface-contained");
+    }
+  }
   function setOpen(next3) {
     open3 = next3;
     trigger.setAttribute("aria-expanded", String(next3));
@@ -37357,6 +37443,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       if (loadState === "error") void refresh();
     } else {
       menu.setAttribute("hidden", "");
+      menu.classList.remove("is-surface-flipped", "is-surface-contained");
       filter8.value = "";
       setView(homeView, false);
       pickerOpts.onClose?.();
@@ -37518,6 +37605,7 @@ function mountModelPicker(root4, getCurrent, onSelect, loadOptions, pickerOpts =
       );
     }
     scrollActiveOptionIntoView();
+    placeFieldMenuInsideSurface();
   }
   function selectOption(value2) {
     if (value2 === null) return;
@@ -245219,8 +245307,8 @@ var init_build_text_with_attachments = __esm({
     ATTACHMENT_MAX_CHARS = 16e3;
     HEAD_FRACTION = 0.7;
     THREAD_STEERING_PREAMBLE = "The past conversation(s) referenced below are available read-only through your file tools. Each is a directory: `events.jsonl` is the linear history (one JSON line per finalized message, oldest first); message prose is under `messages/*.md`; tool results and images under `blobs/`; nested subagent runs under `subagents/`. Read a file with read_file, grep with search_code, or summarize a whole thread with explore. The paths are absolute; do not try to write to them.";
-    VIDEO_STEERING_PREAMBLE = "The user attached the video(s) below. The video itself is NOT in your context \u2014 only these paths are. Use the `video_frames` tool to read one as still images: it samples the recording and returns only the frames that are visually different from each other, so a whole screen recording usually costs a handful of images. Call it with just the path to survey the whole video, then again with `start`/`end` around a moment you need to see more closely. There is no audio track available.";
-    ARCHIVE_STEERING_PREAMBLE = "The user attached the archive(s) below. The archive itself is NOT in your context \u2014 only these paths are. If you have a `read_archive` tool, use it to unpack one: it extracts the archive into this conversation's own directory and returns a listing of everything inside. After that the contents are ordinary files \u2014 read them with read_file, grep them with search_code, or summarize the tree with explore, using the paths under the extraction root it gives you. Unpack once, then work with the files. If no such tool is offered to you, say so and ask how to proceed \u2014 do not silently ignore the archive, and do not unpack it yourself with shell commands.";
+    VIDEO_STEERING_PREAMBLE = "The user attached the video(s) below. The video itself is NOT in your context \u2014 only these paths are. Use the `video_frames` tool to read one as still images: it samples the recording and returns only the frames that are visually different from each other, so a whole screen recording usually costs a handful of images. Call it with just the path to survey the whole video, then again with `start`/`end` around a moment you need to see more closely. There is no audio track available. Your client may offer that tool under a namespaced name, so look for one whose name ends in `video_frames` \u2014 for example `mcp__copse__video_frames`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not try to read the video with shell commands.";
+    ARCHIVE_STEERING_PREAMBLE = "The user attached the archive(s) below. The archive itself is NOT in your context \u2014 only these paths are. If you have a `read_archive` tool, use it to unpack one: it extracts the archive into this conversation's own directory and returns a listing of everything inside. After that the contents are ordinary files \u2014 read them with read_file, grep them with search_code, or summarize the tree with explore, using the paths under the extraction root it gives you. Unpack once, then work with the files. Your client may offer that tool under a namespaced name, so look for one whose name ends in `read_archive` \u2014 for example `mcp__copse__read_archive`. If no such tool is offered to you, say so and ask how to proceed \u2014 do not silently ignore the archive, and do not unpack it yourself with shell commands.";
   }
 });
 
@@ -261759,6 +261847,23 @@ var init_last_exchange = __esm({
 });
 
 // src/renderer/views/approval-comparison-pickers.ts
+async function reviewerOptions(api3, current) {
+  const options2 = await fetchModelOptions(api3, current, REVIEWER_OPTIONS);
+  return options2.map(
+    (option2) => option2.value === current && UNRUNNABLE_CURRENT_SUFFIX.test(option2.label) ? { ...option2, disabled: true } : option2
+  );
+}
+async function refreshReviewer(picker, select, current) {
+  await picker.refresh(current);
+  const selected = select.selectedOptions[0];
+  if (selected?.disabled !== true) return;
+  const replacement = [...select.options].find(
+    (option2) => !option2.disabled && option2.value.length > 0
+  );
+  if (!replacement) return;
+  select.value = replacement.value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
 function modelRow(label, select) {
   return el(
     "label",
@@ -261783,27 +261888,27 @@ function createComparisonModelPickers(api3, models, intro) {
     modelRow("Judge", selectJudge)
   );
   const pickerA = mountModelSelectPicker(selectA, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Reviewer A model",
     loadOnMount: false
   });
   const pickerB = mountModelSelectPicker(selectB, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Reviewer B model",
     loadOnMount: false
   });
   const pickerJudge = mountModelSelectPicker(selectJudge, {
-    loadOptions: (current) => fetchModelOptions(api3, current),
+    loadOptions: (current) => reviewerOptions(api3, current),
     className: "approval-model-picker",
     ariaLabel: "Judge model",
     loadOnMount: false
   });
   void Promise.all([
-    pickerA.refresh(models.a),
-    pickerB.refresh(models.b),
-    pickerJudge.refresh(models.judge)
+    refreshReviewer(pickerA, selectA, models.a),
+    refreshReviewer(pickerB, selectB, models.b),
+    refreshReviewer(pickerJudge, selectJudge, models.judge)
   ]);
   return {
     root: root4,
@@ -261814,11 +261919,14 @@ function createComparisonModelPickers(api3, models, intro) {
     })
   };
 }
+var REVIEWER_OPTIONS, UNRUNNABLE_CURRENT_SUFFIX;
 var init_approval_comparison_pickers = __esm({
   "src/renderer/views/approval-comparison-pickers.ts"() {
     init_helpers();
     init_model_options();
     init_model_picker();
+    REVIEWER_OPTIONS = { includeAgentModels: false };
+    UNRUNNABLE_CURRENT_SUFFIX = / \((?:no key|not available|offline)\)$/i;
   }
 });
 
@@ -274201,6 +274309,47 @@ var init_create_after_persist = __esm({
   }
 });
 
+// src/renderer/terminal/start-failure-message.ts
+function unwrapIpcError(raw) {
+  let message2 = raw;
+  for (; ; ) {
+    const next3 = message2.replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
+    if (next3 === message2) return message2.trim();
+    message2 = next3;
+  }
+}
+function terminalStartFailureMessage(err2) {
+  const detail = unwrapIpcError(errorMessage(err2));
+  if (CROSS_PROJECT.test(detail)) {
+    return "This terminal was opened against a thread from another project. Close the tab and open a new one.";
+  }
+  return detail || "The shell could not be started.";
+}
+var CROSS_PROJECT;
+var init_start_failure_message = __esm({
+  "src/renderer/terminal/start-failure-message.ts"() {
+    init_errors4();
+    CROSS_PROJECT = /^Thread "[^"]*" does not belong to project "[^"]*"$/;
+  }
+});
+
+// src/renderer/terminal/tab-scope.ts
+function resolveTerminalTabScope(state4, options2) {
+  if (options2?.scopeProjectId !== void 0 || options2?.scopeId !== void 0) {
+    return {
+      scopeProjectId: options2.scopeProjectId ?? null,
+      scopeId: options2.scopeId ?? null
+    };
+  }
+  const { activeProjectId, activeThreadId, threads } = state4;
+  const belongs = activeThreadId !== null && threads.some((thread) => thread.id === activeThreadId);
+  return { scopeProjectId: activeProjectId, scopeId: belongs ? activeThreadId : null };
+}
+var init_tab_scope = __esm({
+  "src/renderer/terminal/tab-scope.ts"() {
+  }
+});
+
 // src/renderer/views/terminals-pane.ts
 function applyXtermBg(container2, theme) {
   container2.style.setProperty("--xterm-bg", XTERM_THEME[theme].background);
@@ -274405,7 +274554,10 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
         preserveSharedShell(tab, worktreePath);
       }
     } catch (err2) {
-      tab.term.writeln(`\x1B[31mFailed to start terminal: ${String(err2)}\x1B[0m`);
+      console.error("[terminals] could not start a shell:", err2);
+      tab.term.writeln(
+        `\x1B[31mFailed to start terminal: ${terminalStartFailureMessage(err2)}\x1B[0m`
+      );
     } finally {
       tab.creating = false;
     }
@@ -274525,8 +274677,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store3, api3) {
     panel.append(container2);
     const { term, fitAddon } = createXterm();
     const fileLinks = installTerminalFileLinks(term, store3, api3);
-    const scopeProjectId = options2?.scopeProjectId ?? store3.getState().activeProjectId;
-    const scopeId = options2?.scopeId ?? currentThreadId();
+    const { scopeProjectId, scopeId } = resolveTerminalTabScope(store3.getState(), options2);
     const tab = {
       id: id39,
       scopeProjectId,
@@ -274798,6 +274949,8 @@ var init_terminals_pane = __esm({
     init_read_terminal();
     init_ui_scale();
     init_create_after_persist();
+    init_start_failure_message();
+    init_tab_scope();
     XTERM_THEME = {
       dark: {
         background: "#1e1e1e",
@@ -308585,8 +308738,7 @@ function registerKeyboardShortcuts() {
       openCommandPalette();
     }
     if (matchFindInChatShortcut(e4)) {
-      if (isFileSearchDialogOpen() || isCommandPaletteOpen() || isSettingsDialogOpen() || isKeyboardShortcutsDialogOpen())
-        return;
+      if (isAnyDialogOpen()) return;
       e4.preventDefault();
       openConversationSearch();
     }
@@ -308606,7 +308758,7 @@ function registerKeyboardShortcuts() {
     }
     if (meta5 && e4.key === "w") {
       e4.preventDefault();
-      void confirmDeleteThread();
+      if (!isAnyDialogOpen()) void confirmDeleteThread();
     }
     if (e4.key === "Escape") {
       if (isCommandPaletteOpen()) {
@@ -308702,6 +308854,7 @@ var init_main2 = __esm({
     init_roadmap_pane();
     init_browser_pane();
     await init_vnc_pane();
+    init_dialog_shell();
     init_settings_dialog();
     init_theme2();
     init_ui_scale2();
