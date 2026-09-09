@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
+import { runSerialized } from '../storage/write-queue.ts'
 import {
   isTerminalTaskState,
   supervisedTaskMetaSchema,
   type PermissionSnapshot,
+  type SupervisedTaskArchive,
   type SupervisedTaskAuditEvent,
   type SupervisedTaskMeta,
   type TaskProvenance,
@@ -239,6 +241,51 @@ export class TaskSupervisor {
 
   async enqueue(input: EnqueueSupervisedTaskInput): Promise<SupervisedTaskMeta> {
     await this.start()
+    return this.enqueueWithId(this.createId(), input)
+  }
+
+  /** Recover a durable caller-owned identity, including after task archival. */
+  async enqueueOnce(
+    taskId: string,
+    input: EnqueueSupervisedTaskInput & { contentHash: string },
+  ): Promise<SupervisedTaskMeta | SupervisedTaskArchive> {
+    if (!/^[a-zA-Z0-9_-]{1,160}$/.test(taskId) || input.contentHash === '') {
+      throw new Error('Idempotent task admission requires a safe identity and content hash')
+    }
+    await this.start()
+    return runSerialized(`supervisor-enqueue:${taskKey(input.projectId, taskId)}`, async () => {
+      if (this.stopping) throw new Error('Task supervisor is stopping')
+      const existing =
+        this.tasks.get(taskKey(input.projectId, taskId)) ??
+        (await this.store.findPersisted(input.projectId, taskId))
+      if (existing) {
+        if (
+          existing.contentHash !== input.contentHash ||
+          existing.threadId !== input.threadId ||
+          existing.handler !== input.handler
+        ) {
+          throw new Error('Supervised task identity is already bound to different content')
+        }
+        // A failed save may have persisted metadata before its audit/acknowledgement.
+        // Re-adopt it in this process as well as on the next restart.
+        if (!this.tasks.has(taskKey(input.projectId, taskId))) {
+          const live = supervisedTaskMetaSchema.safeParse(existing)
+          if (live.success) {
+            this.tasks.set(taskKey(input.projectId, taskId), live.data)
+            this.arm(live.data)
+          }
+        }
+        return existing
+      }
+      return this.enqueueWithId(taskId, input)
+    })
+  }
+
+  private async enqueueWithId(
+    taskId: string,
+    input: EnqueueSupervisedTaskInput,
+  ): Promise<SupervisedTaskMeta> {
+    if (this.stopping) throw new Error('Task supervisor is stopping')
     if (input.trigger.kind === 'cron') {
       if (!this.cronEnabled()) throw new Error('Recurring supervised tasks are disabled')
       validateCronExpression(input.trigger.expression)
@@ -251,7 +298,7 @@ export class TaskSupervisor {
         ? 'waiting'
         : 'queued'
     const task = supervisedTaskMetaSchema.parse({
-      taskId: this.createId(),
+      taskId,
       projectId: input.projectId,
       threadId: input.threadId,
       ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
