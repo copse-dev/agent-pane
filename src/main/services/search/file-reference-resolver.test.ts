@@ -33,6 +33,19 @@ describe('file-reference-resolver', () => {
     void rm(tempRoot, { recursive: true, force: true })
   })
 
+  it('resolves explicit files and directories before an index is available', async () => {
+    invalidateIndex(tempRoot)
+    await mkdir(join(tempRoot, 'src'))
+    await writeFile(join(tempRoot, 'src', 'main.ts'), 'export {}')
+    assert.deepEqual(
+      await resolveFileReferences(['src/main.ts', 'src', 'missing.ts', '../escape']),
+      [
+        { candidate: 'src/main.ts', path: 'src/main.ts', kind: 'file' },
+        { candidate: 'src', path: 'src', kind: 'directory' },
+      ],
+    )
+  })
+
   it('resolves exact workspace-relative paths', async () => {
     assert.deepEqual(await resolveFileReferences(['src/main/index.ts']), [
       { candidate: 'src/main/index.ts', path: 'src/main/index.ts', kind: 'file' },
