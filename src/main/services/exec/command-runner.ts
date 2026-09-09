@@ -199,7 +199,7 @@ export function runCommand(
           resolve({
             stdout,
             stderr,
-            code: code ?? 0,
+            code: code ?? 1,
             stdoutTruncated: rawStdoutBytes > stdoutMaxBytes,
           })
         })
