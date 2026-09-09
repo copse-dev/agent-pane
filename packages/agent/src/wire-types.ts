@@ -268,3 +268,14 @@ export type AgentStreamChunk =
    * live in `plugins/plugin-panel.ts` (`PanelData`).
    */
   | { type: 'panel_update'; pluginId: string; contributionId: string; data: PanelData }
+
+/** An external agent's incremental update to an existing tool call. */
+export interface ToolCallUpdateChunk {
+  type: 'tool_call_update'
+  toolCallId: string
+  name?: string
+  args?: unknown
+  status?: 'running' | 'done' | 'error'
+  result?: string
+  resultFormat?: 'markdown'
+}
