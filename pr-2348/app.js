@@ -263624,11 +263624,14 @@ function mountContainerRunControl(api3, context, onStateChanged) {
   function followUpTarget() {
     const latest = latestOnActiveThread();
     const live = isLive2(activeRun());
-    if (!latest && !live) return { available: false, live: false, defaultToContainer: false };
+    if (!latest && !live) {
+      return { available: false, live: false, defaultToContainer: false, runtimeId: null };
+    }
     return {
       available: true,
       live,
-      defaultToContainer: !live && latest !== null && latest.isLastTurn && latest.runtimeId !== null
+      defaultToContainer: !live && latest !== null && latest.isLastTurn && latest.runtimeId !== null,
+      runtimeId: latest?.runtimeId ?? activeRun()?.runtimeId ?? null
     };
   }
   async function followUp(prompt) {
@@ -263960,7 +263963,7 @@ function mountInputBar(root4, store3, api3, opts = {}) {
     footerOverflow?.update();
   });
   let containerRunMounted = false;
-  let targetThreadId = null;
+  let targetDefaultKey = null;
   const containerRun = mountContainerRunControl(
     api3,
     {
@@ -264600,9 +264603,9 @@ ${description}
     if (!target.available) return;
     targetContainer.disabled = target.live;
     targetContainer.textContent = target.live ? "To container (busy)" : "To container";
-    const threadId = getActiveThreadId();
-    if (threadId !== targetThreadId) {
-      targetThreadId = threadId;
+    const key = `${getActiveThreadId() ?? ""}\0${target.runtimeId ?? ""}\0${target.live ? "live" : "settled"}`;
+    if (key !== targetDefaultKey) {
+      targetDefaultKey = key;
       targetSelect.value = target.defaultToContainer ? "container" : "thread";
     }
     if (target.live && targetSelect.value === "container") targetSelect.value = "thread";
