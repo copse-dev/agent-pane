@@ -686,7 +686,7 @@
         "api": "index.resolveFileReferences",
         "args": [
           1,
-          1
+          2
         ]
       },
       "index:status": {

@@ -748,13 +748,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (!win.isDestroyed()) win.webContents.send('index:status-changed', status)
   })
 
-  ipcMain.handle('index:resolve-file-references', async (event, rawCandidates: unknown) => {
-    assertMainFrameSender(event, win)
-    const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
-    const root = getWorkspaceRoot()
-    if (root) await whenFileIndexReady(root)
-    return await resolveFileReferences(candidates)
-  })
+  ipcMain.handle(
+    'index:resolve-file-references',
+    async (event, rawCandidates: unknown, rawOwner: unknown) => {
+      assertMainFrameSender(event, win)
+      const [candidates, owner] = parseIpcArgs(
+        z.tuple([
+          z.array(z.string().min(1).max(4096)).max(200),
+          z.object({ projectId: zProjectId, threadId: zThreadId }).strict().optional(),
+        ]),
+        [rawCandidates, rawOwner],
+      )
+      const root = owner
+        ? (await resolveThreadExecutionContext(owner.projectId, owner.threadId)).root
+        : getWorkspaceRoot()
+      if (root) await whenFileIndexReady(root)
+      return await resolveFileReferences(candidates, root)
+    },
+  )
 
   // Ports panel. Listening ports are discovered by scanning the host, not by
   // tracking what Copse spawned, so the list includes the user's other apps and

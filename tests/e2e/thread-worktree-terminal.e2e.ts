@@ -4,6 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
+import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -81,7 +82,14 @@ describe('isolated thread terminal cwd', () => {
           id: THREAD_ID,
           title: 'Isolated terminal',
           status: 'idle',
-          messages: [],
+          messages: [
+            {
+              id: 'worktree-link-message',
+              role: 'assistant',
+              content: 'Added [the worktree file](/worktree-only.md) for review.',
+              createdAt: now,
+            },
+          ],
           draftPrompt: 'keep worktree fixture',
           usage: { inputTokens: 0, outputTokens: 0 },
           gitBranch: WORKTREE_BRANCH,
@@ -201,5 +209,19 @@ describe('isolated thread terminal cwd', () => {
 
     await browser.closeWindow()
     await browser.switchToWindow(mainHandle)
+  })
+
+  it('opens a newly added file link from the active thread worktree', async function () {
+    this.timeout(60_000)
+    const link = await $('.message-text a[data-workspace-link]')
+    await link.waitForDisplayed({ timeout: 30_000 })
+    await expect(link).toHaveAttribute('href', '/worktree-only.md')
+    await link.click()
+
+    const preview = await $('.markdown-file-preview')
+    await preview.waitForDisplayed({ timeout: 30_000 })
+    await expect(preview).toHaveText(expect.stringContaining('Isolated worktree file'))
+    await assertNoErrorToasts('thread worktree markdown link click')
+    await saveAppScreenshot('thread-worktree-added-file-link.png')
   })
 })
