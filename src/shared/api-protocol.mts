@@ -30,5 +30,6 @@
  */
 // v4 adds bounded PR activity results; v5 adds nested-instruction metadata.
 // Both conservatively version optional result fields for the whole-shape gate.
-// v6 versions task ownership in browser session and canvas payloads.
-export const API_PROTOCOL_VERSION = 6 as const
+// v6 conservatively versions the optional file-reference task owner shape.
+// v7 versions task ownership in browser session and canvas payloads.
+export const API_PROTOCOL_VERSION = 7 as const

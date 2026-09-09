@@ -4,6 +4,11 @@ import { mkdtempSync, realpathSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { localWorkspaceFs } from './local-workspace-fs.ts'
+import {
+  proposedRasterBytes,
+  readWorkspaceFileContent,
+  writeWorkspaceFileContent,
+} from './file-content.ts'
 
 describe('localWorkspaceFs', () => {
   let dir: string
@@ -17,6 +22,24 @@ describe('localWorkspaceFs', () => {
     const file = join(dir, 'a.txt')
     await localWorkspaceFs.writeFile(file, 'hello', 'utf-8')
     assert.equal(await localWorkspaceFs.readFile(file, 'utf-8'), 'hello')
+  })
+
+  it('round-trips raster content through the string-based proposed-diff boundary', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'copse-wfs-'))
+    const file = join(dir, 'image.png')
+    const bytes = Buffer.from('89504e470d0a1a0a0080ff', 'hex')
+    writeFileSync(file, bytes)
+
+    const content = await readWorkspaceFileContent(localWorkspaceFs, file, 'image.png')
+    assert.equal(content, bytes.toString('latin1'))
+
+    const updated = Buffer.from('89504e470d0a1a0a0090fe', 'hex')
+    await writeWorkspaceFileContent(localWorkspaceFs, file, 'image.png', updated.toString('latin1'))
+    assert.deepEqual(await localWorkspaceFs.readFileBytes(file), updated)
+    assert.deepEqual(
+      proposedRasterBytes('image.png', `data:image/png;base64,${bytes.toString('base64')}`),
+      bytes,
+    )
   })
 
   it('lists directory entries with types', async () => {

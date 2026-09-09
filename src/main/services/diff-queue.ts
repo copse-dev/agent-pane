@@ -9,6 +9,7 @@ import {
   resolvePathWithinRoot,
 } from './workspace.ts'
 import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
+import { readWorkspaceFileContent, writeWorkspaceFileContent } from './workspace-fs/file-content.ts'
 import { buildIndex } from './search/file-index.ts'
 import { getGitStatus } from './github/git-service.ts'
 import { assertMainFrameSender, parseIpcArgs, zProjectId, zThreadId } from '../ipc/ipc-guards.ts'
@@ -330,7 +331,7 @@ async function readCurrentContent(
   if (!root) return ''
   try {
     const fs = getActiveWorkspaceFs()
-    return await fs.readFile(await resolvePathWithinRoot(path, root), 'utf-8')
+    return await readWorkspaceFileContent(fs, await resolvePathWithinRoot(path, root), path)
   } catch {
     return ''
   }
@@ -774,7 +775,7 @@ async function applyWrite(entry: QueueEntry, root: string): Promise<ApplyResult>
   const fs = getActiveWorkspaceFs()
   let current = ''
   try {
-    current = await fs.readFile(absPath, 'utf-8')
+    current = await readWorkspaceFileContent(fs, absPath, entry.path)
   } catch (err) {
     if (!isNotFoundError(err)) return { status: 'error', error: errorMessage(err) }
     /* file absent on disk — treated as empty, matching staging snapshot for new files */
@@ -785,7 +786,7 @@ async function applyWrite(entry: QueueEntry, root: string): Promise<ApplyResult>
   try {
     await assertWriteTargetWithinRoot(absPath, root)
     await fs.mkdir(dirname(absPath), { recursive: true })
-    await fs.writeFile(absPath, entry.after, 'utf-8')
+    await writeWorkspaceFileContent(fs, absPath, entry.path, entry.after)
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }
   }
@@ -797,7 +798,7 @@ async function applyDelete(entry: QueueEntry, root: string): Promise<ApplyResult
   const fs = getActiveWorkspaceFs()
   let current: string
   try {
-    current = await fs.readFile(absPath, 'utf-8')
+    current = await readWorkspaceFileContent(fs, absPath, entry.path)
   } catch {
     // Deletion is idempotent: if the file is already gone the desired end state
     // is met, so report success instead of failing the (whole) approval. This is
@@ -824,7 +825,7 @@ async function applyRename(entry: QueueEntry, root: string): Promise<ApplyResult
   const fs = getActiveWorkspaceFs()
   let current: string
   try {
-    current = await fs.readFile(fromAbs, 'utf-8')
+    current = await readWorkspaceFileContent(fs, fromAbs, entry.path)
   } catch {
     return { status: 'error', error: `File not found: ${entry.path}` }
   }

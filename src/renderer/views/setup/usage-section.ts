@@ -17,6 +17,7 @@ import {
 } from '../intellect-frontier-panel.ts'
 import { fetchModelOptions } from '../model-options.ts'
 import type { PlanCoverageMode } from '@shared/plan-inclusion.ts'
+import { parseAcpAgentConfigs } from '@shared/acp.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
 
@@ -601,6 +602,7 @@ export function createUsageSection(
       (await fetchModelOptions(api, ''))
         .filter((option) => option.value !== '' && option.disabled !== true)
         .map((option) => option.value),
+    async () => parseAcpAgentConfigs(await api.settings.get('registeredAcpAgents')),
   )
   root.append(frontierPanel.root)
 
@@ -643,7 +645,10 @@ export function createUsageSection(
       },
       onShowInference: (): void => {
         frontierPanel.setPlanCoverageMode('inference' satisfies PlanCoverageMode)
-        frontierPanel.root.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        frontierPanel.root.scrollIntoView({
+          block: 'nearest',
+          behavior: 'smooth',
+        })
       },
     })
   }

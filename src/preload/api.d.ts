@@ -777,6 +777,7 @@ export interface ApiClient {
     query: (pattern: string) => Promise<string[]>
     resolveFileReferences: (
       candidates: string[],
+      owner?: { projectId: string; threadId: string },
     ) => Promise<{ candidate: string; path: string; kind: 'file' | 'directory' }[]>
     status: () => Promise<import('@shared/types/index-status.ts').WorkspaceIndexStatus>
     onStatusChanged: (

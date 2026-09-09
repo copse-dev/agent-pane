@@ -982,8 +982,10 @@ const api: ApiClient = {
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
-    resolveFileReferences: (candidates: string[]) =>
-      ipcRenderer.invoke('index:resolve-file-references', candidates),
+    resolveFileReferences: (
+      candidates: string[],
+      owner?: { projectId: string; threadId: string },
+    ) => ipcRenderer.invoke('index:resolve-file-references', candidates, owner),
     status: () => ipcRenderer.invoke('index:status'),
     onStatusChanged: (
       handler: (status: import('@shared/types/index-status.ts').WorkspaceIndexStatus) => void,

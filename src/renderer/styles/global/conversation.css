@@ -207,7 +207,7 @@
   border-radius: var(--radius);
 }
 .message-reasoning[open] {
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
   background:
     repeating-linear-gradient(
       135deg,

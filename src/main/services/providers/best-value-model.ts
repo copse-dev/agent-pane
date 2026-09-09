@@ -4,7 +4,6 @@
 // single best-value point via {@link pickBestValueFrontierModel}.
 
 import {
-  blendedPricePerMTok,
   frontierForKnownModels,
   pickBestValueFrontierModel,
   type FrontierCandidate,
@@ -15,21 +14,13 @@ import {
   localFrontierCandidates,
   openRouterFrontierCandidates,
 } from '@copse/llm/frontier-candidates.ts'
-import { CLOUD_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
+import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
 import { isNoTrainingModelPath, isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
 import { LMSTUDIO_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
-import { getIntellectScore } from '@copse/llm/model-intellect.ts'
-import { resolveAgentModelIdentity } from '@copse/llm/agent-model-identity.ts'
 import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
+import { planAcpFrontierCandidates } from '@shared/plan-frontier-candidates.ts'
 import { FALLBACK_APP_CHAT_MODEL, resolveLocalServerUrl } from '@shared/lm-studio-defaults.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
-import {
-  acpModelChoiceLabel,
-  acpModelValue,
-  acpModelVersionName,
-  acpPlanProvider,
-} from '@shared/acp.ts'
-import type { AcpAgentConfig, AcpModelChoice } from '@shared/types/acp.ts'
 import { listEnabledAcpAgents } from '../acp/acp-agent-registry.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import { fetchLmStudioModelsCached } from './lm-studio-models.ts'
@@ -103,57 +94,6 @@ export function toRoutableModelId(candidate: FrontierCandidate): string {
     return `${LMSTUDIO_MODEL_PREFIX}${candidate.id}`
   }
   return candidate.id
-}
-
-/**
- * Models advertised by known subscription-backed ACP agents. Each resolvable
- * model is included, rather than only the agent's strongest one, so identity
- * grouping can replace every paid duplicate (for example OpenRouter GPT-5.6
- * Sol) with the exact Claude/Codex plan route.
- *
- * `planAccess` describes the possible billing path without claiming it is
- * currently free. `applyPlanCoverage` checks the live usage snapshot and only
- * sets `plan` while the relevant window has headroom.
- */
-export function planAcpFrontierCandidates(agents: readonly AcpAgentConfig[]): FrontierCandidate[] {
-  const candidates: FrontierCandidate[] = []
-  for (const agent of agents) {
-    if (!agent.enabled) continue
-    const provider = acpPlanProvider(agent)
-    if (!provider) continue
-    const advertised = agent.availableModels ?? []
-    const selected = agent.model
-    const selectedChoice = selected
-      ? advertised.find((choice) => choice.value === selected)
-      : undefined
-    const choices = new Map<string, AcpModelChoice>()
-    if (selected) choices.set(selected, selectedChoice ?? { value: selected, label: selected })
-    for (const choice of advertised) choices.set(choice.value, choice)
-
-    for (const choice of choices.values()) {
-      // The same forms, in the same order, the picker resolves its intellect
-      // hint from — including the finished label. A model the picker can name
-      // must be one a selector can pick, or the plan route quietly loses to a
-      // paid API route that the frontier *can* see.
-      const resolved = resolveAgentModelIdentity(
-        choice.value,
-        acpModelVersionName(choice.description),
-        choice.label,
-        acpModelChoiceLabel(choice),
-      )
-      if (!resolved) continue
-      const score = getIntellectScore(resolved)
-      const info = getModelInfo(resolved)
-      if (!score || !info) continue
-      candidates.push({
-        id: acpModelValue(agent.id, choice.value),
-        intellect: score.value,
-        costPerMTok: blendedPricePerMTok(info),
-        planAccess: { provider, modelId: resolved },
-      })
-    }
-  }
-  return candidates
 }
 
 /**

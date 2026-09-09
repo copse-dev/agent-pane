@@ -284,7 +284,11 @@ describe('extraProviderFrontierCandidates', () => {
     const candidates = extraProviderFrontierCandidates([
       testExtraProvider([
         // Priced + measured (direct v4.1 reading) → joins at its real price.
-        { id: 'MiniMaxAI/MiniMax-M3', inputPricePerMTok: 1, outputPricePerMTok: 4 },
+        {
+          id: 'MiniMaxAI/MiniMax-M3',
+          inputPricePerMTok: 1,
+          outputPricePerMTok: 4,
+        },
         // Measured but unpriced → hint-only, never plotted.
         { id: 'zai-org/GLM-5.2' },
         // Priced but unmeasured → never invented.
@@ -357,7 +361,12 @@ describe('createIntellectFrontierPanel', () => {
       ok: true,
       models: [
         ...verifiedLiveAnchors(),
-        { id: 'brand-new-model', intellect: 45, inputPricePerMTok: 2, outputPricePerMTok: 8 },
+        {
+          id: 'brand-new-model',
+          intellect: 45,
+          inputPricePerMTok: 2,
+          outputPricePerMTok: 8,
+        },
       ],
     }
     const panel = createIntellectFrontierPanel(
@@ -437,7 +446,11 @@ describe('createIntellectFrontierPanel', () => {
       async () => [],
       async () => [
         testExtraProvider([
-          { id: 'vendor/unscored-priced', inputPricePerMTok: 1, outputPricePerMTok: 4 },
+          {
+            id: 'vendor/unscored-priced',
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 4,
+          },
         ]),
       ],
     )
@@ -627,7 +640,12 @@ describe('createIntellectFrontierPanel', () => {
         models: [
           ...verifiedLiveAnchors(),
           // Uncurated + cheaper-than-frontier: would extend the frontier if set up.
-          { id: 'cheap-smart-oss', intellect: 55, inputPricePerMTok: 0.2, outputPricePerMTok: 0.8 },
+          {
+            id: 'cheap-smart-oss',
+            intellect: 55,
+            inputPricePerMTok: 0.2,
+            outputPricePerMTok: 0.8,
+          },
         ],
       }),
     )
@@ -949,12 +967,48 @@ describe('plan coverage on the map', () => {
     }
   }
 
+  function codexPlan(): PlanUsageSnapshot {
+    return {
+      checkedAt: '2026-09-09T00:00:00Z',
+      providers: [
+        {
+          status: 'ok',
+          provider: 'codex',
+          usage: {
+            provider: 'codex',
+            plan: 'plus',
+            checkedAt: '2026-09-09T00:00:00Z',
+            windows: [
+              {
+                id: 'primary',
+                label: '5-hour',
+                usedPercent: 20,
+                resetsAt: null,
+              },
+              {
+                id: 'secondary',
+                label: 'Weekly',
+                usedPercent: 10,
+                resetsAt: null,
+              },
+            ],
+          },
+        },
+      ],
+    }
+  }
+
   it('plots a plan-covered Claude model at $0 with a plan badge', async () => {
     const panel = createIntellectFrontierPanel(
       async () => [],
       undefined,
       undefined,
-      async () => claudePlan({ id: 'seven_day_fable', label: 'Weekly Fable', usedPercent: 20 }),
+      async () =>
+        claudePlan({
+          id: 'seven_day_fable',
+          label: 'Weekly Fable',
+          usedPercent: 20,
+        }),
     )
     await panel.refresh()
     // The dashed plan-badge ring is only drawn for a plan-covered point.
@@ -971,10 +1025,63 @@ describe('plan coverage on the map', () => {
       async () => [],
       undefined,
       undefined,
-      async () => claudePlan({ id: 'seven_day_fable', label: 'Weekly Fable', usedPercent: 100 }),
+      async () =>
+        claudePlan({
+          id: 'seven_day_fable',
+          label: 'Weekly Fable',
+          usedPercent: 100,
+        }),
     )
     await panel.refresh()
     assert.equal(panel.root.querySelector('circle.frontier-plan-badge'), null)
+  })
+
+  it('shows Astra through its configured Codex ACP plan route', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      undefined,
+      async () => codexPlan(),
+      undefined,
+      async () => ['acp:codex-acp#gpt-6-astra'],
+      async () => [
+        {
+          id: 'codex-acp',
+          title: 'Codex',
+          command: 'codex-acp',
+          enabled: true,
+          availableModels: [{ value: 'gpt-6-astra', label: 'GPT-6 Astra' }],
+        },
+      ],
+    )
+    await panel.refresh()
+
+    assert.ok(
+      panel.root.querySelector(
+        'circle.frontier-point.plan[data-model-id="acp:codex-acp#gpt-6-astra"]',
+      ),
+    )
+    const labels = [...panel.root.querySelectorAll('text.frontier-label')].map((t) => t.textContent)
+    assert.ok(labels.includes('GPT-6 Astra · plan'))
+  })
+
+  it('does not treat a direct Astra API route as Codex plan usage', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      undefined,
+      async () => codexPlan(),
+      undefined,
+      async () => ['gpt-6-astra'],
+      async () => [],
+    )
+    await panel.refresh()
+
+    assert.ok(panel.root.querySelector('circle.frontier-point[data-model-id="gpt-6-astra"]'))
+    assert.equal(
+      panel.root.querySelector('circle.frontier-point.plan[data-model-id="gpt-6-astra"]'),
+      null,
+    )
   })
 
   it('tooltip shows plan headroom + off-plan price when covered', () => {
@@ -1070,7 +1177,10 @@ describe('plan coverage on the map', () => {
       estimated: false,
     })
     assert.ok(unpriced.querySelector('a.tt-card-link'))
-    const unscored = unscoredTooltipContent({ id: 'claude-opus-4-8', costPerMTok: 9 })
+    const unscored = unscoredTooltipContent({
+      id: 'claude-opus-4-8',
+      costPerMTok: 9,
+    })
     assert.ok(unscored.querySelector('a.tt-card-link'))
   })
 })

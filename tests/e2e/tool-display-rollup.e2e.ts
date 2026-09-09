@@ -140,11 +140,44 @@ describe('tool call turn rollup', () => {
     await expect(mixed.$('.message-reasoning-title')).toHaveText('Reasoned')
     // Completed reasoning is a separate, initially closed disclosure inside
     // the step. Open it before asserting the text a user can actually read.
+    const closedBackground = await mixed.$('.message-reasoning').getCSSProperty('background-image')
+    expect(closedBackground.value).toBe('none')
     await mixed.$('.message-reasoning-summary').click()
     await expect(mixed.$('.message-reasoning')).toHaveAttribute('open')
     await expect(mixed.$('.message-reasoning-text')).toHaveText(
       'Reading key files to diagnose the settings flicker and missing button text.',
     )
+
+    // Nesting must preserve the hatched surface's inset, including the left
+    // edge that the old flat-row rule stripped to zero.
+    const reasoningLayout = await browser.execute(() => {
+      const reasoning = document.querySelector<HTMLElement>(
+        '[data-step-message-id="msg-assistant-reads"] .message-reasoning[open]',
+      )
+      const summary = reasoning?.querySelector('.message-reasoning-summary')
+      const text = reasoning?.querySelector('.message-reasoning-text')
+      if (!reasoning || !summary || !text) throw new Error('Expected expanded reasoning')
+      const style = getComputedStyle(reasoning)
+      const box = reasoning.getBoundingClientRect()
+      const summaryBox = summary.getBoundingClientRect()
+      const textBox = text.getBoundingClientRect()
+      return {
+        background: style.backgroundImage,
+        padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+        summaryLeft: summaryBox.left - box.left,
+        summaryTop: summaryBox.top - box.top,
+        textLeft: textBox.left - box.left,
+        textRight: box.right - textBox.right,
+        textBottom: box.bottom - textBox.bottom,
+      }
+    })
+    expect(reasoningLayout.background).toContain('repeating-linear-gradient')
+    expect(reasoningLayout.padding).toEqual(['12px', '16px', '12px', '16px'])
+    expect(reasoningLayout.summaryLeft).toBeGreaterThanOrEqual(16)
+    expect(reasoningLayout.summaryTop).toBeGreaterThanOrEqual(12)
+    expect(reasoningLayout.textLeft).toBeGreaterThanOrEqual(16)
+    expect(reasoningLayout.textRight).toBeGreaterThanOrEqual(16)
+    expect(reasoningLayout.textBottom).toBeGreaterThanOrEqual(12)
     await expect(mixed.$('.tool-card-group .tool-name')).toHaveText('Read files')
     await expect(mixed.$('.tool-card-group .tool-count')).toHaveText('×2')
     await expect(mixed.$('.tool-card[data-tool-id="tc-read-2"] .tool-name')).toHaveText('Read file')

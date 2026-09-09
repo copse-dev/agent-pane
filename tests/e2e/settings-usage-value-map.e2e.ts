@@ -7,20 +7,20 @@ describe('settings usage model value map cost axis', () => {
   before(async () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-value-map-cost', {
-      model: 'acp:value-map-agent#gpt-5.6-sol',
+      model: 'acp:codex-acp#gpt-6-astra',
       registeredAcpAgents: [
         {
-          id: 'value-map-agent',
-          title: 'Value Map Agent',
-          command: 'value-map-agent',
+          id: 'codex-acp',
+          title: 'Codex',
+          command: 'codex-acp',
           enabled: true,
           modelsProbedAt: Date.now(),
           availableModels: [
+            { value: 'gpt-6-astra', label: 'GPT-6 Astra' },
             { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+            { value: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
             { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-            { value: 'gpt-5-mini', label: 'GPT-5 mini' },
-            { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-            { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+            { value: 'gpt-5.5', label: 'GPT-5.5' },
           ],
         },
       ],
@@ -58,14 +58,21 @@ describe('settings usage model value map cost axis', () => {
     // The chart shares the picker's available ACP model list. A statically
     // tracked model that this agent does not advertise stays behind Discover.
     assert.equal(
-      await fieldset.$('circle.frontier-point[data-model-id="gpt-5.5"]').isExisting(),
+      await fieldset.$('circle.frontier-point[data-model-id="claude-fable-5"]').isExisting(),
       false,
     )
     assert.equal(
-      await fieldset.$('circle.frontier-point[data-model-id="gpt-5.6-sol"]').isExisting(),
+      await fieldset
+        .$('circle.frontier-point.plan[data-model-id="acp:codex-acp#gpt-6-astra"]')
+        .isExisting(),
       true,
     )
-    assert.match(await chart.getText(), /GPT-5\.6 Sol/)
+    assert.equal(
+      await fieldset.$('circle.frontier-point.plan[data-model-id^="gpt-"]').isExisting(),
+      false,
+      'only the Codex ACP route should be marked as plan included',
+    )
+    assert.match(await chart.getText(), /GPT-6 Astra · plan/)
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)
 
     await prepareE2eScreenshot()
@@ -88,9 +95,8 @@ describe('settings usage model value map cost axis', () => {
     )
     const taskChartText = await chart.getText()
     assert.match(taskChartText, /AA cost per Intelligence Index task/)
-    // Non-plan models (GPT) must spread across the task-cost axis — not collapse
-    // to the $0 plan column alone.
-    assert.match(taskChartText, /GPT-5\.6 Sol|GPT-5 mini/)
+    // Subscription-backed Codex models remain plan routes on the task axis.
+    assert.match(taskChartText, /GPT-6 Astra · plan/)
     assert.equal(await taskBtn.getAttribute('aria-pressed'), 'true')
     assert.equal(await fieldset.$('details.frontier-unpriced-list').isExisting(), false)
 
@@ -168,7 +174,10 @@ describe('settings usage model value map cost axis', () => {
     await discoverBtn.click()
     await browser.waitUntil(
       async () => (await discoverBtn.getAttribute('aria-pressed')) === 'false',
-      { timeout: 5000, timeoutMsg: 'value map did not disable model discovery' },
+      {
+        timeout: 5000,
+        timeoutMsg: 'value map did not disable model discovery',
+      },
     )
     assert.equal(
       await discoverBtn.getSize('width'),
