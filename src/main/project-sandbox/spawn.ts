@@ -14,6 +14,7 @@ import {
 } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
 import { isSpawnableWorkingDirectory } from './spawn-cwd.ts'
+import { withSandboxTmpEnv } from './tmp-env.ts'
 import {
   detachForGroupKill,
   formatArgvForShell,
@@ -70,8 +71,7 @@ function mergeSpawnEnv(base: NodeJS.ProcessEnv, override?: NodeJS.ProcessEnv): N
  * sandbox, where the system temp dir is fully writable.
  */
 function withWorkspaceTmpEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const tmpDir = ensureWorkspaceTmpDir()
-  return { ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir }
+  return withSandboxTmpEnv(env, ensureWorkspaceTmpDir())
 }
 
 /**
