@@ -7,23 +7,6 @@
   height: var(--chrome-action-band-height);
   border-top: 1px solid var(--border);
 }
-.projects-menu-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--chrome-action-band-height);
-  height: 100%;
-  padding: 0;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-.projects-menu-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
 .projects-settings-btn {
   display: flex;
   align-items: center;
@@ -167,6 +150,7 @@
   flex: 1;
   min-width: 0;
 }
+.project-menu-btn,
 .project-new-thread-btn {
   flex-shrink: 0;
   width: var(--projects-action-size);
@@ -176,6 +160,7 @@
   line-height: 1;
   color: var(--text-secondary);
 }
+.project-menu-btn:hover,
 .project-new-thread-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);

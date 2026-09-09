@@ -51,12 +51,12 @@ export function createAutomationPluginSettings(
   pluginEnabled: boolean,
   revealScheduleId?: string,
   createNew = false,
+  projectId = store.getState().activeProjectId,
 ): AutomationEditor {
   const root = el('section', {
     class: 'automation-plugin-settings',
     'data-plugin-detail': AUTOMATIONS_PLUGIN_ID,
   })
-  const projectId = store.getState().activeProjectId
   const project = store.getState().projects.find((candidate) => candidate.id === projectId)
 
   const heading = el('div', { class: 'automation-plugin-heading' })
