@@ -12,6 +12,10 @@
     "label": "Markdown list indentation"
   },
   {
+    "id": "container-run",
+    "label": "Unattended container run"
+  },
+  {
     "id": "footer-compact",
     "label": "Responsive composer footer"
   },

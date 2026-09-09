@@ -10966,8 +10966,8 @@ var init_pt = __esm({
           case "not_multiple_of":
             return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
           case "unrecognized_keys": {
-            const plural = issue2.keys.length > 1 ? "s" : "";
-            return `Chave${plural} inv\xE1lida${plural}: ${joinValues(issue2.keys, ", ")}`;
+            const plural2 = issue2.keys.length > 1 ? "s" : "";
+            return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
           }
           case "invalid_key":
             return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -11115,8 +11115,8 @@ var init_pt_BR = __esm({
           case "not_multiple_of":
             return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
           case "unrecognized_keys": {
-            const plural = issue2.keys.length > 1 ? "s" : "";
-            return `Chave${plural} inv\xE1lida${plural}: ${joinValues(issue2.keys, ", ")}`;
+            const plural2 = issue2.keys.length > 1 ? "s" : "";
+            return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
           }
           case "invalid_key":
             return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -22086,7 +22086,11 @@ var init_tool_display = __esm({
       ask_user: { running: "Asking user", done: "Asked user" },
       propose_thread: { running: "Proposing a thread", done: "Proposed a thread" },
       update_todos: { running: "Updating plan", done: "Updated plan" },
-      run_checkup: { running: "Running checkup", done: "Ran checkup" }
+      run_checkup: { running: "Running checkup", done: "Ran checkup" },
+      container_run: {
+        running: "Running unattended in a container",
+        done: "Ran unattended in a container"
+      }
     };
     TOOL_GROUPS = {
       reading: {
@@ -25600,6 +25604,150 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "container-run",
+        label: "Unattended container run",
+        project: project("demo-container-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "claude-sonnet-4-6",
+          containerRunsEnabled: true
+        },
+        threads: [
+          {
+            id: "demo-container-thread",
+            title: "Clear the lint backlog",
+            status: "idle",
+            gitBranch: "demo/lint-backlog",
+            messages: [
+              {
+                id: "demo-container-user",
+                role: "user",
+                content: "Clear the lint backlog and open a PR.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 412310, outputTokens: 38902 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        containerRun: {
+          threadId: "demo-container-thread",
+          runtimeId: "run-demo-1",
+          phase: "finished",
+          startedAt: FIXED_TIME,
+          finishedAt: FIXED_TIME + 23 * 6e4,
+          prompt: "Clear the lint suppression backlog in the renderer views",
+          model: "claude-sonnet-4-6",
+          egressAllowlist: ["api.anthropic.com:443"],
+          credential: "key",
+          warnings: [],
+          checkout: {
+            root: "/Users/dev/projects/demo/.copse/worktrees/demo-container-thread",
+            mode: "worktree",
+            branch: "demo/lint-backlog"
+          },
+          log: [
+            "[thread-container] carry-in 9b1b901683b9 as refs/copse/carry-in/run-demo-1",
+            "[thread-container] starting copse-run-demo-1 from copse-worker:local",
+            "[guest] [worker] egress proxy on 127.0.0.1:3128, token-gated",
+            "[guest] [worker] project sandbox: none; the container is the sandbox",
+            "[guest] [worker] done: completed; prompts=0 deferrals=1 commits=3",
+            "[thread-container] carry-out fetched to refs/copse/runs/run-demo-1"
+          ],
+          record: {
+            runtimeId: "run-demo-1",
+            threadId: "demo-container-thread",
+            startedAt: FIXED_TIME,
+            finishedAt: FIXED_TIME + 23 * 6e4,
+            image: "copse-worker:local",
+            imageDigest: "sha256:0c1f2e3d4c5b6a798877665544332211aabbccddeeff00112233445566778899",
+            attestation: {
+              runtimeId: "run-demo-1",
+              image: "copse-worker:local",
+              user: 1001,
+              readOnlyRootfs: true,
+              capDropAll: true,
+              noNewPrivileges: true,
+              pidsLimit: 512,
+              memoryLimit: "4g",
+              network: "brokered",
+              egressAllowlist: ["api.anthropic.com:443"],
+              hostMounts: ["/run/copse", "/run/copse/state", "/run/copse/out"]
+            },
+            egress: [{ at: FIXED_TIME, origin: "api.anthropic.com:443", event: "connect" }],
+            result: {
+              threadId: "demo-container-thread",
+              stopReason: "completed",
+              usage: { inputTokens: 412310, outputTokens: 38902 },
+              harness: "copse",
+              promptsAttempted: 0,
+              denials: [],
+              deferrals: [
+                {
+                  id: "d1",
+                  title: "Outward effect needs review",
+                  subject: "shell command (arguments omitted)",
+                  reasons: ["git push publishes commits to a remote"]
+                }
+              ],
+              commits: [
+                "a1b2c3d fix(lint): remove unused imports across src/main",
+                "b2c3d4e fix(lint): prefer nullish coalescing in providers",
+                "c3d4e5f chore: rerun formatter"
+              ],
+              containment: { declared: true, declineReason: null, projectSandbox: false },
+              toolNames: ["run_shell", "read_file", "write_file"],
+              finalText: "Cleared the lint backlog in three commits. The push is waiting for your review."
+            },
+            transcript: [
+              {
+                id: "guest-1",
+                role: "assistant",
+                content: "Reading the lint report to see which suppressions are still needed.",
+                toolCalls: [
+                  {
+                    id: "guest-t1",
+                    name: "run_shell",
+                    args: { command: "pnpm run lint -- --format json" },
+                    status: "done",
+                    result: "14 suppressions, 11 of them for rules that no longer fire"
+                  },
+                  {
+                    id: "guest-t2",
+                    name: "str_replace",
+                    args: { path: "src/main/providers/openai.ts" },
+                    status: "done",
+                    result: "Replaced 1 occurrence",
+                    editStats: { additions: 1, deletions: 3 }
+                  }
+                ],
+                createdAt: FIXED_TIME + 6e4
+              },
+              {
+                id: "guest-2",
+                role: "assistant",
+                content: "Cleared the lint backlog in three commits. The push is waiting for your review.",
+                toolCalls: [],
+                createdAt: FIXED_TIME + 22 * 6e4
+              }
+            ],
+            carryIn: { sha: "9b1b901683b9f0e5b2a3c4d5e6f708192a3b4c5d", dirty: false },
+            carryOut: { expected: true, ref: "refs/copse/runs/run-demo-1", error: null },
+            containerExit: 0,
+            credential: "key",
+            teardown: "removed",
+            cleanupError: null,
+            secretCanary: { present: false, detail: "canary absent from every surface" }
+          },
+          error: null,
+          continuedFrom: null
+        }
+      },
+      {
         id: "footer-compact",
         label: "Responsive composer footer",
         project: project("demo-footer-project"),
@@ -25610,7 +25758,8 @@ var init_demo_scenarios = __esm({
           model: "lmstudio:qwen/qwen3.6-35b-a3b",
           // Copy/export overflow actions are developer-mode gated; the geometry
           // demo needs them visible to exercise `.footer-overflow`.
-          developerMode: true
+          developerMode: true,
+          containerRunsEnabled: true
         },
         threads: [
           {
@@ -26284,6 +26433,43 @@ function createDemoApi(scenario, options2 = {}) {
       enableGuardedYolo: (threadId) => resolved({ threadId, phase: "off", containment: "unsandboxed", expiresAt: null }),
       disableGuardedYolo: (threadId) => resolved({ threadId, phase: "off", containment: "unsandboxed", expiresAt: null }),
       onGuardedYoloChanged: subscribe
+    },
+    container: {
+      runThread: (request) => resolved({
+        threadId: request.threadId,
+        runtimeId: "run-demo",
+        phase: "running",
+        startedAt: Date.now(),
+        finishedAt: null,
+        prompt: request.prompt,
+        model: request.model,
+        egressAllowlist: ["api.anthropic.com:443"],
+        credential: "key",
+        log: ["[thread-container] starting copse-run-demo from copse-worker:local"],
+        warnings: [],
+        checkout: { root: "/repo", mode: "shared", branch: "main" },
+        record: null,
+        error: null,
+        continuedFrom: request.continueFrom ?? null
+      }),
+      stopRun: () => resolved(null),
+      adoptRun: () => resolved({
+        applied: [
+          "a1b2c3d fix(lint): remove unused imports across src/main",
+          "b2c3d4e fix(lint): prefer nullish coalescing in providers",
+          "c3d4e5f chore: rerun formatter"
+        ],
+        alreadyApplied: 0
+      }),
+      getRun: (threadId) => resolved(
+        scenario.containerRun && scenario.containerRun.threadId === threadId ? scenario.containerRun : null
+      ),
+      modelAvailability: (models) => resolved(
+        Object.fromEntries(
+          models.map((model) => [model, { reason: "not available in the demo" }])
+        )
+      ),
+      onRunChanged: subscribe
     },
     fs: {
       readFile: (_projectId, _threadId, path4) => resolved(writtenFiles.get(path4) ?? ""),
@@ -29447,7 +29633,16 @@ var init_acp_known_agents = __esm({
           // OpenAI-owned infra wholesale: the API lives on api.openai.com, but the
           // ChatGPT-login flow talks to chatgpt.com / auth.openai.com and these move
           // between subdomains — pinning individual hosts breaks auth when they do.
-          allowedDomains: ["openai.com", "*.openai.com", "chatgpt.com", "*.chatgpt.com"],
+          // oaiusercontent.com is OpenAI's user-content store; under a ChatGPT
+          // sign-in the CLI fetches from it (seen refused in a container run).
+          allowedDomains: [
+            "openai.com",
+            "*.openai.com",
+            "chatgpt.com",
+            "*.chatgpt.com",
+            "oaiusercontent.com",
+            "*.oaiusercontent.com"
+          ],
           homeDirs: [".codex", ".config/codex"]
         },
         setup: "codex login",
@@ -57228,6 +57423,21 @@ function mountSettingsDialog(store3, api3) {
             </fieldset>
 
             <fieldset>
+              <legend>Unattended container runs</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="containerRunsEnabled" />
+                Let a thread run unattended inside a disposable Docker container
+              </label>
+              <p class="field-hint">
+                Adds "Run unattended in a container" to the message box menu. The run works on a
+                snapshot of the thread's checkout with no prompts, reaching only its model's
+                origin, and brings its commits back for you to apply. Needs Docker; the first run
+                builds the worker image. A run carries one credential: the model's API key, or,
+                if you opt in per run, your Codex or Gemini sign-in copied into the container.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -59054,8 +59264,8 @@ function mountSettingsDialog(store3, api3) {
         const warn3 = document.createElement("div");
         warn3.className = "mcp-trust-banner trust-unsandboxed-hooks-warning";
         const label = document.createElement("span");
-        const plural = unsandboxed.length === 1 ? "hook" : "hooks";
-        label.textContent = `This workspace declares ${String(unsandboxed.length)} ${plural} with "sandbox": false in .copse/hooks.json. Trusting this workspace allows ${unsandboxed.length === 1 ? "it" : "them"} to run OUTSIDE the project sandbox:`;
+        const plural2 = unsandboxed.length === 1 ? "hook" : "hooks";
+        label.textContent = `This workspace declares ${String(unsandboxed.length)} ${plural2} with "sandbox": false in .copse/hooks.json. Trusting this workspace allows ${unsandboxed.length === 1 ? "it" : "them"} to run OUTSIDE the project sandbox:`;
         const list = document.createElement("ul");
         for (const h3 of unsandboxed) {
           const li2 = document.createElement("li");
@@ -59721,6 +59931,7 @@ var init_settings_dialog = __esm({
       // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
+      { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       // P5: the master model-comparison toggle moved to Settings > Plugins
       // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
@@ -62638,6 +62849,210 @@ function artefactTitleFromUri(uri) {
 var init_artefact = __esm({
   "src/shared/canvas/artefact.ts"() {
     init_browser_url();
+  }
+});
+
+// src/shared/store/container-run-card.ts
+function argsOf(toolCall) {
+  const record2 = toolCall.args;
+  if (!isRecord(record2)) return null;
+  const task = record2["task"];
+  const model = record2["model"];
+  if (typeof task !== "string" || typeof model !== "string") return null;
+  const runtimeId = record2["runtimeId"];
+  const ref = record2["ref"];
+  const credential = record2["credential"];
+  const continuedFrom = record2["continuedFrom"];
+  const report = record2["report"];
+  return {
+    task,
+    model,
+    runtimeId: typeof runtimeId === "string" ? runtimeId : null,
+    ref: typeof ref === "string" ? ref : null,
+    credential: credential === "key" || credential === "login" ? credential : "none",
+    continuedFrom: typeof continuedFrom === "string" ? continuedFrom : null,
+    report: typeof report === "string" ? report : null
+  };
+}
+function latestContainerRun(thread) {
+  for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+    const message2 = thread.messages[index];
+    if (!message2) continue;
+    const toolCall = message2.toolCalls.find((candidate) => candidate.name === CONTAINER_RUN_TOOL);
+    if (!toolCall) continue;
+    const args = argsOf(toolCall);
+    if (!args) continue;
+    return {
+      messageId: message2.id,
+      toolCallId: toolCall.id,
+      runtimeId: args.runtimeId,
+      task: args.task,
+      report: args.report,
+      model: args.model,
+      credential: args.credential,
+      ref: args.ref,
+      status: toolCall.status,
+      isLastTurn: index === thread.messages.length - 1
+    };
+  }
+  return null;
+}
+function containerRunToolCallId(progress2) {
+  return `container-run:${progress2.threadId}:${String(progress2.startedAt)}`;
+}
+function isLive(progress2) {
+  return progress2.phase !== "finished" && progress2.phase !== "failed";
+}
+function cardStatus(progress2) {
+  if (isLive(progress2)) return "running";
+  return progress2.phase === "finished" ? "done" : "error";
+}
+function plural(count2, noun) {
+  return `${String(count2)} ${noun}${count2 === 1 ? "" : "s"}`;
+}
+function minutes(from2, to) {
+  const seconds2 = Math.max(0, Math.round((to - from2) / 1e3));
+  return seconds2 < 90 ? `${String(seconds2)}s` : `${String(Math.round(seconds2 / 60))} min`;
+}
+function containerRunSummary(progress2) {
+  if (isLive(progress2)) return null;
+  const result = progress2.record?.result ?? null;
+  const ref = progress2.record?.carryOut.ref ?? null;
+  if (progress2.phase === "failed") return `Failed: ${progress2.error ?? "the run did not complete"}`;
+  if (!result) return "Finished without a result";
+  const commits = result.commits.length === 0 ? "no commits" : `${plural(result.commits.length, "commit")} ${ref ? `on ${ref}` : "made but not fetched"}`;
+  return `Finished: ${commits}, ${plural(result.deferrals.length, "effect")} waiting for review, ${plural(result.denials.length, "effect")} refused.`;
+}
+function containerRunResultMarkdown(progress2) {
+  if (isLive(progress2)) return null;
+  const record2 = progress2.record;
+  const result = record2?.result ?? null;
+  const lines = [];
+  const summary = containerRunSummary(progress2);
+  if (summary) lines.push(`**${summary}**`);
+  const facts = [`model ${progress2.model}`];
+  if (result) {
+    facts.push(
+      result.harness === "copse" ? "Copse harness" : `${result.harness.acp} agent`,
+      `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`
+    );
+  }
+  if (progress2.finishedAt !== null) facts.push(minutes(progress2.startedAt, progress2.finishedAt));
+  lines.push(facts.join(" \xB7 "));
+  if (result && result.commits.length > 0) {
+    lines.push("", ...result.commits.map((line2) => `- \`${line2}\``));
+  }
+  if (progress2.warnings.length > 0) {
+    lines.push(
+      "",
+      "**Needs your attention**",
+      ...progress2.warnings.map((warning) => `- ${warning}`)
+    );
+  }
+  if (result && result.deferrals.length > 0) {
+    lines.push(
+      "",
+      "**Waiting for your review**",
+      ...result.deferrals.map(
+        (entry) => `- ${entry.title}${entry.reasons?.length ? ` \u2014 ${entry.reasons.join("; ")}` : ""}`
+      )
+    );
+  }
+  if (result && result.denials.length > 0) {
+    lines.push(
+      "",
+      "**Refused by the container policy**",
+      ...result.denials.map(
+        (entry) => `- ${entry.subject}${entry.reasons.length > 0 ? ` \u2014 ${entry.reasons.join("; ")}` : ""}`
+      )
+    );
+  }
+  if (result?.finalText) lines.push("", result.finalText);
+  return lines.join("\n");
+}
+function logMessage(progress2) {
+  if (progress2.log.length === 0) return null;
+  return {
+    id: "run-log",
+    role: "assistant",
+    content: `\`\`\`text
+${progress2.log.join("\n")}
+\`\`\``,
+    toolCalls: [],
+    createdAt: progress2.startedAt
+  };
+}
+function containerRunToolCall(progress2) {
+  const id39 = containerRunToolCallId(progress2);
+  const status = cardStatus(progress2);
+  const args = {
+    task: progress2.prompt,
+    model: progress2.model,
+    runtimeId: progress2.runtimeId,
+    ref: progress2.record?.carryOut.ref ?? null,
+    credential: progress2.credential,
+    continuedFrom: progress2.continuedFrom,
+    report: progress2.record?.result?.finalText ?? null
+  };
+  const transcript = progress2.record?.transcript ?? [];
+  const log3 = logMessage(progress2);
+  const session = {
+    id: progress2.runtimeId ?? id39,
+    kind: "container",
+    status,
+    prompt: progress2.prompt,
+    summary: containerRunSummary(progress2),
+    messages: log3 ? [...transcript, log3] : transcript,
+    model: progress2.model
+  };
+  if (progress2.record?.result) {
+    session.usage = {
+      inputTokens: progress2.record.result.usage.inputTokens,
+      outputTokens: progress2.record.result.usage.outputTokens
+    };
+  }
+  return {
+    id: id39,
+    name: CONTAINER_RUN_TOOL,
+    args,
+    status,
+    result: containerRunResultMarkdown(progress2),
+    resultFormat: "markdown",
+    subagent: session
+  };
+}
+function syncContainerRunCard(store3, progress2) {
+  const thread = getThreadById(store3, progress2.threadId);
+  if (!thread || thread.messagesLoaded === false) return "skipped";
+  const toolCall = containerRunToolCall(progress2);
+  const owner = findToolCallOwner(store3, progress2.threadId, toolCall.id);
+  if (owner !== void 0) {
+    updateToolCall(store3, owner, toolCall.id, toolCall);
+    return "updated";
+  }
+  const messageId = addMessage(store3, progress2.threadId, "assistant", "");
+  addToolCall(store3, messageId, toolCall);
+  return "added";
+}
+function noteAdoptionOnCard(store3, threadId, toolCallId, adoption) {
+  const owner = findToolCallOwner(store3, threadId, toolCallId);
+  if (owner === void 0) return;
+  const thread = getThreadById(store3, threadId);
+  const existing = thread?.messages.find((message2) => message2.id === owner)?.toolCalls.find((toolCall) => toolCall.id === toolCallId)?.result ?? "";
+  const note2 = adoption.applied.length === 0 ? `**Already in this checkout** (${plural(adoption.alreadyApplied, "commit")}).` : `**Applied to this checkout:** ${plural(adoption.applied.length, "commit")}${adoption.alreadyApplied > 0 ? ` (${String(adoption.alreadyApplied)} already present)` : ""}`;
+  updateToolCall(store3, owner, toolCallId, {
+    result: existing.length > 0 ? `${existing}
+
+${note2}` : note2
+  });
+}
+var CONTAINER_RUN_TOOL, CONTAINER_RUN_ADOPT_EVENT;
+var init_container_run_card = __esm({
+  "src/shared/store/container-run-card.ts"() {
+    init_unknown_value3();
+    init_thread_helpers();
+    CONTAINER_RUN_TOOL = "container_run";
+    CONTAINER_RUN_ADOPT_EVENT = "container-run-adopt";
   }
 });
 
@@ -251374,7 +251789,31 @@ function populateSubagentCard(card2, tc2, label, api3) {
     card2.append(resultEl);
     setAssistantMarkdown(resultEl, parentResult, false, api3);
   }
+  const followUp = containerRunFollowUp(tc2, session, status);
+  if (followUp) card2.append(followUp);
   subagentCardChromeSig.set(card2, chromeSig);
+}
+function containerRunFollowUp(tc2, session, status) {
+  if (session.kind !== "container" || status === "running") return null;
+  const args = tc2.args;
+  if (!isRecord(args)) return null;
+  const runtimeId = args["runtimeId"];
+  const ref = args["ref"];
+  if (typeof runtimeId !== "string" || typeof ref !== "string") return null;
+  const button = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary subagent-container-apply" },
+    "Apply the run\u2019s commits to this checkout"
+  );
+  button.addEventListener("click", () => {
+    button.dispatchEvent(
+      new CustomEvent(CONTAINER_RUN_ADOPT_EVENT, {
+        bubbles: true,
+        detail: { runtimeId, toolCallId: tc2.id }
+      })
+    );
+  });
+  return el("div", { class: "subagent-actions" }, button);
 }
 function createSubagentToolCard(tc2, label, api3) {
   const card2 = el("details", {
@@ -252947,6 +253386,8 @@ var init_conversation = __esm({
     init_artefact_previews();
     init_artefact();
     init_thread_helpers();
+    init_container_run_card();
+    init_unknown_value3();
     init_code_block_copy();
     init_table_copy();
     init_dist();
@@ -264312,9 +264753,9 @@ var init_skill_picker = __esm({
 // src/renderer/views/footer-index-status.ts
 function formatElapsed(ms4) {
   const totalSeconds = Math.max(0, Math.floor(ms4 / 1e3));
-  const minutes = Math.floor(totalSeconds / 60);
+  const minutes2 = Math.floor(totalSeconds / 60);
   const seconds2 = totalSeconds % 60;
-  return minutes > 0 ? `${String(minutes)}m ${String(seconds2)}s` : `${String(seconds2)}s`;
+  return minutes2 > 0 ? `${String(minutes2)}m ${String(seconds2)}s` : `${String(seconds2)}s`;
 }
 function componentLabel(component2) {
   return component2 === "fileIndex" ? "file index" : "semantic code index";
@@ -264331,11 +264772,11 @@ function describe3(status) {
   });
   return `Workspace index \u2014 ${parts.join(", ")}`;
 }
-function buildingChipText(status, elapsedLabel) {
+function buildingChipText(status, elapsedLabel2) {
   const fileBuilding = status.fileIndex.phase === "building";
   const semanticBuilding = status.semantic.phase === "building";
-  if (fileBuilding && !semanticBuilding) return `Building file index\u2026 ${elapsedLabel}`;
-  return `Indexing\u2026 ${elapsedLabel}`;
+  if (fileBuilding && !semanticBuilding) return `Building file index\u2026 ${elapsedLabel2}`;
+  return `Indexing\u2026 ${elapsedLabel2}`;
 }
 function oldestBuildStart(status) {
   const starts = [status.fileIndex, status.semantic].filter((c4) => c4.phase === "building").map((c4) => c4.startedAt).filter((n2) => typeof n2 === "number");
@@ -266719,6 +267160,867 @@ var init_guarded_yolo_control = __esm({
   }
 });
 
+// src/shared/container-acp-agents.ts
+function containerAcpAgentTitles() {
+  return CONTAINER_ACP_AGENTS.map((agent) => findAcpCatalogEntry(agent.id)?.title ?? agent.id);
+}
+var CONTAINER_ACP_AGENTS;
+var init_container_acp_agents = __esm({
+  "src/shared/container-acp-agents.ts"() {
+    init_acp_known_agents();
+    CONTAINER_ACP_AGENTS = [
+      {
+        id: "claude-acp",
+        // Zed's adapter was renamed upstream to this package; a config that still
+        // names it runs under the current binary.
+        aliases: ["claude-code-acp"],
+        npmPackage: "@agentclientprotocol/claude-agent-acp",
+        version: "0.75.1",
+        keyEnv: "ANTHROPIC_API_KEY",
+        keySlug: "anthropic",
+        keyLabel: "Anthropic"
+      },
+      {
+        id: "codex-acp",
+        npmPackage: "@agentclientprotocol/codex-acp",
+        version: "1.10.0",
+        // Codex accepts a platform key under this name; the OpenAI key in Settings
+        // is that key. OPENAI_API_KEY is scrubbed from every agent env by design.
+        keyEnv: "CODEX_API_KEY",
+        keySlug: "openai",
+        keyLabel: "OpenAI",
+        // `codex login` writes the token here and nothing else is needed.
+        loginFiles: [".codex/auth.json"]
+      },
+      {
+        id: "gemini",
+        npmPackage: "@google/gemini-cli",
+        version: "0.58.0",
+        keyEnv: "GEMINI_API_KEY",
+        keySlug: "gemini",
+        keyLabel: "Gemini",
+        // Google sign-in writes the token and the account; settings.json carries
+        // `selectedAuthType`, without which a headless CLI asks how to sign in.
+        loginFiles: [
+          ".gemini/oauth_creds.json",
+          ".gemini/google_accounts.json",
+          ".gemini/settings.json"
+        ]
+      }
+    ];
+  }
+});
+
+// src/renderer/views/container-run-control.ts
+function isLive2(progress2) {
+  return progress2 !== null && progress2.phase !== "finished" && progress2.phase !== "failed";
+}
+function elapsedLabel(run6) {
+  return formatDuration(run6.startedAt, run6.finishedAt ?? Date.now()) + (run6.finishedAt === null ? " so far" : "");
+}
+function formatDuration(from2, to) {
+  const seconds2 = Math.max(0, Math.round((to - from2) / 1e3));
+  if (seconds2 < 90) return `${String(seconds2)}s`;
+  return `${String(Math.round(seconds2 / 60))} min`;
+}
+async function loadRunModelOptions(fetch, availability) {
+  const [all, runnable] = await Promise.all([fetch(), fetch({ includeAgentModels: false })]);
+  const canRun = new Set(
+    runnable.filter((option2) => parseAcpModel(option2.value) === null).map((option2) => option2.value)
+  );
+  const agentRows = all.filter((option2) => !canRun.has(option2.value));
+  const verdicts = agentRows.length > 0 ? await availability(agentRows.map((o3) => o3.value)) : {};
+  return all.map((option2) => {
+    if (canRun.has(option2.value)) return option2;
+    const verdict = Object.hasOwn(verdicts, option2.value) ? verdicts[option2.value] ?? { reason: "not available in a container" } : { reason: "not available in a container" };
+    if (verdict.reason !== null) {
+      return { ...option2, disabled: true, label: `${option2.label} \u2014 ${verdict.reason}` };
+    }
+    return verdict.loginOffered ? {
+      ...option2,
+      label: `${option2.label} \u2014 on your ${verdict.loginOffered.agentTitle} sign-in (opt in)`
+    } : option2;
+  });
+}
+function startBlocker(state4) {
+  if (state4.task.trim().length === 0) return "Describe the task first";
+  if (parseAcpModel(state4.model) === null) return null;
+  if (state4.verdict === void 0) {
+    return state4.rosterLoaded ? `${modelDisplayLabel(state4.model)} is not available in a container` : "Checking whether this agent can run in a container\u2026";
+  }
+  if (state4.verdict.reason !== null) {
+    return `${modelDisplayLabel(state4.model)}: ${state4.verdict.reason}`;
+  }
+  if (state4.verdict.loginOffered && !state4.loginChecked) {
+    return `Tick "Use my ${state4.verdict.loginOffered.agentTitle} sign-in for this run" to start`;
+  }
+  return null;
+}
+function agentModelsNote() {
+  const titles = containerAcpAgentTitles();
+  const named2 = titles.length > 1 ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1] ?? ""}` : titles[0] ?? "";
+  return `Agent models run as their own process. ${named2} can run unattended with an API key from Settings, scoped to the run. Codex and Gemini CLI can also run on your desktop sign-in if you opt in per run; an agent that only signs in through a browser cannot.`;
+}
+function mountContainerRunControl(api3, context, onStateChanged) {
+  const runs = /* @__PURE__ */ new Map();
+  let refreshSequence = 0;
+  let overlay = null;
+  let lastPrompt = "";
+  let modelPicker = null;
+  const text4 = el("span", { class: "container-run-text" });
+  const details = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary container-run-details" },
+    "Details"
+  );
+  const dismiss = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost container-run-dismiss",
+      "aria-label": "Dismiss this container run notice",
+      title: "Dismiss"
+    },
+    "\xD7"
+  );
+  const element3 = el(
+    "div",
+    { class: "container-run-banner", role: "status", "aria-live": "polite", hidden: "" },
+    el("span", { class: "container-run-icon", "aria-hidden": "true" }, "\u25A3"),
+    text4,
+    details,
+    dismiss
+  );
+  const dismissed = /* @__PURE__ */ new Map();
+  dismiss.addEventListener("click", () => {
+    const threadId = context.getActiveThreadId();
+    const run6 = activeRun();
+    if (!threadId || !run6 || isLive2(run6)) return;
+    dismissed.set(threadId, run6.runtimeId);
+    renderBanner();
+  });
+  function activeRun() {
+    const threadId = context.getActiveThreadId();
+    return threadId ? runs.get(threadId) ?? null : null;
+  }
+  function renderBanner() {
+    const run6 = activeRun();
+    const threadId = context.getActiveThreadId();
+    const wavedAway = run6 !== null && threadId !== null && !isLive2(run6) && dismissed.has(threadId) && dismissed.get(threadId) === run6.runtimeId;
+    element3.hidden = run6 === null || wavedAway;
+    dismiss.hidden = run6 === null || isLive2(run6);
+    if (!run6) {
+      text4.textContent = "";
+      delete element3.dataset["phase"];
+      onStateChanged();
+      return;
+    }
+    element3.dataset["phase"] = run6.phase;
+    const result = run6.record?.result;
+    const fetched = run6.record?.carryOut.ref !== null && run6.record?.carryOut.ref !== void 0;
+    const commits = result === void 0 || result === null ? "" : result.commits.length === 0 ? "no commits" : `${String(result.commits.length)} commit${result.commits.length === 1 ? "" : "s"} ${fetched ? "back" : "made but NOT fetched"}`;
+    const summary = run6.phase === "finished" && result ? `${commits}, ${String(result.deferrals.length)} waiting for review.` : run6.phase === "failed" ? run6.error ?? "The run did not complete." : `${run6.model} \xB7 limited to the egress allowlist.`;
+    text4.textContent = `Container run: ${PHASE_LABEL[run6.phase].toLowerCase()}. ${summary}`;
+    onStateChanged();
+  }
+  function ensureDialog6() {
+    if (!overlay) {
+      overlay = createOverlayDialog({
+        id: "container-run-dialog",
+        className: "container-run-dialog"
+      });
+      overlay.dialog.addEventListener("close", stopElapsedClock);
+    }
+    return overlay;
+  }
+  let elapsedTimer = null;
+  function stopElapsedClock() {
+    if (elapsedTimer !== null) clearInterval(elapsedTimer);
+    elapsedTimer = null;
+  }
+  function startElapsedClock(run6) {
+    stopElapsedClock();
+    if (!isLive2(run6)) return;
+    elapsedTimer = setInterval(() => {
+      const cell = overlay?.dialog.querySelector(".container-run-elapsed");
+      if (!cell || !overlay?.isOpen()) {
+        stopElapsedClock();
+        return;
+      }
+      cell.textContent = elapsedLabel(run6);
+    }, 1e3);
+  }
+  function renderDialog() {
+    if (!overlay?.isOpen()) return;
+    const run6 = activeRun();
+    modelPicker?.destroy();
+    modelPicker = null;
+    clear(overlay.dialog);
+    overlay.dialog.append(run6 ? statusView(run6) : armForm());
+    if (run6) startElapsedClock(run6);
+    else stopElapsedClock();
+  }
+  function armForm() {
+    const draft = context.getDraft().trim();
+    const quotesDraft = draft.length > 0;
+    const task = el("textarea", {
+      class: "container-run-prompt",
+      rows: "6",
+      "aria-label": quotesDraft ? "Task the unattended run will carry out" : "Task for the unattended run"
+    });
+    task.value = quotesDraft ? draft : lastPrompt;
+    if (quotesDraft) {
+      task.readOnly = true;
+      task.classList.add("is-readonly");
+    }
+    const modelSelect = el("select", {
+      class: "container-run-model",
+      name: "containerRunModel"
+    });
+    let chosenModel = context.getModel();
+    modelSelect.append(el("option", { value: chosenModel }, modelDisplayLabel(chosenModel)));
+    modelSelect.value = chosenModel;
+    modelSelect.addEventListener("change", () => {
+      chosenModel = modelSelect.value;
+      renderEgressHint();
+      renderLoginOptIn();
+    });
+    const verdicts = /* @__PURE__ */ new Map();
+    const modelField = uiField({ label: "Model", control: modelSelect });
+    const agentNote = el("p", { class: "field-hint container-run-agent-note", hidden: "" });
+    agentNote.textContent = agentModelsNote();
+    modelPicker = mountModelSelectPicker(modelSelect, {
+      loadOptions: async (current) => {
+        const options2 = await loadRunModelOptions(
+          (opts) => fetchModelOptions(api3, current, opts),
+          async (models) => {
+            const answered = await api3.container.modelAvailability(models);
+            for (const [model, verdict] of Object.entries(answered)) verdicts.set(model, verdict);
+            return answered;
+          }
+        );
+        agentNote.hidden = !options2.some(
+          (option2) => option2.disabled === true || parseAcpModel(option2.value) !== null
+        );
+        renderLoginOptIn();
+        return options2;
+      },
+      ariaLabel: "Model for the unattended run",
+      loadOnMount: false
+    });
+    let rosterLoaded = false;
+    void modelPicker.refresh(chosenModel).catch(async (error63) => {
+      console.error("[container-run] could not list models:", error63);
+      if (parseAcpModel(chosenModel) !== null) {
+        const answered = await api3.container.modelAvailability([chosenModel]).catch(() => ({}));
+        for (const [model, verdict] of Object.entries(answered)) verdicts.set(model, verdict);
+      }
+    }).finally(() => {
+      rosterLoaded = true;
+      renderLoginOptIn();
+    });
+    const minutes2 = el("input", {
+      type: "number",
+      class: "container-run-minutes",
+      min: "1",
+      max: "1440",
+      step: "1"
+    });
+    minutes2.value = String(DEFAULT_WALL_CLOCK_MINUTES);
+    const tokens2 = el("input", {
+      type: "number",
+      class: "container-run-tokens",
+      min: "1000",
+      step: "1000"
+    });
+    tokens2.value = String(DEFAULT_TOKEN_CEILING);
+    const egressHint = el("p", { class: "field-hint container-run-model-hint" });
+    function renderEgressHint() {
+      egressHint.textContent = `The container can reach only ${modelDisplayLabel(chosenModel)}'s endpoint; the key is scoped to the run and blanked once the guest holds it.`;
+    }
+    renderEgressHint();
+    const loginOptIn = el("input", {
+      type: "checkbox",
+      class: "container-run-agent-login",
+      name: "containerRunAgentLogin"
+    });
+    const loginLabel = el(
+      "label",
+      { class: "container-run-agent-login-label" },
+      loginOptIn,
+      el("span", { class: "container-run-agent-login-text" })
+    );
+    const loginHint = el("p", { class: "field-hint container-run-agent-login-hint" });
+    const loginField = el(
+      "div",
+      { class: "container-run-agent-login-field", hidden: "" },
+      loginLabel,
+      loginHint
+    );
+    function loginOffer() {
+      return verdicts.get(chosenModel)?.loginOffered ?? null;
+    }
+    function renderLoginOptIn() {
+      const offer = loginOffer();
+      loginField.hidden = offer === null;
+      if (offer === null) {
+        loginOptIn.checked = false;
+      } else {
+        const text5 = loginLabel.querySelector(".container-run-agent-login-text");
+        if (text5) text5.textContent = `Use my ${offer.agentTitle} sign-in for this run`;
+        loginHint.textContent = `${offer.agentTitle} has no API key in Settings. Ticking this copies its sign-in files (only those: no transcripts, no history) into the container's throwaway home for this run and discards them with it. That is your whole account, not a scoped key, and a token refresh inside the run may sign the desktop out. Adding an API key in Settings avoids both.`;
+      }
+      renderStartState();
+    }
+    loginOptIn.addEventListener("change", renderStartState);
+    const installOptIn = el("input", {
+      type: "checkbox",
+      class: "container-run-install",
+      name: "containerRunInstall",
+      checked: ""
+    });
+    const installField = el(
+      "div",
+      { class: "container-run-install-field" },
+      el(
+        "label",
+        { class: "container-run-install-label" },
+        installOptIn,
+        el("span", {}, "Install dependencies before the run")
+      ),
+      el(
+        "p",
+        { class: "field-hint container-run-install-hint" },
+        "Runs the checkout's lockfile install (pnpm or npm) once, before the agent starts, so tests and builds can run. The container can then also reach registry.npmjs.org and GitHub, anonymously \u2014 it holds no GitHub credential. The agent\u2019s own commands stay off the network."
+      )
+    );
+    const start2 = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-primary container-run-start" },
+      "Start unattended run"
+    );
+    const cancel = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary container-run-cancel" },
+      "Cancel"
+    );
+    cancel.addEventListener("click", () => overlay?.close());
+    function renderStartState() {
+      const blocker = startBlocker({
+        task: task.value,
+        model: chosenModel,
+        verdict: verdicts.get(chosenModel),
+        rosterLoaded,
+        loginChecked: loginOptIn.checked
+      });
+      start2.disabled = blocker !== null;
+      start2.title = blocker ?? "";
+    }
+    renderStartState();
+    task.addEventListener("input", renderStartState);
+    start2.addEventListener("click", () => {
+      const threadId = context.getActiveThreadId();
+      const projectId = context.getActiveProjectId();
+      if (!threadId || !projectId) return;
+      const prompt = task.value.trim();
+      if (!prompt) return;
+      lastPrompt = prompt;
+      const wallClockMs = Math.max(1, Number(minutes2.value) || DEFAULT_WALL_CLOCK_MINUTES) * 6e4;
+      const tokenCeiling = Math.max(1e3, Number(tokens2.value) || DEFAULT_TOKEN_CEILING);
+      start2.disabled = true;
+      void startRun({
+        projectId,
+        threadId,
+        prompt,
+        model: chosenModel,
+        budgets: { wallClockMs, tokenCeiling },
+        ...loginOffer() !== null && loginOptIn.checked ? { useAgentLogin: true } : {},
+        installDependencies: installOptIn.checked
+      }).then((started) => {
+        if (!started) start2.disabled = false;
+      });
+    });
+    return el(
+      "div",
+      { class: "container-run-form" },
+      el("h2", { class: "container-run-title" }, "Run this thread unattended in a container"),
+      el(
+        "p",
+        { class: "container-run-intro" },
+        "A disposable container gets a snapshot of the checkout and runs the task with no prompts: anything that stays inside the container runs on its own, anything that would leave it (a push, a publish, a GitHub write) is queued for your review, and the result comes back as commits you can inspect before merging."
+      ),
+      uiField({
+        label: quotesDraft ? "Task (from the composer)" : "Task",
+        control: task,
+        ...quotesDraft ? {} : { hint: "Nothing in the composer to run \u2014 describe the task here." }
+      }),
+      modelField,
+      agentNote,
+      el(
+        "div",
+        { class: "container-run-budgets" },
+        uiField({ label: "Stop after (minutes)", control: minutes2 }),
+        uiField({ label: "Token ceiling", control: tokens2 })
+      ),
+      egressHint,
+      loginField,
+      installField,
+      uiActions(cancel, start2, { className: "container-run-actions" })
+    );
+  }
+  function statusView(run6) {
+    const result = run6.record?.result ?? null;
+    const rows = [];
+    const row2 = (label, value2) => el("div", { class: "container-run-row" }, el("dt", {}, label), el("dd", {}, value2));
+    rows.push(row2("Phase", PHASE_LABEL[run6.phase]));
+    if (run6.prompt) rows.push(row2("Task", run6.prompt));
+    rows.push(row2("Model", run6.model));
+    if (run6.checkout) {
+      rows.push(
+        row2(
+          "Checkout",
+          (run6.checkout.mode === "worktree" ? "thread worktree" : "project checkout") + (run6.checkout.branch ? ` (${run6.checkout.branch})` : "")
+        )
+      );
+    }
+    rows.push(row2("Reachable origins", run6.egressAllowlist.join(", ") || "none"));
+    const held = run6.record?.credential ?? run6.credential;
+    rows.push(
+      row2(
+        "Credential",
+        typeof held === "object" ? `your desktop sign-in, copied in for the run (${held.login.map((d4) => `~/${d4}`).join(", ")})` : held === "key" ? "one API key, scoped to the run" : held === "login" ? "your desktop sign-in, copied in for the run" : "none"
+      )
+    );
+    const elapsedRow = row2("Elapsed", elapsedLabel(run6));
+    elapsedRow.querySelector("dd")?.classList.add("container-run-elapsed");
+    rows.push(elapsedRow);
+    if (run6.record) {
+      rows.push(row2("Image", run6.record.imageDigest?.slice(0, 19) ?? run6.record.image));
+      rows.push(
+        row2(
+          "Containment",
+          [
+            "read-only rootfs, no capabilities",
+            run6.record.attestation.securityProfiles === "default" ? "default seccomp and AppArmor" : null,
+            run6.record.attestation.network === "brokered" ? "brokered egress" : "no network",
+            run6.record.attestation.perCommandNetwork === "token-gated" ? "shell commands off the network" : null
+          ].filter((part) => part !== null).join(", ")
+        )
+      );
+      rows.push(row2("Secret canary", run6.record.secretCanary.present ? "PRESENT" : "absent"));
+      rows.push(row2("Teardown", run6.record.teardown));
+    }
+    if (result) {
+      rows.push(row2("Outcome", result.stopReason));
+      rows.push(
+        row2(
+          "Harness",
+          result.harness === "copse" ? "Copse" : `${findAcpCatalogEntry(result.harness.acp)?.title ?? result.harness.acp} (ACP agent)`
+        )
+      );
+      rows.push(row2("Prompts reached a handler", String(result.promptsAttempted)));
+      rows.push(row2("Effects refused", String(result.denials.length)));
+      rows.push(
+        row2(
+          "Tokens",
+          `${String(result.usage.inputTokens)} in / ${String(result.usage.outputTokens)} out`
+        )
+      );
+      rows.push(
+        row2(
+          "Commits",
+          run6.record?.carryOut.ref ?? (run6.record?.carryOut.expected === true ? `NOT FETCHED \u2014 ${run6.record.carryOut.error ?? "unknown error"}` : "none")
+        )
+      );
+    }
+    if (run6.error) rows.push(row2("Error", run6.error));
+    const sections6 = [
+      el("h2", { class: "container-run-title" }, "Unattended container run"),
+      el("dl", { class: "container-run-summary" }, ...rows)
+    ];
+    if (run6.warnings.length > 0) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-warnings" },
+          el("h3", {}, "Needs your attention"),
+          el("ul", {}, ...run6.warnings.map((warning) => el("li", {}, warning)))
+        )
+      );
+    }
+    if (run6.record && run6.record.egress.length > 0) {
+      const connects = /* @__PURE__ */ new Map();
+      const refusals = [];
+      for (const entry of run6.record.egress) {
+        if (entry.event === "connect")
+          connects.set(entry.origin, (connects.get(entry.origin) ?? 0) + 1);
+        if (entry.event === "refused" || entry.event === "error") {
+          refusals.push(
+            `${entry.origin}: ${entry.event}${entry.detail ? ` \u2014 ${entry.detail}` : ""}`
+          );
+        }
+      }
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-egress" },
+          el("h3", {}, "Egress"),
+          el(
+            "ul",
+            {},
+            ...[...connects].map(
+              ([origin, count2]) => el(
+                "li",
+                { class: "mono" },
+                `${origin} \u2014 ${String(count2)} connection${count2 === 1 ? "" : "s"}`
+              )
+            ),
+            ...[...new Set(refusals)].map(
+              (line2) => el("li", { class: "mono container-run-egress-refused" }, line2)
+            )
+          )
+        )
+      );
+    }
+    if (result && result.deferrals.length > 0) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-deferrals" },
+          el("h3", {}, `Waiting for your review (${String(result.deferrals.length)})`),
+          el(
+            "ul",
+            {},
+            ...result.deferrals.map(
+              (entry) => el(
+                "li",
+                {},
+                el("strong", {}, entry.title),
+                entry.reasons?.length ? ` \u2014 ${entry.reasons.join("; ")}` : ""
+              )
+            )
+          )
+        )
+      );
+    }
+    if (result && result.denials.length > 0) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-denials" },
+          el("h3", {}, `Refused by the container policy (${String(result.denials.length)})`),
+          el(
+            "ul",
+            {},
+            ...result.denials.map(
+              (entry) => el(
+                "li",
+                {},
+                el("strong", {}, entry.subject),
+                entry.reasons.length > 0 ? ` \u2014 ${entry.reasons.join("; ")}` : ""
+              )
+            )
+          )
+        )
+      );
+    }
+    if (result && result.commits.length > 0) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section container-run-commits" },
+          el(
+            "h3",
+            {},
+            run6.record?.carryOut.ref === null || run6.record?.carryOut.ref === void 0 ? "Commits the guest made (not fetched)" : `Commits on ${run6.record.carryOut.ref}`
+          ),
+          el("ul", {}, ...result.commits.map((line2) => el("li", { class: "mono" }, line2)))
+        )
+      );
+    }
+    if (result?.finalText) {
+      sections6.push(
+        el(
+          "section",
+          { class: "container-run-section" },
+          el("h3", {}, "The agent said"),
+          el("p", {}, result.finalText)
+        )
+      );
+    }
+    const log3 = el("pre", { class: "container-run-log" }, run6.log.join("\n"));
+    sections6.push(el("section", { class: "container-run-section" }, el("h3", {}, "Log"), log3));
+    const close2 = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary container-run-close" },
+      "Close"
+    );
+    close2.addEventListener("click", () => overlay?.close());
+    const actions = [close2];
+    if (isLive2(run6)) {
+      const stop5 = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-danger container-run-stop" },
+        "Stop run"
+      );
+      stop5.addEventListener("click", () => {
+        stop5.disabled = true;
+        void api3.container.stopRun(run6.threadId).then((progress2) => {
+          if (progress2) update2(progress2);
+        }).catch((error63) => {
+          stop5.disabled = false;
+          showErrorToast("Could not stop the container run", error63);
+        });
+      });
+      actions.push(stop5);
+      sections6.push(
+        el(
+          "p",
+          { class: "field-hint container-run-close-hint" },
+          "Closing this window does not stop the run; it keeps going until it finishes, hits its budget, or you stop it."
+        )
+      );
+    }
+    if (!isLive2(run6) && run6.record?.carryOut.ref && (result?.commits.length ?? 0) > 0) {
+      const apply5 = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary container-run-apply" },
+        `Apply ${String(result?.commits.length ?? 0)} commit${result?.commits.length === 1 ? "" : "s"} to this checkout`
+      );
+      apply5.addEventListener("click", () => {
+        apply5.disabled = true;
+        void adopt(run6.record?.runtimeId ?? "", null).finally(() => {
+          apply5.disabled = false;
+        });
+      });
+      actions.push(apply5);
+    }
+    if (!isLive2(run6)) {
+      const again = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-primary container-run-again" },
+        "Start another run"
+      );
+      again.addEventListener("click", () => {
+        lastPrompt = run6.prompt;
+        const threadId = context.getActiveThreadId();
+        if (threadId) runs.delete(threadId);
+        renderBanner();
+        renderDialog();
+      });
+      actions.push(again);
+    }
+    sections6.push(uiActions(...actions, { className: "container-run-actions" }));
+    const view = el("div", { class: "container-run-status" }, ...sections6);
+    view.dataset["phase"] = run6.phase;
+    return view;
+  }
+  async function startRun(request) {
+    addMessage(context.store, request.threadId, "user", request.prompt);
+    context.clearDraft();
+    try {
+      const progress2 = await api3.container.runThread(request);
+      update2(progress2);
+      overlay?.close();
+      return true;
+    } catch (error63) {
+      showErrorToast("Could not start the container run", error63);
+      return false;
+    }
+  }
+  const DEFAULT_BUDGETS = {
+    wallClockMs: DEFAULT_WALL_CLOCK_MINUTES * 6e4,
+    tokenCeiling: DEFAULT_TOKEN_CEILING
+  };
+  function latestOnActiveThread() {
+    const threadId = context.getActiveThreadId();
+    const thread = threadId ? getThreadById(context.store, threadId) : void 0;
+    return thread ? latestContainerRun(thread) : null;
+  }
+  function followUpTarget() {
+    const latest = latestOnActiveThread();
+    const live = isLive2(activeRun());
+    if (!latest && !live) {
+      return { available: false, live: false, defaultToContainer: false, runtimeId: null };
+    }
+    return {
+      available: true,
+      live,
+      defaultToContainer: !live && latest !== null && latest.isLastTurn && latest.runtimeId !== null,
+      runtimeId: latest?.runtimeId ?? activeRun()?.runtimeId ?? null
+    };
+  }
+  async function followUp(prompt) {
+    const threadId = context.getActiveThreadId();
+    const projectId = context.getActiveProjectId();
+    if (!threadId || !projectId) return false;
+    if (isLive2(activeRun())) {
+      showToast("The container is still busy with the previous run; wait for it or stop it.", {
+        variant: "error"
+      });
+      return false;
+    }
+    const latest = latestOnActiveThread();
+    if (!latest || latest.runtimeId === null) {
+      showToast("This thread has no container run to continue.", { variant: "error" });
+      return false;
+    }
+    return startRun({
+      projectId,
+      threadId,
+      prompt,
+      model: latest.model,
+      budgets: DEFAULT_BUDGETS,
+      ...latest.credential === "login" ? { useAgentLogin: true } : {},
+      installDependencies: true,
+      continueFrom: latest.runtimeId,
+      continueContext: { prompt: latest.task, report: latest.report ?? "", ref: latest.ref }
+    });
+  }
+  const usageFolded = /* @__PURE__ */ new Set();
+  function settle(progress2) {
+    const thread = getThreadById(context.store, progress2.threadId);
+    const usage = progress2.record?.result?.usage;
+    if (usage && progress2.runtimeId !== null && !usageFolded.has(progress2.runtimeId)) {
+      usageFolded.add(progress2.runtimeId);
+      addUsageDelta(context.store, progress2.threadId, {
+        model: progress2.model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens
+      });
+    }
+    markThreadUnread(context.store, progress2.threadId);
+    void api3.alerts.threadFinished(progress2.threadId, thread?.title ?? "Container run").catch((error63) => {
+      console.error("[container-run] could not signal the finished run:", error63);
+    });
+  }
+  async function adopt(runtimeId, toolCallId) {
+    const threadId = context.getActiveThreadId();
+    const projectId = context.getActiveProjectId();
+    if (!threadId || !projectId || runtimeId.length === 0) return;
+    try {
+      const adoption = await api3.container.adoptRun(projectId, threadId, runtimeId);
+      const run6 = runs.get(threadId);
+      const cardId = toolCallId ?? (run6 && run6.runtimeId === runtimeId ? containerRunToolCallId(run6) : null);
+      if (cardId !== null) noteAdoptionOnCard(context.store, threadId, cardId, adoption);
+      showToast(
+        adoption.applied.length === 0 ? `All ${String(adoption.alreadyApplied)} commit(s) from the run are already in this checkout.` : `Applied ${String(adoption.applied.length)} commit(s) from the run to this checkout.`,
+        { variant: "info", durationMs: 8e3 }
+      );
+    } catch (error63) {
+      showErrorToast("Could not apply the run's commits", error63);
+    }
+  }
+  const onCardAdopt = (event3) => {
+    if (!(event3 instanceof CustomEvent)) return;
+    const detail = event3.detail;
+    if (!isRecord(detail)) return;
+    const runtimeId = detail["runtimeId"];
+    const toolCallId = detail["toolCallId"];
+    if (typeof runtimeId !== "string" || typeof toolCallId !== "string") return;
+    void adopt(runtimeId, toolCallId);
+  };
+  document.addEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt);
+  function update2(progress2) {
+    const previous = runs.get(progress2.threadId);
+    runs.set(progress2.threadId, progress2);
+    syncContainerRunCard(context.store, progress2);
+    if (previous && isLive2(previous) && !isLive2(progress2)) {
+      settle(progress2);
+      const result = progress2.record?.result;
+      if (progress2.phase === "finished" && result) {
+        showToast(
+          `Container run finished: ${String(result.commits.length)} commit(s) back, ${String(result.deferrals.length)} waiting for review.`,
+          { variant: "info", durationMs: 1e4 }
+        );
+      } else {
+        showToast(`Container run failed: ${progress2.error ?? "no result"}`, {
+          variant: "error",
+          durationMs: 1e4
+        });
+      }
+    }
+    if (progress2.threadId === context.getActiveThreadId()) {
+      renderBanner();
+      renderDialog();
+    }
+  }
+  function refresh() {
+    const threadId = context.getActiveThreadId();
+    const sequence = ++refreshSequence;
+    if (!threadId) {
+      renderBanner();
+      return;
+    }
+    void api3.container.getRun(threadId).then((progress2) => {
+      if (sequence !== refreshSequence) return;
+      if (progress2) {
+        runs.set(threadId, progress2);
+        syncContainerRunCard(context.store, progress2);
+      }
+      renderBanner();
+      renderDialog();
+    }).catch((error63) => {
+      showErrorToast("Could not read the container run", error63);
+    });
+  }
+  function open3() {
+    if (!context.getActiveThreadId()) return;
+    const dialog2 = ensureDialog6();
+    dialog2.open();
+    renderDialog();
+  }
+  details.addEventListener("click", open3);
+  const unsubscribe = api3.container.onRunChanged(update2);
+  refresh();
+  return {
+    element: element3,
+    menuLabel: () => isLive2(activeRun()) ? "Show container run" : "Run unattended in a container\u2026",
+    open: open3,
+    refresh,
+    followUpTarget,
+    followUp,
+    destroy: () => {
+      unsubscribe();
+      document.removeEventListener(CONTAINER_RUN_ADOPT_EVENT, onCardAdopt);
+      stopElapsedClock();
+      modelPicker?.destroy();
+      modelPicker = null;
+      overlay?.dialog.remove();
+      overlay = null;
+    }
+  };
+}
+var DEFAULT_WALL_CLOCK_MINUTES, DEFAULT_TOKEN_CEILING, PHASE_LABEL;
+var init_container_run_control = __esm({
+  "src/renderer/views/container-run-control.ts"() {
+    init_unknown_value3();
+    init_container_run_card();
+    init_thread_helpers();
+    init_acp();
+    init_acp_known_agents();
+    init_container_acp_agents();
+    init_helpers();
+    init_ui();
+    init_model_options();
+    init_model_picker();
+    init_dialog_shell();
+    init_toast();
+    DEFAULT_WALL_CLOCK_MINUTES = 120;
+    DEFAULT_TOKEN_CEILING = 2e6;
+    PHASE_LABEL = {
+      preparing: "Preparing",
+      "building-image": "Building the worker image",
+      starting: "Starting the container",
+      installing: "Installing dependencies",
+      running: "Running unattended",
+      collecting: "Collecting the result",
+      finished: "Finished",
+      failed: "Failed"
+    };
+  }
+});
+
 // src/renderer/controller/model-selection.ts
 function commitThreadModelSelection(store3, api3, threadId, by, from2, to) {
   if (from2 === to) return;
@@ -266796,7 +268098,15 @@ function mountInputBar(root4, store3, api3, opts = {}) {
       "attach-btn-icon"
     )
   );
-  const submitRow = el("div", { class: "submit-row" }, stopBtn, submitBtn);
+  const targetSelect = el("select", {
+    class: "composer-target",
+    "aria-label": "Send this message to",
+    hidden: ""
+  });
+  const targetContainer = el("option", { value: "container" }, "To container");
+  const targetThread = el("option", { value: "thread" }, "To thread");
+  targetSelect.append(targetContainer, targetThread);
+  const submitRow = el("div", { class: "submit-row" }, targetSelect, stopBtn, submitBtn);
   const inputRow = el("div", { class: "input-row" }, composer.el, attachBtn, fileInput, submitRow);
   const branchWarningText = el("span", { class: "composer-branch-warning-text" });
   const checkoutBranchBtn = el(
@@ -266869,6 +268179,37 @@ function mountInputBar(root4, store3, api3, opts = {}) {
   const guardedYolo = mountGuardedYoloControl(api3, getActiveThreadId, () => {
     footerOverflow?.update();
   });
+  let containerRunMounted = false;
+  let containerRunsEnabled = false;
+  const refreshContainerRunsSetting = async () => {
+    const enabled = await api3.settings.get("containerRunsEnabled").catch(() => void 0);
+    const next3 = enabled === true;
+    if (next3 === containerRunsEnabled) return;
+    containerRunsEnabled = next3;
+    footerOverflow?.update();
+    updateTargetPicker();
+  };
+  let targetDefaultKey = null;
+  const containerRun = mountContainerRunControl(
+    api3,
+    {
+      store: store3,
+      getActiveThreadId,
+      getActiveProjectId: () => store3.getState().activeProjectId,
+      getModel: footerChatModel,
+      getDraft: () => composer.value,
+      clearDraft: () => {
+        composer.clear();
+      }
+    },
+    () => {
+      footerOverflow?.update();
+      updateTargetPicker();
+    }
+  );
+  containerRunMounted = true;
+  updateTargetPicker();
+  void refreshContainerRunsSetting();
   const footer = el("div", { class: "input-footer" });
   const modelHost = el("div", { class: "footer-model-host" });
   const checkoutHost = el("div", { class: "footer-checkout-host" });
@@ -266910,6 +268251,11 @@ function mountInputBar(root4, store3, api3, opts = {}) {
       label: guardedYolo.menuLabel,
       hidden: () => !getActiveThreadId(),
       onClick: guardedYolo.toggle
+    },
+    {
+      label: containerRun.menuLabel,
+      hidden: () => !containerRunsEnabled || !getActiveThreadId(),
+      onClick: containerRun.open
     },
     {
       label: "Copy thread ID",
@@ -267087,6 +268433,7 @@ function mountInputBar(root4, store3, api3, opts = {}) {
   );
   root4.append(
     guardedYolo.element,
+    containerRun.element,
     branchWarning,
     checkoutError,
     imageCompatibilityWarning,
@@ -267476,9 +268823,28 @@ ${description}
     stopPendingThreadId = null;
     stopBtn.classList.remove("stop-pending");
   }
+  function updateTargetPicker() {
+    if (!containerRunMounted) return;
+    if (!containerRunsEnabled) {
+      targetSelect.hidden = true;
+      return;
+    }
+    const target = containerRun.followUpTarget();
+    targetSelect.hidden = !target.available;
+    if (!target.available) return;
+    targetContainer.disabled = target.live;
+    targetContainer.textContent = target.live ? "To container (busy)" : "To container";
+    const key = `${getActiveThreadId() ?? ""}\0${target.runtimeId ?? ""}\0${target.live ? "live" : "settled"}`;
+    if (key !== targetDefaultKey) {
+      targetDefaultKey = key;
+      targetSelect.value = target.defaultToContainer ? "container" : "thread";
+    }
+    if (target.live && targetSelect.value === "container") targetSelect.value = "thread";
+  }
   function updateState() {
     const running = isRunning();
     stopBtn.hidden = !running;
+    updateTargetPicker();
     submitBtn.textContent = running ? "Queue" : "Send";
     submitBtn.setAttribute("aria-label", running ? "Queue message" : "Send message");
     submitBtn.classList.toggle("with-stop", running);
@@ -267796,6 +269162,12 @@ ${description}
     if (!id39) return;
     const projectId = store3.getState().activeProjectId;
     if (!projectId) return;
+    if (!targetSelect.hidden && targetSelect.value === "container") {
+      if (!rawText) return;
+      const started = await containerRun.followUp(rawText);
+      if (started) updateState();
+      return;
+    }
     if (attachedImages.length > 0) {
       const incompatibility = await incompatibleImageModel();
       if (incompatibility) {
@@ -268339,6 +269711,7 @@ ${description}
     store3.on("threads_changed", () => {
       syncComposerThread();
       guardedYolo.refresh();
+      containerRun.refresh();
       hideBranchMismatch();
       updateState();
       updateFooter();
@@ -268351,6 +269724,7 @@ ${description}
       if (tid === getActiveThreadId()) updateFooter();
     }),
     store3.on("settings_changed", () => {
+      void refreshContainerRunsSetting();
       modelPicker.refresh();
       refreshModelPricing();
       updateFooter();
@@ -268418,6 +269792,7 @@ ${description}
       modelPicker.destroy();
       footerOverflow.destroy();
       guardedYolo.destroy();
+      containerRun.destroy();
       footerCompact.destroy();
       portraitPanelControls.destroy();
       branchControl.destroy();
@@ -268472,6 +269847,7 @@ var init_input_bar = __esm({
     init_composer_draft_autosave();
     init_panel_mode_controls();
     init_guarded_yolo_control();
+    init_container_run_control();
     init_active_thread_owner();
     init_unknown_value3();
     init_acp();
