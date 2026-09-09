@@ -1084,6 +1084,60 @@ describe('container task supervision', () => {
     assert.equal(JSON.stringify(task).includes('sk-ant-test'), false)
   })
 
+  it('does not clear a newer run stop controller while saving the previous outcome', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
+    t.after(() => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    initRepo(root)
+    let releaseSave = (): void => {}
+    const saving = new Promise<void>((resolve) => {
+      releaseSave = resolve
+    })
+    let releaseImage = (): void => {}
+    const image = new Promise<void>((resolve) => {
+      releaseImage = resolve
+    })
+    t.after(() => {
+      releaseSave()
+      releaseImage()
+    })
+    const store = new FileSupervisedTaskStore({ COPSE_WORKSPACE_DIR: join(root, 'tasks') })
+    const save = store.saveTransition.bind(store)
+    store.saveTransition = async (task, audit): Promise<void> => {
+      if (task.state === 'completed') await saving
+      await save(task, audit)
+    }
+    const supervisor = new TaskSupervisor({ store })
+    t.after(() => supervisor.shutdown())
+    let builds = 0,
+      runs = 0
+    const service = supervisedService(
+      root,
+      () => {
+        builds += 1
+        return builds === 1 ? Promise.resolve() : image
+      },
+      () => {
+        runs += 1
+        return Promise.resolve(fakeRecord(THREAD))
+      },
+    )
+    t.after(service.installSupervisor(supervisor))
+    await service.start(supervisedRequest())
+    await waitFor(service, THREAD, (p) => p.phase === 'finished')
+    await service.start(supervisedRequest())
+    await waitFor(service, THREAD, (p) => p.phase === 'building-image')
+    releaseSave()
+    await waitForTask(supervisor, 'completed')
+    // Allow the old drive's finally block to finish after its durable transition.
+    await new Promise((resolve) => setImmediate(resolve))
+    await service.stop(THREAD)
+    releaseImage()
+    await waitFor(service, THREAD, (p) => p.phase === 'failed')
+    assert.equal(runs, 1, 'the second run must remain cancelled before Docker starts')
+  })
+
   it('records image preparation failure on the same durable task', async (t) => {
     const root = mkdtempSync(join(tmpdir(), 'container-supervisor-'))
     t.after(() => {

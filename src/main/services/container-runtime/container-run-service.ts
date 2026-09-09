@@ -585,7 +585,9 @@ export class ContainerRunService {
           console.error('[container-run] Could not settle supervised task:', error)
         }
       }
-      this.stopSignals.delete(request.threadId)
+      if (this.stopSignals.get(request.threadId) === stopSignal) {
+        this.stopSignals.delete(request.threadId)
+      }
       for (const listener of this.settledListeners) listener(request.projectId, snapshot(progress))
     }
   }
