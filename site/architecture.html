@@ -3336,10 +3336,12 @@
 
           // With the SVG laid out, shrink any node label that overflows its box.
           const shrink = (textEl, maxWidth) => {
+            // Leave one pixel for font-size rounding and optical font metrics.
+            const targetWidth = maxWidth - 1
             const length = textEl.getComputedTextLength()
-            if (length > maxWidth) {
+            if (length > targetWidth) {
               const current = parseFloat(getComputedStyle(textEl).fontSize) || 12
-              textEl.style.fontSize = `${Math.max(8, (current * maxWidth) / length)}px`
+              textEl.style.fontSize = `${Math.max(8, (current * targetWidth) / length)}px`
             }
           }
           labelFits.forEach(({ node, titleText, subText }) => {
@@ -3468,6 +3470,9 @@
 
         renderLegend()
         renderAll()
+        // Initial layout may use fallback metrics. Refit the diagram once the
+        // webfont settles, preserving the currently selected view and node.
+        document.fonts.ready.then(() => renderDiagram())
       })()
     </script>
   </body>
