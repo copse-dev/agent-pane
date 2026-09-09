@@ -56990,7 +56990,7 @@ function mountSettingsDialog(store3, api3) {
             </label>
             <p class="field-hint storage-project-path" id="storage-project-path"></p>
 
-            <fieldset>
+            <fieldset class="sources-worktrees-fieldset">
               <legend>Worktrees</legend>
               <p class="settings-fieldset-desc">
                 Linked Git checkouts of this project. Copse creates one per isolated thread so
@@ -56999,6 +56999,14 @@ function mountSettingsDialog(store3, api3) {
                 terminal there, remove ignored package-manager directories, or delete the whole
                 checkout. Deleting one also removes its branch when the branch is fully merged.
               </p>
+              <div id="sources-worktrees-selection" class="sources-worktrees-selection" hidden>
+                <label><input id="sources-worktrees-select-all" type="checkbox"> Select all</label>
+                <span id="sources-worktrees-selected-count" aria-live="polite"></span>
+                <div id="sources-worktrees-bulk-actions" hidden>
+                  <button type="button" id="sources-worktrees-cleanup" class="sources-worktree-action-btn">Clean up\u2026</button>
+                  <button type="button" id="sources-worktrees-delete" class="sources-worktree-action-btn sources-worktree-delete-btn">Delete</button>
+                </div>
+              </div>
               <div id="sources-worktrees-list" class="sources-group">
                 <span class="sources-empty">Loading\u2026</span>
               </div>
@@ -57900,7 +57908,7 @@ function mountSettingsDialog(store3, api3) {
     if (entry.changedCount !== null && entry.changedCount > 0) {
       extraBadges.push({
         text: `${String(entry.changedCount)} uncommitted`,
-        className: "sources-badge-warning"
+        className: "sources-badge-warning sources-worktree-changes"
       });
     }
     if (entry.merged === false) {
@@ -57919,6 +57927,17 @@ function mountSettingsDialog(store3, api3) {
       hoverDetail: entry.path
     });
     row2.dataset["worktreePath"] = entry.path;
+    const select = document.createElement("input");
+    select.type = "checkbox";
+    select.className = "sources-worktree-select";
+    select.setAttribute("aria-label", `Select worktree ${entry.branch ?? entry.path}`);
+    select.disabled = Boolean(entry.usage?.running);
+    select.addEventListener("change", () => {
+      if (select.checked) selectedWorktrees.add(entry.path);
+      else selectedWorktrees.delete(entry.path);
+      syncWorktreeSelection();
+    });
+    row2.querySelector(".sources-row-header")?.prepend(select);
     if (entry.usage) {
       const usage = entry.usage;
       const badgeEl = row2.querySelector(".sources-badge");
@@ -57960,7 +57979,7 @@ function mountSettingsDialog(store3, api3) {
       cleanupBtn.title = "Remove ignored package-manager directories from this checkout";
     }
     cleanupBtn.addEventListener("click", () => {
-      void cleanupWorktreePackages(projectId, entry, cleanupBtn);
+      void runWorktreeAction(() => cleanupWorktreePackages(projectId, [entry]));
     });
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
@@ -57973,7 +57992,7 @@ function mountSettingsDialog(store3, api3) {
       removeBtn.title = "Remove this linked checkout from disk";
     }
     removeBtn.addEventListener("click", () => {
-      void removeWorktree(projectId, entry, removeBtn);
+      void runWorktreeAction(() => removeWorktree(projectId, entry));
     });
     row2.querySelector(".sources-row-header")?.append(terminalBtn, cleanupBtn, removeBtn);
     return { row: row2, size: size4 };
@@ -57991,66 +58010,106 @@ function mountSettingsDialog(store3, api3) {
       button.disabled = false;
     }
   }
-  async function cleanupWorktreePackages(projectId, entry, button) {
+  async function cleanupWorktreePackages(projectId, entries2) {
     const statusEl = qsRequired(overlay, "#sources-worktrees-status");
-    button.disabled = true;
+    const previews2 = [];
+    const problems = [];
     statusEl.textContent = "Looking for package directories\u2026";
-    try {
-      const preview = await api3.worktrees.cleanupPackages(projectId, entry.path, false);
-      if (preview.status === "blocked-running") {
-        statusEl.textContent = "That worktree has an agent turn running in it.";
-        return;
+    for (const entry of entries2) {
+      try {
+        const preview = await api3.worktrees.cleanupPackages(projectId, entry.path, false);
+        if (preview.status === "blocked-running") {
+          problems.push(`${entry.branch ?? entry.path}: an agent turn is running.`);
+        } else if (preview.directories.length > 0) {
+          previews2.push({ entry, preview });
+        }
+      } catch (error63) {
+        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error63)}`);
       }
-      if (preview.directories.length === 0) {
-        statusEl.textContent = "No ignored package-manager directories found.";
-        return;
-      }
-      const size4 = preview.truncated ? `at least ${formatByteSize(preview.bytes)}` : formatByteSize(preview.bytes);
-      const shown = preview.directories.slice(0, 12);
-      const remaining = preview.directories.length - shown.length;
-      const confirmed = await showConfirmDialog({
-        message: `Remove ${String(preview.directories.length)} package director${preview.directories.length === 1 ? "y" : "ies"}?`,
-        detail: [
-          ...shown.map((directory) => directory.path),
-          ...remaining > 0 ? [`\u2026and ${String(remaining)} more`] : [],
-          "",
-          `This will reclaim ${size4}. Your package manager can recreate these directories.`
-        ].join("\n"),
-        confirmLabel: "Clean up",
-        danger: true
-      });
-      if (!confirmed) {
-        statusEl.textContent = "Kept.";
-        return;
-      }
-      statusEl.textContent = "Cleaning up package directories\u2026";
-      const result = await api3.worktrees.cleanupPackages(projectId, entry.path, true);
-      if (result.status === "blocked-running") {
-        statusEl.textContent = "That worktree has an agent turn running in it.";
-        return;
-      }
-      const reclaimed = result.truncated ? `at least ${formatByteSize(result.bytes)}` : formatByteSize(result.bytes);
-      await refreshWorktrees(
-        `Cleaned up ${String(result.directories.length)} directories (${reclaimed}).`
-      );
-    } catch (error63) {
-      statusEl.textContent = errorMessage(error63);
-    } finally {
-      if (button.isConnected) button.disabled = false;
     }
+    if (previews2.length === 0) {
+      statusEl.textContent = problems.join("\n") || "No ignored package-manager directories found.";
+      return;
+    }
+    const directories = previews2.flatMap(
+      ({ entry, preview }) => preview.directories.map(
+        (directory) => entries2.length === 1 ? directory.path : `${entry.branch ?? entry.path}: ${directory.path}`
+      )
+    );
+    const bytes = previews2.reduce((total, { preview }) => total + preview.bytes, 0);
+    const size4 = `${previews2.some(({ preview }) => preview.truncated) ? "at least " : ""}${formatByteSize(bytes)}`;
+    const shown = directories.slice(0, 12);
+    const confirmed = await showConfirmDialog({
+      message: `Remove ${String(directories.length)} package director${directories.length === 1 ? "y" : "ies"}${entries2.length > 1 ? ` from ${String(previews2.length)} worktree${previews2.length === 1 ? "" : "s"}` : ""}?`,
+      detail: [
+        ...shown,
+        ...directories.length > shown.length ? [`\u2026and ${String(directories.length - shown.length)} more`] : [],
+        "",
+        `This will reclaim ${size4}. Your package manager can recreate these directories.`,
+        ...problems
+      ].join("\n"),
+      confirmLabel: "Clean up",
+      danger: true
+    });
+    if (!confirmed) {
+      statusEl.textContent = "Kept.";
+      return;
+    }
+    let cleaned = 0;
+    let reclaimed = 0;
+    let truncated = false;
+    for (const { entry } of previews2) {
+      statusEl.textContent = `Cleaning up ${entry.branch ?? entry.path}\u2026`;
+      try {
+        const result = await api3.worktrees.cleanupPackages(projectId, entry.path, true);
+        if (result.status === "blocked-running") {
+          problems.push(`${entry.branch ?? entry.path}: an agent turn is running.`);
+          continue;
+        }
+        cleaned += result.directories.length;
+        reclaimed += result.bytes;
+        truncated ||= result.truncated;
+        selectedWorktrees.delete(entry.path);
+        const target = worktreeRows.get(entry.path);
+        if (target) {
+          if (result.changedCount !== void 0) {
+            entry.changedCount = result.changedCount;
+            target.row.querySelector(".sources-worktree-changes")?.remove();
+            if (result.changedCount !== null && result.changedCount > 0) {
+              const badge = document.createElement("span");
+              badge.className = "sources-badge sources-badge-warning sources-worktree-changes";
+              badge.textContent = `${String(result.changedCount)} uncommitted`;
+              target.row.querySelector(".sources-worktree-terminal-btn")?.before(badge);
+            }
+          }
+          await fillWorktreeSizes(projectId, [target]);
+        }
+      } catch (error63) {
+        problems.push(`${entry.branch ?? entry.path}: ${errorMessage(error63)}`);
+      }
+    }
+    statusEl.textContent = [
+      `Cleaned up ${String(cleaned)} directories (${truncated ? "at least " : ""}${formatByteSize(reclaimed)}).`,
+      ...problems
+    ].join("\n");
   }
+  const worktreeSizeRequests = /* @__PURE__ */ new WeakMap();
   async function fillWorktreeSizes(projectId, targets) {
     for (const target of targets) {
       if (!target.size.isConnected) continue;
+      const request = (worktreeSizeRequests.get(target.size) ?? 0) + 1;
+      worktreeSizeRequests.set(target.size, request);
       try {
         const size4 = await api3.worktrees.size(projectId, target.entry.path);
+        if (worktreeSizeRequests.get(target.size) !== request) continue;
         target.size.textContent = size4.truncated ? `over ${formatByteSize(size4.bytes)}` : formatByteSize(size4.bytes);
       } catch {
+        if (worktreeSizeRequests.get(target.size) !== request) continue;
         target.size.textContent = "size unavailable";
       }
     }
   }
-  async function removeWorktree(projectId, entry, button) {
+  async function removeWorktree(projectId, entry, alreadyConfirmed = false) {
     const statusEl = qsRequired(overlay, "#sources-worktrees-status");
     const name = entry.branch ?? entry.path;
     const consequences = [entry.path];
@@ -58060,14 +58119,13 @@ function mountSettingsDialog(store3, api3) {
     if (entry.merged === false && entry.branch) {
       consequences.push(`Branch ${entry.branch} has unmerged commits and will be kept.`);
     }
-    const confirmed = await showConfirmDialog({
+    const confirmed = alreadyConfirmed || await showConfirmDialog({
       message: `Delete worktree ${name}?`,
       detail: consequences.join("\n"),
       confirmLabel: "Delete",
       danger: true
     });
     if (!confirmed) return;
-    button.disabled = true;
     statusEl.textContent = "Deleting\u2026";
     try {
       let result = await api3.worktrees.remove(projectId, entry.path, false);
@@ -58076,35 +58134,126 @@ function mountSettingsDialog(store3, api3) {
         const rest = result.changed.length - shown.length;
         const forced = await showConfirmDialog({
           message: `Discard ${String(result.changed.length)} uncommitted file${result.changed.length === 1 ? "" : "s"}?`,
-          detail: [...shown, ...rest > 0 ? [`\u2026and ${String(rest)} more`] : []].join("\n"),
+          detail: [name, ...shown, ...rest > 0 ? [`\u2026and ${String(rest)} more`] : []].join("\n"),
           confirmLabel: "Delete anyway",
           danger: true
         });
         if (!forced) {
           statusEl.textContent = "Kept.";
-          button.disabled = false;
           return;
         }
         result = await api3.worktrees.remove(projectId, entry.path, true);
       }
       if (result.status === "blocked-running") {
         statusEl.textContent = "That worktree has an agent turn running in it.";
-        button.disabled = false;
         return;
       }
       if (result.status === "blocked-dirty") {
         statusEl.textContent = "Git still reports uncommitted work in that worktree.";
-        button.disabled = false;
         return;
       }
-      await refreshWorktrees(
-        result.branchDeleted ? `Deleted ${name} and its branch.` : `Deleted ${name}.`
-      );
+      worktreeRows.get(entry.path)?.row.remove();
+      worktreeRows.delete(entry.path);
+      selectedWorktrees.delete(entry.path);
+      if (worktreeRows.size === 0) {
+        fillSourceList(
+          "#sources-worktrees-list",
+          [],
+          "No worktrees. Copse creates one when a thread runs in its own checkout."
+        );
+      }
+      statusEl.textContent = result.branchDeleted ? `Deleted ${name} and its branch.` : `Deleted ${name}.`;
     } catch (error63) {
       statusEl.textContent = errorMessage(error63);
-      button.disabled = false;
     }
   }
+  const worktreeRows = /* @__PURE__ */ new Map();
+  const selectedWorktrees = /* @__PURE__ */ new Set();
+  let worktreeActionRunning = false;
+  function syncWorktreeSelection() {
+    const eligible = [...worktreeRows.values()].filter(({ entry }) => !entry.usage?.running);
+    qsRequired(overlay, "#sources-worktrees-selection").hidden = worktreeRows.size === 0;
+    const all = qsRequired(overlay, "#sources-worktrees-select-all");
+    all.checked = eligible.length > 0 && selectedWorktrees.size === eligible.length;
+    all.indeterminate = selectedWorktrees.size > 0 && !all.checked;
+    all.disabled = worktreeActionRunning || eligible.length === 0;
+    qsRequired(overlay, "#sources-worktrees-selected-count").textContent = selectedWorktrees.size > 0 ? `${String(selectedWorktrees.size)} selected` : "";
+    qsRequired(overlay, "#sources-worktrees-bulk-actions").hidden = selectedWorktrees.size === 0;
+    for (const { entry, row: row2 } of worktreeRows.values()) {
+      const checkbox = qsRequired(row2, ".sources-worktree-select");
+      checkbox.checked = selectedWorktrees.has(entry.path);
+      checkbox.disabled = worktreeActionRunning || Boolean(entry.usage?.running);
+      for (const button of row2.querySelectorAll(
+        ".sources-worktree-cleanup-btn, .sources-worktree-delete-btn"
+      )) {
+        button.disabled = checkbox.disabled;
+      }
+    }
+    for (const id39 of ["#sources-worktrees-cleanup", "#sources-worktrees-delete"]) {
+      qsRequired(overlay, id39).disabled = worktreeActionRunning;
+    }
+    qsRequired(overlay, "#storage-project-select").disabled = worktreeActionRunning || storageProjectId === null;
+  }
+  async function runWorktreeAction(action) {
+    if (worktreeActionRunning) return;
+    worktreeActionRunning = true;
+    syncWorktreeSelection();
+    try {
+      await action();
+    } finally {
+      worktreeActionRunning = false;
+      syncWorktreeSelection();
+    }
+  }
+  qsRequired(overlay, "#sources-worktrees-select-all").addEventListener(
+    "change",
+    (event3) => {
+      if (!(event3.target instanceof HTMLInputElement)) return;
+      selectedWorktrees.clear();
+      if (event3.target.checked) {
+        for (const { entry } of worktreeRows.values()) {
+          if (!entry.usage?.running) selectedWorktrees.add(entry.path);
+        }
+      }
+      syncWorktreeSelection();
+    }
+  );
+  qsRequired(overlay, "#sources-worktrees-cleanup").addEventListener("click", () => {
+    const projectId = storageProjectId;
+    if (!projectId) return;
+    const entries2 = [...worktreeRows.values()].filter(({ entry }) => selectedWorktrees.has(entry.path)).map(({ entry }) => entry);
+    if (entries2.length > 0)
+      void runWorktreeAction(() => cleanupWorktreePackages(projectId, entries2));
+  });
+  qsRequired(overlay, "#sources-worktrees-delete").addEventListener("click", () => {
+    const projectId = storageProjectId;
+    if (!projectId) return;
+    const targets = [...worktreeRows.values()].filter(
+      ({ entry }) => selectedWorktrees.has(entry.path)
+    );
+    if (targets.length === 0) return;
+    void runWorktreeAction(async () => {
+      const confirmed = await showConfirmDialog({
+        message: `Delete ${String(targets.length)} worktree${targets.length === 1 ? "" : "s"}?`,
+        detail: [
+          ...targets.map(({ entry }) => entry.path),
+          "",
+          "Linked threads will continue in the project checkout. Fully merged branches will be deleted; unmerged branches will be kept.",
+          "Worktrees with uncommitted files require a separate confirmation."
+        ].join("\n"),
+        confirmLabel: "Delete",
+        danger: true
+      });
+      if (!confirmed) return;
+      const outcomes = [];
+      const statusEl = qsRequired(overlay, "#sources-worktrees-status");
+      for (const { entry } of targets) {
+        await removeWorktree(projectId, entry, true);
+        outcomes.push(`${entry.branch ?? entry.path}: ${statusEl.textContent}`);
+      }
+      statusEl.textContent = outcomes.join("\n");
+    });
+  });
   let storageProjectId = null;
   let worktreeRefreshGeneration = 0;
   function syncStorageProjectSelect(preferActiveProject = false) {
@@ -58130,8 +58279,13 @@ function mountSettingsDialog(store3, api3) {
     return storageProjectId;
   }
   async function refreshWorktrees(status = "", preferActiveProject = false) {
+    if (worktreeActionRunning) return;
     const statusEl = qsRequired(overlay, "#sources-worktrees-status");
     const projectId = syncStorageProjectSelect(preferActiveProject);
+    worktreeRows.clear();
+    selectedWorktrees.clear();
+    fillSourceList("#sources-worktrees-list", [], "Loading\u2026");
+    syncWorktreeSelection();
     const generation = ++worktreeRefreshGeneration;
     if (!projectId) {
       fillSourceList("#sources-worktrees-list", [], "Open a project to see its worktrees.");
@@ -58147,6 +58301,8 @@ function mountSettingsDialog(store3, api3) {
         rendered.map((item) => item.row),
         "No worktrees. Copse creates one when a thread runs in its own checkout."
       );
+      for (const target of rendered) worktreeRows.set(target.entry.path, target);
+      syncWorktreeSelection();
       statusEl.textContent = status;
       await fillWorktreeSizes(projectId, rendered);
     } catch (error63) {
