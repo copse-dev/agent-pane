@@ -1,11 +1,13 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { MAX_VIDEO_BYTES } from '@shared/video/video-media.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { describeWorkspaceVideo, storeVideoAttachment } from './video-attachment-store.ts'
+
+import { storeArchiveAttachment } from '../archive/archive-attachment-store.ts'
 
 const BYTES = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7])
 
@@ -45,6 +47,21 @@ describe('video attachment store', () => {
     assert.ok(ref.path.includes(join('proj', 'thread-1', 'blobs', 'media')))
     assert.deepEqual(new Uint8Array(await readFile(ref.path)), BYTES)
   })
+
+  for (const extension of ['.mov', '.zip']) {
+    it(`preserves ${extension} when a dropped filename exceeds the storage limit`, async () => {
+      const name = 'screen-recording-'.repeat(10) + extension
+      const input = { name, mimeType: 'video/quicktime', bytes: BYTES }
+      const ref =
+        extension === '.zip'
+          ? storeArchiveAttachment('proj', 'thread-1', input)
+          : storeVideoAttachment('proj', 'thread-1', input)
+      assert.equal(ref.name, name)
+      assert.ok(ref.path.endsWith(extension))
+      assert.ok(basename(ref.path).length <= 36 + 1 + 80)
+      assert.deepEqual(new Uint8Array(await readFile(ref.path)), BYTES)
+    })
+  }
 
   it('keeps the original name legible but strips anything path-like', () => {
     const ref = storeVideoAttachment('proj', 'thread-1', {
