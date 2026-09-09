@@ -138,6 +138,7 @@ export const supervisedTaskArchiveSchema = z.object({
   projectId: z.string().min(1),
   threadId: z.string().min(1),
   handler: z.string().min(1),
+  contentHash: z.string().min(1).optional(),
   provenance: taskProvenanceSchema,
   state: z.enum(TASK_TERMINAL_STATES),
   createdAt: z.number().int(),
