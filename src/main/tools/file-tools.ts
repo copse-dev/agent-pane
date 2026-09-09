@@ -10,7 +10,6 @@ import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { getIndex } from '../services/search/file-index.ts'
-import micromatch from 'micromatch'
 import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
 import { readTextLineRangeFromUtf8Content } from '../services/read-text-file.ts'
 import { buildReadFilePageMeta, formatReadFilePageFooter } from '@copse/agent/read-file-page.ts'
@@ -137,8 +136,8 @@ export const listDirTool = defineTool({
       const idx = getIndex(root)
       let paths: string[]
       if (idx) {
-        const glob = path && path !== '.' ? `${path.replace(/\/$/, '')}/**` : '**'
-        const matched = micromatch(idx.paths, glob)
+        const directory = (await toRelativePathWithinRoot(absPath, root)).replaceAll('\\', '/')
+        const matched = idx.paths.filter((p) => directory === '.' || p.startsWith(`${directory}/`))
         paths = (
           await Promise.all(
             matched.map(async (p) =>
