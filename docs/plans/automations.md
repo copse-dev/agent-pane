@@ -91,6 +91,30 @@ ingress waits for the detached worker/control-plane phase.
 
 ## Pack boundary
 
+### Integrated editor
+
+The side cog opens a menu with **Automations** and **New automation…**. The
+adjacent Settings label remains a direct shortcut. Both menu actions mount the
+same project-scoped editor used in Settings in a native modal, with an explicit
+plugin enable/disable action. Changing enablement preserves an unsaved draft.
+Sidebar automation setup links use this modal too; the modal closes if the active
+project changes. No second store, scheduler, or form is introduced.
+
+The first-party plugin declares `automation-manager` in the level-3 `app-dialog`
+slot. The host only exposes this shipped view when the matching first-party
+declaration is present. Like Settings, configuration is reachable while disabled;
+the plugin flag continues to gate scheduled execution and Run now.
+
+Acceptance criteria:
+
+- The side cog opens the automation list or a new automation form without opening Settings.
+- Settings and the modal edit the same project-owned schedules using the same editor.
+- Plugin enablement preserves an unsaved draft; disabled plugins cannot run automations.
+- Sidebar setup links open the named schedule in the modal, and project changes close it.
+- Focused Electron coverage saves cog-menu, creation, and management screenshots.
+
+### Ownership
+
 `copse.automations` is a default-off first-party pack. The pack owns atomic
 enablement, a level-3 `settings-pack-detail` UI declaration, and its namespaced
 storage declaration. Host code owns the clock and thread-store write; renderer

@@ -85,6 +85,7 @@ help:
 	@echo "  make deps              Sync dependencies to their content fingerprint"
 	@echo "  make build             Sync dependencies and dist/ by content"
 	@echo "  make run               deps -> build (if changed) -> start the app"
+	@echo "  make run-dev           deps -> watch-build + launch against the ~/.copse-dev profile"
 	@echo "  make clean             Remove dist/ and dev-sync fingerprints"
 	@echo
 	@echo "Diagnostics:"
@@ -96,6 +97,7 @@ help:
 	@echo "  make runners-reprovision          # clean-rebuild the fleet (after a repull)"
 	@echo "  make runners RUNNERS=5             # 5 runners"
 	@echo "  make run                           # sync deps+build, then launch"
+	@echo "  make run-dev                       # watch-build against a separate dev profile"
 
 # ============================================================================
 # 1) Docker CI runners
@@ -257,6 +259,18 @@ build: check-node
 run: build
 	@echo "==> Starting the app…"
 	@$(USE_NVM); pnpm start
+
+# --- run (dev watcher) ------------------------------------------------------
+# The watch-build loop, on its own persistent profile (`~/.copse-dev`, see
+# `scripts/dev.mts`) so it never shares threads, settings, or Electron's
+# single-instance lock with `make run`. Only `deps` is a prerequisite: dev.mts
+# builds every bundle itself before the first launch and then watches, so
+# pre-building through `make build` would do the same work twice and leave a
+# one-shot fingerprint the watcher immediately invalidates.
+.PHONY: run-dev
+run-dev: deps
+	@echo "==> Starting the dev watcher…"
+	@$(USE_NVM); pnpm run dev
 
 # --- cleanup ----------------------------------------------------------------
 .PHONY: clean

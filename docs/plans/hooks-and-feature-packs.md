@@ -201,6 +201,19 @@ revisiting this document, not silently diverging in an implementation PR.
     tabs and durable session remain.
     Direct network, arbitrary IPC/Electron access, generic host calls, and unused renderer
     contribution placeholders remain unavailable.
+    **External function-hook registration (SDK stage 1):** a selected user plugin may
+    declare `runtime.hooks: [{ id, event }]`, including a hook-only runtime. Events
+    use the canonical catalogue; IDs are unique per plugin. API v1 adds
+    `registerHook(definition, handler)` during activation and an `invoke-hook`
+    request carrying the registration ID, event, and opaque JSON input. Both the
+    host and worker check the registration/event pair; startup rejects missing,
+    extra, duplicate, or event-mismatched registrations. Handlers receive only
+    `{ event, signal }`, never first-party context, feature-chunk emission, browser
+    or session authority. Existing workers may omit the hooks list. This stage
+    establishes registration and explicit host invocation only: canonical fire
+    sites do not dispatch these hooks yet, and results are not interpreted as
+    decisions or transformations. Automatic dispatch, event-specific payload/result
+    validation, and `next()` composition require their own implementation stages.
 16. **Async hook outputs are epoch-scoped to their emitting turn tree.** Send-now
     currently aborts the active local run (`sendQueuedMessageNow` in
     `src/renderer/controller/message-queue.ts`), so a late async hook from a completed

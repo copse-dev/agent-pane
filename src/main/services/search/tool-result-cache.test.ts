@@ -196,6 +196,25 @@ describe('tool-result-cache', () => {
       assert.equal(getCachedToolResult(identity('t1'), 'search_code', { path: 'src' }), undefined)
     })
 
+    it('invalidates nested scopes when their parent directory is moved or removed', () => {
+      setCachedToolResult(identity('t1'), 'search_code', { path: 'src/deep' }, 'stale hits')
+      setCachedToolResult(identity('t1'), 'list_dir', { path: 'src/deep/nested' }, 'stale files')
+      setCachedToolResult(identity('t1'), 'search_code', { path: 'src-backup' }, 'unaffected')
+      invalidateToolResultCacheForChange(ROOT, join(ROOT, 'src'))
+      assert.equal(
+        getCachedToolResult(identity('t1'), 'search_code', { path: 'src/deep' }),
+        undefined,
+      )
+      assert.equal(
+        getCachedToolResult(identity('t1'), 'list_dir', { path: 'src/deep/nested' }),
+        undefined,
+      )
+      assert.equal(
+        getCachedToolResult(identity('t1'), 'search_code', { path: 'src-backup' }),
+        'unaffected',
+      )
+    })
+
     it('does not treat a sibling directory sharing a name prefix as nested', () => {
       setCachedToolResult(identity('t1'), 'search_code', { path: 'src' }, 'hits')
       invalidateToolResultCacheForChange(ROOT, join(ROOT, 'src-generated', 'file.ts'))

@@ -8,6 +8,42 @@ export interface LmStudioModelInfo {
   contextLength: number | null
   /** Image-input support advertised by LM Studio's native model catalog. */
   supportsImages?: boolean
+  /**
+   * Whether this is an embedding model rather than one that can hold a
+   * conversation. Model pickers hide these: `text-embedding-nomic-embed-text`
+   * has no chat completion to offer, so choosing it as a chat model or a review
+   * reviewer produces a run that cannot start (#2487).
+   */
+  embedding?: boolean
+}
+
+/**
+ * LM Studio's native catalogue declares a model's `type`; the OpenAI-compatible
+ * `/v1/models` does not. `"embedding"` and `"embeddings"` have both been seen.
+ */
+function parseModelType(record: Record<string, unknown>): boolean | undefined {
+  const type = record['type'] ?? record['model_type']
+  if (typeof type !== 'string') return undefined
+  return /^embeddings?$/i.test(type.trim())
+}
+
+/**
+ * Last resort when nothing declared a type — the OpenAI-compatible endpoint
+ * answered and the native one did not.
+ *
+ * Narrow on purpose. A wrong `true` hides a usable chat model from the picker
+ * with no way for the user to tell why, so this matches only ids that announce
+ * themselves: the `text-embedding-` prefix OpenAI established, and an `embed`
+ * token that stands on its own between separators. `embedded`, `embedder` and a
+ * model merely containing the letters do not match.
+ */
+export function looksLikeEmbeddingModelId(id: string): boolean {
+  const name = id.toLowerCase()
+  if (name.startsWith('text-embedding-')) return true
+  // `embed`, `embedding`, `embeddings` — standing alone between separators, so
+  // `nomic-embed-text` matches while `embedded-systems` and `my-embedder-chat`
+  // do not.
+  return /(?:^|[/\-_.])embed(?:ding)?s?(?:$|[/\-_.])/.test(name)
 }
 
 export function lmStudioApiKey(override?: string): string {
@@ -95,6 +131,10 @@ function parseOpenAiModelsPayload(json: unknown): LmStudioModelInfo[] {
       id,
       contextLength: parseContextFromModelRecord(rec),
       ...(supportsImages !== undefined ? { supportsImages } : {}),
+      // Always carried, `false` included: the merge below needs to tell "the
+      // server said this is an LLM" from "nobody said", and only the first may
+      // overrule the other endpoint's id-shaped guess.
+      embedding: parseModelType(rec) ?? looksLikeEmbeddingModelId(id),
     })
   }
   return out
@@ -139,9 +179,23 @@ function parseNativeV1ModelsPayload(json: unknown): LmStudioModelInfo[] {
       id,
       contextLength: effectiveContextFromNativeModelRecord(rec),
       ...(supportsImages !== undefined ? { supportsImages } : {}),
+      embedding: parseModelType(rec) ?? looksLikeEmbeddingModelId(id),
     })
   }
   return out
+}
+
+/**
+ * Drop a `false` embedding flag on the way out.
+ *
+ * The parsers carry it so the merge can prefer a declared type over a guessed
+ * one, but a row that reached a caller saying `embedding: false` would be the
+ * same claim as saying nothing, spelled twice.
+ */
+function withoutNegativeEmbedding(model: LmStudioModelInfo): LmStudioModelInfo {
+  if (model.embedding === true) return model
+  const { embedding: _dropped, ...rest } = model
+  return rest
 }
 
 function mergeOpenAiWithNativeContext(
@@ -150,18 +204,24 @@ function mergeOpenAiWithNativeContext(
 ): LmStudioModelInfo[] {
   const contextById = new Map<string, number>()
   const imageSupportById = new Map<string, boolean>()
+  // The native catalogue is the only side that *declares* a type, so its answer
+  // wins over the id-shaped guess the OpenAI rows carry.
+  const embeddingById = new Map<string, boolean>()
   for (const m of native) {
     if (m.contextLength) contextById.set(m.id, m.contextLength)
     if (m.supportsImages !== undefined) imageSupportById.set(m.id, m.supportsImages)
+    if (m.embedding !== undefined) embeddingById.set(m.id, m.embedding)
   }
-  if (openAi.length === 0) return native
+  if (openAi.length === 0) return native.map(withoutNegativeEmbedding)
   return openAi.map((m) => {
     const supportsImages = imageSupportById.get(m.id) ?? m.supportsImages
-    return {
+    const embedding = embeddingById.get(m.id) ?? m.embedding
+    return withoutNegativeEmbedding({
       id: m.id,
       contextLength: contextById.get(m.id) ?? m.contextLength,
       ...(supportsImages !== undefined ? { supportsImages } : {}),
-    }
+      ...(embedding === undefined ? {} : { embedding }),
+    })
   })
 }
 

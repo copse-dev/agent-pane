@@ -152,7 +152,9 @@ describe('video refs', () => {
   it('emits one steering preamble + a line per video, inlining nothing', () => {
     const result = buildTextWithAttachments('what goes wrong here?', [], [], { videoRefs })
     assert.match(result, /^what goes wrong here\?/)
-    assert.equal(result.match(/video_frames/g)?.length, 1)
+    // One preamble however many videos — counted on the preamble's own opening
+    // rather than on `video_frames`, which it now names three times by design.
+    assert.equal(result.match(/The user attached the video\(s\) below/g)?.length, 1)
     assert.match(
       result,
       /- "Screen Recording\.mov" \(12\.4 MB\): \/chat\/proj\/t1\/blobs\/media\/a-rec\.mov/,
@@ -167,6 +169,25 @@ describe('video refs', () => {
     const result = buildTextWithAttachments('', [], [], { videoRefs })
     assert.match(result, /NOT in your context/)
     assert.match(result, /no audio track/i)
+  })
+
+  it('tells a model without the tool to speak up rather than shell out', () => {
+    // #2513: an ACP agent read this block, found no tool literally named
+    // `video_frames`, and inspected the recording with shell tooling — which
+    // cannot decode a video and left the user thinking it had been watched.
+    const result = buildTextWithAttachments('', [], [], { videoRefs })
+    assert.match(result, /If no such tool is offered to you, say so/)
+    assert.match(result, /do not try to read the video with shell commands/)
+  })
+
+  it('points at the namespaced name an ACP client actually offers', () => {
+    // The bridge does mount `video_frames`, but the client renames it
+    // (`mcp__copse__video_frames` and two other shapes — acp-bridge-name.ts).
+    // Matching on the ending is what makes the instruction true under both
+    // executors; naming only the bare tool is what caused #2513.
+    const result = buildTextWithAttachments('', [], [], { videoRefs })
+    assert.match(result, /ends in `video_frames`/)
+    assert.match(result, /mcp__copse__video_frames/)
   })
 
   it('adds no video block when there are no videos', () => {
@@ -191,7 +212,7 @@ describe('archive refs', () => {
   it('emits one steering preamble + a line per archive, inlining nothing', () => {
     const result = buildTextWithAttachments('what is in here?', [], [], { archiveRefs })
     assert.match(result, /^what is in here\?/)
-    assert.equal(result.match(/read_archive/g)?.length, 1)
+    assert.equal(result.match(/The user attached the archive\(s\) below/g)?.length, 1)
     assert.match(
       result,
       /- "bundle\.zip" \(4\.2 MB\): \/chat\/proj\/t1\/blobs\/media\/a-bundle\.zip/,
@@ -208,6 +229,15 @@ describe('archive refs', () => {
     assert.match(result, /If no such tool is offered to you, say so/)
     // Falling back to `unzip` would bypass every extractor guard.
     assert.match(result, /do not unpack it yourself with shell commands/)
+  })
+
+  it('points at the namespaced name an ACP client actually offers', () => {
+    // Same root cause as #2513: "if you have a `read_archive` tool" reads as
+    // false to an agent whose only matching entry is `mcp__copse__read_archive`,
+    // so the hedge sent it to ask rather than to use the tool it had.
+    const result = buildTextWithAttachments('', [], [], { archiveRefs })
+    assert.match(result, /ends in `read_archive`/)
+    assert.match(result, /mcp__copse__read_archive/)
   })
 
   it('says the archive is not in context and that unpacking is a one-shot step', () => {

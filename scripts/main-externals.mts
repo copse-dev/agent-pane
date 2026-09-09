@@ -31,3 +31,18 @@ export const MAIN_EXTERNALS = [
   // node_modules where the asar-aware require resolves it at runtime.
   'electron-updater',
 ] as const
+
+/**
+ * esbuild log escalations shared by the main-process bundlers.
+ *
+ * `require-resolve-not-external` is the warning a *missing* entry in
+ * {@link MAIN_EXTERNALS} produces: a bundled dependency called
+ * `require.resolve('./worker.js')` for a sibling file the bundle does not carry,
+ * so the resolve would fail at runtime. That is a broken bundle, not a style
+ * note — and as a warning it survived in `dev.mts` for months (#2432). Failing
+ * the build is what makes the list above self-maintaining: add a dependency that
+ * needs to stay external and the bundler says so, instead of printing past it.
+ */
+export const MAIN_LOG_OVERRIDE = {
+  'require-resolve-not-external': 'error',
+} as const

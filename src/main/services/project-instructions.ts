@@ -33,9 +33,8 @@ const MAX_ACTIVE_NESTED_FILES = 8
 const MAX_NESTED_FILE_BYTES = 32 * 1024
 const MAX_ACTIVE_NESTED_BYTES = 64 * 1024
 /**
- * How long a walk serves callers outside a turn (the composer's context
- * estimate). A turn never relies on this: it walks once at turn start and
- * memoises the result for its own tool calls (see {@link NestedInstructionTurn}).
+ * How long a full inventory serves callers outside a turn (Settings and
+ * context estimates). Running turns read only referenced ancestor scopes.
  */
 const NESTED_DISCOVERY_CACHE_MS = 30_000
 
@@ -112,16 +111,18 @@ interface NestedDiscoveryState {
   truncated: boolean
 }
 
+interface NestedInstructionDirectory {
+  descend: boolean
+  source?: NestedInstructionSource
+}
+
 /**
- * Per-turn discovery memo. The turn walks the tree once — at turn start, when
- * the system prompt is assembled — and every tool call of that turn reuses the
- * result instead of re-walking up to {@link MAX_NESTED_DISCOVERY_DIRECTORIES}
- * directories per call. A write to an AGENTS.md invalidates the memo so the
- * next call sees the file the agent just created or changed.
+ * Per-turn ancestor reads, shared by concurrent tools. A scope is read when
+ * first referenced, never by scanning unrelated subtrees. New turns start
+ * fresh; AGENTS.md writes invalidate the execution root during the turn.
  */
 export interface NestedInstructionTurn {
-  /** Resolved execution root → the walk (shared by concurrent tool calls). */
-  readonly discoveries: Map<string, Promise<NestedInstructionDiscovery>>
+  readonly discoveries: Map<string, Map<string, Promise<NestedInstructionDirectory>>>
 }
 
 export function createNestedInstructionTurn(): NestedInstructionTurn {
@@ -311,8 +312,9 @@ async function walkNestedInstructionTree(
 }
 
 interface NestedDiscoveryOptions {
-  /** Walk once per turn; later calls of the same turn reuse the memo. */
+  /** Read referenced ancestor scopes once per turn. */
   turn?: NestedInstructionTurn | undefined
+  contextPaths?: readonly string[] | undefined
   /** Explicit reload (Settings → Sources): ignore any cached walk. */
   refresh?: boolean | undefined
 }
@@ -323,13 +325,12 @@ async function discoverNestedInstructionSources(
 ): Promise<NestedInstructionDiscovery> {
   const key = resolve(root)
   if (opts.turn) {
-    const memo = opts.turn.discoveries.get(key)
-    if (memo) return memo
-    // The turn's first look is always a fresh walk: an AGENTS.md added between
-    // turns must apply to this one, whatever an estimate cached moments ago.
-    const walk = walkNestedInstructionTree(key, root)
-    opts.turn.discoveries.set(key, walk)
-    return walk
+    let scopes = opts.turn.discoveries.get(key)
+    if (!scopes) {
+      scopes = new Map()
+      opts.turn.discoveries.set(key, scopes)
+    }
+    return discoverReferencedAncestors(root, opts.contextPaths ?? [], scopes)
   }
   const cached = nestedDiscoveryCache.get(key)
   if (!opts.refresh && cached && cached.expiresAt > Date.now()) return cached.discovery
@@ -338,7 +339,7 @@ async function discoverNestedInstructionSources(
 
 /**
  * Forget the current execution root's discovery after the agent wrote, moved,
- * or removed a nested AGENTS.md, so the next tool call re-walks and sees it.
+ * or removed a nested AGENTS.md, so the next tool call re-reads its ancestors.
  * Only file paths named AGENTS.md count; other writes keep the memo. Returns
  * whether anything was invalidated.
  */
@@ -383,6 +384,79 @@ async function normalizeContextPathWithinRoot(
   return rel === '.' ? '' : rel
 }
 
+/** Read one ancestor without following directory symlinks or crossing a checkout. */
+async function readInstructionDirectory(
+  root: string,
+  scopePath: string,
+): Promise<NestedInstructionDirectory> {
+  const dir = join(root, scopePath)
+  try {
+    if (!(await fsp.lstat(dir)).isDirectory()) return { descend: false }
+    try {
+      await fsp.lstat(join(dir, '.git'))
+      return { descend: false }
+    } catch (err) {
+      if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) {
+        return { descend: false }
+      }
+    }
+    const path = join(dir, NESTED_INSTRUCTION_FILE)
+    const content = await readProjectTrimmed(path, root, MAX_NESTED_FILE_BYTES)
+    return content
+      ? { descend: true, source: { path, name: displayPath(root, path), content, scopePath } }
+      : { descend: true }
+  } catch {
+    return { descend: false }
+  }
+}
+
+/** Turn latency depends on referenced path depth, not the size of the checkout. */
+async function discoverReferencedAncestors(
+  root: string,
+  contextPaths: readonly string[],
+  scopes: Map<string, Promise<NestedInstructionDirectory>>,
+): Promise<NestedInstructionDiscovery> {
+  const uniquePaths = [...new Set(contextPaths)]
+  let truncated = uniquePaths.length > MAX_NESTED_CONTEXT_PATHS
+  const sources = new Map<string, NestedInstructionSource>()
+  await Promise.all(
+    uniquePaths.slice(0, MAX_NESTED_CONTEXT_PATHS).map(async (path) => {
+      const normalized = await normalizeContextPathWithinRoot(root, path)
+      if (!normalized) return
+      const segments = normalized.split('/')
+      const targetStat = await fsp.lstat(join(root, normalized)).catch(() => null)
+      if (!targetStat?.isDirectory()) segments.pop()
+      let scopePath = ''
+      for (const [index, segment] of segments.entries()) {
+        if (index >= MAX_NESTED_DISCOVERY_DEPTH) {
+          truncated = true
+          break
+        }
+        if (NESTED_SKIP_DIRS.has(segment)) break
+        scopePath = scopePath ? `${scopePath}/${segment}` : segment
+        let pending = scopes.get(scopePath)
+        if (!pending) {
+          if (scopes.size >= MAX_NESTED_DISCOVERY_DIRECTORIES) {
+            truncated = true
+            break
+          }
+          pending = readInstructionDirectory(root, scopePath)
+          scopes.set(scopePath, pending)
+        }
+        const directory = await pending
+        if (!directory.descend) break
+        if (directory.source) sources.set(directory.source.path, directory.source)
+      }
+    }),
+  )
+  const ordered = [...sources.values()].sort((a, b) => a.name.localeCompare(b.name))
+  return {
+    sources: ordered.slice(0, MAX_NESTED_DISCOVERED_FILES),
+    directories: scopes.size,
+    truncated: truncated || ordered.length > MAX_NESTED_DISCOVERED_FILES,
+  }
+}
+
 function scopeDepth(scopePath: string): number {
   return scopePath.split('/').filter(Boolean).length
 }
@@ -401,7 +475,7 @@ async function selectNestedInstructionSources(
       .slice(0, MAX_NESTED_CONTEXT_PATHS)
       .map((path) => normalizeContextPathWithinRoot(root, path)),
   )
-  const targets = normalized.filter((path): path is string => path !== null)
+  const targets = normalized.filter((path) => path !== null)
   if (targets.length === 0) return []
 
   const applicable = sources
@@ -515,6 +589,7 @@ export async function loadProjectInstructionSources(
 
     const discovery = await discoverNestedInstructionSources(root, {
       turn: opts.nestedInstructionTurn,
+      contextPaths: opts.nestedContextPaths,
       refresh: opts.refreshNestedDiscovery,
     })
     const nested = discovery.sources
@@ -691,8 +766,8 @@ const NO_ACTIVATION: NestedInstructionActivation = {
 
 /**
  * Activate instructions for a file tool that introduced a path after turn
- * start. Pass the turn's memo so the call reuses the turn-start walk; without
- * one the shared cache serves the request.
+ * start. The turn memo shares ancestor reads, including missing scopes;
+ * without one the shared inventory cache serves the request.
  */
 export async function activateNestedInstructionSources(
   contextPaths: readonly string[],
@@ -707,7 +782,7 @@ export async function activateNestedInstructionSources(
 
   const selected = await selectNestedInstructionSources(
     root,
-    (await discoverNestedInstructionSources(root, { turn })).sources,
+    (await discoverNestedInstructionSources(root, { turn, contextPaths })).sources,
     contextPaths,
   )
   const candidates = selected.filter(

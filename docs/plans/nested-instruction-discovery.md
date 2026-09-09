@@ -1,0 +1,9 @@
+# Referenced-path instruction discovery
+
+PR #1976 originally performed a serial full-tree scan at the start of every turn, even when a prompt referenced one file. On a macOS Node 24.20 fixture with 100 groups of 100 directories, five fresh-turn activations took 650, 614, 773, 596 and 633 ms; same-turn cache hits took less than 1 ms.
+
+Turn-time discovery now reads only each referenced path's ancestor scopes, with at most 64 distinct context paths per call and 16 ancestor levels. Concurrent tool calls share in-flight reads of each scope. Missing instruction files are cached too. Every turn owns a fresh cache; a file-tool write, rename or deletion of AGENTS.md invalidates that execution root. A previously unseen scope is read on first entry. Already-read scopes changed through an external editor or shell are refreshed next turn. No filesystem watcher or cross-turn cache is trusted for prompt correctness.
+
+Settings retains the bounded full inventory and its existing 30-second cache. Instruction precedence, workspace trust, directory-symlink exclusion, nested checkout boundaries, generated-directory exclusion, file-size limits and prompt budgets remain enforced. A symlinked instruction file still passes through the existing canonical-path read boundary. The existing handwritten filter predicate is replaced with TypeScript's inferred predicate.
+
+The same fixture after the change measured fresh-turn activations of 14, 13, 5, 8 and 6 ms while other validation ran. These are local measurements, not a cross-platform latency guarantee. Run `pnpm test -- nested-instruction-latency` to repeat the real public activation-path benchmark; it prints each fresh-turn and cached duration. `pnpm test -- project-instructions` covers scope freshness, explicit invalidation, trust and repository/symlink boundaries.

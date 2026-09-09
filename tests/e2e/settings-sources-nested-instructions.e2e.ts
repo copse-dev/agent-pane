@@ -24,6 +24,14 @@ describe('settings sources nested AGENTS.md (#1354)', function () {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-nested-instructions-'))
     mkdirSync(join(workspaceRoot, 'packages', 'api', 'src'), { recursive: true })
     mkdirSync(join(workspaceRoot, 'packages', 'web', 'src'), { recursive: true })
+    mkdirSync(join(workspaceRoot, 'packages', 'duplicate'), { recursive: true })
+    // Exceed the bounded inventory depth without adding hundreds of visible rows.
+    mkdirSync(join(workspaceRoot, ...Array.from({ length: 18 }, () => 'deep')), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'packages', 'duplicate', 'AGENTS.md'),
+      'Root workspace conventions.\n',
+      'utf8',
+    )
     writeFileSync(join(workspaceRoot, 'AGENTS.md'), 'Root workspace conventions.\n', 'utf8')
     writeFileSync(
       join(workspaceRoot, 'packages', 'api', 'AGENTS.md'),
@@ -78,6 +86,15 @@ describe('settings sources nested AGENTS.md (#1354)', function () {
     const webRow = list.$('.sources-row*=packages/web/AGENTS.md')
     await expect(apiRow.$('.sources-badge')).toHaveText('active', { ignoreCase: true })
     await expect(webRow.$('.sources-badge')).toHaveText('scoped', { ignoreCase: true })
+    const duplicateRow = list.$('.sources-row*=packages/duplicate/AGENTS.md')
+    await expect(duplicateRow.$('.sources-badge')).toHaveText('duplicate', { ignoreCase: true })
+    assert.match(
+      await duplicateRow.$('.sources-row-detail').getText(),
+      /identical to AGENTS\.md, loaded once through it/,
+    )
+    await expect($('#sources-instructions-truncated')).toHaveText(
+      expect.stringContaining('this list may be incomplete'),
+    )
     assert.match(await apiRow.$('.sources-row-detail').getText(), /scope: packages\/api\//)
     assert.match(await apiRow.$('.sources-row-detail').getText(), /active this turn/)
     assert.match(

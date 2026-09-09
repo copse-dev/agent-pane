@@ -174,14 +174,19 @@ describe('conversation visual hierarchy', () => {
     expect(layout.answerTopBorder).toBe('1px')
     expect(layout.titlebarBorderColor).toMatch(/rgba\([^)]*, 0\)|transparent/)
     expect(layout.selectedRadius).toBe('0px')
-    expect(layout.reviewRadius).toBe('0px')
+    // Review and comparison are annotations on the turn, not part of the answer,
+    // so they take the hatched plate rather than a rail and a fading wash: same
+    // box as the agent's own callouts, different material. The radius is what a
+    // rail could never have had — it would have bowed around the corner. See
+    // docs/ui-taste.md -> "Transcript status callouts".
+    expect(layout.reviewRadius).toBe('6px')
     expect(layout.reviewTopBorder).toBe('0px')
-    expect(layout.reviewLeftBorder).toBe('2px')
-    expect(layout.reviewBackground).toContain('linear-gradient')
-    expect(layout.comparisonRadius).toBe('0px')
+    expect(layout.reviewLeftBorder).toBe('0px')
+    expect(layout.reviewBackground).toContain('repeating-linear-gradient')
+    expect(layout.comparisonRadius).toBe('6px')
     expect(layout.comparisonTopBorder).toBe('0px')
-    expect(layout.comparisonLeftBorder).toBe('2px')
-    expect(layout.comparisonBackground).toContain('linear-gradient')
+    expect(layout.comparisonLeftBorder).toBe('0px')
+    expect(layout.comparisonBackground).toContain('repeating-linear-gradient')
     expect(layout.baseLineHeight).toBe('22px')
     expect(layout.answerLineHeight).toBe(layout.baseLineHeight)
     expect(layout.reasoningLineHeight).toBe(layout.baseLineHeight)

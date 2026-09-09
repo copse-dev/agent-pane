@@ -205,7 +205,9 @@ export function invalidateToolResultCacheForChange(
       continue
     }
     for (const [key, entry] of bucket.entries) {
-      if (isAtOrUnder(changedPath, entry.scope)) bucket.entries.delete(key)
+      if (isAtOrUnder(changedPath, entry.scope) || isAtOrUnder(entry.scope, changedPath)) {
+        bucket.entries.delete(key)
+      }
     }
     if (bucket.entries.size === 0) cachesByThread.delete(threadId)
   }

@@ -55,7 +55,13 @@ describe('agent-service public surface', () => {
 describe('runAgent AgentHost decoupling', () => {
   it('streams a fallback notice when a remote agent is selected without a valid key', async () => {
     const priorCursorKey = process.env['CURSOR_API_KEY']
+    const priorLmStudioUrl = process.env['COPSE_EVAL_LM_STUDIO_URL']
     delete process.env['CURSOR_API_KEY']
+    // The fallback route probes the configured local model. Keep a developer's
+    // running LM Studio server out of this unit test: it may accept the request
+    // and leave the test waiting on a real generation instead of exercising the
+    // unavailable-provider fallback deterministically.
+    process.env['COPSE_EVAL_LM_STUDIO_URL'] = 'http://127.0.0.1:1/v1'
     await setSetting('model', 'remote-agent:cursor')
 
     const received: Array<{ threadId: string; chunk: StreamChunk }> = []
@@ -96,6 +102,8 @@ describe('runAgent AgentHost decoupling', () => {
       )
     } finally {
       if (priorCursorKey !== undefined) process.env['CURSOR_API_KEY'] = priorCursorKey
+      if (priorLmStudioUrl === undefined) delete process.env['COPSE_EVAL_LM_STUDIO_URL']
+      else process.env['COPSE_EVAL_LM_STUDIO_URL'] = priorLmStudioUrl
     }
   })
 
@@ -111,6 +119,7 @@ describe('runAgent AgentHost decoupling', () => {
       isRunning: (pluginId) => pluginId === 'personal.reference-model',
       registrations: () => ({ tools: [], models: [{ id: 'judge:default' }] }),
       invokeTool: () => Promise.reject(new Error('not a tool turn')),
+      invokeHook: () => Promise.reject(new Error('not a hook dispatch')),
       invokeModel: (_pluginId, _routeId, input) => {
         invocation = input
         return Promise.resolve({ text: 'Personal judge answer', inputTokens: 12, outputTokens: 4 })
@@ -341,7 +350,7 @@ describe('runAgent AgentHost decoupling', () => {
     }
   })
 
-  it('discovers nested instructions once per turn, notices activations, and re-walks after an AGENTS.md write', async () => {
+  it('memoizes referenced instruction scopes, notices activations, and refreshes after an AGENTS.md write', async () => {
     const root = await mkdtemp(join(tmpdir(), 'copse-agent-nested-discovery-'))
     await mkdir(join(root, 'packages', 'api'), { recursive: true })
     await mkdir(join(root, 'packages', 'web'), { recursive: true })
@@ -387,8 +396,8 @@ describe('runAgent AgentHost decoupling', () => {
             return
           case 2:
             assert.match(system.content, /API rules here/)
-            // Appears mid-turn without going through a tool: the turn's memo
-            // does not see it, so the next read must not activate it.
+            // The prompt already referenced this missing scope. An external
+            // write stays cached until an explicit file-tool invalidation.
             await writeFile(join(root, 'packages', 'web', 'AGENTS.md'), 'Web rules here.')
             yield readTool('read-web-stale', 'packages/web/b.ts')
             return
@@ -435,7 +444,7 @@ describe('runAgent AgentHost decoupling', () => {
             runWithActiveRunIdentity('thread-nested-discovery', () =>
               agentService.runAgent(
                 'thread-nested-discovery',
-                'Look around.',
+                'Look around packages/web/b.ts.',
                 [],
                 { emit: (_threadId, chunk) => received.push(chunk) },
                 registry,

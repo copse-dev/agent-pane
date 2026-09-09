@@ -66,7 +66,7 @@ describe('settings automations plugin', function () {
     await row.waitForExist({ timeout: 15_000 })
     await row.scrollIntoView({ block: 'center' })
     assert.equal(await row.getAttribute('data-enabled'), 'true')
-    await expect(row.$('.plugin-chip=UI × 1')).toBeDisplayed()
+    await expect(row.$('.plugin-chip=UI × 2')).toBeDisplayed()
 
     // The plugin's detail panel sits inside its closed "Plugin settings" fold.
     await row.$('.plugin-settings-summary').click()

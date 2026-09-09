@@ -11,6 +11,7 @@ import type { PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
+import { describeToolArgError } from './tool-arg-error.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isActiveSshWorkspace } from './ssh-workspace/execution-target.ts'
 import { ensureExecutionRootWatched } from './search/execution-root-watcher.ts'
@@ -135,7 +136,17 @@ export class ToolRegistry {
   async execute(name: string, rawArgs: unknown, signal: AbortSignal): Promise<ToolExecuteResult> {
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
-    const parsed = tool.parse(rawArgs)
+    // A ZodError carries the issues array as its `message`, and the agent loop
+    // puts that straight into the tool result — so a model that gets one field
+    // wrong prints a JSON dump at the user instead of a sentence, and reads a
+    // payload back instead of an instruction. Restate it before it escapes.
+    let parsed: unknown
+    try {
+      parsed = tool.parse(rawArgs)
+    } catch (err) {
+      const described = describeToolArgError(name, err)
+      throw described ? new Error(described) : err
+    }
     const mcpAnnotations = name.startsWith('mcp__') ? getMcpToolMeta(name)?.annotations : undefined
     if (isAgentRunReadonly()) {
       const blockReason = getReadonlyToolBlockReason(name, { mcpAnnotations })

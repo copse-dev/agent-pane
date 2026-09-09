@@ -37,10 +37,12 @@ chain and defers that edit once. The agent sees the new rules and retries instea
 file before its local guidance is available. Each activation adds a one-line note to the
 transcript naming the file that was loaded.
 
-Copse looks for nested files once per turn, when it assembles the prompt, and reuses that result
-for every tool call of the turn. A file the agent itself writes, moves, or removes with a file tool
-is picked up straight away: writing an `AGENTS.md` makes the next file tool call look again. A file
-that appears by any other route — a shell command, an external editor — is seen by the next turn.
+During a turn, Copse reads only the ancestor directories of referenced paths, rather than scanning
+unrelated parts of the repository. Each scope, including a missing `AGENTS.md`, is read once when
+first referenced and shared by later tool calls. A file the agent writes, moves, or removes with a
+file tool is picked up straight away: writing an `AGENTS.md` makes the next file tool call read its
+ancestors again. Other edits to an already-read scope are seen by the next turn. A newly referenced
+scope is read when the agent first enters it. Settings still discovers the full bounded inventory.
 
 Nested `AGENT.md` and `CLAUDE.md` remain root-only compatibility formats. Only `AGENTS.md` follows
 the cross-client directory-scoping convention, which avoids silently changing the meaning of

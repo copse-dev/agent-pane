@@ -1,9 +1,12 @@
 import * as esbuild from 'esbuild'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { cpSync, copyFileSync, rmSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
+import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from './main-externals.mts'
 import { expectString } from '../src/shared/unknown-value.mts'
 
 const require = createRequire(import.meta.url)
@@ -24,6 +27,51 @@ copyFileSync('src/renderer/theme-boot.js', 'dist/renderer/theme-boot.js')
 cpSync('assets', 'dist/assets', { recursive: true })
 copyFileSync('assets/icons/rose/icon-32.png', 'dist/renderer/favicon.png')
 cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive: true })
+
+/**
+ * `pnpm run dev` gets its own persistent profile, separate from the one `make
+ * run` uses (#2431).
+ *
+ * Both used to land on `~/.copse`, so a dev build shared threads, settings and
+ * plugins with the everyday app. Electron's single-instance lock lives in that
+ * same profile (`main/index.ts` calls `app.requestSingleInstanceLock()`), so the
+ * second launch of the pair lost the lock and quit itself rather than opening a
+ * second window — you could not keep a dev build and the everyday app open side
+ * by side at all. Separate profiles mean separate locks.
+ *
+ * `COPSE_DIR` moves the whole profile, not just Electron's `userData`, which is
+ * the difference between a separate app and a separate config file: threads live
+ * under `<root>/workspace`.
+ *
+ * `COPSE_PANEL_USER_DATA` is set alongside it, to the path `COPSE_DIR` would
+ * have produced anyway, purely to opt out of the legacy migration. Without it
+ * `resolveUserDataDir` sees a new empty target and *moves* any surviving
+ * `<appData>/copse-panel` profile into it — so the first `pnpm run dev` on a
+ * machine that had not yet launched a recent build would carry the everyday
+ * profile off into the dev one. `explicit-profile` means "use exactly this
+ * directory", which is what a dev profile wants and why the perf and sidecar
+ * harnesses set the same pair.
+ *
+ * Persistent by design — the point is a dev profile you can keep, not a fresh
+ * one every launch. Set `COPSE_DIR` (or `COPSE_PANEL_USER_DATA`) yourself to
+ * override, including back to `~/.copse` to reproduce something against the real
+ * profile.
+ */
+const DEV_PROFILE_DIR = join(homedir(), '.copse-dev')
+
+function devElectronEnv(): NodeJS.ProcessEnv {
+  const explicit =
+    (process.env['COPSE_DIR']?.trim() ?? '') !== '' ||
+    (process.env['COPSE_PANEL_USER_DATA']?.trim() ?? '') !== ''
+  if (explicit) return process.env
+  return {
+    ...process.env,
+    COPSE_DIR: DEV_PROFILE_DIR,
+    COPSE_PANEL_USER_DATA: join(DEV_PROFILE_DIR, 'user-data'),
+  }
+}
+
+const devProfileRoot = devElectronEnv()['COPSE_DIR'] ?? '(inherited)'
 
 let electron: ChildProcess | null = null
 let shuttingDown = false
@@ -77,6 +125,7 @@ function startElectron(): void {
     electron = spawn(electronPath, ['dist/main/index.js'], {
       detached: process.platform !== 'win32',
       stdio: 'inherit',
+      env: devElectronEnv(),
     })
   })
 }
@@ -100,13 +149,15 @@ const nodeOpts = {
   bundle: true,
   platform: 'node' as const,
   format: 'cjs' as const,
-  external: [
-    'electron',
-    '@anthropic-ai/sandbox-runtime',
-    'shell-quote',
-    'node-pty',
-    '@napi-rs/keyring',
-  ],
+  // The same list `build.mts` uses. This was a hand-copied duplicate, and it had
+  // already rotted: `jsdom` (and `@mozilla/readability`, `turndown`,
+  // `electron-updater`) were added to the shared list and never mirrored here, so
+  // every `pnpm run dev` bundled jsdom and printed the `require-resolve-not-external`
+  // warning for its `xhr-sync-worker.js` that the packaged build never sees (#2432).
+  // A module unbundlable in one of these bundles is unbundlable in both, so there is
+  // one list.
+  external: [...MAIN_EXTERNALS],
+  logOverride: { ...MAIN_LOG_OVERRIDE },
   sourcemap: true,
   define,
 }
@@ -201,6 +252,7 @@ await Promise.all([
   ...standaloneCtxs.map((ctx) => ctx.rebuild()),
 ])
 copyFileSync('src/renderer/video/decoder.html', 'dist/renderer/video/decoder.html')
+console.log(`[dev] profile: ${devProfileRoot}`)
 startElectron()
 restartOnBuild = true
 

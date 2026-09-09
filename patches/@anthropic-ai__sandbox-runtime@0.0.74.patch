@@ -1,3 +1,16 @@
+diff --git a/dist/sandbox/sandbox-manager.js b/dist/sandbox/sandbox-manager.js
+index 3a2d9c8abd01fefff36edea0cd76e9c31a3ed411..7e422b7a159da0ae00902cefcd5d38ac501c223c 100644
+--- a/dist/sandbox/sandbox-manager.js
++++ b/dist/sandbox/sandbox-manager.js
+@@ -1293,7 +1293,7 @@ async function wrapWithSandbox(command, binShell, customConfig, abortSignal, opt
+                 unsetEnvVars: credentialRestrictions.unsetEnvVars,
+                 setEnvVars: credentialRestrictions.setEnvVars,
+                 maskedFileBinds: credentialRestrictions.maskedFileBinds,
+-                allowUnixSockets: getAllowUnixSockets(),
++                allowUnixSockets: customConfig?.network?.allowUnixSockets ?? getAllowUnixSockets(),
+                 allowAllUnixSockets: getAllowAllUnixSockets(),
+                 allowLocalBinding: getAllowLocalBinding(),
+                 allowMachLookup: getAllowMachLookup(),
 diff --git a/dist/sandbox/sandbox-utils.js b/dist/sandbox/sandbox-utils.js
 index 32831bf4b8fb14d9ea6fc5bcfe0dc621702c91f4..f53b047ebb0cd376a0f12a9deb3de08d185145b4 100644
 --- a/dist/sandbox/sandbox-utils.js

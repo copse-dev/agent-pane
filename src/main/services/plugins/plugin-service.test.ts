@@ -309,6 +309,7 @@ describe('PluginService', () => {
       registrations: () => null,
       invokeTool: () => Promise.resolve(null),
       invokeModel: () => Promise.resolve(null),
+      invokeHook: () => Promise.resolve(null),
     }
     setPluginToolRuntimeController(controller)
     const registry = makeRegistry()

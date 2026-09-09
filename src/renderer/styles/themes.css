@@ -17,6 +17,8 @@
   --danger: #f14c4c;
   --success: #4ec9b0;
   --warning: #cca700;
+  --info: #6fb3d9;
+  --important: #9d7cf4;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
@@ -55,7 +57,14 @@
   --bg-muted: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #ececec);
   --bg-subtle: color-mix(in srgb, var(--tint-hue) var(--tint-amount-light), #f7f7f7);
   --bg-active: #0060c0;
-  --bg-selected: color-mix(in srgb, var(--accent) 13%, var(--bg-elevated));
+  /* Mixed from --accent-fill, not --accent (issue #2483). Light's --accent is a
+     30%-of-black derivation for small text and borders, so washing 13% of it into
+     a near-white row produced a desaturated grey — a selection that read as
+     "slightly dirty background" rather than "selected". Against the same row
+     background the grey measured ΔE 8.4 where the dark theme's neon wash measures
+     ΔE 18; mixing the raw hue instead brings light to ΔE 12 and, more to the
+     point, makes it the accent colour rather than grey. */
+  --bg-selected: color-mix(in srgb, var(--accent-fill) 22%, var(--bg-elevated));
   /* The dark highlight fills invert on white: a light wash carrying near-black
      text. --highlight-current-bg cannot follow --warning here (light's warning
      is a dark brown, which would bury the match text). */
@@ -87,6 +96,10 @@
   --danger: #cf222e;
   --success: #1a7f37;
   --warning: #9a6700;
+  /* Derived for contrast on cream rather than reused from dark, per the
+     rule above: the dark pair sits at ~0.55 luminance and washes out here. */
+  --info: #0969da;
+  --important: #8250df;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.14);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.2);

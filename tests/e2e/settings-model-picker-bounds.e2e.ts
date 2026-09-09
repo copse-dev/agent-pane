@@ -19,6 +19,10 @@ async function readMenuGeometry(hostSelector: string): Promise<{
   verticalGap: number
   verticalPlacement: 'above' | 'below' | 'overlap'
   containedInSurface: boolean
+  bottomOverhang: number
+  topOverhang: number
+  menuHeight: number
+  surfaceHeight: number
   escapesPaneClip: boolean
   // Raw edges, carried so a failure can say *why* rather than only that the
   // menu did not end up where it should. The gaps above are absolute
@@ -63,6 +67,11 @@ async function readMenuGeometry(hostSelector: string): Promise<{
         menuRect.right <= surfaceRect.right + 1 &&
         menuRect.top >= surfaceRect.top - 1 &&
         menuRect.bottom <= surfaceRect.bottom + 1,
+      // Signed overhang, so a failure says which edge escaped and by how much.
+      bottomOverhang: round(menuRect.bottom - surfaceRect.bottom),
+      topOverhang: round(surfaceRect.top - menuRect.top),
+      menuHeight: round(menuRect.height),
+      surfaceHeight: round(surfaceRect.height),
       escapesPaneClip: !!menu.offsetParent && !pane.contains(menu.offsetParent),
       triggerLeft: round(triggerRect.left),
       triggerRight: round(triggerRect.right),
@@ -85,6 +94,13 @@ describe('settings model picker bounds', function () {
 
   after(() => {
     resetUserData()
+  })
+
+  afterEach(async () => {
+    await browser.execute(() => {
+      const dialog = document.querySelector<HTMLDialogElement>('#settings-dialog')
+      if (dialog?.open) dialog.close()
+    })
   })
 
   it('anchors each field menu to its own trigger and keeps it on the page', async () => {
@@ -119,7 +135,9 @@ describe('settings model picker bounds', function () {
     expect(opened).not.toBeNull()
     // Room to the right: the menu keeps its preferred left alignment.
     expect(opened?.leftGap).toBeLessThanOrEqual(1)
-    expect(opened?.verticalPlacement).not.toBe('overlap')
+    if (opened?.verticalPlacement === 'overlap') {
+      throw new Error(`roomy field menu overlapped its trigger: ${JSON.stringify(opened)}`)
+    }
     expect(opened?.verticalGap).toBeGreaterThanOrEqual(3)
     expect(opened?.verticalGap).toBeLessThanOrEqual(5)
     expect(opened?.containedInSurface).toBe(true)
@@ -185,5 +203,62 @@ describe('settings model picker bounds', function () {
     expect(flipped?.verticalGap).toBeLessThanOrEqual(5)
     expect(flipped?.containedInSurface).toBe(true)
     await saveAppScreenshot('settings-model-picker-flipped.png')
+  })
+
+  /**
+   * #2487. `position-try` cannot do this one: Chromium chooses a fallback by
+   * testing overflow against the viewport, not against the menu's containing
+   * block, so a menu anchored low in a surface the *window* still has room
+   * around never flips — it just hangs outside the surface, where an ancestor's
+   * `overflow: hidden` cuts it off. The reported case was the comparison
+   * approval prompt, a 420px dialog inside a much taller chat pane; shrinking
+   * the settings surface reproduces the same geometry against the same rule.
+   */
+  it('keeps the menu inside a surface too short to open below the trigger', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    await $('[aria-label="Settings"]').click()
+    await expect($('.settings-section[data-section="general"]')).toBeDisplayed()
+    await $(CHAT_MODEL_HOST).waitForExist({ timeout: 30_000 })
+
+    // Cap the surface and push the trigger low inside it, so opening below
+    // would run past the bottom edge while the viewport is still nowhere near
+    // full. Without the surface-aware placement the menu overhangs by ~100px.
+    await browser.execute((hostSelector) => {
+      const surface = document.querySelector<HTMLElement>('#settings-dialog')
+      const host = document.querySelector<HTMLElement>(hostSelector)
+      if (!surface || !host) return
+      surface.style.height = '420px'
+      surface.style.maxHeight = '420px'
+      host.scrollIntoView({ block: 'end' })
+    }, CHAT_MODEL_HOST)
+
+    await $(`${CHAT_MODEL_HOST} .model-picker-trigger`).click()
+    await expect($(`${CHAT_MODEL_HOST} .model-picker-menu`)).toBeDisplayed()
+
+    let geometry: Awaited<ReturnType<typeof readMenuGeometry>> = null
+    try {
+      await browser.waitUntil(async () => {
+        geometry = await readMenuGeometry(CHAT_MODEL_HOST)
+        return geometry?.containedInSurface === true
+      })
+    } catch {
+      throw new Error(
+        'expected the menu to stay inside the shortened surface — ' +
+          (geometry
+            ? `menu ${geometry.menuHeight}px in a ${geometry.surfaceHeight}px surface, ` +
+              `bottomOverhang ${geometry.bottomOverhang}, topOverhang ${geometry.topOverhang}, ` +
+              `placement ${geometry.verticalPlacement}`
+            : 'geometry could not be read at all (menu or trigger missing)'),
+      )
+    }
+    const contained = await readMenuGeometry(CHAT_MODEL_HOST)
+    expect(contained?.containedInSurface).toBe(true)
+    expect(contained?.bottomOverhang).toBeLessThanOrEqual(0)
+    expect(contained?.topOverhang).toBeLessThanOrEqual(0)
+    // Containment must not come from shrinking the menu to nothing: the point
+    // of the contained fallback is that the menu keeps a useful height even
+    // when neither side of the trigger has room for the full list.
+    expect(contained?.menuHeight).toBeGreaterThan(120)
+    await saveAppScreenshot('settings-model-picker-short-surface.png')
   })
 })

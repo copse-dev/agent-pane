@@ -14,6 +14,11 @@ import {
   type SshAskpassLease,
 } from './askpass.ts'
 import { setSshPromptHandler } from './ssh-prompt.ts'
+import {
+  resolveRendererPromptTarget,
+  runWithRendererPromptTarget,
+  type RendererPromptTarget,
+} from '../renderer-prompt-target.ts'
 
 describe('classifySshPrompt', () => {
   it('treats host-key wording as confirm', () => {
@@ -210,6 +215,76 @@ describe('ssh askpass bridge', () => {
       assert.deepEqual(JSON.parse(response), { response: 's3cret' })
     }
     assert.equal(prompts, 2)
+  })
+
+  // #2507. OpenSSH asks over this socket, in a fresh async context, so the scope
+  // set by the window that started the connection is long gone by the time the
+  // question arrives. The lease carries it instead — without that, a pop-out's
+  // SSH terminal put its passphrase and host-key prompts on the main window,
+  // where they timed out unanswered.
+  describe('the window that leased the connection gets asked', () => {
+    function fakeRenderer(id: string): RendererPromptTarget & { id: string } {
+      return { id, isDestroyed: (): boolean => false, send: (): void => {} }
+    }
+
+    it('restores the leasing renderer when the prompt arrives over the socket', async () => {
+      const mainWindow = fakeRenderer('main')
+      const popout = fakeRenderer('popout')
+      let asked: RendererPromptTarget | null = null
+      setSshPromptHandler(async () => {
+        asked = resolveRendererPromptTarget(mainWindow)
+        return { value: 's3cret' }
+      })
+
+      // Leased inside the pop-out's scope, exactly as `terminal:create` does...
+      const lease = runWithRendererPromptTarget(popout, () => leaseSshAskpassEnv({}))
+      // ...and asked from outside it, exactly as the askpass helper does.
+      const response = await askOverSocket(lease, 'Enter passphrase for key')
+      lease.release()
+
+      assert.deepEqual(JSON.parse(response), { response: 's3cret' })
+      assert.equal(asked, popout)
+    })
+
+    it('leaves a lease with no window behind it on the main-window fallback', async () => {
+      // A background agent run leases credentials too. Nothing scoped it, so it
+      // must not inherit whichever renderer happened to ask last.
+      const mainWindow = fakeRenderer('main')
+      let asked: RendererPromptTarget | null = null
+      setSshPromptHandler(async () => {
+        asked = resolveRendererPromptTarget(mainWindow)
+        return { value: 's3cret' }
+      })
+
+      const lease = leaseSshAskpassEnv({})
+      await askOverSocket(lease, 'Enter passphrase for key')
+      lease.release()
+
+      assert.equal(asked, mainWindow)
+    })
+
+    it('routes a host-key confirmation the same way', async () => {
+      // The one the user can least afford to answer blind: a fingerprint shown
+      // in a window that never mentioned the connection is unanswerable.
+      const mainWindow = fakeRenderer('main')
+      const popout = fakeRenderer('popout')
+      let asked: RendererPromptTarget | null = null
+      setSshPromptHandler(async (req) => {
+        assert.equal(req.kind, 'confirm')
+        asked = resolveRendererPromptTarget(mainWindow)
+        return { value: 'yes' }
+      })
+
+      const lease = runWithRendererPromptTarget(popout, () => leaseSshAskpassEnv({}))
+      const response = await askOverSocket(
+        lease,
+        'Are you sure you want to continue connecting (yes/no/[fingerprint])?',
+      )
+      lease.release()
+
+      assert.deepEqual(JSON.parse(response), { response: 'yes' })
+      assert.equal(asked, popout)
+    })
   })
 
   it('maps confirm prompts to yes', async () => {

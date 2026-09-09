@@ -1800,7 +1800,27 @@ jobs:
     # called `develop`: it is a check-context string that branch protection may
     # match on by name, so renaming it is a separate change that has to land
     # together with the protection rule.
-    name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' || 'CI Passed' }}
+    #
+    # Fork PRs get their own context for the same reason, and it closes the last
+    # of #800's acceptance criteria: "branch protection distinguishes 'tested and
+    # passed' from 'not executed'". A fork run is genuinely green — `precheck`
+    # executes the fork's typecheck and lint on a hosted runner, and gitleaks.yml
+    # scans it — but `check`, `build` and `e2e` never dispatch, so unit tests, the
+    # bundle and the whole e2e tier are unrun. Publishing that under the same
+    # `CI Passed` string as a fully-tested same-repo run made the two
+    # indistinguishable to branch protection and to anyone reading the checks
+    # list. Now a fork PR simply has no `CI Passed` check, so a rule requiring one
+    # holds the merge until a maintainer takes the change through a same-repo
+    # branch — the same mechanism that stops a trunk push satisfying `release`.
+    #
+    # Additive on purpose: same-repo PRs still publish `CI Passed` byte-for-byte,
+    # so no existing protection rule or consumer changes meaning. (`release-mac.yml`
+    # matches this name for a release SHA, which is never a fork PR.)
+    name: >-
+      ${{ (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name != github.repository) && 'Fork CI Passed' ||
+      github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Develop CI Passed' ||
+      'CI Passed' }}
     # NOT `always()`. That is true even when the RUN is cancelled, so GitHub
     # still creates and queues this job on a run that is being torn down — and
     # `runs-on` below prefers the self-hosted fleet, where it can then wait for
@@ -1875,7 +1895,10 @@ jobs:
               echo '${{ toJSON(needs) }}'
               exit 1
             fi
-            echo "Fork PR safe check tier passed; privileged jobs were intentionally skipped."
+            echo "Fork PR safe check tier passed (typecheck, lint, format, API protocol)."
+            echo "Unit tests, build and e2e were intentionally not dispatched: fork code"
+            echo "must not run on this repository's runners. This run therefore reports as"
+            echo "'Fork CI Passed', not 'CI Passed' — it is not evidence the change is tested."
             exit 0
           fi
           MODE="${{ needs.precheck.outputs.mode }}"

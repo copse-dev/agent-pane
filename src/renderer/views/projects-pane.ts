@@ -43,7 +43,8 @@ import {
   switchProject,
   switchProjectThread,
 } from '../controller/projects.ts'
-import { openAutomationSettings, openSettingsDialog } from './settings-dialog.ts'
+import { openSettingsDialog } from './settings-dialog.ts'
+import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
@@ -245,13 +246,68 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const settingsBtn = el(
     'button',
     { class: 'projects-settings-btn', 'aria-label': 'Settings', 'data-tooltip': 'Open settings' },
-    settingsIcon(),
     'Settings',
   )
   settingsBtn.addEventListener('click', () => {
     openSettingsDialog()
   })
-  root.append(header, searchRow, list, settingsBtn)
+  const menuButton = el(
+    'button',
+    {
+      type: 'button',
+      class: 'projects-menu-btn',
+      'aria-label': 'Project menu',
+      'aria-haspopup': 'menu',
+      'data-tooltip': 'Settings and automations',
+    },
+    settingsIcon(),
+  )
+  menuButton.addEventListener('click', () => {
+    menuButton.disabled = true
+    void api.plugins
+      .list()
+      .then((result) => {
+        const rect = menuButton.getBoundingClientRect()
+        const plugin = result.plugins.find(hasAutomationDialog)
+        showContextMenu(rect.left, rect.top, [
+          {
+            label: 'Settings',
+            onSelect: (): void => {
+              openSettingsDialog()
+            },
+          },
+          ...(plugin
+            ? [
+                {
+                  label: 'Automations',
+                  onSelect: (): void => {
+                    openAutomationDialog(store, api)
+                  },
+                },
+                {
+                  label: 'New automation…',
+                  disabled: !store.getState().activeProjectId,
+                  onSelect: (): void => {
+                    openAutomationDialog(store, api, { createNew: true })
+                  },
+                },
+              ]
+            : []),
+        ])
+      })
+      .catch((error: unknown) => {
+        showErrorToast('Could not load project menu', error)
+      })
+      .finally(() => {
+        menuButton.disabled = false
+      })
+  })
+  root.append(
+    header,
+    searchRow,
+    list,
+    el('div', { class: 'projects-settings-actions' }, menuButton, settingsBtn),
+  )
 
   let sshWorkspaceEnabled = false
 
@@ -949,7 +1005,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           switchProject(store, api, project.id)
           return
         }
-        openAutomationSettings(scheduleId)
+        openAutomationDialog(store, api, scheduleId ? { scheduleId } : {})
       }
 
       function renderThreadRow(

@@ -305,7 +305,7 @@ describe('project-instructions', () => {
     })
   })
 
-  it('walks the tree once per turn and re-walks only after an AGENTS.md write', async () => {
+  it('memoizes referenced scopes and invalidates them after an AGENTS.md write', async () => {
     await mkdir(join(projectRoot, 'packages', 'api'), { recursive: true })
     await mkdir(join(projectRoot, 'packages', 'web'), { recursive: true })
     await writeFile(join(projectRoot, 'packages', 'api', 'AGENTS.md'), 'API rules')
@@ -316,8 +316,8 @@ describe('project-instructions', () => {
     const first = await activate(['packages/api/a.ts'])
     assert.deepEqual(first.injectedNames, ['packages/api/AGENTS.md'])
 
-    // A file that appears mid-turn is invisible to the same turn: the memo is
-    // reused rather than the tree re-walked before every tool call.
+    // Cache a missing instruction when this scope is first referenced.
+    assert.deepEqual((await activate(['packages/web/b.ts'])).injectedNames, [])
     await writeFile(join(projectRoot, 'packages', 'web', 'AGENTS.md'), 'Web rules')
     const stale = await activate(['packages/web/b.ts'])
     assert.deepEqual(stale.injectedNames, [])
@@ -333,6 +333,60 @@ describe('project-instructions', () => {
     assert.deepEqual((await activate(['packages/web/b.ts'])).injectedNames, [
       'packages/web/AGENTS.md',
     ])
+  })
+
+  it('reads a newly referenced scope during a turn and refreshes known scopes next turn', async () => {
+    await mkdir(join(projectRoot, 'packages', 'api'), { recursive: true })
+    const turn = createNestedInstructionTurn()
+    await withTrust(true, () => activateNestedInstructionSources([], new Set(), new Set(), 0, turn))
+    const path = join(projectRoot, 'packages', 'api', 'AGENTS.md')
+    await writeFile(path, 'First rules')
+    const first = await withTrust(true, () =>
+      activateNestedInstructionSources(['packages/api/file.ts'], new Set(), new Set(), 0, turn),
+    )
+    assert.match(first.block, /First rules/)
+    await writeFile(path, 'Updated externally')
+    const next = await withTrust(true, () =>
+      activateNestedInstructionSources(
+        ['packages/api/file.ts'],
+        new Set(),
+        new Set(),
+        0,
+        createNestedInstructionTurn(),
+      ),
+    )
+    assert.match(next.block, /Updated externally/)
+  })
+
+  it('keeps turn ancestor reads within checkout, generated-tree and symlink boundaries', async () => {
+    await mkdir(join(projectRoot, 'packages', 'nested', '.git'), { recursive: true })
+    await mkdir(join(projectRoot, 'packages', 'node_modules', 'dep'), { recursive: true })
+    await writeFile(join(projectRoot, 'packages', 'AGENTS.md'), 'Parent rules')
+    await writeFile(join(projectRoot, 'packages', 'nested', 'AGENTS.md'), 'Nested checkout rules')
+    await writeFile(
+      join(projectRoot, 'packages', 'node_modules', 'dep', 'AGENTS.md'),
+      'Dependency rules',
+    )
+    await symlink(join(projectRoot, 'packages'), join(projectRoot, 'linked'))
+    const turn = createNestedInstructionTurn()
+    const activate = (paths: string[]): ReturnType<typeof activateNestedInstructionSources> =>
+      withTrust(true, () => activateNestedInstructionSources(paths, new Set(), new Set(), 0, turn))
+    for (const path of ['packages/nested/file.ts', 'packages/node_modules/dep/file.ts']) {
+      const result = await activate([path])
+      assert.deepEqual(result.injectedNames, ['packages/AGENTS.md'])
+      assert.doesNotMatch(result.block, /Nested checkout rules|Dependency rules/)
+    }
+    assert.equal((await activate(['linked/file.ts'])).block, '')
+    const untrusted = await withTrust(false, () =>
+      activateNestedInstructionSources(
+        ['packages/file.ts'],
+        new Set(),
+        new Set(),
+        0,
+        createNestedInstructionTurn(),
+      ),
+    )
+    assert.equal(untrusted.block, '')
   })
 
   it('flags project sources when discovery stops at a cap', async () => {
