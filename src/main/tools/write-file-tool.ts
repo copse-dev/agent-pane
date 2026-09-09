@@ -7,6 +7,7 @@ import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { applyOrStageDiff } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
+import { readWorkspaceFileContent } from '../services/workspace-fs/file-content.ts'
 
 export const writeFileTool = defineTool({
   name: 'write_file',
@@ -20,7 +21,7 @@ export const writeFileTool = defineTool({
     const absPath = await resolvePathWithinRoot(path, requireAgentExecutionRoot())
     let before = ''
     try {
-      before = await getActiveWorkspaceFs().readFile(absPath, 'utf-8')
+      before = await readWorkspaceFileContent(getActiveWorkspaceFs(), absPath, path)
     } catch (err) {
       if (!isRecord(err) || err['code'] !== 'ENOENT') throw err
       /* new file */

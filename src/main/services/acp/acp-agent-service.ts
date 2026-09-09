@@ -79,6 +79,8 @@ import { recordDecision } from '../security/decision-log-store.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { isStructurallyReadOnlyShellCommand } from '../security/permission-policy.ts'
 import { detectLanguage } from '../language.ts'
+import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
+import { readWorkspaceFileContent } from '../workspace-fs/file-content.ts'
 import {
   getActiveProjectRoot,
   getWorkspaceRoot,
@@ -1021,7 +1023,7 @@ async function writeViaDiffQueue(
   const relPath = await toRelativePathWithinRoot(absPath, root)
   let before = ''
   try {
-    before = await fsp.readFile(absPath, 'utf-8')
+    before = await readWorkspaceFileContent(getActiveWorkspaceFs(), absPath, relPath)
   } catch {
     // New file — staged against an empty baseline, matching the diff queue's
     // treatment of absent files.
