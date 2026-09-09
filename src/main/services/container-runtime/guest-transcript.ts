@@ -1,3 +1,4 @@
+import { TranscriptReducer } from '@copse/agent/transcript-reducer.ts'
 /**
  * The guest's transcript as the launching thread shows it
  * (`docs/plans/thread-in-container.md`, decision A13).
@@ -17,7 +18,7 @@
  * answer is.
  */
 import { z } from 'zod'
-import type { StreamChunk, SubagentMessage, ToolCall } from '@shared/types'
+import type { StreamChunk, SubagentMessage } from '@shared/types'
 import { planAgentTextChunk, type AgentTextChunkState } from '@copse/agent/agent-text-chunk.ts'
 
 /** Longest tool result carried, in characters; the rest is cut with a note. */
@@ -63,71 +64,43 @@ export function foldGuestTranscript(
   // that narrates between commands reads as one message per step, not as one
   // run-on block, and a sentence a tool call interrupted is not stranded.
   let textState: AgentTextChunkState = { msgId: null, toolSinceText: false, currentText: '' }
-  const byId = new Map<string, ToolCall>()
+  const reducer = new TranscriptReducer()
   for (const chunk of chunks) {
     switch (chunk.type) {
       case 'text': {
         const { plan, state } = planAgentTextChunk(textState, chunk.text)
         if (plan.action === 'ignore') break
         const message = plan.startNewMessage || cursor.current === null ? open() : cursor.current
-        message.content += plan.text
+        reducer.reduce({ ...chunk, text: plan.text }, () => message)
         textState = { ...state, msgId: message.id }
         break
       }
       case 'reasoning': {
         const message = cursor.current === null || textState.toolSinceText ? open() : cursor.current
-        message.reasoning = (message.reasoning ?? '') + chunk.text
+        reducer.reduce(chunk, () => message)
         textState = { ...textState, msgId: message.id, toolSinceText: false }
         break
       }
       case 'tool_call': {
-        const toolCall: ToolCall = {
-          id: chunk.toolCall.id,
-          name: chunk.toolCall.name,
-          args: chunk.toolCall.args,
-          status: 'running',
-          result: null,
-        }
         const message = cursor.current ?? open()
-        message.toolCalls.push(toolCall)
-        byId.set(toolCall.id, toolCall)
+        reducer.reduce(chunk, () => message)
         textState = { ...textState, msgId: message.id, toolSinceText: true }
         break
       }
-      case 'tool_result': {
-        const toolCall = byId.get(chunk.toolCallId)
-        if (!toolCall) break
-        toolCall.status = chunk.isError ? 'error' : 'done'
-        toolCall.result = cut(chunk.result, resultLimit)
-        if (chunk.editStats) toolCall.editStats = chunk.editStats
-        if (chunk.resultFormat) toolCall.resultFormat = chunk.resultFormat
+      case 'tool_result':
+      case 'tool_call_update':
+        reducer.reduce(chunk, open)
         break
-      }
-      // An external ACP agent reports its tool calls as patches — a title, the
-      // input, streamed output, and finally a status — rather than one result.
-      // The first real Codex run showed every call as failed because these
-      // were ignored and the end-of-run rule below took "never answered" for
-      // "failed".
-      case 'tool_call_update': {
-        const toolCall = byId.get(chunk.toolCallId)
-        if (!toolCall) break
-        if (chunk.name !== undefined) toolCall.name = chunk.name
-        if (chunk.args !== undefined) toolCall.args = chunk.args
-        if (chunk.status !== undefined) toolCall.status = chunk.status
-        if (chunk.result !== undefined) toolCall.result = cut(chunk.result, resultLimit)
-        if (chunk.resultFormat !== undefined) toolCall.resultFormat = chunk.resultFormat
-        break
-      }
       default:
         break
     }
   }
   // A call the stream never answered — the run was stopped mid-tool — is not
   // still running now that the guest is gone.
-  for (const toolCall of byId.values()) {
-    if (toolCall.status === 'running') {
-      toolCall.status = 'error'
-      toolCall.result = 'no result: the run ended before this tool finished'
+  reducer.finishPending('no result: the run ended before this tool finished')
+  for (const message of messages) {
+    for (const call of message.toolCalls) {
+      if (call.result !== null) call.result = cut(call.result, resultLimit)
     }
   }
   const kept = messages.filter(

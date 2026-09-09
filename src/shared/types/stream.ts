@@ -1,3 +1,4 @@
+import type { ToolCallUpdateChunk } from '@copse/agent/wire-types.ts'
 import type { MachineMessageOrigin, ModelComparison } from './thread.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
 import type { CanvasArtefactReference } from './canvas.ts'
@@ -42,15 +43,7 @@ export type StreamChunk =
    * prevents clients from losing arguments or streamed output before the final
    * completion update arrives.
    */
-  | {
-      type: 'tool_call_update'
-      toolCallId: string
-      name?: string
-      args?: unknown
-      status?: 'running' | 'done' | 'error'
-      result?: string
-      resultFormat?: 'markdown'
-    }
+  | ToolCallUpdateChunk
   | {
       type: 'context_trimmed'
       contextWindow: number
