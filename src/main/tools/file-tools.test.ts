@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ToolRegistry, setPermissionGateForTests } from '../services/tool-registry.ts'
 import { readFileTool, listDirTool, LIST_DIR_MAX_ENTRIES } from './file-tools.ts'
+import { setIndexForTest, invalidateIndex } from '../services/search/file-index.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { runWithAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
 import { ownedIt as it } from '../services/thread-execution-context.test-support.ts'
@@ -44,6 +45,7 @@ describe('file tools', () => {
 
   afterEach(async () => {
     setPermissionGateForTests(null)
+    invalidateIndex(tempRoot)
     restoreWorkspace?.()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
@@ -108,6 +110,35 @@ describe('file tools', () => {
     )
     assert.match(result, /Directory not found: no\/such\/dir/)
     assert.doesNotMatch(result, /ENOENT/)
+  })
+
+  it('lists literal bracket directories, normalized paths and indexed dotfiles', async () => {
+    const paths = ['app/[id]/page.ts', 'app/[id]/.env', 'app/i/page.ts', '.github/workflows/ci.yml']
+    for (const path of paths) {
+      await mkdir(join(tempRoot, path, '..'), { recursive: true })
+      await writeFile(join(tempRoot, path), 'x')
+    }
+    setIndexForTest(paths, tempRoot)
+    for (const path of ['app/[id]', './app/[id]/', join(tempRoot, 'app/[id]')]) {
+      assert.equal(
+        await runTool(
+          registry,
+          'list_dir',
+          { path, recursive: true },
+          new AbortController().signal,
+        ),
+        'app/[id]/page.ts\napp/[id]/.env',
+      )
+    }
+    assert.equal(
+      await runTool(
+        registry,
+        'list_dir',
+        { path: '.', recursive: true },
+        new AbortController().signal,
+      ),
+      paths.join('\n'),
+    )
   })
 
   it('list_dir caps non-recursive entries', async () => {
