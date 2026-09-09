@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { containerRuntimeAttestationSchema } from '@shared/container-run-schema.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import type {
   ContainerRuntimeAttestation,
@@ -23,39 +23,9 @@ import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
  * desktop session believe it is contained.
  */
 
-const attestationSchema = z.object({
-  runtimeId: z.string().min(1),
-  image: z.string().min(1),
-  imageDigest: z.string().min(1).optional(),
-  user: z.number().int().positive(),
-  readOnlyRootfs: z.boolean(),
-  capDropAll: z.boolean(),
-  noNewPrivileges: z.boolean(),
-  pidsLimit: z.number().int().positive(),
-  memoryLimit: z.string().min(1),
-  network: z.enum(['none', 'brokered']),
-  egressAllowlist: z.array(z.string().min(1)),
-  hostMounts: z.array(z.string().min(1)),
-})
-
 /** Parse a host-written attestation; null when it is not one. */
 export function parseContainerRuntimeAttestation(text: string): ContainerRuntimeAttestation | null {
-  const parsed = safeJsonParse(text, decodeWithSchema(attestationSchema))
-  if (parsed === null) return null
-  return {
-    runtimeId: parsed.runtimeId,
-    image: parsed.image,
-    ...(parsed.imageDigest !== undefined ? { imageDigest: parsed.imageDigest } : {}),
-    user: parsed.user,
-    readOnlyRootfs: parsed.readOnlyRootfs,
-    capDropAll: parsed.capDropAll,
-    noNewPrivileges: parsed.noNewPrivileges,
-    pidsLimit: parsed.pidsLimit,
-    memoryLimit: parsed.memoryLimit,
-    network: parsed.network,
-    egressAllowlist: [...parsed.egressAllowlist],
-    hostMounts: [...parsed.hostMounts],
-  }
+  return safeJsonParse(text, decodeWithSchema(containerRuntimeAttestationSchema))
 }
 
 /**

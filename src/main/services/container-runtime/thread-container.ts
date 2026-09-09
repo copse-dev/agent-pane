@@ -1,3 +1,4 @@
+import type { ThreadContainerRunSpec } from './run-spec.ts'
 /**
  * Run one Copse thread inside a disposable, hardened local Docker container
  * (`docs/plans/thread-in-container.md`).
@@ -30,12 +31,13 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { createRequire } from 'node:module'
-import { z } from 'zod'
+import { threadContainerResultSchema } from '@shared/container-run-schema.ts'
+import { decodeWithSchema } from '@shared/safe-json.ts'
 import type {
   ContainerRuntimeAttestation,
   UnattendedRunBudgets,
 } from '@shared/types/unattended-run.ts'
-import type { ThreadContainerRecord, ThreadContainerResult } from '@shared/types/container-run.ts'
+import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { EgressBroker } from './egress-broker.ts'
 import {
@@ -82,7 +84,7 @@ export const RUNTIME_LABEL = 'dev.copse.runtime'
 export const SANDBOX_RUNTIME_PACKAGE = '@anthropic-ai/sandbox-runtime'
 
 /** What the CLI or a test asks for. */
-export type { ThreadContainerRecord, ThreadContainerResult } from '@shared/types/container-run.ts'
+export type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 
 export interface ThreadContainerRequest {
   /** Local git checkout to carry in. */
@@ -160,26 +162,7 @@ export interface ThreadContainerAcpHarness {
 }
 
 /** The spec the guest reads from `run.json`. Contains no secrets. */
-export interface ThreadContainerRunSpec {
-  runtimeId: string
-  threadId: string
-  projectId: string
-  prompt: string
-  model: string
-  provider: ProviderDescription | null
-  contextWindow: number | null
-  apiKeyEnv: string | null
-  acp: ThreadContainerAcpHarness | null
-  /** Run the checkout's lockfile install before the agent (decision A9). */
-  installDependencies: boolean
-  budgets: UnattendedRunBudgets
-  workspace: string
-  carryInRef: string
-  carryInBase: string
-  /** The desktop checkout's `origin`, address only, or null when it has none. */
-  originUrl: string | null
-  maxSteps: number | null
-}
+export type { ThreadContainerRunSpec } from './run-spec.ts'
 
 /**
  * The profile root, resolved here rather than imported: this module runs under
@@ -1127,46 +1110,6 @@ function readJsonFile<T>(path: string, decode: (value: unknown) => T | null): T 
   }
 }
 
-const resultSchema = z.object({
-  threadId: z.string(),
-  stopReason: z.enum(['completed', 'budget:wall-clock', 'budget:tokens', 'aborted', 'error']),
-  error: z.string().optional(),
-  usage: z.object({ inputTokens: z.number(), outputTokens: z.number() }),
-  harness: z.union([z.literal('copse'), z.object({ acp: z.string() })]),
-  promptsAttempted: z.number(),
-  deferrals: z.array(
-    z.object({
-      id: z.string(),
-      title: z.string(),
-      subject: z.string(),
-      reasons: z.array(z.string()).optional(),
-    }),
-  ),
-  denials: z.array(z.object({ subject: z.string(), reasons: z.array(z.string()) })),
-  commits: z.array(z.string()),
-  containment: z.object({
-    declared: z.boolean(),
-    declineReason: z.string().nullable(),
-    projectSandbox: z.boolean(),
-  }),
-  toolNames: z.array(z.string()),
-  finalText: z.string(),
-})
-
-function decodeResult(value: unknown): ThreadContainerResult | null {
-  const parsed = resultSchema.safeParse(value)
-  if (!parsed.success) return null
-  const { error, deferrals, ...rest } = parsed.data
-  return {
-    ...rest,
-    deferrals: deferrals.map(({ reasons, ...entry }) => ({
-      ...entry,
-      ...(reasons !== undefined ? { reasons } : {}),
-    })),
-    ...(error !== undefined ? { error } : {}),
-  }
-}
-
 /**
  * The secret canary (`unattended-runs.md` U3): a marker value present in the
  * host environment must be absent from everything the guest could see or wrote.
@@ -1361,7 +1304,10 @@ export async function runThreadInContainer(
     removeStagedLogin(runDir)
   }
 
-  const decoded = readJsonFile(join(runDir, 'out', 'result.json'), decodeResult)
+  const decoded = readJsonFile(
+    join(runDir, 'out', 'result.json'),
+    decodeWithSchema(threadContainerResultSchema),
+  )
   // The agent's last words name files by their guest path; the desktop wants
   // them relative to the checkout (A14).
   const result = decoded ? { ...decoded, finalText: relocateGuestPaths(decoded.finalText) } : null

@@ -1,3 +1,5 @@
+import type { z } from 'zod'
+import type { containerRuntimeAttestationSchema } from '../container-run-schema.ts'
 /**
  * Unattended runs on a contained runtime (`docs/plans/thread-in-container.md`).
  *
@@ -18,37 +20,7 @@ export type RuntimeContainmentTier = 'container' | 'project-sandbox' | 'unsandbo
  * worker reads this rather than probing, because a guest cannot verify its own
  * boundary from the inside; the record is what the review surface shows.
  */
-export interface ContainerRuntimeAttestation {
-  runtimeId: string
-  /** Image reference and, when known, its resolved digest. */
-  image: string
-  imageDigest?: string
-  /** Uid the worker runs as; never 0. */
-  user: number
-  readOnlyRootfs: boolean
-  capDropAll: boolean
-  noNewPrivileges: boolean
-  pidsLimit: number
-  memoryLimit: string
-  /** `none` is no interface at all; `brokered` is loopback listeners to named origins only. */
-  network: 'none' | 'brokered'
-  /** Origins (`host:port`) reachable through the broker; empty when `network` is `none`. */
-  egressAllowlist: string[]
-  /** No host path is mounted except the run directory the host owns. */
-  hostMounts: string[]
-  /**
-   * Docker's default seccomp and AppArmor profiles, or the unconfined ones an
-   * in-guest bubblewrap needed. Absent on records written before A7.
-   */
-  securityProfiles?: 'default' | 'unconfined'
-  /**
-   * How a shell command inside the guest is kept off the network: `token-gated`
-   * means the proxy refuses anything without the run's token, which the
-   * worker withholds from its children; `none` means there is no egress to
-   * keep it off. Absent on records written before A7.
-   */
-  perCommandNetwork?: 'token-gated' | 'none'
-}
+export type ContainerRuntimeAttestation = z.infer<typeof containerRuntimeAttestationSchema>
 
 export interface UnattendedRunBudgets {
   /** Wall-clock ceiling for the whole run. */
