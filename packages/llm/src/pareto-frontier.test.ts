@@ -86,7 +86,12 @@ describe('computeParetoFrontier', () => {
 
 describe('costOnAxis / projectOntoCostAxis', () => {
   it('keeps blended costs on the blended axis', () => {
-    const c: FrontierCandidate = { id: 'm', intellect: 40, costPerMTok: 9, costPerTask: 1.5 }
+    const c: FrontierCandidate = {
+      id: 'm',
+      intellect: 40,
+      costPerMTok: 9,
+      costPerTask: 1.5,
+    }
     assert.equal(costOnAxis(c, 'blended'), 9)
     const { plotted, missingAxisCost } = projectOntoCostAxis([c], 'blended')
     assert.equal(plotted.length, 1)
@@ -97,7 +102,12 @@ describe('costOnAxis / projectOntoCostAxis', () => {
   })
 
   it('plots per-task cost and preserves blended list price for tooltips', () => {
-    const c: FrontierCandidate = { id: 'm', intellect: 40, costPerMTok: 9, costPerTask: 1.5 }
+    const c: FrontierCandidate = {
+      id: 'm',
+      intellect: 40,
+      costPerMTok: 9,
+      costPerTask: 1.5,
+    }
     assert.equal(costOnAxis(c, 'perTask'), 1.5)
     const { plotted, missingAxisCost } = projectOntoCostAxis([c], 'perTask')
     assert.equal(missingAxisCost.length, 0)
@@ -125,8 +135,18 @@ describe('costOnAxis / projectOntoCostAxis', () => {
     const points = computeParetoFrontier(
       projectOntoCostAxis(
         [
-          { id: 'verbose-cheap-tokens', intellect: 50, costPerMTok: 2, costPerTask: 4 },
-          { id: 'terse-pricey-tokens', intellect: 50, costPerMTok: 8, costPerTask: 1 },
+          {
+            id: 'verbose-cheap-tokens',
+            intellect: 50,
+            costPerMTok: 2,
+            costPerTask: 4,
+          },
+          {
+            id: 'terse-pricey-tokens',
+            intellect: 50,
+            costPerMTok: 8,
+            costPerTask: 1,
+          },
         ],
         'perTask',
       ).plotted,
@@ -204,6 +224,37 @@ describe('frontierForKnownModels', () => {
     assert.equal(points[0]?.id, 'acp:zz-codex#gpt-5.6-sol')
     assert.deepEqual(points[0].prices, [{ id: 'openrouter:openai/gpt-5.6-sol', costPerMTok: 10 }])
   })
+
+  it('applies subscription pricing before grouping identical routes', () => {
+    const score = getIntellectScore('gpt-5.6-sol')
+    assert.ok(score)
+    const points = frontierForKnownModels(
+      [
+        {
+          id: 'openrouter:openai/gpt-5.6-sol',
+          intellect: score.value,
+          costPerMTok: 1,
+        },
+        {
+          id: 'acp:codex-acp#gpt-5.6-sol',
+          intellect: score.value,
+          costPerMTok: 10,
+          planAccess: { provider: 'codex', modelId: 'gpt-5.6-sol' },
+        },
+      ],
+      (candidate) =>
+        candidate.planAccess ? { ...candidate, costPerMTok: 0, plan: '5-hour' } : candidate,
+      (candidate) => candidate.id.startsWith('openrouter:') || candidate.id.startsWith('acp:'),
+    )
+
+    assert.equal(points.length, 1)
+    const point = points[0]
+    assert.ok(point)
+    assert.equal(point.id, 'acp:codex-acp#gpt-5.6-sol')
+    assert.equal(point.costPerMTok, 0)
+    assert.equal(point.plan, '5-hour')
+    assert.deepEqual(point.prices, [{ id: 'openrouter:openai/gpt-5.6-sol', costPerMTok: 1 }])
+  })
 })
 
 describe('pickBestValueFrontierModel', () => {
@@ -239,7 +290,13 @@ describe('pickBestValueFrontierModel', () => {
     assert.equal(pickBestValueFrontierModel([]), null)
     assert.equal(
       pickBestValueFrontierModel([
-        { id: 'only-discovery', intellect: 50, costPerMTok: 1, onFrontier: true, discovery: true },
+        {
+          id: 'only-discovery',
+          intellect: 50,
+          costPerMTok: 1,
+          onFrontier: true,
+          discovery: true,
+        },
       ]),
       null,
     )

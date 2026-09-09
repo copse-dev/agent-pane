@@ -50,6 +50,8 @@ import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
 import { isNoTrainingModelPath, isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import { applyPlanCoverage, type PlanCoverageMode } from '@shared/plan-inclusion.ts'
+import { planAcpFrontierCandidates } from '@shared/plan-frontier-candidates.ts'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { el } from '../dom/helpers.ts'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -698,12 +700,22 @@ export function renderFrontierSvg(
   // Bottom-gutter rows assigned greedily so labels never overlap within a row.
   // Past UNSCORED_ROW_LIMIT the band collapses to one label-less density row.
   const dense = unscored.length > UNSCORED_ROW_LIMIT
-  const unscoredRows: Array<{ id: string; costPerMTok: number; row: number; text: string }> = []
+  const unscoredRows: Array<{
+    id: string
+    costPerMTok: number
+    row: number
+    text: string
+  }> = []
   {
     const rowEnds: number[] = []
     for (const u of [...unscored].sort((a, b) => a.costPerMTok - b.costPerMTok)) {
       if (dense) {
-        unscoredRows.push({ id: u.id, costPerMTok: u.costPerMTok, row: 0, text: '' })
+        unscoredRows.push({
+          id: u.id,
+          costPerMTok: u.costPerMTok,
+          row: 0,
+          text: '',
+        })
         continue
       }
       const text = displayModelLabel(u.id)
@@ -1314,7 +1326,11 @@ export function unpricedCanonicalModels(
     if (plottedIds.has(id)) continue
     const score = getIntellectScore(id)
     if (!score) continue
-    out.push({ id, intellect: score.value, estimated: score.estimated === true })
+    out.push({
+      id,
+      intellect: score.value,
+      estimated: score.estimated === true,
+    })
   }
   for (const live of liveHintOnly) {
     out.push({ id: live.id, intellect: live.intellect, estimated: true })
@@ -1501,7 +1517,11 @@ function buildAuxLists(
         { class: 'field-hint frontier-unpriced-list' },
         el('summary', {}, `${String(unpricedList.length)} scored models with no price data yet`),
         renderBandedModelList(
-          unpricedList.map((u) => ({ id: u.id, intellect: u.intellect, estimated: u.estimated })),
+          unpricedList.map((u) => ({
+            id: u.id,
+            intellect: u.intellect,
+            estimated: u.estimated,
+          })),
         ),
       ),
     )
@@ -1559,6 +1579,8 @@ export function createIntellectFrontierPanel(
    * this so the default map never advertises an unavailable route.
    */
   loadRoutableModelSelections?: () => Promise<readonly string[]>,
+  /** Configured ACP agents, used to attach subscription billing to exact routes. */
+  loadAcpAgents?: () => Promise<readonly AcpAgentConfig[]>,
 ): IntellectFrontierPanel {
   const chartHost = el('div', { class: 'frontier-chart' })
   const liveNotes = el('div', { class: 'field-hint frontier-live-notes' })
@@ -1574,6 +1596,7 @@ export function createIntellectFrontierPanel(
     planUsage: PlanUsageSnapshot | null
     openRouter: OpenRouterFrontierSource
     routableSelections: readonly string[] | null
+    acpAgents: readonly AcpAgentConfig[]
   } | null = null
   let discover = false
   let showUnpriced = false
@@ -1687,7 +1710,11 @@ export function createIntellectFrontierPanel(
       role: 'group',
       'aria-label': 'Plan cost basis',
     })
-    const modes: Array<{ mode: PlanCoverageMode; label: string; title: string }> = [
+    const modes: Array<{
+      mode: PlanCoverageMode
+      label: string
+      title: string
+    }> = [
       {
         mode: 'plan',
         label: 'Plan',
@@ -1805,7 +1832,9 @@ export function createIntellectFrontierPanel(
     expandNoTrainingBtn.addEventListener('click', toggleNoTrainingOnly)
     expandCostAxisGroup = makeCostAxisGroup()
     expandPlanCoverageGroup = makePlanCoverageGroup()
-    const bigChart = el('div', { class: 'frontier-chart frontier-expand-chart' })
+    const bigChart = el('div', {
+      class: 'frontier-chart frontier-expand-chart',
+    })
     expandChartHost = bigChart
     expandTooltip = createTooltipLayer(dialog)
     const closeDialog = (): void => {
@@ -1912,6 +1941,12 @@ export function createIntellectFrontierPanel(
         routableSelections = []
       }
     }
+    let acpAgents: readonly AcpAgentConfig[] = []
+    try {
+      acpAgents = (await loadAcpAgents?.()) ?? []
+    } catch {
+      // Missing settings should remove plan routes, never broaden them.
+    }
     // The gate: live models join ONLY when the feed's declared index version
     // matches the canonical one (when declared) AND its values agree with our
     // curated anchors — a renormalised feed must never share the axis.
@@ -1924,6 +1959,7 @@ export function createIntellectFrontierPanel(
       planUsage,
       openRouter,
       routableSelections,
+      acpAgents,
     }
     render()
   }
@@ -1969,8 +2005,16 @@ export function createIntellectFrontierPanel(
 
   function render(): void {
     if (!state) return
-    const { localIds, extraProviders, live, liveFetch, planUsage, openRouter, routableSelections } =
-      state
+    const {
+      localIds,
+      extraProviders,
+      live,
+      liveFetch,
+      planUsage,
+      openRouter,
+      routableSelections,
+      acpAgents,
+    } = state
     const liveNoteParts: Array<string | HTMLElement> = []
     if (liveFetch.models.length > 0 && live.verification.verified) {
       const stale = live.verification.mismatches
@@ -2046,6 +2090,7 @@ export function createIntellectFrontierPanel(
       ...localFrontierCandidates(localIds),
       ...extraProviderFrontierCandidates(extraProviders),
       ...openRouterFrontierCandidates(openRouter.models),
+      ...planAcpFrontierCandidates(acpAgents),
     ]
     const exactRoutes = routableSelections === null ? null : new Set(routableSelections)
     const delegatedModelIds = new Set<string>()
@@ -2089,7 +2134,10 @@ export function createIntellectFrontierPanel(
     // expensive legacy model cannot stretch the price axis either.
     const liveDiscoverableCandidates: FrontierCandidate[] = [
       ...live.candidates,
-      ...livePricedCurated.map((candidate) => ({ ...candidate, discovery: true })),
+      ...livePricedCurated.map((candidate) => ({
+        ...candidate,
+        discovery: true,
+      })),
     ]
     const trackedDiscoverableCandidates: FrontierCandidate[] = []
     if (exactRoutes !== null) {
@@ -2142,7 +2190,8 @@ export function createIntellectFrontierPanel(
     // Re-price each model against the live plan snapshot: a plan-covered model
     // drops to $0 (best price → wins the frontier) with a plan badge; a model
     // whose plan window is spent keeps its real price and carries a
-    // limit-reached note. Applied per grouped identity inside the frontier.
+    // limit-reached note. Applied before identity grouping so the free ACP
+    // route wins over paid routes to the same weights.
     const allRouteCandidates = [...baseCandidates, ...discoveryCandidates]
     const trackedCandidateIsDiscovery = (candidate: FrontierCandidate): boolean =>
       exactRoutes !== null && isTrackedCloudCandidate(candidate) && !candidateHasRoute(candidate)

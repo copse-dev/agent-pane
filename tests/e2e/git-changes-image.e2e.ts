@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -6,6 +6,8 @@ import {
   resetUserData,
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
+import { setComposerValue } from './helpers/composer.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -52,7 +54,20 @@ async function clickChange(path: string): Promise<void> {
   await row.click()
 }
 
-describe('git changes image preview', () => {
+async function proposeImage(path: string, bytes: Buffer): Promise<void> {
+  const args = JSON.stringify({ path, content: bytes.toString('latin1') })
+  await setComposerValue(`[[mcp:write_file ${args}]]`)
+  await $('.submit-btn').click()
+  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
+    timeout: 60_000,
+    interval: 500,
+    timeoutMsg: 'Agent did not return to idle after proposing the image',
+  })
+}
+
+describe('git changes image preview', function () {
+  this.timeout(90_000)
+
   let repoRoot = ''
 
   before(async () => {
@@ -101,5 +116,37 @@ describe('git changes image preview', () => {
       expect.stringMatching(/^after$/i),
     )
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-untracked.png'))
+  })
+
+  it('shows a proposed image preview with approval actions', async () => {
+    const proposedBytes = readFileSync(
+      join(process.cwd(), 'tests/e2e/fixtures/git-changes-red.png'),
+    )
+    const interveningBytes = readFileSync(
+      join(process.cwd(), 'tests/e2e/fixtures/git-changes-blue.png'),
+    )
+
+    // A new file applies directly. Change it outside Copse, then request the
+    // original image again so the stale-overwrite guard stages the replacement.
+    await proposeImage('proposed.png', proposedBytes)
+    writeFileSync(join(repoRoot, 'proposed.png'), interveningBytes)
+    await proposeImage('proposed.png', proposedBytes)
+
+    await $('.git-changes-section-proposed').waitForDisplayed({ timeout: 30_000 })
+    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
+    await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize(2)
+    const labels = await $$('#git-diff-viewer-host .git-image-diff-label').map((e) => e.getText())
+    await expect(labels).toEqual(['BEFORE', 'AFTER'])
+    await expect($('#git-diff-viewer-host .monaco-diff-editor')).not.toBeDisplayed()
+    await expect($('#git-diff-viewer-host .diff-accept-btn')).toBeDisplayed()
+    await expect($('#git-diff-viewer-host .diff-reject-btn')).toBeDisplayed()
+
+    const src = await $(
+      '#git-diff-viewer-host .git-image-diff-img[alt="proposed.png (after)"]',
+    ).getAttribute('src')
+    await expect(src).toBe(`data:image/png;base64,${proposedBytes.toString('base64')}`)
+    await saveElementScreenshot('#git-diff-viewer-host', 'git-changes-image-proposed.png')
+
+    await $('#git-diff-viewer-host .diff-reject-btn').click()
   })
 })
