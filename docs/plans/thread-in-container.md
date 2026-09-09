@@ -1,18 +1,21 @@
 # Running a thread inside a container
 
-**Status: Active (prototype on the branch).** A thread can be run unattended inside a
+**Status: Active (experimental implementation on `main`, reviewed at `a2880354f`).** A thread can be run unattended inside a
 disposable, hardened local Docker container with no user prompts: the product's own headless
 agent loop runs in the guest, contained effects run without asking, outward effects are queued
 for review, and the result comes back to the host as commits under `refs/copse/runs/<id>`.
 The prototype is exercised end to end by
 `src/main/services/container-runtime/thread-container.integration.test.ts` (opt-in, needs
 Docker), driven by `pnpm run thread:container`, and started from the app through the composer
-footer ("Run unattended in a container…"). What it does **not** yet do
+footer ("Run unattended in a container…") after enabling the experimental
+`containerRunsEnabled` setting, which defaults to off. Main enforces that setting,
+not just the renderer. The supervisor tracks progress and cancellation without
+replaying a container run after restart; the durable review record and result ref
+remain available for explicit adoption. What it does **not** yet do
 is listed under [What the prototype proves, and what it does not](#what-the-prototype-proves-and-what-it-does-not).
 Key-capable agent models (ACP: Claude, Codex, Gemini) run in the guest under a vendor API
 key; the others are offered greyed out with a per-agent reason. That route is described, and
-its status tracked, under
-built, under [Agent models in the guest (ACP)](#agent-models-in-the-guest-acp).
+its status tracked, under [Agent models in the guest (ACP)](#agent-models-in-the-guest-acp).
 
 This plan is the executable slice of two documents that were design-only:
 [`unattended-runs.md`](unattended-runs.md) (the product question: what changes about asking

@@ -39,7 +39,9 @@ architecture is `docs/hooks.md`; per-dialect support and trust models are
 `configureHooksDialects`; every default is the conservative reading:
 
 - `sandbox` — the OS sandbox hooks spawn inside by default (F3, decision 7).
-  Default: none, so hooks spawn unsandboxed exactly as on Linux and Windows.
+  Default: none, so standalone hosts must supply containment. Copse binds its
+  macOS seatbelt or Linux bubblewrap runtime; Windows and sandbox-init failures
+  retain the documented trusted-command-hook fallback.
 - `childEnv` — the environment handed to an unsandboxed hook. Default: the
   process env minus undefined values; the app binds its secret scrubber.
 - `agentExecutionRoot` — the current turn's execution root. Default: unknown.

@@ -89,7 +89,11 @@ explicit opt-in; behavior-derived installation consent is future product work.
 At startup the host re-hashes the source, materializes and validates a
 content-addressed snapshot, and executes only that snapshot in a standalone
 API-v1 worker. The sandbox denies direct network and filesystem writes, and the
-worker can register only the tool names and model ids declared by the manifest.
+worker can register only the tools, models and function hooks declared by the manifest.
+Function-hook registration supports explicit host invocation through the isolated
+SDK, with opaque JSON results; canonical event fire sites do not invoke these
+registrations automatically. This is distinct from the existing command-hook
+path. See [the SDK contract](../packages/plugin-sdk/README.md).
 Without the OS sandbox, execution fails closed.
 
 Selected-plugin models are whole-thread routes, like remote and ACP agents rather

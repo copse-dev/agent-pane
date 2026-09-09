@@ -1,6 +1,9 @@
 # Event-driven automations
 
-Status: **Implementation proposal. No event automation runtime ships with this document.**
+Status: **Partially implemented.** Slice A's durable admission/recovery inbox is on
+`main` at `a2880354f`; see [the implemented contract](event-automation-inbox.md).
+It is not installed at app startup and does not run models. The product editor,
+authenticated adapters and dispatch in the remaining slices are still proposals.
 
 Extends [Project automations](automations.md) and the authenticated-trigger phase of
 [Background supervisor](background-supervisor.md#p6--campaigns--authenticated-trigger-adapters).

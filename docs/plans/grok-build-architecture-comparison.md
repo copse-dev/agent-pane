@@ -2,6 +2,12 @@
 
 Status: architecture review and follow-up proposal, 2026-07-21.
 
+Historical comparison: references to Copse's current behavior below mean the
+specific baseline cited in this paper. For implementation ownership and availability
+at `main` `a2880354f`, use [the architecture guide](../../site/architecture.html),
+[the desktop protocol](../api-protocol.md) and the linked implementation plans.
+The external repositories have not been re-audited as part of that main refresh.
+
 Tracking: [#1078](https://github.com/copse-dev/agent-pane/pull/1078), with follow-up
 issues [#1079](https://github.com/copse-dev/agent-pane/issues/1079),
 [#1080](https://github.com/copse-dev/agent-pane/issues/1080),

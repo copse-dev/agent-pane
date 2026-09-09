@@ -275,7 +275,16 @@ describe('architectureMarkdown', () => {
     )
 
     assert.equal(sources.length > 200, true, 'expected the complete architecture inventory')
-    assert.match(markdown, /^## Recent changes$/m)
+    assert.doesNotMatch(markdown, /^## Recent changes$/m)
+    assert.match(markdown, /^## Agents & hooks$/m)
+    assert.match(markdown, /without replaying runs/)
+    assert.match(markdown, /startup wiring and model dispatch remain future work/)
+    const published = pageMarkdown(readFileSync(file, 'utf8'), 'architecture.html')
+    assert.match(published, /Where the project sandbox applies/)
+    assert.match(
+      published,
+      /Configured stdio MCP servers launch without the project sandbox wrapper/,
+    )
     for (const source of sources) {
       assert.equal(existsSync(join(process.cwd(), source)), true, `missing source: ${source}`)
     }

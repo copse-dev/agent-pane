@@ -19,9 +19,16 @@ Which parts of `agent-pane` could be their own micro-library, or a bigger separa
 project, and what does each cut cost in restructuring? A second question rides along:
 how would a Qwen Code harness sit under the same UI as another backend?
 
+Since that measurement, `@copse/procwatch` and `@copse/store-kit` have also landed
+as host-independent workspace packages. The former owns process diagnostics;
+the latter owns profile paths, persistent/cached stores, keyring encryption and
+migration primitives. App settings and product policy remain in the host. See
+[the current ownership map](../../site/architecture.html), reviewed at
+`main` `a2880354f` (2026-09-09). The tables below retain their dated measurements.
+
 ## Verdict
 
-Nine entries sit under `packages/` on `main`: `@copse/std`, `@copse/llm`, `@copse/agent`,
+At the earlier package-count snapshot, nine entries sat under `packages/`: `@copse/std`, `@copse/llm`, `@copse/agent`,
 `@copse/plan-usage`, `@copse/shell-guard`, `@copse/thread-store`, `@copse/hooks-dialects`,
 and `@copse/plugin-sdk` as in-repo workspace packages, plus `extract-zip` as a vendored
 shim. `@copse/streaming-markdown` left first for its own repo
@@ -218,7 +225,7 @@ and the runner takes an optional `record: RecordCommandHookRun` callback rather 
 `HookRunSink` interface; the host binds it per fire site. The other facts are a
 `HooksDialectsEnvironment` installed through `configureHooksDialects`: `sandbox` (a
 `HookSandboxRuntime` with `enabled`, `spawnShell`, `violationCount`, and `afterCommand`;
-default: no sandbox, so hooks spawn unsandboxed as on Linux and Windows), `childEnv`
+default: no sandbox; the app injects macOS seatbelt or Linux bubblewrap when active), `childEnv`
 (default: passthrough; the app binds its secret scrubber), `agentExecutionRoot` (default:
 unknown), and `dataRoot` (`COPSE_DIR`, else `~/.copse`). The app binds all four in
 `services/hooks/hooks-dialects-environment.ts`.

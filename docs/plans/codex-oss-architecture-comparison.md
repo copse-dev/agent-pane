@@ -2,6 +2,12 @@
 
 Status: architecture review and implementation proposal, 2026-07-19.
 
+Historical comparison: references to Copse's current behavior below mean the
+specific baseline cited in this paper. For implementation ownership and availability
+at `main` `a2880354f`, use [the architecture guide](../../site/architecture.html),
+[the desktop protocol](../api-protocol.md) and the linked implementation plans.
+The external repositories have not been re-audited as part of that main refresh.
+
 Implementation ownership for the cross-target sandbox, network, credential, lifecycle,
 checkpoint, and audit work now lives in
 [`execution-runtime-security.md`](execution-runtime-security.md). This document remains
