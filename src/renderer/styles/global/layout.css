@@ -451,11 +451,14 @@
   background: var(--bg-hover);
 }
 .chat-row.selected {
+  /* The fill alone. --bg-selected is full-bleed across a continuous list, which
+     already says "this one is current"; the accent rail that used to sit on the
+     trailing edge was redundant with it, and one visual device doing selection,
+     containment and nesting at once is what made the rail read as noise. Weight
+     carries the rest — see docs/ui-taste.md -> "Sidebar selections". */
   background: var(--bg-selected);
   color: var(--text-primary);
-  /* Trailing-edge accent rail — selection fill is full-bleed, so the marker
-     sits on the sidebar's right edge rather than inset on the left. */
-  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+  font-weight: 600;
 }
 .chat-title {
   flex: 1 1 auto;
