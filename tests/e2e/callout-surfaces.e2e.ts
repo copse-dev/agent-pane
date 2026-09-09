@@ -4,13 +4,13 @@ import {
   seedCalloutSurfacesFixture,
   seedE2eViewport,
 } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 /**
  * The accent rail used to do three unrelated jobs — containment in the
  * transcript, selection in the sidebar, nesting under a tool card — and looked
- * the same doing all of them. Only nesting kept it (see `docs/ui-taste.md` ->
- * "A rail means nesting, and nothing else"). Containment became a plate, flat
+ * the same doing all of them. Nesting and standing asks keep it (see `docs/ui-taste.md` ->
+ * "Rails mark nesting and standing asks"). Containment became a plate, flat
  * for the agent's own prose and hatched for Copse annotating its own turn, and
  * selection became the fill alone.
  *
@@ -184,16 +184,105 @@ describe('callout surfaces', () => {
     expect(new Set(glyphs.map((glyph) => glyph.mask)).size).toBe(5)
   })
 
+  it('keeps all five silhouettes visible in dark and light forced-colors palettes', async () => {
+    try {
+      for (const scheme of ['dark', 'light']) {
+        await browser.sendCommand('Emulation.setEmulatedMedia', {
+          features: [
+            { name: 'forced-colors', value: 'active' },
+            { name: 'prefers-color-scheme', value: scheme },
+          ],
+        })
+        const glyphs = await browser.execute(() => {
+          if (!matchMedia('(forced-colors: active)').matches) {
+            throw new Error('Forced-colors emulation did not apply')
+          }
+          return Array.from(document.querySelectorAll('.markdown-alert-title')).map((title) => {
+            const plate = title.closest('blockquote')
+            if (!plate) throw new Error('Missing callout plate')
+            const glyph = getComputedStyle(title, '::before')
+            return {
+              kind: plate.className,
+              foreground: getComputedStyle(title).color,
+              background: getComputedStyle(plate).backgroundColor,
+              ink: glyph.backgroundColor,
+              mask: glyph.maskImage,
+            }
+          })
+        })
+        expect(glyphs).toHaveLength(5)
+        for (const glyph of glyphs) {
+          expect({ kind: glyph.kind, ink: glyph.ink }).toEqual({
+            kind: glyph.kind,
+            ink: glyph.foreground,
+          })
+          expect(glyph.ink).not.toBe(glyph.background)
+          expect(glyph.mask).toContain('data:image/svg+xml')
+        }
+        if (scheme === 'dark') {
+          await saveElementScreenshot(
+            '[data-message-id="msg-assistant-callouts"] .message-text',
+            'callout-surfaces-forced-colors-dark.png',
+          )
+        } else {
+          await saveElementScreenshot(
+            '[data-message-id="msg-assistant-callouts"] .message-text',
+            'callout-surfaces-forced-colors-light.png',
+          )
+        }
+      }
+    } finally {
+      await browser.sendCommand('Emulation.setEmulatedMedia', { features: [] })
+    }
+  })
+
+  it('replaces the hatch with a flat wash when transparency or contrast preferences request it', async () => {
+    try {
+      for (const feature of [
+        { name: 'prefers-reduced-transparency', value: 'reduce' },
+        { name: 'prefers-contrast', value: 'more' },
+      ]) {
+        await browser.sendCommand('Emulation.setEmulatedMedia', { features: [feature] })
+        const materials = await browser.execute(() => {
+          return ['.message-reasoning[open]', '.review-panel', '.comparison-panel'].map(
+            (selector) => {
+              const panel = document.querySelector(selector)
+              if (!panel) throw new Error(`Missing commentary: ${selector}`)
+              const style = getComputedStyle(panel)
+              return {
+                selector,
+                line: style.getPropertyValue('--callout-hatch-line').trim(),
+                fill: style.getPropertyValue('--callout-hatch-fill').trim(),
+                plate: style.getPropertyValue('--callout-plate-fill').trim(),
+                background: style.backgroundColor,
+              }
+            },
+          )
+        })
+        for (const material of materials) {
+          expect(material.line).toBe('0%')
+          expect(material.fill).toBe(material.plate)
+          expect(material.background).not.toBe('rgba(0, 0, 0, 0)')
+        }
+      }
+      await saveElementScreenshot('.message-reasoning', 'callout-reasoning-increased-contrast.png')
+    } finally {
+      await browser.sendCommand('Emulation.setEmulatedMedia', { features: [] })
+    }
+  })
+
   // A brand-system change needs both workbenches: the plate and the hatch are
   // color-mixes over theme tokens, and two of the five severity hues are new
   // and derived separately for light.
   it('reads in both workbenches', async () => {
+    await saveElementScreenshot('.message-reasoning', 'callout-reasoning-dark.png')
     await showCommentary()
     await saveAppScreenshot('callout-surfaces-dark.png')
 
     await switchTheme('light')
     await $('blockquote.markdown-alert-note').waitForExist({ timeout: 30_000 })
     await openReasoning()
+    await saveElementScreenshot('.message-reasoning', 'callout-reasoning-light.png')
     await showCommentary()
     await saveAppScreenshot('callout-surfaces-light.png')
   })
