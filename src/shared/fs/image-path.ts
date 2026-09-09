@@ -19,3 +19,9 @@ export function imageMimeType(path: string): string | null {
 export function isImagePath(path: string): boolean {
   return imageMimeType(path) !== null
 }
+
+/** Raster images must travel through the proposed-diff queue as bytes, not UTF-8 text. */
+export function isRasterImagePath(path: string): boolean {
+  const mime = imageMimeType(path)
+  return mime !== null && mime !== 'image/svg+xml'
+}

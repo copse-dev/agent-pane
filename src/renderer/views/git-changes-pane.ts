@@ -36,6 +36,49 @@ import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-ch
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { isImageDiff, renderImageDiff } from './git-image-diff.ts'
 import { materialFolderIconUrl } from '../icons/material-file-icons.ts'
+import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const chunks: string[] = []
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)))
+  }
+  return btoa(chunks.join(''))
+}
+
+function proposedImageDataUrl(path: string, content: string): string | null {
+  if (!content) return null
+  const mime = imageMimeType(path)
+  if (!mime) return null
+
+  const dataUrlPrefix = `data:${mime};base64,`
+  if (content.startsWith(dataUrlPrefix)) return content
+
+  if (isRasterImagePath(path)) {
+    const bytes = new Uint8Array(content.length)
+    for (let i = 0; i < content.length; i++) {
+      const codeUnit = content.charCodeAt(i)
+      if (codeUnit > 0xff) return null
+      bytes[i] = codeUnit
+    }
+    return `${dataUrlPrefix}${bytesToBase64(bytes)}`
+  }
+
+  return `${dataUrlPrefix}${bytesToBase64(new TextEncoder().encode(content))}`
+}
+
+function proposedImageDiff(view: ActiveDiff): GitFileDiff | null {
+  if (!imageMimeType(view.path)) return null
+  return {
+    path: view.path,
+    before: '',
+    after: '',
+    language: view.language,
+    beforeImage: proposedImageDataUrl(view.path, view.before),
+    afterImage: proposedImageDataUrl(view.path, view.after),
+  }
+}
 
 const STATUS_LABEL: Record<GitChangeStatus, string> = {
   modified: 'M',
@@ -149,7 +192,7 @@ export function mountGitChangesPane(
   const dirWrap = el('div', { class: 'git-dir-view' })
   dirWrap.hidden = true
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a changed file')
-  viewerRoot.append(conflictBanner, diffWrap, approvalBar, imageWrap, dirWrap, emptyState)
+  viewerRoot.append(conflictBanner, diffWrap, imageWrap, dirWrap, emptyState, approvalBar)
 
   let diffEditor: GitDiffEditor | null = null
   let pendingSelect: ChangeSelection | null = null
@@ -490,12 +533,24 @@ export function mountGitChangesPane(
       if (owner) void api.diff.reject(owner.projectId, owner.threadId, view.path)
     }
 
+    const imageDiff = proposedImageDiff(view)
+    if (imageDiff) {
+      emptyState.hidden = true
+      diffWrap.hidden = true
+      imageWrap.hidden = false
+      dirWrap.hidden = true
+      if (diffEditor) disposeDiffModels(diffEditor)
+      renderImageDiff(imageWrap, imageDiff)
+      return
+    }
+
     // Unhide the wrap *before* creating/laying out Monaco — creating the editor
     // while `diffWrap` is still `hidden` (zero size) races layout and leaves the
     // first change off-screen after lazy Monaco load.
     emptyState.hidden = true
     imageWrap.hidden = true
     dirWrap.hidden = true
+    clear(imageWrap)
     diffWrap.hidden = false
 
     const proposed: GitFileDiff = {

@@ -266,6 +266,48 @@ async function waitForModifiedValue(
 }
 
 describe('git changes pane fetches proposed diff content on cache miss', () => {
+  it('renders proposed raster bytes as before/after images instead of Monaco text', async () => {
+    const beforeBase64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAT0lEQVR42u3PQQkAAAgEsAt2/VMYxgi+hcEKLNO+FgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQGBywI8cEE8aU9dHgAAAABJRU5ErkJggg=='
+    const afterBase64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAT0lEQVR42u3PQQkAAAgEsAtmMMMaxgi+hcEKLNXzWgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQELguIlwF44h5ndAAAAABJRU5ErkJggg=='
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
+    store.setState({ stagedDiffs: [{ path: 'image.png', language: 'plaintext' }] })
+
+    const api = makeApi(
+      {
+        'image.png': {
+          path: 'image.png',
+          before: Buffer.from(beforeBase64, 'base64').toString('latin1'),
+          after: Buffer.from(afterBase64, 'base64').toString('latin1'),
+          language: 'plaintext',
+        },
+      },
+      [],
+    )
+    const capture: { editor: StubDiffEditor | null } = { editor: null }
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    forceVisible(viewerRoot)
+    document.body.append(listRoot, viewerRoot)
+
+    mountGitChangesPane(listRoot, viewerRoot, store, api, makeMonacoStub(capture))
+    await settle()
+
+    const images = viewerRoot.querySelectorAll<HTMLImageElement>('.git-image-diff-img')
+    assert.equal(images.length, 2)
+    assert.equal(images[0]?.src, `data:image/png;base64,${beforeBase64}`)
+    assert.equal(images[1]?.src, `data:image/png;base64,${afterBase64}`)
+    assert.equal(capture.editor, null, 'Monaco should stay lazy for a proposed image')
+    assert.equal(viewerRoot.querySelector<HTMLButtonElement>('.diff-accept-btn')?.hidden, false)
+    assert.equal(viewerRoot.querySelector<HTMLButtonElement>('.diff-reject-btn')?.hidden, false)
+  })
+
   it('renders a proposed diff whose show_diff push was never received', async () => {
     const store = createStore({
       activeProjectId: 'project-1',
