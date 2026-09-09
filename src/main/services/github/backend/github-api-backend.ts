@@ -33,6 +33,7 @@ import type {
 } from '@shared/types/git.ts'
 import type { GitHubBackend, PrCreateInput, PrRef } from './backend.ts'
 import { resolveGitHubApiToken } from './github-token.ts'
+import { PR_ACTIVITY_QUERY, parsePrActivity, unavailablePrActivity } from './pr-activity.ts'
 import {
   chooseAutoMergeStrategy,
   type AutoMergeStrategy,
@@ -477,10 +478,15 @@ export const githubApiBackend: GitHubBackend = {
     // concurrently rather than serially. reviewDecision is GraphQL-only (the
     // REST pulls payload omits it) and best-effort: a failure just drops the
     // Approved badge, it never fails the details load.
-    const [result, files, reviewDecision] = await Promise.all([
+    const [result, files, reviewDecision, activity] = await Promise.all([
       getPull(ref),
       listPullFiles(ref),
       fetchReviewDecision(ref),
+      graphql(PR_ACTIVITY_QUERY, { owner: ref.owner, repo: ref.repo, number: ref.number })
+        .then((result) =>
+          result.errorMessage ? unavailablePrActivity() : parsePrActivity(result.data),
+        )
+        .catch(() => unavailablePrActivity()),
     ])
     if (result.status === 404) return null
     if (!result.ok) throw new Error(result.errorMessage ?? 'Could not load pull request.')
@@ -495,6 +501,7 @@ export const githubApiBackend: GitHubBackend = {
       state: restPullState(pull),
       body: pull.body?.trim() ?? '',
       files,
+      activity,
     }
     if (pull.head?.ref) details.headRefName = pull.head.ref
     if (pull.base?.ref) details.baseRefName = pull.base.ref
